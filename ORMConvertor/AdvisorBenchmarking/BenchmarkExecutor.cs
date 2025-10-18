@@ -27,7 +27,7 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
         logger?.LogInformation("Benchmark start for framework {Framework} with {SourceCount} sources.", framework, sources.Count);
 
         var benchmarkSource = BenchmarkHarnessBuilder.Build(framework, sources, connectionString);
-        logger?.LogDebug("Generated benchmark source (first 400 chars): {SourceSnippet}", Truncate(benchmarkSource.Source, 400));
+        logger?.LogDebug("Generated benchmark source (first 10000 chars): {SourceSnippet}", Truncate(benchmarkSource.Source, 10000));
 
         var assemblyName = $"DynamicBenchmarks_{Guid.NewGuid():N}";
 

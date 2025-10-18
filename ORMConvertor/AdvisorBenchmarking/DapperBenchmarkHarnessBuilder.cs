@@ -32,14 +32,25 @@ internal static class DapperBenchmarkHarnessBuilder
         var typeName = $"DapperBenchmark_{Guid.NewGuid():N}";
 
         var sb = new StringBuilder();
-        sb.AppendLine("using System;");
-        sb.AppendLine("using System.Collections.Generic;");
-        sb.AppendLine("using System.Linq;");
-        sb.AppendLine("using Microsoft.Data.SqlClient;");
-        sb.AppendLine("using Dapper;");
+        var usingSet = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "System",
+            "System.Collections.Generic",
+            "System.Linq",
+            "Microsoft.Data.SqlClient",
+            "Dapper"
+        };
+        foreach (var entityUsing in entityInfos.SelectMany(e => e.Usings))
+        {
+            usingSet.Add(entityUsing.Replace(";", string.Empty).Trim());
+        }
         foreach (var distinctNs in entityInfos.Select(e => e.Namespace).Where(n => n != null).Distinct())
         {
-            sb.AppendLine($"using {distinctNs};");
+            usingSet.Add(distinctNs!);
+        }
+        foreach (var import in usingSet.OrderBy(u => u, StringComparer.Ordinal))
+        {
+            sb.AppendLine($"using {import};");
         }
         sb.AppendLine();
         sb.AppendLine($"namespace {ns}");
@@ -106,7 +117,9 @@ internal static class DapperBenchmarkHarnessBuilder
         string sqlBody = sqlMatch.Success ? sqlMatch.Groups["sql"].Value.Trim('\r', '\n') : "SELECT 1";
 
         string primaryTable = entityInfos.FirstOrDefault()?.TableName ?? resultType;
+        // Alias handling is delegated to the translator; we just swap placeholder tokens for the resolved table name.
         sqlBody = ReplaceSetPlaceholder(sqlBody, primaryTable);
+        sqlBody = StripCSharpNumericSuffixes(sqlBody);
 
         var builder = new StringBuilder();
         builder.AppendLine($"        public List<{resultType}> Query()");
@@ -119,4 +132,8 @@ internal static class DapperBenchmarkHarnessBuilder
         builder.AppendLine();
         return builder.ToString();
     }
+    // Translation sometimes leaves C# numeric suffixes (2000m, 3.5f) in the emitted SQL literal.
+    // Strip them so the query stays valid for SQL Server.
+    private static string StripCSharpNumericSuffixes(string sqlBody) =>
+        Regex.Replace(sqlBody, @"(?<=\b\d+(?:\.\d+)?)[mMdDfF]\b", string.Empty);
 }

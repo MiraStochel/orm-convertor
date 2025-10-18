@@ -98,7 +98,16 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
                 _ => node.Name.Identifier.Text
             };
 
-            string alias = node.Name.Identifier.Text[..1].ToLower();
+            string aliasSource = node.Name switch
+            {
+                GenericNameSyntax generic when generic.TypeArgumentList.Arguments.Count > 0 =>
+                    ExtractIdentifier(generic.TypeArgumentList.Arguments[0]),
+                _ => node.Name.Identifier.Text
+            };
+
+            string alias = aliasSource.Length > 0
+                ? aliasSource[..1].ToLower()
+                : "t";
 
             queryBuilder.From(tableName, alias);
             fromWasEmitted = true;
@@ -323,5 +332,14 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
         MemberAccessExpressionSyntax m when m.Name is IdentifierNameSyntax id => id.Identifier.Text,
         IdentifierNameSyntax id => id.Identifier.Text,
         _ => "unknown_table"
+    };
+
+    private static string ExtractIdentifier(TypeSyntax typeSyntax) => typeSyntax switch
+    {
+        IdentifierNameSyntax ins => ins.Identifier.Text,
+        QualifiedNameSyntax qns => qns.Right.Identifier.Text,
+        GenericNameSyntax gns => gns.Identifier.Text,
+        PredefinedTypeSyntax pds => pds.Keyword.ValueText,
+        _ => typeSyntax.ToString()
     };
 }

@@ -79,6 +79,10 @@ internal static class EfCoreBenchmarkHarnessBuilder
         AddUsing("System.Threading.Tasks");
         AddUsing("Microsoft.EntityFrameworkCore");
         AddUsing("Microsoft.EntityFrameworkCore.Metadata.Builders");
+        foreach (var entityUsing in entityInfos.SelectMany(e => e.Usings))
+        {
+            AddUsing(entityUsing.StartsWith("using ", StringComparison.Ordinal) ? entityUsing["using ".Length..] : entityUsing);
+        }
         foreach (var distinctNs in entityInfos.Select(e => e.Namespace).Where(n => n != null).Distinct())
         {
             AddUsing(distinctNs!);

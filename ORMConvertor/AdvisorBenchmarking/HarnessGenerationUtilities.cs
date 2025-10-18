@@ -18,12 +18,14 @@ internal static class HarnessGenerationUtilities
             .Where(s => s.ContentType == ConversionContentType.CSharpEntity)
             .Select(s =>
             {
-                var typeName = ExtractTypeName(s.Content);
+                var (usings, body) = SplitUsings(s.Content);
+                var typeName = ExtractTypeName(body);
                 return new EntityInfo(
-                    s.Content,
-                    ExtractNamespace(s.Content),
+                    body,
+                    usings,
+                    ExtractNamespace(body),
                     typeName,
-                    ExtractTableName(s.Content, typeName));
+                    ExtractTableName(body, typeName));
             })
             .ToList();
 
@@ -43,19 +45,19 @@ internal static class HarnessGenerationUtilities
 
         if (!normalized.StartsWith("namespace ", StringComparison.Ordinal))
         {
-            return normalized;
+            return RelaxOptionalValueTypes(normalized);
         }
 
         var firstLineEnd = normalized.IndexOf('\n');
         if (firstLineEnd < 0)
         {
-            return normalized;
+            return RelaxOptionalValueTypes(normalized);
         }
 
         var header = normalized[..firstLineEnd];
         if (!header.TrimEnd().EndsWith(';'))
         {
-            return normalized;
+            return RelaxOptionalValueTypes(normalized);
         }
 
         var ns = header[10..].Trim().TrimEnd(';');
@@ -63,7 +65,8 @@ internal static class HarnessGenerationUtilities
 
         var indentedBody = Indent(body, "    ");
 
-        return $"namespace {ns}\n{{\n{indentedBody}\n}}";
+        var relaxedBody = RelaxOptionalValueTypes(indentedBody);
+        return $"namespace {ns}\n{{\n{relaxedBody}\n}}";
     }
 
     internal static string Indent(string source, string indentation)
@@ -236,6 +239,37 @@ internal static class HarnessGenerationUtilities
         }
     }
 
-    internal sealed record EntityInfo(string Source, string? Namespace, string? TypeName, string TableName);
-}
+    internal static (IReadOnlyList<string> Usings, string Body) SplitUsings(string content)
+    {
+        var lines = content.ReplaceLineEndings("\n").Split('\n');
+        var usings = new List<string>();
+        int index = 0;
+        for (; index < lines.Length; index++)
+        {
+            var trimmed = lines[index].Trim();
+            if (trimmed.StartsWith("using ", StringComparison.Ordinal) && trimmed.EndsWith(';'))
+            {
+                usings.Add(trimmed.TrimEnd(';'));
+                continue;
+            }
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                continue;
+            }
+            break;
+        }
 
+        var body = string.Join("\n", lines[index..]);
+        return (usings, body);
+    }
+
+    private static string RelaxOptionalValueTypes(string source)
+    {
+        return Regex.Replace(
+            source,
+            @"(\bpublic\s+(?:virtual\s+)?)(decimal)(\s+\w+\s*\{)",
+            m => $"{m.Groups[1].Value}decimal?{m.Groups[3].Value}");
+    }
+
+    internal sealed record EntityInfo(string Source, IReadOnlyList<string> Usings, string? Namespace, string? TypeName, string TableName);
+}
