@@ -26,7 +26,8 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
 
     private static readonly ORMEnum[] SupportedFrameworks =
     [
-        ORMEnum.Dapper
+        ORMEnum.Dapper,
+        ORMEnum.EFCore
     ];
 
     public AdvisorRunCoordinator(
@@ -63,7 +64,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         var targetFrameworks = ResolveTargetFrameworks(request);
         if (targetFrameworks.Count == 0)
         {
-            throw new InvalidOperationException("No supported target frameworks resolved for advisor run. Currently supported: Dapper.");
+            throw new InvalidOperationException("No supported target frameworks resolved for advisor run. Currently supported: Dapper, EFCore.");
         }
         logger.LogInformation("Target frameworks resolved: {Frameworks}.", targetFrameworks);
 

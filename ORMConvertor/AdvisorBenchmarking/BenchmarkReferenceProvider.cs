@@ -29,11 +29,16 @@ internal static class BenchmarkReferenceProvider
         AddAssembly(typeof(System.Runtime.GCSettings).Assembly);
         AddAssembly(typeof(System.Diagnostics.Stopwatch).Assembly);
         AddAssembly(typeof(System.Data.Common.DbConnection).Assembly);
+        AddAssembly(typeof(System.Linq.IQueryable).Assembly);
+        AddAssembly(typeof(System.Linq.Expressions.Expression).Assembly);
         AddAssembly(typeof(System.ComponentModel.DataAnnotations.KeyAttribute).Assembly);
         AddAssembly(typeof(System.ComponentModel.Component).Assembly);
+        AddAssembly(typeof(System.ComponentModel.TypeConverter).Assembly);
         AddAssembly(typeof(Microsoft.Data.SqlClient.SqlConnection).Assembly);
         AddAssembly(typeof(Dapper.SqlMapper).Assembly);
         AddAssembly(typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly);
+        AddAssembly(typeof(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<>).Assembly);
+        AddAssembly(typeof(Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions).Assembly);
         AddAssembly(typeof(Microsoft.EntityFrameworkCore.SqlServerDbContextOptionsExtensions).Assembly);
 
         var tpa = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string;
