@@ -2,6 +2,7 @@
 using ORMConvertorAPI.Data;
 using ORMConvertorAPI.Dtos;
 using ORMConvertorAPI.Dtos.Advisor;
+using ORMConvertorAPI.Services;
 
 namespace ORMConvertorAPI;
 
@@ -36,6 +37,12 @@ public static class Endpoints
               .Produces<AdvisorSolveResponse>(StatusCodes.Status200OK)
               .ProducesProblem(StatusCodes.Status400BadRequest)
               .WithOpenApi();
+
+        group.MapPost("/advisor/run", AdvisorRunHandler)
+            .WithName("AdvisorRun")
+            .Produces<AdvisorRunResult>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .WithOpenApi();
     }
 
     private static IResult ConvertHandler(ConvertRequest req)
@@ -65,6 +72,22 @@ public static class Endpoints
                 status, objective, (int[])selected.Clone(), (int[])assignment.Clone()
             );
             return Results.Ok(response);
+        }
+        catch (Exception e)
+        {
+            return Results.BadRequest(e.Message);
+        }
+    }
+
+    private static async Task<IResult> AdvisorRunHandler(
+        AdvisorRunRequest req,
+        IAdvisorRunCoordinator coordinator,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await coordinator.RunAsync(req, cancellationToken);
+            return Results.Ok(result);
         }
         catch (Exception e)
         {
