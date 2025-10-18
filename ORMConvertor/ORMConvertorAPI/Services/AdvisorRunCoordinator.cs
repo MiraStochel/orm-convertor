@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using AdvisorBenchmarking;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Model;
 using AdvisorNamespace = Advisor.Advisor;
 using OrmConvertor;
@@ -9,12 +13,33 @@ namespace ORMConvertorAPI.Services;
 
 public class AdvisorRunCoordinator : IAdvisorRunCoordinator
 {
+    private readonly IBenchmarkExecutor benchmarkExecutor;
+    private readonly ILogger<AdvisorRunCoordinator> logger;
+    private readonly string connectionString;
+
     private static readonly ORMEnum[] KnownFrameworks =
     [
         ORMEnum.Dapper,
         ORMEnum.NHibernate,
         ORMEnum.EFCore
     ];
+
+    private static readonly ORMEnum[] SupportedFrameworks =
+    [
+        ORMEnum.Dapper
+    ];
+
+    public AdvisorRunCoordinator(
+        IBenchmarkExecutor benchmarkExecutor,
+        IConfiguration configuration,
+        ILogger<AdvisorRunCoordinator> logger)
+    {
+        this.benchmarkExecutor = benchmarkExecutor ?? throw new ArgumentNullException(nameof(benchmarkExecutor));
+        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        connectionString = configuration.GetConnectionString("AdvisorDatabase")
+            ?? configuration["Advisor:ConnectionString"]
+            ?? "Server=mssql_db,1433;Database=WideWorldImporters;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;";
+    }
 
     /// <summary>
     /// Validates the request, resolves target frameworks, and prepares translated artifacts.
@@ -33,22 +58,27 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
             throw new ArgumentException("At least one query is required", nameof(request));
         }
 
+        logger.LogInformation("Advisor run received with {QueryCount} queries from source ORM {SourceOrm}.", request.Queries.Count, request.SourceOrm);
+
         var targetFrameworks = ResolveTargetFrameworks(request);
         if (targetFrameworks.Count == 0)
         {
-            throw new InvalidOperationException("No target frameworks resolved for advisor run.");
+            throw new InvalidOperationException("No supported target frameworks resolved for advisor run. Currently supported: Dapper.");
         }
+        logger.LogInformation("Target frameworks resolved: {Frameworks}.", targetFrameworks);
 
         var translations = BuildTranslations(
             request,
             targetFrameworks,
             cancellationToken);
+        logger.LogInformation("Translations built for all queries.");
 
-        var measurements = RunMockBenchmarks(
+        var measurements = RunBenchmarks(
             request,
             targetFrameworks,
             translations,
             cancellationToken);
+        logger.LogInformation("Benchmarks completed for {QueryCount} queries.", request.Queries.Count);
 
         var result = ExecuteAdvisor(
             request,
@@ -63,14 +93,16 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
     /// </summary>
     private static IReadOnlyList<ORMEnum> ResolveTargetFrameworks(AdvisorRunRequest request)
     {
-        if (request.TargetFrameworks is { Count: > 0 } explicitTargets)
-        {
-            return explicitTargets
-                .Distinct()
-                .ToArray();
-        }
+        IEnumerable<ORMEnum> candidates = request.TargetFrameworks is { Count: > 0 } explicitTargets
+            ? explicitTargets
+            : KnownFrameworks;
 
-        return KnownFrameworks;
+        var filtered = candidates
+            .Where(f => SupportedFrameworks.Contains(f))
+            .Distinct()
+            .ToArray();
+
+        return filtered;
     }
 
     /// <summary>
@@ -141,30 +173,37 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
             Content = source.Content
         };
 
-    private static IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, MockBenchmarkResult>> RunMockBenchmarks(
+    private IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, BenchmarkMeasurement>> RunBenchmarks(
         AdvisorRunRequest request,
         IReadOnlyList<ORMEnum> targetFrameworks,
         IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>>> translations,
         CancellationToken cancellationToken)
     {
-        var rng = Random.Shared;
-        var results = new Dictionary<string, IReadOnlyDictionary<ORMEnum, MockBenchmarkResult>>(StringComparer.Ordinal);
+        var results = new Dictionary<string, IReadOnlyDictionary<ORMEnum, BenchmarkMeasurement>>(StringComparer.Ordinal);
 
         foreach (var query in request.Queries)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            logger.LogDebug("Running benchmarks for query {QueryId}.", query.Id);
 
-            var perFramework = new Dictionary<ORMEnum, MockBenchmarkResult>();
+            if (!translations.TryGetValue(query.Id, out var frameworkSources))
+            {
+                throw new InvalidOperationException($"Missing translations for query '{query.Id}'.");
+            }
+
+            var perFramework = new Dictionary<ORMEnum, BenchmarkMeasurement>();
             foreach (var framework in targetFrameworks)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Produce deterministic-ish values seeded by query/framework to keep runs predictable.
-                var hash = HashCode.Combine(query.Id, (int)framework);
-                var duration = 5.0 + Math.Abs(hash % 2000) / 10.0; // 5ms to ~205ms
-                var memory = 1024L * (10 + Math.Abs(hash % 512));  // Between ~10KB and ~522KB
+                if (!frameworkSources.TryGetValue(framework, out var sources))
+                {
+                    throw new InvalidOperationException($"Missing translation for query '{query.Id}' and framework '{framework}'.");
+                }
 
-                perFramework[framework] = new MockBenchmarkResult(duration, memory);
+                var measurement = benchmarkExecutor.Execute(framework, sources, connectionString);
+                perFramework[framework] = measurement;
+                logger.LogInformation("Benchmark {QueryId} on {Framework}: mean {Mean} ms, memory {Memory} bytes.", query.Id, framework, measurement.MeanDurationMilliseconds, measurement.AllocatedBytes);
             }
 
             results[query.Id] = perFramework;
@@ -176,7 +215,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
     private static AdvisorRunResult ExecuteAdvisor(
         AdvisorRunRequest request,
         IReadOnlyList<ORMEnum> targetFrameworks,
-        IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, MockBenchmarkResult>> measurements)
+        IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, BenchmarkMeasurement>> measurements)
     {
         int queryCount = request.Queries.Count;
         int frameworkCount = targetFrameworks.Count;
@@ -245,5 +284,4 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         return new AdvisorRunResult(objective, chosenFrameworks, assignments);
     }
 
-    private sealed record MockBenchmarkResult(double MeanDurationMilliseconds, long AllocatedBytes);
 }

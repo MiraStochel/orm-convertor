@@ -1,3 +1,4 @@
+using AdvisorBenchmarking;
 using ORMConvertorAPI.Services;
 
 namespace ORMConvertorAPI;
@@ -10,6 +11,7 @@ public class Program
 
         // Add services to the container.
         builder.Services.AddAuthorization();
+        builder.Services.AddSingleton<IBenchmarkExecutor, BenchmarkExecutor>();
         builder.Services.AddSingleton<IAdvisorRunCoordinator, AdvisorRunCoordinator>();
 
         // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle

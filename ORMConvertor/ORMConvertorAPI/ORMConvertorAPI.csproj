@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AdvisorBenchmarking\AdvisorBenchmarking.csproj" />
     <ProjectReference Include="..\Advisor\Advisor.csproj" />
     <ProjectReference Include="..\OrmConvertor\OrmConvertor.csproj" />
     <ProjectReference Include="..\SampleData\SampleData.csproj" />
