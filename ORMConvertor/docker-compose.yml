@@ -22,3 +22,8 @@ services:
       - MSSQL_SA_PASSWORD=Testingorms123
       - MSSQL_PID=Developer
     restart: unless-stopped
+    volumes:
+      - mssql_data:/var/opt/mssql
+
+volumes:
+  mssql_data:
