@@ -15,11 +15,10 @@ RUN npx ng build --configuration production --base-href /orm/ --deploy-url /orm/
 # Stage 2: Build native Advisor library
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS advisor-native
 WORKDIR /src/advisor
-RUN --mount=type=cache,target=/var/lib/apt \
-    --mount=type=cache,target=/var/cache/apt \
+RUN --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lists \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     apt-get update && \
     apt-get install -y --no-install-recommends gcc libglpk-dev \
-    && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /artifacts
 COPY Advisor/ilp.c .
 RUN gcc -fPIC -shared -o /artifacts/libadvisor.so ilp.c -lglpk
@@ -65,11 +64,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
 # Install glpk runtime (so .so can be loaded)
-RUN --mount=type=cache,target=/var/lib/apt \
-    --mount=type=cache,target=/var/cache/apt \
+RUN --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lists \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
     apt-get update && \
-    apt-get install -y --no-install-recommends libglpk40 \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends libglpk40
 
 COPY --from=dotnet-build /app/out .
 EXPOSE 5072
