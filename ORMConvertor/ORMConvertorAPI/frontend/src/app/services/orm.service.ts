@@ -3,6 +3,7 @@ import { HttpClient } from "@angular/common/http";
 import { Observable } from "rxjs";
 import { ConvertRequest, ConvertResponse } from "../model/convert";
 import { RequiredContentDefinition } from "../model/required-content";
+import { AdvisorRunRequest, AdvisorRunResult } from "../model/advisor";
 
 @Injectable({ providedIn: "root" })
 export class OrmService {
@@ -24,5 +25,9 @@ export class OrmService {
 
   convert(req: ConvertRequest): Observable<ConvertResponse> {
     return this.http.post<ConvertResponse>(`${this.base}/convert`, req);
+  }
+
+  runAdvisor(req: AdvisorRunRequest): Observable<AdvisorRunResult> {
+    return this.http.post<AdvisorRunResult>(`${this.base}/advisor/run`, req);
   }
 }

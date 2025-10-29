@@ -1,0 +1,162 @@
+<button class="back-button" type="button" (click)="back()">< Back</button>
+<div class="pane-container">
+
+  <div class="pane left">
+    <label class="orm-label">
+      Source ORM
+      <select [(ngModel)]="sourceOrm" (ngModelChange)="onSourceOrmChange($event)">
+        @for (opt of ormTypeOptions; track opt.value) {
+          <option [value]="opt.value">{{ opt.key }}</option>
+        }
+      </select>
+    </label>
+
+    @if (error) {
+      <pre class="error">{{ error }}</pre>
+    }
+
+    <button class="fill-sample-btn" type="button" (click)="fillWithSamples()">Fill Samples</button>
+
+    <section class="unit-section">
+      <h3 class="section-title">Entities</h3>
+      @if (entityUnits.length === 0) {
+        <p class="empty-state">No entity inputs required for the selected ORM.</p>
+      } @else {
+        @for (unit of entityUnits; track unit.key) {
+          <app-content-display
+            [description]="unit.description"
+            [contentType]="unit.contentType"
+            [(content)]="contentByUnit[unit.key]"
+            [autoResize]="true">
+          </app-content-display>
+        }
+      }
+    </section>
+
+    <section class="unit-section">
+      <div class="queries-header">
+        <h3 class="section-title">Queries</h3>
+        <button class="add-query-btn" type="button" (click)="addQuery()">+ Add Query</button>
+      </div>
+      @for (unit of queryUnits; track unit.key; let idx = $index) {
+        <div class="query-block">
+          <app-content-display
+            [description]="unit.description"
+            [contentType]="unit.contentType"
+            [(content)]="contentByUnit[unit.key]"
+            [autoResize]="true">
+          </app-content-display>
+
+          <div class="query-controls">
+            <label class="weight-label">
+              Weight
+              <input
+                type="number"
+                min="1"
+                [(ngModel)]="queryWeights[unit.key]" />
+            </label>
+            <button
+              class="remove-query-btn"
+              type="button"
+              (click)="removeQuery(unit.key)"
+              [disabled]="queryUnits.length === 1">
+              − Remove
+            </button>
+          </div>
+        </div>
+      }
+    </section>
+  </div>
+
+
+  <div class="pane right">
+    <h3>Constraints</h3>
+    <div class="constraints">
+      <label for="memory-kb" class="constraint-label">Memory (KB)</label>
+      <input
+        id="memory-kb"
+        class="constraint-input"
+        type="number"
+        min="0"
+        [(ngModel)]="memoryLimitKb" />
+      <label for="max-frameworks" class="constraint-label">Max Frameworks</label>
+      <input
+        id="max-frameworks"
+        class="constraint-input"
+        type="number"
+        min="1"
+        [(ngModel)]="maxFrameworksToSelect" />
+    </div>
+
+    <h3>Target Frameworks</h3>
+
+    <div class="target-frameworks">
+      @for (opt of ormTypeOptions; track opt.value) {
+        <label>
+          <input type="checkbox"
+                 [checked]="targetOrms.includes(opt.value)"
+                 (change)="handleTargetFrameworkChange(opt.value, $event)" />
+          {{ opt.key }}
+        </label>
+      }
+      <div class="target-actions">
+        <button class="select-all-btn" type="button" (click)="selectAllTargets()">Select All</button>
+        <button class="select-all-btn clear" type="button" (click)="clearTargets()">Clear</button>
+      </div>
+    </div>
+
+    <button class="middle-button" type="button" (click)="convert()" [disabled]="isLoading">
+      Optimize
+    </button>
+    
+    <h3 *ngIf="isLoading" class="optimizing-text">
+      Optimizing{{ loadingDots }}
+    </h3>
+
+    @if (showResults && advisorResult) {
+      <div class="results">
+        <app-result-table
+          [assignments]="assignmentEntries"
+          [selectedFrameworks]="advisorResult.selectedFrameworks"
+          [objective]="advisorResult.objective">
+        </app-result-table>
+        <div class="recommendation">
+          <h3>Recommended Frameworks</h3>
+          @if (advisorResult.selectedFrameworks.length === 0) {
+            <p>No frameworks selected by advisor.</p>
+          } @else {
+            <ul>
+              @for (framework of advisorResult.selectedFrameworks; track framework) {
+                <li>{{ frameworkName(framework) }}</li>
+              }
+            </ul>
+          }
+          <p class="objective" *ngIf="advisorResult.objective !== undefined">
+            Objective score: {{ advisorResult.objective }}
+          </p>
+        </div>
+      </div>
+      <hr>
+      @if (convertedByFramework.length > 0) {
+        @for (conversion of convertedByFramework; track conversion.framework) {
+          <div class="framework-results">
+            <h4>{{ frameworkName(conversion.framework) }}</h4>
+            @for (unit of conversion.sources; track $index) {
+              <app-content-display
+                [description]="unit.contentType | contentTypeToString"
+                [contentType]="unit.contentType"
+                [content]="unit.content"
+                [readonly]="true"
+                [autoResize]="true">
+              </app-content-display>
+            }
+          </div>
+        }
+      } @else {
+        <p class="no-conversions">No translation output available for the selected frameworks.</p>
+      }
+    }
+  </div>
+  
+
+</div>
