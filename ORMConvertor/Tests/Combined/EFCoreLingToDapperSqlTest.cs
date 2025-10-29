@@ -27,7 +27,7 @@ public class EFCoreLingToDapperSqlTest
         }
         """;
 
-        parser.Parse(linqSource, mockEntityMap);
+        parser.Parse(linqSource, new List<EntityMap>{ mockEntityMap });
         string sql = builder.Build().First().Content;
 
         string expected = """"

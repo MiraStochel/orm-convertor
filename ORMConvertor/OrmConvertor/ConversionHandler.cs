@@ -47,8 +47,8 @@ public static class ConversionHandler
             if (parser is IQueryParser qp)
             {
                 var first = matching.First();
-                // With multiple entities present, table resolution can rely on entity attributes later; pass null map
-                qp.Parse(first.Content, null);
+                // Provide all known entity maps for table/schema resolution when available
+                qp.Parse(first.Content, entityBuilder.EntityMaps);
                 continue;
             }
 

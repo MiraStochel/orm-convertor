@@ -12,7 +12,7 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
 {
     private SemanticModel? semanticModel = null;
     private bool fromWasEmitted;
-    private EntityMap? entityMap;
+    private IReadOnlyList<EntityMap>? entityMaps;
 
     public bool CanParse(ConversionContentType contentType)
     {
@@ -24,9 +24,9 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
         Parse(source, null);
     }
 
-    public void Parse(string source, EntityMap? entityMap)
+    public void Parse(string source, IReadOnlyList<EntityMap>? entityMaps)
     {
-        this.entityMap = entityMap;
+        this.entityMaps = entityMaps;
 
         // Parse the snippet into a Roslyn SyntaxTree.
         // Adding a dummy surrounding class/namespace keeps it syntactically valid.
@@ -56,6 +56,8 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
         Visit(root);
         queryBuilder.Pop();
     }
+
+    // SetEntityMaps no longer needed; entity maps are passed via Parse overload
 
     public override void VisitInvocationExpression(InvocationExpressionSyntax node)
     {
@@ -91,12 +93,15 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
         {
             // Resolve the table/schema via EntityMap when available
             // Here we assume that we have map for the entity being queried, this is not future proof
-            string tableName = entityMap switch
+            string dbSetName = node.Name switch
             {
-                { Table: { Length: > 0 } t, Schema: { Length: > 0 } s } => $"{s}.{t}",
-                { Table: { Length: > 0 } t } => t,
+                GenericNameSyntax generic when generic.TypeArgumentList.Arguments.Count > 0 =>
+                    generic.Identifier.Text,
+                IdentifierNameSyntax ins => ins.Identifier.Text,
                 _ => node.Name.Identifier.Text
             };
+
+            string tableName = ResolveQualifiedTableName(dbSetName);
 
             string aliasSource = node.Name switch
             {
@@ -112,6 +117,31 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
             queryBuilder.From(tableName, alias);
             fromWasEmitted = true;
         }
+    }
+
+    private string ResolveQualifiedTableName(string dbSetName)
+    {
+        // Prefer explicit single entityMap when provided
+        if (entityMaps is { Count: > 0 })
+        {
+            // 1) Exact table name match (case-insensitive, without schema)
+            var exact = entityMaps.FirstOrDefault(m => string.Equals(m.Table, dbSetName, StringComparison.OrdinalIgnoreCase));
+            if (exact is not null)
+            {
+                return !string.IsNullOrWhiteSpace(exact.Schema) ? $"{exact.Schema}.{exact.Table}" : exact.Table ?? dbSetName;
+            }
+
+            // 2) Match by entity name pluralisation heuristic: Name + "s"
+            var match = entityMaps.FirstOrDefault(m => string.Equals((m.Entity?.Name ?? string.Empty) + "s", dbSetName, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                var table = match.Table ?? dbSetName;
+                return !string.IsNullOrWhiteSpace(match.Schema) ? $"{match.Schema}.{table}" : table;
+            }
+        }
+
+        // 3) Fallback: use provided DbSet/identifier name
+        return dbSetName;
     }
 
 

@@ -3,5 +3,5 @@
 namespace AbstractWrappers;
 public interface IQueryParser : IParser
 {
-    void Parse(string source, EntityMap? entityMap = null);
+    void Parse(string source, IReadOnlyList<EntityMap>? entityMaps = null);
 }
