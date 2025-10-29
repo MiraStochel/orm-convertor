@@ -120,21 +120,20 @@
           [selectedFrameworks]="advisorResult.selectedFrameworks"
           [measurements]="advisorResult.measurements">
         </app-result-table>
-        <div class="recommendation">
-          <h3>Recommended Frameworks</h3>
-          @if (advisorResult.selectedFrameworks.length === 0) {
-            <p>No frameworks selected by advisor.</p>
-          } @else {
-            <ul>
-              @for (framework of advisorResult.selectedFrameworks; track framework) {
-                <li>{{ frameworkName(framework) }}</li>
-              }
-            </ul>
-          }
-          <p class="objective">Runtime: {{ totalAssignedRuntimeMs.toLocaleString() }} ms</p>
-          <p class="objective">Memory: {{ totalAssignedMemoryKb.toLocaleString() }} kB</p>
-          
-        </div>
+      </div>
+      <div class="recommendation">
+        <h3>Recommended Frameworks</h3>
+        @if (advisorResult.selectedFrameworks.length === 0) {
+          <p>No frameworks selected by advisor.</p>
+        } @else {
+          <ul>
+            @for (framework of advisorResult.selectedFrameworks; track framework) {
+              <li>{{ frameworkName(framework) }}</li>
+            }
+          </ul>
+        }
+        <p class="objective">Runtime: {{ totalAssignedRuntimeMs.toLocaleString() }} ms</p>
+        <p class="objective">Memory: {{ totalAssignedMemoryKb.toLocaleString() }} kB</p>
       </div>
       <hr>
       @if (convertedByFramework.length > 0) {

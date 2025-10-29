@@ -468,12 +468,8 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
     if (!this.advisorResult?.measurements) return 0;
     let total = 0;
     for (const a of this.assignmentEntries) {
-      const perFramework = (this.advisorResult.measurements as any)[a.queryId] as
-        | Record<string, { meanDurationMilliseconds: number }>
-        | undefined;
-      if (!perFramework) continue;
-      const m = perFramework[a.framework] ?? perFramework[String(a.framework)];
-      if (m) total += Math.round(m.meanDurationMilliseconds);
+      const m = this.lookupMeasurement(a.queryId, a.framework);
+      if (m) total += Math.round(m.meanDurationMilliseconds ?? 0);
     }
     return total;
   }
@@ -482,14 +478,32 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
     if (!this.advisorResult?.measurements) return 0;
     let total = 0;
     for (const a of this.assignmentEntries) {
-      const perFramework = (this.advisorResult.measurements as any)[a.queryId] as
-        | Record<string, { allocatedBytes: number }>
-        | undefined;
-      if (!perFramework) continue;
-      const m = perFramework[a.framework] ?? perFramework[String(a.framework)];
-      if (m) total += Math.round((m.allocatedBytes ?? 0) / 1024);
+      const m = this.lookupMeasurement(a.queryId, a.framework);
+      if (m) total += Math.round(((m.allocatedBytes ?? 0) as number) / 1024);
     }
     return total;
+  }
+
+  private lookupMeasurement(queryId: string, framework: ORMType):
+    | { meanDurationMilliseconds: number; allocatedBytes: number }
+    | null {
+    const perFramework = (this.advisorResult?.measurements as any)?.[queryId] as
+      | Record<string, { meanDurationMilliseconds: number; allocatedBytes: number }>
+      | undefined;
+    if (!perFramework) return null;
+    // Try numeric key
+    const direct = (perFramework as any)[framework];
+    if (direct) return direct;
+    // Try numeric-as-string
+    const byString = (perFramework as any)[String(framework)];
+    if (byString) return byString;
+    // Try enum name
+    const enumName = this.ormTypeOptions.find((o) => o.value === framework)?.key;
+    if (enumName) {
+      const byName = (perFramework as any)[enumName] ?? (perFramework as any)[enumName.toUpperCase()] ?? (perFramework as any)[enumName.toLowerCase()];
+      if (byName) return byName;
+    }
+    return null;
   }
 
   back(): void {
