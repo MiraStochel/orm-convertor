@@ -463,6 +463,35 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
     );
   }
 
+  // Totals for the chosen assignment (sums per assigned framework per query)
+  get totalAssignedRuntimeMs(): number {
+    if (!this.advisorResult?.measurements) return 0;
+    let total = 0;
+    for (const a of this.assignmentEntries) {
+      const perFramework = (this.advisorResult.measurements as any)[a.queryId] as
+        | Record<string, { meanDurationMilliseconds: number }>
+        | undefined;
+      if (!perFramework) continue;
+      const m = perFramework[a.framework] ?? perFramework[String(a.framework)];
+      if (m) total += Math.round(m.meanDurationMilliseconds);
+    }
+    return total;
+  }
+
+  get totalAssignedMemoryKb(): number {
+    if (!this.advisorResult?.measurements) return 0;
+    let total = 0;
+    for (const a of this.assignmentEntries) {
+      const perFramework = (this.advisorResult.measurements as any)[a.queryId] as
+        | Record<string, { allocatedBytes: number }>
+        | undefined;
+      if (!perFramework) continue;
+      const m = perFramework[a.framework] ?? perFramework[String(a.framework)];
+      if (m) total += Math.round((m.allocatedBytes ?? 0) / 1024);
+    }
+    return total;
+  }
+
   back(): void {
     this.location.back();
   }

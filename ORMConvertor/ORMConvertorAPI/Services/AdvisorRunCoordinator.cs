@@ -282,7 +282,19 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
             assignments[request.Queries[qi].Id] = targetFrameworks[frameworkIndex];
         }
 
-        return new AdvisorRunResult(objective, chosenFrameworks, assignments);
+        // Map measurements to DTO-friendly structure
+        var dtoMeasurements = new Dictionary<string, IReadOnlyDictionary<ORMEnum, BenchmarkMeasurementDto>>(StringComparer.Ordinal);
+        foreach (var (qid, perFramework) in measurements)
+        {
+            var map = new Dictionary<ORMEnum, BenchmarkMeasurementDto>();
+            foreach (var (framework, m) in perFramework)
+            {
+                map[framework] = new BenchmarkMeasurementDto(m.MeanDurationMilliseconds, m.AllocatedBytes);
+            }
+            dtoMeasurements[qid] = map;
+        }
+
+        return new AdvisorRunResult(chosenFrameworks, assignments, dtoMeasurements);
     }
 
 }

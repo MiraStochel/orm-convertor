@@ -14,7 +14,7 @@
       <tbody>
         @for (assignment of assignments; track assignment.queryId) {
           <tr>
-            <td>{{ assignment.label ?? ('Query ' + assignment.queryId) }}</td>
+            <td>{{ assignment.label ?? ('Q' + assignment.queryId) }}</td>
             <td>{{ frameworkName(assignment.framework) }}</td>
           </tr>
         }
@@ -22,24 +22,61 @@
     </table>
   }
 
-  <div class="summary">
-    <div>
-      <h4>Selected Frameworks</h4>
-      @if (uniqueFrameworks.length === 0) {
-        <p class="empty">No frameworks selected.</p>
-      } @else {
-        <ul>
-          @for (framework of uniqueFrameworks; track framework) {
-            <li>{{ frameworkName(framework) }}</li>
+  @if (measurements && sortedQueryIds.length > 0 && uniqueFrameworks.length > 0) {
+    <div class="tables">
+      <!-- Memory Table -->
+      <table class="assignments">
+        <thead>
+          <tr>
+            <th>Memory (kB)</th>
+            @for (f of uniqueFrameworks; track f) { <th>{{ frameworkName(f) }}</th> }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of memoryTableRows; track row.queryId) {
+            <tr>
+              <td>Q{{ row.queryId }}</td>
+              @for (val of row.values; track $index) {
+                <td [class.best]="val !== null && val === row.min" [class.worst]="val !== null && val === row.max">{{ val?.toLocaleString() }}</td>
+              }
+            </tr>
           }
-        </ul>
-      }
+          <tr class="sum">
+            <td>SUM</td>
+            @let mem = memoryTotalsVM;
+            @for (f of uniqueFrameworks; track f) {
+              <td [class.best]="mem.totals[f] === mem.min" [class.worst]="mem.totals[f] === mem.max">{{ mem.totals[f].toLocaleString() }}</td>
+            }
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Runtime Table -->
+      <table class="assignments">
+        <thead>
+          <tr>
+            <th>Runtime (ms)</th>
+            @for (f of uniqueFrameworks; track f) { <th>{{ frameworkName(f) }}</th> }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of runtimeTableRows; track row.queryId) {
+            <tr>
+              <td>Q{{ row.queryId }}</td>
+              @for (val of row.values; track $index) {
+                <td [class.best]="val !== null && val === row.min" [class.worst]="val !== null && val === row.max">{{ val?.toLocaleString() }}</td>
+              }
+            </tr>
+          }
+          <tr class="sum">
+            <td>SUM</td>
+            @let run = runtimeTotalsVM;
+            @for (f of uniqueFrameworks; track f) {
+              <td [class.best]="run.totals[f] === run.min" [class.worst]="run.totals[f] === run.max">{{ run.totals[f].toLocaleString() }}</td>
+            }
+          </tr>
+        </tbody>
+      </table>
     </div>
-    @if (objective !== null && objective !== undefined) {
-      <div class="objective-summary">
-        <h4>Objective</h4>
-        <p>{{ objective }}</p>
-      </div>
-    }
-  </div>
+  }
 </div>

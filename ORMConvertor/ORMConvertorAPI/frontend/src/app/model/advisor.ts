@@ -16,8 +16,16 @@ export interface AdvisorRunRequest {
   targetFrameworks?: ORMType[];
 }
 
+export interface BenchmarkMeasurementDto {
+  meanDurationMilliseconds: number;
+  allocatedBytes: number;
+}
+
+export type MeasurementsByFramework = Record<ORMType, BenchmarkMeasurementDto>;
+export type AdvisorMeasurements = Record<string, MeasurementsByFramework>;
+
 export interface AdvisorRunResult {
-  objective: number;
   selectedFrameworks: ORMType[];
   queryAssignments: Record<string, ORMType>;
+  measurements: AdvisorMeasurements;
 }

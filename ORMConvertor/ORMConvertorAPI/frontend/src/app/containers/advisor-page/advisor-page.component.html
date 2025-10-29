@@ -118,7 +118,7 @@
         <app-result-table
           [assignments]="assignmentEntries"
           [selectedFrameworks]="advisorResult.selectedFrameworks"
-          [objective]="advisorResult.objective">
+          [measurements]="advisorResult.measurements">
         </app-result-table>
         <div class="recommendation">
           <h3>Recommended Frameworks</h3>
@@ -131,9 +131,9 @@
               }
             </ul>
           }
-          <p class="objective" *ngIf="advisorResult.objective !== undefined">
-            Objective score: {{ advisorResult.objective }}
-          </p>
+          <p class="objective">Runtime: {{ totalAssignedRuntimeMs.toLocaleString() }} ms</p>
+          <p class="objective">Memory: {{ totalAssignedMemoryKb.toLocaleString() }} kB</p>
+          
         </div>
       </div>
       <hr>
