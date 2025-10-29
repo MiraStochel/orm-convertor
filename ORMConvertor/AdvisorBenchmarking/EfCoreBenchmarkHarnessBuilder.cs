@@ -318,7 +318,15 @@ internal static class EfCoreBenchmarkHarnessBuilder
 
         foreach (var body in queryBodies)
         {
-            sb.AppendLine(body);
+            var normalized = body.Trim();
+            // If the query body is not a full type/namespace declaration, wrap it
+            // into a helper class with the expected DbContext parameter.
+            if (!ContainsTypeOrNamespace(normalized))
+            {
+                normalized = WrapLooseQueryBody(normalized);
+            }
+
+            sb.AppendLine(normalized);
             sb.AppendLine();
         }
 
@@ -329,5 +337,57 @@ internal static class EfCoreBenchmarkHarnessBuilder
         }
 
         return new BenchmarkSource(ns, typeName, sb.ToString());
+    }
+
+    private static bool ContainsTypeOrNamespace(string source)
+    {
+        var s = source;
+        // Quick checks to avoid wrapping already well-formed code
+        return s.Contains("namespace ", StringComparison.Ordinal)
+            || s.Contains(" class ", StringComparison.Ordinal)
+            || s.Contains(" struct ", StringComparison.Ordinal)
+            || s.Contains(" record ", StringComparison.Ordinal);
+    }
+
+    private static string WrapLooseQueryBody(string body)
+    {
+        // Attempt to extract the inner block of a method definition if present.
+        static string ExtractInnerBlock(string text)
+        {
+            int start = text.IndexOf('{');
+            if (start < 0)
+            {
+                return text.Trim();
+            }
+            int depth = 0;
+            for (int i = start; i < text.Length; i++)
+            {
+                if (text[i] == '{') depth++;
+                else if (text[i] == '}')
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        var inner = text.Substring(start + 1, i - start - 1);
+                        return inner.Trim();
+                    }
+                }
+            }
+            return text.Trim();
+        }
+
+        var content = ExtractInnerBlock(body);
+        var indented = HarnessGenerationUtilities.Indent(content, "            ");
+        // Non-generic IEnumerable is accepted by the materializer
+        return @"namespace TranslatedQueries
+{
+    public static class QueryHelpers
+    {
+        public static System.Collections.IEnumerable Query(Microsoft.EntityFrameworkCore.DbContext ctx)
+        {
+" + indented + @"
+        }
+    }
+}";
     }
 }

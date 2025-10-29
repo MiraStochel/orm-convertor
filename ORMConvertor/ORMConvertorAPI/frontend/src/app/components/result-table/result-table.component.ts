@@ -94,11 +94,16 @@ export class ResultTableComponent {
       | Record<string, BenchmarkMeasurementDto>
       | undefined;
     if (!perFramework) return null;
-    // Keys may be numeric strings; attempt both
+    // Keys may be numeric strings or enum names (e.g., "Dapper", "EFCore").
     const direct = (perFramework as any)[framework];
     if (direct) return direct as BenchmarkMeasurementDto;
     const byString = (perFramework as any)[String(framework)];
     if (byString) return byString as BenchmarkMeasurementDto;
+    const enumName = this.frameworkOptions.find((o) => o.value === framework)?.key;
+    if (enumName) {
+      const byName = (perFramework as any)[enumName] ?? (perFramework as any)[enumName.toUpperCase()] ?? (perFramework as any)[enumName.toLowerCase()];
+      if (byName) return byName as BenchmarkMeasurementDto;
+    }
     return null;
   }
 
@@ -106,7 +111,15 @@ export class ResultTableComponent {
     const first = Object.values(meas)[0] as Record<string, unknown> | undefined;
     if (!first) return [];
     const keys = Object.keys(first);
-    return keys.map((k) => Number(k) as ORMType).filter((n) => !Number.isNaN(n));
+    const byName = new Map(this.frameworkOptions.map(o => [o.key.toLowerCase(), o.value] as const));
+    const result: ORMType[] = [];
+    for (const k of keys) {
+      const asNum = Number(k);
+      if (!Number.isNaN(asNum)) { result.push(asNum as ORMType); continue; }
+      const nameVal = byName.get(k.toLowerCase());
+      if (nameVal !== undefined) result.push(nameVal);
+    }
+    return Array.from(new Set(result));
   }
 
   rowMin(values: (number | null)[]): number | null {

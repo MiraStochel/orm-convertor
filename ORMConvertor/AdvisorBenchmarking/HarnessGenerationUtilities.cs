@@ -146,8 +146,22 @@ internal static class HarnessGenerationUtilities
 
     internal static string GetDbSetPropertyName(EntityInfo info)
     {
-        var baseName = string.IsNullOrWhiteSpace(info.TypeName) ? "Entity" : info.TypeName!;
-        return baseName.EndsWith("Set", StringComparison.Ordinal) ? baseName : $"{baseName}Set";
+        // Prefer the table name (without schema) so user queries like ctx.Customers work naturally.
+        var table = info.TableName;
+        var nameOnly = table.Contains('.') ? table.Split('.', 2)[1] : table;
+        // Basic sanitization for C# identifiers
+        var prop = Regex.Replace(nameOnly, @"[^A-Za-z0-9_]", "");
+        if (string.IsNullOrWhiteSpace(prop))
+        {
+            var baseName = string.IsNullOrWhiteSpace(info.TypeName) ? "Entity" : info.TypeName!;
+            return baseName.EndsWith("Set", StringComparison.Ordinal) ? baseName : $"{baseName}Set";
+        }
+        // Ensure it starts with a letter or underscore
+        if (!char.IsLetter(prop[0]) && prop[0] != '_')
+        {
+            prop = "_" + prop;
+        }
+        return prop;
     }
 
     internal static string ReplaceSetPlaceholder(string sqlBody, string tableName) =>
