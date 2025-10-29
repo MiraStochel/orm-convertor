@@ -15,7 +15,10 @@ RUN npx ng build --configuration production --base-href /orm/ --deploy-url /orm/
 # Stage 2: Build native Advisor library
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS advisor-native
 WORKDIR /src/advisor
-RUN apt-get update && apt-get install -y build-essential libglpk-dev \
+RUN --mount=type=cache,target=/var/lib/apt \
+    --mount=type=cache,target=/var/cache/apt \
+    apt-get update && \
+    apt-get install -y --no-install-recommends gcc libglpk-dev \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /artifacts
 COPY Advisor/ilp.c .
@@ -62,7 +65,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
 # Install glpk runtime (so .so can be loaded)
-RUN apt-get update && apt-get install -y libglpk40 \
+RUN --mount=type=cache,target=/var/lib/apt \
+    --mount=type=cache,target=/var/cache/apt \
+    apt-get update && \
+    apt-get install -y --no-install-recommends libglpk40 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=dotnet-build /app/out .
