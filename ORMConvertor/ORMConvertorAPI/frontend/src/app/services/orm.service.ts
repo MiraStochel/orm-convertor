@@ -23,6 +23,10 @@ export class OrmService {
     return this.http.get<Record<number, string>>(`${this.base}/samples`);
   }
 
+  getAdvisorSamples(): Observable<Record<number, string>> {
+    return this.http.get<Record<number, string>>(`${this.base}/samples-advisor`);
+  }
+
   convert(req: ConvertRequest): Observable<ConvertResponse> {
     return this.http.post<ConvertResponse>(`${this.base}/convert`, req);
   }

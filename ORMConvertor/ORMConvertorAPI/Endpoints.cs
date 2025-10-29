@@ -32,6 +32,10 @@ public static class Endpoints
             .Produces<Dictionary<int, string>>(StatusCodes.Status200OK)
             .WithOpenApi();
 
+        group.MapGet("/samples-advisor", () => SamplesAdvisor.GetSamples)
+            .Produces<Dictionary<int, string>>(StatusCodes.Status200OK)
+            .WithOpenApi();
+
         group.MapPost("/advisor-test", AdvisorTestHandler)
             .WithName("AdvisorTest")
               .Produces<AdvisorSolveResponse>(StatusCodes.Status200OK)

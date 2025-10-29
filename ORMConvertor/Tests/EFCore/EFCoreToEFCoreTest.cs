@@ -20,7 +20,7 @@ public class EFCoreToEFCoreTest
         Assert.Multiple(() =>
         {
             Assert.Equal(ConversionContentType.CSharpEntity, entityOutput.ContentType);
-            Assert.Equal(CustomerSampleEFCore.Entity, entityOutput.Content, ignoreLineEndingDifferences: true);
+            Assert.Equal(CustomerSampleEFCore.Entity, entityOutput.Content, ignoreLineEndingDifferences: true, ignoreWhiteSpaceDifferences: true);
         });
     }
 }

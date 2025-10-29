@@ -115,7 +115,7 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
       });
 
     this.ormService
-      .getSamples()
+      .getAdvisorSamples()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((samples) => {
         this.samples = new Map(

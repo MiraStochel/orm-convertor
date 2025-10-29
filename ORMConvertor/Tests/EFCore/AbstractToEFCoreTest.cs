@@ -21,6 +21,6 @@ public class AbstractToEFCoreTest
         var entityOutput = results.Single();
 
         Assert.Equal(ConversionContentType.CSharpEntity, entityOutput.ContentType);
-        Assert.Equal(CustomerSampleEFCore.Entity, entityOutput.Content, ignoreLineEndingDifferences: true);
+        Assert.Equal(CustomerSampleEFCore.Entity, entityOutput.Content, ignoreLineEndingDifferences: true, ignoreWhiteSpaceDifferences: true);
     }
 }

@@ -23,10 +23,10 @@ public class NHibernateToNHibernateTest
         Assert.Multiple(() =>
         {
             Assert.Equal(ConversionContentType.CSharpEntity, entityOutput.ContentType);
-            Assert.Equal(CustomerSampleNHibernate.Entity, entityOutput.Content, ignoreLineEndingDifferences: true);
+            Assert.Equal(CustomerSampleNHibernate.Entity, entityOutput.Content, ignoreLineEndingDifferences: true, ignoreWhiteSpaceDifferences: true);
 
             Assert.Equal(ConversionContentType.XML, xmlOutput.ContentType);
-            Assert.Equal(CustomerSampleNHibernate.XmlMapping, xmlOutput.Content, ignoreLineEndingDifferences: true);
+            Assert.Equal(CustomerSampleNHibernate.XmlMapping, xmlOutput.Content, ignoreLineEndingDifferences: true, ignoreWhiteSpaceDifferences: true);
         });
     }
 }

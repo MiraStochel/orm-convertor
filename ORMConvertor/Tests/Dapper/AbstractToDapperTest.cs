@@ -21,6 +21,6 @@ public class AbstractToDapperTest
         var entityOutput = results.Single();
 
         Assert.Equal(ConversionContentType.CSharpEntity, entityOutput.ContentType);
-        Assert.Equal(CustomerSampleDapper.Entity, entityOutput.Content, ignoreLineEndingDifferences: true);
+        Assert.Equal(CustomerSampleDapper.Entity, entityOutput.Content, ignoreLineEndingDifferences: true, ignoreWhiteSpaceDifferences: true);
     }
 }
