@@ -10,32 +10,39 @@ namespace EFCoreWrappers;
 
 public class EFCoreEntityBuilder : AbstractEntityBuilder
 {
-    private readonly StringBuilder codeResult = new();
-
     /// <summary>
-    /// Builds the entity representation and its mapping.
+    /// Builds one EF Core entity class per accumulated entity.
     /// </summary>
     public override List<ConversionSource> Build()
     {
-        BuildImports();
-        BuildTableSchema();
-        BuildPrimaryKey();
-        BuildProperties();
-        BuildForeignKey();
-        FinalizeBuild();
+        var outputs = new List<ConversionSource>();
+        foreach (var em in EntityMaps)
+        {
+            var codeResult = new StringBuilder();
+            BuildImports(em, codeResult);
+            BuildTableSchema(em, codeResult);
+            BuildPrimaryKey(em, codeResult);
+            BuildProperties(em, codeResult);
+            BuildForeignKey(em, codeResult);
+            FinalizeBuild(codeResult);
 
-        return [
-            new ConversionSource
+            outputs.Add(new ConversionSource
             {
                 ContentType = ConversionContentType.CSharpEntity,
                 Content = codeResult.ToString()
-            }
-        ];
+            });
+        }
+        return outputs;
     }
 
     protected override void BuildForeignKey()
     {
-        var foreignKeyPropertyMaps = EntityMap.PropertyMaps
+        // unused in multi-entity flow
+    }
+
+    private static void BuildForeignKey(EntityMap em, StringBuilder codeResult)
+    {
+        var foreignKeyPropertyMaps = em.PropertyMaps
             .Where(pm => pm.OtherDatabaseProperties.TryGetValue("IsForeignKey", out var v) &&
                      string.Equals(v, "true", StringComparison.OrdinalIgnoreCase));
 
@@ -55,9 +62,14 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildImports()
     {
-        if (EntityMap.Entity.Namespace != null)
+        // unused in multi-entity flow
+    }
+
+    private static void BuildImports(EntityMap em, StringBuilder codeResult)
+    {
+        if (em.Entity.Namespace != null)
         {
-            codeResult.AppendLine($"namespace {EntityMap.Entity.Namespace};");
+            codeResult.AppendLine($"namespace {em.Entity.Namespace};");
             codeResult.AppendLine();
         }
 
@@ -69,7 +81,12 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
     protected override void BuildPrimaryKey()
     {
-        var primaryKeyPropertyMap = EntityMap.PropertyMaps.FirstOrDefault(pm =>
+        // unused in multi-entity flow
+    }
+
+    private static void BuildPrimaryKey(EntityMap em, StringBuilder codeResult)
+    {
+        var primaryKeyPropertyMap = em.PropertyMaps.FirstOrDefault(pm =>
             pm.OtherDatabaseProperties.TryGetValue("IsPrimaryKey", out var v) &&
             string.Equals(v, "true", StringComparison.OrdinalIgnoreCase));
 
@@ -95,7 +112,12 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildProperties()
     {
-        foreach (var propertyMap in EntityMap.PropertyMaps)
+        // unused in multi-entity flow
+    }
+
+    private static void BuildProperties(EntityMap em, StringBuilder codeResult)
+    {
+        foreach (var propertyMap in em.PropertyMaps)
         {
             if (propertyMap.OtherDatabaseProperties.TryGetValue("IsPrimaryKey", out var v) && v.Equals("true", StringComparison.OrdinalIgnoreCase))
             {
@@ -120,19 +142,24 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildTableSchema()
     {
-        if (EntityMap.Table != null)
+        // unused in multi-entity flow
+    }
+
+    private static void BuildTableSchema(EntityMap em, StringBuilder codeResult)
+    {
+        if (em.Table != null)
         {
             string schemaIfPresent = "";
-            if (EntityMap.Schema != null)
+            if (em.Schema != null)
             {
-                schemaIfPresent = $", Schema = \"{EntityMap.Schema}\"";
+                schemaIfPresent = $", Schema = \"{em.Schema}\"";
             }
 
-            codeResult.AppendLine($"[Table(\"{EntityMap.Table}\"{schemaIfPresent})]");
+            codeResult.AppendLine($"[Table(\"{em.Table}\"{schemaIfPresent})]");
         }
 
-        var modifier = AccessModifierConvertor.ToModifierString(EntityMap.Entity.AccessModifier);
-        var name = EntityMap.Entity.Name;
+        var modifier = AccessModifierConvertor.ToModifierString(em.Entity.AccessModifier);
+        var name = em.Entity.Name;
 
         codeResult.AppendLine($"{modifier} class {name}");
         codeResult.AppendLine("{");
@@ -142,6 +169,11 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// Finalizes the build process by closing the class definition.
     /// </summary>
     protected override void FinalizeBuild()
+    {
+        // unused in multi-entity flow
+    }
+
+    private static void FinalizeBuild(StringBuilder codeResult)
     {
         codeResult.AppendLine("}");
     }

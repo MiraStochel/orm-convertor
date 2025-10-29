@@ -31,7 +31,7 @@ public static class CustomerSampleEFCore
             public List<CustomerTransaction> Transactions { get; set; } = [];
 
         }
-
+        
         """;
 
     public const string Query = """

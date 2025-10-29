@@ -10,31 +10,30 @@ namespace NHibernateWrappers;
 
 public class NHibernateEntityBuilder : AbstractEntityBuilder
 {
-    private readonly StringBuilder codeResult = new();
-    private readonly StringBuilder mappingResult = new();
-
-    private bool classOpened;
-
-
     /// <summary>
-    /// Builds the entity representation and its mapping.
-    /// Entity is C# class, mapping is XML.
-    /// Other types of mapping are not supported for now.
+    /// Builds one C# class and one XML mapping per entity.
     /// </summary>
     public override List<ConversionSource> Build()
     {
-        BuildImports();
-        BuildTableSchema();
-        BuildPrimaryKey();
-        BuildProperties();
-        BuildForeignKey();
-        FinalizeBuild();
+        var outputs = new List<ConversionSource>();
+        foreach (var em in EntityMaps)
+        {
+            var codeResult = new StringBuilder();
+            var mappingResult = new StringBuilder();
+            bool classOpened = false;
 
-        return
-        [
-            new() { ContentType = ConversionContentType.CSharpEntity, Content = codeResult.ToString() },
-            new() { ContentType = ConversionContentType.XML, Content = mappingResult.ToString() }
-        ];
+            BuildImports(em, codeResult, mappingResult);
+            BuildTableSchema(em, codeResult, mappingResult, ref classOpened);
+            BuildPrimaryKey(em, codeResult, mappingResult);
+            BuildProperties(em, codeResult, mappingResult);
+            BuildForeignKey(em, codeResult, mappingResult);
+            FinalizeBuild(codeResult, mappingResult, classOpened);
+
+            outputs.Add(new() { ContentType = ConversionContentType.CSharpEntity, Content = codeResult.ToString() });
+            outputs.Add(new() { ContentType = ConversionContentType.XML, Content = mappingResult.ToString() });
+        }
+
+        return outputs;
     }
 
     /// <summary>
@@ -43,20 +42,25 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildImports()
     {
+        // unused in multi-entity flow
+    }
+
+    private static void BuildImports(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
+    {
         // No imports needed for NHibernate entity
-        if (!string.IsNullOrWhiteSpace(EntityMap.Entity.Namespace))
+        if (!string.IsNullOrWhiteSpace(em.Entity.Namespace))
         {
-            codeResult.AppendLine($"namespace {EntityMap.Entity.Namespace};");
+            codeResult.AppendLine($"namespace {em.Entity.Namespace};");
             codeResult.AppendLine();
         }
 
         // XML: prolog + root <hibernate-mapping>
-        AppendXml(0, "<?xml version=\"1.0\" encoding=\"utf-8\" ?>");
+        AppendXml(mappingResult, 0, "<?xml version=\"1.0\" encoding=\"utf-8\" ?>");
         var xmlNs = "urn:nhibernate-mapping-2.2";
-        var nsAttr = string.IsNullOrWhiteSpace(EntityMap.Entity.Namespace)
+        var nsAttr = string.IsNullOrWhiteSpace(em.Entity.Namespace)
             ? string.Empty
-            : $" namespace=\"{EntityMap.Entity.Namespace}\"";
-        AppendXml(0, $"<hibernate-mapping xmlns=\"{xmlNs}\"{nsAttr}>");
+            : $" namespace=\"{em.Entity.Namespace}\"";
+        AppendXml(mappingResult, 0, $"<hibernate-mapping xmlns=\"{xmlNs}\"{nsAttr}>");
     }
 
     /// <summary>
@@ -64,23 +68,28 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildTableSchema()
     {
-        var modifier = AccessModifierConvertor.ToModifierString(EntityMap.Entity.AccessModifier);
-        var name = EntityMap.Entity.Name;
+        // unused in multi-entity flow
+    }
+
+    private static void BuildTableSchema(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult, ref bool classOpened)
+    {
+        var modifier = AccessModifierConvertor.ToModifierString(em.Entity.AccessModifier);
+        var name = em.Entity.Name;
 
         // C#
         codeResult.AppendLine($"{modifier} class {name}");
         codeResult.AppendLine("{");
 
         // XML <class>
-        var nameWithNamespace = string.IsNullOrWhiteSpace(EntityMap.Entity.Namespace)
+        var nameWithNamespace = string.IsNullOrWhiteSpace(em.Entity.Namespace)
             ? name
-            : $"{EntityMap.Entity.Namespace}.{name}, {EntityMap.Entity.Namespace}";
+            : $"{em.Entity.Namespace}.{name}, {em.Entity.Namespace}";
 
-        var table = EntityMap.Table ?? name; // default = class name
-        var schema = EntityMap.Schema ?? string.Empty; // TODO schema
+        var table = em.Table ?? name; // default = class name
+        var schema = em.Schema ?? string.Empty; // TODO schema
         var schemaAttr = string.IsNullOrWhiteSpace(schema) ? string.Empty : $" schema=\"{schema}\"";
 
-        AppendXml(1, $"<class name=\"{nameWithNamespace}\" table=\"{table}\"{schemaAttr}>");
+        AppendXml(mappingResult, 1, $"<class name=\"{nameWithNamespace}\" table=\"{table}\"{schemaAttr}>");
         classOpened = true;
     }
 
@@ -89,7 +98,12 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildPrimaryKey()
     {
-        var primaryKeyPropertyMap = EntityMap.PropertyMaps.FirstOrDefault(pm =>
+        // unused in multi-entity flow
+    }
+
+    private static void BuildPrimaryKey(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
+    {
+        var primaryKeyPropertyMap = em.PropertyMaps.FirstOrDefault(pm =>
             pm.OtherDatabaseProperties.TryGetValue("IsPrimaryKey", out var v) &&
             string.Equals(v, "true", StringComparison.OrdinalIgnoreCase));
 
@@ -116,11 +130,11 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             ? PrimaryKeyStrategyConvertor.ToNHibernate((PrimaryKeyStrategy)intVal)
             : "identity"; // default generator (TODO)
 
-        AppendPropertyToCode(prop, isPrimaryKey: true);
+        AppendPropertyToCode(codeResult, prop, isPrimaryKey: true);
 
-        AppendXml(2, $"<id name=\"{prop.Name}\" column=\"{columnName}\" type=\"{nhType}\">");
-        AppendXml(3, $"<generator class=\"{generatorClass}\" />");
-        AppendXml(2, "</id>");
+        AppendXml(mappingResult, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\" type=\"{nhType}\">");
+        AppendXml(mappingResult, 3, $"<generator class=\"{generatorClass}\" />");
+        AppendXml(mappingResult, 2, "</id>");
     }
 
     /// <summary>
@@ -129,7 +143,12 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildProperties()
     {
-        foreach (var pm in EntityMap.PropertyMaps)
+        // unused in multi-entity flow
+    }
+
+    private static void BuildProperties(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
+    {
+        foreach (var pm in em.PropertyMaps)
         {
             if (pm.OtherDatabaseProperties.TryGetValue("IsPrimaryKey", out var v) && v.Equals("true", StringComparison.OrdinalIgnoreCase))
             {
@@ -141,8 +160,8 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 continue; // navigation property – handled in BuildForeignKey
             }
 
-            AppendPropertyToCode(pm.Property);
-            AppendPropertyToXml(pm);
+            AppendPropertyToCode(codeResult, pm.Property);
+            AppendPropertyToXml(mappingResult, pm);
         }
     }
 
@@ -151,8 +170,13 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildForeignKey()
     {
+        // unused in multi-entity flow
+    }
+
+    private static void BuildForeignKey(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
+    {
         // 1:1 and N:1 foreign keys
-        foreach (var foreignKeyPropertyMap in EntityMap.PropertyMaps.Where(p => p.OtherDatabaseProperties.TryGetValue("IsForeignKey", out var v) && v.Equals("true", StringComparison.OrdinalIgnoreCase)))
+        foreach (var foreignKeyPropertyMap in em.PropertyMaps.Where(p => p.OtherDatabaseProperties.TryGetValue("IsForeignKey", out var v) && v.Equals("true", StringComparison.OrdinalIgnoreCase)))
         {
             var rel = foreignKeyPropertyMap.Relation; // single relation per FK property
 
@@ -168,14 +192,14 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 continue; // collection handled below
             }
 
-            AppendPropertyToCode(foreignKeyPropertyMap.Property); // navigation property in C#
+            AppendPropertyToCode(codeResult, foreignKeyPropertyMap.Property); // navigation property in C#
 
             var columnName = foreignKeyPropertyMap.ColumnName ?? foreignKeyPropertyMap.Property.Name;
-            AppendXml(2, $"<{xmlTag} name=\"{foreignKeyPropertyMap.Property.Name}\" class=\"{rel!.Target}\" column=\"{columnName}\" />");
+            AppendXml(mappingResult, 2, $"<{xmlTag} name=\"{foreignKeyPropertyMap.Property.Name}\" class=\"{rel!.Target}\" column=\"{columnName}\" />");
         }
 
         // 1:N and N:N collections
-        foreach (var propertyMap in EntityMap.PropertyMaps.Where(p => p.Relation?.Cardinality is Cardinality.OneToMany or Cardinality.ManyToMany))
+        foreach (var propertyMap in em.PropertyMaps.Where(p => p.Relation?.Cardinality is Cardinality.OneToMany or Cardinality.ManyToMany))
         {
             var relation = propertyMap.Relation!;
 
@@ -191,20 +215,20 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             // XML <bag> (TODO: allow set/list/map etc.)
             // TODO other collection properties
-            AppendXml(2, $"<bag name=\"{propertyMap.Property.Name}\" inverse=\"true\" cascade=\"all-delete-orphan\">");
-            var primaryKeyCol = GetPrimaryKeyColumn();
-            AppendXml(3, $"<key column=\"{primaryKeyCol}\" />");
+            AppendXml(mappingResult, 2, $"<bag name=\"{propertyMap.Property.Name}\" inverse=\"true\" cascade=\"all-delete-orphan\">");
+            var primaryKeyCol = GetPrimaryKeyColumn(em);
+            AppendXml(mappingResult, 3, $"<key column=\"{primaryKeyCol}\" />");
 
             if (relation.Cardinality == Cardinality.OneToMany)
             {
-                AppendXml(3, $"<one-to-many class=\"{relation.Target}\" />");
+                AppendXml(mappingResult, 3, $"<one-to-many class=\"{relation.Target}\" />");
             }
             else // ManyToMany
             {
-                AppendXml(3, $"<many-to-many class=\"{relation.Target}\" />");
+                AppendXml(mappingResult, 3, $"<many-to-many class=\"{relation.Target}\" />");
             }
 
-            AppendXml(2, "</bag>");
+            AppendXml(mappingResult, 2, "</bag>");
         }
     }
 
@@ -213,20 +237,26 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void FinalizeBuild()
     {
+        // unused in multi-entity flow
+    }
+
+    private static void FinalizeBuild(StringBuilder codeResult, StringBuilder mappingResult, bool classOpened)
+    {
+        // Close C# class
         codeResult.AppendLine("}");
 
         if (classOpened)
         {
-            AppendXml(1, "</class>");
+            AppendXml(mappingResult, 1, "</class>");
         }
 
-        AppendXml(0, "</hibernate-mapping>", appendLine: false);
+        AppendXml(mappingResult, 0, "</hibernate-mapping>", appendLine: false);
     }
 
     /// <summary>
     /// Appends a property to the C# code.
     /// </summary>
-    private void AppendPropertyToCode(Property prop, bool isPrimaryKey = false)
+    private static void AppendPropertyToCode(StringBuilder codeResult, Property prop, bool isPrimaryKey = false)
     {
         var declaration = BuildPropertySignature(prop, isPrimaryKey);
         codeResult.AppendLine($"    {declaration}");
@@ -236,7 +266,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// <summary>
     /// Appends a property to the XML mapping.
     /// </summary>
-    private void AppendPropertyToXml(PropertyMap propertyMap)
+    private static void AppendPropertyToXml(StringBuilder mappingResult, PropertyMap propertyMap)
     {
         var prop = propertyMap.Property;
 
@@ -276,15 +306,15 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             attrs.Add($"length=\"{propertyMap.Length.Value}\"");
         }
 
-        AppendXml(2, $"<property {string.Join(' ', attrs)} />");
+        AppendXml(mappingResult, 2, $"<property {string.Join(' ', attrs)} />");
     }
 
     /// <summary>
     /// Gets the primary key column name.
     /// </summary>
-    private string GetPrimaryKeyColumn()
+    private static string GetPrimaryKeyColumn(EntityMap em)
     {
-        var pkMap = EntityMap.PropertyMaps.FirstOrDefault(pm =>
+        var pkMap = em.PropertyMaps.FirstOrDefault(pm =>
             pm.OtherDatabaseProperties.TryGetValue("IsPrimaryKey", out var v) && v.Equals("true", StringComparison.OrdinalIgnoreCase));
         return pkMap?.ColumnName ?? pkMap?.Property.Name ?? "Id";
     }
@@ -292,7 +322,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// <summary>
     /// Appends a line to the XML mapping with indentation.
     /// </summary>
-    private void AppendXml(int indentLevels, string content, bool appendLine = true)
+    private static void AppendXml(StringBuilder mappingResult, int indentLevels, string content, bool appendLine = true)
     {
         var indent = new string(' ', indentLevels * 4);
         if (appendLine)

@@ -24,6 +24,7 @@ public class NHibernateEntityParser(AbstractEntityBuilder entityBuilder) : IPars
     /// <param name="source">C# source code containing a single class, optionally wrapped in a namespace.</param>
     public void Parse(string source)
     {
+        entityBuilder.BeginEntity();
         var root = CSharpSyntaxTree.ParseText(source).GetCompilationUnitRoot();
 
         var ns = root.Members.OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault();

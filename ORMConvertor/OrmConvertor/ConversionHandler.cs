@@ -29,6 +29,7 @@ public static class ConversionHandler
 
         var results = new List<ConversionSource>();
 
+        // First, feed all entity-like sources to their parsers to accumulate multiple entities
         foreach (var parser in parsers)
         {
             if (parser.CanParse(ConversionContentType.CSharpQuery) && queryBuilder == null)
@@ -36,19 +37,25 @@ public static class ConversionHandler
                 continue;
             }
 
-            var parsable = sources.FirstOrDefault(x => parser.CanParse(x.ContentType));
-            if (parsable == null)
+            var matching = sources.Where(x => parser.CanParse(x.ContentType)).ToList();
+            if (matching.Count == 0)
             {
                 continue;
             }
 
+            // For query parsers, parse the first matching query only (advisor composes per-query requests)
             if (parser is IQueryParser qp)
             {
-                qp.Parse(parsable.Content, entityBuilder.EntityMap);
+                var first = matching.First();
+                // With multiple entities present, table resolution can rely on entity attributes later; pass null map
+                qp.Parse(first.Content, null);
+                continue;
             }
-            else
+
+            // For entity parsers (CSharp and XML), parse all matching sources to accumulate multiple entities
+            foreach (var src in matching)
             {
-                parser.Parse(parsable.Content);
+                parser.Parse(src.Content);
             }
         }
 

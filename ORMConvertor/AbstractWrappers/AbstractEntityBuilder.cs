@@ -12,10 +12,43 @@ namespace AbstractWrappers;
 public abstract class AbstractEntityBuilder
 {
     /// <summary>
-    /// Entity map containing the entity and its property mappings.
-    /// Public for testing.
+    /// Collection of built entity maps.
     /// </summary>
-    public EntityMap EntityMap { get; set; } = new() { Entity = new() };
+    public List<EntityMap> EntityMaps { get; } = new();
+
+    /// <summary>
+    /// The currently active entity map (for parser convenience).
+    /// </summary>
+    public EntityMap EntityMap
+    {
+        get
+        {
+            if (currentEntityMap is null)
+            {
+                BeginEntity();
+            }
+            return currentEntityMap!;
+        }
+        set
+        {
+            currentEntityMap = value;
+            if (!EntityMaps.Contains(value))
+            {
+                EntityMaps.Add(value);
+            }
+        }
+    }
+
+    private EntityMap? currentEntityMap;
+
+    /// <summary>
+    /// Starts a new entity definition and sets it as current.
+    /// </summary>
+    public void BeginEntity()
+    {
+        currentEntityMap = new EntityMap { Entity = new() };
+        EntityMaps.Add(currentEntityMap);
+    }
 
     /// <summary>
     /// Add a table name.

@@ -8,25 +8,27 @@ namespace DapperWrappers;
 
 public class DapperEntityBuilder : AbstractEntityBuilder
 {
-    private readonly StringBuilder codeResult = new();
-
     /// <summary>
-    /// Builds the entity representation and its mapping.
+    /// Builds one C# class per accumulated entity.
     /// </summary>
     public override List<ConversionSource> Build()
     {
-        BuildImports();
-        BuildTableSchema();
-        BuildProperties();
-        FinalizeBuild();
+        var outputs = new List<ConversionSource>();
+        foreach (var em in EntityMaps)
+        {
+            var codeResult = new StringBuilder();
+            BuildImports(em, codeResult);
+            BuildTableSchema(em, codeResult);
+            BuildProperties(em, codeResult);
+            FinalizeBuild(codeResult);
 
-        return [
-            new ConversionSource
+            outputs.Add(new ConversionSource
             {
                 ContentType = ConversionContentType.CSharpEntity,
                 Content = codeResult.ToString()
-            }
-        ];
+            });
+        }
+        return outputs;
     }
 
     /// <summary>
@@ -42,13 +44,16 @@ public class DapperEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildImports()
     {
-        if (EntityMap.Entity.Namespace != null)
+        // unused in multi-entity flow
+    }
+
+    private static void BuildImports(EntityMap em, StringBuilder codeResult)
+    {
+        if (em.Entity.Namespace != null)
         {
-            codeResult.AppendLine($"namespace {EntityMap.Entity.Namespace};");
+            codeResult.AppendLine($"namespace {em.Entity.Namespace};");
             codeResult.AppendLine();
         }
-
-        // no imports for Dapper
     }
 
     /// <summary>
@@ -64,7 +69,12 @@ public class DapperEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildProperties()
     {
-        foreach (var property in EntityMap.Entity.Properties)
+        // unused in multi-entity flow
+    }
+
+    private static void BuildProperties(EntityMap em, StringBuilder codeResult)
+    {
+        foreach (var property in em.Entity.Properties)
         {
             var modifiers = $"{AccessModifierConvertor.ToModifierString(property.AccessModifier)} {string.Join(' ', property.OtherModifiers)}".Trim();
             var clrType = CLRTypeConvertor.ToString(property.Type);
@@ -89,8 +99,13 @@ public class DapperEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildTableSchema()
     {
-        var modifier = AccessModifierConvertor.ToModifierString(EntityMap.Entity.AccessModifier);
-        var name = EntityMap.Entity.Name;
+        // unused in multi-entity flow
+    }
+
+    private static void BuildTableSchema(EntityMap em, StringBuilder codeResult)
+    {
+        var modifier = AccessModifierConvertor.ToModifierString(em.Entity.AccessModifier);
+        var name = em.Entity.Name;
 
         codeResult.AppendLine($"{modifier} class {name}");
         codeResult.AppendLine("{");
@@ -100,6 +115,11 @@ public class DapperEntityBuilder : AbstractEntityBuilder
     /// Finalizes the build process by closing the class definition.
     /// </summary>
     protected override void FinalizeBuild()
+    {
+        // unused in multi-entity flow
+    }
+
+    private static void FinalizeBuild(StringBuilder codeResult)
     {
         codeResult.AppendLine("}");
     }

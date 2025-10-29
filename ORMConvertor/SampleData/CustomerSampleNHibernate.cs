@@ -20,7 +20,7 @@ public class CustomerSampleNHibernate
             public virtual List<CustomerTransaction> Transactions { get; set; } = [];
 
         }
-
+        
         """;
 
     public const string XmlMapping = """
