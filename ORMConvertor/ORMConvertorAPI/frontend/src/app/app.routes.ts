@@ -1,4 +1,4 @@
-import { Routes } from "@angular/router";
+﻿import { Routes } from "@angular/router";
 import { MainPageComponent } from "./containers/main-page/main-page.component";
 import { AdvisorPageComponent } from "./containers/advisor-page/advisor-page.component";
 import { LandingPageComponent } from "./containers/landing-page/landing-page.component";
@@ -6,6 +6,10 @@ import { LandingPageComponent } from "./containers/landing-page/landing-page.com
 export const routes: Routes = [
   {
     path: "",
+    component: LandingPageComponent,
+  },
+  {
+    path: "translation",
     component: MainPageComponent,
   },
   {
@@ -14,6 +18,7 @@ export const routes: Routes = [
   },
   {
     path: "home",
-    component: LandingPageComponent,
+    redirectTo: "",
+    pathMatch: "full",
   },
 ];

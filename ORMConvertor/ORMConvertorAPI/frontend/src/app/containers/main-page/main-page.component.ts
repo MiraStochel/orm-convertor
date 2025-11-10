@@ -1,4 +1,4 @@
-import { CommonModule, Location } from "@angular/common";
+﻿import { CommonModule } from "@angular/common";
 import { Component, DestroyRef, inject, OnInit } from "@angular/core";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { FormsModule } from "@angular/forms";
@@ -13,7 +13,7 @@ import {
 } from "../../model/required-content";
 import { ContentTypeToStringPipe } from "../../pipes/content-type-to-string.pipe";
 import { OrmService } from "../../services/orm.service";
-
+import { Router } from "@angular/router";
 @Component({
   selector: "app-main-page",
   standalone: true,
@@ -47,7 +47,7 @@ export class MainPageComponent implements OnInit {
 
   samples: Map<number, string> = new Map();
 
-  constructor(private ormService: OrmService, private location: Location) {}
+  constructor(private ormService: OrmService, private router: Router) {}
 
   ngOnInit(): void {
     this.ormService
@@ -129,6 +129,8 @@ export class MainPageComponent implements OnInit {
   }
   
   back(): void {
-    this.location.back();
+    this.router.navigateByUrl("/");
   }
 }
+
+

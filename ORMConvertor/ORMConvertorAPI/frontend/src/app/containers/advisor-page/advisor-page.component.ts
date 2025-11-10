@@ -1,4 +1,4 @@
-import { CommonModule, Location } from "@angular/common";
+﻿import { CommonModule } from "@angular/common";
 import {
   AfterViewInit,
   Component,
@@ -26,7 +26,7 @@ import {
 } from "../../model/required-content";
 import { ContentTypeToStringPipe } from "../../pipes/content-type-to-string.pipe";
 import { OrmService } from "../../services/orm.service";
-
+import { Router } from "@angular/router";
 interface FrameworkConversion {
   framework: ORMType;
   sources: SourceUnit[];
@@ -102,7 +102,7 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
   constructor(
     private ormService: OrmService,
     private elRef: ElementRef,
-    private location: Location
+    private router: Router
   ) {}
 
   ngOnInit(): void {
@@ -507,6 +507,9 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
   }
 
   back(): void {
-    this.location.back();
+    this.router.navigateByUrl("/");
   }
 }
+
+
+
