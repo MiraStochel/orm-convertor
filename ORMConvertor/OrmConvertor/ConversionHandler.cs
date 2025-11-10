@@ -20,49 +20,49 @@ public static class ConversionHandler
             throw new InvalidOperationException("Target ORM not supported");
         }
 
-        var parsers = ParserFactory.Create(sourceOrm, entityBuilder, queryBuilder);
-
-        if (parsers.Count == 0)
-        {
-            throw new InvalidOperationException("Source ORM not supported");
-        }
-
         var results = new List<ConversionSource>();
 
-        // First, feed all entity-like sources to their parsers to accumulate multiple entities
-        foreach (var parser in parsers)
+        // 1) Build entity maps using entity parsers only
+        var entityParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb: null)
+            .Where(p => !p.CanParse(ConversionContentType.CSharpQuery))
+            .ToList();
+        foreach (var parser in entityParsers)
         {
-            if (parser.CanParse(ConversionContentType.CSharpQuery) && queryBuilder == null)
-            {
-                continue;
-            }
-
-            var matching = sources.Where(x => parser.CanParse(x.ContentType)).ToList();
-            if (matching.Count == 0)
-            {
-                continue;
-            }
-
-            // For query parsers, parse the first matching query only (advisor composes per-query requests)
-            if (parser is IQueryParser qp)
-            {
-                var first = matching.First();
-                // Provide all known entity maps for table/schema resolution when available
-                qp.Parse(first.Content, entityBuilder.EntityMaps);
-                continue;
-            }
-
-            // For entity parsers (CSharp and XML), parse all matching sources to accumulate multiple entities
-            foreach (var src in matching)
+            foreach (var src in sources.Where(x => parser.CanParse(x.ContentType)))
             {
                 parser.Parse(src.Content);
             }
         }
 
+        // Emit entities for target ORM
         results.AddRange(entityBuilder.Build());
-        if (queryBuilder != null && sources.Any(x => x.ContentType == ConversionContentType.CSharpQuery))
+
+        // 2) Translate each query independently so we can return multiple query outputs
+        var querySources = sources.Where(s => s.ContentType == ConversionContentType.CSharpQuery).ToList();
+        foreach (var qsrc in querySources)
         {
-            results.AddRange(queryBuilder.Build());
+            var qb = QueryBuilderFactory.Create(targetOrm);
+            if (qb is null)
+            {
+                // Target ORM has no query builder; skip query translation for this target
+                continue;
+            }
+
+            var queryParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb)
+                .Where(p => p.CanParse(ConversionContentType.CSharpQuery))
+                .OfType<IQueryParser>()
+                .ToList();
+
+            if (queryParsers.Count == 0)
+            {
+                continue;
+            }
+
+            // Use the first available query parser for the source ORM
+            var qp = queryParsers.First();
+            qp.Parse(qsrc.Content, entityBuilder.EntityMaps);
+
+            results.AddRange(qb.Build());
         }
 
         return results;

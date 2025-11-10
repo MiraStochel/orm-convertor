@@ -1,4 +1,5 @@
-﻿using AbstractWrappers;
+using AbstractWrappers;
+using System;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -95,8 +96,7 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
             // Here we assume that we have map for the entity being queried, this is not future proof
             string dbSetName = node.Name switch
             {
-                GenericNameSyntax generic when generic.TypeArgumentList.Arguments.Count > 0 =>
-                    generic.Identifier.Text,
+                GenericNameSyntax generic when generic.TypeArgumentList.Arguments.Count > 0 => MakeDbSetNameFromType(ExtractIdentifier(generic.TypeArgumentList.Arguments[0])),
                 IdentifierNameSyntax ins => ins.Identifier.Text,
                 _ => node.Name.Identifier.Text
             };
@@ -372,4 +372,9 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
         PredefinedTypeSyntax pds => pds.Keyword.ValueText,
         _ => typeSyntax.ToString()
     };
+
+    private static string MakeDbSetNameFromType(string typeName)
+    {
+        return typeName.EndsWith("s", StringComparison.OrdinalIgnoreCase) ? typeName : typeName + "s";
+    }
 }

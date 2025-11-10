@@ -125,17 +125,23 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
             foreach (var framework in targetFrameworks)
             {
                 IReadOnlyList<ConversionSource> artifacts;
-                if (framework == request.SourceOrm)
+                // Always run through ConversionHandler to normalize entities into EntityMaps
+                // and emit one entity per source for the target framework (even if same as source).
+                var sources = ComposeSources(request.Entities, query.Query);
+                artifacts = ConversionHandler.Convert(
+                    request.SourceOrm,
+                    framework,
+                    sources);
+
+                // Ensure EFCore harness still receives a query source. EFCore target does not
+                // produce a CSharpQuery via QueryBuilder (it's null by design). If missing,
+                // append the original query unchanged alongside converted entities.
+                if (framework == ORMEnum.EFCore && !artifacts.Any(a => a.ContentType == ConversionContentType.CSharpQuery))
                 {
-                    artifacts = ComposeSources(request.Entities, query.Query);
-                }
-                else
-                {
-                    var sources = ComposeSources(request.Entities, query.Query);
-                    artifacts = ConversionHandler.Convert(
-                        request.SourceOrm,
-                        framework,
-                        sources);
+                    var withQuery = new List<ConversionSource>(artifacts.Count + 1);
+                    withQuery.AddRange(artifacts);
+                    withQuery.Add(Clone(query.Query));
+                    artifacts = withQuery;
                 }
 
                 perFramework[framework] = artifacts;

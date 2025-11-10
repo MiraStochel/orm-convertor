@@ -7,24 +7,24 @@ using NHibernateWrappers;
 namespace OrmConvertor.Factories;
 internal class ParserFactory
 {
-    static Dictionary<ORMEnum, Func<AbstractEntityBuilder, AbstractQueryBuilder?, IEnumerable<IParser>>> Map =>
-        new()
+    public static List<IParser> Create(ORMEnum orm, AbstractEntityBuilder eb, AbstractQueryBuilder? qb)
+    {
+        return orm switch
         {
-            [ORMEnum.Dapper] = (eb, qb) => [
+            ORMEnum.Dapper => new List<IParser>
+            {
                 new DapperEntityParser(eb)
-            ],
-            [ORMEnum.NHibernate] = (eb, qb) => [
+            },
+            ORMEnum.NHibernate => new List<IParser>
+            {
                 new NHibernateEntityParser(eb),
                 new NHibernateXMLMappingParser(eb)
-            ],
-            [ORMEnum.EFCore] = (eb, qb) => [
-                new EFCoreEntityParser(eb),
-                new EFCoreLinqQueryParser(qb!)
-            ]
+            },
+            ORMEnum.EFCore =>
+                qb is null
+                    ? new List<IParser> { new EFCoreEntityParser(eb) }
+                    : new List<IParser> { new EFCoreEntityParser(eb), new EFCoreLinqQueryParser(qb) },
+            _ => []
         };
-
-    public static List<IParser> Create(ORMEnum orm, AbstractEntityBuilder eb, AbstractQueryBuilder? qb) =>
-        Map.TryGetValue(orm, out var factory)
-            ? factory(eb, qb).ToList()
-            : [];
+    }
 }
