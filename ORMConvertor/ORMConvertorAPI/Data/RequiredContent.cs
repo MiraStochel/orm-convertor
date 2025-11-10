@@ -29,6 +29,7 @@ public static class RequiredContent
         new (ORMEnum.EFCore, [
             new(4, ConversionContentType.CSharpEntity, "Entity Class"),
             new (5, ConversionContentType.CSharpQuery, "Query Method"),
+            new(6, ConversionContentType.CSharpQuery, "Query Method 2"),
         ]),
     ];
 }

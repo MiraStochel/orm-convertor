@@ -78,7 +78,7 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
     .map((k) => ({ key: k, value: (ORMType as any)[k] as ORMType }));
 
   sourceOrm: ORMType = ORMType.EFCore;
-  memoryLimitKb = 128_000;
+  memoryLimitKb: number | null = null;
   maxFrameworksToSelect = 2;
   targetOrms: ORMType[] = [];
 

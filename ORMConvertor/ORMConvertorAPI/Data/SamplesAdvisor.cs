@@ -1,4 +1,4 @@
-﻿using SampleData;
+using SampleData;
 
 namespace ORMConvertorAPI.Data;
 
@@ -19,6 +19,8 @@ public static class SamplesAdvisor
 
         // EF Core advisor-only samples
         { 4, AdvisorEfCoreSamples.Entity },
-        { 5, AdvisorEfCoreSamples.Query },
+        { 5, AdvisorEfCoreSamples.Query1 },
+        { 6, AdvisorEfCoreSamples.Query2 },
     };
 }
+
