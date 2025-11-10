@@ -2,6 +2,7 @@
 using DapperWrappers;
 using Newtonsoft.Json;
 using SampleData;
+using System.Linq;
 
 namespace Tests.Dapper;
 
@@ -17,5 +18,33 @@ public class DapperToAbstractTest
         parser.Parse(sourceCode);
 
         Assert.Equal(JsonConvert.SerializeObject(CustomerSampleDapper.Map), JsonConvert.SerializeObject(builder.EntityMap), ignoreLineEndingDifferences: true);
+    }
+
+    [Fact]
+    public void DapperParser_SupportsMultipleClasses()
+    {
+        const string source = @"
+namespace Sample.Multi
+{
+    public class Customer
+    {
+        public int Id { get; set; }
+    }
+
+    public class Order
+    {
+        public int OrderId { get; set; }
+    }
+}";
+
+        AbstractEntityBuilder builder = new DummyEntityBuilder();
+        var parser = new DapperEntityParser(builder);
+
+        parser.Parse(source);
+
+        Assert.Equal(2, builder.EntityMaps.Count);
+        Assert.Contains(builder.EntityMaps, em => em.Entity.Name == "Customer");
+        Assert.Contains(builder.EntityMaps, em => em.Entity.Name == "Order");
+        Assert.All(builder.EntityMaps, em => Assert.Equal("Sample.Multi", em.Entity.Namespace));
     }
 }

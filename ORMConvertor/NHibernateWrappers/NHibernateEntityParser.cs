@@ -24,30 +24,36 @@ public class NHibernateEntityParser(AbstractEntityBuilder entityBuilder) : IPars
     /// <param name="source">C# source code containing a single class, optionally wrapped in a namespace.</param>
     public void Parse(string source)
     {
-        entityBuilder.BeginEntity();
         var root = CSharpSyntaxTree.ParseText(source).GetCompilationUnitRoot();
 
-        var ns = root.Members.OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault();
+        var classes = root.DescendantNodes()
+            .OfType<ClassDeclarationSyntax>()
+            .ToList();
 
-        // Supporting single class per source for now
-        var cls = root.DescendantNodes()
-                  .OfType<ClassDeclarationSyntax>()
-                  .First();
-
-        if (ns is not null)
+        foreach (var cls in classes)
         {
-            ParseNamespace(ns);
+            entityBuilder.BeginEntity();
+
+            var ns = GetNamespace(cls);
+            if (!string.IsNullOrEmpty(ns))
+            {
+                entityBuilder.AddNamespace(ns);
+            }
+
+            ParseClassHeader(cls);
+            ParseProperties(cls);
         }
-        ParseClassHeader(cls);
-        ParseProperties(cls);
     }
 
-    /// <summary>
-    /// Parses the namespace declaration.
-    /// </summary>
-    private void ParseNamespace(BaseNamespaceDeclarationSyntax namespaceDeclaration)
+    private static string? GetNamespace(ClassDeclarationSyntax classDeclaration)
     {
-        entityBuilder.AddNamespace(namespaceDeclaration.Name.ToString());
+        var namespaces = classDeclaration.Ancestors()
+            .OfType<BaseNamespaceDeclarationSyntax>()
+            .Select(ns => ns.Name.ToString())
+            .Reverse()
+            .ToList();
+
+        return namespaces.Count == 0 ? null : string.Join(".", namespaces);
     }
 
     /// <summary>

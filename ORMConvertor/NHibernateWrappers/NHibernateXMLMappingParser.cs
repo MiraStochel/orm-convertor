@@ -1,7 +1,9 @@
 ﻿using AbstractWrappers;
 using Model;
+using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers.Convertors;
+using System;
 using System.Xml.Linq;
 
 namespace NHibernateWrappers;
@@ -43,19 +45,77 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     /// </summary>
     private void ParseMapping(XElement mapping)
     {
-        // Mapping-level namespace (attribute)
         var mappingNamespace = mapping.Attribute("namespace")?.Value;
-        if (!string.IsNullOrEmpty(mappingNamespace))
-        {
-            entityBuilder.AddNamespace(mappingNamespace);
-        }
 
-        // Class parsing
-        var classElement = mapping.Elements().FirstOrDefault(e => e.Name.LocalName == "class");
-        if (classElement != null)
+        foreach (var classElement in mapping.Elements().Where(e => e.Name.LocalName == "class"))
         {
+            var (classNamespace, className) = ParseClassIdentity(classElement);
+            var effectiveNamespace = classNamespace ?? mappingNamespace;
+
+            EntityMap? existing = null;
+            if (!string.IsNullOrEmpty(className))
+            {
+                if (!string.IsNullOrEmpty(effectiveNamespace))
+                {
+                    existing = entityBuilder.EntityMaps.FirstOrDefault(em =>
+                        string.Equals(em.Entity.Name, className, StringComparison.Ordinal) &&
+                        string.Equals(em.Entity.Namespace, effectiveNamespace, StringComparison.Ordinal));
+                }
+
+                existing ??= entityBuilder.EntityMaps.FirstOrDefault(em =>
+                    string.Equals(em.Entity.Name, className, StringComparison.Ordinal) &&
+                    string.IsNullOrEmpty(em.Entity.Namespace));
+
+                existing ??= entityBuilder.EntityMaps.FirstOrDefault(em =>
+                    string.Equals(em.Entity.Name, className, StringComparison.Ordinal));
+            }
+
+            if (existing is null)
+            {
+                entityBuilder.BeginEntity();
+                if (!string.IsNullOrEmpty(className))
+                {
+                    entityBuilder.AddClassHeader(string.Empty, className);
+                }
+            }
+            else
+            {
+                entityBuilder.EntityMap = existing;
+            }
+
+            if (!string.IsNullOrEmpty(effectiveNamespace) &&
+                string.IsNullOrEmpty(entityBuilder.EntityMap.Entity.Namespace))
+            {
+                entityBuilder.AddNamespace(effectiveNamespace);
+            }
+
             ParseClass(classElement);
         }
+    }
+
+    private static (string? Namespace, string? Name) ParseClassIdentity(XElement classElement)
+    {
+        var nameAttr = classElement.Attribute("name")?.Value;
+        if (string.IsNullOrWhiteSpace(nameAttr))
+        {
+            return (null, null);
+        }
+
+        var fullType = nameAttr.Split(',')[0].Trim();
+        if (string.IsNullOrEmpty(fullType))
+        {
+            return (null, null);
+        }
+
+        var lastDot = fullType.LastIndexOf('.');
+        if (lastDot < 0)
+        {
+            return (null, fullType);
+        }
+
+        var ns = fullType[..lastDot];
+        var name = fullType[(lastDot + 1)..];
+        return (ns, name);
     }
 
     /// <summary>
