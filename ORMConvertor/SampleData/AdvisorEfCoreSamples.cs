@@ -21,11 +21,14 @@ public static class AdvisorEfCoreSamples
 
         public static class MyQueries
         {
-            public static IEnumerable<Customer> Query(DbContext ctx)
+            public static List<Customer> Query(DbContext ctx)
             {
                 return ctx.Set<Customer>()
-                          .Where(c => c.CreditLimit > 2000)
-                          .ToList();
+                    .Where(c => c.CreditLimit > 2000)
+                    .Where(c => c.AccountOpenedDate > new System.DateTime(2025, 1, 1))
+                    .OrderByDescending(c => c.AccountOpenedDate)
+                    .ThenBy(c => c.CustomerName)
+                    .ToList();
             }
         }
         """;

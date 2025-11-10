@@ -244,11 +244,15 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         int[] selected = new int[frameworkCount];
         int[] assignment = new int[queryCount];
 
+        long maxMemory = request.MaxMemoryBytes > 0
+            ? request.MaxMemoryBytes
+            : long.MaxValue;
+
         int status = AdvisorNamespace.Solve(
             mem,
             cost,
             weights,
-            request.MaxMemoryBytes,
+            maxMemory,
             request.MaxFrameworksToSelect,
             queryCount,
             frameworkCount,
