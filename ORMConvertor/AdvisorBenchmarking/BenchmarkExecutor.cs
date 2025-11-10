@@ -49,9 +49,15 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
         var instance = Activator.CreateInstance(benchmarkType)
             ?? throw new InvalidOperationException("Failed to instantiate benchmark harness.");
 
-        const int iterations = 5;
-        long memoryBefore = 0;
-        long memoryAfter = 0;
+        // Warm-up and measurement configuration
+        const int warmupIterations = 2;         // non-measured iterations to stabilise JIT/caches
+        const int minIterations = 3;            // ensure some averaging
+        const int maxIterations = 20;           // avoid overlong DB runs
+        const double targetTotalMs = 500;       // aim for ~0.5s total per benchmark
+
+        int iterations = minIterations;
+        long allocatedBefore = 0;
+        long allocatedAfter = 0;
         var stopwatch = new Stopwatch();
 
         try
@@ -70,11 +76,36 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
                 logger?.LogDebug(ex, "Preview invocation failed; continuing to benchmark.");
             }
 
+            // Additional warm-ups (non-measured) to stabilise caches/JIT.
+            for (int i = 0; i < warmupIterations; i++)
+            {
+                execute.Invoke(instance, null);
+            }
+
+            // Pilot run to estimate time/op and decide iteration count.
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
 
-            memoryBefore = GC.GetTotalMemory(forceFullCollection: true);
+            var pilotWatch = Stopwatch.StartNew();
+            var pilotAllocBefore = GC.GetAllocatedBytesForCurrentThread();
+            execute.Invoke(instance, null);
+            var pilotAllocAfter = GC.GetAllocatedBytesForCurrentThread();
+            pilotWatch.Stop();
+
+            var pilotMs = Math.Max(0.01, pilotWatch.Elapsed.TotalMilliseconds);
+            var suggestedIterations = (int)Math.Ceiling(targetTotalMs / pilotMs);
+            if (suggestedIterations < minIterations) suggestedIterations = minIterations;
+            if (suggestedIterations > maxIterations) suggestedIterations = maxIterations;
+            iterations = suggestedIterations;
+            logger?.LogDebug("Pilot: {PilotMs} ms/op, {PilotAlloc} bytes, chosen iterations {Iterations}.", pilotMs, Math.Max(0, pilotAllocAfter - pilotAllocBefore), iterations);
+
+            // Final measured run
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
             stopwatch.Start();
 
             for (int i = 0; i < iterations; i++)
@@ -83,7 +114,7 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
             }
 
             stopwatch.Stop();
-            memoryAfter = GC.GetTotalMemory(forceFullCollection: false);
+            allocatedAfter = GC.GetAllocatedBytesForCurrentThread();
         }
         catch (TargetInvocationException tie) when (tie.InnerException != null)
         {
@@ -108,12 +139,24 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
             }
         }
 
-        double meanMilliseconds = stopwatch.Elapsed.TotalMilliseconds / iterations;
-        long allocatedBytes = Math.Max(0, memoryAfter - memoryBefore);
+        double meanMilliseconds = stopwatch.Elapsed.TotalMilliseconds / Math.Max(1, iterations);
+        long allocatedBytesPerOp = 0;
+        try
+        {
+            var delta = allocatedAfter - allocatedBefore;
+            if (iterations > 0 && delta > 0)
+            {
+                allocatedBytesPerOp = delta / iterations;
+            }
+        }
+        catch
+        {
+            allocatedBytesPerOp = 0;
+        }
 
-        logger?.LogInformation("Benchmark finished: mean {Mean} ms, allocated {Allocated} bytes.", meanMilliseconds, allocatedBytes);
+        logger?.LogInformation("Benchmark finished: {Iterations} iters, mean {Mean} ms/op, allocated {Allocated} bytes/op.", iterations, meanMilliseconds, allocatedBytesPerOp);
 
-        return new BenchmarkMeasurement(meanMilliseconds, allocatedBytes);
+        return new BenchmarkMeasurement(meanMilliseconds, allocatedBytesPerOp);
     }
     
     private static void LogPreviewResult(ILogger? logger, object? result)

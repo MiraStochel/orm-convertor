@@ -50,7 +50,6 @@ public static class AdvisorEfCoreSamples
             {
                 return ctx.Set<OrderLine>()
                     .Where(o => o.TaxRate == 15)
-                    .Where(o => o.UnitPrice != null)
                     .ToList();
             }
         }
