@@ -1,26 +1,4 @@
 <div class="results-container">
-  <h3>Query Assignments</h3>
-
-  @if (assignments.length === 0) {
-    <p class="empty">No query assignments available.</p>
-  } @else {
-    <table class="assignments">
-      <thead>
-        <tr>
-          <th>Query</th>
-          <th>Framework</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (assignment of assignments; track assignment.queryId) {
-          <tr>
-            <td>{{ assignment.label ?? ('Q' + assignment.queryId) }}</td>
-            <td>{{ frameworkName(assignment.framework) }}</td>
-          </tr>
-        }
-      </tbody>
-    </table>
-  }
 
   @if (measurements && sortedQueryIds.length > 0 && uniqueFrameworks.length > 0) {
     <div class="tables">
@@ -78,5 +56,28 @@
         </tbody>
       </table>
     </div>
+  }
+
+  <h3>Query Assignments</h3>
+
+  @if (assignments.length === 0) {
+    <p class="empty">No query assignments available.</p>
+  } @else {
+    <table class="assignments">
+      <thead>
+        <tr>
+          <th>Query</th>
+          <th>Framework</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (assignment of assignments; track assignment.queryId) {
+          <tr>
+            <td>{{ 'Q' + assignment.queryId }}</td>
+            <td>{{ frameworkName(assignment.framework) }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
   }
 </div>
