@@ -261,7 +261,7 @@ namespace RepoDBFeatures
             int take = 50;
             var orderBy = OrderField.Ascending<OrderLine>(ol => ol.OrderLineID).AsEnumerable();
 
-            var orderLines = connection.SkipQuery<OrderLine>(skip, take, orderBy, where: default(object)).ToList();
+            var orderLines = connection.SkipQuery<OrderLine>(skip, take, orderBy, where: default(object)!).ToList();
 
             Assert.Equal(50, orderLines.Count);
             Assert.Equal(Enumerable.Range(skip + 1, take), orderLines.Select(ol => ol.OrderLineID));
@@ -284,7 +284,7 @@ namespace RepoDBFeatures
         [Fact]
         public void C2_AggregationMax()
         {
-            var maxUnitPrice = connection.MaxAll<OrderLine>(ol => ol.UnitPrice);
+            var maxUnitPrice = connection.MaxAll<OrderLine>(ol => ol.UnitPrice!);
 
             Assert.Equal(1899m, maxUnitPrice);
         }
@@ -496,9 +496,9 @@ namespace RepoDBFeatures
         [Fact]
         public void E1_ColumnSorting()
         {
-            var orderBy = OrderField.Ascending<PurchaseOrder>(po => po.ExpectedDeliveryDate).AsEnumerable();
+            var orderBy = OrderField.Ascending<PurchaseOrder>(po => po.ExpectedDeliveryDate!).AsEnumerable();
 
-            var orders = connection.SkipQuery<PurchaseOrder>(0, 1000, orderBy, default(object))
+            var orders = connection.SkipQuery<PurchaseOrder>(0, 1000, orderBy, default(object)!)
                 .ToList();
 
             Assert.Equal(1000, orders.Count);

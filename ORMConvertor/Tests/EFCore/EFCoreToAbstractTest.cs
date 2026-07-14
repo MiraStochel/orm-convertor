@@ -1,6 +1,6 @@
 ﻿using AbstractWrappers;
 using EFCoreWrappers;
-using Newtonsoft.Json;
+using System.Text.Json;
 using SampleData;
 using System.Linq;
 
@@ -17,7 +17,7 @@ public class EFCoreToAbstractTest
         var entityParser = new EFCoreEntityParser(builder);
         entityParser.Parse(CustomerSampleEFCore.Entity);
 
-        Assert.Equal(JsonConvert.SerializeObject(CustomerSampleEFCore.Map), JsonConvert.SerializeObject(builder.EntityMap), ignoreLineEndingDifferences: true);
+        Assert.Equal(JsonSerializer.Serialize(CustomerSampleEFCore.Map), JsonSerializer.Serialize(builder.EntityMap), ignoreLineEndingDifferences: true);
     }
 
     [Fact]

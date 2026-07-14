@@ -1,6 +1,6 @@
 ﻿using AbstractWrappers;
 using DapperWrappers;
-using Newtonsoft.Json;
+using System.Text.Json;
 using SampleData;
 using System.Linq;
 
@@ -17,7 +17,7 @@ public class DapperToAbstractTest
 
         parser.Parse(sourceCode);
 
-        Assert.Equal(JsonConvert.SerializeObject(CustomerSampleDapper.Map), JsonConvert.SerializeObject(builder.EntityMap), ignoreLineEndingDifferences: true);
+        Assert.Equal(JsonSerializer.Serialize(CustomerSampleDapper.Map), JsonSerializer.Serialize(builder.EntityMap), ignoreLineEndingDifferences: true);
     }
 
     [Fact]

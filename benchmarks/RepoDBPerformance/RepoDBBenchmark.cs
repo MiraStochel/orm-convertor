@@ -176,7 +176,7 @@ namespace RepoDBPerformance
             int take = 50;
             var orderBy = OrderField.Ascending<OrderLine>(ol => ol.OrderLineID).AsEnumerable();
 
-            var orderLines = connection.SkipQuery<OrderLine>(skip, take, orderBy, where: default(object)).ToList();
+            var orderLines = connection.SkipQuery<OrderLine>(skip, take, orderBy, where: default(object)!).ToList();
 
             return orderLines;
         }
@@ -344,9 +344,9 @@ namespace RepoDBPerformance
         [Benchmark]
         public List<PurchaseOrder> E1_ColumnSorting()
         {
-            var orderBy = OrderField.Ascending<PurchaseOrder>(po => po.ExpectedDeliveryDate).AsEnumerable();
+            var orderBy = OrderField.Ascending<PurchaseOrder>(po => po.ExpectedDeliveryDate!).AsEnumerable();
 
-            var orders = connection.SkipQuery<PurchaseOrder>(0, 1000, orderBy, default(object))
+            var orders = connection.SkipQuery<PurchaseOrder>(0, 1000, orderBy, default(object)!)
                 .ToList();
 
             return orders;

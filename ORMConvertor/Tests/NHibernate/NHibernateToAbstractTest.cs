@@ -1,5 +1,5 @@
 ﻿using AbstractWrappers;
-using Newtonsoft.Json;
+using System.Text.Json;
 using NHibernateWrappers;
 using SampleData;
 using System.Linq;
@@ -18,7 +18,7 @@ public class NHibernateToAbstractTest
         entityParser.Parse(CustomerSampleNHibernate.Entity);
         mappingParser.Parse(CustomerSampleNHibernate.XmlMapping);
 
-        Assert.Equal(JsonConvert.SerializeObject(CustomerSampleNHibernate.Map), JsonConvert.SerializeObject(builder.EntityMap), ignoreLineEndingDifferences: true);
+        Assert.Equal(JsonSerializer.Serialize(CustomerSampleNHibernate.Map), JsonSerializer.Serialize(builder.EntityMap), ignoreLineEndingDifferences: true);
     }
 
     [Fact]
