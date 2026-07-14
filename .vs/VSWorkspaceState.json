@@ -1,8 +1,11 @@
 {
   "ExpandedNodes": [
     "",
+    "\\benchmarks\\NHibernateEntities\\Models",
+    "\\docs\\design",
     "\\ORMConvertor",
-    "\\ORMConvertor\\AbstractWrappers"
+    "\\ORMConvertor\\AbstractWrappers",
+    "\\ORMConvertor\\ORMConvertorAPI"
   ],
   "PreviewInSolutionExplorer": false
 }
