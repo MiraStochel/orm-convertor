@@ -14,39 +14,32 @@ public static class Endpoints
 
         group.MapGet("/required-content", () => RequiredContent.GetRequiredContent)
             .WithName("RequiredContent")
-            .Produces<List<RequiredContentDefinition>>(StatusCodes.Status200OK)
-            .WithOpenApi();
+            .Produces<List<RequiredContentDefinition>>(StatusCodes.Status200OK);
 
         group.MapGet("/required-content-advisor", () => RequiredContent.GetRequiredContentAdvisor)
             .WithName("RequiredContentAdvisor")
-            .Produces<List<RequiredContentDefinition>>(StatusCodes.Status200OK)
-            .WithOpenApi();
+            .Produces<List<RequiredContentDefinition>>(StatusCodes.Status200OK);
 
         group.MapPost("/convert", ConvertHandler)
            .WithName("Convert")
            .Produces<ConvertResponse>(StatusCodes.Status200OK)
-           .ProducesProblem(StatusCodes.Status400BadRequest)
-           .WithOpenApi();
+           .ProducesProblem(StatusCodes.Status400BadRequest);
 
         group.MapGet("/samples", () => Samples.GetSamples)
-            .Produces<Dictionary<int, string>>(StatusCodes.Status200OK)
-            .WithOpenApi();
+            .Produces<Dictionary<int, string>>(StatusCodes.Status200OK);
 
         group.MapGet("/samples-advisor", () => SamplesAdvisor.GetSamples)
-            .Produces<Dictionary<int, string>>(StatusCodes.Status200OK)
-            .WithOpenApi();
+            .Produces<Dictionary<int, string>>(StatusCodes.Status200OK);
 
         group.MapPost("/advisor-test", AdvisorTestHandler)
             .WithName("AdvisorTest")
               .Produces<AdvisorSolveResponse>(StatusCodes.Status200OK)
-              .ProducesProblem(StatusCodes.Status400BadRequest)
-              .WithOpenApi();
+              .ProducesProblem(StatusCodes.Status400BadRequest);
 
         group.MapPost("/advisor/run", AdvisorRunHandler)
             .WithName("AdvisorRun")
             .Produces<AdvisorRunResult>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status400BadRequest)
-            .WithOpenApi();
+            .ProducesProblem(StatusCodes.Status400BadRequest);
     }
 
     private static IResult ConvertHandler(ConvertRequest req)
