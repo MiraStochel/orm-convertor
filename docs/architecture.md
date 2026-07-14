@@ -11,7 +11,7 @@ Aplikace překládá entity, mapování a dotazy mezi třemi .NET ORM frameworky
 
 ## 2. Struktura řešení (.NET solution)
 
-Aplikace je .NET 8 solution rozdělená na projekty tří typů:
+Aplikace je .NET 10 solution (povýšená z .NET 8) rozdělená na projekty tří typů:
 
 - **ASP.NET web projekt** – `ORMConvertorAPI`, poskytuje REST API a servíruje zkompilovaný Angular frontend jako statické soubory. API dokumentace je automaticky generovaná přes Swagger, dostupná na `/orm/swagger`.
 - **Testovací projekt (xUnit)** – `Tests`, integrační testy pro každý směr překladu i jejich kombinace.

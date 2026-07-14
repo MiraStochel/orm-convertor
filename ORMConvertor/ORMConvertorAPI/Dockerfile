@@ -13,7 +13,7 @@ COPY ORMConvertorAPI/frontend .
 RUN npx ng build --configuration production --base-href /orm/ --deploy-url /orm/ --output-path=dist
 
 # Stage 2: Build native Advisor library
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS advisor-native
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS advisor-native
 WORKDIR /src/advisor
 RUN --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lists \
     --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
@@ -24,7 +24,7 @@ COPY Advisor/ilp.c .
 RUN gcc -fPIC -shared -o /artifacts/libadvisor.so ilp.c -lglpk
 
 # Stage 3: Build and publish the .NET app, also bring in frontend static assets
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dotnet-build
 WORKDIR /app
 
 # Restore with project files only so cache survives source edits
@@ -60,7 +60,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages dotnet publish ORMConvertorA
     && cp Advisor/libadvisor.so /app/out/
 
 # Stage 4: Create runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 # Install glpk runtime (so .so can be loaded)
