@@ -1,4 +1,4 @@
-Visual Studio projects containing unit and benchmark tests for 7 different .NET ORMs.
+Visual Studio solution (``ORMComparison.sln``) containing unit and benchmark tests for 7 different .NET ORMs.
 
 Visual Studio Test Explorer window can be used to run unit tests.
 
@@ -23,4 +23,4 @@ Test connection:
 # Sources
 - [Wide World Importers sample databases for Microsoft SQL](https://learn.microsoft.com/en-us/sql/samples/wide-world-importers-what-is?view=sql-server-ver16)
 - [BAK file with WWI database](https://github.com/microsoft/sql-server-samples/releases/download/wide-world-importers-v1.0/WideWorldImporters-Full.bak)
-- [Microsoft SQL Server image on DockerHuber](https://hub.docker.com/r/microsoft/mssql-server)
+- [Microsoft SQL Server image on Docker Hub](https://hub.docker.com/r/microsoft/mssql-server)

@@ -3,6 +3,7 @@
 **Rozsah:** podmínkový strom (WHERE/HAVING/JOIN), kompozitní primární klíče, vícesloupcové vztahy (1:1, 1:N, N:M)
 **Stav:** návrh k implementaci, kód zatím neměním
 **Kontext:** navazuje na `Model`, `AbstractWrappers`, `DapperWrappers`, `EFCoreWrappers`, `NHibernateWrappers` v mém repozitáři [`MiraStochel/orm-convertor`](https://github.com/MiraStochel/orm-convertor)
+**Pokrývá požadavky:** F1–F3 z [docs/requirements.md](../requirements.md)
 
 ---
 
@@ -99,7 +100,7 @@ Implementace (např. `DapperSQLQueryVisitor`) musí při vykreslování hlídat 
 
 ### 2.5 Dopad na `JoinInstruction` (navazuje na kompozitní FK, kapitola 4)
 
-Původní návrh v `thesis/chapters/04_query_translation.tex` počítal s JOIN instrukcí ve tvaru `JOIN table1, table2, joinType, (conditionTree)` – tedy ON klauzule měla být od začátku celý podmínkový strom, ne jen jeden pár sloupců. Držím se toho a `JoinInstruction` navrhuji rovnou s `ConditionNode`, ne se seznamem párů – je to obecnější (multi-column equi-join je jen `AND` několika `ComparisonCondition` rovností) a znovu použije přesně stejný mechanismus jako WHERE/HAVING, žádný nový typ navíc.
+Původní návrh v kapitole 04_query_translation.tex původní diplomky [`thesis/chapters v původním repozitáři`](https://github.com/milan252525/orm-convertor/blob/main/thesis/chapters/04_query_translation.tex) počítal s JOIN instrukcí ve tvaru `JOIN table1, table2, joinType, (conditionTree)` – tedy ON klauzule měla být od začátku celý podmínkový strom, ne jen jeden pár sloupců. Držím se toho a `JoinInstruction` navrhuji rovnou s `ConditionNode`, ne se seznamem párů – je to obecnější (multi-column equi-join je jen `AND` několika `ComparisonCondition` rovností) a znovu použije přesně stejný mechanismus jako WHERE/HAVING, žádný nový typ navíc.
 
 ```csharp
 public sealed record JoinInstruction(
