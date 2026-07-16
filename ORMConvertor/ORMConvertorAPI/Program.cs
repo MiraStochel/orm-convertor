@@ -21,6 +21,7 @@ public class Program
         var app = builder.Build();
 
         app.UsePathBase("/orm");
+        app.UseRouting();
 
         // Configure the HTTP request pipeline.
         if (app.Environment.IsDevelopment())

@@ -356,7 +356,10 @@ export class AdvisorPageComponent implements OnInit, AfterViewInit {
           setTimeout(() => this.resizeAll(), 0);
         },
         error: (err) => {
-          this.error = err?.message ?? "Advisor run failed.";
+          this.error =
+                typeof err?.error === "string" && err.error.length > 0
+                    ? err.error
+                    : err?.message ?? "Advisor run failed.";
           this.advisorResult = null;
           this.assignmentEntries = [];
           this.convertedByFramework = [];

@@ -10,7 +10,7 @@ public static class Endpoints
 {
     public static void Map(WebApplication app)
     {
-        var group = app.MapGroup("/orm");
+        var group = app.MapGroup("");
 
         group.MapGet("/required-content", () => RequiredContent.GetRequiredContent)
             .WithName("RequiredContent")

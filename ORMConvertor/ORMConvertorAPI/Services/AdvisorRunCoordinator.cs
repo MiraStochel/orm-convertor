@@ -39,12 +39,12 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         connectionString = configuration.GetConnectionString("AdvisorDatabase")
             ?? configuration["Advisor:ConnectionString"]
-            ?? "Server=mssql_db,1433;Database=WideWorldImporters;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;";
+            ?? string.Empty;
     }
 
     /// <summary>
-    /// Validates the request, resolves target frameworks, and prepares translated artifacts.
-    /// Benchmark execution and optimisation will be plugged in subsequently.
+    /// Validates the request, resolves target frameworks, translates the workload,
+    /// benchmarks it against the configured database, and runs the ILP optimisation.
     /// </summary>
     public Task<AdvisorRunResult> RunAsync(
         AdvisorRunRequest request,
@@ -57,6 +57,14 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         if (request.Queries.Count == 0)
         {
             throw new ArgumentException("At least one query is required", nameof(request));
+        }
+
+        foreach (var query in request.Queries)
+        {
+            if (string.IsNullOrWhiteSpace(query.Query?.Content))
+            {
+                throw new ArgumentException($"Query '{query.Id}' has no content.", nameof(request));
+            }
         }
 
         logger.LogInformation("Advisor run received with {QueryCount} queries from source ORM {SourceOrm}.", request.Queries.Count, request.SourceOrm);
@@ -73,6 +81,14 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
             targetFrameworks,
             cancellationToken);
         logger.LogInformation("Translations built for all queries.");
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "Advisor database connection string is not configured. " +
+                "Set 'ConnectionStrings:AdvisorDatabase' (or 'Advisor:ConnectionString') " +
+                "in appsettings.json or via environment variables (ConnectionStrings__AdvisorDatabase).");
+        }
 
         var measurements = RunBenchmarks(
             request,
