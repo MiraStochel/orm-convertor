@@ -5,7 +5,7 @@ using Model.AbstractRepresentation;
 
 namespace Tests.Combined;
 
-public class EFCoreLingToDapperSqlTest
+public class EFCoreLinqToDapperSqlTest
 {
     [Fact]
     public void SimpleLinqToSql()
