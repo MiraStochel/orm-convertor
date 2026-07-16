@@ -5,6 +5,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
 using Model.AbstractRepresentation;
+using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
 
 namespace EFCoreWrappers;
@@ -147,27 +148,155 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
 
     private void HandleWhere(InvocationExpressionSyntax node)
     {
+        // Where navazující přímo na GroupBy je post-agregační filtr –
+        // zpracovává ho HandleGroupBy jako HAVING, tady ho přeskočíme.
+        if (node.Expression is MemberAccessExpressionSyntax whereMember
+            && whereMember.Expression is InvocationExpressionSyntax previousInvocation
+            && previousInvocation.Expression is MemberAccessExpressionSyntax previousMember
+            && previousMember.Name.Identifier.Text == "GroupBy")
+        {
+            return;
+        }
+
         var arg = node.ArgumentList.Arguments.FirstOrDefault();
         if (arg?.Expression is not SimpleLambdaExpressionSyntax lambda)
         {
             return;
         }
 
-        if (lambda.Body is not BinaryExpressionSyntax binary)
+        if (lambda.Body is not ExpressionSyntax body)
         {
             return;
         }
 
-        bool lOk = TryParseOperand(binary.Left, out var lTable, out var lProp, out var lConst);
-        bool rOk = TryParseOperand(binary.Right, out var rTable, out var rProp, out var rConst);
-        
-        if (!lOk || !rOk)
+        var condition = ParseCondition(body);
+        if (condition is null)
         {
             return;
         }
 
-        queryBuilder.Select(lTable, lProp, lConst, MapOperator(binary.Kind()), rTable, rProp, rConst);
+        queryBuilder.Where(condition);
     }
+
+    /// <summary>
+    /// Rekurzivně převede C# výraz predikátu na podmínkový strom.
+    /// Vrací null, pokud výraz (nebo kterákoli jeho část) není podporovaný –
+    /// v tom případě se celý predikát přeskočí, stejně jako dřív.
+    /// </summary>
+    private ConditionNode? ParseCondition(ExpressionSyntax expr)
+    {
+        switch (expr)
+        {
+            case ParenthesizedExpressionSyntax parenthesized:
+                return ParseCondition(parenthesized.Expression);
+
+            case PrefixUnaryExpressionSyntax unary when unary.IsKind(SyntaxKind.LogicalNotExpression):
+                {
+                    var operand = ParseCondition(unary.Operand);
+                    return operand is null ? null : new NotCondition(operand);
+                }
+
+            case BinaryExpressionSyntax logical when logical.IsKind(SyntaxKind.LogicalAndExpression)
+                                                  || logical.IsKind(SyntaxKind.LogicalOrExpression):
+                {
+                    var op = logical.IsKind(SyntaxKind.LogicalAndExpression)
+                        ? LogicalOperator.And
+                        : LogicalOperator.Or;
+
+                    var left = ParseCondition(logical.Left);
+                    var right = ParseCondition(logical.Right);
+                    if (left is null || right is null)
+                    {
+                        return null;
+                    }
+
+                    // Řetězce stejného operátoru (a && b && c) se zplošťují do jednoho uzlu.
+                    var operands = new List<ConditionNode>();
+                    if (left is LogicalCondition leftLogical && leftLogical.Operator == op)
+                    {
+                        operands.AddRange(leftLogical.Operands);
+                    }
+                    else
+                    {
+                        operands.Add(left);
+                    }
+
+                    if (right is LogicalCondition rightLogical && rightLogical.Operator == op)
+                    {
+                        operands.AddRange(rightLogical.Operands);
+                    }
+                    else
+                    {
+                        operands.Add(right);
+                    }
+
+                    return new LogicalCondition(op, operands);
+                }
+
+            case BinaryExpressionSyntax comparison:
+                return ParseComparison(comparison);
+
+            default:
+                return null;
+        }
+    }
+
+    private static ConditionNode? ParseComparison(BinaryExpressionSyntax binary)
+    {
+        var op = MapOperator(binary.Kind());
+        if (op is null)
+        {
+            return null;
+        }
+
+        bool leftIsNull = IsNullLiteral(binary.Left);
+        bool rightIsNull = IsNullLiteral(binary.Right);
+
+        if (leftIsNull && rightIsNull)
+        {
+            return null;
+        }
+
+        // Porovnání s null literálem se normalizuje na IS NULL / IS NOT NULL
+        // (rozhodnutí 7.2 v design docu 001).
+        if (leftIsNull || rightIsNull)
+        {
+            if (op is not (ComparisonOperator.Equal or ComparisonOperator.NotEqual))
+            {
+                return null;
+            }
+
+            var operandExpression = leftIsNull ? binary.Right : binary.Left;
+            if (!TryParseOperand(operandExpression, out var table, out var property, out var constant))
+            {
+                return null;
+            }
+
+            var nullOperator = op == ComparisonOperator.Equal
+                ? ComparisonOperator.IsNull
+                : ComparisonOperator.IsNotNull;
+
+            return new ComparisonCondition(table, property, constant, null, nullOperator, null, null, null, null);
+        }
+
+        if (!TryParseOperand(binary.Left, out var leftTable, out var leftProperty, out var leftConstant))
+        {
+            return null;
+        }
+
+        if (!TryParseOperand(binary.Right, out var rightTable, out var rightProperty, out var rightConstant))
+        {
+            return null;
+        }
+
+        return new ComparisonCondition(
+            leftTable, leftProperty, leftConstant, null,
+            op.Value,
+            rightTable, rightProperty, rightConstant, null);
+    }
+
+    private static bool IsNullLiteral(ExpressionSyntax expr)
+        => expr is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.NullLiteralExpression);
 
     private void HandleJoin(InvocationExpressionSyntax node)
     {
@@ -280,6 +409,12 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
             return;
         }
 
+        var op = MapOperator(binary.Kind());
+        if (op is null)
+        {
+            return;
+        }
+
         bool lOk = TryParseAggOperand(binary.Left, out var lTable, out var lProp, out var lFunc, out var lConst);
         bool rOk = TryParseAggOperand(binary.Right, out var rTable, out var rProp, out var rFunc, out var rConst);
         if (!lOk || !rOk)
@@ -287,18 +422,21 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
             return;
         }
 
-        queryBuilder.Having(lTable, lProp, lConst, lFunc, MapOperator(binary.Kind()), rTable, rProp, rConst, rFunc);
+        queryBuilder.Having(new ComparisonCondition(
+            lTable, lProp, lConst, lFunc,
+            op.Value,
+            rTable, rProp, rConst, rFunc));
     }
 
-    private static BooleanOperator MapOperator(SyntaxKind k) => k switch
+    private static ComparisonOperator? MapOperator(SyntaxKind k) => k switch
     {
-        SyntaxKind.EqualsExpression => BooleanOperator.Equal,
-        SyntaxKind.NotEqualsExpression => BooleanOperator.NotEqual,
-        SyntaxKind.GreaterThanExpression => BooleanOperator.GreaterThan,
-        SyntaxKind.GreaterThanOrEqualExpression => BooleanOperator.GreaterThanOrEqual,
-        SyntaxKind.LessThanExpression => BooleanOperator.LessThan,
-        SyntaxKind.LessThanOrEqualExpression => BooleanOperator.LessThanOrEqual,
-        _ => BooleanOperator.Equal
+        SyntaxKind.EqualsExpression => ComparisonOperator.Equal,
+        SyntaxKind.NotEqualsExpression => ComparisonOperator.NotEqual,
+        SyntaxKind.GreaterThanExpression => ComparisonOperator.GreaterThan,
+        SyntaxKind.GreaterThanOrEqualExpression => ComparisonOperator.GreaterThanOrEqual,
+        SyntaxKind.LessThanExpression => ComparisonOperator.LessThan,
+        SyntaxKind.LessThanOrEqualExpression => ComparisonOperator.LessThanOrEqual,
+        _ => null
     };
 
     private static bool TryParseOperand(ExpressionSyntax expr, out string? table, out string? prop, out string? constant)

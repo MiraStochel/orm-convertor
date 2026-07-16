@@ -1,5 +1,6 @@
 ﻿using Model;
 using Model.QueryInstructions;
+using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
 
 namespace AbstractWrappers;
@@ -48,12 +49,9 @@ public abstract class AbstractQueryBuilder()
         instructions.Add(new ProjectInstruction(table, attr, alias, function));
     }
 
-    public void Select(
-        string? leftTable, string? leftProperty, string? leftConstant,
-        BooleanOperator op,
-        string? rightTable, string? rightProperty, string? rightConstant)
+    public void Where(ConditionNode condition)
     {
-        instructions.Add(new SelectInstruction(leftTable, leftProperty, leftConstant, op, rightTable, rightProperty, rightConstant));
+        instructions.Add(new SelectInstruction(condition));
     }
 
     public void Join(JoinKind kind, string left, string right, string leftProperty, string rightProperty, string? rightTableAlias = null)
@@ -71,13 +69,9 @@ public abstract class AbstractQueryBuilder()
         instructions.Add(new OrderByInstruction(table, attributeOrAlias, asc));
     }
 
-    public void Having(
-        string? leftTable, string? leftProperty, string? leftConstant, string? leftFunction,
-        BooleanOperator op,
-        string? rightTable, string? rightProperty, string? rightConstant, string? rightFunction
-    )
+    public void Having(ConditionNode condition)
     {
-        instructions.Add(new HavingInstruction(leftTable, leftProperty, leftConstant, leftFunction, op, rightTable, rightProperty, rightConstant, rightFunction));
+        instructions.Add(new HavingInstruction(condition));
     }
 
     public void SetOperation(SetOperationType operation)

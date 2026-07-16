@@ -2,6 +2,7 @@
 using Model;
 using Model.Exceptions;
 using Model.QueryInstructions;
+using Model.QueryInstructions.Conditions;
 using System.Text;
 
 namespace DapperWrappers;
@@ -144,17 +145,13 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
             return;
         }
 
-        sqlBuilder.Append("WHERE ");
-        for (int i = 0; i < selectInstructions.Count; i++)
-        {
-            sqlBuilder.Append(selectInstructions[i].Accept(visitor));
+        // Více Where() volání se spojuje konjunkcí (pravidlo Q4 z článku).
+        var condition = selectInstructions.Count == 1
+            ? selectInstructions[0].Condition
+            : new LogicalCondition(LogicalOperator.And, selectInstructions.Select(s => s.Condition).ToList());
 
-            if (i < selectInstructions.Count - 1)
-            {
-                sqlBuilder.AppendLine();
-                sqlBuilder.Append("    AND ");
-            }
-        }
+        sqlBuilder.Append("WHERE ");
+        sqlBuilder.Append(condition.Accept(visitor));
         sqlBuilder.AppendLine();
     }
 
@@ -202,17 +199,12 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
             return;
         }
 
-        sqlBuilder.Append("HAVING ");
-        for (int i = 0; i < havingInstructions.Count; i++)
-        {
-            sqlBuilder.Append(havingInstructions[i].Accept(visitor));
+        var condition = havingInstructions.Count == 1
+            ? havingInstructions[0].Condition
+            : new LogicalCondition(LogicalOperator.And, havingInstructions.Select(h => h.Condition).ToList());
 
-            if (i < havingInstructions.Count - 1)
-            {
-                sqlBuilder.AppendLine();
-                sqlBuilder.Append("\tAND ");
-            }
-        }
+        sqlBuilder.Append("HAVING ");
+        sqlBuilder.Append(condition.Accept(visitor));
         sqlBuilder.AppendLine();
     }
 }

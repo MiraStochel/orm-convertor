@@ -1,5 +1,6 @@
 ﻿using Model.Exceptions;
 using Model.QueryInstructions;
+using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
 
 namespace DapperWrappers;
@@ -28,54 +29,64 @@ public class DapperSQLQueryVisitor : IQueryVisitor
         return $"{value}{alias}";
     }
 
-    public string Visit(SelectInstruction instr)
+    public string Visit(SelectInstruction instr) => instr.Condition.Accept(this);
+
+    public string Visit(HavingInstruction instr) => instr.Condition.Accept(this);
+
+    public string Visit(ComparisonCondition cond)
     {
-        string left;
-        if (instr.LeftTable != null && instr.LeftProperty != null)
+        string left = BuildOperand(cond.LeftTable, cond.LeftProperty, cond.LeftConstant, cond.LeftFunction);
+
+        if (cond.Operator == ComparisonOperator.IsNull)
         {
-            left = $"{instr.LeftTable}.{instr.LeftProperty}";
-        }
-        else if (instr.LeftConstant != null)
-        {
-            left = instr.LeftConstant.Replace('"', '\'');
-        }
-        else
-        {
-            throw new QueryBuilderException("SelectInstruction: Left side must be a table.column or a constant.");
+            return $"{left} IS NULL";
         }
 
-        string right;
-        if (instr.RightTable != null && instr.RightProperty != null)
+        if (cond.Operator == ComparisonOperator.IsNotNull)
         {
-            right = $"{instr.RightTable}.{instr.RightProperty}";
-        }
-        else if (instr.RightConstant != null)
-        {
-            right = instr.RightConstant.Replace('"', '\'');
-        }
-        else
-        {
-            throw new QueryBuilderException("SelectInstruction: Right side must be a table.column or a constant.");
+            return $"{left} IS NOT NULL";
         }
 
-
-        string op = instr.Operator switch
-        {
-            BooleanOperator.Equal => "=",
-            BooleanOperator.NotEqual => "<>",
-            BooleanOperator.GreaterThan => ">",
-            BooleanOperator.GreaterThanOrEqual => ">=",
-            BooleanOperator.LessThan => "<",
-            BooleanOperator.LessThanOrEqual => "<=",
-            BooleanOperator.Like => "LIKE",
-            BooleanOperator.NotLike => "NOT LIKE",
-            BooleanOperator.In => "IN",
-            BooleanOperator.NotIn => "NOT IN",
-            _ => throw new QueryBuilderException($"Unsupported BooleanOperator: {instr.Operator}")
-        };
-
-        return $"{left} {op} {right}";
+        string right = BuildOperand(cond.RightTable, cond.RightProperty, cond.RightConstant, cond.RightFunction);
+        return $"{left} {MapOperator(cond.Operator)} {right}";
     }
+
+    public string Visit(LogicalCondition cond)
+    {
+        if (cond.Operands.Count == 0)
+        {
+            throw new QueryBuilderException("LogicalCondition must have at least one operand.");
+        }
+
+        string keyword = cond.Operator == LogicalOperator.And ? "AND" : "OR";
+
+        // Vnořený logický uzel se vždy obaluje závorkami, aby AND obsahující OR
+        // (a naopak) nezměnil význam dotazu.
+        var parts = cond.Operands.Select(operand =>
+            operand is LogicalCondition
+                ? $"({operand.Accept(this)})"
+                : operand.Accept(this));
+
+        return string.Join($" {keyword} ", parts);
+    }
+
+    public string Visit(NotCondition cond)
+    {
+        return $"NOT ({cond.Operand.Accept(this)})";
+    }
+
+    private static string MapOperator(ComparisonOperator op) => op switch
+    {
+        ComparisonOperator.Equal => "=",
+        ComparisonOperator.NotEqual => "<>",
+        ComparisonOperator.GreaterThan => ">",
+        ComparisonOperator.GreaterThanOrEqual => ">=",
+        ComparisonOperator.LessThan => "<",
+        ComparisonOperator.LessThanOrEqual => "<=",
+        ComparisonOperator.Like => "LIKE",
+        ComparisonOperator.In => "IN",
+        _ => throw new QueryBuilderException($"Unsupported ComparisonOperator: {op}")
+    };
 
     public string Visit(JoinInstruction instr)
     {
@@ -109,29 +120,6 @@ public class DapperSQLQueryVisitor : IQueryVisitor
         return $"{instr.Table}.{instr.Attribute}";
     }
 
-    public string Visit(HavingInstruction instr)
-    {
-        string left = BuildOperand(instr.LeftTable, instr.LeftProperty, instr.LeftConstant, instr.LeftFunction);
-        string right = BuildOperand(instr.RightTable, instr.RightProperty, instr.RightConstant, instr.RightFunction);
-
-        string op = instr.Operator switch
-        {
-            BooleanOperator.Equal => "=",
-            BooleanOperator.NotEqual => "<>",
-            BooleanOperator.GreaterThan => ">",
-            BooleanOperator.GreaterThanOrEqual => ">=",
-            BooleanOperator.LessThan => "<",
-            BooleanOperator.LessThanOrEqual => "<=",
-            BooleanOperator.Like => "LIKE",
-            BooleanOperator.NotLike => "NOT LIKE",
-            BooleanOperator.In => "IN",
-            BooleanOperator.NotIn => "NOT IN",
-            _ => throw new QueryBuilderException($"Unsupported BooleanOperator: {instr.Operator}")
-        };
-
-        return $"{left} {op} {right}";
-    }
-
     private static string BuildOperand(
         string? table,
         string? property,
@@ -155,7 +143,7 @@ public class DapperSQLQueryVisitor : IQueryVisitor
         }
         else
         {
-            throw new QueryBuilderException($"Having operand must be a table.column or a constant.");
+            throw new QueryBuilderException("Condition operand must be a table.column or a constant.");
         }
     }
 
