@@ -150,6 +150,19 @@ public static class CustomerSampleEFCore
                 map.Entity.Properties.Add(propertyMap.Property);
             }
 
+            map.PrimaryKey = new PrimaryKey
+            {
+                Parts =
+                [
+                    new PrimaryKeyPart
+                    {
+                        PropertyMap = map.PropertyMaps.First(pm => pm.Property.Name == "CustomerID"),
+                        Order = 1,
+                        Strategy = PrimaryKeyStrategy.Identity,
+                    },
+                ],
+            };
+
             return map;
         }
     }

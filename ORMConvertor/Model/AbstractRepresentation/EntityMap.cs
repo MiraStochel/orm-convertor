@@ -9,4 +9,6 @@ public class EntityMap
     public string? Schema { get; set; }
 
     public List<PropertyMap> PropertyMaps { get; set; } = [];
+    
+    public PrimaryKey? PrimaryKey { get; set; }
 }

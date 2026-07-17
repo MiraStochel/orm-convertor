@@ -95,11 +95,51 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Add a primary key to the entity.
+    /// Define the (possibly composite) primary key of the entity.
+    /// The whole key is defined by a single call; a repeated call replaces the previous key.
+    /// </summary>
+    /// <param name="parts">Key parts: property name, explicit 1-based order, and per-part generation strategy.</param>
+    public void AddPrimaryKey(IReadOnlyList<(string PropertyName, int Order, PrimaryKeyStrategy Strategy)> parts)
+    {
+        if (parts == null || parts.Count == 0)
+        {
+            throw new ArgumentException("Primary key must have at least one part.", nameof(parts));
+        }
+
+        var keyParts = new List<PrimaryKeyPart>();
+
+        foreach (var (propertyName, order, strategy) in parts)
+        {
+            var propertyMap = GetOrCreatePropertyMap(propertyName);
+
+            // Dočasný duální zápis: string příznaky zatím čtou EFCore/NHibernate buildery.
+            // Odstraní se v navazujícím podkroku (přepis wrapperů na EntityMap.PrimaryKey).
+            propertyMap.OtherDatabaseProperties["IsPrimaryKey"] = "true";
+            propertyMap.OtherDatabaseProperties["PrimaryKeyStrategy"] = ((int)strategy).ToString();
+
+            keyParts.Add(new PrimaryKeyPart
+            {
+                PropertyMap = propertyMap,
+                Order = order,
+                Strategy = strategy,
+            });
+        }
+
+        EntityMap.PrimaryKey = new PrimaryKey
+        {
+            Parts = keyParts.OrderBy(p => p.Order).ToList(),
+        };
+    }
+
+    /// <summary>
+    /// Convenience overload for a simple (single-property) primary key.
     /// </summary>
     /// <param name="strategy">Primary key strategy</param>
     /// <param name="propertyName">Property name to be used as primary key</param>
     public void AddPrimaryKey(PrimaryKeyStrategy strategy, string propertyName)
+        => AddPrimaryKey([(propertyName, 1, strategy)]);
+
+    private PropertyMap GetOrCreatePropertyMap(string propertyName)
     {
         // Find the property in the entity's properties
         var property = EntityMap.Entity.Properties.FirstOrDefault(p => p.Name == propertyName);
@@ -109,7 +149,7 @@ public abstract class AbstractEntityBuilder
             property = new Property
             {
                 Name = propertyName,
-                Type = new (){ CLRType = CLRType.None  } // Should be replaced with actual type later
+                Type = new() { CLRType = CLRType.None } // Should be replaced with actual type later
             };
             EntityMap.Entity.Properties.Add(property);
         }
@@ -125,8 +165,7 @@ public abstract class AbstractEntityBuilder
             EntityMap.PropertyMaps.Add(propertyMap);
         }
 
-        propertyMap.OtherDatabaseProperties["IsPrimaryKey"] = "true";
-        propertyMap.OtherDatabaseProperties["PrimaryKeyStrategy"] = ((int)strategy).ToString();
+        return propertyMap;
     }
 
     /// <summary>
