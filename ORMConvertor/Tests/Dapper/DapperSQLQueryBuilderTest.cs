@@ -17,7 +17,9 @@ public class DapperSQLQueryBuilderTest
         builder.Project("ord", "Id", function: "COUNT", alias: "OrderCount");
         builder.Project("ord", "TotalPrice", function: "SUM", alias: "TotalSpent");
         builder.From("Sales.Customer", alias: "c");
-        builder.Join(JoinKind.Inner, "c", "Sales.Orders", "Id", "CustomerId", rightTableAlias: "ord");
+        builder.Join(JoinKind.Inner, "c", "Sales.Orders",
+            new ComparisonCondition("c", "Id", null, null, ComparisonOperator.Equal, "ord", "CustomerId", null, null),
+            rightTableAlias: "ord");
         builder.Where(new ComparisonCondition("c", "Id", null, null, ComparisonOperator.NotEqual, null, null, "25", null));
         builder.Where(new ComparisonCondition("ord", "TotalPrice", null, null, ComparisonOperator.GreaterThanOrEqual, "c", "MaxOrderLimit", null, null));
         builder.OrderBy(null, "Name", asc: false);
@@ -78,6 +80,40 @@ public class DapperSQLQueryBuilderTest
                 SELECT *
                 FROM Sales.Customers AS c
                 WHERE (c.CreditLimit > 2000 OR c.CreditLimit IS NULL) AND c.AccountOpenedDate >= '2025-01-01' AND NOT (c.IsOnCreditHold = 1)
+                """,    
+            ).ToList();
+        }
+        """";
+
+        Assert.Equal(expected, sql, ignoreAllWhiteSpace: true, ignoreLineEndingDifferences: true);
+    }
+
+    [Fact]
+    public void MultiColumnJoin()
+    {
+        AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
+
+        builder.Push();
+        builder.From("Sales.OrderLines", alias: "ol");
+        builder.Join(JoinKind.Left, "ol", "Sales.Orders",
+            new LogicalCondition(LogicalOperator.And,
+            [
+                new ComparisonCondition("ol", "OrderId", null, null, ComparisonOperator.Equal, "o", "OrderId", null, null),
+                new ComparisonCondition("ol", "CompanyId", null, null, ComparisonOperator.Equal, "o", "CompanyId", null, null),
+            ]),
+            rightTableAlias: "o");
+        builder.Pop();
+
+        var sql = builder.Build().First().Content;
+
+        string expected = """"
+        public List<OrderLine> Query() 
+        {
+            return connection.Query<OrderLine>(
+                """
+                SELECT *
+                FROM Sales.OrderLines AS ol
+                LEFT JOIN Sales.Orders o ON ol.OrderId = o.OrderId AND ol.CompanyId = o.CompanyId
                 """,    
             ).ToList();
         }

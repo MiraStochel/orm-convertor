@@ -321,7 +321,53 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
             return;
         }
 
-        queryBuilder.Join(JoinKind.Inner, leftAlias, rightTable, ExtractMemberName(outerBody), ExtractMemberName(innerBody), rightAlias);
+        var onCondition = BuildJoinCondition(outerBody, innerBody, leftAlias, rightAlias);
+        if (onCondition is null)
+        {
+            return;
+        }
+
+        queryBuilder.Join(JoinKind.Inner, leftAlias, rightTable, onCondition, rightAlias);
+    }
+
+    /// <summary>
+    /// Sestaví ON podmínku joinu. Jednoduché klíče (ol => ol.OrderId) dávají jednu rovnost,
+    /// kompozitní klíče přes anonymní typy (ol => new { ol.OrderId, ol.CompanyId })
+    /// se párují po pozicích do AND několika rovností.
+    /// </summary>
+    private static ConditionNode? BuildJoinCondition(
+        ExpressionSyntax outerBody,
+        ExpressionSyntax innerBody,
+        string leftAlias,
+        string rightAlias)
+    {
+        if (outerBody is AnonymousObjectCreationExpressionSyntax outerAnon
+            && innerBody is AnonymousObjectCreationExpressionSyntax innerAnon)
+        {
+            if (outerAnon.Initializers.Count == 0
+                || outerAnon.Initializers.Count != innerAnon.Initializers.Count)
+            {
+                return null;
+            }
+
+            var equalities = new List<ConditionNode>();
+            for (int i = 0; i < outerAnon.Initializers.Count; i++)
+            {
+                equalities.Add(new ComparisonCondition(
+                    leftAlias, ExtractMemberName(outerAnon.Initializers[i].Expression), null, null,
+                    ComparisonOperator.Equal,
+                    rightAlias, ExtractMemberName(innerAnon.Initializers[i].Expression), null, null));
+            }
+
+            return equalities.Count == 1
+                ? equalities[0]
+                : new LogicalCondition(LogicalOperator.And, equalities);
+        }
+
+        return new ComparisonCondition(
+            leftAlias, ExtractMemberName(outerBody), null, null,
+            ComparisonOperator.Equal,
+            rightAlias, ExtractMemberName(innerBody), null, null);
     }
 
     private void HandleSelect(InvocationExpressionSyntax node)
@@ -493,7 +539,18 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
     };
 
     private static string ExtractAliasFromPrev(InvocationExpressionSyntax node)
-        => node.Expression is MemberAccessExpressionSyntax m && m.Expression is IdentifierNameSyntax id ? id.Identifier.Text : "t";
+        => node.Expression is MemberAccessExpressionSyntax m
+            ? m.Expression switch
+            {
+                IdentifierNameSyntax id => id.Identifier.Text,
+                // ctx.OrderLines.Join(...) – alias se odvodí z názvu DbSetu stejně jako ve FROM
+                MemberAccessExpressionSyntax dbSet when dbSet.Expression is IdentifierNameSyntax ctxId
+                    && ctxId.Identifier.Text == "ctx"
+                    && dbSet.Name.Identifier.Text.Length > 0
+                    => dbSet.Name.Identifier.Text[..1].ToLower(),
+                _ => "t"
+            }
+            : "t";
 
     private static string ResolveTableName(ExpressionSyntax src) => src switch
     {

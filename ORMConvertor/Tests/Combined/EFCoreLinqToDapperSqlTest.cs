@@ -83,4 +83,44 @@ public class EFCoreLinqToDapperSqlTest
 
         Assert.Equal(expected, sql, ignoreWhiteSpaceDifferences: true, ignoreLineEndingDifferences: true);
     }
+
+    [Fact]
+    public void MultiKeyJoinLinqToSql()
+    {
+        AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
+
+        var mockEntityMap = new EntityMap() { Entity = new(), Table = "OrderLines", Schema = "Sales" };
+
+        var parser = new EFCoreLinqQueryParser(builder);
+
+        const string linqSource = """
+        public void Query()
+        {
+            var q = ctx.OrderLines
+                .Join(ctx.Orders,
+                    ol => new { ol.OrderId, ol.CompanyId },
+                    o => new { o.OrderId, o.CompanyId },
+                    (ol, o) => new { ol.Description })
+                .ToList();
+        }
+        """;
+
+        parser.Parse(linqSource, new List<EntityMap> { mockEntityMap });
+        string sql = builder.Build().First().Content;
+
+        string expected = """"
+        public List<OrderLine> Query() 
+        {
+            return connection.Query<OrderLine>(
+                """
+                SELECT *
+                FROM Sales.OrderLines AS o
+                INNER JOIN Orders orders ON o.OrderId = orders.OrderId AND o.CompanyId = orders.CompanyId
+                """,    
+            ).ToList();
+        }
+        """";
+
+        Assert.Equal(expected, sql, ignoreWhiteSpaceDifferences: true, ignoreLineEndingDifferences: true);
+    }
 }

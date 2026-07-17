@@ -1,4 +1,5 @@
-﻿using Model.QueryInstructions.Enums;
+﻿using Model.QueryInstructions.Conditions;
+using Model.QueryInstructions.Enums;
 
 namespace Model.QueryInstructions;
 
@@ -7,8 +8,7 @@ public sealed record JoinInstruction(
     string LeftTable,
     string RightTable,
     string? RightTableAlias,
-    string LeftProperty,
-    string RightProperty
+    ConditionNode OnCondition
 ) : QueryInstruction
 {
     public override string Accept(IQueryVisitor visitor) => visitor.Visit(this);

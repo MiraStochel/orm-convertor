@@ -103,7 +103,7 @@ public class DapperSQLQueryVisitor : IQueryVisitor
             ? instr.RightTable
             : $"{instr.RightTable} {instr.RightTableAlias}";
 
-        return $"{joinType} {rightTable} ON {instr.LeftTable}.{instr.LeftProperty} = {(instr.RightTableAlias ?? instr.RightTable)}.{instr.RightProperty}";
+        return $"{joinType} {rightTable} ON {instr.OnCondition.Accept(this)}";
     }
 
     public string Visit(OrderByInstruction instr)

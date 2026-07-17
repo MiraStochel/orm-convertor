@@ -54,9 +54,9 @@ public abstract class AbstractQueryBuilder()
         instructions.Add(new SelectInstruction(condition));
     }
 
-    public void Join(JoinKind kind, string left, string right, string leftProperty, string rightProperty, string? rightTableAlias = null)
+    public void Join(JoinKind kind, string left, string right, ConditionNode onCondition, string? rightTableAlias = null)
     {
-        instructions.Add(new JoinInstruction(kind, left, right, rightTableAlias, leftProperty, rightProperty));
+        instructions.Add(new JoinInstruction(kind, left, right, rightTableAlias, onCondition));
     }
 
     public void GroupBy(string table, string attr)
