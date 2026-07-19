@@ -112,11 +112,6 @@ public abstract class AbstractEntityBuilder
         {
             var propertyMap = GetOrCreatePropertyMap(propertyName);
 
-            // Dočasný duální zápis: string příznaky zatím čtou EFCore/NHibernate buildery.
-            // Odstraní se v navazujícím podkroku (přepis wrapperů na EntityMap.PrimaryKey).
-            propertyMap.OtherDatabaseProperties["IsPrimaryKey"] = "true";
-            propertyMap.OtherDatabaseProperties["PrimaryKeyStrategy"] = ((int)strategy).ToString();
-
             keyParts.Add(new PrimaryKeyPart
             {
                 PropertyMap = propertyMap,
@@ -286,7 +281,8 @@ public abstract class AbstractEntityBuilder
                 property = new Property { Name = propertyName, Type = new() { CLRType = CLRType.None } };
                 EntityMap.Entity.Properties.Add(property);
             }
-            propertyMap = new PropertyMap { Property = property }; 
+            propertyMap = new PropertyMap { Property = property };
+            EntityMap.PropertyMaps.Add(propertyMap);
         }
         else
         {

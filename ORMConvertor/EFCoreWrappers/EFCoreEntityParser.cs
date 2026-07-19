@@ -116,10 +116,53 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
     }
 
     /// <summary>
+    /// Reads the EF Core 7+ class-level [PrimaryKey(nameof(A), nameof(B))] attribute.
+    /// Argument order defines the key part order.
+    /// </summary>
+    private static List<string> GetClassPrimaryKeyNames(ClassDeclarationSyntax classDeclaration)
+    {
+        var names = new List<string>();
+
+        foreach (var attr in classDeclaration.AttributeLists.SelectMany(l => l.Attributes))
+        {
+            if (!TrimAttribute(attr.Name.ToString()).Equals("PrimaryKey", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            foreach (var arg in attr.ArgumentList?.Arguments ?? Enumerable.Empty<AttributeArgumentSyntax>())
+            {
+                string? name = arg.Expression switch
+                {
+                    // nameof(CustomerID)
+                    InvocationExpressionSyntax inv
+                        when inv.Expression is IdentifierNameSyntax id
+                          && id.Identifier.Text == "nameof"
+                          && inv.ArgumentList.Arguments.Count == 1
+                          && inv.ArgumentList.Arguments[0].Expression is IdentifierNameSyntax propName
+                        => propName.Identifier.Text,
+                    // "CustomerID"
+                    _ => GetString(arg.Expression),
+                };
+
+                if (!string.IsNullOrEmpty(name))
+                {
+                    names.Add(name);
+                }
+            }
+        }
+
+        return names;
+    }
+
+    /// <summary>
     /// Parses properties from the class declaration.
     /// </summary>
     private void ParseProperties(ClassDeclarationSyntax classDeclaration)
     {
+        var classKeyNames = GetClassPrimaryKeyNames(classDeclaration);
+        var keyPropertyNames = new List<string>();
+
         foreach (var prop in classDeclaration.Members.OfType<PropertyDeclarationSyntax>())
         {
             var name = prop.Identifier.Text;
@@ -199,13 +242,26 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
 
             if (isPrimaryKey)
             {
-                entityBuilder.AddPrimaryKey(PrimaryKeyStrategy.Identity, name);
+                keyPropertyNames.Add(name);
             }
 
             if (IsCollection(prop.Type, out var target))
             {
                 entityBuilder.AddForeignKey(Cardinality.OneToMany, name, target);
             }
+        }
+
+        // Klíč se definuje jedním voláním pro celou entitu (design doc 001, §3.3).
+        // Třídní [PrimaryKey(...)] má přednost – určuje explicitní pořadí částí.
+        if (classKeyNames.Count > 0)
+        {
+            entityBuilder.AddPrimaryKey(
+                classKeyNames.Select((n, i) => (n, i + 1, PrimaryKeyStrategy.None)).ToList());
+        }
+        else if (keyPropertyNames.Count > 0)
+        {
+            entityBuilder.AddPrimaryKey(
+                keyPropertyNames.Select((n, i) => (n, i + 1, PrimaryKeyStrategy.Identity)).ToList());
         }
     }
 

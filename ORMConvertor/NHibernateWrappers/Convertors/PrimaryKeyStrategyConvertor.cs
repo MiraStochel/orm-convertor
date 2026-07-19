@@ -13,6 +13,7 @@ public class PrimaryKeyStrategyConvertor
             "hilo" => PrimaryKeyStrategy.HiLo,
             "uuid" => PrimaryKeyStrategy.Uuid,
             "guid" => PrimaryKeyStrategy.Guid,
+            "assigned" => PrimaryKeyStrategy.None,
             _ => PrimaryKeyStrategy.None
         };
     }
@@ -21,7 +22,7 @@ public class PrimaryKeyStrategyConvertor
     {
         return strategy switch
         {
-            PrimaryKeyStrategy.None => throw new NotImplementedException(),
+            PrimaryKeyStrategy.None => "assigned",
             PrimaryKeyStrategy.Increment => "increment",
             PrimaryKeyStrategy.Identity => "identity",
             PrimaryKeyStrategy.Sequence => "sequence",

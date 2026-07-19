@@ -103,38 +103,53 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
     private static void BuildPrimaryKey(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
     {
-        var primaryKeyPropertyMap = em.PropertyMaps.FirstOrDefault(pm =>
-            pm.OtherDatabaseProperties.TryGetValue("IsPrimaryKey", out var v) &&
-            string.Equals(v, "true", StringComparison.OrdinalIgnoreCase));
-
-        if (primaryKeyPropertyMap is null)
+        if (em.PrimaryKey is null)
         {
             return; // no PK
         }
 
-        var prop = primaryKeyPropertyMap.Property;
-        var columnName = primaryKeyPropertyMap.ColumnName ?? prop.Name;
-        string nhType;
-        if (primaryKeyPropertyMap.Type != null)
+        if (em.PrimaryKey.Parts.Count == 1)
         {
-            nhType = DatabaseTypeConvertor.ToNHibernate(primaryKeyPropertyMap.Type.Value);
+            var part = em.PrimaryKey.Parts[0];
+            var propertyMap = part.PropertyMap;
+            var prop = propertyMap.Property;
+            var columnName = propertyMap.ColumnName ?? prop.Name;
+
+            var generatorClass = PrimaryKeyStrategyConvertor.ToNHibernate(part.Strategy);
+
+            AppendPropertyToCode(codeResult, prop, isPrimaryKey: true);
+
+            AppendXml(mappingResult, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\">");
+            AppendXml(mappingResult, 3, $"<generator class=\"{generatorClass}\" />");
+            AppendXml(mappingResult, 2, "</id>");
+            return;
         }
-        else
+
+        // Kompozitní klíč: <composite-id> bez generátoru (assigned sémantika),
+        // pořadí <key-property> elementů odpovídá PrimaryKeyPart.Order.
+        AppendXml(mappingResult, 2, "<composite-id>");
+        foreach (var part in em.PrimaryKey.Parts)
         {
-            // TODO this would be a place to query database for the missing type
-            // for now we guess it from CLR type
-            nhType = DatabaseTypeConvertor.GuessFromPropertyType(prop.Type.CLRType);
+            var propertyMap = part.PropertyMap;
+            var prop = propertyMap.Property;
+            var columnName = propertyMap.ColumnName ?? prop.Name;
+
+            AppendPropertyToCode(codeResult, prop, isPrimaryKey: true);
+            AppendXml(mappingResult, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\" />");
+        }
+        AppendXml(mappingResult, 2, "</composite-id>");
+    }
+
+    private static string ResolveNhType(PropertyMap propertyMap)
+    {
+        if (propertyMap.Type != null)
+        {
+            return DatabaseTypeConvertor.ToNHibernate(propertyMap.Type.Value);
         }
 
-        var generatorClass = primaryKeyPropertyMap.OtherDatabaseProperties.TryGetValue("PrimaryKeyStrategy", out var s) && int.TryParse(s, out var intVal)
-            ? PrimaryKeyStrategyConvertor.ToNHibernate((PrimaryKeyStrategy)intVal)
-            : "identity"; // default generator (TODO)
-
-        AppendPropertyToCode(codeResult, prop, isPrimaryKey: true);
-
-        AppendXml(mappingResult, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\" type=\"{nhType}\">");
-        AppendXml(mappingResult, 3, $"<generator class=\"{generatorClass}\" />");
-        AppendXml(mappingResult, 2, "</id>");
+        // TODO this would be a place to query database for the missing type
+        // for now we guess it from CLR type
+        return DatabaseTypeConvertor.GuessFromPropertyType(propertyMap.Property.Type.CLRType);
     }
 
     /// <summary>
@@ -150,7 +165,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     {
         foreach (var pm in em.PropertyMaps)
         {
-            if (pm.OtherDatabaseProperties.TryGetValue("IsPrimaryKey", out var v) && v.Equals("true", StringComparison.OrdinalIgnoreCase))
+            if (em.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == pm.Property.Name) == true)
             {
                 continue; // handled in BuildPrimaryKey
             }
@@ -314,8 +329,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// </summary>
     private static string GetPrimaryKeyColumn(EntityMap em)
     {
-        var pkMap = em.PropertyMaps.FirstOrDefault(pm =>
-            pm.OtherDatabaseProperties.TryGetValue("IsPrimaryKey", out var v) && v.Equals("true", StringComparison.OrdinalIgnoreCase));
+        var pkMap = em.PrimaryKey?.Parts.FirstOrDefault()?.PropertyMap;
         return pkMap?.ColumnName ?? pkMap?.Property.Name ?? "Id";
     }
 

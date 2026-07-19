@@ -66,11 +66,6 @@ public class CustomerSampleNHibernate
                            HasGetter = true,
                            HasSetter = true,
                        },
-                       OtherDatabaseProperties = new Dictionary<string, string>
-                       {
-                           { "IsPrimaryKey", "true" },
-                           { "PrimaryKeyStrategy", ((int)PrimaryKeyStrategy.Identity).ToString() }
-                       }
                    },
                    new() {
                        Property = new Property

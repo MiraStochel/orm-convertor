@@ -73,6 +73,11 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             codeResult.AppendLine();
         }
 
+        if (em.PrimaryKey?.Parts.Count > 1)
+        {
+            codeResult.AppendLine("using Microsoft.EntityFrameworkCore;"); // [PrimaryKey] attribute
+        }
+
         codeResult.AppendLine("using System.ComponentModel.DataAnnotations;");
         codeResult.AppendLine("using System.ComponentModel.DataAnnotations.Schema;");
 
@@ -86,25 +91,26 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
     private static void BuildPrimaryKey(EntityMap em, StringBuilder codeResult)
     {
-        var primaryKeyPropertyMap = em.PropertyMaps.FirstOrDefault(pm =>
-            pm.OtherDatabaseProperties.TryGetValue("IsPrimaryKey", out var v) &&
-            string.Equals(v, "true", StringComparison.OrdinalIgnoreCase));
-
-        if (primaryKeyPropertyMap is null)
+        if (em.PrimaryKey is null)
         {
             return; // no PK
         }
 
-        var prop = primaryKeyPropertyMap.Property;
-        var columnName = primaryKeyPropertyMap.ColumnName ?? prop.Name;
+        bool composite = em.PrimaryKey.Parts.Count > 1;
 
         // TODO primary key strategy
 
-        bool nullable = primaryKeyPropertyMap.IsNullable ?? false;
+        foreach (var part in em.PrimaryKey.Parts)
+        {
+            var propertyMap = part.PropertyMap;
+            bool nullable = propertyMap.IsNullable ?? false;
 
-        codeResult.Append(BuildPropertyAttributes(primaryKeyPropertyMap, isPrimaryKey: true));
-        codeResult.AppendLine($"    {BuildPropertySignature(prop, isPrimaryKey: true, nullable: nullable)}");
-        codeResult.AppendLine();
+            // U jednoduchého klíče [Key] na vlastnosti; u kompozitního definuje klíč
+            // třídní [PrimaryKey(...)] atribut (viz BuildTableSchema), [Key] se negeneruje.
+            codeResult.Append(BuildPropertyAttributes(propertyMap, isPrimaryKey: !composite));
+            codeResult.AppendLine($"    {BuildPropertySignature(propertyMap.Property, isPrimaryKey: true, nullable: nullable)}");
+            codeResult.AppendLine();
+        }
     }
 
     /// <summary>
@@ -119,7 +125,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     {
         foreach (var propertyMap in em.PropertyMaps)
         {
-            if (propertyMap.OtherDatabaseProperties.TryGetValue("IsPrimaryKey", out var v) && v.Equals("true", StringComparison.OrdinalIgnoreCase))
+            if (em.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == propertyMap.Property.Name) == true)
             {
                 continue; // handled in BuildPrimaryKey
             }
@@ -156,6 +162,12 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             }
 
             codeResult.AppendLine($"[Table(\"{em.Table}\"{schemaIfPresent})]");
+        }
+
+        if (em.PrimaryKey?.Parts.Count > 1)
+        {
+            var keyNames = string.Join(", ", em.PrimaryKey.Parts.Select(p => $"nameof({p.PropertyMap.Property.Name})"));
+            codeResult.AppendLine($"[PrimaryKey({keyNames})]");
         }
 
         var modifier = AccessModifierConvertor.ToModifierString(em.Entity.AccessModifier);

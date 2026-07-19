@@ -72,11 +72,6 @@ public static class CustomerSampleEFCore
                            HasSetter = true,
                        },
                        IsNullable = false,
-                       OtherDatabaseProperties = new Dictionary<string, string>
-                       {
-                           { "IsPrimaryKey", "true" },
-                           { "PrimaryKeyStrategy", ((int)PrimaryKeyStrategy.Identity).ToString() },
-                       }
                    },
                    new() {
                        Property = new Property

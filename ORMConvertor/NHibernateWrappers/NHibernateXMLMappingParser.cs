@@ -158,6 +158,47 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     /// </summary>
     private void ParsePrimaryKey(XElement classElement)
     {
+        var compositeElem = classElement.Elements().FirstOrDefault(e => e.Name.LocalName == "composite-id");
+        if (compositeElem != null)
+        {
+            var parts = new List<(string PropertyName, int Order, PrimaryKeyStrategy Strategy)>();
+            int order = 1;
+
+            foreach (var keyProp in compositeElem.Elements().Where(e => e.Name.LocalName == "key-property"))
+            {
+                var name = keyProp.Attribute("name")?.Value;
+                if (string.IsNullOrEmpty(name))
+                {
+                    continue;
+                }
+
+                var dbProps = new Dictionary<string, string>();
+                if (keyProp.Attribute("column")?.Value is string col && !string.IsNullOrEmpty(col))
+                {
+                    dbProps["column"] = col;
+                }
+
+                if (keyProp.Attribute("type")?.Value is string t && !string.IsNullOrEmpty(t))
+                {
+                    dbProps["type"] = ((int)DatabaseTypeConvertor.FromNHibernate(t)).ToString();
+                }
+
+                if (dbProps.Count > 0)
+                {
+                    entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
+                }
+
+                parts.Add((name, order++, PrimaryKeyStrategy.None)); // composite-id nemá generátor
+            }
+
+            if (parts.Count > 0)
+            {
+                entityBuilder.AddPrimaryKey(parts);
+            }
+
+            return;
+        }
+
         var idElem = classElement.Elements().FirstOrDefault(e => e.Name.LocalName == "id");
         if (idElem == null)
         {
