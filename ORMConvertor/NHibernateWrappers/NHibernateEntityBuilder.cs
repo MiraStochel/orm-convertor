@@ -170,7 +170,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 continue; // handled in BuildPrimaryKey
             }
 
-            if (pm.OtherDatabaseProperties.TryGetValue("IsForeignKey", out var fk) && fk.Equals("true", StringComparison.OrdinalIgnoreCase))
+            if (em.Relations.Any(r => r.SourceNavigationProperty == pm.Property.Name))
             {
                 continue; // navigation property – handled in BuildForeignKey
             }
@@ -191,39 +191,30 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     private static void BuildForeignKey(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
     {
         // 1:1 and N:1 foreign keys
-        foreach (var foreignKeyPropertyMap in em.PropertyMaps.Where(p => p.OtherDatabaseProperties.TryGetValue("IsForeignKey", out var v) && v.Equals("true", StringComparison.OrdinalIgnoreCase)))
+        foreach (var relation in em.Relations.Where(r => r.Cardinality is Cardinality.OneToOne or Cardinality.ManyToOne))
         {
-            var rel = foreignKeyPropertyMap.Relation; // single relation per FK property
-
-            var xmlTag = rel?.Cardinality switch
+            var propertyMap = FindNavigationPropertyMap(em, relation);
+            if (propertyMap is null)
             {
-                Cardinality.OneToOne => "one-to-one",
-                Cardinality.ManyToOne => "many-to-one",
-                _ => null
-            };
-
-            if (xmlTag is null)
-            {
-                continue; // collection handled below
+                continue;
             }
 
-            AppendPropertyToCode(codeResult, foreignKeyPropertyMap.Property); // navigation property in C#
+            var xmlTag = relation.Cardinality == Cardinality.OneToOne ? "one-to-one" : "many-to-one";
 
-            var columnName = foreignKeyPropertyMap.ColumnName ?? foreignKeyPropertyMap.Property.Name;
-            AppendXml(mappingResult, 2, $"<{xmlTag} name=\"{foreignKeyPropertyMap.Property.Name}\" class=\"{rel!.Target}\" column=\"{columnName}\" />");
+            AppendPropertyToCode(codeResult, propertyMap.Property); // navigation property in C#
+
+            var columnName = propertyMap.ColumnName ?? propertyMap.Property.Name;
+            AppendXml(mappingResult, 2, $"<{xmlTag} name=\"{propertyMap.Property.Name}\" class=\"{relation.TargetEntity}\" column=\"{columnName}\" />");
         }
 
         // 1:N and N:N collections
-        foreach (var propertyMap in em.PropertyMaps.Where(p => p.Relation?.Cardinality is Cardinality.OneToMany or Cardinality.ManyToMany))
+        foreach (var relation in em.Relations.Where(r => r.Cardinality is Cardinality.OneToMany or Cardinality.ManyToMany))
         {
-            var relation = propertyMap.Relation!;
-
-            // C# collection type - List<target>
-            var targetShortName = relation.Target.Contains('.')
-                ? relation.Target[(relation.Target.LastIndexOf('.') + 1)..]
-                : relation.Target;
-
-            var collectionType = $"List<{targetShortName}>";
+            var propertyMap = FindNavigationPropertyMap(em, relation);
+            if (propertyMap is null)
+            {
+                continue;
+            }
 
             codeResult.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
             codeResult.AppendLine();
@@ -236,16 +227,21 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             if (relation.Cardinality == Cardinality.OneToMany)
             {
-                AppendXml(mappingResult, 3, $"<one-to-many class=\"{relation.Target}\" />");
+                AppendXml(mappingResult, 3, $"<one-to-many class=\"{relation.TargetEntity}\" />");
             }
             else // ManyToMany
             {
-                AppendXml(mappingResult, 3, $"<many-to-many class=\"{relation.Target}\" />");
+                AppendXml(mappingResult, 3, $"<many-to-many class=\"{relation.TargetEntity}\" />");
             }
 
             AppendXml(mappingResult, 2, "</bag>");
         }
     }
+
+    private static PropertyMap? FindNavigationPropertyMap(EntityMap em, Relation relation)
+        => relation.SourceNavigationProperty is null
+            ? null
+            : em.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == relation.SourceNavigationProperty);
 
     /// <summary>
     /// Finalizes the build process by closing the class and XML tags.

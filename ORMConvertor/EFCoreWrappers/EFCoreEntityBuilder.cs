@@ -42,13 +42,17 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
     private static void BuildForeignKey(EntityMap em, StringBuilder codeResult)
     {
-        var foreignKeyPropertyMaps = em.PropertyMaps
-            .Where(pm => pm.OtherDatabaseProperties.TryGetValue("IsForeignKey", out var v) &&
-                     string.Equals(v, "true", StringComparison.OrdinalIgnoreCase));
-
-        foreach (var propertyMap in foreignKeyPropertyMaps)
+        foreach (var relation in em.Relations)
         {
-            var rel = propertyMap.Relation;
+            var propertyMap = relation.SourceNavigationProperty is null
+                ? null
+                : em.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == relation.SourceNavigationProperty);
+
+            if (propertyMap is null)
+            {
+                continue; // vztah bez navigační vlastnosti se do C# kódu nepromítá
+            }
+
             bool nullable = propertyMap.IsNullable ?? true;
 
             codeResult.Append(BuildPropertyAttributes(propertyMap));
@@ -130,7 +134,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 continue; // handled in BuildPrimaryKey
             }
 
-            if (propertyMap.OtherDatabaseProperties.TryGetValue("IsForeignKey", out var fk) && fk.Equals("true", StringComparison.OrdinalIgnoreCase))
+            if (em.Relations.Any(r => r.SourceNavigationProperty == propertyMap.Property.Name))
             {
                 continue; // navigation property – handled in BuildForeignKey
             }

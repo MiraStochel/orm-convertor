@@ -164,45 +164,36 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Add a foreign key to the entity.
+    /// Convenience method: registers a relation known from a navigation property.
+    /// Typický případ parserů – cílové sloupce nejdou z jedné translation unit rozresolvovat,
+    /// ColumnPairs proto zůstávají prázdné (doplní je metadata z DB / multi-entity kontext).
     /// </summary>
     /// <param name="cardinality">Relationship cardinality</param>
-    /// <param name="propertyName">Property name to be used as foreign key</param>
+    /// <param name="propertyName">Navigation property name on the source entity</param>
+    /// <param name="target">Target entity name</param>
     public void AddForeignKey(Cardinality cardinality, string propertyName, string target)
     {
-        // Find the property in the entity's properties
-        var property = EntityMap.Entity.Properties.FirstOrDefault(p => p.Name == propertyName);
-        if (property == null)
-        {
-            // If not found, create and add it
-            property = new Property
-            {
-                Name = propertyName,
-                Type = new() { CLRType = CLRType.None } // Should be replaced with actual type later
-            };
-            EntityMap.Entity.Properties.Add(property);
-        }
+        GetOrCreatePropertyMap(propertyName); // navigační vlastnost musí v modelu existovat
 
-        // Find or create the property map
-        var propertyMap = EntityMap.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == propertyName);
-        if (propertyMap == null)
+        AddRelation(new Relation
         {
-            propertyMap = new PropertyMap
-            {
-                Property = property
-            };
-            EntityMap.PropertyMaps.Add(propertyMap);
-        }
+            Cardinality = cardinality,
+            Role = cardinality is Cardinality.OneToOne or Cardinality.ManyToOne
+                ? RelationRole.Owning
+                : RelationRole.Inverse,
+            SourceEntity = EntityMap.Entity.Name,
+            TargetEntity = target,
+            SourceNavigationProperty = propertyName,
+            IsUnique = cardinality == Cardinality.OneToOne,
+        });
+    }
 
-        propertyMap.OtherDatabaseProperties["IsForeignKey"] = "true";
-        propertyMap.OtherDatabaseProperties["ForeignKeyCardinality"] = ((int)cardinality).ToString();
-
-        propertyMap.Relation = new Relation
-        {
-            Source = EntityMap?.Entity?.Name,
-            Target = target,
-            Cardinality = cardinality
-        };
+    /// <summary>
+    /// Registers a fully specified relation (including ColumnPairs, junction scenarios, …).
+    /// </summary>
+    public void AddRelation(Relation relation)
+    {
+        EntityMap.Relations.Add(relation);
     }
 
     /// <summary>

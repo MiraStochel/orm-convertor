@@ -122,16 +122,6 @@ public class CustomerSampleNHibernate
                            HasSetter = true,
                            DefaultValue = "[]",
                        },
-                       Relation = new() {
-                           Cardinality = Cardinality.OneToMany,
-                           Source = "Customer",
-                           Target = "CustomerTransaction",
-                       },
-                       OtherDatabaseProperties = new Dictionary<string, string>
-                       {
-                           { "IsForeignKey", "true" },
-                           { "ForeignKeyCardinality", ((int)Cardinality.OneToMany).ToString() }
-                       }
                    },
                ],
             };
@@ -153,6 +143,15 @@ public class CustomerSampleNHibernate
                     },
                 ],
             };
+
+            map.Relations.Add(new Relation
+            {
+                Cardinality = Cardinality.OneToMany,
+                Role = RelationRole.Inverse,
+                SourceEntity = "Customer",
+                TargetEntity = "CustomerTransaction",
+                SourceNavigationProperty = "Transactions",
+            });
 
             return map;
         }

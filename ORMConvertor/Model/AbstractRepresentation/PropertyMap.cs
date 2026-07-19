@@ -19,6 +19,4 @@ public class PropertyMap
     public bool? IsNullable { get; set; }
 
     public Dictionary<string, string> OtherDatabaseProperties { get; set; } = [];
-
-    public Relation? Relation { get; set; } = null;
 }
