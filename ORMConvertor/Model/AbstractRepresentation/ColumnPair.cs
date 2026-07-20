@@ -1,8 +1,8 @@
 ﻿namespace Model.AbstractRepresentation;
 
 /// <summary>
-/// Uspořádaná dvojice sloupců kompozitního FK (source.Col1 ↔ target.Col1).
-/// Třída místo tuple záměrně – System.Text.Json tuple položky neserializuje.
+/// Ordered pair of columns of a composite FK (source.Col1 <-> target.Col1).
+/// A class rather than a tuple on purpose - System.Text.Json does not serialize tuple items.
 /// </summary>
 public sealed class ColumnPair
 {

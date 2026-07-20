@@ -188,7 +188,7 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                     entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
                 }
 
-                parts.Add((name, order++, PrimaryKeyStrategy.None)); // composite-id nemá generátor
+                parts.Add((name, order++, PrimaryKeyStrategy.None)); // composite-id has no generator
             }
 
             if (parts.Count > 0)

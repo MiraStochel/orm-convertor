@@ -60,8 +60,8 @@ public class DapperSQLQueryVisitor : IQueryVisitor
 
         string keyword = cond.Operator == LogicalOperator.And ? "AND" : "OR";
 
-        // Vnořený logický uzel se vždy obaluje závorkami, aby AND obsahující OR
-        // (a naopak) nezměnil význam dotazu.
+        // A nested logical node is always wrapped in parentheses so that an AND containing an OR
+        // (and vice versa) does not change the meaning of the query.
         var parts = cond.Operands.Select(operand =>
             operand is LogicalCondition
                 ? $"({operand.Accept(this)})"

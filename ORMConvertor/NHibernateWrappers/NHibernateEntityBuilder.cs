@@ -125,8 +125,8 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             return;
         }
 
-        // Kompozitní klíč: <composite-id> bez generátoru (assigned sémantika),
-        // pořadí <key-property> elementů odpovídá PrimaryKeyPart.Order.
+        // Composite key: <composite-id> without a generator (assigned semantics),
+        // the order of <key-property> elements matches PrimaryKeyPart.Order.
         AppendXml(mappingResult, 2, "<composite-id>");
         foreach (var part in em.PrimaryKey.Parts)
         {

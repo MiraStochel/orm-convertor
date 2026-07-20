@@ -165,15 +165,15 @@ public abstract class AbstractEntityBuilder
 
     /// <summary>
     /// Convenience method: registers a relation known from a navigation property.
-    /// Typický případ parserů – cílové sloupce nejdou z jedné translation unit rozresolvovat,
-    /// ColumnPairs proto zůstávají prázdné (doplní je metadata z DB / multi-entity kontext).
+    /// A typical parser case - target columns cannot be resolved from a single translation unit,
+    /// so ColumnPairs stay empty (to be filled from DB metadata / multi-entity context).
     /// </summary>
     /// <param name="cardinality">Relationship cardinality</param>
     /// <param name="propertyName">Navigation property name on the source entity</param>
     /// <param name="target">Target entity name</param>
     public void AddForeignKey(Cardinality cardinality, string propertyName, string target)
     {
-        GetOrCreatePropertyMap(propertyName); // navigační vlastnost musí v modelu existovat
+        GetOrCreatePropertyMap(propertyName); // the navigation property must exist in the model
 
         AddRelation(new Relation
         {

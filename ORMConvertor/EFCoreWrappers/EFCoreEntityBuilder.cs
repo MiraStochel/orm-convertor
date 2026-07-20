@@ -50,7 +50,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
             if (propertyMap is null)
             {
-                continue; // vztah bez navigační vlastnosti se do C# kódu nepromítá
+                continue; // a relation without a navigation property is not emitted into C# code
             }
 
             bool nullable = propertyMap.IsNullable ?? true;
@@ -109,8 +109,8 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             var propertyMap = part.PropertyMap;
             bool nullable = propertyMap.IsNullable ?? false;
 
-            // U jednoduchého klíče [Key] na vlastnosti; u kompozitního definuje klíč
-            // třídní [PrimaryKey(...)] atribut (viz BuildTableSchema), [Key] se negeneruje.
+            // For a simple key [Key] goes on the property; for a composite key the class-level
+            // [PrimaryKey(...)] attribute (see BuildTableSchema) defines it and [Key] is not emitted.
             codeResult.Append(BuildPropertyAttributes(propertyMap, isPrimaryKey: !composite));
             codeResult.AppendLine($"    {BuildPropertySignature(propertyMap.Property, isPrimaryKey: true, nullable: nullable)}");
             codeResult.AppendLine();

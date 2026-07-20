@@ -148,8 +148,8 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
 
     private void HandleWhere(InvocationExpressionSyntax node)
     {
-        // Where navazující přímo na GroupBy je post-agregační filtr –
-        // zpracovává ho HandleGroupBy jako HAVING, tady ho přeskočíme.
+        // A Where directly following GroupBy is a post-aggregation filter -
+        // HandleGroupBy processes it as HAVING, so skip it here.
         if (node.Expression is MemberAccessExpressionSyntax whereMember
             && whereMember.Expression is InvocationExpressionSyntax previousInvocation
             && previousInvocation.Expression is MemberAccessExpressionSyntax previousMember
@@ -179,9 +179,9 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
     }
 
     /// <summary>
-    /// Rekurzivně převede C# výraz predikátu na podmínkový strom.
-    /// Vrací null, pokud výraz (nebo kterákoli jeho část) není podporovaný –
-    /// v tom případě se celý predikát přeskočí, stejně jako dřív.
+    /// Recursively converts a C# predicate expression into a condition tree.
+    /// Returns null if the expression (or any of its parts) is unsupported -
+    /// in that case the whole predicate is skipped, as before.
     /// </summary>
     private ConditionNode? ParseCondition(ExpressionSyntax expr)
     {
@@ -210,7 +210,7 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
                         return null;
                     }
 
-                    // Řetězce stejného operátoru (a && b && c) se zplošťují do jednoho uzlu.
+                    // Chains of the same operator (a && b && c) are flattened into a single node.
                     var operands = new List<ConditionNode>();
                     if (left is LogicalCondition leftLogical && leftLogical.Operator == op)
                     {
@@ -257,8 +257,8 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
             return null;
         }
 
-        // Porovnání s null literálem se normalizuje na IS NULL / IS NOT NULL
-        // (rozhodnutí 7.2 v design docu 001).
+        // A comparison with a null literal is normalized to IS NULL / IS NOT NULL
+        // (decision 7.2 in design doc 001).
         if (leftIsNull || rightIsNull)
         {
             if (op is not (ComparisonOperator.Equal or ComparisonOperator.NotEqual))
@@ -331,9 +331,9 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
     }
 
     /// <summary>
-    /// Sestaví ON podmínku joinu. Jednoduché klíče (ol => ol.OrderId) dávají jednu rovnost,
-    /// kompozitní klíče přes anonymní typy (ol => new { ol.OrderId, ol.CompanyId })
-    /// se párují po pozicích do AND několika rovností.
+    /// Builds the join ON condition. Simple keys (ol => ol.OrderId) yield one equality,
+    /// composite keys via anonymous types (ol => new { ol.OrderId, ol.CompanyId })
+    /// are paired positionally into an AND of several equalities.
     /// </summary>
     private static ConditionNode? BuildJoinCondition(
         ExpressionSyntax outerBody,
@@ -543,7 +543,7 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
             ? m.Expression switch
             {
                 IdentifierNameSyntax id => id.Identifier.Text,
-                // ctx.OrderLines.Join(...) – alias se odvodí z názvu DbSetu stejně jako ve FROM
+                // ctx.OrderLines.Join(...) - the alias is derived from the DbSet name, same as in FROM
                 MemberAccessExpressionSyntax dbSet when dbSet.Expression is IdentifierNameSyntax ctxId
                     && ctxId.Identifier.Text == "ctx"
                     && dbSet.Name.Identifier.Text.Length > 0

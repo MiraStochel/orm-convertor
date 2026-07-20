@@ -145,7 +145,7 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
             return;
         }
 
-        // Více Where() volání se spojuje konjunkcí (pravidlo Q4 z článku).
+        // Multiple Where() calls are combined by conjunction (rule Q4 from the paper).
         var condition = selectInstructions.Count == 1
             ? selectInstructions[0].Condition
             : new LogicalCondition(LogicalOperator.And, selectInstructions.Select(s => s.Condition).ToList());

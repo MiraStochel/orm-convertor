@@ -251,8 +251,8 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             }
         }
 
-        // Klíč se definuje jedním voláním pro celou entitu (design doc 001, §3.3).
-        // Třídní [PrimaryKey(...)] má přednost – určuje explicitní pořadí částí.
+        // The key is defined by a single call for the whole entity (design doc 001, §3.3).
+        // The class-level [PrimaryKey(...)] takes precedence - it defines the explicit part order.
         if (classKeyNames.Count > 0)
         {
             entityBuilder.AddPrimaryKey(
