@@ -1,5 +1,6 @@
 ﻿using AbstractWrappers;
 using EFCoreWrappers;
+using Model;
 using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers;
 
@@ -22,6 +23,21 @@ public class CompositeKeyTest
             public required int CompanyID { get; set; }
 
             public required string Description { get; set; }
+        }
+        """;
+    private const string SingleKeyEntitySource = """
+        namespace EFCoreEntities;
+
+        using System.ComponentModel.DataAnnotations;
+        using System.ComponentModel.DataAnnotations.Schema;
+
+        [Table("Customers", Schema = "Sales")]
+        public class Customer
+        {
+            [Key]
+            public required int CustomerID { get; set; }
+
+            public required string Name { get; set; }
         }
         """;
 
@@ -105,5 +121,49 @@ public class CompositeKeyTest
         Assert.Equal("OrderID", pk.Parts[0].PropertyMap.ColumnName);
         Assert.Equal("CompanyID", pk.Parts[1].PropertyMap.Property.Name);
         Assert.Equal(2, pk.Parts[1].Order);
+    }
+
+    [Fact]
+    public void EFCoreCompositeKeyToNHibernateEntityHasIdentityMembers()
+    {
+        var builder = new NHibernateEntityBuilder();
+        var parser = new EFCoreEntityParser(builder);
+
+        parser.Parse(CompositeEntitySource);
+        var code = builder.Build().Single(o => o.ContentType == ConversionContentType.CSharpEntity).Content;
+
+        // NHibernate refuses to compile a <composite-id> mapping unless the persistent
+        // class overrides Equals and GetHashCode and is marked [Serializable].
+        Assert.Contains("using System;", code);
+        Assert.Contains("[Serializable]", code);
+        Assert.Contains("public override bool Equals(object? obj)", code);
+        Assert.Contains("public override int GetHashCode()", code);
+
+        // Every key part has to take part in both members.
+        Assert.Contains("Equals(OrderID, other.OrderID)", code);
+        Assert.Contains("Equals(CompanyID, other.CompanyID)", code);
+        Assert.Contains("HashCode.Combine(OrderID, CompanyID)", code);
+
+        // A proxy is a subclass of the entity, so the type check must not compare
+        // runtime types - otherwise a proxy would never equal its own entity.
+        Assert.Contains("obj is not OrderLine other", code);
+        Assert.DoesNotContain("GetType()", code);
+    }
+
+    [Fact]
+    public void NHibernateSingleKeyEntityHasNoIdentityMembers()
+    {
+        var builder = new NHibernateEntityBuilder();
+        var parser = new EFCoreEntityParser(builder);
+
+        parser.Parse(SingleKeyEntitySource);
+        var code = builder.Build().Single(o => o.ContentType == ConversionContentType.CSharpEntity).Content;
+
+        // Identity members are only required for composite identifiers. A single
+        // <id> mapping must stay a plain POCO.
+        Assert.DoesNotContain("[Serializable]", code);
+        Assert.DoesNotContain("public override bool Equals", code);
+        Assert.DoesNotContain("public override int GetHashCode", code);
+        Assert.DoesNotContain("using System;", code);
     }
 }
