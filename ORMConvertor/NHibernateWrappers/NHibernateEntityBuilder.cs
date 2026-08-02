@@ -27,6 +27,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             BuildPrimaryKey(em, codeResult, mappingResult);
             BuildProperties(em, codeResult, mappingResult);
             BuildForeignKey(em, codeResult, mappingResult);
+            BuildIdentityMembers(em, codeResult);
             FinalizeBuild(codeResult, mappingResult, classOpened);
 
             outputs.Add(new() { ContentType = ConversionContentType.CSharpEntity, Content = codeResult.ToString() });
@@ -35,6 +36,14 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         return outputs;
     }
+
+    /// <summary>
+    /// True when the entity is mapped with a composite identifier.
+    /// NHibernate then imposes extra requirements on the persistent class,
+    /// see design doc 001 section 3.5.
+    /// </summary>
+    private static bool HasCompositeKey(EntityMap em)
+        => em.PrimaryKey is not null && em.PrimaryKey.Parts.Count > 1;
 
     /// <summary>
     /// Adds C# namespace.
@@ -47,7 +56,14 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
     private static void BuildImports(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
     {
-        // No imports needed for NHibernate entity
+        // System is required for [Serializable] and HashCode in the identity
+        // members emitted for composite keys. A plain entity needs no imports.
+        if (HasCompositeKey(em))
+        {
+            codeResult.AppendLine("using System;");
+            codeResult.AppendLine();
+        }
+
         if (!string.IsNullOrWhiteSpace(em.Entity.Namespace))
         {
             codeResult.AppendLine($"namespace {em.Entity.Namespace};");
@@ -77,6 +93,12 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         var name = em.Entity.Name;
 
         // C#
+        if (HasCompositeKey(em))
+        {
+            // Required by NHibernate for classes mapped with <composite-id>.
+            codeResult.AppendLine("[Serializable]");
+        }
+
         codeResult.AppendLine($"{modifier} class {name}");
         codeResult.AppendLine("{");
 
@@ -138,6 +160,72 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             AppendXml(mappingResult, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\" />");
         }
         AppendXml(mappingResult, 2, "</composite-id>");
+    }
+
+    /// <summary>
+    /// Emits the Equals/GetHashCode overrides that NHibernate requires from any
+    /// class mapped with <composite-id>. Without them the mapping fails to compile
+    /// with "composite-id class must override Equals()" while the session factory
+    /// is being built. See design doc 001, section 3.5 and decision 7.5.
+    /// </summary>
+    private static void BuildIdentityMembers(EntityMap em, StringBuilder codeResult)
+    {
+        if (!HasCompositeKey(em))
+        {
+            return;
+        }
+
+        var className = em.Entity.Name;
+        var keyNames = em.PrimaryKey!.Parts
+            .Select(p => p.PropertyMap.Property.Name)
+            .ToList();
+
+        codeResult.AppendLine("    public override bool Equals(object? obj)");
+        codeResult.AppendLine("    {");
+        codeResult.AppendLine("        if (ReferenceEquals(this, obj))");
+        codeResult.AppendLine("        {");
+        codeResult.AppendLine("            return true;");
+        codeResult.AppendLine("        }");
+        codeResult.AppendLine();
+        // Pattern matching rather than GetType() equality: an NHibernate proxy is a
+        // subclass of the entity, so comparing the runtime types would reject it.
+        codeResult.AppendLine($"        if (obj is not {className} other)");
+        codeResult.AppendLine("        {");
+        codeResult.AppendLine("            return false;");
+        codeResult.AppendLine("        }");
+        codeResult.AppendLine();
+
+        for (var i = 0; i < keyNames.Count; i++)
+        {
+            var name = keyNames[i];
+            var prefix = i == 0 ? "return " : "    && ";
+            var suffix = i == keyNames.Count - 1 ? ";" : string.Empty;
+            codeResult.AppendLine($"        {prefix}Equals({name}, other.{name}){suffix}");
+        }
+
+        codeResult.AppendLine("    }");
+        codeResult.AppendLine();
+
+        codeResult.AppendLine("    public override int GetHashCode()");
+        codeResult.AppendLine("    {");
+
+        if (keyNames.Count <= 8)
+        {
+            codeResult.AppendLine($"        return HashCode.Combine({string.Join(", ", keyNames)});");
+        }
+        else
+        {
+            // HashCode.Combine is only defined up to eight arguments.
+            codeResult.AppendLine("        var hash = new HashCode();");
+            foreach (var name in keyNames)
+            {
+                codeResult.AppendLine($"        hash.Add({name});");
+            }
+            codeResult.AppendLine("        return hash.ToHashCode();");
+        }
+
+        codeResult.AppendLine("    }");
+        codeResult.AppendLine();
     }
 
     private static string ResolveNhType(PropertyMap propertyMap)
