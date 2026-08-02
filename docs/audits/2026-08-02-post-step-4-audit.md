@@ -120,9 +120,11 @@ IR tedy nemá jen jazykově specifický typový model (`CLRType`), ale i databá
 
 ### 3.1 Invariant `Order` na částech klíče není vynucený
 
-`AbstractEntityBuilder.AddPrimaryKey` řadí části podle `Order` při konstrukci. Buildery pak iterují seznam a spoléhají, že je setříděný. `SampleData/CustomerSampleNHibernate.cs:134` a `SampleData/CustomerSampleEFCore.cs:138` ale konstruují `PrimaryKey` přímo přiřazením, mimo `AddPrimaryKey`, takže invariant tam neplatí.
+`AbstractEntityBuilder.AddPrimaryKey` řadí části podle `Order` při konstrukci, ale je to jediné místo, kde invariant platí. Buildery pak iterují `PrimaryKey.Parts` a spoléhají, že je seznam setříděný. `SampleData/CustomerSampleNHibernate.cs:134` a `SampleData/CustomerSampleEFCore.cs:138` ale konstruují `PrimaryKey` přímo přiřazením, mimo `AddPrimaryKey`, takže tam invariant neplatí.
 
-Dnes to nevadí, protože jde o jednoprvkový klíč. Design doc 001 §3.2 ale argumentuje, že `Order` má být první-třídní hodnota — pak by ji buď měly respektovat buildery při iteraci, nebo by invariant měl držet samotný typ `PrimaryKey`.
+Dnes to nevadí, protože jde o jednoprvkový klíč. Design doc 001 §3.2 ale argumentuje, že `Order` má být první-třídní hodnota, a s kompozitními klíči z kroku 5a se seznam stane vícepoložkovým. Invariant patří do typu `PrimaryKey`, ne do jedné z cest, které ho konstruují — pak bude platit i pro přímé přiřazení a buildery mohou iterovat seznam bez vlastního řazení. Přepsat `SampleData` na `AddPrimaryKey` není alternativa: konstruuje `EntityMap` přímo a žádný builder po ruce nemá.
+
+S tím souvisí otázka, kterou §3.2 neuzavírá: zda má být `Order` unikátní a souvislý od jedničky. Duplicitní hodnoty dnes k nedeterminismu nevedou, protože `OrderBy` je v LINQ stabilní a zachová pořadí vstupu, ale výsledné pořadí pak není dané modelem. Validace duplicit proto není součástí vynucení invariantu a patří k Ú1.
 
 ### 3.2 Parser NHibernate neumí variantu s klíčovou třídou
 
@@ -234,7 +236,7 @@ Tři samostatné jednořádkové opravy v `NHibernateWrappers/Convertors/Databas
 
 ### O4 — Vynutit invariant `Order`
 
-Buď doplnit řazení v builderech při iteraci částí klíče, nebo přesunout invariant do typu `PrimaryKey` a upravit `SampleData` tak, aby konstruoval klíč přes `AddPrimaryKey`. Druhá varianta je čistší.
+Přesunout řazení částí klíče z `AbstractEntityBuilder.AddPrimaryKey` do typu `PrimaryKey`, aby platilo na každé konstrukční cestě, a zdvojené řazení v builderu odstranit. `SampleData` se nemění. Validace duplicitních hodnot `Order` sem nepatří — viz zjištění 3.1 a položka Ú1.
 
 ### O5 — Doplnit chybějící záznamy do changelogu
 
@@ -243,7 +245,7 @@ Buď doplnit řazení v builderech při iteraci částí klíče, nebo přesunou
 
 ### O6 — Zdokumentovat slévání typů data a času
 
-Krátkodobě: zaznamenat do dokumentace, že převod přes NHibernate převádí `DateTime` a `SmallDateTime` na `DateTime2` a že je to vázané na verzi a dialekt. Dlouhodobě to spadá pod revizi typového modelu (Ú2).
+Zaznamenat do `architecture.md` §4, že převod typů přes NHibernate není bijektivní: `DateTime`, `DateTime2` i `SmallDateTime` se slévají do jednoho typu NHibernate a zpětný převod je vrací jako `DateTime2`. Uvést i příčinu — `type` v mapování NHibernate není SQL typ — a vazbu na verzi a dialekt. Oprava, tedy vyjádření rozdílu přes `sql-type` na `<column>`, sem nepatří: vyžaduje znát cílový dialekt (R4) a rozhodnout, kdy `sql-type` emitovat (Ú2).
 
 ---
 
@@ -271,6 +273,8 @@ Zavést do architektury explicitní pojem pro boilerplate, který cílový frame
 
 Přeformulovat rozhodnutí 7.4 tak, aby popisovalo obecný mechanismus „fakt nevyjádřitelný v cílovém frameworku" parametrizovaný frameworkem, ne dapperovskou větev. Seznam faktů pro Dapper už existuje ve srovnávací analýze; pro MyBatis bude analogický.
 
+Do stejné kategorie patří i zúžení uvnitř typového modelu, nejen fakty, které cíl neunese. Konkrétně slévání `DateTime`, `DateTime2` a `SmallDateTime` do jediného typu NHibernate (zjištění 2.1): zdroj i cíl ten typ vyjádřit umí, ale převod ho zúží. Diagnostika by měla ohlásit obojí a rozlišit to, protože první případ je vlastnost cílového frameworku, kdežto druhý je vlastnost převodu a dá se odstranit (Ú2, R4).
+
 ### R4 — Deklarace cílových verzí frameworků
 
 Rozhodnout, kde se deklaruje cílová verze frameworku pro převod: v IR, nebo v konfiguraci převodu. Je to předpoklad splnění S6 a zároveň to zpřesní generování — například volba mezi `[PrimaryKey]` a `HasKey` podle verze EF Core, nebo dostupnost `DateOnly` podle verze NHibernate.
@@ -279,9 +283,11 @@ Rozhodnout, kde se deklaruje cílová verze frameworku pro převod: v IR, nebo v
 
 ## 7. Úpravy s delším horizontem
 
-### Ú1 — Revize `PrimaryKeyStrategy`
+### Ú1 — Revize `PrimaryKeyStrategy` a sémantiky `Order`
 
-Projít výčet proti generátorům NHibernate, mechanismům EF Core a `@GeneratedValue` z JPA. Souvisí s R1 a §3.4.
+Projít výčet `PrimaryKeyStrategy` proti generátorům NHibernate, mechanismům EF Core a `@GeneratedValue` z JPA. Souvisí s R1 a §3.4.
+
+Ve stejném průchodu uzavřít otázku z §3.2, zda má být `Order` na `PrimaryKeyPart` unikátní a souvislý od jedničky, a podle rozhodnutí případně doplnit validaci (zjištění 3.1).
 
 ### Ú2 — Neutralizace typového modelu
 
