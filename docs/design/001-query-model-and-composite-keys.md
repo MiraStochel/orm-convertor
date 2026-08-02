@@ -167,6 +167,18 @@ public void AddPrimaryKey(PrimaryKeyStrategy strategy, string propertyName)
 
 Rozhodli jsme se nechat model záměrně permisivní (dovolí i teoreticky nevalidní kombinaci, např. dvě `Identity` části) a validaci typu "smí mít tabulka jen jednu IDENTITY" necháme na cílovém builderu/databázi, ne na abstraktním modelu. Model má reprezentovat záměr, ne vynucovat pravidla konkrétního SQL enginu.
 
+### 3.5 Sémantika identity u kompozitního klíče
+
+Kompozitní klíč není jen struktura sloupců. U NHibernate a v plánovaném javovém ekosystému klade požadavky i na tvar třídy, kterou popisuje – u EF Core nikoli.
+
+NHibernate u `<composite-id>` vyžaduje, aby persistentní třída přepsala `Equals()` a `GetHashCode()` a byla označená atributem `Serializable`. V této podobě se persistentní objekt stává svým vlastním identifikátorem a rovnost nelze rozhodnout jinak než přes `Equals`. Bez těchto členů selže kompilace mapování už při stavbě session factory hláškou `composite-id class must override Equals()`.
+
+JPA nabízí dvě formy, `@IdClass` a `@EmbeddedId`, a obě vyžadují samostatnou třídu reprezentující klíč: veřejnou, s bezparametrickým konstruktorem, s `equals()`, `hashCode()` a `Serializable`. Bezklíčová varianta v JPA neexistuje.
+
+EF Core nevyžaduje nic; klíč je pro něj množina vlastností bez dopadu na tvar třídy.
+
+IR proto nese jen strukturu klíče podle §3.1. Členy vynucené cílovým frameworkem generuje builder – viz rozhodnutí 5 v §7.
+
 ---
 
 ## 4. Vícesloupcové vztahy (1:1, 1:N, N:M)
@@ -279,6 +291,10 @@ Při návrhu jsem si všiml ještě těchto věcí:
 4. **Dapper a klíče/vztahy** – je třeba ujasnit, má-li je builder začít nějak reflektovat, i když dnes negeneruje explicitní metadata.
 
    **Rozhodnutí: negenerovat, ale nahlásit strukturovaným varováním.** Dapper mechanismus explicitního mapování klíčů a vztahů nemá – ve srovnání z článku (tab. 1) je specifikace primárního klíče „implicit/manual" a cizí klíče se řeší ručními joiny. Není tedy do čeho generovat: pseudo-atributy nebo metadata v komentářích by vytvářely kód, který žádné Dapper API nečte, a budily by falešný dojem, že se informace přenesla. Dnešní builder ale klíče a vztahy zahazuje potichu (kroky `BuildPrimaryKey`/`BuildForeignKey` vůbec nevolá), což je přesně chování, které F11 zakazuje: „Nepodporované konstrukce nesmí být potichu vynechány." Builder proto klíče/vztahy nadále generovat nebude, ale výsledek konverze ponese strukturované varování za každý nevyjádřený fakt – např. „primární klíč (CustomerID) je zachován jen v IR; Dapper ho nevyjadřuje" – aby uživatel v UI i volající API viděli, co se do cílového kódu nepropsalo. Varování se napojí na diagnostickou infrastrukturu z F11, jakmile vznikne; do té doby stačí jednoduchý seznam varování ve výsledku konverze. Podstatné je, že IR zůstává úplná – při překladu Dapper → EF Core/NHibernate se metadata neztrácejí, protože zdrojem pravdy je pivot přes IR, ne vygenerovaný Dapper kód.
+
+5. **Forma kompozitního klíče ve výstupu** – je třeba rozhodnout, jakou podobu má kompozitní klíč dostat v generovaném kódu jednotlivých cílů a zda má IR nést pojem klíčové třídy.
+
+   **Rozhodnutí: ploché vykreslení ve všech cílech, identitní členy jako odpovědnost builderu, klíčová třída jen jako volitelný signál.** Kompozitní klíč zůstává v IR tím, čím je podle §3.1 – seřazeným seznamem částí – a buildery ho vykreslují tak, aby klíčové vlastnosti zůstaly přímo na entitě: EF Core přes `HasKey`/`[PrimaryKey]`, NHibernate přes `<composite-id>` s `<key-property>` nad vlastnostmi entity, JPA přes `@IdClass`. Alternativu `@EmbeddedId` vylučuje už rozhodnutí z §3.4: `@GeneratedValue` lze v JPA použít jen na atributu anotovaném `@Id`, a u `@EmbeddedId` není žádná část klíče takto anotovaná, takže kompozitní klíč s generovanými hodnotami tato forma vyjádřit neumí – model, který podle §3.4 nese strategii generování per-part, by se do ní nevešel. Druhý důvod je dosah do dotazové větve: u `@IdClass` se na část klíče odkazuje `o.orderId`, u `@EmbeddedId` `o.id.orderId`, takže volba formy není lokální pro entitní model, ale mění cesty k vlastnostem v generovaných dotazech. Ploché vykreslení proto drží tvar entity i cesty k vlastnostem jednotné napříč všemi cíli a dotazová IR může dál odkazovat vlastnosti prostým jménem. Členy, které si kompozitní klíč v cílovém frameworku vynucuje – u NHibernate `Equals`, `GetHashCode` a `[Serializable]` na persistentní třídě, u JPA celá ID třída s bezparametrickým konstruktorem, `equals`, `hashCode` a `Serializable` – do IR nepatří: nejsou to fakta o doméně, ale požadavky cílového frameworku, ve stejné kategorii jako `virtual` na mapovaných členech u NHibernate. Generuje je tedy builder a odpovídá za ně stejně jako za zbytek boilerplate. To, že jejich chybějící generování u NHibernate shodí stavbu session factory hláškou `composite-id class must override Equals()`, není okrajový detail, ale doklad, že bez tohoto rozdělení odpovědností vzniká syntakticky správný a přitom nespustitelný výstup. Zbývá jedna informace, kterou ploché vykreslení zahazuje: pokud zdrojový projekt klíč vyjádřil klíčovou třídou – `@EmbeddedId` v Javě nebo `<composite-id name="..." class="...">` u NHibernate – ztratí se její název i zvolená forma. Proto `PrimaryKey` dostane nepovinný údaj o názvu a formě klíčové třídy, obdobně jako `IsJunctionTable` slouží v design docu 002 jako opt-in signál pro pozdější zploštění N:M. Parser ho vyplní, když ho zdroj nese, builder ho použije, pokud je přítomný, a jinak odvodí název konvencí; bez něj by se model při překladu javového projektu (F7–F10) potichu přetvaroval a F11 by neměla co ohlásit. IR tím nezískává klíčovou třídu jako povinnou strukturu – nese ji jako záznam o zdroji, ne jako součást definice klíče.
 
 ---
 
