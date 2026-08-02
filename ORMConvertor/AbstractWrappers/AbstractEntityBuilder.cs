@@ -122,7 +122,7 @@ public abstract class AbstractEntityBuilder
 
         EntityMap.PrimaryKey = new PrimaryKey
         {
-            Parts = keyParts.OrderBy(p => p.Order).ToList(),
+            Parts = keyParts,
         };
     }
 
