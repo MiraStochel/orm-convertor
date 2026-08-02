@@ -102,9 +102,17 @@ Tento nález dosud nebyl nikde zaznamenaný. `DatabaseType` sice vypadá jako ob
 
 IR tedy nemá jen jazykově specifický typový model (`CLRType`), ale i databázově specifický (`DatabaseType`). JSS článek adresuje jen první z nich, konceptem `LangType`. Druhý zatím adresovaný není.
 
-### 2.4 `CLRType.Byte` se mapuje na `DatabaseType.Int`
+### 2.4 Chybné položky v převodní tabulce typů
 
-V `GuessFromPropertyType` je `CLRType.Byte => ToNHibernate(DatabaseType.Int)`, tedy `"Int32"`. Přitom `DatabaseType.TinyInt` existuje, mapuje se na `"Byte"` a zpětný převod `"byte"` vrací `TinyInt`. Vlastnost typu `byte` tak dostane typ `Int32`. Vypadá to na překlep, ne na záměr.
+`NHibernateWrappers/Convertors/DatabaseTypeConvertor.cs` obsahuje tři vady, které mění výsledný SQL typ. Všechny jsou překlepy v převodní tabulce, ne koncepční problém.
+
+**`CLRType.Byte` míří na `DatabaseType.Int`.** V `GuessFromPropertyType` je `CLRType.Byte => ToNHibernate(DatabaseType.Int)`, tedy `"Int32"`. Přitom `DatabaseType.TinyInt` existuje, mapuje se na `"Byte"` a zpětný převod `"byte"` vrací `TinyInt` — chybí jen tento směr. Vlastnost typu `byte` tak dostane typ `Int32`.
+
+**`CLRType.Float` míří na `DatabaseType.Float`.** Výsledkem je typ `"Double"`. Je to past v pojmenování SQL typů: `DatabaseType.Float` je osmibajtový SQL `float`, tedy protějšek C# `double`; čtyřbajtovému C# `float` odpovídá `DatabaseType.Real`, který se správně mapuje na `"Single"`. Opačný směr to má v `FromNHibernate` správně (`"single" or "float" => DatabaseType.Real`).
+
+**Případ `"datetimenoMs"` je nedosažitelný.** `FromNHibernate` provádí `switch` nad `type.Trim().ToLowerInvariant()`, ale tato větev má velké `M`. Nemůže tedy nikdy zabrat a typ `DateTimeNoMs` propadne do `NotImplementedException`. Ostatní větve casing dodržují.
+
+Čtvrtý případ stejné kategorie je v tomto souboru rovněž, ale opravit ho stejným způsobem nelze: `CLRType.Char` míří na `DatabaseType.Char`, což dá typ `"AnsiStringFixedLength"`. Podle referenční tabulky NHibernate je ale výchozím typem pro `System.Char` typ `Char` (DbType.StringFixedLength) a `AnsiChar` se musí uvést explicitně. C# `char` tedy končí jako neunicode `char(1)` místo `nchar(1)`. Přesměrovat ho na jinou hodnotu `DatabaseType` nejde, protože žádná z nich typ `"Char"` nevrací — `DatabaseType.NChar` dává `"StringFixedLength"`, což je typ pro řetězec pevné délky, ne pro jeden znak. Oprava proto vyžaduje rozšíření typového modelu a spadá pod Ú2, ne pod O3.
 
 ---
 
@@ -220,9 +228,9 @@ U `[Serializable]` je vzhledem ke změnám serializace v NHibernate 5.7.0 na .NE
 
 `CompositeKeyTest.cs` doplnit o asserce nad generovaným C# pro NHibernate — přítomnost obou override a atributu. Zároveň zvážit obecnější test, který u každého cílového frameworku ověří, že generovaný kód nese členy vynucené tím frameworkem; to je přímý důsledek zjištění 4.4.
 
-### O3 — `CLRType.Byte` na `DatabaseType.TinyInt`
+### O3 — Chybné položky v převodní tabulce typů
 
-Samostatná drobná oprava v `NHibernateWrappers/Convertors/DatabaseTypeConvertor.cs`, bez závislostí.
+Tři samostatné jednořádkové opravy v `NHibernateWrappers/Convertors/DatabaseTypeConvertor.cs`, bez závislostí: `CLRType.Byte` na `DatabaseType.TinyInt`, `CLRType.Float` na `DatabaseType.Real` a oprava casingu ve větvi `"datetimenoMs"`. Případ `CLRType.Char` sem nepatří — viz zjištění 2.4 a položka Ú2.
 
 ### O4 — Vynutit invariant `Order`
 
@@ -279,7 +287,7 @@ Projít výčet proti generátorům NHibernate, mechanismům EF Core a `@Generat
 
 Nejrozsáhlejší položka. Zahrnuje obě roviny:
 
-1. `CLRType` → jazykově neutrální reprezentace (`LangType` podle JSS §5.2), s doplněním chybějících typů (zjištění 2.2)
+1. `CLRType` → jazykově neutrální reprezentace (`LangType` podle JSS §5.2), s doplněním chybějících typů (zjištění 2.2) a s vyřešením případu `CLRType.Char`, který dnes nelze namapovat na správný typ NHibernate, protože v `DatabaseType` chybí hodnota pro jednotlivý unicode znak (zjištění 2.4)
 2. `DatabaseType` → databázově neutrální reprezentace, případně s vrstvou pro dialekty (zjištění 2.3)
 
 Je to **předpoklad** pro F7–F10 i pro javovou část kroku 5a, ne jejich příprava (zjištění 4.5). Zaslouží si vlastní design doc.

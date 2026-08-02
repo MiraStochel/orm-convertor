@@ -28,7 +28,7 @@ public static class DatabaseTypeConvertor
             "single" or "float" => DatabaseType.Real,
 
             "date" => DatabaseType.Date,
-            "datetime" or "datetime2" or "datetimenoMs" or "dbtimestamp" => DatabaseType.DateTime2,
+            "datetime" or "datetime2" or "datetimenoms" or "dbtimestamp" => DatabaseType.DateTime2,
             "smalldatetime" => DatabaseType.SmallDateTime,
             "time" or "timeastimespan" => DatabaseType.Time,
             "datetimeoffset" => DatabaseType.DateTimeOffset,
@@ -98,12 +98,12 @@ public static class DatabaseTypeConvertor
         return clrType switch
         {
             CLRType.Bool => ToNHibernate(DatabaseType.Bit),
-            CLRType.Byte => ToNHibernate(DatabaseType.Int),
+            CLRType.Byte => ToNHibernate(DatabaseType.TinyInt),
             CLRType.Char => ToNHibernate(DatabaseType.Char),
             CLRType.Int => ToNHibernate(DatabaseType.Int),
             CLRType.Long => ToNHibernate(DatabaseType.BigInt),
             CLRType.Double => ToNHibernate(DatabaseType.Float),
-            CLRType.Float => ToNHibernate(DatabaseType.Float),
+            CLRType.Float => ToNHibernate(DatabaseType.Real),
             CLRType.Decimal => ToNHibernate(DatabaseType.Decimal),
             CLRType.String => ToNHibernate(DatabaseType.NVarChar),
             CLRType.DateTime => ToNHibernate(DatabaseType.DateTime2),
