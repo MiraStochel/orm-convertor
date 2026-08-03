@@ -15,6 +15,7 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 3. **Diagnostika jako kategorie** a **deklarace cílových verzí frameworků** (rozhodnutí) — druhé jmenované je předpoklad S6.
 4. **Neutralizace typového modelu** (rozhodnutí, rozsahem na samostatný dokument) — předpoklad javové větve, blokuje F7–F10.
 5. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+
 ---
  
 ## Otevřená rozhodnutí
@@ -47,6 +48,7 @@ Nejrozsáhlejší otevřená položka, ve dvou rovinách:
  
 1. `CLRType` → jazykově neutrální reprezentace (`LangType` podle JSS §5.2), s doplněním chybějících typů a s vyřešením případu `CLRType.Char`, který dnes nelze namapovat na správný typ NHibernate, protože v `DatabaseType` chybí hodnota pro jednotlivý unicode znak.
 2. `DatabaseType` → databázově neutrální reprezentace, případně s vrstvou pro dialekty. Dnešní výčet je fakticky seznam typů T-SQL.
+
 Je to **předpoklad** pro F7–F10, ne jejich příprava: javová ID třída se neobejde bez otypovaných polí, a ta vezme builder odsud.
  
 ### Revize `PrimaryKeyStrategy` a sémantiky `Order`
@@ -91,6 +93,7 @@ Dapper builder dnes klíče a vztahy zahazuje potichu. Do vzniku diagnostické i
 - `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec — poddotazy projdou, ale výsledek se nikam neskládá.
 - `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu).
 - `BuildSQL()` z původního návrhu neexistuje; rozlišení nativní syntaxe od syrového SQL bude potřeba dořešit při implementaci query builderů pro EF Core a NHibernate.
+
 ### EF Core — strategie primárního klíče
  
 Nepropaguje se do výstupu (TODO v `EFCoreEntityBuilder.BuildPrimaryKey`). Rozdíl v paritě, ne regrese. Souvisí s revizí `PrimaryKeyStrategy`.
@@ -111,6 +114,7 @@ Odloženo do cílenější přestavby, současný stav je funkční:
 1. Přeskočit prázdné dotazové jednotky v `convert()` před odesláním — server je striktní záměrně, tolerance patří do UI.
 2. Zobrazovat chyby ze serveru přes `err.error`, ne `err.message`.
 3. Validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku.
+
 ### Ověřit docker-compose
  
 `ConnectionStrings__AdvisorDatabase` je commitnutá deklarace, kterou zatím nikdo nespustil. Ověří se při prvním reálném běhu Advisoru v Dockeru.

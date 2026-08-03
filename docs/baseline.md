@@ -7,12 +7,13 @@ Snímek je **zmražený a nepřepisuje se** — je to referenční bod, proti kt
 ---
  
 ## 1. Co funguje
- 
+
 - Překlad entit a mapování mezi všemi třemi podporovanými ORM (Dapper, NHibernate, EF Core) v libovolném směru.
 - Překlad dotazů jedním směrem: EF Core LINQ → Dapper SQL.
 - Advisor (ILP optimalizátor) pro Dapper a EF Core – reálně přeloží a odbenchmarkuje sadu dotazů, doporučí framework/kombinaci podle zadaných omezení (max. počet frameworků, paměťový limit, váhy dotazů).
 - REST API + Swagger dokumentace (UI jen v Development prostředí), Angular frontend se třemi obrazovkami: úvodní stránka, Translation a Advisor.
 - Testy parserů a builderů pro všechny tři ORM (převod do mezireprezentace a z ní, identity převody X→X) a kombinované end-to-end testy pro dvojice EF Core ↔ NHibernate a EF Core → Dapper (dotazy). Běží v CI při push na `main` a u pull requestů, pokud se změnilo něco v `ORMConvertor/**`.
+
 ## 2. Co chybí do plného rozsahu – a proč
  
 | Mezera | Popis | Poznámka |
