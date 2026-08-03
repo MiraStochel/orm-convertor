@@ -7,7 +7,7 @@ public sealed class PrimaryKeyPart
     // Type, column name, nullability etc. are taken from Property/PropertyMap.
     public required PropertyMap PropertyMap { get; init; }
 
-    // Explicit 1-based order - NOT the position in the list (see design doc 001, §3.2).
+    // Explicit 1-based order - NOT the position in the list.
     public required int Order { get; init; }
 
     // Per-part generation strategy, not for the whole key (see §3.4).

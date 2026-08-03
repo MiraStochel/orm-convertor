@@ -258,7 +258,7 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : CSharpSy
         }
 
         // A comparison with a null literal is normalized to IS NULL / IS NOT NULL
-        // (decision 7.2 in design doc 001).
+        // (decision 002).
         if (leftIsNull || rightIsNull)
         {
             if (op is not (ComparisonOperator.Equal or ComparisonOperator.NotEqual))

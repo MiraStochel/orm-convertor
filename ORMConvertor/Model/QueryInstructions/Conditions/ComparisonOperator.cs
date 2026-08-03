@@ -10,6 +10,6 @@ public enum ComparisonOperator
     LessThanOrEqual = 6,    // <=
     Like = 7,               // LIKE
     In = 8,                 // IN (...)
-    IsNull = 9,             // IS NULL - right operand is ignored (decision 7.2 in design doc 001)
+    IsNull = 9,             // IS NULL - right operand is ignored (decision 002)
     IsNotNull = 10,         // IS NOT NULL - right operand is ignored
 }

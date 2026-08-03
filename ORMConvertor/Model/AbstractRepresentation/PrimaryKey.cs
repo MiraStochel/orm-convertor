@@ -8,7 +8,7 @@ public sealed class PrimaryKey
     /// Key parts, always sorted by <see cref="PrimaryKeyPart.Order"/>.
     /// The invariant is enforced here rather than at the call site so that it holds
     /// on every construction path, including direct object initialization. Builders
-    /// can therefore iterate the list as-is. See design doc 001, section 3.2.
+    /// can therefore iterate the list as-is
     /// </summary>
     public required IReadOnlyList<PrimaryKeyPart> Parts
     {

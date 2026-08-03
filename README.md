@@ -11,7 +11,7 @@ This repository continues the development of a prototype originally created by M
 | Directory | Contents |
 |---|---|
 | `ORMConvertor/` | The translation and advisor tool: .NET 10 solution (ASP.NET Core REST API + Angular frontend). See [`ORMConvertor/README.md`](ORMConvertor/README.md) for build and run instructions. |
-| `docs/` | Project documentation: [current architecture](docs/architecture.md), [what works today](docs/architecture.md), [what remains](docs/open-items.md), and [design decisions](docs/decisions/). |
+| `docs/` | Project documentation: [how the tool works today](docs/architecture.md), [what remains](docs/open-items.md), [design decisions](docs/decisions/), and the [state at takeover](docs/baseline.md). |
 | `benchmarks/` | Experimental comparison of seven .NET ORMs (unit tests and performance benchmarks) inherited from the original research. |
 | `diagrams/` | Diagrams created with [draw.io](https://www.drawio.com/). |
 | `notes/` | Research notes in Czech comparing ORM frameworks feature by feature. |
@@ -43,10 +43,10 @@ The `benchmarks` directory contains the static and experimental comparison of se
 The main directions of ongoing work (detailed in [`docs/open-items.md`](docs/open-items.md)):
 
 - Full query parser/builder coverage for all three supported frameworks (NHibernate LINQ, Dapper SQL parsing, EF Core and NHibernate query generation).
-- A proper boolean condition tree for WHERE/HAVING/JOIN clauses (replacing the current flat AND-only model).
-- Composite primary keys and multi-column foreign key relationships (1:1, 1:N, N:M via junction entities).
+- Multi-column foreign keys, and many-to-many relationships generated as explicit junction entities.
 - Database metadata enrichment: completing incomplete mappings (typical for micro-ORMs) from the database catalog.
 - Extending the Advisor to all supported frameworks.
+- Java ecosystem support (Hibernate, MyBatis, EclipseLink) and cross-ecosystem translation between .NET and Java.
 
 ## Origin and attribution
 

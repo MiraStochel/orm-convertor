@@ -7,7 +7,7 @@ public sealed class Relation
     public string? Name { get; set; }                  // distinguishes multiple relations between the same pair of entities
     public required Cardinality Cardinality { get; set; }
     public required RelationRole Role { get; set; }
-    public required string SourceEntity { get; set; }  // entity name; string per decision 7.1
+    public required string SourceEntity { get; set; }  // entity name, not a reference (decision 001)
     public required string TargetEntity { get; set; }
 
     /// <summary>FK column pairs; empty = columns not yet resolved (see F4/F5).</summary>

@@ -82,7 +82,7 @@ Generování explicitní junction entity a vícesloupcový rendering cizích kl�
 ### Detekce N:M v parserech
 *Blokováno.*
  
-Detekce N:M na vstupu, syntéza junction entity a naplnění `ColumnPairs`. Cílové sloupce nejdou určit z jedné translation unit, takže to stojí na metadatech z databáze (F4/F5).
+Detekce N:M na vstupu, syntéza junction entity a naplnění `ColumnPairs`. Cílové sloupce nejdou určit z jedné translation unit, takže to stojí na metadatech z databáze (F4/F5). Totéž místo je předznamenané i v NHibernate builderu, kde chybějící typ vlastnosti nese TODO „query database for the missing type".
  
 ### Strukturovaná varování pro nevyjádřitelné fakty
 *Rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md); rozsah upřesní rozhodnutí o diagnostice jako kategorii.*
@@ -100,19 +100,27 @@ Nepropaguje se do výstupu (TODO v `EFCoreEntityBuilder.BuildPrimaryKey`). Rozd�
  
 ### Parser NHibernate — varianta s klíčovou třídou
 *Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a na neutralizaci typového modelu. Podklad: audit 2026-08-02, kap. 3.2.*
- 
+
 `NHibernateXMLMappingParser` čte `<composite-id>` jen přes `<key-property>`; atributy `name` a `class`, které označují variantu se samostatnou klíčovou třídou, neřeší. Bez toho nelze číst vstupy, které klíč vyjadřují klíčovou třídou — a analogicky pak `@EmbeddedId` na javové straně.
  
 ### Mrtvé stuby v builderech
  
-Bezparametrické `protected override` metody jsou ve všech třech builderech prázdné a nesou komentář `// unused in multi-entity flow`. Buď z `Build()` udělat šablonovou metodu nad overloady s parametry, nebo stuby odstranit.
+Bezparametrické `protected overridemetody` nesou komentář `// unused in multi-entity flow` a jsou prázdné — čtyři v Dapper builderu, šest v EF Core a šest v NHibernate; Dapper navíc nechává `BuildPrimaryKey` a `BuildForeignKey` házet `NotImplementedException`. Buď z `Build()` udělat šablonovou metodu nad overloady s parametry, nebo stuby odstranit.
  
+### NHibernate builder — schéma se nepropisuje do mapování
+
+`BuildTableSchema` čte `em.Schema`, ale při prázdné hodnotě dosadí prázdný řetězec a dál s ním nepracuje (TODO v kódu). Mapování tak vzniká bez `schema` atributu i tam, kde ho zdroj nese, což u databází s víc schématy vyrobí mapování mířící do výchozího schématu.
+
+### NHibernate builder — kolekce jen jako `<bag>`
+
+Kolekční vlastnost se generuje natvrdo jako `<bag>` a ostatní kolekční tvary (`set`, `list`, `map`) ani další kolekční vlastnosti builder neřeší (dva TODO v kódu). Volba tvaru kolekce je v NHibernate sémantická — `set` vylučuje duplicity, `list` nese pořadí — takže dnešní stav mění chování, ne jen zápis.
+
 ### Frontend
  
 Odloženo do cílenější přestavby, současný stav je funkční:
  
-1. Přeskočit prázdné dotazové jednotky v `convert()` před odesláním — server je striktní záměrně, tolerance patří do UI.
-2. Zobrazovat chyby ze serveru přes `err.error`, ne `err.message`.
+1. V `advisor-page.component.ts` přeskočit prázdné dotazové jednotky v `convert()` před odesláním — server je striktní záměrně, tolerance patří do UI.
+2. V `main-page.component.ts` zobrazovat chyby ze serveru přes `err.error`, ne `err.message`; vzor je v `advisor-page.component.ts`.
 3. Validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku.
 
 ### Ověřit docker-compose

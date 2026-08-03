@@ -40,7 +40,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// <summary>
     /// True when the entity is mapped with a composite identifier.
     /// NHibernate then imposes extra requirements on the persistent class,
-    /// see design doc 001 section 3.5.
+    /// see decision 006.
     /// </summary>
     private static bool HasCompositeKey(EntityMap em)
         => em.PrimaryKey is not null && em.PrimaryKey.Parts.Count > 1;
@@ -166,7 +166,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// Emits the Equals/GetHashCode overrides that NHibernate requires from any
     /// class mapped with <composite-id>. Without them the mapping fails to compile
     /// with "composite-id class must override Equals()" while the session factory
-    /// is being built. See design doc 001, section 3.5 and decision 7.5.
+    /// is being built. See decision 006.
     /// </summary>
     private static void BuildIdentityMembers(EntityMap em, StringBuilder codeResult)
     {

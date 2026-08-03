@@ -251,7 +251,7 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             }
         }
 
-        // The key is defined by a single call for the whole entity (design doc 001, §3.3).
+        // The key is defined by a single call for the whole entity.
         // The class-level [PrimaryKey(...)] takes precedence - it defines the explicit part order.
         if (classKeyNames.Count > 0)
         {
