@@ -345,7 +345,7 @@ Obecná tendence: EF Core posouvá nejvíc chyb do compile-time, NHibernate je o
 
 ## 20. Souhrn expresivity
 
-Klíčová tabulka pro návrh IR a pro diagnostiku podle rozhodnutí 7.4 z design docu 001.
+Klíčová tabulka pro návrh IR a pro diagnostiku podle rozhodnutí [004](../decisions/004-unexpressible-facts-as-warnings.md).
 
 | Fakt o doméně | NHibernate 5.7.0 | EF Core 10.0.10 | Dapper 2.1.79 |
 |---|---|---|---|

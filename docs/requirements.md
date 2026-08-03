@@ -82,28 +82,3 @@
 **E7 – Baseline optimalizace.** ILP porovnat proti každému jednotlivému frameworku, nejméně jedné ruční heuristice a případně greedy strategii; použít i neuniformní váhy odvozené z reálné četnosti dotazů.
 
 Pro LLM experimenty se počítá se zero-shot, few-shot a strukturovanější RAG/agentní variantou a s metrikami syntaktické správnosti, funkční ekvivalence, času a nákladů.
-
-## Mapování na současný stav
-
-| Požadavek | Stav | Poznámka |
-|---|---|---|
-| F1 | chybí, návrh hotový | `docs/design/001` – `PrimaryKey`/`PrimaryKeyPart` |
-| F2 | chybí | .NET část navazuje na 001; Java část závisí na F7–F9 |
-| F3 | chybí, návrh hotový | `docs/design/001` – `Relation` s `ColumnPairs`, N:M přes junction entitu |
-| F4 | chybí úplně | dnes žádné čtení DB katalogu (viz current-state) |
-| F5 | částečně | agregace více parserů do jedné IR funguje (NHibernate C# + XML); chybí DB katalog jako zdroj, priority zdrojů a hlášení konfliktů |
-| F6 | chybí | závisí na F4 + F5 |
-| F7–F9 | chybí | nový Java ekosystém, zatím nezačato |
-| F10 | chybí | pozor: typový model IR je dnes CLR-specifický (`CLRTypeModel`, `CLRTypeConvertor` v `Common`) – pro Javu bude potřeba jazykově neutrální reprezentace typů (článek, §5.2 „LangType") |
-| F11 | nesplněno | validace úplnosti IR neexistuje; nepodporované konstrukce se dnes potichu vynechávají (Dapper builder přeskakuje PK/FK); strukturovaná diagnostika chybí |
-| F12–F13 | chybí | testovací infrastruktura pro Javu a diferenční běh dotazů neexistuje |
-| F14 | částečně | frontend přijímá ručně vkládané artefakty po jednom; nahrání souborů/archivu projektu a per-file diagnostika chybí |
-| F15 | částečně | přímá volba cíle i ILP advisor fungují (jen Dapper a EF Core); srovnání „vše X" a heuristik se uživateli nezobrazuje |
-| S1 | drží | zajištěno parser/builder architekturou; hlídat při přidávání Java frameworků |
-| S2 | pravděpodobně drží, netestováno | šablonové generování je deterministické, ale žádný test opakovatelnosti neexistuje |
-| S3 | neměřeno | článek uvádí škálovací čísla jen pro původní prototyp |
-| S4 | nesplněno | benchmarky běží in-process bez limitů CPU/paměti/času; fallback connection string se `sa` heslem je natvrdo v `AdvisorRunCoordinator.cs` (ř. 42) – odstranit |
-| S5 | částečně | docker-compose (aplikace + DB) existuje; jednopříkazová reprodukce testů a experimentů ne |
-| S6 | chybí | žádný identifikátor běhu ani strojově čitelný záznam překladu |
-| S7 | částečně | základní scénář v UI projde; validace před spuštěním, průběžný stav, chyby na úrovni souboru/řádku a stažení výstupního projektu chybí |
-| E1–E7 | nezačato | E7 přímo navazuje na existující ILP advisor |

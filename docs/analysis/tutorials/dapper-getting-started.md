@@ -343,7 +343,7 @@ Tohle je pro tvoji práci nejdůležitější sekce v celém dokumentu. Následu
 | Identita entity | nikde |
 | Dědičnost | nikde |
 
-Když tohle položíš vedle tabulek z předchozích dvou tutoriálů, máš přesně tu matici „nelze vyjádřit", o které jsme mluvili — a zároveň seznam případů, pro které musí Dapper builder podle rozhodnutí 7.4 emitovat strukturovaná varování. Každý řádek téhle tabulky je jedno varování.
+Když tohle položíš vedle tabulek z předchozích dvou tutoriálů, máš přesně tu matici „nelze vyjádřit", o které jsme mluvili — a zároveň seznam případů, pro které musí Dapper builder podle rozhodnutí [004](../../decisions/004-unexpressible-facts-as-warnings.md) emitovat strukturovaná varování. Každý řádek téhle tabulky je jedno varování.
 
 Stojí za zmínku, že to není chyba návrhu Dapperu. Dapper záměrně nespravuje schéma; předpokládá, že databáze existuje a někdo jiný ji spravuje. Ztrátovost převodu je důsledek téhle volby, ne nedostatku.
 
@@ -392,7 +392,7 @@ Poslední řádek je vlastnost, ne chyba: v Dapperu jsou SQL řetězce mimo dosa
 
 **1. Kompozitní klíč.** Přidej `BookTranslation` s klíčem `(BookId, LanguageCode)`. Pro Dapper to bude znamenat jen to, že v `WHERE` píšeš dvě podmínky místo jedné — na úrovni kódu se nezmění vůbec nic. Ten nulový rozdíl je ale právě ten výsledek: srovnej ho s `<composite-id>` a s `HasKey(t => new { ... })`.
 
-**2. N:M.** `Book` ↔ `Category`. Znamená to JOIN přes junction tabulku a dictionary. Zajímavé je, že tady se Dapper naopak shoduje s IR podle design docu 002 — junction tabulka je v SQL viditelná explicitně, protože jinak než explicitně o ní mluvit nejde.
+**2. N:M.** `Book` ↔ `Category`. Znamená to JOIN přes junction tabulku a dictionary. Zajímavé je, že tady se Dapper naopak shoduje s IR podle rozhodnutí [005](../../decisions/005-many-to-many-as-explicit-junction-entity.md) — junction tabulka je v SQL viditelná explicitně, protože jinak než explicitně o ní mluvit nejde.
 
 **3. Znovu si přečti `DapperFeatures/FeatureTests.cs` v benchmarcích.** Po tomhle tutoriálu ti bude dávat mnohem větší smysl, hlavně testy `A3_MultipleEntitiesFromOneResult` a `A4_StoredProcedureToEntity`.
 

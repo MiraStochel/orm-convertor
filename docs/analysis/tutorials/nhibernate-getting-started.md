@@ -337,7 +337,7 @@ Až tohle poběží, následují témata, kvůli kterým hřiště vzniklo. V po
 
 **1. Kompozitní klíč.** Přidej `BookTranslation` s klíčem `(BookId, LanguageCode)` a namapuj přes `<composite-id>`. Narazíš na to, že NHibernate vyžaduje na klíčové třídě override `Equals` a `GetHashCode` — klíč s sebou táhne sémantiku identity, což je věc, kterou EF Core nevyžaduje vůbec. Přesně tenhle rozdíl je materiál pro rozhodnutí, jestli `PrimaryKeyPart` v IR stačí, nebo jestli potřebuješ koncept „třídy klíče".
 
-**2. N:M.** Přidej `Category` a namapuj `Book` ↔ `Category` přes `<set>` s `<many-to-many>`. Junction tabulka nemá vlastní entitu — to je opak toho, co generuje IR podle design docu 002.
+**2. N:M.** Přidej `Category` a namapuj `Book` ↔ `Category` přes `<set>` s `<many-to-many>`. Junction tabulka nemá vlastní entitu — to je opak toho, co generuje IR podle rozhodnutí [005](../../decisions/005-many-to-many-as-explicit-junction-entity.md).
 
 **3. DDL bez databáze.** Pro analýzu často nepotřebuješ nic spouštět, stačí vygenerovaný DDL:
 

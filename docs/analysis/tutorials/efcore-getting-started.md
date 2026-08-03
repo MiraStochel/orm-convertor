@@ -380,7 +380,7 @@ entity.HasKey(t => new { t.BookId, t.LanguageCode });
 
 Jeden řádek, žádná klíčová třída, žádný `Equals`/`GetHashCode`. Postav to vedle `<composite-id>` z NHibernate a máš první pořádně podloženou stránku analýzy. Od EF Core 7 existuje i atribut `[PrimaryKey(nameof(BookId), nameof(LanguageCode))]` — tedy další doklad té třívrstvosti.
 
-**2. N:M.** `Book` ↔ `Category` přes `HasMany().WithMany()`. EF Core junction tabulku vytvoří sám a bez entity — stejně jako NHibernate `<many-to-many>` a opačně, než co generuje IR podle design docu 002.
+**2. N:M.** `Book` ↔ `Category` přes `HasMany().WithMany()`. EF Core junction tabulku vytvoří sám a bez entity — stejně jako NHibernate `<many-to-many>` a opačně, než co generuje IR podle rozhodnutí [005](../../decisions/005-many-to-many-as-explicit-junction-entity.md).
 
 **3. Dědičnost.** EF Core má TPH jako výchozí (`HasDiscriminator`), TPT přes `UseTptMappingStrategy()`, TPC přes `UseTpcMappingStrategy()`. Proti NHibernate `<subclass>` / `<joined-subclass>` / `<union-subclass>` je to skoro 1:1 mapování konceptů — dobrý kandidát na kapitolu, kde se ukáže, že IR může být jednotné.
 

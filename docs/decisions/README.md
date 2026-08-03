@@ -12,6 +12,7 @@ Každé rozhodnutí je samostatný soubor. **Rozhodnutí se nepřepisují.** Pok
 | [004](004-unexpressible-facts-as-warnings.md) | Nevyjádřitelné fakty hlásit varováním | 2026-07-16 | platí | F11 |
 | [005](005-many-to-many-as-explicit-junction-entity.md) | N:M jako explicitní junction entita | 2026-07-20 | platí | F3, F10, E1 |
 | [006](006-flat-composite-key-rendering.md) | Ploché vykreslení kompozitního klíče | 2026-08-02 | platí | F1, F2, F7–F10, F11 |
+| [007](007-documentation-structure.md) | Dokumentace organizovaná podle rozhodnutí, ne podle času | 2026-08-03 | platí | — |
 
 ## Formát
 

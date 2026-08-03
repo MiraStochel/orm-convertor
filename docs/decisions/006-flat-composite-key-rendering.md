@@ -36,5 +36,3 @@ Ploché vykreslení proto drží tvar entity i cesty k vlastnostem jednotné nap
 Ploché vykreslení zahazuje jednu informaci: pokud zdrojový projekt klíč vyjádřil klíčovou třídou, ztratí se její název i zvolená forma. `PrimaryKey` proto dostane nepovinný údaj o názvu a formě klíčové třídy, obdobně jako `IsJunctionTable` slouží v rozhodnutí 005 jako opt-in signál. Parser ho vyplní, když ho zdroj nese, builder ho použije, pokud je přítomný, a jinak odvodí název konvencí. Bez něj by se model při překladu javového projektu (F7–F10) potichu přetvaroval a F11 by neměla co ohlásit.
 
 IR tím nezískává klíčovou třídu jako povinnou strukturu — nese ji jako záznam o zdroji, ne jako součást definice klíče.
-
-Otevřená návaznost: audit 2026-08-02 (položka R2) navrhuje zavést pro členy vynucené frameworkem pojmenovaný architektonický koncept, aby každý builder měl jedno místo, kde deklaruje, co musí ke generované třídě přidat, a aby na to existoval společný test.

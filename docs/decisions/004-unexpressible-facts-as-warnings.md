@@ -28,5 +28,3 @@ Výsledek konverze proto ponese strukturované varování za každý nevyjádře
 Varování se napojí na diagnostickou infrastrukturu z F11, jakmile vznikne; do té doby stačí jednoduchý seznam varování ve výsledku konverze.
 
 Podstatné je, že IR zůstává úplná — při překladu Dapper → EF Core / NHibernate se metadata neztrácejí, protože zdrojem pravdy je pivot přes IR, ne vygenerovaný Dapper kód.
-
-Otevřená návaznost: audit 2026-08-02 (položka R3) navrhuje přeformulovat tento mechanismus jako obecnou kategorii „fakt nevyjádřitelný v cílovém frameworku" parametrizovanou frameworkem, ne jako dapperovskou větev, a zahrnout do ní i zúžení uvnitř typového modelu. Do rozhodnutí o R3 platí toto rozhodnutí v původním rozsahu.
