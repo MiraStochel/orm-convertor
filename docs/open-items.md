@@ -105,7 +105,7 @@ Nepropaguje se do výstupu (TODO v `EFCoreEntityBuilder.BuildPrimaryKey`). Rozd�
  
 ### Mrtvé stuby v builderech
  
-Bezparametrické `protected overridemetody` nesou komentář `// unused in multi-entity flow` a jsou prázdné — čtyři v Dapper builderu, šest v EF Core a šest v NHibernate; Dapper navíc nechává `BuildPrimaryKey` a `BuildForeignKey` házet `NotImplementedException`. Buď z `Build()` udělat šablonovou metodu nad overloady s parametry, nebo stuby odstranit.
+Bezparametrické `protected override`metody nesou komentář `// unused in multi-entity flow` a jsou prázdné — čtyři v Dapper builderu, šest v EF Core a šest v NHibernate; Dapper navíc nechává `BuildPrimaryKey` a `BuildForeignKey` házet `NotImplementedException`. Buď z `Build()` udělat šablonovou metodu nad overloady s parametry, nebo stuby odstranit.
  
 ### NHibernate builder — schéma se nepropisuje do mapování
 
