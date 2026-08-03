@@ -1,11 +1,11 @@
 # Výchozí stav při převzetí projektu
- 
+
 **Snímek k 2026-07-15.** Dokument popisuje, co nástroj uměl a co mu chybělo ve chvíli, kdy jsme na něm začali stavět. Přítomný čas se v celém textu vztahuje k tomuto datu.
- 
+
 Snímek je **zmražený a nepřepisuje se** — je to referenční bod, proti kterému se poměřuje, co z dnešního stavu jsme přinesli my a co jsme převzali. Jak nástroj funguje dnes, popisuje [`architecture.md`](./architecture.md); co zbývá udělat, [`open-items.md`](./open-items.md).
- 
+
 ---
- 
+
 ## 1. Co funguje
 
 - Překlad entit a mapování mezi všemi třemi podporovanými ORM (Dapper, NHibernate, EF Core) v libovolném směru.
@@ -15,7 +15,7 @@ Snímek je **zmražený a nepřepisuje se** — je to referenční bod, proti kt
 - Testy parserů a builderů pro všechny tři ORM (převod do mezireprezentace a z ní, identity převody X→X) a kombinované end-to-end testy pro dvojice EF Core ↔ NHibernate a EF Core → Dapper (dotazy). Běží v CI při push na `main` a u pull requestů, pokud se změnilo něco v `ORMConvertor/**`.
 
 ## 2. Co chybí do plného rozsahu – a proč
- 
+
 | Mezera | Popis | Poznámka |
 |---|---|---|
 | Parser dotazů pro NHibernate | neexistuje – NHibernate se účastní jen entit/mapování, ne dotazů | přirozeným cílem je NHibernate LINQ (`ISession.Query<>()`): HQL je stringový dotazovací jazyk (viz `notes/comparison-research/NHibernate.md`), takže by vyžadoval samostatný textový parser podobně jako Dapper SQL, zatímco LINQ jde parsovat stejným Roslyn přístupem jako u EF Core; Criteria/QueryOver jsme nezvažovali |
@@ -27,11 +27,11 @@ Snímek je **zmražený a nepřepisuje se** — je to referenční bod, proti kt
 | Kompozitní primární klíče | `AddPrimaryKey` bere jen jednu vlastnost, žádné pořadí, žádná strategie per-part | v původním návrhu se neobjevuje vůbec, ani jako budoucí práce – jde o čistě nový požadavek, ne o dodělání něčeho rozpracovaného |
 | Vícesloupcové vztahy (FK) | `Relation` visí na jednom `PropertyMap`, žádné uspořádané páry sloupců; totéž omezení má i `JoinInstruction` | stejně jako u kompozitních klíčů nový požadavek, ne rozpracovaná věc z diplomky |
 | Automatická detekce zdrojového frameworku | uživatel musí framework vybrat ručně | zmíněno v diplomce jako budoucí rozšíření |
- 
+
 ## 3. Mapování požadavků na výchozí stav
- 
+
 Jak si nástroj k témuž datu stál vůči zadání vedoucího ([`requirements.md`](./requirements.md)).
- 
+
 | Požadavek | Stav | Poznámka |
 |---|---|---|
 | F1 | chybí | `AddPrimaryKey` bere jen jednu vlastnost, bez pořadí a bez strategie per-part |
@@ -54,7 +54,7 @@ Jak si nástroj k témuž datu stál vůči zadání vedoucího ([`requirements.
 | S6 | chybí | žádný identifikátor běhu ani strojově čitelný záznam překladu |
 | S7 | částečně | základní scénář v UI projde; validace před spuštěním, průběžný stav, chyby na úrovni souboru/řádku a stažení výstupního projektu chybí |
 | E1–E7 | nezačato | E7 přímo navazuje na existující ILP advisor |
- 
+
 ## 4. Nápady z původního výzkumu bez vazby na aktuální práci
- 
+
 Nízká priorita, jen ať se neztratí – diplomka je zmiňuje jako možné směry rozšíření Advisoru, se kterými dnešní implementace vůbec nepočítá: zahrnutí více databázových backendů do optimalizačního prostoru (ne jen výběr ORM, ale i výběr DB – PostgreSQL, MySQL, NoSQL), a modelování redundance/replikace dat (směrování dotazů na replikovaná/denormalizovaná úložiště). Žádné z toho není potřeba řešit teď, ale stojí za zapsání, kdyby se k tomu jednou vracelo.
