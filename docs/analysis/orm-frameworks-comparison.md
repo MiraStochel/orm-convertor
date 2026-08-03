@@ -168,7 +168,7 @@ Podpora `DateOnly` a `TimeOnly` je zároveň ukázkou, proč je nutné u každé
 | **Skip navigation** | ano, fakticky — `Book.Categories` míří rovnou na `Category` | ano, oficiálně tak pojmenované (od EF Core 5) | neexistuje |
 | **Payload na junction tabulce** | nelze na `<many-to-many>`; nutný rozpad na dvě 1:N přes explicitní entitu | nelze na implicitní junction; buď `UsingEntity<T>` s vlastní entitou, nebo rozpad na dvě 1:N | přirozeně |
 
-Zde vzniká rozpor, který je pro práci důležitý. Podle rozhodnutí `decisions/005-many-to-many-as-explicit-junction-entity.md` generuje IR vztah N:M jako **explicitní junction entitu** (varianta B), zatímco idiomatický výstup pro NHibernate i EF Core je **skip navigation**. Benchmarky to potvrzují: `WWIContext.OnModelCreating` používá `HasMany().WithMany().UsingEntity(...)` a mapování NHibernate používá `<many-to-many>`; ani v jednom případě neexistuje entita pro `StockItemStockGroups`.
+Zde vzniká rozpor, který je pro práci důležitý. Podle rozhodnutí [005](../decisions/005-many-to-many-as-explicit-junction-entity.md) generuje IR vztah N:M jako **explicitní junction entitu** (varianta B), zatímco idiomatický výstup pro NHibernate i EF Core je **skip navigation**. Benchmarky to potvrzují: `WWIContext.OnModelCreating` používá `HasMany().WithMany().UsingEntity(...)` a mapování NHibernate používá `<many-to-many>`; ani v jednom případě neexistuje entita pro `StockItemStockGroups`.
 
 Není to chyba návrhu. Explicitní junction entita je obecnější — unese payload i kompozitní klíč — a je to jediná forma, kterou umí vyjádřit všechny tři frameworky včetně Dapperu. Proto je v `EntityMap` příznak `IsJunctionTable` jako opt-in signál pro budoucí zploštění na skip navigation. Do analýzy tento případ patří jako doklad rozdílu mezi **expresivitou** (co lze vyjádřit) a **idiomatičností** (jak by to napsal člověk).
 
@@ -212,7 +212,7 @@ V `ORMComparison.sln` dědičnost úplně chybí, experimenty k tomuto tématu b
 | **Vytvoření databáze** | ne — pokud databáze neexistuje, skončí to chybou `Cannot open database ... requested by the login` | **ano**, `EnsureCreated()` vytvoří databázi i tabulky | ne |
 | **Vytvoření tabulek** | `new SchemaExport(cfg).Create(useStdOut, execute)` | `EnsureCreated()` | ručně psané DDL v `Execute(...)` |
 | **DDL bez připojení k databázi** | `new SchemaExport(cfg).Create(s => sb.AppendLine(s), execute: false)` | `context.Database.GenerateCreateScript()` | triviálně — DDL píše autor |
-| **Aktualizace existujícího schématu** | `SchemaUpdate` (best-effort, needestruktivní, neumí mazat) | **Migrations** — verzované, reverzibilní, s historií v tabulce `__EFMigrationsHistory` | ručně |
+| **Aktualizace existujícího schématu** | `SchemaUpdate` (best-effort, nedestruktivní, neumí mazat) | **Migrations** — verzované, reverzibilní, s historií v tabulce `__EFMigrationsHistory` | ručně |
 | **Validace schématu proti modelu** | `SchemaValidator` | `context.Database.GetPendingMigrations()`, plus runtime chyby | žádná |
 | **Smazání schématu** | `SchemaExport.Drop(...)`; `Create` napřed dropne, pak vytvoří | `EnsureDeleted()` | `DROP TABLE IF EXISTS` |
 | **Vhodnost pro produkci** | `SchemaExport` ne, `SchemaUpdate` s výhradami | Migrations ano | ruční správa, obvykle mimo aplikaci |
