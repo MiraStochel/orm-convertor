@@ -1,7 +1,7 @@
 # Architektura aplikace – současný stav
 
-**Účel:** referenční popis architektury tak, jak je dnes implementovaná, nezávisle na akademickém textu diplomky, ze které projekt vzešel.
-**Zdroj faktů:** vlastní čtení zdrojového kódu + kapitola *Architecture and Implementation* z původní diplomky (fakta přepsaná vlastními slovy, ne citace). Naposledy ověřeno proti kódu: červenec 2026.
+**Účel:** referenční popis architektury tak, jak je dnes implementovaná, nezávisle na akademickém textu diplomky, ze které projekt vzešel. Odpovídá na otázku „jak to teď funguje"; proč jsme co zvolili, je v [`decisions/`](./decisions/README.md), co zbývá udělat, v [`open-items.md`](./open-items.md).
+**Zdroj faktů:** vlastní čtení zdrojového kódu + kapitola *Architecture and Implementation* z původní diplomky (fakta přepsaná vlastními slovy, ne citace). Naposledy ověřeno proti kódu: 2026-08-02.
 
 ---
 
@@ -27,7 +27,7 @@ Aplikace je .NET 10 solution (povýšená z .NET 8) rozdělená na projekty tř�
 | `DapperWrappers` / `EFCoreWrappers` / `NHibernateWrappers` | konkrétní implementace parserů/builderů pro jednotlivé ORM, každý framework izolovaný ve vlastním projektu |
 | `OrmConvertor` | orchestrace – třída `ConversionHandler` přijímá zdrojový vstup, přes factory třídy najde správný parser/builder a vrátí výstup; s konkrétními implementacemi pracuje jen přes rozhraní |
 | `SampleData` | ukázkové vstupy (entity, mapování, dotazy) pro frontend – servírované přes endpointy `/samples` a `/samples-advisor`; zároveň se používají v testech |
-| `Advisor` | ILP optimalizátor (GLPK), vybírá framework/kombinaci frameworků podle naměřených nákladů – detaily v §7 |
+| `Advisor` | ILP optimalizátor (GLPK), vybírá framework/kombinaci frameworků podle naměřených nákladů – detaily v §8 |
 | `AdvisorBenchmarking` | dynamická kompilace a spuštění vygenerovaného kódu (Roslyn) pro reálné změření běhu a paměti |
 
 ## 3. Použité návrhové vzory
@@ -37,15 +37,115 @@ Aplikace je .NET 10 solution (povýšená z .NET 8) rozdělená na projekty tř�
 - **Builder** – entity/query buildery skládají výstupní kód postupně přes `StringBuilder`.
 - **Factory** – výběr správné konkrétní implementace parseru/builderu podle zvoleného ORM.
 
-## 4. Parsery a buildery – jak fungují dnes
+## 4. Mezireprezentace
+
+Mezireprezentace má dvě části: entitní a mapovací model (`Model.AbstractRepresentation`) a dotazové instrukce (`Model.QueryInstructions`).
+
+### 4.1 Entity a mapování
+
+`Entity` a `Property` popisují aplikační vrstvu – název, jmenný prostor, přístupové modifikátory, jazykový typ. `EntityMap` k entitě přidává databázová fakta:
+
+```csharp
+public class EntityMap
+{
+    public required Entity Entity { get; set; }
+    public string? Table { get; set; }
+    public string? Schema { get; set; }
+    public List<PropertyMap> PropertyMaps { get; set; } = [];
+    public PrimaryKey? PrimaryKey { get; set; }
+    public List<Relation> Relations { get; set; } = [];
+    public bool IsJunctionTable { get; set; } = false;
+}
+```
+
+`PropertyMap` nese název sloupce, databázový typ, délku, precision, scale, nullabilitu a volný slovník `OtherDatabaseProperties` pro ostatní metadata ve tvaru klíč–hodnota. Vztah na `PropertyMap` **není** – žije výhradně na entitě, viz §4.3.
+
+### 4.2 Primární klíč
+
+```csharp
+public sealed class PrimaryKey
+{
+    public required IReadOnlyList<PrimaryKeyPart> Parts { get; init; }   // vždy seřazené podle Order
+}
+
+public sealed class PrimaryKeyPart
+{
+    public required PropertyMap PropertyMap { get; init; }
+    public required int Order { get; init; }                             // explicitní, 1-based
+    public PrimaryKeyStrategy Strategy { get; init; } = PrimaryKeyStrategy.None;   // per-part
+}
+```
+
+Klíč je seřazený seznam částí; jednoduchý klíč je degenerovaný případ o jedné části. Pořadí je explicitní hodnota, ne pozice v seznamu – EF Core řeší tentýž problém atributem `[Column(Order = N)]` a u NHibernate XML `<composite-id>` by se pořadí prvků dalo splést s pořadím parsování.
+
+Řazení podle `Order` vynucuje setter vlastnosti `Parts`, takže invariant platí na každé konstrukční cestě včetně přímé inicializace objektu a buildery mohou seznam iterovat tak, jak je. Prázdný klíč je odmítnut výjimkou.
+
+Strategie generování je per-part. Model je záměrně permisivní – dovolí i kombinaci, kterou konkrétní databáze nepřijme (například dvě `Identity` části); validace typu „tabulka smí mít jen jednu IDENTITY" patří cílovému builderu nebo databázi, ne abstraktnímu modelu.
+
+Členy, které si kompozitní klíč v cílovém frameworku vynucuje – u NHibernate `Equals`, `GetHashCode` a `[Serializable]`, u JPA celá ID třída – v mezireprezentaci nejsou; generuje je builder (rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md)).
+
+### 4.3 Vztahy
+
+```csharp
+public sealed class Relation
+{
+    public string? Name { get; set; }
+    public required Cardinality Cardinality { get; set; }        // OneToOne, OneToMany, ManyToMany, ManyToOne
+    public required RelationRole Role { get; set; }              // Owning, Inverse
+    public required string SourceEntity { get; set; }            // název entity, ne reference
+    public required string TargetEntity { get; set; }
+    public IReadOnlyList<ColumnPair> ColumnPairs { get; set; } = [];
+    public string? SourceNavigationProperty { get; set; }
+    public bool IsUnique { get; set; }                           // true = 1:1
+    public string? InverseRelationName { get; set; }
+}
+```
+
+Vztah žije na `EntityMap`, ne na `PropertyMap` – u 1:N a N:M neexistuje na straně „mnoho" žádný sloupec, na který by šlo vztah pověsit.
+
+`Role` rozlišuje stranu s fyzickým cizím klíčem (`Owning`) od strany s navigační kolekcí nebo referencí bez sloupce (`Inverse`). Builder podle role generuje buď vlastnost s cizím klíčem, nebo navigaci.
+
+`ColumnPairs` je uspořádaný seznam dvojic sloupců, který zaručuje správné párování u kompozitního cizího klíče. `ColumnPair` je záměrně třída, ne tuple – System.Text.Json položky tuple neserializuje. **Prázdný seznam znamená, že sloupce zatím nejsou rozresolvované**; cílové sloupce nejdou určit z jedné translation unit a jejich doplnění závisí na metadatech z databáze (F4/F5).
+
+Entity se ve vztahu odkazují jménem, ne referencí (rozhodnutí [001](./decisions/001-entity-reference-by-name.md)).
+
+N:M nemá vlastní typ vztahu. Skládá se ze spojovací entity s `IsJunctionTable = true` a dvou `Owning` relací s kardinalitou `ManyToOne`, které z ní míří k oběma stranám:
+
+```
+StudentCourse (IsJunctionTable = true)
+ ├─ Relation(Owning, ManyToOne) → Student   (ColumnPairs: [StudentId ↔ Id])
+ └─ Relation(Owning, ManyToOne) → Course    (ColumnPairs: [CourseId ↔ Id])
+```
+
+„Bohatá" spojovací tabulka s vlastními sloupci navíc je z pohledu modelu prostě normální entita se dvěma cizími klíči. `IsJunctionTable` je volitelný signál, že tabulka je „čistá" – dnešní buildery ho k ničemu nepotřebují (rozhodnutí [005](./decisions/005-many-to-many-as-explicit-junction-entity.md)).
+
+### 4.4 Dotazové instrukce a podmínkový strom
+
+Dotaz je seznam instrukcí (`FromInstruction`, `ProjectInstruction`, `SelectInstruction`, `JoinInstruction`, `GroupByInstruction`, `HavingInstruction`, `OrderByInstruction`, `SubQueryInstruction`, `SetOperationInstruction`), každá s metodou `Accept(IQueryVisitor)`.
+
+Filtrační a spojovací podmínky jsou strom (`Model.QueryInstructions.Conditions`):
+
+- `ComparisonCondition` – levá i pravá strana jako trojice tabulka/vlastnost/konstanta plus volitelná funkce (`COUNT`, `SUM`, …), mezi nimi `ComparisonOperator`
+- `LogicalCondition` – `And` nebo `Or` nad seznamem operandů
+- `NotCondition` – negace jednoho operandu
+
+Test na `NULL` je operátor `IsNull`/`IsNotNull` s nevyužitou pravou stranou, ne samostatný uzel ani porovnání s konstantou (rozhodnutí [002](./decisions/002-is-null-as-comparison-operator.md)).
+
+`SelectInstruction` i `HavingInstruction` nesou právě jeden `ConditionNode`; místo seznamu plochých instrukcí spojovaných builderem přes AND je celá podmínka včetně vnoření ve stromu. `JoinInstruction` má ON klauzuli rovněž jako `ConditionNode`, takže vícesloupcový equi-join je jen `And` několika rovností a nepotřebuje vlastní mechanismus.
+
+`IQueryVisitor` má kromě metod pro instrukce i `Visit` pro všechny tři typy podmínkových uzlů. Implementace musí hlídat závorkování – vnořený `LogicalCondition` s odlišným operátorem (AND obsahující OR) se musí obalit, jinak vznikne sémanticky jiný dotaz.
+
+## 5. Parsery a buildery – jak fungují dnes
 
 - Všechny entity parsery používají Roslyn syntax analyzer. Dapper parser čte jen strukturu entity (Dapper mapování nepodporuje), EF Core parser navíc interpretuje atributové mapování, NHibernate má dva samostatné parsery – jeden pro entitu (stejně jako Dapper), druhý pro XML mapování (LINQ to XML).
 - Parsování dotazů je implementované jen pro EF Core LINQ (`EFCoreLinqQueryParser` dědí z Roslyn `CSharpSyntaxWalker`, přepisuje `Visit*` metody pro analýzu řetězených volání).
 - Generování dotazů je implementované jen pro Dapper SQL (přes `StringBuilder` + dedikovaný visitor `DapperSQLQueryVisitor`).
 - Entity buildery fungují stejně napříč frameworky – skládají string šablony; NHibernate builder plní dva `StringBuilder`y najednou a vrací dva výstupy (C# entitu + XML mapování).
+- Kompozitní klíč vykresluje EF Core builder atributem `[PrimaryKey]`, NHibernate builder elementem `<composite-id>` s `<key-property>` a k tomu na entitní třídu doplní `[Serializable]` a přepisy `Equals`/`GetHashCode`. Bez nich NHibernate shodí stavbu session factory hláškou `composite-id class must override Equals()`.
+- Dapper builder kroky `BuildPrimaryKey` a `BuildForeignKey` vynechává úplně, protože Dapper mapování klíčů nemá. Dnes je zahazuje potichu; podle rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md) o nich má nést strukturované varování – zatím neimplementováno.
 - Převod typů není mezi frameworky symetrický. Konvertor pro EF Core je u data a času bijekce (`datetime`, `datetime2`, `smalldatetime` tam i zpět), protože `HasColumnType` bere doslovný SQL typ. Konvertor pro NHibernate slévá `DatabaseType.DateTime`, `DateTime2` i `SmallDateTime` do jediného `type="DateTime"` a zpětný převod vrací všechny tři jako `DateTime2`. Round-trip přes NHibernate tedy z `datetime` i `smalldatetime` udělá `datetime2` – idempotence po první normalizaci platí, identita ne; u `smalldatetime` je to navíc změna přesnosti z minuty na 100 ns a rozsahu z 1900–2079 na 0001–9999. Příčinou není chyba v převodní tabulce, ale to, že `type` v mapování NHibernate je typ NHibernate, ne SQL typ – konkrétní SQL typ z něj odvozuje dialekt. Pod zafixovanými verzemi to odpovídá i skutečnosti: NHibernate 5.7.0 s `MsSql2012Dialect` vyrobí z typu `DateTime` sloupec `datetime2`, protože dialekty pro SQL Server 2008+ ho používají od verze 5.0.0, a typ `DateTime2` je od téže verze obsoletní. Rozdíl by šlo udržet přes `sql-type` na `<column>`, to ale vyžaduje znát cílový dialekt, který se dnes nikde nedeklaruje.
 
-## 5. Spuštění a nasazení
+## 6. Spuštění a nasazení
 
 **Přes Visual Studio:** otevřít `ORMConvertor.sln`, nastavit `ORMConvertorAPI` jako startup projekt, spustit (`F5` / `Ctrl+F5`). Otestovaný je jen `http` launch profil.
 
@@ -73,24 +173,28 @@ ng build --configuration "production" --base-href "/orm/" --deploy-url "/orm/"
 # a zkopírovat dist/browser/* do ../wwwroot/
 ```
 
-**Kontejnerizované nasazení:** v repozitáři je i `docker-compose.yml` (aplikace + SQL Server s WideWorldImporters přes `database.Dockerfile`) a vícestupňový `ORMConvertorAPI/Dockerfile`, který sestaví frontend (Node), nativní knihovnu Advisoru (`libadvisor.so`, gcc + GLPK) i .NET aplikaci. Soubor `ecosystem.config.js` je konfigurace pro proces manager PM2 (nasazení mimo Docker). Tahle cesta zatím není podrobněji zdokumentovaná – viz úklidové úkoly v `docs/current-state.md`.
+**Kontejnerizované nasazení:** v repozitáři je i `docker-compose.yml` (aplikace + SQL Server s WideWorldImporters přes `database.Dockerfile`) a vícestupňový `ORMConvertorAPI/Dockerfile`, který sestaví frontend (Node), nativní knihovnu Advisoru (`libadvisor.so`, gcc + GLPK) i .NET aplikaci. Soubor `ecosystem.config.js` je konfigurace pro proces manager PM2 (nasazení mimo Docker). Tahle cesta zatím není podrobněji zdokumentovaná – viz [`open-items.md`](./open-items.md).
 
-## 6. Rozhraní parserů a builderů
+## 7. Rozhraní parserů a builderů
 
-`AbstractEntityBuilder` odděluje dvě sady metod. **Naplnění mezireprezentace** řeší veřejné metody implementované přímo v abstraktní třídě (framework-nezávislé): `BeginEntity` (začátek další entity – builder umí držet víc entit najednou v `EntityMaps`), `AddNamespace`, `AddClassHeader`, `AddSchema`, `AddTable`, `AddProperty`, `SetPropertyDatabaseMapping` (databázové detaily mapování – sloupec, typ, délka, precision/scale, nullabilita, ostatní klíč–hodnota), `AddPrimaryKey`, `AddForeignKey`.
+`AbstractEntityBuilder` odděluje dvě sady metod. **Naplnění mezireprezentace** řeší veřejné metody implementované přímo v abstraktní třídě (framework-nezávislé): `BeginEntity` (začátek další entity – builder umí držet víc entit najednou v `EntityMaps`), `AddNamespace`, `AddClassHeader`, `AddSchema`, `AddTable`, `AddProperty`, `SetPropertyDatabaseMapping` (databázové detaily mapování – sloupec, typ, délka, precision/scale, nullabilita, ostatní klíč–hodnota), `AddPrimaryKey`, `AddForeignKey` a `AddRelation`. `AddPrimaryKey` má dvě přetížení: seznam trojic `(PropertyName, Order, Strategy)` pro kompozitní klíč a pohodlnou zkratku pro jednoduchý klíč.
 
-**Generování výstupu** deklaruje abstraktní třída jako jedinou veřejnou abstraktní `Build()` a šest `protected abstract` metod (`BuildImports`, `BuildTableSchema`, `BuildPrimaryKey`, `BuildForeignKey`, `BuildProperties`, `FinalizeBuild`). Skutečnost je ale taková, že tohle rozdělení je pozůstatek staršího návrhu pro jednu entitu: každý konkrétní builder si `Build()` implementuje sám – iteruje přes `EntityMaps` a volá **vlastní privátní statické overloady** týchž metod s parametry `(EntityMap, StringBuilder…)`. Bezparametrické `protected override` verze jsou ve všech třech builderech prázdné stuby s komentářem `// unused in multi-entity flow`. Reálné pořadí kroků v EF Core i NHibernate builderu je: `BuildImports` → `BuildTableSchema` → `BuildPrimaryKey` → `BuildProperties` → `BuildForeignKey` → `FinalizeBuild` (primární klíč se generuje **před** vlastnostmi). Dapper builder kroky `BuildPrimaryKey` a `BuildForeignKey` vynechává úplně, protože Dapper mapování klíčů nemá. Kandidát na refaktoring: buď z `Build()` udělat šablonovou metodu nad overloady s parametry, nebo mrtvé stuby odstranit.
+**Generování výstupu** deklaruje abstraktní třída jako jedinou veřejnou abstraktní `Build()` a šest `protected abstract` metod (`BuildImports`, `BuildTableSchema`, `BuildPrimaryKey`, `BuildForeignKey`, `BuildProperties`, `FinalizeBuild`). Skutečnost je ale taková, že tohle rozdělení je pozůstatek staršího návrhu pro jednu entitu: každý konkrétní builder si `Build()` implementuje sám – iteruje přes `EntityMaps` a volá **vlastní privátní statické overloady** týchž metod s parametry `(EntityMap, StringBuilder…)`. Bezparametrické `protected override` verze jsou ve všech třech builderech prázdné stuby s komentářem `// unused in multi-entity flow`. Reálné pořadí kroků v EF Core i NHibernate builderu je: `BuildImports` → `BuildTableSchema` → `BuildPrimaryKey` → `BuildProperties` → `BuildForeignKey` → `FinalizeBuild` (primární klíč se generuje **před** vlastnostmi). Kandidát na refaktoring: buď z `Build()` udělat šablonovou metodu nad overloady s parametry, nebo mrtvé stuby odstranit.
+
+`AbstractQueryBuilder` přijímá podmínky hotové: `Where(ConditionNode)`, `Having(ConditionNode)` a `Join(JoinKind, left, right, ConditionNode, alias?)`. Parser si strom postaví sám rekurzivním průchodem zdrojové syntaxe a předá ho jedním voláním – to odpovídá tomu, jak `EFCoreLinqQueryParser` už dnes rekurzivně prochází syntaxi, a je to přirozenější než inkrementální mutace builderu.
 
 `IParser` (entity/mapování) definuje jen dvě metody: `CanParse(contentType)` – zjistí, jestli parser umí daný vstupní formát (důležité tam, kde je mapování rozdělené do víc souborů, typicky NHibernate XML), a `Parse(source)`, která nemá návratovou hodnotu a místo toho naplňuje mezireprezentaci přes volání na `AbstractEntityBuilder`. `IQueryParser` je stejné, jen `Parse` navíc bere referenci na už naparsované mapování entit, protože dotaz sám o sobě často neobsahuje název tabulky/sloupce (typicky LINQ).
 
-Původní návrh pro `AbstractQueryBuilder` (v `thesis/chapters/04_query_translation.tex` v původním repozitáři) počítá s `Push()`/`Pop()` metodami pro vstup/výstup z vnořeného poddotazu a se dvěma abstraktními výstupními metodami – `Build()` pro nativní syntaxi cílového frameworku (LINQ apod.) a `BuildSQL()` pro syrové SQL. Ověřeno proti kódu: `Push()`/`Pop()` implementované jsou (zásobník značek, `Pop()` obalí nasbírané instrukce do `SubQueryInstruction`; `SetOperation` je bez předchozího Push/Pop odmítnutá výjimkou). `BuildSQL()` ale **neexistuje** – je jen jediná abstraktní `Build()` vracející `List<ConversionSource>`; rozlišení nativní syntaxe vs. SQL bude potřeba dořešit při implementaci query builderů pro EF Core a NHibernate. Poddotazy jsou navíc ve visitor vrstvě dotažené jen napůl: `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` obsahuje `TODO` a vrací prázdný string (instrukce uvnitř poddotazu projde, ale výsledek se nikam neskládá). Tvar `SelectInstruction` se od návrhu odchýlil taky – řešeno v `docs/design/001-query-model-and-composite-keys.md`.
+Původní návrh pro `AbstractQueryBuilder` (v `thesis/chapters/04_query_translation.tex` v původním repozitáři) počítá s `Push()`/`Pop()` metodami pro vstup/výstup z vnořeného poddotazu a se dvěma abstraktními výstupními metodami – `Build()` pro nativní syntaxi cílového frameworku (LINQ apod.) a `BuildSQL()` pro syrové SQL. Ověřeno proti kódu: `Push()`/`Pop()` implementované jsou (zásobník značek, `Pop()` obalí nasbírané instrukce do `SubQueryInstruction`; `SetOperation` je bez předchozího Push/Pop odmítnutá výjimkou). `BuildSQL()` ale **neexistuje** – je jen jediná abstraktní `Build()` vracející `List<ConversionSource>`; rozlišení nativní syntaxe vs. SQL bude potřeba dořešit při implementaci query builderů pro EF Core a NHibernate. Poddotazy jsou navíc ve visitor vrstvě dotažené jen napůl: `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` obsahuje `TODO` a vrací prázdný string (instrukce uvnitř poddotazu projde, ale výsledek se nikam neskládá).
 
-## 7. Advisor – implementační detaily
+## 8. Advisor – implementační detaily
 
 ILP model je napsaný v C (`Advisor/ilp.c`) přímo přes GLPK C API (ne přes vyšší úroveň abstrakce): `glp_create_prob()` založí úlohu, `glp_add_cols()`/`glp_set_col_kind()` definují binární proměnné $x_{q,f}$ a $y_f$, `glp_set_obj_coef()` nastaví účelovou funkci, `glp_add_rows()`/`glp_set_row_bnds()` definují omezení, `glp_load_matrix()` nahraje řídkou matici koeficientů. Řešení spouští `glp_init_iocp()` (parametry solveru) a `glp_intopt()` (branch-and-bound). Výsledek se čte zpět přes `glp_mip_col_val()`.
 
 C# strana (`Advisor.Solve`) volá tenhle wrapper přes P/Invoke – `[LibraryImport("libadvisor.so")]`. Knihovna `libadvisor.so` se kompiluje jen v Docker buildu (stage `advisor-native`: gcc + `libglpk-dev`); název je natvrdo linuxový, takže Advisor mimo Linux/Docker neběží – překladová část aplikace na tom nezávisí a funguje všude. Build krok pro Windows (`advisor.dll`) neexistuje, i když `ilp.c` má exportní makra připravená.
 
-## 8. Co je záměrně mimo rozsah dnešní implementace
+## 9. Co je záměrně mimo rozsah dnešní implementace
 
-Podrobný seznam a zdůvodnění je v [`docs/current-state.md`](./current-state.md). Stručně: podpora jen tří ORM, jednosměrný překlad dotazů (jen EF Core → Dapper), Advisor omezený na Dapper a EF Core, žádné napojení na databázi pro doplnění chybějících metadat, žádné vnořené/OR podmínky v dotazech, žádná podpora kompozitních klíčů ani vícesloupcových vztahů.
+Výchozí stav při převzetí projektu popisuje [`baseline.md`](./baseline.md), otevřené položky a jejich pořadí [`open-items.md`](./open-items.md).
+
+Stručně: podporované jsou tři .NET ORM, překlad dotazů je jednosměrný (jen EF Core → Dapper), Advisor pracuje jen s Dapperem a EF Core, napojení na databázi pro doplnění chybějících metadat neexistuje – a s ním ani rozresolvované `ColumnPairs`. Javový ekosystém a cross-ecosystem překlad zatím nezačaly; typový model je stále CLR-specifický.

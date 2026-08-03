@@ -11,7 +11,7 @@ This repository continues the development of a prototype originally created by M
 | Directory | Contents |
 |---|---|
 | `ORMConvertor/` | The translation and advisor tool: .NET 10 solution (ASP.NET Core REST API + Angular frontend). See [`ORMConvertor/README.md`](ORMConvertor/README.md) for build and run instructions. |
-| `docs/` | Project documentation: [current architecture](docs/architecture.md), [implementation status and gaps](docs/current-state.md), and [design documents](docs/design/) for planned extensions. |
+| `docs/` | Project documentation: [current architecture](docs/architecture.md), [what works today](docs/architecture.md), [what remains](docs/open-items.md), and [design decisions](docs/decisions/). |
 | `benchmarks/` | Experimental comparison of seven .NET ORMs (unit tests and performance benchmarks) inherited from the original research. |
 | `diagrams/` | Diagrams created with [draw.io](https://www.drawio.com/). |
 | `notes/` | Research notes in Czech comparing ORM frameworks feature by feature. |
@@ -22,7 +22,7 @@ This repository continues the development of a prototype originally created by M
 - **Query translation**, currently one direction: EF Core LINQ → Dapper SQL.
 - **Advisor**: given a set of entities and queries, translates the queries into candidate frameworks, compiles and benchmarks them against a live database (Roslyn dynamic compilation), and solves an ILP model (GLPK) to recommend a framework assignment under user constraints (framework count limit, memory budget, query weights). Currently supports Dapper and EF Core.
 
-The current implementation status, including known limitations and missing features, is tracked in [`docs/current-state.md`](docs/current-state.md).
+The current implementation status, including known limitations and missing features, is tracked in [`docs/open-items.md`](docs/open-items.md).
 
 ## Getting started
 
@@ -40,7 +40,7 @@ The `benchmarks` directory contains the static and experimental comparison of se
 
 ## Roadmap
 
-The main directions of ongoing work (detailed in [`docs/current-state.md`](docs/current-state.md) and [`docs/design/`](docs/design/)):
+The main directions of ongoing work (detailed in [`docs/open-items.md`](docs/open-items.md)):
 
 - Full query parser/builder coverage for all three supported frameworks (NHibernate LINQ, Dapper SQL parsing, EF Core and NHibernate query generation).
 - A proper boolean condition tree for WHERE/HAVING/JOIN clauses (replacing the current flat AND-only model).

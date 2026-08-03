@@ -2,6 +2,8 @@
 
 Dokument shrnuje výsledky auditu provedeného po dokončení kroků 1–4 z design docu 001, po zafixování verzí frameworků a po analýze tří .NET ORM frameworků. Slouží jako pracovní plán dalšího postupu.
 
+*Audit vznikl ještě za předchozí struktury dokumentace, kterou nahradilo rozhodnutí 007. Nálezy zůstávají v původním znění; zmínky o changelogu a design docech popisují tehdejší stav.*
+
 Struktura: nejdřív zjištění, pak dopady rozšíření na Javu, pak konkrétní seznam oprav, pak návazné úpravy návrhu a nakonec přehled dřívějších položek, které dosud nebyly zapracované.
 
 ## Zafixované verze
@@ -147,7 +149,7 @@ Požadavek S6 přitom vyžaduje verze frameworků zaznamenávat ve strojově či
 
 ### 3.5 Dokumentace nepokrývá aktuální stav
 
-1. Z dvojice `current-state.md` + `changelog.md`, která má podle konvence tvořit aktuální stav, **nelze zjistit, že design doc 002 existuje**. `current-state.md` je zmražený snímek a zmiňuje jen 001; changelog má jediný záznam, který na 002 neodkazuje.
+1. Z dvojice `current-state.md` + `changelog.md`, která tehdy podle konvence tvořila aktuální stav, **nelze zjistit, že design doc 002 existuje**. `current-state.md` je zmražený snímek a zmiňuje jen 001; changelog má jediný záznam, který na 002 neodkazuje.
 2. Chybí záznam v changelogu o normalizaci konců řádků (commit `abb777f`, 27 souborů, kořenový `.gitattributes`).
 
 ---
@@ -238,7 +240,7 @@ Tři samostatné jednořádkové opravy v `NHibernateWrappers/Convertors/Databas
 
 Přesunout řazení částí klíče z `AbstractEntityBuilder.AddPrimaryKey` do typu `PrimaryKey`, aby platilo na každé konstrukční cestě, a zdvojené řazení v builderu odstranit. `SampleData` se nemění. Validace duplicitních hodnot `Order` sem nepatří — viz zjištění 3.1 a položka Ú1.
 
-### O5 — Doplnit chybějící záznamy do changelogu
+### O5 — Doplnit chybějící záznamy do changelogu *(provedeno; changelog později zrušen rozhodnutím 007)*
 
 1. Normalizace konců řádků (commit `abb777f`).
 2. Vznik design docu 002, aby existence dokumentu byla odvoditelná z `current-state.md` + `changelog.md`. Součástí je rozhodnutí, zda se vznik design docu obecně do changelogu zaznamenává; dosavadní praxe to nedělá, ale pak dvojice zdrojů pravdy nestačí.
