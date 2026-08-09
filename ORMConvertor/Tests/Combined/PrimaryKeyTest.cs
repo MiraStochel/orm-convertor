@@ -179,6 +179,43 @@ public class PrimaryKeyTest
         Assert.Contains("<generator class=\"identity\" />", xml);
     }
 
+    [Fact]
+    public void SimpleKeyKeepsColumnNameAndDatabaseType()
+    {
+        const string entitySource = """
+            namespace EFCoreEntities;
+
+            using System.ComponentModel.DataAnnotations;
+            using System.ComponentModel.DataAnnotations.Schema;
+
+            [Table("Customers", Schema = "Sales")]
+            public class Customer
+            {
+                [Key]
+                [Column("CustomerId", TypeName = "int")]
+                public required int CustomerID { get; set; }
+
+                public required string Name { get; set; }
+            }
+            """;
+
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse(entitySource);
+
+        var pk = builder.EntityMap.PrimaryKey;
+        Assert.NotNull(pk);
+
+        // The mapping is recorded before the key is declared, and the key part picks
+        // up the existing property mapping - so a simple key carries the same set of
+        // facts as a composite one.
+        var part = Assert.Single(pk.Parts);
+        Assert.Equal("CustomerID", part.PropertyMap.Property.Name);
+        Assert.Equal("CustomerId", part.PropertyMap.ColumnName);
+        Assert.Equal(DatabaseType.Int, part.PropertyMap.Type);
+        Assert.Equal(CLRType.Int, part.PropertyMap.Property.Type.CLRType);
+        Assert.Equal(PrimaryKeyStrategy.Identity, part.Strategy);
+    }
+
     private static PropertyMap NewPropertyMap(string propertyName) => new()
     {
         Property = new Property

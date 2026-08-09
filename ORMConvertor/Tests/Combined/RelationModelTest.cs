@@ -1,4 +1,5 @@
 ﻿using EFCoreWrappers;
+using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers;
 
@@ -75,5 +76,66 @@ public class RelationModelTest
         Assert.Equal(Cardinality.OneToOne, relation.Cardinality);
         Assert.Equal(RelationRole.Owning, relation.Role);
         Assert.True(relation.IsUnique);
+    }
+
+    [Fact]
+    public void MultiColumnForeignKeyReferencesTargetKeyPartsInOrder()
+    {
+        var builder = new DummyEntityBuilder();
+
+        // Target entity with a two-part key.
+        builder.BeginEntity();
+        builder.AddClassHeader("public", "OrderLine");
+        builder.AddProperty("int", "OrderID");
+        builder.AddProperty("long", "CompanyID");
+        builder.AddPrimaryKey(
+        [
+            ("OrderID", 1, PrimaryKeyStrategy.None),
+            ("CompanyID", 2, PrimaryKeyStrategy.None),
+        ]);
+        var target = builder.EntityMap;
+
+        // Source entity referencing it through two foreign key columns.
+        builder.BeginEntity();
+        builder.AddClassHeader("public", "OrderLineAllocation");
+        builder.AddProperty("int", "OrderRef");
+        builder.AddProperty("long", "CompanyRef");
+        var source = builder.EntityMap;
+
+        // No parser fills ColumnPairs today - resolving them needs several entities at
+        // once - so the relation is assembled through the builder API. What this test
+        // pins down is that the model can express a multi-column foreign key at all.
+        builder.AddRelation(new Relation
+        {
+            Cardinality = Cardinality.ManyToOne,
+            Role = RelationRole.Owning,
+            SourceEntity = "OrderLineAllocation",
+            TargetEntity = "OrderLine",
+            ColumnPairs =
+            [
+                new ColumnPair
+                {
+                    Source = source.PropertyMaps.Single(pm => pm.Property.Name == "OrderRef"),
+                    Target = target.PrimaryKey!.Parts[0].PropertyMap,
+                },
+                new ColumnPair
+                {
+                    Source = source.PropertyMaps.Single(pm => pm.Property.Name == "CompanyRef"),
+                    Target = target.PrimaryKey!.Parts[1].PropertyMap,
+                },
+            ],
+        });
+
+        Assert.Equal(2, builder.EntityMaps.Count);
+
+        var relation = Assert.Single(source.Relations);
+        Assert.Equal(2, relation.ColumnPairs.Count);
+        Assert.Equal("OrderRef", relation.ColumnPairs[0].Source.Property.Name);
+        Assert.Equal("CompanyRef", relation.ColumnPairs[1].Source.Property.Name);
+
+        // The target side is not a copy - the pairs point at the very property mappings
+        // that make up the target key, in the key's own order.
+        Assert.Same(target.PrimaryKey!.Parts[0].PropertyMap, relation.ColumnPairs[0].Target);
+        Assert.Same(target.PrimaryKey!.Parts[1].PropertyMap, relation.ColumnPairs[1].Target);
     }
 }
