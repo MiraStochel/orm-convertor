@@ -10,28 +10,22 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-1. **Diagnostika jako kategorie** (rozhodnutí) — rozhodnutí 008 na ni deleguje evidenci původu faktu, takže se stala předpokladem jeho implementace.
-2. **Členy vynucené frameworkem** (rozhodnutí) — sourozenec deklarace požadavků cíle z rozhodnutí 008; odblokuje junction entitu.
-3. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje `ColumnPairs`, detekci N:M i Dapper jako plnohodnotný zdroj.
-4. **Junction entita v builderech** (práce) — první bod, kterým se N:M propíše do generovaného kódu.
-5. **Deklarace cílových verzí frameworků** a **neutralizace typového modelu** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10.
-6. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+1. **Deskriptor cílového frameworku** (práce) — nečeká na nic a je předpokladem čtení katalogu i junction entity.
+2. **Diagnostika jako kategorie** (rozhodnutí) — rozhodnutí 008 na ni deleguje evidenci původu faktu, takže se stala předpokladem jeho implementace.
+3. **Prostředí s databází pro vývoj a testy** (práce) — bez něj nelze čtení katalogu otestovat jinak než proti mocku.
+4. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje `ColumnPairs`, detekci N:M i Dapper jako plnohodnotný zdroj.
+5. **Junction entita v builderech** (práce) — první bod, kterým se N:M propíše do generovaného kódu.
+6. **Deklarace cílových verzí frameworků** a **neutralizace typového modelu** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10.
+7. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
 ## Otevřená rozhodnutí
 
-### Členy vynucené frameworkem jako pojmenovaný koncept
-*Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md), sourozenec deklarace požadavků cíle z rozhodnutí [008](./decisions/008-database-as-metadata-source.md). Podklad: audit 2026-08-02, kap. 4.4.*
-
-Zavést do architektury explicitní pojem pro boilerplate, který cílový framework vyžaduje a který není faktem o doméně — `Equals`/`GetHashCode`/`[Serializable]` u NHibernate, ID třída u JPA, `virtual` na mapovaných členech. Cíl: každý nový builder má jedno místo, kde deklaruje, co musí ke generované třídě přidat, a existuje na to společný test.
-
-Dnes to buildery řeší ad hoc a `virtual` je zadrátovaný v `BuildPropertySignature`. Při pěti a více cílových frameworcích si to jinak každý nový builder objeví znovu a na něco zapomene. Rozhodnutí 008 zavádí obrácenou polovinu téhož: deklaraci toho, co cíl potřebuje na vstupu. Obě mají mít jedno místo a je namístě rozhodnout je společně.
-
 ### Diagnostika jako kategorie
 *Zobecňuje rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md), předpoklad implementace rozhodnutí [008](./decisions/008-database-as-metadata-source.md). Podklad: audit 2026-08-02, kap. 2.1 a 4.6.*
 
-Přeformulovat mechanismus „fakt nevyjádřitelný v cílovém frameworku" tak, aby byl parametrizovaný frameworkem, ne dapperovskou větví. Seznam faktů pro Dapper už existuje ve srovnávací analýze, pro MyBatis bude analogický.
+Přeformulovat mechanismus „fakt nevyjádřitelný v cílovém frameworku" tak, aby byl parametrizovaný frameworkem, ne dapperovskou větví. Seznam faktů pro Dapper existuje ve srovnávací analýze a rozhodnutí [009](./decisions/009-target-framework-descriptor.md) mu dalo závazné místo v deskriptoru cílového frameworku jako stav „neumím vyjádřit"; pro MyBatis bude analogický.
 
 Do stejné kategorie patří i zúžení uvnitř typového modelu, nejen fakty, které cíl neunese — konkrétně slévání `DateTime`, `DateTime2` a `SmallDateTime` do jediného typu NHibernate. Diagnostika by měla ohlásit obojí a rozlišit to: první případ je vlastnost cílového frameworku, druhý vlastnost převodu a dá se odstranit.
 
@@ -42,7 +36,7 @@ Rozhodnutí 008 sem přidalo dvě věci: evidenci původu každého faktu — ze
 
 Rozhodnout, kde se deklaruje cílová verze frameworku pro převod — v IR, nebo v konfiguraci převodu. Zpřesní generování: volba mezi `[PrimaryKey]` a `HasKey` podle verze EF Core, dostupnost `DateOnly` podle verze NHibernate, dialekt pro odvození SQL typu.
 
-Dnes wrappery nereferencují žádný ORM balíček, jen Roslyn, takže cílová verze není nikde uvedená a existuje jen implicitní předpoklad o cílové syntaxi.
+Dnes wrappery nereferencují žádný ORM balíček, jen Roslyn, takže cílová verze není nikde uvedená a existuje jen implicitní předpoklad o cílové syntaxi. Místo pro ni je připravené v deskriptoru cílového frameworku (rozhodnutí [009](./decisions/009-target-framework-descriptor.md)), který nese ostatní vlastnosti cíle.
 
 ### Neutralizace typového modelu
 *Rozsahem na samostatné rozhodnutí, ne na odstavec. Podklad: audit 2026-08-02, kap. 2.2–2.4 a 4.5.*
@@ -77,17 +71,33 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 
 ## Otevřená práce
 
-### Čtení databázového katalogu
-*Rozhodnutí [008](./decisions/008-database-as-metadata-source.md). Požadavky F4, F5, F6.*
+### Deskriptor cílového frameworku
+*Rozhodnutí [009](./decisions/009-target-framework-descriptor.md).*
 
-Komponenta, která na jednom místě čte metadata z připojené databáze, a deklarace na straně cílového frameworku, ze které se sestavuje poptávka. Dnes žádné čtení katalogu pro doplnění mezireprezentace neexistuje — buildery chybějící fakt nahrazují konvencí a nikde to nezaznamenají.
+Typ, který pro každý framework na jednom místě uvádí vynucené členy — co builder přidá ke generovanému artefaktu, ačkoli to není fakt o doméně — a vztah ke kategoriím mapovacích faktů ve třech stavech: vyžaduji, umím vyjádřit, neumím vyjádřit. Dnes tyto informace v kódu jsou, ale nepojmenované: `virtual` je zadrátovaný v `BuildPropertySignature`, identitní členy generuje privátní `BuildIdentityMembers` mimo šestici abstraktních metod, a bezparametrický konstruktor s nefinální třídou u NHibernate vycházejí správně jen proto, že je builder negeneruje vůbec.
+
+Součástí je jednorázový přepis `Build()` na šablonovou metodu nad kroky s parametry, protože krok pro vynucené členy nemá kam zavěsit: dnes si `Build()` píše každý builder sám a šest `protected abstract` metod zůstalo jako prázdné stuby s poznámkou `// unused in multi-entity flow` — čtyři v Dapper builderu, šest v EF Core a šest v NHibernate, přičemž Dapper navíc nechává `BuildPrimaryKey` a `BuildForeignKey` házet `NotImplementedException`.
+
+K tomu společný test napříč frameworky, který proti deskriptoru ověří přítomnost vynucených členů za podmínek, za kterých platí. Přesně takový test u identitních členů chyběl a jeho absence pustila do repozitáře nespustitelný výstup.
+
+### Prostředí s databází pro vývoj a testy
+*Předpoklad čtení databázového katalogu. Souvisí s S5.*
+
+Testovací projekt dnes nereferencuje žádného databázového klienta, žádný test spojení neotevírá a workflow v `.github` spouští `dotnet test` bez service containeru. Čtení katalogu je první práce, kterou takto otestovat nelze — zbyly by testy proti mocku, které ověří tvar volání, ne to, že se z katalogu vrátí správná metadata.
+
+Potřeba je databáze dostupná testům lokálně i v CI a rozhodnutí, které testy na ní závisí a jak se zachovají, když není. `docker-compose.yml` staví SQL Server s WideWorldImporters přes `database.Dockerfile`, ale jako prostředí pro aplikaci; `ConnectionStrings__AdvisorDatabase` je v něm commitnutá deklarace, kterou zatím nikdo nespustil, takže se ověří tady.
+
+### Čtení databázového katalogu
+*Rozhodnutí [008](./decisions/008-database-as-metadata-source.md). Blokováno diagnostikou jako kategorií a prostředím s databází. Požadavky F4, F5, F6.*
+
+Komponenta, která na jednom místě čte metadata z připojené databáze, a sestavení poptávky z deskriptoru cílového frameworku. Dnes žádné čtení katalogu pro doplnění mezireprezentace neexistuje — buildery chybějící fakt nahrazují konvencí a nikde to nezaznamenají.
 
 Součástí je sjednocení dvou míst, která dnes tentýž problém řeší různě: `EFCoreLinqQueryParser.ResolveQualifiedTableName` doplňuje chybějící schéma heuristikou nad `EntityMaps`, `HarnessGenerationUtilities.ResolveQualifiedTableName` dotazem do `INFORMATION_SCHEMA` s prázdným `catch` při selhání spojení.
 
 Fáze musí být měřitelná odděleně od času překladu (S3) a překlad bez připojené databáze nesmí selhat.
 
 ### Junction entita v builderech
-*Rozhodnutí [005](./decisions/005-many-to-many-as-explicit-junction-entity.md).*
+*Rozhodnutí [005](./decisions/005-many-to-many-as-explicit-junction-entity.md); vynucené členy bere z deskriptoru cílového frameworku (rozhodnutí [009](./decisions/009-target-framework-descriptor.md)).*
 
 Generování explicitní junction entity a vícesloupcový rendering cizích klíčů. Testovací vstupy je nutné skládat ručně přes builder API, protože `ColumnPairs` se automaticky neplní.
 
@@ -97,7 +107,7 @@ Generování explicitní junction entity a vícesloupcový rendering cizích kl�
 Detekce N:M na vstupu, syntéza junction entity a naplnění `ColumnPairs`. Cílové sloupce nejdou určit z jedné translation unit, takže to stojí na metadatech z databáze (F4/F5). Totéž místo je předznamenané i v NHibernate builderu, kde chybějící typ vlastnosti nese TODO „query database for the missing type".
 
 ### Strukturovaná varování pro nevyjádřitelné fakty
-*Rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md); rozsah upřesní rozhodnutí o diagnostice jako kategorii.*
+*Rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md); rozsah upřesní rozhodnutí o diagnostice jako kategorii, seznam faktů bere z deskriptoru cílového frameworku.*
 
 Dapper builder dnes klíče a vztahy zahazuje potichu. Do vzniku diagnostické infrastruktury z F11 stačí prostý seznam varování ve výsledku převodu.
 
@@ -107,24 +117,38 @@ Dapper builder dnes klíče a vztahy zahazuje potichu. Do vzniku diagnostické i
 - `BuildSQL()` z původního návrhu neexistuje; rozlišení nativní syntaxe od syrového SQL bude potřeba dořešit při implementaci query builderů pro EF Core a NHibernate.
 
 ### EF Core — strategie primárního klíče
+*Souvisí s revizí `PrimaryKeyStrategy`.*
 
-Nepropaguje se do výstupu (TODO v `EFCoreEntityBuilder.BuildPrimaryKey`). Rozdíl v paritě, ne regrese. Souvisí s revizí `PrimaryKeyStrategy`.
+Strategie se do výstupu nepropaguje (TODO v `EFCoreEntityBuilder.BuildPrimaryKey`), takže `sequence`, `identity` i `hilo` se cestou z NHibernate ztratí. Parser má tutéž mezeru obráceně: `[DatabaseGenerated]` nečte vůbec a každé vlastnosti s `[Key]` přiřadí `Identity` bez ohledu na typ, takže z řetězcového nebo `Guid` klíče vznikne v NHibernate `<generator class="identity" />`.
 
-### Parser NHibernate — sloupec zapsaný vnořeným elementem
+Anotacemi lze vyjádřit `Identity`, `None` a `Computed`; `Sequence`, `HiLo`, `Increment`, `Uuid` a `Guid` jsou v EF Core dostupné jen fluent API, takže patří mezi nevyjádřitelné fakty podle rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md).
+
+### EF Core — cizí klíč se negeneruje
+
+`EFCoreEntityBuilder.BuildForeignKey` vypíše jen navigační vlastnost, atribut `[ForeignKey]` negeneruje vůbec. U vícesloupcového cizího klíče má v EF Core anotacích tvar se seznamem sloupců, na jejichž pořadí záleží — je to tedy první konzument `ColumnPairs` spolu s junction entitou.
+
+### NHibernate — sloupec zapsaný vnořeným elementem
 *Rozpor s F1.*
 
 NHibernate dovoluje zapsat sloupec i jako vnořený element `<column name="…" />` místo atributu `column`. `NHibernateXMLMappingParser` čte výhradně atributovou podobu, a to na všech třech místech — u `<id>`, u `<key-property>` i u `<property>`. Vstup, který sloupce zapisuje elementem, se proto přeloží bez názvu sloupce a builder ho nahradí názvem vlastnosti; u délky, přesnosti, měřítka a nullability platí totéž. Doplnit je potřeba čtení elementu všude tam, kde dnes čteme atributy, s tím, že element má přednost.
 
+Táž mezera je i na straně builderu a projeví se ztrátou dat: `<id>` a `<key-property>` se generují jen s `name`, `column` a `type`, takže délka, přesnost a měřítko klíčového sloupce se do mapování nedostanou — na rozdíl od `<property>`, kde se vypisují. Vstup s `[Key]` a `[MaxLength(10)]` nad řetězcem tak skončí jako klíč bez délky. Vnořený `<column>` element je pro tyto údaje u klíče přirozené místo, takže obě strany patří do jedné práce.
+
 Element navíc nese atributy, které atributová podoba nemá — `sql-type`, `unique`, `index`, `check` a `default`. Z nich je `sql-type` jediná cesta, jak v mapování NHibernate udržet konkrétní SQL typ místo typu NHibernate; jeho čtení a uložení do mezireprezentace patří k neutralizaci typového modelu, ne k této položce.
+
+### NHibernate builder — `<key>` kolekce bere jen první část klíče
+
+`GetPrimaryKeyColumn` vrací `Parts.FirstOrDefault()`, takže `<bag>` dostane jednosloupcový `<key column="…" />` i u entity s kompozitním klíčem a vznikne mapování, kde jednosloupcový cizí klíč míří proti vícesloupcovému primárnímu. Totéž se týká `<many-to-one>` a `<one-to-one>`, které nesou `column` jako atribut a vícesloupcový cizí klíč vyjádřit neumí.
 
 ### Parser NHibernate — varianta s klíčovou třídou
 *Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a na neutralizaci typového modelu. Podklad: audit 2026-08-02, kap. 3.2.*
 
-`NHibernateXMLMappingParser` čte `<composite-id>` jen přes `<key-property>`; atributy `name` a `class`, které označují variantu se samostatnou klíčovou třídou, neřeší. Bez toho nelze číst vstupy, které klíč vyjadřují klíčovou třídou — a analogicky pak `@EmbeddedId` na javové straně.
+`NHibernateXMLMappingParser` čte `<composite-id>` jen přes `<key-property>`; atributy `name` a `class`, které označují variantu se samostatnou klíčovou třídou, neřeší. Bez toho nelze číst vstupy, které klíč vyjadřují klíčovou třídou — a analogicky pak `@EmbeddedId` na javové straně. Výsledek navíc nemá kam ukládat, dokud `PrimaryKey` nemá údaj o klíčové třídě.
 
-### Mrtvé stuby v builderech
+### Údaj o klíčové třídě na `PrimaryKey`
+*Nesplněný důsledek rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md).*
 
-Bezparametrické `protected override`metody nesou komentář `// unused in multi-entity flow` a jsou prázdné — čtyři v Dapper builderu, šest v EF Core a šest v NHibernate; Dapper navíc nechává `BuildPrimaryKey` a `BuildForeignKey` házet `NotImplementedException`. Buď z `Build()` udělat šablonovou metodu nad overloady s parametry, nebo stuby odstranit.
+Rozhodnutí 006 v důsledcích uvádí, že `PrimaryKey` dostane nepovinný údaj o názvu a formě klíčové třídy, aby se při plochém vykreslení neztratilo, že zdroj klíč vyjádřil klíčovou třídou. V modelu takové pole není — `PrimaryKey` nese jen `Parts`. Rozhodnutí a kód se tu rozcházejí.
 
 ### NHibernate builder — schéma se nepropisuje do mapování
 
@@ -141,10 +165,6 @@ Odloženo do cílenější přestavby, současný stav je funkční:
 1. V `advisor-page.component.ts` přeskočit prázdné dotazové jednotky v `convert()` před odesláním — server je striktní záměrně, tolerance patří do UI.
 2. V `main-page.component.ts` zobrazovat chyby ze serveru přes `err.error`, ne `err.message`; vzor je v `advisor-page.component.ts`.
 3. Validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku.
-
-### Ověřit docker-compose
-
-`ConnectionStrings__AdvisorDatabase` je commitnutá deklarace, kterou zatím nikdo nespustil. Ověří se při prvním reálném běhu Advisoru v Dockeru.
 
 ---
 
