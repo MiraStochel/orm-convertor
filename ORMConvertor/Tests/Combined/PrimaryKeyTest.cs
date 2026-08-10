@@ -19,7 +19,7 @@ public class PrimaryKeyTest
         <?xml version="1.0" encoding="utf-8" ?>
         <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
             <class name="Customer" table="Customers" schema="Sales">
-                <id name="CustomerID" column="CustomerID" type="int">
+                <id name="CustomerID" column="CustomerId" type="int">
                     <generator class="sequence" />
                 </id>
                 <property name="Name" column="Name" type="string" />
@@ -60,6 +60,11 @@ public class PrimaryKeyTest
         Assert.Equal("CustomerID", part.PropertyMap.Property.Name);
         Assert.Equal(1, part.Order);
         Assert.Equal(PrimaryKeyStrategy.Sequence, part.Strategy);
+
+        // The <id> element states the column and the type, so the key part carries
+        // them the same way a <key-property> of a composite key does.
+        Assert.Equal("CustomerId", part.PropertyMap.ColumnName);
+        Assert.Equal(DatabaseType.Int, part.PropertyMap.Type);
     }
 
     [Theory]

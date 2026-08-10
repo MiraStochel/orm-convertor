@@ -210,10 +210,28 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         var genClass = generatorElem?.Attribute("class")?.Value;
         var strategy = PrimaryKeyStrategyConvertor.FromNHibernate(genClass);
 
-        if (!string.IsNullOrEmpty(propName))
+        if (string.IsNullOrEmpty(propName))
         {
-            entityBuilder.AddPrimaryKey(strategy, propName);
+            return;
         }
+
+        var idDbProps = new Dictionary<string, string>();
+        if (idElem.Attribute("column")?.Value is string idCol && !string.IsNullOrEmpty(idCol))
+        {
+            idDbProps["column"] = idCol;
+        }
+
+        if (idElem.Attribute("type")?.Value is string idType && !string.IsNullOrEmpty(idType))
+        {
+            idDbProps["type"] = ((int)DatabaseTypeConvertor.FromNHibernate(idType)).ToString();
+        }
+
+        if (idDbProps.Count > 0)
+        {
+            entityBuilder.SetPropertyDatabaseMapping(propName, idDbProps);
+        }
+
+        entityBuilder.AddPrimaryKey(strategy, propName);
     }
 
     /// <summary>
