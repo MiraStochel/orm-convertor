@@ -37,7 +37,7 @@ public class RelationModelTest
                     <id name="TransactionID" column="TransactionID" type="int">
                         <generator class="identity" />
                     </id>
-                    <many-to-one name="Customer" class="Customer" column="CustomerID" />
+                    <many-to-one name="Owner" class="Customer" column="CustomerID" />
                 </class>
             </hibernate-mapping>
             """;
@@ -48,7 +48,7 @@ public class RelationModelTest
         Assert.Equal(Cardinality.ManyToOne, relation.Cardinality);
         Assert.Equal(RelationRole.Owning, relation.Role);
         Assert.Equal("Customer", relation.TargetEntity);
-        Assert.Equal("Customer", relation.SourceNavigationProperty);
+        Assert.Equal("Owner", relation.SourceNavigationProperty);
         Assert.False(relation.IsUnique);
     }
 

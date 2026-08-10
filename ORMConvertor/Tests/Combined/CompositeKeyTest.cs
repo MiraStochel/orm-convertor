@@ -270,8 +270,8 @@ public class CompositeKeyTest
             <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
                 <class name="OrderLine" table="OrderLines" schema="Sales">
                     <composite-id>
-                        <key-property name="OrderID" column="OrderID" type="int" />
-                        <key-property name="CompanyID" column="CompanyID" type="int" />
+                        <key-property name="OrderID" column="OrderId" type="int" />
+                        <key-property name="CompanyID" column="CompanyId" type="int" />
                     </composite-id>
                     <property name="Description" column="Description" type="string" />
                 </class>
@@ -284,8 +284,9 @@ public class CompositeKeyTest
         Assert.NotNull(pk);
         Assert.Equal(2, pk.Parts.Count);
         Assert.Equal("OrderID", pk.Parts[0].PropertyMap.Property.Name);
-        Assert.Equal("OrderID", pk.Parts[0].PropertyMap.ColumnName);
+        Assert.Equal("OrderId", pk.Parts[0].PropertyMap.ColumnName);
         Assert.Equal("CompanyID", pk.Parts[1].PropertyMap.Property.Name);
+        Assert.Equal("CompanyId", pk.Parts[1].PropertyMap.ColumnName);
         Assert.Equal(2, pk.Parts[1].Order);
     }
 
