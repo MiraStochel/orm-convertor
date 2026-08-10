@@ -98,6 +98,13 @@ Dapper builder dnes klíče a vztahy zahazuje potichu. Do vzniku diagnostické i
 
 Nepropaguje se do výstupu (TODO v `EFCoreEntityBuilder.BuildPrimaryKey`). Rozdíl v paritě, ne regrese. Souvisí s revizí `PrimaryKeyStrategy`.
 
+### Parser NHibernate — sloupec zapsaný vnořeným elementem
+*Rozpor s F1.*
+
+NHibernate dovoluje zapsat sloupec i jako vnořený element `<column name="…" />` místo atributu `column`. `NHibernateXMLMappingParser` čte výhradně atributovou podobu, a to na všech třech místech — u `<id>`, u `<key-property>` i u `<property>`. Vstup, který sloupce zapisuje elementem, se proto přeloží bez názvu sloupce a builder ho nahradí názvem vlastnosti; u délky, přesnosti, měřítka a nullability platí totéž. Doplnit je potřeba čtení elementu všude tam, kde dnes čteme atributy, s tím, že element má přednost.
+
+Element navíc nese atributy, které atributová podoba nemá — `sql-type`, `unique`, `index`, `check` a `default`. Z nich je `sql-type` jediná cesta, jak v mapování NHibernate udržet konkrétní SQL typ místo typu NHibernate; jeho čtení a uložení do mezireprezentace patří k neutralizaci typového modelu, ne k této položce.
+
 ### Parser NHibernate — varianta s klíčovou třídou
 *Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a na neutralizaci typového modelu. Podklad: audit 2026-08-02, kap. 3.2.*
 
