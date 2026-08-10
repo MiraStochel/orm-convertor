@@ -98,6 +98,13 @@ Dapper builder dnes klíče a vztahy zahazuje potichu. Do vzniku diagnostické i
 
 Nepropaguje se do výstupu (TODO v `EFCoreEntityBuilder.BuildPrimaryKey`). Rozdíl v paritě, ne regrese. Souvisí s revizí `PrimaryKeyStrategy`.
 
+### Parser NHibernate — jednoduchý klíč ztrácí sloupec a typ
+*Rozpor s F1.*
+
+`ParsePrimaryKey` čte z elementu `<id>` jen atribut `name` a třídu generátoru; atributy `column` a `type` ignoruje a `SetPropertyDatabaseMapping` pro klíčovou vlastnost nevolá. Název sloupce a databázový typ jednoduchého klíče se tak do IR nedostanou vůbec a builder je nahradí konvencí — sloupec názvem vlastnosti, typ odhadem z jazykového typu. Mapování `<id name="CustomerID" column="CustomerId" type="int" />` proto po překladu zpět do NHibernate vyjde jako `column="CustomerID"` a mířilo by na neexistující sloupec.
+
+Větev pro `<composite-id>` ve stejné metodě přitom `column` i `type` čte a zapisuje přes `SetPropertyDatabaseMapping`, takže se obě větve chovají různě. Oprava je doplnit do větve `<id>` totéž, co už dělá větev `<composite-id>`.
+
 ### Parser NHibernate — varianta s klíčovou třídou
 *Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a na neutralizaci typového modelu. Podklad: audit 2026-08-02, kap. 3.2.*
 
