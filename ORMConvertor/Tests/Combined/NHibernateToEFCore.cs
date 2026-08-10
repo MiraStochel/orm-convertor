@@ -98,6 +98,7 @@ public class NHibernateToEFCore
         public class Order
         {
             [Key]
+            [Column("OrderID", TypeName="int")]
             public virtual required int OrderID { get; set; }
 
             [Column(TypeName="int")]

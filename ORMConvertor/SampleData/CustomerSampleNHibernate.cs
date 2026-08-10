@@ -66,6 +66,8 @@ public class CustomerSampleNHibernate
                            HasGetter = true,
                            HasSetter = true,
                        },
+                       ColumnName = "CustomerID",
+                       Type = DatabaseType.Int,
                    },
                    new() {
                        Property = new Property
