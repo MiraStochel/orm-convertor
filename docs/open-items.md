@@ -10,29 +10,32 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-1. **Členy vynucené frameworkem** (rozhodnutí) — junction entita nese typicky kompozitní klíč, takže na tuhle kategorii narazí hned další krok.
-2. **Junction entita v builderech** (práce) — první bod, kterým se N:M propíše do generovaného kódu.
-3. **Diagnostika jako kategorie** a **deklarace cílových verzí frameworků** (rozhodnutí) — druhé jmenované je předpoklad S6.
-4. **Neutralizace typového modelu** (rozhodnutí, rozsahem na samostatný dokument) — předpoklad javové větve, blokuje F7–F10.
-5. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+1. **Diagnostika jako kategorie** (rozhodnutí) — rozhodnutí 008 na ni deleguje evidenci původu faktu, takže se stala předpokladem jeho implementace.
+2. **Členy vynucené frameworkem** (rozhodnutí) — sourozenec deklarace požadavků cíle z rozhodnutí 008; odblokuje junction entitu.
+3. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje `ColumnPairs`, detekci N:M i Dapper jako plnohodnotný zdroj.
+4. **Junction entita v builderech** (práce) — první bod, kterým se N:M propíše do generovaného kódu.
+5. **Deklarace cílových verzí frameworků** a **neutralizace typového modelu** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10.
+6. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
 ## Otevřená rozhodnutí
 
 ### Členy vynucené frameworkem jako pojmenovaný koncept
-*Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md). Podklad: audit 2026-08-02, kap. 4.4.*
+*Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md), sourozenec deklarace požadavků cíle z rozhodnutí [008](./decisions/008-database-as-metadata-source.md). Podklad: audit 2026-08-02, kap. 4.4.*
 
 Zavést do architektury explicitní pojem pro boilerplate, který cílový framework vyžaduje a který není faktem o doméně — `Equals`/`GetHashCode`/`[Serializable]` u NHibernate, ID třída u JPA, `virtual` na mapovaných členech. Cíl: každý nový builder má jedno místo, kde deklaruje, co musí ke generované třídě přidat, a existuje na to společný test.
 
-Dnes to buildery řeší ad hoc a `virtual` je zadrátovaný v `BuildPropertySignature`. Při pěti a více cílových frameworcích si to jinak každý nový builder objeví znovu a na něco zapomene.
+Dnes to buildery řeší ad hoc a `virtual` je zadrátovaný v `BuildPropertySignature`. Při pěti a více cílových frameworcích si to jinak každý nový builder objeví znovu a na něco zapomene. Rozhodnutí 008 zavádí obrácenou polovinu téhož: deklaraci toho, co cíl potřebuje na vstupu. Obě mají mít jedno místo a je namístě rozhodnout je společně.
 
 ### Diagnostika jako kategorie
-*Zobecňuje rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md). Podklad: audit 2026-08-02, kap. 2.1 a 4.6.*
+*Zobecňuje rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md), předpoklad implementace rozhodnutí [008](./decisions/008-database-as-metadata-source.md). Podklad: audit 2026-08-02, kap. 2.1 a 4.6.*
 
 Přeformulovat mechanismus „fakt nevyjádřitelný v cílovém frameworku" tak, aby byl parametrizovaný frameworkem, ne dapperovskou větví. Seznam faktů pro Dapper už existuje ve srovnávací analýze, pro MyBatis bude analogický.
 
 Do stejné kategorie patří i zúžení uvnitř typového modelu, nejen fakty, které cíl neunese — konkrétně slévání `DateTime`, `DateTime2` a `SmallDateTime` do jediného typu NHibernate. Diagnostika by měla ohlásit obojí a rozlišit to: první případ je vlastnost cílového frameworku, druhý vlastnost převodu a dá se odstranit.
+
+Rozhodnutí 008 sem přidalo dvě věci: evidenci původu každého faktu — ze zdroje, z katalogu, nebo konvencí — a hlášení konfliktu, kdy zdroj a databázový katalog tvrdí každý něco jiného. Bez prvního nelze rozlišit tvrzení od domněnky, bez druhého splnit F5. Čtení katalogu proto na tuto položku čeká.
 
 ### Deklarace cílových verzí frameworků
 *Předpoklad S6. Podklad: audit 2026-08-02, kap. 3.3.*
@@ -74,13 +77,22 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 
 ## Otevřená práce
 
+### Čtení databázového katalogu
+*Rozhodnutí [008](./decisions/008-database-as-metadata-source.md). Požadavky F4, F5, F6.*
+
+Komponenta, která na jednom místě čte metadata z připojené databáze, a deklarace na straně cílového frameworku, ze které se sestavuje poptávka. Dnes žádné čtení katalogu pro doplnění mezireprezentace neexistuje — buildery chybějící fakt nahrazují konvencí a nikde to nezaznamenají.
+
+Součástí je sjednocení dvou míst, která dnes tentýž problém řeší různě: `EFCoreLinqQueryParser.ResolveQualifiedTableName` doplňuje chybějící schéma heuristikou nad `EntityMaps`, `HarnessGenerationUtilities.ResolveQualifiedTableName` dotazem do `INFORMATION_SCHEMA` s prázdným `catch` při selhání spojení.
+
+Fáze musí být měřitelná odděleně od času překladu (S3) a překlad bez připojené databáze nesmí selhat.
+
 ### Junction entita v builderech
 *Rozhodnutí [005](./decisions/005-many-to-many-as-explicit-junction-entity.md).*
 
 Generování explicitní junction entity a vícesloupcový rendering cizích klíčů. Testovací vstupy je nutné skládat ručně přes builder API, protože `ColumnPairs` se automaticky neplní.
 
 ### Detekce N:M v parserech
-*Blokováno.*
+*Blokováno položkou o čtení databázového katalogu; rozhodnutí [008](./decisions/008-database-as-metadata-source.md).*
 
 Detekce N:M na vstupu, syntéza junction entity a naplnění `ColumnPairs`. Cílové sloupce nejdou určit z jedné translation unit, takže to stojí na metadatech z databáze (F4/F5). Totéž místo je předznamenané i v NHibernate builderu, kde chybějící typ vlastnosti nese TODO „query database for the missing type".
 
