@@ -103,7 +103,17 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             AppendPropertyToCode(artifact.Code, prop, isPrimaryKey: true);
 
-            AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\">");
+            var facets = BuildColumnFacets(propertyMap);
+            if (facets.Count == 0)
+            {
+                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\">");
+            }
+            else
+            {
+                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" type=\"{ResolveNhType(propertyMap)}\">");
+                AppendXml(artifact.Mapping, 3, $"<column name=\"{columnName}\" {string.Join(' ', facets)} />");
+            }
+
             AppendXml(artifact.Mapping, 3, $"<generator class=\"{generatorClass}\" />");
             AppendXml(artifact.Mapping, 2, "</id>");
             return;
@@ -119,7 +129,18 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             var columnName = propertyMap.ColumnName ?? prop.Name;
 
             AppendPropertyToCode(artifact.Code, prop, isPrimaryKey: true);
-            AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\" />");
+
+            var facets = BuildColumnFacets(propertyMap);
+            if (facets.Count == 0)
+            {
+                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\" />");
+            }
+            else
+            {
+                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" type=\"{ResolveNhType(propertyMap)}\">");
+                AppendXml(artifact.Mapping, 4, $"<column name=\"{columnName}\" {string.Join(' ', facets)} />");
+                AppendXml(artifact.Mapping, 3, "</key-property>");
+            }
         }
         AppendXml(artifact.Mapping, 2, "</composite-id>");
     }
@@ -134,6 +155,40 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         // TODO this would be a place to query database for the missing type
         // for now we guess it from CLR type
         return DatabaseTypeConvertor.GuessFromPropertyType(propertyMap.Property.Type.CLRType);
+    }
+
+    /// <summary>
+    /// Facets of a key column that NHibernate accepts only inside a nested &lt;column&gt; element.
+    /// &lt;property&gt; can carry length, precision and scale as its own attributes, &lt;id&gt; and
+    /// &lt;key-property&gt; cannot - so without the nested form a key column loses them silently.
+    ///
+    /// Nullability is deliberately left out: a column that carries the identifier is not
+    /// nullable, and emitting not-null="false" there would produce a mapping that contradicts
+    /// itself.
+    ///
+    /// An empty result means the compact form with a column attribute is enough, which keeps
+    /// the output of a plain key exactly as it was.
+    /// </summary>
+    private static List<string> BuildColumnFacets(PropertyMap propertyMap)
+    {
+        var facets = new List<string>();
+
+        if (propertyMap.Length.HasValue)
+        {
+            facets.Add($"length=\"{propertyMap.Length.Value}\"");
+        }
+
+        if (propertyMap.Precision.HasValue)
+        {
+            facets.Add($"precision=\"{propertyMap.Precision.Value}\"");
+        }
+
+        if (propertyMap.Scale.HasValue)
+        {
+            facets.Add($"scale=\"{propertyMap.Scale.Value}\"");
+        }
+
+        return facets;
     }
 
     /// <summary>

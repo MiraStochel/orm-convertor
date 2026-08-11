@@ -36,14 +36,14 @@ public class EnforcedMembersTest
     [MemberData(nameof(Cases))]
     public void GeneratedArtifactSatisfiesTheDescriptor(string framework, int keyParts)
     {
-        var (builder, descriptor) = Create(framework);
+        var builder = Create(framework);
         Populate(builder, keyParts);
 
         var code = builder.Build()
             .Single(output => output.ContentType == ConversionContentType.CSharpEntity)
             .Content;
 
-        foreach (var member in descriptor.EnforcedMembersFor(builder.EntityMap))
+        foreach (var member in builder.Descriptor.EnforcedMembersFor(builder.EntityMap))
         {
             var marker = EnforcedMember.Resolve(member.Marker, ClassName);
             if (marker is not null)
@@ -71,16 +71,16 @@ public class EnforcedMembersTest
     [MemberData(nameof(Cases))]
     public void GeneratedArtifactOmitsMembersWhoseConditionDoesNotHold(string framework, int keyParts)
     {
-        var (builder, descriptor) = Create(framework);
+        var builder = Create(framework);
         Populate(builder, keyParts);
 
         var code = builder.Build()
             .Single(output => output.ContentType == ConversionContentType.CSharpEntity)
             .Content;
 
-        var applicable = descriptor.EnforcedMembersFor(builder.EntityMap).ToHashSet();
+        var applicable = builder.Descriptor.EnforcedMembersFor(builder.EntityMap).ToHashSet();
 
-        foreach (var member in descriptor.EnforcedMembers.Where(m => !applicable.Contains(m)))
+        foreach (var member in builder.Descriptor.EnforcedMembers.Where(m => !applicable.Contains(m)))
         {
             var marker = EnforcedMember.Resolve(member.Marker, ClassName);
             if (marker is not null)
@@ -92,12 +92,17 @@ public class EnforcedMembersTest
         }
     }
 
-    private static (AbstractEntityBuilder Builder, TargetFrameworkDescriptor Descriptor) Create(string framework)
+    /// <summary>
+    /// Only the builder is created; its descriptor is read from it. Naming the descriptor
+    /// here as well would put the framework-to-descriptor mapping in a second place, and a
+    /// test that carries its own copy of what it verifies cannot catch the two drifting.
+    /// </summary>
+    private static AbstractEntityBuilder Create(string framework)
         => framework switch
         {
-            "Dapper" => (new DapperEntityBuilder(), DapperDescriptor.Instance),
-            "EFCore" => (new EFCoreEntityBuilder(), EFCoreDescriptor.Instance),
-            "NHibernate" => (new NHibernateEntityBuilder(), NHibernateDescriptor.Instance),
+            "Dapper" => new DapperEntityBuilder(),
+            "EFCore" => new EFCoreEntityBuilder(),
+            "NHibernate" => new NHibernateEntityBuilder(),
             _ => throw new ArgumentOutOfRangeException(nameof(framework), framework, null),
         };
 

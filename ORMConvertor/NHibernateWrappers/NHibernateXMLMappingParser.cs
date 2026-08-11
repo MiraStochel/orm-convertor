@@ -172,16 +172,7 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                     continue;
                 }
 
-                var dbProps = new Dictionary<string, string>();
-                if (keyProp.Attribute("column")?.Value is string col && !string.IsNullOrEmpty(col))
-                {
-                    dbProps["column"] = col;
-                }
-
-                if (keyProp.Attribute("type")?.Value is string t && !string.IsNullOrEmpty(t))
-                {
-                    dbProps["type"] = ((int)DatabaseTypeConvertor.FromNHibernate(t)).ToString();
-                }
+                var dbProps = ReadColumnFacts(keyProp);
 
                 if (dbProps.Count > 0)
                 {
@@ -215,16 +206,7 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
             return;
         }
 
-        var idDbProps = new Dictionary<string, string>();
-        if (idElem.Attribute("column")?.Value is string idCol && !string.IsNullOrEmpty(idCol))
-        {
-            idDbProps["column"] = idCol;
-        }
-
-        if (idElem.Attribute("type")?.Value is string idType && !string.IsNullOrEmpty(idType))
-        {
-            idDbProps["type"] = ((int)DatabaseTypeConvertor.FromNHibernate(idType)).ToString();
-        }
+        var idDbProps = ReadColumnFacts(idElem);
 
         if (idDbProps.Count > 0)
         {
@@ -247,41 +229,83 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                 continue;
             }
 
-            var dbProps = new Dictionary<string, string>();
-            if (prop.Attribute("column")?.Value is string col && !string.IsNullOrEmpty(col))
-            {
-                dbProps["column"] = col;
-            }
-
-            if (prop.Attribute("type")?.Value is string t && !string.IsNullOrEmpty(t))
-            {
-                dbProps["type"] = ((int)DatabaseTypeConvertor.FromNHibernate(t)).ToString();
-            }
-
-            if (bool.TryParse(prop.Attribute("not-null")?.Value, out var notNull))
-            {
-                dbProps["nullable"] = (!notNull).ToString().ToLowerInvariant();
-            }
-
-            if (prop.Attribute("precision")?.Value is string prec && !string.IsNullOrWhiteSpace(prec))
-            {
-                dbProps["precision"] = prec;
-            }
-
-            if (prop.Attribute("scale")?.Value is string sc && !string.IsNullOrWhiteSpace(sc))
-            {
-                dbProps["scale"] = sc;
-            }
-
-            if (prop.Attribute("length")?.Value is string len && !string.IsNullOrWhiteSpace(len))
-            {
-                dbProps["length"] = len;
-            }
-
+            // Called even with nothing to record: a property that appears only in the XML
+            // descriptor has to exist in the model before anything can be attached to it.
             entityBuilder.SetPropertyDatabaseMapping(
                 propertyName,
-                dbProps
+                ReadColumnFacts(prop)
             );
+        }
+    }
+
+    /// <summary>
+    /// Reads the mapping facts of one column from an &lt;id&gt;, &lt;key-property&gt; or
+    /// &lt;property&gt; element. NHibernate accepts them either as attributes of the element or
+    /// as a nested &lt;column&gt; element, and for an identifier the nested form is the only one
+    /// that can carry precision and scale at all. Where both forms are present the nested one
+    /// wins, being the more specific of the two.
+    ///
+    /// Only the first &lt;column&gt; is read, because the model maps a property to a single
+    /// column; a property spread over several columns is a separate concern. Attributes with
+    /// no counterpart in the model - unique, index, check, default - are skipped, and so is
+    /// sql-type, whose place in the model belongs to the type neutralization work.
+    /// </summary>
+    private static Dictionary<string, string> ReadColumnFacts(XElement element)
+    {
+        var dbProps = new Dictionary<string, string>();
+
+        if (element.Attribute("column")?.Value is string column && !string.IsNullOrWhiteSpace(column))
+        {
+            dbProps["column"] = column;
+        }
+
+        // The NHibernate type sits on the element itself; a <column> carries sql-type instead.
+        if (element.Attribute("type")?.Value is string type && !string.IsNullOrWhiteSpace(type))
+        {
+            dbProps["type"] = ((int)DatabaseTypeConvertor.FromNHibernate(type)).ToString();
+        }
+
+        ReadFacetsInto(dbProps, element);
+
+        var columnElement = element.Elements().FirstOrDefault(e => e.Name.LocalName == "column");
+        if (columnElement is null)
+        {
+            return dbProps;
+        }
+
+        if (columnElement.Attribute("name")?.Value is string nestedName && !string.IsNullOrWhiteSpace(nestedName))
+        {
+            dbProps["column"] = nestedName;
+        }
+
+        ReadFacetsInto(dbProps, columnElement);
+
+        return dbProps;
+    }
+
+    /// <summary>
+    /// Facets an element and a nested &lt;column&gt; spell the same way.
+    /// </summary>
+    private static void ReadFacetsInto(Dictionary<string, string> dbProps, XElement element)
+    {
+        if (bool.TryParse(element.Attribute("not-null")?.Value, out var notNull))
+        {
+            dbProps["nullable"] = (!notNull).ToString().ToLowerInvariant();
+        }
+
+        if (element.Attribute("precision")?.Value is string precision && !string.IsNullOrWhiteSpace(precision))
+        {
+            dbProps["precision"] = precision;
+        }
+
+        if (element.Attribute("scale")?.Value is string scale && !string.IsNullOrWhiteSpace(scale))
+        {
+            dbProps["scale"] = scale;
+        }
+
+        if (element.Attribute("length")?.Value is string length && !string.IsNullOrWhiteSpace(length))
+        {
+            dbProps["length"] = length;
         }
     }
 

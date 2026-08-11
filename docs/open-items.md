@@ -43,14 +43,14 @@ Dnes wrappery nereferencují žádný ORM balíček, jen Roslyn, takže cílová
 Nejrozsáhlejší otevřená položka, ve dvou rovinách:
 
 1. `CLRType` → jazykově neutrální reprezentace (`LangType` podle JSS §5.2), s doplněním chybějících typů a s vyřešením případu `CLRType.Char`, který dnes nelze namapovat na správný typ NHibernate, protože v `DatabaseType` chybí hodnota pro jednotlivý unicode znak.
-2. `DatabaseType` → databázově neutrální reprezentace, případně s vrstvou pro dialekty. Dnešní výčet je fakticky seznam typů T-SQL.
+2. `DatabaseType` → databázově neutrální reprezentace, případně s vrstvou pro dialekty. Dnešní výčet je fakticky seznam typů T-SQL. Sem patří i `sql-type` na vnořeném `<column>` elementu NHibernate — jediná cesta, jak v mapování udržet konkrétní SQL typ místo typu NHibernate; parser ho dnes nečte, protože nemá kam ho uložit.
 
 Je to **předpoklad** pro F7–F10, ne jejich příprava: javová ID třída se neobejde bez otypovaných polí, a ta vezme builder odsud.
 
 ### Revize `PrimaryKeyStrategy` a sémantiky `Order`
 *Podklad: audit 2026-08-02, kap. 3.1 a 4.7.*
 
-Projít výčet `PrimaryKeyStrategy` proti generátorům NHibernate, mechanismům EF Core a `@GeneratedValue` z JPA. Ve stejném průchodu uzavřít otázku, zda má být `Order` na `PrimaryKeyPart` unikátní a souvislý od jedničky, a podle rozhodnutí případně doplnit validaci.
+Projít výčet `PrimaryKeyStrategy` proti generátorům NHibernate, mechanismům EF Core a `@GeneratedValue` z JPA. Ve stejném průchodu uzavřít otázku, zda má být `Order` na `PrimaryKeyPart` unikátní a souvislý od jedničky, a podle rozhodnutí případně doplnit validaci. Součástí je i chování na okrajích tabulky: `PrimaryKeyStrategyConvertor.FromNHibernate` překládá neznámý generátor stejně jako `assigned`, tedy na `None`, takže vlastní generátor zapsaný názvem typu se ztratí bez varování a od legitimní hodnoty ho nelze odlišit; `ToNHibernate` naopak končí větví `NotImplementedException`, která je dnes nedosažitelná, ale při rozšíření výčtu z ní bude pád při generování místo diagnostiky.
 
 ### Centrální správa verzí
 
@@ -121,15 +121,6 @@ Anotacemi lze vyjádřit `Identity`, `None` a `Computed`; `Sequence`, `HiLo`, `I
 
 Anotaci `[Required]` builder negeneruje. Databázová nullabilita z `PropertyMap.IsNullable` se propisuje jen do modifikátoru `required` a otazník za typem vychází z jazykové nullability vlastnosti. Parser přitom `[Required]` číst umí, takže vstup s ním se přeloží a zpět už tuto podobu nezíská. Deskriptor uvádí kategorii jako vyjádřitelnou, protože popisuje framework, ne dnešní stav builderu.
 
-### NHibernate — sloupec zapsaný vnořeným elementem
-*Rozpor s F1.*
-
-NHibernate dovoluje zapsat sloupec i jako vnořený element `<column name="…" />` místo atributu `column`. `NHibernateXMLMappingParser` čte výhradně atributovou podobu, a to na všech třech místech — u `<id>`, u `<key-property>` i u `<property>`. Vstup, který sloupce zapisuje elementem, se proto přeloží bez názvu sloupce a builder ho nahradí názvem vlastnosti; u délky, přesnosti, měřítka a nullability platí totéž. Doplnit je potřeba čtení elementu všude tam, kde dnes čteme atributy, s tím, že element má přednost.
-
-Táž mezera je i na straně builderu a projeví se ztrátou dat: `<id>` a `<key-property>` se generují jen s `name`, `column` a `type`, takže délka, přesnost a měřítko klíčového sloupce se do mapování nedostanou — na rozdíl od `<property>`, kde se vypisují. Vstup s `[Key]` a `[MaxLength(10)]` nad řetězcem tak skončí jako klíč bez délky. Vnořený `<column>` element je pro tyto údaje u klíče přirozené místo, takže obě strany patří do jedné práce.
-
-Element navíc nese atributy, které atributová podoba nemá — `sql-type`, `unique`, `index`, `check` a `default`. Z nich je `sql-type` jediná cesta, jak v mapování NHibernate udržet konkrétní SQL typ místo typu NHibernate; jeho čtení a uložení do mezireprezentace patří k neutralizaci typového modelu, ne k této položce.
-
 ### NHibernate builder — `<key>` kolekce bere jen první část klíče
 
 `GetPrimaryKeyColumn` vrací `Parts.FirstOrDefault()`, takže `<bag>` dostane jednosloupcový `<key column="…" />` i u entity s kompozitním klíčem a vznikne mapování, kde jednosloupcový cizí klíč míří proti vícesloupcovému primárnímu. Totéž se týká `<many-to-one>` a `<one-to-one>`, které nesou `column` jako atribut a vícesloupcový cizí klíč vyjádřit neumí.
@@ -147,6 +138,12 @@ Rozhodnutí 006 v důsledcích uvádí, že `PrimaryKey` dostane nepovinný úda
 ### NHibernate builder — schéma se nepropisuje do mapování
 
 `BuildTableSchema` čte `em.Schema`, ale při prázdné hodnotě dosadí prázdný řetězec a dál s ním nepracuje (TODO v kódu). Mapování tak vzniká bez `schema` atributu i tam, kde ho zdroj nese, což u databází s víc schématy vyrobí mapování mířící do výchozího schématu.
+
+### Chybějící jazykový typ shodí generování
+
+Vlastnost, kterou zná jen XML mapování a ne entitní třída, vznikne s `CLRType.None` a `CLRTypeConvertor.ToString` na ní vyhodí `NotSupportedException("None")` uprostřed generování. Neúplný vstup je tedy pád, ne diagnostika — proti F11, který žádá framework, artefakt, chybějící vlastnost a důvod selhání; z výjimky nejde určit ani entitu.
+
+Potřebný fakt je přitom po ruce: `PropertyMap.Type` databázový typ nese, jen opačný převod v `DatabaseTypeConvertor` neexistuje, ačkoli směr CLR → databáze je v něm jako `GuessFromPropertyType`. Podle rozhodnutí [008](./decisions/008-database-as-metadata-source.md) je odvození z databázového typu konvence třetího stupně a musí nést svůj původ.
 
 ### NHibernate builder — kolekce jen jako `<bag>`
 

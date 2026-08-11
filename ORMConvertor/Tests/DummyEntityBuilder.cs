@@ -1,5 +1,6 @@
 ﻿using AbstractWrappers;
 using AbstractWrappers.Descriptors;
+using DapperWrappers;
 using Model;
 using Model.AbstractRepresentation;
 
@@ -10,13 +11,12 @@ namespace Tests;
 /// </summary>
 public class DummyEntityBuilder : AbstractEntityBuilder
 {
-    public override TargetFrameworkDescriptor Descriptor { get; } = new()
-    {
-        Framework = ORMEnum.Dapper,
-        EnforcedMembers = [],
-        Support = Enum.GetValues<MappingFactCategory>()
-            .ToDictionary(category => category, _ => FactSupport.NotExpressible),
-    };
+    /// <summary>
+    /// Borrowed from Dapper: a framework that expresses no mapping fact and imposes nothing
+    /// says exactly what this builder is. Constructing a second descriptor with the same
+    /// content would only mean one more place to keep in step.
+    /// </summary>
+    public override TargetFrameworkDescriptor Descriptor => DapperDescriptor.Instance;
 
     protected override void BuildImports(EntityMap entityMap, EntityArtifact artifact)
     {

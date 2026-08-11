@@ -3,6 +3,7 @@ using DapperWrappers;
 using EFCoreWrappers;
 using Model;
 using Model.AbstractRepresentation;
+using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers;
 
 namespace Tests.Combined;
@@ -121,14 +122,14 @@ public class TargetFrameworkDescriptorTest
 
         if (keyParts == 1)
         {
-            builder.AddPrimaryKey(Model.AbstractRepresentation.Enums.PrimaryKeyStrategy.Identity, "PartOne");
+            builder.AddPrimaryKey(PrimaryKeyStrategy.Identity, "PartOne");
         }
         else if (keyParts == 2)
         {
             builder.AddPrimaryKey(
             [
-                ("PartOne", 1, Model.AbstractRepresentation.Enums.PrimaryKeyStrategy.None),
-                ("PartTwo", 2, Model.AbstractRepresentation.Enums.PrimaryKeyStrategy.None),
+                ("PartOne", 1, PrimaryKeyStrategy.None),
+                ("PartTwo", 2, PrimaryKeyStrategy.None),
             ]);
         }
 

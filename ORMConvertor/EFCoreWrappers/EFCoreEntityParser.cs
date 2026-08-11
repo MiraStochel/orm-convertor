@@ -162,6 +162,7 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
     {
         var classKeyNames = GetClassPrimaryKeyNames(classDeclaration);
         var keyPropertyNames = new List<string>();
+        var scalarPropertyNames = new List<string>();
 
         foreach (var prop in classDeclaration.Members.OfType<PropertyDeclarationSyntax>())
         {
@@ -249,6 +250,11 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             {
                 entityBuilder.AddForeignKey(Cardinality.OneToMany, name, target);
             }
+            else
+            {
+                // Only a scalar property can become the key EF Core derives by convention.
+                scalarPropertyNames.Add(name);
+            }
         }
 
         // The key is defined by a single call for the whole entity.
@@ -263,6 +269,37 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             entityBuilder.AddPrimaryKey(
                 keyPropertyNames.Select((n, i) => (n, i + 1, PrimaryKeyStrategy.Identity)).ToList());
         }
+        else if (FindConventionKey(classDeclaration.Identifier.Text, scalarPropertyNames) is { } conventionKey)
+        {
+            // The strategy matches the [Key] branch above. It is equally wrong there for
+            // string and Guid keys; the open item on key strategies fixes both at once.
+            entityBuilder.AddPrimaryKey(PrimaryKeyStrategy.Identity, conventionKey);
+        }
+    }
+
+    /// <summary>
+    /// EF Core derives a primary key by convention from a property named Id or
+    /// {EntityName}Id when none is declared explicitly. Such an entity does have a key, so
+    /// the parser records it: leaving it out would make it indistinguishable from an entity
+    /// that genuinely has none, and the target builder would mark that one keyless.
+    /// Reading the convention of the source framework is the parser's job precisely because
+    /// only the parser knows which framework the input came from - see decision 008.
+    ///
+    /// The comparison is case-insensitive, so CustomerID counts as CustomerId. That matches
+    /// what EF Core does, but the documentation page on keys does not spell it out, so the
+    /// claim rests on observed behaviour rather than on a quotable sentence.
+    /// </summary>
+    private static string? FindConventionKey(string entityName, List<string> propertyNames)
+    {
+        // Id takes precedence over {EntityName}Id when both are present.
+        var id = propertyNames.FirstOrDefault(n => n.Equals("Id", StringComparison.OrdinalIgnoreCase));
+        if (id is not null)
+        {
+            return id;
+        }
+
+        var suffixed = entityName + "Id";
+        return propertyNames.FirstOrDefault(n => n.Equals(suffixed, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
