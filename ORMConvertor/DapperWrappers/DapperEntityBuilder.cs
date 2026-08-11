@@ -1,80 +1,56 @@
 ﻿using AbstractWrappers;
+using AbstractWrappers.Descriptors;
 using Common.Convertors;
 using Model;
 using Model.AbstractRepresentation;
-using System.Text;
 
 namespace DapperWrappers;
 
 public class DapperEntityBuilder : AbstractEntityBuilder
 {
+    public override TargetFrameworkDescriptor Descriptor => DapperDescriptor.Instance;
+
     /// <summary>
-    /// Builds one C# class per accumulated entity.
+    /// Dapper needs no imports for the entity; only the namespace is emitted.
     /// </summary>
-    public override List<ConversionSource> Build()
+    protected override void BuildImports(EntityMap entityMap, EntityArtifact artifact)
     {
-        var outputs = new List<ConversionSource>();
-        foreach (var em in EntityMaps)
+        if (entityMap.Entity.Namespace != null)
         {
-            var codeResult = new StringBuilder();
-            BuildImports(em, codeResult);
-            BuildTableSchema(em, codeResult);
-            BuildProperties(em, codeResult);
-            FinalizeBuild(codeResult);
-
-            outputs.Add(new ConversionSource
-            {
-                ContentType = ConversionContentType.CSharpEntity,
-                Content = codeResult.ToString()
-            });
-        }
-        return outputs;
-    }
-
-    /// <summary>
-    /// Dapper does not support foreign keys.
-    /// </summary>
-    protected override void BuildForeignKey()
-    {
-        throw new NotImplementedException();
-    }
-
-    /// <summary>
-    /// Dapper needs no imports for the entity. Only builds namespace if provided.
-    /// </summary>
-    protected override void BuildImports()
-    {
-        // unused in multi-entity flow
-    }
-
-    private static void BuildImports(EntityMap em, StringBuilder codeResult)
-    {
-        if (em.Entity.Namespace != null)
-        {
-            codeResult.AppendLine($"namespace {em.Entity.Namespace};");
-            codeResult.AppendLine();
+            artifact.Code.AppendLine($"namespace {entityMap.Entity.Namespace};");
+            artifact.Code.AppendLine();
         }
     }
 
     /// <summary>
-    /// Dapper does not support primary keys.
+    /// Dapper records no table or schema; only the class header is emitted.
     /// </summary>
-    protected override void BuildPrimaryKey()
+    protected override void BuildTableSchema(EntityMap entityMap, EntityArtifact artifact)
     {
-        throw new NotImplementedException();
+        var modifier = AccessModifierConvertor.ToModifierString(entityMap.Entity.AccessModifier);
+
+        artifact.Code.AppendLine($"{modifier} class {entityMap.Entity.Name}");
+        artifact.Code.AppendLine("{");
     }
 
     /// <summary>
-    /// Builds the properties of the entity.
+    /// Dapper has no mechanism for keys. Per decision 004 the fact is reported rather than
+    /// approximated, so nothing is emitted.
     /// </summary>
-    protected override void BuildProperties()
+    protected override void BuildPrimaryKey(EntityMap entityMap, EntityArtifact artifact)
     {
-        // unused in multi-entity flow
     }
 
-    private static void BuildProperties(EntityMap em, StringBuilder codeResult)
+    /// <summary>
+    /// Dapper has no mechanism for relations; joins are written by hand in SQL.
+    /// </summary>
+    protected override void BuildForeignKey(EntityMap entityMap, EntityArtifact artifact)
     {
-        foreach (var property in em.Entity.Properties)
+    }
+
+    protected override void BuildProperties(EntityMap entityMap, EntityArtifact artifact)
+    {
+        foreach (var property in entityMap.Entity.Properties)
         {
             var modifiers = $"{AccessModifierConvertor.ToModifierString(property.AccessModifier)} {string.Join(' ', property.OtherModifiers)}".Trim();
             var clrType = CLRTypeConvertor.ToString(property.Type);
@@ -88,39 +64,26 @@ public class DapperEntityBuilder : AbstractEntityBuilder
                 ? string.Empty
                 : $" = {property.DefaultValue};";
 
-            codeResult.AppendLine($"    {modifiers} {type} {property.Name}{getterSetter}{defaultValue}");
-            codeResult.AppendLine();
+            artifact.Code.AppendLine($"    {modifiers} {type} {property.Name}{getterSetter}{defaultValue}");
+            artifact.Code.AppendLine();
         }
     }
 
     /// <summary>
-    /// Dapped support no information about table schema.
-    /// Only builds the class.
+    /// Dapper imposes nothing on the generated class - the descriptor declares no members.
     /// </summary>
-    protected override void BuildTableSchema()
+    protected override void BuildEnforcedMembers(EntityMap entityMap, EntityArtifact artifact)
     {
-        // unused in multi-entity flow
     }
 
-    private static void BuildTableSchema(EntityMap em, StringBuilder codeResult)
+    protected override IEnumerable<ConversionSource> FinalizeBuild(EntityMap entityMap, EntityArtifact artifact)
     {
-        var modifier = AccessModifierConvertor.ToModifierString(em.Entity.AccessModifier);
-        var name = em.Entity.Name;
+        artifact.Code.AppendLine("}");
 
-        codeResult.AppendLine($"{modifier} class {name}");
-        codeResult.AppendLine("{");
-    }
-
-    /// <summary>
-    /// Finalizes the build process by closing the class definition.
-    /// </summary>
-    protected override void FinalizeBuild()
-    {
-        // unused in multi-entity flow
-    }
-
-    private static void FinalizeBuild(StringBuilder codeResult)
-    {
-        codeResult.AppendLine("}");
+        yield return new ConversionSource
+        {
+            ContentType = ConversionContentType.CSharpEntity,
+            Content = artifact.Code.ToString()
+        };
     }
 }

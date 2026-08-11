@@ -13,8 +13,8 @@ Každé rozhodnutí je samostatný soubor. **Rozhodnutí se nepřepisují.** Pok
 | [005](005-many-to-many-as-explicit-junction-entity.md) | N:M jako explicitní junction entita | 2026-07-20 | platí | F3, F10, E1 |
 | [006](006-flat-composite-key-rendering.md) | Ploché vykreslení kompozitního klíče | 2026-08-02 | platí | F1, F2, F7–F10, F11 |
 | [007](007-documentation-structure.md) | Dokumentace organizovaná podle rozhodnutí, ne podle času | 2026-08-03 | platí | — |
-| [008](008-database-as-metadata-source.md) | Databáze jako autoritativní doplněk chybějících mapovacích faktů | 2026-08-10 | platí | F4, F5, F6, F11, S1, S3 |
-| [009](009-target-framework-descriptor.md) | Deskriptor cílového frameworku místo vlastností rozptýlených v builderech | 2026-08-11 | platí | F2, F4, F11, F7–F10, S1 |
+| [008](008-database-as-metadata-source.md) | Databáze jako autoritativní doplněk chybějících mapovacích faktů | 2026-08-11 | platí | F4, F5, F6, F11, S1, S3 |
+| [009](009-target-framework-descriptor.md) | Deskriptor cílového frameworku místo vlastností rozptýlených v builderech | 2026-08-11 | platí | F2, F4, F7–F10, F11, S1 |
 
 ## Formát
 

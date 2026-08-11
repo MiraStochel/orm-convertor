@@ -2,7 +2,7 @@
 
 Datum: 2026-08-11
 Stav: platí
-Požadavky: F2, F4, F11, F7–F10, S1
+Požadavky: F2, F4, F7–F10, F11, S1
 Podklad: audit 2026-08-02, kap. 4.4
 
 ## Kontext

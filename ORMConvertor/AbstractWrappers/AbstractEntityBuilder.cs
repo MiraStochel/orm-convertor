@@ -1,7 +1,9 @@
-﻿using Common.Convertors;
+﻿using System.Text;
+using Common.Convertors;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
+using AbstractWrappers.Descriptors;
 
 namespace AbstractWrappers;
 
@@ -323,38 +325,89 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Build the conversion result for the entity.
+    /// Buffers for the artifacts of one entity. NHibernate splits a mapping over an entity
+    /// class and an XML descriptor; frameworks that emit code only leave Mapping empty.
     /// </summary>
-    /// <returns>List of ConversionResult containing the generated content and type (C#, XML, ...)</returns>
-    public abstract List<ConversionSource> Build();
+    protected sealed class EntityArtifact
+    {
+        public StringBuilder Code { get; } = new();
+
+        public StringBuilder Mapping { get; } = new();
+
+        /// <summary>
+        /// Set by BuildTableSchema when it opens an element that FinalizeBuild has to close.
+        /// </summary>
+        public bool ClassOpened { get; set; }
+    }
 
     /// <summary>
-    /// Build import statements for the entity.
+    /// Declaration of what the target framework requires, can express, and adds to the
+    /// generated artifact. See decision 009.
     /// </summary>
-    protected abstract void BuildImports();
+    public abstract TargetFrameworkDescriptor Descriptor { get; }
 
     /// <summary>
-    /// Build table and schema information for the entity.
+    /// Builds the artifacts for every accumulated entity. The order of the steps is fixed
+    /// here so that it cannot drift between frameworks; a framework with nothing to emit in
+    /// a step overrides it with an empty body, which is a statement rather than dead code.
     /// </summary>
-    protected abstract void BuildTableSchema();
+    /// <returns>List of ConversionSource containing the generated content and type (C#, XML, ...)</returns>
+    public List<ConversionSource> Build()
+    {
+        var outputs = new List<ConversionSource>();
+
+        foreach (var entityMap in EntityMaps)
+        {
+            var artifact = new EntityArtifact();
+
+            BuildImports(entityMap, artifact);
+            BuildTableSchema(entityMap, artifact);
+            BuildPrimaryKey(entityMap, artifact);
+            BuildProperties(entityMap, artifact);
+            BuildForeignKey(entityMap, artifact);
+            BuildEnforcedMembers(entityMap, artifact);
+
+            outputs.AddRange(FinalizeBuild(entityMap, artifact));
+        }
+
+        return outputs;
+    }
 
     /// <summary>
-    /// Build primary key information for the entity.
+    /// Namespace declaration and imports.
     /// </summary>
-    protected abstract void BuildPrimaryKey();
+    protected abstract void BuildImports(EntityMap entityMap, EntityArtifact artifact);
 
     /// <summary>
-    /// Build foreign key information for the entity.
+    /// Class header, class-level attributes, and the opening of the mapping element.
     /// </summary>
-    protected abstract void BuildForeignKey();
+    protected abstract void BuildTableSchema(EntityMap entityMap, EntityArtifact artifact);
 
     /// <summary>
-    /// Build property definitions for the entity.
+    /// Primary key. Runs before the properties because the key parts are emitted in the
+    /// order the key declares, not the order the properties were declared in.
     /// </summary>
-    protected abstract void BuildProperties();
+    protected abstract void BuildPrimaryKey(EntityMap entityMap, EntityArtifact artifact);
 
     /// <summary>
-    /// Finalize the build process for the entity.
+    /// Properties that are neither key parts nor navigation properties.
     /// </summary>
-    protected abstract void FinalizeBuild();
+    protected abstract void BuildProperties(EntityMap entityMap, EntityArtifact artifact);
+
+    /// <summary>
+    /// Relations and their navigation properties.
+    /// </summary>
+    protected abstract void BuildForeignKey(EntityMap entityMap, EntityArtifact artifact);
+
+    /// <summary>
+    /// Members the framework forces onto the body of the class, as declared by
+    /// <see cref="Descriptor"/>. Class-level attributes belong to BuildTableSchema, since
+    /// they precede the class header.
+    /// </summary>
+    protected abstract void BuildEnforcedMembers(EntityMap entityMap, EntityArtifact artifact);
+
+    /// <summary>
+    /// Closes the artifacts and turns them into conversion outputs.
+    /// </summary>
+    protected abstract IEnumerable<ConversionSource> FinalizeBuild(EntityMap entityMap, EntityArtifact artifact);
 }

@@ -10,13 +10,12 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-1. **Deskriptor cílového frameworku** (práce) — nečeká na nic a je předpokladem čtení katalogu i junction entity.
-2. **Diagnostika jako kategorie** (rozhodnutí) — rozhodnutí 008 na ni deleguje evidenci původu faktu, takže se stala předpokladem jeho implementace.
-3. **Prostředí s databází pro vývoj a testy** (práce) — bez něj nelze čtení katalogu otestovat jinak než proti mocku.
-4. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje `ColumnPairs`, detekci N:M i Dapper jako plnohodnotný zdroj.
-5. **Junction entita v builderech** (práce) — první bod, kterým se N:M propíše do generovaného kódu.
-6. **Deklarace cílových verzí frameworků** a **neutralizace typového modelu** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10.
-7. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+1. **Diagnostika jako kategorie** (rozhodnutí) — rozhodnutí 008 na ni deleguje evidenci původu faktu, takže se stala předpokladem jeho implementace.
+2. **Prostředí s databází pro vývoj a testy** (práce) — bez něj nelze čtení katalogu otestovat jinak než proti mocku.
+3. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje `ColumnPairs`, detekci N:M i Dapper jako plnohodnotný zdroj.
+4. **Junction entita v builderech** (práce) — první bod, kterým se N:M propíše do generovaného kódu.
+5. **Deklarace cílových verzí frameworků** a **neutralizace typového modelu** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10.
+6. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
@@ -71,15 +70,6 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 
 ## Otevřená práce
 
-### Deskriptor cílového frameworku
-*Rozhodnutí [009](./decisions/009-target-framework-descriptor.md).*
-
-Typ, který pro každý framework na jednom místě uvádí vynucené členy — co builder přidá ke generovanému artefaktu, ačkoli to není fakt o doméně — a vztah ke kategoriím mapovacích faktů ve třech stavech: vyžaduji, umím vyjádřit, neumím vyjádřit. Dnes tyto informace v kódu jsou, ale nepojmenované: `virtual` je zadrátovaný v `BuildPropertySignature`, identitní členy generuje privátní `BuildIdentityMembers` mimo šestici abstraktních metod, a bezparametrický konstruktor s nefinální třídou u NHibernate vycházejí správně jen proto, že je builder negeneruje vůbec.
-
-Součástí je jednorázový přepis `Build()` na šablonovou metodu nad kroky s parametry, protože krok pro vynucené členy nemá kam zavěsit: dnes si `Build()` píše každý builder sám a šest `protected abstract` metod zůstalo jako prázdné stuby s poznámkou `// unused in multi-entity flow` — čtyři v Dapper builderu, šest v EF Core a šest v NHibernate, přičemž Dapper navíc nechává `BuildPrimaryKey` a `BuildForeignKey` házet `NotImplementedException`.
-
-K tomu společný test napříč frameworky, který proti deskriptoru ověří přítomnost vynucených členů za podmínek, za kterých platí. Přesně takový test u identitních členů chyběl a jeho absence pustila do repozitáře nespustitelný výstup.
-
 ### Prostředí s databází pro vývoj a testy
 *Předpoklad čtení databázového katalogu. Souvisí s S5.*
 
@@ -126,6 +116,10 @@ Anotacemi lze vyjádřit `Identity`, `None` a `Computed`; `Sequence`, `HiLo`, `I
 ### EF Core — cizí klíč se negeneruje
 
 `EFCoreEntityBuilder.BuildForeignKey` vypíše jen navigační vlastnost, atribut `[ForeignKey]` negeneruje vůbec. U vícesloupcového cizího klíče má v EF Core anotacích tvar se seznamem sloupců, na jejichž pořadí záleží — je to tedy první konzument `ColumnPairs` spolu s junction entitou.
+
+### EF Core — nullabilita se vyjadřuje jen jazykově
+
+Anotaci `[Required]` builder negeneruje. Databázová nullabilita z `PropertyMap.IsNullable` se propisuje jen do modifikátoru `required` a otazník za typem vychází z jazykové nullability vlastnosti. Parser přitom `[Required]` číst umí, takže vstup s ním se přeloží a zpět už tuto podobu nezíská. Deskriptor uvádí kategorii jako vyjádřitelnou, protože popisuje framework, ne dnešní stav builderu.
 
 ### NHibernate — sloupec zapsaný vnořeným elementem
 *Rozpor s F1.*

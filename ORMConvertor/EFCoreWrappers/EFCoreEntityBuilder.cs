@@ -1,52 +1,119 @@
 ﻿using AbstractWrappers;
+using AbstractWrappers.Descriptors;
 using Common.Convertors;
 using EFCoreWrappers.Convertors;
 using Model;
 using Model.AbstractRepresentation;
-using System.Data;
 using System.Text;
 
 namespace EFCoreWrappers;
 
 public class EFCoreEntityBuilder : AbstractEntityBuilder
 {
-    /// <summary>
-    /// Builds one EF Core entity class per accumulated entity.
-    /// </summary>
-    public override List<ConversionSource> Build()
+    public override TargetFrameworkDescriptor Descriptor => EFCoreDescriptor.Instance;
+
+    protected override void BuildImports(EntityMap entityMap, EntityArtifact artifact)
     {
-        var outputs = new List<ConversionSource>();
-        foreach (var em in EntityMaps)
+        if (entityMap.Entity.Namespace != null)
         {
-            var codeResult = new StringBuilder();
-            BuildImports(em, codeResult);
-            BuildTableSchema(em, codeResult);
-            BuildPrimaryKey(em, codeResult);
-            BuildProperties(em, codeResult);
-            BuildForeignKey(em, codeResult);
-            FinalizeBuild(codeResult);
-
-            outputs.Add(new ConversionSource
-            {
-                ContentType = ConversionContentType.CSharpEntity,
-                Content = codeResult.ToString()
-            });
+            artifact.Code.AppendLine($"namespace {entityMap.Entity.Namespace};");
+            artifact.Code.AppendLine();
         }
-        return outputs;
+
+        // Both [PrimaryKey] and [Keyless] live in this namespace.
+        if (entityMap.PrimaryKey is null || entityMap.PrimaryKey.Parts.Count > 1)
+        {
+            artifact.Code.AppendLine("using Microsoft.EntityFrameworkCore;");
+        }
+
+        artifact.Code.AppendLine("using System.ComponentModel.DataAnnotations;");
+        artifact.Code.AppendLine("using System.ComponentModel.DataAnnotations.Schema;");
+
+        artifact.Code.AppendLine();
     }
 
-    protected override void BuildForeignKey()
+    protected override void BuildTableSchema(EntityMap entityMap, EntityArtifact artifact)
     {
-        // unused in multi-entity flow
+        if (entityMap.Table != null)
+        {
+            var schemaIfPresent = entityMap.Schema != null
+                ? $", Schema = \"{entityMap.Schema}\""
+                : string.Empty;
+
+            artifact.Code.AppendLine($"[Table(\"{entityMap.Table}\"{schemaIfPresent})]");
+        }
+
+        if (entityMap.PrimaryKey is null)
+        {
+            // EF Core would otherwise derive a key by convention from a property named
+            // Id or {TypeName}Id. The model holds no key, so none may appear in the output.
+            artifact.Code.AppendLine("[Keyless]");
+        }
+        else if (entityMap.PrimaryKey.Parts.Count > 1)
+        {
+            var keyNames = string.Join(", ", entityMap.PrimaryKey.Parts.Select(p => $"nameof({p.PropertyMap.Property.Name})"));
+            artifact.Code.AppendLine($"[PrimaryKey({keyNames})]");
+        }
+
+        var modifier = AccessModifierConvertor.ToModifierString(entityMap.Entity.AccessModifier);
+
+        artifact.Code.AppendLine($"{modifier} class {entityMap.Entity.Name}");
+        artifact.Code.AppendLine("{");
     }
 
-    private static void BuildForeignKey(EntityMap em, StringBuilder codeResult)
+    protected override void BuildPrimaryKey(EntityMap entityMap, EntityArtifact artifact)
     {
-        foreach (var relation in em.Relations)
+        if (entityMap.PrimaryKey is null)
+        {
+            return;
+        }
+
+        bool composite = entityMap.PrimaryKey.Parts.Count > 1;
+
+        // TODO primary key strategy
+
+        foreach (var part in entityMap.PrimaryKey.Parts)
+        {
+            var propertyMap = part.PropertyMap;
+            bool nullable = propertyMap.IsNullable ?? false;
+
+            // For a simple key [Key] goes on the property; for a composite key the class-level
+            // [PrimaryKey(...)] attribute (see BuildTableSchema) defines it and [Key] is not emitted.
+            artifact.Code.Append(BuildPropertyAttributes(propertyMap, isPrimaryKey: !composite));
+            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, isPrimaryKey: true, nullable: nullable)}");
+            artifact.Code.AppendLine();
+        }
+    }
+
+    protected override void BuildProperties(EntityMap entityMap, EntityArtifact artifact)
+    {
+        foreach (var propertyMap in entityMap.PropertyMaps)
+        {
+            if (entityMap.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == propertyMap.Property.Name) == true)
+            {
+                continue; // handled in BuildPrimaryKey
+            }
+
+            if (entityMap.Relations.Any(r => r.SourceNavigationProperty == propertyMap.Property.Name))
+            {
+                continue; // navigation property - handled in BuildForeignKey
+            }
+
+            bool nullable = propertyMap.IsNullable ?? false;
+
+            artifact.Code.Append(BuildPropertyAttributes(propertyMap));
+            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, nullable: nullable)}");
+            artifact.Code.AppendLine();
+        }
+    }
+
+    protected override void BuildForeignKey(EntityMap entityMap, EntityArtifact artifact)
+    {
+        foreach (var relation in entityMap.Relations)
         {
             var propertyMap = relation.SourceNavigationProperty is null
                 ? null
-                : em.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == relation.SourceNavigationProperty);
+                : entityMap.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == relation.SourceNavigationProperty);
 
             if (propertyMap is null)
             {
@@ -55,143 +122,29 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
             bool nullable = propertyMap.IsNullable ?? true;
 
-            codeResult.Append(BuildPropertyAttributes(propertyMap));
-            codeResult.AppendLine($"    {BuildPropertySignature(propertyMap.Property, nullable: nullable)}");
-            codeResult.AppendLine();
+            artifact.Code.Append(BuildPropertyAttributes(propertyMap));
+            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, nullable: nullable)}");
+            artifact.Code.AppendLine();
         }
     }
 
     /// <summary>
-    /// Adds namespace if present and imports required for EF Core entity mapping.
+    /// EF Core forces nothing onto the body of the class; its only enforced element is the
+    /// keyless marker, which precedes the class header and is emitted in BuildTableSchema.
     /// </summary>
-    protected override void BuildImports()
+    protected override void BuildEnforcedMembers(EntityMap entityMap, EntityArtifact artifact)
     {
-        // unused in multi-entity flow
     }
 
-    private static void BuildImports(EntityMap em, StringBuilder codeResult)
+    protected override IEnumerable<ConversionSource> FinalizeBuild(EntityMap entityMap, EntityArtifact artifact)
     {
-        if (em.Entity.Namespace != null)
+        artifact.Code.AppendLine("}");
+
+        yield return new ConversionSource
         {
-            codeResult.AppendLine($"namespace {em.Entity.Namespace};");
-            codeResult.AppendLine();
-        }
-
-        if (em.PrimaryKey?.Parts.Count > 1)
-        {
-            codeResult.AppendLine("using Microsoft.EntityFrameworkCore;"); // [PrimaryKey] attribute
-        }
-
-        codeResult.AppendLine("using System.ComponentModel.DataAnnotations;");
-        codeResult.AppendLine("using System.ComponentModel.DataAnnotations.Schema;");
-
-        codeResult.AppendLine();
-    }
-
-    protected override void BuildPrimaryKey()
-    {
-        // unused in multi-entity flow
-    }
-
-    private static void BuildPrimaryKey(EntityMap em, StringBuilder codeResult)
-    {
-        if (em.PrimaryKey is null)
-        {
-            return; // no PK
-        }
-
-        bool composite = em.PrimaryKey.Parts.Count > 1;
-
-        // TODO primary key strategy
-
-        foreach (var part in em.PrimaryKey.Parts)
-        {
-            var propertyMap = part.PropertyMap;
-            bool nullable = propertyMap.IsNullable ?? false;
-
-            // For a simple key [Key] goes on the property; for a composite key the class-level
-            // [PrimaryKey(...)] attribute (see BuildTableSchema) defines it and [Key] is not emitted.
-            codeResult.Append(BuildPropertyAttributes(propertyMap, isPrimaryKey: !composite));
-            codeResult.AppendLine($"    {BuildPropertySignature(propertyMap.Property, isPrimaryKey: true, nullable: nullable)}");
-            codeResult.AppendLine();
-        }
-    }
-
-    /// <summary>
-    /// Builds the properties of the entity.
-    /// </summary>
-    protected override void BuildProperties()
-    {
-        // unused in multi-entity flow
-    }
-
-    private static void BuildProperties(EntityMap em, StringBuilder codeResult)
-    {
-        foreach (var propertyMap in em.PropertyMaps)
-        {
-            if (em.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == propertyMap.Property.Name) == true)
-            {
-                continue; // handled in BuildPrimaryKey
-            }
-
-            if (em.Relations.Any(r => r.SourceNavigationProperty == propertyMap.Property.Name))
-            {
-                continue; // navigation property – handled in BuildForeignKey
-            }
-
-            bool nullable = propertyMap.IsNullable ?? false;
-
-            codeResult.Append(BuildPropertyAttributes(propertyMap));
-            codeResult.AppendLine($"    {BuildPropertySignature(propertyMap.Property, nullable: nullable)}");
-            codeResult.AppendLine();
-        }
-    }
-
-    /// <summary>
-    /// Builds table schema - attributes and class definition.
-    /// </summary>
-    protected override void BuildTableSchema()
-    {
-        // unused in multi-entity flow
-    }
-
-    private static void BuildTableSchema(EntityMap em, StringBuilder codeResult)
-    {
-        if (em.Table != null)
-        {
-            string schemaIfPresent = "";
-            if (em.Schema != null)
-            {
-                schemaIfPresent = $", Schema = \"{em.Schema}\"";
-            }
-
-            codeResult.AppendLine($"[Table(\"{em.Table}\"{schemaIfPresent})]");
-        }
-
-        if (em.PrimaryKey?.Parts.Count > 1)
-        {
-            var keyNames = string.Join(", ", em.PrimaryKey.Parts.Select(p => $"nameof({p.PropertyMap.Property.Name})"));
-            codeResult.AppendLine($"[PrimaryKey({keyNames})]");
-        }
-
-        var modifier = AccessModifierConvertor.ToModifierString(em.Entity.AccessModifier);
-        var name = em.Entity.Name;
-
-        codeResult.AppendLine($"{modifier} class {name}");
-        codeResult.AppendLine("{");
-    }
-
-    /// <summary>
-    /// Finalizes the build process by closing the class definition.
-    /// </summary>
-    protected override void FinalizeBuild()
-    {
-        // unused in multi-entity flow
-    }
-
-    private static void FinalizeBuild(StringBuilder codeResult)
-    {
-        codeResult.AppendLine("}");
+            ContentType = ConversionContentType.CSharpEntity,
+            Content = artifact.Code.ToString()
+        };
     }
 
     /// <summary>
@@ -235,7 +188,6 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             attributes.AppendLine($"    [Key]");
         }
 
-        // This would be a place to query database type in the future, if needed
         if (propMap.ColumnName != null || propMap.Type != null)
         {
             var parts = new List<string>();

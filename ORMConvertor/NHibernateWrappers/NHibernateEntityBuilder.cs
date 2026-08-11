@@ -1,4 +1,5 @@
 ﻿using AbstractWrappers;
+using AbstractWrappers.Descriptors;
 using Common.Convertors;
 using Model;
 using Model.AbstractRepresentation;
@@ -10,32 +11,7 @@ namespace NHibernateWrappers;
 
 public class NHibernateEntityBuilder : AbstractEntityBuilder
 {
-    /// <summary>
-    /// Builds one C# class and one XML mapping per entity.
-    /// </summary>
-    public override List<ConversionSource> Build()
-    {
-        var outputs = new List<ConversionSource>();
-        foreach (var em in EntityMaps)
-        {
-            var codeResult = new StringBuilder();
-            var mappingResult = new StringBuilder();
-            bool classOpened = false;
-
-            BuildImports(em, codeResult, mappingResult);
-            BuildTableSchema(em, codeResult, mappingResult, ref classOpened);
-            BuildPrimaryKey(em, codeResult, mappingResult);
-            BuildProperties(em, codeResult, mappingResult);
-            BuildForeignKey(em, codeResult, mappingResult);
-            BuildIdentityMembers(em, codeResult);
-            FinalizeBuild(codeResult, mappingResult, classOpened);
-
-            outputs.Add(new() { ContentType = ConversionContentType.CSharpEntity, Content = codeResult.ToString() });
-            outputs.Add(new() { ContentType = ConversionContentType.XML, Content = mappingResult.ToString() });
-        }
-
-        return outputs;
-    }
+    public override TargetFrameworkDescriptor Descriptor => NHibernateDescriptor.Instance;
 
     /// <summary>
     /// True when the entity is mapped with a composite identifier.
@@ -49,183 +25,103 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// Adds C# namespace.
     /// Adds XML prolog and root <hibernate-mapping> tag.
     /// </summary>
-    protected override void BuildImports()
-    {
-        // unused in multi-entity flow
-    }
-
-    private static void BuildImports(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
+    protected override void BuildImports(EntityMap entityMap, EntityArtifact artifact)
     {
         // System is required for [Serializable] and HashCode in the identity
         // members emitted for composite keys. A plain entity needs no imports.
-        if (HasCompositeKey(em))
+        if (HasCompositeKey(entityMap))
         {
-            codeResult.AppendLine("using System;");
-            codeResult.AppendLine();
+            artifact.Code.AppendLine("using System;");
+            artifact.Code.AppendLine();
         }
 
-        if (!string.IsNullOrWhiteSpace(em.Entity.Namespace))
+        if (!string.IsNullOrWhiteSpace(entityMap.Entity.Namespace))
         {
-            codeResult.AppendLine($"namespace {em.Entity.Namespace};");
-            codeResult.AppendLine();
+            artifact.Code.AppendLine($"namespace {entityMap.Entity.Namespace};");
+            artifact.Code.AppendLine();
         }
 
         // XML: prolog + root <hibernate-mapping>
-        AppendXml(mappingResult, 0, "<?xml version=\"1.0\" encoding=\"utf-8\" ?>");
+        AppendXml(artifact.Mapping, 0, "<?xml version=\"1.0\" encoding=\"utf-8\" ?>");
         var xmlNs = "urn:nhibernate-mapping-2.2";
-        var nsAttr = string.IsNullOrWhiteSpace(em.Entity.Namespace)
+        var nsAttr = string.IsNullOrWhiteSpace(entityMap.Entity.Namespace)
             ? string.Empty
-            : $" namespace=\"{em.Entity.Namespace}\"";
-        AppendXml(mappingResult, 0, $"<hibernate-mapping xmlns=\"{xmlNs}\"{nsAttr}>");
+            : $" namespace=\"{entityMap.Entity.Namespace}\"";
+        AppendXml(artifact.Mapping, 0, $"<hibernate-mapping xmlns=\"{xmlNs}\"{nsAttr}>");
     }
 
     /// <summary>
     /// Builds C# class header and XML <class> tag.
     /// </summary>
-    protected override void BuildTableSchema()
+    protected override void BuildTableSchema(EntityMap entityMap, EntityArtifact artifact)
     {
-        // unused in multi-entity flow
-    }
-
-    private static void BuildTableSchema(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult, ref bool classOpened)
-    {
-        var modifier = AccessModifierConvertor.ToModifierString(em.Entity.AccessModifier);
-        var name = em.Entity.Name;
+        var modifier = AccessModifierConvertor.ToModifierString(entityMap.Entity.AccessModifier);
+        var name = entityMap.Entity.Name;
 
         // C#
-        if (HasCompositeKey(em))
+        if (HasCompositeKey(entityMap))
         {
-            // Required by NHibernate for classes mapped with <composite-id>.
-            codeResult.AppendLine("[Serializable]");
+            // Required by NHibernate for classes mapped with <composite-id>. Declared as an
+            // enforced member, but emitted here because it precedes the class header.
+            artifact.Code.AppendLine("[Serializable]");
         }
 
-        codeResult.AppendLine($"{modifier} class {name}");
-        codeResult.AppendLine("{");
+        artifact.Code.AppendLine($"{modifier} class {name}");
+        artifact.Code.AppendLine("{");
 
         // XML <class>
-        var nameWithNamespace = string.IsNullOrWhiteSpace(em.Entity.Namespace)
+        var nameWithNamespace = string.IsNullOrWhiteSpace(entityMap.Entity.Namespace)
             ? name
-            : $"{em.Entity.Namespace}.{name}, {em.Entity.Namespace}";
+            : $"{entityMap.Entity.Namespace}.{name}, {entityMap.Entity.Namespace}";
 
-        var table = em.Table ?? name; // default = class name
-        var schema = em.Schema ?? string.Empty; // TODO schema
+        var table = entityMap.Table ?? name; // default = class name
+        var schema = entityMap.Schema ?? string.Empty; // TODO schema
         var schemaAttr = string.IsNullOrWhiteSpace(schema) ? string.Empty : $" schema=\"{schema}\"";
 
-        AppendXml(mappingResult, 1, $"<class name=\"{nameWithNamespace}\" table=\"{table}\"{schemaAttr}>");
-        classOpened = true;
+        AppendXml(artifact.Mapping, 1, $"<class name=\"{nameWithNamespace}\" table=\"{table}\"{schemaAttr}>");
+        artifact.ClassOpened = true;
     }
 
     /// <summary>
     /// Builds C# primary key property and XML <id> tag.
     /// </summary>
-    protected override void BuildPrimaryKey()
+    protected override void BuildPrimaryKey(EntityMap entityMap, EntityArtifact artifact)
     {
-        // unused in multi-entity flow
-    }
-
-    private static void BuildPrimaryKey(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
-    {
-        if (em.PrimaryKey is null)
+        if (entityMap.PrimaryKey is null)
         {
             return; // no PK
         }
 
-        if (em.PrimaryKey.Parts.Count == 1)
+        if (entityMap.PrimaryKey.Parts.Count == 1)
         {
-            var part = em.PrimaryKey.Parts[0];
+            var part = entityMap.PrimaryKey.Parts[0];
             var propertyMap = part.PropertyMap;
             var prop = propertyMap.Property;
             var columnName = propertyMap.ColumnName ?? prop.Name;
 
             var generatorClass = PrimaryKeyStrategyConvertor.ToNHibernate(part.Strategy);
 
-            AppendPropertyToCode(codeResult, prop, isPrimaryKey: true);
+            AppendPropertyToCode(artifact.Code, prop, isPrimaryKey: true);
 
-            AppendXml(mappingResult, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\">");
-            AppendXml(mappingResult, 3, $"<generator class=\"{generatorClass}\" />");
-            AppendXml(mappingResult, 2, "</id>");
+            AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\">");
+            AppendXml(artifact.Mapping, 3, $"<generator class=\"{generatorClass}\" />");
+            AppendXml(artifact.Mapping, 2, "</id>");
             return;
         }
 
         // Composite key: <composite-id> without a generator (assigned semantics),
         // the order of <key-property> elements matches PrimaryKeyPart.Order.
-        AppendXml(mappingResult, 2, "<composite-id>");
-        foreach (var part in em.PrimaryKey.Parts)
+        AppendXml(artifact.Mapping, 2, "<composite-id>");
+        foreach (var part in entityMap.PrimaryKey.Parts)
         {
             var propertyMap = part.PropertyMap;
             var prop = propertyMap.Property;
             var columnName = propertyMap.ColumnName ?? prop.Name;
 
-            AppendPropertyToCode(codeResult, prop, isPrimaryKey: true);
-            AppendXml(mappingResult, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\" />");
+            AppendPropertyToCode(artifact.Code, prop, isPrimaryKey: true);
+            AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\" />");
         }
-        AppendXml(mappingResult, 2, "</composite-id>");
-    }
-
-    /// <summary>
-    /// Emits the Equals/GetHashCode overrides that NHibernate requires from any
-    /// class mapped with <composite-id>. Without them the mapping fails to compile
-    /// with "composite-id class must override Equals()" while the session factory
-    /// is being built. See decision 006.
-    /// </summary>
-    private static void BuildIdentityMembers(EntityMap em, StringBuilder codeResult)
-    {
-        if (!HasCompositeKey(em))
-        {
-            return;
-        }
-
-        var className = em.Entity.Name;
-        var keyNames = em.PrimaryKey!.Parts
-            .Select(p => p.PropertyMap.Property.Name)
-            .ToList();
-
-        codeResult.AppendLine("    public override bool Equals(object? obj)");
-        codeResult.AppendLine("    {");
-        codeResult.AppendLine("        if (ReferenceEquals(this, obj))");
-        codeResult.AppendLine("        {");
-        codeResult.AppendLine("            return true;");
-        codeResult.AppendLine("        }");
-        codeResult.AppendLine();
-        // Pattern matching rather than GetType() equality: an NHibernate proxy is a
-        // subclass of the entity, so comparing the runtime types would reject it.
-        codeResult.AppendLine($"        if (obj is not {className} other)");
-        codeResult.AppendLine("        {");
-        codeResult.AppendLine("            return false;");
-        codeResult.AppendLine("        }");
-        codeResult.AppendLine();
-
-        for (var i = 0; i < keyNames.Count; i++)
-        {
-            var name = keyNames[i];
-            var prefix = i == 0 ? "return " : "    && ";
-            var suffix = i == keyNames.Count - 1 ? ";" : string.Empty;
-            codeResult.AppendLine($"        {prefix}Equals({name}, other.{name}){suffix}");
-        }
-
-        codeResult.AppendLine("    }");
-        codeResult.AppendLine();
-
-        codeResult.AppendLine("    public override int GetHashCode()");
-        codeResult.AppendLine("    {");
-
-        if (keyNames.Count <= 8)
-        {
-            codeResult.AppendLine($"        return HashCode.Combine({string.Join(", ", keyNames)});");
-        }
-        else
-        {
-            // HashCode.Combine is only defined up to eight arguments.
-            codeResult.AppendLine("        var hash = new HashCode();");
-            foreach (var name in keyNames)
-            {
-                codeResult.AppendLine($"        hash.Add({name});");
-            }
-            codeResult.AppendLine("        return hash.ToHashCode();");
-        }
-
-        codeResult.AppendLine("    }");
-        codeResult.AppendLine();
+        AppendXml(artifact.Mapping, 2, "</composite-id>");
     }
 
     private static string ResolveNhType(PropertyMap propertyMap)
@@ -244,44 +140,34 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// Builds C# properties and XML <property> tags.
     /// Primary and foreign keys are handled separately.
     /// </summary>
-    protected override void BuildProperties()
+    protected override void BuildProperties(EntityMap entityMap, EntityArtifact artifact)
     {
-        // unused in multi-entity flow
-    }
-
-    private static void BuildProperties(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
-    {
-        foreach (var pm in em.PropertyMaps)
+        foreach (var pm in entityMap.PropertyMaps)
         {
-            if (em.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == pm.Property.Name) == true)
+            if (entityMap.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == pm.Property.Name) == true)
             {
                 continue; // handled in BuildPrimaryKey
             }
 
-            if (em.Relations.Any(r => r.SourceNavigationProperty == pm.Property.Name))
+            if (entityMap.Relations.Any(r => r.SourceNavigationProperty == pm.Property.Name))
             {
                 continue; // navigation property – handled in BuildForeignKey
             }
 
-            AppendPropertyToCode(codeResult, pm.Property);
-            AppendPropertyToXml(mappingResult, pm);
+            AppendPropertyToCode(artifact.Code, pm.Property);
+            AppendPropertyToXml(artifact.Mapping, pm);
         }
     }
 
     /// <summary>
     /// Builds C# foreign key properties and XML <one-to-one>, <many-to-one>, <bag> or <many-to-many> tags.
     /// </summary>
-    protected override void BuildForeignKey()
-    {
-        // unused in multi-entity flow
-    }
-
-    private static void BuildForeignKey(EntityMap em, StringBuilder codeResult, StringBuilder mappingResult)
+    protected override void BuildForeignKey(EntityMap entityMap, EntityArtifact artifact)
     {
         // 1:1 and N:1 foreign keys
-        foreach (var relation in em.Relations.Where(r => r.Cardinality is Cardinality.OneToOne or Cardinality.ManyToOne))
+        foreach (var relation in entityMap.Relations.Where(r => r.Cardinality is Cardinality.OneToOne or Cardinality.ManyToOne))
         {
-            var propertyMap = FindNavigationPropertyMap(em, relation);
+            var propertyMap = FindNavigationPropertyMap(entityMap, relation);
             if (propertyMap is null)
             {
                 continue;
@@ -289,40 +175,40 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             var xmlTag = relation.Cardinality == Cardinality.OneToOne ? "one-to-one" : "many-to-one";
 
-            AppendPropertyToCode(codeResult, propertyMap.Property); // navigation property in C#
+            AppendPropertyToCode(artifact.Code, propertyMap.Property); // navigation property in C#
 
             var columnName = propertyMap.ColumnName ?? propertyMap.Property.Name;
-            AppendXml(mappingResult, 2, $"<{xmlTag} name=\"{propertyMap.Property.Name}\" class=\"{relation.TargetEntity}\" column=\"{columnName}\" />");
+            AppendXml(artifact.Mapping, 2, $"<{xmlTag} name=\"{propertyMap.Property.Name}\" class=\"{relation.TargetEntity}\" column=\"{columnName}\" />");
         }
 
         // 1:N and N:N collections
-        foreach (var relation in em.Relations.Where(r => r.Cardinality is Cardinality.OneToMany or Cardinality.ManyToMany))
+        foreach (var relation in entityMap.Relations.Where(r => r.Cardinality is Cardinality.OneToMany or Cardinality.ManyToMany))
         {
-            var propertyMap = FindNavigationPropertyMap(em, relation);
+            var propertyMap = FindNavigationPropertyMap(entityMap, relation);
             if (propertyMap is null)
             {
                 continue;
             }
 
-            codeResult.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
-            codeResult.AppendLine();
+            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
+            artifact.Code.AppendLine();
 
             // XML <bag> (TODO: allow set/list/map etc.)
             // TODO other collection properties
-            AppendXml(mappingResult, 2, $"<bag name=\"{propertyMap.Property.Name}\" inverse=\"true\" cascade=\"all-delete-orphan\">");
-            var primaryKeyCol = GetPrimaryKeyColumn(em);
-            AppendXml(mappingResult, 3, $"<key column=\"{primaryKeyCol}\" />");
+            AppendXml(artifact.Mapping, 2, $"<bag name=\"{propertyMap.Property.Name}\" inverse=\"true\" cascade=\"all-delete-orphan\">");
+            var primaryKeyCol = GetPrimaryKeyColumn(entityMap);
+            AppendXml(artifact.Mapping, 3, $"<key column=\"{primaryKeyCol}\" />");
 
             if (relation.Cardinality == Cardinality.OneToMany)
             {
-                AppendXml(mappingResult, 3, $"<one-to-many class=\"{relation.TargetEntity}\" />");
+                AppendXml(artifact.Mapping, 3, $"<one-to-many class=\"{relation.TargetEntity}\" />");
             }
             else // ManyToMany
             {
-                AppendXml(mappingResult, 3, $"<many-to-many class=\"{relation.TargetEntity}\" />");
+                AppendXml(artifact.Mapping, 3, $"<many-to-many class=\"{relation.TargetEntity}\" />");
             }
 
-            AppendXml(mappingResult, 2, "</bag>");
+            AppendXml(artifact.Mapping, 2, "</bag>");
         }
     }
 
@@ -332,24 +218,90 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             : em.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == relation.SourceNavigationProperty);
 
     /// <summary>
-    /// Finalizes the build process by closing the class and XML tags.
+    /// Emits the Equals/GetHashCode overrides that NHibernate requires from any
+    /// class mapped with <composite-id>, as declared by <see cref="Descriptor"/>.
+    /// Without them the mapping fails to compile with "composite-id class must
+    /// override Equals()" while the session factory is being built. The matching
+    /// [Serializable] attribute precedes the class header and is therefore emitted
+    /// in BuildTableSchema. See decision 006.
     /// </summary>
-    protected override void FinalizeBuild()
+    protected override void BuildEnforcedMembers(EntityMap entityMap, EntityArtifact artifact)
     {
-        // unused in multi-entity flow
-    }
-
-    private static void FinalizeBuild(StringBuilder codeResult, StringBuilder mappingResult, bool classOpened)
-    {
-        // Close C# class
-        codeResult.AppendLine("}");
-
-        if (classOpened)
+        if (!HasCompositeKey(entityMap))
         {
-            AppendXml(mappingResult, 1, "</class>");
+            return;
         }
 
-        AppendXml(mappingResult, 0, "</hibernate-mapping>", appendLine: false);
+        var className = entityMap.Entity.Name;
+        var keyNames = entityMap.PrimaryKey!.Parts
+            .Select(p => p.PropertyMap.Property.Name)
+            .ToList();
+
+        artifact.Code.AppendLine("    public override bool Equals(object? obj)");
+        artifact.Code.AppendLine("    {");
+        artifact.Code.AppendLine("        if (ReferenceEquals(this, obj))");
+        artifact.Code.AppendLine("        {");
+        artifact.Code.AppendLine("            return true;");
+        artifact.Code.AppendLine("        }");
+        artifact.Code.AppendLine();
+        // Pattern matching rather than GetType() equality: an NHibernate proxy is a
+        // subclass of the entity, so comparing the runtime types would reject it.
+        artifact.Code.AppendLine($"        if (obj is not {className} other)");
+        artifact.Code.AppendLine("        {");
+        artifact.Code.AppendLine("            return false;");
+        artifact.Code.AppendLine("        }");
+        artifact.Code.AppendLine();
+
+        for (var i = 0; i < keyNames.Count; i++)
+        {
+            var name = keyNames[i];
+            var prefix = i == 0 ? "return " : "    && ";
+            var suffix = i == keyNames.Count - 1 ? ";" : string.Empty;
+            artifact.Code.AppendLine($"        {prefix}Equals({name}, other.{name}){suffix}");
+        }
+
+        artifact.Code.AppendLine("    }");
+        artifact.Code.AppendLine();
+
+        artifact.Code.AppendLine("    public override int GetHashCode()");
+        artifact.Code.AppendLine("    {");
+
+        if (keyNames.Count <= 8)
+        {
+            artifact.Code.AppendLine($"        return HashCode.Combine({string.Join(", ", keyNames)});");
+        }
+        else
+        {
+            // HashCode.Combine is only defined up to eight arguments.
+            artifact.Code.AppendLine("        var hash = new HashCode();");
+            foreach (var name in keyNames)
+            {
+                artifact.Code.AppendLine($"        hash.Add({name});");
+            }
+            artifact.Code.AppendLine("        return hash.ToHashCode();");
+        }
+
+        artifact.Code.AppendLine("    }");
+        artifact.Code.AppendLine();
+    }
+
+    /// <summary>
+    /// Finalizes the build process by closing the class and XML tags.
+    /// </summary>
+    protected override IEnumerable<ConversionSource> FinalizeBuild(EntityMap entityMap, EntityArtifact artifact)
+    {
+        // Close C# class
+        artifact.Code.AppendLine("}");
+
+        if (artifact.ClassOpened)
+        {
+            AppendXml(artifact.Mapping, 1, "</class>");
+        }
+
+        AppendXml(artifact.Mapping, 0, "</hibernate-mapping>", appendLine: false);
+
+        yield return new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = artifact.Code.ToString() };
+        yield return new ConversionSource { ContentType = ConversionContentType.XML, Content = artifact.Mapping.ToString() };
     }
 
     /// <summary>

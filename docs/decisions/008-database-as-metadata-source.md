@@ -1,6 +1,6 @@
 # 008 — Databáze jako autoritativní doplněk chybějících mapovacích faktů
 
-Datum: 2026-08-10
+Datum: 2026-08-11
 Stav: platí
 Požadavky: F4, F5, F6, F11, S1, S3
 Podklad: JSS článek, §7.1 a pravidlo E9
@@ -94,28 +94,11 @@ Databáze tedy nikdy nepřepíše to, co zdroj tvrdí. Odpovídá to pravidlu E9
 
 Konvence z varianty A nezaniká, jen klesá na třetí místo — bez připojené databáze je pořád lepší než nic. Mění se ale její postavení: **každý doplněný fakt nese svůj původ** a konvenční odhad je ve výsledku odlišitelný od hodnoty přenesené ze zdroje i od hodnoty přečtené z katalogu. Bez toho by rozhodnutí nebylo ověřitelné a F11 by neměla co hlásit.
 
-**Primární klíč**, který je podnětem tohoto rozhodnutí, se řídí týmž řetězem, s jedním
-upřesněním na jeho konci. Pokud klíč nedá zdroj ani katalog, není to mezera, ale fakt:
-tabulka klíč nemá, nebo ji nemáme s čím ověřit. Konvenční dopočet klíče nepřipadá
-v úvahu — vymyslet klíč z vlastnosti jménem `Id` je horší než klíč nemít, protože chybu
-přesune z okamžiku překladu do okamžiku běhu.
+**Primární klíč**, který je podnětem tohoto rozhodnutí, se řídí týmž řetězem, s jedním upřesněním na jeho konci. Pokud klíč nedá zdroj ani katalog, není to mezera, ale fakt: tabulka klíč nemá, nebo ji nemáme s čím ověřit. Konvenční dopočet klíče nepřipadá v úvahu — vymyslet klíč z vlastnosti jménem `Id` je horší než klíč nemít, protože chybu přesune z okamžiku překladu do okamžiku běhu.
 
-U EF Core to není hypotetická obava. Podle konvence se vlastnost pojmenovaná `Id` nebo
-`<název typu>Id` stane primárním klíčem, aniž by to kdokoli tvrdil. Chybějící klíč se
-tedy sám neohlásí: buď entita takovou vlastnost nemá a stavba modelu selže, nebo ji má
-a klíč tiše vznikne. Generovaný bezklíčový typ (`[Keyless]`) je proto nutný ne jako
-náhrada za chybějící klíč, ale jako **jediný způsob, jak tuto konvenci potlačit**
-a udržet v cílovém kódu totéž, co tvrdí mezireprezentace.
+U EF Core to není hypotetická obava. Podle konvence se vlastnost pojmenovaná `Id` nebo `<název typu>Id` stane primárním klíčem, aniž by to kdokoli tvrdil. Chybějící klíč se tedy sám neohlásí: buď entita takovou vlastnost nemá a stavba modelu selže, nebo ji má a klíč tiše vznikne. Generovaný bezklíčový typ (`[Keyless]`) je proto nutný ne jako náhrada za chybějící klíč, ale jako **jediný způsob, jak tuto konvenci potlačit** a udržet v cílovém kódu totéž, co tvrdí mezireprezentace.
 
-Bezklíčový typ ale nese omezení: nesmí být cílem vztahu, žádná jiná entita na něj nesmí
-mít navigační vlastnost a sám smí nést jen referenční navigace ven, nikoli kolekce. Tato
-omezení nejsou svévolná — kopírují to, co v relační databázi platí o tabulce bez
-primárního klíče, na kterou nemůže ukazovat cizí klíč. Zdrojový model je ovšem porušit
-může, protože například Dapper nic z toho nevynucuje. Builder proto ověří, že entita
-omezením vyhovuje, a **teprve pak** bezklíčový typ vygeneruje; jinak překlad odmítne se
-strukturovanou diagnostikou. Cíl, který bezklíčový tvar nemá vůbec, odmítne vždy
-(NHibernate). Dapper klíč nevyjadřuje, takže se u něj nic neodmítá; nese varování podle
-rozhodnutí [004](004-unexpressible-facts-as-warnings.md).
+Bezklíčový typ ale nese omezení: nesmí být cílem vztahu, žádná jiná entita na něj nesmí mít navigační vlastnost a sám smí nést jen referenční navigace ven, nikoli kolekce. Tato omezení nejsou svévolná — kopírují to, co v relační databázi platí o tabulce bez primárního klíče, na kterou nemůže ukazovat cizí klíč. Zdrojový model je ovšem porušit může, protože například Dapper nic z toho nevynucuje. Builder proto ověří, že entita omezením vyhovuje, a **teprve pak** bezklíčový typ vygeneruje; jinak překlad odmítne se strukturovanou diagnostikou. Cíl, který bezklíčový tvar nemá vůbec, odmítne vždy (NHibernate). Dapper klíč nevyjadřuje, takže se u něj nic neodmítá; nese varování podle rozhodnutí [004](004-unexpressible-facts-as-warnings.md).
 
 **Variantu F nezavrhujeme, jen ji neimplementujeme teď.** Poptávka je datová struktura, takže rozšířit její sestavování z „jen cílový framework" na „cílový framework plus konkrétní úloha" je přírůstek, ne přestavba. Dokud jsou převáděné projekty v řádu jednotek entit, je úspora dotazů menší než složitost suchého průchodu; jakmile se nástroj otevře dávkovým vstupům (F14) a bude platit časový limit na projekt o sto entitách (S3), je F první kandidát na zpřesnění.
 
@@ -133,10 +116,6 @@ rozhodnutí [004](004-unexpressible-facts-as-warnings.md).
 
 **Odblokuje to čtyři věci naráz:** Dapper jako plnohodnotný zdroj překladu, doplnění délky a přesnosti klíčových sloupců, naplnění `ColumnPairs` u vícesloupcových cizích klíčů a detekci N:M v parserech. Všechny čtyři dnes stojí na tomtéž — že cílové sloupce a jejich vlastnosti nejdou určit z jedné překladové jednotky.
 
-**Bezklíčový typ potřebuje registraci v modelu.** Na rozdíl od běžné entity, kterou EF
-Core může objevit přes navigaci z jiné entity, se keyless typ do modelu dostane jen přes
-`DbSet` nebo explicitní konfiguraci. Dnešní překladový builder `DbContext` negeneruje,
-takže bez něj nefunguje ani běžná entita a rozdíl se neprojeví; při doplnění generování
-kontextu je to podmínka, na kterou je třeba pamatovat.
+**Bezklíčový typ potřebuje registraci v modelu.** Na rozdíl od běžné entity, kterou EF Core může objevit přes navigaci z jiné entity, se keyless typ do modelu dostane jen přes `DbSet` nebo explicitní konfiguraci. Dnešní překladový builder `DbContext` negeneruje, takže bez něj nefunguje ani běžná entita a rozdíl se neprojeví; při doplnění generování kontextu je to podmínka, na kterou je třeba pamatovat.
 
 **Co toto rozhodnutí neurčuje:** jak se katalog čte, které pohledy se dotazují, jak se řeší dialekt jiné databáze než SQL Server a zda se odpovědi cachují. To je práce podle F4 a rozhodne se při implementaci.
