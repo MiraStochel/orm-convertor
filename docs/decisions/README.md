@@ -15,6 +15,7 @@ Každé rozhodnutí je samostatný soubor. **Rozhodnutí se nepřepisují.** Pok
 | [007](007-documentation-structure.md) | Dokumentace organizovaná podle rozhodnutí, ne podle času | 2026-08-03 | platí | — |
 | [008](008-database-as-metadata-source.md) | Databáze jako autoritativní doplněk chybějících mapovacích faktů | 2026-08-11 | revidováno | F2, F4, F5, F6, F11, S1, S3 |
 | [009](009-target-framework-descriptor.md) | Deskriptor cílového frameworku místo vlastností rozptýlených v builderech | 2026-08-11 | platí | F2, F4, F7–F10, F11, S1 |
+| [010](010-diagnostics-as-returned-data.md) | Diagnostika jako vrácená data, ne výjimka | 2026-08-12 | platí | F5, F11, F14, E3, S6 |
 
 ## Formát
 
