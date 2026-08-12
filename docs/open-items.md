@@ -10,25 +10,23 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-1. **Diagnostika jako kategorie** (rozhodnutí) — rozhodnutí 008 na ni deleguje evidenci původu faktu, takže se stala předpokladem jeho implementace.
-2. **Prostředí s databází pro vývoj a testy** (práce) — bez něj nelze čtení katalogu otestovat jinak než proti mocku.
-3. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje `ColumnPairs`, detekci N:M i Dapper jako plnohodnotný zdroj.
-4. **Junction entita v builderech** (práce) — první bod, kterým se N:M propíše do generovaného kódu.
-5. **Deklarace cílových verzí frameworků** a **neutralizace typového modelu** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10.
-6. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Body 1 až 5 k němu vedou přímo a databázi nepotřebují; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
+
+1. **Údaj o klíčové třídě na `PrimaryKey`** (práce) — nesplněný důsledek rozhodnutí 006 a předpoklad varianty s klíčovou třídou v parseru.
+2. **Revize `PrimaryKeyStrategy`** (rozhodnutí) a hned po ní **strategie primárního klíče u EF Core** (práce) — v tomto pořadí, jinak se strategie píše dvakrát.
+3. **Varianta `<composite-id name= class=>` v parseru NHibernate** (práce) — druhý způsob, jak NHibernate vyjadřuje kompozitní klíč.
+4. **Vícesloupcový cizí klíč v builderech** (práce) — `[ForeignKey]` u EF Core a `<key>` u NHibernate; první konzument `ColumnPairs` a základ, na kterém staví junction entita.
+5. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — cílové sloupce lze určit ze zdroje všude, kde je cílová entita součástí téhož převodu.
+6. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
+7. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
+8. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
+9. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
+10. **Deklarace cílových verzí frameworků** a **neutralizace typového modelu** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10.
+11. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
 ## Otevřená rozhodnutí
-
-### Diagnostika jako kategorie
-*Zobecňuje rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md), předpoklad implementace rozhodnutí [008](./decisions/008-database-as-metadata-source.md). Podklad: audit 2026-08-02, kap. 2.1 a 4.6.*
-
-Přeformulovat mechanismus „fakt nevyjádřitelný v cílovém frameworku" tak, aby byl parametrizovaný frameworkem, ne dapperovskou větví. Seznam faktů pro Dapper existuje ve srovnávací analýze a rozhodnutí [009](./decisions/009-target-framework-descriptor.md) mu dalo závazné místo v deskriptoru cílového frameworku jako stav „neumím vyjádřit"; pro MyBatis bude analogický.
-
-Do stejné kategorie patří i zúžení uvnitř typového modelu, nejen fakty, které cíl neunese — konkrétně slévání `DateTime`, `DateTime2` a `SmallDateTime` do jediného typu NHibernate. Diagnostika by měla ohlásit obojí a rozlišit to: první případ je vlastnost cílového frameworku, druhý vlastnost převodu a dá se odstranit.
-
-Rozhodnutí 008 sem přidalo dvě věci: evidenci původu každého faktu — ze zdroje, z katalogu, nebo konvencí — a hlášení konfliktu, kdy zdroj a databázový katalog tvrdí každý něco jiného. Bez prvního nelze rozlišit tvrzení od domněnky, bez druhého splnit F5. Čtení katalogu proto na tuto položku čeká.
 
 ### Deklarace cílových verzí frameworků
 *Předpoklad S6. Podklad: audit 2026-08-02, kap. 3.3.*
@@ -43,7 +41,7 @@ Dnes wrappery nereferencují žádný ORM balíček, jen Roslyn, takže cílová
 Nejrozsáhlejší otevřená položka, ve dvou rovinách:
 
 1. `CLRType` → jazykově neutrální reprezentace (`LangType` podle JSS §5.2), s doplněním chybějících typů a s vyřešením případu `CLRType.Char`, který dnes nelze namapovat na správný typ NHibernate, protože v `DatabaseType` chybí hodnota pro jednotlivý unicode znak.
-2. `DatabaseType` → databázově neutrální reprezentace, případně s vrstvou pro dialekty. Dnešní výčet je fakticky seznam typů T-SQL. Sem patří i `sql-type` na vnořeném `<column>` elementu NHibernate — jediná cesta, jak v mapování udržet konkrétní SQL typ místo typu NHibernate; parser ho dnes nečte, protože nemá kam ho uložit.
+2. `DatabaseType` → databázově neutrální reprezentace, případně s vrstvou pro dialekty. Dnešní výčet je fakticky seznam typů T-SQL. Sem patří i `sql-type` na vnořeném `<column>` elementu NHibernate — jediná cesta, jak v mapování udržet konkrétní SQL typ místo typu NHibernate; parser ho dnes nečte, protože nemá kam ho uložit. Sem rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) odsunulo i slévání `DateTime`, `DateTime2` a `SmallDateTime` do jediného typu NHibernate: je to ztráta ve stejném smyslu jako nevyjádřitelný fakt, ale aby ji šlo ohlásit, musí být z převodu poznat, že zúžil — a to je práce tady, ne v diagnostice.
 
 Je to **předpoklad** pro F7–F10, ne jejich příprava: javová ID třída se neobejde bez otypovaných polí, a ta vezme builder odsud.
 
@@ -92,14 +90,18 @@ Fáze musí být měřitelná odděleně od času překladu (S3) a překlad bez 
 Generování explicitní junction entity a vícesloupcový rendering cizích klíčů. Testovací vstupy je nutné skládat ručně přes builder API, protože `ColumnPairs` se automaticky neplní.
 
 ### Detekce N:M v parserech
-*Blokováno položkou o čtení databázového katalogu; rozhodnutí [008](./decisions/008-database-as-metadata-source.md).*
+*Blokováno jen zčásti — viz níže; rozhodnutí [008](./decisions/008-database-as-metadata-source.md).*
 
-Detekce N:M na vstupu, syntéza junction entity a naplnění `ColumnPairs`. Cílové sloupce nejdou určit z jedné translation unit, takže to stojí na metadatech z databáze (F4/F5). Totéž místo je předznamenané i v NHibernate builderu, kde chybějící typ vlastnosti nese TODO „query database for the missing type".
+Detekce N:M na vstupu, syntéza junction entity a naplnění `ColumnPairs`. Cílové sloupce nejdou určit z jedné translation unit, takže to stojí na metadatech z databáze (F4/F5). Totéž místo je předznamenané i v NHibernate builderu, kde chybějící typ vlastnosti nese TODO „query database for the missing type". Blokace ale platí jen pro odkaz mimo převod. Je-li cílová entita součástí téhož vstupu, jsou její klíčové sloupce v mezireprezentaci a `ColumnPairs` lze naplnit ze zdroje; katalog je potřeba teprve tam, kde cílová entita ve vstupu není.
 
-### Strukturovaná varování pro nevyjádřitelné fakty
-*Rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md); rozsah upřesní rozhodnutí o diagnostice jako kategorii, seznam faktů bere z deskriptoru cílového frameworku.*
+### Diagnostika převodu
+*Rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md), naplňuje [004](./decisions/004-unexpressible-facts-as-warnings.md). Seznam faktů bere z deskriptoru cílového frameworku ([009](./decisions/009-target-framework-descriptor.md)). Požadavky F5, F11, E3.*
 
-Dapper builder dnes klíče a vztahy zahazuje potichu. Do vzniku diagnostické infrastruktury z F11 stačí prostý seznam varování ve výsledku převodu.
+Návratový typ převodu, který nese artefakty i záznamy, a dvě místa, kde záznamy vznikají: kontrola úplnosti proti deskriptoru před generováním a záznamy o ztrátě při emisi. Záznam nese framework, artefakt, entitu a vlastnost, kategorii mapovacího faktu a důvod.
+
+Dnes je nástroj tichý: Dapper builder klíče i vztahy zahazuje bez hlášení, `ConversionHandler.Convert` vrací jen `List<ConversionSource>`, takže kanál pro cokoli dalšího neexistuje, a chybějící jazykový typ končí výjimkou uprostřed generování. Změna se propíše do REST API; frontend zůstává na příště a je veden zvlášť.
+
+Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho četl jen test.
 
 ### Dotazová větev
 - `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec — poddotazy projdou, ale výsledek se nikam neskládá.
@@ -141,7 +143,7 @@ Rozhodnutí 006 v důsledcích uvádí, že `PrimaryKey` dostane nepovinný úda
 
 ### Chybějící jazykový typ shodí generování
 
-Vlastnost, kterou zná jen XML mapování a ne entitní třída, vznikne s `CLRType.None` a `CLRTypeConvertor.ToString` na ní vyhodí `NotSupportedException("None")` uprostřed generování. Neúplný vstup je tedy pád, ne diagnostika — proti F11, který žádá framework, artefakt, chybějící vlastnost a důvod selhání; z výjimky nejde určit ani entitu.
+Vlastnost, kterou zná jen XML mapování a ne entitní třída, vznikne s `CLRType.None` a `CLRTypeConvertor.ToString` na ní vyhodí `NotSupportedException("None")` uprostřed generování. Neúplný vstup je tedy pád, ne diagnostika — proti F11, který žádá framework, artefakt, chybějící vlastnost a důvod selhání; z výjimky nejde určit ani entitu. Rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) z toho dělá záznam o selhání: je to kategorie, kterou cíl vyžaduje a nikdo ji nedodal.
 
 Potřebný fakt je přitom po ruce: `PropertyMap.Type` databázový typ nese, jen opačný převod v `DatabaseTypeConvertor` neexistuje, ačkoli směr CLR → databáze je v něm jako `GuessFromPropertyType`. Podle rozhodnutí [008](./decisions/008-database-as-metadata-source.md) je odvození z databázového typu konvence třetího stupně a musí nést svůj původ.
 

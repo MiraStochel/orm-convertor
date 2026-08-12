@@ -1,6 +1,6 @@
 # Rozhodnutí
 
-Každé rozhodnutí je samostatný soubor. **Rozhodnutí se nepřepisují.** Pokud se názor změní, vznikne nové rozhodnutí a to původní dostane stav `nahrazeno NNN` — původní úvaha včetně toho, proč tehdy dávala smysl, zůstává čitelná.
+Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vznikne nové rozhodnutí a to původní dostane stav `nahrazeno NNN` — původní úvaha včetně toho, proč tehdy dávala smysl, zůstává čitelná. Doplnění případu, na který se při psaní nemyslelo, je něco jiného: to se opraví na místě se stavem `revidováno`.
 
 Číslování je chronologické a stabilní; čísla se nepřepoužívají.
 
