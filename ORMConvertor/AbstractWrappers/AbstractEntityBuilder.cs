@@ -101,7 +101,10 @@ public abstract class AbstractEntityBuilder
     /// The whole key is defined by a single call; a repeated call replaces the previous key.
     /// </summary>
     /// <param name="parts">Key parts: property name, explicit 1-based order, and per-part generation strategy.</param>
-    public void AddPrimaryKey(IReadOnlyList<(string PropertyName, int Order, PrimaryKeyStrategy Strategy)> parts)
+    /// <param name="sourceKeyClass">Optional record of a key class used by the source; null when the source declared the key parts directly on the entity.</param>
+    public void AddPrimaryKey(
+        IReadOnlyList<(string PropertyName, int Order, PrimaryKeyStrategy Strategy)> parts,
+        SourceKeyClass? sourceKeyClass = null)
     {
         if (parts == null || parts.Count == 0)
         {
@@ -125,6 +128,7 @@ public abstract class AbstractEntityBuilder
         EntityMap.PrimaryKey = new PrimaryKey
         {
             Parts = keyParts,
+            SourceKeyClass = sourceKeyClass,
         };
     }
 

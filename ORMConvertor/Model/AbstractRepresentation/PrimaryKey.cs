@@ -25,4 +25,11 @@ public sealed class PrimaryKey
             parts = [.. value.OrderBy(p => p.Order)];
         }
     }
+
+    /// <summary>
+    /// Set when the source expressed the key by a dedicated key class. It is a record of
+    /// the source, not part of the key definition - the key itself is always the ordered
+    /// list of parts above, because every target renders it flat (decision 006).
+    /// </summary>
+    public SourceKeyClass? SourceKeyClass { get; init; }
 }

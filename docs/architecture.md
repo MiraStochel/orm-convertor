@@ -66,6 +66,7 @@ public class EntityMap
 public sealed class PrimaryKey
 {
     public required IReadOnlyList<PrimaryKeyPart> Parts { get; init; }   // vždy seřazené podle Order
+    public SourceKeyClass? SourceKeyClass { get; init; }                 // nepovinný záznam o zdroji
 }
 
 public sealed class PrimaryKeyPart
@@ -73,6 +74,13 @@ public sealed class PrimaryKeyPart
     public required PropertyMap PropertyMap { get; init; }
     public required int Order { get; init; }                             // explicitní, 1-based
     public PrimaryKeyStrategy Strategy { get; init; } = PrimaryKeyStrategy.None;   // per-part
+}
+
+public sealed class SourceKeyClass          // konstruktor validuje dvojici Form / PropertyName
+{
+    public string ClassName { get; }
+    public KeyClassForm Form { get; }        // Embedded | Mirrored
+    public string? PropertyName { get; }     // jen u Embedded
 }
 ```
 
@@ -83,6 +91,8 @@ Klíč je seřazený seznam částí; jednoduchý klíč je degenerovaný příp
 Strategie generování je per-part. Model je záměrně permisivní – dovolí i kombinaci, kterou konkrétní databáze nepřijme (například dvě `Identity` části); validace typu „tabulka smí mít jen jednu IDENTITY" patří cílovému builderu nebo databázi, ne abstraktnímu modelu.
 
 Členy, které si kompozitní klíč v cílovém frameworku vynucuje – u NHibernate `Equals`, `GetHashCode` a `[Serializable]`, u JPA celá ID třída – v mezireprezentaci nejsou; generuje je builder (rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md)).
+
+Klíčová třída zdroje se zaznamenává, ne převádí. Protože všechny cíle vykreslují klíč ploše, ztratil by se při překladu její název i forma; `SourceKeyClass` je proto nepovinný signál vedle klíče, obdobně jako `IsJunctionTable` u spojovací tabulky – klíč sám zůstává seřazeným seznamem částí. Formy jsou dvě a liší se cestou k části klíče: u `Embedded` vede přes vlastnost entity (`<composite-id name= class=>`, `@EmbeddedId`, `o.Id.OrderID`), u `Mirrored` klíčové vlastnosti zůstávají na entitě a třída je jen zrcadlí (`<composite-id class=>` bez `name`, `@IdClass`, `o.OrderID`). Dvojici formy a názvu vlastnosti kontroluje konstruktor, takže nekonzistentní záznam v mezireprezentaci nevznikne. Dnes signál nevyplňuje žádný parser – čtení varianty `<composite-id name= class=>` je otevřená položka – a žádný .NET builder ho nečte; test ověřuje, že generovaný artefakt je s ním i bez něj shodný. Prvním čtenářem bude JPA builder, který podle něj pojmenuje ID třídu místo odvození konvencí (F7–F10).
 
 ### 4.3 Vztahy
 
@@ -180,7 +190,7 @@ ng build --configuration "production" --base-href "/orm/" --deploy-url "/orm/"
 
 ## 7. Rozhraní parserů a builderů
 
-`AbstractEntityBuilder` odděluje dvě sady metod. **Naplnění mezireprezentace** řeší veřejné metody implementované přímo v abstraktní třídě (framework-nezávislé): `BeginEntity` (začátek další entity – builder umí držet víc entit najednou v `EntityMaps`), `AddNamespace`, `AddClassHeader`, `AddSchema`, `AddTable`, `AddProperty`, `SetPropertyDatabaseMapping` (databázové detaily mapování – sloupec, typ, délka, precision/scale, nullabilita, ostatní klíč–hodnota), `AddPrimaryKey`, `AddForeignKey` a `AddRelation`. `AddPrimaryKey` má dvě přetížení: seznam trojic `(PropertyName, Order, Strategy)` pro kompozitní klíč a pohodlnou zkratku pro jednoduchý klíč.
+`AbstractEntityBuilder` odděluje dvě sady metod. **Naplnění mezireprezentace** řeší veřejné metody implementované přímo v abstraktní třídě (framework-nezávislé): `BeginEntity` (začátek další entity – builder umí držet víc entit najednou v `EntityMaps`), `AddNamespace`, `AddClassHeader`, `AddSchema`, `AddTable`, `AddProperty`, `SetPropertyDatabaseMapping` (databázové detaily mapování – sloupec, typ, délka, precision/scale, nullabilita, ostatní klíč–hodnota), `AddPrimaryKey`, `AddForeignKey` a `AddRelation`. `AddPrimaryKey` má dvě přetížení: seznam trojic `(PropertyName, Order, Strategy)` pro kompozitní klíč a pohodlnou zkratku pro jednoduchý klíč; kompozitní přetížení navíc bere nepovinný záznam o klíčové třídě zdroje.
 
 **Generování výstupu** je šablonová metoda. Veřejná `Build()` je implementovaná v abstraktní třídě: iteruje přes `EntityMaps` a pro každou entitu volá v pevném pořadí `BuildImports` → `BuildTableSchema` → `BuildPrimaryKey` → `BuildProperties` → `BuildForeignKey` → `BuildEnforcedMembers` → `FinalizeBuild`. Všech sedm kroků je `protected abstract` a bere `(EntityMap, EntityArtifact)`; `FinalizeBuild` navíc vrací výstupy, protože počet artefaktů se liší podle frameworku. `EntityArtifact` drží dva `StringBuilder`y (`Code` a `Mapping`) a příznak `ClassOpened` — NHibernate plní oba a vrací dva výstupy, Dapper i EF Core plní jen `Code`. Primární klíč se generuje **před** vlastnostmi, protože části klíče se vypisují v pořadí, které určuje klíč, ne deklarace vlastností. Krok, ve kterém framework nic negeneruje, má prázdné tělo — to je tvrzení o frameworku, ne mrtvý kód: Dapper má prázdné `BuildPrimaryKey`, `BuildForeignKey` i `BuildEnforcedMembers`, EF Core prázdné `BuildEnforcedMembers`, protože jeho jediný vynucený prvek stojí před hlavičkou třídy a vypisuje se v `BuildTableSchema`. Každý builder má vlastnost `Descriptor` odkazující na deskriptor svého frameworku.
 

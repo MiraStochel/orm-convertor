@@ -1,4 +1,5 @@
-﻿using EFCoreWrappers;
+﻿using AbstractWrappers;
+using EFCoreWrappers;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
@@ -8,10 +9,10 @@ namespace Tests.Combined;
 
 /// <summary>
 /// Covers the primary key as a concept of the intermediate representation: a simple
-/// key together with its generation strategy, the invariants the model enforces on
-/// key parts, and what a builder does with mapping facts the source framework does
-/// not state. Translation of composite keys themselves is covered by
-/// <see cref="CompositeKeyTest"/>.
+/// key together with its generation strategy, the invariants the model enforces on key
+/// parts and on the record of a key class used by the source, and what a builder does
+/// with mapping facts the source framework does not state. Translation of composite
+/// keys themselves is covered by <see cref="CompositeKeyTest"/>.
 /// </summary>
 public class PrimaryKeyTest
 {
@@ -219,6 +220,98 @@ public class PrimaryKeyTest
         Assert.Equal(DatabaseType.Int, part.PropertyMap.Type);
         Assert.Equal(CLRType.Int, part.PropertyMap.Property.Type.CLRType);
         Assert.Equal(PrimaryKeyStrategy.Identity, part.Strategy);
+    }
+
+    [Fact]
+    public void KeyClassOfTheSourceIsRecordedOnlyWhenTheSourceHasOne()
+    {
+        var builder = new DummyEntityBuilder();
+        builder.AddClassHeader("public", "OrderLine");
+        builder.AddProperty("int", "OrderID");
+        builder.AddProperty("int", "LineNumber");
+
+        builder.AddPrimaryKey(
+        [
+            ("OrderID", 1, PrimaryKeyStrategy.None),
+            ("LineNumber", 2, PrimaryKeyStrategy.None),
+        ],
+        new SourceKeyClass("OrderLineId", KeyClassForm.Embedded, "Id"));
+
+        var pk = builder.EntityMap.PrimaryKey;
+        Assert.NotNull(pk);
+
+        // The class is recorded next to the key, not instead of it: the parts remain the
+        // definition of the key, so a target rendering it flat needs nothing else.
+        Assert.Equal(new[] { "OrderID", "LineNumber" }, pk.Parts.Select(p => p.PropertyMap.Property.Name));
+
+        var keyClass = pk.SourceKeyClass;
+        Assert.NotNull(keyClass);
+        Assert.Equal("OrderLineId", keyClass.ClassName);
+        Assert.Equal(KeyClassForm.Embedded, keyClass.Form);
+        Assert.Equal("Id", keyClass.PropertyName);
+
+        // Absence says something too: the source declared the key parts on the entity
+        // itself, so there is no class name to carry over.
+        var plain = new DummyEntityBuilder();
+        plain.AddClassHeader("public", "OrderLine");
+        plain.AddProperty("int", "OrderID");
+        plain.AddPrimaryKey(PrimaryKeyStrategy.Identity, "OrderID");
+
+        Assert.Null(plain.EntityMap.PrimaryKey?.SourceKeyClass);
+    }
+
+    [Fact]
+    public void KeyClassFormDecidesWhetherAPropertyNameBelongsThere()
+    {
+        // Embedded means the parts are reached through a property of the entity
+        // (o.Id.OrderID), so without its name the record would not describe the source.
+        Assert.Throws<ArgumentException>(() => _ = new SourceKeyClass("OrderLineId", KeyClassForm.Embedded));
+        Assert.Throws<ArgumentException>(() => _ = new SourceKeyClass("OrderLineId", KeyClassForm.Embedded, "   "));
+
+        // Mirrored means the parts stay on the entity (o.OrderID) and no such property
+        // exists - accepting one would record a claim about the source that is not true.
+        Assert.Throws<ArgumentException>(() => _ = new SourceKeyClass("OrderLineId", KeyClassForm.Mirrored, "Id"));
+
+        // The class name is what the record exists for, so it is required in both forms.
+        Assert.Throws<ArgumentException>(() => _ = new SourceKeyClass("", KeyClassForm.Mirrored));
+    }
+
+    [Fact]
+    public void KeyClassSignalDoesNotChangeGeneratedArtifacts()
+    {
+        var keyClass = new SourceKeyClass("OrderLineId", KeyClassForm.Embedded, "Id");
+
+        // Every target renders the key flat (decision 006), so the signal must not reach
+        // the output. Once a builder does read it - the JPA one will, to name the ID class
+        // instead of deriving it by convention - this is the test that has to be revisited
+        // deliberately rather than quietly going red.
+        Assert.Equal(
+            CompositeKeyOutputs(new NHibernateEntityBuilder(), null),
+            CompositeKeyOutputs(new NHibernateEntityBuilder(), keyClass));
+
+        Assert.Equal(
+            CompositeKeyOutputs(new EFCoreEntityBuilder(), null),
+            CompositeKeyOutputs(new EFCoreEntityBuilder(), keyClass));
+    }
+
+    /// <summary>
+    /// The same two-part key every time, so the key class signal is the only thing that
+    /// can differ between two outputs of the same builder.
+    /// </summary>
+    private static List<string> CompositeKeyOutputs(AbstractEntityBuilder builder, SourceKeyClass? sourceKeyClass)
+    {
+        builder.AddClassHeader("public", "OrderLine");
+        builder.AddTable("OrderLines");
+        builder.AddProperty("int", "OrderID", "public", hasGetter: true, hasSetter: true);
+        builder.AddProperty("int", "LineNumber", "public", hasGetter: true, hasSetter: true);
+        builder.AddPrimaryKey(
+        [
+            ("OrderID", 1, PrimaryKeyStrategy.None),
+            ("LineNumber", 2, PrimaryKeyStrategy.None),
+        ],
+        sourceKeyClass);
+
+        return [.. builder.Build().Select(o => o.Content)];
     }
 
     private static PropertyMap NewPropertyMap(string propertyName) => new()
