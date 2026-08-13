@@ -88,7 +88,7 @@ Fáze musí být měřitelná odděleně od času překladu (S3) a překlad bez 
 ### Junction entita v builderech
 *Rozhodnutí [005](./decisions/005-many-to-many-as-explicit-junction-entity.md); vynucené členy bere z deskriptoru cílového frameworku (rozhodnutí [009](./decisions/009-target-framework-descriptor.md)).*
 
-Generování explicitní junction entity a vícesloupcový rendering cizích klíčů. Testovací vstupy je nutné skládat ručně přes builder API, protože `ColumnPairs` se automaticky neplní.
+Generování explicitní junction entity. Vícesloupcový cizí klíč už buildery vypsat umějí (rozhodnutí [012](./decisions/012-foreign-key-rendering.md)), takže zbývá sama junction entita; testovací vstupy je pořád nutné skládat ručně přes builder API, protože `ColumnPairs` se automaticky neplní.
 
 ### Detekce N:M v parserech
 *Blokováno jen zčásti — viz níže; rozhodnutí [008](./decisions/008-database-as-metadata-source.md).*
@@ -104,6 +104,13 @@ Dnes je nástroj tichý: Dapper builder klíče i vztahy zahazuje bez hlášení
 
 Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho četl jen test.
 
+### Rozresolvování jmen entit před generováním
+*Nesplněný důsledek rozhodnutí [001](./decisions/001-entity-reference-by-name.md); záznam podle [010](./decisions/010-diagnostics-as-returned-data.md). Požadavek F11.*
+
+Vztah odkazuje na cílovou entitu jménem a důsledky rozhodnutí 001 slibují, že se všechna jména před generováním rozresolvují proti `EntityMaps` a nenalezené jméno bude chyba úplnosti se strukturovanou diagnostikou. V kódu nic takového není: `AbstractEntityBuilder.Build` projde entity a rovnou volá jednotlivé kroky, takže překlep v názvu cílové entity projde beze slova až do výstupu, kde z něj vznikne odkaz na třídu, která neexistuje. Kontrola patří na totéž místo jako kontrola úplnosti proti deskriptoru, tedy před generování.
+
+Čekají na ni dvě věci: `property-ref` na inverzní straně vztahu 1:1, který rozhodnutí [012](./decisions/012-foreign-key-rendering.md) odkládá právě sem, protože potřebuje navigaci protistrany, a naplnění `ColumnPairs`, které pracuje s toutéž množinou entit.
+
 ### Dotazová větev
 - `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec — poddotazy projdou, ale výsledek se nikam neskládá.
 - `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu).
@@ -114,9 +121,9 @@ Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho č
 Anotaci `[Required]` builder negeneruje. Databázová nullabilita z `PropertyMap.IsNullable` se propisuje jen do modifikátoru `required` a otazník za typem vychází z jazykové nullability vlastnosti. Parser přitom `[Required]` číst umí, takže vstup s ním se přeloží a zpět už tuto podobu nezíská. Deskriptor uvádí kategorii jako vyjádřitelnou, protože popisuje framework, ne dnešní stav builderu.
 
 ### Parser NHibernate — část klíče, která je cizím klíčem
-*Souvisí s vícesloupcovým cizím klíčem. Požadavky F1, F3.*
+*Navazuje na rozhodnutí [012](./decisions/012-foreign-key-rendering.md) a na naplnění `ColumnPairs`. Požadavky F1, F3.*
 
-Uvnitř `<composite-id>` smí stát i `<key-many-to-one>` — část klíče, která je zároveň odkazem na jinou entitu. Smyčka v `NHibernateXMLMappingParser` bere jen `<key-property>`, takže taková část z klíče beze stopy zmizí a vznikne klíč o menším počtu částí, než jaký zdroj popsal; u dvousložkového klíče může zbýt jednosložkový, který se navíc tváří jako úplný. Vyžaduje vícesloupcový cizí klíč v mezireprezentaci a hlášení podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md).
+Uvnitř `<composite-id>` smí stát i `<key-many-to-one>` — část klíče, která je zároveň odkazem na jinou entitu. Smyčka v `NHibernateXMLMappingParser` bere jen `<key-property>`, takže taková část z klíče beze stopy zmizí a vznikne klíč o menším počtu částí, než jaký zdroj popsal; u dvousložkového klíče může zbýt jednosložkový, který se navíc tváří jako úplný. Vypsat takovou část klíče buildery po rozhodnutí [012](./decisions/012-foreign-key-rendering.md) umějí, takže zbývá ji přečíst a doplnit hlášení podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md).
 
 ### Klíčová třída u kompozitního klíče na straně entity
 *Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md). Blokováno neutralizací typového modelu. Podklad: audit 2026-08-02, kap. 3.2.*
