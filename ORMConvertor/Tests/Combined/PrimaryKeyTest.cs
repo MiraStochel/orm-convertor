@@ -347,8 +347,9 @@ public class PrimaryKeyTest
     [Fact]
     public void KeyPartOrderNeedNotStartAtOneOrBeContiguous()
     {
-        // Only the relative order carries meaning and sources number differently:
-        // EF Core [Column(Order = …)] counts from zero, NHibernate by element position.
+        // Only the relative order carries meaning, and sources rarely number the parts at all:
+        // EF Core takes it from the argument order of [PrimaryKey(...)], NHibernate from the order
+        // of the <key-property> elements. The numbers arise here, so contiguity is not ours to demand.
         var key = new PrimaryKey
         {
             Parts =

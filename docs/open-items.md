@@ -10,18 +10,17 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Body 1 až 4 k němu vedou přímo a databázi nepotřebují; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
+Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Body 1 až 3 k němu vedou přímo a databázi nepotřebují; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
 
-1. **Slovník strategií generování klíče** (práce) — implementace rozhodnutí 011 v modelu, konvertoru a obou parserech; hned s ní **strategie primárního klíče u EF Core**, aby se nepsala dvakrát.
-2. **Varianta `<composite-id name= class=>` v parseru NHibernate** (práce) — druhý způsob, jak NHibernate vyjadřuje kompozitní klíč.
-3. **Vícesloupcový cizí klíč v builderech** (práce) — `[ForeignKey]` u EF Core a `<key>` u NHibernate; první konzument `ColumnPairs` a základ, na kterém staví junction entita.
-4. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — cílové sloupce lze určit ze zdroje všude, kde je cílová entita součástí téhož převodu.
-5. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
-6. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
-7. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
-8. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
-9. **Deklarace cílových verzí frameworků** a **neutralizace typového modelu** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10.
-10. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+1. **Varianta `<composite-id name= class=>` v parseru NHibernate** (práce) — druhý způsob, jak NHibernate vyjadřuje kompozitní klíč.
+2. **Vícesloupcový cizí klíč v builderech** (práce) — `[ForeignKey]` u EF Core a `<key>` u NHibernate, k tomu oprava neplatného `<one-to-one>`; první konzument `ColumnPairs` a základ, na kterém staví junction entita.
+3. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — cílové sloupce lze určit ze zdroje všude, kde je cílová entita součástí téhož převodu.
+4. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
+5. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
+6. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
+7. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
+8. **Deklarace cílových verzí frameworků** a **neutralizace typového modelu** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10.
+9. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
@@ -39,10 +38,20 @@ Dnes wrappery nereferencují žádný ORM balíček, jen Roslyn, takže cílová
 
 Nejrozsáhlejší otevřená položka, ve dvou rovinách:
 
-1. `CLRType` → jazykově neutrální reprezentace (`LangType` podle JSS §5.2), s doplněním chybějících typů a s vyřešením případu `CLRType.Char`, který dnes nelze namapovat na správný typ NHibernate, protože v `DatabaseType` chybí hodnota pro jednotlivý unicode znak.
+1. `CLRType` → jazykově neutrální reprezentace (`LangType` podle JSS §5.2), s doplněním chybějících typů a s vyřešením případu `CLRType.Char`, který dnes nelze namapovat na správný typ NHibernate, protože v `DatabaseType` chybí hodnota pro jednotlivý unicode znak. Chybějící typ přitom není jen mezera v mapování: `CLRTypeConvertor.FromString` na neznámém názvu vyhodí `NotSupportedException`, takže entita s vlastností typu `Guid`, `short` nebo `uint` neprojde parsováním vůbec. `Guid` je z nich nejběžnější, mimo jiné jako typ primárního klíče — parser pro něj strategii `Uuid` odvodit umí, ale nikdy se k tomu nedostane.
 2. `DatabaseType` → databázově neutrální reprezentace, případně s vrstvou pro dialekty. Dnešní výčet je fakticky seznam typů T-SQL. Sem patří i `sql-type` na vnořeném `<column>` elementu NHibernate — jediná cesta, jak v mapování udržet konkrétní SQL typ místo typu NHibernate; parser ho dnes nečte, protože nemá kam ho uložit. Sem rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) odsunulo i slévání `DateTime`, `DateTime2` a `SmallDateTime` do jediného typu NHibernate: je to ztráta ve stejném smyslu jako nevyjádřitelný fakt, ale aby ji šlo ohlásit, musí být z převodu poznat, že zúžil — a to je práce tady, ne v diagnostice.
 
 Je to **předpoklad** pro F7–F10, ne jejich příprava: javová ID třída se neobejde bez otypovaných polí, a ta vezme builder odsud.
+
+### Kanonický slovník parametrů generátoru
+*Navazuje na rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md). Předpoklad F7–F10.*
+
+`StrategyParameters` nese parametry tak, jak je pojmenoval zdroj: u NHibernate `sequence` a `max_lo`, u JPA `sequenceName` a `allocationSize`. Uvnitř jednoho ekosystému to stačí, napříč nimi ne — cílový builder názvům zdroje nerozumí, takže je buď vypíše nesmyslně, nebo zahodí, a klíč vázaný na sekvenci se stane nespustitelným. Rozhodnout, jestli názvy kanonizovat v modelu, nebo jejich překlad nechat na wrapperech. Rozhodnutí 011 dalo parametrům místo v modelu a tuhle otázku nechalo vědomě otevřenou.
+
+### Smí builder použít název strategie ze zdroje?
+*Navazuje na rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md).*
+
+Rozhodnutí 011 dalo `SourceStrategyName` roli záznamu pro diagnostiku, ne vstupu generování, takže builder vypisuje kanonický název: z NHibernate do NHibernate se `seqhilo` vrátí jako `hilo`, `guid.comb` jako `guid` a `foreign` dokonce jako `assigned`, ačkoli cíl všechno tohle přijme. U `foreign` to není kosmetika — je to jediné tvrzení, ze kterého se pozná vztah 1:1 přes sdílený primární klíč, takže s ním padá i informace o vztahu. Rozhodnout, jestli smí builder název ze zdroje použít tam, kde mu cílový framework rozumí — kritériem se nabízí, že se název zpětně mapuje na tutéž hodnotu výčtu — nebo jestli má vstupem generování zůstat jedině slovník a rozdíl hlásit diagnostika. Změna role toho pole je změna volby, ne doplnění, takže patří do nového rozhodnutí.
 
 ### Centrální správa verzí
 
@@ -93,7 +102,7 @@ Detekce N:M na vstupu, syntéza junction entity a naplnění `ColumnPairs`. Cíl
 
 Návratový typ převodu, který nese artefakty i záznamy, a dvě místa, kde záznamy vznikají: kontrola úplnosti proti deskriptoru před generováním a záznamy o ztrátě při emisi. Záznam nese framework, artefakt, entitu a vlastnost, kategorii mapovacího faktu a důvod.
 
-Dnes je nástroj tichý: Dapper builder klíče i vztahy zahazuje bez hlášení, `ConversionHandler.Convert` vrací jen `List<ConversionSource>`, takže kanál pro cokoli dalšího neexistuje, a chybějící jazykový typ končí výjimkou uprostřed generování. Změna se propíše do REST API; frontend zůstává na příště a je veden zvlášť.
+Dnes je nástroj tichý: Dapper builder klíče i vztahy zahazuje bez hlášení, `ConversionHandler.Convert` vrací jen `List<ConversionSource>`, takže kanál pro cokoli dalšího neexistuje, a chybějící jazykový typ končí výjimkou uprostřed generování. Se slovníkem strategií (rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md)) přibyla tři konkrétní zúžení, která na hlášení čekají: mechanismy `Identity`, `Sequence`, `HiLo`, `Uuid` a `Increment` anotace EF Core nevyjádří, `<composite-id>` v NHibernate neunese strategii žádnou, a strategii, kterou nikdo neuvedl, vypisuje NHibernate builder jako `assigned`, tedy jako konvenci cíle. Změna se propíše do REST API; frontend zůstává na příště a je veden zvlášť.
 
 Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho četl jen test.
 
@@ -102,18 +111,6 @@ Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho č
 - `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu).
 - `BuildSQL()` z původního návrhu neexistuje; rozlišení nativní syntaxe od syrového SQL bude potřeba dořešit při implementaci query builderů pro EF Core a NHibernate.
 
-### Slovník strategií generování klíče
-*Rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md). Požadavky F1, F2, F11, S2.*
-
-Přepsat `PrimaryKeyStrategy` na slovník mechanismů, doplnit na `PrimaryKeyPart` název strategie ze zdroje a parametry generátoru a vynutit unikátnost `Order` v typu `PrimaryKey`. Konvertor u NHibernate dnes překládá neznámý generátor stejně jako `assigned`, takže vlastní generátor zapsaný názvem typu se ztratí bez varování; opačný směr končí větví `NotImplementedException`, ze které bude po rozšíření výčtu pád při generování místo diagnostiky. Přepis se dotkne obou parserů, obou builderů, `SampleData` i testů a podle rozhodnutí [003](./decisions/003-one-shot-migration.md) proběhne jednorázově.
-
-### EF Core — strategie primárního klíče
-*Navazuje na rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md).*
-
-Strategie se do výstupu nepropaguje (TODO v `EFCoreEntityBuilder.BuildPrimaryKey`), takže `sequence`, `identity` i `hilo` se cestou z NHibernate ztratí. Parser má tutéž mezeru obráceně: `[DatabaseGenerated]` nečte vůbec a každé vlastnosti s `[Key]` přiřadí `Identity` bez ohledu na typ, takže z řetězcového klíče vznikne v NHibernate `<generator class="identity" />`.
-
-Anotacemi lze vyjádřit jen `Auto` a `Assigned`; `Identity`, `Sequence`, `HiLo`, `Uuid` a `Increment` jsou v EF Core dostupné pouze fluent API, takže patří mezi nevyjádřitelné fakty podle rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md).
-
 ### EF Core — cizí klíč se negeneruje
 
 `EFCoreEntityBuilder.BuildForeignKey` vypíše jen navigační vlastnost, atribut `[ForeignKey]` negeneruje vůbec. U vícesloupcového cizího klíče má v EF Core anotacích tvar se seznamem sloupců, na jejichž pořadí záleží — je to tedy první konzument `ColumnPairs` spolu s junction entitou.
@@ -121,6 +118,16 @@ Anotacemi lze vyjádřit jen `Auto` a `Assigned`; `Identity`, `Sequence`, `HiLo`
 ### EF Core — nullabilita se vyjadřuje jen jazykově
 
 Anotaci `[Required]` builder negeneruje. Databázová nullabilita z `PropertyMap.IsNullable` se propisuje jen do modifikátoru `required` a otazník za typem vychází z jazykové nullability vlastnosti. Parser přitom `[Required]` číst umí, takže vstup s ním se přeloží a zpět už tuto podobu nezíská. Deskriptor uvádí kategorii jako vyjádřitelnou, protože popisuje framework, ne dnešní stav builderu.
+
+### Parser NHibernate — část klíče, která je cizím klíčem
+*Souvisí s vícesloupcovým cizím klíčem. Požadavky F1, F3.*
+
+Uvnitř `<composite-id>` smí stát i `<key-many-to-one>` — část klíče, která je zároveň odkazem na jinou entitu. Smyčka v `NHibernateXMLMappingParser` bere jen `<key-property>`, takže taková část z klíče beze stopy zmizí a vznikne klíč o menším počtu částí, než jaký zdroj popsal; u dvousložkového klíče může zbýt jednosložkový, který se navíc tváří jako úplný. Vyžaduje vícesloupcový cizí klíč v mezireprezentaci a hlášení podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md).
+
+### NHibernate builder — `<one-to-one>` se sloupcem je neplatné mapování
+*Souvisí s vícesloupcovým cizím klíčem. Podklad: `nhibernate-mapping.xsd` verze 5.7.0.*
+
+U vztahu 1:1 vypisuje builder `<one-to-one … column="…" />`. Element `<one-to-one>` ale podle schématu atribut `column` nemá a připouští jen potomky `meta` a `formula` — je to strana, která žádný cizí klíč nedrží. Vlastnící strana vztahu 1:1 s vlastním cizím klíčem se zapisuje `<many-to-one unique="true">`, kdežto `<one-to-one>` je buď protistrana s `property-ref`, nebo vztah přes sdílený primární klíč. Generované mapování je tedy proti schématu neplatné a oprava patří k vícesloupcovému cizímu klíči, kde se tvar značky rozhoduje.
 
 ### NHibernate builder — `<key>` kolekce bere jen první část klíče
 

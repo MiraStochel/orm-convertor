@@ -1,9 +1,9 @@
 # 011 — Slovník strategií generování klíče
 
 Datum: 2026-08-13
-Stav: platí
+Stav: revidováno
 Požadavky: F1, F2, F7–F10, F11, S2
-Podklad: `analysis/orm-frameworks-comparison.md`; audit 2026-08-02, nálezy 3.1 a 4.7
+Podklad: NHibernate 5.7.0 — `src/NHibernate/Id/IdentifierGeneratorFactory.cs`; `analysis/orm-frameworks-comparison.md`; audit 2026-08-02, nálezy 3.1 a 4.7
 
 ## Kontext
 
@@ -62,7 +62,7 @@ Hodnotu `Computed` pro `[DatabaseGenerated(Computed)]` do slovníku nedáváme: 
 
 **Název výčtu `PrimaryKeyStrategy` zůstává.** Přesnější `KeyGenerationStrategy` zamítáme kvůli papírové stopě: odkazují na něj rozhodnutí 006 a 009, audit i kategorie `MappingFactCategory.PrimaryKeyStrategy`, a rozhodnutí se nepřepisují. Že jde o strategii části, říká už umístění — `PrimaryKeyPart.Strategy`.
 
-**`Order` musí být v rámci klíče unikátní, souvislý od jedničky být nemusí.** Duplicitní hodnota dělá výsledné pořadí závislým na pořadí vstupu, protože `OrderBy` je stabilní — a pořadí sloupců klíče určené vstupem místo modelem je porušení S2. Souvislost naopak nevyžadujeme: nese se jen relativní pořadí a zdroje číslují různě, EF Core `[Column(Order)]` od nuly, NHibernate pozicí prvku. Validaci umístíme do typu `PrimaryKey`, kde už bydlí řazení, aby platila na každé konstrukční cestě.
+**`Order` musí být v rámci klíče unikátní, souvislý od jedničky být nemusí.** Duplicitní hodnota dělá výsledné pořadí závislým na pořadí vstupu, protože `OrderBy` je stabilní — a pořadí sloupců klíče určené vstupem místo modelem je porušení S2. Souvislost naopak nevyžadujeme: zdroje pořadí samy zpravidla nečíslují, EF Core je dané pořadím argumentů v `[PrimaryKey(...)]` a NHibernate pořadím prvků `<key-property>`. Čísla tedy vznikají až u nás a trvat na jejich souvislosti by znamenalo vynucovat vlastnost, kterou žádný zdroj netvrdí. Validaci umístíme do typu `PrimaryKey`, kde už bydlí řazení, aby platila na každé konstrukční cestě.
 
 **Konvenci zdrojového frameworku čte parser.** Podle rozhodnutí [008](008-database-as-metadata-source.md) se konvence čte tam, kde by její neznalost změnila význam, což je tento případ: strategie odvozená z typu klíče je tvrzení o tom, jak hodnota vzniká, a jeho ztráta mění chování cílového kódu. Konkrétně u EF Core se čte `[DatabaseGenerated]` a u klíče bez něj se strategie odvodí z typu — celočíselný klíč `Auto`, klíč typu `Guid` `Uuid`, řetězcový klíč `Assigned`. Části kompozitního klíče dostávají `Assigned` u obou frameworků: `<composite-id>` v NHibernate generátor nepřipouští a EF Core u kompozitního klíče hodnoty negeneruje, takže v obou případech je hodnota věcí aplikace — to je tvrzení frameworku, ne mlčení.
 
@@ -77,3 +77,9 @@ Diagnostika dostane u této kategorie tři konkrétní případy. NHibernate neu
 Parametry generátoru tím dostávají místo v modelu, ne zdroj. Kde je zdroj neuvádí, zůstanou prázdné; doplnění z databázového katalogu (rozhodnutí 008) je samostatná práce a týká se hlavně identity sloupce a výchozí hodnoty odkazující na sekvenci.
 
 Slovník je zároveň prvním případem obecnějšího vzorce, na který narazíme znovu u typového modelu: **mezireprezentace nese průnik záměrů, framework-specifické podrobnosti nese vedle něj jako záznam o zdroji.** Kdybychom místo toho volili sjednocení, model by rostl s každým dalším frameworkem — což je přesně to, čemu se parser-builder architektura vyhýbá.
+
+## Historie
+
+**2026-08-13 — revidováno.** Zdůvodnění, proč nevyžadujeme souvislé číslování `Order`, se opíralo o tvrzení, že EF Core čísluje části klíče atributem `[Column(Order = N)]` od nuly. To neplatí: `[Column(Order)]` řídí pořadí sloupců v tabulce, číslované pořadí částí klíče je vzorec z EF6 a EF Core určuje pořadí argumenty `[PrimaryKey(...)]` nebo fluent API. Volba se nemění, opravena je jen ilustrace, o kterou se opírala.
+
+Ve stejném průchodu doplněn primární podklad ke generátorům NHibernate. Srovnávací analýza, ze které slovník vyšel, jich uvádí jen část; `IdentifierGeneratorFactory` v 5.7.0 registruje navíc `guid.native`, `counter`, `vm`, `select`, `sequence-identity`, `trigger-identity`, `enhanced-sequence` a `enhanced-table`. Slovník se tím nemění — všechny zůstávají `Unspecified` se zachovaným názvem, tedy přesně tou únikovou cestou, kvůli které rozhodnutí vzniklo. Tentýž soubor zároveň dokládá její premisu: jméno, které v tabulce generátorů není, se řeší jako název typu (`ReflectHelper.ClassForName`), takže neznámý řetězec není překlep, ale uživatelská třída.
