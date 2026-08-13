@@ -10,16 +10,15 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Body 1 a 2 k němu vedou přímo a databázi nepotřebují; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
+Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Bod 1 k němu vede přímo a databázi nepotřebuje; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
 
-1. **Vícesloupcový cizí klíč v builderech** (práce) — `[ForeignKey]` u EF Core a `<key>` u NHibernate, k tomu oprava neplatného `<one-to-one>`; první konzument `ColumnPairs` a základ, na kterém staví junction entita.
-2. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — cílové sloupce lze určit ze zdroje všude, kde je cílová entita součástí téhož převodu.
-3. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
-4. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
-5. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
-6. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
-7. **Deklarace cílových verzí frameworků**, **neutralizace typového modelu** a **klíčová třída u formy `Embedded`** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10 a třetí na něm stojí.
-8. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+1. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — cílové sloupce lze určit ze zdroje všude, kde je cílová entita součástí téhož převodu; teprve tím se vícesloupcový cizí klíč projeví v převodu, ne jen v modelu.
+2. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
+3. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
+4. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
+5. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
+6. **Deklarace cílových verzí frameworků**, **neutralizace typového modelu** a **klíčová třída u formy `Embedded`** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10 a třetí na něm stojí.
+7. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
@@ -101,7 +100,7 @@ Detekce N:M na vstupu, syntéza junction entity a naplnění `ColumnPairs`. Cíl
 
 Návratový typ převodu, který nese artefakty i záznamy, a dvě místa, kde záznamy vznikají: kontrola úplnosti proti deskriptoru před generováním a záznamy o ztrátě při emisi. Záznam nese framework, artefakt, entitu a vlastnost, kategorii mapovacího faktu a důvod.
 
-Dnes je nástroj tichý: Dapper builder klíče i vztahy zahazuje bez hlášení, `ConversionHandler.Convert` vrací jen `List<ConversionSource>`, takže kanál pro cokoli dalšího neexistuje, a chybějící jazykový typ končí výjimkou uprostřed generování. Se slovníkem strategií (rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md)) přibyla tři konkrétní zúžení, která na hlášení čekají: mechanismy `Identity`, `Sequence`, `HiLo`, `Uuid` a `Increment` anotace EF Core nevyjádří, `<composite-id>` v NHibernate neunese strategii žádnou, a strategii, kterou nikdo neuvedl, vypisuje NHibernate builder jako `assigned`, tedy jako konvenci cíle. Změna se propíše do REST API; frontend zůstává na příště a je veden zvlášť.
+Dnes je nástroj tichý: Dapper builder klíče i vztahy zahazuje bez hlášení, `ConversionHandler.Convert` vrací jen `List<ConversionSource>`, takže kanál pro cokoli dalšího neexistuje, a chybějící jazykový typ končí výjimkou uprostřed generování. Se slovníkem strategií (rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md)) přibyla tři konkrétní zúžení, která na hlášení čekají: mechanismy `Identity`, `Sequence`, `HiLo`, `Uuid` a `Increment` anotace EF Core nevyjádří, `<composite-id>` v NHibernate neunese strategii žádnou, a strategii, kterou nikdo neuvedl, vypisuje NHibernate builder jako `assigned`, tedy jako konvenci cíle. Rozhodnutí [012](./decisions/012-foreign-key-rendering.md) přidalo čtyři další: neznámé sloupce cizího klíče, pořadí párů neodpovídající klíči cílové entity, N:M bez spojovací entity a nezachovanou hodnotu `property-ref` na inverzní straně. Změna se propíše do REST API; frontend zůstává na příště a je veden zvlášť.
 
 Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho četl jen test.
 
@@ -109,10 +108,6 @@ Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho č
 - `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec — poddotazy projdou, ale výsledek se nikam neskládá.
 - `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu).
 - `BuildSQL()` z původního návrhu neexistuje; rozlišení nativní syntaxe od syrového SQL bude potřeba dořešit při implementaci query builderů pro EF Core a NHibernate.
-
-### EF Core — cizí klíč se negeneruje
-
-`EFCoreEntityBuilder.BuildForeignKey` vypíše jen navigační vlastnost, atribut `[ForeignKey]` negeneruje vůbec. U vícesloupcového cizího klíče má v EF Core anotacích tvar se seznamem sloupců, na jejichž pořadí záleží — je to tedy první konzument `ColumnPairs` spolu s junction entitou.
 
 ### EF Core — nullabilita se vyjadřuje jen jazykově
 
@@ -122,15 +117,6 @@ Anotaci `[Required]` builder negeneruje. Databázová nullabilita z `PropertyMap
 *Souvisí s vícesloupcovým cizím klíčem. Požadavky F1, F3.*
 
 Uvnitř `<composite-id>` smí stát i `<key-many-to-one>` — část klíče, která je zároveň odkazem na jinou entitu. Smyčka v `NHibernateXMLMappingParser` bere jen `<key-property>`, takže taková část z klíče beze stopy zmizí a vznikne klíč o menším počtu částí, než jaký zdroj popsal; u dvousložkového klíče může zbýt jednosložkový, který se navíc tváří jako úplný. Vyžaduje vícesloupcový cizí klíč v mezireprezentaci a hlášení podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md).
-
-### NHibernate builder — `<one-to-one>` se sloupcem je neplatné mapování
-*Souvisí s vícesloupcovým cizím klíčem. Podklad: `nhibernate-mapping.xsd` verze 5.7.0.*
-
-U vztahu 1:1 vypisuje builder `<one-to-one … column="…" />`. Element `<one-to-one>` ale podle schématu atribut `column` nemá a připouští jen potomky `meta` a `formula` — je to strana, která žádný cizí klíč nedrží. Vlastnící strana vztahu 1:1 s vlastním cizím klíčem se zapisuje `<many-to-one unique="true">`, kdežto `<one-to-one>` je buď protistrana s `property-ref`, nebo vztah přes sdílený primární klíč. Generované mapování je tedy proti schématu neplatné a oprava patří k vícesloupcovému cizímu klíči, kde se tvar značky rozhoduje.
-
-### NHibernate builder — `<key>` kolekce bere jen první část klíče
-
-`GetPrimaryKeyColumn` vrací `Parts.FirstOrDefault()`, takže `<bag>` dostane jednosloupcový `<key column="…" />` i u entity s kompozitním klíčem a vznikne mapování, kde jednosloupcový cizí klíč míří proti vícesloupcovému primárnímu. Totéž se týká `<many-to-one>` a `<one-to-one>`, které nesou `column` jako atribut a vícesloupcový cizí klíč vyjádřit neumí.
 
 ### Klíčová třída u kompozitního klíče na straně entity
 *Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md). Blokováno neutralizací typového modelu. Podklad: audit 2026-08-02, kap. 3.2.*
@@ -145,7 +131,7 @@ Vstupní překážka je přitom dřív: `CLRTypeConvertor.FromString` na typu `O
 
 ### Chybějící jazykový typ shodí generování
 
-Vlastnost, kterou zná jen XML mapování a ne entitní třída, vznikne s `CLRType.None` a `CLRTypeConvertor.ToString` na ní vyhodí `NotSupportedException("None")` uprostřed generování. Neúplný vstup je tedy pád, ne diagnostika — proti F11, který žádá framework, artefakt, chybějící vlastnost a důvod selhání; z výjimky nejde určit ani entitu. Rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) z toho dělá záznam o selhání: je to kategorie, kterou cíl vyžaduje a nikdo ji nedodal.
+Vlastnost, kterou zná jen XML mapování a ne entitní třída, vznikne s `CLRType.None` a `CLRTypeConvertor.ToString` na ní vyhodí `NotSupportedException("None")` uprostřed generování. Neúplný vstup je tedy pád, ne diagnostika — proti F11, který žádá framework, artefakt, chybějící vlastnost a důvod selhání; z výjimky nejde určit ani entitu. Rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) z toho dělá záznam o selhání: je to kategorie, kterou cíl vyžaduje a nikdo ji nedodal. Týž typový model brání i opačnému směru: navigační vlastnost odkazující na jinou entitu se do modelu nedostane vůbec, protože `CLRTypeConvertor.FromString` na názvu entity vyhodí `NotSupportedException` už v `AddProperty`. Vztah 1:1 nebo N:1 tedy dnes projde jen tam, kde navigaci založí mapovací parser bez jazykového typu — a generování C# na ní pak spadne.
 
 Potřebný fakt je přitom po ruce: `PropertyMap.Type` databázový typ nese, jen opačný převod v `DatabaseTypeConvertor` neexistuje, ačkoli směr CLR → databáze je v něm jako `GuessFromPropertyType`. Podle rozhodnutí [008](./decisions/008-database-as-metadata-source.md) je odvození z databázového typu konvence třetího stupně a musí nést svůj původ.
 

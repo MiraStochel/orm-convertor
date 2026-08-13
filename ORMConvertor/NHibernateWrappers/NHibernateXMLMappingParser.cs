@@ -280,6 +280,17 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     }
 
     /// <summary>
+    /// Reads a boolean attribute. The schema types these as xs:boolean, whose lexical space admits
+    /// both true/false and 1/0, and mappings in the wild use either.
+    /// </summary>
+    private static bool IsTrue(XElement element, string attributeName)
+    {
+        var value = element.Attribute(attributeName)?.Value;
+
+        return value == "1" || (bool.TryParse(value, out var parsed) && parsed);
+    }
+
+    /// <summary>
     /// Parses the properties of the class element, extracting their names, types, and database attributes.
     /// </summary>
     private void ParseProperties(XElement classElement)
@@ -388,14 +399,24 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                 continue;
             }
 
-            var cardinality = relation.Name.LocalName switch
-            {
-                "one-to-one" => Cardinality.OneToOne,
-                "many-to-one" => Cardinality.ManyToOne,
-                _ => throw new InvalidOperationException()
-            };
+            // The element name describes the shape of the columns, not the multiplicity: a
+            // <many-to-one unique="true"> is the owning side of a 1:1, while <one-to-one> is the
+            // side that holds no foreign key at all (decision 012).
+            var isOneToOne = relation.Name.LocalName == "one-to-one" || IsTrue(relation, "unique");
 
-            entityBuilder.AddForeignKey(cardinality, propName, target);
+            // <one-to-one> owns the key only where it says its own identity is constrained by the
+            // other entity, which is the shared primary key case. Otherwise the key sits on the far
+            // side and property-ref names the property holding it - a value the model has nowhere
+            // to keep, so of the whole attribute only the role survives.
+            var role = relation.Name.LocalName == "one-to-one" && !IsTrue(relation, "constrained")
+                ? RelationRole.Inverse
+                : RelationRole.Owning;
+
+            entityBuilder.AddForeignKey(
+                isOneToOne ? Cardinality.OneToOne : Cardinality.ManyToOne,
+                propName,
+                target,
+                role);
         }
 
         string[] collectionTypes = ["bag", "set", "list", "map"];

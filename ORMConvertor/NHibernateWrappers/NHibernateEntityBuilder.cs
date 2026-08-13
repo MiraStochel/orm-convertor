@@ -226,12 +226,9 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
-            var xmlTag = relation.Cardinality == Cardinality.OneToOne ? "one-to-one" : "many-to-one";
-
             AppendPropertyToCode(artifact.Code, propertyMap.Property); // navigation property in C#
 
-            var columnName = propertyMap.ColumnName ?? propertyMap.Property.Name;
-            AppendXml(artifact.Mapping, 2, $"<{xmlTag} name=\"{propertyMap.Property.Name}\" class=\"{relation.TargetEntity}\" column=\"{columnName}\" />");
+            AppendReference(artifact.Mapping, entityMap, relation, propertyMap.Property.Name);
         }
 
         // 1:N and N:N collections
@@ -249,8 +246,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             // XML <bag> (TODO: allow set/list/map etc.)
             // TODO other collection properties
             AppendXml(artifact.Mapping, 2, $"<bag name=\"{propertyMap.Property.Name}\" inverse=\"true\" cascade=\"all-delete-orphan\">");
-            var primaryKeyCol = GetPrimaryKeyColumn(entityMap);
-            AppendXml(artifact.Mapping, 3, $"<key column=\"{primaryKeyCol}\" />");
+            AppendKey(artifact.Mapping, entityMap, relation);
 
             if (relation.Cardinality == Cardinality.OneToMany)
             {
@@ -414,15 +410,6 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Gets the primary key column name.
-    /// </summary>
-    private static string GetPrimaryKeyColumn(EntityMap em)
-    {
-        var pkMap = em.PrimaryKey?.Parts.FirstOrDefault()?.PropertyMap;
-        return pkMap?.ColumnName ?? pkMap?.Property.Name ?? "Id";
-    }
-
-    /// <summary>
     /// Writes the generator of a simple key. Parameters - sequence name, block size - go in as
     /// nested elements: without them the mapping names no sequence and the target falls back
     /// to its own default, so it compiles and fails at runtime. The class written is the
@@ -447,6 +434,108 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         }
 
         AppendXml(mapping, 3, "</generator>");
+    }
+
+    /// <summary>
+    /// Writes the mapping of a 1:1 or N:1 reference. The element name follows the shape of the
+    /// columns rather than the multiplicity: &lt;one-to-one&gt; is the side holding no foreign key
+    /// and admits no column at all, so the owning side of a 1:1 with its own key is written as
+    /// &lt;many-to-one unique="true"&gt; (decision 012).
+    /// </summary>
+    private static void AppendReference(StringBuilder mapping, EntityMap entityMap, Relation relation, string navigationProperty)
+    {
+        bool sharedKey = SharesPrimaryKeyThrough(entityMap, navigationProperty);
+
+        if (relation.Cardinality == Cardinality.OneToOne && (relation.Role == RelationRole.Inverse || sharedKey))
+        {
+            // Nothing to name here: either the far side holds the key, or both entities share the
+            // primary key, and constrained is how NHibernate says the identity comes from there.
+            var constrained = sharedKey ? " constrained=\"true\"" : string.Empty;
+            AppendXml(mapping, 2, $"<one-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{constrained} />");
+            return;
+        }
+
+        var unique = relation.Cardinality == Cardinality.OneToOne ? " unique=\"true\"" : string.Empty;
+        var columns = relation.ColumnPairs.Select(pair => pair.Source.ColumnName ?? pair.Source.Property.Name).ToList();
+
+        if (columns.Count == 0)
+        {
+            // Nobody said which column carries the key, so neither do we: NHibernate falls back to
+            // the property name, and a name of our own making would be a claim the source never
+            // made (rozhodnutí 008).
+            AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{unique} />");
+            return;
+        }
+
+        if (columns.Count == 1)
+        {
+            AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\" column=\"{columns[0]}\"{unique} />");
+            return;
+        }
+
+        AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{unique}>");
+
+        foreach (var column in columns)
+        {
+            AppendXml(mapping, 3, $"<column name=\"{column}\" />");
+        }
+
+        AppendXml(mapping, 2, "</many-to-one>");
+    }
+
+    /// <summary>
+    /// Writes the key of a collection. Those columns belong to the child table, so they reach the
+    /// model only where both entities take part in the same conversion. Until then the key column of
+    /// the owner is written, as before: leaving the attribute out is not silence here, because
+    /// NHibernate then names the column id rather than anything derived from the owner
+    /// (Collection.DefaultKeyColumnName in 5.7.0), which would change the mapping instead of
+    /// declining to state it (decision 012).
+    /// </summary>
+    private static void AppendKey(StringBuilder mapping, EntityMap entityMap, Relation relation)
+    {
+        var columns = relation.ColumnPairs.Select(pair => pair.Source.ColumnName ?? pair.Source.Property.Name).ToList();
+
+        if (columns.Count == 0)
+        {
+            var ownerKey = entityMap.PrimaryKey?.Parts.FirstOrDefault()?.PropertyMap;
+            var ownerColumn = ownerKey?.ColumnName ?? ownerKey?.Property.Name ?? "Id";
+
+            AppendXml(mapping, 3, $"<key column=\"{ownerColumn}\" />");
+            return;
+        }
+
+        if (columns.Count == 1)
+        {
+            AppendXml(mapping, 3, $"<key column=\"{columns[0]}\" />");
+            return;
+        }
+
+        AppendXml(mapping, 3, "<key>");
+
+        foreach (var column in columns)
+        {
+            AppendXml(mapping, 4, $"<column name=\"{column}\" />");
+        }
+
+        AppendXml(mapping, 3, "</key>");
+    }
+
+    /// <summary>
+    /// Whether this entity takes its identity from the entity it references. NHibernate says so with
+    /// the foreign generator, which decision 011 keeps under its own name together with the property
+    /// it points at - a claim local to this entity, so no other one has to be at hand.
+    /// </summary>
+    private static bool SharesPrimaryKeyThrough(EntityMap entityMap, string navigationProperty)
+    {
+        var part = entityMap.PrimaryKey?.Parts.FirstOrDefault(p => p.SourceStrategyName == "foreign");
+
+        if (part is null)
+        {
+            return false;
+        }
+
+        return !part.StrategyParameters.TryGetValue("property", out var through)
+            || through == navigationProperty;
     }
 
     /// <summary>

@@ -217,16 +217,19 @@ public abstract class AbstractEntityBuilder
     /// <param name="cardinality">Relationship cardinality</param>
     /// <param name="propertyName">Navigation property name on the source entity</param>
     /// <param name="target">Target entity name</param>
-    public void AddForeignKey(Cardinality cardinality, string propertyName, string target)
+    /// <param name="role">Which side holds the foreign key; derived from the cardinality when omitted.</param>
+    public void AddForeignKey(Cardinality cardinality, string propertyName, string target, RelationRole? role = null)
     {
         GetOrCreatePropertyMap(propertyName); // the navigation property must exist in the model
 
         AddRelation(new Relation
         {
             Cardinality = cardinality,
-            Role = cardinality is Cardinality.OneToOne or Cardinality.ManyToOne
+            // A 1:1 sits on either side, so the caller may say which one this is - NHibernate marks
+            // it with constrained or property-ref, EF Core by where the key properties live.
+            Role = role ?? (cardinality is Cardinality.OneToOne or Cardinality.ManyToOne
                 ? RelationRole.Owning
-                : RelationRole.Inverse,
+                : RelationRole.Inverse),
             SourceEntity = EntityMap.Entity.Name,
             TargetEntity = target,
             SourceNavigationProperty = propertyName,

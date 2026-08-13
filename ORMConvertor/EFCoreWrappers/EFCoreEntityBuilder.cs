@@ -124,10 +124,76 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
             bool nullable = propertyMap.IsNullable ?? true;
 
+            // The key properties come first: [ForeignKey] on the navigation names them, so a reader
+            // meets them before the annotation that refers to them (decision 012).
+            List<string> foreignKeyProperties = relation.Role == RelationRole.Owning
+                ? AppendForeignKeyProperties(artifact.Code, entityMap, relation, propertyMap.Property.Name, nullable)
+                : [];
+
+            if (foreignKeyProperties.Count > 0)
+            {
+                artifact.Code.AppendLine($"    [ForeignKey(\"{string.Join(',', foreignKeyProperties)}\")]");
+            }
+
             artifact.Code.Append(BuildPropertyAttributes(propertyMap));
             artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, nullable: nullable)}");
             artifact.Code.AppendLine();
         }
+    }
+
+    /// <summary>
+    /// Writes the scalar properties a foreign key consists of and returns their names in the order
+    /// of the key they point at. [ForeignKey] names properties of the class, not columns, so where
+    /// the model carries only a column the property has to be supplied here - the same division of
+    /// labour as with the members a composite key forces on NHibernate (decisions 006 and 012).
+    /// </summary>
+    private static List<string> AppendForeignKeyProperties(
+        StringBuilder code,
+        EntityMap entityMap,
+        Relation relation,
+        string navigationProperty,
+        bool nullable)
+    {
+        var names = new List<string>();
+        var missing = new List<(string Name, CLRType Type, string Column)>();
+
+        foreach (var pair in relation.ColumnPairs)
+        {
+            // A column is not a property until it has a language type, so a property map carrying
+            // only the column does not count as one the entity already has.
+            var existing = entityMap.PropertyMaps.FirstOrDefault(pm =>
+                pm.Property.Name == pair.Source.Property.Name && pm.Property.Type.CLRType != CLRType.None);
+
+            if (existing is not null)
+            {
+                names.Add(existing.Property.Name);
+                continue;
+            }
+
+            if (pair.Target.Property.Type.CLRType == CLRType.None)
+            {
+                // Without the language type of the key part it points at there is nothing to
+                // declare, and an annotation naming properties that do not exist would not compile.
+                return [];
+            }
+
+            var name = navigationProperty + pair.Target.Property.Name;
+            missing.Add((name, pair.Target.Property.Type.CLRType, pair.Source.ColumnName ?? pair.Source.Property.Name));
+            names.Add(name);
+        }
+
+        foreach (var (name, type, column) in missing)
+        {
+            if (column != name)
+            {
+                code.AppendLine($"    [Column(\"{column}\")]");
+            }
+
+            code.AppendLine($"    public {CLRTypeConvertor.ToString(type)}{(nullable ? "?" : string.Empty)} {name} {{ get; set; }}");
+            code.AppendLine();
+        }
+
+        return names;
     }
 
     /// <summary>

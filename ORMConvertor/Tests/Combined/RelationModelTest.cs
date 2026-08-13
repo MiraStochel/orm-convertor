@@ -53,7 +53,7 @@ public class RelationModelTest
     }
 
     [Fact]
-    public void NHibernateOneToOneIsParsedAsOwningUniqueRelation()
+    public void NHibernateOneToOneWithoutColumnsIsTheInverseSide()
     {
         var builder = new NHibernateEntityBuilder();
         var parser = new NHibernateXMLMappingParser(builder);
@@ -72,6 +72,71 @@ public class RelationModelTest
 
         parser.Parse(xmlMapping);
 
+        // <one-to-one> carries no column, so this side holds no foreign key: either the far side
+        // holds it, or both entities share the primary key (decision 012).
+        var relation = Assert.Single(builder.EntityMap.Relations);
+        Assert.Equal(Cardinality.OneToOne, relation.Cardinality);
+        Assert.Equal(RelationRole.Inverse, relation.Role);
+        Assert.True(relation.IsUnique);
+    }
+
+    [Fact]
+    public void NHibernateOneToOneWithConstrainedIsTheOwningSide()
+    {
+        var builder = new NHibernateEntityBuilder();
+        var parser = new NHibernateXMLMappingParser(builder);
+
+        const string xmlMapping = """
+            <?xml version="1.0" encoding="utf-8" ?>
+            <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
+                <class name="CustomerProfile" table="CustomerProfiles" schema="Sales">
+                    <id name="CustomerID" column="CustomerID" type="int">
+                        <generator class="foreign">
+                            <param name="property">Customer</param>
+                        </generator>
+                    </id>
+                    <one-to-one name="Customer" class="Customer" constrained="true" />
+                </class>
+            </hibernate-mapping>
+            """;
+
+        parser.Parse(xmlMapping);
+
+        // constrained="true" says this entity takes its identity from the other one, so it is the
+        // dependent side even though it has no foreign key column of its own.
+        var relation = Assert.Single(builder.EntityMap.Relations);
+        Assert.Equal(Cardinality.OneToOne, relation.Cardinality);
+        Assert.Equal(RelationRole.Owning, relation.Role);
+
+        // The generator names the property the identity comes from, which is what makes the shared
+        // key recognisable later without reaching into the other entity (decision 011).
+        var part = Assert.Single(builder.EntityMap.PrimaryKey!.Parts);
+        Assert.Equal("foreign", part.SourceStrategyName);
+        Assert.Equal("Customer", part.StrategyParameters["property"]);
+    }
+
+    [Fact]
+    public void NHibernateManyToOneWithUniqueIsAOneToOneRelation()
+    {
+        var builder = new NHibernateEntityBuilder();
+        var parser = new NHibernateXMLMappingParser(builder);
+
+        const string xmlMapping = """
+            <?xml version="1.0" encoding="utf-8" ?>
+            <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
+                <class name="Customer" table="Customers" schema="Sales">
+                    <id name="CustomerID" column="CustomerID" type="int">
+                        <generator class="identity" />
+                    </id>
+                    <many-to-one name="Profile" class="CustomerProfile" column="ProfileID" unique="true" />
+                </class>
+            </hibernate-mapping>
+            """;
+
+        parser.Parse(xmlMapping);
+
+        // The same element without unique="true" is N:1; the constraint is the whole difference,
+        // and reading only the element name would degrade the relation on the way back.
         var relation = Assert.Single(builder.EntityMap.Relations);
         Assert.Equal(Cardinality.OneToOne, relation.Cardinality);
         Assert.Equal(RelationRole.Owning, relation.Role);
