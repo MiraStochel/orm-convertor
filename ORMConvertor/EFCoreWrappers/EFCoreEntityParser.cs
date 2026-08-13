@@ -164,6 +164,12 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
         var keyPropertyNames = new List<string>();
         var scalarPropertyNames = new List<string>();
 
+        // Collected per property because the strategy is decided once the whole key is known:
+        // the type of the key property carries EF Core's convention, and the annotation, where
+        // present, overrides it (decision 011).
+        var propertyTypes = new Dictionary<string, string>();
+        var generatedOptions = new Dictionary<string, string>();
+
         foreach (var prop in classDeclaration.Members.OfType<PropertyDeclarationSyntax>())
         {
             var name = prop.Identifier.Text;
@@ -196,6 +202,7 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             var dbProps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             bool isPrimaryKey = false;
             bool requiredAttr = false;
+            string? generatedOption = null;
 
             foreach (var attribute in prop.AttributeLists.SelectMany(l => l.Attributes))
             {
@@ -217,6 +224,9 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
                         break;
                     case "Required":
                         requiredAttr = true;
+                        break;
+                    case "DatabaseGenerated":
+                        generatedOption = ReadGeneratedOption(attribute);
                         break;
                 }
             }
@@ -241,6 +251,13 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
                 entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
             }
 
+            propertyTypes[name] = type;
+
+            if (generatedOption is not null)
+            {
+                generatedOptions[name] = generatedOption;
+            }
+
             if (isPrimaryKey)
             {
                 keyPropertyNames.Add(name);
@@ -262,19 +279,87 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
         if (classKeyNames.Count > 0)
         {
             entityBuilder.AddPrimaryKey(
-                classKeyNames.Select((n, i) => (n, i + 1, PrimaryKeyStrategy.None)).ToList());
+                classKeyNames.Select((n, i) => (n, i + 1, StrategyFor(n, composite: true))).ToList());
         }
         else if (keyPropertyNames.Count > 0)
         {
+            bool isComposite = keyPropertyNames.Count > 1;
+
             entityBuilder.AddPrimaryKey(
-                keyPropertyNames.Select((n, i) => (n, i + 1, PrimaryKeyStrategy.Identity)).ToList());
+                keyPropertyNames.Select((n, i) => (n, i + 1, StrategyFor(n, isComposite))).ToList());
         }
         else if (FindConventionKey(classDeclaration.Identifier.Text, scalarPropertyNames) is { } conventionKey)
         {
-            // The strategy matches the [Key] branch above. It is equally wrong there for
-            // string and Guid keys; the open item on key strategies fixes both at once.
-            entityBuilder.AddPrimaryKey(PrimaryKeyStrategy.Identity, conventionKey);
+            entityBuilder.AddPrimaryKey(StrategyFor(conventionKey, composite: false), conventionKey);
         }
+
+        // Local because it reads what the loop above collected. The annotation wins where it is
+        // present; otherwise EF Core's convention is what the source claims, and that convention
+        // depends both on the type of the key and on whether the key is composite.
+        PrimaryKeyStrategy StrategyFor(string propertyName, bool composite)
+        {
+            if (generatedOptions.TryGetValue(propertyName, out var option))
+            {
+                return option switch
+                {
+                    "None" => PrimaryKeyStrategy.Assigned,
+
+                    // The annotation says the store produces the value on insert; which
+                    // mechanism it uses is the provider's choice, so this is Auto rather than
+                    // Identity. Computed adds regeneration on update, a fact about the column
+                    // that has no place in the key vocabulary (decision 011).
+                    "Identity" or "Computed" => PrimaryKeyStrategy.Auto,
+                    _ => PrimaryKeyStrategy.Unspecified,
+                };
+            }
+
+            // EF Core generates no value for the parts of a composite key.
+            if (composite)
+            {
+                return PrimaryKeyStrategy.Assigned;
+            }
+
+            return StrategyFromKeyType(propertyTypes.GetValueOrDefault(propertyName));
+        }
+    }
+
+    /// <summary>
+    /// Reads the option out of [DatabaseGenerated(DatabaseGeneratedOption.X)] and returns the X.
+    /// The argument is an enum member, so whatever follows the last dot is the value, whether
+    /// the source wrote it qualified or not.
+    /// </summary>
+    private static string? ReadGeneratedOption(AttributeSyntax attribute)
+    {
+        var argument = attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression.ToString();
+
+        return string.IsNullOrEmpty(argument)
+            ? null
+            : argument.Split('.').Last().Trim();
+    }
+
+    /// <summary>
+    /// The convention EF Core applies to a key that says nothing about generation: integer and
+    /// Guid keys get a value on add, everything else does not. Reading the convention belongs to
+    /// the parser wherever its absence would change the meaning (decision 008), and it does here
+    /// - assuming generation for a string key produces a target mapping the database rejects.
+    ///
+    /// The list describes EF Core, not the reach of our type model: only int, long and byte can
+    /// arrive here today, because CLRTypeConvertor rejects the other numeric types and Guid
+    /// outright. The remaining branches become reachable once the type model carries them.
+    /// </summary>
+    private static PrimaryKeyStrategy StrategyFromKeyType(string? typeText)
+    {
+        var type = typeText?.Trim().Split('.').Last();
+
+        return type switch
+        {
+            null => PrimaryKeyStrategy.Unspecified,
+            "byte" or "sbyte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong"
+                or "Byte" or "SByte" or "Int16" or "UInt16" or "Int32" or "UInt32" or "Int64" or "UInt64"
+                => PrimaryKeyStrategy.Auto,
+            "Guid" => PrimaryKeyStrategy.Uuid,
+            _ => PrimaryKeyStrategy.Assigned,
+        };
     }
 
     /// <summary>

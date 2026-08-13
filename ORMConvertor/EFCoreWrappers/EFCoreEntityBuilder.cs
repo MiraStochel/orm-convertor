@@ -4,6 +4,7 @@ using Common.Convertors;
 using EFCoreWrappers.Convertors;
 using Model;
 using Model.AbstractRepresentation;
+using Model.AbstractRepresentation.Enums;
 using System.Text;
 
 namespace EFCoreWrappers;
@@ -80,6 +81,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             // For a simple key [Key] goes on the property; for a composite key the class-level
             // [PrimaryKey(...)] attribute (see BuildTableSchema) defines it and [Key] is not emitted.
             artifact.Code.Append(BuildPropertyAttributes(propertyMap, isPrimaryKey: !composite));
+            AppendKeyStrategyAttribute(artifact.Code, part, composite);
             artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, isPrimaryKey: true, nullable: nullable)}");
             artifact.Code.AppendLine();
         }
@@ -222,4 +224,40 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
         return attributes.ToString();
     }
+
+    /// <summary>
+    /// The strategy as an annotation. [DatabaseGenerated] can say two things: that the store
+    /// produces the value on insert, and that nothing generates it. The named mechanisms -
+    /// identity column, sequence, hi/lo - are fluent-only, so the model holds them and the
+    /// annotation cannot; that narrowing is for diagnostics to report (decision 011).
+    ///
+    /// It is emitted only where it changes what EF Core would do anyway. Restating the target's
+    /// own convention adds noise, while leaving it out where the convention disagrees flips the
+    /// claim - a string key marked Auto would silently stop being generated.
+    /// </summary>
+    private static void AppendKeyStrategyAttribute(StringBuilder code, PrimaryKeyPart part, bool composite)
+    {
+        bool generatedByConvention = IsGeneratedByConvention(part, composite);
+
+        var option = part.Strategy switch
+        {
+            PrimaryKeyStrategy.Assigned when generatedByConvention => "None",
+            PrimaryKeyStrategy.Auto when !generatedByConvention => "Identity",
+            _ => null,
+        };
+
+        if (option is not null)
+        {
+            code.AppendLine($"    [DatabaseGenerated(DatabaseGeneratedOption.{option})]");
+        }
+    }
+
+    /// <summary>
+    /// EF Core generates a value on its own for a single-property key of an integer type, and
+    /// for a Guid key - which cannot reach this method at all, because the type model has no
+    /// value for Guid and the parser throws on the property before the key is ever built.
+    /// </summary>
+    private static bool IsGeneratedByConvention(PrimaryKeyPart part, bool composite)
+        => !composite
+        && part.PropertyMap.Property.Type.CLRType is CLRType.Byte or CLRType.Int or CLRType.Long;
 }

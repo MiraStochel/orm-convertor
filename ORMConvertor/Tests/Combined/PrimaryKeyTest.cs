@@ -69,13 +69,13 @@ public class PrimaryKeyTest
     }
 
     [Theory]
-    [InlineData(PrimaryKeyStrategy.None, "assigned")]
-    [InlineData(PrimaryKeyStrategy.Increment, "increment")]
+    [InlineData(PrimaryKeyStrategy.Assigned, "assigned")]
+    [InlineData(PrimaryKeyStrategy.Auto, "native")]
     [InlineData(PrimaryKeyStrategy.Identity, "identity")]
     [InlineData(PrimaryKeyStrategy.Sequence, "sequence")]
     [InlineData(PrimaryKeyStrategy.HiLo, "hilo")]
-    [InlineData(PrimaryKeyStrategy.Uuid, "uuid")]
-    [InlineData(PrimaryKeyStrategy.Guid, "guid")]
+    [InlineData(PrimaryKeyStrategy.Uuid, "guid")]
+    [InlineData(PrimaryKeyStrategy.Increment, "increment")]
     public void KeyStrategySurvivesRoundTripThroughModel(PrimaryKeyStrategy strategy, string expectedGenerator)
     {
         var builder = new NHibernateEntityBuilder();
@@ -96,6 +96,29 @@ public class PrimaryKeyTest
         var pk = reparsed.EntityMap.PrimaryKey;
         Assert.NotNull(pk);
         Assert.Equal(strategy, Assert.Single(pk.Parts).Strategy);
+    }
+
+    [Fact]
+    public void UnspecifiedStrategyFallsBackToTheConventionOfTheTarget()
+    {
+        var builder = new NHibernateEntityBuilder();
+        builder.AddClassHeader("public", "Customer");
+        builder.AddTable("Customers");
+        builder.AddProperty("int", "CustomerID");
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Unspecified, "CustomerID");
+
+        // NHibernate needs a generator, so the builder writes the convention of the target
+        // rather than a fact of the source (decision 008) - and that the source said nothing
+        // does not survive the round trip. Reporting the difference is what diagnostics is for.
+        var xml = builder.Build().Single(o => o.ContentType == ConversionContentType.XML).Content;
+        Assert.Contains("<generator class=\"assigned\" />", xml);
+
+        var reparsed = new NHibernateEntityBuilder();
+        new NHibernateXMLMappingParser(reparsed).Parse(xml);
+
+        Assert.Equal(
+            PrimaryKeyStrategy.Assigned,
+            Assert.Single(reparsed.EntityMap.PrimaryKey!.Parts).Strategy);
     }
 
     [Fact]
@@ -145,13 +168,13 @@ public class PrimaryKeyTest
         builder.AddPrimaryKey(
         [
             ("OrderID", 1, PrimaryKeyStrategy.Identity),
-            ("LineNumber", 2, PrimaryKeyStrategy.None),
+            ("LineNumber", 2, PrimaryKeyStrategy.Assigned),
         ]);
 
         var pk = builder.EntityMap.PrimaryKey;
         Assert.NotNull(pk);
         Assert.Equal(PrimaryKeyStrategy.Identity, pk.Parts[0].Strategy);
-        Assert.Equal(PrimaryKeyStrategy.None, pk.Parts[1].Strategy);
+        Assert.Equal(PrimaryKeyStrategy.Assigned, pk.Parts[1].Strategy);
 
         // Key parts point at the existing property mappings, they do not duplicate them.
         Assert.Equal(2, builder.EntityMap.PropertyMaps.Count);
@@ -180,9 +203,10 @@ public class PrimaryKeyTest
         var xml = builder.Build().Single(o => o.ContentType == ConversionContentType.XML).Content;
         Assert.Contains("<id name=\"CustomerID\" column=\"CustomerID\" type=\"Int32\">", xml);
 
-        // The strategy is a convention as well - EF Core generates an int key by
-        // default, the attribute itself says nothing about it.
-        Assert.Contains("<generator class=\"identity\" />", xml);
+        // The strategy is a convention as well - EF Core generates an int key by default and
+        // the attribute says nothing about how. That is the claim "the framework picks", whose
+        // counterpart in NHibernate is native, not identity.
+        Assert.Contains("<generator class=\"native\" />", xml);
     }
 
     [Fact]
@@ -219,7 +243,7 @@ public class PrimaryKeyTest
         Assert.Equal("CustomerId", part.PropertyMap.ColumnName);
         Assert.Equal(DatabaseType.Int, part.PropertyMap.Type);
         Assert.Equal(CLRType.Int, part.PropertyMap.Property.Type.CLRType);
-        Assert.Equal(PrimaryKeyStrategy.Identity, part.Strategy);
+        Assert.Equal(PrimaryKeyStrategy.Auto, part.Strategy);
     }
 
     [Fact]
@@ -232,8 +256,8 @@ public class PrimaryKeyTest
 
         builder.AddPrimaryKey(
         [
-            ("OrderID", 1, PrimaryKeyStrategy.None),
-            ("LineNumber", 2, PrimaryKeyStrategy.None),
+            ("OrderID", 1, PrimaryKeyStrategy.Assigned),
+            ("LineNumber", 2, PrimaryKeyStrategy.Assigned),
         ],
         new SourceKeyClass("OrderLineId", KeyClassForm.Embedded, "Id"));
 
@@ -294,6 +318,105 @@ public class PrimaryKeyTest
             CompositeKeyOutputs(new EFCoreEntityBuilder(), keyClass));
     }
 
+    [Fact]
+    public void KeyPartsMustHaveDistinctOrder()
+    {
+        // Two parts claiming the same position leave the resulting order to the input
+        // rather than to the model - the non-determinism S2 rules out (decision 011).
+        Assert.Throws<ArgumentException>(() => _ = new PrimaryKey
+        {
+            Parts =
+            [
+                new PrimaryKeyPart { PropertyMap = NewPropertyMap("OrderID"), Order = 1 },
+                new PrimaryKeyPart { PropertyMap = NewPropertyMap("LineNumber"), Order = 1 },
+            ]
+        });
+
+        var builder = new DummyEntityBuilder();
+        builder.AddClassHeader("public", "OrderLine");
+        builder.AddProperty("int", "OrderID");
+        builder.AddProperty("int", "LineNumber");
+
+        Assert.Throws<ArgumentException>(() => builder.AddPrimaryKey(
+        [
+            ("OrderID", 1, PrimaryKeyStrategy.Identity),
+            ("LineNumber", 1, PrimaryKeyStrategy.Identity),
+        ]));
+    }
+
+    [Fact]
+    public void KeyPartOrderNeedNotStartAtOneOrBeContiguous()
+    {
+        // Only the relative order carries meaning and sources number differently:
+        // EF Core [Column(Order = …)] counts from zero, NHibernate by element position.
+        var key = new PrimaryKey
+        {
+            Parts =
+            [
+                new PrimaryKeyPart { PropertyMap = NewPropertyMap("LineNumber"), Order = 40 },
+                new PrimaryKeyPart { PropertyMap = NewPropertyMap("OrderID"), Order = 0 },
+            ]
+        };
+
+        Assert.Equal(new[] { "OrderID", "LineNumber" }, key.Parts.Select(p => p.PropertyMap.Property.Name));
+    }
+
+    [Fact]
+    public void StrategyDetailsOfTheSourceAreRecordedOnTheKeyPart()
+    {
+        var builder = new DummyEntityBuilder();
+        builder.AddClassHeader("public", "OrderLine");
+        builder.AddProperty("int", "OrderID");
+        builder.AddProperty("int", "LineNumber");
+        builder.AddPrimaryKey(
+        [
+            ("OrderID", 1, PrimaryKeyStrategy.Sequence),
+            ("LineNumber", 2, PrimaryKeyStrategy.Identity),
+        ],
+        new SourceKeyClass("OrderLineId", KeyClassForm.Mirrored));
+
+        builder.SetKeyStrategyDetails(
+            "OrderID",
+            sourceStrategyName: "seqhilo",
+            parameters: new Dictionary<string, string> { ["sequence"] = "order_line_seq", ["max_lo"] = "50" });
+
+        var pk = builder.EntityMap.PrimaryKey;
+        Assert.NotNull(pk);
+
+        // The parameters are what keeps a sequence-backed key runnable in the target: without
+        // the sequence name the generated mapping points at a sequence that need not exist.
+        var detailed = pk.Parts.Single(p => p.PropertyMap.Property.Name == "OrderID");
+        Assert.Equal(PrimaryKeyStrategy.Sequence, detailed.Strategy);
+        Assert.Equal("seqhilo", detailed.SourceStrategyName);
+        Assert.Equal("order_line_seq", detailed.StrategyParameters["sequence"]);
+        Assert.Equal("50", detailed.StrategyParameters["max_lo"]);
+
+        // Rebuilding the key around one part must leave everything else as it was.
+        var untouched = pk.Parts.Single(p => p.PropertyMap.Property.Name == "LineNumber");
+        Assert.Equal(PrimaryKeyStrategy.Identity, untouched.Strategy);
+        Assert.Null(untouched.SourceStrategyName);
+        Assert.Empty(untouched.StrategyParameters);
+        Assert.Equal(new[] { 1, 2 }, pk.Parts.Select(p => p.Order));
+        Assert.Equal("OrderLineId", pk.SourceKeyClass?.ClassName);
+    }
+
+    [Fact]
+    public void StrategyDetailsNeedAKeyPartToLandOn()
+    {
+        var builder = new DummyEntityBuilder();
+        builder.AddClassHeader("public", "OrderLine");
+        builder.AddProperty("int", "OrderID");
+        builder.AddProperty("string", "Description");
+
+        // No key defined yet ...
+        Assert.Throws<InvalidOperationException>(() => builder.SetKeyStrategyDetails("OrderID", "increment"));
+
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Identity, "OrderID");
+
+        // ... and a property outside the key is a mistake, not a silent no-op.
+        Assert.Throws<ArgumentException>(() => builder.SetKeyStrategyDetails("Description", "increment"));
+    }
+
     /// <summary>
     /// The same two-part key every time, so the key class signal is the only thing that
     /// can differ between two outputs of the same builder.
@@ -306,8 +429,8 @@ public class PrimaryKeyTest
         builder.AddProperty("int", "LineNumber", "public", hasGetter: true, hasSetter: true);
         builder.AddPrimaryKey(
         [
-            ("OrderID", 1, PrimaryKeyStrategy.None),
-            ("LineNumber", 2, PrimaryKeyStrategy.None),
+            ("OrderID", 1, PrimaryKeyStrategy.Assigned),
+            ("LineNumber", 2, PrimaryKeyStrategy.Assigned),
         ],
         sourceKeyClass);
 

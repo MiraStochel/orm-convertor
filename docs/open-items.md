@@ -12,7 +12,7 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Body 1 až 4 k němu vedou přímo a databázi nepotřebují; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
 
-1. **Revize `PrimaryKeyStrategy`** (rozhodnutí) a hned po ní **strategie primárního klíče u EF Core** (práce) — v tomto pořadí, jinak se strategie píše dvakrát.
+1. **Slovník strategií generování klíče** (práce) — implementace rozhodnutí 011 v modelu, konvertoru a obou parserech; hned s ní **strategie primárního klíče u EF Core**, aby se nepsala dvakrát.
 2. **Varianta `<composite-id name= class=>` v parseru NHibernate** (práce) — druhý způsob, jak NHibernate vyjadřuje kompozitní klíč.
 3. **Vícesloupcový cizí klíč v builderech** (práce) — `[ForeignKey]` u EF Core a `<key>` u NHibernate; první konzument `ColumnPairs` a základ, na kterém staví junction entita.
 4. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — cílové sloupce lze určit ze zdroje všude, kde je cílová entita součástí téhož převodu.
@@ -43,11 +43,6 @@ Nejrozsáhlejší otevřená položka, ve dvou rovinách:
 2. `DatabaseType` → databázově neutrální reprezentace, případně s vrstvou pro dialekty. Dnešní výčet je fakticky seznam typů T-SQL. Sem patří i `sql-type` na vnořeném `<column>` elementu NHibernate — jediná cesta, jak v mapování udržet konkrétní SQL typ místo typu NHibernate; parser ho dnes nečte, protože nemá kam ho uložit. Sem rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) odsunulo i slévání `DateTime`, `DateTime2` a `SmallDateTime` do jediného typu NHibernate: je to ztráta ve stejném smyslu jako nevyjádřitelný fakt, ale aby ji šlo ohlásit, musí být z převodu poznat, že zúžil — a to je práce tady, ne v diagnostice.
 
 Je to **předpoklad** pro F7–F10, ne jejich příprava: javová ID třída se neobejde bez otypovaných polí, a ta vezme builder odsud.
-
-### Revize `PrimaryKeyStrategy` a sémantiky `Order`
-*Podklad: audit 2026-08-02, kap. 3.1 a 4.7.*
-
-Projít výčet `PrimaryKeyStrategy` proti generátorům NHibernate, mechanismům EF Core a `@GeneratedValue` z JPA. Ve stejném průchodu uzavřít otázku, zda má být `Order` na `PrimaryKeyPart` unikátní a souvislý od jedničky, a podle rozhodnutí případně doplnit validaci. Součástí je i chování na okrajích tabulky: `PrimaryKeyStrategyConvertor.FromNHibernate` překládá neznámý generátor stejně jako `assigned`, tedy na `None`, takže vlastní generátor zapsaný názvem typu se ztratí bez varování a od legitimní hodnoty ho nelze odlišit; `ToNHibernate` naopak končí větví `NotImplementedException`, která je dnes nedosažitelná, ale při rozšíření výčtu z ní bude pád při generování místo diagnostiky.
 
 ### Centrální správa verzí
 
@@ -107,12 +102,17 @@ Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho č
 - `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu).
 - `BuildSQL()` z původního návrhu neexistuje; rozlišení nativní syntaxe od syrového SQL bude potřeba dořešit při implementaci query builderů pro EF Core a NHibernate.
 
+### Slovník strategií generování klíče
+*Rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md). Požadavky F1, F2, F11, S2.*
+
+Přepsat `PrimaryKeyStrategy` na slovník mechanismů, doplnit na `PrimaryKeyPart` název strategie ze zdroje a parametry generátoru a vynutit unikátnost `Order` v typu `PrimaryKey`. Konvertor u NHibernate dnes překládá neznámý generátor stejně jako `assigned`, takže vlastní generátor zapsaný názvem typu se ztratí bez varování; opačný směr končí větví `NotImplementedException`, ze které bude po rozšíření výčtu pád při generování místo diagnostiky. Přepis se dotkne obou parserů, obou builderů, `SampleData` i testů a podle rozhodnutí [003](./decisions/003-one-shot-migration.md) proběhne jednorázově.
+
 ### EF Core — strategie primárního klíče
-*Souvisí s revizí `PrimaryKeyStrategy`.*
+*Navazuje na rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md).*
 
-Strategie se do výstupu nepropaguje (TODO v `EFCoreEntityBuilder.BuildPrimaryKey`), takže `sequence`, `identity` i `hilo` se cestou z NHibernate ztratí. Parser má tutéž mezeru obráceně: `[DatabaseGenerated]` nečte vůbec a každé vlastnosti s `[Key]` přiřadí `Identity` bez ohledu na typ, takže z řetězcového nebo `Guid` klíče vznikne v NHibernate `<generator class="identity" />`.
+Strategie se do výstupu nepropaguje (TODO v `EFCoreEntityBuilder.BuildPrimaryKey`), takže `sequence`, `identity` i `hilo` se cestou z NHibernate ztratí. Parser má tutéž mezeru obráceně: `[DatabaseGenerated]` nečte vůbec a každé vlastnosti s `[Key]` přiřadí `Identity` bez ohledu na typ, takže z řetězcového klíče vznikne v NHibernate `<generator class="identity" />`.
 
-Anotacemi lze vyjádřit `Identity`, `None` a `Computed`; `Sequence`, `HiLo`, `Increment`, `Uuid` a `Guid` jsou v EF Core dostupné jen fluent API, takže patří mezi nevyjádřitelné fakty podle rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md).
+Anotacemi lze vyjádřit jen `Auto` a `Assigned`; `Identity`, `Sequence`, `HiLo`, `Uuid` a `Increment` jsou v EF Core dostupné pouze fluent API, takže patří mezi nevyjádřitelné fakty podle rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md).
 
 ### EF Core — cizí klíč se negeneruje
 

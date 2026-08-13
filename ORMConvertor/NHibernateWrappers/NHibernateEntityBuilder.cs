@@ -99,8 +99,6 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             var prop = propertyMap.Property;
             var columnName = propertyMap.ColumnName ?? prop.Name;
 
-            var generatorClass = PrimaryKeyStrategyConvertor.ToNHibernate(part.Strategy);
-
             AppendPropertyToCode(artifact.Code, prop, isPrimaryKey: true);
 
             var facets = BuildColumnFacets(propertyMap);
@@ -114,7 +112,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 AppendXml(artifact.Mapping, 3, $"<column name=\"{columnName}\" {string.Join(' ', facets)} />");
             }
 
-            AppendXml(artifact.Mapping, 3, $"<generator class=\"{generatorClass}\" />");
+            AppendGenerator(artifact.Mapping, part);
             AppendXml(artifact.Mapping, 2, "</id>");
             return;
         }
@@ -422,6 +420,33 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     {
         var pkMap = em.PrimaryKey?.Parts.FirstOrDefault()?.PropertyMap;
         return pkMap?.ColumnName ?? pkMap?.Property.Name ?? "Id";
+    }
+
+    /// <summary>
+    /// Writes the generator of a simple key. Parameters - sequence name, block size - go in as
+    /// nested elements: without them the mapping names no sequence and the target falls back
+    /// to its own default, so it compiles and fails at runtime. The class written is the
+    /// canonical name of the strategy; what the source called it is a record for diagnostics,
+    /// not an input to generation (decision 011).
+    /// </summary>
+    private static void AppendGenerator(StringBuilder mapping, PrimaryKeyPart part)
+    {
+        var generatorClass = PrimaryKeyStrategyConvertor.ToNHibernate(part.Strategy);
+
+        if (part.StrategyParameters.Count == 0)
+        {
+            AppendXml(mapping, 3, $"<generator class=\"{generatorClass}\" />");
+            return;
+        }
+
+        AppendXml(mapping, 3, $"<generator class=\"{generatorClass}\">");
+
+        foreach (var (name, value) in part.StrategyParameters)
+        {
+            AppendXml(mapping, 4, $"<param name=\"{name}\">{value}</param>");
+        }
+
+        AppendXml(mapping, 3, "</generator>");
     }
 
     /// <summary>

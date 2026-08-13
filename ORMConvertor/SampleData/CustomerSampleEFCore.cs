@@ -143,7 +143,10 @@ public static class CustomerSampleEFCore
                     {
                         PropertyMap = map.PropertyMaps.First(pm => pm.Property.Name == "CustomerID"),
                         Order = 1,
-                        Strategy = PrimaryKeyStrategy.Identity,
+
+                        // The entity declares [Key] and says nothing about how the value arises,
+                        // so the claim is EF Core's convention: the framework picks the mechanism.
+                        Strategy = PrimaryKeyStrategy.Auto,
                     },
                 ],
             };

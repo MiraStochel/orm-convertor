@@ -128,8 +128,8 @@ public class TargetFrameworkDescriptorTest
         {
             builder.AddPrimaryKey(
             [
-                ("PartOne", 1, PrimaryKeyStrategy.None),
-                ("PartTwo", 2, PrimaryKeyStrategy.None),
+                ("PartOne", 1, PrimaryKeyStrategy.Assigned),
+                ("PartTwo", 2, PrimaryKeyStrategy.Assigned),
             ]);
         }
 

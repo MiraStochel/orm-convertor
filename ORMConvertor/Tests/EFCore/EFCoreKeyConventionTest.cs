@@ -181,6 +181,6 @@ public class EFCoreKeyConventionTest
         Assert.Equal(
             byAttribute.EntityMap.PrimaryKey!.Parts[0].Strategy,
             byConvention.EntityMap.PrimaryKey!.Parts[0].Strategy);
-        Assert.Equal(PrimaryKeyStrategy.Identity, byConvention.EntityMap.PrimaryKey!.Parts[0].Strategy);
+        Assert.Equal(PrimaryKeyStrategy.Auto, byConvention.EntityMap.PrimaryKey!.Parts[0].Strategy);
     }
 }

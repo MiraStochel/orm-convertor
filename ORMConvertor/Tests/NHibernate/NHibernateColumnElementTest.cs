@@ -91,9 +91,9 @@ public class NHibernateColumnElementTest
         var map = Assert.Single(pk.Parts).PropertyMap;
         Assert.Equal("ProductCode", map.ColumnName);
         Assert.Equal(10, map.Length);
-        // "assigned" has no counterpart of its own in the model - it is the absence of a
-        // generation strategy, so it maps to None, and None maps back to "assigned".
-        Assert.Equal(PrimaryKeyStrategy.None, pk.Parts[0].Strategy);
+        // "assigned" now has a counterpart of its own: it is a statement that the application
+        // supplies the value, which is a different claim from the source saying nothing.
+        Assert.Equal(PrimaryKeyStrategy.Assigned, pk.Parts[0].Strategy);
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public class NHibernateColumnElementTest
         builder.AddClassHeader("public", "Product");
         builder.AddTable("Products");
         builder.AddProperty("string", "Code", "public", hasGetter: true, hasSetter: true);
-        builder.AddPrimaryKey(PrimaryKeyStrategy.None, "Code");
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Assigned, "Code");
         builder.SetPropertyDatabaseMapping("Code", new() { ["column"] = "ProductCode", ["length"] = "10" });
 
         var xml = builder.Build().Single(o => o.ContentType == ConversionContentType.XML).Content;

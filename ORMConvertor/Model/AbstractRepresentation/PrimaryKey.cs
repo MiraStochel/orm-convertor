@@ -5,10 +5,15 @@ public sealed class PrimaryKey
     private readonly IReadOnlyList<PrimaryKeyPart> parts = [];
 
     /// <summary>
-    /// Key parts, always sorted by <see cref="PrimaryKeyPart.Order"/>.
-    /// The invariant is enforced here rather than at the call site so that it holds
-    /// on every construction path, including direct object initialization. Builders
-    /// can therefore iterate the list as-is.
+    /// Key parts, always sorted by <see cref="PrimaryKeyPart.Order"/>, which must be
+    /// distinct within one key. The invariants are enforced here rather than at the call
+    /// site so that they hold on every construction path, including direct object
+    /// initialization. Builders can therefore iterate the list as-is.
+    ///
+    /// Order need not start at one nor be contiguous: only the relative order carries
+    /// meaning and sources number differently (decision 011). Duplicates are rejected,
+    /// because with them the resulting order would follow the input rather than the
+    /// model - the non-determinism S2 rules out.
     /// </summary>
     public required IReadOnlyList<PrimaryKeyPart> Parts
     {
@@ -20,6 +25,11 @@ public sealed class PrimaryKey
             if (value.Count == 0)
             {
                 throw new ArgumentException("Primary key must have at least one part.", nameof(Parts));
+            }
+
+            if (value.Select(p => p.Order).Distinct().Count() != value.Count)
+            {
+                throw new ArgumentException("Primary key parts must have distinct Order values.", nameof(Parts));
             }
 
             parts = [.. value.OrderBy(p => p.Order)];

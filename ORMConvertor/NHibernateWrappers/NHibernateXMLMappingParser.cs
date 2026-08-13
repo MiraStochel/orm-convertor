@@ -179,7 +179,9 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                     entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
                 }
 
-                parts.Add((name, order++, PrimaryKeyStrategy.None)); // composite-id has no generator
+                // <composite-id> admits no generator, so the values are the application's to
+                // supply - that is a statement of the framework, not silence of the source.
+                parts.Add((name, order++, PrimaryKeyStrategy.Assigned));
             }
 
             if (parts.Count > 0)
@@ -214,6 +216,44 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         }
 
         entityBuilder.AddPrimaryKey(strategy, propName);
+
+        // What the generator says beyond the vocabulary: its own name where we narrowed it,
+        // and its parameters. Without the parameters a sequence-backed key would translate
+        // into a mapping naming no sequence, which compiles and does not run.
+        var sourceStrategyName = PrimaryKeyStrategyConvertor.SourceNameFor(genClass, strategy);
+        var strategyParameters = ReadGeneratorParameters(generatorElem);
+
+        if (sourceStrategyName is not null || strategyParameters.Count > 0)
+        {
+            entityBuilder.SetKeyStrategyDetails(propName, sourceStrategyName, strategyParameters);
+        }
+    }
+
+    /// <summary>
+    /// Reads the &lt;param name="..."&gt; children of a generator. Which names appear is up to
+    /// the generator itself - sequence, max_lo, table - so they are kept as the source wrote
+    /// them rather than translated into a vocabulary the model does not have.
+    /// </summary>
+    private static Dictionary<string, string> ReadGeneratorParameters(XElement? generatorElem)
+    {
+        var parameters = new Dictionary<string, string>();
+
+        if (generatorElem is null)
+        {
+            return parameters;
+        }
+
+        foreach (var param in generatorElem.Elements().Where(e => e.Name.LocalName == "param"))
+        {
+            var name = param.Attribute("name")?.Value;
+
+            if (!string.IsNullOrEmpty(name))
+            {
+                parameters[name] = param.Value.Trim();
+            }
+        }
+
+        return parameters;
     }
 
     /// <summary>

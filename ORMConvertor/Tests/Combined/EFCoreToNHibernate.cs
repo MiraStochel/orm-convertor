@@ -109,7 +109,7 @@ public class EFCoreToNHibernate
         <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2">
             <class name="Order" table="Orders" schema="Sales">
                 <id name="OrderID" column="OrderID" type="Int32">
-                    <generator class="identity" />
+                    <generator class="native" />
                 </id>
                 <property name="CustomerID" not-null="true" />
                 <property name="SalespersonPersonID" not-null="true" />

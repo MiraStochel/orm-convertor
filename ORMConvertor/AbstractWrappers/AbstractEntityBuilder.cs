@@ -140,6 +140,46 @@ public abstract class AbstractEntityBuilder
     public void AddPrimaryKey(PrimaryKeyStrategy strategy, string propertyName)
         => AddPrimaryKey([(propertyName, 1, strategy)]);
 
+    /// <summary>
+    /// Record what the source said about a key part's strategy beyond the vocabulary value:
+    /// its own name for it and the generator parameters. Call after <see cref="AddPrimaryKey"/>,
+    /// which defines the key as a whole - a repeated AddPrimaryKey call discards these details
+    /// together with the key it replaces.
+    /// </summary>
+    /// <param name="propertyName">Name of a property that is already part of the key.</param>
+    /// <param name="sourceStrategyName">The source's own name for the strategy, when the vocabulary lost it.</param>
+    /// <param name="parameters">Generator parameters, e.g. sequence name or block size.</param>
+    public void SetKeyStrategyDetails(
+        string propertyName,
+        string? sourceStrategyName = null,
+        IReadOnlyDictionary<string, string>? parameters = null)
+    {
+        var key = EntityMap.PrimaryKey
+            ?? throw new InvalidOperationException("Key strategy details can only be set once the key is defined.");
+
+        var target = key.Parts.FirstOrDefault(p => p.PropertyMap.Property.Name == propertyName)
+            ?? throw new ArgumentException($"Property '{propertyName}' is not part of the primary key.", nameof(propertyName));
+
+        // Key parts are init-only, so the detail lands on a replacement part and the key
+        // is rebuilt around it. Rebuilding also re-checks the invariants of PrimaryKey.
+        var replacement = new PrimaryKeyPart
+        {
+            PropertyMap = target.PropertyMap,
+            Order = target.Order,
+            Strategy = target.Strategy,
+            SourceStrategyName = sourceStrategyName ?? target.SourceStrategyName,
+            StrategyParameters = parameters is null
+                ? target.StrategyParameters
+                : new Dictionary<string, string>(parameters),
+        };
+
+        EntityMap.PrimaryKey = new PrimaryKey
+        {
+            Parts = [.. key.Parts.Select(p => ReferenceEquals(p, target) ? replacement : p)],
+            SourceKeyClass = key.SourceKeyClass,
+        };
+    }
+
     private PropertyMap GetOrCreatePropertyMap(string propertyName)
     {
         // Find the property in the entity's properties

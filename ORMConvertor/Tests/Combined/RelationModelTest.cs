@@ -90,8 +90,8 @@ public class RelationModelTest
         builder.AddProperty("long", "CompanyID");
         builder.AddPrimaryKey(
         [
-            ("OrderID", 1, PrimaryKeyStrategy.None),
-            ("CompanyID", 2, PrimaryKeyStrategy.None),
+            ("OrderID", 1, PrimaryKeyStrategy.Assigned),
+            ("CompanyID", 2, PrimaryKeyStrategy.Assigned),
         ]);
         var target = builder.EntityMap;
 
