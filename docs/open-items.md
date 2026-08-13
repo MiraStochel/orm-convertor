@@ -10,17 +10,16 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Body 1 až 3 k němu vedou přímo a databázi nepotřebují; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
+Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Body 1 a 2 k němu vedou přímo a databázi nepotřebují; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
 
-1. **Varianta `<composite-id name= class=>` v parseru NHibernate** (práce) — druhý způsob, jak NHibernate vyjadřuje kompozitní klíč.
-2. **Vícesloupcový cizí klíč v builderech** (práce) — `[ForeignKey]` u EF Core a `<key>` u NHibernate, k tomu oprava neplatného `<one-to-one>`; první konzument `ColumnPairs` a základ, na kterém staví junction entita.
-3. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — cílové sloupce lze určit ze zdroje všude, kde je cílová entita součástí téhož převodu.
-4. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
-5. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
-6. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
-7. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
-8. **Deklarace cílových verzí frameworků** a **neutralizace typového modelu** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10.
-9. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+1. **Vícesloupcový cizí klíč v builderech** (práce) — `[ForeignKey]` u EF Core a `<key>` u NHibernate, k tomu oprava neplatného `<one-to-one>`; první konzument `ColumnPairs` a základ, na kterém staví junction entita.
+2. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — cílové sloupce lze určit ze zdroje všude, kde je cílová entita součástí téhož převodu.
+3. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
+4. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
+5. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
+6. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
+7. **Deklarace cílových verzí frameworků**, **neutralizace typového modelu** a **klíčová třída u formy `Embedded`** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10 a třetí na něm stojí.
+8. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
@@ -133,10 +132,12 @@ U vztahu 1:1 vypisuje builder `<one-to-one … column="…" />`. Element `<one-t
 
 `GetPrimaryKeyColumn` vrací `Parts.FirstOrDefault()`, takže `<bag>` dostane jednosloupcový `<key column="…" />` i u entity s kompozitním klíčem a vznikne mapování, kde jednosloupcový cizí klíč míří proti vícesloupcovému primárnímu. Totéž se týká `<many-to-one>` a `<one-to-one>`, které nesou `column` jako atribut a vícesloupcový cizí klíč vyjádřit neumí.
 
-### Parser NHibernate — varianta s klíčovou třídou
-*Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a na neutralizaci typového modelu. Podklad: audit 2026-08-02, kap. 3.2.*
+### Klíčová třída u kompozitního klíče na straně entity
+*Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md). Blokováno neutralizací typového modelu. Podklad: audit 2026-08-02, kap. 3.2.*
 
-`NHibernateXMLMappingParser` čte `<composite-id>` jen přes `<key-property>`; atributy `name` a `class`, které označují variantu se samostatnou klíčovou třídou, neřeší. Bez toho nelze číst vstupy, které klíč vyjadřují klíčovou třídou — a analogicky pak `@EmbeddedId` na javové straně. Kam výsledek uložit, model už má: `PrimaryKey.SourceKeyClass` nese název i formu klíčové třídy, takže parseru zbývá obojí z mapování přečíst a předat builderu.
+Mapovací stranu už parser čte: `<composite-id class=>` i `<composite-id name= class=>` skončí jako `SourceKeyClass`. U formy `Embedded` ale části klíče nejsou vlastnostmi entity, nýbrž klíčové třídy, a entita nese jedinou vlastnost jejího typu. Zbývá tedy trojí: odkud vzít jazykové typy částí, jak zabránit tomu, aby se držící vlastnost dostala do mezireprezentace jako běžná vlastnost (ploché vykreslení klíčovou třídu ruší), a co udělat s C# zdrojem klíčové třídy, pokud do převodu vstoupí — entitní parser by z něj dnes udělal další entitu.
+
+Vstupní překážka je přitom dřív: `CLRTypeConvertor.FromString` na typu `OrderLineId` vyhodí `NotSupportedException`, takže entita té formy neprojde už parsováním. Je to táž překážka jako u vlastnosti odkazující na jinou entitu, a proto to patří k neutralizaci typového modelu, ne před ni.
 
 ### NHibernate builder — schéma se nepropisuje do mapování
 

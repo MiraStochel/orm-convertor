@@ -186,7 +186,7 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
 
             if (parts.Count > 0)
             {
-                entityBuilder.AddPrimaryKey(parts);
+                entityBuilder.AddPrimaryKey(parts, ReadSourceKeyClass(compositeElem));
             }
 
             return;
@@ -254,6 +254,29 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         }
 
         return parameters;
+    }
+
+    /// <summary>
+    /// Reads the key class of a &lt;composite-id&gt;. NHibernate writes it in two shapes and they
+    /// differ in where the key properties live: with the class attribute alone they are properties
+    /// of the entity and the class only mirrors them, while with name as well they live inside the
+    /// class and the entity holds it in one property. The distinction reaches the query side later
+    /// - o.OrderID against o.Id.OrderID - so it is kept rather than flattened away (decision 011).
+    /// </summary>
+    private static SourceKeyClass? ReadSourceKeyClass(XElement compositeElem)
+    {
+        var className = compositeElem.Attribute("class")?.Value;
+
+        if (string.IsNullOrEmpty(className))
+        {
+            return null;
+        }
+
+        var propertyName = compositeElem.Attribute("name")?.Value;
+
+        return string.IsNullOrEmpty(propertyName)
+            ? new SourceKeyClass(className, KeyClassForm.Mirrored)
+            : new SourceKeyClass(className, KeyClassForm.Embedded, propertyName);
     }
 
     /// <summary>
