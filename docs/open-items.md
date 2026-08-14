@@ -10,29 +10,25 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Bod 1 k němu vede přímo a databázi nepotřebuje; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
+Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Body 1 a 2 k němu vedou přímo a databázi nepotřebují; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
 
-1. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — cílové sloupce lze určit ze zdroje všude, kde je cílová entita součástí téhož převodu; teprve tím se vícesloupcový cizí klíč projeví v převodu, ne jen v modelu.
-2. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
-3. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
-4. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
-5. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
-6. **Neutralizace typového modelu** a **klíčová třída u formy `Embedded`** (rozhodnutí) — první blokuje F7–F10 i referenční navigace, druhá na něm stojí.
-7. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+1. **Jazykový typový model** (práce) — implementace rozhodnutí 014; odblokuje referenční navigace, klíče typu `Guid` i klíčovou třídu, takže patří před všechno ostatní v této oblasti.
+2. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — teprve s referenčními navigacemi má co párovat; k tomu rozresolvování jmen entit, které je tatáž fáze převodu.
+3. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
+4. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
+5. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
+6. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
+7. **Klíčová třída u formy `Embedded`** (rozhodnutí) — stojí na typovém modelu, takže má smysl až po bodu 1.
+8. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
 ## Otevřená rozhodnutí
 
-### Neutralizace typového modelu
-*Rozsahem na samostatné rozhodnutí, ne na odstavec. Podklad: audit 2026-08-02, kap. 2.2–2.4 a 4.5.*
+### Neutralizace databázového typu
+*Navazuje na rozhodnutí [014](./decisions/014-language-type-model.md), které vyřešilo jazykovou stranu. Předpoklad F7–F10 nad jiným DBMS. Podklad: audit 2026-08-02, kap. 2.2–2.4 a 4.5.*
 
-Nejrozsáhlejší otevřená položka, ve dvou rovinách:
-
-1. `CLRType` → jazykově neutrální reprezentace (`LangType` podle JSS §5.2), s doplněním chybějících typů a s vyřešením případu `CLRType.Char`, který dnes nelze namapovat na správný typ NHibernate, protože v `DatabaseType` chybí hodnota pro jednotlivý unicode znak. Chybějící typ přitom není jen mezera v mapování: `CLRTypeConvertor.FromString` na neznámém názvu vyhodí `NotSupportedException`, takže entita s vlastností typu `Guid`, `short` nebo `uint` neprojde parsováním vůbec. `Guid` je z nich nejběžnější, mimo jiné jako typ primárního klíče — parser pro něj strategii `Uuid` odvodit umí, ale nikdy se k tomu nedostane.
-2. `DatabaseType` → databázově neutrální reprezentace, případně s vrstvou pro dialekty. Dnešní výčet je fakticky seznam typů T-SQL. Sem patří i `sql-type` na vnořeném `<column>` elementu NHibernate — jediná cesta, jak v mapování udržet konkrétní SQL typ místo typu NHibernate; parser ho dnes nečte, protože nemá kam ho uložit. Sem rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) odsunulo i slévání `DateTime`, `DateTime2` a `SmallDateTime` do jediného typu NHibernate: je to ztráta ve stejném smyslu jako nevyjádřitelný fakt, ale aby ji šlo ohlásit, musí být z převodu poznat, že zúžil — a to je práce tady, ne v diagnostice.
-
-Je to **předpoklad** pro F7–F10, ne jejich příprava: javová ID třída se neobejde bez otypovaných polí, a ta vezme builder odsud.
+`DatabaseType` je fakticky seznam typů T-SQL. Dokud oba ekosystémy míří na týž SQL Server, nic to nelže, ale s jiným DBMS — nebo s dialektem, který si Hibernate odvodí z JDBC metadat — přestane platit. Sem patří i `sql-type` na vnořeném `<column>` elementu NHibernate, jediná cesta, jak v mapování udržet konkrétní SQL typ místo typu frameworku; parser ho dnes nečte, protože nemá kam ho uložit. A sem patří případ `Char`, který dnes nelze namapovat na správný typ NHibernate, protože ve výčtu chybí hodnota pro jednotlivý unicode znak.
 
 ### Kanonický slovník parametrů generátoru
 *Navazuje na rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md). Předpoklad F7–F10.*
@@ -96,6 +92,13 @@ Návratový typ převodu, který nese artefakty i záznamy, a dvě místa, kde z
 Dnes je nástroj tichý: Dapper builder klíče i vztahy zahazuje bez hlášení, `ConversionHandler.Convert` vrací jen `List<ConversionSource>`, takže kanál pro cokoli dalšího neexistuje, a chybějící jazykový typ končí výjimkou uprostřed generování. Se slovníkem strategií (rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md)) přibyla tři konkrétní zúžení, která na hlášení čekají: mechanismy `Identity`, `Sequence`, `HiLo`, `Uuid` a `Increment` anotace EF Core nevyjádří, `<composite-id>` v NHibernate neunese strategii žádnou, a strategii, kterou nikdo neuvedl, vypisuje NHibernate builder jako `assigned`, tedy jako konvenci cíle. Rozhodnutí [012](./decisions/012-foreign-key-rendering.md) přidalo čtyři další: neznámé sloupce cizího klíče, pořadí párů neodpovídající klíči cílové entity, N:M bez spojovací entity a nezachovanou hodnotu `property-ref` na inverzní straně. Změna se propíše do REST API; frontend zůstává na příště a je veden zvlášť.
 
 Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho četl jen test.
+
+### Jazykový typový model
+*Implementace rozhodnutí [014](./decisions/014-language-type-model.md). Požadavky F1–F3, F7–F10, F11.*
+
+Nahradit `CLRTypeModel` a `CLRType` typem `LangType` se čtyřmi kategoriemi a továrními metodami, rozdělit `CLRTypeConvertor` na jazykovou část v `Common` a tabulku jazyk ↔ databáze ve wrapperech a přestat padat na neznámém typu. Dotkne se modelu, obou entitních parserů, obou builderů, deskriptoru, `SampleData` i testů a podle rozhodnutí [003](./decisions/003-one-shot-migration.md) proběhne jednorázově. Rozpadá se do čtyř kroků, z nichž každý končí zeleným buildem: model, konvertory, parsery, buildery.
+
+Odblokuje referenční navigace — a s nimi vztahy N:1 a 1:1 od parseru až po výstup — klíče typu `Guid`, formu `Embedded` u klíčové třídy a rozlišení `<set>` od `<bag>` u kolekcí.
 
 ### Cílová verze v deskriptoru
 *Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md). Požadavky S2, S6.*

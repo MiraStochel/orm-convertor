@@ -19,6 +19,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [011](011-key-generation-strategy-vocabulary.md) | Slovník strategií generování klíče | 2026-08-13 | revidováno | F1, F2, F7–F10, F11, S2 |
 | [012](012-foreign-key-rendering.md) | Vykreslení cizího klíče v cílových frameworcích | 2026-08-13 | platí | F2, F3, F11, S2 |
 | [013](013-target-framework-versions.md) | Zafixované verze cílových frameworků | 2026-08-14 | platí | S2, S6, F7–F10 |
+| [014](014-language-type-model.md) | Jazykový typový model | 2026-08-14 | platí | F1, F2, F3, F7–F10, F11 |
 
 ## Formát
 
