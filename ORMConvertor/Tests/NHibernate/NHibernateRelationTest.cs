@@ -111,7 +111,6 @@ public class NHibernateRelationTest
             SourceEntity = "Customer",
             TargetEntity = "CustomerProfile",
             SourceNavigationProperty = "Profile",
-            IsUnique = true,
             ColumnPairs = [new ColumnPair { Source = ColumnOf(builder, "ProfileRef"), Target = target[0] }],
         });
 
@@ -135,7 +134,6 @@ public class NHibernateRelationTest
             SourceEntity = "Customer",
             TargetEntity = "CustomerProfile",
             SourceNavigationProperty = "Profile",
-            IsUnique = true,
         });
 
         Assert.Contains("<one-to-one name=\"Profile\" class=\"CustomerProfile\" />", MappingOf(builder));
@@ -162,7 +160,6 @@ public class NHibernateRelationTest
             SourceEntity = "CustomerProfile",
             TargetEntity = "Customer",
             SourceNavigationProperty = "Customer",
-            IsUnique = true,
         });
 
         // The entity owns the relation, yet has no column of its own: its identity is the foreign

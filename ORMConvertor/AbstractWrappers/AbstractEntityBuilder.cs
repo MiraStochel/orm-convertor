@@ -233,7 +233,6 @@ public abstract class AbstractEntityBuilder
             SourceEntity = EntityMap.Entity.Name,
             TargetEntity = target,
             SourceNavigationProperty = propertyName,
-            IsUnique = cardinality == Cardinality.OneToOne,
         });
     }
 

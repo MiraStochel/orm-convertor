@@ -112,12 +112,11 @@ public sealed class Relation
     public required string TargetEntity { get; set; }
     public IReadOnlyList<ColumnPair> ColumnPairs { get; set; } = [];
     public string? SourceNavigationProperty { get; set; }
-    public bool IsUnique { get; set; }                           // true = 1:1
     public string? InverseRelationName { get; set; }
 }
 ```
 
-Vztah žije na `EntityMap`, ne na `PropertyMap` – u 1:N a N:M neexistuje na straně „mnoho" žádný sloupec, na který by šlo vztah pověsit.
+Vztah žije na `EntityMap`, ne na `PropertyMap` – u 1:N a N:M neexistuje na straně „mnoho" žádný sloupec, na který by šlo vztah pověsit. Násobnost nese jedině `Cardinality`; samostatný příznak pro 1:1 model nemá, protože by říkal totéž jinými slovy a dvě místa pro jeden fakt se dřív nebo později rozejdou.
 
 `Role` rozlišuje stranu s fyzickým cizím klíčem (`Owning`) od strany s navigační kolekcí nebo referencí bez sloupce (`Inverse`). Builder podle role generuje buď vlastnost s cizím klíčem, nebo navigaci — a role, ne kardinalita, rozhoduje i o tvaru značky: u NHibernate je vlastnící strana vztahu 1:1 `<many-to-one unique="true">`, kdežto `<one-to-one>` je strana bez sloupce, tedy buď protistrana, nebo vztah přes sdílený primární klíč, který se pozná podle generátoru `foreign` u vlastního klíče entity (rozhodnutí [012](./decisions/012-foreign-key-rendering.md)).
 

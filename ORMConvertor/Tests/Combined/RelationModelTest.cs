@@ -49,7 +49,6 @@ public class RelationModelTest
         Assert.Equal(RelationRole.Owning, relation.Role);
         Assert.Equal("Customer", relation.TargetEntity);
         Assert.Equal("Owner", relation.SourceNavigationProperty);
-        Assert.False(relation.IsUnique);
     }
 
     [Fact]
@@ -77,7 +76,6 @@ public class RelationModelTest
         var relation = Assert.Single(builder.EntityMap.Relations);
         Assert.Equal(Cardinality.OneToOne, relation.Cardinality);
         Assert.Equal(RelationRole.Inverse, relation.Role);
-        Assert.True(relation.IsUnique);
     }
 
     [Fact]
@@ -140,7 +138,6 @@ public class RelationModelTest
         var relation = Assert.Single(builder.EntityMap.Relations);
         Assert.Equal(Cardinality.OneToOne, relation.Cardinality);
         Assert.Equal(RelationRole.Owning, relation.Role);
-        Assert.True(relation.IsUnique);
     }
 
     [Fact]
