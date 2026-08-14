@@ -18,6 +18,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [010](010-diagnostics-as-returned-data.md) | Diagnostika jako vrácená data, ne výjimka | 2026-08-12 | platí | F5, F11, F14, E3, S6 |
 | [011](011-key-generation-strategy-vocabulary.md) | Slovník strategií generování klíče | 2026-08-13 | revidováno | F1, F2, F7–F10, F11, S2 |
 | [012](012-foreign-key-rendering.md) | Vykreslení cizího klíče v cílových frameworcích | 2026-08-13 | platí | F2, F3, F11, S2 |
+| [013](013-target-framework-versions.md) | Zafixované verze cílových frameworků | 2026-08-14 | platí | S2, S6, F7–F10 |
 
 ## Formát
 

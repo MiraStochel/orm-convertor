@@ -17,19 +17,12 @@ Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve
 3. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
 4. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 008; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
 5. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
-6. **Deklarace cílových verzí frameworků**, **neutralizace typového modelu** a **klíčová třída u formy `Embedded`** (rozhodnutí) — první je předpoklad S6, druhé blokuje F7–F10 a třetí na něm stojí.
+6. **Neutralizace typového modelu** a **klíčová třída u formy `Embedded`** (rozhodnutí) — první blokuje F7–F10 i referenční navigace, druhá na něm stojí.
 7. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
 ## Otevřená rozhodnutí
-
-### Deklarace cílových verzí frameworků
-*Předpoklad S6. Podklad: audit 2026-08-02, kap. 3.3.*
-
-Rozhodnout, kde se deklaruje cílová verze frameworku pro převod — v IR, nebo v konfiguraci převodu. Zpřesní generování: volba mezi `[PrimaryKey]` a `HasKey` podle verze EF Core, dostupnost `DateOnly` podle verze NHibernate, dialekt pro odvození SQL typu.
-
-Dnes wrappery nereferencují žádný ORM balíček, jen Roslyn, takže cílová verze není nikde uvedená a existuje jen implicitní předpoklad o cílové syntaxi. Místo pro ni je připravené v deskriptoru cílového frameworku (rozhodnutí [009](./decisions/009-target-framework-descriptor.md)), který nese ostatní vlastnosti cíle.
 
 ### Neutralizace typového modelu
 *Rozsahem na samostatné rozhodnutí, ne na odstavec. Podklad: audit 2026-08-02, kap. 2.2–2.4 a 4.5.*
@@ -103,6 +96,11 @@ Návratový typ převodu, který nese artefakty i záznamy, a dvě místa, kde z
 Dnes je nástroj tichý: Dapper builder klíče i vztahy zahazuje bez hlášení, `ConversionHandler.Convert` vrací jen `List<ConversionSource>`, takže kanál pro cokoli dalšího neexistuje, a chybějící jazykový typ končí výjimkou uprostřed generování. Se slovníkem strategií (rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md)) přibyla tři konkrétní zúžení, která na hlášení čekají: mechanismy `Identity`, `Sequence`, `HiLo`, `Uuid` a `Increment` anotace EF Core nevyjádří, `<composite-id>` v NHibernate neunese strategii žádnou, a strategii, kterou nikdo neuvedl, vypisuje NHibernate builder jako `assigned`, tedy jako konvenci cíle. Rozhodnutí [012](./decisions/012-foreign-key-rendering.md) přidalo čtyři další: neznámé sloupce cizího klíče, pořadí párů neodpovídající klíči cílové entity, N:M bez spojovací entity a nezachovanou hodnotu `property-ref` na inverzní straně. Změna se propíše do REST API; frontend zůstává na příště a je veden zvlášť.
 
 Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho četl jen test.
+
+### Cílová verze v deskriptoru
+*Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md). Požadavky S2, S6.*
+
+Deskriptor cílového frameworku nese, co cíl umí vyjádřit, ale ne verzi, proti které to platí. Doplnit ji a nechat buildery volit syntaxi tam, kde se verze rozcházejí — u EF Core `[PrimaryKey]` proti `HasKey`, u NHibernate dostupnost `DateOnly`. Bez explicitní volby platí verze zafixovaná v `architecture.md`. Tímtéž údajem se pak plní záznam běhu podle S6, aby nemohl tvrdit něco jiného než generátor.
 
 ### Rozresolvování jmen entit před generováním
 *Nesplněný důsledek rozhodnutí [001](./decisions/001-entity-reference-by-name.md); záznam podle [010](./decisions/010-diagnostics-as-returned-data.md). Požadavek F11.*

@@ -9,6 +9,29 @@
 
 Aplikace překládá entity, mapování a dotazy mezi třemi .NET ORM frameworky – Dapper, NHibernate a EF Core – přes společnou frameworko-nezávislou mezireprezentaci. Pipeline má dvě fáze: parser převede zdrojový kód do mezireprezentace, builder z ní vygeneruje kód pro cílový framework. Nad tím běží ještě Advisor – optimalizační modul, který pro danou sadu dotazů doporučí nejvhodnější framework (nebo kombinaci frameworků) na základě reálně naměřeného výkonu.
 
+### Zafixované verze
+
+Veškerá tvrzení o chování frameworků v tomto dokumentu i v `docs/analysis/` platí proti těmto verzím. Tabulka je jejich kanonické místo; audity uvádějí verze jen jako snímek k datu svého vzniku. Proč právě tyhle, říká rozhodnutí [013](./decisions/013-target-framework-versions.md).
+
+| Komponenta | Verze |
+|---|---|
+| .NET | 10 (`net10.0`) |
+| NHibernate | 5.7.0 |
+| Microsoft.EntityFrameworkCore(.SqlServer) | 10.0.10 |
+| Dapper | 2.1.79 |
+| Microsoft.Data.SqlClient | 7.0.2 |
+| Microsoft.CodeAnalysis.CSharp (Roslyn) | 5.6.0 |
+| xUnit | v3 (3.2.2) |
+| JDK | 25 (LTS) |
+| Jakarta Persistence | 3.2 |
+| Hibernate ORM | 7.4.5.Final |
+| EclipseLink | 5.0.0 |
+| MyBatis | 3.5.19 |
+| `mssql-jdbc` | 13.4.0.jre11 |
+| SQL Server | 2022 |
+
+Javová část je zatím deklarace, ne závislost — v repozitáři žádný javový projekt není.
+
 ## 2. Struktura řešení (.NET solution)
 
 Aplikace je .NET 10 solution (povýšená z .NET 8) rozdělená na projekty tří typů:
