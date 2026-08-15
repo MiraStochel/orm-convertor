@@ -27,13 +27,11 @@ public class EFCoreKeyStrategyTest
         return builder;
     }
 
-    // Guid is missing on purpose: the type model has no value for it, so CLRTypeConvertor throws
-    // on the property long before the key is built. The parser maps Guid to Uuid all the same,
-    // and the case becomes testable once the type model carries the type.
     [Theory]
     [InlineData("    [Key]\n    public int CustomerID { get; set; }", PrimaryKeyStrategy.Auto)]
     [InlineData("    [Key]\n    public long CustomerID { get; set; }", PrimaryKeyStrategy.Auto)]
     [InlineData("    [Key]\n    public byte CustomerID { get; set; }", PrimaryKeyStrategy.Auto)]
+    [InlineData("    [Key]\n    public Guid CustomerID { get; set; }", PrimaryKeyStrategy.Uuid)]
     [InlineData("    [Key]\n    public string CustomerID { get; set; }", PrimaryKeyStrategy.Assigned)]
     public void StrategyOfAnUnannotatedKeyFollowsItsType(string keyProperty, PrimaryKeyStrategy expected)
     {

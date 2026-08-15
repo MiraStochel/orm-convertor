@@ -343,9 +343,9 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
     /// the parser wherever its absence would change the meaning (decision 008), and it does here
     /// - assuming generation for a string key produces a target mapping the database rejects.
     ///
-    /// The list describes EF Core, not the reach of our type model: only int, long and byte can
-    /// arrive here today, because CLRTypeConvertor rejects the other numeric types and Guid
-    /// outright. The remaining branches become reachable once the type model carries them.
+    /// The list describes EF Core: the unsigned types have no value in the neutral type model
+    /// and survive as Unknown, but EF Core's convention treats them as generated all the same,
+    /// so they are matched here by name.
     /// </summary>
     private static PrimaryKeyStrategy StrategyFromKeyType(string? typeText)
     {

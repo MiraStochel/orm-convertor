@@ -93,21 +93,30 @@ public static class DatabaseTypeConvertor
         _ => throw new NotImplementedException(type.ToString())
     };
 
-    public static string GuessFromPropertyType(CLRType clrType)
+    /// <summary>
+    /// NHibernate's own default assumption about the column behind a scalar - the
+    /// language-to-database table of this framework, which is why it lives here and not
+    /// in Common (decision 014). Null means no claim: for Object NHibernate decides at
+    /// runtime, and writing anything down would state more than the source did.
+    /// </summary>
+    public static string? GuessFromScalarType(ScalarType scalarType)
     {
-        return clrType switch
+        return scalarType switch
         {
-            CLRType.Bool => ToNHibernate(DatabaseType.Bit),
-            CLRType.Byte => ToNHibernate(DatabaseType.TinyInt),
-            CLRType.Char => ToNHibernate(DatabaseType.Char),
-            CLRType.Int => ToNHibernate(DatabaseType.Int),
-            CLRType.Long => ToNHibernate(DatabaseType.BigInt),
-            CLRType.Double => ToNHibernate(DatabaseType.Float),
-            CLRType.Float => ToNHibernate(DatabaseType.Real),
-            CLRType.Decimal => ToNHibernate(DatabaseType.Decimal),
-            CLRType.String => ToNHibernate(DatabaseType.NVarChar),
-            CLRType.DateTime => ToNHibernate(DatabaseType.DateTime2),
-            _ => throw new NotImplementedException(clrType.ToString())
+            ScalarType.Bool => ToNHibernate(DatabaseType.Bit),
+            ScalarType.Byte => ToNHibernate(DatabaseType.TinyInt),
+            ScalarType.Short => ToNHibernate(DatabaseType.SmallInt),
+            ScalarType.Char => ToNHibernate(DatabaseType.Char),
+            ScalarType.Int => ToNHibernate(DatabaseType.Int),
+            ScalarType.Long => ToNHibernate(DatabaseType.BigInt),
+            ScalarType.Double => ToNHibernate(DatabaseType.Float),
+            ScalarType.Float => ToNHibernate(DatabaseType.Real),
+            ScalarType.Decimal => ToNHibernate(DatabaseType.Decimal),
+            ScalarType.String => ToNHibernate(DatabaseType.NVarChar),
+            ScalarType.DateTime => ToNHibernate(DatabaseType.DateTime2),
+            ScalarType.Guid => ToNHibernate(DatabaseType.UniqueIdentifier),
+            ScalarType.Object => null,
+            _ => null,
         };
     }
 }

@@ -155,14 +155,14 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         bool nullable)
     {
         var names = new List<string>();
-        var missing = new List<(string Name, CLRType Type, string Column)>();
+        var missing = new List<(string Name, LangType Type, string Column)>();
 
         foreach (var pair in relation.ColumnPairs)
         {
             // A column is not a property until it has a language type, so a property map carrying
             // only the column does not count as one the entity already has.
             var existing = entityMap.PropertyMaps.FirstOrDefault(pm =>
-                pm.Property.Name == pair.Source.Property.Name && pm.Property.Type.CLRType != CLRType.None);
+                pm.Property.Name == pair.Source.Property.Name && pm.Property.Type is not null);
 
             if (existing is not null)
             {
@@ -170,7 +170,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
-            if (pair.Target.Property.Type.CLRType == CLRType.None)
+            if (pair.Target.Property.Type is null)
             {
                 // Without the language type of the key part it points at there is nothing to
                 // declare, and an annotation naming properties that do not exist would not compile.
@@ -178,7 +178,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             }
 
             var name = navigationProperty + pair.Target.Property.Name;
-            missing.Add((name, pair.Target.Property.Type.CLRType, pair.Source.ColumnName ?? pair.Source.Property.Name));
+            missing.Add((name, pair.Target.Property.Type, pair.Source.ColumnName ?? pair.Source.Property.Name));
             names.Add(name);
         }
 
@@ -189,7 +189,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 code.AppendLine($"    [Column(\"{column}\")]");
             }
 
-            code.AppendLine($"    public {CLRTypeConvertor.ToString(type)}{(nullable ? "?" : string.Empty)} {name} {{ get; set; }}");
+            code.AppendLine($"    public {CSharpTypeConvertor.ToString(type)}{(nullable ? "?" : string.Empty)} {name} {{ get; set; }}");
             code.AppendLine();
         }
 
@@ -231,8 +231,10 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         var access = AccessModifierConvertor.ToModifierString(prop.AccessModifier);
         var modifiers = $"{access} {string.Join(' ', otherMods)}".Trim();
 
-        var dbType = CLRTypeConvertor.ToString(prop.Type);
-        var type = (!isPrimaryKey && prop.IsNullable) ? $"{dbType}?" : dbType;
+        var langType = prop.Type
+            ?? throw new NotSupportedException($"Property '{prop.Name}' has no language type.");
+        var typeName = CSharpTypeConvertor.ToString(langType);
+        var type = (!isPrimaryKey && langType.IsNullable) ? $"{typeName}?" : typeName;
 
         var getterSetter = (prop.HasGetter || prop.HasSetter)
             ? $" {{ {(prop.HasGetter ? "get;" : "")}{(prop.HasSetter ? " set;" : "")} }}"
@@ -319,11 +321,15 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
-    /// EF Core generates a value on its own for a single-property key of an integer type, and
-    /// for a Guid key - which cannot reach this method at all, because the type model has no
-    /// value for Guid and the parser throws on the property before the key is ever built.
+    /// EF Core generates a value on its own for a single-property key of an integer type
+    /// or of Guid.
     /// </summary>
     private static bool IsGeneratedByConvention(PrimaryKeyPart part, bool composite)
         => !composite
-        && part.PropertyMap.Property.Type.CLRType is CLRType.Byte or CLRType.Int or CLRType.Long;
+        && part.PropertyMap.Property.Type is
+        {
+            Category: LangTypeCategory.Scalar,
+            ScalarType: ScalarType.Byte or ScalarType.Short or ScalarType.Int
+                or ScalarType.Long or ScalarType.Guid,
+        };
 }

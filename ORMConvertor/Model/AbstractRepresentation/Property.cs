@@ -1,4 +1,4 @@
-﻿using Model.AbstractRepresentation.Enums;
+using Model.AbstractRepresentation.Enums;
 
 namespace Model.AbstractRepresentation;
 
@@ -6,9 +6,12 @@ public class Property
 {
     public required string Name { get; set; }
 
-    public required CLRTypeModel Type { get; set; }
-
-    public bool IsNullable { get; set; } = false;
+    /// <summary>
+    /// Language type of the property, including its language-side nullability.
+    /// Null means nobody stated the type - a property known only from a mapping
+    /// descriptor, not from source code (decision 014).
+    /// </summary>
+    public LangType? Type { get; set; }
 
     public AccessModifier? AccessModifier { get; set; }
 

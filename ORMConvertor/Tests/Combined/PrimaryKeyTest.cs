@@ -242,7 +242,7 @@ public class PrimaryKeyTest
         Assert.Equal("CustomerID", part.PropertyMap.Property.Name);
         Assert.Equal("CustomerId", part.PropertyMap.ColumnName);
         Assert.Equal(DatabaseType.Int, part.PropertyMap.Type);
-        Assert.Equal(CLRType.Int, part.PropertyMap.Property.Type.CLRType);
+        Assert.Equal(ScalarType.Int, part.PropertyMap.Property.Type!.ScalarType);
         Assert.Equal(PrimaryKeyStrategy.Auto, part.Strategy);
     }
 
@@ -443,7 +443,7 @@ public class PrimaryKeyTest
         Property = new Property
         {
             Name = propertyName,
-            Type = new CLRTypeModel { CLRType = CLRType.Int },
+            Type = LangType.Scalar(ScalarType.Int),
         }
     };
 }

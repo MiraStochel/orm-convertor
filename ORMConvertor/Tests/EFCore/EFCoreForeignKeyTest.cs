@@ -35,9 +35,9 @@ public class EFCoreForeignKeyTest
         builder.AddProperty("int", "Id", "public", hasGetter: true, hasSetter: true);
         builder.AddPrimaryKey(PrimaryKeyStrategy.Auto, "Id");
 
-        // The navigation is declared as object: the type model has no value for an entity type, so
-        // a navigation typed by the target cannot be added at all. Only the annotations are asserted.
-        builder.AddProperty("object", "OrderLine", "public", hasGetter: true, hasSetter: true);
+        // The navigation is typed by the target entity; the parser keeps the name as an
+        // Unknown type and the builder writes it back as the source wrote it.
+        builder.AddProperty("OrderLine", "OrderLine", "public", hasGetter: true, hasSetter: true);
         return builder;
     }
 
@@ -47,7 +47,7 @@ public class EFCoreForeignKeyTest
     /// </summary>
     private static PropertyMap ColumnOnly(string column) => new()
     {
-        Property = new Property { Name = column, Type = new CLRTypeModel { CLRType = CLRType.None } },
+        Property = new Property { Name = column },
         ColumnName = column,
     };
 

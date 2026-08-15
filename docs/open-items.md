@@ -10,16 +10,15 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Body 1 a 2 k němu vedou přímo a databázi nepotřebují; teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
+Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Jazykový typový model (rozhodnutí 014) je hotový, takže referenční navigace i klíče typu `Guid` už procházejí; bod 1 na něj přímo navazuje a databázi nepotřebuje. Teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
 
-1. **Jazykový typový model** (práce) — implementace rozhodnutí 014; odblokuje referenční navigace, klíče typu `Guid` i klíčovou třídu, takže patří před všechno ostatní v této oblasti.
-2. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — teprve s referenčními navigacemi má co párovat; k tomu rozresolvování jmen entit, které je tatáž fáze převodu.
-3. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
-4. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
-5. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 015; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
-6. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
-7. **Klíčová třída u formy `Embedded`** (rozhodnutí) — stojí na typovém modelu, takže má smysl až po bodu 1.
-8. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+1. **Naplnění `ColumnPairs` v parserech pro entity převáděné společně** (práce) — s referenčními navigacemi má co párovat; k tomu rozresolvování jmen entit, které je tatáž fáze převodu.
+2. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu a je předpokladem čtení katalogu.
+3. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
+4. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 015; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
+5. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
+6. **Klíčová třída u formy `Embedded`** (rozhodnutí) — typovým modelem odblokovaná, entita té formy už projde parsováním.
+7. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
@@ -98,13 +97,6 @@ Dnes je nástroj tichý: Dapper builder klíče i vztahy zahazuje bez hlášení
 
 Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho četl jen test.
 
-### Jazykový typový model
-*Implementace rozhodnutí [014](./decisions/014-language-type-model.md). Požadavky F1–F3, F7–F10, F11.*
-
-Nahradit `CLRTypeModel` a `CLRType` typem `LangType` se čtyřmi kategoriemi a továrními metodami, rozdělit `CLRTypeConvertor` na jazykovou část v `Common` a tabulku jazyk ↔ databáze ve wrapperech a přestat padat na neznámém typu. Dotkne se modelu, obou entitních parserů, obou builderů, deskriptoru, `SampleData` i testů a podle rozhodnutí [003](./decisions/003-one-shot-migration.md) proběhne jednorázově. Rozpadá se do čtyř kroků, z nichž každý končí zeleným buildem: model, konvertory, parsery, buildery.
-
-Odblokuje referenční navigace — a s nimi vztahy N:1 a 1:1 od parseru až po výstup — klíče typu `Guid`, formu `Embedded` u klíčové třídy a rozlišení `<set>` od `<bag>` u kolekcí.
-
 ### Cílová verze v deskriptoru
 *Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md). Požadavky S2, S6.*
 
@@ -132,11 +124,11 @@ Anotaci `[Required]` builder negeneruje. Databázová nullabilita z `PropertyMap
 Uvnitř `<composite-id>` smí stát i `<key-many-to-one>` — část klíče, která je zároveň odkazem na jinou entitu. Smyčka v `NHibernateXMLMappingParser` bere jen `<key-property>`, takže taková část z klíče beze stopy zmizí a vznikne klíč o menším počtu částí, než jaký zdroj popsal; u dvousložkového klíče může zbýt jednosložkový, který se navíc tváří jako úplný. Vypsat takovou část klíče buildery po rozhodnutí [012](./decisions/012-foreign-key-rendering.md) umějí, takže zbývá ji přečíst a doplnit hlášení podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md).
 
 ### Klíčová třída u kompozitního klíče na straně entity
-*Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md). Blokováno neutralizací typového modelu. Podklad: audit 2026-08-02, kap. 3.2.*
+*Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a [014](./decisions/014-language-type-model.md). Podklad: audit 2026-08-02, kap. 3.2.*
 
 Mapovací stranu už parser čte: `<composite-id class=>` i `<composite-id name= class=>` skončí jako `SourceKeyClass`. U formy `Embedded` ale části klíče nejsou vlastnostmi entity, nýbrž klíčové třídy, a entita nese jedinou vlastnost jejího typu. Zbývá tedy trojí: odkud vzít jazykové typy částí, jak zabránit tomu, aby se držící vlastnost dostala do mezireprezentace jako běžná vlastnost (ploché vykreslení klíčovou třídu ruší), a co udělat s C# zdrojem klíčové třídy, pokud do převodu vstoupí — entitní parser by z něj dnes udělal další entitu.
 
-Vstupní překážka je přitom dřív: `CLRTypeConvertor.FromString` na typu `OrderLineId` vyhodí `NotSupportedException`, takže entita té formy neprojde už parsováním. Je to táž překážka jako u vlastnosti odkazující na jinou entitu, a proto to patří k neutralizaci typového modelu, ne před ni.
+Vstupní překážku odstranil jazykový typový model: vlastnost typu `OrderLineId` projde parsováním jako `Unknown` a entita té formy se dostane do mezireprezentace. Trojí otázka výše tím ale zodpovězená není, proto zůstává rozhodnutím.
 
 ### NHibernate builder — schéma se nepropisuje do mapování
 
@@ -144,13 +136,13 @@ Vstupní překážka je přitom dřív: `CLRTypeConvertor.FromString` na typu `O
 
 ### Chybějící jazykový typ shodí generování
 
-Vlastnost, kterou zná jen XML mapování a ne entitní třída, vznikne s `CLRType.None` a `CLRTypeConvertor.ToString` na ní vyhodí `NotSupportedException("None")` uprostřed generování. Neúplný vstup je tedy pád, ne diagnostika — proti F11, který žádá framework, artefakt, chybějící vlastnost a důvod selhání; z výjimky nejde určit ani entitu. Rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) z toho dělá záznam o selhání: je to kategorie, kterou cíl vyžaduje a nikdo ji nedodal. Týž typový model brání i opačnému směru: navigační vlastnost odkazující na jinou entitu se do modelu nedostane vůbec, protože `CLRTypeConvertor.FromString` na názvu entity vyhodí `NotSupportedException` už v `AddProperty`. Vztah 1:1 nebo N:1 tedy dnes projde jen tam, kde navigaci založí mapovací parser bez jazykového typu — a generování C# na ní pak spadne.
+Vlastnost, kterou zná jen XML mapování a ne entitní třída, vznikne s `Property.Type = null` a buildery na ní při generování C# vyhodí `NotSupportedException` — výjimka po jazykovém typovém modelu (rozhodnutí [014](./decisions/014-language-type-model.md)) aspoň jmenuje vlastnost, ale pořád je to pád uprostřed generování, ne diagnostika — proti F11, který žádá framework, artefakt, chybějící vlastnost a důvod selhání. Rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) z toho dělá záznam o selhání: je to kategorie, kterou cíl vyžaduje a nikdo ji nedodal. Opačný směr už typový model vyřešil: navigační vlastnost odkazující na jinou entitu projde parserem jako `Unknown` a mapovací parser ji povýší na referenci, takže vztahy 1:1 a N:1 se generují.
 
-Potřebný fakt je přitom po ruce: `PropertyMap.Type` databázový typ nese, jen opačný převod v `DatabaseTypeConvertor` neexistuje, ačkoli směr CLR → databáze je v něm jako `GuessFromPropertyType`. Podle rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) je odvození z databázového typu konvence třetího stupně a musí nést svůj původ.
+Potřebný fakt je přitom po ruce: `PropertyMap.Type` databázový typ nese, jen opačný převod v `DatabaseTypeConvertor` neexistuje, ačkoli směr jazyk → databáze je v něm jako `GuessFromScalarType`. Podle rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) je odvození z databázového typu konvence třetího stupně a musí nést svůj původ.
 
 ### NHibernate builder — kolekce jen jako `<bag>`
 
-Kolekční vlastnost se generuje natvrdo jako `<bag>` a ostatní kolekční tvary (`set`, `list`, `map`) ani další kolekční vlastnosti builder neřeší (dva TODO v kódu). Volba tvaru kolekce je v NHibernate sémantická — `set` vylučuje duplicity, `list` nese pořadí — takže dnešní stav mění chování, ne jen zápis.
+Kolekční vlastnost se generuje natvrdo jako `<bag>` a ostatní kolekční tvary (`set`, `list`, `map`) ani další kolekční vlastnosti builder neřeší (dva TODO v kódu). Volba tvaru kolekce je v NHibernate sémantická — `set` vylučuje duplicity, `list` nese pořadí — takže dnešní stav mění chování, ne jen zápis. Model už druh kolekce nese (`CollectionKind` na `LangType`, rozhodnutí [014](./decisions/014-language-type-model.md)) a plní ho jazyková strana (`HashSet<T>` → `Set`); XML parser tvar elementu (`<set>` vs. `<bag>`) do modelu zatím nepropisuje a builder druh nečte — obojí patří k této položce.
 
 ### Frontend
 
@@ -170,7 +162,7 @@ Velké bloky ze zadání, každý si zaslouží vlastní rozhodnutí, než se do
 |---|---|
 | **F4–F6** metadata z databáze | `ColumnPairs`, detekci N:M v parserech, úplné mapování z neúplného vstupu |
 | **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech, kontrolu úplnosti IR |
-| **F7–F10** javový ekosystém a cross-ecosystem překlad | jádro rozšíření; stojí na neutralizaci typového modelu |
+| **F7–F10** javový ekosystém a cross-ecosystem překlad | jádro rozšíření; jazykovou stranu typového modelu už má (rozhodnutí 014), stojí ještě na neutralizaci databázové strany |
 | **F12–F13** testovací infrastruktura pro Javu, diferenční ověření | důkaz funkční ekvivalence |
 | **F14–F15** dávkové vstupy a výběr cíle v UI | použitelnost nástroje mimo ruční zadávání |
 | **T1–T7** experimenty | T7 navazuje na existující ILP Advisor |

@@ -60,7 +60,7 @@ public class CustomerSampleNHibernate
                        Property = new Property
                        {
                            Name = "CustomerID",
-                           Type = new CLRTypeModel(){ CLRType = CLRType.Int },
+                           Type = LangType.Scalar(ScalarType.Int),
                            AccessModifier = AccessModifier.Public,
                            OtherModifiers = ["virtual"],
                            HasGetter = true,
@@ -73,7 +73,7 @@ public class CustomerSampleNHibernate
                        Property = new Property
                        {
                            Name = "CustomerName",
-                           Type = new CLRTypeModel(){ CLRType = CLRType.String },
+                           Type = LangType.Scalar(ScalarType.String),
                            AccessModifier = AccessModifier.Public,
                            OtherModifiers = ["virtual", "required"],
                            HasGetter = true,
@@ -87,7 +87,7 @@ public class CustomerSampleNHibernate
                        Property = new Property
                        {
                            Name = "AccountOpenedDate",
-                           Type = new CLRTypeModel(){ CLRType = CLRType.DateTime },
+                           Type = LangType.Scalar(ScalarType.DateTime),
                            AccessModifier = AccessModifier.Public,
                            OtherModifiers = ["virtual"],
                            HasGetter = true,
@@ -101,8 +101,7 @@ public class CustomerSampleNHibernate
                        Property = new Property
                        {
                            Name = "CreditLimit",
-                           Type = new CLRTypeModel(){ CLRType = CLRType.Decimal },
-                           IsNullable = true,
+                           Type = LangType.Scalar(ScalarType.Decimal, isNullable: true),
                            AccessModifier = AccessModifier.Public,
                            OtherModifiers = ["virtual"],
                            HasGetter = true,
@@ -117,7 +116,9 @@ public class CustomerSampleNHibernate
                        Property = new Property
                        {
                            Name = "Transactions",
-                           Type = new CLRTypeModel(){ CLRType = CLRType.List, GenericParam = "CustomerTransaction" },
+                           Type = LangType.Collection(
+                               LangType.Reference("CustomerTransaction"),
+                               CollectionKind.List),
                            AccessModifier = AccessModifier.Public,
                            OtherModifiers = ["virtual"],
                            HasGetter = true,

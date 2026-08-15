@@ -186,11 +186,10 @@ public abstract class AbstractEntityBuilder
         var property = EntityMap.Entity.Properties.FirstOrDefault(p => p.Name == propertyName);
         if (property == null)
         {
-            // If not found, create and add it
+            // If not found, create and add it; a null type records that nobody stated it.
             property = new Property
             {
                 Name = propertyName,
-                Type = new() { CLRType = CLRType.None } // Should be replaced with actual type later
             };
             EntityMap.Entity.Properties.Add(property);
         }
@@ -220,7 +219,13 @@ public abstract class AbstractEntityBuilder
     /// <param name="role">Which side holds the foreign key; derived from the cardinality when omitted.</param>
     public void AddForeignKey(Cardinality cardinality, string propertyName, string target, RelationRole? role = null)
     {
-        GetOrCreatePropertyMap(propertyName); // the navigation property must exist in the model
+        var propertyMap = GetOrCreatePropertyMap(propertyName); // the navigation property must exist in the model
+
+        // The mapping or annotation just claimed the property points at an entity, which is
+        // exactly when a Reference arises (decision 014). The C# side has already read the
+        // same property as Unknown - or as a collection of one - so the claim upgrades the
+        // type in place, keeping the nullability and the collection kind the source declared.
+        propertyMap.Property.Type = ReferenceTypeFor(propertyMap.Property.Type, cardinality, target);
 
         AddRelation(new Relation
         {
@@ -245,6 +250,35 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
+    /// Language type of a navigation property once a relation names its target. The entity is
+    /// referenced by its simple name (decision 001), so an assembly-qualified or namespaced
+    /// name from an NHibernate class attribute is trimmed to the class itself.
+    /// </summary>
+    private static LangType ReferenceTypeFor(LangType? current, Cardinality cardinality, string target)
+    {
+        var simpleName = target.Split(',')[0].Trim();
+        var lastDot = simpleName.LastIndexOf('.');
+        if (lastDot >= 0)
+        {
+            simpleName = simpleName[(lastDot + 1)..];
+        }
+
+        if (cardinality is Cardinality.OneToOne or Cardinality.ManyToOne)
+        {
+            return LangType.Reference(simpleName, current?.IsNullable ?? false);
+        }
+
+        // The "many" side is a collection of references; what the C# declaration said about
+        // the kind and the element's nullability survives the upgrade.
+        var element = LangType.Reference(simpleName, current?.ElementType?.IsNullable ?? false);
+
+        return LangType.Collection(
+            element,
+            current?.CollectionKind ?? CollectionKind.Unspecified,
+            current?.IsNullable ?? false);
+    }
+
+    /// <summary>
     /// Add a property to the entity and its mapping.
     /// </summary>
     /// <param name="type">Property C# type</param>
@@ -254,7 +288,7 @@ public abstract class AbstractEntityBuilder
     /// <param name="hasGetter">Indicates if property has a getter</param>
     /// <param name="hasSetter">Indicates if property has a setter</param>
     /// <param name="defaultValue">Default value</param>
-    /// <param name="isNullable">Indicates if property is nullable</param>
+    /// <param name="isNullable">Indicates if property is nullable (language side)</param>
     public void AddProperty(
     string type,
     string propertyName,
@@ -266,36 +300,17 @@ public abstract class AbstractEntityBuilder
     bool isNullable = false
 )
     {
-        // Parse type and generic parameter (if any)
-        int genericStart = type.IndexOf('<');
-        int genericEnd = type.LastIndexOf('>');
-        string? genericParameter = null;
-        string baseTypeString;
-
-        if (genericStart >= 0 && genericEnd > genericStart)
-        {
-            // Type has a generic parameter, e.g., List<string>
-            genericParameter = type.Substring(genericStart + 1, genericEnd - genericStart - 1).Trim();
-            baseTypeString = type[..genericStart].Trim();
-        }
-        else
-        {
-            // Type is not generic
-            baseTypeString = type.Trim();
-        }
-
-        var clrType = CLRTypeConvertor.FromString(baseTypeString);
-
         var property = new Property
         {
             Name = propertyName,
-            Type = new CLRTypeModel { CLRType = clrType, GenericParam = genericParameter },
+            // An unrecognized name becomes an Unknown type rather than an exception,
+            // so an entity referencing another one survives parsing (decision 014).
+            Type = CSharpTypeConvertor.FromString(type, isNullable),
             AccessModifier = AccessModifierConvertor.FromString(accessModifier),
             OtherModifiers = OtherModifiers ?? [],
             HasGetter = hasGetter,
             HasSetter = hasSetter,
             DefaultValue = defaultValue,
-            IsNullable = isNullable,
         };
 
         EntityMap.Entity.Properties.Add(property);
@@ -317,7 +332,7 @@ public abstract class AbstractEntityBuilder
             property = EntityMap.Entity.Properties.FirstOrDefault(p => p.Name == propertyName);
             if (property == null)
             {
-                property = new Property { Name = propertyName, Type = new() { CLRType = CLRType.None } };
+                property = new Property { Name = propertyName };
                 EntityMap.Entity.Properties.Add(property);
             }
             propertyMap = new PropertyMap { Property = property };

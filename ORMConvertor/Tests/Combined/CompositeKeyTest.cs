@@ -162,12 +162,12 @@ public class CompositeKeyTest
         Assert.Equal("OrderID", pk.Parts[0].PropertyMap.Property.Name);
         Assert.Equal("OrderId", pk.Parts[0].PropertyMap.ColumnName);
         Assert.Equal(DatabaseType.Int, pk.Parts[0].PropertyMap.Type);
-        Assert.Equal(CLRType.Int, pk.Parts[0].PropertyMap.Property.Type.CLRType);
+        Assert.Equal(ScalarType.Int, pk.Parts[0].PropertyMap.Property.Type!.ScalarType);
 
         Assert.Equal("CompanyID", pk.Parts[1].PropertyMap.Property.Name);
         Assert.Equal("CompanyId", pk.Parts[1].PropertyMap.ColumnName);
         Assert.Equal(DatabaseType.BigInt, pk.Parts[1].PropertyMap.Type);
-        Assert.Equal(CLRType.Long, pk.Parts[1].PropertyMap.Property.Type.CLRType);
+        Assert.Equal(ScalarType.Long, pk.Parts[1].PropertyMap.Property.Type!.ScalarType);
     }
 
     [Fact]
@@ -193,8 +193,8 @@ public class CompositeKeyTest
         // class - the two artifacts merge into one key in the model.
         Assert.Equal(new DatabaseType?[] { DatabaseType.Int, DatabaseType.BigInt, DatabaseType.Int },
             pk.Parts.Select(p => p.PropertyMap.Type));
-        Assert.Equal(new[] { CLRType.Int, CLRType.Long, CLRType.Int },
-            pk.Parts.Select(p => p.PropertyMap.Property.Type.CLRType));
+        Assert.Equal(new ScalarType?[] { ScalarType.Int, ScalarType.Long, ScalarType.Int },
+            pk.Parts.Select(p => p.PropertyMap.Property.Type!.ScalarType));
 
         // <composite-id> admits no generator, so every part is the application's to assign.
         Assert.All(pk.Parts, p => Assert.Equal(PrimaryKeyStrategy.Assigned, p.Strategy));

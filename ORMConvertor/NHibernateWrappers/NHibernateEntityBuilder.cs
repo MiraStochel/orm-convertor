@@ -104,11 +104,11 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             var facets = BuildColumnFacets(propertyMap);
             if (facets.Count == 0)
             {
-                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\">");
+                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\"{TypeAttribute(propertyMap)}>");
             }
             else
             {
-                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" type=\"{ResolveNhType(propertyMap)}\">");
+                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\"{TypeAttribute(propertyMap)}>");
                 AppendXml(artifact.Mapping, 3, $"<column name=\"{columnName}\" {string.Join(' ', facets)} />");
             }
 
@@ -131,11 +131,11 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             var facets = BuildColumnFacets(propertyMap);
             if (facets.Count == 0)
             {
-                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\" type=\"{ResolveNhType(propertyMap)}\" />");
+                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\"{TypeAttribute(propertyMap)} />");
             }
             else
             {
-                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" type=\"{ResolveNhType(propertyMap)}\">");
+                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\"{TypeAttribute(propertyMap)}>");
                 AppendXml(artifact.Mapping, 4, $"<column name=\"{columnName}\" {string.Join(' ', facets)} />");
                 AppendXml(artifact.Mapping, 3, "</key-property>");
             }
@@ -143,7 +143,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         AppendXml(artifact.Mapping, 2, "</composite-id>");
     }
 
-    private static string ResolveNhType(PropertyMap propertyMap)
+    private static string? ResolveNhType(PropertyMap propertyMap)
     {
         if (propertyMap.Type != null)
         {
@@ -151,9 +151,19 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         }
 
         // TODO this would be a place to query database for the missing type
-        // for now we guess it from CLR type
-        return DatabaseTypeConvertor.GuessFromPropertyType(propertyMap.Property.Type.CLRType);
+        // for now we guess it from the language scalar; for anything else - a reference,
+        // a collection, an unknown name - no claim is made and NHibernate decides itself.
+        return propertyMap.Property.Type is { Category: LangTypeCategory.Scalar } langType
+            ? DatabaseTypeConvertor.GuessFromScalarType(langType.ScalarType!.Value)
+            : null;
     }
+
+    /// <summary>
+    /// The type attribute of an &lt;id&gt; or &lt;key-property&gt;, empty when there is
+    /// nothing to claim - NHibernate then infers the type from the persistent class.
+    /// </summary>
+    private static string TypeAttribute(PropertyMap propertyMap)
+        => ResolveNhType(propertyMap) is string type ? $" type=\"{type}\"" : string.Empty;
 
     /// <summary>
     /// Facets of a key column that NHibernate accepts only inside a nested &lt;column&gt; element.
@@ -381,8 +391,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         {
             attrs.Add($"not-null=\"{(!propertyMap.IsNullable.Value).ToString().ToLowerInvariant()}\"");
         }
-        else if (!prop.IsNullable)
+        else if (prop.Type is { IsNullable: false })
         {
+            // The language side is the fallback claim; a property with no stated type
+            // says nothing about nullability either.
             attrs.Add("not-null=\"true\"");
         }
 
@@ -569,8 +581,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         var access = AccessModifierConvertor.ToModifierString(prop.AccessModifier);
         var modifiers = $"{access} {string.Join(' ', otherMods)}".Trim();
-        var clrType = CLRTypeConvertor.ToString(prop.Type);
-        var type = (!isPrimaryKey && prop.IsNullable) ? $"{clrType}?" : clrType;
+        var langType = prop.Type
+            ?? throw new NotSupportedException($"Property '{prop.Name}' has no language type.");
+        var typeName = CSharpTypeConvertor.ToString(langType);
+        var type = (!isPrimaryKey && langType.IsNullable) ? $"{typeName}?" : typeName;
 
         var getterSetter = (prop.HasGetter || prop.HasSetter)
             ? $" {{ {(prop.HasGetter ? "get;" : "")}{(prop.HasSetter ? " set;" : "")} }}"

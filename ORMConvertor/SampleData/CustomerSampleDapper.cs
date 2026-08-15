@@ -43,7 +43,7 @@ public class CustomerSampleDapper
                        Property = new Property
                        {
                            Name = "CustomerID",
-                           Type = new() { CLRType = CLRType.Int },
+                           Type = LangType.Scalar(ScalarType.Int),
                            AccessModifier = AccessModifier.Public,
                            HasGetter = true,
                            HasSetter = true,
@@ -53,7 +53,7 @@ public class CustomerSampleDapper
                        Property = new Property
                        {
                            Name = "CustomerName",
-                           Type = new() { CLRType = CLRType.String },
+                           Type = LangType.Scalar(ScalarType.String),
                            AccessModifier = AccessModifier.Public,
                            OtherModifiers = ["required"],
                            HasGetter = true,
@@ -64,7 +64,7 @@ public class CustomerSampleDapper
                        Property = new Property
                        {
                            Name = "AccountOpenedDate",
-                           Type = new() { CLRType = CLRType.DateTime },
+                           Type = LangType.Scalar(ScalarType.DateTime),
                            AccessModifier = AccessModifier.Public,
                            HasGetter = true,
                            HasSetter = true
@@ -74,18 +74,21 @@ public class CustomerSampleDapper
                        Property = new Property
                        {
                            Name = "CreditLimit",
-                           Type = new() { CLRType = CLRType.Decimal },
-                           IsNullable = true,
+                           Type = LangType.Scalar(ScalarType.Decimal, isNullable: true),
                            AccessModifier = AccessModifier.Public,
                            HasGetter = true,
                            HasSetter = true
                        }
                    },
                    new() {
+                       // Dapper records no relations, so the element type stays what the C#
+                       // declaration alone can say: an unrecognized name, not a reference.
                        Property = new Property
                        {
                            Name = "Transactions",
-                           Type = new() { CLRType = CLRType.List, GenericParam = "CustomerTransaction"},
+                           Type = LangType.Collection(
+                               LangType.Unknown("CustomerTransaction"),
+                               CollectionKind.List),
                            AccessModifier = AccessModifier.Public,
                            HasGetter = true,
                            HasSetter = true,
