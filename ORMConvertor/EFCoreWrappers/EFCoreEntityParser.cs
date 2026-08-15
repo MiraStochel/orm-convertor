@@ -1,4 +1,5 @@
 ﻿using AbstractWrappers;
+using Common.Convertors;
 using EFCoreWrappers.Convertors;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -203,6 +204,7 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             bool isPrimaryKey = false;
             bool requiredAttr = false;
             string? generatedOption = null;
+            List<string>? foreignKeyNames = null;
 
             foreach (var attribute in prop.AttributeLists.SelectMany(l => l.Attributes))
             {
@@ -227,6 +229,9 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
                         break;
                     case "DatabaseGenerated":
                         generatedOption = ReadGeneratedOption(attribute);
+                        break;
+                    case "ForeignKey":
+                        foreignKeyNames = ReadForeignKeyNames(attribute);
                         break;
                 }
             }
@@ -265,7 +270,17 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
 
             if (IsCollection(prop.Type, out var target))
             {
-                entityBuilder.AddForeignKey(Cardinality.OneToMany, name, target);
+                entityBuilder.AddForeignKey(Cardinality.OneToMany, name, target, foreignKeyColumns: foreignKeyNames);
+            }
+            else if (foreignKeyNames is not null && !IsScalarTypeName(type))
+            {
+                // [ForeignKey] on the navigation is the claim that the property points at an
+                // entity, and it names the key properties in the order of the key they reference
+                // (decision 012). The annotation cannot say the relation is 1:1, so N:1 is what
+                // survives the reading. The scalar guard keeps out the other legal form of the
+                // attribute - [ForeignKey("Navigation")] sitting on the key property itself -
+                // whose claim points the opposite way and has no place in the model yet.
+                entityBuilder.AddForeignKey(Cardinality.ManyToOne, name, type, RelationRole.Owning, foreignKeyNames);
             }
             else
             {
@@ -322,6 +337,47 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             return StrategyFromKeyType(propertyTypes.GetValueOrDefault(propertyName));
         }
     }
+
+    /// <summary>
+    /// Reads the names out of [ForeignKey("A,B")] or [ForeignKey(nameof(A))]. The attribute
+    /// takes a single string; a composite key arrives comma-separated inside it, in the order
+    /// of the key it references, and the order is kept because the pairing relies on it.
+    /// </summary>
+    private static List<string>? ReadForeignKeyNames(AttributeSyntax attribute)
+    {
+        var argument = attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression;
+
+        var value = argument switch
+        {
+            null => null,
+            InvocationExpressionSyntax inv
+                when inv.Expression is IdentifierNameSyntax id
+                  && id.Identifier.Text == "nameof"
+                  && inv.ArgumentList.Arguments.Count == 1
+                  && inv.ArgumentList.Arguments[0].Expression is IdentifierNameSyntax propName
+                => propName.Identifier.Text,
+            _ => GetString(argument),
+        };
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var names = value.Split(',')
+            .Select(n => n.Trim())
+            .Where(n => n.Length > 0)
+            .ToList();
+
+        return names.Count == 0 ? null : names;
+    }
+
+    /// <summary>
+    /// Whether the written type is a scalar of the language type model - which a navigation
+    /// property can never be.
+    /// </summary>
+    private static bool IsScalarTypeName(string typeText)
+        => CSharpTypeConvertor.FromString(typeText).Category == LangTypeCategory.Scalar;
 
     /// <summary>
     /// Reads the option out of [DatabaseGenerated(DatabaseGeneratedOption.X)] and returns the X.

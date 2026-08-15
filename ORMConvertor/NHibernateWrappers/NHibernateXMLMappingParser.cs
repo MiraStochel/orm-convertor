@@ -416,7 +416,9 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                 isOneToOne ? Cardinality.OneToOne : Cardinality.ManyToOne,
                 propName,
                 target,
-                role);
+                role,
+                // <one-to-one> admits no column by schema, so only <many-to-one> can state any.
+                ReadRelationColumns(relation));
         }
 
         string[] collectionTypes = ["bag", "set", "list", "map"];
@@ -428,13 +430,19 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                 continue;
             }
 
+            // The <key> of a collection names the columns of the child table; the parser of the
+            // parent cannot pair them with anything, so they travel with the relation and the
+            // pairing happens before generation, once the child is part of the same conversion.
+            var keyElement = collection.Elements().FirstOrDefault(e => e.Name.LocalName == "key");
+            var keyColumns = keyElement is null ? null : ReadRelationColumns(keyElement);
+
             var oneToMany = collection.Elements().FirstOrDefault(e => e.Name.LocalName == "one-to-many");
             if (oneToMany != null)
             {
                 var target = oneToMany.Attribute("class")?.Value;
                 if (!string.IsNullOrEmpty(target))
                 {
-                    entityBuilder.AddForeignKey(Cardinality.OneToMany, propName, target);
+                    entityBuilder.AddForeignKey(Cardinality.OneToMany, propName, target, foreignKeyColumns: keyColumns);
                 }
                 continue;
             }
@@ -445,9 +453,36 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                 var target = manyToMany.Attribute("class")?.Value;
                 if (!string.IsNullOrEmpty(target))
                 {
-                    entityBuilder.AddForeignKey(Cardinality.ManyToMany, propName, target);
+                    // The columns belong to a junction table here, not to the target entity;
+                    // they are recorded all the same for the junction work (decision 005).
+                    entityBuilder.AddForeignKey(Cardinality.ManyToMany, propName, target, foreignKeyColumns: keyColumns);
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Reads the foreign key columns of a <many-to-one> or a collection's <key>, in the
+    /// source's order. One column is an attribute, several are nested <column> elements;
+    /// where both appear the nested form wins, being the more specific of the two - the
+    /// same precedence <see cref="ReadColumnFacts"/> applies.
+    /// </summary>
+    private static List<string>? ReadRelationColumns(XElement element)
+    {
+        var nested = element.Elements()
+            .Where(e => e.Name.LocalName == "column")
+            .Select(e => e.Attribute("name")?.Value)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!)
+            .ToList();
+
+        if (nested.Count > 0)
+        {
+            return nested;
+        }
+
+        var single = element.Attribute("column")?.Value;
+
+        return string.IsNullOrWhiteSpace(single) ? null : [single];
     }
 }

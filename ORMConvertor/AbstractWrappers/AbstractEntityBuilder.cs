@@ -210,14 +210,25 @@ public abstract class AbstractEntityBuilder
 
     /// <summary>
     /// Convenience method: registers a relation known from a navigation property.
-    /// A typical parser case - target columns cannot be resolved from a single translation unit,
-    /// so ColumnPairs stay empty (to be filled from DB metadata / multi-entity context).
+    /// A typical parser case - the target's columns cannot be resolved from a single translation
+    /// unit, so ColumnPairs stay empty here. The foreign key columns the source stated are kept
+    /// aside and paired with the target's key by <see cref="ResolveEntityNames"/> before
+    /// generation, once every entity of the conversion has been parsed; a target outside the
+    /// conversion is the database catalog's case (decision 015).
     /// </summary>
     /// <param name="cardinality">Relationship cardinality</param>
     /// <param name="propertyName">Navigation property name on the source entity</param>
     /// <param name="target">Target entity name</param>
     /// <param name="role">Which side holds the foreign key; derived from the cardinality when omitted.</param>
-    public void AddForeignKey(Cardinality cardinality, string propertyName, string target, RelationRole? role = null)
+    /// <param name="foreignKeyColumns">Columns (or properties) of the foreign key as the source
+    /// stated them, in the source's order. They belong to whichever side holds the key: the
+    /// source entity of an owning relation, the target entity of an inverse one.</param>
+    public void AddForeignKey(
+        Cardinality cardinality,
+        string propertyName,
+        string target,
+        RelationRole? role = null,
+        IReadOnlyList<string>? foreignKeyColumns = null)
     {
         var propertyMap = GetOrCreatePropertyMap(propertyName); // the navigation property must exist in the model
 
@@ -227,7 +238,7 @@ public abstract class AbstractEntityBuilder
         // type in place, keeping the nullability and the collection kind the source declared.
         propertyMap.Property.Type = ReferenceTypeFor(propertyMap.Property.Type, cardinality, target);
 
-        AddRelation(new Relation
+        var relation = new Relation
         {
             Cardinality = cardinality,
             // A 1:1 sits on either side, so the caller may say which one this is - NHibernate marks
@@ -238,7 +249,14 @@ public abstract class AbstractEntityBuilder
             SourceEntity = EntityMap.Entity.Name,
             TargetEntity = target,
             SourceNavigationProperty = propertyName,
-        });
+        };
+
+        AddRelation(relation);
+
+        if (foreignKeyColumns is { Count: > 0 })
+        {
+            pendingForeignKeyColumns[relation] = foreignKeyColumns;
+        }
     }
 
     /// <summary>
@@ -256,12 +274,7 @@ public abstract class AbstractEntityBuilder
     /// </summary>
     private static LangType ReferenceTypeFor(LangType? current, Cardinality cardinality, string target)
     {
-        var simpleName = target.Split(',')[0].Trim();
-        var lastDot = simpleName.LastIndexOf('.');
-        if (lastDot >= 0)
-        {
-            simpleName = simpleName[(lastDot + 1)..];
-        }
+        var simpleName = SimpleEntityName(target);
 
         if (cardinality is Cardinality.OneToOne or Cardinality.ManyToOne)
         {
@@ -276,6 +289,149 @@ public abstract class AbstractEntityBuilder
             element,
             current?.CollectionKind ?? CollectionKind.Unspecified,
             current?.IsNullable ?? false);
+    }
+
+    /// <summary>
+    /// Foreign key columns stated by the source, keyed by the relation they belong to, waiting
+    /// for the target entity's key to pair with. Builder state, not part of the model: once
+    /// paired they live in <see cref="Relation.ColumnPairs"/>, and an entry whose target never
+    /// arrives simply stays unconsumed.
+    /// </summary>
+    private readonly Dictionary<Relation, IReadOnlyList<string>> pendingForeignKeyColumns = [];
+
+    /// <summary>
+    /// The resolution phase promised by decision 001: runs once per <see cref="Build"/>, after
+    /// all entities of the conversion have been parsed and before anything is generated.
+    /// Resolves relation targets by name against <see cref="EntityMaps"/>, fills
+    /// <see cref="Relation.ColumnPairs"/> where the source stated the foreign key columns, and
+    /// completes the second half of the Reference rule of decision 014 - an unknown type name
+    /// matching an entity of the same conversion becomes a reference. A name that resolves to
+    /// nothing is left as it is: reporting it is a completeness error for the structured
+    /// diagnostics of decision 010, which does not exist yet.
+    /// </summary>
+    private void ResolveEntityNames()
+    {
+        foreach (var entityMap in EntityMaps)
+        {
+            foreach (var property in entityMap.Entity.Properties)
+            {
+                property.Type = ResolveUnknownType(property.Type);
+            }
+
+            foreach (var relation in entityMap.Relations)
+            {
+                ResolveColumnPairs(entityMap, relation);
+            }
+        }
+    }
+
+    /// <summary>
+    /// An Unknown whose source name is exactly the name of an entity of this conversion becomes
+    /// a Reference; the element of a collection likewise. Anything else stays untouched -
+    /// a namespaced or otherwise decorated name is not the claim this rule reads.
+    /// </summary>
+    private LangType? ResolveUnknownType(LangType? type)
+    {
+        if (type is { Category: LangTypeCategory.Unknown }
+            && FindEntityMap(type.SourceName!) is not null)
+        {
+            return LangType.Reference(type.SourceName!, type.IsNullable);
+        }
+
+        if (type is { Category: LangTypeCategory.Collection }
+            && ResolveUnknownType(type.ElementType) is { Category: LangTypeCategory.Reference } element)
+        {
+            return LangType.Collection(element, type.CollectionKind!.Value, type.IsNullable);
+        }
+
+        return type;
+    }
+
+    /// <summary>
+    /// Pairs the foreign key columns the source stated with the key they reference, once both
+    /// entities are part of the same conversion. The key side follows the role: an owning
+    /// relation holds the key and references the target's primary key, an inverse one is
+    /// referenced through its own. N:M stays out - its key columns belong to a junction table,
+    /// which is an entity of its own (decision 005). A column count that disagrees with the
+    /// key, like an unresolved target, is left unpaired for diagnostics to report.
+    /// </summary>
+    private void ResolveColumnPairs(EntityMap entityMap, Relation relation)
+    {
+        if (relation.ColumnPairs.Count > 0
+            || relation.Cardinality == Cardinality.ManyToMany
+            || !pendingForeignKeyColumns.TryGetValue(relation, out var columns))
+        {
+            return;
+        }
+
+        var target = FindEntityMap(relation.TargetEntity);
+        if (target is null)
+        {
+            return;
+        }
+
+        var (keyHolder, referencedKey) = relation.Role == RelationRole.Owning
+            ? (entityMap, target.PrimaryKey)
+            : (target, entityMap.PrimaryKey);
+
+        if (referencedKey is null || referencedKey.Parts.Count != columns.Count)
+        {
+            return;
+        }
+
+        var pairs = new List<ColumnPair>(columns.Count);
+
+        for (var i = 0; i < columns.Count; i++)
+        {
+            pairs.Add(new ColumnPair
+            {
+                Source = ForeignKeyColumnMap(keyHolder, columns[i]),
+                Target = referencedKey.Parts[i].PropertyMap,
+            });
+        }
+
+        relation.ColumnPairs = pairs;
+        pendingForeignKeyColumns.Remove(relation);
+    }
+
+    /// <summary>
+    /// The property map behind one stated foreign key column: an existing one of the entity
+    /// holding the key, found by column and then by property name (EF Core states properties,
+    /// NHibernate columns). A column nobody declared a property for gets a detached map -
+    /// a column is not a property until it has a language type, so it must not enter the
+    /// entity's PropertyMaps, where builders would emit it as one.
+    /// </summary>
+    private static PropertyMap ForeignKeyColumnMap(EntityMap keyHolder, string column)
+    {
+        return keyHolder.PropertyMaps.FirstOrDefault(pm => pm.ColumnName == column)
+            ?? keyHolder.PropertyMaps.FirstOrDefault(pm => pm.ColumnName is null && pm.Property.Name == column)
+            ?? new PropertyMap
+            {
+                Property = new Property { Name = column },
+                ColumnName = column,
+            };
+    }
+
+    /// <summary>
+    /// Finds an entity of this conversion by name; the match is on the simple class name,
+    /// which is how relations reference entities (decision 001).
+    /// </summary>
+    private EntityMap? FindEntityMap(string entityName)
+    {
+        var simpleName = SimpleEntityName(entityName);
+
+        return EntityMaps.FirstOrDefault(em => em.Entity.Name == simpleName);
+    }
+
+    /// <summary>
+    /// Trims an assembly-qualified or namespaced name to the class itself.
+    /// </summary>
+    private static string SimpleEntityName(string name)
+    {
+        var typeName = name.Split(',')[0].Trim();
+        var lastDot = typeName.LastIndexOf('.');
+
+        return lastDot < 0 ? typeName : typeName[(lastDot + 1)..];
     }
 
     /// <summary>
@@ -415,6 +571,10 @@ public abstract class AbstractEntityBuilder
     /// <returns>List of ConversionSource containing the generated content and type (C#, XML, ...)</returns>
     public List<ConversionSource> Build()
     {
+        // Entity names resolve only against the finished set, so the phase sits between
+        // parsing and generation rather than inside either.
+        ResolveEntityNames();
+
         var outputs = new List<ConversionSource>();
 
         foreach (var entityMap in EntityMaps)
