@@ -2,6 +2,7 @@
 
 Datum: 2026-08-03
 Stav: platí
+Požadavky: žádné
 Podklad: audit 2026-08-02, nález 3.5
 
 ## Kontext

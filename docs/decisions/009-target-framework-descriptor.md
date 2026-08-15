@@ -20,7 +20,7 @@ Dvě ze čtyř tedy platí jen proto, že jsme nic neudělali. Žádná není ni
 
 Rozhodnutí [006](006-flat-composite-key-rendering.md) tuto kategorii už jednou pojmenovalo — pro kompozitní klíč — a přiřadilo ji builderu. Bezprostředním podnětem byl kritický nález auditu, kdy chybějící identitní členy vyrobily syntakticky správný a přitom nespustitelný výstup. Zobecnění tehdy zůstalo otevřené.
 
-Rozhodnutí [008](008-database-as-metadata-source.md) k témuž konceptu přidalo obrácenou stranu. Rozsah čtení databázového katalogu určuje cílová strana převodu: cíl deklaruje, které mapovací fakty vyžaduje a které umí vyjádřit, a z deklarace vzniká jediná dávková poptávka. Kde tato deklarace žije, 008 nechalo otevřené.
+Rozhodnutí [008](008-database-as-metadata-source.md), dnes nahrazené rozhodnutím [015](015-mapping-fact-completion-from-the-catalog.md), k témuž konceptu přidalo obrácenou stranu. Rozsah čtení databázového katalogu určuje cílová strana převodu: cíl deklaruje, které mapovací fakty vyžaduje a které umí vyjádřit, a z deklarace vzniká jediná dávková poptávka. Kde tato deklarace žije, 008 nechalo otevřené.
 
 Obě strany dnes existují jen jako podmínky rozeseté v tělech builderů, nebo vůbec ne. Seznam faktů, které Dapper nevyjádří a o kterých má podle rozhodnutí [004](004-unexpressible-facts-as-warnings.md) nést varování, je zapsán pouze jako text ve srovnávací analýze v `docs/analysis/`. Při rozšíření na Hibernate, MyBatis a EclipseLink si tyto vlastnosti každý nový builder objeví znovu a na některou zapomene — u NHibernate se to už jednou stalo.
 
@@ -57,10 +57,10 @@ Druhý důvod je, že otevřená otázka deklarace cílové verze frameworku hle
 **Druhá část je vztah ke kategoriím mapovacích faktů** — název tabulky a schématu, název sloupce, databázový typ, délka, přesnost a měřítko, nullabilita, primární klíč, párování sloupců cizího klíče. Ke každé kategorii deskriptor uvádí jeden ze tří stavů:
 
 - **vyžaduji** — bez faktu se negeneruje. Chybí-li i po doplnění z katalogu, překlad se odmítne se strukturovanou diagnostikou. Sem patří identifikátor u NHibernate.
-- **umím vyjádřit** — doplň, pokud to jde. Když katalog není k dispozici, nastoupí konvence a fakt nese záznam o svém původu podle 008.
+- **umím vyjádřit** — doplň, pokud to jde. Když katalog není k dispozici, nastoupí konvence a o jejím uplatnění vznikne záznam podle rozhodnutí [010](010-diagnostics-as-returned-data.md).
 - **neumím vyjádřit** — nedoplňuj a ohlas. Sem patří u Dapperu klíče, vztahy i typ sloupce.
 
-Tři stavy jsou jádro tohoto rozhodnutí, protože z nich plyne obojí, co deskriptor obsluhuje. **Poptávka do katalogu** je sjednocení kategorií ve stavu *vyžaduji* a *umím vyjádřit*, zmenšené o to, co už v mezireprezentaci je. **Varování podle rozhodnutí 004** je průnik faktů, které mezireprezentace nese, s kategoriemi ve stavu *neumím vyjádřit*. Jedna struktura tedy popisuje vstupní i výstupní stranu, což je nejsilnější doklad toho, že jde o jeden koncept, a ne o dva náhodou sousedící.
+Tři stavy jsou jádro tohoto rozhodnutí, protože z nich plyne obojí, co deskriptor obsluhuje. **Poptávka do katalogu** je sjednocení kategorií ve stavu *vyžaduji* a *umím vyjádřit*; rozhoduje o tom, které fakty se z odpovědi katalogu zapíšou do mezireprezentace, ne o rozsahu dotazu (rozhodnutí [015](015-mapping-fact-completion-from-the-catalog.md)). **Varování podle rozhodnutí 004** je průnik faktů, které mezireprezentace nese, s kategoriemi ve stavu *neumím vyjádřit*. Jedna struktura tedy popisuje vstupní i výstupní stranu, což je nejsilnější doklad toho, že jde o jeden koncept, a ne o dva náhodou sousedící.
 
 ### Umístění a konzumace
 
@@ -70,7 +70,7 @@ Vynucené členy dostanou v builderu pojmenovaný krok. Dnešní `Build()` není
 
 ### Co deskriptor nepopisuje
 
-Nepopisuje syntaxi ani způsob, jakým se co vypisuje — to zůstává odpovědností builderu. Deskriptor říká, že NHibernate vyžaduje identitní členy u kompozitního klíče; jak vypadá jejich tělo, ví builder. Nepopisuje ani typový model: převodní tabulky zůstávají tam, kde jsou, a neutralizace typového modelu je na tomto rozhodnutí nezávislá.
+Nepopisuje syntaxi ani způsob, jakým se co vypisuje — to zůstává odpovědností builderu. Deskriptor říká, že NHibernate vyžaduje identitní členy u kompozitního klíče; jak vypadá jejich tělo, ví builder. Nepopisuje syntaxi typů — na typovém modelu ale nezávislý není. Rozhodnutí [014](014-language-type-model.md) váže stav *umím vyjádřit* na uzavřenou množinu jazykových typů a převodní tabulky stěhuje z `Common` do wrapperů. Původní znění tvrdilo, že převodní tabulky zůstávají tam, kde jsou, a že neutralizace typového modelu je na tomto rozhodnutí nezávislá; byla to nepřesnost už při psaní, protože nad otevřenou množinou typů nemůže deskriptor říct, co cíl vyjádřit umí (audit 2026-08-15, nález 1.3).
 
 ## Důsledky
 

@@ -53,7 +53,7 @@ Jak si nástroj k témuž datu stál vůči zadání vedoucího ([`requirements.
 | S5 | částečně | docker-compose (aplikace + DB) existuje; jednopříkazová reprodukce testů a experimentů ne |
 | S6 | chybí | žádný identifikátor běhu ani strojově čitelný záznam překladu |
 | S7 | částečně | základní scénář v UI projde; validace před spuštěním, průběžný stav, chyby na úrovni souboru/řádku a stažení výstupního projektu chybí |
-| E1–E7 | nezačato | E7 přímo navazuje na existující ILP advisor |
+| T1–T7 | nezačato | T7 přímo navazuje na existující ILP advisor |
 
 ## 4. Nápady z původního výzkumu bez vazby na aktuální práci
 

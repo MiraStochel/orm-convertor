@@ -2,7 +2,7 @@
 
 Datum: 2026-07-20
 Stav: platí
-Požadavky: F3, F10, E1
+Požadavky: F3, F10, T1
 
 ## Kontext
 
@@ -26,7 +26,7 @@ Spojovací tabulka je běžná entita se dvěma vztahy typu N:1.
 
 1. **Symetrie s modelem IR.** N:M je v mezireprezentaci zachycená jako junction `EntityMap` plus dvě relace N:1. Varianta B tuto strukturu promítá jedna k jedné; varianta A ji při generování rozpouští, což je krok stranou od zvoleného modelu.
 2. **Obousměrnost a cross-ecosystem (F3, F10).** Spojovací tabulka je nejnižší společný jmenovatel N:M napříč všemi frameworky. Udržení junction entity viditelné v IR umožňuje generovat kterýkoli cílový tvar bez rekonstrukce; skrytí by před každým dalším překladem vyžadovalo entitu znovu odvodit.
-3. **Bohatá spojovací tabulka (F3, E1).** Reálné spojovací tabulky mívají extra sloupce a explicitní entitu vyžadují i v EF Core. Varianta B je řeší stejným kódem jako čistou M:N; varianta A by potřebovala dvě cesty a rozhodovací logiku mezi nimi.
+3. **Bohatá spojovací tabulka (F3, T1).** Reálné spojovací tabulky mívají extra sloupce a explicitní entitu vyžadují i v EF Core. Varianta B je řeší stejným kódem jako čistou M:N; varianta A by potřebovala dvě cesty a rozhodovací logiku mezi nimi.
 
 ## Důsledky
 

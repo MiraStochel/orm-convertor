@@ -1,7 +1,7 @@
 # 008 — Databáze jako autoritativní doplněk chybějících mapovacích faktů
 
 Datum: 2026-08-11
-Stav: revidováno
+Stav: nahrazeno 015
 Požadavky: F2, F4, F5, F6, F11, S1, S3
 Podklad: JSS článek, §7.1 a pravidlo E9
 
@@ -137,3 +137,5 @@ Bezklíčový typ ale nese omezení: nesmí být cílem vztahu, žádná jiná e
 **2026-08-11 — doplněna konvence zdrojového frameworku do prvního stupně priority.** Původní znění vyjmenovalo řetěz jako „explicitní fakt — katalog — konvence cíle" a s tím, že zdroj může fakt vyjádřit i konvencí, nepočítalo. Ukázalo se to hned poté, co podle tohoto rozhodnutí začal EF Core builder generovat bezklíčový typ: entity s klíčem odvozeným z konvence ho tím ztrácely, protože parser konvenci nečte. Doplněno je proto, co se počítá za tvrzení zdroje, kdo konvenci čte a kdy se má číst; k tomu přibyl požadavek F2.
 
 Volba samotná se nemění — mění se rozsah případů, na které dopadá. Proto revize na místě a ne nové rozhodnutí: dva dokumenty by čtenáře nutily skládat prioritní řetězec ze dvou míst a text by se hůř přenášel do práce. Původní znění zůstává v git historii, což je stejná úvaha, ze které vychází rozhodnutí [007](007-documentation-structure.md), když ruší changelog. Revidovat na místě je ale bezpečné jen dokud rozhodnutí není naimplementované; čtení katalogu v době revize nezačalo. Jakmile podle rozhodnutí vznikne kód, začne text popisovat něco, co v repozitáři je, a přepis by měnil význam už napsaného — pak je namístě nové rozhodnutí a stav `nahrazeno NNN`.
+
+**2026-08-15 — nahrazeno rozhodnutím [015](015-mapping-fact-completion-from-the-catalog.md).** Rozhodnutí [010](010-diagnostics-as-returned-data.md) změnilo dvě věci: původ doplněného faktu se nadále neukládá do mezireprezentace, ale vydává jako záznam, a poptávka do katalogu neodečítá to, co model už nese, protože jinak by nešlo odhalit rozpor mezi zdrojem a schématem podle F5. 010 obojí označilo za změnu volby a přitom nechalo 008 ve stavu `revidováno`, takže tento dokument dál tvrdil opak (audit 2026-08-15, nálezy 1.1 a 1.2). Platnou verzi včetně obou oprav nese 015; zbytek volby se nemění.

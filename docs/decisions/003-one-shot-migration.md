@@ -2,6 +2,7 @@
 
 Datum: 2026-07-16
 Stav: platí
+Požadavky: žádné
 
 ## Kontext
 

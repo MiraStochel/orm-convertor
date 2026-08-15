@@ -2,7 +2,7 @@
 
 Datum: 2026-08-12
 Stav: platí
-Požadavky: F5, F11, F14, E3, S6
+Požadavky: F5, F11, F14, T3, S6
 Podklad: JSS článek, §3.3 a pravidlo E8
 
 ## Kontext
@@ -25,9 +25,9 @@ Mezitím přibyly dvě věci, které na tento chybějící mechanismus čekají.
 
 Případ 1 z velké části řeší přístup k databázi podle rozhodnutí 008. Případy 2 až 4 ale nejsou o chybějící informaci: informace je k dispozici a **vědomě se zahazuje nebo přepisuje**, protože se frameworky liší v tom, co unesou. To žádný přístup k datům neodstraní; je to vlastnost překladu mezi nestejně expresivními cíli. Případ 5 je jediné skutečné selhání.
 
-**Co k tomu říká článek a co ne.** Článek pro tuhle oblast používá pojem *validace* a dává jí značnou váhu: v §3.1 je validace přeložených artefaktů proti požadavkům cílového frameworku jednou ze tří schopností, jejichž absenci článek označuje za jádro problému; §5 ji uvádí jako jednu ze tří věcí, které mezireprezentace umožňuje; §9 jako jeden ze tří cílů prototypu; Tabulka 5 v §11 řadí práci do řádku s rule-based translation a validačními kontrakty. Formálně ji zakotvuje pravidlo **E8**, které definuje úplnost mapování jako konjunkci tabulky, primárního klíče a platnosti všech vlastností. §3.3 přitom výslovně žádá ověřit přítomnost povinných metadat **před generováním**, zatímco §4.3 a §7.2 nechávají frameworková omezení až na okamžik emise (E10, Q14).
+**Co k tomu říká článek a co ne.** Článek pro tuhle oblast používá pojem *validace* a dává jí značnou váhu: v §3.1 je validace přeložených artefaktů proti požadavkům cílového frameworku jednou ze tří schopností, jejichž absenci článek označuje za jádro problému; §5 ji uvádí jako jednu ze tří věcí, které mezireprezentace umožňuje; §9 jako jeden ze tří cílů prototypu; Tabulka 5 v §11 řadí práci do řádku s rule-based translation a validačními kontrakty. Formálně ji zakotvuje pravidlo **E8**, které definuje úplnost mapování jako konjunkci tabulky, primárního klíče a platnosti všech vlastností. §3.3 přitom výslovně žádá ověřit přítomnost povinných metadat **před generováním**, zatímco §4.3 a §7.2 nechávají frameworková omezení až na okamžik emise (pravidla E10 a Q14).
 
-Hlášení toho, co se při překladu ztratilo, ale článek nežádá nikde. Q14 dovoluje nepodporovanou konstrukci přepsat nebo dekomponovat a o hlášení mlčí, §3.2 vyjímá sémantickou ekvivalenci ze záběru. Požadavek na hlášení ztrátovosti pochází výhradně ze zadání vedoucího, a to ze čtyř nezávislých míst: **F11** („nepodporované konstrukce nesmí být potichu vynechány"), **F5** (hlášení konfliktů, ověřované nejméně čtyřmi scénáři), **E3** (metrika úplnosti přenesených mapovacích vlastností) a **S6**, který v záznamu běhu jmenuje varování i zdroje metadat.
+Hlášení toho, co se při překladu ztratilo, ale článek nežádá nikde. Q14 dovoluje nepodporovanou konstrukci přepsat nebo dekomponovat a o hlášení mlčí, §3.2 vyjímá sémantickou ekvivalenci ze záběru. Požadavek na hlášení ztrátovosti pochází výhradně ze zadání vedoucího, a to ze čtyř nezávislých míst: **F11** („nepodporované konstrukce nesmí být potichu vynechány"), **F5** (hlášení konfliktů, ověřované nejméně čtyřmi scénáři), **T3** (metrika úplnosti přenesených mapovacích vlastností) a **S6**, který v záznamu běhu jmenuje varování i zdroje metadat.
 
 ## Zvažované varianty
 
@@ -47,13 +47,13 @@ Selhává na třech místech. Případy 2 až 4 jsou **úspěšné** převody �
 
 Diagnostika by se psala do aplikačního logu a výstup převodu by zůstal beze změny.
 
-Nevyžaduje zásah do API. Uživatel webového rozhraní se ale k logu serveru nedostane, takže hlášení nedorazí tomu, komu je určeno, a E3 by muselo metriku úplnosti dolovat z textového logu místo ze strukturovaných dat.
+Nevyžaduje zásah do API. Uživatel webového rozhraní se ale k logu serveru nedostane, takže hlášení nedorazí tomu, komu je určeno, a T3 by muselo metriku úplnosti dolovat z textového logu místo ze strukturovaných dat.
 
 ### D — Vrácená data, jeden druh záznamu
 
 Návratový typ převodu nese artefakty i záznamy; selhání zůstávají výjimkou, záznamy pokrývají jen ztrátovost.
 
-Splňuje F5, E3 i S6 a je to nejmenší možná změna. Naráží ale na doslovné znění F11 — neúspěšný překlad má diagnostiku vrátit — a na F14, protože výjimka dál ukončí dávku.
+Splňuje F5, T3 i S6 a je to nejmenší možná změna. Naráží ale na doslovné znění F11 — neúspěšný překlad má diagnostiku vrátit — a na F14, protože výjimka dál ukončí dávku.
 
 ### E — Vrácená data, dva druhy záznamu ve dvou okamžicích
 
@@ -75,7 +75,7 @@ Rozdělení má i praktický důvod: odmítnout mapování NHibernate bez identi
 
 **Původ faktu je událost, ne stav v mezireprezentaci.** Rozhodnutí 008 ve svých důsledcích uvádí, že mezireprezentace musí evidovat původ každého faktu, a zdůvodňuje to tím, že jinak nemá F5 ani F11 co hlásit. Toto rozhodnutí ten důsledek **zužuje**: původ se vydává jako záznam v okamžiku, kdy fakt dodá katalog, a v modelu se neukládá. Důvodů je několik. S6 chce zdroje metadat ve strojově čitelném **záznamu běhu**, což je log, ne pole v modelu. Konzumenta, který by se modelu ptal „odkud je tahle hodnota", se nepodařilo pojmenovat: idempotentní doplňování z 008 si vystačí s testem na prázdnou hodnotu, rozpor se vyhodnocuje v okamžiku dodání a konvence cílového frameworku se do modelu nikdy neukládá, protože ji builder aplikuje až při generování. A alternativa by znamenala obalit každou z šesti hodnot `PropertyMap` typem s původem, tedy podstatný zásah do modelu bez odběratele.
 
-Je to změna volby, ne její doplnění, takže se 008 nereviduje. Platí z něj všechno ostatní — priorita zdrojů, vítězství zdroje nad katalogem i požadavek, aby se rozpor ohlásil; mění se jen to, kde ohlášení žije.
+Je to změna volby, ne její doplnění, takže se 008 nereviduje, ale nahrazuje: platnou verzi nese rozhodnutí [015](015-mapping-fact-completion-from-the-catalog.md), které z 008 přebírá všechno ostatní — prioritu zdrojů, vítězství zdroje nad katalogem i požadavek, aby se rozpor ohlásil. *(Odkaz doplněn 2026-08-15; v době vzniku tohoto rozhodnutí 015 ještě neexistovalo.)*
 
 **Poptávka řídí, co se použije, ne co se načte.** Tohle je podmínka, bez které je hlášení konfliktů z F5 nedosažitelné. Rozhodnutí 008 staví poptávku do katalogu z toho, co v mezireprezentaci chybí — jenže fakt dodaný zdrojem v ní nechybí, takže by se na něj katalogu nikdo nezeptal a rozpor by nemohl vzniknout. Dotaz na katalog přitom vrací sloupce tabulky vcelku a omezovat ho na podmnožinu nic neušetří. Načítá se tedy celý sloupcový obraz dotčených tabulek, poptávka rozhoduje o tom, které fakty se z něj do mezireprezentace zapíšou, a hodnoty, které zdroj už nese, se porovnají: shodují-li se, neděje se nic, liší-li se, vydá se záznam o konfliktu a platí hodnota ze zdroje.
 
@@ -91,7 +91,7 @@ Je to změna volby, ne její doplnění, takže se 008 nereviduje. Platí z něj
 
 **Čtečka katalogu vydává záznamy dvou dalších druhů** — o původu doplněného faktu a o konfliktu se zdrojem. F5 žádá testy nejméně pro čtyři konfliktní scénáře: nullabilitu, název sloupce, datový typ a primární klíč.
 
-**E3 dostane data, ze kterých se dá počítat.** Metrika úplnosti přenesených mapovacích vlastností potřebuje strojově čitelný seznam toho, co se nepřeneslo; z logu ani z výjimek by se nesestavila.
+**T3 dostane data, ze kterých se dá počítat.** Metrika úplnosti přenesených mapovacích vlastností potřebuje strojově čitelný seznam toho, co se nepřeneslo; z logu ani z výjimek by se nesestavila.
 
 **Zúžení uvnitř typového modelu se stane hlásitelným, ale ne hned.** Slévání `DateTime`, `DateTime2` a `SmallDateTime` do jediného typu NHibernate je ztráta ve stejném smyslu jako nevyjádřitelný fakt, jen se odehrává uvnitř převodu typů, ne na hranici frameworku. Aby ji šlo ohlásit, musí být z převodu poznat, že zúžil — to je práce v typovém modelu, ne v diagnostice.
 
