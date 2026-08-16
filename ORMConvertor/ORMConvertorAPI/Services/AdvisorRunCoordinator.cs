@@ -147,7 +147,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
                 artifacts = ConversionHandler.Convert(
                     request.SourceOrm,
                     framework,
-                    sources);
+                    sources).Sources;
 
                 // Ensure EFCore harness still receives a query source. EFCore target does not
                 // produce a CSharpQuery via QueryBuilder (it's null by design). If missing,

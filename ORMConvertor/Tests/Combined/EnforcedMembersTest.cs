@@ -25,6 +25,14 @@ public class EnforcedMembersTest
         {
             foreach (var keyParts in new[] { 0, 1, 2 })
             {
+                if (framework == "NHibernate" && keyParts == 0)
+                {
+                    // NHibernate requires an identifier: the completeness gate refuses the
+                    // entity instead of generating anything (decision 010), so there is no
+                    // artifact to check here. The refusal itself is asserted in DiagnosticsTest.
+                    continue;
+                }
+
                 data.Add(framework, keyParts);
             }
         }

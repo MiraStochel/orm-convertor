@@ -4,6 +4,7 @@ using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
 
 namespace AbstractWrappers;
 
@@ -306,8 +307,9 @@ public abstract class AbstractEntityBuilder
     /// <see cref="Relation.ColumnPairs"/> where the source stated the foreign key columns, and
     /// completes the second half of the Reference rule of decision 014 - an unknown type name
     /// matching an entity of the same conversion becomes a reference. A name that resolves to
-    /// nothing is left as it is: reporting it is a completeness error for the structured
-    /// diagnostics of decision 010, which does not exist yet.
+    /// nothing is left as it is and recorded as incompleteness (decision 010): it may be a
+    /// typo, or a reference outside the conversion that the database catalog would resolve
+    /// (decision 015), and only the catalog can tell the two apart.
     /// </summary>
     private void ResolveEntityNames()
     {
@@ -320,9 +322,48 @@ public abstract class AbstractEntityBuilder
 
             foreach (var relation in entityMap.Relations)
             {
-                ResolveColumnPairs(entityMap, relation);
+                var target = FindEntityMap(relation.TargetEntity);
+
+                if (target is null)
+                {
+                    Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Incompleteness,
+                        Framework = Descriptor.Framework,
+                        Entity = entityMap.Entity.Name,
+                        Property = relation.SourceNavigationProperty,
+                        Reason = $"Target entity '{relation.TargetEntity}' is not part of the conversion, so nothing can be resolved against it - a reference outside the conversion is the database catalog's case (decision 015).",
+                    });
+                }
+                else if (relation.Cardinality == Cardinality.ManyToMany && !HasJunctionEntityFor(relation))
+                {
+                    Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Incompleteness,
+                        Framework = Descriptor.Framework,
+                        Entity = entityMap.Entity.Name,
+                        Property = relation.SourceNavigationProperty,
+                        Reason = $"The many-to-many relation to '{relation.TargetEntity}' has no junction entity in the conversion; decision 005 represents N:M as an explicit junction entity, so its mapping cannot be generated.",
+                    });
+                }
+
+                ResolveColumnPairs(entityMap, relation, target);
             }
         }
+    }
+
+    /// <summary>
+    /// Whether a junction entity connecting both sides of an N:M relation takes part in
+    /// this conversion (decision 005: many-to-many has no type of its own).
+    /// </summary>
+    private bool HasJunctionEntityFor(Relation relation)
+    {
+        var source = SimpleEntityName(relation.SourceEntity);
+        var target = SimpleEntityName(relation.TargetEntity);
+
+        return EntityMaps.Any(em => em.IsJunctionTable
+            && em.Relations.Any(r => SimpleEntityName(r.TargetEntity) == source)
+            && em.Relations.Any(r => SimpleEntityName(r.TargetEntity) == target));
     }
 
     /// <summary>
@@ -353,19 +394,12 @@ public abstract class AbstractEntityBuilder
     /// relation holds the key and references the target's primary key, an inverse one is
     /// referenced through its own. N:M stays out - its key columns belong to a junction table,
     /// which is an entity of its own (decision 005). A column count that disagrees with the
-    /// key, like an unresolved target, is left unpaired for diagnostics to report.
+    /// key is left unpaired and recorded (decision 010); pairs the source supplied already
+    /// filled are checked against the order of the referenced key (decision 012).
     /// </summary>
-    private void ResolveColumnPairs(EntityMap entityMap, Relation relation)
+    private void ResolveColumnPairs(EntityMap entityMap, Relation relation, EntityMap? target)
     {
-        if (relation.ColumnPairs.Count > 0
-            || relation.Cardinality == Cardinality.ManyToMany
-            || !pendingForeignKeyColumns.TryGetValue(relation, out var columns))
-        {
-            return;
-        }
-
-        var target = FindEntityMap(relation.TargetEntity);
-        if (target is null)
+        if (relation.Cardinality == Cardinality.ManyToMany || target is null)
         {
             return;
         }
@@ -374,8 +408,32 @@ public abstract class AbstractEntityBuilder
             ? (entityMap, target.PrimaryKey)
             : (target, entityMap.PrimaryKey);
 
+        if (relation.ColumnPairs.Count > 0)
+        {
+            CheckColumnPairOrder(entityMap, relation, referencedKey);
+            return;
+        }
+
+        if (!pendingForeignKeyColumns.TryGetValue(relation, out var columns))
+        {
+            return;
+        }
+
         if (referencedKey is null || referencedKey.Parts.Count != columns.Count)
         {
+            // The builder must not pair by guesswork: a wrong count means either the source
+            // or the key is incomplete, and quietly padding or trimming would hide which.
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Incompleteness,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Property = relation.SourceNavigationProperty,
+                Category = MappingFactCategory.ForeignKeyColumns,
+                Reason = referencedKey is null
+                    ? $"The source states foreign key columns towards '{relation.TargetEntity}', but the referenced key does not exist; the columns stay unpaired."
+                    : $"The source states {columns.Count} foreign key column(s) towards '{relation.TargetEntity}', but the referenced key has {referencedKey.Parts.Count} part(s); the columns stay unpaired.",
+            });
             return;
         }
 
@@ -392,6 +450,46 @@ public abstract class AbstractEntityBuilder
 
         relation.ColumnPairs = pairs;
         pendingForeignKeyColumns.Remove(relation);
+    }
+
+    /// <summary>
+    /// Pairs supplied ready-made are ordered and authoritative; the builder never reorders
+    /// them, because that would cover up a defect of the producer. A sequence of targets
+    /// that disagrees with the referenced key is a completeness error of the intermediate
+    /// representation and is recorded as such (decision 012).
+    /// </summary>
+    private void CheckColumnPairOrder(EntityMap entityMap, Relation relation, PrimaryKey? referencedKey)
+    {
+        if (referencedKey is null || referencedKey.Parts.Count != relation.ColumnPairs.Count)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Incompleteness,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Property = relation.SourceNavigationProperty,
+                Category = MappingFactCategory.ForeignKeyColumns,
+                Reason = $"The relation to '{relation.TargetEntity}' carries {relation.ColumnPairs.Count} column pair(s) but the referenced key has {referencedKey?.Parts.Count ?? 0} part(s); the pairs are emitted as stored.",
+            });
+            return;
+        }
+
+        for (var i = 0; i < referencedKey.Parts.Count; i++)
+        {
+            if (relation.ColumnPairs[i].Target.Property.Name != referencedKey.Parts[i].PropertyMap.Property.Name)
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Entity = entityMap.Entity.Name,
+                    Property = relation.SourceNavigationProperty,
+                    Category = MappingFactCategory.ForeignKeyColumns,
+                    Reason = $"The order of the column pairs of the relation to '{relation.TargetEntity}' does not match the order of the referenced key; the pairs are emitted as stored, not silently reordered (decision 012).",
+                });
+                return;
+            }
+        }
     }
 
     /// <summary>
@@ -563,6 +661,20 @@ public abstract class AbstractEntityBuilder
     /// </summary>
     public abstract TargetFrameworkDescriptor Descriptor { get; }
 
+    private readonly List<ConversionRecord> records = [];
+
+    /// <summary>
+    /// Diagnostic records of this conversion (decision 010). Filled while parsing and while
+    /// building; the orchestration returns them next to the artifacts.
+    /// </summary>
+    public IReadOnlyList<ConversionRecord> Records => records;
+
+    /// <summary>
+    /// Adds a record. Public because a loss can occur on the way into the model as well -
+    /// a parser reading a fact the model has nowhere to keep reports it here.
+    /// </summary>
+    public void Report(ConversionRecord record) => records.Add(record);
+
     /// <summary>
     /// Builds the artifacts for every accumulated entity. The order of the steps is fixed
     /// here so that it cannot drift between frameworks; a framework with nothing to emit in
@@ -579,6 +691,16 @@ public abstract class AbstractEntityBuilder
 
         foreach (var entityMap in EntityMaps)
         {
+            // The completeness gate of decision 010, per §3.3 of the paper: a category the
+            // descriptor requires and nobody supplied refuses the entity with a failure
+            // record before half an artifact is written.
+            if (!CheckCompleteness(entityMap))
+            {
+                continue;
+            }
+
+            ReportLosses(entityMap);
+
             var artifact = new EntityArtifact();
 
             BuildImports(entityMap, artifact);
@@ -593,6 +715,117 @@ public abstract class AbstractEntityBuilder
 
         return outputs;
     }
+
+    /// <summary>
+    /// The gate before generation (decision 010): every category the descriptor marks as
+    /// required has to be present, and every property that would reach the output needs a
+    /// language type. A failed check emits failure records and the entity's artifacts are
+    /// not generated. Exceptions stay reserved for states the design does not expect at all.
+    /// </summary>
+    private bool CheckCompleteness(EntityMap entityMap)
+    {
+        var complete = true;
+
+        foreach (var category in Enum.GetValues<MappingFactCategory>())
+        {
+            if (Descriptor.SupportOf(category) == FactSupport.Required && !Carries(entityMap, category))
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Failure,
+                    Framework = Descriptor.Framework,
+                    Entity = entityMap.Entity.Name,
+                    Category = category,
+                    Reason = $"The target requires {category} and neither the source nor a catalog supplied it; the entity's artifacts are not generated.",
+                });
+                complete = false;
+            }
+        }
+
+        foreach (var propertyMap in entityMap.PropertyMaps.Where(pm => pm.Property.Type is null))
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Property = propertyMap.Property.Name,
+                Reason = "The property has no language type - it is known only to the mapping, not to the entity class - and no property can be declared without one; the entity's artifacts are not generated.",
+            });
+            complete = false;
+        }
+
+        return complete;
+    }
+
+    /// <summary>
+    /// Loss records at emission time: the intersection of the facts the model carries with
+    /// the categories the descriptor marks as inexpressible (decisions 004, 009, 010). The
+    /// builder does not write these by hand - they follow from the descriptor, which is
+    /// what makes the list impossible to forget.
+    /// </summary>
+    private void ReportLosses(EntityMap entityMap)
+    {
+        foreach (var category in Enum.GetValues<MappingFactCategory>())
+        {
+            if (Descriptor.SupportOf(category) != FactSupport.NotExpressible || !Carries(entityMap, category))
+            {
+                continue;
+            }
+
+            foreach (var property in LossSubjects(entityMap, category))
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Entity = entityMap.Entity.Name,
+                    Property = property,
+                    Category = category,
+                    Reason = $"The source states {category} and the target has no way to record it; the fact is dropped from the output.",
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether the intermediate representation holds a fact of the category for this entity.
+    /// The intersection with the descriptor's states yields both mechanical halves of
+    /// decision 010: required-and-absent is a failure, present-and-inexpressible a loss.
+    /// </summary>
+    private static bool Carries(EntityMap em, MappingFactCategory category) => category switch
+    {
+        MappingFactCategory.TableName => em.Table is not null,
+        MappingFactCategory.SchemaName => em.Schema is not null,
+        MappingFactCategory.ColumnName => em.PropertyMaps.Any(pm => pm.ColumnName is not null),
+        MappingFactCategory.DatabaseType => em.PropertyMaps.Any(pm => pm.Type is not null),
+        MappingFactCategory.Length => em.PropertyMaps.Any(pm => pm.Length is not null),
+        MappingFactCategory.PrecisionAndScale => em.PropertyMaps.Any(pm => pm.Precision is not null || pm.Scale is not null),
+        MappingFactCategory.Nullability => em.PropertyMaps.Any(pm => pm.IsNullable is not null),
+        MappingFactCategory.PrimaryKey => em.PrimaryKey is not null,
+        MappingFactCategory.PrimaryKeyStrategy => em.PrimaryKey?.Parts.Any(p => p.Strategy != PrimaryKeyStrategy.Unspecified || p.SourceStrategyName is not null) == true,
+        MappingFactCategory.ForeignKeyColumns => em.Relations.Any(r => r.ColumnPairs.Count > 0),
+        _ => throw new ArgumentOutOfRangeException(nameof(category), category, null),
+    };
+
+    /// <summary>
+    /// The properties a lost category concerns: one record per property for facts living on
+    /// a property map or key part, a single record without a property for facts of the
+    /// entity itself.
+    /// </summary>
+    private static IEnumerable<string?> LossSubjects(EntityMap em, MappingFactCategory category) => category switch
+    {
+        MappingFactCategory.ColumnName => em.PropertyMaps.Where(pm => pm.ColumnName is not null).Select(pm => (string?)pm.Property.Name),
+        MappingFactCategory.DatabaseType => em.PropertyMaps.Where(pm => pm.Type is not null).Select(pm => (string?)pm.Property.Name),
+        MappingFactCategory.Length => em.PropertyMaps.Where(pm => pm.Length is not null).Select(pm => (string?)pm.Property.Name),
+        MappingFactCategory.PrecisionAndScale => em.PropertyMaps.Where(pm => pm.Precision is not null || pm.Scale is not null).Select(pm => (string?)pm.Property.Name),
+        MappingFactCategory.Nullability => em.PropertyMaps.Where(pm => pm.IsNullable is not null).Select(pm => (string?)pm.Property.Name),
+        MappingFactCategory.PrimaryKeyStrategy => em.PrimaryKey!.Parts
+            .Where(p => p.Strategy != PrimaryKeyStrategy.Unspecified || p.SourceStrategyName is not null)
+            .Select(p => (string?)p.PropertyMap.Property.Name),
+        MappingFactCategory.ForeignKeyColumns => em.Relations.Where(r => r.ColumnPairs.Count > 0).Select(r => r.SourceNavigationProperty),
+        _ => [null],
+    };
 
     /// <summary>
     /// Namespace declaration and imports.

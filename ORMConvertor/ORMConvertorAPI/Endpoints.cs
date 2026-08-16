@@ -47,7 +47,7 @@ public static class Endpoints
         try
         {
             var converted = ConversionHandler.Convert(req.SourceOrm, req.TargetOrm, req.Sources);
-            return Results.Ok(new ConvertResponse(converted));
+            return Results.Ok(new ConvertResponse(converted.Sources, converted.Records));
         }
         catch (Exception e)
         {

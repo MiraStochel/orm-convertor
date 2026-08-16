@@ -41,6 +41,7 @@
     <ProjectReference Include="..\EFCoreWrappers\EFCoreWrappers.csproj" />
     <ProjectReference Include="..\Model\Model.csproj" />
     <ProjectReference Include="..\NHibernateWrappers\NHibernateWrappers.csproj" />
+    <ProjectReference Include="..\OrmConvertor\OrmConvertor.csproj" />
     <ProjectReference Include="..\SampleData\SampleData.csproj" />
   </ItemGroup>
 

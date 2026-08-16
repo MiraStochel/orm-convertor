@@ -6,7 +6,7 @@ namespace OrmConvertor;
 
 public static class ConversionHandler
 {
-    public static List<ConversionSource> Convert(
+    public static ConversionResult Convert(
         ORMEnum sourceOrm,
         ORMEnum targetOrm,
         List<ConversionSource> sources
@@ -65,6 +65,12 @@ public static class ConversionHandler
             results.AddRange(qb.Build());
         }
 
-        return results;
+        // The records accumulate on the entity builder - parsers and the build phases both
+        // report there - and leave as returned data next to the artifacts (decision 010).
+        return new ConversionResult
+        {
+            Sources = results,
+            Records = [.. entityBuilder.Records],
+        };
     }
 }

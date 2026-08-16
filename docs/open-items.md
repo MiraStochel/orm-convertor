@@ -10,14 +10,13 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Jazykový typový model (rozhodnutí 014) i fáze rozresolvování jmen entit s naplněním `ColumnPairs` jsou hotové, takže vztahy mezi entitami téhož převodu procházejí od parseru po výstup i se sloupci. Teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
+Nejbližší cíl je uzavřít práci s jednoduchými i kompozitními klíči ve všech třech .NET frameworcích, tedy F1–F3. Jazykový typový model (rozhodnutí 014), fáze rozresolvování jmen entit s naplněním `ColumnPairs` i diagnostika převodu (rozhodnutí 010) jsou hotové, takže vztahy mezi entitami téhož převodu procházejí od parseru po výstup i se sloupci a převod vrací vedle artefaktů strukturované záznamy. Teprve F3 v plném rozsahu — N:M přes spojovací tabulku a spuštěné testy — vyžaduje prostředí i katalog.
 
-1. **Diagnostika převodu** (práce) — implementace rozhodnutí 010; odblokuje varování u Dapperu, hlášení z fáze rozresolvování a je předpokladem čtení katalogu.
-2. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
-3. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 015; odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
-4. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
-5. **Klíčová třída u formy `Embedded`** (rozhodnutí) — typovým modelem odblokovaná, entita té formy už projde parsováním.
-6. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
+1. **Prostředí s databází pro vývoj a testy** (práce) — spuštěné testy vyžaduje F3; bez něj nelze otestovat ani čtení katalogu jinak než proti mocku.
+2. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 015; diagnostika jako předpoklad je hotová, odblokuje odkaz mimo převod a Dapper jako plnohodnotný zdroj.
+3. **Junction entita v builderech** (práce) — N:M přes spojovací tabulku, poslední kus F3.
+4. **Klíčová třída u formy `Embedded`** (rozhodnutí) — typovým modelem odblokovaná, entita té formy už projde parsováním.
+5. **Zbytek** podle priorit vyplývajících z požadavků F/S/E.
 
 ---
 
@@ -69,9 +68,11 @@ Testovací projekt dnes nereferencuje žádného databázového klienta, žádn�
 Potřeba je databáze dostupná testům lokálně i v CI a rozhodnutí, které testy na ní závisí a jak se zachovají, když není. `docker-compose.yml` staví SQL Server s WideWorldImporters přes `database.Dockerfile`, ale jako prostředí pro aplikaci; `ConnectionStrings__AdvisorDatabase` je v něm commitnutá deklarace, kterou zatím nikdo nespustil, takže se ověří tady.
 
 ### Čtení databázového katalogu
-*Rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Blokováno diagnostikou jako kategorií a prostředím s databází. Požadavky F4, F5, F6.*
+*Rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Blokováno prostředím s databází; diagnostický kanál podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) už existuje a čtečka do něj přidá záznamy o původu doplněného faktu a o konfliktu se zdrojem. Požadavky F4, F5, F6.*
 
-Komponenta, která na jednom místě čte metadata z připojené databáze, a sestavení poptávky z deskriptoru cílového frameworku. Dnes žádné čtení katalogu pro doplnění mezireprezentace neexistuje — buildery chybějící fakt nahrazují konvencí a nikde to nezaznamenají.
+Komponenta, která na jednom místě čte metadata z připojené databáze, a sestavení poptávky z deskriptoru cílového frameworku. Dnes žádné čtení katalogu pro doplnění mezireprezentace neexistuje — buildery chybějící fakt nahrazují konvencí; entita bez klíče nebo vlastnost bez jazykového typu se u cíle, který je vyžaduje, odmítne se záznamem o selhání a právě tyhle fakty má katalog dodávat.
+
+Sem patří i odvození jazykového typu vlastnosti, kterou zná jen mapování: `PropertyMap.Type` databázový typ nese, jen opačný převod v `DatabaseTypeConvertor` neexistuje, ačkoli směr jazyk → databáze je v něm jako `GuessFromScalarType`. Podle rozhodnutí 015 je odvození z databázového typu konvence třetího stupně a musí nést svůj původ.
 
 Součástí je sjednocení dvou míst, která dnes tentýž problém řeší různě: `EFCoreLinqQueryParser.ResolveQualifiedTableName` doplňuje chybějící schéma heuristikou nad `EntityMaps`, `HarnessGenerationUtilities.ResolveQualifiedTableName` dotazem do `INFORMATION_SCHEMA` s prázdným `catch` při selhání spojení.
 
@@ -87,24 +88,15 @@ Generování explicitní junction entity. Vícesloupcový cizí klíč už build
 
 Detekce N:M na vstupu a syntéza junction entity. Cílové sloupce nejdou určit z jedné translation unit, takže to stojí na metadatech z databáze (F4/F5). Totéž místo je předznamenané i v NHibernate builderu, kde chybějící typ vlastnosti nese TODO „query database for the missing type". Blokace ale platí jen pro odkaz mimo převod: mezi entitami téhož vstupu se `ColumnPairs` už plní ve fázi rozresolvování a katalog je potřeba teprve tam, kde cílová entita ve vstupu není.
 
-### Diagnostika převodu
-*Rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md), naplňuje [004](./decisions/004-unexpressible-facts-as-warnings.md). Seznam faktů bere z deskriptoru cílového frameworku ([009](./decisions/009-target-framework-descriptor.md)). Požadavky F5, F11, T3.*
-
-Návratový typ převodu, který nese artefakty i záznamy, a dvě místa, kde záznamy vznikají: kontrola úplnosti proti deskriptoru před generováním a záznamy o ztrátě při emisi. Ke kontrole před generováním patří i to, co dnes fáze rozresolvování mlčky přeskakuje — nenalezené jméno cílové entity a počet sloupců neodpovídající klíči (viz položku o rozresolvování). Záznam nese framework, artefakt, entitu a vlastnost, kategorii mapovacího faktu a důvod.
-
-Dnes je nástroj tichý: Dapper builder klíče i vztahy zahazuje bez hlášení, `ConversionHandler.Convert` vrací jen `List<ConversionSource>`, takže kanál pro cokoli dalšího neexistuje, a chybějící jazykový typ končí výjimkou uprostřed generování. Se slovníkem strategií (rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md)) přibyla tři konkrétní zúžení, která na hlášení čekají: mechanismy `Identity`, `Sequence`, `HiLo`, `Uuid` a `Increment` anotace EF Core nevyjádří, `<composite-id>` v NHibernate neunese strategii žádnou, a strategii, kterou nikdo neuvedl, vypisuje NHibernate builder jako `assigned`, tedy jako konvenci cíle. Rozhodnutí [012](./decisions/012-foreign-key-rendering.md) přidalo čtyři další: neznámé sloupce cizího klíče, pořadí párů neodpovídající klíči cílové entity, N:M bez spojovací entity a nezachovanou hodnotu `property-ref` na inverzní straně. Změna se propíše do REST API; frontend zůstává na příště a je veden zvlášť.
-
-Deskriptor tím dostane prvního konzumenta v produkčním kódu — dosud ho četl jen test.
-
 ### Cílová verze v deskriptoru
 *Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md). Požadavky S2, S6.*
 
 Deskriptor cílového frameworku nese, co cíl umí vyjádřit, ale ne verzi, proti které to platí. Doplnit ji a nechat buildery volit syntaxi tam, kde se verze rozcházejí — u EF Core `[PrimaryKey]` proti `HasKey`, u NHibernate dostupnost `DateOnly`. Bez explicitní volby platí verze zafixovaná v `architecture.md`. Tímtéž údajem se pak plní záznam běhu podle S6, aby nemohl tvrdit něco jiného než generátor.
 
-### Rozresolvování jmen entit — hlášení a `property-ref`
-*Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md); záznam podle [010](./decisions/010-diagnostics-as-returned-data.md). Požadavek F11.*
+### Rozresolvování jmen entit — `property-ref` na inverzní straně
+*Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F11.*
 
-Fáze rozresolvování (`ResolveEntityNames` v `AbstractEntityBuilder`) běží před generováním, plní `ColumnPairs` a povyšuje `Unknown` typy na reference; z důsledků rozhodnutí 001 tedy zbývají dvě věci. Zaprvé hlášení: nenalezené jméno cílové entity i počet sloupců neodpovídající počtu částí klíče dnes fáze mlčky přeskočí, takže překlep v názvu projde beze slova až do výstupu — obojí má být chyba úplnosti se strukturovaným záznamem, jakmile bude kanál podle rozhodnutí 010. Zadruhé `property-ref` na inverzní straně vztahu 1:1, který rozhodnutí [012](./decisions/012-foreign-key-rendering.md) odkládá právě sem: navigace protistrany je po rozresolvování dostupná, ale builder ji zatím nehledá a atribut nevypisuje.
+Fáze rozresolvování (`ResolveEntityNames` v `AbstractEntityBuilder`) běží před generováním, plní `ColumnPairs`, povyšuje `Unknown` typy na reference a nenalezené jméno cílové entity i nesouhlasící počet či pořadí sloupců hlásí záznamem podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md). Z důsledků rozhodnutí 001 tak zbývá jediné: `property-ref` na inverzní straně vztahu 1:1, který rozhodnutí 012 odkládá právě sem. Navigace protistrany je po rozresolvování dostupná, ale NHibernate builder ji zatím nehledá a atribut nevypisuje; zahozenou hodnotu ze vstupu aspoň hlásí parser záznamem o ztrátě.
 
 ### Dotazová větev
 - `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec — poddotazy projdou, ale výsledek se nikam neskládá.
@@ -131,12 +123,6 @@ Vstupní překážku odstranil jazykový typový model: vlastnost typu `OrderLin
 
 `BuildTableSchema` čte `em.Schema`, ale při prázdné hodnotě dosadí prázdný řetězec a dál s ním nepracuje (TODO v kódu). Mapování tak vzniká bez `schema` atributu i tam, kde ho zdroj nese, což u databází s víc schématy vyrobí mapování mířící do výchozího schématu.
 
-### Chybějící jazykový typ shodí generování
-
-Vlastnost, kterou zná jen XML mapování a ne entitní třída, vznikne s `Property.Type = null` a buildery na ní při generování C# vyhodí `NotSupportedException` — výjimka po jazykovém typovém modelu (rozhodnutí [014](./decisions/014-language-type-model.md)) aspoň jmenuje vlastnost, ale pořád je to pád uprostřed generování, ne diagnostika — proti F11, který žádá framework, artefakt, chybějící vlastnost a důvod selhání. Rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) z toho dělá záznam o selhání: je to kategorie, kterou cíl vyžaduje a nikdo ji nedodal. Opačný směr už typový model vyřešil: navigační vlastnost odkazující na jinou entitu projde parserem jako `Unknown` a mapovací parser ji povýší na referenci, takže vztahy 1:1 a N:1 se generují.
-
-Potřebný fakt je přitom po ruce: `PropertyMap.Type` databázový typ nese, jen opačný převod v `DatabaseTypeConvertor` neexistuje, ačkoli směr jazyk → databáze je v něm jako `GuessFromScalarType`. Podle rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) je odvození z databázového typu konvence třetího stupně a musí nést svůj původ.
-
 ### NHibernate builder — kolekce jen jako `<bag>`
 
 Kolekční vlastnost se generuje natvrdo jako `<bag>` a ostatní kolekční tvary (`set`, `list`, `map`) ani další kolekční vlastnosti builder neřeší (dva TODO v kódu). Volba tvaru kolekce je v NHibernate sémantická — `set` vylučuje duplicity, `list` nese pořadí — takže dnešní stav mění chování, ne jen zápis. Model už druh kolekce nese (`CollectionKind` na `LangType`, rozhodnutí [014](./decisions/014-language-type-model.md)) a plní ho jazyková strana (`HashSet<T>` → `Set`); XML parser tvar elementu (`<set>` vs. `<bag>`) do modelu zatím nepropisuje a builder druh nečte — obojí patří k této položce.
@@ -148,6 +134,7 @@ Odloženo do cílenější přestavby, současný stav je funkční:
 1. V `advisor-page.component.ts` přeskočit prázdné dotazové jednotky v `convert()` před odesláním — server je striktní záměrně, tolerance patří do UI.
 2. V `main-page.component.ts` zobrazovat chyby ze serveru přes `err.error`, ne `err.message`; vzor je v `advisor-page.component.ts`.
 3. Validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku.
+4. Zobrazit diagnostické záznamy, které `/convert` nově vrací v poli `records` vedle artefaktů (rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md)) — dnes je frontend ignoruje.
 
 ---
 
@@ -158,7 +145,7 @@ Velké bloky ze zadání, každý si zaslouží vlastní rozhodnutí, než se do
 | Blok | Co odblokuje |
 |---|---|
 | **F4–F6** metadata z databáze | `ColumnPairs`, detekci N:M v parserech, úplné mapování z neúplného vstupu |
-| **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech, kontrolu úplnosti IR |
+| **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech a kontrola úplnosti IR jsou hotové (rozhodnutí 010); zbývá syntaktické ověření vygenerovaných souborů a záznam běhu podle S6 |
 | **F7–F10** javový ekosystém a cross-ecosystem překlad | jádro rozšíření; jazykovou stranu typového modelu už má (rozhodnutí 014), stojí ještě na neutralizaci databázové strany |
 | **F12–F13** testovací infrastruktura pro Javu, diferenční ověření | důkaz funkční ekvivalence |
 | **F14–F15** dávkové vstupy a výběr cíle v UI | použitelnost nástroje mimo ruční zadávání |

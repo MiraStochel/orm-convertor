@@ -67,18 +67,18 @@
 
 ## Experimentální požadavky (diplomová práce / rozšíření článku)
 
-**E1 – Reálná případová studie.** Alespoň jedna, lépe dvě open-source aplikace s netriviálním ORM přístupem k datům; každá ≥ 15 entit, vztahy, složený klíč, ≥ 20 read-only dotazů.
+**T1 – Reálná případová studie.** Alespoň jedna, lépe dvě open-source aplikace s netriviálním ORM přístupem k datům; každá ≥ 15 entit, vztahy, složený klíč, ≥ 20 read-only dotazů.
 
-**E2 – Matice překladů.** Minimálně .NET → Java, Java → .NET a Java → Java, rozdělené podle kategorií dotazů: projekce, filtrace, joiny, agregace, stránkování, poddotazy, množinové operace.
+**T2 – Matice překladů.** Minimálně .NET → Java, Java → .NET a Java → Java, rozdělené podle kategorií dotazů: projekce, filtrace, joiny, agregace, stránkování, poddotazy, množinové operace.
 
-**E3 – Metriky korektnosti.** Podíl parsovatelných, kompilovatelných a spustitelných výstupů, funkční ekvivalence, úplnost přenesených mapovacích vlastností.
+**T3 – Metriky korektnosti.** Podíl parsovatelných, kompilovatelných a spustitelných výstupů, funkční ekvivalence, úplnost přenesených mapovacích vlastností.
 
-**E4 – LLM baseline.** Porovnat pravidlový přístup alespoň s jedním silným LLM v zero-shot a few-shot režimu; uvádět přesný model, verzi, prompt, teplotu, počet pokusů, tokeny, čas a náklady.
+**T4 – LLM baseline.** Porovnat pravidlový přístup alespoň s jedním silným LLM v zero-shot a few-shot režimu; uvádět přesný model, verzi, prompt, teplotu, počet pokusů, tokeny, čas a náklady.
 
-**E5 – RAG / agentní varianta.** Varianta poskytující modelu dokumentaci cílového frameworku, informace o schématu a relevantní příklady; porovnat se stejným LLM bez RAG.
+**T5 – RAG / agentní varianta.** Varianta poskytující modelu dokumentaci cílového frameworku, informace o schématu a relevantní příklady; porovnat se stejným LLM bez RAG.
 
-**E6 – Ablace.** Samostatně vyhodnotit vliv databázových metadat, validace, opravného cyklu a RAG – ukázat, která komponenta zlepšení skutečně způsobuje.
+**T6 – Ablace.** Samostatně vyhodnotit vliv databázových metadat, validace, opravného cyklu a RAG – ukázat, která komponenta zlepšení skutečně způsobuje.
 
-**E7 – Baseline optimalizace.** ILP porovnat proti každému jednotlivému frameworku, nejméně jedné ruční heuristice a případně greedy strategii; použít i neuniformní váhy odvozené z reálné četnosti dotazů.
+**T7 – Baseline optimalizace.** ILP porovnat proti každému jednotlivému frameworku, nejméně jedné ruční heuristice a případně greedy strategii; použít i neuniformní váhy odvozené z reálné četnosti dotazů.
 
 Pro LLM experimenty se počítá se zero-shot, few-shot a strukturovanější RAG/agentní variantou a s metrikami syntaktické správnosti, funkční ekvivalence, času a nákladů.

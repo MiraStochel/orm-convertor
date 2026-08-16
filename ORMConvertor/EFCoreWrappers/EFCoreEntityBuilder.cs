@@ -1,5 +1,6 @@
 ﻿using AbstractWrappers;
 using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
 using Common.Convertors;
 using EFCoreWrappers.Convertors;
 using Model;
@@ -81,7 +82,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             // For a simple key [Key] goes on the property; for a composite key the class-level
             // [PrimaryKey(...)] attribute (see BuildTableSchema) defines it and [Key] is not emitted.
             artifact.Code.Append(BuildPropertyAttributes(propertyMap, isPrimaryKey: !composite));
-            AppendKeyStrategyAttribute(artifact.Code, part, composite);
+            AppendKeyStrategyAttribute(artifact.Code, entityMap, part, composite);
             artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, isPrimaryKey: true, nullable: nullable)}");
             artifact.Code.AppendLine();
         }
@@ -134,6 +135,22 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             {
                 artifact.Code.AppendLine($"    [ForeignKey(\"{string.Join(',', foreignKeyProperties)}\")]");
             }
+            else if (relation.Role == RelationRole.Owning && relation.ColumnPairs.Count == 0)
+            {
+                // Leaving [ForeignKey] out hands the derivation to the target's own
+                // convention - allowed, because it fills in the same thing we would have
+                // written, but still its convention and therefore recorded (decision 012).
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Convention,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.CSharpEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = propertyMap.Property.Name,
+                    Category = MappingFactCategory.ForeignKeyColumns,
+                    Reason = $"No foreign key columns are known for the relation to '{relation.TargetEntity}'; [ForeignKey] is left out and EF Core derives the key by its own convention (decision 012).",
+                });
+            }
 
             artifact.Code.Append(BuildPropertyAttributes(propertyMap));
             artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, nullable: nullable)}");
@@ -147,7 +164,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// the model carries only a column the property has to be supplied here - the same division of
     /// labour as with the members a composite key forces on NHibernate (decisions 006 and 012).
     /// </summary>
-    private static List<string> AppendForeignKeyProperties(
+    private List<string> AppendForeignKeyProperties(
         StringBuilder code,
         EntityMap entityMap,
         Relation relation,
@@ -174,6 +191,16 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             {
                 // Without the language type of the key part it points at there is nothing to
                 // declare, and an annotation naming properties that do not exist would not compile.
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.CSharpEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = navigationProperty,
+                    Category = MappingFactCategory.ForeignKeyColumns,
+                    Reason = $"[ForeignKey] cannot be written for the relation to '{relation.TargetEntity}': the language type of the referenced key part '{pair.Target.Property.Name}' is unknown, so the foreign key properties cannot be declared.",
+                });
                 return [];
             }
 
@@ -297,14 +324,29 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// The strategy as an annotation. [DatabaseGenerated] can say two things: that the store
     /// produces the value on insert, and that nothing generates it. The named mechanisms -
     /// identity column, sequence, hi/lo - are fluent-only, so the model holds them and the
-    /// annotation cannot; that narrowing is for diagnostics to report (decision 011).
+    /// annotation cannot; that narrowing is reported as a loss (decisions 010 and 011).
     ///
     /// It is emitted only where it changes what EF Core would do anyway. Restating the target's
     /// own convention adds noise, while leaving it out where the convention disagrees flips the
     /// claim - a string key marked Auto would silently stop being generated.
     /// </summary>
-    private static void AppendKeyStrategyAttribute(StringBuilder code, PrimaryKeyPart part, bool composite)
+    private void AppendKeyStrategyAttribute(StringBuilder code, EntityMap entityMap, PrimaryKeyPart part, bool composite)
     {
+        if (part.Strategy is PrimaryKeyStrategy.Identity or PrimaryKeyStrategy.Sequence
+            or PrimaryKeyStrategy.HiLo or PrimaryKeyStrategy.Uuid or PrimaryKeyStrategy.Increment)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.CSharpEntity,
+                Entity = entityMap.Entity.Name,
+                Property = part.PropertyMap.Property.Name,
+                Category = MappingFactCategory.PrimaryKeyStrategy,
+                Reason = $"The {part.Strategy} mechanism is fluent-only in EF Core; the annotation form cannot express it, so the strategy is dropped (decision 011).",
+            });
+        }
+
         bool generatedByConvention = IsGeneratedByConvention(part, composite);
 
         var option = part.Strategy switch

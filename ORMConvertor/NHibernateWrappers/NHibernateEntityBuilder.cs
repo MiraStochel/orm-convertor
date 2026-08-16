@@ -1,5 +1,6 @@
 ﻿using AbstractWrappers;
 using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
 using Common.Convertors;
 using Model;
 using Model.AbstractRepresentation;
@@ -112,7 +113,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 AppendXml(artifact.Mapping, 3, $"<column name=\"{columnName}\" {string.Join(' ', facets)} />");
             }
 
-            AppendGenerator(artifact.Mapping, part);
+            AppendGenerator(artifact.Mapping, entityMap, part);
             AppendXml(artifact.Mapping, 2, "</id>");
             return;
         }
@@ -125,6 +126,22 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             var propertyMap = part.PropertyMap;
             var prop = propertyMap.Property;
             var columnName = propertyMap.ColumnName ?? prop.Name;
+
+            if (part.Strategy is not (PrimaryKeyStrategy.Unspecified or PrimaryKeyStrategy.Assigned))
+            {
+                // <composite-id> admits no <generator> at all, so a stated mechanism cannot
+                // survive; assigned semantics apply (decision 011).
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.XML,
+                    Entity = entityMap.Entity.Name,
+                    Property = prop.Name,
+                    Category = MappingFactCategory.PrimaryKeyStrategy,
+                    Reason = $"<composite-id> carries no generator, so the strategy {part.Strategy} of this key part is dropped and assigned semantics apply.",
+                });
+            }
 
             AppendPropertyToCode(artifact.Code, prop, isPrimaryKey: true);
 
@@ -426,11 +443,40 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// nested elements: without them the mapping names no sequence and the target falls back
     /// to its own default, so it compiles and fails at runtime. The class written is the
     /// canonical name of the strategy; what the source called it is a record for diagnostics,
-    /// not an input to generation (decision 011).
+    /// not an input to generation (decision 011) - so a source name the canonical form does
+    /// not restate is reported as a loss, and assigned written for a strategy nobody stated
+    /// is reported as a convention of the target (decision 010).
     /// </summary>
-    private static void AppendGenerator(StringBuilder mapping, PrimaryKeyPart part)
+    private void AppendGenerator(StringBuilder mapping, EntityMap entityMap, PrimaryKeyPart part)
     {
         var generatorClass = PrimaryKeyStrategyConvertor.ToNHibernate(part.Strategy);
+
+        if (part.SourceStrategyName is not null && part.SourceStrategyName != generatorClass)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Entity = entityMap.Entity.Name,
+                Property = part.PropertyMap.Property.Name,
+                Category = MappingFactCategory.PrimaryKeyStrategy,
+                Reason = $"The source called the generator '{part.SourceStrategyName}'; the canonical '{generatorClass}' is written and the source's own name is not restated (decision 011).",
+            });
+        }
+        else if (part.Strategy == PrimaryKeyStrategy.Unspecified)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Entity = entityMap.Entity.Name,
+                Property = part.PropertyMap.Property.Name,
+                Category = MappingFactCategory.PrimaryKeyStrategy,
+                Reason = "No generation strategy was stated; the generator 'assigned' is written, which is a convention of the target, not a fact of the source.",
+            });
+        }
 
         if (part.StrategyParameters.Count == 0)
         {
@@ -454,7 +500,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// and admits no column at all, so the owning side of a 1:1 with its own key is written as
     /// &lt;many-to-one unique="true"&gt; (decision 012).
     /// </summary>
-    private static void AppendReference(StringBuilder mapping, EntityMap entityMap, Relation relation, string navigationProperty)
+    private void AppendReference(StringBuilder mapping, EntityMap entityMap, Relation relation, string navigationProperty)
     {
         bool sharedKey = SharesPrimaryKeyThrough(entityMap, navigationProperty);
 
@@ -474,7 +520,18 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         {
             // Nobody said which column carries the key, so neither do we: NHibernate falls back to
             // the property name, and a name of our own making would be a claim the source never
-            // made (rozhodnutí 008).
+            // made (rozhodnutí 008). Silence is allowed here precisely because the target fills in
+            // the same thing we would have written - still its convention, so it is recorded.
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Entity = entityMap.Entity.Name,
+                Property = navigationProperty,
+                Category = MappingFactCategory.ForeignKeyColumns,
+                Reason = $"No foreign key columns are known for the relation to '{relation.TargetEntity}'; the column attribute is left out and NHibernate derives the column from the property name (decision 012).",
+            });
             AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{unique} />");
             return;
         }
@@ -503,7 +560,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// (Collection.DefaultKeyColumnName in 5.7.0), which would change the mapping instead of
     /// declining to state it (decision 012).
     /// </summary>
-    private static void AppendKey(StringBuilder mapping, EntityMap entityMap, Relation relation)
+    private void AppendKey(StringBuilder mapping, EntityMap entityMap, Relation relation)
     {
         var columns = relation.ColumnPairs.Select(pair => pair.Source.ColumnName ?? pair.Source.Property.Name).ToList();
 
@@ -512,6 +569,19 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             var ownerKey = entityMap.PrimaryKey?.Parts.FirstOrDefault()?.PropertyMap;
             var ownerColumn = ownerKey?.ColumnName ?? ownerKey?.Property.Name ?? "Id";
 
+            // A third-degree convention of the tool, not silence: leaving the attribute out
+            // would make NHibernate name the column id, which changes the mapping instead of
+            // declining to state it (decision 012). Reported as such.
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Entity = entityMap.Entity.Name,
+                Property = relation.SourceNavigationProperty,
+                Category = MappingFactCategory.ForeignKeyColumns,
+                Reason = $"No key columns are known for the collection towards '{relation.TargetEntity}'; the owner's key column '{ownerColumn}' is written, which is the tool's fallback, not a fact of the source (decision 012).",
+            });
             AppendXml(mapping, 3, $"<key column=\"{ownerColumn}\" />");
             return;
         }

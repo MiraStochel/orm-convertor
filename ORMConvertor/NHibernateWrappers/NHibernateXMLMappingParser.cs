@@ -1,4 +1,5 @@
 ﻿using AbstractWrappers;
+using AbstractWrappers.Diagnostics;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
@@ -411,6 +412,21 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
             var role = relation.Name.LocalName == "one-to-one" && !IsTrue(relation, "constrained")
                 ? RelationRole.Inverse
                 : RelationRole.Owning;
+
+            if (relation.Attribute("property-ref")?.Value is string propertyRef
+                && !string.IsNullOrWhiteSpace(propertyRef))
+            {
+                // The value names a property of the other entity; the model keeps only the
+                // role, so the drop is reported instead of happening silently (decision 010).
+                entityBuilder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = entityBuilder.Descriptor.Framework,
+                    Entity = entityBuilder.EntityMap.Entity.Name,
+                    Property = propName,
+                    Reason = $"property-ref=\"{propertyRef}\" names a property of the referenced entity; the model has nowhere to keep the value, only the inverse role survives, and the generated mapping will not restate it (decision 012).",
+                });
+            }
 
             entityBuilder.AddForeignKey(
                 isOneToOne ? Cardinality.OneToOne : Cardinality.ManyToOne,
