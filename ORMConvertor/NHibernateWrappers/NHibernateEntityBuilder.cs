@@ -102,7 +102,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             AppendPropertyToCode(artifact.Code, prop, isPrimaryKey: true);
 
-            var facets = BuildColumnFacets(propertyMap);
+            var facets = BuildColumnFacets(entityMap, propertyMap);
             if (facets.Count == 0)
             {
                 AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\"{TypeAttribute(propertyMap)}>");
@@ -145,7 +145,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             AppendPropertyToCode(artifact.Code, prop, isPrimaryKey: true);
 
-            var facets = BuildColumnFacets(propertyMap);
+            var facets = BuildColumnFacets(entityMap, propertyMap);
             if (facets.Count == 0)
             {
                 AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\"{TypeAttribute(propertyMap)} />");
@@ -194,7 +194,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// An empty result means the compact form with a column attribute is enough, which keeps
     /// the output of a plain key exactly as it was.
     /// </summary>
-    private static List<string> BuildColumnFacets(PropertyMap propertyMap)
+    private List<string> BuildColumnFacets(EntityMap entityMap, PropertyMap propertyMap)
     {
         var facets = new List<string>();
 
@@ -203,9 +203,9 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             facets.Add($"length=\"{propertyMap.Length.Value}\"");
         }
 
-        if (propertyMap.Precision.HasValue)
+        if (PrecisionIsExpressible(entityMap, propertyMap))
         {
-            facets.Add($"precision=\"{propertyMap.Precision.Value}\"");
+            facets.Add($"precision=\"{propertyMap.Precision!.Value}\"");
         }
 
         if (propertyMap.Scale.HasValue)
@@ -214,6 +214,39 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         }
 
         return facets;
+    }
+
+    /// <summary>
+    /// The mapping schema of NHibernate declares precision as a positive integer, so zero -
+    /// legal in the source as the sub-second precision of a date-time column - has no place
+    /// to go: the framework itself refuses the document. The fact is dropped and reported
+    /// as a loss (decision 004); carrying it would take a concrete SQL type on the column,
+    /// which belongs to the database type neutralization (open item).
+    /// </summary>
+    private bool PrecisionIsExpressible(EntityMap entityMap, PropertyMap propertyMap)
+    {
+        if (!propertyMap.Precision.HasValue)
+        {
+            return false;
+        }
+
+        if (propertyMap.Precision.Value >= 1)
+        {
+            return true;
+        }
+
+        Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = Descriptor.Framework,
+            Artifact = ConversionContentType.XML,
+            Entity = entityMap.Entity.Name,
+            Property = propertyMap.Property.Name,
+            Category = MappingFactCategory.PrecisionAndScale,
+            Reason = $"NHibernate's mapping schema admits only a positive precision, so precision {propertyMap.Precision.Value} cannot be expressed and is dropped (decision 004).",
+        });
+
+        return false;
     }
 
     /// <summary>
@@ -235,7 +268,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             }
 
             AppendPropertyToCode(artifact.Code, pm.Property);
-            AppendPropertyToXml(artifact.Mapping, pm);
+            AppendPropertyToXml(artifact.Mapping, entityMap, pm);
         }
     }
 
@@ -393,7 +426,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// <summary>
     /// Appends a property to the XML mapping.
     /// </summary>
-    private static void AppendPropertyToXml(StringBuilder mappingResult, PropertyMap propertyMap)
+    private void AppendPropertyToXml(StringBuilder mappingResult, EntityMap entityMap, PropertyMap propertyMap)
     {
         var prop = propertyMap.Property;
 
@@ -420,9 +453,9 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             attrs.Add($"type=\"{DatabaseTypeConvertor.ToNHibernate(propertyMap.Type.Value)}\"");
         }
 
-        if (propertyMap.Precision.HasValue)
+        if (PrecisionIsExpressible(entityMap, propertyMap))
         {
-            attrs.Add($"precision=\"{propertyMap.Precision.Value}\"");
+            attrs.Add($"precision=\"{propertyMap.Precision!.Value}\"");
         }
 
         if (propertyMap.Scale.HasValue)

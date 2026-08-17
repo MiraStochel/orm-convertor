@@ -116,8 +116,8 @@ public class EFCoreToNHibernate
                 <property name="PickedByPersonID" not-null="false" />
                 <property name="ContactPersonID" not-null="true" />
                 <property name="BackorderOrderID" not-null="false" />
-                <property name="OrderDate" not-null="true" precision="0" />
-                <property name="ExpectedDeliveryDate" not-null="true" precision="0" />
+                <property name="OrderDate" not-null="true" />
+                <property name="ExpectedDeliveryDate" not-null="true" />
                 <property name="CustomerPurchaseOrderNumber" not-null="false" />
                 <property name="IsUndersupplyBackordered" not-null="true" />
                 <property name="Comments" not-null="false" />

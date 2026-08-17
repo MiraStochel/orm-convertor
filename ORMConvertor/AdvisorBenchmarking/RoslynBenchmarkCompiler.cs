@@ -4,34 +4,30 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
+using Common.Compilation;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 
 namespace AdvisorBenchmarking;
 
+/// <summary>
+/// The benchmarking consumer of the shared compilation step (decision 016): a benchmark
+/// cannot run without an assembly, so here a failed compilation is an error and the emitted
+/// assembly is loaded into a collectible context right away. The verification of generated
+/// artifacts uses the same step the other way round - diagnostics, no loading.
+/// </summary>
 internal sealed class RoslynBenchmarkCompiler
 {
     public CompiledAssembly Compile(string source, IEnumerable<MetadataReference> references, string assemblyName)
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        var result = CSharpSourceCompiler.Compile(assemblyName, [source], references);
 
-        var compilation = CSharpCompilation.Create(
-            assemblyName,
-            new[] { syntaxTree },
-            references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        using var peStream = new MemoryStream();
-        using var pdbStream = new MemoryStream();
-        var emitResult = compilation.Emit(peStream, pdbStream);
-
-        if (!emitResult.Success)
+        if (!result.Success)
         {
-            throw new InvalidOperationException("Compilation failed. " + string.Join(Environment.NewLine, emitResult.Diagnostics.Select(d => d.ToString())));
+            throw new InvalidOperationException("Compilation failed. " + string.Join(Environment.NewLine, result.Diagnostics.Select(d => d.ToString())));
         }
 
-        peStream.Seek(0, SeekOrigin.Begin);
-        pdbStream.Seek(0, SeekOrigin.Begin);
+        using var peStream = new MemoryStream(result.Assembly!);
+        using var pdbStream = new MemoryStream(result.Symbols!);
 
         var context = new AssemblyLoadContext(assemblyName, isCollectible: true);
         var assembly = context.LoadFromStream(peStream, pdbStream);

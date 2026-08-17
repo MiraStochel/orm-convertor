@@ -10,16 +10,15 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-Nejbližší cíl je **překlad z Dapperu do EF Core a NHibernate s mapovacími fakty doplněnými z databázového katalogu**, tedy F6 a s ním F4. Jazykový typový model (rozhodnutí 014), fáze rozresolvování jmen entit s naplněním `ColumnPairs` i diagnostika převodu (rozhodnutí 010) jsou hotové, takže vztahy mezi entitami téhož převodu procházejí od parseru po výstup i se sloupci a převod vrací vedle artefaktů strukturované záznamy. F1 je pokryté nad mezireprezentací: `PrimaryKeyTest` drží jednoduchý klíč, `CompositeKeyTest` složené klíče o dvou, třech a čtyřech částech. Hotové je i **prostředí s testovací databází** — lokální instance, schéma vlastněné testy a přeskakování s uvedeným důvodem, když databáze není (viz `architecture.md`, §6.1).
+Nejbližší cíl je **překlad z Dapperu do EF Core a NHibernate s mapovacími fakty doplněnými z databázového katalogu**, tedy F6 a s ním F4. Jazykový typový model (rozhodnutí 014), fáze rozresolvování jmen entit s naplněním `ColumnPairs` i diagnostika převodu (rozhodnutí 010) jsou hotové, takže vztahy mezi entitami téhož převodu procházejí od parseru po výstup i se sloupci a převod vrací vedle artefaktů strukturované záznamy. F1 je pokryté nad mezireprezentací: `PrimaryKeyTest` drží jednoduchý klíč, `CompositeKeyTest` složené klíče o dvou, třech a čtyřech částech. Hotové je i **prostředí s testovací databází** — lokální instance, schéma vlastněné testy a přeskakování s uvedeným důvodem, když databáze není (viz `architecture.md`, §6.1) — a **2. a 3. stupeň ověření generovaných artefaktů** (rozhodnutí 016): převod EF Core ↔ NHibernate se nasucho ověřuje překladem přes Roslyn, mapováním proti XSD z balíku NHibernate a přijetím u obou cílových frameworků (viz `architecture.md`, §6.2).
 
-Pořadí vychází z rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md). Ze zdroje v Dapperu nepřijde **nic** — parser klíč nevytvoří nikdy a deskriptor má všechny mapovací kategorie jako nevyjádřitelné —, takže tenhle převod stojí a padá s katalogem a katalog s připojenou databází. Kritérium F6 zároveň žádá *kompilovatelnou* cílovou entitu, o čemž tvarová aserce rozhodnout nemůže. Ověření překladem a přijetím frameworku je proto první krok a čtečka katalogu druhý; v tomto pořadí proto, že fakty doplněné z katalogu posoudí až cílový framework, a čtečka tak dostane verdikt hned, místo aby ji zatím soudily aserce nad mapováním, které jsme si sami poskládali.
+Pořadí vychází z rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md). Ze zdroje v Dapperu nepřijde **nic** — parser klíč nevytvoří nikdy a deskriptor má všechny mapovací kategorie jako nevyjádřitelné —, takže tenhle převod stojí a padá s katalogem a katalog s připojenou databází. S hotovým 3. stupněm dostane každá iterace čtečky rovnou odpověď od NHibernate a EF Core, místo aby ji soudily aserce nad mapováním, které jsme si sami poskládali.
 
-1. **Ověření generovaných artefaktů překladem a přijetím frameworku** (práce) — 2. a 3. stupeň rozhodnutí 016, doslovné kritérium F6 i F2. Na převodu EF Core ↔ NHibernate databázi nepotřebuje.
-2. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 015. Tím je nejbližší cíl hotový: Dapper → EF Core a NHibernate s úplným mapováním, souzené 3. stupněm. Odblokuje zároveň odkaz mimo převod a detekci N:M.
-3. **Junction entita v builderech** (práce) — generující část F3; `ColumnPairs` mezi entitami téhož převodu na ni stačí.
-4. **Parser NHibernate — část klíče, která je cizím klíčem** (práce) — přímá mezera v F1 i F3, bez jakékoli infrastruktury; dnes taková část z klíče beze stopy zmizí. Na ničem výše nezávisí, takže ji lze vzít kdykoli.
-5. **Klíčová třída u formy `Embedded`** (rozhodnutí) — pravděpodobně si ji vynutí krok 1 dřív, než na ni dojde řada: u té formy nejsou části klíče vlastnostmi entity, takže mapování odkáže na vlastnost, kterou třída nemá, a přijetí frameworkem to odhalí. Tvarová aserce to dodnes odhalit nemohla.
-6. **Zbytek** podle priorit vyplývajících z požadavků F/S/T.
+1. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 015. Tím je nejbližší cíl hotový: Dapper → EF Core a NHibernate s úplným mapováním, souzené 3. stupněm. Odblokuje zároveň odkaz mimo převod a detekci N:M. Scénáře 2. a 3. stupně se zdrojem v Dapperu vzniknou spolu s ní a poběží proti databázi (rozhodnutí 016).
+2. **Junction entita v builderech** (práce) — generující část F3; `ColumnPairs` mezi entitami téhož převodu na ni stačí.
+3. **Parser NHibernate — část klíče, která je cizím klíčem** (práce) — přímá mezera v F1 i F3, bez jakékoli infrastruktury; dnes taková část z klíče beze stopy zmizí. Na ničem výše nezávisí, takže ji lze vzít kdykoli.
+4. **Klíčová třída u formy `Embedded`** (rozhodnutí) — přijetí frameworkem ji už umí odhalit: u té formy nejsou části klíče vlastnostmi entity, takže mapování odkáže na vlastnost, kterou třída nemá, a 3. stupeň takový pár odmítne. Tvarová aserce to odhalit nemohla.
+5. **Zbytek** podle priorit vyplývajících z požadavků F/S/T.
 
 ---
 
@@ -62,19 +61,6 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 ---
 
 ## Otevřená práce
-
-### Ověření generovaných artefaktů překladem a přijetím frameworku
-*Rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md), 2. a 3. stupeň. Požadavky F2, F6, F11.*
-
-Testy nad mezireprezentací dnes drží model — pořadí částí klíče, názvy sloupců, databázové i jazykové typy, strategii —, o vygenerovaném artefaktu ale tvrdí jen tvar textu. `NHibernateCompositeKeyRoundTrip` čeká výskyt `<key-property name="OrderID" column="OrderId" type="Int32" />` a pořadí tří takových elementů; to dokazuje, že builder napsal, co jsme čekali, ne že to NHibernate přijme. Doslovné kritérium F6 („kompilovatelná cílová entita") ani F2 („výstup se musí zkompilovat") tím splnit nelze a F11 nemá čím doložit syntaktickou správnost generovaných souborů.
-
-Chybí dvě věci. **Překlad:** Roslyn nad generovaným C# a ověření mapování NHibernate proti XSD. Kompilace přes Roslyn v repozitáři už je, ale v podobě, která se sem nehodí — `RoslynBenchmarkCompiler` a `BenchmarkReferenceProvider` jsou `internal` v `AdvisorBenchmarking`, kompilátor při neúspěchu vyhazuje výjimku a sestavení rovnou zavádí do `AssemblyLoadContext`; ověření potřebuje vrácené diagnostiky a žádné zavádění. Druhá cesta přes Roslyn vedle první je ale právě ta dvojí odpověď na tutéž otázku, kterou vytklo rozhodnutí 015 kvalifikaci názvu tabulky, takže krok překladu potřebuje jedno místo použitelné z obou stran.
-
-**Přijetí frameworkem:** `BuildSessionFactory` nad konfigurací NHibernate s pouhým dialektem a sestavení modelu EF Core z `DbContext`, kterému stačí připojovací řetězec jako text. Zachytí se tím mapování odkazující na neexistující vlastnost, klíčová třída bez `Equals` a `GetHashCode` i klíčová část bez typu, tedy třída chyb pojmenovaná rozhodnutím [006](./decisions/006-flat-composite-key-rendering.md); je to zároveň jediné skutečné ověření vynucených členů z rozhodnutí [009](./decisions/009-target-framework-descriptor.md). U mapování doplněného z katalogu je to navíc jediný verdikt, který něco znamená — fakty nepřišly ze zdroje, takže jinak než přijetím u cíle se jejich správnost nepozná.
-
-Databázi nevyžaduje ani jeden z obou stupňů tam, kde zdroj klíč vyjadřuje, tedy na převodu EF Core ↔ NHibernate. Scénáře se zdrojem v Dapperu vzniknou až s hotovou čtečkou katalogu a poběží proti databázi; do té doby se přeskakují (rozhodnutí 016).
-
-Testovací projekt kvůli tomu získá balíky cílových frameworků (EF Core, NHibernate, Dapper) — `Microsoft.Data.SqlClient` v něm už je z prostředí s testovací databází, NHibernate naopak v tomto řešení dosud není vůbec, je jen v odděleném `benchmarks/`. S1 to neporušuje: wrappery zůstávají bez závislosti na frameworku, pro který generují. Testy tím ale začnou tvrdit něco o konkrétní verzi, takže se rozejití verze v testech a v deskriptoru (rozhodnutí [013](./decisions/013-target-framework-versions.md)) stává tichou vadou.
 
 ### Čtení databázového katalogu
 *Rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Nejbližší cíl; prostředí s testovací databází, proti kterému se ověří, už stojí (`architecture.md`, §6.1), a soudí ho 2. a 3. stupeň ověření (rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md)). Diagnostický kanál podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) už existuje a čtečka do něj přidá záznamy o původu doplněného faktu a o konfliktu se zdrojem. Požadavky F4, F5, F6.*
@@ -162,7 +148,7 @@ Velké bloky ze zadání, každý si zaslouží vlastní rozhodnutí, než se do
 
 | Blok | Co odblokuje |
 |---|---|
-| **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech a kontrola úplnosti IR jsou hotové (rozhodnutí 010), syntaktické ověření generovaných souborů je krokem 2 výše; zbývá záznam běhu podle S6 |
+| **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech a kontrola úplnosti IR jsou hotové (rozhodnutí 010), syntaktické ověření generovaných souborů také (rozhodnutí 016, `architecture.md` §6.2); zbývá záznam běhu podle S6 |
 | **F7–F10** javový ekosystém a cross-ecosystem překlad | jádro rozšíření; jazykovou stranu typového modelu už má (rozhodnutí 014), stojí ještě na neutralizaci databázové strany |
 | **F12–F13** testovací infrastruktura pro Javu, diferenční ověření | důkaz funkční ekvivalence |
 | **F14–F15** dávkové vstupy a výběr cíle v UI | použitelnost nástroje mimo ruční zadávání |

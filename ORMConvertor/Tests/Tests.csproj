@@ -33,6 +33,12 @@
     <!-- Database-dependent tests (decision 016): client plus the configuration sources
          the connection string is read from. -->
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+    <!-- Target framework packages for the acceptance level of artifact verification
+         (decision 016): the frameworks themselves judge the generated mapping and class.
+         S1 is not violated - the wrappers stay free of them, only the verification depends
+         on them. The versions must match the table in docs/architecture.md. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
+    <PackageReference Include="NHibernate" Version="5.7.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.10" />

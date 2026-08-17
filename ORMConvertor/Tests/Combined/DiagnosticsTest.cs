@@ -126,6 +126,33 @@ public class DiagnosticsTest
     }
 
     [Fact]
+    public void ZeroPrecisionIsDroppedForNHibernateWithALossRecord()
+    {
+        var builder = new NHibernateEntityBuilder();
+        new EFCoreEntityParser(builder).Parse("""
+            public class Order
+            {
+                [Key]
+                public required int OrderID { get; set; }
+
+                [Precision(0)]
+                public required DateTime OrderDate { get; set; }
+            }
+            """);
+
+        var xml = builder.Build().Single(o => o.ContentType == ConversionContentType.XML).Content;
+
+        // NHibernate's mapping schema admits only a positive precision, so zero - the
+        // sub-second precision of a date-time column - would make the framework refuse the
+        // whole document. The fact is dropped and the drop recorded (decision 004); the
+        // acceptance level of decision 016 is what caught this.
+        Assert.DoesNotContain("precision", xml);
+        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
+        Assert.Equal(MappingFactCategory.PrecisionAndScale, record.Category);
+        Assert.Equal("OrderDate", record.Property);
+    }
+
+    [Fact]
     public void UnstatedStrategyWrittenAsAssignedIsAConventionOfTheTarget()
     {
         var builder = new NHibernateEntityBuilder();
