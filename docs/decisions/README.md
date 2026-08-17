@@ -21,6 +21,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [013](013-target-framework-versions.md) | Zafixované verze cílových frameworků | 2026-08-14 | platí | S2, S6, F7–F10 |
 | [014](014-language-type-model.md) | Jazykový typový model | 2026-08-14 | platí | F1, F2, F3, F7–F10, F11 |
 | [015](015-mapping-fact-completion-from-the-catalog.md) | Doplňování chybějících mapovacích faktů z databáze | 2026-08-15 | platí | F2, F4, F5, F6, F11, S1, S3 |
+| [016](016-generated-artifact-verification-levels.md) | Stupně ověření generovaných artefaktů a zdroj testovací databáze | 2026-08-17 | platí | F2, F3, F4, F6, F11, S2, S4, S5 |
 
 ## Formát
 

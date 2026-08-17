@@ -37,7 +37,7 @@ Javová část je zatím deklarace, ne závislost — v repozitáři žádný ja
 Aplikace je .NET 10 solution (povýšená z .NET 8) rozdělená na projekty tří typů:
 
 - **ASP.NET web projekt** – `ORMConvertorAPI`, poskytuje REST API a servíruje zkompilovaný Angular frontend jako statické soubory. API dokumentace je automaticky generovaná přes Swagger; UI je zapnuté jen v Development prostředí, pak je dostupné na `/orm/swagger`.
-- **Testovací projekt (xUnit v3)** – `Tests`, testy parserů a builderů pro všechny tři ORM (převod do mezireprezentace a z ní, identity testy) a kombinované end-to-end testy pro dvojice EF Core ↔ NHibernate a EF Core → Dapper (dotazy).
+- **Testovací projekt (xUnit v3)** – `Tests`, testy parserů a builderů pro všechny tři ORM (převod do mezireprezentace a z ní, identity testy) a kombinované end-to-end testy pro dvojice EF Core ↔ NHibernate a EF Core → Dapper (dotazy). Podsložka `Database/` drží prostředí s testovací databází (viz §6.1).
 - **Class library projekty** – zbytek, nejsou samostatně spustitelné, používají se jen jako reference.
 
 ### Knihovní projekty a jejich zodpovědnost
@@ -232,6 +232,22 @@ dotnet test Tests/Tests.csproj --configuration Release
 ```
 
 Testy běží i v GitHub Actions (konfigurace ve `.github`) – při push na `main` a u pull requestů, ale jen pokud se změnilo něco uvnitř `ORMConvertor/**`; změny v `docs/`, `benchmarks/` apod. workflow nespustí.
+
+### 6.1 Testovací databáze
+
+Databázově závislé testy se podle rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md) připojují k **lokální instanci SQL Serveru a schéma si vytvářejí samy**. Všechno k tomu potřebné je v `Tests/Database/`.
+
+**Připojení je konfigurace, ne kód.** `TestDatabase` skládá konfiguraci ze dvou zdrojů – user secrets testovacího projektu (`UserSecretsId` je v `Tests.csproj`) a proměnných prostředí – a čte z nich připojovací řetězec pod jménem `TestDatabase`, tedy klíč `ConnectionStrings:TestDatabase` v user secrets nebo proměnná `ConnectionStrings__TestDatabase`. V repozitáři řetězec není (S4); pojmenování je stejné jako u `ConnectionStrings__AdvisorDatabase` v `docker-compose.yml`. Název schématu je natvrdo `ormconvertor_test`, aby se běh dal prohlédnout ručně; proměnná `ORMCONVERTOR_TEST_SCHEMA` ho přebije (musí to být prostý SQL identifikátor, jinak se odmítne – dosazuje se přímo do DDL).
+
+**Schéma je zároveň očekávanou odpovědí.** Popisuje ho SQL skript `Database/TestSchema.sql`, vložený do sestavení jako embedded resource; místo názvu schématu je v něm zástupný symbol `{{schema}}`. Skriptem, ne kódem, protože se dá spustit i ručně proti lokální instanci a je to čitelný zápis toho, proti čemu se podle F4 měří podíl správně získaných metadat. Obsahuje právě ty případy, o které jde: jednosložkový klíč generovaný `IDENTITY` (`Customers`, `Suppliers`) i přiřazený aplikací (`Products`), složené klíče o dvou (`Orders`, `ProductSuppliers`), třech (`OrderLines`) a čtyřech částech (`OrderLineAllocations`), jedno-, dvou- a třísloupcové cizí klíče, vztah 1:1 přes sdílený primární klíč (`CustomerProfiles`), spojovací tabulku (`ProductSuppliers`) a sadu typů s délkou, precision/scale i nullabilitou.
+
+**Životní cyklus a hranice transakce.** `TestSchemaFixture` je collection fixture: schéma vznikne jednou pro celou kolekci `TestDatabaseSchema` a po jejím doběhnutí se zahodí. Jednou za kolekci proto, že čtečka katalogu čte metadata a ta se zapisují jednou a čtou mnohokrát. Před vytvořením se schéma nejdřív zahodí, takže zbytek po spadlém běhu další běh neblokuje; úklid je psaný proti systémovému katalogu (zruší všechny cizí klíče, pak všechny tabulky, pak schéma), takže přidání tabulky do skriptu ho nerozbije. Fixture sama žádnou transakci nedrží – DDL je sdílené a pro 2. a 3. stupeň ověření jen ke čtení. Test 4. stupně, který zapisuje řádky, si otevře vlastní transakci nad `OpenConnection()` a vrátí ji zpět, aby žádný test nezávisel na tom, co po sobě nechal jiný.
+
+**Chybějící databáze test přeskočí, ne shodí.** `SkipIfUnavailable()` na fixture volá dynamické přeskočení xUnit v3 s uvedeným důvodem. Rozlišují se dva: buď není nakonfigurovaný připojovací řetězec (důvod říká, kam ho zapsat), nebo nakonfigurovaný je, ale schéma se nepodařilo připravit (důvod nese chybu spojení). Ani jeden případ testy neshodí – to je záměr, ne tolerance: sada nemá tvrdit opak toho, co tvrdí nástroj, u kterého překlad bez připojené databáze selhat nesmí. Přeskočení je ale samo tvrzením o pokrytí, takže kritéria F4 a F6 platí jen tam, kde běh s databází skutečně proběhl.
+
+**Co fixture hlídá sama.** `TestSchemaFixtureTest` ověřuje, že schéma opravdu obsahuje, co slibuje – existenci tabulek, pořadí částí u všech čtyř velikostí klíče, sloupcové páry vícesloupcových cizích klíčů, spojovací tabulku (celý klíč je složený z cizích klíčů) a u vybraných sloupců typ, nullabilitu, délku, precision/scale a příznak `IDENTITY`. Bez toho by fixture mohla tiše přestat obsahovat případ, o který jde, a každý pozdější verdikt o čtečce katalogu by tím ztratil smysl.
+
+Testovací projekt kvůli tomu referencuje `Microsoft.Data.SqlClient` a konfigurační balíky; **S1 to neporušuje** – wrappery zůstávají bez závislosti na frameworku, pro který generují. CI zatím databázi nemá, takže tyhle testy tam přeskakují; kontejnerová konfigurace podle S5 je otevřená položka.
 
 **Frontend (Angular):** je potřeba zkompilovat zvlášť a zkopírovat do `wwwroot`, odkud ho servíruje ASP.NET:
 

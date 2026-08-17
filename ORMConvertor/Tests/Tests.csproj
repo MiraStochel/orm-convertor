@@ -6,6 +6,8 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Tests</RootNamespace>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- Connection string of the test database lives in user secrets, never in the repository (S4). -->
+    <UserSecretsId>ormconvertor-tests-1f0a2c64-3f1e-4a0b-9b7d-2c5b0f4d8e11</UserSecretsId>
     <!--
     To enable the Microsoft Testing Platform 'dotnet test' experience, add property:
       <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
@@ -20,6 +22,7 @@
 
   <ItemGroup>
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Database\TestSchema.sql" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,6 +30,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Database-dependent tests (decision 016): client plus the configuration sources
+         the connection string is read from. -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.10" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
