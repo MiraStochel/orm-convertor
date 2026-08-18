@@ -301,6 +301,14 @@ public abstract class AbstractEntityBuilder
     private readonly Dictionary<Relation, IReadOnlyList<string>> pendingForeignKeyColumns = [];
 
     /// <summary>
+    /// Foreign key columns the source stated for a relation whose pairs are not resolved
+    /// yet, or null when it stated none. Read by the catalog completion phase (decision
+    /// 015) to compare the source's claim with the catalog without consuming it.
+    /// </summary>
+    public IReadOnlyList<string>? StatedForeignKeyColumns(Relation relation)
+        => pendingForeignKeyColumns.TryGetValue(relation, out var columns) ? columns : null;
+
+    /// <summary>
     /// The resolution phase promised by decision 001: runs once per <see cref="Build"/>, after
     /// all entities of the conversion have been parsed and before anything is generated.
     /// Resolves relation targets by name against <see cref="EntityMaps"/>, fills

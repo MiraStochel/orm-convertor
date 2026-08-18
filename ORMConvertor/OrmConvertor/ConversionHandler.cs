@@ -1,4 +1,5 @@
 ﻿using AbstractWrappers;
+using DatabaseCatalog;
 using Model;
 using OrmConvertor.Factories;
 
@@ -9,7 +10,8 @@ public static class ConversionHandler
     public static ConversionResult Convert(
         ORMEnum sourceOrm,
         ORMEnum targetOrm,
-        List<ConversionSource> sources
+        List<ConversionSource> sources,
+        string? catalogConnectionString = null
     )
     {
         var entityBuilder = EntityBuilderFactory.Create(targetOrm);
@@ -33,6 +35,15 @@ public static class ConversionHandler
                 parser.Parse(src.Content);
             }
         }
+
+        // The completion phase of decision 015 sits between parsing and generation: the
+        // target's descriptor formulates the demand, one component reads the catalog, and
+        // the phase is timed on its own (S3). The connection is an optional input - a
+        // translation without one proceeds on conventions and says so in the records.
+        var catalogReader = string.IsNullOrWhiteSpace(catalogConnectionString)
+            ? null
+            : new SqlServerCatalogReader(catalogConnectionString);
+        var catalogReadTime = CatalogCompletion.Complete(entityBuilder, catalogReader);
 
         // Emit entities for target ORM
         results.AddRange(entityBuilder.Build());
@@ -71,6 +82,7 @@ public static class ConversionHandler
         {
             Sources = results,
             Records = [.. entityBuilder.Records],
+            CatalogReadTime = catalogReadTime,
         };
     }
 }

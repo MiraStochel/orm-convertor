@@ -42,12 +42,20 @@ public static class Endpoints
             .ProducesProblem(StatusCodes.Status400BadRequest);
     }
 
-    private static IResult ConvertHandler(ConvertRequest req)
+    private static IResult ConvertHandler(ConvertRequest req, IConfiguration configuration)
     {
         try
         {
-            var converted = ConversionHandler.Convert(req.SourceOrm, req.TargetOrm, req.Sources);
-            return Results.Ok(new ConvertResponse(converted.Sources, converted.Records));
+            // The optional input of decision 015: with it the completion phase fills the
+            // intermediate representation from the catalog, without it the translation
+            // proceeds on conventions and the records say so.
+            var catalogConnectionString = configuration.GetConnectionString("CatalogDatabase");
+
+            var converted = ConversionHandler.Convert(req.SourceOrm, req.TargetOrm, req.Sources, catalogConnectionString);
+            return Results.Ok(new ConvertResponse(
+                converted.Sources,
+                converted.Records,
+                converted.CatalogReadTime?.TotalMilliseconds));
         }
         catch (Exception e)
         {

@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AbstractWrappers\AbstractWrappers.csproj" />
     <ProjectReference Include="..\DapperWrappers\DapperWrappers.csproj" />
+    <ProjectReference Include="..\DatabaseCatalog\DatabaseCatalog.csproj" />
     <ProjectReference Include="..\EFCoreWrappers\EFCoreWrappers.csproj" />
     <ProjectReference Include="..\Model\Model.csproj" />
     <ProjectReference Include="..\NHibernateWrappers\NHibernateWrappers.csproj" />

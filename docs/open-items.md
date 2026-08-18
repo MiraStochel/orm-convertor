@@ -10,13 +10,11 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Doporučené pořadí
 
-Nejbližší cíl je **překlad z Dapperu do EF Core a NHibernate s mapovacími fakty doplněnými z databázového katalogu**, tedy F6 a s ním F4. Jazykový typový model (rozhodnutí 014), fáze rozresolvování jmen entit s naplněním `ColumnPairs` i diagnostika převodu (rozhodnutí 010) jsou hotové, takže vztahy mezi entitami téhož převodu procházejí od parseru po výstup i se sloupci a převod vrací vedle artefaktů strukturované záznamy. F1 je pokryté nad mezireprezentací: `PrimaryKeyTest` drží jednoduchý klíč, `CompositeKeyTest` složené klíče o dvou, třech a čtyřech částech. Hotové je i **prostředí s testovací databází** — lokální instance, schéma vlastněné testy a přeskakování s uvedeným důvodem, když databáze není (viz `architecture.md`, §6.1) — a **2. a 3. stupeň ověření generovaných artefaktů** (rozhodnutí 016): převod EF Core ↔ NHibernate se nasucho ověřuje překladem přes Roslyn, mapováním proti XSD z balíku NHibernate a přijetím u obou cílových frameworků (viz `architecture.md`, §6.2).
+Dosavadní nejbližší cíl — **překlad z Dapperu do EF Core a NHibernate s mapovacími fakty doplněnými z databázového katalogu** (F6 a s ním F4) — je implementovaný: fáze doplnění podle rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) čte katalog jedinou komponentou, zapisuje podle poptávky deskriptoru s prioritou zdroj → katalog → konvence, hlásí původ i konflikty záznamy `Supplied`/`Conflict` a měří se odděleně (viz `architecture.md`, §5.2). Scénáře 2. a 3. stupně se zdrojem v Dapperu existují a běží proti testovací databázi (§6.2); kritéria F4 a F6 platí jen tam, kde běh s databází skutečně proběhl (rozhodnutí 016). Hotové zůstává, co bylo: jazykový typový model (rozhodnutí 014), fáze rozresolvování s naplněním `ColumnPairs`, diagnostika převodu (rozhodnutí 010), F1 nad mezireprezentací (`PrimaryKeyTest`, `CompositeKeyTest`), prostředí s testovací databází (§6.1) i nasucho běžící ověření převodu EF Core ↔ NHibernate.
 
-Pořadí vychází z rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md). Ze zdroje v Dapperu nepřijde **nic** — parser klíč nevytvoří nikdy a deskriptor má všechny mapovací kategorie jako nevyjádřitelné —, takže tenhle převod stojí a padá s katalogem a katalog s připojenou databází. S hotovým 3. stupněm dostane každá iterace čtečky rovnou odpověď od NHibernate a EF Core, místo aby ji soudily aserce nad mapováním, které jsme si sami poskládali.
-
-1. **Čtení databázového katalogu** (práce) — implementace rozhodnutí 015. Tím je nejbližší cíl hotový: Dapper → EF Core a NHibernate s úplným mapováním, souzené 3. stupněm. Odblokuje zároveň odkaz mimo převod a detekci N:M. Scénáře 2. a 3. stupně se zdrojem v Dapperu vzniknou spolu s ní a poběží proti databázi (rozhodnutí 016).
-2. **Junction entita v builderech** (práce) — generující část F3; `ColumnPairs` mezi entitami téhož převodu na ni stačí.
-3. **Parser NHibernate — část klíče, která je cizím klíčem** (práce) — přímá mezera v F1 i F3, bez jakékoli infrastruktury; dnes taková část z klíče beze stopy zmizí. Na ničem výše nezávisí, takže ji lze vzít kdykoli.
+1. **Junction entita v builderech** (práce) — generující část F3; `ColumnPairs` mezi entitami téhož převodu na ni stačí.
+2. **Parser NHibernate — část klíče, která je cizím klíčem** (práce) — přímá mezera v F1 i F3, bez jakékoli infrastruktury; dnes taková část z klíče beze stopy zmizí. Na ničem výše nezávisí, takže ji lze vzít kdykoli.
+3. **Detekce N:M v parserech** (práce) — čtečkou katalogu odblokovaná syntéza junction entity tam, kde ji vstup nenese.
 4. **Klíčová třída u formy `Embedded`** (rozhodnutí) — přijetí frameworkem ji už umí odhalit: u té formy nejsou části klíče vlastnostmi entity, takže mapování odkáže na vlastnost, kterou třída nemá, a 3. stupeň takový pár odmítne. Tvarová aserce to odhalit nemohla.
 5. **Zbytek** podle priorit vyplývajících z požadavků F/S/T.
 
@@ -62,19 +60,6 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 
 ## Otevřená práce
 
-### Čtení databázového katalogu
-*Rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Nejbližší cíl; prostředí s testovací databází, proti kterému se ověří, už stojí (`architecture.md`, §6.1), a soudí ho 2. a 3. stupeň ověření (rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md)). Diagnostický kanál podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) už existuje a čtečka do něj přidá záznamy o původu doplněného faktu a o konfliktu se zdrojem. Požadavky F4, F5, F6.*
-
-Komponenta, která na jednom místě čte metadata z připojené databáze, a sestavení poptávky z deskriptoru cílového frameworku. Dnes žádné čtení katalogu pro doplnění mezireprezentace neexistuje — buildery chybějící fakt nahrazují konvencí; entita bez klíče nebo vlastnost bez jazykového typu se u cíle, který je vyžaduje, odmítne se záznamem o selhání a právě tyhle fakty má katalog dodávat.
-
-Cílovým scénářem je Dapper jako zdroj: entita nesoucí jen názvy vlastností a jazykové typy má vyjít jako úplné mapování EF Core nebo NHibernate se správným názvem tabulky a schématu, sloupci, typy, klíčem a cizími klíči. Poptávku sestavuje deskriptor cílového frameworku (rozhodnutí [009](./decisions/009-target-framework-descriptor.md)), načítá se celý sloupcový obraz dotčených tabulek, zápis je přírůstkový a idempotentní a zdroj má přednost před katalogem — rozpor se hlásí, nepřepisuje.
-
-Sem patří i odvození jazykového typu vlastnosti, kterou zná jen mapování: `PropertyMap.Type` databázový typ nese, jen opačný převod v `DatabaseTypeConvertor` neexistuje, ačkoli směr jazyk → databáze je v něm jako `GuessFromScalarType`. Podle rozhodnutí 015 je odvození z databázového typu konvence třetího stupně a musí nést svůj původ.
-
-Součástí je sjednocení dvou míst, která dnes tentýž problém řeší různě: `EFCoreLinqQueryParser.ResolveQualifiedTableName` doplňuje chybějící schéma heuristikou nad `EntityMaps`, `HarnessGenerationUtilities.ResolveQualifiedTableName` dotazem do `INFORMATION_SCHEMA` s prázdným `catch` při selhání spojení.
-
-Fáze musí být měřitelná odděleně od času překladu (S3) a překlad bez připojené databáze nesmí selhat.
-
 ### Kontejnerová konfigurace prostředí
 *Dohnání S5 odložené rozhodnutím [016](./decisions/016-generated-artifact-verification-levels.md).*
 
@@ -88,9 +73,9 @@ Patří sem trojí: service container do workflow v `.github` spolu s proměnnou
 Generování explicitní junction entity. Vícesloupcový cizí klíč už buildery vypsat umějí (rozhodnutí [012](./decisions/012-foreign-key-rendering.md)) a `ColumnPairs` se mezi entitami téhož převodu plní z uvedených sloupců, takže zbývá sama junction entita. Fáze rozresolvování N:M vztahy záměrně nepáruje — sloupce jejich `<key>` patří spojovací tabulce, která má být entitou; parser NHibernate je u `<many-to-many>` čte a předává, takže na syntézu junction entity čekají připravené.
 
 ### Detekce N:M v parserech
-*Blokováno jen zčásti — viz níže; rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md).*
+*Odblokováno čtečkou katalogu; rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) a [005](./decisions/005-many-to-many-as-explicit-junction-entity.md).*
 
-Detekce N:M na vstupu a syntéza junction entity. Cílové sloupce nejdou určit z jedné translation unit, takže to stojí na metadatech z databáze (F4/F5). Totéž místo je předznamenané i v NHibernate builderu, kde chybějící typ vlastnosti nese TODO „query database for the missing type". Blokace ale platí jen pro odkaz mimo převod: mezi entitami téhož vstupu se `ColumnPairs` už plní ve fázi rozresolvování a katalog je potřeba teprve tam, kde cílová entita ve vstupu není.
+Detekce N:M na vstupu a syntéza junction entity. Cílové sloupce nejdou určit z jedné translation unit; mezi entitami téhož vstupu se `ColumnPairs` plní ve fázi rozresolvování a metadata pro zbytek už umí dodat fáze doplnění z katalogu (`architecture.md`, §5.2). Co zbývá, je sama detekce: poznat, že tabulka, jejíž celý klíč tvoří dva cizí klíče, je spojovací (`IsJunctionTable`), a syntetizovat junction entitu tam, kde ji vstup nenese — fáze doplnění dnes vztahy jen páruje a syntetizuje N:1/1:1 přes existující navigace, spojovací entitu nevyrábí.
 
 ### Cílová verze v deskriptoru
 *Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md). Požadavky S2, S6.*

@@ -167,9 +167,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             return DatabaseTypeConvertor.ToNHibernate(propertyMap.Type.Value);
         }
 
-        // TODO this would be a place to query database for the missing type
-        // for now we guess it from the language scalar; for anything else - a reference,
-        // a collection, an unknown name - no claim is made and NHibernate decides itself.
+        // The database is never queried from here - the completion phase fills the model
+        // before generation (decision 015). What is still missing at this point is guessed
+        // from the language scalar; for anything else - a reference, a collection, an
+        // unknown name - no claim is made and NHibernate decides itself.
         return propertyMap.Property.Type is { Category: LangTypeCategory.Scalar } langType
             ? DatabaseTypeConvertor.GuessFromScalarType(langType.ScalarType!.Value)
             : null;
@@ -327,6 +328,21 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             : em.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == relation.SourceNavigationProperty);
 
     /// <summary>
+    /// Whether a reference or one-to-one relation of the entity claims the column through
+    /// its resolved pairs. Collections stay out: their key columns belong to the child table.
+    /// </summary>
+    private static bool ColumnBelongsToRelation(EntityMap em, string column)
+        => em.Relations
+            .Where(r => r.Cardinality is Cardinality.OneToOne or Cardinality.ManyToOne)
+            .SelectMany(r => r.ColumnPairs)
+            .Any(pair => string.Equals(
+                pair.Source.ColumnName ?? pair.Source.Property.Name, column, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsPrimaryKeyColumn(EntityMap em, string column)
+        => em.PrimaryKey?.Parts.Any(p => string.Equals(
+            p.PropertyMap.ColumnName ?? p.PropertyMap.Property.Name, column, StringComparison.OrdinalIgnoreCase)) == true;
+
+    /// <summary>
     /// Emits the Equals/GetHashCode overrides that NHibernate requires from any
     /// class mapped with <composite-id>, as declared by <see cref="Descriptor"/>.
     /// Without them the mapping fails to compile with "composite-id class must
@@ -424,13 +440,22 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Appends a property to the XML mapping.
+    /// Appends a property to the XML mapping. A column may be mapped writable only once:
+    /// when a relation of the entity claims the same column through its pairs, the scalar
+    /// property is mapped read-only and the association keeps the write, otherwise
+    /// NHibernate refuses the mapping as a repeated column.
     /// </summary>
     private void AppendPropertyToXml(StringBuilder mappingResult, EntityMap entityMap, PropertyMap propertyMap)
     {
         var prop = propertyMap.Property;
 
         var attrs = new List<string> { $"name=\"{prop.Name}\"" };
+
+        if (ColumnBelongsToRelation(entityMap, propertyMap.ColumnName ?? prop.Name))
+        {
+            attrs.Add("insert=\"false\"");
+            attrs.Add("update=\"false\"");
+        }
 
         if (!string.IsNullOrWhiteSpace(propertyMap.ColumnName))
         {
@@ -549,6 +574,13 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         var unique = relation.Cardinality == Cardinality.OneToOne ? " unique=\"true\"" : string.Empty;
         var columns = relation.ColumnPairs.Select(pair => pair.Source.ColumnName ?? pair.Source.Property.Name).ToList();
 
+        // The identifier owns the write on its columns; a reference over key columns -
+        // a foreign key inside the primary key - is therefore mapped read-only, otherwise
+        // NHibernate refuses the repeated column.
+        var readOnly = columns.Any(column => IsPrimaryKeyColumn(entityMap, column))
+            ? " insert=\"false\" update=\"false\""
+            : string.Empty;
+
         if (columns.Count == 0)
         {
             // Nobody said which column carries the key, so neither do we: NHibernate falls back to
@@ -571,11 +603,11 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         if (columns.Count == 1)
         {
-            AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\" column=\"{columns[0]}\"{unique} />");
+            AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\" column=\"{columns[0]}\"{unique}{readOnly} />");
             return;
         }
 
-        AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{unique}>");
+        AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{unique}{readOnly}>");
 
         foreach (var column in columns)
         {

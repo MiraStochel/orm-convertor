@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using Microsoft.Data.SqlClient;
+using DatabaseCatalog;
 using Model;
 
 namespace AdvisorBenchmarking;
@@ -167,90 +167,41 @@ internal static class HarnessGenerationUtilities
     internal static string ReplaceSetPlaceholder(string sqlBody, string tableName) =>
         Regex.Replace(sqlBody, @"\bSet\b", tableName, RegexOptions.IgnoreCase);
 
+    /// <summary>
+    /// Qualifies unqualified table names against the advisor database, so generated SQL
+    /// keeps working even when the translated entity omitted schema information (common
+    /// with EF models). One mechanism answers the question for the whole solution: the
+    /// catalog reader of decision 015, one batch per run. A connection failure propagates
+    /// instead of being swallowed - the benchmark run needs the database anyway, and an
+    /// early clear error beats SQL that silently targets the wrong table.
+    /// </summary>
     internal static List<EntityInfo> QualifyEntityTableNames(
         List<EntityInfo> entityInfos,
         string connectionString)
     {
-        if (entityInfos.Count == 0)
+        var requests = entityInfos
+            .Select((info, index) => (Info: info, Index: index))
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Info.TableName)
+                && !entry.Info.TableName.Contains('.', StringComparison.Ordinal))
+            .Select(entry => new TableRequest(
+                entry.Index.ToString(),
+                Schema: null,
+                TableNameCandidates.For(entry.Info.TableName)))
+            .ToList();
+
+        if (requests.Count == 0)
         {
             return entityInfos;
         }
 
-        try
-        {
-            // Reach into the advisor database once per run so generated SQL keeps working even when
-            // the translated entity omitted schema information (common with EF models).
-            using var connection = new SqlConnection(connectionString);
-            connection.Open();
+        var lookups = new SqlServerCatalogReader(connectionString).ReadTables(requests);
 
-            return entityInfos
-                .Select(info => info with { TableName = ResolveQualifiedTableName(connection, info.TableName) })
-                .ToList();
-        }
-        catch (Exception)
-        {
-            return entityInfos;
-        }
-    }
-
-    internal static string ResolveQualifiedTableName(SqlConnection connection, string tableName)
-    {
-        if (string.IsNullOrWhiteSpace(tableName) || tableName.Contains('.', StringComparison.Ordinal))
-        {
-            return tableName;
-        }
-
-        foreach (var candidate in ExpandTableNameCandidates(tableName))
-        {
-            // Prefer matches in dbo but tolerate other schemas so long as SQL Server can find the table.
-            using var command = connection.CreateCommand();
-            command.CommandText =
-                """
-                SELECT TOP (1) TABLE_SCHEMA, TABLE_NAME
-                FROM INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_NAME = @TableName
-                ORDER BY CASE WHEN TABLE_SCHEMA = 'dbo' THEN 0 ELSE 1 END, TABLE_SCHEMA
-                """;
-            command.Parameters.Clear();
-            command.Parameters.AddWithValue("@TableName", candidate);
-
-            using var reader = command.ExecuteReader();
-            if (reader.Read())
-            {
-                var schema = reader.GetString(0);
-                var name = reader.GetString(1);
-                return $"{schema}.{name}";
-            }
-        }
-
-        return tableName;
-    }
-
-    internal static IEnumerable<string> ExpandTableNameCandidates(string tableName)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        if (seen.Add(tableName))
-        {
-            yield return tableName;
-        }
-
-        if (tableName.EndsWith("s", StringComparison.OrdinalIgnoreCase))
-        {
-            var singular = tableName[..^1];
-            if (seen.Add(singular))
-            {
-                yield return singular;
-            }
-        }
-        else
-        {
-            var plural = $"{tableName}s";
-            if (seen.Add(plural))
-            {
-                yield return plural;
-            }
-        }
+        return entityInfos
+            .Select((info, index) =>
+                lookups.TryGetValue(index.ToString(), out var lookup) && lookup.Image is not null
+                    ? info with { TableName = lookup.Image.QualifiedName }
+                    : info)
+            .ToList();
     }
 
     internal static (IReadOnlyList<string> Usings, string Body) SplitUsings(string content)

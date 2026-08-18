@@ -6,8 +6,10 @@ namespace AbstractWrappers.Diagnostics;
 /// two descriptor states of decision 009; Convention is the record decisions 009 and 012
 /// require when a convention enters the output; Incompleteness is what the pre-generation
 /// check finds missing without refusing the artifact - typically a fact a database catalog
-/// could still supply (decision 015). The catalog reader will add kinds of its own for the
-/// origin of a supplied fact and for a conflict with the source.
+/// could still supply (decision 015). Supplied and Conflict belong to the catalog
+/// completion phase: the origin of a fact lives in the record, not in the model
+/// (decision 010), and a disagreement between source and catalog is reported, never
+/// resolved silently (decision 015).
 /// </summary>
 public enum ConversionRecordKind
 {
@@ -35,4 +37,18 @@ public enum ConversionRecordKind
     /// generation proceeds on what there is.
     /// </summary>
     Incompleteness = 4,
+
+    /// <summary>
+    /// A fact the source did not state was supplied from outside it - the database
+    /// catalog. The record is the fact's origin, which the model itself does not carry
+    /// (decisions 010 and 015).
+    /// </summary>
+    Supplied = 5,
+
+    /// <summary>
+    /// The source and the catalog disagree. The source outranks the catalog (rule E9,
+    /// decision 015), so translation continues with the source value and this record
+    /// says what the catalog stated instead.
+    /// </summary>
+    Conflict = 6,
 }

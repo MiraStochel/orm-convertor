@@ -14,4 +14,11 @@ public sealed class ConversionResult
     public required List<ConversionSource> Sources { get; init; }
 
     public required List<ConversionRecord> Records { get; init; }
+
+    /// <summary>
+    /// How long the catalog completion phase took (decision 015), reported separately
+    /// from translation time as S3 asks. Null when the phase had nothing to do - an
+    /// empty demand or no configured connection means zero queries.
+    /// </summary>
+    public TimeSpan? CatalogReadTime { get; init; }
 }
