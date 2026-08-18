@@ -223,13 +223,17 @@ public abstract class AbstractEntityBuilder
     /// <param name="role">Which side holds the foreign key; derived from the cardinality when omitted.</param>
     /// <param name="foreignKeyColumns">Columns (or properties) of the foreign key as the source
     /// stated them, in the source's order. They belong to whichever side holds the key: the
-    /// source entity of an owning relation, the target entity of an inverse one.</param>
+    /// source entity of an owning relation, the target entity of an inverse one - and to the
+    /// junction table for a many-to-many, where they reference this entity's key.</param>
+    /// <param name="junction">Many-to-many only: what the source stated about the junction
+    /// table, waiting for the synthesis of the junction entity (decision 005).</param>
     public void AddForeignKey(
         Cardinality cardinality,
         string propertyName,
         string target,
         RelationRole? role = null,
-        IReadOnlyList<string>? foreignKeyColumns = null)
+        IReadOnlyList<string>? foreignKeyColumns = null,
+        JunctionFacts? junction = null)
     {
         var propertyMap = GetOrCreatePropertyMap(propertyName); // the navigation property must exist in the model
 
@@ -257,6 +261,11 @@ public abstract class AbstractEntityBuilder
         if (foreignKeyColumns is { Count: > 0 })
         {
             pendingForeignKeyColumns[relation] = foreignKeyColumns;
+        }
+
+        if (cardinality == Cardinality.ManyToMany && junction is not null)
+        {
+            pendingJunctionFacts[relation] = junction;
         }
     }
 
@@ -299,6 +308,12 @@ public abstract class AbstractEntityBuilder
     /// arrives simply stays unconsumed.
     /// </summary>
     private readonly Dictionary<Relation, IReadOnlyList<string>> pendingForeignKeyColumns = [];
+
+    /// <summary>
+    /// Junction table facts of many-to-many relations, waiting for
+    /// <see cref="SynthesizeJunctionEntities"/>. Same lifecycle as the pending columns above.
+    /// </summary>
+    private readonly Dictionary<Relation, JunctionFacts> pendingJunctionFacts = [];
 
     /// <summary>
     /// Foreign key columns the source stated for a relation whose pairs are not resolved
@@ -358,6 +373,235 @@ public abstract class AbstractEntityBuilder
                 ResolveColumnPairs(entityMap, relation, target);
             }
         }
+    }
+
+    /// <summary>
+    /// The generating half of decision 005: a many-to-many between two entities of the
+    /// conversion becomes an explicit junction entity with two owning many-to-one
+    /// relations, and the collections of both sides retarget to it as inverse
+    /// one-to-many. Everything the entity is made of is a stated fact of the source -
+    /// the junction table, its key columns towards this side and the far side's columns -
+    /// except the class name, which derives from the table name and is reported as a
+    /// convention. Where a fact is missing the synthesis declines and the relation stays
+    /// many-to-many; the resolution phase then reports the missing junction entity as it
+    /// always has.
+    /// </summary>
+    private void SynthesizeJunctionEntities()
+    {
+        foreach (var entityMap in EntityMaps.ToList())
+        {
+            foreach (var relation in entityMap.Relations.Where(r => r.Cardinality == Cardinality.ManyToMany).ToList())
+            {
+                TrySynthesizeJunction(entityMap, relation);
+            }
+        }
+    }
+
+    private void TrySynthesizeJunction(EntityMap entityMap, Relation relation)
+    {
+        if (HasJunctionEntityFor(relation))
+        {
+            return;
+        }
+
+        var target = FindEntityMap(relation.TargetEntity);
+
+        // A target outside the conversion or a self-referencing many-to-many is left as it
+        // is; the resolution phase reports the state, so nothing is said twice here.
+        if (target is null || ReferenceEquals(target, entityMap))
+        {
+            return;
+        }
+
+        var counterpart = target.Relations.FirstOrDefault(r =>
+            r != relation
+            && r.Cardinality == Cardinality.ManyToMany
+            && FindEntityMap(r.TargetEntity) == entityMap);
+
+        var facts = pendingJunctionFacts.GetValueOrDefault(relation);
+        var counterpartFacts = counterpart is null ? null : pendingJunctionFacts.GetValueOrDefault(counterpart);
+
+        // Both collections describe the same junction table from opposite ends, so either
+        // supplies what the other left out: this side's <key> columns are the far side's
+        // <many-to-many> columns and vice versa.
+        var table = facts?.Table ?? counterpartFacts?.Table;
+        var schema = facts?.Schema ?? counterpartFacts?.Schema;
+        var sourceSideColumns = StatedForeignKeyColumns(relation) ?? counterpartFacts?.TargetColumns;
+        var targetSideColumns = facts?.TargetColumns
+            ?? (counterpart is null ? null : StatedForeignKeyColumns(counterpart));
+
+        if (table is null || sourceSideColumns is null || targetSideColumns is null)
+        {
+            return;
+        }
+
+        if (entityMap.PrimaryKey is null || entityMap.PrimaryKey.Parts.Count != sourceSideColumns.Count
+            || target.PrimaryKey is null || target.PrimaryKey.Parts.Count != targetSideColumns.Count)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Incompleteness,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Property = relation.SourceNavigationProperty,
+                Category = MappingFactCategory.ForeignKeyColumns,
+                Reason = $"The junction table '{table}' cannot become an entity: its stated columns do not pair "
+                    + $"with the keys of '{entityMap.Entity.Name}' and '{target.Entity.Name}' (decision 005).",
+            });
+            return;
+        }
+
+        var junctionName = DeriveJunctionEntityName(table);
+        var memberNames = sourceSideColumns.Concat(targetSideColumns)
+            .Append(entityMap.Entity.Name)
+            .Append(target.Entity.Name)
+            .ToList();
+
+        if (FindEntityMap(junctionName) is not null
+            || memberNames.Distinct(StringComparer.Ordinal).Count() != memberNames.Count)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Incompleteness,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Property = relation.SourceNavigationProperty,
+                Category = MappingFactCategory.ForeignKeyColumns,
+                Reason = $"The junction entity '{junctionName}' for table '{table}' cannot be synthesized: "
+                    + "its name or members would collide with what the conversion already holds (decision 005).",
+            });
+            return;
+        }
+
+        var junction = new EntityMap
+        {
+            Entity = new Entity
+            {
+                Name = junctionName,
+                Namespace = entityMap.Entity.Namespace,
+                AccessModifier = AccessModifier.Public,
+            },
+            Table = table,
+            Schema = schema,
+            IsJunctionTable = true,
+        };
+        EntityMap = junction;
+
+        AddJunctionColumnProperties(junction, sourceSideColumns, entityMap.PrimaryKey);
+        AddJunctionColumnProperties(junction, targetSideColumns, target.PrimaryKey);
+
+        AddPrimaryKey([.. sourceSideColumns.Concat(targetSideColumns)
+            .Select((column, index) => (column, index + 1, PrimaryKeyStrategy.Assigned))]);
+
+        AddJunctionNavigation(junction, entityMap, sourceSideColumns);
+        AddJunctionNavigation(junction, target, targetSideColumns);
+
+        RetargetCollection(entityMap, relation, junctionName);
+        if (counterpart is not null)
+        {
+            RetargetCollection(target, counterpart, junctionName);
+        }
+
+        Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Convention,
+            Framework = Descriptor.Framework,
+            Entity = junctionName,
+            Reason = $"The many-to-many between '{entityMap.Entity.Name}' and '{target.Entity.Name}' is generated "
+                + $"as the explicit junction entity '{junctionName}' with two many-to-one relations, and both "
+                + $"collections now hold it (decision 005). The class name derives from the table '{table}', "
+                + "which is the tool's convention, not a fact of the source.",
+        });
+    }
+
+    /// <summary>
+    /// Class name of a synthesized junction entity: the table name, singularized by the
+    /// same trailing-s heuristic the rest of the solution uses for the opposite direction.
+    /// </summary>
+    private static string DeriveJunctionEntityName(string table)
+        => table.Length > 1 && (table.EndsWith('s') || table.EndsWith('S'))
+            ? table[..^1]
+            : table;
+
+    /// <summary>
+    /// One property per junction column, its facts copied from the key part it references:
+    /// a foreign key column shares the referenced column's types, and being part of the
+    /// junction's key it is not nullable.
+    /// </summary>
+    private void AddJunctionColumnProperties(EntityMap junction, IReadOnlyList<string> columns, PrimaryKey referencedKey)
+    {
+        for (var i = 0; i < columns.Count; i++)
+        {
+            var part = referencedKey.Parts[i];
+            var property = new Property
+            {
+                Name = columns[i],
+                Type = part.PropertyMap.Property.Type,
+                AccessModifier = AccessModifier.Public,
+                HasGetter = true,
+                HasSetter = true,
+            };
+
+            junction.Entity.Properties.Add(property);
+            junction.PropertyMaps.Add(new PropertyMap
+            {
+                Property = property,
+                Type = part.PropertyMap.Type,
+                Length = part.PropertyMap.Length,
+                Precision = part.PropertyMap.Precision,
+                Scale = part.PropertyMap.Scale,
+                IsNullable = false,
+            });
+        }
+    }
+
+    /// <summary>
+    /// The navigation the junction's many-to-one hangs on, named after the entity it points
+    /// at. Declared here rather than left to <see cref="AddForeignKey"/>, because a property
+    /// nobody wrote needs access and accessors to be declarable at all.
+    /// </summary>
+    private void AddJunctionNavigation(EntityMap junction, EntityMap target, IReadOnlyList<string> columns)
+    {
+        var property = new Property
+        {
+            Name = target.Entity.Name,
+            Type = LangType.Reference(target.Entity.Name),
+            AccessModifier = AccessModifier.Public,
+            HasGetter = true,
+            HasSetter = true,
+        };
+
+        junction.Entity.Properties.Add(property);
+        junction.PropertyMaps.Add(new PropertyMap { Property = property });
+
+        EntityMap = junction;
+        AddForeignKey(Cardinality.ManyToOne, property.Name, target.Entity.Name, RelationRole.Owning, columns);
+    }
+
+    /// <summary>
+    /// Turns a side's many-to-many collection into the inverse one-to-many towards the
+    /// junction entity - the shape decision 005 gives the model. The element type of the
+    /// collection follows; the stated key columns stay pending on the relation and pair
+    /// with the junction's properties in the resolution phase.
+    /// </summary>
+    private void RetargetCollection(EntityMap entityMap, Relation relation, string junctionName)
+    {
+        relation.Cardinality = Cardinality.OneToMany;
+        relation.Role = RelationRole.Inverse;
+        relation.TargetEntity = junctionName;
+
+        var propertyMap = entityMap.PropertyMaps.FirstOrDefault(pm =>
+            pm.Property.Name == relation.SourceNavigationProperty);
+
+        if (propertyMap?.Property.Type is { Category: LangTypeCategory.Collection } type)
+        {
+            propertyMap.Property.Type = LangType.Collection(
+                LangType.Reference(junctionName, type.ElementType?.IsNullable ?? false),
+                type.CollectionKind ?? CollectionKind.Unspecified,
+                type.IsNullable);
+        }
+
+        pendingJunctionFacts.Remove(relation);
     }
 
     /// <summary>
@@ -691,8 +935,10 @@ public abstract class AbstractEntityBuilder
     /// <returns>List of ConversionSource containing the generated content and type (C#, XML, ...)</returns>
     public List<ConversionSource> Build()
     {
-        // Entity names resolve only against the finished set, so the phase sits between
+        // The junction entities have to stand before names resolve, so that their relations
+        // and the retargeted collections pair like any others; both phases sit between
         // parsing and generation rather than inside either.
+        SynthesizeJunctionEntities();
         ResolveEntityNames();
 
         var outputs = new List<ConversionSource>();

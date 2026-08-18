@@ -12,11 +12,12 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 Dosavadní nejbližší cíl — **překlad z Dapperu do EF Core a NHibernate s mapovacími fakty doplněnými z databázového katalogu** (F6 a s ním F4) — je implementovaný: fáze doplnění podle rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) čte katalog jedinou komponentou, zapisuje podle poptávky deskriptoru s prioritou zdroj → katalog → konvence, hlásí původ i konflikty záznamy `Supplied`/`Conflict` a měří se odděleně (viz `architecture.md`, §5.2). Scénáře 2. a 3. stupně se zdrojem v Dapperu existují a běží proti testovací databázi (§6.2); kritéria F4 a F6 platí jen tam, kde běh s databází skutečně proběhl (rozhodnutí 016). Hotové zůstává, co bylo: jazykový typový model (rozhodnutí 014), fáze rozresolvování s naplněním `ColumnPairs`, diagnostika převodu (rozhodnutí 010), F1 nad mezireprezentací (`PrimaryKeyTest`, `CompositeKeyTest`), prostředí s testovací databází (§6.1) i nasucho běžící ověření převodu EF Core ↔ NHibernate.
 
-1. **Junction entita v builderech** (práce) — generující část F3; `ColumnPairs` mezi entitami téhož převodu na ni stačí.
-2. **Parser NHibernate — část klíče, která je cizím klíčem** (práce) — přímá mezera v F1 i F3, bez jakékoli infrastruktury; dnes taková část z klíče beze stopy zmizí. Na ničem výše nezávisí, takže ji lze vzít kdykoli.
-3. **Detekce N:M v parserech** (práce) — čtečkou katalogu odblokovaná syntéza junction entity tam, kde ji vstup nenese.
-4. **Klíčová třída u formy `Embedded`** (rozhodnutí) — přijetí frameworkem ji už umí odhalit: u té formy nejsou části klíče vlastnostmi entity, takže mapování odkáže na vlastnost, kterou třída nemá, a 3. stupeň takový pár odmítne. Tvarová aserce to odhalit nemohla.
-5. **Zbytek** podle priorit vyplývajících z požadavků F/S/T.
+Hotová je nově i **generující část F3**: N:M vztah zdroje se před generováním syntetizuje do explicitní junction entity se dvěma vztahy N:1 a kolekce obou stran se přesměrují na ni (rozhodnutí 005, viz `architecture.md`, §4.3); přijetí u obou cílových frameworků soudí nasucho běžící `ManyToManyJunctionVerificationTest`.
+
+1. **Parser NHibernate — část klíče, která je cizím klíčem** (práce) — přímá mezera v F1 i F3, bez jakékoli infrastruktury; dnes taková část z klíče beze stopy zmizí. Na ničem výše nezávisí, takže ji lze vzít kdykoli.
+2. **Detekce N:M v parserech** (práce) — poznat spojovací tabulku z katalogu tam, kde vstup N:M nevyjadřuje; sama syntéza už existuje, chybí detekce a dodání faktů.
+3. **Klíčová třída u formy `Embedded`** (rozhodnutí) — přijetí frameworkem ji už umí odhalit: u té formy nejsou části klíče vlastnostmi entity, takže mapování odkáže na vlastnost, kterou třída nemá, a 3. stupeň takový pár odmítne. Tvarová aserce to odhalit nemohla.
+4. **Zbytek** podle priorit vyplývajících z požadavků F/S/T.
 
 ---
 
@@ -67,15 +68,10 @@ S5 žádá celý systém včetně databáze spustitelný dokumentovanou kontejne
 
 Patří sem trojí: service container do workflow v `.github` spolu s proměnnou `ConnectionStrings__TestDatabase`, aby databázově závislé testy běžely i v CI (dnes se tam přeskakují, protože proměnná není nastavená), volba mezi Docker Compose a Testcontainers pro lokální reprodukci, a ověření `ConnectionStrings__AdvisorDatabase` v `docker-compose.yml` — commitnutá deklarace, kterou dosud nikdo nespustil a jejíž ověření dřívější plán čekal od stavby testovacího prostředí.
 
-### Junction entita v builderech
-*Rozhodnutí [005](./decisions/005-many-to-many-as-explicit-junction-entity.md); vynucené členy bere z deskriptoru cílového frameworku (rozhodnutí [009](./decisions/009-target-framework-descriptor.md)).*
-
-Generování explicitní junction entity. Vícesloupcový cizí klíč už buildery vypsat umějí (rozhodnutí [012](./decisions/012-foreign-key-rendering.md)) a `ColumnPairs` se mezi entitami téhož převodu plní z uvedených sloupců, takže zbývá sama junction entita. Fáze rozresolvování N:M vztahy záměrně nepáruje — sloupce jejich `<key>` patří spojovací tabulce, která má být entitou; parser NHibernate je u `<many-to-many>` čte a předává, takže na syntézu junction entity čekají připravené.
-
 ### Detekce N:M v parserech
 *Odblokováno čtečkou katalogu; rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) a [005](./decisions/005-many-to-many-as-explicit-junction-entity.md).*
 
-Detekce N:M na vstupu a syntéza junction entity. Cílové sloupce nejdou určit z jedné translation unit; mezi entitami téhož vstupu se `ColumnPairs` plní ve fázi rozresolvování a metadata pro zbytek už umí dodat fáze doplnění z katalogu (`architecture.md`, §5.2). Co zbývá, je sama detekce: poznat, že tabulka, jejíž celý klíč tvoří dva cizí klíče, je spojovací (`IsJunctionTable`), a syntetizovat junction entitu tam, kde ji vstup nenese — fáze doplnění dnes vztahy jen páruje a syntetizuje N:1/1:1 přes existující navigace, spojovací entitu nevyrábí.
+Poznat N:M tam, kde ho vstup nevyjadřuje. Syntéza junction entity už existuje — `SynthesizeJunctionEntities` staví spojovací entitu z faktů o spojovací tabulce a přesměrovává kolekce (`architecture.md`, §4.3) — ale spouští ji jen N:M vztah, který zdroj uvedl (`<many-to-many>` u NHibernate). Zbývá druhá cesta: v katalogu poznat tabulku, jejíž celý klíč tvoří dva cizí klíče (`IsJunctionTable`), a z jejích faktů syntézu vyvolat i tehdy, když ji žádná strana vstupu nejmenuje — fáze doplnění dnes vztahy jen páruje a syntetizuje N:1/1:1 přes existující navigace. Patří sem i rozmyšlení, kdy se smí kolekce strany přesměrovat: bez tvrzení zdroje o N:M je i to dovozený fakt.
 
 ### Doplnění z katalogu — inverzní strana kolekce
 *Navazuje na rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F6.*

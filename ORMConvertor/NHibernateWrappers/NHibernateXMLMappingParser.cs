@@ -469,9 +469,18 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                 var target = manyToMany.Attribute("class")?.Value;
                 if (!string.IsNullOrEmpty(target))
                 {
-                    // The columns belong to a junction table here, not to the target entity;
-                    // they are recorded all the same for the junction work (decision 005).
-                    entityBuilder.AddForeignKey(Cardinality.ManyToMany, propName, target, foreignKeyColumns: keyColumns);
+                    // The <key> and <many-to-many> columns belong to a junction table, not
+                    // to the target entity; together with the collection's table they are
+                    // what the junction entity is synthesized from (decision 005).
+                    entityBuilder.AddForeignKey(
+                        Cardinality.ManyToMany,
+                        propName,
+                        target,
+                        foreignKeyColumns: keyColumns,
+                        junction: new JunctionFacts(
+                            collection.Attribute("table")?.Value,
+                            collection.Attribute("schema")?.Value,
+                            ReadRelationColumns(manyToMany)));
                 }
             }
         }
