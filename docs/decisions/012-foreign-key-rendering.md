@@ -43,9 +43,11 @@ Volíme variantu 3. **Tvar výstupu určuje kardinalita spolu s rolí vztahu, a 
 | 1:1 s vlastním cizím klíčem | `Inverse` | `<one-to-one>` bez sloupců, s `property-ref` je-li známý |
 | 1:1 přes sdílený primární klíč | `Owning` (závislá entita) | `<one-to-one constrained="true">` bez sloupců |
 | 1:1 přes sdílený primární klíč | `Inverse` (nadřazená entita) | `<one-to-one>` bez sloupců |
-| 1:N a N:M | `Inverse` | `<bag>` s `<key>`, sloupce z `ColumnPairs` |
+| 1:N | `Inverse` | `<bag>` s `<key>`, sloupce z `ColumnPairs` |
 
-Role je v modelu podle rozhodnutí [001](001-entity-reference-by-name.md) definovaná jako strana držící fyzický cizí klíč, takže kolekce jsou vždy `Inverse` — `AddForeignKey` to tak i přiděluje a builder `<bag>` vypisuje s `inverse="true"`.
+Vztah N:M v tabulce není: podle rozhodnutí [005](005-many-to-many-as-explicit-junction-entity.md) se do builderu nedostane, protože se před generováním syntetizuje na spojovací entitu se dvěma vztahy N:1. Případ, kdy syntéza proběhnout nemůže, pokrývá diagnostická kategorie „N:M bez spojovací entity" níže.
+
+**Role je strana držící fyzický cizí klíč.** Žádné dřívější rozhodnutí ji nedefinuje — `RelationRole` to tak v kódu má od začátku, ale zapsané to nikde nebylo, takže to vyslovujeme zde: `Owning` drží fyzický cizí klíč, `Inverse` nese navigaci. Kolekce jsou tím vždy `Inverse` — `AddForeignKey` to tak i přiděluje a builder `<bag>` vypisuje s `inverse="true"`.
 
 **Sdílený primární klíč se pozná lokálně a jen tam, kde na tom záleží.** Závislá entita ho vyjadřuje generátorem `foreign`, což je po rozhodnutí [011](011-key-generation-strategy-vocabulary.md) hodnota `Unspecified` se `SourceStrategyName = "foreign"` a s parametrem `property` v `StrategyParameters`. To je tvrzení zdroje, ne dohad z prázdných sloupců, a leží ve stejné entitě, která se právě generuje. Na straně nadřazené entity rozdíl mizí: obě varianty tam vypisují `<one-to-one>` bez sloupců a liší se jen přítomností `property-ref`. Rozlišovat tedy stačí na straně závislé, kde je signál po ruce.
 

@@ -9,9 +9,9 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [001](001-entity-reference-by-name.md) | Odkaz na entitu ve vztahu jménem, ne referencí | 2026-07-16 | platí | F3, F10, F11 |
 | [002](002-is-null-as-comparison-operator.md) | `IS NULL` jako porovnávací operátor | 2026-07-16 | platí | F7–F10 |
 | [003](003-one-shot-migration.md) | Jednorázový přepis místo přechodného období | 2026-07-16 | platí | žádné |
-| [004](004-unexpressible-facts-as-warnings.md) | Nevyjádřitelné fakty hlásit varováním | 2026-07-16 | platí | F11 |
+| [004](004-unexpressible-facts-as-warnings.md) | Nevyjádřitelné fakty hlásit varováním, negenerovat náhražky | 2026-07-16 | platí | F11 |
 | [005](005-many-to-many-as-explicit-junction-entity.md) | N:M jako explicitní junction entita | 2026-07-20 | platí | F3, F10, T1 |
-| [006](006-flat-composite-key-rendering.md) | Ploché vykreslení kompozitního klíče | 2026-08-02 | platí | F1, F2, F7–F10, F11 |
+| [006](006-flat-composite-key-rendering.md) | Ploché vykreslení kompozitního klíče a identitní členy jako odpovědnost builderu | 2026-08-02 | platí | F1, F2, F7–F10, F11 |
 | [007](007-documentation-structure.md) | Dokumentace organizovaná podle rozhodnutí, ne podle času | 2026-08-03 | platí | žádné |
 | [008](008-database-as-metadata-source.md) | Databáze jako autoritativní doplněk chybějících mapovacích faktů | 2026-08-11 | nahrazeno 015 | F2, F4, F5, F6, F11, S1, S3 |
 | [009](009-target-framework-descriptor.md) | Deskriptor cílového frameworku místo vlastností rozptýlených v builderech | 2026-08-11 | revidováno | F2, F4, F7–F10, F11, S1 |
@@ -22,6 +22,8 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [014](014-language-type-model.md) | Jazykový typový model | 2026-08-14 | platí | F1, F2, F3, F7–F10, F11 |
 | [015](015-mapping-fact-completion-from-the-catalog.md) | Doplňování chybějících mapovacích faktů z databáze | 2026-08-15 | platí | F2, F4, F5, F6, F11, S1, S3 |
 | [016](016-generated-artifact-verification-levels.md) | Stupně ověření generovaných artefaktů a zdroj testovací databáze | 2026-08-17 | platí | F2, F3, F4, F6, F11, S2, S4, S5 |
+| [017](017-source-precedence-for-mapping-facts.md) | Priorita zdrojů uvnitř vstupu | 2026-08-18 | platí | F2, F4, F5, F6, F11, S1, S2 |
+| [018](018-work-order-as-item-marker.md) | Pořadí práce jako značka u položky | 2026-08-18 | platí | žádné |
 
 ## Formát
 
@@ -29,7 +31,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 # NNN — Název
 
 Datum: RRRR-MM-DD
-Stav: platí | revidováno | nahrazeno NNN | zavrženo
+Stav: platí | revidováno | nahrazeno NNN
 Požadavky: F3, F10 | žádné
 Podklad: analysis/…            (nepovinné)
 
