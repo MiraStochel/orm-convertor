@@ -1,7 +1,7 @@
 # 010 — Diagnostika jako vrácená data, ne výjimka
 
 Datum: 2026-08-12
-Stav: platí
+Stav: revidováno
 Požadavky: F5, F11, F14, T3, S6
 Podklad: JSS článek, §3.3 a pravidlo E8
 
@@ -75,7 +75,7 @@ Rozdělení má i praktický důvod: odmítnout mapování NHibernate bez identi
 
 **Původ faktu je událost, ne stav v mezireprezentaci.** Rozhodnutí 008 ve svých důsledcích uvádí, že mezireprezentace musí evidovat původ každého faktu, a zdůvodňuje to tím, že jinak nemá F5 ani F11 co hlásit. Toto rozhodnutí ten důsledek **zužuje**: původ se vydává jako záznam v okamžiku, kdy fakt dodá katalog, a v modelu se neukládá. Důvodů je několik. S6 chce zdroje metadat ve strojově čitelném **záznamu běhu**, což je log, ne pole v modelu. Konzumenta, který by se modelu ptal „odkud je tahle hodnota", se nepodařilo pojmenovat: idempotentní doplňování z 008 si vystačí s testem na prázdnou hodnotu, rozpor se vyhodnocuje v okamžiku dodání a konvence cílového frameworku se do modelu nikdy neukládá, protože ji builder aplikuje až při generování. A alternativa by znamenala obalit každou z šesti hodnot `PropertyMap` typem s původem, tedy podstatný zásah do modelu bez odběratele.
 
-Je to změna volby, ne její doplnění, takže se 008 nereviduje, ale nahrazuje: platnou verzi nese rozhodnutí [015](015-mapping-fact-completion-from-the-catalog.md), které z 008 přebírá všechno ostatní — prioritu zdrojů, vítězství zdroje nad katalogem i požadavek, aby se rozpor ohlásil. *(Odkaz doplněn 2026-08-15; v době vzniku tohoto rozhodnutí 015 ještě neexistovalo.)*
+Je to změna volby, ne její doplnění, takže se 008 nereviduje, ale nahrazuje: platnou verzi nese rozhodnutí [015](015-mapping-fact-completion-from-the-catalog.md), které z 008 přebírá všechno ostatní — prioritu zdrojů, vítězství zdroje nad katalogem i požadavek, aby se rozpor ohlásil.
 
 **Poptávka řídí, co se použije, ne co se načte.** Tohle je podmínka, bez které je hlášení konfliktů z F5 nedosažitelné. Rozhodnutí 008 staví poptávku do katalogu z toho, co v mezireprezentaci chybí — jenže fakt dodaný zdrojem v ní nechybí, takže by se na něj katalogu nikdo nezeptal a rozpor by nemohl vzniknout. Dotaz na katalog přitom vrací sloupce tabulky vcelku a omezovat ho na podmnožinu nic neušetří. Načítá se tedy celý sloupcový obraz dotčených tabulek, poptávka rozhoduje o tom, které fakty se z něj do mezireprezentace zapíšou, a hodnoty, které zdroj už nese, se porovnají: shodují-li se, neděje se nic, liší-li se, vydá se záznam o konfliktu a platí hodnota ze zdroje.
 
@@ -96,3 +96,7 @@ Je to změna volby, ne její doplnění, takže se 008 nereviduje, ale nahrazuje
 **Zúžení uvnitř typového modelu se stane hlásitelným, ale ne hned.** Slévání `DateTime`, `DateTime2` a `SmallDateTime` do jediného typu NHibernate je ztráta ve stejném smyslu jako nevyjádřitelný fakt, jen se odehrává uvnitř převodu typů, ne na hranici frameworku. Aby ji šlo ohlásit, musí být z převodu poznat, že zúžil — to je práce v typovém modelu, ne v diagnostice.
 
 **Co toto rozhodnutí neurčuje:** jaký je úplný katalog kontrol strukturální úplnosti nad rámec toho, co deklaruje deskriptor; syntaktické ověření vygenerovaných souborů, které F11 žádá jako třetí položku; a záznam běhu podle S6 s identifikátorem, provedenými pravidly, verzemi frameworků a výsledky kompilace — ten je širší než diagnostika jednoho převodu a diagnostika do něj bude jen vstupovat.
+
+## Historie
+
+**2026-08-15 — revidováno.** Volba se nemění, doplněn je záznam o tom, kam se propsala. Toto rozhodnutí zúžilo dva důsledky rozhodnutí [008](008-database-as-metadata-source.md) — evidenci původu faktu v mezireprezentaci a odečítání už známých faktů z poptávky do katalogu — a obojí samo pojmenovalo jako změnu volby, aniž by ji kam zapsalo; 008 přitom zůstávalo ve stavu `revidováno` a jeho text dál tvrdil opak. Platnou verzi obou bodů proto nese rozhodnutí [015](015-mapping-fact-completion-from-the-catalog.md), které v době vzniku tohoto rozhodnutí ještě neexistovalo, a text je o odkaz na ně doplněný. Podnětem byl audit 2026-08-15, nález 1.1.

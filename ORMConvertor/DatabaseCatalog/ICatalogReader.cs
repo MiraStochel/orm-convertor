@@ -37,6 +37,14 @@ public interface ICatalogReader
     /// whether that is fatal (a benchmark run) or a diagnostic record (a translation).
     /// </summary>
     IReadOnlyDictionary<string, TableLookup> ReadTables(IReadOnlyList<TableRequest> requests);
+
+    /// <summary>
+    /// Full images of the junction-shaped tables (see <see cref="JunctionShape"/>) whose
+    /// two key-forming foreign keys both point at the given tables. This is how a
+    /// many-to-many nobody's artifact expresses is found: the junction table exists only
+    /// in the schema, so only the catalog can name it (decisions 005 and 015).
+    /// </summary>
+    IReadOnlyList<TableImage> FindJunctionTables(IReadOnlyCollection<TableImage> referencedTables);
 }
 
 /// <summary>

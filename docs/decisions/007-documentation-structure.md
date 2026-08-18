@@ -35,7 +35,7 @@ Tenhle tvar neobsluhoval to, co od dokumentace ve skutečnosti potřebujeme, tot
 | `audits/RRRR-MM-DD-*.md` | datovaná revize stavu | neměnné |
 | `analysis/` | tutoriály a srovnání frameworků | přibývá podle potřeby |
 
-Rozhodnutí se **nepřepisují**. Změna názoru znamená nové rozhodnutí a stav `nahrazeno NNN` u původního; obojí zůstává čitelné vedle sebe. Každé rozhodnutí nese datum, stav a vazbu na požadavky F/S/E.
+Rozhodnutí se **nepřepisují**. Změna názoru znamená nové rozhodnutí a stav `nahrazeno NNN` u původního; obojí zůstává čitelné vedle sebe. Každé rozhodnutí nese datum, stav a vazbu na požadavky F/S/T.
 
 Varianta 1 řešila jen bezprostřední příznak. Kdyby platila, changelog by dál nesl tři různé role najednou — čím se změnilo, proč, a co teď platí — a každou hůř než dokument určený právě jí.
 
@@ -50,7 +50,7 @@ Stav se přestává skládat replayem a čte se ze dvou živých dokumentů: `ar
 
 Disciplína se přesouvá, nezmenšuje: místo připsání řádku do changelogu se po dokončení úkolu aktualizuje `architecture.md` a škrtne položka v `open-items.md`. Rozdíl je v tom, že když to někdo neudělá, je dokument rovnou nesprávný, ne jen neúplný. Je to vědomá výměna — nesprávnost je vidět, neúplnost se pozná až při rekonstrukci.
 
-Pole `Požadavky` u rozhodnutí dává zpětnou dohledatelnost F/S/E → rozhodnutí, kterou text práce potřebuje tak jako tak.
+Pole `Požadavky` u rozhodnutí dává zpětnou dohledatelnost F/S/T → rozhodnutí, kterou text práce potřebuje tak jako tak.
 
 Cena, kterou tím platíme: design doc 001 měl souvislý výklad „dotazový model a kompozitní klíče" a rozebráním se rozpadl na šest samostatných rozhodnutí. Souvislý příběh se skládá až při psaní práce z `architecture.md` (jaký model vznikl) a z rozhodnutí (proč zrovna takový). Přijali jsme to proto, že ten výklad už tak jako tak mísil hotové s plánovaným a s každým dalším krokem by zastarával dál.
 

@@ -324,6 +324,27 @@ public abstract class AbstractEntityBuilder
         => pendingForeignKeyColumns.TryGetValue(relation, out var columns) ? columns : null;
 
     /// <summary>
+    /// Junction facts waiting on a many-to-many relation, or null when there are none.
+    /// The counterpart of <see cref="SupplyJunctionFacts"/> for the catalog completion phase.
+    /// </summary>
+    public JunctionFacts? StatedJunctionFacts(Relation relation)
+        => pendingJunctionFacts.TryGetValue(relation, out var facts) ? facts : null;
+
+    /// <summary>
+    /// Replaces the junction facts of a many-to-many relation. Called by the catalog
+    /// completion phase (decision 015) when the schema knows the junction table the source
+    /// left unnamed; the caller merges, so that every fact the source stated wins over the
+    /// catalog. Ignored for other cardinalities, where junction facts mean nothing.
+    /// </summary>
+    public void SupplyJunctionFacts(Relation relation, JunctionFacts facts)
+    {
+        if (relation.Cardinality == Cardinality.ManyToMany)
+        {
+            pendingJunctionFacts[relation] = facts;
+        }
+    }
+
+    /// <summary>
     /// The resolution phase promised by decision 001: runs once per <see cref="Build"/>, after
     /// all entities of the conversion have been parsed and before anything is generated.
     /// Resolves relation targets by name against <see cref="EntityMaps"/>, fills

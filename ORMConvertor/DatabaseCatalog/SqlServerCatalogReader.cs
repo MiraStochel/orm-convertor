@@ -39,6 +39,64 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
         return results;
     }
 
+    public IReadOnlyList<TableImage> FindJunctionTables(IReadOnlyCollection<TableImage> referencedTables)
+    {
+        if (referencedTables.Count == 0)
+        {
+            return [];
+        }
+
+        using var connection = new SqlConnection(connectionString);
+        connection.Open();
+
+        // Names of tables holding a foreign key towards any of the given tables; the
+        // schema check and the junction shape are decided over the loaded images.
+        var referencedNames = referencedTables.Select(t => t.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var inClause = string.Join(", ", Enumerable.Range(0, referencedNames.Count).Select(i => $"@n{i}"));
+
+        var candidateNames = new List<string>();
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"""
+                SELECT DISTINCT pt.name
+                FROM sys.foreign_keys fk
+                JOIN sys.tables pt ON pt.object_id = fk.parent_object_id
+                JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
+                WHERE rt.name IN ({inClause})
+                """;
+            for (var i = 0; i < referencedNames.Count; i++)
+            {
+                command.Parameters.AddWithValue($"@n{i}", referencedNames[i]);
+            }
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                candidateNames.Add(reader.GetString(0));
+            }
+        }
+
+        if (candidateNames.Count == 0)
+        {
+            return [];
+        }
+
+        var referenced = referencedTables
+            .Select(t => (t.Schema.ToLowerInvariant(), t.Name.ToLowerInvariant()))
+            .ToHashSet();
+
+        return [.. LoadImages(connection, candidateNames)
+            .Where(image => JunctionShape.TryGet(image) is { } shape
+                && References(shape.First, referenced)
+                && References(shape.Second, referenced))];
+    }
+
+    private static bool References(ForeignKeyImage fk, HashSet<(string, string)> referenced)
+        => referenced.Contains((fk.ReferencedSchema.ToLowerInvariant(), fk.ReferencedTable.ToLowerInvariant()));
+
     private static TableLookup Resolve(TableRequest request, IReadOnlyList<TableImage> images)
     {
         foreach (var candidate in request.NameCandidates)

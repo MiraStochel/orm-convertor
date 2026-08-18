@@ -136,7 +136,7 @@ Zadání vedoucího používalo pro experimentální požadavky E1–E7, JSS čl
 
 ### 5.2 Rozhodnutí 003 a 007 nemají pole `Požadavky`
 
-Šablona v `decisions/README.md` ho neoznačuje za nepovinné (na rozdíl od `Podklad`) a rozhodnutí 007 samo stanoví: *„Každé rozhodnutí nese datum, stav a vazbu na požadavky F/S/E."* 007 tedy porušuje pravidlo, které zavádí. U obou přitom jde o rozhodnutí o způsobu práce, ne o nástroji, takže vazba na požadavky žádná není — chybí spíš pravidlo pro tenhle případ než hodnota v poli.
+Šablona v `decisions/README.md` ho neoznačuje za nepovinné (na rozdíl od `Podklad`) a rozhodnutí 007 samo stanoví: *„Každé rozhodnutí nese datum, stav a vazbu na požadavky F/S/T."* 007 tedy porušuje pravidlo, které zavádí. U obou přitom jde o rozhodnutí o způsobu práce, ne o nástroji, takže vazba na požadavky žádná není — chybí spíš pravidlo pro tenhle případ než hodnota v poli.
 
 ### 5.3 Index zkracuje názvy dvou rozhodnutí
 
@@ -182,7 +182,7 @@ Většina nálezů nejsou změny názoru, ale chyby od začátku: odkaz na text,
 | Přejmenovat zastaralý blokátor | `open-items.md` (3.7) |
 | Doplnit řádky odkazů, přepsat *Dotazovou větev* a *Frontend* na soběstačné položky | `open-items.md` (3.8) |
 | Založit položky pro pět mezer z `architecture.md` | `open-items.md` (3.9) |
-| Přejmenovat experimentální požadavky E1–E7 na T1–T7 | `requirements.md` v repozitáři i v souborech projektu, `baseline.md`, rozhodnutí 005 a 010, index rozhodnutí, `open-items.md`, `CLAUDE.md` (5.1) |
+| Přejmenovat experimentální požadavky E1–E7 na T1–T7 | `requirements.md`, `baseline.md`, rozhodnutí 005 a 010, index rozhodnutí, `open-items.md` (5.1) |
 | Doplnit názvy 004 a 006 v indexu, odstranit nedefinovaný stav `zavrženo` | `decisions/README.md` (5.3, 5.4) |
 
 Přejmenování E → T se týká jen požadavků ze zadání. Označení E1–E10 pro překladová pravidla článku zůstává; po přejmenování už se ty dvě řady nepřekrývají. Zásah do `baseline.md` a `requirements.md` je výjimka z pravidla o zmražených dokumentech: obojí je čistě přeznačení, žádné tvrzení se nemění, a ponechat v nich starou řadu by kolizi udrželo naživu.

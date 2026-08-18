@@ -1,7 +1,7 @@
 # 009 — Deskriptor cílového frameworku místo vlastností rozptýlených v builderech
 
 Datum: 2026-08-11
-Stav: platí
+Stav: revidováno
 Požadavky: F2, F4, F7–F10, F11, S1
 Podklad: audit 2026-08-02, kap. 4.4
 
@@ -70,7 +70,7 @@ Vynucené členy dostanou v builderu pojmenovaný krok. Dnešní `Build()` není
 
 ### Co deskriptor nepopisuje
 
-Nepopisuje syntaxi ani způsob, jakým se co vypisuje — to zůstává odpovědností builderu. Deskriptor říká, že NHibernate vyžaduje identitní členy u kompozitního klíče; jak vypadá jejich tělo, ví builder. Nepopisuje syntaxi typů — na typovém modelu ale nezávislý není. Rozhodnutí [014](014-language-type-model.md) váže stav *umím vyjádřit* na uzavřenou množinu jazykových typů a převodní tabulky stěhuje z `Common` do wrapperů. Původní znění tvrdilo, že převodní tabulky zůstávají tam, kde jsou, a že neutralizace typového modelu je na tomto rozhodnutí nezávislá; byla to nepřesnost už při psaní, protože nad otevřenou množinou typů nemůže deskriptor říct, co cíl vyjádřit umí (audit 2026-08-15, nález 1.3).
+Nepopisuje syntaxi ani způsob, jakým se co vypisuje — to zůstává odpovědností builderu. Deskriptor říká, že NHibernate vyžaduje identitní členy u kompozitního klíče; jak vypadá jejich tělo, ví builder. Nepopisuje syntaxi typů — na typovém modelu ale nezávislý není: nad otevřenou množinou typů nemůže deskriptor říct, co cíl vyjádřit umí. Uzavřenou množinu jazykových typů, na kterou se stav *umím vyjádřit* váže, dodává rozhodnutí [014](014-language-type-model.md); tímtéž rozhodnutím se převodní tabulky stěhují z `Common` do wrapperů.
 
 ## Důsledky
 
@@ -87,3 +87,13 @@ Nepopisuje syntaxi ani způsob, jakým se co vypisuje — to zůstává odpověd
 **Deskriptor je připravené místo pro cílovou verzi frameworku**, až se o ní rozhodne. Toto rozhodnutí ji nezavádí a nepředjímá její podobu.
 
 **Pro javové frameworky (F7–F10) je ID třída vynuceným členem** ve stejném smyslu jako identitní členy u NHibernate — rozhodnutí 006 to konstatuje. Její vygenerování ale vyžaduje otypovaná pole, tedy neutralizovaný typový model. Deskriptor takovou položku unese; její naplnění u javového builderu čeká na jinou práci.
+
+## Historie
+
+**2026-08-15 — revidováno.** Volba se nemění; opravena jsou dvě tvrzení, která ji popisovala nepřesně, a doplněn stav rozhodnutí, na které se text odkazuje.
+
+Za prvé **definice poptávky do katalogu**. Původní znění ji převzalo z rozhodnutí [008](008-database-as-metadata-source.md) včetně odečtení toho, co mezireprezentace už nese. Tak formulovaná poptávka znemožňuje splnit F5: fakt dodaný zdrojem v mezireprezentaci nechybí, takže by se na něj katalogu nikdo nezeptal a rozpor mezi zdrojem a schématem by nemohl vzniknout. Poptávka je proto sjednocením kategorií ve stavu *vyžaduji* a *umím vyjádřit* a rozhoduje o tom, co se z odpovědi katalogu zapíše, ne o rozsahu dotazu; platnou podobu nese rozhodnutí [015](015-mapping-fact-completion-from-the-catalog.md).
+
+Za druhé věta, že **převodní tabulky zůstávají tam, kde jsou**, a že neutralizace typového modelu je na tomto rozhodnutí nezávislá. Byla to nepřesnost už při psaní: nad otevřenou množinou typů nemůže deskriptor říct, co cíl vyjádřit umí, takže na typovém modelu závislý je. Platnou podobu dodalo rozhodnutí [014](014-language-type-model.md), které převodní tabulky stěhuje z `Common` do wrapperů.
+
+Odkazy na rozhodnutí 008 jsou navíc doplněné o to, že je dnes nahrazené rozhodnutím 015. Podnětem k oběma opravám byl audit 2026-08-15, nálezy 1.2 a 1.3.

@@ -31,4 +31,16 @@ internal sealed class FakeCatalogReader(params TableImage[] images) : ICatalogRe
 
         return results;
     }
+
+    public IReadOnlyList<TableImage> FindJunctionTables(IReadOnlyCollection<TableImage> referencedTables)
+    {
+        var referenced = referencedTables
+            .Select(t => (t.Schema.ToLowerInvariant(), t.Name.ToLowerInvariant()))
+            .ToHashSet();
+
+        return [.. images
+            .Where(image => JunctionShape.TryGet(image) is { } shape
+                && referenced.Contains((shape.First.ReferencedSchema.ToLowerInvariant(), shape.First.ReferencedTable.ToLowerInvariant()))
+                && referenced.Contains((shape.Second.ReferencedSchema.ToLowerInvariant(), shape.Second.ReferencedTable.ToLowerInvariant())))];
+    }
 }

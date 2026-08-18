@@ -14,8 +14,8 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [006](006-flat-composite-key-rendering.md) | Ploché vykreslení kompozitního klíče | 2026-08-02 | platí | F1, F2, F7–F10, F11 |
 | [007](007-documentation-structure.md) | Dokumentace organizovaná podle rozhodnutí, ne podle času | 2026-08-03 | platí | žádné |
 | [008](008-database-as-metadata-source.md) | Databáze jako autoritativní doplněk chybějících mapovacích faktů | 2026-08-11 | nahrazeno 015 | F2, F4, F5, F6, F11, S1, S3 |
-| [009](009-target-framework-descriptor.md) | Deskriptor cílového frameworku místo vlastností rozptýlených v builderech | 2026-08-11 | platí | F2, F4, F7–F10, F11, S1 |
-| [010](010-diagnostics-as-returned-data.md) | Diagnostika jako vrácená data, ne výjimka | 2026-08-12 | platí | F5, F11, F14, T3, S6 |
+| [009](009-target-framework-descriptor.md) | Deskriptor cílového frameworku místo vlastností rozptýlených v builderech | 2026-08-11 | revidováno | F2, F4, F7–F10, F11, S1 |
+| [010](010-diagnostics-as-returned-data.md) | Diagnostika jako vrácená data, ne výjimka | 2026-08-12 | revidováno | F5, F11, F14, T3, S6 |
 | [011](011-key-generation-strategy-vocabulary.md) | Slovník strategií generování klíče | 2026-08-13 | revidováno | F1, F2, F7–F10, F11, S2 |
 | [012](012-foreign-key-rendering.md) | Vykreslení cizího klíče v cílových frameworcích | 2026-08-13 | platí | F2, F3, F11, S2 |
 | [013](013-target-framework-versions.md) | Zafixované verze cílových frameworků | 2026-08-14 | platí | S2, S6, F7–F10 |

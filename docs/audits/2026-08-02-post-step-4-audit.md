@@ -354,4 +354,4 @@ Odloženo do cílenější přestavby, současný stav je funkční:
 4. **Krok 5a** — generování junction entity a vícesloupcových FK. Nadále platí, že `ColumnPairs` zůstávají prázdné a testovací vstupy je nutné skládat ručně přes builder API.
 5. **R2, R3, R4** — zapsat zbývající rozhodnutí. R4 je předpoklad S6.
 6. **Ú2** — design doc k typovému modelu. Předpoklad pro javovou větev; do té doby blokuje F7–F10.
-7. **Ú1, Ú3, Ú4, Ú5** a položky z kapitoly 8 podle priorit vyplývajících z požadavků F/S/E.
+7. **Ú1, Ú3, Ú4, Ú5** a položky z kapitoly 8 podle priorit vyplývajících z požadavků F/S/T.

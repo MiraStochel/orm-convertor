@@ -122,6 +122,35 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
     }
 
     [Fact]
+    public void FindsTheJunctionTableBetweenProductsAndSuppliers()
+    {
+        fixture.SkipIfUnavailable();
+
+        var junctions = new SqlServerCatalogReader(TestDatabase.ConnectionString!)
+            .FindJunctionTables([ImageOf("Product"), ImageOf("Supplier")]);
+
+        // ProductSuppliers is the junction of the schema: its whole key is two foreign
+        // keys, and the payload column does not disqualify it.
+        var junction = Assert.Single(junctions);
+        Assert.Equal("ProductSuppliers", junction.Name);
+        Assert.Equal(2, junction.ForeignKeys.Count);
+        Assert.NotNull(junction.FindColumn("SupplierSku"));
+    }
+
+    [Fact]
+    public void OrdinaryReferencingTablesAreNotJunctions()
+    {
+        fixture.SkipIfUnavailable();
+
+        // Orders references Customers without being key-covered, CustomerProfiles covers
+        // its key with a single foreign key - neither is the two-key junction shape.
+        var junctions = new SqlServerCatalogReader(TestDatabase.ConnectionString!)
+            .FindJunctionTables([ImageOf("Customer")]);
+
+        Assert.Empty(junctions);
+    }
+
+    [Fact]
     public void AnUnknownNameResolvesToNothing()
     {
         fixture.SkipIfUnavailable();

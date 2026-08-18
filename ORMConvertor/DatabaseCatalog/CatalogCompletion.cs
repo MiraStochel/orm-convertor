@@ -134,6 +134,228 @@ public static class CatalogCompletion
                     CompleteForeignKeys(builder, em, image, entityByTable);
                 }
             }
+
+            MarkJunctionEntities(builder, imageByEntity);
+            CompleteManyToMany(builder, reader, imageByEntity, entityByTable);
+        }
+    }
+
+    /// <summary>
+    /// An entity of the conversion whose table is junction-shaped - the whole primary key
+    /// consists of two foreign keys - gets the junction flag of decision 005. A fact of
+    /// the schema, so it carries its origin as a record.
+    /// </summary>
+    private static void MarkJunctionEntities(AbstractEntityBuilder builder, Dictionary<EntityMap, TableImage> imageByEntity)
+    {
+        foreach (var (em, image) in imageByEntity)
+        {
+            if (!em.IsJunctionTable && JunctionShape.TryGet(image) is not null)
+            {
+                em.IsJunctionTable = true;
+                builder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Supplied,
+                    Framework = builder.Descriptor.Framework,
+                    Entity = em.Entity.Name,
+                    Reason = $"The whole primary key of '{image.QualifiedName}' consists of two foreign keys, "
+                        + "so the entity is marked as a junction table (decisions 005 and 015).",
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// The many-to-many nobody's artifact expresses (decision 005): a junction-shaped
+    /// table outside the conversion whose two foreign keys point at tables of two
+    /// conversion entities. Where the source declares a collection navigation towards the
+    /// far side, a many-to-many relation with the junction table's facts is registered and
+    /// the standard synthesis builds the junction entity before generation; a many-to-many
+    /// the source stated without naming its table gets the missing facts supplied instead.
+    /// No member is invented - a side without a collection navigation stays untouched and
+    /// the unused junction table is reported.
+    /// </summary>
+    private static void CompleteManyToMany(
+        AbstractEntityBuilder builder, ICatalogReader reader,
+        Dictionary<EntityMap, TableImage> imageByEntity,
+        Dictionary<(string Schema, string Table), EntityMap> entityByTable)
+    {
+        foreach (var junction in reader.FindJunctionTables(imageByEntity.Values.ToList()))
+        {
+            if (entityByTable.ContainsKey((junction.Schema.ToLowerInvariant(), junction.Name.ToLowerInvariant())))
+            {
+                continue; // the junction is an entity of the conversion; MarkJunctionEntities covered it
+            }
+
+            if (JunctionShape.TryGet(junction) is not { } shape)
+            {
+                continue;
+            }
+
+            var first = entityByTable.GetValueOrDefault((shape.First.ReferencedSchema.ToLowerInvariant(), shape.First.ReferencedTable.ToLowerInvariant()));
+            var second = entityByTable.GetValueOrDefault((shape.Second.ReferencedSchema.ToLowerInvariant(), shape.Second.ReferencedTable.ToLowerInvariant()));
+
+            if (first is null || second is null || ReferenceEquals(first, second))
+            {
+                continue; // a side outside the conversion, or a self-referencing junction
+            }
+
+            // A direct foreign key between the two tables would make a collection
+            // ambiguous - the inverse of the direct key, or the far side of the junction -
+            // so nothing is derived and the ambiguity is reported.
+            if (HasDirectForeignKey(imageByEntity[first], imageByEntity[second])
+                || HasDirectForeignKey(imageByEntity[second], imageByEntity[first]))
+            {
+                builder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = builder.Descriptor.Framework,
+                    Category = MappingFactCategory.ForeignKeyColumns,
+                    Reason = $"Both the junction table '{junction.QualifiedName}' and a direct foreign key link "
+                        + $"'{first.Entity.Name}' and '{second.Entity.Name}'; a collection between them is ambiguous, "
+                        + "so no many-to-many is derived.",
+                });
+                continue;
+            }
+
+            var firstColumns = OrderByReferencedKey(shape.First, first);
+            var secondColumns = OrderByReferencedKey(shape.Second, second);
+
+            if (firstColumns is null || secondColumns is null)
+            {
+                builder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = builder.Descriptor.Framework,
+                    Category = MappingFactCategory.ForeignKeyColumns,
+                    Reason = $"The junction table '{junction.QualifiedName}' links '{first.Entity.Name}' and "
+                        + $"'{second.Entity.Name}', but its columns do not pair with their keys; nothing is derived.",
+                });
+                continue;
+            }
+
+            var used = CompleteManyToManySide(builder, junction, first, second, firstColumns, secondColumns)
+                | CompleteManyToManySide(builder, junction, second, first, secondColumns, firstColumns);
+
+            if (!used)
+            {
+                builder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = builder.Descriptor.Framework,
+                    Category = MappingFactCategory.ForeignKeyColumns,
+                    Reason = $"The catalog states the junction table '{junction.QualifiedName}' between "
+                        + $"'{first.Entity.Name}' and '{second.Entity.Name}', but neither entity has a collection "
+                        + "navigation towards the other; the many-to-many is not generated.",
+                });
+                continue;
+            }
+
+            ReportJunctionPayload(builder, junction, firstColumns, secondColumns);
+        }
+    }
+
+    /// <summary>
+    /// One side of a catalog-detected many-to-many: an existing relation gets the facts it
+    /// lacks, a collection navigation without a relation gets one registered. Returns
+    /// whether the junction table found a consumer on this side.
+    /// </summary>
+    private static bool CompleteManyToManySide(
+        AbstractEntityBuilder builder, TableImage junction,
+        EntityMap em, EntityMap other, List<string> myColumns, List<string> otherColumns)
+    {
+        var existing = em.Relations
+            .Where(r => r.Cardinality == Cardinality.ManyToMany
+                && SimpleEntityName(r.TargetEntity) == other.Entity.Name)
+            .ToList();
+
+        if (existing.Count > 0)
+        {
+            foreach (var relation in existing)
+            {
+                var stated = builder.StatedJunctionFacts(relation);
+
+                if (stated is { Table: not null, TargetColumns: not null })
+                {
+                    continue; // the source stated everything; the synthesis needs nothing more
+                }
+
+                // Merged so that every fact the source stated outranks the catalog (decision 015).
+                builder.SupplyJunctionFacts(relation, new JunctionFacts(
+                    stated?.Table ?? junction.Name,
+                    stated?.Schema ?? junction.Schema,
+                    stated?.TargetColumns ?? otherColumns));
+
+                ReportSupplied(builder, em, relation.SourceNavigationProperty, MappingFactCategory.ForeignKeyColumns,
+                    $"The junction table '{junction.QualifiedName}' behind the many-to-many towards "
+                    + $"'{other.Entity.Name}' supplied by the database catalog.");
+            }
+
+            return true;
+        }
+
+        var navigation = FindCollectionNavigation(em, other.Entity.Name);
+
+        if (navigation is null)
+        {
+            return false;
+        }
+
+        builder.EntityMap = em;
+        builder.AddForeignKey(
+            Cardinality.ManyToMany,
+            navigation.Name,
+            other.Entity.Name,
+            foreignKeyColumns: myColumns,
+            junction: new JunctionFacts(junction.Name, junction.Schema, otherColumns));
+
+        ReportSupplied(builder, em, navigation.Name, MappingFactCategory.ForeignKeyColumns,
+            $"Many-to-many towards '{other.Entity.Name}' over the junction table '{junction.QualifiedName}' "
+            + "supplied by the database catalog; the source declares the collection, the schema the association.");
+
+        return true;
+    }
+
+    /// <summary>
+    /// A collection navigation towards the named entity that no relation claims yet. The
+    /// element is a reference - or an unknown naming the entity, which the resolution
+    /// phase upgrades before generation.
+    /// </summary>
+    private static Property? FindCollectionNavigation(EntityMap em, string targetName)
+        => em.Entity.Properties.FirstOrDefault(p =>
+            p.Type is { Category: LangTypeCategory.Collection } type
+            && ((type.ElementType is { Category: LangTypeCategory.Reference } reference && reference.TargetEntity == targetName)
+                || (type.ElementType is { Category: LangTypeCategory.Unknown } unknown && unknown.SourceName == targetName))
+            && !em.Relations.Any(r => r.SourceNavigationProperty == p.Name));
+
+    private static bool HasDirectForeignKey(TableImage from, TableImage to)
+        => from.ForeignKeys.Any(fk =>
+            string.Equals(fk.ReferencedSchema, to.Schema, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(fk.ReferencedTable, to.Name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Columns of the junction table beyond its two foreign keys. The synthesized entity
+    /// is built from the association's facts alone, so payload columns do not reach it -
+    /// said openly rather than silently.
+    /// </summary>
+    private static void ReportJunctionPayload(
+        AbstractEntityBuilder builder, TableImage junction, List<string> firstColumns, List<string> secondColumns)
+    {
+        var keyColumns = firstColumns.Concat(secondColumns).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var payload = junction.Columns
+            .Select(c => c.Name)
+            .Where(name => !keyColumns.Contains(name))
+            .ToList();
+
+        if (payload.Count > 0)
+        {
+            builder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Incompleteness,
+                Framework = builder.Descriptor.Framework,
+                Reason = $"The junction table '{junction.QualifiedName}' carries columns beyond its foreign keys "
+                    + $"({string.Join(", ", payload)}); nobody declares them as properties, so the synthesized "
+                    + "junction entity does not generate them.",
+            });
         }
     }
 
