@@ -60,6 +60,10 @@ public class DapperToEFCoreVerificationTest(TestSchemaFixture fixture)
         Assert.Equal("DapperEntities.Customer", orderToCustomer.PrincipalEntityType.Name);
         Assert.Equal(["CustomerId"], orderToCustomer.Properties.Select(p => p.Name));
 
+        // The inverse collection pairs with the same relationship rather than spawning
+        // a second one - the catalog supplied both sides of the same foreign key.
+        Assert.Equal("Orders", orderToCustomer.PrincipalToDependent?.Name);
+
         var orderLine = model.FindEntityType("DapperEntities.OrderLine");
         Assert.NotNull(orderLine);
         Assert.Equal(["CompanyId", "OrderId", "LineNo"],
@@ -68,5 +72,6 @@ public class DapperToEFCoreVerificationTest(TestSchemaFixture fixture)
         var lineToOrder = Assert.Single(orderLine.GetForeignKeys());
         Assert.Equal("DapperEntities.Order", lineToOrder.PrincipalEntityType.Name);
         Assert.Equal(["CompanyId", "OrderId"], lineToOrder.Properties.Select(p => p.Name));
+        Assert.Equal("OrderLines", lineToOrder.PrincipalToDependent?.Name);
     }
 }

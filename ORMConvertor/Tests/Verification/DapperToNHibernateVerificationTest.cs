@@ -61,6 +61,26 @@ public class DapperToNHibernateVerificationTest(TestSchemaFixture fixture)
     }
 
     [Fact]
+    public void TheInverseCollectionsCarryTheChildsKeyColumns()
+    {
+        fixture.SkipIfUnavailable();
+
+        var mappings = DapperSourceEntities.Convert(ORMEnum.NHibernate).Sources
+            .Where(o => o.ContentType == ConversionContentType.XML)
+            .ToList();
+
+        // The key of a collection lives in the child's table, so only the catalog can
+        // supply it here - a single column for Customer.Orders, the composite key of
+        // Orders for Order.OrderLines (decision 012 and the completion of decision 015).
+        var customer = Assert.Single(mappings, m => m.Content.Contains("<bag name=\"Orders\""));
+        Assert.Contains("<key column=\"CustomerId\" />", customer.Content);
+
+        var order = Assert.Single(mappings, m => m.Content.Contains("<bag name=\"OrderLines\""));
+        Assert.Contains("<column name=\"CompanyId\" />", order.Content);
+        Assert.Contains("<column name=\"OrderId\" />", order.Content);
+    }
+
+    [Fact]
     public void NHibernateBuildsASessionFactoryFromTheArtifacts()
     {
         fixture.SkipIfUnavailable();

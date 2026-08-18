@@ -24,6 +24,8 @@ internal static class DapperSourceEntities
             public string Name { get; set; } = string.Empty;
 
             public string? Notes { get; set; }
+
+            public List<Order> Orders { get; set; } = [];
         }
         """;
 
@@ -47,6 +49,8 @@ internal static class DapperSourceEntities
             public Guid? ExternalRef { get; set; }
 
             public Customer Customer { get; set; } = null!;
+
+            public List<OrderLine> OrderLines { get; set; } = [];
         }
         """;
 

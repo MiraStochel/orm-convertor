@@ -247,10 +247,9 @@ public class CatalogManyToManyDetectionTest
         CatalogCompletion.Complete(builder, new FakeCatalogReader(SuppliersImage(), products, JunctionImage()));
 
         // Both a junction table and a direct foreign key link the two entities; deriving
-        // either reading would be a guess, so neither is derived and the state is reported.
-        Assert.DoesNotContain(
-            builder.EntityMaps.SelectMany(em => em.Relations),
-            r => r.Cardinality == Cardinality.ManyToMany);
+        // either reading - the many-to-many over the junction, or the inverse one-to-many
+        // over the direct key - would be a guess, so neither is derived and the state is reported.
+        Assert.All(builder.EntityMaps, em => Assert.Empty(em.Relations));
         Assert.Contains(builder.Records, r =>
             r.Kind == ConversionRecordKind.Incompleteness && r.Reason.Contains("ambiguous"));
     }

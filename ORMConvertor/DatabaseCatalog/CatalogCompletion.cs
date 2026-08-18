@@ -136,7 +136,8 @@ public static class CatalogCompletion
             }
 
             MarkJunctionEntities(builder, imageByEntity);
-            CompleteManyToMany(builder, reader, imageByEntity, entityByTable);
+            var ambiguousPairs = CompleteManyToMany(builder, reader, imageByEntity, entityByTable);
+            CompleteInverseCollections(builder, imageByEntity, entityByTable, ambiguousPairs);
         }
     }
 
@@ -172,13 +173,17 @@ public static class CatalogCompletion
     /// the standard synthesis builds the junction entity before generation; a many-to-many
     /// the source stated without naming its table gets the missing facts supplied instead.
     /// No member is invented - a side without a collection navigation stays untouched and
-    /// the unused junction table is reported.
+    /// the unused junction table is reported. Returns the entity pairs a junction table
+    /// and a direct foreign key both link - a collection between them is ambiguous, so no
+    /// relation of either reading may be derived from the catalog.
     /// </summary>
-    private static void CompleteManyToMany(
+    private static HashSet<(EntityMap, EntityMap)> CompleteManyToMany(
         AbstractEntityBuilder builder, ICatalogReader reader,
         Dictionary<EntityMap, TableImage> imageByEntity,
         Dictionary<(string Schema, string Table), EntityMap> entityByTable)
     {
+        var ambiguousPairs = new HashSet<(EntityMap, EntityMap)>();
+
         foreach (var junction in reader.FindJunctionTables(imageByEntity.Values.ToList()))
         {
             if (entityByTable.ContainsKey((junction.Schema.ToLowerInvariant(), junction.Name.ToLowerInvariant())))
@@ -205,6 +210,8 @@ public static class CatalogCompletion
             if (HasDirectForeignKey(imageByEntity[first], imageByEntity[second])
                 || HasDirectForeignKey(imageByEntity[second], imageByEntity[first]))
             {
+                ambiguousPairs.Add((first, second));
+                ambiguousPairs.Add((second, first));
                 builder.Report(new ConversionRecord
                 {
                     Kind = ConversionRecordKind.Incompleteness,
@@ -252,6 +259,8 @@ public static class CatalogCompletion
 
             ReportJunctionPayload(builder, junction, firstColumns, secondColumns);
         }
+
+        return ambiguousPairs;
     }
 
     /// <summary>
@@ -757,6 +766,148 @@ public static class CatalogCompletion
         builder.AddForeignKey(cardinality, navigation.Name, target.Entity.Name, RelationRole.Owning, orderedColumns);
         ReportSupplied(builder, em, navigation.Name, MappingFactCategory.ForeignKeyColumns,
             $"Foreign key ({string.Join(", ", orderedColumns)}) towards '{target.Entity.Name}' supplied by the database catalog ({fk.Name}).");
+    }
+
+    /// <summary>
+    /// The inverse side of a collection: its key columns live in the child's table
+    /// (decision 012), so they come from the foreign keys of every other entity of the
+    /// conversion pointing back at this one. An existing inverse one-to-many gets its
+    /// column pairs; a collection navigation no relation claims gets the relation
+    /// synthesized. No member is invented - the collection navigation must exist in the
+    /// source, only the relation and its pairs are supplied.
+    /// </summary>
+    private static void CompleteInverseCollections(
+        AbstractEntityBuilder builder,
+        Dictionary<EntityMap, TableImage> imageByEntity,
+        Dictionary<(string Schema, string Table), EntityMap> entityByTable,
+        HashSet<(EntityMap, EntityMap)> ambiguousPairs)
+    {
+        foreach (var (child, image) in imageByEntity)
+        {
+            foreach (var fk in image.ForeignKeys)
+            {
+                if (!entityByTable.TryGetValue((fk.ReferencedSchema.ToLowerInvariant(), fk.ReferencedTable.ToLowerInvariant()), out var parent)
+                    || ReferenceEquals(parent, child))
+                {
+                    continue;
+                }
+
+                var orderedColumns = OrderByReferencedKey(fk, parent);
+
+                if (orderedColumns is null)
+                {
+                    continue; // the owning pass over the child's image reported the pairing failure already
+                }
+
+                // A foreign key covering the child's whole primary key is the shared-key
+                // one-to-one; its inverse side is a reference, not a collection (decision 012).
+                if (CoversWholeKey(image, fk))
+                {
+                    continue;
+                }
+
+                var existing = parent.Relations
+                    .Where(r => r.Role == RelationRole.Inverse
+                        && r.Cardinality == Cardinality.OneToMany
+                        && SimpleEntityName(r.TargetEntity) == child.Entity.Name)
+                    .ToList();
+
+                if (existing.Count > 0)
+                {
+                    CompleteExistingInverseRelation(builder, parent, child, existing, orderedColumns, fk);
+                    continue;
+                }
+
+                // A relation the source stated resolves the ambiguity itself; deriving one
+                // is a guess, so between an ambiguous pair nothing is synthesized. The
+                // many-to-many detection reported the state.
+                if (!ambiguousPairs.Contains((parent, child)))
+                {
+                    SynthesizeInverseRelation(builder, parent, child, orderedColumns, fk);
+                }
+            }
+        }
+    }
+
+    private static bool CoversWholeKey(TableImage image, ForeignKeyImage fk)
+        => image.PrimaryKeyColumns.Count == fk.Columns.Count
+            && image.PrimaryKeyColumns.All(key =>
+                fk.Columns.Any(c => string.Equals(c.Column, key, StringComparison.OrdinalIgnoreCase)));
+
+    private static void CompleteExistingInverseRelation(
+        AbstractEntityBuilder builder, EntityMap parent, EntityMap child,
+        IReadOnlyList<Relation> candidates, List<string> orderedColumns, ForeignKeyImage fk)
+    {
+        // A relation whose columns - resolved pairs or the source's stated columns -
+        // already agree with the catalog needs nothing.
+        foreach (var relation in candidates)
+        {
+            var stated = relation.ColumnPairs.Count > 0
+                ? relation.ColumnPairs.Select(p => p.Source.ColumnName ?? p.Source.Property.Name).ToList()
+                : builder.StatedForeignKeyColumns(relation)?.ToList();
+
+            if (stated is not null && stated.SequenceEqual(orderedColumns, StringComparer.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        var open = candidates.FirstOrDefault(r =>
+            r.ColumnPairs.Count == 0 && builder.StatedForeignKeyColumns(r) is null);
+
+        if (open is not null)
+        {
+            var pairs = new List<ColumnPair>(orderedColumns.Count);
+
+            for (var i = 0; i < orderedColumns.Count; i++)
+            {
+                pairs.Add(new ColumnPair
+                {
+                    // The key columns belong to the child's table (decision 012), so the
+                    // source side of each pair is the child's property map.
+                    Source = FindPropertyMapForColumn(child, orderedColumns[i])
+                        ?? new PropertyMap
+                        {
+                            Property = new Property { Name = orderedColumns[i] },
+                            ColumnName = orderedColumns[i],
+                        },
+                    Target = parent.PrimaryKey!.Parts[i].PropertyMap,
+                });
+            }
+
+            open.ColumnPairs = pairs;
+            ReportSupplied(builder, parent, open.SourceNavigationProperty, MappingFactCategory.ForeignKeyColumns,
+                $"Key columns ({string.Join(", ", orderedColumns)}) of the collection towards '{child.Entity.Name}' "
+                + $"supplied by the database catalog ({fk.Name}).");
+            return;
+        }
+
+        // Every candidate states columns and none of them matches the catalog.
+        ReportConflict(builder, parent, candidates[0].SourceNavigationProperty, MappingFactCategory.ForeignKeyColumns,
+            $"The source states key columns for the collection towards '{child.Entity.Name}' that do not match "
+            + $"the catalog's {fk.Name} ({string.Join(", ", orderedColumns)}).");
+    }
+
+    private static void SynthesizeInverseRelation(
+        AbstractEntityBuilder builder, EntityMap parent, EntityMap child, List<string> orderedColumns, ForeignKeyImage fk)
+    {
+        var navigation = FindCollectionNavigation(parent, child.Entity.Name);
+
+        if (navigation is null)
+        {
+            // A unidirectional relation seen from its far side - the owning side carries
+            // it, so a parent without a collection is a fact, not a gap.
+            return;
+        }
+
+        // The stated columns pair with the parent's key in the resolution phase, like any
+        // inverse relation a parser registers.
+        builder.EntityMap = parent;
+        builder.AddForeignKey(Cardinality.OneToMany, navigation.Name, child.Entity.Name, RelationRole.Inverse, orderedColumns);
+        ReportSupplied(builder, parent, navigation.Name, MappingFactCategory.ForeignKeyColumns,
+            $"Inverse one-to-many towards '{child.Entity.Name}' over its foreign key ({string.Join(", ", orderedColumns)}) "
+            + "supplied by the database catalog "
+            + $"({fk.Name}); the source declares the collection, the schema the relation.");
     }
 
     /// <summary>
