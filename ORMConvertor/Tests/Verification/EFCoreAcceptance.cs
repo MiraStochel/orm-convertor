@@ -23,8 +23,14 @@ internal static class EFCoreAcceptance
             .Where(type => type.IsClass && type.IsPublic && !type.IsAbstract)
             .ToList();
 
+        // EF Core caches the model per context type, and every verification shares this one
+        // context type. With the shared cache, whichever test built a model first would hand
+        // it to every later call - OnModelCreating and validation would never run again, and
+        // a broken artifact would be "accepted". A fresh internal service provider per call
+        // keeps every build, and therefore every verdict, real.
         var options = new DbContextOptionsBuilder<VerificationContext>()
             .UseSqlServer()
+            .EnableServiceProviderCaching(false)
             .Options;
 
         using var context = new VerificationContext(options, entityTypes);
