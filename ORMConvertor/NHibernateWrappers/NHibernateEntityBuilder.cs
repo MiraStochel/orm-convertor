@@ -76,7 +76,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             : $"{entityMap.Entity.Namespace}.{name}, {entityMap.Entity.Namespace}";
 
         var table = entityMap.Table ?? name; // default = class name
-        var schema = entityMap.Schema ?? string.Empty; // TODO schema
+        var schema = entityMap.Schema ?? string.Empty;
         var schemaAttr = string.IsNullOrWhiteSpace(schema) ? string.Empty : $" schema=\"{schema}\"";
 
         AppendXml(artifact.Mapping, 1, $"<class name=\"{nameWithNamespace}\" table=\"{table}\"{schemaAttr}>");

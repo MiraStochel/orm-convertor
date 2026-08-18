@@ -77,6 +77,11 @@ Generování explicitní junction entity. Vícesloupcový cizí klíč už build
 
 Detekce N:M na vstupu a syntéza junction entity. Cílové sloupce nejdou určit z jedné translation unit; mezi entitami téhož vstupu se `ColumnPairs` plní ve fázi rozresolvování a metadata pro zbytek už umí dodat fáze doplnění z katalogu (`architecture.md`, §5.2). Co zbývá, je sama detekce: poznat, že tabulka, jejíž celý klíč tvoří dva cizí klíče, je spojovací (`IsJunctionTable`), a syntetizovat junction entitu tam, kde ji vstup nenese — fáze doplnění dnes vztahy jen páruje a syntetizuje N:1/1:1 přes existující navigace, spojovací entitu nevyrábí.
 
+### Doplnění z katalogu — inverzní strana kolekce
+*Navazuje na rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F6.*
+
+Fáze doplnění čte cizí klíče jen z tabulky entity, která je drží, a doplňuje či syntetizuje výhradně vlastnící stranu — N:1 a 1:1 přes existující navigaci (`CompleteForeignKeys` a `SynthesizeRelation` v `CatalogCompletion`); cizí klíč bez navigační vlastnosti končí záznamem o neúplnosti. Inverzní strana z katalogu nedostane nic, a to dvojmo: existující inverzní relace 1:N se nespáruje se sloupci cizího klíče podřízené tabulky, takže `<bag>` se vypíše s fallbackem `<key>` na sloupec klíče vlastníka — konvence z rozhodnutí 012, správná jen při shodě názvů, kterou by katalog uměl nahradit faktem; a kolekční vlastnost zdroje, jehož parser vztahy netvoří (Dapper), zůstane bez relace úplně, takže ji builder NHibernate vypíše jako obyčejnou `<property>` bez typu — mapování, které cílový framework u kolekce nepřijme. Syntéza se přitom má držet pravidla nevymýšlet členy: kolekční navigace musí ve zdroji existovat, syntetizuje se jen vztah a jeho páry.
+
 ### Cílová verze v deskriptoru
 *Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md). Požadavky S2, S6.*
 
@@ -107,10 +112,6 @@ Uvnitř `<composite-id>` smí stát i `<key-many-to-one>` — část klíče, kt
 Mapovací stranu už parser čte: `<composite-id class=>` i `<composite-id name= class=>` skončí jako `SourceKeyClass`. U formy `Embedded` ale části klíče nejsou vlastnostmi entity, nýbrž klíčové třídy, a entita nese jedinou vlastnost jejího typu. Zbývá tedy trojí: odkud vzít jazykové typy částí, jak zabránit tomu, aby se držící vlastnost dostala do mezireprezentace jako běžná vlastnost (ploché vykreslení klíčovou třídu ruší), a co udělat s C# zdrojem klíčové třídy, pokud do převodu vstoupí — entitní parser by z něj dnes udělal další entitu.
 
 Vstupní překážku odstranil jazykový typový model: vlastnost typu `OrderLineId` projde parsováním jako `Unknown` a entita té formy se dostane do mezireprezentace. Trojí otázka výše tím ale zodpovězená není, proto zůstává rozhodnutím.
-
-### NHibernate builder — schéma se nepropisuje do mapování
-
-`BuildTableSchema` čte `em.Schema`, ale při prázdné hodnotě dosadí prázdný řetězec a dál s ním nepracuje (TODO v kódu). Mapování tak vzniká bez `schema` atributu i tam, kde ho zdroj nese, což u databází s víc schématy vyrobí mapování mířící do výchozího schématu.
 
 ### NHibernate builder — kolekce jen jako `<bag>`
 
