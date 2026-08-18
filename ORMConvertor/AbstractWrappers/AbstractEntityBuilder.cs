@@ -702,6 +702,59 @@ public abstract class AbstractEntityBuilder
 
         relation.ColumnPairs = pairs;
         pendingForeignKeyColumns.Remove(relation);
+
+        // The referenced side follows the role the same way the key did above.
+        var referencedEntity = relation.Role == RelationRole.Owning
+            ? relation.TargetEntity
+            : entityMap.Entity.Name;
+        CompleteForeignKeyColumnTypes(keyHolder, referencedEntity, pairs);
+    }
+
+    /// <summary>
+    /// A foreign key column property the source never typed - a &lt;key-many-to-one&gt;
+    /// part, where the class holds the navigation and the columns live only in the
+    /// mapping - takes its language type and column facts from the key part it
+    /// references. Only properties of the entity are completed; a detached map inside a
+    /// pair stays as it is, because nothing declares it. The value is derived within the
+    /// same conversion, but it is still a claim the source never made, so it carries a
+    /// record (decision 010).
+    /// </summary>
+    private void CompleteForeignKeyColumnTypes(EntityMap keyHolder, string referencedEntity, List<ColumnPair> pairs)
+    {
+        foreach (var pair in pairs)
+        {
+            if (pair.Source.Property.Type is not null
+                || pair.Target.Property.Type is null
+                || !keyHolder.PropertyMaps.Contains(pair.Source))
+            {
+                continue;
+            }
+
+            pair.Source.Property.Type = pair.Target.Property.Type;
+            pair.Source.Property.AccessModifier ??= AccessModifier.Public;
+
+            if (!pair.Source.Property.HasGetter && !pair.Source.Property.HasSetter)
+            {
+                pair.Source.Property.HasGetter = true;
+                pair.Source.Property.HasSetter = true;
+            }
+
+            pair.Source.Type ??= pair.Target.Type;
+            pair.Source.Length ??= pair.Target.Length;
+            pair.Source.Precision ??= pair.Target.Precision;
+            pair.Source.Scale ??= pair.Target.Scale;
+
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Entity = keyHolder.Entity.Name,
+                Property = pair.Source.Property.Name,
+                Reason = $"The property has no language type; it was taken over from the key part "
+                    + $"'{pair.Target.Property.Name}' of '{referencedEntity}' that its column references - "
+                    + "derived within the conversion, but still a claim the source never made (decision 010).",
+            });
+        }
     }
 
     /// <summary>

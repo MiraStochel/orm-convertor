@@ -12,12 +12,11 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 Dosavadní nejbližší cíl — **překlad z Dapperu do EF Core a NHibernate s mapovacími fakty doplněnými z databázového katalogu** (F6 a s ním F4) — je implementovaný: fáze doplnění podle rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) čte katalog jedinou komponentou, zapisuje podle poptávky deskriptoru s prioritou zdroj → katalog → konvence, hlásí původ i konflikty záznamy `Supplied`/`Conflict` a měří se odděleně (viz `architecture.md`, §5.2). Scénáře 2. a 3. stupně se zdrojem v Dapperu existují a běží proti testovací databázi (§6.2); kritéria F4 a F6 platí jen tam, kde běh s databází skutečně proběhl (rozhodnutí 016). Hotové zůstává, co bylo: jazykový typový model (rozhodnutí 014), fáze rozresolvování s naplněním `ColumnPairs`, diagnostika převodu (rozhodnutí 010), F1 nad mezireprezentací (`PrimaryKeyTest`, `CompositeKeyTest`), prostředí s testovací databází (§6.1) i nasucho běžící ověření převodu EF Core ↔ NHibernate.
 
-Hotová je nově i **generující část F3**: N:M vztah zdroje se před generováním syntetizuje do explicitní junction entity se dvěma vztahy N:1 a kolekce obou stran se přesměrují na ni (rozhodnutí 005, viz `architecture.md`, §4.3); přijetí u obou cílových frameworků soudí nasucho běžící `ManyToManyJunctionVerificationTest`.
+Hotová je nově i **generující část F3**: N:M vztah zdroje se před generováním syntetizuje do explicitní junction entity se dvěma vztahy N:1 a kolekce obou stran se přesměrují na ni (rozhodnutí 005, viz `architecture.md`, §4.3); přijetí u obou cílových frameworků soudí nasucho běžící `ManyToManyJunctionVerificationTest`. A parser NHibernate už čte i `<key-many-to-one>` — část klíče, která je zároveň odkazem: plochým modelem jako sloupcové části klíče typované z odkazovaného klíče plus vztah N:1, se záznamem o změněné formě (viz `architecture.md`, §5); dřív taková část z klíče mizela beze stopy.
 
-1. **Parser NHibernate — část klíče, která je cizím klíčem** (práce) — přímá mezera v F1 i F3, bez jakékoli infrastruktury; dnes taková část z klíče beze stopy zmizí. Na ničem výše nezávisí, takže ji lze vzít kdykoli.
-2. **Detekce N:M v parserech** (práce) — poznat spojovací tabulku z katalogu tam, kde vstup N:M nevyjadřuje; sama syntéza už existuje, chybí detekce a dodání faktů.
-3. **Klíčová třída u formy `Embedded`** (rozhodnutí) — přijetí frameworkem ji už umí odhalit: u té formy nejsou části klíče vlastnostmi entity, takže mapování odkáže na vlastnost, kterou třída nemá, a 3. stupeň takový pár odmítne. Tvarová aserce to odhalit nemohla.
-4. **Zbytek** podle priorit vyplývajících z požadavků F/S/T.
+1. **Detekce N:M v parserech** (práce) — poznat spojovací tabulku z katalogu tam, kde vstup N:M nevyjadřuje; sama syntéza už existuje, chybí detekce a dodání faktů.
+2. **Klíčová třída u formy `Embedded`** (rozhodnutí) — přijetí frameworkem ji už umí odhalit: u té formy nejsou části klíče vlastnostmi entity, takže mapování odkáže na vlastnost, kterou třída nemá, a 3. stupeň takový pár odmítne. Tvarová aserce to odhalit nemohla.
+3. **Zbytek** podle priorit vyplývajících z požadavků F/S/T.
 
 ---
 
@@ -96,11 +95,6 @@ Fáze rozresolvování (`ResolveEntityNames` v `AbstractEntityBuilder`) běží 
 ### EF Core — nullabilita se vyjadřuje jen jazykově
 
 Anotaci `[Required]` builder negeneruje. Databázová nullabilita z `PropertyMap.IsNullable` se propisuje jen do modifikátoru `required` a otazník za typem vychází z jazykové nullability vlastnosti. Parser přitom `[Required]` číst umí, takže vstup s ním se přeloží a zpět už tuto podobu nezíská. Deskriptor uvádí kategorii jako vyjádřitelnou, protože popisuje framework, ne dnešní stav builderu.
-
-### Parser NHibernate — část klíče, která je cizím klíčem
-*Navazuje na rozhodnutí [012](./decisions/012-foreign-key-rendering.md) a na naplnění `ColumnPairs`. Požadavky F1, F3.*
-
-Uvnitř `<composite-id>` smí stát i `<key-many-to-one>` — část klíče, která je zároveň odkazem na jinou entitu. Smyčka v `NHibernateXMLMappingParser` bere jen `<key-property>`, takže taková část z klíče beze stopy zmizí a vznikne klíč o menším počtu částí, než jaký zdroj popsal; u dvousložkového klíče může zbýt jednosložkový, který se navíc tváří jako úplný. Vypsat takovou část klíče buildery po rozhodnutí [012](./decisions/012-foreign-key-rendering.md) umějí, takže zbývá ji přečíst a doplnit hlášení podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md).
 
 ### Klíčová třída u kompozitního klíče na straně entity
 *Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a [014](./decisions/014-language-type-model.md). Podklad: audit 2026-08-02, kap. 3.2.*

@@ -1,4 +1,5 @@
 ﻿using AbstractWrappers;
+using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model;
 using Model.AbstractRepresentation;
@@ -165,24 +166,35 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
             var parts = new List<(string PropertyName, int Order, PrimaryKeyStrategy Strategy)>();
             int order = 1;
 
-            foreach (var keyProp in compositeElem.Elements().Where(e => e.Name.LocalName == "key-property"))
+            // Both part kinds are read in document order, because the order of the parts
+            // is the order of the key.
+            foreach (var part in compositeElem.Elements())
             {
-                var name = keyProp.Attribute("name")?.Value;
-                if (string.IsNullOrEmpty(name))
+                if (part.Name.LocalName == "key-property")
                 {
+                    var name = part.Attribute("name")?.Value;
+                    if (string.IsNullOrEmpty(name))
+                    {
+                        continue;
+                    }
+
+                    var dbProps = ReadColumnFacts(part);
+
+                    if (dbProps.Count > 0)
+                    {
+                        entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
+                    }
+
+                    // <composite-id> admits no generator, so the values are the application's to
+                    // supply - that is a statement of the framework, not silence of the source.
+                    parts.Add((name, order++, PrimaryKeyStrategy.Assigned));
                     continue;
                 }
 
-                var dbProps = ReadColumnFacts(keyProp);
-
-                if (dbProps.Count > 0)
+                if (part.Name.LocalName == "key-many-to-one")
                 {
-                    entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
+                    order = ParseKeyManyToOne(part, parts, order);
                 }
-
-                // <composite-id> admits no generator, so the values are the application's to
-                // supply - that is a statement of the framework, not silence of the source.
-                parts.Add((name, order++, PrimaryKeyStrategy.Assigned));
             }
 
             if (parts.Count > 0)
@@ -228,6 +240,71 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         {
             entityBuilder.SetKeyStrategyDetails(propName, sourceStrategyName, strategyParameters);
         }
+    }
+
+    /// <summary>
+    /// Reads a &lt;key-many-to-one&gt; - a key part that is at the same time a reference to
+    /// another entity. The flat key of decision 006 has no reference-typed parts, so the
+    /// element is read as its columns, which become scalar key parts, plus an owning
+    /// many-to-one relation; the language types of the column parts arrive from the
+    /// referenced key when the pairs resolve. Both readings are reported (decision 010):
+    /// the reference form is not restated in the output, and a part without stated
+    /// columns has nothing to stand on and shortens the key.
+    /// </summary>
+    /// <returns>The next free key part order.</returns>
+    private int ParseKeyManyToOne(
+        XElement element, List<(string PropertyName, int Order, PrimaryKeyStrategy Strategy)> parts, int order)
+    {
+        var name = element.Attribute("name")?.Value;
+        var target = element.Attribute("class")?.Value;
+
+        if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(target))
+        {
+            return order;
+        }
+
+        var columns = ReadRelationColumns(element);
+
+        // The reference is a stated fact either way, so the relation is registered even
+        // when its columns are not.
+        entityBuilder.AddForeignKey(Cardinality.ManyToOne, name, target, RelationRole.Owning, columns);
+
+        if (columns is null)
+        {
+            // Without stated columns the default column is the navigation's name, which is
+            // no scalar part to build a flat key from; the drop is reported instead of the
+            // part vanishing without a trace.
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Incompleteness,
+                Framework = entityBuilder.Descriptor.Framework,
+                Entity = entityBuilder.EntityMap.Entity.Name,
+                Property = name,
+                Category = MappingFactCategory.PrimaryKey,
+                Reason = $"<key-many-to-one name=\"{name}\"> states no columns, so the flat key (decision 006) "
+                    + "has no scalar part to stand in for it; the key comes out with fewer parts than the source described.",
+            });
+            return order;
+        }
+
+        foreach (var column in columns)
+        {
+            // Assigned for the same reason as a <key-property>: <composite-id> admits no generator.
+            parts.Add((column, order++, PrimaryKeyStrategy.Assigned));
+        }
+
+        entityBuilder.Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = entityBuilder.Descriptor.Framework,
+            Entity = entityBuilder.EntityMap.Entity.Name,
+            Property = name,
+            Category = MappingFactCategory.PrimaryKey,
+            Reason = $"<key-many-to-one name=\"{name}\"> is read as its column(s) plus a many-to-one relation: "
+                + "the key renders flat (decision 006), so the reference form of the key part is not restated in the output.",
+        });
+
+        return order;
     }
 
     /// <summary>

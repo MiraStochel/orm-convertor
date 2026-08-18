@@ -28,6 +28,9 @@ internal static class NHibernateAcceptance
 
         // NHibernate resolves class names through Assembly.Load, which cannot see an
         // assembly loaded from a byte image; the handler hands it ours and nothing else.
+        // The event is process-global and matched by name alone, so every acceptance test
+        // has to compile under its own assembly name: two tests sharing one and running in
+        // parallel would answer each other's resolutions with the wrong assembly.
         ResolveEventHandler resolveGeneratedEntities = (_, args) =>
             new AssemblyName(args.Name).Name == assemblyName ? entities : null;
 

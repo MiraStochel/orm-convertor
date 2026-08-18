@@ -15,7 +15,7 @@ namespace Tests.Verification;
 public class ManyToManyJunctionVerificationTest
 {
     private const string SupplierSource = """
-        namespace NHibernateEntities;
+        namespace JunctionEntities;
 
         public class Supplier
         {
@@ -28,7 +28,7 @@ public class ManyToManyJunctionVerificationTest
         """;
 
     private const string ProductSource = """
-        namespace NHibernateEntities;
+        namespace JunctionEntities;
 
         public class Product
         {
@@ -42,8 +42,8 @@ public class ManyToManyJunctionVerificationTest
 
     private const string SupplierMapping = """
         <?xml version="1.0" encoding="utf-8" ?>
-        <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="NHibernateEntities">
-            <class name="NHibernateEntities.Supplier, NHibernateEntities" table="Suppliers">
+        <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="JunctionEntities">
+            <class name="JunctionEntities.Supplier, JunctionEntities" table="Suppliers">
                 <id name="SupplierId" column="SupplierId" type="int">
                     <generator class="identity" />
                 </id>
@@ -58,8 +58,8 @@ public class ManyToManyJunctionVerificationTest
 
     private const string ProductMapping = """
         <?xml version="1.0" encoding="utf-8" ?>
-        <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="NHibernateEntities">
-            <class name="NHibernateEntities.Product, NHibernateEntities" table="Products">
+        <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="JunctionEntities">
+            <class name="JunctionEntities.Product, JunctionEntities" table="Products">
                 <id name="ProductId" column="ProductId" type="int">
                     <generator class="identity" />
                 </id>
@@ -86,7 +86,7 @@ public class ManyToManyJunctionVerificationTest
     private static byte[] CompileEntities(
         IEnumerable<ConversionSource> outputs, IReadOnlyList<Microsoft.CodeAnalysis.MetadataReference> references)
         => GeneratedEntityCompiler.CompileOrFail(
-            "NHibernateEntities",
+            "JunctionEntities",
             outputs.Where(o => o.ContentType == ConversionContentType.CSharpEntity).Select(o => o.Content),
             references);
 
@@ -121,7 +121,7 @@ public class ManyToManyJunctionVerificationTest
         var model = EFCoreAcceptance.BuildModel(
             CompileEntities(outputs, GeneratedEntityCompiler.EFCoreConsumerReferences));
 
-        var junction = model.FindEntityType("NHibernateEntities.ProductSupplier");
+        var junction = model.FindEntityType("JunctionEntities.ProductSupplier");
         Assert.NotNull(junction);
         Assert.Equal("ProductSuppliers", junction.GetTableName());
         Assert.Equal(["SupplierId", "ProductId"],
@@ -133,12 +133,12 @@ public class ManyToManyJunctionVerificationTest
         Assert.Equal(2, foreignKeys.Count);
 
         var toSupplier = Assert.Single(foreignKeys,
-            fk => fk.PrincipalEntityType.Name == "NHibernateEntities.Supplier");
+            fk => fk.PrincipalEntityType.Name == "JunctionEntities.Supplier");
         Assert.Equal(["SupplierId"], toSupplier.Properties.Select(p => p.Name));
         Assert.Equal("Products", toSupplier.PrincipalToDependent?.Name);
 
         var toProduct = Assert.Single(foreignKeys,
-            fk => fk.PrincipalEntityType.Name == "NHibernateEntities.Product");
+            fk => fk.PrincipalEntityType.Name == "JunctionEntities.Product");
         Assert.Equal(["ProductId"], toProduct.Properties.Select(p => p.Name));
         Assert.Equal("Suppliers", toProduct.PrincipalToDependent?.Name);
     }
