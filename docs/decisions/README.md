@@ -25,6 +25,8 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [017](017-source-precedence-for-mapping-facts.md) | Priorita zdrojů uvnitř vstupu | 2026-08-18 | platí | F2, F4, F5, F6, F11, S1, S2 |
 | [018](018-work-order-as-item-marker.md) | Pořadí práce jako značka u položky | 2026-08-18 | platí | žádné |
 | [019](019-neutral-database-type-vocabulary.md) | Neutrální slovník databázových typů | 2026-08-18 | platí | F2, F5, F7–F10, F11, S2 |
+| [020](020-canonical-generator-parameter-vocabulary.md) | Kanonický slovník parametrů generátoru | 2026-08-19 | platí | F1, F2, F7–F10, F11, S1, S2 |
+| [021](021-generator-name-selection.md) | Výběr názvu generátoru ve výstupu | 2026-08-19 | platí | F2, F3, F7–F10, F11, S1, S2 |
 
 ## Formát
 

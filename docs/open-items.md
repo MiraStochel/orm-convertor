@@ -17,16 +17,6 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 `RowVersion` se dosud nesl jako databázový typ, ale typ to není — je to token pro optimistickou souběžnost, který každý framework vyjadřuje vlastním mechanismem: JPA anotací `@Version`, EF Core voláním `IsRowVersion()`, NHibernate elementem `<version>`. Rozhodnutí 019 ho ze slovníku odstranilo jako typ jediného systému a fakt tím zůstal bez domova: sloupec `rowversion` z katalogu vyjde jako `VarBinary` s doslovným názvem na únikové cestě a význam „tenhle sloupec nese verzi řádku" se ztratí. Rozhodnout je třeba, jestli mezireprezentace dostane vlastní mapovací fakt pro sloupec verze — a s ním kategorii v deskriptoru, aby šlo říct, který cíl ho vyjádřit umí — nebo jestli zůstane mimo rozsah a bude se hlásit jako nevyjádřitelný. Do té doby se ztrácí bez záznamu, což je přesně to, čemu má bránit rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md).
 
-### Kanonický slovník parametrů generátoru
-*Na řadě. Navazuje na rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md). Předpoklad F7–F10.*
-
-`StrategyParameters` nese parametry tak, jak je pojmenoval zdroj: u NHibernate `sequence` a `max_lo`, u JPA `sequenceName` a `allocationSize`. Uvnitř jednoho ekosystému to stačí, napříč nimi ne — cílový builder názvům zdroje nerozumí, takže je buď vypíše nesmyslně, nebo zahodí, a klíč vázaný na sekvenci se stane nespustitelným. Rozhodnout, jestli názvy kanonizovat v modelu, nebo jejich překlad nechat na wrapperech. Rozhodnutí 011 dalo parametrům místo v modelu a tuhle otázku nechalo vědomě otevřenou.
-
-### Smí builder použít název strategie ze zdroje?
-*Potom. Navazuje na rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md); rozhodnutí [012](./decisions/012-foreign-key-rendering.md) na výsledku nestojí, ale zpřesní se s ním.*
-
-Rozhodnutí 011 dalo `SourceStrategyName` roli záznamu pro diagnostiku, ne vstupu generování, takže builder vypisuje kanonický název: z NHibernate do NHibernate se `seqhilo` vrátí jako `hilo`, `guid.comb` jako `guid` a `foreign` dokonce jako `assigned`, ačkoli cíl všechno tohle přijme. U `foreign` to není kosmetika — je to jediné tvrzení, ze kterého se pozná vztah 1:1 přes sdílený primární klíč, takže s ním padá i informace o vztahu. Rozhodnout, jestli smí builder název ze zdroje použít tam, kde mu cílový framework rozumí — kritériem se nabízí, že se název zpětně mapuje na tutéž hodnotu výčtu — nebo jestli má vstupem generování zůstat jedině slovník a rozdíl hlásit diagnostika. Změna role toho pole je změna volby, ne doplnění, takže patří do nového rozhodnutí.
-
 ### Kritérium pro širší čtení konvencí zdroje
 *Navazuje na rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), které v tomto bodě nahradilo [008](./decisions/008-database-as-metadata-source.md). Souvisí s [010](./decisions/010-diagnostics-as-returned-data.md). Požadavky F2, F5, F6.*
 
@@ -67,6 +57,16 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 ---
 
 ## Otevřená práce
+
+### Parametry generátoru se nekanonizují
+*Na řadě. Implementace rozhodnutí [020](./decisions/020-canonical-generator-parameter-vocabulary.md); předpoklad položky o výběru názvu generátoru níže. Požadavky F7–F10, F11, S2.*
+
+Rozhodnutí 020 pojmenovalo parametry generátoru uzavřeným výčtem, který fixuje význam a jednotku, a doslovné parametry zdroje odsunulo vedle něj. Kód drží pořád jediný slovník `Dictionary<string, string>` plněný doslova: `ReadGeneratorParameters` v XML parseru NHibernate přebírá prvky `<param>` beze změny a `AppendGenerator` je zpětně vypisuje jako echo, takže napříč ekosystémy by cílový builder názvům zdroje nerozuměl. Zbývá trojí: rozdělit pole na kanonické `StrategyParameters` a doslovné `SourceStrategyParameters`, kanonizovat v parseru podle třídy generátoru — `max_lo` se ukládá jako `BlockSize` o jedničku větší, `sequence` jako `SequenceName`, `table` a `column` jako sloupce čítače —, a v builderu překládat zpět, přičemž strategie z únikové cesty si doslovné parametry ponechá; jinak přestane fungovat rozpoznání sdíleného primárního klíče přes generátor `foreign`, které je dnes jediným čtenářem doslovné cesty. Parametr, který cíl vyjádřit neumí, je záznam o ztrátě podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md). Sahá do téhož `AppendGenerator` jako výběr názvu generátoru podle rozhodnutí [021](./decisions/021-generator-name-selection.md), takže obojí patří do jednoho průchodu.
+
+### Builder nevybírá název generátoru podle faktů
+*Potom. Implementace rozhodnutí [021](./decisions/021-generator-name-selection.md). Navazuje na rozhodnutí [012](./decisions/012-foreign-key-rendering.md). Požadavky F2, F3, F11, S2.*
+
+Builder NHibernate vypisuje výhradně kanonický název z `ToNHibernate`, takže `seqhilo` vyjde jako `hilo` a čítač se přestěhuje ze sekvence do tabulky, `guid.comb` jako `guid` a `foreign` jako `assigned` — a s posledním jmenovaným přestane výstup popisovat vztah 1:1 přes sdílený primární klíč, ačkoli `SharesPrimaryKeyThrough` ten signál na vstupu čte a `<one-to-one constrained="true">` vypíše správně. Rozhodnutí 021 uložilo tři kroky v pořadí: název odvodit z kanonických faktů, kde to jde (`HiLo` se `SequenceName` je `seqhilo`, s `CounterTable` `hilo`); jinak použít název ze zdroje, zná-li ho cílový framework a znamená-li týž mechanismus; jinak kanonický název se záznamem o ztrátě. Zbývá trojí: doplnit `PrimaryKeyStrategyConvertor` o seznam názvů, které NHibernate zná — dnes `FromNHibernate` slévá neznámý řetězec a `assigned` do téže větve, takže „neznám" od „znám a mapuji na `Unspecified`" nerozliší —, přepsat výběr názvu v `AppendGenerator` a zúžit tamní záznam o ztrátě na případy, kdy se název opravdu zahodí. Stojí na kanonických parametrech z rozhodnutí [020](./decisions/020-canonical-generator-parameter-vocabulary.md), bez kterých první krok nemá z čeho odvozovat, a sahá do téhož `AppendGenerator`, takže obojí patří do jednoho průchodu.
 
 ### Priorita zdrojů uvnitř vstupu se nevynucuje
 *Implementace rozhodnutí [017](./decisions/017-source-precedence-for-mapping-facts.md). Požadavky F5, F11, S2.*
@@ -131,7 +131,7 @@ Velké bloky ze zadání, každý si zaslouží vlastní rozhodnutí, než se do
 | Blok | Co odblokuje |
 |---|---|
 | **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech a kontrola úplnosti IR jsou hotové (rozhodnutí 010), syntaktické ověření generovaných souborů také (rozhodnutí 016, `architecture.md` §6.2); zbývá záznam běhu podle S6, který stojí na cílové verzi v deskriptoru |
-| **F7–F10** javový ekosystém a cross-ecosystem překlad | jádro rozšíření; jazykovou stranu typového modelu už má (rozhodnutí 014), stojí ještě na neutralizaci databázové strany a na kanonickém slovníku parametrů generátoru |
+| **F7–F10** javový ekosystém a cross-ecosystem překlad | jádro rozšíření; typový model má zneutralizovaný na jazykové (rozhodnutí 014) i databázové straně (rozhodnutí 019) a slovník parametrů generátoru rozhodnutý (020), takže z předpokladů zbývá jeho implementace |
 | **F12–F13** testovací infrastruktura pro Javu, diferenční ověření | důkaz funkční ekvivalence |
 | **F14–F15** dávkové vstupy a výběr cíle v UI | použitelnost nástroje mimo ruční zadávání; F14 je zároveň předpokladem třetí otázky u klíčové třídy |
 | **T1–T7** experimenty | T7 navazuje na existující ILP Advisor |
