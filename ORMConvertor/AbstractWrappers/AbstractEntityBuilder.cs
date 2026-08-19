@@ -149,11 +149,13 @@ public abstract class AbstractEntityBuilder
     /// </summary>
     /// <param name="propertyName">Name of a property that is already part of the key.</param>
     /// <param name="sourceStrategyName">The source's own name for the strategy, when the vocabulary lost it.</param>
-    /// <param name="parameters">Generator parameters, e.g. sequence name or block size.</param>
+    /// <param name="parameters">Canonical generator parameters (decision 020), e.g. sequence name or block size.</param>
+    /// <param name="sourceParameters">Parameters as the source wrote them, where the vocabulary did not capture them.</param>
     public void SetKeyStrategyDetails(
         string propertyName,
         string? sourceStrategyName = null,
-        IReadOnlyDictionary<string, string>? parameters = null)
+        IReadOnlyDictionary<GeneratorParameter, string>? parameters = null,
+        IReadOnlyDictionary<string, string>? sourceParameters = null)
     {
         var key = EntityMap.PrimaryKey
             ?? throw new InvalidOperationException("Key strategy details can only be set once the key is defined.");
@@ -171,7 +173,10 @@ public abstract class AbstractEntityBuilder
             SourceStrategyName = sourceStrategyName ?? target.SourceStrategyName,
             StrategyParameters = parameters is null
                 ? target.StrategyParameters
-                : new Dictionary<string, string>(parameters),
+                : new Dictionary<GeneratorParameter, string>(parameters),
+            SourceStrategyParameters = sourceParameters is null
+                ? target.SourceStrategyParameters
+                : new Dictionary<string, string>(sourceParameters),
         };
 
         EntityMap.PrimaryKey = new PrimaryKey

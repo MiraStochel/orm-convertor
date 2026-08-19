@@ -1,4 +1,5 @@
-﻿using Model;
+﻿using AbstractWrappers.Descriptors;
+using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers;
@@ -151,7 +152,7 @@ public class NHibernateRelationTest
         builder.SetKeyStrategyDetails(
             "CustomerID",
             sourceStrategyName: "foreign",
-            parameters: new Dictionary<string, string> { ["property"] = "Customer" });
+            sourceParameters: new Dictionary<string, string> { ["property"] = "Customer" });
 
         builder.AddRelation(new Relation
         {
@@ -164,7 +165,15 @@ public class NHibernateRelationTest
 
         // The entity owns the relation, yet has no column of its own: its identity is the foreign
         // key. That is exactly what the foreign generator says, and it says it locally.
-        Assert.Contains("<one-to-one name=\"Customer\" class=\"Customer\" constrained=\"true\" />", MappingOf(builder));
+        var xml = MappingOf(builder);
+        Assert.Contains("<one-to-one name=\"Customer\" class=\"Customer\" constrained=\"true\" />", xml);
+
+        // The generator itself comes back too: assigned in its place would stop describing the
+        // shared key the constrained one-to-one claims (decision 021), and the escape-path
+        // parameters travel verbatim (decision 020), so the property survives with it.
+        Assert.Contains("<generator class=\"foreign\">", xml);
+        Assert.Contains("<param name=\"property\">Customer</param>", xml);
+        Assert.DoesNotContain(builder.Records, r => r.Category == MappingFactCategory.PrimaryKeyStrategy);
     }
 
     [Fact]

@@ -583,6 +583,7 @@ public static class CatalogCompletion
                     Strategy = PrimaryKeyStrategy.Identity,
                     SourceStrategyName = part.SourceStrategyName,
                     StrategyParameters = part.StrategyParameters,
+                    SourceStrategyParameters = part.SourceStrategyParameters,
                 });
                 changed = true;
                 ReportSupplied(builder, em, part.PropertyMap.Property.Name, MappingFactCategory.PrimaryKeyStrategy,

@@ -21,9 +21,19 @@ public sealed class PrimaryKeyPart
     public string? SourceStrategyName { get; init; }
 
     /// <summary>
-    /// Generator parameters as key-value pairs: sequence name, block size, counter table.
+    /// Canonical generator parameters (decision 020): the closed vocabulary fixes meaning and
+    /// unit, so BlockSize holds the number of values in a block whatever the source called it.
     /// Without them a sequence-backed key translates into a mapping that compiles and does
     /// not run, because it points at a sequence the target database need not have.
     /// </summary>
-    public Dictionary<string, string> StrategyParameters { get; init; } = [];
+    public IReadOnlyDictionary<GeneratorParameter, string> StrategyParameters { get; init; } =
+        new Dictionary<GeneratorParameter, string>();
+
+    /// <summary>
+    /// Parameters as the source wrote them, where the vocabulary did not capture them: all
+    /// parameters of a strategy that stayed on the escape path (Unspecified with a named
+    /// generator), and words local to one generator elsewhere. A record of the source next
+    /// to the canonical value, like SourceStrategyName (decision 020).
+    /// </summary>
+    public Dictionary<string, string> SourceStrategyParameters { get; init; } = [];
 }

@@ -379,24 +379,32 @@ public class PrimaryKeyTest
         builder.SetKeyStrategyDetails(
             "OrderID",
             sourceStrategyName: "seqhilo",
-            parameters: new Dictionary<string, string> { ["sequence"] = "order_line_seq", ["max_lo"] = "50" });
+            parameters: new Dictionary<GeneratorParameter, string>
+            {
+                [GeneratorParameter.SequenceName] = "order_line_seq",
+                [GeneratorParameter.BlockSize] = "51",
+            },
+            sourceParameters: new Dictionary<string, string> { ["where"] = "flag = 1" });
 
         var pk = builder.EntityMap.PrimaryKey;
         Assert.NotNull(pk);
 
         // The parameters are what keeps a sequence-backed key runnable in the target: without
         // the sequence name the generated mapping points at a sequence that need not exist.
+        // Canonical and literal land side by side (decision 020), neither replacing the other.
         var detailed = pk.Parts.Single(p => p.PropertyMap.Property.Name == "OrderID");
         Assert.Equal(PrimaryKeyStrategy.Sequence, detailed.Strategy);
         Assert.Equal("seqhilo", detailed.SourceStrategyName);
-        Assert.Equal("order_line_seq", detailed.StrategyParameters["sequence"]);
-        Assert.Equal("50", detailed.StrategyParameters["max_lo"]);
+        Assert.Equal("order_line_seq", detailed.StrategyParameters[GeneratorParameter.SequenceName]);
+        Assert.Equal("51", detailed.StrategyParameters[GeneratorParameter.BlockSize]);
+        Assert.Equal("flag = 1", detailed.SourceStrategyParameters["where"]);
 
         // Rebuilding the key around one part must leave everything else as it was.
         var untouched = pk.Parts.Single(p => p.PropertyMap.Property.Name == "LineNumber");
         Assert.Equal(PrimaryKeyStrategy.Identity, untouched.Strategy);
         Assert.Null(untouched.SourceStrategyName);
         Assert.Empty(untouched.StrategyParameters);
+        Assert.Empty(untouched.SourceStrategyParameters);
         Assert.Equal(new[] { 1, 2 }, pk.Parts.Select(p => p.Order));
         Assert.Equal("OrderLineId", pk.SourceKeyClass?.ClassName);
     }

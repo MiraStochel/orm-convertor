@@ -238,11 +238,11 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         // and its parameters. Without the parameters a sequence-backed key would translate
         // into a mapping naming no sequence, which compiles and does not run.
         var sourceStrategyName = PrimaryKeyStrategyConvertor.SourceNameFor(genClass, strategy);
-        var strategyParameters = ReadGeneratorParameters(generatorElem);
+        var (parameters, sourceParameters) = ReadGeneratorParameters(generatorElem, genClass, strategy);
 
-        if (sourceStrategyName is not null || strategyParameters.Count > 0)
+        if (sourceStrategyName is not null || parameters.Count > 0 || sourceParameters.Count > 0)
         {
-            entityBuilder.SetKeyStrategyDetails(propName, sourceStrategyName, strategyParameters);
+            entityBuilder.SetKeyStrategyDetails(propName, sourceStrategyName, parameters, sourceParameters);
         }
     }
 
@@ -312,30 +312,97 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     }
 
     /// <summary>
-    /// Reads the &lt;param name="..."&gt; children of a generator. Which names appear is up to
-    /// the generator itself - sequence, max_lo, table - so they are kept as the source wrote
-    /// them rather than translated into a vocabulary the model does not have.
+    /// Reads the &lt;param name="..."&gt; children of a generator and canonicalizes the ones whose
+    /// meaning the generator class fixes (decision 020): sequence names the sequence of both
+    /// sequence and seqhilo, table and column locate the counter of hilo, and max_lo is the
+    /// highest low value, so the block holds one value more than it says. A strategy that
+    /// stayed on the escape path keeps all of its parameters verbatim - they are not ours to
+    /// interpret - and so does any parameter the vocabulary does not name, such as where.
     /// </summary>
-    private static Dictionary<string, string> ReadGeneratorParameters(XElement? generatorElem)
+    private static (Dictionary<GeneratorParameter, string> Canonical, Dictionary<string, string> Literal)
+        ReadGeneratorParameters(XElement? generatorElem, string? generatorClass, PrimaryKeyStrategy strategy)
     {
-        var parameters = new Dictionary<string, string>();
+        var canonical = new Dictionary<GeneratorParameter, string>();
+        var literal = new Dictionary<string, string>();
 
         if (generatorElem is null)
         {
-            return parameters;
+            return (canonical, literal);
         }
 
         foreach (var param in generatorElem.Elements().Where(e => e.Name.LocalName == "param"))
         {
             var name = param.Attribute("name")?.Value;
 
-            if (!string.IsNullOrEmpty(name))
+            if (string.IsNullOrEmpty(name))
             {
-                parameters[name] = param.Value.Trim();
+                continue;
+            }
+
+            var value = param.Value.Trim();
+
+            if (strategy == PrimaryKeyStrategy.Unspecified || !TryCanonicalize(generatorClass, name, value, canonical))
+            {
+                literal[name] = value;
             }
         }
 
-        return parameters;
+        return (canonical, literal);
+    }
+
+    private static bool TryCanonicalize(
+        string? generatorClass, string name, string value, Dictionary<GeneratorParameter, string> canonical)
+    {
+        switch (generatorClass, name)
+        {
+            case ("sequence" or "seqhilo", "sequence"):
+            {
+                var (schema, sequence) = SplitQualifiedName(value);
+                canonical[GeneratorParameter.SequenceName] = sequence;
+                if (schema is not null)
+                {
+                    canonical[GeneratorParameter.Schema] = schema;
+                }
+                return true;
+            }
+            case ("seqhilo" or "hilo", "max_lo") when int.TryParse(value, out var maxLo):
+                // max_lo is the highest low value, so the block holds max_lo + 1 values.
+                // Renaming without the shift is the off-by-one trap decision 020 names.
+                canonical[GeneratorParameter.BlockSize] = (maxLo + 1).ToString();
+                return true;
+            case ("hilo", "table"):
+            {
+                var (schema, table) = SplitQualifiedName(value);
+                canonical[GeneratorParameter.CounterTable] = table;
+                if (schema is not null)
+                {
+                    canonical[GeneratorParameter.Schema] = schema;
+                }
+                return true;
+            }
+            case ("hilo", "column"):
+                canonical[GeneratorParameter.CounterValueColumn] = value;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Splits a possibly schema-qualified name; the schema goes to its own canonical value
+    /// (decision 020). A quoted identifier may legitimately contain a dot, so it is left whole
+    /// rather than a schema being invented out of it.
+    /// </summary>
+    private static (string? Schema, string Name) SplitQualifiedName(string value)
+    {
+        var dot = value.LastIndexOf('.');
+
+        if (dot <= 0 || dot == value.Length - 1 || value.IndexOfAny(['`', '"', '[', ']']) >= 0)
+        {
+            return (null, value);
+        }
+
+        return (value[..dot], value[(dot + 1)..]);
     }
 
     /// <summary>

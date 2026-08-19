@@ -548,20 +548,30 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Writes the generator of a simple key. Parameters - sequence name, block size - go in as
-    /// nested elements: without them the mapping names no sequence and the target falls back
-    /// to its own default, so it compiles and fails at runtime. The class written is the
-    /// canonical name of the strategy; what the source called it is a record for diagnostics,
-    /// not an input to generation (decision 011) - so a source name the canonical form does
-    /// not restate is reported as a loss, and assigned written for a strategy nobody stated
-    /// is reported as a convention of the target (decision 010).
+    /// Writes the generator of a simple key. The class is selected in three steps (decision
+    /// 021): from the canonical facts where they determine it, then from the source's own name
+    /// where NHibernate knows it and it means the mechanism the part carries, and only then
+    /// the canonical name of the strategy with a loss record. Canonical parameters (decision
+    /// 020) go in as nested elements under the names of the selected generator: without them
+    /// the mapping names no sequence and the target falls back to its own default, so it
+    /// compiles and fails at runtime. A strategy that stayed on the escape path takes its
+    /// literal parameters with it, so foreign keeps its property and the shared-key signal of
+    /// decision 012 closes on the output side too. assigned written for a strategy nobody
+    /// stated is reported as a convention of the target (decision 010).
     /// </summary>
     private void AppendGenerator(StringBuilder mapping, EntityMap entityMap, PrimaryKeyPart part)
     {
-        var generatorClass = PrimaryKeyStrategyConvertor.ToNHibernate(part.Strategy);
+        var generatorClass = SelectGeneratorClass(part);
 
         if (part.SourceStrategyName is not null && part.SourceStrategyName != generatorClass)
         {
+            // The loss says why the name is dropped, not merely that the spelling differs.
+            var why = !PrimaryKeyStrategyConvertor.Knows(part.SourceStrategyName)
+                ? "the target framework does not know a generator of that name"
+                : PrimaryKeyStrategyConvertor.FromNHibernate(part.SourceStrategyName) != part.Strategy
+                    ? $"that name means a different mechanism than the {part.Strategy} the key part carries"
+                    : "the facts the key part carries select the generator";
+
             Report(new ConversionRecord
             {
                 Kind = ConversionRecordKind.Loss,
@@ -570,10 +580,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 Entity = entityMap.Entity.Name,
                 Property = part.PropertyMap.Property.Name,
                 Category = MappingFactCategory.PrimaryKeyStrategy,
-                Reason = $"The source called the generator '{part.SourceStrategyName}'; the canonical '{generatorClass}' is written and the source's own name is not restated (decision 011).",
+                Reason = $"The source called the generator '{part.SourceStrategyName}'; '{generatorClass}' is written because {why} (decision 021).",
             });
         }
-        else if (part.Strategy == PrimaryKeyStrategy.Unspecified)
+        else if (part.Strategy == PrimaryKeyStrategy.Unspecified && part.SourceStrategyName is null)
         {
             Report(new ConversionRecord
             {
@@ -587,7 +597,9 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             });
         }
 
-        if (part.StrategyParameters.Count == 0)
+        var parameters = TranslateGeneratorParameters(entityMap, part, generatorClass);
+
+        if (parameters.Count == 0)
         {
             AppendXml(mapping, 3, $"<generator class=\"{generatorClass}\" />");
             return;
@@ -595,12 +607,132 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         AppendXml(mapping, 3, $"<generator class=\"{generatorClass}\">");
 
-        foreach (var (name, value) in part.StrategyParameters)
+        foreach (var (name, value) in parameters)
         {
             AppendXml(mapping, 4, $"<param name=\"{name}\">{value}</param>");
         }
 
         AppendXml(mapping, 3, "</generator>");
+    }
+
+    /// <summary>
+    /// The three steps of decision 021, in order: facts, then the source's name as an arbiter
+    /// between spellings the model does not tell apart, then the canonical name.
+    /// </summary>
+    private static string SelectGeneratorClass(PrimaryKeyPart part)
+    {
+        // Facts before names: HiLo is the one mechanism NHibernate writes as two generators,
+        // and where the counter lives is a parameter of the model, not a name of the source -
+        // so this branch holds for a model that never carried a name, e.g. one parsed from JPA.
+        if (part.Strategy == PrimaryKeyStrategy.HiLo)
+        {
+            return part.StrategyParameters.ContainsKey(GeneratorParameter.SequenceName) ? "seqhilo" : "hilo";
+        }
+
+        // The source's name never decides what is generated, only how it is spelled: it must
+        // be a generator NHibernate registers AND mean the mechanism the part carries, which
+        // is what keeps a custom generator class or a foreign ecosystem's name out.
+        if (part.SourceStrategyName is { } sourceName
+            && PrimaryKeyStrategyConvertor.Knows(sourceName)
+            && PrimaryKeyStrategyConvertor.FromNHibernate(sourceName) == part.Strategy)
+        {
+            return sourceName;
+        }
+
+        return PrimaryKeyStrategyConvertor.ToNHibernate(part.Strategy);
+    }
+
+    /// <summary>
+    /// Translates canonical parameters (decision 020) into the vocabulary of the selected
+    /// generator - which generator is written decides what its parameters are called, so the
+    /// table is keyed by the class, not the mechanism. Emission follows the declaration order
+    /// of the vocabulary, a stable property of the model rather than of the input (S2). A
+    /// parameter the selected generator cannot express is a loss record, and so is a literal
+    /// parameter outside the escape path: writing a word we never understood under a generator
+    /// we selected would be a claim about its meaning.
+    /// </summary>
+    private List<(string Name, string Value)> TranslateGeneratorParameters(
+        EntityMap entityMap, PrimaryKeyPart part, string generatorClass)
+    {
+        var result = new List<(string Name, string Value)>();
+
+        // The escape path proper: the strategy is unrecognized and the source's own generator
+        // is being written, so its parameters mean exactly what the source meant by them.
+        if (part.Strategy == PrimaryKeyStrategy.Unspecified && generatorClass == part.SourceStrategyName)
+        {
+            foreach (var (name, value) in part.SourceStrategyParameters)
+            {
+                result.Add((name, value));
+            }
+
+            return result;
+        }
+
+        var schema = part.StrategyParameters.GetValueOrDefault(GeneratorParameter.Schema);
+        var schemaConsumed = false;
+
+        foreach (var parameter in Enum.GetValues<GeneratorParameter>())
+        {
+            if (parameter == GeneratorParameter.Schema || !part.StrategyParameters.TryGetValue(parameter, out var value))
+            {
+                // The schema travels with the name it qualifies; left over, it is reported below.
+                continue;
+            }
+
+            switch (parameter, generatorClass)
+            {
+                case (GeneratorParameter.SequenceName, "sequence" or "seqhilo"):
+                    result.Add(("sequence", Qualify(schema, value)));
+                    schemaConsumed = schema is not null;
+                    break;
+                case (GeneratorParameter.CounterTable, "hilo"):
+                    result.Add(("table", Qualify(schema, value)));
+                    schemaConsumed = schema is not null;
+                    break;
+                case (GeneratorParameter.CounterValueColumn, "hilo"):
+                    result.Add(("column", value));
+                    break;
+                case (GeneratorParameter.BlockSize, "seqhilo" or "hilo") when int.TryParse(value, out var blockSize):
+                    // BlockSize is the number of values in the block; max_lo is the highest
+                    // low value, one less - the same shift the parser makes, in reverse.
+                    result.Add(("max_lo", (blockSize - 1).ToString()));
+                    break;
+                default:
+                    ReportGeneratorParameterLoss(entityMap, part, parameter.ToString(), value, generatorClass);
+                    break;
+            }
+        }
+
+        if (schema is not null && !schemaConsumed)
+        {
+            ReportGeneratorParameterLoss(
+                entityMap, part, nameof(GeneratorParameter.Schema), schema, generatorClass);
+        }
+
+        foreach (var (name, value) in part.SourceStrategyParameters)
+        {
+            ReportGeneratorParameterLoss(entityMap, part, name, value, generatorClass);
+        }
+
+        return result;
+    }
+
+    private static string Qualify(string? schema, string name)
+        => schema is null ? name : $"{schema}.{name}";
+
+    private void ReportGeneratorParameterLoss(
+        EntityMap entityMap, PrimaryKeyPart part, string parameter, string value, string generatorClass)
+    {
+        Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = Descriptor.Framework,
+            Artifact = ConversionContentType.XML,
+            Entity = entityMap.Entity.Name,
+            Property = part.PropertyMap.Property.Name,
+            Category = MappingFactCategory.PrimaryKeyStrategy,
+            Reason = $"The generator parameter '{parameter}' ('{value}') has no counterpart on NHibernate's '{generatorClass}' generator and is dropped (decision 020).",
+        });
     }
 
     /// <summary>
@@ -732,7 +864,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             return false;
         }
 
-        return !part.StrategyParameters.TryGetValue("property", out var through)
+        return !part.SourceStrategyParameters.TryGetValue("property", out var through)
             || through == navigationProperty;
     }
 

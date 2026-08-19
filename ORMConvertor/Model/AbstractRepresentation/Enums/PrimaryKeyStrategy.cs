@@ -3,7 +3,7 @@
 /// <summary>
 /// How the value of a key part comes to exist. The values name mechanisms shared by several
 /// frameworks, not generators of one of them; what a source expresses beyond them is kept on
-/// PrimaryKeyPart as SourceStrategyName and StrategyParameters (decision 011).
+/// PrimaryKeyPart as SourceStrategyName and SourceStrategyParameters (decisions 011 and 020).
 /// </summary>
 public enum PrimaryKeyStrategy
 {

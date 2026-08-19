@@ -171,23 +171,48 @@ public class DiagnosticsTest
     }
 
     [Fact]
-    public void SourceGeneratorNameTheCanonicalFormDropsIsALoss()
+    public void SourceGeneratorNameTheTargetDoesNotKnowIsALoss()
+    {
+        var builder = new NHibernateEntityBuilder();
+        builder.AddClassHeader("public", "Order");
+        builder.AddTable("Orders");
+        builder.AddProperty("int", "OrderID", "public", hasGetter: true, hasSetter: true);
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Unspecified, "OrderID");
+        builder.SetKeyStrategyDetails("OrderID", "OrderIds.SnowflakeGenerator, OrderIds");
+
+        var xml = builder.Build().Single(o => o.ContentType == ConversionContentType.XML).Content;
+
+        // A name outside the target's own list of generators is never written back - the
+        // artifact would fail to start on an unloadable type - so the canonical fallback goes
+        // out and the record says why the name was dropped (decision 021).
+        Assert.Contains("<generator class=\"assigned\" />", xml);
+        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
+        Assert.Contains("SnowflakeGenerator", record.Reason);
+        Assert.Contains("does not know", record.Reason);
+    }
+
+    [Fact]
+    public void GeneratorParameterTheTargetCannotExpressIsALoss()
     {
         var builder = new NHibernateEntityBuilder();
         builder.AddClassHeader("public", "Order");
         builder.AddTable("Orders");
         builder.AddProperty("int", "OrderID", "public", hasGetter: true, hasSetter: true);
         builder.AddPrimaryKey(PrimaryKeyStrategy.HiLo, "OrderID");
-        builder.SetKeyStrategyDetails("OrderID", "seqhilo",
-            new Dictionary<string, string> { ["sequence"] = "order_hi" });
+        builder.SetKeyStrategyDetails("OrderID", parameters: new Dictionary<GeneratorParameter, string>
+        {
+            [GeneratorParameter.CounterTable] = "hibernate_unique_key",
+            [GeneratorParameter.CounterKeyColumn] = "sequence_name",
+        });
 
         var xml = builder.Build().Single(o => o.ContentType == ConversionContentType.XML).Content;
 
-        // The canonical hilo is written (decision 011); that seqhilo does not come back is
-        // exactly the difference the record has to carry.
+        // NHibernate's hilo keeps a single-row counter table: the JPA-style row selector has
+        // no counterpart there, so it goes out as a record, not silently (decision 020).
         Assert.Contains("<generator class=\"hilo\">", xml);
+        Assert.Contains("<param name=\"table\">hibernate_unique_key</param>", xml);
         var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
-        Assert.Contains("seqhilo", record.Reason);
+        Assert.Contains(nameof(GeneratorParameter.CounterKeyColumn), record.Reason);
     }
 
     [Fact]

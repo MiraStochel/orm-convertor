@@ -56,4 +56,38 @@ public class PrimaryKeyStrategyConvertor
         => string.IsNullOrEmpty(generator) || generator == ToNHibernate(strategy)
             ? null
             : generator;
+
+    /// <summary>
+    /// Whether NHibernate registers a generator of this name - the first condition for writing
+    /// a source's own name back into the output (decision 021). Deliberately distinct from
+    /// <see cref="FromNHibernate"/> landing on Unspecified, which conflates a name we know and
+    /// map onto nothing with a name we never saw, such as a custom generator class.
+    /// </summary>
+    public static bool Knows(string generator) => KnownGenerators.Contains(generator);
+
+    // The short names IdentifierGeneratorFactory registers in NHibernate 5.7.0, plus native,
+    // which the binder resolves against the dialect. A name missing here only costs fidelity
+    // (canonical fallback with a loss record); a name NHibernate does not accept would cost a
+    // runnable artifact, so the list errs on the side of leaving out.
+    private static readonly HashSet<string> KnownGenerators = new(StringComparer.Ordinal)
+    {
+        "assigned",
+        "native",
+        "identity",
+        "sequence",
+        "seqhilo",
+        "hilo",
+        "increment",
+        "guid",
+        "guid.comb",
+        "guid.native",
+        "uuid.hex",
+        "uuid.string",
+        "foreign",
+        "select",
+        "sequence-identity",
+        "trigger-identity",
+        "enhanced-sequence",
+        "enhanced-table",
+    };
 }
