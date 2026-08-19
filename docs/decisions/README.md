@@ -31,7 +31,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [023](023-query-builder-template-method.md) | Šablonová metoda dotazového builderu podle relačního pořadí | 2026-08-19 | platí | F7–F10, F11, T2, S1, S2 |
 | [024](024-typed-query-operand.md) | Typovaný operand dotazové podmínky | 2026-08-19 | platí | F7–F10, F11, T2, T3, S2 |
 | [025](025-query-language-as-content-type.md) | Dotazový jazyk jako typ obsahu | 2026-08-19 | platí | F7–F10, F11, F14, S1, S2, S7 |
-| [026](026-home-of-shared-query-reading.md) | Kde bydlí sdílené čtení dotazů | 2026-08-19 | platí | F7–F10, S1, S2 |
+| [026](026-home-of-shared-query-reading.md) | Kde bydlí sdílené čtení dotazů | 2026-08-19 | revidováno | F7–F10, S1, S2 |
 | [027](027-query-artifact-verification.md) | Ověření generovaných dotazů | 2026-08-19 | platí | F11, F13, T2, T3, S2 |
 | [028](028-assembly-name-is-not-ours-to-invent.md) | Název sestavení není náš, abychom ho vymýšleli | 2026-08-19 | platí | F2, F11, S2 |
 

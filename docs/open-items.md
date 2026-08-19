@@ -82,6 +82,8 @@ Deskriptor cílového frameworku nese, co cíl umí vyjádřit, ale ne verzi, pr
 
 Sem patří i **cílový databázový dialekt**, který rozhodnutí 019 odmítlo řešit v typovém modelu: je to fakt o cíli převodu téhož tvaru jako verze frameworku. Bez něj nelze emitovat `sql-type` odvozený z typové rodiny ani vybrat typ podle systému, protože konkrétní SQL typ z typu frameworku odvozuje právě dialekt — NHibernate builder dnes propisuje jen doslovný `SourceSqlType`, který nese zdroj. Dokud se dialekt nedeklaruje, je jediným dialektem SQL Server.
 
+Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dialektu ji nevyřeší: `DapperSqlQueryParser` čte T-SQL gramatikou `TSql160Parser` (rozhodnutí [026](./decisions/026-home-of-shared-query-reading.md)), takže SQL napsané pro jiný databázový systém — u MyBatisu (F8) běžné — touhle cestou neprojde. Řešením je vlastní parser SQL v javovém wrapperu, ne pole v deskriptoru.
+
 ### Rozresolvování jmen entit — `property-ref` na inverzní straně
 *Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F11.*
 
