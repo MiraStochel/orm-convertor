@@ -1,210 +1,169 @@
-﻿using AbstractWrappers;
+using AbstractWrappers;
+using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
 using Model;
-using Model.Exceptions;
 using Model.QueryInstructions;
-using Model.QueryInstructions.Conditions;
-using System.Text;
 
 namespace DapperWrappers;
 
+/// <summary>
+/// Emits SQL, which is the only query form Dapper has (decision 022). Two artifacts leave
+/// here: the runnable C# method and the bare SQL, so that consumers which want the query
+/// itself do not have to dig it back out of the generated code (decision 025).
+/// </summary>
 public class DapperSqlQueryBuilder : AbstractQueryBuilder
 {
     private readonly IQueryVisitor visitor = new DapperSQLQueryVisitor();
 
-    private string? sourceEntity;
-    private string sourceName = "connection";
+    public override TargetFrameworkDescriptor Descriptor => DapperDescriptor.Instance;
 
-    public override List<ConversionSource> Build()
+    protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
     {
-        var firstInstruction = instructions[0];
+        artifact.Source.Append("FROM ").Append(clauses.From.Accept(visitor));
 
-        string query;
-
-        if (firstInstruction is SetOperationInstruction setOp)
+        // Dapper materialises into a type the query itself never names, so the entity is
+        // derived from the table - a convention of ours, and reported as one.
+        var table = clauses.From.Table.Split('.').LastOrDefault();
+        if (!string.IsNullOrEmpty(table))
         {
-            var left = BuildSelectQuery(setOp.Left);
-            var right = BuildSelectQuery(setOp.Right);
-            query = $"{left.TrimEnd()}\n\n{visitor.Visit(setOp)}\n\n{right}";
+            artifact.ResultEntity = table.EndsWith('s') ? table[..^1] : table;
+            Report(
+                ConversionRecordKind.Convention,
+                $"The result type '{artifact.ResultEntity}' was derived from the table name '{clauses.From.Table}'; the query does not name it.",
+                QueryFeature.Projection,
+                entity: artifact.ResultEntity);
         }
-        else if (firstInstruction is SubQueryInstruction subQuery)
+    }
+
+    protected override void BuildJoins(QueryClauses clauses, QueryArtifact artifact)
+    {
+        foreach (var join in clauses.Joins)
         {
-            query = BuildSelectQuery(subQuery);
-        }
-        else
-        {
-            throw new NotSupportedException();
-        }
-
-        query = query.Trim();
-        var indent = new string(' ', 8);
-        var indentedQuery = string.Join("\n", query.Split('\n').Select(line => indent + line));
-
-        // Indentation fix :(
-        var template =
-@"public List<{0}> Query() 
-{{
-    return {2}.Query<{0}>(
-        """"""
-        {1}
-        """""",    
-    ).ToList();
-}}
-"; ;
-
-        var finalMethod = string.Format(template.Trim(), sourceEntity, indentedQuery.TrimStart(), sourceName);
-        return [
-            new() {
-                Content = finalMethod,
-                ContentType = ConversionContentType.CSharpQuery
+            if (artifact.Joins.Length > 0)
+            {
+                artifact.Joins.AppendLine();
             }
+
+            artifact.Joins.Append(join.Accept(visitor));
+        }
+    }
+
+    protected override void BuildFilter(QueryClauses clauses, QueryArtifact artifact)
+    {
+        if (clauses.Filter is null)
+        {
+            return;
+        }
+
+        artifact.Filter.Append("WHERE ").Append(clauses.Filter.Accept(visitor));
+    }
+
+    protected override void BuildGrouping(QueryClauses clauses, QueryArtifact artifact)
+    {
+        if (clauses.GroupBys.Count == 0)
+        {
+            return;
+        }
+
+        artifact.Grouping
+            .Append("GROUP BY ")
+            .Append(string.Join(", ", clauses.GroupBys.Select(g => g.Accept(visitor))));
+    }
+
+    protected override void BuildPostFilter(QueryClauses clauses, QueryArtifact artifact)
+    {
+        if (clauses.PostFilter is null)
+        {
+            return;
+        }
+
+        artifact.PostFilter.Append("HAVING ").Append(clauses.PostFilter.Accept(visitor));
+    }
+
+    protected override void BuildOrdering(QueryClauses clauses, QueryArtifact artifact)
+    {
+        if (clauses.OrderBys.Count == 0)
+        {
+            return;
+        }
+
+        artifact.Ordering
+            .Append("ORDER BY ")
+            .Append(string.Join(", ", clauses.OrderBys.Select(o => o.Accept(visitor))));
+    }
+
+    protected override void BuildProjection(QueryClauses clauses, QueryArtifact artifact)
+    {
+        artifact.Projection.Append("SELECT ");
+
+        // Rule Q3: no projection means the whole entity is materialised.
+        artifact.Projection.Append(clauses.ProjectsWholeEntity
+            ? "*"
+            : string.Join(", ", clauses.Projections.Select(p => p.Accept(visitor))));
+    }
+
+    protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
+        => Emit(RenderSelect(artifact), artifact.ResultEntity);
+
+    /// <summary>
+    /// SQL clause order, which is the relational evaluation order with the projection moved
+    /// to the front. The steps ran in the other order; joining the slots here is what lets
+    /// one template also serve a LINQ target (decision 023).
+    /// </summary>
+    private static string RenderSelect(QueryArtifact artifact)
+    {
+        var parts = new[]
+        {
+            artifact.Projection,
+            artifact.Source,
+            artifact.Joins,
+            artifact.Filter,
+            artifact.Grouping,
+            artifact.PostFilter,
+            artifact.Ordering,
+        };
+
+        return string.Join("\n", parts.Where(p => p.Length > 0).Select(p => p.ToString()));
+    }
+
+    protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)
+    {
+        var left = Normalize(instruction.Left.Instructions);
+        var right = Normalize(instruction.Right.Instructions);
+
+        if (left is null || right is null)
+        {
+            return [];
+        }
+
+        var leftSql = RenderSelect(Compose(left));
+        var rightArtifact = Compose(right);
+        var rightSql = RenderSelect(rightArtifact);
+
+        var sql = $"{leftSql}\n\n{visitor.Visit(instruction)}\n\n{rightSql}";
+        return Emit(sql, rightArtifact.ResultEntity);
+    }
+
+    private static List<ConversionSource> Emit(string sql, string? resultEntity)
+    {
+        var entity = resultEntity ?? "object";
+        var indented = string.Join("\n", sql.Split('\n').Select(line => "        " + line));
+
+        var method =
+            $$""""
+            public static List<{{entity}}> Query(IDbConnection connection)
+            {
+                return connection.Query<{{entity}}>(
+                    """
+            {{indented}}
+                    """).ToList();
+            }
+            """";
+
+        return
+        [
+            new() { Content = method, ContentType = ConversionContentType.CSharpQuery },
+            new() { Content = sql, ContentType = ConversionContentType.SqlQuery },
         ];
-    }
-
-    private string BuildSelectQuery(SubQueryInstruction subQuery)
-    {
-        // Own builder for nesting
-        StringBuilder sqlBuilder = new();
-
-        var inst = subQuery.Instructions;
-
-        BuildProjectionPart(inst, sqlBuilder);
-
-        BuildFromPart(inst, sqlBuilder);
-
-        BuildJoinPart(inst, sqlBuilder);
-
-        BuildWherePart(inst, sqlBuilder);
-
-        BuildGroupByPart(inst, sqlBuilder);
-
-        BuildHavingPart(inst, sqlBuilder);
-
-        BuildOrderByPart(inst, sqlBuilder);
-
-        return sqlBuilder.ToString();
-    }
-
-    private void BuildProjectionPart(List<QueryInstruction> instructions, StringBuilder sqlBuilder)
-    {
-        sqlBuilder.Append("SELECT ");
-
-        var projections = instructions.OfType<ProjectInstruction>().ToList();
-
-        if (projections.Count == 0)
-        {
-            sqlBuilder.Append('*');
-            sqlBuilder.AppendLine();
-            return;
-        }
-
-        foreach (var projection in projections)
-        {
-            sqlBuilder.Append(projection.Accept(visitor) + ", ");
-        }
-
-        sqlBuilder.Remove(sqlBuilder.Length - 2, 2); // Remove trailing comma and space
-        sqlBuilder.AppendLine();
-    }
-
-    private void BuildFromPart(List<QueryInstruction> instructions, StringBuilder sqlBuilder)
-    {
-        var fromInstructions = instructions.OfType<FromInstruction>().ToList();
-
-        if (fromInstructions.Count != 1)
-        {
-            throw new QueryBuilderException("None or too many query sources.");
-        }
-
-        sourceEntity = fromInstructions.First().Table.Split('.').LastOrDefault();
-        if (sourceEntity != null && sourceEntity.EndsWith('s'))
-        {
-            sourceEntity = sourceEntity[..^1];
-        }
-
-        sqlBuilder.Append("FROM ");
-        sqlBuilder.Append(fromInstructions.First().Accept(visitor));
-        sqlBuilder.AppendLine();
-    }
-
-    private void BuildJoinPart(List<QueryInstruction> instructions, StringBuilder sqlBuilder)
-    {
-        var joinInstructions = instructions.OfType<JoinInstruction>().ToList();
-
-        foreach (var join in joinInstructions)
-        {
-            sqlBuilder.AppendLine(join.Accept(visitor));
-        }
-    }
-
-    private void BuildWherePart(List<QueryInstruction> instructions, StringBuilder sqlBuilder)
-    {
-        var selectInstructions = instructions.OfType<SelectInstruction>().ToList();
-
-        if (selectInstructions.Count == 0)
-        {
-            return;
-        }
-
-        // Multiple Where() calls are combined by conjunction (rule Q4 from the paper).
-        var condition = selectInstructions.Count == 1
-            ? selectInstructions[0].Condition
-            : new LogicalCondition(LogicalOperator.And, selectInstructions.Select(s => s.Condition).ToList());
-
-        sqlBuilder.Append("WHERE ");
-        sqlBuilder.Append(condition.Accept(visitor));
-        sqlBuilder.AppendLine();
-    }
-
-    private void BuildOrderByPart(List<QueryInstruction> instructions, StringBuilder sqlBuilder)
-    {
-        var orderByInstructions = instructions.OfType<OrderByInstruction>().ToList();
-
-        if (orderByInstructions.Count == 0)
-        {
-            return;
-        }
-
-        sqlBuilder.Append("ORDER BY ");
-        foreach (var orderBy in orderByInstructions)
-        {
-            sqlBuilder.Append(orderBy.Accept(visitor) + ", ");
-        }
-        sqlBuilder.Remove(sqlBuilder.Length - 2, 2); // Remove trailing comma and space
-        sqlBuilder.AppendLine();
-    }
-
-    private void BuildGroupByPart(List<QueryInstruction> instructions, StringBuilder sqlBuilder)
-    {
-        var groupByInstructions = instructions.OfType<GroupByInstruction>().ToList();
-
-        if (groupByInstructions.Count == 0)
-        {
-            return;
-        }
-
-        sqlBuilder.Append("GROUP BY ");
-        foreach (var groupBy in groupByInstructions)
-        {
-            sqlBuilder.Append(groupBy.Accept(visitor) + ", ");
-        }
-        sqlBuilder.Remove(sqlBuilder.Length - 2, 2); // Remove trailing comma and space
-        sqlBuilder.AppendLine();
-    }
-
-    private void BuildHavingPart(List<QueryInstruction> instructions, StringBuilder sqlBuilder)
-    {
-        var havingInstructions = instructions.OfType<HavingInstruction>().ToList();
-        if (havingInstructions.Count == 0)
-        {
-            return;
-        }
-
-        var condition = havingInstructions.Count == 1
-            ? havingInstructions[0].Condition
-            : new LogicalCondition(LogicalOperator.And, havingInstructions.Select(h => h.Condition).ToList());
-
-        sqlBuilder.Append("HAVING ");
-        sqlBuilder.Append(condition.Accept(visitor));
-        sqlBuilder.AppendLine();
     }
 }

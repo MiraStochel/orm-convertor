@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using AdvisorBenchmarking;
@@ -148,17 +148,6 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
                     request.SourceOrm,
                     framework,
                     sources).Sources;
-
-                // Ensure EFCore harness still receives a query source. EFCore target does not
-                // produce a CSharpQuery via QueryBuilder (it's null by design). If missing,
-                // append the original query unchanged alongside converted entities.
-                if (framework == ORMEnum.EFCore && !artifacts.Any(a => a.ContentType == ConversionContentType.CSharpQuery))
-                {
-                    var withQuery = new List<ConversionSource>(artifacts.Count + 1);
-                    withQuery.AddRange(artifacts);
-                    withQuery.Add(Clone(query.Query));
-                    artifacts = withQuery;
-                }
 
                 perFramework[framework] = artifacts;
             }

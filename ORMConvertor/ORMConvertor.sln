@@ -39,6 +39,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AdvisorBenchmarking", "Advi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DatabaseCatalog", "DatabaseCatalog\DatabaseCatalog.csproj", "{5B8E4D27-9C1A-4F6E-8A3D-7E2F0B6C9D14}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinqParsing", "LinqParsing\LinqParsing.csproj", "{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -205,6 +207,18 @@ Global
 		{5B8E4D27-9C1A-4F6E-8A3D-7E2F0B6C9D14}.Release|x64.Build.0 = Release|Any CPU
 		{5B8E4D27-9C1A-4F6E-8A3D-7E2F0B6C9D14}.Release|x86.ActiveCfg = Release|Any CPU
 		{5B8E4D27-9C1A-4F6E-8A3D-7E2F0B6C9D14}.Release|x86.Build.0 = Release|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Debug|x64.Build.0 = Debug|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Debug|x86.Build.0 = Debug|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Release|x64.ActiveCfg = Release|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Release|x64.Build.0 = Release|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Release|x86.ActiveCfg = Release|Any CPU
+		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

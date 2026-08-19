@@ -66,6 +66,39 @@ public sealed class TargetFrameworkDescriptor
 
     public FactSupport SupportOf(MappingFactCategory category) => support[category];
 
+    private readonly IReadOnlyDictionary<QueryFeature, FactSupport> querySupport =
+        new Dictionary<QueryFeature, FactSupport>();
+
+    /// <summary>
+    /// Support level for every query feature (decision 022). Completeness is enforced the
+    /// same way as for mapping facts, so adding a feature fails loudly on every descriptor
+    /// instead of defaulting to silence — which is exactly what a capability report must
+    /// never do.
+    /// </summary>
+    public required IReadOnlyDictionary<QueryFeature, FactSupport> QuerySupport
+    {
+        get => querySupport;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+
+            var missing = Enum.GetValues<QueryFeature>()
+                .Where(feature => !value.ContainsKey(feature))
+                .ToList();
+
+            if (missing.Count > 0)
+            {
+                throw new ArgumentException(
+                    $"Descriptor is missing a support level for: {string.Join(", ", missing)}.",
+                    nameof(QuerySupport));
+            }
+
+            querySupport = value;
+        }
+    }
+
+    public FactSupport SupportOf(QueryFeature feature) => querySupport[feature];
+
     /// <summary>
     /// Enforced members applying to a given entity map.
     /// </summary>

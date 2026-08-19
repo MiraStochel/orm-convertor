@@ -1,6 +1,8 @@
-﻿using AbstractWrappers;
+using AbstractWrappers;
 using DapperWrappers;
+using EFCoreWrappers;
 using Model;
+using NHibernateWrappers;
 
 namespace OrmConvertor.Factories;
 internal static class QueryBuilderFactory
@@ -9,8 +11,8 @@ internal static class QueryBuilderFactory
         new()
         {
             [ORMEnum.Dapper] = () => new DapperSqlQueryBuilder(),
-            [ORMEnum.NHibernate] = () => null,
-            [ORMEnum.EFCore] = () => null
+            [ORMEnum.NHibernate] = () => new NHibernateHqlQueryBuilder(),
+            [ORMEnum.EFCore] = () => new EFCoreLinqQueryBuilder()
         };
 
     public static AbstractQueryBuilder? Create(ORMEnum orm) =>

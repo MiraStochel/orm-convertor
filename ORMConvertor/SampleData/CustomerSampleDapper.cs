@@ -23,6 +23,16 @@ public class CustomerSampleDapper
         }
         
         """;
+    /// <summary>
+    /// A Dapper query is T-SQL. It names the table outright, because a Dapper source
+    /// carries no mapping metadata of its own to resolve it from.
+    /// </summary>
+    public const string Query = """
+        SELECT c.CustomerName, c.CreditLimit
+        FROM Sales.Customers AS c
+        WHERE c.CreditLimit > 2000
+        ORDER BY c.AccountOpenedDate DESC
+        """;
 
     public static EntityMap Map
     {

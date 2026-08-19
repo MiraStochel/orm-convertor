@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -22,10 +22,15 @@ internal static class DapperBenchmarkHarnessBuilder
             throw new InvalidOperationException("Dapper harness requires at least one entity definition.");
         }
 
-        // Dapper is fed with a single translated query. Entity + query sources come from translation layer.
+        // Dapper is fed with a single translated query. Since decision 025 the builder emits
+        // the bare SQL beside the method, so the harness takes that instead of digging the
+        // literal back out of the generated code with a regex.
+        var sqlSource = sources
+            .FirstOrDefault(s => s.ContentType == ConversionContentType.SqlQuery)?.Content
+            ?? throw new InvalidOperationException("Dapper harness requires a query definition.");
         var querySource = sources
             .FirstOrDefault(s => s.ContentType == ConversionContentType.CSharpQuery)?.Content
-            ?? throw new InvalidOperationException("Dapper harness requires a query definition.");
+            ?? string.Empty;
         querySource = NormalizeQuerySource(querySource);
 
         var ns = "DynamicBenchmarks.Generated";
@@ -82,7 +87,7 @@ internal static class DapperBenchmarkHarnessBuilder
         sb.AppendLine("            return Query().Count;");
         sb.AppendLine("        }");
         sb.AppendLine();
-        sb.AppendLine(BuildDapperQueryMethod(querySource, entityInfos));
+        sb.AppendLine(BuildDapperQueryMethod(querySource, sqlSource, entityInfos));
         sb.AppendLine("    }");
         sb.AppendLine("}");
         sb.AppendLine();
@@ -96,7 +101,7 @@ internal static class DapperBenchmarkHarnessBuilder
         return new BenchmarkSource(ns, typeName, sb.ToString());
     }
 
-    private static string BuildDapperQueryMethod(string querySource, IReadOnlyList<EntityInfo> entityInfos)
+    private static string BuildDapperQueryMethod(string querySource, string sqlSource, IReadOnlyList<EntityInfo> entityInfos)
     {
         string normalized = querySource.ReplaceLineEndings("\n");
 
@@ -113,13 +118,11 @@ internal static class DapperBenchmarkHarnessBuilder
             resultType = entityInfos.FirstOrDefault()?.TypeName ?? "global::System.Collections.Generic.Dictionary<string, object>";
         }
 
-        var sqlMatch = Regex.Match(normalized, "\"\"\"(?<sql>.*?)\"\"\"", RegexOptions.Singleline);
-        string sqlBody = sqlMatch.Success ? sqlMatch.Groups["sql"].Value.Trim('\r', '\n') : "SELECT 1";
+        string sqlBody = sqlSource.ReplaceLineEndings("\n").Trim();
 
         string primaryTable = entityInfos.FirstOrDefault()?.TableName ?? resultType;
         // Alias handling is delegated to the translator; we just swap placeholder tokens for the resolved table name.
         sqlBody = ReplaceSetPlaceholder(sqlBody, primaryTable);
-        sqlBody = StripCSharpNumericSuffixes(sqlBody);
 
         var builder = new StringBuilder();
         builder.AppendLine($"        public List<{resultType}> Query()");
@@ -132,8 +135,4 @@ internal static class DapperBenchmarkHarnessBuilder
         builder.AppendLine();
         return builder.ToString();
     }
-    // Translation sometimes leaves C# numeric suffixes (2000m, 3.5f) in the emitted SQL literal.
-    // Strip them so the query stays valid for SQL Server.
-    private static string StripCSharpNumericSuffixes(string sqlBody) =>
-        Regex.Replace(sqlBody, @"(?<=\b\d+(?:\.\d+)?)[mMdDfF]\b", string.Empty);
 }

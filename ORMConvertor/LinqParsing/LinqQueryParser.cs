@@ -1,0 +1,773 @@
+using System.Globalization;
+using AbstractWrappers;
+using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Model;
+using Model.AbstractRepresentation;
+using Model.AbstractRepresentation.Enums;
+using Model.QueryInstructions.Conditions;
+using Model.QueryInstructions.Enums;
+
+namespace LinqParsing;
+
+/// <summary>
+/// Reads a LINQ query written in C# into the query IR (decision 026). Everything here is a
+/// property of <c>System.Linq</c> rather than of any ORM: the same Where, Join, Select,
+/// OrderBy and GroupBy mean the same thing under either provider. What differs between
+/// frameworks is how the chain starts, and that is the one thing a subclass supplies.
+///
+/// The chain is decomposed explicitly, head to tail, the way the paper's Algorithm 2
+/// describes. An earlier version rode on the visit order of a syntax walker, which made the
+/// head-to-tail order accidental and turned "a Where directly after a GroupBy is a HAVING"
+/// into a special case that had to look back up the tree.
+/// </summary>
+public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQueryParser
+{
+    protected readonly AbstractQueryBuilder queryBuilder = queryBuilder;
+
+    private IReadOnlyList<EntityMap>? entityMaps;
+    private string sourceAlias = "t";
+
+    public bool CanParse(ConversionContentType contentType)
+        => contentType == ConversionContentType.CSharpQuery;
+
+    public void Parse(string source) => Parse(source, null);
+
+    public void Parse(string source, IReadOnlyList<EntityMap>? maps)
+    {
+        entityMaps = maps;
+
+        var tree = CSharpSyntaxTree.ParseText(Wrap(source));
+        var root = tree.GetCompilationUnitRoot();
+
+        queryBuilder.Push();
+
+        // Outer nodes come before inner ones in document order, so the first invocation that
+        // decomposes to a query root is the outermost link of the chain. A root appearing
+        // inside a Join argument therefore cannot be mistaken for the query's own.
+        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (TryDecompose(invocation, out var queryRoot, out var steps))
+            {
+                EmitSource(queryRoot!);
+                EmitSteps(steps);
+                queryBuilder.Pop();
+                return;
+            }
+        }
+
+        Report(
+            ConversionRecordKind.Failure,
+            "No LINQ query chain was found in the source; nothing was translated.");
+        queryBuilder.Pop();
+    }
+
+    /// <summary>
+    /// Recognises the head of the chain — <c>ctx.Customers</c>, <c>ctx.Set&lt;T&gt;()</c>,
+    /// <c>session.Query&lt;T&gt;()</c> — and says what it names.
+    /// </summary>
+    protected abstract bool TryReadQueryRoot(ExpressionSyntax expression, out LinqQueryRoot? root);
+
+    private static string Wrap(string source) =>
+        "using System;\n" +
+        "using System.Linq;\n" +
+        "using System.Collections.Generic;\n" +
+        "\n" +
+        "public class Snippet\n" +
+        "{\n" +
+        source +
+        "\n}\n";
+
+    private sealed record ChainStep(string Name, InvocationExpressionSyntax Node);
+
+    private bool TryDecompose(
+        ExpressionSyntax expression,
+        out LinqQueryRoot? root,
+        out List<ChainStep> steps)
+    {
+        steps = [];
+        var current = expression;
+
+        while (true)
+        {
+            if (TryReadQueryRoot(current, out root))
+            {
+                steps.Reverse();
+                return true;
+            }
+
+            if (current is InvocationExpressionSyntax invocation
+                && invocation.Expression is MemberAccessExpressionSyntax member)
+            {
+                steps.Add(new ChainStep(member.Name.Identifier.Text, invocation));
+                current = member.Expression;
+                continue;
+            }
+
+            root = null;
+            return false;
+        }
+    }
+
+    private void EmitSource(LinqQueryRoot root)
+    {
+        sourceAlias = root.Name.Length > 0 ? root.Name[..1].ToLowerInvariant() : "t";
+        queryBuilder.From(ResolveTable(root.Name), sourceAlias);
+    }
+
+    private void EmitSteps(List<ChainStep> steps)
+    {
+        for (int i = 0; i < steps.Count; i++)
+        {
+            var step = steps[i];
+            bool followsGrouping = i > 0 && steps[i - 1].Name == "GroupBy";
+
+            switch (step.Name)
+            {
+                // A Where directly after a GroupBy filters the groups, which is HAVING.
+                case "Where" when followsGrouping:
+                    HandleHaving(step.Node);
+                    break;
+                case "Where":
+                    HandleWhere(step.Node);
+                    break;
+
+                case "Join":
+                    HandleJoin(step.Node, JoinKind.Inner);
+                    break;
+
+                // EF Core 10 added explicit outer joins; before it, LINQ could only express
+                // an inner join directly.
+                case "LeftJoin":
+                    HandleJoin(step.Node, JoinKind.Left);
+                    break;
+                case "RightJoin":
+                    HandleJoin(step.Node, JoinKind.Right);
+                    break;
+
+                case "Select":
+                    HandleSelect(step.Node);
+                    break;
+
+                case "OrderBy":
+                case "ThenBy":
+                    HandleOrderBy(step.Node, asc: true);
+                    break;
+                case "OrderByDescending":
+                case "ThenByDescending":
+                    HandleOrderBy(step.Node, asc: false);
+                    break;
+
+                case "GroupBy":
+                    HandleGroupBy(step.Node);
+                    break;
+
+                // Materialisation and tracking say nothing about the query's structure.
+                case "ToList":
+                case "ToArray":
+                case "ToListAsync":
+                case "ToArrayAsync":
+                case "AsQueryable":
+                case "AsNoTracking":
+                case "AsNoTrackingWithIdentityResolution":
+                    break;
+
+                case "Take":
+                case "Skip":
+                    ReportUnsupported(step.Name, QueryFeature.Pagination);
+                    break;
+
+                case "Union":
+                case "Concat":
+                case "Intersect":
+                case "Except":
+                    ReportUnsupported(step.Name, QueryFeature.SetOperation);
+                    break;
+
+                case "Distinct":
+                    ReportUnsupported(step.Name, QueryFeature.Projection);
+                    break;
+
+                default:
+                    ReportUnsupported(step.Name, null);
+                    break;
+            }
+        }
+    }
+
+    private void ReportUnsupported(string method, QueryFeature? feature)
+        => Report(
+            ConversionRecordKind.Loss,
+            $"The query calls {method}(), which the query representation does not carry; the output is poorer than the input.",
+            feature);
+
+    private void HandleWhere(InvocationExpressionSyntax node)
+    {
+        if (!TryReadLambdaBody(node, out var body))
+        {
+            Report(ConversionRecordKind.Loss, "A Where() argument was not a lambda and was dropped.", QueryFeature.Filtering);
+            return;
+        }
+
+        var condition = ParseCondition(body!);
+        if (condition is null)
+        {
+            // Silence here used to lose the whole predicate. F11 forbids exactly that.
+            Report(
+                ConversionRecordKind.Loss,
+                $"The predicate '{body}' uses a construct the condition tree cannot carry, so the whole filter was dropped.",
+                QueryFeature.Filtering);
+            return;
+        }
+
+        queryBuilder.Where(condition);
+    }
+
+    private void HandleJoin(InvocationExpressionSyntax node, JoinKind kind)
+    {
+        var args = node.ArgumentList.Arguments;
+        if (args.Count < 3)
+        {
+            Report(ConversionRecordKind.Loss, "A join with too few arguments was dropped.", QueryFeature.Join);
+            return;
+        }
+
+        string rightTable = ResolveTable(NameOfSource(args[0].Expression));
+        string rightAlias = (rightTable.Split('.').LastOrDefault() ?? rightTable).ToLowerInvariant();
+
+        if (args[1].Expression is not SimpleLambdaExpressionSyntax outer
+            || args[2].Expression is not SimpleLambdaExpressionSyntax inner
+            || outer.Body is not ExpressionSyntax outerBody
+            || inner.Body is not ExpressionSyntax innerBody)
+        {
+            Report(ConversionRecordKind.Loss, "A join whose key selectors are not lambdas was dropped.", QueryFeature.Join);
+            return;
+        }
+
+        var onCondition = BuildJoinCondition(outerBody, innerBody, sourceAlias, rightAlias);
+        if (onCondition is null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "A join whose key selectors do not pair up column for column was dropped.",
+                QueryFeature.Join);
+            return;
+        }
+
+        queryBuilder.Join(kind, sourceAlias, rightTable, onCondition, rightAlias);
+    }
+
+    /// <summary>
+    /// Simple keys (ol =&gt; ol.OrderId) yield one equality; composite keys expressed with
+    /// anonymous types are paired positionally into an AND of several equalities.
+    /// </summary>
+    private ConditionNode? BuildJoinCondition(
+        ExpressionSyntax outerBody,
+        ExpressionSyntax innerBody,
+        string leftAlias,
+        string rightAlias)
+    {
+        if (outerBody is AnonymousObjectCreationExpressionSyntax outerAnon
+            && innerBody is AnonymousObjectCreationExpressionSyntax innerAnon)
+        {
+            if (outerAnon.Initializers.Count == 0
+                || outerAnon.Initializers.Count != innerAnon.Initializers.Count)
+            {
+                return null;
+            }
+
+            var equalities = new List<ConditionNode>();
+            for (int i = 0; i < outerAnon.Initializers.Count; i++)
+            {
+                var left = MemberName(outerAnon.Initializers[i].Expression);
+                var right = MemberName(innerAnon.Initializers[i].Expression);
+                if (left is null || right is null)
+                {
+                    return null;
+                }
+
+                equalities.Add(new ComparisonCondition(
+                    QueryOperand.Column(leftAlias, left),
+                    ComparisonOperator.Equal,
+                    QueryOperand.Column(rightAlias, right)));
+            }
+
+            return equalities.Count == 1
+                ? equalities[0]
+                : new LogicalCondition(LogicalOperator.And, equalities);
+        }
+
+        var outerName = MemberName(outerBody);
+        var innerName = MemberName(innerBody);
+        if (outerName is null || innerName is null)
+        {
+            return null;
+        }
+
+        return new ComparisonCondition(
+            QueryOperand.Column(leftAlias, outerName),
+            ComparisonOperator.Equal,
+            QueryOperand.Column(rightAlias, innerName));
+    }
+
+    private void HandleSelect(InvocationExpressionSyntax node)
+    {
+        if (!TryReadLambdaBody(node, out var body))
+        {
+            Report(ConversionRecordKind.Loss, "A Select() argument was not a lambda and was dropped.", QueryFeature.Projection);
+            return;
+        }
+
+        switch (body)
+        {
+            // Select(c => c) materialises the whole entity: rule Q3's default, so no
+            // projection instruction is recorded.
+            case IdentifierNameSyntax:
+                return;
+
+            case AnonymousObjectCreationExpressionSyntax anon:
+                foreach (var initializer in anon.Initializers)
+                {
+                    EmitProjection(
+                        initializer.Expression,
+                        initializer.NameEquals?.Name.Identifier.Text ?? MemberName(initializer.Expression));
+                }
+
+                return;
+
+            // Select(c => c.Name) is a projection of one column - the commonest shape there
+            // is, and one an earlier version dropped entirely.
+            case MemberAccessExpressionSyntax member:
+                EmitProjection(member, MemberName(member));
+                return;
+
+            default:
+                Report(
+                    ConversionRecordKind.Loss,
+                    $"The projection '{body}' is not a shape the query representation carries; the whole entity is materialised instead.",
+                    QueryFeature.Projection);
+                return;
+        }
+    }
+
+    private void EmitProjection(ExpressionSyntax expression, string? alias)
+    {
+        if (TryReadAggregate(expression, out var function, out var table, out var attribute))
+        {
+            queryBuilder.Project(table ?? sourceAlias, attribute!, alias, function);
+            return;
+        }
+
+        var name = MemberName(expression);
+        if (name is null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"The projected expression '{expression}' is not a column reference and was dropped.",
+                QueryFeature.Projection);
+            return;
+        }
+
+        queryBuilder.Project(AliasOf(expression), name, alias);
+    }
+
+    private void HandleOrderBy(InvocationExpressionSyntax node, bool asc)
+    {
+        if (!TryReadLambdaBody(node, out var body))
+        {
+            Report(ConversionRecordKind.Loss, "An ordering argument was not a lambda and was dropped.", QueryFeature.Ordering);
+            return;
+        }
+
+        var name = MemberName(body!);
+        if (name is null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"The ordering key '{body}' is not a column reference and was dropped.",
+                QueryFeature.Ordering);
+            return;
+        }
+
+        queryBuilder.OrderBy(AliasOf(body!), name, asc);
+    }
+
+    private void HandleGroupBy(InvocationExpressionSyntax node)
+    {
+        if (!TryReadLambdaBody(node, out var body))
+        {
+            Report(ConversionRecordKind.Loss, "A GroupBy() argument was not a lambda and was dropped.", QueryFeature.Grouping);
+            return;
+        }
+
+        if (body is AnonymousObjectCreationExpressionSyntax anon)
+        {
+            foreach (var initializer in anon.Initializers)
+            {
+                var key = MemberName(initializer.Expression);
+                if (key is not null)
+                {
+                    queryBuilder.GroupBy(AliasOf(initializer.Expression), key);
+                }
+            }
+
+            return;
+        }
+
+        var name = MemberName(body!);
+        if (name is null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"The grouping key '{body}' is not a column reference and was dropped.",
+                QueryFeature.Grouping);
+            return;
+        }
+
+        queryBuilder.GroupBy(AliasOf(body!), name);
+    }
+
+    private void HandleHaving(InvocationExpressionSyntax node)
+    {
+        if (!TryReadLambdaBody(node, out var body) || body is not BinaryExpressionSyntax binary)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "A post-aggregation filter that is not a simple comparison was dropped.",
+                QueryFeature.PostAggregationFiltering);
+            return;
+        }
+
+        var op = MapOperator(binary.Kind());
+        var left = ReadHavingOperand(binary.Left);
+        var right = ReadHavingOperand(binary.Right);
+
+        if (op is null || left is null || right is null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"The post-aggregation filter '{binary}' uses a construct the condition tree cannot carry and was dropped.",
+                QueryFeature.PostAggregationFiltering);
+            return;
+        }
+
+        queryBuilder.Having(new ComparisonCondition(left, op.Value, right));
+    }
+
+    private QueryOperand? ReadHavingOperand(ExpressionSyntax expression)
+    {
+        if (TryReadAggregate(expression, out var function, out var table, out var attribute))
+        {
+            return QueryOperand.Column(table ?? sourceAlias, attribute!, function);
+        }
+
+        return ReadOperand(expression);
+    }
+
+    /// <summary>
+    /// Reads g.Sum(x =&gt; x.Total), g.Count() and their kin. The element the lambda ranges
+    /// over is a row of the source, so its columns are qualified by the source alias rather
+    /// than by the lambda's own parameter name, which is not a table alias at all.
+    /// </summary>
+    private bool TryReadAggregate(
+        ExpressionSyntax expression,
+        out string? function,
+        out string? table,
+        out string? attribute)
+    {
+        function = table = attribute = null;
+
+        if (expression is not InvocationExpressionSyntax invocation
+            || invocation.Expression is not MemberAccessExpressionSyntax member)
+        {
+            return false;
+        }
+
+        var name = member.Name.Identifier.Text.ToUpperInvariant();
+        if (name is not ("COUNT" or "SUM" or "MIN" or "MAX" or "AVG"))
+        {
+            return false;
+        }
+
+        function = name;
+        table = sourceAlias;
+
+        var argument = invocation.ArgumentList.Arguments.FirstOrDefault();
+        if (argument is null)
+        {
+            // g.Count() counts rows, not a column.
+            attribute = "*";
+            return true;
+        }
+
+        if (argument.Expression is SimpleLambdaExpressionSyntax lambda
+            && lambda.Body is ExpressionSyntax lambdaBody
+            && MemberName(lambdaBody) is { } column)
+        {
+            attribute = column;
+            return true;
+        }
+
+        function = table = null;
+        return false;
+    }
+
+    private ConditionNode? ParseCondition(ExpressionSyntax expression)
+    {
+        switch (expression)
+        {
+            case ParenthesizedExpressionSyntax parenthesized:
+                return ParseCondition(parenthesized.Expression);
+
+            case PrefixUnaryExpressionSyntax unary when unary.IsKind(SyntaxKind.LogicalNotExpression):
+                {
+                    var operand = ParseCondition(unary.Operand);
+                    return operand is null ? null : new NotCondition(operand);
+                }
+
+            case BinaryExpressionSyntax logical when logical.IsKind(SyntaxKind.LogicalAndExpression)
+                                                  || logical.IsKind(SyntaxKind.LogicalOrExpression):
+                {
+                    var op = logical.IsKind(SyntaxKind.LogicalAndExpression)
+                        ? LogicalOperator.And
+                        : LogicalOperator.Or;
+
+                    var left = ParseCondition(logical.Left);
+                    var right = ParseCondition(logical.Right);
+                    if (left is null || right is null)
+                    {
+                        return null;
+                    }
+
+                    // Chains of the same operator (a && b && c) are flattened into one node.
+                    var operands = new List<ConditionNode>();
+                    Flatten(left, op, operands);
+                    Flatten(right, op, operands);
+                    return new LogicalCondition(op, operands);
+                }
+
+            case BinaryExpressionSyntax comparison:
+                return ParseComparison(comparison);
+
+            default:
+                return null;
+        }
+    }
+
+    private static void Flatten(ConditionNode node, LogicalOperator op, List<ConditionNode> into)
+    {
+        if (node is LogicalCondition logical && logical.Operator == op)
+        {
+            into.AddRange(logical.Operands);
+            return;
+        }
+
+        into.Add(node);
+    }
+
+    private ConditionNode? ParseComparison(BinaryExpressionSyntax binary)
+    {
+        var op = MapOperator(binary.Kind());
+        if (op is null)
+        {
+            return null;
+        }
+
+        bool leftIsNull = IsNullLiteral(binary.Left);
+        bool rightIsNull = IsNullLiteral(binary.Right);
+
+        if (leftIsNull && rightIsNull)
+        {
+            return null;
+        }
+
+        // A comparison with a null literal is normalised to IS NULL / IS NOT NULL
+        // (decision 002).
+        if (leftIsNull || rightIsNull)
+        {
+            if (op is not (ComparisonOperator.Equal or ComparisonOperator.NotEqual))
+            {
+                return null;
+            }
+
+            var operand = ReadOperand(leftIsNull ? binary.Right : binary.Left);
+            if (operand is null)
+            {
+                return null;
+            }
+
+            return new ComparisonCondition(
+                operand,
+                op == ComparisonOperator.Equal ? ComparisonOperator.IsNull : ComparisonOperator.IsNotNull);
+        }
+
+        var left = ReadOperand(binary.Left);
+        var right = ReadOperand(binary.Right);
+        if (left is null || right is null)
+        {
+            return null;
+        }
+
+        return new ComparisonCondition(left, op.Value, right);
+    }
+
+    private QueryOperand? ReadOperand(ExpressionSyntax expression) => expression switch
+    {
+        MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax identifier
+            => QueryOperand.Column(identifier.Identifier.Text, member.Name.Identifier.Text),
+        LiteralExpressionSyntax literal => QueryOperand.Value(ReadConstant(literal)),
+        PrefixUnaryExpressionSyntax negation when negation.IsKind(SyntaxKind.UnaryMinusExpression)
+            && negation.Operand is LiteralExpressionSyntax inner
+            => QueryOperand.Value(Negate(ReadConstant(inner))),
+        _ => null,
+    };
+
+    /// <summary>
+    /// Turns a C# literal into a typed constant (decision 024). The token's own value
+    /// carries the type, so 2000m arrives as the decimal 2000 and leaves the suffix behind
+    /// in the source where it belongs.
+    /// </summary>
+    private QueryConstant ReadConstant(LiteralExpressionSyntax literal)
+    {
+        var value = literal.Token.Value;
+
+        switch (value)
+        {
+            case string text: return QueryConstant.Of(text, ScalarType.String);
+            case char character: return QueryConstant.Of(character.ToString(), ScalarType.Char);
+            case bool flag: return QueryConstant.Of(flag ? "true" : "false", ScalarType.Bool);
+            case int number: return QueryConstant.Of(number.ToString(CultureInfo.InvariantCulture), ScalarType.Int);
+            case long number: return QueryConstant.Of(number.ToString(CultureInfo.InvariantCulture), ScalarType.Long);
+            case decimal number: return QueryConstant.Of(number.ToString(CultureInfo.InvariantCulture), ScalarType.Decimal);
+            case double number: return QueryConstant.Of(number.ToString(CultureInfo.InvariantCulture), ScalarType.Double);
+            case float number: return QueryConstant.Of(number.ToString(CultureInfo.InvariantCulture), ScalarType.Float);
+        }
+
+        Report(
+            ConversionRecordKind.Incompleteness,
+            $"The literal '{literal}' has no counterpart in the scalar vocabulary; it is carried verbatim.",
+            QueryFeature.Filtering);
+
+        return QueryConstant.Unrecognised(literal.Token.ValueText);
+    }
+
+    private static QueryConstant Negate(QueryConstant constant)
+        => constant.Type is null
+            ? QueryConstant.Unrecognised("-" + constant.Text)
+            : QueryConstant.Of("-" + constant.Text, constant.Type.Value);
+
+    private static bool IsNullLiteral(ExpressionSyntax expression)
+        => expression is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.NullLiteralExpression);
+
+    private static ComparisonOperator? MapOperator(SyntaxKind kind) => kind switch
+    {
+        SyntaxKind.EqualsExpression => ComparisonOperator.Equal,
+        SyntaxKind.NotEqualsExpression => ComparisonOperator.NotEqual,
+        SyntaxKind.GreaterThanExpression => ComparisonOperator.GreaterThan,
+        SyntaxKind.GreaterThanOrEqualExpression => ComparisonOperator.GreaterThanOrEqual,
+        SyntaxKind.LessThanExpression => ComparisonOperator.LessThan,
+        SyntaxKind.LessThanOrEqualExpression => ComparisonOperator.LessThanOrEqual,
+        _ => null,
+    };
+
+    private static bool TryReadLambdaBody(InvocationExpressionSyntax node, out ExpressionSyntax? body)
+    {
+        body = null;
+
+        if (node.ArgumentList.Arguments.FirstOrDefault()?.Expression is SimpleLambdaExpressionSyntax lambda
+            && lambda.Body is ExpressionSyntax lambdaBody)
+        {
+            body = lambdaBody;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Member name of a column reference, or null when the expression is not one. Returning
+    /// null rather than throwing is the point: an unsupported shape is a record, never an
+    /// exception escaping to the caller.
+    /// </summary>
+    private static string? MemberName(ExpressionSyntax expression) => expression switch
+    {
+        MemberAccessExpressionSyntax member => member.Name.Identifier.Text,
+        _ => null,
+    };
+
+    private string AliasOf(ExpressionSyntax expression) => expression switch
+    {
+        MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax identifier
+            => identifier.Identifier.Text,
+        _ => sourceAlias,
+    };
+
+    private static string NameOfSource(ExpressionSyntax expression) => expression switch
+    {
+        InvocationExpressionSyntax invocation when invocation.Expression is MemberAccessExpressionSyntax member
+            => TypeArgumentOf(member.Name) ?? member.Name.Identifier.Text,
+        MemberAccessExpressionSyntax member => member.Name.Identifier.Text,
+        IdentifierNameSyntax identifier => identifier.Identifier.Text,
+        _ => "unknown_table",
+    };
+
+    /// <summary>
+    /// Resolves the name the source wrote — a DbSet name or an entity name — to a qualified
+    /// table, using the mapping IR built by the entity parsers (rule Q2).
+    /// </summary>
+    private string ResolveTable(string name)
+    {
+        if (entityMaps is { Count: > 0 })
+        {
+            var byTable = entityMaps.FirstOrDefault(m =>
+                string.Equals(m.Table, name, StringComparison.OrdinalIgnoreCase));
+            if (byTable is not null)
+            {
+                return Qualify(byTable, byTable.Table ?? name);
+            }
+
+            var byEntity = entityMaps.FirstOrDefault(m =>
+                string.Equals(m.Entity?.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (byEntity is not null)
+            {
+                return Qualify(byEntity, byEntity.Table ?? name);
+            }
+
+            var byPlural = entityMaps.FirstOrDefault(m =>
+                string.Equals((m.Entity?.Name ?? string.Empty) + "s", name, StringComparison.OrdinalIgnoreCase));
+            if (byPlural is not null)
+            {
+                return Qualify(byPlural, byPlural.Table ?? name);
+            }
+        }
+
+        return name;
+    }
+
+    private static string Qualify(EntityMap map, string table)
+        => string.IsNullOrWhiteSpace(map.Schema) ? table : $"{map.Schema}.{table}";
+
+    protected static string? TypeArgumentOf(SimpleNameSyntax name)
+        => name is GenericNameSyntax generic && generic.TypeArgumentList.Arguments.Count > 0
+            ? generic.TypeArgumentList.Arguments[0] switch
+            {
+                IdentifierNameSyntax identifier => identifier.Identifier.Text,
+                QualifiedNameSyntax qualified => qualified.Right.Identifier.Text,
+                GenericNameSyntax nested => nested.Identifier.Text,
+                var other => other.ToString(),
+            }
+            : null;
+
+    private void Report(ConversionRecordKind kind, string reason, QueryFeature? feature = null)
+        => queryBuilder.Report(new ConversionRecord
+        {
+            Kind = kind,
+            Framework = queryBuilder.Descriptor.Framework,
+            Artifact = ConversionContentType.CSharpQuery,
+            Feature = feature,
+            Reason = reason,
+        });
+}

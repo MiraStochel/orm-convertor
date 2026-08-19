@@ -1,4 +1,5 @@
-﻿using AbstractWrappers;
+using AbstractWrappers;
+using AbstractWrappers.Diagnostics;
 using DatabaseCatalog;
 using Model;
 using OrmConvertor.Factories;
@@ -15,7 +16,6 @@ public static class ConversionHandler
     )
     {
         var entityBuilder = EntityBuilderFactory.Create(targetOrm);
-        var queryBuilder = QueryBuilderFactory.Create(targetOrm);
 
         if (entityBuilder == null)
         {
@@ -26,7 +26,7 @@ public static class ConversionHandler
 
         // 1) Build entity maps using entity parsers only
         var entityParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb: null)
-            .Where(p => !p.CanParse(ConversionContentType.CSharpQuery))
+            .Where(p => p is not IQueryParser)
             .ToList();
         foreach (var parser in entityParsers)
         {
@@ -48,32 +48,50 @@ public static class ConversionHandler
         // Emit entities for target ORM
         results.AddRange(entityBuilder.Build());
 
-        // 2) Translate each query independently so we can return multiple query outputs
-        var querySources = sources.Where(s => s.ContentType == ConversionContentType.CSharpQuery).ToList();
+        // 2) Translate each query independently so we can return multiple query outputs.
+        //    Records of the query builders join the entity builder's, because the caller
+        //    asked for one conversion (decision 022).
+        var queryRecords = new List<ConversionRecord>();
+
+        // An unfilled input box is not a claim, so a blank query source is skipped without a
+        // record; a non-blank one nobody can read is a Failure (decision 025).
+        var querySources = sources
+            .Where(s => s.ContentType.IsQuery() && !string.IsNullOrWhiteSpace(s.Content))
+            .ToList();
+
         foreach (var qsrc in querySources)
         {
             var qb = QueryBuilderFactory.Create(targetOrm);
             if (qb is null)
             {
-                // Target ORM has no query builder; skip query translation for this target
+                queryRecords.Add(NoQuerySupport(
+                    targetOrm,
+                    qsrc.ContentType,
+                    $"{targetOrm} has no query builder, so the query was not translated."));
                 continue;
             }
 
             var queryParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb)
-                .Where(p => p.CanParse(ConversionContentType.CSharpQuery))
                 .OfType<IQueryParser>()
+                .Where(p => p.CanParse(qsrc.ContentType))
                 .ToList();
 
             if (queryParsers.Count == 0)
             {
+                queryRecords.Add(NoQuerySupport(
+                    targetOrm,
+                    qsrc.ContentType,
+                    $"{sourceOrm} has no parser for a {qsrc.ContentType} query, so it was not translated."));
                 continue;
             }
 
-            // Use the first available query parser for the source ORM
-            var qp = queryParsers.First();
-            qp.Parse(qsrc.Content, entityBuilder.EntityMaps);
+            // Exactly one parser per source ORM claims a given query language, so the choice
+            // no longer depends on the order of the list (decision 025).
+            qb.EntityMaps = entityBuilder.EntityMaps;
+            queryParsers[0].Parse(qsrc.Content, entityBuilder.EntityMaps);
 
             results.AddRange(qb.Build());
+            queryRecords.AddRange(qb.Records);
         }
 
         // The records accumulate on the entity builder - parsers and the build phases both
@@ -81,8 +99,20 @@ public static class ConversionHandler
         return new ConversionResult
         {
             Sources = results,
-            Records = [.. entityBuilder.Records],
+            Records = [.. entityBuilder.Records, .. queryRecords],
             CatalogReadTime = catalogReadTime,
         };
     }
+
+    private static ConversionRecord NoQuerySupport(
+        ORMEnum targetOrm,
+        ConversionContentType artifact,
+        string reason)
+        => new()
+        {
+            Kind = ConversionRecordKind.Failure,
+            Framework = targetOrm,
+            Artifact = artifact,
+            Reason = reason,
+        };
 }

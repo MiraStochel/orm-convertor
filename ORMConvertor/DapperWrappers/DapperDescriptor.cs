@@ -37,5 +37,23 @@ public static class DapperDescriptor
             [MappingFactCategory.PrimaryKeyStrategy] = FactSupport.NotExpressible,
             [MappingFactCategory.ForeignKeyColumns] = FactSupport.NotExpressible,
         },
+
+        // SQL expresses every query category, so as a query target Dapper is the opposite of
+        // what it is as a mapping target: nothing is beyond it.
+        QuerySupport = new Dictionary<QueryFeature, FactSupport>
+        {
+            [QueryFeature.Projection] = FactSupport.Expressible,
+            [QueryFeature.Filtering] = FactSupport.Expressible,
+            [QueryFeature.Join] = FactSupport.Expressible,
+            [QueryFeature.JoinKind] = FactSupport.Expressible,
+            [QueryFeature.Aggregation] = FactSupport.Expressible,
+            [QueryFeature.Grouping] = FactSupport.Expressible,
+            [QueryFeature.PostAggregationFiltering] = FactSupport.Expressible,
+            [QueryFeature.Ordering] = FactSupport.Expressible,
+            [QueryFeature.Pagination] = FactSupport.Expressible,
+            [QueryFeature.Subquery] = FactSupport.Expressible,
+            [QueryFeature.SetOperation] = FactSupport.Expressible,
+            [QueryFeature.QueryParameter] = FactSupport.Expressible,
+        },
     };
 }

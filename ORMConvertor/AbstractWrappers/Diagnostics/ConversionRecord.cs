@@ -32,5 +32,12 @@ public sealed class ConversionRecord
     /// </summary>
     public MappingFactCategory? Category { get; init; }
 
+    /// <summary>
+    /// Query capability the record concerns; null for records of the entity branch. A query
+    /// loss is about an instruction, not a mapping fact, so it needs its own vocabulary
+    /// (decision 022).
+    /// </summary>
+    public QueryFeature? Feature { get; init; }
+
     public required string Reason { get; init; }
 }

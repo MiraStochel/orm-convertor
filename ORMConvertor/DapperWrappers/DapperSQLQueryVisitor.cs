@@ -1,4 +1,5 @@
-﻿using Model.Exceptions;
+using Model.AbstractRepresentation.Enums;
+using Model.Exceptions;
 using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
@@ -35,7 +36,7 @@ public class DapperSQLQueryVisitor : IQueryVisitor
 
     public string Visit(ComparisonCondition cond)
     {
-        string left = BuildOperand(cond.LeftTable, cond.LeftProperty, cond.LeftConstant, cond.LeftFunction);
+        string left = BuildOperand(cond.Left);
 
         if (cond.Operator == ComparisonOperator.IsNull)
         {
@@ -47,7 +48,12 @@ public class DapperSQLQueryVisitor : IQueryVisitor
             return $"{left} IS NOT NULL";
         }
 
-        string right = BuildOperand(cond.RightTable, cond.RightProperty, cond.RightConstant, cond.RightFunction);
+        if (cond.Right is null)
+        {
+            throw new QueryBuilderException($"Operator {cond.Operator} needs a right operand.");
+        }
+
+        string right = BuildOperand(cond.Right);
         return $"{left} {MapOperator(cond.Operator)} {right}";
     }
 
@@ -120,32 +126,29 @@ public class DapperSQLQueryVisitor : IQueryVisitor
         return $"{instr.Table}.{instr.Attribute}";
     }
 
-    private static string BuildOperand(
-        string? table,
-        string? property,
-        string? constant,
-        string? function
-    )
+    private static string BuildOperand(QueryOperand operand)
     {
-        if (property != null)
-        {
-            string column = table != null ? $"{table}.{property}" : property;
-            return function != null
-                ? $"{function}({column})"
-                : column;
-        }
-        else if (constant != null)
-        {
-            string value = constant.Replace('"', '\'');
-            return function != null
-                ? $"{function}({value})"
-                : value;
-        }
-        else
-        {
-            throw new QueryBuilderException("Condition operand must be a table.column or a constant.");
-        }
+        var text = operand.IsColumn
+            ? (operand.Table is null ? operand.Property! : $"{operand.Table}.{operand.Property}")
+            : Literal(operand.Constant!);
+
+        return operand.Function is null ? text : $"{operand.Function}({text})";
     }
+
+    /// <summary>
+    /// Writes a constant the way T-SQL wants it (decision 024). The model carries the value
+    /// undecorated, so quoting is decided here from the scalar type rather than guessed from
+    /// the shape of the text. A value whose type nobody recognised goes out verbatim - that
+    /// is what the parser already reported as a gap.
+    /// </summary>
+    private static string Literal(QueryConstant constant) => constant.Type switch
+    {
+        null => constant.Text,
+        ScalarType.String or ScalarType.Char or ScalarType.Guid or ScalarType.DateTime
+            => $"'{constant.Text.Replace("'", "''")}'",
+        ScalarType.Bool => string.Equals(constant.Text, "true", StringComparison.OrdinalIgnoreCase) ? "1" : "0",
+        _ => constant.Text,
+    };
 
     public string Visit(SetOperationInstruction instr)
     {

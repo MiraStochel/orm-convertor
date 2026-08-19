@@ -27,6 +27,12 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [019](019-neutral-database-type-vocabulary.md) | Neutrální slovník databázových typů | 2026-08-18 | platí | F2, F5, F7–F10, F11, S2 |
 | [020](020-canonical-generator-parameter-vocabulary.md) | Kanonický slovník parametrů generátoru | 2026-08-19 | platí | F1, F2, F7–F10, F11, S1, S2 |
 | [021](021-generator-name-selection.md) | Výběr názvu generátoru ve výstupu | 2026-08-19 | platí | F2, F3, F7–F10, F11, S1, S2 |
+| [022](022-native-query-syntax-in-builders.md) | Nativní syntaxe cílového frameworku v dotazových builderech | 2026-08-19 | platí | F7–F10, F11, T2, T3, S1, S2 |
+| [023](023-query-builder-template-method.md) | Šablonová metoda dotazového builderu podle relačního pořadí | 2026-08-19 | platí | F7–F10, F11, T2, S1, S2 |
+| [024](024-typed-query-operand.md) | Typovaný operand dotazové podmínky | 2026-08-19 | platí | F7–F10, F11, T2, T3, S2 |
+| [025](025-query-language-as-content-type.md) | Dotazový jazyk jako typ obsahu | 2026-08-19 | platí | F7–F10, F11, F14, S1, S2, S7 |
+| [026](026-home-of-shared-query-reading.md) | Kde bydlí sdílené čtení dotazů | 2026-08-19 | platí | F7–F10, S1, S2 |
+| [027](027-query-artifact-verification.md) | Ověření generovaných dotazů | 2026-08-19 | platí | F11, F13, T2, T3, S2 |
 
 ## Formát
 

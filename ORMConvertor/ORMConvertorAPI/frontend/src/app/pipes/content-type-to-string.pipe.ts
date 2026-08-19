@@ -12,7 +12,11 @@ export class ContentTypeToStringPipe implements PipeTransform {
       case ContentType.XML:
         return "XML Mapping";
       case ContentType.CSharpQuery:
-        return "Query Method";
+        return "Query (LINQ)";
+      case ContentType.SqlQuery:
+        return "Query (SQL)";
+      case ContentType.HqlQuery:
+        return "Query (HQL)";
       default:
         return "Unknown";
     }

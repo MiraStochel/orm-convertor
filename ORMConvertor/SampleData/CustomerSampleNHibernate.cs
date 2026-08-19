@@ -40,6 +40,20 @@ public class CustomerSampleNHibernate
             </class>
         </hibernate-mapping>
         """;
+    /// <summary>
+    /// NHibernate is read from LINQ and written as HQL (decisions 022 and 026), so the
+    /// sample input is a LINQ chain rooted in session.Query&lt;T&gt;().
+    /// </summary>
+    public const string Query = """
+        public List<Customer> Query()
+        {
+            return session.Query<Customer>()
+               .Where(c => c.CreditLimit > 2000)
+               .OrderByDescending(c => c.AccountOpenedDate)
+               .ThenBy(c => c.CustomerName)
+               .ToList();
+        }
+        """;
 
     public static EntityMap Map
     {

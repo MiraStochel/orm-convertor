@@ -1,5 +1,9 @@
-﻿using AbstractWrappers;
+using AbstractWrappers;
+using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
 using DapperWrappers;
+using Model;
+using Model.AbstractRepresentation.Enums;
 using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
 
@@ -7,6 +11,18 @@ namespace Tests.Dapper;
 
 public class DapperSQLQueryBuilderTest
 {
+    private static QueryOperand Col(string table, string property, string? function = null)
+        => QueryOperand.Column(table, property, function);
+
+    private static QueryOperand Int(int value)
+        => QueryOperand.Value(QueryConstant.Of(value.ToString(), ScalarType.Int));
+
+    private static string Sql(AbstractQueryBuilder builder)
+        => builder.Build().Single(s => s.ContentType == ConversionContentType.SqlQuery).Content;
+
+    private static string Method(AbstractQueryBuilder builder)
+        => builder.Build().Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
+
     [Fact]
     public void SelectWithAllQueryInstructions()
     {
@@ -18,36 +34,27 @@ public class DapperSQLQueryBuilderTest
         builder.Project("ord", "TotalPrice", function: "SUM", alias: "TotalSpent");
         builder.From("Sales.Customer", alias: "c");
         builder.Join(JoinKind.Inner, "c", "Sales.Orders",
-            new ComparisonCondition("c", "Id", null, null, ComparisonOperator.Equal, "ord", "CustomerId", null, null),
+            new ComparisonCondition(Col("c", "Id"), ComparisonOperator.Equal, Col("ord", "CustomerId")),
             rightTableAlias: "ord");
-        builder.Where(new ComparisonCondition("c", "Id", null, null, ComparisonOperator.NotEqual, null, null, "25", null));
-        builder.Where(new ComparisonCondition("ord", "TotalPrice", null, null, ComparisonOperator.GreaterThanOrEqual, "c", "MaxOrderLimit", null, null));
+        builder.Where(new ComparisonCondition(Col("c", "Id"), ComparisonOperator.NotEqual, Int(25)));
+        builder.Where(new ComparisonCondition(Col("ord", "TotalPrice"), ComparisonOperator.GreaterThanOrEqual, Col("c", "MaxOrderLimit")));
         builder.OrderBy(null, "Name", asc: false);
         builder.OrderBy(null, "TotalSpent", asc: true);
         builder.GroupBy("c", "CustomerName");
-        builder.Having(new ComparisonCondition("ord", "TotalPrice", null, "SUM", ComparisonOperator.GreaterThan, null, null, "1000", null));
+        builder.Having(new ComparisonCondition(Col("ord", "TotalPrice", "SUM"), ComparisonOperator.GreaterThan, Int(1000)));
         builder.Pop();
 
-        var sql = builder.Build().First().Content;
+        string expected = """
+        SELECT c.CustomerName AS Name, COUNT(ord.Id) AS OrderCount, SUM(ord.TotalPrice) AS TotalSpent
+        FROM Sales.Customer AS c
+        INNER JOIN Sales.Orders ord ON c.Id = ord.CustomerId
+        WHERE c.Id <> 25 AND ord.TotalPrice >= c.MaxOrderLimit
+        GROUP BY c.CustomerName
+        HAVING SUM(ord.TotalPrice) > 1000
+        ORDER BY Name DESC, TotalSpent ASC
+        """;
 
-        string expected = """"
-        public List<Customer> Query() 
-        {
-            return connection.Query<Customer>(
-                """
-                SELECT c.CustomerName AS Name, COUNT(ord.Id) AS OrderCount, SUM(ord.TotalPrice) AS TotalSpent
-                FROM Sales.Customer AS c
-                INNER JOIN Sales.Orders ord ON c.Id = ord.CustomerId
-                WHERE c.Id <> 25 AND ord.TotalPrice >= c.MaxOrderLimit
-                GROUP BY c.CustomerName
-                HAVING SUM(ord.TotalPrice) > 1000
-                ORDER BY Name DESC, TotalSpent ASC
-                """,    
-            ).ToList();
-        }
-        """";
-
-        Assert.Equal(expected, sql, ignoreAllWhiteSpace: true, ignoreLineEndingDifferences: true);
+        Assert.Equal(expected, Sql(builder), ignoreAllWhiteSpace: true, ignoreLineEndingDifferences: true);
     }
 
     [Fact]
@@ -61,31 +68,25 @@ public class DapperSQLQueryBuilderTest
         [
             new LogicalCondition(LogicalOperator.Or,
             [
-                new ComparisonCondition("c", "CreditLimit", null, null, ComparisonOperator.GreaterThan, null, null, "2000", null),
-                new ComparisonCondition("c", "CreditLimit", null, null, ComparisonOperator.IsNull, null, null, null, null),
+                new ComparisonCondition(Col("c", "CreditLimit"), ComparisonOperator.GreaterThan, Int(2000)),
+                new ComparisonCondition(Col("c", "CreditLimit"), ComparisonOperator.IsNull),
             ]),
-            new ComparisonCondition("c", "AccountOpenedDate", null, null, ComparisonOperator.GreaterThanOrEqual, null, null, "'2025-01-01'", null),
+            new ComparisonCondition(
+                Col("c", "AccountOpenedDate"),
+                ComparisonOperator.GreaterThanOrEqual,
+                QueryOperand.Value(QueryConstant.Of("2025-01-01", ScalarType.DateTime))),
             new NotCondition(
-                new ComparisonCondition("c", "IsOnCreditHold", null, null, ComparisonOperator.Equal, null, null, "1", null)),
+                new ComparisonCondition(Col("c", "IsOnCreditHold"), ComparisonOperator.Equal, Int(1))),
         ]));
         builder.Pop();
 
-        var sql = builder.Build().First().Content;
+        string expected = """
+        SELECT *
+        FROM Sales.Customers AS c
+        WHERE (c.CreditLimit > 2000 OR c.CreditLimit IS NULL) AND c.AccountOpenedDate >= '2025-01-01' AND NOT (c.IsOnCreditHold = 1)
+        """;
 
-        string expected = """"
-        public List<Customer> Query() 
-        {
-            return connection.Query<Customer>(
-                """
-                SELECT *
-                FROM Sales.Customers AS c
-                WHERE (c.CreditLimit > 2000 OR c.CreditLimit IS NULL) AND c.AccountOpenedDate >= '2025-01-01' AND NOT (c.IsOnCreditHold = 1)
-                """,    
-            ).ToList();
-        }
-        """";
-
-        Assert.Equal(expected, sql, ignoreAllWhiteSpace: true, ignoreLineEndingDifferences: true);
+        Assert.Equal(expected, Sql(builder), ignoreAllWhiteSpace: true, ignoreLineEndingDifferences: true);
     }
 
     [Fact]
@@ -98,28 +99,19 @@ public class DapperSQLQueryBuilderTest
         builder.Join(JoinKind.Left, "ol", "Sales.Orders",
             new LogicalCondition(LogicalOperator.And,
             [
-                new ComparisonCondition("ol", "OrderId", null, null, ComparisonOperator.Equal, "o", "OrderId", null, null),
-                new ComparisonCondition("ol", "CompanyId", null, null, ComparisonOperator.Equal, "o", "CompanyId", null, null),
+                new ComparisonCondition(Col("ol", "OrderId"), ComparisonOperator.Equal, Col("o", "OrderId")),
+                new ComparisonCondition(Col("ol", "CompanyId"), ComparisonOperator.Equal, Col("o", "CompanyId")),
             ]),
             rightTableAlias: "o");
         builder.Pop();
 
-        var sql = builder.Build().First().Content;
+        string expected = """
+        SELECT *
+        FROM Sales.OrderLines AS ol
+        LEFT JOIN Sales.Orders o ON ol.OrderId = o.OrderId AND ol.CompanyId = o.CompanyId
+        """;
 
-        string expected = """"
-        public List<OrderLine> Query() 
-        {
-            return connection.Query<OrderLine>(
-                """
-                SELECT *
-                FROM Sales.OrderLines AS ol
-                LEFT JOIN Sales.Orders o ON ol.OrderId = o.OrderId AND ol.CompanyId = o.CompanyId
-                """,    
-            ).ToList();
-        }
-        """";
-
-        Assert.Equal(expected, sql, ignoreAllWhiteSpace: true, ignoreLineEndingDifferences: true);
+        Assert.Equal(expected, Sql(builder), ignoreAllWhiteSpace: true, ignoreLineEndingDifferences: true);
     }
 
     [Fact]
@@ -137,25 +129,99 @@ public class DapperSQLQueryBuilderTest
         builder.From("Sales.Customer", alias: "c");
         builder.Pop();
 
-        var sql = builder.Build().First().Content;
+        string expected = """
+        SELECT c.CustomerName AS Name
+        FROM Sales.Customer AS c
 
-        string expected = """"
-        public List<Customer> Query() 
-        {
-            return connection.Query<Customer>(
-                """
-                SELECT c.CustomerName AS Name
-                FROM Sales.Customer AS c
-                
-                UNION
+        UNION
 
-                SELECT c.CustomerName AS Name
-                FROM Sales.Customer AS c
-                """,    
-            ).ToList();
-        }
-        """";
+        SELECT c.CustomerName AS Name
+        FROM Sales.Customer AS c
+        """;
 
-        Assert.Equal(expected, sql, ignoreAllWhiteSpace: true, ignoreLineEndingDifferences: true);
+        Assert.Equal(expected, Sql(builder), ignoreAllWhiteSpace: true, ignoreLineEndingDifferences: true);
+    }
+
+    /// <summary>
+    /// The generated method used to carry a trailing comma in the argument list, so it never
+    /// compiled and AdvisorBenchmarking had to dig the SQL back out with a regex. Level 2 of
+    /// decision 016 now judges it, so the shape assertion here guards the call site itself.
+    /// </summary>
+    [Fact]
+    public void TheGeneratedMethodIsWellFormedCSharp()
+    {
+        AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
+
+        builder.Push();
+        builder.From("Sales.Customers", alias: "c");
+        builder.Pop();
+
+        var method = Method(builder);
+
+        Assert.Contains("public static List<Customer> Query(IDbConnection connection)", method);
+        Assert.Contains("connection.Query<Customer>(", method);
+        Assert.Contains("\"\"\").ToList();", method);
+        Assert.DoesNotContain(",\n)", method.Replace("\r\n", "\n"));
+    }
+
+    /// <summary>
+    /// Decision 025: a target whose query form is a string emits the bare query beside the
+    /// method, so nothing downstream has to extract it back out of the code.
+    /// </summary>
+    [Fact]
+    public void BothTheMethodAndTheBareSqlAreEmitted()
+    {
+        AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
+
+        builder.Push();
+        builder.From("Sales.Customers", alias: "c");
+        builder.Pop();
+
+        var artifacts = builder.Build();
+
+        Assert.Equal(2, artifacts.Count);
+        Assert.Contains(artifacts, a => a.ContentType == ConversionContentType.CSharpQuery);
+        Assert.Contains(artifacts, a => a.ContentType == ConversionContentType.SqlQuery);
+        Assert.StartsWith("SELECT", artifacts.Single(a => a.ContentType == ConversionContentType.SqlQuery).Content);
+    }
+
+    /// <summary>
+    /// Rule Q2 used to end in an exception; decision 010 says a state the design foresees is
+    /// a record, not a crash.
+    /// </summary>
+    [Fact]
+    public void AQueryWithoutASourceIsARecordNotAnException()
+    {
+        AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
+
+        builder.Push();
+        builder.Project("c", "Name");
+        builder.Pop();
+
+        var artifacts = builder.Build();
+
+        Assert.Empty(artifacts);
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("Q2"));
+    }
+
+    /// <summary>
+    /// Rule Q8: aggregates next to plain columns need a grouping. Nothing checked this before.
+    /// </summary>
+    [Fact]
+    public void AggregatesWithoutAGroupingAreReported()
+    {
+        AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
+
+        builder.Push();
+        builder.From("Sales.Orders", alias: "o");
+        builder.Project("o", "CustomerId");
+        builder.Project("o", "TotalPrice", function: "SUM", alias: "Total");
+        builder.Pop();
+
+        builder.Build();
+
+        Assert.Contains(
+            builder.Records,
+            r => r.Kind == ConversionRecordKind.Incompleteness && r.Feature == QueryFeature.Grouping);
     }
 }

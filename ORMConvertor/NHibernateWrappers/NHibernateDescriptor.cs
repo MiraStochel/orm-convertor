@@ -86,5 +86,24 @@ public static class NHibernateDescriptor
             [MappingFactCategory.PrimaryKeyStrategy] = FactSupport.Expressible, // <generator>
             [MappingFactCategory.ForeignKeyColumns] = FactSupport.Expressible,
         },
+
+        // HQL covers every category except set operations: NHibernate 5.7.0 has no UNION,
+        // INTERSECT or EXCEPT in HQL. Pagination is expressible even though it is not part of
+        // the HQL text - it is SetMaxResults on the surrounding IQuery.
+        QuerySupport = new Dictionary<QueryFeature, FactSupport>
+        {
+            [QueryFeature.Projection] = FactSupport.Expressible,
+            [QueryFeature.Filtering] = FactSupport.Expressible,
+            [QueryFeature.Join] = FactSupport.Expressible,
+            [QueryFeature.JoinKind] = FactSupport.Expressible,
+            [QueryFeature.Aggregation] = FactSupport.Expressible,
+            [QueryFeature.Grouping] = FactSupport.Expressible,
+            [QueryFeature.PostAggregationFiltering] = FactSupport.Expressible,
+            [QueryFeature.Ordering] = FactSupport.Expressible,
+            [QueryFeature.Pagination] = FactSupport.Expressible,
+            [QueryFeature.Subquery] = FactSupport.Expressible,
+            [QueryFeature.SetOperation] = FactSupport.NotExpressible,
+            [QueryFeature.QueryParameter] = FactSupport.Expressible,
+        },
     };
 }

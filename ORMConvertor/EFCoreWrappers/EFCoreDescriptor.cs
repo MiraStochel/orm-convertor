@@ -50,5 +50,24 @@ public static class EFCoreDescriptor
 
             [MappingFactCategory.ForeignKeyColumns] = FactSupport.Expressible, // [ForeignKey]
         },
+
+        // LINQ over DbSet covers every category. The one narrowing inside JoinKind - EF Core 10
+        // has LeftJoin and RightJoin but no full outer join - is a value, not a category, so
+        // the builder reports it at the point of emission the way the entity branch does.
+        QuerySupport = new Dictionary<QueryFeature, FactSupport>
+        {
+            [QueryFeature.Projection] = FactSupport.Expressible,
+            [QueryFeature.Filtering] = FactSupport.Expressible,
+            [QueryFeature.Join] = FactSupport.Expressible,
+            [QueryFeature.JoinKind] = FactSupport.Expressible,
+            [QueryFeature.Aggregation] = FactSupport.Expressible,
+            [QueryFeature.Grouping] = FactSupport.Expressible,
+            [QueryFeature.PostAggregationFiltering] = FactSupport.Expressible,
+            [QueryFeature.Ordering] = FactSupport.Expressible,
+            [QueryFeature.Pagination] = FactSupport.Expressible,
+            [QueryFeature.Subquery] = FactSupport.Expressible,
+            [QueryFeature.SetOperation] = FactSupport.Expressible,
+            [QueryFeature.QueryParameter] = FactSupport.Expressible,
+        },
     };
 }

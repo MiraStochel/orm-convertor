@@ -65,6 +65,25 @@ public class TargetFrameworkDescriptorTest
         {
             Framework = ORMEnum.Dapper,
             Support = incomplete,
+            QuerySupport = DapperDescriptor.Instance.QuerySupport,
+        });
+    }
+
+    [Fact]
+    public void DescriptorRejectsAnIncompleteQuerySupportTable()
+    {
+        // The same gate as for mapping facts (decision 022): a missing query feature has to
+        // fail loudly, because a capability report that defaults to silence reports nothing.
+        var incomplete = new Dictionary<QueryFeature, FactSupport>
+        {
+            [QueryFeature.Projection] = FactSupport.Expressible,
+        };
+
+        Assert.Throws<ArgumentException>(() => _ = new TargetFrameworkDescriptor
+        {
+            Framework = ORMEnum.Dapper,
+            Support = DapperDescriptor.Instance.Support,
+            QuerySupport = incomplete,
         });
     }
 
@@ -75,6 +94,7 @@ public class TargetFrameworkDescriptorTest
         {
             Framework = ORMEnum.Dapper,
             Support = DapperDescriptor.Instance.Support,
+            QuerySupport = DapperDescriptor.Instance.QuerySupport,
             EnforcedMembers =
             [
                 new EnforcedMember

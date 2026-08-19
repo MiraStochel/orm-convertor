@@ -32,6 +32,7 @@
   <ItemGroup>
     <!-- Database-dependent tests (decision 016): client plus the configuration sources
          the connection string is read from. -->
+    <PackageReference Include="Dapper" Version="2.1.79" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
     <!-- Target framework packages for the acceptance level of artifact verification
          (decision 016): the frameworks themselves judge the generated mapping and class.
@@ -58,6 +59,7 @@
     <ProjectReference Include="..\Model\Model.csproj" />
     <ProjectReference Include="..\NHibernateWrappers\NHibernateWrappers.csproj" />
     <ProjectReference Include="..\OrmConvertor\OrmConvertor.csproj" />
+    <ProjectReference Include="..\ORMConvertorAPI\ORMConvertorAPI.csproj" />
     <ProjectReference Include="..\SampleData\SampleData.csproj" />
   </ItemGroup>
 

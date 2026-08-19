@@ -27,11 +27,6 @@ Parsery dnes čtou konvenci zdrojového frameworku jen tam, kde by její neznalo
 
 Rozhodnutí 017 uspořádalo zdroje faktů na vstupní text frameworku, pomocné mapovací artefakty, katalog a konvenci cíle. Některý framework ale mezi svými vlastními artefakty precedenci sám dokumentuje, a to opačnou: EF Core staví fluent API nad anotace, MyBatis řeší souběh anotací a XML mapperu vlastními pravidly. Přeložit takový projekt naším pořadím znamená přeložit něco jiného, než co zdroj znamená — a překlad má reprodukovat význam zdroje, ne naši preferenci. Rozhodnout je třeba, jestli precedence zdrojového frameworku přebíjí naše pořadí uvnitř prvního stupně, a pokud ano, kde je ta precedence zapsaná: deskriptor popisuje cíl, ne zdroj, a kategorii pro tohle nemá. Dokud se čte jediný artefakt na framework, případ nenastane; nastane s prvním parserem fluent konfigurace.
 
-### Nativní syntaxe versus syrové SQL v dotazových builderech
-*Vytčeno z dřívější položky o dotazové větvi. Předpoklad dotazových builderů pro EF Core a NHibernate. Požadavky F7–F10, T2.*
-
-Původní návrh počítal s krokem `BuildSQL()`; v kódu neexistuje a jediný hotový dotazový builder generuje SQL pro Dapper, kde otázka nevzniká — Dapper nic jiného než SQL nemá. U EF Core a NHibernate vzniká hned: tytéž dotazové instrukce jde vyjádřit nativně (LINQ, HQL) i syrovým SQL přes únikovou cestu frameworku, a obojí má jiné důsledky pro T2 i pro diferenční ověření podle F13. Rozhodnout je třeba, kdy builder volí kterou cestu a jestli se rozdíl nese v dotazové mezireprezentaci, nebo zůstává volbou builderu. Bez toho nelze začít psát dotazové buildery pro oba frameworky, protože právě tohle je jejich první větev.
-
 ### Klíčová třída u kompozitního klíče na straně entity
 *Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a [014](./decisions/014-language-type-model.md). Podklad: audit 2026-08-02, kap. 3.2.*
 
@@ -58,6 +53,26 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 
 ## Otevřená práce
 
+### NHibernate builder si vymýšlí název sestavení
+*Na řadě. Odporuje rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md), které zakazuje generovat náhražky za fakta, která nemáme. Požadavky F2, F11, S2.*
+
+`BuildTableSchema` vypisuje u entity se jmenným prostorem `<class name="Shop.Customer, Shop">` — druhou částí je název sestavení a builder ho odvozuje z jmenného prostoru. To jsou ale nezávislé věci: sestavení je fakt konzumentského projektu, který převod nezná a znát nemůže. Vygenerované mapování tak tvrdí o cílovém projektu něco, co skoro jistě neplatí, a NHibernate ho odmítne hláškou `persistent class ... not found`. Že to dosud nikdo neodhalil, je vlastnost testů, ne kódu: ověřovací testy kompilují entity pod názvem sestavení shodným se jmenným prostorem zdroje, takže si výmysl samy potvrzují — a `NHibernateAcceptance.QualifyAssembly` popisuje tenhle stav jako záměr („název, který builder už kvalifikoval, má přednost"), ačkoli je to obcházení vady. Správný tvar má název sestavení na kořenovém elementu `<hibernate-mapping assembly=...>`, kam ho doplní konzument, a `<class name=...>` nechá nekvalifikované; jmenný prostor kořen už dnes vypisuje. Rozhodnout je při tom třeba, jestli se název sestavení stane deklarovaným vstupem převodu, nebo zůstane vynechaný se záznamem o konvenci.
+
+### EF Core parser nečte navigaci bez `[ForeignKey]`
+*Potom. Souvisí s rozhodnutím [012](./decisions/012-foreign-key-rendering.md) a [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Požadavky F3, F11.*
+
+V `EFCoreEntityParser` skončí vlastnost, která není skalár a nemá `[ForeignKey]`, ve větvi `else` mezi kandidáty na konvenční klíč. Obyčejné `public Customer Customer { get; set; }` — v EF Core naprosto běžný zápis, protože vztah tam plyne z konvence — tedy nezaloží žádný vztah a do mezireprezentace vejde jako by to byl skalár. Cíl to pak vypíše jako obyčejnou vlastnost: NHibernate takové mapování odmítne, protože `<property>` míří na typ, který není namapovaný jako hodnota. Zachránit to umí jedině fáze doplnění z katalogu, tedy jen s připojenou databází, a bez ní o tom nevznikne ani záznam. Chybí tedy dvojí: uznat neskalární vlastnost za navigaci i bez anotace, a tam, kde se sloupce nedají odvodit, to ohlásit místo mlčení.
+
+### EF Core parser zahazuje neznámé anotace beze stopy
+*Souvisí s rozhodnutím [010](./decisions/010-diagnostics-as-returned-data.md). Požadavek F11.*
+
+`switch` nad názvem atributu v `EFCoreEntityParser` nemá větev `default`, takže všechno mimo sedmičku rozpoznaných anotací se ztratí bez záznamu. U některých je to jen ochuzení (`[StringLength]`, `[Comment]`, `[Index]`), u dvou to ale mění význam artefaktu: `[NotMapped]` říká, že vlastnost se nemapuje vůbec, a `[Keyless]`, že typ nemá klíč. Obojí projde jako by tam nebylo. Nejmenší náprava je větev `default` se záznamem o ztrátě; k tomu patří rozhodnout, které z nich má mezireprezentace umět nést.
+
+### Dva entitní parsery jsou totéž
+*Vytčeno rozhodnutím [026](./decisions/026-home-of-shared-query-reading.md), které touž duplicitu odstranilo na dotazové straně. Požadavek S1.*
+
+`DapperEntityParser` a `NHibernateEntityParser` se liší jedinou řádkou dokumentačního komentáře; oba čtou jmenný prostor, hlavičku třídy a vlastnosti a nic dalšího. Třetí kopii téhož drží `EFCoreEntityParser` uvnitř sebe. Každá oprava čtení vlastností se tak musí udělat dvakrát až třikrát. Na dotazové větvi tenhle problém vyřešila sdílená knihovna se zásuvnými body; entitní strana čeká na totéž a je to týž tvar řešení, ne nový.
+
 ### Priorita zdrojů uvnitř vstupu se nevynucuje
 *Implementace rozhodnutí [017](./decisions/017-source-precedence-for-mapping-facts.md). Požadavky F5, F11, S2.*
 
@@ -83,9 +98,9 @@ Sem patří i **cílový databázový dialekt**, který rozhodnutí 019 odmítlo
 Fáze rozresolvování (`ResolveEntityNames` v `AbstractEntityBuilder`) běží před generováním, plní `ColumnPairs`, povyšuje `Unknown` typy na reference a nenalezené jméno cílové entity i nesouhlasící počet či pořadí sloupců hlásí záznamem podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md). Z důsledků rozhodnutí 001 tak zbývá jediné: `property-ref` na inverzní straně vztahu 1:1, který rozhodnutí 012 odkládá právě sem. Navigace protistrany je po rozresolvování dostupná, ale NHibernate builder ji zatím nehledá a atribut nevypisuje; zahozenou hodnotu ze vstupu aspoň hlásí parser záznamem o ztrátě.
 
 ### Poddotazy a množinové operace se nevykreslí
-*Podklad: audit 2026-08-02, kap. 8. Požadavek T2, který dotazovou matici dělí i podle poddotazů a množinových operací.*
+*Potom. Podklad: audit 2026-08-02, kap. 8. Požadavek T2, který dotazovou matici dělí i podle poddotazů a množinových operací.*
 
-Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec, takže poddotaz projde parsováním, ale jeho výsledek se nikam neskládá — výstup je tiše chudší než vstup. Vedle toho `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu), takže složený dotaz se poskládá špatně. Obojí je táž mezera z opačných stran a obojí blokuje dvě kategorie dotazové matice podle T2, které tak nemají co měřit.
+Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec, takže poddotaz projde parsováním, ale jeho výsledek se nikam neskládá. **Tiché to už není** — `Normalize()` v šabloně dotazového builderu (rozhodnutí [023](./decisions/023-query-builder-template-method.md)) vnořený poddotaz ohlásí záznamem o ztrátě —, ale vykreslit ho to neumí. Vedle toho `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu), takže složený dotaz se poskládá špatně; množinovou operaci navíc dnes vykresluje jedině Dapper builder, kdežto NHibernate ji podle deskriptoru vyjádřit neumí a EF Core builder pro ni nemá větev. Sem patří i stránkování, které mezireprezentace vůbec nenese — parsery ho hlásí jako ztrátu. Všechno tohle jsou kategorie dotazové matice podle T2, které tak nemají co měřit.
 
 ### EF Core — nullabilita se vyjadřuje jen jazykově
 *Souvisí s rozhodnutím [009](./decisions/009-target-framework-descriptor.md): deskriptor kategorii uvádí jako vyjádřitelnou, protože popisuje framework, ne dnešní stav builderu. Požadavky F2, F11.*
@@ -95,7 +110,7 @@ Anotaci `[Required]` builder negeneruje. Databázová nullabilita z `PropertyMap
 ### NHibernate builder — kolekce jen jako `<bag>`
 *Navazuje na rozhodnutí [014](./decisions/014-language-type-model.md), které do modelu přineslo `CollectionKind`. Požadavky F3, F11.*
 
-Kolekční vlastnost se generuje natvrdo jako `<bag>` a ostatní kolekční tvary (`set`, `list`, `map`) ani další kolekční vlastnosti builder neřeší (dva TODO v kódu). Volba tvaru kolekce je v NHibernate sémantická — `set` vylučuje duplicity, `list` nese pořadí — takže dnešní stav mění chování, ne jen zápis. Model už druh kolekce nese (`CollectionKind` na `LangType`) a plní ho jazyková strana (`HashSet<T>` → `Set`); XML parser tvar elementu (`<set>` vs. `<bag>`) do modelu zatím nepropisuje a builder druh nečte — obojí patří k této položce.
+Kolekční vlastnost se generuje natvrdo jako `<bag inverse="true" cascade="all-delete-orphan">` a ostatní kolekční tvary (`set`, `list`, `map`) ani další kolekční vlastnosti builder neřeší (dva TODO v kódu). Atributy `inverse` a `cascade` jsou přitom fakty, které nikdo netvrdil — kaskádní mazání sirotků obzvlášť mění chování — a nevzniká o nich záznam. K témuž místu patří i to, že vztah N:M, který přežil fázi syntézy, vyjde jako `<many-to-many>` uvnitř `<bag>` bez atributu `table`: to není chudší mapování, nýbrž neplatné. Volba tvaru kolekce je v NHibernate sémantická — `set` vylučuje duplicity, `list` nese pořadí — takže dnešní stav mění chování, ne jen zápis. Model už druh kolekce nese (`CollectionKind` na `LangType`) a plní ho jazyková strana (`HashSet<T>` → `Set`); XML parser tvar elementu (`<set>` vs. `<bag>`) do modelu zatím nepropisuje a builder druh nečte — obojí patří k této položce.
 
 ### Advisor nemá build nativní knihovny pro Windows
 *Mezera popsaná v [`architecture.md`](./architecture.md), §8. Souvisí s S5 a T7.*
@@ -110,7 +125,7 @@ V repozitáři leží `ecosystem.config.js`, konfigurace pro proces manager PM2,
 ### Frontend zaostal za API a nevaliduje vstup
 *Souvisí s rozhodnutím [010](./decisions/010-diagnostics-as-returned-data.md), jehož záznamy frontend nezobrazuje. Požadavek S7. Odloženo do cílenější přestavby, současný stav je funkční.*
 
-Uživatelské rozhraní zůstalo u tvaru API, který už neplatí, a chybové stavy nechává na serveru. `/convert` vrací od rozhodnutí 010 vedle artefaktů i pole `records` se strukturovanou diagnostikou a frontend je ignoruje, takže se uživatel o ztrátách, konvencích ani konfliktech nedozví. Chyby ze serveru zobrazuje `main-page.component.ts` přes `err.message` místo `err.error`, takže místo hlášky ze serveru ukáže obecný text HTTP chyby; vzor správného čtení je v `advisor-page.component.ts`. Prázdné dotazové jednotky posílá `advisor-page.component.ts` na server, který je záměrně striktní a odmítne je — tolerance patří do UI, ne do API. A validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku, neexistuje vůbec.
+Uživatelské rozhraní zůstalo u tvaru API, který už neplatí, a chybové stavy nechává na serveru. `/convert` vrací od rozhodnutí 010 vedle artefaktů i pole `records` se strukturovanou diagnostikou a frontend je ignoruje, takže se uživatel o ztrátách, konvencích ani konfliktech nedozví — a nově je těch záznamů podstatně víc, protože je vydává i dotazová větev. Chyby ze serveru zobrazuje `main-page.component.ts` přes `err.message` místo `err.error`, takže místo hlášky ze serveru ukáže obecný text HTTP chyby; vzor správného čtení je v `advisor-page.component.ts`. A validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku, neexistuje vůbec — u zdroje v Dapperu přitom server nově řádek i sloupec zná, protože je hlásí parser T-SQL. Prázdné jednotky odsud zmizely: server je od rozhodnutí [025](./decisions/025-query-language-as-content-type.md) přeskakuje sám, protože nevyplněné pole není tvrzení. Zbývá také přeložit frontend do `wwwroot` — výčet typů obsahu se změnil a commitnutý bundle ho zatím nezná.
 
 ---
 
@@ -126,4 +141,4 @@ Velké bloky ze zadání, každý si zaslouží vlastní rozhodnutí, než se do
 | **F14–F15** dávkové vstupy a výběr cíle v UI | použitelnost nástroje mimo ruční zadávání; F14 je zároveň předpokladem třetí otázky u klíčové třídy |
 | **T1–T7** experimenty | T7 navazuje na existující ILP Advisor |
 
-Dotazová větev z původního zadání zůstává rozpracovaná: chybí NHibernate LINQ parser, Dapper SQL parser a query buildery pro EF Core i NHibernate.
+Dotazová větev z původního zadání je hotová ve všech devíti směrech v rozsahu kategorií projekce, filtrace, join, agregace a řazení (rozhodnutí 022–027). Co z ní zbývá, jsou zbylé kategorie požadavku T2 — stránkování, poddotazy a množinové operace — a HQL parser, bez kterého NHibernate → NHibernate není textovým round-tripem.
