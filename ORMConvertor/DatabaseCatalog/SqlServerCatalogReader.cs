@@ -279,26 +279,30 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
     private static ColumnImage ReadColumn(
         string name, string sqlType, short maxLength, byte precision, byte scale, bool isNullable, bool isIdentity)
     {
-        var type = MapType(sqlType);
+        var (type, isUnicode, keepLiteral) = MapType(sqlType);
 
         // Only the values meaningful for the type are carried; sys.columns states a
         // precision for every numeric column and a byte length for every column, which
-        // as model facts would be noise rather than information.
+        // as model facts would be noise rather than information. Unicode character
+        // columns state their byte length, so the character count is half of it.
         int? length = type switch
         {
+            DatabaseType.Char or DatabaseType.VarChar when isUnicode == true
+                => maxLength > 0 ? maxLength / 2 : null,
             DatabaseType.Char or DatabaseType.VarChar or DatabaseType.Binary or DatabaseType.VarBinary
                 => maxLength > 0 ? maxLength : null,
-            DatabaseType.NChar or DatabaseType.NVarChar
-                => maxLength > 0 ? maxLength / 2 : null,
             _ => null,
         };
 
         (int? columnPrecision, int? columnScale) = type switch
         {
-            DatabaseType.Decimal or DatabaseType.Numeric => ((int?)precision, (int?)scale),
+            DatabaseType.Decimal => ((int?)precision, (int?)scale),
             // For date-time columns the fractional-second precision is what mappings
-            // express as precision; sys.columns keeps it in scale.
-            DatabaseType.DateTime2 or DatabaseType.DateTimeOffset or DatabaseType.Time => ((int?)scale, (int?)null),
+            // express as precision; sys.columns keeps it in scale. The Timestamp family
+            // covers datetime and smalldatetime too, whose fixed precisions the catalog
+            // states the same way (decision 019).
+            DatabaseType.Timestamp or DatabaseType.TimestampWithTimeZone or DatabaseType.Time
+                => ((int?)scale, (int?)null),
             _ => ((int?)null, (int?)null),
         };
 
@@ -306,6 +310,8 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
         {
             Name = name,
             Type = type,
+            IsUnicode = isUnicode,
+            SourceSqlType = keepLiteral ? sqlType : null,
             Length = length,
             Precision = columnPrecision,
             Scale = columnScale,
@@ -315,43 +321,55 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
     }
 
     /// <summary>
-    /// The T-SQL name of a type as the catalog spells it. A name outside the vocabulary
-    /// maps to null: the fact is not supplied rather than guessed. This is the catalog's
-    /// side of the DatabaseType list being a T-SQL vocabulary today - the open item on
-    /// database type neutralization owns the wider question.
+    /// The T-SQL name of a type as the catalog spells it, read into the neutral vocabulary
+    /// (decision 019): the family, the unicode facet of character types, and whether the
+    /// literal spelling belongs on the escape path because the family is coarser than the
+    /// type - money, datetime, rowversion. A name outside the vocabulary has no family and
+    /// keeps only its spelling: the fact is carried literally rather than guessed.
     /// </summary>
-    private static DatabaseType? MapType(string sqlType) => sqlType.ToLowerInvariant() switch
-    {
-        "bigint" => DatabaseType.BigInt,
-        "int" => DatabaseType.Int,
-        "smallint" => DatabaseType.SmallInt,
-        "tinyint" => DatabaseType.TinyInt,
-        "bit" => DatabaseType.Bit,
-        "decimal" => DatabaseType.Decimal,
-        "numeric" => DatabaseType.Numeric,
-        "money" => DatabaseType.Money,
-        "smallmoney" => DatabaseType.SmallMoney,
-        "float" => DatabaseType.Float,
-        "real" => DatabaseType.Real,
-        "date" => DatabaseType.Date,
-        "datetime" => DatabaseType.DateTime,
-        "datetime2" => DatabaseType.DateTime2,
-        "smalldatetime" => DatabaseType.SmallDateTime,
-        "time" => DatabaseType.Time,
-        "datetimeoffset" => DatabaseType.DateTimeOffset,
-        "char" => DatabaseType.Char,
-        "varchar" => DatabaseType.VarChar,
-        "text" => DatabaseType.Text,
-        "nchar" => DatabaseType.NChar,
-        "nvarchar" or "sysname" => DatabaseType.NVarChar,
-        "ntext" => DatabaseType.NText,
-        "binary" => DatabaseType.Binary,
-        "varbinary" => DatabaseType.VarBinary,
-        "image" => DatabaseType.Image,
-        "uniqueidentifier" => DatabaseType.UniqueIdentifier,
-        "xml" => DatabaseType.Xml,
-        "sql_variant" => DatabaseType.SqlVariant,
-        "rowversion" or "timestamp" => DatabaseType.RowVersion,
-        _ => null,
-    };
+    private static (DatabaseType? Type, bool? IsUnicode, bool KeepLiteral) MapType(string sqlType)
+        => sqlType.ToLowerInvariant() switch
+        {
+            "bit" => (DatabaseType.Boolean, null, false),
+            "tinyint" => (DatabaseType.TinyInt, null, false),
+            "smallint" => (DatabaseType.SmallInt, null, false),
+            "int" => (DatabaseType.Integer, null, false),
+            "bigint" => (DatabaseType.BigInt, null, false),
+
+            "decimal" or "numeric" => (DatabaseType.Decimal, null, false),
+            // The money types keep their exact decimal shape through sys.columns'
+            // precision and scale; the literal records their narrower range.
+            "money" or "smallmoney" => (DatabaseType.Decimal, null, true),
+
+            "float" => (DatabaseType.DoublePrecision, null, false),
+            "real" => (DatabaseType.Real, null, false),
+
+            "date" => (DatabaseType.Date, null, false),
+            "time" => (DatabaseType.Time, null, false),
+            "datetime" or "smalldatetime" => (DatabaseType.Timestamp, null, true),
+            "datetime2" => (DatabaseType.Timestamp, null, false),
+            "datetimeoffset" => (DatabaseType.TimestampWithTimeZone, null, false),
+
+            "char" => (DatabaseType.Char, false, false),
+            "nchar" => (DatabaseType.Char, true, false),
+            "varchar" => (DatabaseType.VarChar, false, false),
+            "nvarchar" or "sysname" => (DatabaseType.VarChar, true, false),
+            "text" => (DatabaseType.Text, false, false),
+            "ntext" => (DatabaseType.Text, true, false),
+
+            "binary" => (DatabaseType.Binary, null, false),
+            "varbinary" => (DatabaseType.VarBinary, null, false),
+            "image" => (DatabaseType.Blob, null, false),
+
+            "uniqueidentifier" => (DatabaseType.Uuid, null, false),
+            "xml" => (DatabaseType.Xml, null, false),
+
+            // A rowversion column is eight bytes of binary; the versioning semantics
+            // have no mapping fact yet (open item of decision 019), so the literal is
+            // what keeps them from vanishing without a trace.
+            "rowversion" or "timestamp" => (DatabaseType.VarBinary, null, true),
+            "sql_variant" => (null, null, true),
+
+            _ => (null, null, true),
+        };
 }

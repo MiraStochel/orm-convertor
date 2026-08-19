@@ -185,6 +185,8 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                         entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
                     }
 
+                    ApplyTypeFacts(part, name);
+
                     // <composite-id> admits no generator, so the values are the application's to
                     // supply - that is a statement of the framework, not silence of the source.
                     parts.Add((name, order++, PrimaryKeyStrategy.Assigned));
@@ -227,6 +229,8 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         {
             entityBuilder.SetPropertyDatabaseMapping(propName, idDbProps);
         }
+
+        ApplyTypeFacts(idElem, propName);
 
         entityBuilder.AddPrimaryKey(strategy, propName);
 
@@ -387,6 +391,70 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                 propertyName,
                 ReadColumnFacts(prop)
             );
+
+            ApplyTypeFacts(prop, propertyName);
+        }
+    }
+
+    /// <summary>
+    /// The type claim of an element, read through the typed channel (decision 019): the
+    /// type attribute becomes the family with the facets its name itself carries, and the
+    /// sql-type of a nested &lt;column&gt; travels verbatim on the escape path. A type name
+    /// outside the vocabulary keeps only its literal spelling and is reported - the family
+    /// fact is missing rather than lost, and the catalog may still supply it (decision 010).
+    /// </summary>
+    private void ApplyTypeFacts(XElement element, string propertyName)
+    {
+        var columnElement = element.Elements().FirstOrDefault(e => e.Name.LocalName == "column");
+        var sqlType = columnElement?.Attribute("sql-type")?.Value;
+
+        if (!string.IsNullOrWhiteSpace(sqlType))
+        {
+            entityBuilder.SetPropertyDatabaseType(propertyName, null, sourceSqlType: sqlType.Trim());
+        }
+
+        var typeAttr = element.Attribute("type")?.Value;
+
+        if (string.IsNullOrWhiteSpace(typeAttr))
+        {
+            return;
+        }
+
+        var reading = DatabaseTypeConvertor.FromNHibernate(typeAttr);
+
+        entityBuilder.SetPropertyDatabaseType(
+            propertyName,
+            reading.Type,
+            reading.IsUnicode,
+            reading.SourceType,
+            reading.Length,
+            reading.Precision,
+            reading.Scale);
+
+        if (reading.Type is null)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Incompleteness,
+                Framework = entityBuilder.Descriptor.Framework,
+                Entity = entityBuilder.EntityMap.Entity.Name,
+                Property = propertyName,
+                Category = MappingFactCategory.DatabaseType,
+                Reason = $"The type '{typeAttr.Trim()}' has no family in the neutral vocabulary; its literal "
+                    + "spelling is kept on the escape path and no family is claimed (decision 019).",
+            });
+        }
+        else if (reading.Narrowing is not null)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = entityBuilder.Descriptor.Framework,
+                Entity = entityBuilder.EntityMap.Entity.Name,
+                Property = propertyName,
+                Category = MappingFactCategory.DatabaseType,
+                Reason = reading.Narrowing,
+            });
         }
     }
 
@@ -399,8 +467,10 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     ///
     /// Only the first &lt;column&gt; is read, because the model maps a property to a single
     /// column; a property spread over several columns is a separate concern. Attributes with
-    /// no counterpart in the model - unique, index, check, default - are skipped, and so is
-    /// sql-type, whose place in the model belongs to the type neutralization work.
+    /// no counterpart in the model - unique, index, check, default - are skipped. The type
+    /// attribute and the sql-type of a nested &lt;column&gt; do not travel through this
+    /// dictionary: they go through the typed channel of <see cref="ApplyTypeFacts"/>
+    /// (decision 019).
     /// </summary>
     private static Dictionary<string, string> ReadColumnFacts(XElement element)
     {
@@ -409,12 +479,6 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         if (element.Attribute("column")?.Value is string column && !string.IsNullOrWhiteSpace(column))
         {
             dbProps["column"] = column;
-        }
-
-        // The NHibernate type sits on the element itself; a <column> carries sql-type instead.
-        if (element.Attribute("type")?.Value is string type && !string.IsNullOrWhiteSpace(type))
-        {
-            dbProps["type"] = ((int)DatabaseTypeConvertor.FromNHibernate(type)).ToString();
         }
 
         ReadFacetsInto(dbProps, element);

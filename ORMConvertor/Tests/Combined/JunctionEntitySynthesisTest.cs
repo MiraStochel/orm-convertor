@@ -117,7 +117,7 @@ public class JunctionEntitySynthesisTest
         // The key part's facts travel to the foreign key column that references it.
         var keyType = junction.PropertyMaps.Single(pm => pm.Property.Name == "SupplierId");
         Assert.Equal(ScalarType.Int, keyType.Property.Type?.ScalarType);
-        Assert.Equal(DatabaseType.Int, keyType.Type);
+        Assert.Equal(DatabaseType.Integer, keyType.Type);
         Assert.False(keyType.IsNullable);
     }
 

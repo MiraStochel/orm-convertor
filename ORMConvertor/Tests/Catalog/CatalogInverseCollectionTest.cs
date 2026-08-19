@@ -47,7 +47,7 @@ public class CatalogInverseCollectionTest
         Name = "Customers",
         Columns =
         [
-            new ColumnImage { Name = "CustomerId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = true },
+            new ColumnImage { Name = "CustomerId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = true },
         ],
         PrimaryKeyColumns = ["CustomerId"],
         ForeignKeys = [],
@@ -62,8 +62,8 @@ public class CatalogInverseCollectionTest
         Name = "Orders",
         Columns =
         [
-            new ColumnImage { Name = "OrderId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = true },
-            new ColumnImage { Name = "CustId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = false },
+            new ColumnImage { Name = "OrderId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = true },
+            new ColumnImage { Name = "CustId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = false },
         ],
         PrimaryKeyColumns = ["OrderId"],
         ForeignKeys =
@@ -231,7 +231,7 @@ public class CatalogInverseCollectionTest
             Name = "Profiles",
             Columns =
             [
-                new ColumnImage { Name = "CustomerId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = false },
+                new ColumnImage { Name = "CustomerId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = false },
             ],
             PrimaryKeyColumns = ["CustomerId"],
             ForeignKeys =

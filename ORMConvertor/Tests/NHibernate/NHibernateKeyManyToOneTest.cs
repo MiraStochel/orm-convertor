@@ -123,7 +123,7 @@ public class NHibernateKeyManyToOneTest
         // The class holds only the navigation; the scalar part the flat key needs is typed
         // from the key part its column references, and the derivation is reported.
         Assert.Equal(ScalarType.Int, orderId.Property.Type?.ScalarType);
-        Assert.Equal(DatabaseType.Int, orderId.Type);
+        Assert.Equal(DatabaseType.Integer, orderId.Type);
         Assert.Contains(builder.Records, r =>
             r.Kind == ConversionRecordKind.Convention && r.Property == "OrderId" && r.Reason.Contains("taken over"));
 

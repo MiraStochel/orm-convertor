@@ -12,15 +12,13 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Otevřená rozhodnutí
 
-### Neutralizace databázového typu
-*Na řadě. Navazuje na rozhodnutí [014](./decisions/014-language-type-model.md), které vyřešilo jazykovou stranu. Předpoklad F7–F10 nad jiným DBMS. Podklad: audit 2026-08-02, kap. 2.2–2.4 a 4.5.*
+### Sloupec verze jako mapovací fakt
+*Vytčeno z rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md), které `RowVersion` odstranilo ze slovníku typů. Požadavky F2, F7–F10, F11.*
 
-`DatabaseType` je fakticky seznam typů T-SQL. Dokud oba ekosystémy míří na týž SQL Server, nic to nelže, ale s jiným DBMS — nebo s dialektem, který si Hibernate odvodí z JDBC metadat — přestane platit. Sem patří i `sql-type` na vnořeném `<column>` elementu NHibernate, jediná cesta, jak v mapování udržet konkrétní SQL typ místo typu frameworku; parser ho dnes nečte, protože nemá kam ho uložit. A sem patří případ `Char`, který dnes nelze namapovat na správný typ NHibernate, protože ve výčtu chybí hodnota pro jednotlivý unicode znak.
-
-Se stejnou otázkou visí dvě věci, které dnes nemají kde bydlet. **Cílový dialekt se nikde nedeklaruje**, takže `sql-type` nelze emitovat, ani kdyby ho model nesl — konkrétní SQL typ z typu NHibernate odvozuje právě dialekt. A **zúžení musí být z převodu poznat**: rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md) to výslovně žádá, kdežto dnešní slévání `DateTime`, `DateTime2` i `SmallDateTime` do jediného typu NHibernate zúží přesnost i rozsah a rozliší se to jen z popisu, ne z modelu (viz `architecture.md`, §5).
+`RowVersion` se dosud nesl jako databázový typ, ale typ to není — je to token pro optimistickou souběžnost, který každý framework vyjadřuje vlastním mechanismem: JPA anotací `@Version`, EF Core voláním `IsRowVersion()`, NHibernate elementem `<version>`. Rozhodnutí 019 ho ze slovníku odstranilo jako typ jediného systému a fakt tím zůstal bez domova: sloupec `rowversion` z katalogu vyjde jako `VarBinary` s doslovným názvem na únikové cestě a význam „tenhle sloupec nese verzi řádku" se ztratí. Rozhodnout je třeba, jestli mezireprezentace dostane vlastní mapovací fakt pro sloupec verze — a s ním kategorii v deskriptoru, aby šlo říct, který cíl ho vyjádřit umí — nebo jestli zůstane mimo rozsah a bude se hlásit jako nevyjádřitelný. Do té doby se ztrácí bez záznamu, což je přesně to, čemu má bránit rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md).
 
 ### Kanonický slovník parametrů generátoru
-*Potom. Navazuje na rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md). Předpoklad F7–F10.*
+*Na řadě. Navazuje na rozhodnutí [011](./decisions/011-key-generation-strategy-vocabulary.md). Předpoklad F7–F10.*
 
 `StrategyParameters` nese parametry tak, jak je pojmenoval zdroj: u NHibernate `sequence` a `max_lo`, u JPA `sequenceName` a `allocationSize`. Uvnitř jednoho ekosystému to stačí, napříč nimi ne — cílový builder názvům zdroje nerozumí, takže je buď vypíše nesmyslně, nebo zahodí, a klíč vázaný na sekvenci se stane nespustitelným. Rozhodnout, jestli názvy kanonizovat v modelu, nebo jejich překlad nechat na wrapperech. Rozhodnutí 011 dalo parametrům místo v modelu a tuhle otázku nechalo vědomě otevřenou.
 
@@ -82,10 +80,12 @@ S5 žádá celý systém včetně databáze spustitelný dokumentovanou kontejne
 
 Patří sem trojí: service container do workflow v `.github` spolu s proměnnou `ConnectionStrings__TestDatabase`, aby databázově závislé testy běžely i v CI (dnes se tam přeskakují, protože proměnná není nastavená), volba mezi Docker Compose a Testcontainers pro lokální reprodukci, a ověření `ConnectionStrings__AdvisorDatabase` v `docker-compose.yml` — commitnutá deklarace, kterou dosud nikdo nespustil a jejíž ověření dřívější plán čekal od stavby testovacího prostředí.
 
-### Cílová verze v deskriptoru
-*Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md). Požadavky S2, S6.*
+### Cílová verze a databázový dialekt v deskriptoru
+*Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md); dialekt sem odkázalo rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md). Požadavky S2, S6, F7–F10.*
 
 Deskriptor cílového frameworku nese, co cíl umí vyjádřit, ale ne verzi, proti které to platí. Doplnit ji a nechat buildery volit syntaxi tam, kde se verze rozcházejí — u EF Core `[PrimaryKey]` proti `HasKey`, u NHibernate dostupnost `DateOnly`. Bez explicitní volby platí verze zafixovaná v `architecture.md`. Tímtéž údajem se pak plní záznam běhu podle S6, aby nemohl tvrdit něco jiného než generátor.
+
+Sem patří i **cílový databázový dialekt**, který rozhodnutí 019 odmítlo řešit v typovém modelu: je to fakt o cíli převodu téhož tvaru jako verze frameworku. Bez něj nelze emitovat `sql-type` odvozený z typové rodiny ani vybrat typ podle systému, protože konkrétní SQL typ z typu frameworku odvozuje právě dialekt — NHibernate builder dnes propisuje jen doslovný `SourceSqlType`, který nese zdroj. Dokud se dialekt nedeklaruje, je jediným dialektem SQL Server.
 
 ### Rozresolvování jmen entit — `property-ref` na inverzní straně
 *Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F11.*

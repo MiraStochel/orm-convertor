@@ -1,10 +1,34 @@
-﻿using Model.AbstractRepresentation.Enums;
+using Model.AbstractRepresentation.Enums;
 
 namespace NHibernateWrappers.Convertors;
 
+/// <summary>
+/// One reading of an NHibernate type attribute in the neutral vocabulary (decision 019):
+/// the family, the facets the type name itself claims, and - for a name outside the
+/// vocabulary - the literal spelling for the escape path. A null Type with a SourceType
+/// means the vocabulary does not capture the name; a non-null Narrowing carries the
+/// reason where the family is coarser than the name and the difference deserves a record.
+/// </summary>
+public readonly record struct NHibernateTypeReading(
+    DatabaseType? Type,
+    bool? IsUnicode = null,
+    int? Length = null,
+    int? Precision = null,
+    int? Scale = null,
+    string? SourceType = null,
+    string? Narrowing = null);
+
 public static class DatabaseTypeConvertor
 {
-    public static DatabaseType FromNHibernate(string? type)
+    /// <summary>
+    /// The type attribute of a property element read into the neutral vocabulary. The
+    /// aliases are those TypeFactory of NHibernate 5.7.0 registers; a name it does not
+    /// register - a user type, or a spelling of another system - has no family and keeps
+    /// only its literal spelling, which the caller records (decisions 010 and 019).
+    /// Never throws on an unknown name: a type outside the vocabulary is a record and a
+    /// poorer artifact, not a failed conversion.
+    /// </summary>
+    public static NHibernateTypeReading FromNHibernate(string? type)
     {
         if (string.IsNullOrWhiteSpace(type))
         {
@@ -13,84 +37,93 @@ public static class DatabaseTypeConvertor
 
         return type.Trim().ToLowerInvariant() switch
         {
-            "int64" or "long" => DatabaseType.BigInt,
+            "boolean" or "bool" => new(DatabaseType.Boolean),
+            "byte" => new(DatabaseType.TinyInt),
+            "int16" or "short" => new(DatabaseType.SmallInt),
+            "int32" or "int" or "integer" => new(DatabaseType.Integer),
+            "int64" or "long" => new(DatabaseType.BigInt),
 
-            "int32" or "int" or "integer" => DatabaseType.Int,
+            "decimal" or "big_decimal" => new(DatabaseType.Decimal),
 
-            "int16" or "short" => DatabaseType.SmallInt,
+            // Currency is DbType.Currency - money under the SQL Server dialect. The
+            // vocabulary has no money family (a type of one system), so the claim is
+            // read as its exact decimal shape and the narrowing is reported.
+            "currency" => new(DatabaseType.Decimal, Precision: 19, Scale: 4,
+                Narrowing: "NHibernate type 'Currency' has no family of its own in the neutral vocabulary; "
+                    + "it is read as Decimal with precision 19 and scale 4, the shape of the money type it maps to (decision 019)."),
 
-            "byte" => DatabaseType.TinyInt,
-            "boolean" or "bool" => DatabaseType.Bit,
+            "single" or "float" => new(DatabaseType.Real),
+            "double" => new(DatabaseType.DoublePrecision),
 
-            "decimal" or "big_decimal" => DatabaseType.Decimal,
-            "currency" => DatabaseType.Money,
-            "double" => DatabaseType.Float,
-            "single" or "float" => DatabaseType.Real,
+            "date" => new(DatabaseType.Date),
+            "time" or "timeastimespan" => new(DatabaseType.Time),
 
-            "date" => DatabaseType.Date,
-            "datetime" or "datetime2" or "datetimenoms" or "dbtimestamp" => DatabaseType.DateTime2,
-            "smalldatetime" => DatabaseType.SmallDateTime,
-            "time" or "timeastimespan" => DatabaseType.Time,
-            "datetimeoffset" => DatabaseType.DateTimeOffset,
+            // Timestamp is NHibernate's DateTime-valued type, not a rowversion column.
+            "datetime" or "datetime2" or "dbtimestamp" or "timestamp" => new(DatabaseType.Timestamp),
 
-            "ansistringfixedlength" or "ansichar" or "char" => DatabaseType.Char,
-            "ansistring" => DatabaseType.VarChar,
-            "ansistringclob" => DatabaseType.Text,
-            "stringfixedlength" => DatabaseType.NChar,
-            "string" => DatabaseType.NVarChar,
-            "stringclob" => DatabaseType.NText,
+            // The name itself claims no fractional seconds.
+            "datetimenoms" => new(DatabaseType.Timestamp, Precision: 0),
+            "datetimeoffset" => new(DatabaseType.TimestampWithTimeZone),
 
-            "binary" => DatabaseType.Binary,
-            "binaryblob" => DatabaseType.Image,
+            // A single character is a fixed-length character column of length one; the
+            // unicode facet is what tells Char from AnsiChar (decision 019).
+            "char" => new(DatabaseType.Char, IsUnicode: true, Length: 1),
+            "ansichar" => new(DatabaseType.Char, IsUnicode: false, Length: 1),
+            "stringfixedlength" => new(DatabaseType.Char, IsUnicode: true),
+            "ansistringfixedlength" => new(DatabaseType.Char, IsUnicode: false),
+            "string" => new(DatabaseType.VarChar, IsUnicode: true),
+            "ansistring" => new(DatabaseType.VarChar, IsUnicode: false),
+            "stringclob" => new(DatabaseType.Text, IsUnicode: true),
+            "ansistringclob" => new(DatabaseType.Text, IsUnicode: false),
 
-            "guid" => DatabaseType.UniqueIdentifier,
-            "xml" => DatabaseType.Xml,
-            "serializable" or "object" => DatabaseType.SqlVariant,
-            "timestamp" or "rowversion" => DatabaseType.RowVersion,
-            _ => throw new NotImplementedException(type),
+            // Binary is Byte[] over DbType.Binary, which the SQL Server driver renders
+            // as the variable-length binary type.
+            "binary" => new(DatabaseType.VarBinary),
+            "binaryblob" => new(DatabaseType.Blob),
+
+            "guid" => new(DatabaseType.Uuid),
+            "xml" or "xmldoc" or "xmldocument" => new(DatabaseType.Xml),
+
+            _ => new(null, SourceType: type.Trim()),
         };
     }
 
-    public static string ToNHibernate(DatabaseType type) => type switch
+    /// <summary>
+    /// The NHibernate type name of a family. The unicode facet picks between the ansi
+    /// and unicode variants of character data; unstated falls to the unicode variant,
+    /// which is NHibernate's own default, so nothing is claimed beyond the target's
+    /// convention. The length tells a single character (Char/AnsiChar) from a
+    /// fixed-length string.
+    /// </summary>
+    public static string ToNHibernate(DatabaseType type, bool? isUnicode = null, int? length = null) => type switch
     {
-        DatabaseType.BigInt => "Int64",
-        DatabaseType.Int => "Int32",
-        DatabaseType.SmallInt => "Int16",
+        DatabaseType.Boolean => "Boolean",
         DatabaseType.TinyInt => "Byte",
-        DatabaseType.Bit => "Boolean",
+        DatabaseType.SmallInt => "Int16",
+        DatabaseType.Integer => "Int32",
+        DatabaseType.BigInt => "Int64",
 
         DatabaseType.Decimal => "Decimal",
-        DatabaseType.Numeric => "Decimal",
-        DatabaseType.Money => "Currency",
-        DatabaseType.SmallMoney => "Currency",
-
-        DatabaseType.Float => "Double",
         DatabaseType.Real => "Single",
+        DatabaseType.DoublePrecision => "Double",
 
         DatabaseType.Date => "Date",
-        DatabaseType.DateTime => "DateTime",
-        DatabaseType.DateTime2 => "DateTime",
-        DatabaseType.SmallDateTime => "DateTime",
         DatabaseType.Time => "TimeAsTimeSpan",
-        DatabaseType.DateTimeOffset => "DateTimeOffset",
+        DatabaseType.Timestamp => "DateTime",
+        DatabaseType.TimestampWithTimeZone => "DateTimeOffset",
 
-        DatabaseType.Char => "AnsiStringFixedLength",
-        DatabaseType.VarChar => "AnsiString",
-        DatabaseType.Text => "AnsiStringClob",
-        DatabaseType.NChar => "StringFixedLength",
-        DatabaseType.NVarChar => "String",
-        DatabaseType.NText => "StringClob",
+        DatabaseType.Char when length == 1 => isUnicode == false ? "AnsiChar" : "Char",
+        DatabaseType.Char => isUnicode == false ? "AnsiStringFixedLength" : "StringFixedLength",
+        DatabaseType.VarChar => isUnicode == false ? "AnsiString" : "String",
+        DatabaseType.Text => isUnicode == false ? "AnsiStringClob" : "StringClob",
 
-        DatabaseType.Binary => "Binary",
-        DatabaseType.VarBinary => "Binary",
-        DatabaseType.Image => "BinaryBlob",
+        DatabaseType.Binary or DatabaseType.VarBinary => "Binary",
+        DatabaseType.Blob => "BinaryBlob",
 
-        DatabaseType.UniqueIdentifier => "Guid",
+        DatabaseType.Uuid => "Guid",
         DatabaseType.Xml => "Xml",
-        DatabaseType.SqlVariant => "Serializable",
-        DatabaseType.RowVersion => "Timestamp",
 
-        _ => throw new NotImplementedException(type.ToString())
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
 
     /// <summary>
@@ -103,18 +136,20 @@ public static class DatabaseTypeConvertor
     {
         return scalarType switch
         {
-            ScalarType.Bool => ToNHibernate(DatabaseType.Bit),
+            ScalarType.Bool => ToNHibernate(DatabaseType.Boolean),
             ScalarType.Byte => ToNHibernate(DatabaseType.TinyInt),
             ScalarType.Short => ToNHibernate(DatabaseType.SmallInt),
-            ScalarType.Char => ToNHibernate(DatabaseType.Char),
-            ScalarType.Int => ToNHibernate(DatabaseType.Int),
+            // The reference documentation's default for System.Char is the unicode
+            // single character - the case the unicode facet exists for (decision 019).
+            ScalarType.Char => ToNHibernate(DatabaseType.Char, isUnicode: true, length: 1),
+            ScalarType.Int => ToNHibernate(DatabaseType.Integer),
             ScalarType.Long => ToNHibernate(DatabaseType.BigInt),
-            ScalarType.Double => ToNHibernate(DatabaseType.Float),
+            ScalarType.Double => ToNHibernate(DatabaseType.DoublePrecision),
             ScalarType.Float => ToNHibernate(DatabaseType.Real),
             ScalarType.Decimal => ToNHibernate(DatabaseType.Decimal),
-            ScalarType.String => ToNHibernate(DatabaseType.NVarChar),
-            ScalarType.DateTime => ToNHibernate(DatabaseType.DateTime2),
-            ScalarType.Guid => ToNHibernate(DatabaseType.UniqueIdentifier),
+            ScalarType.String => ToNHibernate(DatabaseType.VarChar, isUnicode: true),
+            ScalarType.DateTime => ToNHibernate(DatabaseType.Timestamp),
+            ScalarType.Guid => ToNHibernate(DatabaseType.Uuid),
             ScalarType.Object => null,
             _ => null,
         };

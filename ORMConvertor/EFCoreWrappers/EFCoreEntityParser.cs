@@ -1,4 +1,6 @@
 ﻿using AbstractWrappers;
+using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
 using Common.Convertors;
 using EFCoreWrappers.Convertors;
 using Microsoft.CodeAnalysis;
@@ -204,6 +206,7 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             bool isPrimaryKey = false;
             bool requiredAttr = false;
             string? generatedOption = null;
+            string? columnTypeName = null;
             List<string>? foreignKeyNames = null;
 
             foreach (var attribute in prop.AttributeLists.SelectMany(l => l.Attributes))
@@ -216,7 +219,7 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
                         isPrimaryKey = true;
                         break;
                     case "Column":
-                        HandleColumn(attribute, dbProps);
+                        columnTypeName = HandleColumn(attribute, dbProps) ?? columnTypeName;
                         break;
                     case "MaxLength":
                         dbProps["Length"] = GetInt(attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression).ToString();
@@ -254,6 +257,11 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             if (dbProps.Count > 0)
             {
                 entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
+            }
+
+            if (columnTypeName is not null)
+            {
+                ApplyColumnTypeName(name, columnTypeName);
             }
 
             propertyTypes[name] = type;
@@ -488,10 +496,13 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
     }
 
     /// <summary>
-    /// Handles the "Column" attribute, extracting properties like ColumnName and TypeName.
+    /// Handles the "Column" attribute: the column name goes into the string facts, the
+    /// TypeName is returned to travel through the typed channel (decision 019).
     /// </summary>
-    private static void HandleColumn(AttributeSyntax attribute, Dictionary<string, string> dbProps)
+    private static string? HandleColumn(AttributeSyntax attribute, Dictionary<string, string> dbProps)
     {
+        string? typeName = null;
+
         foreach (var arg in attribute.ArgumentList?.Arguments ?? Enumerable.Empty<AttributeArgumentSyntax>())
         {
             var named = arg.NameEquals?.Name.Identifier.ValueText;
@@ -502,8 +513,45 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             }
             else if (named.Equals("TypeName", StringComparison.OrdinalIgnoreCase))
             {
-                dbProps["Type"] = ((int)DatabaseTypeConvertor.FromEfCore(GetString(arg.Expression))).ToString();
+                typeName = GetString(arg.Expression);
             }
+        }
+
+        return string.IsNullOrWhiteSpace(typeName) ? null : typeName;
+    }
+
+    /// <summary>
+    /// The TypeName of a [Column] read into the neutral vocabulary (decision 019): the
+    /// family with the facets the name and its arguments claim, and the literal spelling
+    /// on the escape path where the family is coarser or missing. A name outside the
+    /// vocabulary is a record, not an exception - the family fact is missing rather than
+    /// lost, and the catalog may still supply it (decision 010).
+    /// </summary>
+    private void ApplyColumnTypeName(string propertyName, string columnTypeName)
+    {
+        var reading = DatabaseTypeConvertor.FromEfCore(columnTypeName);
+
+        entityBuilder.SetPropertyDatabaseType(
+            propertyName,
+            reading.Type,
+            reading.IsUnicode,
+            reading.KeepLiteral || reading.Type is null ? columnTypeName.Trim() : null,
+            reading.Length,
+            reading.Precision,
+            reading.Scale);
+
+        if (reading.Type is null)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Incompleteness,
+                Framework = entityBuilder.Descriptor.Framework,
+                Entity = entityBuilder.EntityMap.Entity.Name,
+                Property = propertyName,
+                Category = MappingFactCategory.DatabaseType,
+                Reason = $"The type '{columnTypeName.Trim()}' has no family in the neutral vocabulary; its literal "
+                    + "spelling is kept on the escape path and no family is claimed (decision 019).",
+            });
         }
     }
 

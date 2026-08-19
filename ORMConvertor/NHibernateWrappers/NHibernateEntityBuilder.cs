@@ -164,7 +164,8 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     {
         if (propertyMap.Type != null)
         {
-            return DatabaseTypeConvertor.ToNHibernate(propertyMap.Type.Value);
+            return DatabaseTypeConvertor.ToNHibernate(
+                propertyMap.Type.Value, propertyMap.IsUnicode, propertyMap.Length);
         }
 
         // The database is never queried from here - the completion phase fills the model
@@ -187,6 +188,8 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// Facets of a key column that NHibernate accepts only inside a nested &lt;column&gt; element.
     /// &lt;property&gt; can carry length, precision and scale as its own attributes, &lt;id&gt; and
     /// &lt;key-property&gt; cannot - so without the nested form a key column loses them silently.
+    /// The literal SQL type of the source travels the same way: sql-type exists only on
+    /// &lt;column&gt;, and what came in through it goes back out through it (decision 019).
     ///
     /// Nullability is deliberately left out: a column that carries the identifier is not
     /// nullable, and emitting not-null="false" there would produce a mapping that contradicts
@@ -212,6 +215,11 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         if (propertyMap.Scale.HasValue)
         {
             facets.Add($"scale=\"{propertyMap.Scale.Value}\"");
+        }
+
+        if (propertyMap.SourceSqlType is not null)
+        {
+            facets.Add($"sql-type=\"{propertyMap.SourceSqlType}\"");
         }
 
         return facets;
@@ -444,6 +452,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// when a relation of the entity claims the same column through its pairs, the scalar
     /// property is mapped read-only and the association keeps the write, otherwise
     /// NHibernate refuses the mapping as a repeated column.
+    ///
+    /// A literal SQL type of the source forces the nested form: sql-type exists only on a
+    /// &lt;column&gt; element (decision 019), so the column facts move onto it and the
+    /// property element keeps what belongs to the property - name and the NHibernate type.
     /// </summary>
     private void AppendPropertyToXml(StringBuilder mappingResult, EntityMap entityMap, PropertyMap propertyMap)
     {
@@ -457,43 +469,82 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             attrs.Add("update=\"false\"");
         }
 
-        if (!string.IsNullOrWhiteSpace(propertyMap.ColumnName))
-        {
-            attrs.Add($"column=\"{propertyMap.ColumnName}\"");
-        }
+        string? notNull = null;
 
         if (propertyMap.IsNullable.HasValue)
         {
-            attrs.Add($"not-null=\"{(!propertyMap.IsNullable.Value).ToString().ToLowerInvariant()}\"");
+            notNull = $"not-null=\"{(!propertyMap.IsNullable.Value).ToString().ToLowerInvariant()}\"";
         }
         else if (prop.Type is { IsNullable: false })
         {
             // The language side is the fallback claim; a property with no stated type
             // says nothing about nullability either.
-            attrs.Add("not-null=\"true\"");
+            notNull = "not-null=\"true\"";
         }
 
-        if (propertyMap.Type.HasValue)
-        {
-            attrs.Add($"type=\"{DatabaseTypeConvertor.ToNHibernate(propertyMap.Type.Value)}\"");
-        }
+        var typeAttr = propertyMap.Type.HasValue
+            ? $"type=\"{DatabaseTypeConvertor.ToNHibernate(propertyMap.Type.Value, propertyMap.IsUnicode, propertyMap.Length)}\""
+            : null;
+
+        var sizeFacets = new List<string>();
 
         if (PrecisionIsExpressible(entityMap, propertyMap))
         {
-            attrs.Add($"precision=\"{propertyMap.Precision!.Value}\"");
+            sizeFacets.Add($"precision=\"{propertyMap.Precision!.Value}\"");
         }
 
         if (propertyMap.Scale.HasValue)
         {
-            attrs.Add($"scale=\"{propertyMap.Scale.Value}\"");
+            sizeFacets.Add($"scale=\"{propertyMap.Scale.Value}\"");
         }
 
         if (propertyMap.Length.HasValue)
         {
-            attrs.Add($"length=\"{propertyMap.Length.Value}\"");
+            sizeFacets.Add($"length=\"{propertyMap.Length.Value}\"");
         }
 
-        AppendXml(mappingResult, 2, $"<property {string.Join(' ', attrs)} />");
+        if (propertyMap.SourceSqlType is null)
+        {
+            // The compact form: everything as attributes of the property element itself.
+            if (!string.IsNullOrWhiteSpace(propertyMap.ColumnName))
+            {
+                attrs.Add($"column=\"{propertyMap.ColumnName}\"");
+            }
+
+            if (notNull is not null)
+            {
+                attrs.Add(notNull);
+            }
+
+            if (typeAttr is not null)
+            {
+                attrs.Add(typeAttr);
+            }
+
+            attrs.AddRange(sizeFacets);
+
+            AppendXml(mappingResult, 2, $"<property {string.Join(' ', attrs)} />");
+            return;
+        }
+
+        if (typeAttr is not null)
+        {
+            attrs.Add(typeAttr);
+        }
+
+        var columnAttrs = new List<string> { $"name=\"{propertyMap.ColumnName ?? prop.Name}\"" };
+
+        if (notNull is not null)
+        {
+            columnAttrs.Add(notNull);
+        }
+
+        columnAttrs.AddRange(sizeFacets);
+        columnAttrs.Add($"sql-type=\"{propertyMap.SourceSqlType}\"");
+
+        AppendXml(mappingResult, 2, $"<property {string.Join(' ', attrs)}>");
+        AppendXml(mappingResult, 3, $"<column {string.Join(' ', columnAttrs)} />");
+        AppendXml(mappingResult, 2, "</property>");
     }
 
     /// <summary>

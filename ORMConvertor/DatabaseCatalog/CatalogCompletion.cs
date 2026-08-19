@@ -432,7 +432,11 @@ public static class CatalogCompletion
         {
             if (pm.Type is null)
             {
+                // The unicode facet and the literal spelling are part of the same type
+                // claim (decision 019), so they arrive together with the family.
                 pm.Type = column.Type;
+                pm.IsUnicode ??= column.IsUnicode;
+                pm.SourceSqlType ??= column.SourceSqlType;
                 ReportSupplied(builder, em, pm.Property.Name, MappingFactCategory.DatabaseType,
                     $"Database type {column.Type} supplied by the database catalog from '{image.QualifiedName}'.");
             }
@@ -440,6 +444,19 @@ public static class CatalogCompletion
             {
                 ReportConflict(builder, em, pm.Property.Name, MappingFactCategory.DatabaseType,
                     $"The source maps the property as {pm.Type}, the catalog column '{column.Name}' is {column.Type}.");
+            }
+            else if (pm.IsUnicode is null && column.IsUnicode is not null)
+            {
+                pm.IsUnicode = column.IsUnicode;
+                ReportSupplied(builder, em, pm.Property.Name, MappingFactCategory.DatabaseType,
+                    $"The unicode facet ({(column.IsUnicode.Value ? "unicode" : "non-unicode")}) of the {column.Type} column "
+                    + $"'{column.Name}' supplied by the database catalog from '{image.QualifiedName}'.");
+            }
+            else if (column.IsUnicode is not null && pm.IsUnicode != column.IsUnicode)
+            {
+                ReportConflict(builder, em, pm.Property.Name, MappingFactCategory.DatabaseType,
+                    $"The source maps the property as {(pm.IsUnicode!.Value ? "unicode" : "non-unicode")} {pm.Type}, "
+                    + $"the catalog column '{column.Name}' is {(column.IsUnicode.Value ? "unicode" : "non-unicode")}.");
             }
         }
 

@@ -48,8 +48,8 @@ public class CatalogManyToManyDetectionTest
         Name = "Suppliers",
         Columns =
         [
-            new ColumnImage { Name = "SupplierId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = true },
-            new ColumnImage { Name = "SupplierName", Type = DatabaseType.NVarChar, Length = 100, IsNullable = false, IsIdentity = false },
+            new ColumnImage { Name = "SupplierId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = true },
+            new ColumnImage { Name = "SupplierName", Type = DatabaseType.VarChar, IsUnicode = true, Length = 100, IsNullable = false, IsIdentity = false },
         ],
         PrimaryKeyColumns = ["SupplierId"],
         ForeignKeys = foreignKeys,
@@ -61,8 +61,8 @@ public class CatalogManyToManyDetectionTest
         Name = "Products",
         Columns =
         [
-            new ColumnImage { Name = "ProductId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = true },
-            new ColumnImage { Name = "ProductName", Type = DatabaseType.NVarChar, Length = 100, IsNullable = false, IsIdentity = false },
+            new ColumnImage { Name = "ProductId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = true },
+            new ColumnImage { Name = "ProductName", Type = DatabaseType.VarChar, IsUnicode = true, Length = 100, IsNullable = false, IsIdentity = false },
         ],
         PrimaryKeyColumns = ["ProductId"],
         ForeignKeys = foreignKeys,
@@ -74,9 +74,9 @@ public class CatalogManyToManyDetectionTest
         Name = "ProductSuppliers",
         Columns =
         [
-            new ColumnImage { Name = "ProductId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = false },
-            new ColumnImage { Name = "SupplierId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = false },
-            new ColumnImage { Name = "SupplierSku", Type = DatabaseType.VarChar, Length = 32, IsNullable = true, IsIdentity = false },
+            new ColumnImage { Name = "ProductId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = false },
+            new ColumnImage { Name = "SupplierId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = false },
+            new ColumnImage { Name = "SupplierSku", Type = DatabaseType.VarChar, IsUnicode = false, Length = 32, IsNullable = true, IsIdentity = false },
         ],
         PrimaryKeyColumns = ["ProductId", "SupplierId"],
         ForeignKeys =

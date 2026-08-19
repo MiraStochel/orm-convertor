@@ -295,7 +295,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
             if (propMap.Type.HasValue)
             {
-                var typeText = DatabaseTypeConvertor.ToEFCore(propMap.Type.Value);
+                var typeText = DatabaseTypeConvertor.ToEFCore(propMap.Type.Value, propMap.IsUnicode);
                 parts.Add($"TypeName=\"{typeText}\"");
             }
 

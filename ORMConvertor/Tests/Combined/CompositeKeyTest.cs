@@ -161,7 +161,7 @@ public class CompositeKeyTest
         // that property, so the column name and both type levels travel with the key.
         Assert.Equal("OrderID", pk.Parts[0].PropertyMap.Property.Name);
         Assert.Equal("OrderId", pk.Parts[0].PropertyMap.ColumnName);
-        Assert.Equal(DatabaseType.Int, pk.Parts[0].PropertyMap.Type);
+        Assert.Equal(DatabaseType.Integer, pk.Parts[0].PropertyMap.Type);
         Assert.Equal(ScalarType.Int, pk.Parts[0].PropertyMap.Property.Type!.ScalarType);
 
         Assert.Equal("CompanyID", pk.Parts[1].PropertyMap.Property.Name);
@@ -191,7 +191,7 @@ public class CompositeKeyTest
 
         // Database types come from the XML descriptor, language types from the entity
         // class - the two artifacts merge into one key in the model.
-        Assert.Equal(new DatabaseType?[] { DatabaseType.Int, DatabaseType.BigInt, DatabaseType.Int },
+        Assert.Equal(new DatabaseType?[] { DatabaseType.Integer, DatabaseType.BigInt, DatabaseType.Integer },
             pk.Parts.Select(p => p.PropertyMap.Type));
         Assert.Equal(new ScalarType?[] { ScalarType.Int, ScalarType.Long, ScalarType.Int },
             pk.Parts.Select(p => p.PropertyMap.Property.Type!.ScalarType));
@@ -221,7 +221,7 @@ public class CompositeKeyTest
 
         Assert.Equal(new string?[] { "AllocationId", "LineNo", "OrderId", "CompanyId" },
             pk.Parts.Select(p => p.PropertyMap.ColumnName));
-        Assert.Equal(new DatabaseType?[] { DatabaseType.Int, DatabaseType.Int, DatabaseType.Int, DatabaseType.BigInt },
+        Assert.Equal(new DatabaseType?[] { DatabaseType.Integer, DatabaseType.Integer, DatabaseType.Integer, DatabaseType.BigInt },
             pk.Parts.Select(p => p.PropertyMap.Type));
     }
 

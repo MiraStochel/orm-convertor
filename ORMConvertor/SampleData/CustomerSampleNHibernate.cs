@@ -67,7 +67,7 @@ public class CustomerSampleNHibernate
                            HasSetter = true,
                        },
                        ColumnName = "CustomerID",
-                       Type = DatabaseType.Int,
+                       Type = DatabaseType.Integer,
                    },
                    new() {
                        Property = new Property
@@ -80,7 +80,8 @@ public class CustomerSampleNHibernate
                            HasSetter = true
                        },
                        IsNullable = false,
-                       Type = DatabaseType.NVarChar,
+                       Type = DatabaseType.VarChar,
+                       IsUnicode = true,
                        Length = 200
                    },
                    new() {
@@ -94,7 +95,7 @@ public class CustomerSampleNHibernate
                            HasSetter = true
                        },
                        IsNullable = false,
-                       Type = DatabaseType.DateTime2,
+                       Type = DatabaseType.Timestamp,
                        Precision = 7
                    },
                    new() {

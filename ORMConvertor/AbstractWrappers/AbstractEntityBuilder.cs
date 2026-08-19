@@ -568,6 +568,8 @@ public abstract class AbstractEntityBuilder
             {
                 Property = property,
                 Type = part.PropertyMap.Type,
+                IsUnicode = part.PropertyMap.IsUnicode,
+                SourceSqlType = part.PropertyMap.SourceSqlType,
                 Length = part.PropertyMap.Length,
                 Precision = part.PropertyMap.Precision,
                 Scale = part.PropertyMap.Scale,
@@ -761,6 +763,8 @@ public abstract class AbstractEntityBuilder
             }
 
             pair.Source.Type ??= pair.Target.Type;
+            pair.Source.IsUnicode ??= pair.Target.IsUnicode;
+            pair.Source.SourceSqlType ??= pair.Target.SourceSqlType;
             pair.Source.Length ??= pair.Target.Length;
             pair.Source.Precision ??= pair.Target.Precision;
             pair.Source.Scale ??= pair.Target.Scale;
@@ -930,9 +934,6 @@ public abstract class AbstractEntityBuilder
                 case "columnname" or "column":
                     propertyMap.ColumnName = kvp.Value;
                     break;
-                case "type":
-                    propertyMap.Type = (DatabaseType)int.Parse(kvp.Value);
-                    break;
                 case "precision":
                     if (int.TryParse(kvp.Value, out var precision))
                     {
@@ -963,6 +964,52 @@ public abstract class AbstractEntityBuilder
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// The typed half of the database mapping: the type family and its companions travel
+    /// as values of the model, never through the string dictionary - the untyped channel
+    /// that carried the enum as a stringified ordinal is gone (decision 019). Type,
+    /// unicode and the literal source spelling are assigned when stated; the facets are
+    /// claims the type name itself makes, so they never override a facet the source
+    /// stated explicitly.
+    /// </summary>
+    /// <param name="propertyName">Property name</param>
+    /// <param name="type">Type family, or null when the vocabulary does not capture the source's type.</param>
+    /// <param name="isUnicode">The unicode facet where the source's type name states it.</param>
+    /// <param name="sourceSqlType">The literal type as the source spelled it, where the family is missing or coarser (decision 019).</param>
+    /// <param name="length">Length the type name itself implies (e.g. a single character).</param>
+    /// <param name="precision">Precision the type name itself implies (e.g. money, datetime).</param>
+    /// <param name="scale">Scale the type name itself implies.</param>
+    public void SetPropertyDatabaseType(
+        string propertyName,
+        DatabaseType? type,
+        bool? isUnicode = null,
+        string? sourceSqlType = null,
+        int? length = null,
+        int? precision = null,
+        int? scale = null)
+    {
+        var propertyMap = GetOrCreatePropertyMap(propertyName);
+
+        if (type is not null)
+        {
+            propertyMap.Type = type;
+        }
+
+        if (isUnicode is not null)
+        {
+            propertyMap.IsUnicode = isUnicode;
+        }
+
+        if (!string.IsNullOrWhiteSpace(sourceSqlType))
+        {
+            propertyMap.SourceSqlType = sourceSqlType;
+        }
+
+        propertyMap.Length ??= length;
+        propertyMap.Precision ??= precision;
+        propertyMap.Scale ??= scale;
     }
 
     /// <summary>
@@ -1126,7 +1173,10 @@ public abstract class AbstractEntityBuilder
         MappingFactCategory.TableName => em.Table is not null,
         MappingFactCategory.SchemaName => em.Schema is not null,
         MappingFactCategory.ColumnName => em.PropertyMaps.Any(pm => pm.ColumnName is not null),
-        MappingFactCategory.DatabaseType => em.PropertyMaps.Any(pm => pm.Type is not null),
+        // The unicode facet and the literal source spelling are part of the type claim
+        // (decision 019), so any of the three carries the category.
+        MappingFactCategory.DatabaseType => em.PropertyMaps.Any(pm =>
+            pm.Type is not null || pm.IsUnicode is not null || pm.SourceSqlType is not null),
         MappingFactCategory.Length => em.PropertyMaps.Any(pm => pm.Length is not null),
         MappingFactCategory.PrecisionAndScale => em.PropertyMaps.Any(pm => pm.Precision is not null || pm.Scale is not null),
         MappingFactCategory.Nullability => em.PropertyMaps.Any(pm => pm.IsNullable is not null),
@@ -1144,7 +1194,9 @@ public abstract class AbstractEntityBuilder
     private static IEnumerable<string?> LossSubjects(EntityMap em, MappingFactCategory category) => category switch
     {
         MappingFactCategory.ColumnName => em.PropertyMaps.Where(pm => pm.ColumnName is not null).Select(pm => (string?)pm.Property.Name),
-        MappingFactCategory.DatabaseType => em.PropertyMaps.Where(pm => pm.Type is not null).Select(pm => (string?)pm.Property.Name),
+        MappingFactCategory.DatabaseType => em.PropertyMaps
+            .Where(pm => pm.Type is not null || pm.IsUnicode is not null || pm.SourceSqlType is not null)
+            .Select(pm => (string?)pm.Property.Name),
         MappingFactCategory.Length => em.PropertyMaps.Where(pm => pm.Length is not null).Select(pm => (string?)pm.Property.Name),
         MappingFactCategory.PrecisionAndScale => em.PropertyMaps.Where(pm => pm.Precision is not null || pm.Scale is not null).Select(pm => (string?)pm.Property.Name),
         MappingFactCategory.Nullability => em.PropertyMaps.Where(pm => pm.IsNullable is not null).Select(pm => (string?)pm.Property.Name),

@@ -65,7 +65,7 @@ public class PrimaryKeyTest
         // The <id> element states the column and the type, so the key part carries
         // them the same way a <key-property> of a composite key does.
         Assert.Equal("CustomerId", part.PropertyMap.ColumnName);
-        Assert.Equal(DatabaseType.Int, part.PropertyMap.Type);
+        Assert.Equal(DatabaseType.Integer, part.PropertyMap.Type);
     }
 
     [Theory]
@@ -241,7 +241,7 @@ public class PrimaryKeyTest
         var part = Assert.Single(pk.Parts);
         Assert.Equal("CustomerID", part.PropertyMap.Property.Name);
         Assert.Equal("CustomerId", part.PropertyMap.ColumnName);
-        Assert.Equal(DatabaseType.Int, part.PropertyMap.Type);
+        Assert.Equal(DatabaseType.Integer, part.PropertyMap.Type);
         Assert.Equal(ScalarType.Int, part.PropertyMap.Property.Type!.ScalarType);
         Assert.Equal(PrimaryKeyStrategy.Auto, part.Strategy);
     }

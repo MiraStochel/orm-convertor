@@ -98,7 +98,7 @@ public static class CustomerSampleEFCore
                        },
                        Precision = 7,
                        IsNullable = false,
-                       Type = DatabaseType.DateTime2
+                       Type = DatabaseType.Timestamp
                    },
                    new() {
                        Property = new Property

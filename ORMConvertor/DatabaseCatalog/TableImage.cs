@@ -33,16 +33,23 @@ public sealed class TableImage
 
 /// <summary>
 /// One column of a table image. <see cref="Type"/> is null when the SQL type has no
-/// counterpart in <see cref="DatabaseType"/> - the fact is then simply not supplied.
+/// family in <see cref="DatabaseType"/> - the fact is then simply not supplied.
 /// Length, precision and scale carry only the values meaningful for the type: length for
 /// character and binary columns (null for MAX), precision and scale for decimals, and the
-/// fractional-second precision for date-time columns.
+/// fractional-second precision for date-time columns. <see cref="IsUnicode"/> is the
+/// unicode facet of character columns, and <see cref="SourceSqlType"/> keeps the
+/// catalog's literal spelling where the family is coarser than the type - money,
+/// datetime, rowversion (decision 019).
 /// </summary>
 public sealed class ColumnImage
 {
     public required string Name { get; init; }
 
     public DatabaseType? Type { get; init; }
+
+    public bool? IsUnicode { get; init; }
+
+    public string? SourceSqlType { get; init; }
 
     public int? Length { get; init; }
 

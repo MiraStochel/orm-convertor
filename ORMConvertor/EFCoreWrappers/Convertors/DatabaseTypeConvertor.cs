@@ -1,127 +1,164 @@
-﻿using Model.AbstractRepresentation.Enums;
+using Model.AbstractRepresentation.Enums;
 
 namespace EFCoreWrappers.Convertors;
 
+/// <summary>
+/// One reading of an EF Core column type - the literal SQL of [Column(TypeName = ...)] or
+/// a CLR type name - in the neutral vocabulary (decision 019): the family, the facets the
+/// name and its arguments claim, and whether the literal spelling belongs on the escape
+/// path because the family is coarser than the name (money, datetime) or missing
+/// altogether. A null Type means the vocabulary does not capture the name.
+/// </summary>
+public readonly record struct SqlTypeReading(
+    DatabaseType? Type,
+    bool? IsUnicode = null,
+    int? Length = null,
+    int? Precision = null,
+    int? Scale = null,
+    bool KeepLiteral = false);
+
 public class DatabaseTypeConvertor
 {
-    public static DatabaseType FromEfCore(string? columnTypeOrClr)
+    /// <summary>
+    /// Reads a SQL type as EF Core spells it, including parenthesized arguments -
+    /// varchar(50), decimal(18,2), datetime2(3) - which become the facet the family
+    /// measures itself by. Never throws on an unknown name: the literal spelling is kept
+    /// on the escape path and the caller records it (decisions 010 and 019).
+    /// </summary>
+    public static SqlTypeReading FromEfCore(string? columnTypeOrClr)
     {
         if (string.IsNullOrWhiteSpace(columnTypeOrClr))
         {
             throw new ArgumentNullException(nameof(columnTypeOrClr));
         }
 
-        // Strip precision/scale/length
         var type = columnTypeOrClr.Trim();
-        var pos = type.IndexOf('(');
-        if (pos >= 0)
+        var (name, first, second) = SplitArguments(type);
+
+        return name.ToLowerInvariant() switch
         {
-            type = type[..pos];
-        }
+            "bit" => new(DatabaseType.Boolean),
+            "tinyint" => new(DatabaseType.TinyInt),
+            "smallint" => new(DatabaseType.SmallInt),
+            "int" or "integer" => new(DatabaseType.Integer),
+            "bigint" => new(DatabaseType.BigInt),
 
-        var sql = type.ToLowerInvariant();
+            "decimal" or "numeric" => new(DatabaseType.Decimal, Precision: first, Scale: second),
 
-        return sql switch
-        {
-            "bigint" => DatabaseType.BigInt,
-            "int" or "integer" => DatabaseType.Int,
-            "smallint" => DatabaseType.SmallInt,
-            "tinyint" => DatabaseType.TinyInt,
-            "bit" => DatabaseType.Bit,
+            // The money types are types of one system; the family keeps their exact
+            // decimal shape and the literal spelling rides the escape path (decision 019).
+            "money" => new(DatabaseType.Decimal, Precision: 19, Scale: 4, KeepLiteral: true),
+            "smallmoney" => new(DatabaseType.Decimal, Precision: 10, Scale: 4, KeepLiteral: true),
 
-            "decimal" => DatabaseType.Decimal,
-            "numeric" => DatabaseType.Numeric,
-            "money" => DatabaseType.Money,
-            "smallmoney" => DatabaseType.SmallMoney,
+            // T-SQL float(n) with n <= 24 is single precision; bare float is double.
+            "float" when first is <= 24 => new(DatabaseType.Real, KeepLiteral: true),
+            "float" => new(DatabaseType.DoublePrecision),
+            "real" => new(DatabaseType.Real),
 
-            "float" => DatabaseType.Float,
-            "real" => DatabaseType.Real,
+            "date" => new(DatabaseType.Date),
+            "time" => new(DatabaseType.Time, Precision: first),
 
-            "date" => DatabaseType.Date,
-            "datetime" => DatabaseType.DateTime,
-            "datetime2" => DatabaseType.DateTime2,
-            "smalldatetime" => DatabaseType.SmallDateTime,
-            "time" => DatabaseType.Time,
-            "datetimeoffset" => DatabaseType.DateTimeOffset,
+            // datetime and smalldatetime are the Timestamp family at the precision the
+            // name itself fixes; their narrower range is what the literal records.
+            "datetime" => new(DatabaseType.Timestamp, Precision: 3, KeepLiteral: true),
+            "smalldatetime" => new(DatabaseType.Timestamp, Precision: 0, KeepLiteral: true),
+            "datetime2" => new(DatabaseType.Timestamp, Precision: first),
+            "datetimeoffset" => new(DatabaseType.TimestampWithTimeZone, Precision: first),
 
-            "char" => DatabaseType.Char,
-            "varchar" => DatabaseType.VarChar,
-            "text" => DatabaseType.Text,
-            "nchar" => DatabaseType.NChar,
-            "nvarchar" => DatabaseType.NVarChar,
-            "ntext" => DatabaseType.NText,
+            "char" => new(DatabaseType.Char, IsUnicode: false, Length: first),
+            "nchar" => new(DatabaseType.Char, IsUnicode: true, Length: first),
+            "varchar" => new(DatabaseType.VarChar, IsUnicode: false, Length: first),
+            "nvarchar" => new(DatabaseType.VarChar, IsUnicode: true, Length: first),
+            "text" => new(DatabaseType.Text, IsUnicode: false),
+            "ntext" => new(DatabaseType.Text, IsUnicode: true),
 
-            "binary" => DatabaseType.Binary,
-            "varbinary" => DatabaseType.VarBinary,
-            "image" => DatabaseType.Image,
+            "binary" => new(DatabaseType.Binary, Length: first),
+            "varbinary" => new(DatabaseType.VarBinary, Length: first),
+            "image" => new(DatabaseType.Blob, KeepLiteral: true),
 
-            "uniqueidentifier" or "uuid"
-                                => DatabaseType.UniqueIdentifier,
-            "xml" => DatabaseType.Xml,
-            "sql_variant" => DatabaseType.SqlVariant,
-            "rowversion" or "timestamp"
-                                => DatabaseType.RowVersion,
+            "uniqueidentifier" or "uuid" => new(DatabaseType.Uuid),
+            "xml" => new(DatabaseType.Xml),
+
+            // A rowversion column is eight bytes of binary; the versioning semantics
+            // have no mapping fact yet (open item of decision 019), so the literal is
+            // what keeps them from vanishing without a trace.
+            "rowversion" or "timestamp" => new(DatabaseType.VarBinary, Length: 8, KeepLiteral: true),
+            "sql_variant" => new(null, KeepLiteral: true),
 
             // CLR type fall-back
-            "long" => DatabaseType.BigInt,
-            "int32" or "int" => DatabaseType.Int,
-            "int16" or "short" => DatabaseType.SmallInt,
-            "byte" => DatabaseType.TinyInt,
-            "bool" or "boolean" => DatabaseType.Bit,
+            "long" or "int64" => new(DatabaseType.BigInt),
+            "int32" => new(DatabaseType.Integer),
+            "int16" or "short" => new(DatabaseType.SmallInt),
+            "byte" => new(DatabaseType.TinyInt),
+            "bool" or "boolean" => new(DatabaseType.Boolean),
+            "system.decimal" => new(DatabaseType.Decimal),
+            "double" => new(DatabaseType.DoublePrecision),
+            "single" => new(DatabaseType.Real),
+            "system.datetime" => new(DatabaseType.Timestamp),
+            "system.timespan" or "timespan" => new(DatabaseType.Time),
+            "system.datetimeoffset" => new(DatabaseType.TimestampWithTimeZone),
+            "guid" or "system.guid" => new(DatabaseType.Uuid),
 
-            "decimal" or "system.decimal" => DatabaseType.Decimal,
-            "double" => DatabaseType.Float,
-            "single" or "float" => DatabaseType.Real,
-
-            "system.datetime" => DatabaseType.DateTime,
-            "system.timespan" or "timespan" => DatabaseType.Time,
-            "system.datetimeoffset" => DatabaseType.DateTimeOffset,
-
-            "guid" or "system.guid" => DatabaseType.UniqueIdentifier,
-
-            _ => throw new NotImplementedException(columnTypeOrClr)
+            _ => new(null, KeepLiteral: true),
         };
     }
 
-    public static string ToEFCore(DatabaseType type) => type switch
+    /// <summary>
+    /// Splits "name(a[,b])" into the name and up to two integer arguments; "max" and a
+    /// missing argument list both come back as null.
+    /// </summary>
+    private static (string Name, int? First, int? Second) SplitArguments(string type)
     {
-        DatabaseType.BigInt => "bigint",
-        DatabaseType.Int => "int",
-        DatabaseType.SmallInt => "smallint",
+        var open = type.IndexOf('(');
+
+        if (open < 0)
+        {
+            return (type, null, null);
+        }
+
+        var name = type[..open].Trim();
+        var arguments = type[(open + 1)..].TrimEnd(')').Split(',');
+
+        int? first = arguments.Length > 0 && int.TryParse(arguments[0].Trim(), out var a) ? a : null;
+        int? second = arguments.Length > 1 && int.TryParse(arguments[1].Trim(), out var b) ? b : null;
+
+        return (name, first, second);
+    }
+
+    /// <summary>
+    /// The SQL type of a family as EF Core's SQL Server provider spells it. The unicode
+    /// facet picks the n-variant of character data; unstated falls to unicode, which is
+    /// the provider's own convention for .NET strings. Length, precision and scale are
+    /// carried by their own annotations, so they do not appear here.
+    /// </summary>
+    public static string ToEFCore(DatabaseType type, bool? isUnicode = null) => type switch
+    {
+        DatabaseType.Boolean => "bit",
         DatabaseType.TinyInt => "tinyint",
-        DatabaseType.Bit => "bit",
+        DatabaseType.SmallInt => "smallint",
+        DatabaseType.Integer => "int",
+        DatabaseType.BigInt => "bigint",
 
         DatabaseType.Decimal => "decimal",
-        DatabaseType.Numeric => "numeric",
-        DatabaseType.Money => "money",
-        DatabaseType.SmallMoney => "smallmoney",
-
-        DatabaseType.Float => "float",
         DatabaseType.Real => "real",
+        DatabaseType.DoublePrecision => "float",
 
         DatabaseType.Date => "date",
-        DatabaseType.DateTime => "datetime",
-        DatabaseType.DateTime2 => "datetime2",
-        DatabaseType.SmallDateTime => "smalldatetime",
         DatabaseType.Time => "time",
-        DatabaseType.DateTimeOffset => "datetimeoffset",
+        DatabaseType.Timestamp => "datetime2",
+        DatabaseType.TimestampWithTimeZone => "datetimeoffset",
 
-        DatabaseType.Char => "char",
-        DatabaseType.VarChar => "varchar",
-        DatabaseType.Text => "text",
-        DatabaseType.NChar => "nchar",
-        DatabaseType.NVarChar => "nvarchar",
-        DatabaseType.NText => "ntext",
+        DatabaseType.Char => isUnicode == false ? "char" : "nchar",
+        DatabaseType.VarChar => isUnicode == false ? "varchar" : "nvarchar",
+        DatabaseType.Text => isUnicode == false ? "text" : "ntext",
 
         DatabaseType.Binary => "binary",
         DatabaseType.VarBinary => "varbinary",
-        DatabaseType.Image => "image",
+        DatabaseType.Blob => "image",
 
-        DatabaseType.UniqueIdentifier => "uniqueidentifier",
+        DatabaseType.Uuid => "uniqueidentifier",
         DatabaseType.Xml => "xml",
-        DatabaseType.SqlVariant => "sql_variant",
-        DatabaseType.RowVersion => "rowversion",
 
-        _ => throw new NotImplementedException(type.ToString())
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
 }

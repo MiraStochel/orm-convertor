@@ -34,9 +34,9 @@ public class CatalogCompletionTest
         Name = "Customers",
         Columns =
         [
-            new ColumnImage { Name = "CustomerId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = true },
-            new ColumnImage { Name = "Name", Type = DatabaseType.NVarChar, Length = 100, IsNullable = false, IsIdentity = false },
-            new ColumnImage { Name = "Notes", Type = DatabaseType.NVarChar, Length = 400, IsNullable = true, IsIdentity = false },
+            new ColumnImage { Name = "CustomerId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = true },
+            new ColumnImage { Name = "Name", Type = DatabaseType.VarChar, IsUnicode = true, Length = 100, IsNullable = false, IsIdentity = false },
+            new ColumnImage { Name = "Notes", Type = DatabaseType.VarChar, IsUnicode = true, Length = 400, IsNullable = true, IsIdentity = false },
         ],
         PrimaryKeyColumns = ["CustomerId"],
         ForeignKeys = [],
@@ -61,7 +61,8 @@ public class CatalogCompletionTest
         Assert.Equal("sales", em.Schema);
 
         var name = em.PropertyMaps.Single(pm => pm.Property.Name == "Name");
-        Assert.Equal(DatabaseType.NVarChar, name.Type);
+        Assert.Equal(DatabaseType.VarChar, name.Type);
+        Assert.True(name.IsUnicode);
         Assert.Equal(100, name.Length);
         Assert.False(name.IsNullable);
 
@@ -95,15 +96,17 @@ public class CatalogCompletionTest
     public void SourceOutranksTheCatalogAndTheDisagreementIsReported()
     {
         var builder = ParseCustomer();
-        builder.SetPropertyDatabaseMapping("Name", new Dictionary<string, string>
-        {
-            ["type"] = ((int)DatabaseType.VarChar).ToString(),
-        });
+
+        // The source claims a non-unicode column; the catalog states a unicode one. The
+        // unicode facet is part of the type claim (decision 019), so the disagreement is
+        // a conflict of the DatabaseType category.
+        builder.SetPropertyDatabaseType("Name", DatabaseType.VarChar, isUnicode: false);
 
         CatalogCompletion.Complete(builder, new FakeCatalogReader(CustomersImage()));
 
         var name = builder.EntityMaps.Single().PropertyMaps.Single(pm => pm.Property.Name == "Name");
         Assert.Equal(DatabaseType.VarChar, name.Type);
+        Assert.False(name.IsUnicode);
 
         var conflict = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Conflict);
         Assert.Equal(MappingFactCategory.DatabaseType, conflict.Category);
@@ -177,8 +180,8 @@ public class CatalogCompletionTest
             Name = "Orders",
             Columns =
             [
-                new ColumnImage { Name = "OrderId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = true },
-                new ColumnImage { Name = "CustomerId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = false },
+                new ColumnImage { Name = "OrderId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = true },
+                new ColumnImage { Name = "CustomerId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = false },
             ],
             PrimaryKeyColumns = ["OrderId"],
             ForeignKeys =
@@ -236,8 +239,8 @@ public class CatalogCompletionTest
             Name = "Orders",
             Columns =
             [
-                new ColumnImage { Name = "OrderId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = true },
-                new ColumnImage { Name = "CustomerId", Type = DatabaseType.Int, IsNullable = false, IsIdentity = false },
+                new ColumnImage { Name = "OrderId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = true },
+                new ColumnImage { Name = "CustomerId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = false },
             ],
             PrimaryKeyColumns = ["OrderId"],
             ForeignKeys =
@@ -276,9 +279,9 @@ public class CatalogCompletionTest
         var builder = new NHibernateEntityBuilder();
         builder.BeginEntity();
         builder.AddClassHeader("public", "Invoice");
+        builder.SetPropertyDatabaseType("Total", DatabaseType.Decimal);
         builder.SetPropertyDatabaseMapping("Total", new Dictionary<string, string>
         {
-            ["type"] = ((int)DatabaseType.Decimal).ToString(),
             ["nullable"] = "false",
         });
 

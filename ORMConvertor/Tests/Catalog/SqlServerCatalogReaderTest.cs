@@ -47,12 +47,14 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
         var sku = products.FindColumn("Sku");
         Assert.NotNull(sku);
         Assert.Equal(DatabaseType.VarChar, sku.Type);
+        Assert.False(sku.IsUnicode);
         Assert.Equal(32, sku.Length);
         Assert.False(sku.IsNullable);
 
         var name = products.FindColumn("ProductName");
         Assert.NotNull(name);
-        Assert.Equal(DatabaseType.NVarChar, name.Type);
+        Assert.Equal(DatabaseType.VarChar, name.Type);
+        Assert.True(name.IsUnicode);
         // nvarchar length is characters, not the bytes sys.columns counts.
         Assert.Equal(100, name.Length);
 
@@ -64,7 +66,7 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
 
         var weight = products.FindColumn("Weight");
         Assert.NotNull(weight);
-        Assert.Equal(DatabaseType.Float, weight.Type);
+        Assert.Equal(DatabaseType.DoublePrecision, weight.Type);
         Assert.True(weight.IsNullable);
 
         // NVARCHAR(MAX) carries no length: -1 is a marker, not a fact.
@@ -81,7 +83,7 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
         var placedAt = ImageOf("Order").FindColumn("PlacedAt");
 
         Assert.NotNull(placedAt);
-        Assert.Equal(DatabaseType.DateTime2, placedAt.Type);
+        Assert.Equal(DatabaseType.Timestamp, placedAt.Type);
         Assert.Equal(3, placedAt.Precision);
     }
 
