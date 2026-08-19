@@ -48,6 +48,11 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         var nsAttr = string.IsNullOrWhiteSpace(entityMap.Entity.Namespace)
             ? string.Empty
             : $" namespace=\"{entityMap.Entity.Namespace}\"";
+        // NHibernate resolves a persistent class by namespace and assembly. The namespace is
+        // above; the assembly is a contribution of the consumer project, like the project
+        // file or the connection string, so it is left out rather than invented from the
+        // namespace (decision 028). No record: it is absent from every mapping we generate,
+        // which makes it a property of the format and not a finding about this conversion.
         AppendXml(artifact.Mapping, 0, $"<hibernate-mapping xmlns=\"{xmlNs}\"{nsAttr}>");
     }
 
@@ -70,16 +75,15 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         artifact.Code.AppendLine($"{modifier} class {name}");
         artifact.Code.AppendLine("{");
 
-        // XML <class>
-        var nameWithNamespace = string.IsNullOrWhiteSpace(entityMap.Entity.Namespace)
-            ? name
-            : $"{entityMap.Entity.Namespace}.{name}, {entityMap.Entity.Namespace}";
-
+        // XML <class>: the bare class name. The namespace is on <hibernate-mapping>, which
+        // BuildImports writes, and the assembly belongs there too - as an attribute the
+        // consumer project supplies, because which assembly the class ends up in is a fact
+        // of that project and not of the conversion (decision 028).
         var table = entityMap.Table ?? name; // default = class name
         var schema = entityMap.Schema ?? string.Empty;
         var schemaAttr = string.IsNullOrWhiteSpace(schema) ? string.Empty : $" schema=\"{schema}\"";
 
-        AppendXml(artifact.Mapping, 1, $"<class name=\"{nameWithNamespace}\" table=\"{table}\"{schemaAttr}>");
+        AppendXml(artifact.Mapping, 1, $"<class name=\"{name}\" table=\"{table}\"{schemaAttr}>");
         artifact.ClassOpened = true;
     }
 

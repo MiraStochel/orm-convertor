@@ -53,20 +53,10 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 
 ## Otevřená práce
 
-### NHibernate builder si vymýšlí název sestavení
-*Na řadě. Odporuje rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md), které zakazuje generovat náhražky za fakta, která nemáme. Požadavky F2, F11, S2.*
-
-`BuildTableSchema` vypisuje u entity se jmenným prostorem `<class name="Shop.Customer, Shop">` — druhou částí je název sestavení a builder ho odvozuje z jmenného prostoru. To jsou ale nezávislé věci: sestavení je fakt konzumentského projektu, který převod nezná a znát nemůže. Vygenerované mapování tak tvrdí o cílovém projektu něco, co skoro jistě neplatí, a NHibernate ho odmítne hláškou `persistent class ... not found`. Že to dosud nikdo neodhalil, je vlastnost testů, ne kódu: ověřovací testy kompilují entity pod názvem sestavení shodným se jmenným prostorem zdroje, takže si výmysl samy potvrzují — a `NHibernateAcceptance.QualifyAssembly` popisuje tenhle stav jako záměr („název, který builder už kvalifikoval, má přednost"), ačkoli je to obcházení vady. Správný tvar má název sestavení na kořenovém elementu `<hibernate-mapping assembly=...>`, kam ho doplní konzument, a `<class name=...>` nechá nekvalifikované; jmenný prostor kořen už dnes vypisuje. Rozhodnout je při tom třeba, jestli se název sestavení stane deklarovaným vstupem převodu, nebo zůstane vynechaný se záznamem o konvenci.
-
 ### EF Core parser nečte navigaci bez `[ForeignKey]`
-*Potom. Souvisí s rozhodnutím [012](./decisions/012-foreign-key-rendering.md) a [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Požadavky F3, F11.*
+*Na řadě. Souvisí s rozhodnutím [012](./decisions/012-foreign-key-rendering.md) a [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Požadavky F3, F11.*
 
 V `EFCoreEntityParser` skončí vlastnost, která není skalár a nemá `[ForeignKey]`, ve větvi `else` mezi kandidáty na konvenční klíč. Obyčejné `public Customer Customer { get; set; }` — v EF Core naprosto běžný zápis, protože vztah tam plyne z konvence — tedy nezaloží žádný vztah a do mezireprezentace vejde jako by to byl skalár. Cíl to pak vypíše jako obyčejnou vlastnost: NHibernate takové mapování odmítne, protože `<property>` míří na typ, který není namapovaný jako hodnota. Zachránit to umí jedině fáze doplnění z katalogu, tedy jen s připojenou databází, a bez ní o tom nevznikne ani záznam. Chybí tedy dvojí: uznat neskalární vlastnost za navigaci i bez anotace, a tam, kde se sloupce nedají odvodit, to ohlásit místo mlčení.
-
-### EF Core parser zahazuje neznámé anotace beze stopy
-*Souvisí s rozhodnutím [010](./decisions/010-diagnostics-as-returned-data.md). Požadavek F11.*
-
-`switch` nad názvem atributu v `EFCoreEntityParser` nemá větev `default`, takže všechno mimo sedmičku rozpoznaných anotací se ztratí bez záznamu. U některých je to jen ochuzení (`[StringLength]`, `[Comment]`, `[Index]`), u dvou to ale mění význam artefaktu: `[NotMapped]` říká, že vlastnost se nemapuje vůbec, a `[Keyless]`, že typ nemá klíč. Obojí projde jako by tam nebylo. Nejmenší náprava je větev `default` se záznamem o ztrátě; k tomu patří rozhodnout, které z nich má mezireprezentace umět nést.
 
 ### Dva entitní parsery jsou totéž
 *Vytčeno rozhodnutím [026](./decisions/026-home-of-shared-query-reading.md), které touž duplicitu odstranilo na dotazové straně. Požadavek S1.*
@@ -108,7 +98,7 @@ Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisi
 Anotaci `[Required]` builder negeneruje. Databázová nullabilita z `PropertyMap.IsNullable` se propisuje jen do modifikátoru `required` a otazník za typem vychází z jazykové nullability vlastnosti. Parser přitom `[Required]` číst umí, takže vstup s ním se přeloží a zpět už tuto podobu nezíská.
 
 ### NHibernate builder — kolekce jen jako `<bag>`
-*Navazuje na rozhodnutí [014](./decisions/014-language-type-model.md), které do modelu přineslo `CollectionKind`. Požadavky F3, F11.*
+*Potom. Navazuje na rozhodnutí [014](./decisions/014-language-type-model.md), které do modelu přineslo `CollectionKind`. Požadavky F3, F11.*
 
 Kolekční vlastnost se generuje natvrdo jako `<bag inverse="true" cascade="all-delete-orphan">` a ostatní kolekční tvary (`set`, `list`, `map`) ani další kolekční vlastnosti builder neřeší (dva TODO v kódu). Atributy `inverse` a `cascade` jsou přitom fakty, které nikdo netvrdil — kaskádní mazání sirotků obzvlášť mění chování — a nevzniká o nich záznam. K témuž místu patří i to, že vztah N:M, který přežil fázi syntézy, vyjde jako `<many-to-many>` uvnitř `<bag>` bez atributu `table`: to není chudší mapování, nýbrž neplatné. Volba tvaru kolekce je v NHibernate sémantická — `set` vylučuje duplicity, `list` nese pořadí — takže dnešní stav mění chování, ne jen zápis. Model už druh kolekce nese (`CollectionKind` na `LangType`) a plní ho jazyková strana (`HashSet<T>` → `Set`); XML parser tvar elementu (`<set>` vs. `<bag>`) do modelu zatím nepropisuje a builder druh nečte — obojí patří k této položce.
 
@@ -126,6 +116,26 @@ V repozitáři leží `ecosystem.config.js`, konfigurace pro proces manager PM2,
 *Souvisí s rozhodnutím [010](./decisions/010-diagnostics-as-returned-data.md), jehož záznamy frontend nezobrazuje. Požadavek S7. Odloženo do cílenější přestavby, současný stav je funkční.*
 
 Uživatelské rozhraní zůstalo u tvaru API, který už neplatí, a chybové stavy nechává na serveru. `/convert` vrací od rozhodnutí 010 vedle artefaktů i pole `records` se strukturovanou diagnostikou a frontend je ignoruje, takže se uživatel o ztrátách, konvencích ani konfliktech nedozví — a nově je těch záznamů podstatně víc, protože je vydává i dotazová větev. Chyby ze serveru zobrazuje `main-page.component.ts` přes `err.message` místo `err.error`, takže místo hlášky ze serveru ukáže obecný text HTTP chyby; vzor správného čtení je v `advisor-page.component.ts`. A validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku, neexistuje vůbec — u zdroje v Dapperu přitom server nově řádek i sloupec zná, protože je hlásí parser T-SQL. Prázdné jednotky odsud zmizely: server je od rozhodnutí [025](./decisions/025-query-language-as-content-type.md) přeskakuje sám, protože nevyplněné pole není tvrzení. Zbývá také přeložit frontend do `wwwroot` — výčet typů obsahu se změnil a commitnutý bundle ho zatím nezná.
+
+### Připojení ke katalogu se přes API nedá nastavit
+*Souvisí s rozhodnutím [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), jehož fáze doplnění na tom stojí. Požadavky F4, F6, S7.*
+
+Endpoint `/convert` čte připojovací řetězec pod klíčem `ConnectionStrings:CatalogDatabase`, jenže `appsettings.json` deklaruje jen `AdvisorDatabase`. Kdo nástroj spustí a nevytvoří proměnnou prostředí, dostane překlad postavený výhradně na konvencích — a jediná stopa je záznam o nedostupném katalogu mezi ostatními. Prakticky to znamená, že kritéria F4 a F6 přes uživatelské rozhraní nikdy neplatí, protože se k nim uživatel nemá jak dostat. Prázdný klíč už v `appsettings.json` je, takže je aspoň vidět, že existuje. Zbývá rozhodnout, jestli má být připojení zadatelné přímo v rozhraní vedle volby frameworků — bez toho zůstává čtení katalogu funkcí, kterou nástroj umí a uživatel se k ní nedostane.
+
+### Deskriptor deklaruje vynucené členy, které čte jen test
+*Souvisí s rozhodnutím [009](./decisions/009-target-framework-descriptor.md), které dělbu deklarace a emise zavedlo. Požadavek S2.*
+
+`EnforcedMembers` a `EnforcedMembersFor` volá jedině `EnforcedMembersTest`; produkční kód je nečte. Každý builder si vynucené členy vypisuje sám a nezávisle — `virtual` v `BuildPropertySignature`, `[Serializable]` v `BuildTableSchema`, `[Keyless]` u EF Core. Rozhodnutí 009 to tak popsalo záměrně: deskriptor deklaruje, builder implementuje, test je váže. Trojice ale drží jen tak dlouho, dokud test skutečně pokrývá každý člen za každé podmínky; jinak se deklarace a emise rozejdou a nikdo se to nedozví. Zbývá rozhodnout, jestli má vazbu držet test, nebo jestli si má builder vynucené členy z deskriptoru brát — s vědomím, že párování podle názvu vrací zpět riziko překlepu, kterým 009 tuhle variantu zamítlo.
+
+### NHibernate XML parser čte jen plochou třídu
+*Souvisí s otevřeným rozhodnutím o sloupci verze výše. Požadavky F2, F11.*
+
+`NHibernateXMLMappingParser` bere z mapování jen prvky `class`. Dědičnost (`<subclass>`, `<joined-subclass>`, `<union-subclass>`), komponenty (`<component>`), spojené tabulky (`<join>`), verzování (`<version>`, `<timestamp>`), přirozený klíč (`<natural-id>`) i zvláštní kolekce (`<idbag>`, `<array>`) projdou beze stopy — bez záznamu, takže výstup je tiše chudší než vstup. Totéž platí pro druhý a další `<column>` u jedné vlastnosti. Než se to začne řešit, je potřeba vědět, co z toho má mezireprezentace nést; do té doby je nejmenší náprava záznam o ztrátě u každého nepřečteného prvku, aby se nedalo přehlédnout, že se něco zahodilo.
+
+### Advisor a benchmarking nemají žádné testy
+*Souvisí s [`architecture.md`](./architecture.md), §8. Požadavky T7, S6.*
+
+Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný je tedy P/Invoke do ILP solveru, obě stavby benchmarkových harnessů i `HarnessGenerationUtilities`, které si názvy typů, jmenné prostory a atribut `[Table]` tahá z generovaného textu regulárními výrazy a nullabilitu hodnotových typů přepisuje textovou náhradou. Právě tahle část se nejsnáz rozejde s generátorem, protože stojí na jeho výstupním tvaru — a jednou už se rozešla: extrakce SQL z generované metody přestala být potřeba, teprve když builder začal vydávat holý dotaz zvlášť. Sem patří i to, že 4. stupeň ověření podle rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md) nemá jediného zástupce: `TestSchemaFixture.OpenConnection()` existuje i s popsanou hranicí transakce, ale nikdo ho nevolá.
 
 ---
 

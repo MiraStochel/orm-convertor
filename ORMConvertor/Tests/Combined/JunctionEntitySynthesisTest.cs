@@ -155,7 +155,7 @@ public class JunctionEntitySynthesisTest
         var outputs = builder.Build();
 
         var junctionXml = outputs.Where(o => o.ContentType == ConversionContentType.XML)
-            .Single(o => o.Content.Contains("ProductSupplier,"));
+            .Single(o => o.Content.Contains("<class name=\"ProductSupplier\""));
 
         Assert.Contains("table=\"ProductSuppliers\"", junctionXml.Content);
         Assert.Contains("<composite-id>", junctionXml.Content);

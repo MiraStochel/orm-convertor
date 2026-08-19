@@ -236,6 +236,22 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
                     case "ForeignKey":
                         foreignKeyNames = ReadForeignKeyNames(attribute);
                         break;
+
+                    // Everything else used to fall out of this switch without a trace. Two of
+                    // them change what the artifact means rather than merely impoverishing it:
+                    // [NotMapped] says the property is not mapped at all and [Keyless] that the
+                    // type has no key, and both went through as if absent (decision 010).
+                    default:
+                        entityBuilder.Report(new ConversionRecord
+                        {
+                            Kind = ConversionRecordKind.Loss,
+                            Framework = ORMEnum.EFCore,
+                            Artifact = ConversionContentType.CSharpEntity,
+                            Entity = classDeclaration.Identifier.Text,
+                            Property = name,
+                            Reason = $"The annotation [{attrName}] has no counterpart in the intermediate representation and was dropped.",
+                        });
+                        break;
                 }
             }
 

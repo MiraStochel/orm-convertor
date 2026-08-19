@@ -78,7 +78,12 @@ namespace Sample.Multi
 
         Assert.Contains(entities, r => r.Content.Contains("class Customer"));
         Assert.Contains(entities, r => r.Content.Contains("class Order"));
-        Assert.Contains(mappings, r => r.Content.Contains("<class name=\"Sample.Multi.Customer"));
-        Assert.Contains(mappings, r => r.Content.Contains("<class name=\"Sample.Multi.Order"));
+        // The class carries the bare name; the namespace sits on the root and the assembly is
+        // the consumer project's to supply (decision 028).
+        Assert.Contains(mappings, r => r.Content.Contains("namespace=\"Sample.Multi\"")
+                                       && r.Content.Contains("<class name=\"Customer\""));
+        Assert.Contains(mappings, r => r.Content.Contains("namespace=\"Sample.Multi\"")
+                                       && r.Content.Contains("<class name=\"Order\""));
+        Assert.DoesNotContain(mappings, r => r.Content.Contains("assembly="));
     }
 }

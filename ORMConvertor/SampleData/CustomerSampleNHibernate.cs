@@ -26,7 +26,7 @@ public class CustomerSampleNHibernate
     public const string XmlMapping = """
         <?xml version="1.0" encoding="utf-8" ?>
         <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="NHibernateEntities">
-            <class name="NHibernateEntities.Customer, NHibernateEntities" table="Customers" schema="Sales">
+            <class name="Customer" table="Customers" schema="Sales">
                 <id name="CustomerID" column="CustomerID" type="Int32">
                     <generator class="identity" />
                 </id>

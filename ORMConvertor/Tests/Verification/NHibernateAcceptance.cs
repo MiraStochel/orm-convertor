@@ -67,8 +67,14 @@ internal static class NHibernateAcceptance
     /// Which assembly the entity ends up in is a fact of the consumer project, not of the
     /// conversion, so the artifact cannot carry it and the consumer supplies it - in a real
     /// project by the assembly attribute matching the project name, here by naming the
-    /// assembly the sources were compiled into. A class name the builder already qualified
-    /// takes precedence over this default on its own.
+    /// assembly the sources were compiled into.
+    ///
+    /// This used to add the attribute only when the mapping did not already qualify the
+    /// class itself, which sounded like deference and was in fact a workaround: the builder
+    /// invented an assembly name from the namespace, and the verification tests confirmed
+    /// the invention by compiling under exactly that name. Since decision 028 the builder
+    /// qualifies nothing, so this always applies and the level is judging the artifact
+    /// rather than itself.
     /// </summary>
     private static string QualifyAssembly(string mappingXml, string assemblyName)
     {
