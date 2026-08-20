@@ -109,11 +109,11 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             var facets = BuildColumnFacets(entityMap, propertyMap);
             if (facets.Count == 0)
             {
-                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\"{TypeAttribute(propertyMap)}>");
+                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\"{TypeAttribute(entityMap, propertyMap)}>");
             }
             else
             {
-                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\"{TypeAttribute(propertyMap)}>");
+                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\"{TypeAttribute(entityMap, propertyMap)}>");
                 AppendXml(artifact.Mapping, 3, $"<column name=\"{columnName}\" {string.Join(' ', facets)} />");
             }
 
@@ -152,11 +152,11 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             var facets = BuildColumnFacets(entityMap, propertyMap);
             if (facets.Count == 0)
             {
-                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\"{TypeAttribute(propertyMap)} />");
+                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\"{TypeAttribute(entityMap, propertyMap)} />");
             }
             else
             {
-                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\"{TypeAttribute(propertyMap)}>");
+                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\"{TypeAttribute(entityMap, propertyMap)}>");
                 AppendXml(artifact.Mapping, 4, $"<column name=\"{columnName}\" {string.Join(' ', facets)} />");
                 AppendXml(artifact.Mapping, 3, "</key-property>");
             }
@@ -164,12 +164,35 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         AppendXml(artifact.Mapping, 2, "</composite-id>");
     }
 
-    private static string? ResolveNhType(PropertyMap propertyMap)
+    /// <summary>
+    /// The NHibernate type name of a property's claim, with the narrowing the conversion
+    /// table states reported at the point of emission - the counterpart of the Narrowing
+    /// channel the parser reads through (decision 010). A claim NHibernate 5.7.0 has no
+    /// registered name for comes out under the nearest registered one with a loss record
+    /// instead of as a name the framework would refuse.
+    /// </summary>
+    private string? ResolveNhType(EntityMap entityMap, PropertyMap propertyMap)
     {
         if (propertyMap.Type != null)
         {
-            return DatabaseTypeConvertor.ToNHibernate(
+            var naming = DatabaseTypeConvertor.ToNHibernate(
                 propertyMap.Type.Value, propertyMap.IsUnicode, propertyMap.Length);
+
+            if (naming.Narrowing is not null)
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.XML,
+                    Entity = entityMap.Entity.Name,
+                    Property = propertyMap.Property.Name,
+                    Category = MappingFactCategory.DatabaseType,
+                    Reason = naming.Narrowing,
+                });
+            }
+
+            return naming.Name;
         }
 
         // The database is never queried from here - the completion phase fills the model
@@ -185,8 +208,8 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// The type attribute of an &lt;id&gt; or &lt;key-property&gt;, empty when there is
     /// nothing to claim - NHibernate then infers the type from the persistent class.
     /// </summary>
-    private static string TypeAttribute(PropertyMap propertyMap)
-        => ResolveNhType(propertyMap) is string type ? $" type=\"{type}\"" : string.Empty;
+    private string TypeAttribute(EntityMap entityMap, PropertyMap propertyMap)
+        => ResolveNhType(entityMap, propertyMap) is string type ? $" type=\"{type}\"" : string.Empty;
 
     /// <summary>
     /// Facets of a key column that NHibernate accepts only inside a nested &lt;column&gt; element.
@@ -369,7 +392,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         }
 
         var typeAttr = version.Type.HasValue
-            ? $"type=\"{DatabaseTypeConvertor.ToNHibernate(version.Type.Value, version.IsUnicode, version.Length)}\""
+            ? $"type=\"{ResolveNhType(entityMap, version)}\""
             : null;
 
         string? notNull = null;
@@ -755,7 +778,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         }
 
         var typeAttr = propertyMap.Type.HasValue
-            ? $"type=\"{DatabaseTypeConvertor.ToNHibernate(propertyMap.Type.Value, propertyMap.IsUnicode, propertyMap.Length)}\""
+            ? $"type=\"{ResolveNhType(entityMap, propertyMap)}\""
             : null;
 
         var sizeFacets = new List<string>();

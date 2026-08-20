@@ -25,14 +25,14 @@ Parsery dnes čtou konvenci zdrojového frameworku jen tam, kde by její neznalo
 Rozhodnutí 017 uspořádalo zdroje faktů na vstupní text frameworku, pomocné mapovací artefakty, katalog a konvenci cíle. Některý framework ale mezi svými vlastními artefakty precedenci sám dokumentuje, a to opačnou: EF Core staví fluent API nad anotace, MyBatis řeší souběh anotací a XML mapperu vlastními pravidly. Přeložit takový projekt naším pořadím znamená přeložit něco jiného, než co zdroj znamená — a překlad má reprodukovat význam zdroje, ne naši preferenci. Rozhodnout je třeba, jestli precedence zdrojového frameworku přebíjí naše pořadí uvnitř prvního stupně, a pokud ano, kde je ta precedence zapsaná: deskriptor popisuje cíl, ne zdroj, a kategorii pro tohle nemá. Dokud se čte jediný artefakt na framework, případ nenastane; nastane s prvním parserem fluent konfigurace.
 
 ### Klíčová třída u kompozitního klíče na straně entity
-*Verze 1.0 — 6. Potom. Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a [014](./decisions/014-language-type-model.md). Podklad: audit 2026-08-02, kap. 3.2.*
+*Verze 1.0 — 7. Na řadě. Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a [014](./decisions/014-language-type-model.md). Podklad: audit 2026-08-02, kap. 3.2.*
 
 Mapovací stranu už parser čte: `<composite-id class=>` i `<composite-id name= class=>` skončí jako `SourceKeyClass`. U formy `Embedded` ale části klíče nejsou vlastnostmi entity, nýbrž klíčové třídy, a entita nese jedinou vlastnost jejího typu. Zbývá tedy trojí: odkud vzít jazykové typy částí, jak zabránit tomu, aby se držící vlastnost dostala do mezireprezentace jako běžná vlastnost (ploché vykreslení klíčovou třídu ruší), a co udělat s C# zdrojem klíčové třídy, pokud do převodu vstoupí — entitní parser by z něj dnes udělal další entitu.
 
 Vstupní překážku odstranil jazykový typový model: vlastnost typu `OrderLineId` projde parsováním jako `Unknown` a entita té formy se dostane do mezireprezentace. Přijetí frameworkem ji dnes odhalí — u téhle formy odkáže mapování na vlastnost, kterou třída nemá, a 3. stupeň takový pár odmítne (tvarová aserce to odhalit nemohla). Trojí otázka výše tím ale zodpovězená není. Třetí z nich sahá mimo entitní větev, blokovaná ale není: „další soubor téhož převodu" znamená vícezdrojový vstup a ten na úrovni API existuje — `ConversionHandler.Convert` i `ConvertRequest` berou seznam zdrojů, takže F14 je dohnání rozhraní, ne předpoklad. Zbývají tedy dvě otázky z původních tří.
 
 ### Centrální správa verzí
-*Verze 1.0 — 14. Podklad: audit 2026-08-02, kap. 3.4.1. Souvisí s S2, jehož determinismus se opírá o dané verze.*
+*Verze 1.0 — 15. Podklad: audit 2026-08-02, kap. 3.4.1. Souvisí s S2, jehož determinismus se opírá o dané verze.*
 
 Zavést `Directory.Packages.props`, případně `global.json`, aby se sjednocení verzí udržovalo mechanicky a ne ručně. Dnes se může nepozorovaně rozejít — tabulka zafixovaných verzí v `architecture.md` pak tvrdí něco, co v `.csproj` souborech nemusí platit.
 
@@ -42,7 +42,7 @@ Zavést `Directory.Packages.props`, případně `global.json`, aby se sjednocen�
 Dapper, EF Core, linq2db a RepoDB běží na `Microsoft.Data.SqlClient`, NHibernate a EF6 na `System.Data.SqlClient`. Pro srovnání výkonu je to metodologický confound. Buď přepnout NHibernate na `MicrosoftDataSqlClientDriver`, ověřit provider u PetaPoco a EF6 a přeměřit, nebo confound explicitně popsat v textu práce. Do verze 1.0 to nepatří: rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo benchmarking ze záruk vcelku, takže srovnávat jeho konfiguraci nemá proti čemu.
 
 ### Osud `wwwroot`
-*Verze 1.0 — 13. Souvisí s S5.*
+*Verze 1.0 — 14. Souvisí s S5.*
 
 Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes je to commitnutý build, takže po každé změně frontendu hrozí, že nasazený bundle neodpovídá zdrojákům.
 
@@ -51,12 +51,12 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 ## Otevřená práce
 
 ### Dva entitní parsery jsou totéž
-*Verze 1.0 — 9. Vytčeno rozhodnutím [026](./decisions/026-home-of-shared-query-reading.md), které touž duplicitu odstranilo na dotazové straně. Požadavek S1.*
+*Verze 1.0 — 10. Vytčeno rozhodnutím [026](./decisions/026-home-of-shared-query-reading.md), které touž duplicitu odstranilo na dotazové straně. Požadavek S1.*
 
 `DapperEntityParser` a `NHibernateEntityParser` se liší jedinou řádkou dokumentačního komentáře; oba čtou jmenný prostor, hlavičku třídy a vlastnosti a nic dalšího. Třetí kopii téhož drží `EFCoreEntityParser` uvnitř sebe. Každá oprava čtení vlastností se tak musí udělat dvakrát až třikrát. Na dotazové větvi tenhle problém vyřešila sdílená knihovna se zásuvnými body; entitní strana čeká na totéž a je to týž tvar řešení, ne nový.
 
 ### Priorita zdrojů uvnitř vstupu se nevynucuje
-*Verze 1.0 — 8. Implementace rozhodnutí [017](./decisions/017-source-precedence-for-mapping-facts.md). Požadavky F5, F11, S2.*
+*Verze 1.0 — 9. Potom. Implementace rozhodnutí [017](./decisions/017-source-precedence-for-mapping-facts.md). Požadavky F5, F11, S2.*
 
 Rozhodnutí 017 rozdělilo první stupeň priority na vstupní text frameworku a pomocné mapovací artefakty a uložilo, že vyšší úroveň se nepřepisuje nižší a rozdíl se hlásí. Kód to zatím nedělá. Pořadí čtení plyne jen z pořadí parserů v seznamu, který vrací `ParserFactory`, takže se přehozením dvou řádků tiše obrátí; `SetPropertyDatabaseMapping` přepisuje bezpodmínečně, takže mapovací artefakt přebije, co tvrdila entitní třída; a rozpor mezi dvěma vstupními artefakty nevydá žádný záznam, ačkoli týž rozpor proti katalogu skončí záznamem `Conflict`. Zbývá trojí: uspořádat seznam parserů jako vyslovený fakt frameworku, rozlišit na zápisové cestě druhé úrovně prázdný fakt od obsazeného, a neshodu vydat jako `Conflict`. Vzorem je fáze doplnění z katalogu, která přesně tohle už umí (viz `architecture.md`, §5.2).
 
@@ -70,7 +70,7 @@ Patří sem trojí: service container do workflow v `.github` spolu s proměnnou
 Do verze 1.0 nic z toho nepatří (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)): nasazení řešíme jedinou ručně spravovanou instancí, ne kontejnerem. Důsledek je ale potřeba nést nahlas i v textu práce — bez databáze v CI se databázově závislé testy dál přeskakují, takže **kritéria F4 a F6 platí jen tam, kde běh s lokální databází skutečně proběhl**.
 
 ### Cílová verze a databázový dialekt v deskriptoru
-*Verze 1.0 — 10., v rozsahu cílové verze; dialekt mimo verzi. Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md); dialekt sem odkázalo rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md). Požadavky S2, S6, F7–F10.*
+*Verze 1.0 — 11., v rozsahu cílové verze; dialekt mimo verzi. Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md); dialekt sem odkázalo rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md). Požadavky S2, S6, F7–F10.*
 
 Deskriptor cílového frameworku nese, co cíl umí vyjádřit, ale ne verzi, proti které to platí. Doplnit ji a nechat buildery volit syntaxi tam, kde se verze rozcházejí — u EF Core `[PrimaryKey]` proti `HasKey`, u NHibernate dostupnost `DateOnly`. Bez explicitní volby platí verze zafixovaná v `architecture.md`. Tímtéž údajem se pak plní záznam běhu podle S6, aby nemohl tvrdit něco jiného než generátor.
 
@@ -81,7 +81,7 @@ Sem patří i **cílový databázový dialekt**, který rozhodnutí 019 odmítlo
 Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dialektu ji nevyřeší: `DapperSqlQueryParser` čte T-SQL gramatikou `TSql160Parser` (rozhodnutí [026](./decisions/026-home-of-shared-query-reading.md)), takže SQL napsané pro jiný databázový systém — u MyBatisu (F8) běžné — touhle cestou neprojde. Řešením je vlastní parser SQL v javovém wrapperu, ne pole v deskriptoru.
 
 ### Rozresolvování jmen entit — `property-ref` na inverzní straně
-*Verze 1.0 — 7. Potom. Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F11.*
+*Verze 1.0 — 8. Potom. Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F11.*
 
 Fáze rozresolvování (`ResolveEntityNames` v `AbstractEntityBuilder`) běží před generováním, plní `ColumnPairs`, povyšuje `Unknown` typy na reference a nenalezené jméno cílové entity i nesouhlasící počet či pořadí sloupců hlásí záznamem podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md). Z důsledků rozhodnutí 001 tak zbývá jediné: `property-ref` na inverzní straně vztahu 1:1, který rozhodnutí 012 odkládá právě sem. Navigace protistrany je po rozresolvování dostupná, ale NHibernate builder ji zatím nehledá a atribut nevypisuje; zahozenou hodnotu ze vstupu aspoň hlásí parser záznamem o ztrátě.
 
@@ -95,28 +95,23 @@ Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisi
 
 NHibernate vyžaduje, aby perzistentní kolekce byla deklarovaná rozhraním (`IList<T>`, `ISet<T>`): za běhu vlastnost nahrazuje vlastní implementací a ta se do konkrétního `List<T>` či `HashSet<T>` přiřadit nedá. Generovaná entita ale kolekce deklaruje konkrétně, protože sdílený převod jazykových typů vykresluje `List`/`HashSet` pro všechny cíle. Stavba session factory to přijímá — 3. stupeň ověření proto mlčí — a selhání by se ukázalo až při načtení entity, tedy na 4. stupni, který zástupce nemá. Náprava patří NHibernate builderu, stejně jako vynucené `virtual`: vykreslit rozhraní a přepsat inicializátor — `= new()` se nad rozhraním nepřeloží vůbec a `= []` nad `ISet<T>` také ne — ne měnit sdílený převod.
 
-### Převodní tabulka NHibernate vypisuje dvě neregistrovaná jména typů
-*Navazuje na rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md), které tvrzení o typech NHibernate žádá ověřit proti verzi 5.7.0. Požadavky F3, F11.*
-
-Ověření emitovaných jmen proti registru `TypeFactory` NHibernate 5.7.0, provedené při implementaci sloupce verze, našlo čtyři jména, která framework neregistruje. Dvě jsou opravená na registrované aliasy — binární rodiny vypisují `binary`, rodina `Xml` jméno `XmlDoc` —, dvě opravu teprve čekají: `AnsiStringClob` (existuje jen `StringClob`) a `StringFixedLength`/`AnsiStringFixedLength` (typ řetězce pevné délky NHibernate nemá vůbec). Mapování s takovým `type` NHibernate odmítne jako neurčitelný typ, takže výstup pro neunicode `text` sloupec a pro znakový sloupec pevné délky jiné než 1 je dnes neplatný — přesně třída vad, kterou má odhalovat 3. stupeň ověření, jenž tyhle větve zatím nekryje. Oprava potřebuje říct, co se má tvrdit místo neexistujícího jména: nejbližší registrovaný typ mění tvrzení (u `AnsiStringClob` unicode facetu, u pevné délky proměnlivost), takže patří vypsat se záznamem o zúžení — a kanál pro záznamy z emisní strany převodní tabulky, obdoba `Narrowing` na čtecí straně, zatím neexistuje. Číslo ve verzi 1.0 položka nemá, protože seznam vydání je uzavřený (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)); neplatný výstup uvnitř zaručované oblasti je ale přesně druh vady, kvůli kterému kritérium verze vzniklo, takže zařazení stojí za zvážení jako revize toho rozhodnutí.
-
 ### Advisor nemá build nativní knihovny pro Windows
 *Mezera popsaná v [`architecture.md`](./architecture.md), §8. Souvisí s S5 a T7.*
 
 `libadvisor.so` se kompiluje jen v Docker buildu (stage `advisor-native`) a název je v P/Invoke natvrdo linuxový, takže mimo Linux a Docker Advisor endpointy selhávají; překladová část na tom nezávisí. Soubor `ilp.c` má přitom exportní makra pro Windows připravená, jen build krok pro `advisor.dll` neexistuje. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) tuhle dvojici uzavřelo druhým způsobem: Advisor je ze záruk verze 1.0 vyňatý vcelku, takže doslovně linuxový název v `LibraryImport` odpovídá tomu, co o něm tvrdíme, a rozpor mizí bez zásahu do kódu. Zbývá tedy jen build krok pro `advisor.dll`, a ten je mimo verzi; `ilp.c` má pro něj exportní makra připravená. Nasazenou instanci to neshodí — `AdvisorRunHandler` výjimku z P/Invoke zachytává a vrací její text, takže uživatel dostane hlášku.
 
 ### Spuštění mimo Docker není ověřené ani popsané
-*Verze 1.0 — 17. Mezera popsaná v [`architecture.md`](./architecture.md), §6, kde je na tuhle položku odkaz. Souvisí s S5 a S7.*
+*Verze 1.0 — 18. Mezera popsaná v [`architecture.md`](./architecture.md), §6, kde je na tuhle položku odkaz. Souvisí s S5 a S7.*
 
 V repozitáři leží `ecosystem.config.js`, konfigurace pro proces manager PM2, tedy nasazení mimo Docker. Nikde není popsané, co ta cesta předpokládá — které proměnné prostředí, jaký build frontendu, co servíruje statické soubory — a nikdo ji nespustil. Z lokálního spuštění je podobně ověřený jen `http` launch profil; ostatní profily jsou commitnuté a nevyzkoušené. Obojí je stejný druh dluhu: deklarovaná cesta, o které se neví, jestli funguje.
 
 ### Frontend zaostal za API a nevaliduje vstup
-*Verze 1.0 — 12. Souvisí s rozhodnutím [010](./decisions/010-diagnostics-as-returned-data.md), jehož záznamy frontend nezobrazuje. Požadavky S7 a F14.*
+*Verze 1.0 — 13. Souvisí s rozhodnutím [010](./decisions/010-diagnostics-as-returned-data.md), jehož záznamy frontend nezobrazuje. Požadavky S7 a F14.*
 
 Uživatelské rozhraní zůstalo u tvaru API, který už neplatí, a chybové stavy nechává na serveru. `/convert` vrací od rozhodnutí 010 vedle artefaktů i pole `records` se strukturovanou diagnostikou a frontend je ignoruje, takže se uživatel o ztrátách, konvencích ani konfliktech nedozví — a nově je těch záznamů podstatně víc, protože je vydává i dotazová větev. Chyby ze serveru zobrazuje `main-page.component.ts` přes `err.message` místo `err.error`, takže místo hlášky ze serveru ukáže obecný text HTTP chyby; vzor správného čtení je v `advisor-page.component.ts`. A validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku, neexistuje vůbec — u zdroje v Dapperu přitom server nově řádek i sloupec zná, protože je hlásí parser T-SQL. Prázdné jednotky odsud zmizely: server je od rozhodnutí [025](./decisions/025-query-language-as-content-type.md) přeskakuje sám, protože nevyplněné pole není tvrzení. Zbývá také přeložit frontend do `wwwroot` — výčet typů obsahu se změnil a commitnutý bundle ho zatím nezná; jak se ten překlad bude dělat, řeší položka o osudu `wwwroot` výše. Přestavba už odložená není: rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) ji staví do verze 1.0 spolu s dávkovým vstupem podle F14, tedy nahráním více celých souborů a zobrazením vstupu, výstupu i záznamů po jednotlivých souborech.
 
 ### Připojení ke katalogu se přes API nedá nastavit
-*Verze 1.0 — 11. Souvisí s rozhodnutím [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), jehož fáze doplnění na tom stojí. Požadavky F4, F6, S7.*
+*Verze 1.0 — 12. Souvisí s rozhodnutím [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), jehož fáze doplnění na tom stojí. Požadavky F4, F6, S7.*
 
 Endpoint `/convert` čte připojovací řetězec pod klíčem `ConnectionStrings:CatalogDatabase`, jenže `appsettings.json` deklaruje jen `AdvisorDatabase`. Kdo nástroj spustí a nevytvoří proměnnou prostředí, dostane překlad postavený výhradně na konvencích — a jediná stopa je záznam o nedostupném katalogu mezi ostatními. Prakticky to znamená, že kritéria F4 a F6 přes uživatelské rozhraní nikdy neplatí, protože se k nim uživatel nemá jak dostat. Prázdný klíč `CatalogDatabase` už v `appsettings.json` je, takže je aspoň vidět, že existuje. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) otázku uzavřelo: připojení zůstává v serverové konfiguraci a rozhraní ukáže jen jeho stav. Pole pro řetězec ve formuláři by z veřejně dostupné instance udělalo čtečku cizích schémat — kdokoli by nástroj namířil na libovolnou dosažitelnou databázi a nechal si vypsat její metadata. Zbývá tedy trojí: klíč na nasazené instanci vyplnit, stav připojení vydat v odpovědi `/convert` vedle záznamů, a zobrazit ho.
 
@@ -124,11 +119,6 @@ Endpoint `/convert` čte připojovací řetězec pod klíčem `ConnectionStrings
 *Souvisí s rozhodnutím [009](./decisions/009-target-framework-descriptor.md), které dělbu deklarace a emise zavedlo. Požadavek S2.*
 
 `EnforcedMembers` a `EnforcedMembersFor` volá jedině `EnforcedMembersTest`; produkční kód je nečte. Každý builder si vynucené členy vypisuje sám a nezávisle — `virtual` v `BuildPropertySignature`, `[Serializable]` v `BuildTableSchema`, `[Keyless]` u EF Core. Rozhodnutí 009 to tak popsalo záměrně: deskriptor deklaruje, builder implementuje, test je váže. Trojice ale drží jen tak dlouho, dokud test skutečně pokrývá každý člen za každé podmínky; jinak se deklarace a emise rozejdou a nikdo se to nedozví. Zbývá rozhodnout, jestli má vazbu držet test, nebo jestli si má builder vynucené členy z deskriptoru brát — s vědomím, že párování podle názvu vrací zpět riziko překlepu, kterým 009 tuhle variantu zamítlo.
-
-### NHibernate XML parser čte jen plochou třídu
-*Verze 1.0 — 5., v rozsahu druhého `<column>` a záznamů. Na řadě. Požadavky F2, F11.*
-
-`NHibernateXMLMappingParser` bere z mapování jen prvky `class`. Dědičnost (`<subclass>`, `<joined-subclass>`, `<union-subclass>`), komponenty (`<component>`), spojené tabulky (`<join>`), verzování (`<version>`, `<timestamp>`), přirozený klíč (`<natural-id>`) i zvláštní kolekce (`<idbag>`, `<array>`) projdou beze stopy — bez záznamu, takže výstup je tiše chudší než vstup. Totéž platí pro druhý a další `<column>` u jedné vlastnosti. Než se to začne řešit, je potřeba vědět, co z toho má mezireprezentace nést; do té doby je nejmenší náprava záznam o ztrátě u každého nepřečteného prvku, aby se nedalo přehlédnout, že se něco zahodilo. U `<version>` už mezireprezentace protějšek má — příznak sloupce verze z rozhodnutí [030](./decisions/030-scope-of-version-1-0.md), který NHibernate builder vypisuje —, takže jeho přečtení je dorovnání parseru, ne rozšíření modelu.
 
 ### Advisor a benchmarking nemají žádné testy
 *Souvisí s [`architecture.md`](./architecture.md), §8. Požadavky T7, S6.*
@@ -138,17 +128,17 @@ Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný
 Do verze 1.0 položka nepatří. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo `Advisor` i `AdvisorBenchmarking` ze záruk vcelku právě proto, že netestované jsou; testovat oblast, na kterou verze neslibuje spoleh, by bylo otevírání nové části místo dokončení rozdělané.
 
 ### Překladový artefakt nenese přihlašovací údaje — a nikdo to netvrdí
-*Verze 1.0 — 15. Implementace rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md). Požadavky S4, S2.*
+*Verze 1.0 — 16. Implementace rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md). Požadavky S4, S2.*
 
 Rozhodnutí 029 uzavřelo, že připojení do databáze je fakt konzumentského projektu a do předávaného artefaktu nepatří. Dnes to platí konstrukcí: dotazový artefakt EF Core má tvar `Query(DbContext ctx)`, entitní buildery konfiguraci nevydávají, NHibernate mapování element pro spojení nemá a výstupem Dapperu je třída a holý dotaz. Netvrdí to ale žádný test, takže je ta vlastnost splněná náhodou a dá se porušit nepozorovaně — stačí, aby některý builder začal vydávat konfigurační soubor, u javového ekosystému `persistence.xml`. Zbývá aserce nad výstupem převodu ve všech třech směrech a k ní věta v [`architecture.md`](./architecture.md) o tom, že překladová cesta cizí kód nekompiluje ani nespouští; dnes to z textu plyne jen nepřímo, přes popis `Common.Compilation` a ověřovacích stupňů.
 
 ### Výkon překladu podle S3 se neměří
-*Verze 1.0 — 16. Předpokladem je dávkový vstup z položky o frontendu. Požadavky S3, S6.*
+*Verze 1.0 — 17. Předpokladem je dávkový vstup z položky o frontendu. Požadavky S3, S6.*
 
 S3 žádá dvojí: aby překlad projektu se 100 entitami a 100 dotazy skončil na referenčním stroji do 30 sekund, a aby se čtení databázových metadat měřilo a reportovalo odděleně. Druhá polovina hotová je — `ConversionResult` nese čas fáze doplnění a `/convert` ho vrací jako `CatalogReadMilliseconds`. První polovinu netvrdí nic: scénář té velikosti neexistuje a nikdo ho nepustil, takže třicetisekundová hranice je číslo bez měření a případné zpomalení by se poznalo až na cizím projektu. Zbývá test, který vstup složí a čas změří, a údaj o stroji, proti kterému výsledek platí. Dřív než bude hotová dávková cesta, se to dělá špatně — ruční skládání sta jednotek do požadavku by měřilo hlavně samo sebe.
 
 ### Verze nástroje a značka vydání
-*Verze 1.0 — 18. Uzavírá rozhodnutí [030](./decisions/030-scope-of-version-1-0.md). Požadavky S2, S6.*
+*Verze 1.0 — 19. Uzavírá rozhodnutí [030](./decisions/030-scope-of-version-1-0.md). Požadavky S2, S6.*
 
 S2 mluví o „stejné verzi nástroje" a S6 žádá strojově čitelný záznam běhu včetně verzí; obojí předpokládá, že nástroj nějakou verzi má. Nemá. Sestavení se nikde nečíslují, repozitář nenese značku vydání a `README.md` je zděděný z původního prototypu, takže popisuje stav, který dávno neplatí. Zbývá tedy trojí: číslo verze v sestaveních — nejlépe na jednom místě spolu s centrální správou verzí —, značka v gitu, a průchod `README.md`, aby řekl, co nástroj v této verzi umí, co je z jeho záruk vyňaté a jak se spouští. Je to poslední položka vydání, protože až do ní se obsah verze ještě mění.
 

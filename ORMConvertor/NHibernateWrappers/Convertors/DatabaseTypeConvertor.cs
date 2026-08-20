@@ -18,6 +18,15 @@ public readonly record struct NHibernateTypeReading(
     string? SourceType = null,
     string? Narrowing = null);
 
+/// <summary>
+/// One naming of a type claim on the emission side: the type name NHibernate 5.7.0
+/// registers, and - where no registered name says exactly what the family and its facets
+/// claim - the reason the nearest registered name changes the claim. The counterpart of
+/// Narrowing on <see cref="NHibernateTypeReading"/>: the table states the difference,
+/// the builder reports it at the point of emission (decision 010).
+/// </summary>
+public readonly record struct NHibernateTypeNaming(string Name, string? Narrowing = null);
+
 public static class DatabaseTypeConvertor
 {
     /// <summary>
@@ -95,37 +104,54 @@ public static class DatabaseTypeConvertor
     /// which is NHibernate's own default, so nothing is claimed beyond the target's
     /// convention. The length tells a single character (Char/AnsiChar) from a
     /// fixed-length string.
+    ///
+    /// Every emitted name is registered by TypeFactory of NHibernate 5.7.0 - a name the
+    /// registry does not know fails the session factory build with an undeterminable
+    /// type, so an invalid mapping would come out of a valid input. Two claims have no
+    /// registered name at all: the fixed-length string (StringFixedLength and
+    /// AnsiStringFixedLength are names of DbType values, not of NHibernate types) and
+    /// the non-unicode large text (only StringClob exists). There the nearest registered
+    /// name is written and the difference travels as the Narrowing of the result, for
+    /// the builder to report at the point of emission.
     /// </summary>
-    public static string ToNHibernate(DatabaseType type, bool? isUnicode = null, int? length = null) => type switch
+    public static NHibernateTypeNaming ToNHibernate(DatabaseType type, bool? isUnicode = null, int? length = null) => type switch
     {
-        DatabaseType.Boolean => "Boolean",
-        DatabaseType.TinyInt => "Byte",
-        DatabaseType.SmallInt => "Int16",
-        DatabaseType.Integer => "Int32",
-        DatabaseType.BigInt => "Int64",
+        DatabaseType.Boolean => new("Boolean"),
+        DatabaseType.TinyInt => new("Byte"),
+        DatabaseType.SmallInt => new("Int16"),
+        DatabaseType.Integer => new("Int32"),
+        DatabaseType.BigInt => new("Int64"),
 
-        DatabaseType.Decimal => "Decimal",
-        DatabaseType.Real => "Single",
-        DatabaseType.DoublePrecision => "Double",
+        DatabaseType.Decimal => new("Decimal"),
+        DatabaseType.Real => new("Single"),
+        DatabaseType.DoublePrecision => new("Double"),
 
-        DatabaseType.Date => "Date",
-        DatabaseType.Time => "TimeAsTimeSpan",
-        DatabaseType.Timestamp => "DateTime",
-        DatabaseType.TimestampWithTimeZone => "DateTimeOffset",
+        DatabaseType.Date => new("Date"),
+        DatabaseType.Time => new("TimeAsTimeSpan"),
+        DatabaseType.Timestamp => new("DateTime"),
+        DatabaseType.TimestampWithTimeZone => new("DateTimeOffset"),
 
-        DatabaseType.Char when length == 1 => isUnicode == false ? "AnsiChar" : "Char",
-        DatabaseType.Char => isUnicode == false ? "AnsiStringFixedLength" : "StringFixedLength",
-        DatabaseType.VarChar => isUnicode == false ? "AnsiString" : "String",
-        DatabaseType.Text => isUnicode == false ? "AnsiStringClob" : "StringClob",
+        DatabaseType.Char when length == 1 => isUnicode == false ? new("AnsiChar") : new("Char"),
+        DatabaseType.Char when isUnicode == false => new("AnsiString",
+            "NHibernate 5.7.0 registers no fixed-length string type ('AnsiStringFixedLength' is not in TypeFactory), "
+            + "so 'AnsiString' is written and the claim changes from fixed-length to variable-length character data (decision 019)."),
+        DatabaseType.Char => new("String",
+            "NHibernate 5.7.0 registers no fixed-length string type ('StringFixedLength' is not in TypeFactory), "
+            + "so 'String' is written and the claim changes from fixed-length to variable-length character data (decision 019)."),
+        DatabaseType.VarChar => isUnicode == false ? new("AnsiString") : new("String"),
+        DatabaseType.Text when isUnicode == false => new("StringClob",
+            "NHibernate 5.7.0 registers no non-unicode large-text type ('AnsiStringClob' is not in TypeFactory), "
+            + "so 'StringClob' is written and the non-unicode facet of the claim is dropped (decision 019)."),
+        DatabaseType.Text => new("StringClob"),
 
         // TypeFactory of 5.7.0 registers the binary type under the lowercase alias -
         // "Binary" resolves to nothing - and the XML document type under XmlDoc, not Xml.
         // Both spellings verified against the package the acceptance level runs on.
-        DatabaseType.Binary or DatabaseType.VarBinary => "binary",
-        DatabaseType.Blob => "BinaryBlob",
+        DatabaseType.Binary or DatabaseType.VarBinary => new("binary"),
+        DatabaseType.Blob => new("BinaryBlob"),
 
-        DatabaseType.Uuid => "Guid",
-        DatabaseType.Xml => "XmlDoc",
+        DatabaseType.Uuid => new("Guid"),
+        DatabaseType.Xml => new("XmlDoc"),
 
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
@@ -138,22 +164,24 @@ public static class DatabaseTypeConvertor
     /// </summary>
     public static string? GuessFromScalarType(ScalarType scalarType)
     {
+        // Every claim guessed here has an exactly matching registered name, so taking
+        // the name alone drops no narrowing.
         return scalarType switch
         {
-            ScalarType.Bool => ToNHibernate(DatabaseType.Boolean),
-            ScalarType.Byte => ToNHibernate(DatabaseType.TinyInt),
-            ScalarType.Short => ToNHibernate(DatabaseType.SmallInt),
+            ScalarType.Bool => ToNHibernate(DatabaseType.Boolean).Name,
+            ScalarType.Byte => ToNHibernate(DatabaseType.TinyInt).Name,
+            ScalarType.Short => ToNHibernate(DatabaseType.SmallInt).Name,
             // The reference documentation's default for System.Char is the unicode
             // single character - the case the unicode facet exists for (decision 019).
-            ScalarType.Char => ToNHibernate(DatabaseType.Char, isUnicode: true, length: 1),
-            ScalarType.Int => ToNHibernate(DatabaseType.Integer),
-            ScalarType.Long => ToNHibernate(DatabaseType.BigInt),
-            ScalarType.Double => ToNHibernate(DatabaseType.DoublePrecision),
-            ScalarType.Float => ToNHibernate(DatabaseType.Real),
-            ScalarType.Decimal => ToNHibernate(DatabaseType.Decimal),
-            ScalarType.String => ToNHibernate(DatabaseType.VarChar, isUnicode: true),
-            ScalarType.DateTime => ToNHibernate(DatabaseType.Timestamp),
-            ScalarType.Guid => ToNHibernate(DatabaseType.Uuid),
+            ScalarType.Char => ToNHibernate(DatabaseType.Char, isUnicode: true, length: 1).Name,
+            ScalarType.Int => ToNHibernate(DatabaseType.Integer).Name,
+            ScalarType.Long => ToNHibernate(DatabaseType.BigInt).Name,
+            ScalarType.Double => ToNHibernate(DatabaseType.DoublePrecision).Name,
+            ScalarType.Float => ToNHibernate(DatabaseType.Real).Name,
+            ScalarType.Decimal => ToNHibernate(DatabaseType.Decimal).Name,
+            ScalarType.String => ToNHibernate(DatabaseType.VarChar, isUnicode: true).Name,
+            ScalarType.DateTime => ToNHibernate(DatabaseType.Timestamp).Name,
+            ScalarType.Guid => ToNHibernate(DatabaseType.Uuid).Name,
             ScalarType.Object => null,
             _ => null,
         };

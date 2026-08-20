@@ -1,7 +1,7 @@
 # 030 — Rozsah verze 1.0
 
 Datum: 2026-08-20
-Stav: platí
+Stav: revidováno
 Požadavky: F1–F15, S1–S7, T1–T7
 Podklad: rozhodnutí [004](004-unexpressible-facts-as-warnings.md), [018](018-work-order-as-item-marker.md) a [029](029-database-connection-is-the-consumer-projects-fact.md); `open-items.md` ke dni rozhodnutí
 
@@ -75,20 +75,21 @@ Značky `Na řadě` a `Potom` zůstávají a znamenají totéž co dosud, jen se
 | 2 | NHibernate builder — kolekce jen jako `<bag>` | jediná položka, která vydá neplatné mapování a vymyslí destruktivní kaskádu |
 | 3 | EF Core — nullabilita se vyjadřuje jen jazykově | tichá ztráta tvrzeného faktu, a deskriptor mezitím tvrdí opak |
 | 4 | Sloupec verze jako mapovací fakt | rozhodnutí i implementace; sahá do slovníku kategorií, ať je hotový před dalšími |
-| 5 | NHibernate XML parser čte jen plochou třídu | týž soubor jako 4 (`<version>` se čte tady); druhý `<column>` dodělat, zbytek záznamem |
-| 6 | Klíčová třída u kompozitního klíče na straně entity | jádro F1 a F2; vícezdrojový vstup na úrovni API už existuje |
-| 7 | Rozresolvování jmen entit — `property-ref` na inverzní straně | poslední zbytek rozhodnutí 001 a 012, úzké a uzavírá vlákno |
-| 8 | Priorita zdrojů uvnitř vstupu se nevynucuje | implementace 017; bez ní se S2 obrátí přehozením dvou řádků |
-| 9 | Dva entitní parsery jsou totéž | S1; po 1 a 8, aby se sjednocovalo už opravené |
-| 10 | Cílová verze v deskriptoru a záznam běhu | jen verze, ne dialekt; ustálí tvar odpovědi před frontendem |
-| 11 | Připojení ke katalogu se přes API nedá nastavit | poslední změna API před frontendem |
-| 12 | Frontend zaostal za API a nevaliduje vstup | největší blok; F14, záznamy, validace, stav katalogu |
-| 13 | Osud `wwwroot` | uzavře frontend build; překlad do `wwwroot` je součást publikace |
-| 14 | Centrální správa verzí | mechanické, chrání tabulku verzí, o kterou se opírá S2 |
-| 15 | Překladový artefakt nenese přihlašovací údaje — a nikdo to netvrdí | aserce k rozhodnutí 029 |
-| 16 | Výkon překladu podle S3 se neměří | potřebuje dávkovou cestu z bodu 12 |
-| 17 | Spuštění mimo Docker není ověřené ani popsané | vlastní nasazení tuhle položku ověří tím, že ji použije |
-| 18 | Verze nástroje a značka vydání | poslední; S2 i S6 se na verzi nástroje odvolávají |
+| 5 | NHibernate XML parser čte jen plochou třídu | týž soubor jako 4 (`<version>` a jeho zkratka `<timestamp>` se čtou tady); druhý `<column>` dodělat, zbytek záznamem |
+| 6 | Převodní tabulka NHibernate vypisuje dvě neregistrovaná jména typů | vydává neplatné mapování pro platný vstup (`char(n)`, neunicode `text`) — táž třída vady, která zařadila kolekce na 2; hned po rozpracované 5 (viz Historie) |
+| 7 | Klíčová třída u kompozitního klíče na straně entity | jádro F1 a F2; vícezdrojový vstup na úrovni API už existuje |
+| 8 | Rozresolvování jmen entit — `property-ref` na inverzní straně | poslední zbytek rozhodnutí 001 a 012, úzké a uzavírá vlákno |
+| 9 | Priorita zdrojů uvnitř vstupu se nevynucuje | implementace 017; bez ní se S2 obrátí přehozením dvou řádků |
+| 10 | Dva entitní parsery jsou totéž | S1; po 1 a 9, aby se sjednocovalo už opravené |
+| 11 | Cílová verze v deskriptoru a záznam běhu | jen verze, ne dialekt; ustálí tvar odpovědi před frontendem |
+| 12 | Připojení ke katalogu se přes API nedá nastavit | poslední změna API před frontendem |
+| 13 | Frontend zaostal za API a nevaliduje vstup | největší blok; F14, záznamy, validace, stav katalogu |
+| 14 | Osud `wwwroot` | uzavře frontend build; překlad do `wwwroot` je součást publikace |
+| 15 | Centrální správa verzí | mechanické, chrání tabulku verzí, o kterou se opírá S2 |
+| 16 | Překladový artefakt nenese přihlašovací údaje — a nikdo to netvrdí | aserce k rozhodnutí 029 |
+| 17 | Výkon překladu podle S3 se neměří | potřebuje dávkovou cestu z bodu 13 |
+| 18 | Spuštění mimo Docker není ověřené ani popsané | vlastní nasazení tuhle položku ověří tím, že ji použije |
+| 19 | Verze nástroje a značka vydání | poslední; S2 i S6 se na verzi nástroje odvolávají |
 
 ## Důsledky
 
@@ -103,3 +104,9 @@ Značky `Na řadě` a `Potom` zůstávají a znamenají totéž co dosud, jen se
 **Připojení ke katalogu zůstane v serverové konfiguraci a rozhraní ukáže jen stav.** Pole pro připojovací řetězec v uživatelském rozhraní by z veřejně dostupné instance udělalo čtečku cizích schémat: kdokoli by nástroj namířil na libovolnou dosažitelnou databázi a nechal si vypsat její metadata. Klíč `CatalogDatabase` v `appsettings.json` už existuje, takže F4 i F6 přes rozhraní platí, jakmile se na instanci vyplní — a je to zároveň méně práce než formulářové pole.
 
 **Co přijde po verzi 1.0, se nezačíná od nuly.** Slovníkové předpoklady javové větve jsou hotové: jazykový typový model (rozhodnutí [014](014-language-type-model.md)), neutrální databázové typy ([019](019-neutral-database-type-vocabulary.md)) i kanonické parametry generátoru ([020](020-canonical-generator-parameter-vocabulary.md), [021](021-generator-name-selection.md)). Vyňaté oblasti se vracejí do hry v pořadí, které si určí až ta verze.
+
+## Historie
+
+**2026-08-20 — revidováno podruhé.** Položka 5 čte vedle `<version>` i jeho zkratku `<timestamp>`: NHibernate ji dokumentuje jako `<version type="timestamp">`, takže protějškem v mezireprezentaci je týž příznak sloupce verze a přečtení je totéž dorovnání parseru, ne rozšíření modelu — hlásit ji záznamem o ztrátě by znamenalo hlásit fakt, který nástroj nést umí, tedy přesně omluvu za polotovar, kterou tohle rozhodnutí zakazuje. Původní znění ji řadilo do „zbytek záznamem" a krátce tak byla i implementovaná; oprava mění jen závorku v řádku 5, na záznamu nic nestálo a kritérium, vyňaté oblasti ani pořadí se nemění, takže je revize na místě bezpečná.
+
+**2026-08-20 — revidováno.** Volba — kritérium hotovosti, vyňaté oblasti i nároky verze — se nemění; do uzavřeného seznamu přibyla položka, kterou v den rozhodnutí nikdo neznal. Implementace položky 4 poprvé provedla ověření emitovaných jmen typů NHibernate proti registru `TypeFactory` verze 5.7.0, které žádá závěr rozhodnutí [019](019-neutral-database-type-vocabulary.md), a našla čtyři jména, která framework neregistruje: dvě opravila hned (`binary`, `XmlDoc`), dvě zbývají (`AnsiStringClob`; `StringFixedLength` a `AnsiStringFixedLength`) a mapování s nimi NHibernate odmítne jako neurčitelný typ. To je neplatný výstup pro platný vstup uvnitř zaručované oblasti — přesně třída vady, podle které tenhle seznam řadí a která nesmí zůstat mimo vydání. Položka je zařazená jako 6, hned po rozpracované 5; dosavadní položky 6–18 se posouvají na 7–19 a s nimi dva vnitřní odkazy tabulky (u sjednocení parserů „po 1 a 8" na „po 1 a 9", u výkonu „z bodu 12" na „z bodu 13"). Revize na místě je bezpečná: hotové položky 1–4 se nemění a pořadí zbylých není ztělesněné v žádném kódu.

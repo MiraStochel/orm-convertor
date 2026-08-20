@@ -49,6 +49,13 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     {
         var mappingNamespace = mapping.Attribute("namespace")?.Value;
 
+        foreach (var element in mapping.Elements().Where(e => e.Name.LocalName != "class"))
+        {
+            // <subclass> and its joined and union forms can sit here with an extends
+            // attribute, next to queries and imports; none of them is read (decision 030).
+            ReportUnreadElement(element, entity: null);
+        }
+
         foreach (var classElement in mapping.Elements().Where(e => e.Name.LocalName == "class"))
         {
             var (classNamespace, className) = ParseClassIdentity(classElement);
@@ -151,8 +158,95 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         }
 
         ParsePrimaryKey(classElement);
+        ParseVersion(classElement);
         ParseProperties(classElement);
         ParseRelations(classElement);
+        ReportUnreadClassChildren(classElement);
+    }
+
+    /// <summary>
+    /// The elements of a &lt;class&gt; this parser reads; everything else is a flat-class
+    /// boundary crossing and leaves a record (decision 030). &lt;map&gt; is on the list
+    /// because <see cref="ParseRelations"/> walks it, even though its shape itself is
+    /// dropped with a record of its own.
+    /// </summary>
+    private static readonly HashSet<string> ReadClassChildren =
+        ["id", "composite-id", "property", "version", "timestamp", "one-to-one", "many-to-one", "bag", "set", "list", "map"];
+
+    /// <summary>
+    /// Elements whose name attribute names a property of the entity - the record can
+    /// point at it. On the inheritance and join elements the attribute names a class or
+    /// a table instead, so it stays in the reason text only.
+    /// </summary>
+    private static readonly HashSet<string> PropertyNamedElements =
+        ["component", "dynamic-component", "idbag", "array", "primitive-array", "any"];
+
+    /// <summary>
+    /// The flat-class boundary, stated per element (decision 030): inheritance
+    /// (&lt;subclass&gt;, &lt;joined-subclass&gt;, &lt;union-subclass&gt;), components, joined tables,
+    /// the natural key and the special collections are not read, and stay outside the
+    /// guarantees of version 1.0 as a whole - the record is how that boundary reaches the
+    /// user of this one input instead of the output being silently poorer than it.
+    /// </summary>
+    private void ReportUnreadClassChildren(XElement classElement)
+    {
+        foreach (var element in classElement.Elements().Where(e => !ReadClassChildren.Contains(e.Name.LocalName)))
+        {
+            ReportUnreadElement(element, entityBuilder.EntityMap.Entity.Name);
+        }
+    }
+
+    private void ReportUnreadElement(XElement element, string? entity)
+    {
+        var name = element.Name.LocalName;
+        var statedName = element.Attribute("name")?.Value;
+        var opening = statedName is null ? $"<{name}>" : $"<{name} name=\"{statedName}\">";
+
+        entityBuilder.Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = entityBuilder.Descriptor.Framework,
+            Entity = entity,
+            Property = PropertyNamedElements.Contains(name) ? statedName : null,
+            Reason = $"The parser reads only the flat class, so {opening} and everything it states are dropped (decision 030).",
+        });
+    }
+
+    /// <summary>
+    /// Reads the &lt;version&gt; element and its &lt;timestamp&gt; shortcut (decision 030): the
+    /// flag, the column facts and the type claim of the property NHibernate versions the
+    /// row with. &lt;timestamp&gt; is the framework's spelling of &lt;version type="timestamp"&gt;,
+    /// so it carries the same flag and its element name itself is the type claim; the
+    /// generated mapping states the same thing as a &lt;version&gt; element. The other
+    /// attributes - unsaved-value, generated, access, source - have no counterpart in the
+    /// model and are skipped like any other unmapped attribute; the generated mapping
+    /// derives generated="always" from the binary type family itself.
+    /// </summary>
+    private void ParseVersion(XElement classElement)
+    {
+        var versionElem = classElement.Elements()
+            .FirstOrDefault(e => e.Name.LocalName is "version" or "timestamp");
+        var name = versionElem?.Attribute("name")?.Value;
+
+        if (versionElem is null || string.IsNullOrEmpty(name))
+        {
+            return;
+        }
+
+        var dbProps = ReadColumnFacts(versionElem, name);
+        dbProps["IsVersion"] = "true";
+
+        entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
+
+        if (versionElem.Name.LocalName == "timestamp")
+        {
+            // The element name claims the family the way the version element's type
+            // attribute would spell it.
+            entityBuilder.SetPropertyDatabaseType(name, DatabaseType.Timestamp);
+            return;
+        }
+
+        ApplyTypeFacts(versionElem, name);
     }
 
     /// <summary>
@@ -178,7 +272,7 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                         continue;
                     }
 
-                    var dbProps = ReadColumnFacts(part);
+                    var dbProps = ReadColumnFacts(part, name);
 
                     if (dbProps.Count > 0)
                     {
@@ -223,7 +317,7 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
             return;
         }
 
-        var idDbProps = ReadColumnFacts(idElem);
+        var idDbProps = ReadColumnFacts(idElem, propName);
 
         if (idDbProps.Count > 0)
         {
@@ -456,7 +550,7 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
             // descriptor has to exist in the model before anything can be attached to it.
             entityBuilder.SetPropertyDatabaseMapping(
                 propertyName,
-                ReadColumnFacts(prop)
+                ReadColumnFacts(prop, propertyName)
             );
 
             ApplyTypeFacts(prop, propertyName);
@@ -533,13 +627,14 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     /// wins, being the more specific of the two.
     ///
     /// Only the first &lt;column&gt; is read, because the model maps a property to a single
-    /// column; a property spread over several columns is a separate concern. Attributes with
-    /// no counterpart in the model - unique, index, check, default - are skipped. The type
-    /// attribute and the sql-type of a nested &lt;column&gt; do not travel through this
-    /// dictionary: they go through the typed channel of <see cref="ApplyTypeFacts"/>
-    /// (decision 019).
+    /// column; a property spread over several columns would take a composite user type
+    /// the model does not carry, so each further column is dropped with a record instead
+    /// of vanishing (decision 030). Attributes with no counterpart in the model - unique,
+    /// index, check, default - are skipped. The type attribute and the sql-type of a
+    /// nested &lt;column&gt; do not travel through this dictionary: they go through the typed
+    /// channel of <see cref="ApplyTypeFacts"/> (decision 019).
     /// </summary>
-    private static Dictionary<string, string> ReadColumnFacts(XElement element)
+    private Dictionary<string, string> ReadColumnFacts(XElement element, string propertyName)
     {
         var dbProps = new Dictionary<string, string>();
 
@@ -550,7 +645,26 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
 
         ReadFacetsInto(dbProps, element);
 
-        var columnElement = element.Elements().FirstOrDefault(e => e.Name.LocalName == "column");
+        var columnElements = element.Elements().Where(e => e.Name.LocalName == "column").ToList();
+
+        foreach (var surplus in columnElements.Skip(1))
+        {
+            var surplusName = surplus.Attribute("name")?.Value;
+
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = entityBuilder.Descriptor.Framework,
+                Entity = entityBuilder.EntityMap.Entity.Name,
+                Property = propertyName,
+                Category = MappingFactCategory.ColumnName,
+                Reason = $"The model maps a property to a single column, so of the several <column> elements "
+                    + $"of '{propertyName}' only the first is read; <column name=\"{surplusName}\"> "
+                    + "and everything it states are dropped (decision 030).",
+            });
+        }
+
+        var columnElement = columnElements.FirstOrDefault();
         if (columnElement is null)
         {
             return dbProps;
