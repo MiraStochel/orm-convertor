@@ -15,6 +15,12 @@ public static class NHibernateDescriptor
     {
         Framework = ORMEnum.NHibernate,
 
+        // Pinned by decision 013; the canonical table is in docs/architecture.md and a
+        // test binds this value to the package the verification level loads. The release
+        // decides which syntax the artifact means - the emitted type names are verified
+        // against the TypeFactory registry of exactly this version (decision 019).
+        Version = "5.7.0",
+
         EnforcedMembers =
         [
             new EnforcedMember

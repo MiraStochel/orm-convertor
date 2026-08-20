@@ -96,8 +96,15 @@ public static class ConversionHandler
 
         // The records accumulate on the entity builder - parsers and the build phases both
         // report there - and leave as returned data next to the artifacts (decision 010).
+        // The framework versions come from the descriptors (decision 013), so the run
+        // record and the generator cannot disagree about them (S6).
         return new ConversionResult
         {
+            RunId = Guid.NewGuid(),
+            SourceFramework = sourceOrm,
+            SourceFrameworkVersion = DescriptorFactory.Create(sourceOrm).Version,
+            TargetFramework = targetOrm,
+            TargetFrameworkVersion = entityBuilder.Descriptor.Version,
             Sources = results,
             Records = [.. entityBuilder.Records, .. queryRecords],
             CatalogReadTime = catalogReadTime,

@@ -53,6 +53,11 @@ public static class Endpoints
 
             var converted = ConversionHandler.Convert(req.SourceOrm, req.TargetOrm, req.Sources, catalogConnectionString);
             return Results.Ok(new ConvertResponse(
+                converted.RunId,
+                converted.SourceFramework,
+                converted.SourceFrameworkVersion,
+                converted.TargetFramework,
+                converted.TargetFrameworkVersion,
                 converted.Sources,
                 converted.Records,
                 converted.CatalogReadTime?.TotalMilliseconds));

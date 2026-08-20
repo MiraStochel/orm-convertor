@@ -16,6 +16,25 @@ public sealed class TargetFrameworkDescriptor
 
     public required ORMEnum Framework { get; init; }
 
+    private readonly string version = "";
+
+    /// <summary>
+    /// The framework release everything else in this descriptor - and every generated
+    /// artifact - is valid against (decision 013). The pinned set lives canonically in
+    /// docs/architecture.md; a conversion has no way to choose another release yet, so
+    /// this value always applies, and the run record (S6) reports the version from here,
+    /// so it cannot claim anything the generator did not.
+    /// </summary>
+    public required string Version
+    {
+        get => version;
+        init
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(value);
+            version = value;
+        }
+    }
+
     private readonly IReadOnlyList<EnforcedMember> enforcedMembers = [];
 
     /// <summary>

@@ -15,6 +15,10 @@ public static class DapperDescriptor
     {
         Framework = ORMEnum.Dapper,
 
+        // Pinned by decision 013; the canonical table is in docs/architecture.md and a
+        // test binds this value to the package the verification level loads.
+        Version = "2.1.79",
+
         // Dapper imposes nothing on the generated class. An empty list is a statement,
         // not an omission.
         EnforcedMembers = [],

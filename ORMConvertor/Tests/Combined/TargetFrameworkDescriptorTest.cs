@@ -1,4 +1,5 @@
-﻿using AbstractWrappers.Descriptors;
+﻿using System.Reflection;
+using AbstractWrappers.Descriptors;
 using DapperWrappers;
 using EFCoreWrappers;
 using Model;
@@ -28,6 +29,32 @@ public class TargetFrameworkDescriptorTest
 
         Assert.Equal(Enum.GetValues<ORMEnum>().Length, declared.Count);
         Assert.Equal(Enum.GetValues<ORMEnum>().OrderBy(f => f), declared.OrderBy(f => f));
+    }
+
+    /// <summary>
+    /// The declared version must be the release the acceptance level of verification
+    /// actually loads (decision 016) - the same pinned set as the table in
+    /// architecture.md (decision 013). The informational version is compared because
+    /// Dapper keeps its assembly version at 2.0.0.0 across releases; the "+commit"
+    /// suffix is stripped before comparing.
+    /// </summary>
+    [Fact]
+    public void DeclaredVersionsMatchTheVerificationPackages()
+    {
+        // global:: because the sibling test namespaces Tests.Dapper and Tests.NHibernate
+        // shadow the package namespaces from inside Tests.Combined.
+        Assert.Equal(PackageVersion(typeof(global::Dapper.SqlMapper).Assembly), DapperDescriptor.Instance.Version);
+        Assert.Equal(PackageVersion(typeof(global::NHibernate.ISession).Assembly), NHibernateDescriptor.Instance.Version);
+        Assert.Equal(PackageVersion(typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly), EFCoreDescriptor.Instance.Version);
+    }
+
+    private static string PackageVersion(Assembly assembly)
+    {
+        var informational = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!
+            .InformationalVersion;
+        var metadata = informational.IndexOf('+');
+        return metadata < 0 ? informational : informational[..metadata];
     }
 
     [Fact]
@@ -64,6 +91,7 @@ public class TargetFrameworkDescriptorTest
         Assert.Throws<ArgumentException>(() => _ = new TargetFrameworkDescriptor
         {
             Framework = ORMEnum.Dapper,
+            Version = DapperDescriptor.Instance.Version,
             Support = incomplete,
             QuerySupport = DapperDescriptor.Instance.QuerySupport,
         });
@@ -82,6 +110,7 @@ public class TargetFrameworkDescriptorTest
         Assert.Throws<ArgumentException>(() => _ = new TargetFrameworkDescriptor
         {
             Framework = ORMEnum.Dapper,
+            Version = DapperDescriptor.Instance.Version,
             Support = DapperDescriptor.Instance.Support,
             QuerySupport = incomplete,
         });
@@ -93,6 +122,7 @@ public class TargetFrameworkDescriptorTest
         Assert.Throws<InvalidOperationException>(() => _ = new TargetFrameworkDescriptor
         {
             Framework = ORMEnum.Dapper,
+            Version = DapperDescriptor.Instance.Version,
             Support = DapperDescriptor.Instance.Support,
             QuerySupport = DapperDescriptor.Instance.QuerySupport,
             EnforcedMembers =

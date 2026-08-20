@@ -11,6 +11,29 @@ namespace OrmConvertor;
 /// </summary>
 public sealed class ConversionResult
 {
+    /// <summary>
+    /// Identifier of this run (S6). Fresh on every call, so two runs over the same input
+    /// stay distinguishable wherever the result is stored or logged.
+    /// </summary>
+    public required Guid RunId { get; init; }
+
+    public required ORMEnum SourceFramework { get; init; }
+
+    /// <summary>
+    /// Framework release the source was read against, taken from its descriptor
+    /// (decision 013) - the record cannot claim a version the parser did not assume.
+    /// </summary>
+    public required string SourceFrameworkVersion { get; init; }
+
+    public required ORMEnum TargetFramework { get; init; }
+
+    /// <summary>
+    /// Framework release the artifacts are valid against, taken from the target's
+    /// descriptor (decision 013) - the record cannot claim a version the generator
+    /// did not use.
+    /// </summary>
+    public required string TargetFrameworkVersion { get; init; }
+
     public required List<ConversionSource> Sources { get; init; }
 
     public required List<ConversionRecord> Records { get; init; }

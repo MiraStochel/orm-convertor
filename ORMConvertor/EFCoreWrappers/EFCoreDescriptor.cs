@@ -15,6 +15,11 @@ public static class EFCoreDescriptor
     {
         Framework = ORMEnum.EFCore,
 
+        // Pinned by decision 013; the canonical table is in docs/architecture.md and a
+        // test binds this value to the package the verification level loads. The release
+        // decides which syntax the artifact means - [PrimaryKey] exists since EF Core 7.
+        Version = "10.0.10",
+
         EnforcedMembers =
         [
             new EnforcedMember

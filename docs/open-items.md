@@ -35,7 +35,7 @@ Zavést `Directory.Packages.props`, případně `global.json`, aby se sjednocen�
 Dapper, EF Core, linq2db a RepoDB běží na `Microsoft.Data.SqlClient`, NHibernate a EF6 na `System.Data.SqlClient`. Pro srovnání výkonu je to metodologický confound. Buď přepnout NHibernate na `MicrosoftDataSqlClientDriver`, ověřit provider u PetaPoco a EF6 a přeměřit, nebo confound explicitně popsat v textu práce. Do verze 1.0 to nepatří: rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo benchmarking ze záruk vcelku, takže srovnávat jeho konfiguraci nemá proti čemu.
 
 ### Osud `wwwroot`
-*Verze 1.0 — 14. Souvisí s S5.*
+*Verze 1.0 — 14. Potom. Souvisí s S5.*
 
 Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes je to commitnutý build, takže po každé změně frontendu hrozí, že nasazený bundle neodpovídá zdrojákům.
 
@@ -52,14 +52,10 @@ Patří sem trojí: service container do workflow v `.github` spolu s proměnnou
 
 Do verze 1.0 nic z toho nepatří (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)): nasazení řešíme jedinou ručně spravovanou instancí, ne kontejnerem. Důsledek je ale potřeba nést nahlas i v textu práce — bez databáze v CI se databázově závislé testy dál přeskakují, takže **kritéria F4 a F6 platí jen tam, kde běh s lokální databází skutečně proběhl**.
 
-### Cílová verze a databázový dialekt v deskriptoru
-*Verze 1.0 — 11., v rozsahu cílové verze; dialekt mimo verzi. Na řadě. Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md); dialekt sem odkázalo rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md). Požadavky S2, S6, F7–F10.*
+### Cílový databázový dialekt v deskriptoru
+*Sem odkázalo rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md); deskriptor s cílovou verzí, na kterou se dialekt tvarem podobá, je hotový (rozhodnutí [013](./decisions/013-target-framework-versions.md)). Mimo verzi 1.0 (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)). Požadavky F7–F10, S2.*
 
-Deskriptor cílového frameworku nese, co cíl umí vyjádřit, ale ne verzi, proti které to platí. Doplnit ji a nechat buildery volit syntaxi tam, kde se verze rozcházejí — u EF Core `[PrimaryKey]` proti `HasKey`, u NHibernate dostupnost `DateOnly`. Bez explicitní volby platí verze zafixovaná v `architecture.md`. Tímtéž údajem se pak plní záznam běhu podle S6, aby nemohl tvrdit něco jiného než generátor.
-
-Do verze 1.0 patří z téhle položky jen cílová verze a záznam běhu podle S6; dialekt zůstává mimo, protože verze umí jediný dialekt a říká to (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)).
-
-Sem patří i **cílový databázový dialekt**, který rozhodnutí 019 odmítlo řešit v typovém modelu: je to fakt o cíli převodu téhož tvaru jako verze frameworku. Bez něj nelze emitovat `sql-type` odvozený z typové rodiny ani vybrat typ podle systému, protože konkrétní SQL typ z typu frameworku odvozuje právě dialekt — NHibernate builder dnes propisuje jen doslovný `SourceSqlType`, který nese zdroj. Dokud se dialekt nedeklaruje, je jediným dialektem SQL Server.
+Cílový databázový dialekt je fakt o cíli převodu téhož tvaru jako verze frameworku v deskriptoru, a rozhodnutí 019 ho odmítlo řešit v typovém modelu. Bez jeho deklarace nelze emitovat `sql-type` odvozený z typové rodiny ani vybrat typ podle systému, protože konkrétní SQL typ z typu frameworku odvozuje právě dialekt — NHibernate builder dnes propisuje jen doslovný `SourceSqlType`, který nese zdroj. Dokud se dialekt nedeklaruje, je jediným dialektem SQL Server; verze 1.0 to říká a nic víc netvrdí.
 
 Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dialektu ji nevyřeší: `DapperSqlQueryParser` čte T-SQL gramatikou `TSql160Parser` (rozhodnutí [026](./decisions/026-home-of-shared-query-reading.md)), takže SQL napsané pro jiný databázový systém — u MyBatisu (F8) běžné — touhle cestou neprojde. Řešením je vlastní parser SQL v javovém wrapperu, ne pole v deskriptoru.
 
@@ -89,7 +85,7 @@ V repozitáři leží `ecosystem.config.js`, konfigurace pro proces manager PM2,
 Uživatelské rozhraní zůstalo u tvaru API, který už neplatí, a chybové stavy nechává na serveru. `/convert` vrací od rozhodnutí 010 vedle artefaktů i pole `records` se strukturovanou diagnostikou a frontend je ignoruje, takže se uživatel o ztrátách, konvencích ani konfliktech nedozví — a nově je těch záznamů podstatně víc, protože je vydává i dotazová větev. Chyby ze serveru zobrazuje `main-page.component.ts` přes `err.message` místo `err.error`, takže místo hlášky ze serveru ukáže obecný text HTTP chyby; vzor správného čtení je v `advisor-page.component.ts`. A validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku, neexistuje vůbec — u zdroje v Dapperu přitom server nově řádek i sloupec zná, protože je hlásí parser T-SQL. Prázdné jednotky odsud zmizely: server je od rozhodnutí [025](./decisions/025-query-language-as-content-type.md) přeskakuje sám, protože nevyplněné pole není tvrzení. Zbývá také přeložit frontend do `wwwroot` — výčet typů obsahu se změnil a commitnutý bundle ho zatím nezná; jak se ten překlad bude dělat, řeší položka o osudu `wwwroot` výše. Přestavba už odložená není: rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) ji staví do verze 1.0 spolu s dávkovým vstupem podle F14, tedy nahráním více celých souborů a zobrazením vstupu, výstupu i záznamů po jednotlivých souborech.
 
 ### Připojení ke katalogu se přes API nedá nastavit
-*Verze 1.0 — 12. Potom. Souvisí s rozhodnutím [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), jehož fáze doplnění na tom stojí. Požadavky F4, F6, S7.*
+*Verze 1.0 — 12. Na řadě. Souvisí s rozhodnutím [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), jehož fáze doplnění na tom stojí. Požadavky F4, F6, S7.*
 
 Endpoint `/convert` čte připojovací řetězec pod klíčem `ConnectionStrings:CatalogDatabase`, jenže `appsettings.json` deklaruje jen `AdvisorDatabase`. Kdo nástroj spustí a nevytvoří proměnnou prostředí, dostane překlad postavený výhradně na konvencích — a jediná stopa je záznam o nedostupném katalogu mezi ostatními. Prakticky to znamená, že kritéria F4 a F6 přes uživatelské rozhraní nikdy neplatí, protože se k nim uživatel nemá jak dostat. Prázdný klíč `CatalogDatabase` už v `appsettings.json` je, takže je aspoň vidět, že existuje. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) otázku uzavřelo: připojení zůstává v serverové konfiguraci a rozhraní ukáže jen jeho stav. Pole pro řetězec ve formuláři by z veřejně dostupné instance udělalo čtečku cizích schémat — kdokoli by nástroj namířil na libovolnou dosažitelnou databázi a nechal si vypsat její metadata. Zbývá tedy trojí: klíč na nasazené instanci vyplnit, stav připojení vydat v odpovědi `/convert` vedle záznamů, a zobrazit ho.
 
@@ -128,7 +124,7 @@ Velké bloky ze zadání, každý si zaslouží vlastní rozhodnutí, než se do
 
 | Blok | Co odblokuje |
 |---|---|
-| **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech a kontrola úplnosti IR jsou hotové (rozhodnutí 010), syntaktické ověření generovaných souborů také (rozhodnutí 016, `architecture.md` §6.2); zbývá záznam běhu podle S6, který stojí na cílové verzi v deskriptoru |
+| **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech a kontrola úplnosti IR jsou hotové (rozhodnutí 010), syntaktické ověření generovaných souborů také (rozhodnutí 016, `architecture.md` §6.2) a záznam běhu podle S6 — identifikátor a verze frameworků z deskriptorů — vydává `/convert`; verzi nástroje do záznamu doplní položka o značce vydání |
 | **F7–F10** javový ekosystém a cross-ecosystem překlad | jádro rozšíření; typový model má zneutralizovaný na jazykové (rozhodnutí 014) i databázové straně (rozhodnutí 019) a parametry generátoru se nesou kanonicky s výběrem názvu ve výstupu (rozhodnutí 020 a 021, obojí implementované), takže slovníkové předpoklady jsou hotové |
 | **F12–F13** testovací infrastruktura pro Javu, diferenční ověření | důkaz funkční ekvivalence |
 | **F14–F15** dávkové vstupy a výběr cíle v UI | použitelnost nástroje mimo ruční zadávání; F14 je zároveň předpokladem třetí otázky u klíčové třídy |
