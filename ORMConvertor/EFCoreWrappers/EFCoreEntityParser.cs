@@ -7,6 +7,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
+using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 
 namespace EFCoreWrappers;
@@ -165,7 +166,7 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
     {
         var classKeyNames = GetClassPrimaryKeyNames(classDeclaration);
         var keyPropertyNames = new List<string>();
-        var scalarPropertyNames = new List<string>();
+        var conventionKeyCandidates = new List<string>();
 
         // Collected per property because the strategy is decided once the whole key is known:
         // the type of the key property carries EF Core's convention, and the annotation, where
@@ -255,19 +256,23 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
                 }
             }
 
-            bool isNullable = !requiredAttr && nullableSyntax;
+            // The two nullability channels travel apart: the question mark is the language
+            // claim and stays on the type, while the column's nullability is what EF Core
+            // reads from the type unless [Required] overrides it. Folding them into one
+            // value used to lose the question mark of a [Required] property.
+            bool databaseNullable = !requiredAttr && nullableSyntax;
 
-            dbProps["Nullable"] = isNullable ? "true" :"false";
+            dbProps["Nullable"] = databaseNullable ? "true" : "false";
 
             entityBuilder.AddProperty(
-                type, 
+                type,
                 name,
                 accessModifier: accessModifiers,
                 OtherModifiers: otherModifiers,
                 hasGetter: hasGetter,
                 hasSetter: hasSetter,
                 defaultValue: defaultValue,
-                isNullable: isNullable
+                isNullable: nullableSyntax
             );
 
             if (dbProps.Count > 0)
@@ -308,8 +313,25 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             }
             else
             {
-                // Only a scalar property can become the key EF Core derives by convention.
-                scalarPropertyNames.Add(name);
+                if (!IsScalarTypeName(type))
+                {
+                    // A reference navigation needs no [ForeignKey] in EF Core - the
+                    // relationship follows by convention from the type being an entity of
+                    // the model. The vocabulary cannot tell such a type from a scalar it
+                    // does not know (uint, a key class) until every source is parsed, so
+                    // the claim waits and materializes against the entities of the
+                    // conversion. The shape is what the annotation would have stated: N:1
+                    // with the key on this side; the callback finds the foreign key
+                    // property by EF Core's naming convention once the target's key stands.
+                    entityBuilder.AddConventionNavigation(
+                        Cardinality.ManyToOne, name, type, RelationRole.Owning,
+                        (ownerMap, targetMap) => ConventionForeignKeyProperties(ownerMap, targetMap, name));
+                }
+
+                // Candidates for the key EF Core derives by convention. Only a scalar can
+                // become one, but an unrecognized name may still be a scalar outside the
+                // vocabulary (uint), so unknown names stay on the list.
+                conventionKeyCandidates.Add(name);
             }
         }
 
@@ -327,7 +349,7 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             entityBuilder.AddPrimaryKey(
                 keyPropertyNames.Select((n, i) => (n, i + 1, StrategyFor(n, isComposite))).ToList());
         }
-        else if (FindConventionKey(classDeclaration.Identifier.Text, scalarPropertyNames) is { } conventionKey)
+        else if (FindConventionKey(classDeclaration.Identifier.Text, conventionKeyCandidates) is { } conventionKey)
         {
             entityBuilder.AddPrimaryKey(StrategyFor(conventionKey, composite: false), conventionKey);
         }
@@ -402,6 +424,50 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
     /// </summary>
     private static bool IsScalarTypeName(string typeText)
         => CSharpTypeConvertor.FromString(typeText).Category == LangTypeCategory.Scalar;
+
+    /// <summary>
+    /// EF Core's discovery of the foreign key property behind a bare reference navigation,
+    /// run once the target and its key are known: a property named {Navigation}{KeyName},
+    /// {Navigation}Id, {TargetType}{KeyName} or {TargetType}Id - in that order, compared
+    /// case-insensitively like the key convention - whose scalar type matches the key
+    /// part's. The convention pairs single-part keys only; a composite foreign key exists
+    /// in EF Core solely through explicit configuration. Null means EF Core would fall
+    /// back to a shadow property, a column no class member carries: the model cannot state
+    /// that, so the relation goes without columns and the target reports the omission
+    /// where it emits (decision 012).
+    /// </summary>
+    private static IReadOnlyList<string>? ConventionForeignKeyProperties(
+        EntityMap owner, EntityMap target, string navigationName)
+    {
+        if (target.PrimaryKey is not { Parts: [var keyPart] }
+            || keyPart.PropertyMap.Property.Type is not { Category: LangTypeCategory.Scalar } keyType)
+        {
+            return null;
+        }
+
+        string[] candidates =
+        [
+            navigationName + keyPart.PropertyMap.Property.Name,
+            navigationName + "Id",
+            target.Entity.Name + keyPart.PropertyMap.Property.Name,
+            target.Entity.Name + "Id",
+        ];
+
+        foreach (var candidate in candidates)
+        {
+            var match = owner.Entity.Properties.FirstOrDefault(p =>
+                p.Name.Equals(candidate, StringComparison.OrdinalIgnoreCase)
+                && p.Type is { Category: LangTypeCategory.Scalar } propertyType
+                && propertyType.ScalarType == keyType.ScalarType);
+
+            if (match is not null)
+            {
+                return [match.Name];
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Reads the option out of [DatabaseGenerated(DatabaseGeneratedOption.X)] and returns the X.

@@ -283,6 +283,80 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
+    /// A navigation the source framework states by convention rather than annotation - what a
+    /// bare "public Customer Customer" means in EF Core. Whether the written type names an
+    /// entity or a scalar the language vocabulary does not capture (uint, a key class) is
+    /// decidable no sooner than after the last source of the conversion is parsed, so the
+    /// claim waits here and <see cref="ResolveConventionNavigations"/> materializes it. The
+    /// optional callback derives the foreign key columns by the source framework's own
+    /// convention once the target entity and its key are known - the framework knowledge
+    /// stays in the wrapper, this mechanism is neutral.
+    /// </summary>
+    public void AddConventionNavigation(
+        Cardinality cardinality,
+        string propertyName,
+        string targetTypeName,
+        RelationRole? role = null,
+        Func<EntityMap, EntityMap, IReadOnlyList<string>?>? foreignKeyColumns = null)
+    {
+        conventionNavigations.Add(new ConventionNavigation(
+            EntityMap, cardinality, propertyName, targetTypeName, role, foreignKeyColumns));
+    }
+
+    /// <summary>
+    /// Materializes the pending convention navigations against the entities of the
+    /// conversion. The catalog completion phase calls it before reading, so that the
+    /// source's conventional claims outrank the catalog (decision 015), and
+    /// <see cref="Build"/> calls it for conversions that never meet a catalog. A name that
+    /// resolves to no entity was not a navigation and the candidate is dropped without a
+    /// record, exactly like any other unknown type name; a property that meanwhile carries
+    /// a relation (an annotation, an earlier call) or sits in the primary key is skipped.
+    /// </summary>
+    public void ResolveConventionNavigations()
+    {
+        var pending = conventionNavigations.ToList();
+        conventionNavigations.Clear();
+
+        foreach (var candidate in pending)
+        {
+            var target = FindEntityMap(candidate.TargetTypeName);
+
+            if (target is null
+                || candidate.Entity.Relations.Any(r => r.SourceNavigationProperty == candidate.PropertyName)
+                || candidate.Entity.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == candidate.PropertyName) == true)
+            {
+                continue;
+            }
+
+            EntityMap = candidate.Entity;
+            AddForeignKey(
+                candidate.Cardinality,
+                candidate.PropertyName,
+                target.Entity.Name,
+                candidate.Role,
+                candidate.ForeignKeyColumns?.Invoke(candidate.Entity, target));
+        }
+    }
+
+    /// <summary>
+    /// One pending conventional navigation claim; see <see cref="AddConventionNavigation"/>.
+    /// </summary>
+    private sealed record ConventionNavigation(
+        EntityMap Entity,
+        Cardinality Cardinality,
+        string PropertyName,
+        string TargetTypeName,
+        RelationRole? Role,
+        Func<EntityMap, EntityMap, IReadOnlyList<string>?>? ForeignKeyColumns);
+
+    /// <summary>
+    /// Convention navigations waiting for the entities of the conversion to be known.
+    /// Builder state like the pending columns below; an entry whose name resolves to no
+    /// entity is dropped at materialization, the way any unknown type name is.
+    /// </summary>
+    private readonly List<ConventionNavigation> conventionNavigations = [];
+
+    /// <summary>
     /// Language type of a navigation property once a relation names its target. The entity is
     /// referenced by its simple name (decision 001), so an assembly-qualified or namespaced
     /// name from an NHibernate class attribute is trimmed to the class itself.
@@ -1061,6 +1135,11 @@ public abstract class AbstractEntityBuilder
     /// <returns>List of ConversionSource containing the generated content and type (C#, XML, ...)</returns>
     public List<ConversionSource> Build()
     {
+        // Any pending convention navigations land first: a conversion that never met the
+        // catalog completion phase resolves them here; after one that did, the list is
+        // already empty.
+        ResolveConventionNavigations();
+
         // The junction entities have to stand before names resolve, so that their relations
         // and the retargeted collections pair like any others; both phases sit between
         // parsing and generation rather than inside either.

@@ -77,13 +77,12 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         foreach (var part in entityMap.PrimaryKey.Parts)
         {
             var propertyMap = part.PropertyMap;
-            bool nullable = propertyMap.IsNullable ?? false;
 
             // For a simple key [Key] goes on the property; for a composite key the class-level
             // [PrimaryKey(...)] attribute (see BuildTableSchema) defines it and [Key] is not emitted.
             artifact.Code.Append(BuildPropertyAttributes(propertyMap, isPrimaryKey: !composite));
             AppendKeyStrategyAttribute(artifact.Code, entityMap, part, composite);
-            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, isPrimaryKey: true, nullable: nullable)}");
+            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, isPrimaryKey: true)}");
             artifact.Code.AppendLine();
         }
     }
@@ -102,10 +101,10 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 continue; // navigation property - handled in BuildForeignKey
             }
 
-            bool nullable = propertyMap.IsNullable ?? false;
+            ReportNullableColumnLoss(entityMap, propertyMap);
 
             artifact.Code.Append(BuildPropertyAttributes(propertyMap));
-            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, nullable: nullable)}");
+            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
             artifact.Code.AppendLine();
         }
     }
@@ -123,7 +122,11 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 continue; // a relation without a navigation property is not emitted into C# code
             }
 
+            // The generated key property's nullability follows the navigation's stated
+            // nullability (decision 012): an unstated one counts as optional.
             bool nullable = propertyMap.IsNullable ?? true;
+
+            ReportNullableColumnLoss(entityMap, propertyMap);
 
             // The key properties come first: [ForeignKey] on the navigation names them, so a reader
             // meets them before the annotation that refers to them (decision 012).
@@ -153,7 +156,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             }
 
             artifact.Code.Append(BuildPropertyAttributes(propertyMap));
-            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, nullable: nullable)}");
+            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
             artifact.Code.AppendLine();
         }
     }
@@ -231,6 +234,33 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     {
     }
 
+    /// <summary>
+    /// The disagreement [Required] cannot carry: a nullable column behind a non-nullable
+    /// property. EF Core derives NOT NULL from the type and the annotation form has
+    /// nothing to override it with - IsRequired(false) is fluent-only - so the claim is
+    /// dropped and the drop is recorded (decision 004).
+    /// </summary>
+    private void ReportNullableColumnLoss(EntityMap entityMap, PropertyMap propertyMap)
+    {
+        if (propertyMap.IsNullable != true || propertyMap.Property.Type is not { IsNullable: false })
+        {
+            return;
+        }
+
+        Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = Descriptor.Framework,
+            Artifact = ConversionContentType.CSharpEntity,
+            Entity = entityMap.Entity.Name,
+            Property = propertyMap.Property.Name,
+            Category = MappingFactCategory.Nullability,
+            Reason = "The source states a nullable column behind a non-nullable property; EF Core reads "
+                + "NOT NULL from the type and the annotation form has nothing to override it with, so the "
+                + "claim is dropped.",
+        });
+    }
+
     protected override IEnumerable<ConversionSource> FinalizeBuild(EntityMap entityMap, EntityArtifact artifact)
     {
         artifact.Code.AppendLine("}");
@@ -246,11 +276,17 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// Builds the property signature for C# code.
     /// Adds modifiers, type, name, getter/setter, and default value.
     /// </summary>
-    private static string BuildPropertySignature(Property prop, bool isPrimaryKey = false, bool nullable = false)
+    private static string BuildPropertySignature(Property prop, bool isPrimaryKey = false)
     {
         var otherMods = new List<string>(prop.OtherModifiers ?? []);
 
-        if (!nullable && !otherMods.Contains("required") && string.IsNullOrEmpty(prop.DefaultValue))
+        var langType = prop.Type
+            ?? throw new NotSupportedException($"Property '{prop.Name}' has no language type.");
+
+        // The required modifier is a language device - a non-nullable property without an
+        // initializer needs it to compile clean - so the language type decides it. What
+        // the database says about the column travels through [Required], not through here.
+        if (!langType.IsNullable && !otherMods.Contains("required") && string.IsNullOrEmpty(prop.DefaultValue))
         {
             otherMods.Add("required");
         }
@@ -258,8 +294,6 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         var access = AccessModifierConvertor.ToModifierString(prop.AccessModifier);
         var modifiers = $"{access} {string.Join(' ', otherMods)}".Trim();
 
-        var langType = prop.Type
-            ?? throw new NotSupportedException($"Property '{prop.Name}' has no language type.");
         var typeName = CSharpTypeConvertor.ToString(langType);
         var type = (!isPrimaryKey && langType.IsNullable) ? $"{typeName}?" : typeName;
 
@@ -283,6 +317,16 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         if (isPrimaryKey)
         {
             attributes.AppendLine($"    [Key]");
+        }
+
+        // A stated NOT NULL over a nullable property: EF Core reads the column's
+        // nullability from the language type, so [Required] is the only carrier of the
+        // claim. Where the type already agrees, the annotation would restate the target's
+        // own reading (rule E4: a non-nullable property implies a non-nullable column);
+        // a key column is never nullable, so the key needs no claim either.
+        if (!isPrimaryKey && propMap.IsNullable == false && propMap.Property.Type is { IsNullable: true })
+        {
+            attributes.AppendLine("    [Required]");
         }
 
         if (propMap.ColumnName != null || propMap.Type != null)

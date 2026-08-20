@@ -51,14 +51,9 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 ## Otevřená práce
 
 ### Sloupec verze jako mapovací fakt
-*Verze 1.0 — 4. Vytčeno z rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md), které `RowVersion` odstranilo ze slovníku typů. Požadavky F2, F7–F10, F11.*
+*Verze 1.0 — 4. Potom. Vytčeno z rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md), které `RowVersion` odstranilo ze slovníku typů. Požadavky F2, F7–F10, F11.*
 
 `RowVersion` se dosud nesl jako databázový typ, ale typ to není — je to token pro optimistickou souběžnost, který každý framework vyjadřuje vlastním mechanismem: JPA anotací `@Version`, EF Core voláním `IsRowVersion()`, NHibernate elementem `<version>`. Rozhodnutí 019 ho ze slovníku odstranilo jako typ jediného systému a fakt tím zůstal bez domova: sloupec `rowversion` z katalogu vyjde jako `VarBinary` s doslovným názvem na únikové cestě a význam „tenhle sloupec nese verzi řádku" se ztratí. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) volbu uzavřelo ve prospěch vlastního mapovacího faktu: mezireprezentace dostane příznak sloupce verze, deskriptor jedenáctou kategorii v `MappingFactCategory`, EF Core builder `[Timestamp]` a NHibernate builder `<version>`. U Dapperu zůstává nevyjádřitelný, a tam je záznam tvrzením o Dapperu, ne o nás. Do té doby se fakt ztrácí bez záznamu, což je přesně to, čemu má bránit rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md).
-
-### EF Core parser nečte navigaci bez `[ForeignKey]`
-*Verze 1.0 — 1. Na řadě. Souvisí s rozhodnutím [012](./decisions/012-foreign-key-rendering.md) a [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Požadavky F3, F11.*
-
-V `EFCoreEntityParser` skončí vlastnost, která není skalár a nemá `[ForeignKey]`, ve větvi `else` mezi kandidáty na konvenční klíč. Obyčejné `public Customer Customer { get; set; }` — v EF Core naprosto běžný zápis, protože vztah tam plyne z konvence — tedy nezaloží žádný vztah a do mezireprezentace vejde jako by to byl skalár. Cíl to pak vypíše jako obyčejnou vlastnost: NHibernate takové mapování odmítne, protože `<property>` míří na typ, který není namapovaný jako hodnota. Zachránit to umí jedině fáze doplnění z katalogu, tedy jen s připojenou databází, a bez ní o tom nevznikne ani záznam. Chybí tedy dvojí: uznat neskalární vlastnost za navigaci i bez anotace, a tam, kde se sloupce nedají odvodit, to ohlásit místo mlčení.
 
 ### Dva entitní parsery jsou totéž
 *Verze 1.0 — 9. Vytčeno rozhodnutím [026](./decisions/026-home-of-shared-query-reading.md), které touž duplicitu odstranilo na dotazové straně. Požadavek S1.*
@@ -100,13 +95,8 @@ Fáze rozresolvování (`ResolveEntityNames` v `AbstractEntityBuilder`) běží 
 
 Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec, takže poddotaz projde parsováním, ale jeho výsledek se nikam neskládá. **Tiché to už není** — `Normalize()` v šabloně dotazového builderu (rozhodnutí [023](./decisions/023-query-builder-template-method.md)) vnořený poddotaz ohlásí záznamem o ztrátě —, ale vykreslit ho to neumí. Vedle toho `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu), takže složený dotaz se poskládá špatně; množinovou operaci navíc dnes vykresluje jedině Dapper builder, kdežto NHibernate ji podle deskriptoru vyjádřit neumí a EF Core builder pro ni nemá větev. Sem patří i stránkování, které mezireprezentace vůbec nenese — parsery ho hlásí jako ztrátu. Všechno tohle jsou kategorie dotazové matice podle T2, které tak nemají co měřit.
 
-### EF Core — nullabilita se vyjadřuje jen jazykově
-*Verze 1.0 — 3. Potom. Souvisí s rozhodnutím [009](./decisions/009-target-framework-descriptor.md): deskriptor kategorii uvádí jako vyjádřitelnou, protože popisuje framework, ne dnešní stav builderu. Požadavky F2, F11.*
-
-Anotaci `[Required]` builder negeneruje. Databázová nullabilita z `PropertyMap.IsNullable` se propisuje jen do modifikátoru `required` a otazník za typem vychází z jazykové nullability vlastnosti. Parser přitom `[Required]` číst umí, takže vstup s ním se přeloží a zpět už tuto podobu nezíská.
-
 ### NHibernate builder — kolekce jen jako `<bag>`
-*Verze 1.0 — 2. Potom. Navazuje na rozhodnutí [014](./decisions/014-language-type-model.md), které do modelu přineslo `CollectionKind`. Požadavky F3, F11.*
+*Verze 1.0 — 2. Na řadě. Navazuje na rozhodnutí [014](./decisions/014-language-type-model.md), které do modelu přineslo `CollectionKind`. Požadavky F3, F11.*
 
 Kolekční vlastnost se generuje natvrdo jako `<bag inverse="true" cascade="all-delete-orphan">` a ostatní kolekční tvary (`set`, `list`, `map`) ani další kolekční vlastnosti builder neřeší (dva TODO v kódu). Atributy `inverse` a `cascade` jsou přitom fakty, které nikdo netvrdil — kaskádní mazání sirotků obzvlášť mění chování — a nevzniká o nich záznam. K témuž místu patří i to, že vztah N:M, který přežil fázi syntézy, vyjde jako `<many-to-many>` uvnitř `<bag>` bez atributu `table`: to není chudší mapování, nýbrž neplatné. Volba tvaru kolekce je v NHibernate sémantická — `set` vylučuje duplicity, `list` nese pořadí — takže dnešní stav mění chování, ne jen zápis. Model už druh kolekce nese (`CollectionKind` na `LangType`) a plní ho jazyková strana (`HashSet<T>` → `Set`); XML parser tvar elementu (`<set>` vs. `<bag>`) do modelu zatím nepropisuje a builder druh nečte — obojí patří k této položce.
 
@@ -136,7 +126,7 @@ Endpoint `/convert` čte připojovací řetězec pod klíčem `ConnectionStrings
 `EnforcedMembers` a `EnforcedMembersFor` volá jedině `EnforcedMembersTest`; produkční kód je nečte. Každý builder si vynucené členy vypisuje sám a nezávisle — `virtual` v `BuildPropertySignature`, `[Serializable]` v `BuildTableSchema`, `[Keyless]` u EF Core. Rozhodnutí 009 to tak popsalo záměrně: deskriptor deklaruje, builder implementuje, test je váže. Trojice ale drží jen tak dlouho, dokud test skutečně pokrývá každý člen za každé podmínky; jinak se deklarace a emise rozejdou a nikdo se to nedozví. Zbývá rozhodnout, jestli má vazbu držet test, nebo jestli si má builder vynucené členy z deskriptoru brát — s vědomím, že párování podle názvu vrací zpět riziko překlepu, kterým 009 tuhle variantu zamítlo.
 
 ### NHibernate XML parser čte jen plochou třídu
-*Verze 1.0 — 5., v rozsahu druhého `<column>` a záznamů. Souvisí s položkou o sloupci verze výše. Požadavky F2, F11.*
+*Verze 1.0 — 5., v rozsahu druhého `<column>` a záznamů. Potom. Souvisí s položkou o sloupci verze výše. Požadavky F2, F11.*
 
 `NHibernateXMLMappingParser` bere z mapování jen prvky `class`. Dědičnost (`<subclass>`, `<joined-subclass>`, `<union-subclass>`), komponenty (`<component>`), spojené tabulky (`<join>`), verzování (`<version>`, `<timestamp>`), přirozený klíč (`<natural-id>`) i zvláštní kolekce (`<idbag>`, `<array>`) projdou beze stopy — bez záznamu, takže výstup je tiše chudší než vstup. Totéž platí pro druhý a další `<column>` u jedné vlastnosti. Než se to začne řešit, je potřeba vědět, co z toho má mezireprezentace nést; do té doby je nejmenší náprava záznam o ztrátě u každého nepřečteného prvku, aby se nedalo přehlédnout, že se něco zahodilo.
 

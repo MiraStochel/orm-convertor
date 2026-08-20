@@ -26,6 +26,11 @@ public static class CatalogCompletion
     /// </summary>
     public static TimeSpan? Complete(AbstractEntityBuilder builder, ICatalogReader? reader)
     {
+        // The source's conventional claims have to stand before the catalog is compared
+        // against them - a navigation the source states by convention is a first-degree
+        // fact and outranks anything read below (decision 015).
+        builder.ResolveConventionNavigations();
+
         var demand = Enum.GetValues<MappingFactCategory>()
             .Where(category => builder.Descriptor.SupportOf(category) != FactSupport.NotExpressible)
             .ToHashSet();
