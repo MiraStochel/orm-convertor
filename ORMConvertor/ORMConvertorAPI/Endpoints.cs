@@ -1,4 +1,5 @@
-﻿using OrmConvertor;
+﻿using System.IO.Compression;
+using OrmConvertor;
 using ORMConvertorAPI.Data;
 using ORMConvertorAPI.Dtos;
 using ORMConvertorAPI.Dtos.Advisor;
@@ -40,6 +41,35 @@ public static class Endpoints
             .WithName("AdvisorRun")
             .Produces<AdvisorRunResult>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/archive", ArchiveHandler)
+            .WithName("Archive")
+            .Produces(StatusCodes.Status200OK, contentType: "application/zip")
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+    }
+
+    // Packs client-named files into a ZIP for the complete-output download of S7
+    // (decision 033); translates nothing.
+    private static IResult ArchiveHandler(ArchiveRequest req)
+    {
+        try
+        {
+            using var buffer = new MemoryStream();
+            using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                foreach (var file in req.Files)
+                {
+                    var entry = archive.CreateEntry(file.Name);
+                    using var writer = new StreamWriter(entry.Open());
+                    writer.Write(file.Content);
+                }
+            }
+            return Results.File(buffer.ToArray(), "application/zip", "conversion.zip");
+        }
+        catch (Exception e)
+        {
+            return Results.BadRequest(e.Message);
+        }
     }
 
     private static IResult ConvertHandler(ConvertRequest req, IConfiguration configuration)

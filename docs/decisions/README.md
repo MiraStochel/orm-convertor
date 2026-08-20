@@ -37,6 +37,8 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [029](029-database-connection-is-the-consumer-projects-fact.md) | Připojení do databáze je fakt konzumentského projektu | 2026-08-20 | platí | F5, F11, S4 |
 | [030](030-scope-of-version-1-0.md) | Rozsah verze 1.0 | 2026-08-20 | revidováno | F1–F15, S1–S7, T1–T7 |
 | [031](031-key-class-as-declaration-of-key-parts.md) | Klíčová třída je deklarací částí klíče, ne entitou převodu | 2026-08-20 | platí | F1, F2, F5, F7–F10, F11, F14, S1, S2 |
+| [032](032-frontend-as-static-pages-without-a-build.md) | Frontend jako statické stránky bez buildu | 2026-08-20 | platí | F11, F14, S5, S7 |
+| [033](033-shape-of-the-static-frontend-screens.md) | Podoba obrazovek statického frontendu | 2026-08-20 | platí | F11, F14, S6, S7 |
 
 ## Formát
 

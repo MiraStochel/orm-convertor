@@ -1,12 +1,86 @@
 <!doctype html>
-<html lang="en" data-beasties-container>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>OrmConvert</title>
-  <base href="/orm/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>body{font-family:Arial,sans-serif;padding-left:1.5rem;padding-right:1.5rem;padding-bottom:1.5rem}</style><link rel="stylesheet" href="/orm/styles-HNOQ7ZKU.css" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="/orm/styles-HNOQ7ZKU.css"></noscript></head>
+  <meta name="color-scheme" content="light dark">
+  <title>ORMConvertor</title>
+  <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="css/app.css">
+</head>
 <body>
-  <app-root></app-root>
-<script src="/orm/polyfills-5CFQRCPP.js" type="module"></script><script src="/orm/main-JKIRXLUR.js" type="module"></script></body>
+  <header>
+    <nav>
+      <ul>
+        <li><strong><a href="index.html">ORMConvertor</a></strong></li>
+      </ul>
+      <ul>
+        <li><a href="translation.html">Translation</a></li>
+        <li><a href="advisor.html">Advisor</a></li>
+        <li><a href="examples.html">Examples</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h1>ORMConvertor</h1>
+    <p class="lede">
+      A research tool that translates entities, mappings and queries between .NET
+      ORM frameworks &mdash; Dapper, NHibernate and EF&nbsp;Core &mdash; through a
+      framework-agnostic intermediate representation, and recommends the best
+      framework for a query workload from real benchmark measurements.
+    </p>
+
+    <div class="card-grid">
+      <article>
+        <h3>Translation</h3>
+        <p>
+          Upload or paste entity classes, mappings and queries, pick a source and a
+          target framework, and read the generated artifacts together with the
+          structured diagnostic records of the conversion.
+        </p>
+        <a href="translation.html" role="button">Open the translator</a>
+      </article>
+      <article>
+        <h3>Advisor</h3>
+        <p>
+          Give the advisor your entities and a query workload with weights, and it
+          selects the best framework &mdash; or combination of frameworks &mdash;
+          by measuring the generated code, then solving an ILP model over the
+          measured costs.
+        </p>
+        <a href="advisor.html" role="button">Open the advisor</a>
+      </article>
+      <article>
+        <h3>Examples</h3>
+        <p>
+          A guided look at how a translation works: the pipeline from source
+          artifacts through the intermediate representation to the target, shown on
+          live conversions of the built-in samples.
+        </p>
+        <a href="examples.html" role="button">See the examples</a>
+      </article>
+    </div>
+
+    <section>
+      <h2>How it works</h2>
+      <p>
+        Every translation runs the same pipeline: a framework-specific
+        <em>parser</em> reads the source artifacts into the intermediate
+        representation; an optional <em>completion phase</em> fills mapping facts
+        the source never stated from the database catalog, when a connection is
+        configured on the server; and a framework-specific <em>builder</em>
+        generates the target artifacts. Whatever cannot be carried over &mdash; and
+        whatever was filled in by a convention or by the catalog &mdash; is
+        reported as a structured record next to the artifacts, never silently.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <p>ORMConvertor &mdash; a research prototype. The advisor requires the native ILP solver and runs only in the containerized deployment.</p>
+  </footer>
+</body>
 </html>

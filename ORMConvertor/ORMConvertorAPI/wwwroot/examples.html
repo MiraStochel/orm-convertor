@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ORMConvertor — Examples</title>
+  <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><strong><a href="index.html">ORMConvertor</a></strong></li>
+      </ul>
+      <ul>
+        <li><a href="translation.html">Translation</a></li>
+        <li><a href="advisor.html">Advisor</a></li>
+        <li><a href="examples.html" aria-current="page">Examples</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h1>How a translation works</h1>
+    <p class="lede">
+      The examples on this page are live: each one loads a built-in sample, sends
+      it to the same <code>/convert</code> endpoint the translator uses, and shows
+      the real output next to the real input. They cannot drift away from the tool,
+      because the tool produces them.
+    </p>
+
+    <h2>The pipeline</h2>
+    <p>
+      Every conversion has the same three phases. A framework-specific
+      <strong>parser</strong> reads the source artifacts &mdash; entity classes,
+      mapping files, queries &mdash; into a framework-agnostic intermediate
+      representation. If a database catalog connection is configured on the server,
+      a <strong>completion phase</strong> fills in mapping facts the source never
+      stated (column types, keys, foreign keys) and records where each fact came
+      from. Finally a framework-specific <strong>builder</strong> generates the
+      target artifacts, validating against what the target can express. Anything
+      dropped, filled in by convention, or supplied by the catalog becomes a
+      structured <strong>record</strong> returned next to the artifacts.
+    </p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 920 230" role="img" aria-label="Pipeline: source artifacts flow through the parser into the intermediate representation, are optionally completed from the database catalog, and the builder generates the target artifacts plus records.">
+        <g fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="8"   y="45" width="150" height="60" rx="8"/>
+          <rect x="205" y="45" width="150" height="60" rx="8"/>
+          <rect x="402" y="45" width="160" height="60" rx="8" stroke="var(--pico-primary)" stroke-width="2.5"/>
+          <rect x="609" y="45" width="150" height="60" rx="8"/>
+          <rect x="806" y="45" width="106" height="60" rx="8"/>
+          <rect x="402" y="160" width="160" height="50" rx="8" stroke-dasharray="6 4"/>
+        </g>
+        <g stroke="currentColor" stroke-width="1.5">
+          <line x1="158" y1="75" x2="197" y2="75"/>
+          <line x1="355" y1="75" x2="394" y2="75"/>
+          <line x1="562" y1="75" x2="601" y2="75"/>
+          <line x1="759" y1="75" x2="798" y2="75"/>
+          <line x1="482" y1="160" x2="482" y2="113" stroke-dasharray="6 4"/>
+        </g>
+        <g fill="currentColor">
+          <polygon points="197,75 189,71 189,79"/>
+          <polygon points="394,75 386,71 386,79"/>
+          <polygon points="601,75 593,71 593,79"/>
+          <polygon points="798,75 790,71 790,79"/>
+          <polygon points="482,113 478,121 486,121"/>
+        </g>
+        <g fill="currentColor" font-size="14" text-anchor="middle">
+          <text x="83"  y="70">Source</text>
+          <text x="83"  y="88">artifacts</text>
+          <text x="280" y="70">Parser</text>
+          <text x="280" y="88">(source framework)</text>
+          <text x="482" y="70">Intermediate</text>
+          <text x="482" y="88">representation</text>
+          <text x="684" y="70">Builder</text>
+          <text x="684" y="88">(target framework)</text>
+          <text x="859" y="70">Artifacts</text>
+          <text x="859" y="88">+ records</text>
+          <text x="482" y="182">Completion from the</text>
+          <text x="482" y="200">database catalog (optional)</text>
+        </g>
+      </svg>
+      <figcaption>
+        The translation pipeline. The completion phase runs only when the server
+        has a catalog connection configured; without one, the builder works from
+        what the source states plus the target's conventions.
+      </figcaption>
+    </figure>
+
+    <section data-example="efcore-to-nhibernate">
+      <h2>Example 1: EF Core &rarr; NHibernate</h2>
+      <p>
+        The source states a lot: an EF Core entity annotated with attributes
+        (table, column types, keys) and a LINQ query. Watch how the attributes
+        become an NHibernate XML mapping, how the entity class loses its
+        attributes but gains what NHibernate enforces (<code>virtual</code>
+        members), and how the LINQ chain becomes HQL. The records tell you every
+        place where the target could not carry a fact, or where a gap was filled
+        by a convention.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" hidden></p>
+      <div class="panes">
+        <h3>Input</h3>
+        <div class="example-inputs pane-grid"></div>
+        <h3>Output</h3>
+        <div class="example-outputs pane-grid"></div>
+      </div>
+      <h3>Records</h3>
+      <div class="example-records"></div>
+    </section>
+
+    <section data-example="dapper-to-efcore">
+      <h2>Example 2: Dapper &rarr; EF Core</h2>
+      <p>
+        The opposite direction: the source states very little. A Dapper entity is
+        a plain C# class and the query is raw SQL, so most mapping facts &mdash;
+        table names, key, column types &mdash; are nowhere in the input. The
+        generated EF Core artifacts therefore lean on conventions (or on the
+        database catalog, when the server has a connection configured), and the
+        records are where you see it happen: this is the example that shows what
+        the diagnostics are for.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" hidden></p>
+      <div class="panes">
+        <h3>Input</h3>
+        <div class="example-inputs pane-grid"></div>
+        <h3>Output</h3>
+        <div class="example-outputs pane-grid"></div>
+      </div>
+      <h3>Records</h3>
+      <div class="example-records"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>ORMConvertor &mdash; a research prototype.</p>
+  </footer>
+
+  <template id="artifact-template">
+    <article class="artifact">
+      <header class="artifact-header">
+        <span>
+          <strong class="artifact-name"></strong>
+          <small class="artifact-type"></small>
+        </span>
+      </header>
+      <pre><code></code></pre>
+    </article>
+  </template>
+
+  <script type="module" src="js/examples.js"></script>
+</body>
+</html>

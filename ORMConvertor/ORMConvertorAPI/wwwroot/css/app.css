@@ -1,0 +1,250 @@
+/*
+ * The app's own layer over Pico (decision 032d): tokens, layout, responsiveness.
+ * Pico carries the boring base (typography, form states, light/dark via color-scheme);
+ * everything recognisable about this tool lives here.
+ */
+
+:root {
+  --pico-border-radius: 0.5rem;
+  --pico-form-element-spacing-vertical: 0.55rem;
+  --pico-form-element-spacing-horizontal: 0.9rem;
+  --app-code-font: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --app-panel-border: 1px solid var(--pico-muted-border-color);
+}
+
+/* ---- shared chrome ---------------------------------------------------- */
+
+body > header nav strong a {
+  text-decoration: none;
+  color: inherit;
+}
+
+body > header nav a[aria-current="page"] {
+  text-decoration: underline;
+  text-underline-offset: 0.35em;
+}
+
+body > footer {
+  font-size: 0.85rem;
+  color: var(--pico-muted-color);
+}
+
+main h1 + p.lede {
+  color: var(--pico-muted-color);
+  max-width: 60ch;
+}
+
+/* ---- code panels ------------------------------------------------------ */
+
+pre {
+  border: var(--app-panel-border);
+  border-radius: var(--pico-border-radius);
+  max-height: 30rem;
+  overflow: auto;
+}
+
+pre > code {
+  font-family: var(--app-code-font);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+textarea.unit-content {
+  font-family: var(--app-code-font);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  min-height: 12rem;
+  resize: vertical;
+}
+
+/* ---- input units and output artifacts --------------------------------- */
+
+article.unit,
+article.artifact {
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.unit-header,
+.artifact-header {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.unit-header input,
+.unit-header select {
+  margin-bottom: 0;
+}
+
+.artifact-header {
+  grid-template-columns: 1fr auto;
+}
+
+.artifact-header .artifact-name {
+  font-family: var(--app-code-font);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.artifact-header small {
+  color: var(--pico-muted-color);
+  white-space: nowrap;
+}
+
+.artifact-header button,
+.unit-header button {
+  margin-bottom: 0;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  width: auto;
+}
+
+.unit-error {
+  color: var(--pico-del-color);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.toolbar button {
+  width: auto;
+  margin-bottom: 0;
+}
+
+/* Two columns for artifacts and example panes when the container is wide enough
+   (container queries, not window width - decision 032d). */
+
+.panes {
+  container-type: inline-size;
+}
+
+.pane-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+@container (min-width: 58rem) {
+  .pane-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ---- validation and errors -------------------------------------------- */
+
+.problem {
+  color: var(--pico-del-color);
+}
+
+#validation ul {
+  margin-bottom: 0;
+}
+
+/* ---- run header and records ------------------------------------------- */
+
+.run-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  align-items: baseline;
+  font-size: 0.9rem;
+}
+
+.run-facts code {
+  font-size: 0.8rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.badge-failure        { background: #b3261e; }
+.badge-loss           { background: #a05a00; }
+.badge-convention     { background: #1a5fb4; }
+.badge-incompleteness { background: #5f6368; }
+.badge-supplied       { background: #1b7f4d; }
+.badge-conflict       { background: #8f3f97; }
+
+.badge-catalog-notconfigured { background: #5f6368; }
+.badge-catalog-unused        { background: #5f6368; }
+.badge-catalog-reached       { background: #1b7f4d; }
+.badge-catalog-unreachable   { background: #b3261e; }
+
+.record-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.records-table {
+  font-size: 0.85rem;
+}
+
+.records-table td,
+.records-table th {
+  vertical-align: top;
+}
+
+.records-table td.reason {
+  min-width: 20rem;
+}
+
+/* ---- examples page ----------------------------------------------------- */
+
+figure.diagram {
+  margin: 1.5rem 0;
+}
+
+figure.diagram svg {
+  width: 100%;
+  height: auto;
+}
+
+figure.diagram figcaption {
+  font-size: 0.85rem;
+  color: var(--pico-muted-color);
+}
+
+/* ---- landing page cards ------------------------------------------------ */
+
+.card-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.card-grid article {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-grid article p {
+  flex-grow: 1;
+}
+
+.card-grid article a[role="button"] {
+  width: 100%;
+  text-align: center;
+}

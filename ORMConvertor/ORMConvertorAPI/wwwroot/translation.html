@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ORMConvertor — Translation</title>
+  <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><strong><a href="index.html">ORMConvertor</a></strong></li>
+      </ul>
+      <ul>
+        <li><a href="translation.html" aria-current="page">Translation</a></li>
+        <li><a href="advisor.html">Advisor</a></li>
+        <li><a href="examples.html">Examples</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Translation</h1>
+    <p class="lede">
+      Pick the frameworks, add your source files, convert, and read the artifacts
+      together with the records of everything the conversion had to decide, drop
+      or fill in.
+    </p>
+
+    <section>
+      <h2>1. Source framework</h2>
+      <select id="source-orm" aria-label="Source framework"></select>
+    </section>
+
+    <section>
+      <h2>2. Target framework</h2>
+      <select id="target-orm" aria-label="Target framework"></select>
+    </section>
+
+    <section>
+      <h2>3. Input files</h2>
+      <p id="offer-note"></p>
+      <div class="toolbar">
+        <button type="button" id="add-files">Add files…</button>
+        <button type="button" id="add-unit" class="secondary">Add empty unit</button>
+        <button type="button" id="load-samples" class="secondary">Load sample set</button>
+        <input type="file" id="file-input" multiple accept=".cs,.xml,.sql,.hql,.txt" hidden>
+      </div>
+      <div id="units"></div>
+    </section>
+
+    <section>
+      <h2>4. Convert</h2>
+      <div id="validation" hidden>
+        <p class="problem">The input is not ready to send:</p>
+        <ul id="validation-list"></ul>
+      </div>
+      <button type="button" id="convert">Convert</button>
+      <p id="convert-error" class="problem" hidden></p>
+    </section>
+
+    <section id="result" hidden>
+      <h2>5. Result</h2>
+      <div class="run-facts">
+        <span id="run-frameworks"></span>
+        <span id="catalog-state"></span>
+        <span>run <code id="run-id"></code></span>
+      </div>
+      <div class="toolbar" style="margin-top: 1rem;">
+        <button type="button" id="download" class="secondary">Download all as ZIP</button>
+      </div>
+      <div class="panes">
+        <div id="artifacts" class="pane-grid"></div>
+      </div>
+      <h3>Records</h3>
+      <div id="records"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>ORMConvertor &mdash; a research prototype.</p>
+  </footer>
+
+  <template id="unit-template">
+    <article class="unit">
+      <header class="unit-header">
+        <input class="unit-name" type="text" aria-label="File name" placeholder="file name">
+        <select class="unit-type" aria-label="Content type"></select>
+        <button type="button" class="unit-remove secondary outline">Remove</button>
+      </header>
+      <textarea class="unit-content" spellcheck="false" placeholder="Paste the source here, or add whole files above."></textarea>
+      <p class="unit-error" hidden></p>
+    </article>
+  </template>
+
+  <template id="artifact-template">
+    <article class="artifact">
+      <header class="artifact-header">
+        <span>
+          <strong class="artifact-name"></strong>
+          <small class="artifact-type"></small>
+        </span>
+        <button type="button" class="artifact-copy secondary outline">Copy</button>
+      </header>
+      <pre><code></code></pre>
+    </article>
+  </template>
+
+  <script type="module" src="js/translation.js"></script>
+</body>
+</html>

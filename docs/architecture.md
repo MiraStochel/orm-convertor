@@ -1,7 +1,7 @@
 # Architektura aplikace – současný stav
 
 **Účel:** referenční popis architektury tak, jak je dnes implementovaná, nezávisle na akademickém textu diplomky, ze které projekt vzešel. Odpovídá na otázku „jak to teď funguje"; proč jsme co zvolili, je v [`decisions/`](./decisions/README.md), co zbývá udělat, v [`open-items.md`](./open-items.md).
-**Zdroj faktů:** vlastní čtení zdrojového kódu + kapitola *Architecture and Implementation* z původní diplomky (fakta přepsaná vlastními slovy, ne citace). Naposledy ověřeno proti kódu: 2026-08-19.
+**Zdroj faktů:** vlastní čtení zdrojového kódu + kapitola *Architecture and Implementation* z původní diplomky (fakta přepsaná vlastními slovy, ne citace). Naposledy ověřeno proti kódu: 2026-08-20.
 
 ---
 
@@ -30,6 +30,8 @@ Veškerá tvrzení o chování frameworků v tomto dokumentu i v `docs/analysis/
 | MyBatis | 3.5.19 |
 | `mssql-jdbc` | 13.4.0.jre11 |
 | SQL Server | 2022 |
+| Pico CSS (vendorovaná ve `wwwroot/vendor/`) | 2.1.1 (classless) |
+| highlight.js (vendorovaná ve `wwwroot/vendor/`) | 11.12.0 (jádro + gramatiky C#, XML, SQL) |
 
 Verze tří .NET ORM nese vedle téhle tabulky i deskriptor příslušného wrapperu (`TargetFrameworkDescriptor.Version`, rozhodnutí [013](./decisions/013-target-framework-versions.md)). Je to jediné místo, ze kterého se verze vydává za běhu — záznam běhu podle S6 ji bere odsud, takže nemůže tvrdit nic jiného než generátor (viz §5.1) — a test `DeclaredVersionsMatchTheVerificationPackages` ji váže na balíčky, které načítá ověřovací úroveň (rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md)). Explicitní volba jiné verze zatím neexistuje, takže vždy platí zafixovaná hodnota, jak s tím rozhodnutí 013 počítá.
 
@@ -39,7 +41,7 @@ Javová část je zatím deklarace, ne závislost — v repozitáři žádný ja
 
 Aplikace je .NET 10 solution (povýšená z .NET 8) rozdělená na projekty tří typů:
 
-- **ASP.NET web projekt** – `ORMConvertorAPI`, poskytuje REST API a servíruje zkompilovaný Angular frontend jako statické soubory. API dokumentace je automaticky generovaná přes Swagger; UI je zapnuté jen v Development prostředí, pak je dostupné na `/orm/swagger`.
+- **ASP.NET web projekt** – `ORMConvertorAPI`, poskytuje REST API a servíruje frontend z `wwwroot` — ručně psané statické stránky bez buildu (rozhodnutí [032](./decisions/032-frontend-as-static-pages-without-a-build.md), podoba obrazovek v [033](./decisions/033-shape-of-the-static-frontend-screens.md); viz §6.3). API dokumentace je automaticky generovaná přes Swagger; UI je zapnuté jen v Development prostředí, pak je dostupné na `/orm/swagger`.
 - **Testovací projekt (xUnit v3)** – `Tests`, testy parserů a builderů pro všechny tři ORM (převod do mezireprezentace a z ní, identity testy), kombinované end-to-end testy pro dvojice EF Core ↔ NHibernate a dotazová matice přes `ConversionHandler` ve všech devíti směrech (`Combined/QueryMatrixTest.cs`). Podsložka `Database/` drží prostředí s testovací databází (viz §6.1), podsložka `Catalog/` testy čtečky katalogu a fáze doplnění (viz §5.2), podsložka `Verification/` 2. a 3. stupeň ověření generovaných artefaktů (viz §6.2).
 - **Class library projekty** – zbytek, nejsou samostatně spustitelné, používají se jen jako reference.
 
@@ -226,7 +228,7 @@ Test na `NULL` je operátor `IsNull`/`IsNotNull` s nevyužitou pravou stranou, n
 
 ### 5.1 Diagnostika převodu
 
-Převod vrací vedle artefaktů i diagnostické záznamy (rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md)): `ConversionHandler.Convert` vrací `ConversionResult` se seznamy `Sources` a `Records`, stavem připojení ke katalogu `CatalogState` a časem `CatalogReadTime` (obojí viz §5.2) a REST endpoint `/convert` všechno propisuje do `ConvertResponse` (čas jako `CatalogReadMilliseconds`). Výsledek nese i záznam běhu podle S6: `RunId` — identifikátor nový pro každý běh, takže dva běhy nad týmž vstupem zůstávají rozlišitelné — a zdrojový i cílový framework s verzemi (`SourceFrameworkVersion`, `TargetFrameworkVersion`) převzatými z deskriptorů (rozhodnutí [013](./decisions/013-target-framework-versions.md)), takže záznam nemůže tvrdit jinou verzi, než proti které parser četl a generátor psal; verzi samotného nástroje záznam zatím nenese (otevřená položka o značce vydání). Frontend záznamy zatím nezobrazuje — jeho úpravy jsou vedené zvlášť v [`open-items.md`](./open-items.md). Výjimky zůstávají vyhrazené chybám programu (nepodporovaný framework, neparsovatelný vstup); stav, se kterým návrh počítá, končí záznamem, ne pádem.
+Převod vrací vedle artefaktů i diagnostické záznamy (rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md)): `ConversionHandler.Convert` vrací `ConversionResult` se seznamy `Sources` a `Records`, stavem připojení ke katalogu `CatalogState` a časem `CatalogReadTime` (obojí viz §5.2) a REST endpoint `/convert` všechno propisuje do `ConvertResponse` (čas jako `CatalogReadMilliseconds`). Výsledek nese i záznam běhu podle S6: `RunId` — identifikátor nový pro každý běh, takže dva běhy nad týmž vstupem zůstávají rozlišitelné — a zdrojový i cílový framework s verzemi (`SourceFrameworkVersion`, `TargetFrameworkVersion`) převzatými z deskriptorů (rozhodnutí [013](./decisions/013-target-framework-versions.md)), takže záznam nemůže tvrdit jinou verzi, než proti které parser četl a generátor psal; verzi samotného nástroje záznam zatím nenese (otevřená položka o značce vydání). Frontend záznamy zobrazuje v pásu pod výstupem, seskupené po entitách a s `Failure` první (rozhodnutí [033](./decisions/033-shape-of-the-static-frontend-screens.md), viz §6.3). Výjimky zůstávají vyhrazené chybám programu (nepodporovaný framework, neparsovatelný vstup); stav, se kterým návrh počítá, končí záznamem, ne pádem.
 
 Záznam je `ConversionRecord` (`AbstractWrappers.Diagnostics`) a nese, co žádá F11: druh, cílový framework, artefakt, entitu, vlastnost, kategorii mapovacího faktu a důvod. Druh (`ConversionRecordKind`) není stupnice závažnosti, ale výčet definovaných událostí:
 
@@ -328,15 +330,13 @@ Negativní polovina je i tady povinná: nepřeložitelný výraz LINQ, HQL nad n
 
 **Scénáře se zdrojem v Dapperu** — doslovné kritérium F6 — existují se čtečkou katalogu a běží proti testovací databázi v kolekci `TestDatabaseSchema` (`DapperToNHibernateVerificationTest`, `DapperToEFCoreVerificationTest`): celá pipeline přes `ConversionHandler.Convert` s připojením, pak 2. stupeň (kompilace, XSD) a 3. stupeň (session factory; u EF Core se finalizovaný model ptá zpět na tabulku, schéma, pořadí částí klíče a cizí klíče, které mohly přijít jedině z katalogu). Zdrojové entity nesou i kolekční navigace (`Customer.Orders`, `Order.OrderLines`), takže scénář pokrývá i inverzní stranu: `<key>` sloupce obou `<bag>` — jednosloupcový i kompozitní — mohly přijít jedině z cizích klíčů podřízených tabulek a u EF Core se model ptá zpět na spárování kolekce s týmž cizím klíčem. Bez nakonfigurované databáze se přeskakují s uvedeným důvodem (§6.1). Mechanismus a řízení fáze doplnění mají vedle toho vlastní testy: `SqlServerCatalogReaderTest` proti schématu fixture (F4 — podíl správně získaných metadat, včetně nálezu spojovací tabulky), `CatalogCompletionTest` nad falešnou čtečkou bez databáze (priorita zdrojů, idempotence, prázdná poptávka, syntéza vztahů, odvození jazykového typu), `CatalogManyToManyDetectionTest` pro detekci N:M a `CatalogInverseCollectionTest` pro inverzní stranu kolekce (§5.2). N:M, které vyjadřuje jen schéma, soudí proti databázi `DapperManyToManyVerificationTest` — Dapper zdroj s kolekcemi vyjde jako syntetizovaná junction entita přijatá oběma cíli.
 
-**Frontend (Angular):** je potřeba zkompilovat zvlášť a zkopírovat do `wwwroot`, odkud ho servíruje ASP.NET:
+### 6.3 Frontend
 
-```
-npm install
-ng build --configuration "production" --base-href "/orm/" --deploy-url "/orm/"
-# a zkopírovat dist/browser/* do ../wwwroot/
-```
+Frontend jsou statické soubory ve `wwwroot`, které prohlížeč spouští přesně tak, jak leží v repozitáři — žádný framework, žádný balíčkovací nástroj, žádný build krok (rozhodnutí [032](./decisions/032-frontend-as-static-pages-without-a-build.md)); nasazení je zkopírování souborů a ASP.NET je servíruje přes `UseDefaultFiles`/`UseStaticFiles`. Čtyři samostatné dokumenty místo klientského routeru — `index.html` (rozcestník), `translation.html` (překlad), `advisor.html` (Advisor), `examples.html` (výkladová stránka se dvěma živými příklady nad `/samples` a `/convert`) — každý s vlastním modulem v `js/`; podobu obrazovek určuje rozhodnutí [033](./decisions/033-shape-of-the-static-frontend-screens.md). Všechny adresy jsou relativní, takže nasazovací cestu `/orm` nenese žádný soubor, a záložní pravidlo `MapFallbackToFile` z `Program.cs` zmizelo spolu s klientským směrováním.
 
-**Kontejnerizované nasazení:** v repozitáři je i `docker-compose.yml` (aplikace + SQL Server s WideWorldImporters přes `database.Dockerfile`) a vícestupňový `ORMConvertorAPI/Dockerfile`, který sestaví frontend (Node), nativní knihovnu Advisoru (`libadvisor.so`, gcc + GLPK) i .NET aplikaci. Soubor `ecosystem.config.js` je konfigurace pro proces manager PM2 (nasazení mimo Docker). Tahle cesta zatím není podrobněji zdokumentovaná – viz [`open-items.md`](./open-items.md).
+Tvar API zná jediný modul `js/api.js`: cesty koncových bodů, zrcadla výčtů (`ORMEnum`, `ConversionContentType`, druhy záznamů, stavy katalogu) a čtení chybového těla odpovědi. Vykreslování je bez frameworku: stav obrazovky je obyčejný objekt a vykreslovací funkce skládají oblasti z klonovaných `<template>` prvků. Vzhled nese vendorovaná bezetřídní Pico CSS a vlastní vrstva `css/app.css` (tokeny, rozvržení, responzivita přes container queries); zvýraznění syntaxe dělá vendorovaný highlight.js s gramatikami pro C#, XML a SQL (HQL se zvýrazňuje gramatikou SQL — přiblížení, ne tvrzení o jazyce). Obě knihovny leží ve `wwwroot/vendor/` i s licencí a verzí (tabulka v §1); instance funguje bez sítě. Stažení kompletního výstupu podle S7 balí server: koncový bod `POST /archive` přijme dvojice jméno–obsah a vrátí ZIP (jediný koncový bod, který nic nepřekládá — rozhodnutí 033). Automatické testy frontend nemá, a je to vyslovená hranice rozhodnutí 032: kontrakt API je testovaný na serveru a rozhraní se ověřuje projitím základního scénáře podle S7.
+
+**Kontejnerizované nasazení:** v repozitáři je i `docker-compose.yml` (aplikace + SQL Server s WideWorldImporters přes `database.Dockerfile`) a vícestupňový `ORMConvertorAPI/Dockerfile`, který sestaví nativní knihovnu Advisoru (`libadvisor.so`, gcc + GLPK) a .NET aplikaci; frontend žádný build krok nemá a do image putuje uvnitř `wwwroot` s kopií zdrojů. Soubor `ecosystem.config.js` je konfigurace pro proces manager PM2 (nasazení mimo Docker). Tahle cesta zatím není podrobněji zdokumentovaná – viz [`open-items.md`](./open-items.md).
 
 ## 7. Rozhraní parserů a builderů
 

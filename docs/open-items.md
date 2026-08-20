@@ -25,7 +25,7 @@ Parsery dnes čtou konvenci zdrojového frameworku jen tam, kde by její neznalo
 Rozhodnutí 017 uspořádalo zdroje faktů na vstupní text frameworku, pomocné mapovací artefakty, katalog a konvenci cíle. Některý framework ale mezi svými vlastními artefakty precedenci sám dokumentuje, a to opačnou: EF Core staví fluent API nad anotace, MyBatis řeší souběh anotací a XML mapperu vlastními pravidly. Přeložit takový projekt naším pořadím znamená přeložit něco jiného, než co zdroj znamená — a překlad má reprodukovat význam zdroje, ne naši preferenci. Rozhodnout je třeba, jestli precedence zdrojového frameworku přebíjí naše pořadí uvnitř prvního stupně, a pokud ano, kde je ta precedence zapsaná: deskriptor popisuje cíl, ne zdroj, a kategorii pro tohle nemá. Dokud se čte jediný artefakt na framework, případ nenastane; nastane s prvním parserem fluent konfigurace.
 
 ### Centrální správa verzí
-*Verze 1.0 — 15. Potom. Podklad: audit 2026-08-02, kap. 3.4.1. Souvisí s S2, jehož determinismus se opírá o dané verze.*
+*Verze 1.0 — 15. Na řadě. Podklad: audit 2026-08-02, kap. 3.4.1. Souvisí s S2, jehož determinismus se opírá o dané verze.*
 
 Zavést `Directory.Packages.props`, případně `global.json`, aby se sjednocení verzí udržovalo mechanicky a ne ručně. Dnes se může nepozorovaně rozejít — tabulka zafixovaných verzí v `architecture.md` pak tvrdí něco, co v `.csproj` souborech nemusí platit.
 
@@ -33,11 +33,6 @@ Zavést `Directory.Packages.props`, případně `global.json`, aby se sjednocen�
 *Souvisí s T-požadavky. Podklad: audit 2026-08-02, kap. 3.4.2.*
 
 Dapper, EF Core, linq2db a RepoDB běží na `Microsoft.Data.SqlClient`, NHibernate a EF6 na `System.Data.SqlClient`. Pro srovnání výkonu je to metodologický confound. Buď přepnout NHibernate na `MicrosoftDataSqlClientDriver`, ověřit provider u PetaPoco a EF6 a přeměřit, nebo confound explicitně popsat v textu práce. Do verze 1.0 to nepatří: rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo benchmarking ze záruk vcelku, takže srovnávat jeho konfiguraci nemá proti čemu.
-
-### Osud `wwwroot`
-*Verze 1.0 — 14. Potom. Souvisí s S5.*
-
-Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes je to commitnutý build, takže po každé změně frontendu hrozí, že nasazený bundle neodpovídá zdrojákům.
 
 ---
 
@@ -77,12 +72,7 @@ NHibernate vyžaduje, aby perzistentní kolekce byla deklarovaná rozhraním (`I
 ### Spuštění mimo Docker není ověřené ani popsané
 *Verze 1.0 — 18. Mezera popsaná v [`architecture.md`](./architecture.md), §6, kde je na tuhle položku odkaz. Souvisí s S5 a S7.*
 
-V repozitáři leží `ecosystem.config.js`, konfigurace pro proces manager PM2, tedy nasazení mimo Docker. Nikde není popsané, co ta cesta předpokládá — které proměnné prostředí, jaký build frontendu, co servíruje statické soubory — a nikdo ji nespustil. Z lokálního spuštění je podobně ověřený jen `http` launch profil; ostatní profily jsou commitnuté a nevyzkoušené. Obojí je stejný druh dluhu: deklarovaná cesta, o které se neví, jestli funguje. Součástí zprovoznění instance je i vyplnění klíče `ConnectionStrings:CatalogDatabase` — v `appsettings.json` je prázdný, a dokud na nasazené instanci prázdný zůstane, fáze doplnění z katalogu se nikdy nespustí a kritéria F4 a F6 přes rozhraní neplatí (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)); odpověď `/convert` ten stav hlásí polem `CatalogState`.
-
-### Frontend zaostal za API a nevaliduje vstup
-*Verze 1.0 — 13. Na řadě. Souvisí s rozhodnutím [010](./decisions/010-diagnostics-as-returned-data.md), jehož záznamy frontend nezobrazuje. Požadavky S7 a F14.*
-
-Uživatelské rozhraní zůstalo u tvaru API, který už neplatí, a chybové stavy nechává na serveru. `/convert` vrací od rozhodnutí 010 vedle artefaktů i pole `records` se strukturovanou diagnostikou a frontend je ignoruje, takže se uživatel o ztrátách, konvencích ani konfliktech nedozví — a nově je těch záznamů podstatně víc, protože je vydává i dotazová větev. Chyby ze serveru zobrazuje `main-page.component.ts` přes `err.message` místo `err.error`, takže místo hlášky ze serveru ukáže obecný text HTTP chyby; vzor správného čtení je v `advisor-page.component.ts`. A validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku, neexistuje vůbec — u zdroje v Dapperu přitom server nově řádek i sloupec zná, protože je hlásí parser T-SQL. Prázdné jednotky odsud zmizely: server je od rozhodnutí [025](./decisions/025-query-language-as-content-type.md) přeskakuje sám, protože nevyplněné pole není tvrzení. Patří sem i zobrazení stavu připojení ke katalogu: odpověď `/convert` ho nese jako pole `CatalogState` (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) — připojení zůstává v serverové konfiguraci a rozhraní ukáže jen jeho stav), takže se uživatel má odkud dozvědět, jestli překlad běžel s katalogem, bez nakonfigurovaného připojení, nebo s připojením, jehož čtení selhalo. Zbývá také přeložit frontend do `wwwroot` — výčet typů obsahu se změnil a commitnutý bundle ho zatím nezná; jak se ten překlad bude dělat, řeší položka o osudu `wwwroot` výše. Přestavba už odložená není: rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) ji staví do verze 1.0 spolu s dávkovým vstupem podle F14, tedy nahráním více celých souborů a zobrazením vstupu, výstupu i záznamů po jednotlivých souborech.
+V repozitáři leží `ecosystem.config.js`, konfigurace pro proces manager PM2, tedy nasazení mimo Docker. Nikde není popsané, co ta cesta předpokládá — které proměnné prostředí, co servíruje statické soubory z `wwwroot` — a nikdo ji nespustil. Z lokálního spuštění je podobně ověřený jen `http` launch profil; ostatní profily jsou commitnuté a nevyzkoušené. Obojí je stejný druh dluhu: deklarovaná cesta, o které se neví, jestli funguje. Součástí zprovoznění instance je i vyplnění klíče `ConnectionStrings:CatalogDatabase` — v `appsettings.json` je prázdný, a dokud na nasazené instanci prázdný zůstane, fáze doplnění z katalogu se nikdy nespustí a kritéria F4 a F6 přes rozhraní neplatí (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)); odpověď `/convert` ten stav hlásí polem `CatalogState`.
 
 ### Deskriptor deklaruje vynucené členy, které čte jen test
 *Souvisí s rozhodnutím [009](./decisions/009-target-framework-descriptor.md), které dělbu deklarace a emise zavedlo. Požadavek S2.*
@@ -97,14 +87,14 @@ Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný
 Do verze 1.0 položka nepatří. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo `Advisor` i `AdvisorBenchmarking` ze záruk vcelku právě proto, že netestované jsou; testovat oblast, na kterou verze neslibuje spoleh, by bylo otevírání nové části místo dokončení rozdělané.
 
 ### Překladový artefakt nenese přihlašovací údaje — a nikdo to netvrdí
-*Verze 1.0 — 16. Implementace rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md). Požadavky S4, S2.*
+*Verze 1.0 — 16. Potom. Implementace rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md). Požadavky S4, S2.*
 
 Rozhodnutí 029 uzavřelo, že připojení do databáze je fakt konzumentského projektu a do předávaného artefaktu nepatří. Dnes to platí konstrukcí: dotazový artefakt EF Core má tvar `Query(DbContext ctx)`, entitní buildery konfiguraci nevydávají, NHibernate mapování element pro spojení nemá a výstupem Dapperu je třída a holý dotaz. Netvrdí to ale žádný test, takže je ta vlastnost splněná náhodou a dá se porušit nepozorovaně — stačí, aby některý builder začal vydávat konfigurační soubor, u javového ekosystému `persistence.xml`. Zbývá aserce nad výstupem převodu ve všech třech směrech a k ní věta v [`architecture.md`](./architecture.md) o tom, že překladová cesta cizí kód nekompiluje ani nespouští; dnes to z textu plyne jen nepřímo, přes popis `Common.Compilation` a ověřovacích stupňů.
 
 ### Výkon překladu podle S3 se neměří
-*Verze 1.0 — 17. Předpokladem je dávkový vstup z položky o frontendu. Požadavky S3, S6.*
+*Verze 1.0 — 17. Potom. Požadavky S3, S6.*
 
-S3 žádá dvojí: aby překlad projektu se 100 entitami a 100 dotazy skončil na referenčním stroji do 30 sekund, a aby se čtení databázových metadat měřilo a reportovalo odděleně. Druhá polovina hotová je — `ConversionResult` nese čas fáze doplnění a `/convert` ho vrací jako `CatalogReadMilliseconds`. První polovinu netvrdí nic: scénář té velikosti neexistuje a nikdo ho nepustil, takže třicetisekundová hranice je číslo bez měření a případné zpomalení by se poznalo až na cizím projektu. Zbývá test, který vstup složí a čas změří, a údaj o stroji, proti kterému výsledek platí. Dřív než bude hotová dávková cesta, se to dělá špatně — ruční skládání sta jednotek do požadavku by měřilo hlavně samo sebe.
+S3 žádá dvojí: aby překlad projektu se 100 entitami a 100 dotazy skončil na referenčním stroji do 30 sekund, a aby se čtení databázových metadat měřilo a reportovalo odděleně. Druhá polovina hotová je — `ConversionResult` nese čas fáze doplnění a `/convert` ho vrací jako `CatalogReadMilliseconds`. První polovinu netvrdí nic: scénář té velikosti neexistuje a nikdo ho nepustil, takže třicetisekundová hranice je číslo bez měření a případné zpomalení by se poznalo až na cizím projektu. Zbývá test, který vstup složí a čas změří, a údaj o stroji, proti kterému výsledek platí; dávková cesta, na kterou položka čekala, je s frontendem podle rozhodnutí [033](./decisions/033-shape-of-the-static-frontend-screens.md) hotová.
 
 ### Verze nástroje a značka vydání
 *Verze 1.0 — 19. Uzavírá rozhodnutí [030](./decisions/030-scope-of-version-1-0.md). Požadavky S2, S6.*

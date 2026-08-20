@@ -1,18 +1,6 @@
 # syntax=docker/dockerfile:1.6
 
-# Stage 1: Build the Angular frontend
-FROM node:22-alpine AS angular-build
-WORKDIR /frontend
-
-# Install dependencies with cached npm folder
-COPY ORMConvertorAPI/frontend/package*.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
-
-# Copy app source files and build
-COPY ORMConvertorAPI/frontend .
-RUN npx ng build --configuration production --base-href /orm/ --deploy-url /orm/ --output-path=dist
-
-# Stage 2: Build native Advisor library
+# Stage 1: Build native Advisor library
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS advisor-native
 WORKDIR /src/advisor
 RUN --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lists \
@@ -23,7 +11,8 @@ RUN --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lists \
 COPY Advisor/ilp.c .
 RUN gcc -fPIC -shared -o /artifacts/libadvisor.so ilp.c -lglpk
 
-# Stage 3: Build and publish the .NET app, also bring in frontend static assets
+# Stage 2: Build and publish the .NET app; the static frontend travels inside wwwroot
+# with the source copy (decision 032) - there is no frontend build step
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dotnet-build
 WORKDIR /app
 
@@ -49,9 +38,6 @@ COPY . .
 # Ensure packages restored with full source context (handles new dependencies)
 RUN --mount=type=cache,target=/root/.nuget/packages dotnet restore ORMConvertorAPI/ORMConvertorAPI.csproj
 
-# Inject frontend build output
-COPY --from=angular-build /frontend/dist/browser ORMConvertorAPI/wwwroot
-
 # Add the native library artifact
 COPY --from=advisor-native /artifacts/libadvisor.so Advisor/libadvisor.so
 
@@ -59,7 +45,7 @@ COPY --from=advisor-native /artifacts/libadvisor.so Advisor/libadvisor.so
 RUN --mount=type=cache,target=/root/.nuget/packages dotnet publish ORMConvertorAPI/ORMConvertorAPI.csproj -c Release -o /app/out --no-restore \
     && cp Advisor/libadvisor.so /app/out/
 
-# Stage 4: Create runtime image
+# Stage 3: Create runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 

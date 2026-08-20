@@ -39,8 +39,6 @@ public class Program
         app.UseDefaultFiles();
         app.UseStaticFiles();
 
-        app.MapFallbackToFile("{*path:nonfile}", "index.html");
-
         app.Run();
     }
 }

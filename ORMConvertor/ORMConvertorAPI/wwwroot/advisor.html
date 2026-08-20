@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ORMConvertor — Advisor</title>
+  <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><strong><a href="index.html">ORMConvertor</a></strong></li>
+      </ul>
+      <ul>
+        <li><a href="translation.html">Translation</a></li>
+        <li><a href="advisor.html" aria-current="page">Advisor</a></li>
+        <li><a href="examples.html">Examples</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Advisor</h1>
+    <p class="lede">
+      The advisor translates your entities and queries into every candidate
+      framework, measures the generated code against the benchmark database, and
+      solves an ILP model over the measured costs to recommend a framework — or a
+      combination — for the workload. It needs the native ILP solver, so it runs
+      only in the containerized deployment.
+    </p>
+
+    <section>
+      <h2>1. Source framework</h2>
+      <select id="source-orm" aria-label="Source framework"></select>
+    </section>
+
+    <section>
+      <h2>2. Entities</h2>
+      <div class="toolbar">
+        <button type="button" id="load-samples" class="secondary">Load samples</button>
+      </div>
+      <div id="entity-units"></div>
+    </section>
+
+    <section>
+      <h2>3. Queries and weights</h2>
+      <p>The weight is how often the query runs relative to the others; it scales the query's cost in the optimization.</p>
+      <div class="toolbar">
+        <button type="button" id="add-query" class="secondary">Add query</button>
+      </div>
+      <div id="query-units"></div>
+    </section>
+
+    <section>
+      <h2>4. Constraints</h2>
+      <label>Memory limit (KB, 0 = unconstrained)
+        <input type="number" id="memory-limit" min="0" value="0">
+      </label>
+      <label>Maximum frameworks to select
+        <input type="number" id="max-frameworks" min="1" value="2">
+      </label>
+      <fieldset id="target-frameworks">
+        <legend>Candidate frameworks (none checked = all)</legend>
+      </fieldset>
+    </section>
+
+    <section>
+      <h2>5. Run</h2>
+      <button type="button" id="run">Run the advisor</button>
+      <p id="run-error" class="problem" hidden></p>
+    </section>
+
+    <section id="result" hidden>
+      <h2>Result</h2>
+      <p id="selected-frameworks"></p>
+      <figure class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Query</th><th>Assigned framework</th><th>Mean time (ms)</th><th>Allocated (KB)</th></tr>
+          </thead>
+          <tbody id="assignments"></tbody>
+          <tfoot>
+            <tr><th>Total</th><th></th><th id="total-time"></th><th id="total-memory"></th></tr>
+          </tfoot>
+        </table>
+      </figure>
+      <h3>Converted artifacts</h3>
+      <div id="conversions"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>ORMConvertor &mdash; a research prototype.</p>
+  </footer>
+
+  <template id="entity-unit-template">
+    <article class="unit">
+      <header class="unit-header">
+        <strong class="unit-label"></strong>
+      </header>
+      <textarea class="unit-content" spellcheck="false"></textarea>
+    </article>
+  </template>
+
+  <template id="query-unit-template">
+    <article class="unit">
+      <header class="unit-header">
+        <strong class="unit-label"></strong>
+        <label class="unit-weight-label">weight
+          <input class="unit-weight" type="number" min="1" value="1">
+        </label>
+        <button type="button" class="unit-remove secondary outline">Remove</button>
+      </header>
+      <textarea class="unit-content" spellcheck="false"></textarea>
+    </article>
+  </template>
+
+  <template id="artifact-template">
+    <article class="artifact">
+      <header class="artifact-header">
+        <span>
+          <strong class="artifact-name"></strong>
+          <small class="artifact-type"></small>
+        </span>
+      </header>
+      <pre><code></code></pre>
+    </article>
+  </template>
+
+  <template id="conversion-template">
+    <details>
+      <summary></summary>
+      <div class="panes">
+        <div class="pane-grid conversion-artifacts"></div>
+      </div>
+    </details>
+  </template>
+
+  <script type="module" src="js/advisor.js"></script>
+</body>
+</html>
