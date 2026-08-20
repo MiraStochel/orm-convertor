@@ -1,4 +1,5 @@
 ﻿using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
@@ -138,6 +139,89 @@ public class NHibernateRelationTest
         });
 
         Assert.Contains("<one-to-one name=\"Profile\" class=\"CustomerProfile\" />", MappingOf(builder));
+    }
+
+    [Fact]
+    public void InverseOneToOneNamesTheCounterpartNavigationAsPropertyRef()
+    {
+        var builder = Entity("Customer", "Customers");
+        builder.AddForeignKey(Cardinality.OneToOne, "Profile", "CustomerProfile", RelationRole.Inverse);
+
+        builder.BeginEntity();
+        builder.AddClassHeader("public", "CustomerProfile");
+        builder.AddTable("CustomerProfiles");
+        builder.AddProperty("int", "Id", "public", hasGetter: true, hasSetter: true);
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Identity, "Id");
+        builder.AddForeignKey(Cardinality.OneToOne, "Owner", "Customer", RelationRole.Owning);
+
+        // The attribute names the property of the owning entity that holds the key - the
+        // counterpart navigation, reachable once the resolution phase has run (decision 012).
+        var xmls = builder.Build()
+            .Where(o => o.ContentType == ConversionContentType.XML)
+            .Select(o => o.Content)
+            .ToList();
+        Assert.Contains(
+            "<one-to-one name=\"Profile\" class=\"CustomerProfile\" property-ref=\"Owner\" />",
+            xmls.Single(x => x.Contains("<class name=\"Customer\"")));
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Incompleteness);
+    }
+
+    [Fact]
+    public void ParentOfASharedKeyOneToOneWritesNoPropertyRef()
+    {
+        var builder = Entity("Customer", "Customers");
+        builder.AddForeignKey(Cardinality.OneToOne, "Profile", "CustomerProfile", RelationRole.Inverse);
+
+        builder.BeginEntity();
+        builder.AddClassHeader("public", "CustomerProfile");
+        builder.AddTable("CustomerProfiles");
+        builder.AddProperty("int", "CustomerID", "public", hasGetter: true, hasSetter: true);
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Unspecified, "CustomerID");
+        builder.SetKeyStrategyDetails(
+            "CustomerID",
+            sourceStrategyName: "foreign",
+            sourceParameters: new Dictionary<string, string> { ["property"] = "Owner" });
+        builder.AddForeignKey(Cardinality.OneToOne, "Owner", "Customer", RelationRole.Owning);
+
+        // The counterpart takes its identity from this entity, so the association joins over
+        // the primary keys - exactly what a bare <one-to-one> says. No attribute, no record.
+        var xmls = builder.Build()
+            .Where(o => o.ContentType == ConversionContentType.XML)
+            .Select(o => o.Content)
+            .ToList();
+        Assert.Contains(
+            "<one-to-one name=\"Profile\" class=\"CustomerProfile\" />",
+            xmls.Single(x => x.Contains("<class name=\"Customer\"")));
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Incompleteness);
+    }
+
+    [Fact]
+    public void InverseOneToOneWithoutACounterpartIsReported()
+    {
+        var builder = Entity("Customer", "Customers");
+        builder.AddForeignKey(Cardinality.OneToOne, "Profile", "CustomerProfile", RelationRole.Inverse);
+
+        builder.BeginEntity();
+        builder.AddClassHeader("public", "CustomerProfile");
+        builder.AddTable("CustomerProfiles");
+        builder.AddProperty("int", "Id", "public", hasGetter: true, hasSetter: true);
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Identity, "Id");
+
+        // The target takes part in the conversion but nothing owns the key back here, so the
+        // bare <one-to-one> claims a shared-key join the inverse role never asserted - the
+        // omission is recorded rather than passed off as silence (decision 012).
+        var xmls = builder.Build()
+            .Where(o => o.ContentType == ConversionContentType.XML)
+            .Select(o => o.Content)
+            .ToList();
+        Assert.Contains(
+            "<one-to-one name=\"Profile\" class=\"CustomerProfile\" />",
+            xmls.Single(x => x.Contains("<class name=\"Customer\"")));
+
+        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Incompleteness);
+        Assert.Equal("Customer", record.Entity);
+        Assert.Equal("Profile", record.Property);
+        Assert.Contains("property-ref", record.Reason);
     }
 
     [Fact]

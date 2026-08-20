@@ -49,7 +49,7 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 `DapperEntityParser` a `NHibernateEntityParser` se liší jedinou řádkou dokumentačního komentáře; oba čtou jmenný prostor, hlavičku třídy a vlastnosti a nic dalšího. Třetí kopii téhož drží `EFCoreEntityParser` uvnitř sebe. Každá oprava čtení vlastností se tak musí udělat dvakrát až třikrát. Na dotazové větvi tenhle problém vyřešila sdílená knihovna se zásuvnými body; entitní strana čeká na totéž a je to týž tvar řešení, ne nový.
 
 ### Priorita zdrojů uvnitř vstupu se nevynucuje
-*Verze 1.0 — 9. Potom. Implementace rozhodnutí [017](./decisions/017-source-precedence-for-mapping-facts.md). Požadavky F5, F11, S2.*
+*Verze 1.0 — 9. Na řadě. Implementace rozhodnutí [017](./decisions/017-source-precedence-for-mapping-facts.md). Požadavky F5, F11, S2.*
 
 Rozhodnutí 017 rozdělilo první stupeň priority na vstupní text frameworku a pomocné mapovací artefakty a uložilo, že vyšší úroveň se nepřepisuje nižší a rozdíl se hlásí. Kód to zatím nedělá. Pořadí čtení plyne jen z pořadí parserů v seznamu, který vrací `ParserFactory`, takže se přehozením dvou řádků tiše obrátí; `SetPropertyDatabaseMapping` přepisuje bezpodmínečně, takže mapovací artefakt přebije, co tvrdila entitní třída; a rozpor mezi dvěma vstupními artefakty nevydá žádný záznam, ačkoli týž rozpor proti katalogu skončí záznamem `Conflict`. Zbývá trojí: uspořádat seznam parserů jako vyslovený fakt frameworku, rozlišit na zápisové cestě druhé úrovně prázdný fakt od obsazeného, a neshodu vydat jako `Conflict`. Vzorem je fáze doplnění z katalogu, která přesně tohle už umí (viz `architecture.md`, §5.2).
 
@@ -63,7 +63,7 @@ Patří sem trojí: service container do workflow v `.github` spolu s proměnnou
 Do verze 1.0 nic z toho nepatří (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)): nasazení řešíme jedinou ručně spravovanou instancí, ne kontejnerem. Důsledek je ale potřeba nést nahlas i v textu práce — bez databáze v CI se databázově závislé testy dál přeskakují, takže **kritéria F4 a F6 platí jen tam, kde běh s lokální databází skutečně proběhl**.
 
 ### Cílová verze a databázový dialekt v deskriptoru
-*Verze 1.0 — 11., v rozsahu cílové verze; dialekt mimo verzi. Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md); dialekt sem odkázalo rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md). Požadavky S2, S6, F7–F10.*
+*Verze 1.0 — 11., v rozsahu cílové verze; dialekt mimo verzi. Potom. Implementace rozhodnutí [013](./decisions/013-target-framework-versions.md) nad deskriptorem z rozhodnutí [009](./decisions/009-target-framework-descriptor.md); dialekt sem odkázalo rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md). Požadavky S2, S6, F7–F10.*
 
 Deskriptor cílového frameworku nese, co cíl umí vyjádřit, ale ne verzi, proti které to platí. Doplnit ji a nechat buildery volit syntaxi tam, kde se verze rozcházejí — u EF Core `[PrimaryKey]` proti `HasKey`, u NHibernate dostupnost `DateOnly`. Bez explicitní volby platí verze zafixovaná v `architecture.md`. Tímtéž údajem se pak plní záznam běhu podle S6, aby nemohl tvrdit něco jiného než generátor.
 
@@ -72,11 +72,6 @@ Do verze 1.0 patří z téhle položky jen cílová verze a záznam běhu podle 
 Sem patří i **cílový databázový dialekt**, který rozhodnutí 019 odmítlo řešit v typovém modelu: je to fakt o cíli převodu téhož tvaru jako verze frameworku. Bez něj nelze emitovat `sql-type` odvozený z typové rodiny ani vybrat typ podle systému, protože konkrétní SQL typ z typu frameworku odvozuje právě dialekt — NHibernate builder dnes propisuje jen doslovný `SourceSqlType`, který nese zdroj. Dokud se dialekt nedeklaruje, je jediným dialektem SQL Server.
 
 Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dialektu ji nevyřeší: `DapperSqlQueryParser` čte T-SQL gramatikou `TSql160Parser` (rozhodnutí [026](./decisions/026-home-of-shared-query-reading.md)), takže SQL napsané pro jiný databázový systém — u MyBatisu (F8) běžné — touhle cestou neprojde. Řešením je vlastní parser SQL v javovém wrapperu, ne pole v deskriptoru.
-
-### Rozresolvování jmen entit — `property-ref` na inverzní straně
-*Verze 1.0 — 8. Na řadě. Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F11.*
-
-Fáze rozresolvování (`ResolveEntityNames` v `AbstractEntityBuilder`) běží před generováním, plní `ColumnPairs`, povyšuje `Unknown` typy na reference a nenalezené jméno cílové entity i nesouhlasící počet či pořadí sloupců hlásí záznamem podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md). Z důsledků rozhodnutí 001 tak zbývá jediné: `property-ref` na inverzní straně vztahu 1:1, který rozhodnutí 012 odkládá právě sem. Navigace protistrany je po rozresolvování dostupná, ale NHibernate builder ji zatím nehledá a atribut nevypisuje; zahozenou hodnotu ze vstupu aspoň hlásí parser záznamem o ztrátě.
 
 ### Poddotazy a množinové operace se nevykreslí
 *Podklad: audit 2026-08-02, kap. 8. Požadavek T2, který dotazovou matici dělí i podle poddotazů a množinových operací.*

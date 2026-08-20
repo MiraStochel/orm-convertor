@@ -746,7 +746,7 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                     Framework = entityBuilder.Descriptor.Framework,
                     Entity = entityBuilder.EntityMap.Entity.Name,
                     Property = propName,
-                    Reason = $"property-ref=\"{propertyRef}\" names a property of the referenced entity; the model has nowhere to keep the value, only the inverse role survives, and the generated mapping will not restate it (decision 012).",
+                    Reason = $"property-ref=\"{propertyRef}\" names a property of the referenced entity; the model has nowhere to keep the value, only the inverse role survives, and the generated mapping derives the attribute anew from the counterpart navigation - only where the counterpart takes part in the same conversion (decision 012).",
                 });
             }
 

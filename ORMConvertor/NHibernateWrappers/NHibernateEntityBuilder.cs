@@ -1042,10 +1042,13 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         if (relation.Cardinality == Cardinality.OneToOne && (relation.Role == RelationRole.Inverse || sharedKey))
         {
-            // Nothing to name here: either the far side holds the key, or both entities share the
-            // primary key, and constrained is how NHibernate says the identity comes from there.
+            // No column to name here: either the far side holds the key, or both entities share
+            // the primary key, and constrained is how NHibernate says the identity comes from
+            // there. The inverse side of a foreign key still points at the property holding it,
+            // which is what property-ref names.
             var constrained = sharedKey ? " constrained=\"true\"" : string.Empty;
-            AppendXml(mapping, 2, $"<one-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{constrained} />");
+            var propertyRef = sharedKey ? string.Empty : PropertyRefAttribute(entityMap, relation);
+            AppendXml(mapping, 2, $"<one-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{propertyRef}{constrained} />");
             return;
         }
 
@@ -1093,6 +1096,58 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         }
 
         AppendXml(mapping, 2, "</many-to-one>");
+    }
+
+    /// <summary>
+    /// The property-ref of an inverse one-to-one names the property of the owning entity that
+    /// holds the foreign key - the counterpart navigation. The model keeps no such value
+    /// (entities reference each other by name only, decision 001), so it is derived from the
+    /// counterpart relation once the resolution phase has made the far side reachable
+    /// (decision 012). A counterpart that takes its identity from this entity is the shared
+    /// primary key case: there the association joins over the identifiers, which is exactly
+    /// what a bare &lt;one-to-one&gt; says, so the attribute stays out and nothing is reported.
+    /// Where the target takes part in the conversion but no owning one-to-one points back,
+    /// the omission is not silence - a bare &lt;one-to-one&gt; claims the shared-key join, not
+    /// the foreign key the inverse role asserts - and it is recorded as incompleteness.
+    /// A target outside the conversion is already recorded by the resolution phase.
+    /// </summary>
+    private string PropertyRefAttribute(EntityMap entityMap, Relation relation)
+    {
+        var target = FindEntityMap(relation.TargetEntity);
+
+        if (target is null)
+        {
+            return string.Empty;
+        }
+
+        var counterpart = target.Relations.FirstOrDefault(r =>
+            r is { Role: RelationRole.Owning, Cardinality: Cardinality.OneToOne, SourceNavigationProperty: not null }
+            && FindEntityMap(r.TargetEntity) == entityMap);
+
+        if (counterpart is null)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Incompleteness,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Entity = entityMap.Entity.Name,
+                Property = relation.SourceNavigationProperty,
+                Category = MappingFactCategory.ForeignKeyColumns,
+                Reason = $"'{relation.TargetEntity}' takes part in the conversion but carries no owning "
+                    + $"one-to-one back to '{entityMap.Entity.Name}', so property-ref cannot name the "
+                    + "property holding the foreign key; without the attribute NHibernate joins the "
+                    + "association over the primary keys (decision 012).",
+            });
+            return string.Empty;
+        }
+
+        if (SharesPrimaryKeyThrough(target, counterpart.SourceNavigationProperty!))
+        {
+            return string.Empty;
+        }
+
+        return $" property-ref=\"{counterpart.SourceNavigationProperty}\"";
     }
 
     /// <summary>
