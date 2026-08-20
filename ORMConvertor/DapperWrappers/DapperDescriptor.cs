@@ -36,6 +36,11 @@ public static class DapperDescriptor
             [MappingFactCategory.PrimaryKey] = FactSupport.NotExpressible,
             [MappingFactCategory.PrimaryKeyStrategy] = FactSupport.NotExpressible,
             [MappingFactCategory.ForeignKeyColumns] = FactSupport.NotExpressible,
+
+            // Optimistic concurrency in Dapper is a hand-written WHERE clause, not
+            // mapping metadata; the record this produces is a statement about Dapper,
+            // not about the tool (decision 030).
+            [MappingFactCategory.VersionColumn] = FactSupport.NotExpressible,
         },
 
         // SQL expresses every query category, so as a query target Dapper is the opposite of

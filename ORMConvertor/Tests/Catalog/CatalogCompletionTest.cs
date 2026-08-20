@@ -114,6 +114,58 @@ public class CatalogCompletionTest
     }
 
     [Fact]
+    public void SuppliesTheVersionFlagForARowversionColumn()
+    {
+        var builder = new NHibernateEntityBuilder();
+        new DapperEntityParser(builder).Parse("""
+            namespace DapperEntities;
+
+            public class Document
+            {
+                public int DocumentId { get; set; }
+
+                public byte[] RowVersion { get; set; }
+            }
+            """);
+        var reader = new FakeCatalogReader(new TableImage
+        {
+            Schema = "dbo",
+            Name = "Documents",
+            Columns =
+            [
+                new ColumnImage { Name = "DocumentId", Type = DatabaseType.Integer, IsNullable = false, IsIdentity = true },
+                new ColumnImage
+                {
+                    Name = "RowVersion",
+                    Type = DatabaseType.VarBinary,
+                    SourceSqlType = "rowversion",
+                    Length = 8,
+                    IsNullable = false,
+                    IsIdentity = false,
+                    IsRowVersion = true,
+                },
+            ],
+            PrimaryKeyColumns = ["DocumentId"],
+            ForeignKeys = [],
+        });
+
+        CatalogCompletion.Complete(builder, reader);
+
+        // The versioning claim arrives beside the type, not as one (decision 019): the
+        // family stays binary and the flag is the schema's own fact (decision 030).
+        var map = builder.EntityMaps.Single().PropertyMaps.Single(pm => pm.Property.Name == "RowVersion");
+        Assert.True(map.IsVersion);
+        Assert.Equal(DatabaseType.VarBinary, map.Type);
+        Assert.Contains(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Supplied && r.Category == MappingFactCategory.VersionColumn);
+
+        // A flag once present is never re-supplied (decision 015).
+        CatalogCompletion.Complete(builder, reader);
+        Assert.Single(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Supplied && r.Category == MappingFactCategory.VersionColumn);
+    }
+
+    [Fact]
     public void CompletionIsIdempotent()
     {
         var builder = ParseCustomer();

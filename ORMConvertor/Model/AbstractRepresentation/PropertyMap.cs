@@ -33,5 +33,15 @@ public class PropertyMap
 
     public bool? IsNullable { get; set; }
 
+    /// <summary>
+    /// Whether the column carries the row version for optimistic concurrency - the token
+    /// each framework expresses with its own mechanism: [Timestamp] in EF Core, the
+    /// version element in NHibernate, @Version in JPA (decision 030). A claim of its own
+    /// rather than a type: decision 019 removed RowVersion from the type vocabulary as a
+    /// type of one system, and the type family of such a column is plain binary. False
+    /// means nobody stated it - no source states the opposite positively.
+    /// </summary>
+    public bool IsVersion { get; set; }
+
     public Dictionary<string, string> OtherDatabaseProperties { get; set; } = [];
 }

@@ -1067,6 +1067,13 @@ public abstract class AbstractEntityBuilder
                     }
 
                     break;
+                case "isversion" or "version":
+                    if (bool.TryParse(kvp.Value, out var isVersion))
+                    {
+                        propertyMap.IsVersion = isVersion;
+                    }
+
+                    break;
                 default:
                     propertyMap.OtherDatabaseProperties[kvp.Key] = kvp.Value;
                     break;
@@ -1296,6 +1303,7 @@ public abstract class AbstractEntityBuilder
         MappingFactCategory.PrimaryKey => em.PrimaryKey is not null,
         MappingFactCategory.PrimaryKeyStrategy => em.PrimaryKey?.Parts.Any(p => p.Strategy != PrimaryKeyStrategy.Unspecified || p.SourceStrategyName is not null) == true,
         MappingFactCategory.ForeignKeyColumns => em.Relations.Any(r => r.ColumnPairs.Count > 0),
+        MappingFactCategory.VersionColumn => em.PropertyMaps.Any(pm => pm.IsVersion),
         _ => throw new ArgumentOutOfRangeException(nameof(category), category, null),
     };
 
@@ -1317,6 +1325,7 @@ public abstract class AbstractEntityBuilder
             .Where(p => p.Strategy != PrimaryKeyStrategy.Unspecified || p.SourceStrategyName is not null)
             .Select(p => (string?)p.PropertyMap.Property.Name),
         MappingFactCategory.ForeignKeyColumns => em.Relations.Where(r => r.ColumnPairs.Count > 0).Select(r => r.SourceNavigationProperty),
+        MappingFactCategory.VersionColumn => em.PropertyMaps.Where(pm => pm.IsVersion).Select(pm => (string?)pm.Property.Name),
         _ => [null],
     };
 

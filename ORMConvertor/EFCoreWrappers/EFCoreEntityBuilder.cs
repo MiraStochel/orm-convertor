@@ -329,7 +329,18 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             attributes.AppendLine("    [Required]");
         }
 
-        if (propMap.ColumnName != null || propMap.Type != null)
+        if (propMap.IsVersion)
+        {
+            attributes.AppendLine("    [Timestamp]");
+        }
+
+        // [Timestamp] itself makes a binary column a rowversion on the target, so the
+        // type and length of such a column are already stated; a TypeName would override
+        // the rowversion mapping with plain varbinary and change the column.
+        var typeCarriedByTimestamp = propMap.IsVersion
+            && propMap.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob;
+
+        if (propMap.ColumnName != null || (propMap.Type != null && !typeCarriedByTimestamp))
         {
             var parts = new List<string>();
             if (propMap.ColumnName != null)
@@ -337,7 +348,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 parts.Add($"\"{propMap.ColumnName}\"");
             }
 
-            if (propMap.Type.HasValue)
+            if (propMap.Type.HasValue && !typeCarriedByTimestamp)
             {
                 var typeText = DatabaseTypeConvertor.ToEFCore(propMap.Type.Value, propMap.IsUnicode);
                 parts.Add($"TypeName=\"{typeText}\"");
@@ -347,7 +358,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         }
 
 
-        if (propMap.Length != null)
+        if (propMap.Length != null && !typeCarriedByTimestamp)
         {
             attributes.AppendLine($"    [MaxLength({propMap.Length})]");
         }

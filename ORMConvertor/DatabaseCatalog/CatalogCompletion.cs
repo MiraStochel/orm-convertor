@@ -510,6 +510,17 @@ public static class CatalogCompletion
                     $"The source states the property is {(pm.IsNullable.Value ? "nullable" : "not nullable")}, the catalog column '{column.Name}' is {(column.IsNullable ? "NULL" : "NOT NULL")}.");
             }
         }
+
+        // Only the supply direction exists for the version flag: a rowversion column
+        // states the claim positively, but the schema cannot deny it - a version the
+        // framework manages itself looks like any other numeric column - so a flag the
+        // source stated over a non-rowversion column is no conflict (decision 030).
+        if (demand.Contains(MappingFactCategory.VersionColumn) && column.IsRowVersion && !pm.IsVersion)
+        {
+            pm.IsVersion = true;
+            ReportSupplied(builder, em, pm.Property.Name, MappingFactCategory.VersionColumn,
+                $"The rowversion column '{column.Name}' of '{image.QualifiedName}' carries the row version; the version flag supplied by the database catalog.");
+        }
     }
 
     private static void CompletePrimaryKey(AbstractEntityBuilder builder, EntityMap em, TableImage image)

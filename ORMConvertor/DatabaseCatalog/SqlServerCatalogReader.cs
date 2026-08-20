@@ -317,6 +317,11 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
             Scale = columnScale,
             IsNullable = isNullable,
             IsIdentity = isIdentity,
+            // In SQL Server a rowversion column carries the row version and nothing else,
+            // so the type name alone states the versioning claim (decision 030); timestamp
+            // is the same type's deprecated spelling.
+            IsRowVersion = sqlType.Equals("rowversion", StringComparison.OrdinalIgnoreCase)
+                || sqlType.Equals("timestamp", StringComparison.OrdinalIgnoreCase),
         };
     }
 
@@ -364,9 +369,9 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
             "uniqueidentifier" => (DatabaseType.Uuid, null, false),
             "xml" => (DatabaseType.Xml, null, false),
 
-            // A rowversion column is eight bytes of binary; the versioning semantics
-            // have no mapping fact yet (open item of decision 019), so the literal is
-            // what keeps them from vanishing without a trace.
+            // A rowversion column is eight bytes of binary; the versioning claim is a
+            // mapping fact of its own, stated through IsRowVersion (decision 030), and
+            // the literal keeps the exact type beside the coarser family.
             "rowversion" or "timestamp" => (DatabaseType.VarBinary, null, true),
             "sql_variant" => (null, null, true),
 

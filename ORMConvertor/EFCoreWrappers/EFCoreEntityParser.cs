@@ -237,6 +237,14 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
                     case "ForeignKey":
                         foreignKeyNames = ReadForeignKeyNames(attribute);
                         break;
+                    case "Timestamp":
+                        // [Timestamp] is EF Core's mechanism for the version column
+                        // (decision 030). The concurrency-token and store-generation
+                        // behavior it also implies has no separate fact in the model;
+                        // the one flag is the claim. The store type it maps to is the
+                        // provider's business, so no type is invented here.
+                        dbProps["IsVersion"] = "true";
+                        break;
 
                     // Everything else used to fall out of this switch without a trace. Two of
                     // them change what the artifact means rather than merely impoverishing it:

@@ -50,11 +50,6 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 
 ## Otevřená práce
 
-### Sloupec verze jako mapovací fakt
-*Verze 1.0 — 4. Na řadě. Vytčeno z rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md), které `RowVersion` odstranilo ze slovníku typů. Požadavky F2, F7–F10, F11.*
-
-`RowVersion` se dosud nesl jako databázový typ, ale typ to není — je to token pro optimistickou souběžnost, který každý framework vyjadřuje vlastním mechanismem: JPA anotací `@Version`, EF Core voláním `IsRowVersion()`, NHibernate elementem `<version>`. Rozhodnutí 019 ho ze slovníku odstranilo jako typ jediného systému a fakt tím zůstal bez domova: sloupec `rowversion` z katalogu vyjde jako `VarBinary` s doslovným názvem na únikové cestě a význam „tenhle sloupec nese verzi řádku" se ztratí. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) volbu uzavřelo ve prospěch vlastního mapovacího faktu: mezireprezentace dostane příznak sloupce verze, deskriptor jedenáctou kategorii v `MappingFactCategory`, EF Core builder `[Timestamp]` a NHibernate builder `<version>`. U Dapperu zůstává nevyjádřitelný, a tam je záznam tvrzením o Dapperu, ne o nás. Do té doby se fakt ztrácí bez záznamu, což je přesně to, čemu má bránit rozhodnutí [004](./decisions/004-unexpressible-facts-as-warnings.md).
-
 ### Dva entitní parsery jsou totéž
 *Verze 1.0 — 9. Vytčeno rozhodnutím [026](./decisions/026-home-of-shared-query-reading.md), které touž duplicitu odstranilo na dotazové straně. Požadavek S1.*
 
@@ -86,7 +81,7 @@ Sem patří i **cílový databázový dialekt**, který rozhodnutí 019 odmítlo
 Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dialektu ji nevyřeší: `DapperSqlQueryParser` čte T-SQL gramatikou `TSql160Parser` (rozhodnutí [026](./decisions/026-home-of-shared-query-reading.md)), takže SQL napsané pro jiný databázový systém — u MyBatisu (F8) běžné — touhle cestou neprojde. Řešením je vlastní parser SQL v javovém wrapperu, ne pole v deskriptoru.
 
 ### Rozresolvování jmen entit — `property-ref` na inverzní straně
-*Verze 1.0 — 7. Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F11.*
+*Verze 1.0 — 7. Potom. Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F11.*
 
 Fáze rozresolvování (`ResolveEntityNames` v `AbstractEntityBuilder`) běží před generováním, plní `ColumnPairs`, povyšuje `Unknown` typy na reference a nenalezené jméno cílové entity i nesouhlasící počet či pořadí sloupců hlásí záznamem podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md). Z důsledků rozhodnutí 001 tak zbývá jediné: `property-ref` na inverzní straně vztahu 1:1, který rozhodnutí 012 odkládá právě sem. Navigace protistrany je po rozresolvování dostupná, ale NHibernate builder ji zatím nehledá a atribut nevypisuje; zahozenou hodnotu ze vstupu aspoň hlásí parser záznamem o ztrátě.
 
@@ -99,6 +94,11 @@ Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisi
 *Souvisí s rozhodnutím [016](./decisions/016-generated-artifact-verification-levels.md) — mezera je viditelná až na 4. stupni ověření, který nemá zástupce. Požadavek F3.*
 
 NHibernate vyžaduje, aby perzistentní kolekce byla deklarovaná rozhraním (`IList<T>`, `ISet<T>`): za běhu vlastnost nahrazuje vlastní implementací a ta se do konkrétního `List<T>` či `HashSet<T>` přiřadit nedá. Generovaná entita ale kolekce deklaruje konkrétně, protože sdílený převod jazykových typů vykresluje `List`/`HashSet` pro všechny cíle. Stavba session factory to přijímá — 3. stupeň ověření proto mlčí — a selhání by se ukázalo až při načtení entity, tedy na 4. stupni, který zástupce nemá. Náprava patří NHibernate builderu, stejně jako vynucené `virtual`: vykreslit rozhraní a přepsat inicializátor — `= new()` se nad rozhraním nepřeloží vůbec a `= []` nad `ISet<T>` také ne — ne měnit sdílený převod.
+
+### Převodní tabulka NHibernate vypisuje dvě neregistrovaná jména typů
+*Navazuje na rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md), které tvrzení o typech NHibernate žádá ověřit proti verzi 5.7.0. Požadavky F3, F11.*
+
+Ověření emitovaných jmen proti registru `TypeFactory` NHibernate 5.7.0, provedené při implementaci sloupce verze, našlo čtyři jména, která framework neregistruje. Dvě jsou opravená na registrované aliasy — binární rodiny vypisují `binary`, rodina `Xml` jméno `XmlDoc` —, dvě opravu teprve čekají: `AnsiStringClob` (existuje jen `StringClob`) a `StringFixedLength`/`AnsiStringFixedLength` (typ řetězce pevné délky NHibernate nemá vůbec). Mapování s takovým `type` NHibernate odmítne jako neurčitelný typ, takže výstup pro neunicode `text` sloupec a pro znakový sloupec pevné délky jiné než 1 je dnes neplatný — přesně třída vad, kterou má odhalovat 3. stupeň ověření, jenž tyhle větve zatím nekryje. Oprava potřebuje říct, co se má tvrdit místo neexistujícího jména: nejbližší registrovaný typ mění tvrzení (u `AnsiStringClob` unicode facetu, u pevné délky proměnlivost), takže patří vypsat se záznamem o zúžení — a kanál pro záznamy z emisní strany převodní tabulky, obdoba `Narrowing` na čtecí straně, zatím neexistuje. Číslo ve verzi 1.0 položka nemá, protože seznam vydání je uzavřený (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)); neplatný výstup uvnitř zaručované oblasti je ale přesně druh vady, kvůli kterému kritérium verze vzniklo, takže zařazení stojí za zvážení jako revize toho rozhodnutí.
 
 ### Advisor nemá build nativní knihovny pro Windows
 *Mezera popsaná v [`architecture.md`](./architecture.md), §8. Souvisí s S5 a T7.*
@@ -126,9 +126,9 @@ Endpoint `/convert` čte připojovací řetězec pod klíčem `ConnectionStrings
 `EnforcedMembers` a `EnforcedMembersFor` volá jedině `EnforcedMembersTest`; produkční kód je nečte. Každý builder si vynucené členy vypisuje sám a nezávisle — `virtual` v `BuildPropertySignature`, `[Serializable]` v `BuildTableSchema`, `[Keyless]` u EF Core. Rozhodnutí 009 to tak popsalo záměrně: deskriptor deklaruje, builder implementuje, test je váže. Trojice ale drží jen tak dlouho, dokud test skutečně pokrývá každý člen za každé podmínky; jinak se deklarace a emise rozejdou a nikdo se to nedozví. Zbývá rozhodnout, jestli má vazbu držet test, nebo jestli si má builder vynucené členy z deskriptoru brát — s vědomím, že párování podle názvu vrací zpět riziko překlepu, kterým 009 tuhle variantu zamítlo.
 
 ### NHibernate XML parser čte jen plochou třídu
-*Verze 1.0 — 5., v rozsahu druhého `<column>` a záznamů. Potom. Souvisí s položkou o sloupci verze výše. Požadavky F2, F11.*
+*Verze 1.0 — 5., v rozsahu druhého `<column>` a záznamů. Na řadě. Požadavky F2, F11.*
 
-`NHibernateXMLMappingParser` bere z mapování jen prvky `class`. Dědičnost (`<subclass>`, `<joined-subclass>`, `<union-subclass>`), komponenty (`<component>`), spojené tabulky (`<join>`), verzování (`<version>`, `<timestamp>`), přirozený klíč (`<natural-id>`) i zvláštní kolekce (`<idbag>`, `<array>`) projdou beze stopy — bez záznamu, takže výstup je tiše chudší než vstup. Totéž platí pro druhý a další `<column>` u jedné vlastnosti. Než se to začne řešit, je potřeba vědět, co z toho má mezireprezentace nést; do té doby je nejmenší náprava záznam o ztrátě u každého nepřečteného prvku, aby se nedalo přehlédnout, že se něco zahodilo.
+`NHibernateXMLMappingParser` bere z mapování jen prvky `class`. Dědičnost (`<subclass>`, `<joined-subclass>`, `<union-subclass>`), komponenty (`<component>`), spojené tabulky (`<join>`), verzování (`<version>`, `<timestamp>`), přirozený klíč (`<natural-id>`) i zvláštní kolekce (`<idbag>`, `<array>`) projdou beze stopy — bez záznamu, takže výstup je tiše chudší než vstup. Totéž platí pro druhý a další `<column>` u jedné vlastnosti. Než se to začne řešit, je potřeba vědět, co z toho má mezireprezentace nést; do té doby je nejmenší náprava záznam o ztrátě u každého nepřečteného prvku, aby se nedalo přehlédnout, že se něco zahodilo. U `<version>` už mezireprezentace protějšek má — příznak sloupce verze z rozhodnutí [030](./decisions/030-scope-of-version-1-0.md), který NHibernate builder vypisuje —, takže jeho přečtení je dorovnání parseru, ne rozšíření modelu.
 
 ### Advisor a benchmarking nemají žádné testy
 *Souvisí s [`architecture.md`](./architecture.md), §8. Požadavky T7, S6.*

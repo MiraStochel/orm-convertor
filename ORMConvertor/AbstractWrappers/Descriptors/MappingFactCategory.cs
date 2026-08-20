@@ -17,4 +17,11 @@ public enum MappingFactCategory
     PrimaryKey = 8,
     PrimaryKeyStrategy = 9,
     ForeignKeyColumns = 10,
+
+    /// <summary>
+    /// The column carries the row version for optimistic concurrency (decision 030) -
+    /// [Timestamp] in EF Core, the version element in NHibernate; Dapper has nowhere
+    /// to put it.
+    /// </summary>
+    VersionColumn = 11,
 }

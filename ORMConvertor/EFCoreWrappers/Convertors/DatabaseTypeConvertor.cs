@@ -79,9 +79,10 @@ public class DatabaseTypeConvertor
             "uniqueidentifier" or "uuid" => new(DatabaseType.Uuid),
             "xml" => new(DatabaseType.Xml),
 
-            // A rowversion column is eight bytes of binary; the versioning semantics
-            // have no mapping fact yet (open item of decision 019), so the literal is
-            // what keeps them from vanishing without a trace.
+            // A rowversion column is eight bytes of binary; the literal keeps the exact
+            // type beside the coarser family. The type name states only the storage -
+            // EF Core reads the version claim from [Timestamp], not from here, so the
+            // version flag (decision 030) is not set by this reading.
             "rowversion" or "timestamp" => new(DatabaseType.VarBinary, Length: 8, KeepLiteral: true),
             "sql_variant" => new(null, KeepLiteral: true),
 

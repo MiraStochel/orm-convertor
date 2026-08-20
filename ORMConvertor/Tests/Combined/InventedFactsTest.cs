@@ -74,7 +74,7 @@ public class InventedFactsTest
     /// </summary>
     [Theory]
     [InlineData("NotMapped")]
-    [InlineData("Timestamp")]
+    [InlineData("ConcurrencyCheck")]
     [InlineData("StringLength(50)")]
     public void AnUnreadEFCoreAnnotationIsReported(string annotation)
     {

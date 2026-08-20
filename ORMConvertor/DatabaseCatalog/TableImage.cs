@@ -60,6 +60,13 @@ public sealed class ColumnImage
     public required bool IsNullable { get; init; }
 
     public required bool IsIdentity { get; init; }
+
+    /// <summary>
+    /// Whether the column is a rowversion - a claim of its own beside the type, because
+    /// the type family only says binary while the schema says the column carries the row
+    /// version (decisions 019 and 030). Defaults to false: most columns are not one.
+    /// </summary>
+    public bool IsRowVersion { get; init; }
 }
 
 /// <summary>

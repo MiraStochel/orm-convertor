@@ -85,6 +85,7 @@ public static class NHibernateDescriptor
 
             [MappingFactCategory.PrimaryKeyStrategy] = FactSupport.Expressible, // <generator>
             [MappingFactCategory.ForeignKeyColumns] = FactSupport.Expressible,
+            [MappingFactCategory.VersionColumn] = FactSupport.Expressible,   // <version> element
         },
 
         // HQL covers every category except set operations: NHibernate 5.7.0 has no UNION,

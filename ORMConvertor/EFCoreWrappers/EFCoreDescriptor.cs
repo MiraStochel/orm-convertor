@@ -49,6 +49,7 @@ public static class EFCoreDescriptor
             [MappingFactCategory.PrimaryKeyStrategy] = FactSupport.Expressible,
 
             [MappingFactCategory.ForeignKeyColumns] = FactSupport.Expressible, // [ForeignKey]
+            [MappingFactCategory.VersionColumn] = FactSupport.Expressible,  // [Timestamp]
         },
 
         // LINQ over DbSet covers every category. The one narrowing inside JoinKind - EF Core 10

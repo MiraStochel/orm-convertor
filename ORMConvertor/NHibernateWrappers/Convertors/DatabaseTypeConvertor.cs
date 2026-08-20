@@ -77,8 +77,9 @@ public static class DatabaseTypeConvertor
             "ansistringclob" => new(DatabaseType.Text, IsUnicode: false),
 
             // Binary is Byte[] over DbType.Binary, which the SQL Server driver renders
-            // as the variable-length binary type.
-            "binary" => new(DatabaseType.VarBinary),
+            // as the variable-length binary type; Byte[] and System.Byte[] are the same
+            // type under its CLR aliases.
+            "binary" or "byte[]" or "system.byte[]" => new(DatabaseType.VarBinary),
             "binaryblob" => new(DatabaseType.Blob),
 
             "guid" => new(DatabaseType.Uuid),
@@ -117,11 +118,14 @@ public static class DatabaseTypeConvertor
         DatabaseType.VarChar => isUnicode == false ? "AnsiString" : "String",
         DatabaseType.Text => isUnicode == false ? "AnsiStringClob" : "StringClob",
 
-        DatabaseType.Binary or DatabaseType.VarBinary => "Binary",
+        // TypeFactory of 5.7.0 registers the binary type under the lowercase alias -
+        // "Binary" resolves to nothing - and the XML document type under XmlDoc, not Xml.
+        // Both spellings verified against the package the acceptance level runs on.
+        DatabaseType.Binary or DatabaseType.VarBinary => "binary",
         DatabaseType.Blob => "BinaryBlob",
 
         DatabaseType.Uuid => "Guid",
-        DatabaseType.Xml => "Xml",
+        DatabaseType.Xml => "XmlDoc",
 
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };

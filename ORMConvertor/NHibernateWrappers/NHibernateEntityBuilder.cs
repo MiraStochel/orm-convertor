@@ -268,8 +268,15 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildProperties(EntityMap entityMap, EntityArtifact artifact)
     {
+        var version = AppendVersion(entityMap, artifact);
+
         foreach (var pm in entityMap.PropertyMaps)
         {
+            if (pm == version)
+            {
+                continue; // emitted as <version> above
+            }
+
             if (entityMap.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == pm.Property.Name) == true)
             {
                 continue; // handled in BuildPrimaryKey
@@ -303,6 +310,131 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             AppendPropertyToXml(artifact.Mapping, entityMap, pm);
         }
+    }
+
+    /// <summary>
+    /// Writes the version column (decision 030) as the &lt;version&gt; element, which the mapping
+    /// schema places between the identifier and the properties - hence the head of the
+    /// properties step, right after BuildPrimaryKey wrote the identifier. The element admits
+    /// no length, precision, scale or not-null attributes of its own, so any of those facts
+    /// forces the nested &lt;column&gt; form, the same way sql-type does on &lt;property&gt;.
+    ///
+    /// A binary version - the shape of a SQL Server rowversion column - is a value NHibernate
+    /// cannot increment itself, so generated="always" is forced by the framework the way
+    /// virtual is: the database produces the value and NHibernate reads it back. A numeric or
+    /// date-time version stays framework-managed, which is the element's default.
+    ///
+    /// The schema admits a single &lt;version&gt; element, on a plain mapped property; a version
+    /// flag anywhere else - a second flagged property, a key part, a navigation - is dropped
+    /// with a loss record (decision 004).
+    /// </summary>
+    /// <returns>The property map emitted as the version, or null when the entity has none.</returns>
+    private PropertyMap? AppendVersion(EntityMap entityMap, EntityArtifact artifact)
+    {
+        var flagged = entityMap.PropertyMaps.Where(pm => pm.IsVersion).ToList();
+
+        var version = flagged.FirstOrDefault(pm =>
+            entityMap.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == pm.Property.Name) != true
+            && !entityMap.Relations.Any(r => r.SourceNavigationProperty == pm.Property.Name)
+            && pm.Property.Type is not { Category: LangTypeCategory.Collection });
+
+        foreach (var dropped in flagged.Where(pm => pm != version))
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Entity = entityMap.Entity.Name,
+                Property = dropped.Property.Name,
+                Category = MappingFactCategory.VersionColumn,
+                Reason = "NHibernate maps the row version with a single <version> element on a plain "
+                    + "mapped property; the version flag of this property cannot be expressed there "
+                    + "and is dropped (decision 004).",
+            });
+        }
+
+        if (version is null)
+        {
+            return null;
+        }
+
+        AppendPropertyToCode(artifact.Code, version.Property);
+
+        var attrs = new List<string> { $"name=\"{version.Property.Name}\"" };
+
+        if (version.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob)
+        {
+            attrs.Add("generated=\"always\"");
+        }
+
+        var typeAttr = version.Type.HasValue
+            ? $"type=\"{DatabaseTypeConvertor.ToNHibernate(version.Type.Value, version.IsUnicode, version.Length)}\""
+            : null;
+
+        string? notNull = null;
+
+        if (version.IsNullable.HasValue)
+        {
+            notNull = $"not-null=\"{(!version.IsNullable.Value).ToString().ToLowerInvariant()}\"";
+        }
+        else if (version.Property.Type is { IsNullable: false })
+        {
+            notNull = "not-null=\"true\"";
+        }
+
+        var columnFacets = new List<string>();
+
+        if (notNull is not null)
+        {
+            columnFacets.Add(notNull);
+        }
+
+        if (version.Length.HasValue)
+        {
+            columnFacets.Add($"length=\"{version.Length.Value}\"");
+        }
+
+        if (PrecisionIsExpressible(entityMap, version))
+        {
+            columnFacets.Add($"precision=\"{version.Precision!.Value}\"");
+        }
+
+        if (version.Scale.HasValue)
+        {
+            columnFacets.Add($"scale=\"{version.Scale.Value}\"");
+        }
+
+        if (version.SourceSqlType is not null)
+        {
+            columnFacets.Add($"sql-type=\"{version.SourceSqlType}\"");
+        }
+
+        if (columnFacets.Count == 0)
+        {
+            if (!string.IsNullOrWhiteSpace(version.ColumnName))
+            {
+                attrs.Add($"column=\"{version.ColumnName}\"");
+            }
+
+            if (typeAttr is not null)
+            {
+                attrs.Add(typeAttr);
+            }
+
+            AppendXml(artifact.Mapping, 2, $"<version {string.Join(' ', attrs)} />");
+            return version;
+        }
+
+        if (typeAttr is not null)
+        {
+            attrs.Add(typeAttr);
+        }
+
+        AppendXml(artifact.Mapping, 2, $"<version {string.Join(' ', attrs)}>");
+        AppendXml(artifact.Mapping, 3, $"<column name=\"{version.ColumnName ?? version.Property.Name}\" {string.Join(' ', columnFacets)} />");
+        AppendXml(artifact.Mapping, 2, "</version>");
+        return version;
     }
 
     /// <summary>
