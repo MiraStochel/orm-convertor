@@ -54,7 +54,10 @@ public class CatalogCompletionTest
     {
         var builder = ParseCustomer();
 
-        CatalogCompletion.Complete(builder, new FakeCatalogReader(CustomersImage()));
+        var result = CatalogCompletion.Complete(builder, new FakeCatalogReader(CustomersImage()));
+
+        Assert.Equal(CatalogConnectionState.Reached, result.ConnectionState);
+        Assert.NotNull(result.ReadTime);
 
         var em = builder.EntityMaps.Single();
         Assert.Equal("Customers", em.Table);
@@ -189,12 +192,14 @@ public class CatalogCompletionTest
         new DapperEntityParser(builder).Parse(CustomerSource);
         var reader = new FakeCatalogReader(CustomersImage());
 
-        var elapsed = CatalogCompletion.Complete(builder, reader);
+        var result = CatalogCompletion.Complete(builder, reader);
 
         // Dapper as a target expresses no mapping category, so its demand is empty and
-        // the catalog is never asked (decision 015).
+        // the catalog is never asked (decision 015). The connection state says exactly
+        // that: configured, but never tried.
         Assert.Equal(0, reader.Reads);
-        Assert.Null(elapsed);
+        Assert.Equal(CatalogConnectionState.Unused, result.ConnectionState);
+        Assert.Null(result.ReadTime);
         Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Supplied);
     }
 
@@ -203,11 +208,37 @@ public class CatalogCompletionTest
     {
         var builder = ParseCustomer();
 
-        var elapsed = CatalogCompletion.Complete(builder, reader: null);
+        var result = CatalogCompletion.Complete(builder, reader: null);
 
-        Assert.Null(elapsed);
+        Assert.Equal(CatalogConnectionState.NotConfigured, result.ConnectionState);
+        Assert.Null(result.ReadTime);
         Assert.Contains(builder.Records, r =>
             r.Kind == ConversionRecordKind.Incompleteness && r.Reason.Contains("No database connection"));
+    }
+
+    [Fact]
+    public void UnreachableCatalogBecomesARecordNotAFailure()
+    {
+        var builder = ParseCustomer();
+
+        var result = CatalogCompletion.Complete(builder, new UnreachableCatalogReader());
+
+        // A configured but unreachable catalog is infrastructure, not input: the
+        // translation continues on conventions, a record says why, and the connection
+        // state carries the fact as a field of its own (decisions 015 and 030).
+        Assert.Equal(CatalogConnectionState.Unreachable, result.ConnectionState);
+        Assert.Contains(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Incompleteness && r.Reason.Contains("could not be read"));
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Supplied);
+    }
+
+    private sealed class UnreachableCatalogReader : ICatalogReader
+    {
+        public IReadOnlyDictionary<string, TableLookup> ReadTables(IReadOnlyList<TableRequest> requests)
+            => throw new InvalidOperationException("connection refused");
+
+        public IReadOnlyList<TableImage> FindJunctionTables(IReadOnlyCollection<TableImage> referencedTables)
+            => throw new InvalidOperationException("connection refused");
     }
 
     [Fact]

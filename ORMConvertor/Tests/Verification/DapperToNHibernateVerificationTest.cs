@@ -1,4 +1,5 @@
 using AbstractWrappers.Diagnostics;
+using DatabaseCatalog;
 using Model;
 using Tests.Database;
 
@@ -31,6 +32,7 @@ public class DapperToNHibernateVerificationTest(TestSchemaFixture fixture)
         // failure record would mean the completion did not reach the key.
         Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure);
         Assert.Equal(3, result.Sources.Count(o => o.ContentType == ConversionContentType.XML));
+        Assert.Equal(CatalogConnectionState.Reached, result.CatalogState);
         Assert.NotNull(result.CatalogReadTime);
     }
 

@@ -60,6 +60,7 @@ public static class Endpoints
                 converted.TargetFrameworkVersion,
                 converted.Sources,
                 converted.Records,
+                converted.CatalogState,
                 converted.CatalogReadTime?.TotalMilliseconds));
         }
         catch (Exception e)

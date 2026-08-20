@@ -19,12 +19,13 @@ namespace DatabaseCatalog;
 public static class CatalogCompletion
 {
     /// <summary>
-    /// Runs the phase over the builder's accumulated entities. Returns the time the
-    /// catalog read and write took, so it can be reported separately from translation
-    /// time (S3); null when the phase had nothing to do - an empty demand means zero
-    /// queries (decision 015).
+    /// Runs the phase over the builder's accumulated entities. Returns the state of the
+    /// catalog connection - the first-class answer the /convert response carries beside
+    /// the records (decision 030) - and the time the catalog read and write took, so it
+    /// can be reported separately from translation time (S3); a null time means the
+    /// connection was never tried - an empty demand means zero queries (decision 015).
     /// </summary>
-    public static TimeSpan? Complete(AbstractEntityBuilder builder, ICatalogReader? reader)
+    public static CatalogPhaseResult Complete(AbstractEntityBuilder builder, ICatalogReader? reader)
     {
         // A key class named by a composite key is not an entity of the conversion and
         // has no table, so it dissolves into the key before the catalog would look one
@@ -39,6 +40,7 @@ public static class CatalogCompletion
             .ToHashSet();
 
         TimeSpan? elapsed = null;
+        var state = reader is null ? CatalogConnectionState.NotConfigured : CatalogConnectionState.Unused;
 
         if (demand.Count > 0 && builder.EntityMaps.Any(em => em.Entity.Name.Length > 0))
         {
@@ -58,11 +60,13 @@ public static class CatalogCompletion
                 try
                 {
                     Apply(builder, reader, demand);
+                    state = CatalogConnectionState.Reached;
                 }
                 catch (Exception ex)
                 {
                     // A configured but unreachable catalog is infrastructure, not input;
                     // the translation continues on conventions and says why (decision 015).
+                    state = CatalogConnectionState.Unreachable;
                     builder.Report(new ConversionRecord
                     {
                         Kind = ConversionRecordKind.Incompleteness,
@@ -79,7 +83,7 @@ public static class CatalogCompletion
 
         InferLanguageTypes(builder);
 
-        return elapsed;
+        return new CatalogPhaseResult(state, elapsed);
     }
 
     private static void Apply(AbstractEntityBuilder builder, ICatalogReader reader, HashSet<MappingFactCategory> demand)

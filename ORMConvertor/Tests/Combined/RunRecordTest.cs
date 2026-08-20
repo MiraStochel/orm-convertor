@@ -1,4 +1,5 @@
 using DapperWrappers;
+using DatabaseCatalog;
 using EFCoreWrappers;
 using Model;
 using OrmConvertor;
@@ -31,6 +32,10 @@ public class RunRecordTest
         Assert.Equal(DapperDescriptor.Instance.Version, result.SourceFrameworkVersion);
         Assert.Equal(ORMEnum.EFCore, result.TargetFramework);
         Assert.Equal(EFCoreDescriptor.Instance.Version, result.TargetFrameworkVersion);
+
+        // No connection string was passed, so the record must say the catalog took no
+        // part - a first-class field beside the records (decision 030).
+        Assert.Equal(CatalogConnectionState.NotConfigured, result.CatalogState);
     }
 
     [Fact]

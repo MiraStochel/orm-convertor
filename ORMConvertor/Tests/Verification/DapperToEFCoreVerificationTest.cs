@@ -1,4 +1,5 @@
 using AbstractWrappers.Diagnostics;
+using DatabaseCatalog;
 using Microsoft.EntityFrameworkCore;
 using Model;
 using Tests.Database;
@@ -28,6 +29,7 @@ public class DapperToEFCoreVerificationTest(TestSchemaFixture fixture)
         var result = DapperSourceEntities.Convert(ORMEnum.EFCore);
 
         Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.Equal(CatalogConnectionState.Reached, result.CatalogState);
         Assert.NotNull(result.CatalogReadTime);
     }
 

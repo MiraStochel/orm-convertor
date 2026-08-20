@@ -1,4 +1,5 @@
 using AbstractWrappers.Diagnostics;
+using DatabaseCatalog;
 using Model;
 
 namespace OrmConvertor;
@@ -37,6 +38,14 @@ public sealed class ConversionResult
     public required List<ConversionSource> Sources { get; init; }
 
     public required List<ConversionRecord> Records { get; init; }
+
+    /// <summary>
+    /// State of the catalog connection during the completion phase. The connection lives
+    /// in server configuration and the interface only shows its state (decision 030); the
+    /// records carry the same fact, but only as one entry among many, so the caller gets
+    /// it here as a field of its own.
+    /// </summary>
+    public required CatalogConnectionState CatalogState { get; init; }
 
     /// <summary>
     /// How long the catalog completion phase took (decision 015), reported separately

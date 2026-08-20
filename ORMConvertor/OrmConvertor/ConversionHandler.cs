@@ -43,7 +43,7 @@ public static class ConversionHandler
         var catalogReader = string.IsNullOrWhiteSpace(catalogConnectionString)
             ? null
             : new SqlServerCatalogReader(catalogConnectionString);
-        var catalogReadTime = CatalogCompletion.Complete(entityBuilder, catalogReader);
+        var catalogPhase = CatalogCompletion.Complete(entityBuilder, catalogReader);
 
         // Emit entities for target ORM
         results.AddRange(entityBuilder.Build());
@@ -107,7 +107,8 @@ public static class ConversionHandler
             TargetFrameworkVersion = entityBuilder.Descriptor.Version,
             Sources = results,
             Records = [.. entityBuilder.Records, .. queryRecords],
-            CatalogReadTime = catalogReadTime,
+            CatalogState = catalogPhase.ConnectionState,
+            CatalogReadTime = catalogPhase.ReadTime,
         };
     }
 
