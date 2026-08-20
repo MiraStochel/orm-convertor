@@ -24,11 +24,6 @@ Parsery dnes čtou konvenci zdrojového frameworku jen tam, kde by její neznalo
 
 Rozhodnutí 017 uspořádalo zdroje faktů na vstupní text frameworku, pomocné mapovací artefakty, katalog a konvenci cíle. Některý framework ale mezi svými vlastními artefakty precedenci sám dokumentuje, a to opačnou: EF Core staví fluent API nad anotace, MyBatis řeší souběh anotací a XML mapperu vlastními pravidly. Přeložit takový projekt naším pořadím znamená přeložit něco jiného, než co zdroj znamená — a překlad má reprodukovat význam zdroje, ne naši preferenci. Rozhodnout je třeba, jestli precedence zdrojového frameworku přebíjí naše pořadí uvnitř prvního stupně, a pokud ano, kde je ta precedence zapsaná: deskriptor popisuje cíl, ne zdroj, a kategorii pro tohle nemá. Dokud se čte jediný artefakt na framework, případ nenastane; nastane s prvním parserem fluent konfigurace.
 
-### Centrální správa verzí
-*Verze 1.0 — 15. Na řadě. Podklad: audit 2026-08-02, kap. 3.4.1. Souvisí s S2, jehož determinismus se opírá o dané verze.*
-
-Zavést `Directory.Packages.props`, případně `global.json`, aby se sjednocení verzí udržovalo mechanicky a ne ručně. Dnes se může nepozorovaně rozejít — tabulka zafixovaných verzí v `architecture.md` pak tvrdí něco, co v `.csproj` souborech nemusí platit.
-
 ### Sjednocení ADO.NET provideru v benchmarcích
 *Souvisí s T-požadavky. Podklad: audit 2026-08-02, kap. 3.4.2.*
 
@@ -85,6 +80,11 @@ V repozitáři leží `ecosystem.config.js`, konfigurace pro proces manager PM2,
 Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný je tedy P/Invoke do ILP solveru, obě stavby benchmarkových harnessů i `HarnessGenerationUtilities`, které si názvy typů, jmenné prostory a atribut `[Table]` tahá z generovaného textu regulárními výrazy a nullabilitu hodnotových typů přepisuje textovou náhradou. Právě tahle část se nejsnáz rozejde s generátorem, protože stojí na jeho výstupním tvaru — a jednou už se rozešla: extrakce SQL z generované metody přestala být potřeba, teprve když builder začal vydávat holý dotaz zvlášť. Sem patří i to, že 4. stupeň ověření podle rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md) nemá jediného zástupce: `TestSchemaFixture.OpenConnection()` existuje i s popsanou hranicí transakce, ale nikdo ho nevolá.
 
 Do verze 1.0 položka nepatří. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo `Advisor` i `AdvisorBenchmarking` ze záruk vcelku právě proto, že netestované jsou; testovat oblast, na kterou verze neslibuje spoleh, by bylo otevírání nové části místo dokončení rozdělané.
+
+### Centrální správa verzí
+*Verze 1.0 — 15. Na řadě. Implementace rozhodnutí [034](./decisions/034-central-version-management.md). Podklad: audit 2026-08-02, kap. 3.4.1. Požadavky S2, S6.*
+
+Verze balíčků i cílový framework jsou dnes napsané v patnácti souborech `.csproj` a s tabulkou zafixovaných verzí v [`architecture.md`](./architecture.md) §1 je nespojuje nic: devět zápisů verze je duplicitních a samotné číslo `10.0.10` stojí na osmi místech ve třech projektech. Verze SDK není v repozitáři vůbec — CI, Dockerfile a vývojový stroj si ji každý určují po svém. Rozhodnutí [034](./decisions/034-central-version-management.md) volbu uzavřelo: v adresáři řešení vzniknou `Directory.Packages.props` se zákazem lokálního přebití, `global.json` s pásmem SDK a `Directory.Build.props` s `TargetFramework`, `ImplicitUsings` a `Nullable`, a patnáct projektů se o ten obsah zkrátí. Do téže práce patří dvě řádky v `ORMConvertorAPI/Dockerfile` — bez zkopírování obou souborů `props` do fáze obnovy by tam restore selhal — a věta v `architecture.md` §1 o tom, odkud se .NET řádky tabulky nově berou; §6.2 naopak ruční hlídání shody `Tests.csproj` s tabulkou přestane potřebovat.
 
 ### Překladový artefakt nenese přihlašovací údaje — a nikdo to netvrdí
 *Verze 1.0 — 16. Potom. Implementace rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md). Požadavky S4, S2.*
