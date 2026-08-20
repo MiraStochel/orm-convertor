@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AbstractWrappers\AbstractWrappers.csproj" />
+    <ProjectReference Include="..\CSharpEntityParsing\CSharpEntityParsing.csproj" />
     <ProjectReference Include="..\Model\Model.csproj" />
   </ItemGroup>
 

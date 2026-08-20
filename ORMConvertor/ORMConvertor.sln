@@ -41,6 +41,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DatabaseCatalog", "Database
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinqParsing", "LinqParsing\LinqParsing.csproj", "{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CSharpEntityParsing", "CSharpEntityParsing\CSharpEntityParsing.csproj", "{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -219,6 +221,18 @@ Global
 		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Release|x64.Build.0 = Release|Any CPU
 		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Release|x86.ActiveCfg = Release|Any CPU
 		{C6C495D5-12AF-4ABA-A9ED-B5C030B94AAE}.Release|x86.Build.0 = Release|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Debug|x64.Build.0 = Debug|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Debug|x86.Build.0 = Debug|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Release|x64.ActiveCfg = Release|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Release|x64.Build.0 = Release|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Release|x86.ActiveCfg = Release|Any CPU
+		{8D4F1A27-53B6-4E8C-9F02-B7A1C4D6E395}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

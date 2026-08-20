@@ -2,9 +2,8 @@
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Convertors;
+using CSharpEntityParsing;
 using EFCoreWrappers.Convertors;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
 using Model.AbstractRepresentation;
@@ -13,71 +12,19 @@ using Model.AbstractRepresentation.Enums;
 namespace EFCoreWrappers;
 
 /// <summary>
-/// Parses a C# class definition (optionally within a namespace) from the provided source code string.
+/// Parses an EF Core entity class from C# source code: the shared structural reading plus
+/// EF Core's attribute mapping and the conventions whose absence would change the meaning.
 /// </summary>
-public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
+public class EFCoreEntityParser : CSharpEntityParser
 {
-    public bool CanParse(ConversionContentType contentType)
+    public EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : base(entityBuilder)
     {
-        return contentType == ConversionContentType.CSharpEntity;
-    }
-
-    /// <summary>
-    /// Parses a C# class definition (optionally within a namespace) from the provided source code string.
-    /// </summary>
-    /// <param name="source">C# source code containing a single class, optionally wrapped in a namespace.</param>
-    public void Parse(string source)
-    {
-        var root = CSharpSyntaxTree.ParseText(source).GetCompilationUnitRoot();
-
-        var classes = root.DescendantNodes()
-            .OfType<ClassDeclarationSyntax>()
-            .ToList();
-
-        foreach (var cls in classes)
-        {
-            entityBuilder.BeginEntity();
-
-            var ns = GetNamespace(cls);
-            if (!string.IsNullOrEmpty(ns))
-            {
-                entityBuilder.AddNamespace(ns);
-            }
-
-            ParseClassAttributes(cls);
-            ParseClassHeader(cls);
-            ParseProperties(cls);
-        }
-    }
-
-    private static string? GetNamespace(ClassDeclarationSyntax classDeclaration)
-    {
-        var namespaces = classDeclaration.Ancestors()
-            .OfType<BaseNamespaceDeclarationSyntax>()
-            .Select(ns => ns.Name.ToString())
-            .Reverse()
-            .ToList();
-
-        return namespaces.Count == 0 ? null : string.Join(".", namespaces);
-    }
-
-    /// <summary>
-    /// Parses the class header, including modifiers and class name.
-    /// </summary>
-    private void ParseClassHeader(ClassDeclarationSyntax classDeclaration)
-    {
-        var modifiers = string.Join(" ", classDeclaration.Modifiers.Select(m => m.Text));
-
-        entityBuilder.AddClassHeader(
-            modifiers,
-            classDeclaration.Identifier.Text
-        );
     }
 
     /// <summary>
     /// Parses class attributes, specifically looking for EF Core table and schema attributes.
     /// </summary>
-    private void ParseClassAttributes(ClassDeclarationSyntax classDeclaration)
+    protected override void ParseClassAttributes(ClassDeclarationSyntax classDeclaration)
     {
         foreach (var attr in classDeclaration.AttributeLists.SelectMany(l => l.Attributes))
         {
@@ -162,7 +109,7 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
     /// <summary>
     /// Parses properties from the class declaration.
     /// </summary>
-    private void ParseProperties(ClassDeclarationSyntax classDeclaration)
+    protected override void ParseProperties(ClassDeclarationSyntax classDeclaration)
     {
         var classKeyNames = GetClassPrimaryKeyNames(classDeclaration);
         var keyPropertyNames = new List<string>();
@@ -176,32 +123,9 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
 
         foreach (var prop in classDeclaration.Members.OfType<PropertyDeclarationSyntax>())
         {
-            var name = prop.Identifier.Text;
-            var accessTokens = prop.Modifiers
-                .Where(m =>
-                    m.IsKind(SyntaxKind.PublicKeyword) ||
-                    m.IsKind(SyntaxKind.PrivateKeyword) ||
-                    m.IsKind(SyntaxKind.InternalKeyword) ||
-                    m.IsKind(SyntaxKind.ProtectedKeyword))
-                .Select(t => t.Text)
-                .ToList();
-            var accessModifiers = string.Join(" ", accessTokens);
-
-            var otherModifiers = prop.Modifiers
-                        .Where(m => !accessTokens.Contains(m.Text))
-                        .Select(m => m.Text)
-                        .ToList();
-
-            bool hasGetter = prop.ExpressionBody != null
-                    || prop.AccessorList?.Accessors.Any(a => a.IsKind(SyntaxKind.GetAccessorDeclaration)) == true;
-
-            bool hasSetter = prop.AccessorList?.Accessors
-                        .Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration)) == true;
-
-            bool nullableSyntax = prop.Type is NullableTypeSyntax;
-            string type = ((prop.Type as NullableTypeSyntax)?.ElementType ?? prop.Type).ToString();
-            
-            var defaultValue = prop.Initializer?.Value?.ToString();
+            var reading = ReadProperty(prop);
+            var name = reading.Name;
+            var type = reading.Type;
 
             var dbProps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             bool isPrimaryKey = false;
@@ -268,20 +192,11 @@ public class EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : IParser
             // claim and stays on the type, while the column's nullability is what EF Core
             // reads from the type unless [Required] overrides it. Folding them into one
             // value used to lose the question mark of a [Required] property.
-            bool databaseNullable = !requiredAttr && nullableSyntax;
+            bool databaseNullable = !requiredAttr && reading.IsNullable;
 
             dbProps["Nullable"] = databaseNullable ? "true" : "false";
 
-            entityBuilder.AddProperty(
-                type,
-                name,
-                accessModifier: accessModifiers,
-                OtherModifiers: otherModifiers,
-                hasGetter: hasGetter,
-                hasSetter: hasSetter,
-                defaultValue: defaultValue,
-                isNullable: nullableSyntax
-            );
+            EmitProperty(reading);
 
             if (dbProps.Count > 0)
             {
