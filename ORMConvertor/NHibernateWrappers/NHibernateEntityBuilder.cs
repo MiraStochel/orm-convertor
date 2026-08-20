@@ -281,12 +281,33 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             }
 
             AppendPropertyToCode(artifact.Code, pm.Property);
+
+            if (pm.Property.Type is { Category: LangTypeCategory.Collection })
+            {
+                // A collection with no relation behind it cannot become a <property> - NHibernate
+                // would refuse to infer a type for it - and the value-collection form would need
+                // key and element columns nobody stated. The class keeps the property, the
+                // mapping leaves it out, and NHibernate ignores an unmapped member.
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.XML,
+                    Entity = entityMap.Entity.Name,
+                    Property = pm.Property.Name,
+                    Reason = "The collection has no relation behind it, so there is nothing to build its mapping from; "
+                        + "the property stays on the class and the mapping leaves it unmapped.",
+                });
+                continue;
+            }
+
             AppendPropertyToXml(artifact.Mapping, entityMap, pm);
         }
     }
 
     /// <summary>
-    /// Builds C# foreign key properties and XML <one-to-one>, <many-to-one>, <bag> or <many-to-many> tags.
+    /// Builds C# foreign key properties and XML <one-to-one>, <many-to-one> or collection
+    /// (<bag>, <set>) tags, with <one-to-many> or <many-to-many> inside the collection.
     /// </summary>
     protected override void BuildForeignKey(EntityMap entityMap, EntityArtifact artifact)
     {
@@ -313,25 +334,140 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
-            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
-            artifact.Code.AppendLine();
-
-            // XML <bag> (TODO: allow set/list/map etc.)
-            // TODO other collection properties
-            AppendXml(artifact.Mapping, 2, $"<bag name=\"{propertyMap.Property.Name}\" inverse=\"true\" cascade=\"all-delete-orphan\">");
-            AppendKey(artifact.Mapping, entityMap, relation);
-
-            if (relation.Cardinality == Cardinality.OneToMany)
-            {
-                AppendXml(artifact.Mapping, 3, $"<one-to-many class=\"{relation.TargetEntity}\" />");
-            }
-            else // ManyToMany
-            {
-                AppendXml(artifact.Mapping, 3, $"<many-to-many class=\"{relation.TargetEntity}\" />");
-            }
-
-            AppendXml(artifact.Mapping, 2, "</bag>");
+            AppendPropertyToCode(artifact.Code, propertyMap.Property);
+            AppendCollection(artifact.Mapping, entityMap, relation, propertyMap);
         }
+    }
+
+    /// <summary>
+    /// Writes the mapping of a collection. The element follows the kind the model carries
+    /// (decision 014): Set is &lt;set&gt;, everything else is &lt;bag&gt; - &lt;list&gt; would need an
+    /// index column the model does not keep, and &lt;bag&gt; is NHibernate's own shape for a
+    /// list-typed property without one, so no claim is added and nothing is reported here;
+    /// where a &lt;list&gt; was the source, its parser already reported the dropped order.
+    ///
+    /// The attributes carry only what the model states: inverse="true" is derived from the
+    /// shape of both sides rather than assumed (see <see cref="CollectionIsInverse"/>), and
+    /// cascade is never written - the source stated no cascade behavior, so the target's
+    /// default (none) applies. A many-to-many that survived the junction synthesis of
+    /// decision 005 writes back the junction facts the source stated - the collection
+    /// table, its schema and the far side's columns - because without the table attribute
+    /// the mapping is invalid, not merely poorer; what stays missing is already recorded
+    /// by the resolution phase.
+    /// </summary>
+    private void AppendCollection(StringBuilder mapping, EntityMap entityMap, Relation relation, PropertyMap propertyMap)
+    {
+        var element = propertyMap.Property.Type is { CollectionKind: CollectionKind.Set } ? "set" : "bag";
+
+        var attrs = new List<string> { $"name=\"{propertyMap.Property.Name}\"" };
+
+        var junction = relation.Cardinality == Cardinality.ManyToMany ? StatedJunctionFacts(relation) : null;
+
+        if (junction?.Table is not null)
+        {
+            attrs.Add($"table=\"{junction.Table}\"");
+        }
+
+        if (junction?.Schema is not null)
+        {
+            attrs.Add($"schema=\"{junction.Schema}\"");
+        }
+
+        if (CollectionIsInverse(entityMap, relation))
+        {
+            attrs.Add("inverse=\"true\"");
+        }
+
+        AppendXml(mapping, 2, $"<{element} {string.Join(' ', attrs)}>");
+        AppendKey(mapping, entityMap, relation);
+
+        if (relation.Cardinality == Cardinality.OneToMany)
+        {
+            AppendXml(mapping, 3, $"<one-to-many class=\"{relation.TargetEntity}\" />");
+        }
+        else // ManyToMany
+        {
+            AppendManyToMany(mapping, relation, junction);
+        }
+
+        AppendXml(mapping, 2, $"</{element}>");
+    }
+
+    /// <summary>
+    /// Whether the write on the foreign key belongs to a counterpart the conversion knows:
+    /// the target entity is part of it and carries an owning reference back here over the
+    /// same columns. Only then does inverse="true" restate the model - this side holds no
+    /// column and the far side maps the association. Without such a counterpart the
+    /// attribute is left out, and NHibernate lets the collection write the key: with
+    /// inverse="true" and nobody on the other side, the association would never persist.
+    /// A surviving many-to-many gets no inverse either way - which side manages the
+    /// junction rows is a claim nobody made.
+    /// </summary>
+    private bool CollectionIsInverse(EntityMap entityMap, Relation relation)
+    {
+        if (relation.Cardinality != Cardinality.OneToMany || relation.Role != RelationRole.Inverse)
+        {
+            return false;
+        }
+
+        var target = FindEntityMap(relation.TargetEntity);
+
+        return target is not null && target.Relations.Any(r =>
+            r is { Role: RelationRole.Owning, Cardinality: Cardinality.ManyToOne }
+            && FindEntityMap(r.TargetEntity) == entityMap
+            && DescribesTheSameForeignKey(r, relation));
+    }
+
+    /// <summary>
+    /// Both relations describe the same foreign key when both know their columns - the
+    /// source side of every pair is the child's column on either reading (decision 012).
+    /// A side with unresolved pairs cannot disagree, so it does not veto the match; the
+    /// check only tells apart two distinct foreign keys between the same pair of entities.
+    /// </summary>
+    private static bool DescribesTheSameForeignKey(Relation owning, Relation collection)
+    {
+        if (owning.ColumnPairs.Count == 0 || collection.ColumnPairs.Count == 0)
+        {
+            return true;
+        }
+
+        return owning.ColumnPairs.Count == collection.ColumnPairs.Count
+            && owning.ColumnPairs.Zip(collection.ColumnPairs).All(pair =>
+                string.Equals(
+                    pair.First.Source.ColumnName ?? pair.First.Source.Property.Name,
+                    pair.Second.Source.ColumnName ?? pair.Second.Source.Property.Name,
+                    StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The far side of a many-to-many that survived the junction synthesis: the columns the
+    /// source stated for the &lt;many-to-many&gt; element go back out verbatim - they belong to
+    /// the junction table, so there is no key to pair them with and no pairing to wait for.
+    /// </summary>
+    private static void AppendManyToMany(StringBuilder mapping, Relation relation, JunctionFacts? junction)
+    {
+        var columns = junction?.TargetColumns ?? [];
+
+        if (columns.Count == 0)
+        {
+            AppendXml(mapping, 3, $"<many-to-many class=\"{relation.TargetEntity}\" />");
+            return;
+        }
+
+        if (columns.Count == 1)
+        {
+            AppendXml(mapping, 3, $"<many-to-many class=\"{relation.TargetEntity}\" column=\"{columns[0]}\" />");
+            return;
+        }
+
+        AppendXml(mapping, 3, $"<many-to-many class=\"{relation.TargetEntity}\">");
+
+        foreach (var column in columns)
+        {
+            AppendXml(mapping, 4, $"<column name=\"{column}\" />");
+        }
+
+        AppendXml(mapping, 3, "</many-to-many>");
     }
 
     private static PropertyMap? FindNavigationPropertyMap(EntityMap em, Relation relation)
@@ -805,16 +941,23 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Writes the key of a collection. Those columns belong to the child table, so they reach the
-    /// model only where both entities take part in the same conversion. Until then the key column of
-    /// the owner is written, as before: leaving the attribute out is not silence here, because
-    /// NHibernate then names the column id rather than anything derived from the owner
-    /// (Collection.DefaultKeyColumnName in 5.7.0), which would change the mapping instead of
-    /// declining to state it (decision 012).
+    /// Writes the key of a collection. Those columns belong to the child table, so they pair up
+    /// only where both entities take part in the same conversion; where the pairs never resolved -
+    /// a target outside the conversion, or a many-to-many whose columns belong to the junction
+    /// table (decision 005) - the columns the source stated go back out verbatim. Only when the
+    /// source stated none is the key column of the owner written, as before: leaving the attribute
+    /// out is not silence here, because NHibernate then names the column id rather than anything
+    /// derived from the owner (Collection.DefaultKeyColumnName in 5.7.0), which would change the
+    /// mapping instead of declining to state it (decision 012).
     /// </summary>
     private void AppendKey(StringBuilder mapping, EntityMap entityMap, Relation relation)
     {
         var columns = relation.ColumnPairs.Select(pair => pair.Source.ColumnName ?? pair.Source.Property.Name).ToList();
+
+        if (columns.Count == 0)
+        {
+            columns = StatedForeignKeyColumns(relation)?.ToList() ?? [];
+        }
 
         if (columns.Count == 0)
         {

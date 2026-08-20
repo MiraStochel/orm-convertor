@@ -186,6 +186,29 @@ public abstract class AbstractEntityBuilder
         };
     }
 
+    /// <summary>
+    /// States the kind of a collection property - what tells &lt;set&gt; from &lt;bag&gt; in an
+    /// NHibernate mapping - where the language side has not committed to one. Only an empty
+    /// fact is filled: the entity text outranks an auxiliary mapping artifact (decision 017),
+    /// so a kind the declared type already carries stays, and Unspecified states nothing and
+    /// never overwrites. A property that is no collection is left alone - the claim has
+    /// nothing to attach to until a relation upgrades the type, so call this after the
+    /// relation is registered.
+    /// </summary>
+    public void SetCollectionKind(string propertyName, CollectionKind kind)
+    {
+        var propertyMap = EntityMap.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == propertyName);
+
+        if (kind == CollectionKind.Unspecified
+            || propertyMap?.Property.Type is not
+                { Category: LangTypeCategory.Collection, CollectionKind: CollectionKind.Unspecified } type)
+        {
+            return;
+        }
+
+        propertyMap.Property.Type = LangType.Collection(type.ElementType!, kind, type.IsNullable);
+    }
+
     private PropertyMap GetOrCreatePropertyMap(string propertyName)
     {
         // Find the property in the entity's properties
@@ -923,7 +946,13 @@ public abstract class AbstractEntityBuilder
     /// Finds an entity of this conversion by name; the match is on the simple class name,
     /// which is how relations reference entities (decision 001).
     /// </summary>
-    private EntityMap? FindEntityMap(string entityName)
+    /// <summary>
+    /// The entity of this conversion a possibly qualified name refers to, or null when the
+    /// name points outside the conversion. Protected so that a builder can ask about the
+    /// far side of a relation - the NHibernate builder derives the inverse attribute of a
+    /// collection from whether the owning counterpart is at hand.
+    /// </summary>
+    protected EntityMap? FindEntityMap(string entityName)
     {
         var simpleName = SimpleEntityName(entityName);
 

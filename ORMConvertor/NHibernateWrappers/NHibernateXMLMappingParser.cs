@@ -667,6 +667,7 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                 if (!string.IsNullOrEmpty(target))
                 {
                     entityBuilder.AddForeignKey(Cardinality.OneToMany, propName, target, foreignKeyColumns: keyColumns);
+                    ApplyCollectionShape(collection, propName);
                 }
                 continue;
             }
@@ -689,9 +690,69 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
                             collection.Attribute("table")?.Value,
                             collection.Attribute("schema")?.Value,
                             ReadRelationColumns(manyToMany)));
+                    ApplyCollectionShape(collection, propName);
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Carries the shape of a collection element into the model and reports what has no
+    /// home there. The element name is the kind of decision 014: &lt;set&gt; is Set, &lt;list&gt;
+    /// is List, and &lt;bag&gt; states nothing beyond the default, so it stays Unspecified.
+    /// The kind fills only an empty fact - the entity text outranks the mapping artifact
+    /// (decision 017). What does not survive is reported by the parser, the only place
+    /// that still sees it (decision 010): the index column of a &lt;list&gt;, whose order
+    /// therefore holds in memory only; the &lt;map&gt; shape, which would need a key type
+    /// (decision 014); and the inverse and cascade attributes, which the model does not
+    /// keep - the generated mapping derives inverse from the shape of both sides and
+    /// states no cascade at all.
+    /// </summary>
+    private void ApplyCollectionShape(XElement collection, string propertyName)
+    {
+        switch (collection.Name.LocalName)
+        {
+            case "set":
+                entityBuilder.SetCollectionKind(propertyName, CollectionKind.Set);
+                break;
+            case "list":
+                entityBuilder.SetCollectionKind(propertyName, CollectionKind.List);
+                ReportCollectionShapeLoss(propertyName,
+                    "The index column of <list> has no home in the model, so the order it carries is dropped; "
+                    + "the generated mapping renders the collection as <bag>.");
+                break;
+            case "map":
+                ReportCollectionShapeLoss(propertyName,
+                    "The <map> shape needs a key type the model does not carry (decision 014); "
+                    + "the collection is read as a plain one and the generated mapping renders it as <bag>.");
+                break;
+        }
+
+        if (collection.Attribute("inverse")?.Value is string inverse)
+        {
+            ReportCollectionShapeLoss(propertyName,
+                $"inverse=\"{inverse}\" is not kept by the model; the generated mapping derives the attribute "
+                + "from whether the owning side of the relation is part of the conversion instead of restating it.");
+        }
+
+        if (collection.Attribute("cascade")?.Value is string cascade)
+        {
+            ReportCollectionShapeLoss(propertyName,
+                $"cascade=\"{cascade}\" has no home in the model; the generated mapping states no cascade "
+                + "and the target's default (none) applies.");
+        }
+    }
+
+    private void ReportCollectionShapeLoss(string propertyName, string reason)
+    {
+        entityBuilder.Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = entityBuilder.Descriptor.Framework,
+            Entity = entityBuilder.EntityMap.Entity.Name,
+            Property = propertyName,
+            Reason = reason,
+        });
     }
 
     /// <summary>

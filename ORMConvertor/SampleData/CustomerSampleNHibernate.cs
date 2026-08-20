@@ -33,7 +33,7 @@ public class CustomerSampleNHibernate
                 <property name="CustomerName" not-null="true" type="String" length="200" />
                 <property name="AccountOpenedDate" not-null="true" type="DateTime" precision="7" />
                 <property name="CreditLimit" not-null="false" type="Decimal" precision="18" scale="2" />
-                <bag name="Transactions" inverse="true" cascade="all-delete-orphan">
+                <bag name="Transactions">
                     <key column="CustomerID" />
                     <one-to-many class="CustomerTransaction" />
                 </bag>

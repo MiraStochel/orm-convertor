@@ -247,8 +247,11 @@ public class JunctionEntitySynthesisTest
         Assert.Contains(builder.Records, r =>
             r.Kind == ConversionRecordKind.Incompleteness && r.Reason.Contains("junction"));
 
+        // The facts the source did state - its <key> and <many-to-many> columns - go back
+        // out verbatim; only the table nobody named stays missing.
         var supplierXml = outputs.Where(o => o.ContentType == ConversionContentType.XML)
             .Single(o => o.Content.Contains("table=\"Suppliers\""));
-        Assert.Contains("<many-to-many class=\"Product\" />", supplierXml.Content);
+        Assert.Contains("<many-to-many class=\"Product\" column=\"ProductId\" />", supplierXml.Content);
+        Assert.Contains("<key column=\"SupplierId\" />", supplierXml.Content);
     }
 }

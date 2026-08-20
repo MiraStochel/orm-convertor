@@ -126,7 +126,7 @@ public class EFCoreToNHibernate
                 <property name="PickingCompletedWhen" not-null="false" />
                 <property name="LastEditedBy" not-null="true" />
                 <property name="LastEditedWhen" not-null="true" precision="7" />
-                <bag name="OrderLines" inverse="true" cascade="all-delete-orphan">
+                <bag name="OrderLines">
                     <key column="OrderID" />
                     <one-to-many class="OrderLine" />
                 </bag>
