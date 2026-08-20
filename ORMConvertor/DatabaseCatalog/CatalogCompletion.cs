@@ -26,9 +26,12 @@ public static class CatalogCompletion
     /// </summary>
     public static TimeSpan? Complete(AbstractEntityBuilder builder, ICatalogReader? reader)
     {
-        // The source's conventional claims have to stand before the catalog is compared
-        // against them - a navigation the source states by convention is a first-degree
-        // fact and outranks anything read below (decision 015).
+        // A key class named by a composite key is not an entity of the conversion and
+        // has no table, so it dissolves into the key before the catalog would look one
+        // up (decision 031). Only then the source's conventional claims stand up before
+        // the catalog is compared against them - a navigation the source states by
+        // convention is a first-degree fact and outranks anything read below (decision 015).
+        builder.DissolveKeyClasses();
         builder.ResolveConventionNavigations();
 
         var demand = Enum.GetValues<MappingFactCategory>()

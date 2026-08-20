@@ -24,13 +24,6 @@ Parsery dnes čtou konvenci zdrojového frameworku jen tam, kde by její neznalo
 
 Rozhodnutí 017 uspořádalo zdroje faktů na vstupní text frameworku, pomocné mapovací artefakty, katalog a konvenci cíle. Některý framework ale mezi svými vlastními artefakty precedenci sám dokumentuje, a to opačnou: EF Core staví fluent API nad anotace, MyBatis řeší souběh anotací a XML mapperu vlastními pravidly. Přeložit takový projekt naším pořadím znamená přeložit něco jiného, než co zdroj znamená — a překlad má reprodukovat význam zdroje, ne naši preferenci. Rozhodnout je třeba, jestli precedence zdrojového frameworku přebíjí naše pořadí uvnitř prvního stupně, a pokud ano, kde je ta precedence zapsaná: deskriptor popisuje cíl, ne zdroj, a kategorii pro tohle nemá. Dokud se čte jediný artefakt na framework, případ nenastane; nastane s prvním parserem fluent konfigurace.
 
-### Klíčová třída u kompozitního klíče na straně entity
-*Verze 1.0 — 7. Na řadě. Navazuje na rozhodnutí [006](./decisions/006-flat-composite-key-rendering.md) a [014](./decisions/014-language-type-model.md). Podklad: audit 2026-08-02, kap. 3.2.*
-
-Mapovací stranu už parser čte: `<composite-id class=>` i `<composite-id name= class=>` skončí jako `SourceKeyClass`. U formy `Embedded` ale části klíče nejsou vlastnostmi entity, nýbrž klíčové třídy, a entita nese jedinou vlastnost jejího typu. Zbývá tedy trojí: odkud vzít jazykové typy částí, jak zabránit tomu, aby se držící vlastnost dostala do mezireprezentace jako běžná vlastnost (ploché vykreslení klíčovou třídu ruší), a co udělat s C# zdrojem klíčové třídy, pokud do převodu vstoupí — entitní parser by z něj dnes udělal další entitu.
-
-Vstupní překážku odstranil jazykový typový model: vlastnost typu `OrderLineId` projde parsováním jako `Unknown` a entita té formy se dostane do mezireprezentace. Přijetí frameworkem ji dnes odhalí — u téhle formy odkáže mapování na vlastnost, kterou třída nemá, a 3. stupeň takový pár odmítne (tvarová aserce to odhalit nemohla). Trojí otázka výše tím ale zodpovězená není. Třetí z nich sahá mimo entitní větev, blokovaná ale není: „další soubor téhož převodu" znamená vícezdrojový vstup a ten na úrovni API existuje — `ConversionHandler.Convert` i `ConvertRequest` berou seznam zdrojů, takže F14 je dohnání rozhraní, ne předpoklad. Zbývají tedy dvě otázky z původních tří.
-
 ### Centrální správa verzí
 *Verze 1.0 — 15. Podklad: audit 2026-08-02, kap. 3.4.1. Souvisí s S2, jehož determinismus se opírá o dané verze.*
 
@@ -51,7 +44,7 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 ## Otevřená práce
 
 ### Dva entitní parsery jsou totéž
-*Verze 1.0 — 10. Vytčeno rozhodnutím [026](./decisions/026-home-of-shared-query-reading.md), které touž duplicitu odstranilo na dotazové straně. Požadavek S1.*
+*Verze 1.0 — 10. Potom. Vytčeno rozhodnutím [026](./decisions/026-home-of-shared-query-reading.md), které touž duplicitu odstranilo na dotazové straně. Požadavek S1.*
 
 `DapperEntityParser` a `NHibernateEntityParser` se liší jedinou řádkou dokumentačního komentáře; oba čtou jmenný prostor, hlavičku třídy a vlastnosti a nic dalšího. Třetí kopii téhož drží `EFCoreEntityParser` uvnitř sebe. Každá oprava čtení vlastností se tak musí udělat dvakrát až třikrát. Na dotazové větvi tenhle problém vyřešila sdílená knihovna se zásuvnými body; entitní strana čeká na totéž a je to týž tvar řešení, ne nový.
 
@@ -81,7 +74,7 @@ Sem patří i **cílový databázový dialekt**, který rozhodnutí 019 odmítlo
 Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dialektu ji nevyřeší: `DapperSqlQueryParser` čte T-SQL gramatikou `TSql160Parser` (rozhodnutí [026](./decisions/026-home-of-shared-query-reading.md)), takže SQL napsané pro jiný databázový systém — u MyBatisu (F8) běžné — touhle cestou neprojde. Řešením je vlastní parser SQL v javovém wrapperu, ne pole v deskriptoru.
 
 ### Rozresolvování jmen entit — `property-ref` na inverzní straně
-*Verze 1.0 — 8. Potom. Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F11.*
+*Verze 1.0 — 8. Na řadě. Zbytek důsledku rozhodnutí [001](./decisions/001-entity-reference-by-name.md) a [012](./decisions/012-foreign-key-rendering.md). Požadavek F11.*
 
 Fáze rozresolvování (`ResolveEntityNames` v `AbstractEntityBuilder`) běží před generováním, plní `ColumnPairs`, povyšuje `Unknown` typy na reference a nenalezené jméno cílové entity i nesouhlasící počet či pořadí sloupců hlásí záznamem podle rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md). Z důsledků rozhodnutí 001 tak zbývá jediné: `property-ref` na inverzní straně vztahu 1:1, který rozhodnutí 012 odkládá právě sem. Navigace protistrany je po rozresolvování dostupná, ale NHibernate builder ji zatím nehledá a atribut nevypisuje; zahozenou hodnotu ze vstupu aspoň hlásí parser záznamem o ztrátě.
 

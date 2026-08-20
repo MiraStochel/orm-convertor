@@ -46,9 +46,10 @@ public enum ConversionRecordKind
     Supplied = 5,
 
     /// <summary>
-    /// The source and the catalog disagree. The source outranks the catalog (rule E9,
-    /// decision 015), so translation continues with the source value and this record
-    /// says what the catalog stated instead.
+    /// The source and the catalog disagree - or two first-degree sources of the input do,
+    /// as when a class named as a key class carries a mapping of its own (decision 031).
+    /// Against the catalog the source outranks it (rule E9, decision 015), so translation
+    /// continues with the source value and this record says what the catalog stated instead.
     /// </summary>
     Conflict = 6,
 }

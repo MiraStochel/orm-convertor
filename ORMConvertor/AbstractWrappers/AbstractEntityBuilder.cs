@@ -362,6 +362,180 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
+    /// The dissolution phase of decision 031: the name a mapping recorded in
+    /// <see cref="SourceKeyClass"/> is a reference to a class of the same conversion, and
+    /// what that class declares are the parts of the key, not the properties of another
+    /// entity. The phase transfers the language declarations of the class's members onto
+    /// the key parts (only an empty fact is filled - the column side stays as the mapping
+    /// read it, decision 017), removes the holding property of the Embedded form, and
+    /// takes the class out of <see cref="EntityMaps"/> - but only a class that carries no
+    /// mapping of its own; one that does is a conflict of two first-degree sources and
+    /// stays an entity. Runs before every other phase: the class must be gone before
+    /// convention navigations or name resolution could take it for an entity, and before
+    /// the catalog would look for its table. The catalog completion phase calls it as its
+    /// first step and <see cref="Build"/> calls it for conversions that never meet a
+    /// catalog; a key class once handled is never handled again, so the double run and
+    /// the order of the input sources change nothing (S2).
+    /// </summary>
+    public void DissolveKeyClasses()
+    {
+        foreach (var entityMap in EntityMaps.ToList())
+        {
+            var key = entityMap.PrimaryKey;
+
+            if (key?.SourceKeyClass is not { } keyClass || !handledKeyClasses.Add(keyClass))
+            {
+                continue;
+            }
+
+            var keyClassMap = FindEntityMap(keyClass.ClassName);
+
+            if (keyClassMap is null)
+            {
+                // The types of the parts are not guessed: the catalog completion phase may
+                // still supply them, and otherwise the completeness gate refuses the
+                // entity - this record says why that refusal happens (decision 031).
+                if (keyClass.Form == KeyClassForm.Embedded
+                    || key.Parts.Any(p => p.PropertyMap.Property.Type is null))
+                {
+                    Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Incompleteness,
+                        Framework = Descriptor.Framework,
+                        Entity = entityMap.Entity.Name,
+                        Property = keyClass.PropertyName,
+                        Category = MappingFactCategory.PrimaryKey,
+                        Reason = $"The mapping names '{keyClass.ClassName}' as the key class of the entity, but no "
+                            + "source of the conversion declares it; the language declarations of the key parts "
+                            + "cannot be taken from it (decision 031).",
+                    });
+                }
+
+                DissolveHoldingProperty(entityMap, keyClass);
+                continue;
+            }
+
+            if (keyClassMap.Table is not null || keyClassMap.Schema is not null
+                || keyClassMap.PrimaryKey is not null || keyClassMap.Relations.Count > 0)
+            {
+                // Silently un-entitying a mapped class would be worse than an unread key
+                // class, so it stays and the disagreement is said out loud (decision 031).
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Conflict,
+                    Framework = Descriptor.Framework,
+                    Entity = SimpleEntityName(keyClass.ClassName),
+                    Category = MappingFactCategory.PrimaryKey,
+                    Reason = $"The mapping of '{entityMap.Entity.Name}' names '{keyClass.ClassName}' as its key "
+                        + "class, but the class carries a mapping of its own; two first-degree sources claim "
+                        + "different things about it, so it remains an entity of the conversion (decision 031).",
+                });
+                continue;
+            }
+
+            foreach (var part in key.Parts)
+            {
+                var member = keyClassMap.Entity.Properties
+                    .FirstOrDefault(p => p.Name == part.PropertyMap.Property.Name);
+
+                if (member is null)
+                {
+                    continue; // known only to the mapping; the completeness gate reports it
+                }
+
+                // Only an empty fact is filled: the class is level 1a of decision 017 and
+                // carries the language side, the mapping artifact is 1b and keeps the
+                // column side - an entity declaring the same property loses nothing.
+                var property = part.PropertyMap.Property;
+                property.Type ??= member.Type;
+                property.AccessModifier ??= member.AccessModifier;
+                property.DefaultValue ??= member.DefaultValue;
+
+                if (!property.HasGetter && !property.HasSetter)
+                {
+                    property.HasGetter = member.HasGetter;
+                    property.HasSetter = member.HasSetter;
+                }
+            }
+
+            var partNames = key.Parts
+                .Select(p => p.PropertyMap.Property.Name)
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var member in keyClassMap.Entity.Properties)
+            {
+                if (partNames.Contains(member.Name)
+                    || entityMap.Relations.Any(r => r.SourceNavigationProperty == member.Name))
+                {
+                    continue;
+                }
+
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Entity = entityMap.Entity.Name,
+                    Property = member.Name,
+                    Category = MappingFactCategory.PrimaryKey,
+                    Reason = $"The key class '{keyClass.ClassName}' declares the member and the mapping does not "
+                        + "name it as a key part, so nothing persists it; it becomes neither a key part nor a "
+                        + "property of the entity (decision 031).",
+                });
+            }
+
+            if (keyClass.Form == KeyClassForm.Embedded)
+            {
+                DissolveHoldingProperty(entityMap, keyClass);
+
+                // The change of form itself is a loss for every .NET target: the flat key
+                // (decision 006) drops the class name and shortens the access path to the
+                // parts - o.Id.OrderID becomes o.OrderID (decision 031).
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Entity = entityMap.Entity.Name,
+                    Property = keyClass.PropertyName,
+                    Category = MappingFactCategory.PrimaryKey,
+                    Reason = $"The source reaches the key parts through the key class '{keyClass.ClassName}' and "
+                        + "every target renders the key flat (decision 006); the class name and the access path "
+                        + $"through '{keyClass.PropertyName}' disappear from the output.",
+                });
+            }
+
+            EntityMaps.Remove(keyClassMap);
+
+            if (ReferenceEquals(currentEntityMap, keyClassMap))
+            {
+                currentEntityMap = entityMap;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Removes the property holding the key class of the Embedded form: the flat rendering
+    /// replaces it with the key parts themselves, so emitting both would emit the same
+    /// column twice. The Mirrored form has no holding property and nothing happens.
+    /// </summary>
+    private static void DissolveHoldingProperty(EntityMap entityMap, SourceKeyClass keyClass)
+    {
+        if (keyClass.PropertyName is not { } holder)
+        {
+            return;
+        }
+
+        entityMap.Entity.Properties.RemoveAll(p => p.Name == holder);
+        entityMap.PropertyMaps.RemoveAll(pm => pm.Property.Name == holder);
+    }
+
+    /// <summary>
+    /// Key classes the dissolution phase has handled. The phase runs twice on the catalog
+    /// path - as the completion phase's first step and again in <see cref="Build"/> - so
+    /// the guard keeps the records single as well as the edits (decision 031).
+    /// </summary>
+    private readonly HashSet<SourceKeyClass> handledKeyClasses = [];
+
+    /// <summary>
     /// One pending conventional navigation claim; see <see cref="AddConventionNavigation"/>.
     /// </summary>
     private sealed record ConventionNavigation(
@@ -1171,9 +1345,11 @@ public abstract class AbstractEntityBuilder
     /// <returns>List of ConversionSource containing the generated content and type (C#, XML, ...)</returns>
     public List<ConversionSource> Build()
     {
-        // Any pending convention navigations land first: a conversion that never met the
-        // catalog completion phase resolves them here; after one that did, the list is
-        // already empty.
+        // Key classes dissolve before anything else reads the entity list, so that no
+        // later phase takes one for an entity; convention navigations follow for the
+        // same reason. A conversion that never met the catalog completion phase runs
+        // both here; after one that did, both find everything handled already.
+        DissolveKeyClasses();
         ResolveConventionNavigations();
 
         // The junction entities have to stand before names resolve, so that their relations

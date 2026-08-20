@@ -36,6 +36,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [028](028-assembly-name-is-not-ours-to-invent.md) | Název sestavení není náš, abychom ho vymýšleli | 2026-08-19 | platí | F2, F11, S2 |
 | [029](029-database-connection-is-the-consumer-projects-fact.md) | Připojení do databáze je fakt konzumentského projektu | 2026-08-20 | platí | F5, F11, S4 |
 | [030](030-scope-of-version-1-0.md) | Rozsah verze 1.0 | 2026-08-20 | revidováno | F1–F15, S1–S7, T1–T7 |
+| [031](031-key-class-as-declaration-of-key-parts.md) | Klíčová třída je deklarací částí klíče, ne entitou převodu | 2026-08-20 | platí | F1, F2, F5, F7–F10, F11, F14, S1, S2 |
 
 ## Formát
 

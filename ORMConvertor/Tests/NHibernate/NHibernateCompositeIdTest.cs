@@ -73,9 +73,9 @@ public class NHibernateCompositeIdTest
     [Fact]
     public void NameWithClassMeansTheEntityHoldsTheKeyClassInAProperty()
     {
-        // Only the mapping is parsed here. The entity of this shape carries a property typed by the
-        // key class, and the type model has no value for such a type, so parsing its C# would throw
-        // before anything about the key could be read - that is the next step's problem.
+        // Only the mapping is parsed here: what the signal alone records. The pair of entity class
+        // and key class is the dissolution phase's case (decision 031), covered by
+        // NHibernateEmbeddedKeyClassTest.
         var builder = ParseMappingOnly("""
                 <composite-id name="Id" class="OrderLineId">
                     <key-property name="OrderID" column="OrderId" type="Int32" />
