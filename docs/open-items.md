@@ -44,14 +44,9 @@ Automatizovat build Angularu do `wwwroot`, nebo `wwwroot` z gitu odstranit. Dnes
 ## Otevřená práce
 
 ### Dva entitní parsery jsou totéž
-*Verze 1.0 — 10. Potom. Vytčeno rozhodnutím [026](./decisions/026-home-of-shared-query-reading.md), které touž duplicitu odstranilo na dotazové straně. Požadavek S1.*
+*Verze 1.0 — 10. Na řadě. Vytčeno rozhodnutím [026](./decisions/026-home-of-shared-query-reading.md), které touž duplicitu odstranilo na dotazové straně. Požadavek S1.*
 
 `DapperEntityParser` a `NHibernateEntityParser` se liší jedinou řádkou dokumentačního komentáře; oba čtou jmenný prostor, hlavičku třídy a vlastnosti a nic dalšího. Třetí kopii téhož drží `EFCoreEntityParser` uvnitř sebe. Každá oprava čtení vlastností se tak musí udělat dvakrát až třikrát. Na dotazové větvi tenhle problém vyřešila sdílená knihovna se zásuvnými body; entitní strana čeká na totéž a je to týž tvar řešení, ne nový.
-
-### Priorita zdrojů uvnitř vstupu se nevynucuje
-*Verze 1.0 — 9. Na řadě. Implementace rozhodnutí [017](./decisions/017-source-precedence-for-mapping-facts.md). Požadavky F5, F11, S2.*
-
-Rozhodnutí 017 rozdělilo první stupeň priority na vstupní text frameworku a pomocné mapovací artefakty a uložilo, že vyšší úroveň se nepřepisuje nižší a rozdíl se hlásí. Kód to zatím nedělá. Pořadí čtení plyne jen z pořadí parserů v seznamu, který vrací `ParserFactory`, takže se přehozením dvou řádků tiše obrátí; `SetPropertyDatabaseMapping` přepisuje bezpodmínečně, takže mapovací artefakt přebije, co tvrdila entitní třída; a rozpor mezi dvěma vstupními artefakty nevydá žádný záznam, ačkoli týž rozpor proti katalogu skončí záznamem `Conflict`. Zbývá trojí: uspořádat seznam parserů jako vyslovený fakt frameworku, rozlišit na zápisové cestě druhé úrovně prázdný fakt od obsazeného, a neshodu vydat jako `Conflict`. Vzorem je fáze doplnění z katalogu, která přesně tohle už umí (viz `architecture.md`, §5.2).
 
 ### Kontejnerová konfigurace prostředí
 *Dohnání S5 odložené rozhodnutím [016](./decisions/016-generated-artifact-verification-levels.md).*
@@ -99,7 +94,7 @@ V repozitáři leží `ecosystem.config.js`, konfigurace pro proces manager PM2,
 Uživatelské rozhraní zůstalo u tvaru API, který už neplatí, a chybové stavy nechává na serveru. `/convert` vrací od rozhodnutí 010 vedle artefaktů i pole `records` se strukturovanou diagnostikou a frontend je ignoruje, takže se uživatel o ztrátách, konvencích ani konfliktech nedozví — a nově je těch záznamů podstatně víc, protože je vydává i dotazová větev. Chyby ze serveru zobrazuje `main-page.component.ts` přes `err.message` místo `err.error`, takže místo hlášky ze serveru ukáže obecný text HTTP chyby; vzor správného čtení je v `advisor-page.component.ts`. A validace před odesláním podle S7, tedy chyby na úrovni souboru a řádku, neexistuje vůbec — u zdroje v Dapperu přitom server nově řádek i sloupec zná, protože je hlásí parser T-SQL. Prázdné jednotky odsud zmizely: server je od rozhodnutí [025](./decisions/025-query-language-as-content-type.md) přeskakuje sám, protože nevyplněné pole není tvrzení. Zbývá také přeložit frontend do `wwwroot` — výčet typů obsahu se změnil a commitnutý bundle ho zatím nezná; jak se ten překlad bude dělat, řeší položka o osudu `wwwroot` výše. Přestavba už odložená není: rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) ji staví do verze 1.0 spolu s dávkovým vstupem podle F14, tedy nahráním více celých souborů a zobrazením vstupu, výstupu i záznamů po jednotlivých souborech.
 
 ### Připojení ke katalogu se přes API nedá nastavit
-*Verze 1.0 — 12. Souvisí s rozhodnutím [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), jehož fáze doplnění na tom stojí. Požadavky F4, F6, S7.*
+*Verze 1.0 — 12. Potom. Souvisí s rozhodnutím [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), jehož fáze doplnění na tom stojí. Požadavky F4, F6, S7.*
 
 Endpoint `/convert` čte připojovací řetězec pod klíčem `ConnectionStrings:CatalogDatabase`, jenže `appsettings.json` deklaruje jen `AdvisorDatabase`. Kdo nástroj spustí a nevytvoří proměnnou prostředí, dostane překlad postavený výhradně na konvencích — a jediná stopa je záznam o nedostupném katalogu mezi ostatními. Prakticky to znamená, že kritéria F4 a F6 přes uživatelské rozhraní nikdy neplatí, protože se k nim uživatel nemá jak dostat. Prázdný klíč `CatalogDatabase` už v `appsettings.json` je, takže je aspoň vidět, že existuje. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) otázku uzavřelo: připojení zůstává v serverové konfiguraci a rozhraní ukáže jen jeho stav. Pole pro řetězec ve formuláři by z veřejně dostupné instance udělalo čtečku cizích schémat — kdokoli by nástroj namířil na libovolnou dosažitelnou databázi a nechal si vypsat její metadata. Zbývá tedy trojí: klíč na nasazené instanci vyplnit, stav připojení vydat v odpovědi `/convert` vedle záznamů, a zobrazit ho.
 

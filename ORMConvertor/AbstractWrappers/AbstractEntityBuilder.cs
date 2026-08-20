@@ -54,26 +54,47 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Add a table name.
+    /// Add a table name. Only an empty fact is filled: a table an earlier-read source
+    /// already stated stays, and a different later claim is a conflict record (decision 017).
     /// </summary>
     /// <param name="tableName">Table name</param>
     public void AddTable(string tableName)
     {
-        if (!string.IsNullOrEmpty(tableName))
+        if (string.IsNullOrEmpty(tableName))
+        {
+            return;
+        }
+
+        if (EntityMap.Table is null)
         {
             EntityMap.Table = tableName;
+        }
+        else if (!string.Equals(EntityMap.Table, tableName, StringComparison.Ordinal))
+        {
+            ReportInputConflict(null, MappingFactCategory.TableName,
+                $"An earlier source maps the entity to the table '{EntityMap.Table}', a later one to '{tableName}'.");
         }
     }
 
     /// <summary>
-    /// Add a schema name.
+    /// Add a schema name. Fills only an empty fact, like <see cref="AddTable"/> (decision 017).
     /// </summary>
     /// <param name="schemaName">Schema name</param>
     public void AddSchema(string schemaName)
     {
-        if (!string.IsNullOrEmpty(schemaName))
+        if (string.IsNullOrEmpty(schemaName))
+        {
+            return;
+        }
+
+        if (EntityMap.Schema is null)
         {
             EntityMap.Schema = schemaName;
+        }
+        else if (!string.Equals(EntityMap.Schema, schemaName, StringComparison.Ordinal))
+        {
+            ReportInputConflict(null, MappingFactCategory.SchemaName,
+                $"An earlier source maps the entity to the schema '{EntityMap.Schema}', a later one to '{schemaName}'.");
         }
     }
 
@@ -1184,7 +1205,10 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Add or update database-specific property settings for a property.
+    /// Add database-specific property settings for a property. Only an empty fact is
+    /// filled: a fact an earlier-read source already stated is never overwritten, and a
+    /// different later claim leaves a conflict record - the same incremental write the
+    /// catalog completion phase uses, applied to the levels within the input (decision 017).
     /// </summary>
     /// <param name="propertyName">Property name</param>
     /// <param name="databaseProperties">Database-specific property settings</param>
@@ -1214,42 +1238,92 @@ public abstract class AbstractEntityBuilder
             switch (kvp.Key.ToLowerInvariant())
             {
                 case "columnname" or "column":
-                    propertyMap.ColumnName = kvp.Value;
+                    if (propertyMap.ColumnName is null)
+                    {
+                        propertyMap.ColumnName = kvp.Value;
+                    }
+                    else if (!string.Equals(propertyMap.ColumnName, kvp.Value, StringComparison.Ordinal))
+                    {
+                        ReportInputConflict(propertyName, MappingFactCategory.ColumnName,
+                            $"An earlier source maps the property to the column '{propertyMap.ColumnName}', a later one to '{kvp.Value}'.");
+                    }
                     break;
                 case "precision":
                     if (int.TryParse(kvp.Value, out var precision))
                     {
-                        propertyMap.Precision = precision;
+                        if (propertyMap.Precision is null)
+                        {
+                            propertyMap.Precision = precision;
+                        }
+                        else if (propertyMap.Precision != precision)
+                        {
+                            ReportInputConflict(propertyName, MappingFactCategory.PrecisionAndScale,
+                                $"An earlier source states precision {propertyMap.Precision}, a later one {precision}.");
+                        }
                     }
                     break;
                 case "scale":
                     if (int.TryParse(kvp.Value, out var scale))
                     {
-                        propertyMap.Scale = scale;
+                        if (propertyMap.Scale is null)
+                        {
+                            propertyMap.Scale = scale;
+                        }
+                        else if (propertyMap.Scale != scale)
+                        {
+                            ReportInputConflict(propertyName, MappingFactCategory.PrecisionAndScale,
+                                $"An earlier source states scale {propertyMap.Scale}, a later one {scale}.");
+                        }
                     }
                     break;
                 case "length":
                     if (int.TryParse(kvp.Value, out var length))
                     {
-                        propertyMap.Length = length;
+                        if (propertyMap.Length is null)
+                        {
+                            propertyMap.Length = length;
+                        }
+                        else if (propertyMap.Length != length)
+                        {
+                            ReportInputConflict(propertyName, MappingFactCategory.Length,
+                                $"An earlier source states length {propertyMap.Length}, a later one {length}.");
+                        }
                     }
                     break;
                 case "isnullable" or "nullable":
                     if (bool.TryParse(kvp.Value, out var isNullable))
                     {
-                        propertyMap.IsNullable = isNullable;
+                        if (propertyMap.IsNullable is null)
+                        {
+                            propertyMap.IsNullable = isNullable;
+                        }
+                        else if (propertyMap.IsNullable != isNullable)
+                        {
+                            ReportInputConflict(propertyName, MappingFactCategory.Nullability,
+                                $"An earlier source states the property is {(propertyMap.IsNullable.Value ? "nullable" : "not nullable")}, a later one states the opposite.");
+                        }
                     }
 
                     break;
                 case "isversion" or "version":
-                    if (bool.TryParse(kvp.Value, out var isVersion))
+                    // Positive-only, like the catalog's supply direction (decision 030):
+                    // "not a version" is the absence of the claim, not a claim to conflict with.
+                    if (bool.TryParse(kvp.Value, out var isVersion) && isVersion)
                     {
-                        propertyMap.IsVersion = isVersion;
+                        propertyMap.IsVersion = true;
                     }
 
                     break;
                 default:
-                    propertyMap.OtherDatabaseProperties[kvp.Key] = kvp.Value;
+                    if (!propertyMap.OtherDatabaseProperties.TryGetValue(kvp.Key, out var existing))
+                    {
+                        propertyMap.OtherDatabaseProperties[kvp.Key] = kvp.Value;
+                    }
+                    else if (!string.Equals(existing, kvp.Value, StringComparison.Ordinal))
+                    {
+                        ReportInputConflict(propertyName, null,
+                            $"An earlier source states {kvp.Key} '{existing}', a later one '{kvp.Value}'.");
+                    }
                     break;
             }
         }
@@ -1259,9 +1333,10 @@ public abstract class AbstractEntityBuilder
     /// The typed half of the database mapping: the type family and its companions travel
     /// as values of the model, never through the string dictionary - the untyped channel
     /// that carried the enum as a stringified ordinal is gone (decision 019). Type,
-    /// unicode and the literal source spelling are assigned when stated; the facets are
-    /// claims the type name itself makes, so they never override a facet the source
-    /// stated explicitly.
+    /// unicode and the literal source spelling fill only an empty fact and a differing
+    /// later claim is a conflict record (decision 017); the facets are claims the type
+    /// name itself makes, so they never override a facet the source stated explicitly
+    /// and their difference is no conflict.
     /// </summary>
     /// <param name="propertyName">Property name</param>
     /// <param name="type">Type family, or null when the vocabulary does not capture the source's type.</param>
@@ -1283,23 +1358,68 @@ public abstract class AbstractEntityBuilder
 
         if (type is not null)
         {
-            propertyMap.Type = type;
+            if (propertyMap.Type is null)
+            {
+                propertyMap.Type = type;
+            }
+            else if (propertyMap.Type != type)
+            {
+                ReportInputConflict(propertyName, MappingFactCategory.DatabaseType,
+                    $"An earlier source maps the property as {propertyMap.Type}, a later one as {type}.");
+            }
         }
 
         if (isUnicode is not null)
         {
-            propertyMap.IsUnicode = isUnicode;
+            if (propertyMap.IsUnicode is null)
+            {
+                propertyMap.IsUnicode = isUnicode;
+            }
+            else if (propertyMap.IsUnicode != isUnicode)
+            {
+                ReportInputConflict(propertyName, MappingFactCategory.DatabaseType,
+                    $"An earlier source maps the property as {(propertyMap.IsUnicode.Value ? "unicode" : "non-unicode")}, "
+                    + $"a later one as {(isUnicode.Value ? "unicode" : "non-unicode")}.");
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(sourceSqlType))
         {
-            propertyMap.SourceSqlType = sourceSqlType;
+            if (propertyMap.SourceSqlType is null)
+            {
+                propertyMap.SourceSqlType = sourceSqlType;
+            }
+            else if (!string.Equals(propertyMap.SourceSqlType, sourceSqlType, StringComparison.Ordinal))
+            {
+                ReportInputConflict(propertyName, MappingFactCategory.DatabaseType,
+                    $"An earlier source spells the type '{propertyMap.SourceSqlType}', a later one '{sourceSqlType}'.");
+            }
         }
 
         propertyMap.Length ??= length;
         propertyMap.Precision ??= precision;
         propertyMap.Scale ??= scale;
     }
+
+    /// <summary>
+    /// The conflict record of decision 017: a fact an earlier-read source of the input
+    /// already claimed is never overwritten by a later one. The levels are ordered in
+    /// time - the framework's input text parses before its auxiliary mapping artifacts,
+    /// see ParserFactory - so "claimed at a higher or equal level" equals "occupied on
+    /// arrival", and within one level the first value read wins so that the result stays
+    /// deterministic (S2). The same event as a disagreement with the catalog, hence the
+    /// same record kind (decision 015).
+    /// </summary>
+    private void ReportInputConflict(string? property, MappingFactCategory? category, string reason)
+        => Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Conflict,
+            Framework = Descriptor.Framework,
+            Entity = EntityMap.Entity.Name,
+            Property = property,
+            Category = category,
+            Reason = reason + " A fact read earlier is never overwritten by a later input source (decision 017), so the first value is kept.",
+        });
 
     /// <summary>
     /// Buffers for the artifacts of one entity. NHibernate splits a mapping over an entity

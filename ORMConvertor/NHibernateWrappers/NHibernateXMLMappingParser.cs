@@ -568,26 +568,32 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     {
         var columnElement = element.Elements().FirstOrDefault(e => e.Name.LocalName == "column");
         var sqlType = columnElement?.Attribute("sql-type")?.Value;
-
-        if (!string.IsNullOrWhiteSpace(sqlType))
-        {
-            entityBuilder.SetPropertyDatabaseType(propertyName, null, sourceSqlType: sqlType.Trim());
-        }
+        sqlType = string.IsNullOrWhiteSpace(sqlType) ? null : sqlType.Trim();
 
         var typeAttr = element.Attribute("type")?.Value;
 
         if (string.IsNullOrWhiteSpace(typeAttr))
         {
+            if (sqlType is not null)
+            {
+                entityBuilder.SetPropertyDatabaseType(propertyName, null, sourceSqlType: sqlType);
+            }
+
             return;
         }
 
         var reading = DatabaseTypeConvertor.FromNHibernate(typeAttr);
 
+        // One call per element, so that its two literal spellings never look like two
+        // sources of the conversion (decision 017). Where both are stated, sql-type
+        // takes the escape path over the type attribute's name, being the database-side
+        // spelling of the two - the same precedence ReadColumnFacts gives the nested
+        // <column> form.
         entityBuilder.SetPropertyDatabaseType(
             propertyName,
             reading.Type,
             reading.IsUnicode,
-            reading.SourceType,
+            sqlType ?? reading.SourceType,
             reading.Length,
             reading.Precision,
             reading.Scale);
