@@ -10,7 +10,8 @@ namespace Tests.NHibernate;
 /// the same conversion, and what that class declares are the key parts, not the properties
 /// of another entity. These tests drive the phase through the NHibernate parsers - the pair
 /// of an entity class holding the key class in one property and a mapping in the Embedded
-/// form - and check the three record kinds the decision prescribes.
+/// form - and check the three record kinds the decision prescribes, plus the shape the
+/// phase deliberately leaves record-free.
 /// </summary>
 public class NHibernateEmbeddedKeyClassTest
 {
@@ -56,6 +57,9 @@ public class NHibernateEmbeddedKeyClassTest
         """;
 
     private static NHibernateEntityBuilder Parse(params string[] csharpSources)
+        => ParseWith(EmbeddedMapping, csharpSources);
+
+    private static NHibernateEntityBuilder ParseWith(string mapping, params string[] csharpSources)
     {
         var builder = new NHibernateEntityBuilder();
         var entityParser = new NHibernateEntityParser(builder);
@@ -65,7 +69,7 @@ public class NHibernateEmbeddedKeyClassTest
             entityParser.Parse(source);
         }
 
-        new NHibernateXMLMappingParser(builder).Parse(EmbeddedMapping);
+        new NHibernateXMLMappingParser(builder).Parse(mapping);
         return builder;
     }
 
@@ -187,5 +191,51 @@ public class NHibernateEmbeddedKeyClassTest
         Assert.DoesNotContain(entityMap.Entity.Properties, p => p.Name == "Checksum");
         Assert.Contains(builder.Records, r =>
             r.Kind == ConversionRecordKind.Loss && r.Property == "Checksum");
+    }
+
+    [Fact]
+    public void MirroredClassNobodyDeclaresOverTypedPartsIsRecordFree()
+    {
+        const string mirroredEntitySource = """
+            namespace KeyClassEntities;
+
+            public class OrderLine
+            {
+                public virtual int OrderID { get; set; }
+
+                public virtual int LineNo { get; set; }
+
+                public virtual int Quantity { get; set; }
+            }
+            """;
+
+        const string mirroredMapping = """
+            <?xml version="1.0" encoding="utf-8" ?>
+            <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="KeyClassEntities">
+                <class name="OrderLine" table="OrderLines">
+                    <composite-id class="OrderLineId">
+                        <key-property name="OrderID" column="OrderID" type="int" />
+                        <key-property name="LineNo" column="LineNo" type="int" />
+                    </composite-id>
+                    <property name="Quantity" column="Quantity" type="int" />
+                </class>
+            </hibernate-mapping>
+            """;
+
+        var builder = ParseWith(mirroredMapping, mirroredEntitySource);
+        var outputs = builder.Build();
+
+        // The Mirrored form only duplicates parts the entity declares itself, so nothing
+        // stands on the declarations of the class nobody declares: the completeness gate
+        // lets the entity through, and the record that would explain a refusal has no
+        // refusal to explain (decision 031, architecture.md 4.2).
+        Assert.NotEmpty(outputs);
+        Assert.DoesNotContain(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Incompleteness && r.Reason.Contains("OrderLineId"));
+
+        var entityMap = Assert.Single(builder.EntityMaps);
+        Assert.Equal(
+            new[] { "OrderID", "LineNo" },
+            entityMap.PrimaryKey!.Parts.Select(p => p.PropertyMap.Property.Name));
     }
 }
