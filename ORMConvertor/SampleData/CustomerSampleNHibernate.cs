@@ -17,7 +17,7 @@ public class CustomerSampleNHibernate
 
             public virtual decimal? CreditLimit { get; set; }
 
-            public virtual List<CustomerTransaction> Transactions { get; set; } = [];
+            public virtual IList<CustomerTransaction> Transactions { get; set; } = new List<CustomerTransaction>();
 
         }
         
@@ -138,7 +138,7 @@ public class CustomerSampleNHibernate
                            OtherModifiers = ["virtual"],
                            HasGetter = true,
                            HasSetter = true,
-                           DefaultValue = "[]",
+                           DefaultValue = "new List<CustomerTransaction>()",
                        },
                    },
                ],

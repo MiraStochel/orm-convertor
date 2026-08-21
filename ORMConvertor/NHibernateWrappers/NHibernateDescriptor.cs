@@ -48,6 +48,29 @@ public static class NHibernateDescriptor
                        + "constructor removes the implicit parameterless one, so the artifact "
                        + "must declare none.",
             },
+            // Two markers for one requirement, because a concrete declaration can appear
+            // under either name. Forbidden rather than required: a required "IList<" would
+            // be satisfied by the first collection, while a forbidden concrete declaration
+            // is caught wherever it appears (decision 035). The initializer keeps the
+            // concrete type - "new List<T>()" - which is why the markers anchor on virtual.
+            new EnforcedMember
+            {
+                Name = "collection declared by IList, not List",
+                Condition = EnforcedMemberCondition.Always,
+                ForbiddenMarker = "virtual List<",
+                Reason = "A persistent collection is replaced with NHibernate's own "
+                       + "implementation when the entity loads, which cannot be assigned "
+                       + "to a concrete List<T>. See decision 035.",
+            },
+            new EnforcedMember
+            {
+                Name = "collection declared by ISet, not HashSet",
+                Condition = EnforcedMemberCondition.Always,
+                ForbiddenMarker = "virtual HashSet<",
+                Reason = "A persistent collection is replaced with NHibernate's own "
+                       + "implementation when the entity loads, which cannot be assigned "
+                       + "to a concrete HashSet<T>. See decision 035.",
+            },
             new EnforcedMember
             {
                 Name = "[Serializable] on a composite-id class",

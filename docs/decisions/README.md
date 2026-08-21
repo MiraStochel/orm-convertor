@@ -40,6 +40,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [032](032-frontend-as-static-pages-without-a-build.md) | Frontend jako statické stránky bez buildu | 2026-08-20 | platí | F11, F14, S5, S7 |
 | [033](033-shape-of-the-static-frontend-screens.md) | Podoba obrazovek statického frontendu | 2026-08-20 | platí | F11, F14, S6, S7 |
 | [034](034-central-version-management.md) | Centrální správa verzí | 2026-08-20 | platí | S2, S6 |
+| [035](035-nhibernate-collections-declared-by-interface.md) | Kolekce v NHibernate entitě deklarované rozhraním | 2026-08-21 | platí | F3, F11, S2 |
 
 ## Formát
 

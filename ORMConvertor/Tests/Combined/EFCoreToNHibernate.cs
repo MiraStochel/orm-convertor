@@ -98,7 +98,7 @@ public class EFCoreToNHibernate
 
             public required virtual DateTime LastEditedWhen { get; set; }
 
-            public virtual List<OrderLine> OrderLines { get; set; } = new();
+            public virtual IList<OrderLine> OrderLines { get; set; } = new List<OrderLine>();
 
         }
         

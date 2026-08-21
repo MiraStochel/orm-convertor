@@ -138,9 +138,9 @@ public class TargetFrameworkDescriptorTest
     }
 
     [Theory]
-    [InlineData(0, 3)] // no key: virtual, non-sealed, parameterless constructor
-    [InlineData(1, 3)] // simple key: the same three
-    [InlineData(2, 6)] // composite key: plus [Serializable], Equals, GetHashCode
+    [InlineData(0, 5)] // no key: virtual, non-sealed, parameterless constructor, both collection interfaces
+    [InlineData(1, 5)] // simple key: the same five
+    [InlineData(2, 8)] // composite key: plus [Serializable], Equals, GetHashCode
     public void NHibernateEnforcedMembersFollowTheShapeOfTheKey(int keyParts, int expected)
     {
         var entityMap = EntityMapWithKeyParts(keyParts);

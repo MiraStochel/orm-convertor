@@ -104,7 +104,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             var prop = propertyMap.Property;
             var columnName = propertyMap.ColumnName ?? prop.Name;
 
-            AppendPropertyToCode(artifact.Code, prop, isPrimaryKey: true);
+            AppendPropertyToCode(artifact.Code, entityMap, prop, isPrimaryKey: true);
 
             var facets = BuildColumnFacets(entityMap, propertyMap);
             if (facets.Count == 0)
@@ -147,7 +147,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 });
             }
 
-            AppendPropertyToCode(artifact.Code, prop, isPrimaryKey: true);
+            AppendPropertyToCode(artifact.Code, entityMap, prop, isPrimaryKey: true);
 
             var facets = BuildColumnFacets(entityMap, propertyMap);
             if (facets.Count == 0)
@@ -310,7 +310,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 continue; // navigation property – handled in BuildForeignKey
             }
 
-            AppendPropertyToCode(artifact.Code, pm.Property);
+            AppendPropertyToCode(artifact.Code, entityMap, pm.Property);
 
             if (pm.Property.Type is { Category: LangTypeCategory.Collection })
             {
@@ -382,7 +382,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             return null;
         }
 
-        AppendPropertyToCode(artifact.Code, version.Property);
+        AppendPropertyToCode(artifact.Code, entityMap, version.Property);
 
         var attrs = new List<string> { $"name=\"{version.Property.Name}\"" };
 
@@ -475,7 +475,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
-            AppendPropertyToCode(artifact.Code, propertyMap.Property); // navigation property in C#
+            AppendPropertyToCode(artifact.Code, entityMap, propertyMap.Property); // navigation property in C#
 
             AppendReference(artifact.Mapping, entityMap, relation, propertyMap.Property.Name);
         }
@@ -489,7 +489,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
-            AppendPropertyToCode(artifact.Code, propertyMap.Property);
+            AppendPropertyToCode(artifact.Code, entityMap, propertyMap.Property);
             AppendCollection(artifact.Mapping, entityMap, relation, propertyMap);
         }
     }
@@ -735,9 +735,9 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// <summary>
     /// Appends a property to the C# code.
     /// </summary>
-    private static void AppendPropertyToCode(StringBuilder codeResult, Property prop, bool isPrimaryKey = false)
+    private void AppendPropertyToCode(StringBuilder codeResult, EntityMap entityMap, Property prop, bool isPrimaryKey = false)
     {
-        var declaration = BuildPropertySignature(prop, isPrimaryKey);
+        var declaration = BuildPropertySignature(entityMap, prop, isPrimaryKey);
         codeResult.AppendLine($"    {declaration}");
         codeResult.AppendLine();
     }
@@ -1246,7 +1246,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// Builds the property signature for C# code.
     /// Adds modifiers, type, name, getter/setter, and default value.
     /// </summary>
-    private static string BuildPropertySignature(Property prop, bool isPrimaryKey = false)
+    private string BuildPropertySignature(EntityMap entityMap, Property prop, bool isPrimaryKey = false)
     {
         var otherMods = new List<string>(prop.OtherModifiers ?? []);
         if (!otherMods.Any(m => m.Equals("virtual", StringComparison.OrdinalIgnoreCase)))
@@ -1259,15 +1259,64 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         var langType = prop.Type
             ?? throw new NotSupportedException($"Property '{prop.Name}' has no language type.");
         var typeName = CSharpTypeConvertor.ToString(langType);
+        var defaultVal = string.IsNullOrWhiteSpace(prop.DefaultValue)
+            ? ""
+            : $" = {prop.DefaultValue};";
+
+        if (langType.Category == LangTypeCategory.Collection)
+        {
+            // NHibernate replaces a persistent collection with its own implementation when
+            // loading the entity, so the declaration has to be the interface - a framework
+            // enforcement of the same kind as virtual (decision 035). The concrete name the
+            // shared conversion renders still types the initializer.
+            var iface = langType.CollectionKind == CollectionKind.Set ? "ISet" : "IList";
+            defaultVal = RewriteCollectionInitializer(entityMap, prop, typeName);
+            typeName = $"{iface}{typeName[typeName.IndexOf('<')..]}";
+        }
+
         var type = (!isPrimaryKey && langType.IsNullable) ? $"{typeName}?" : typeName;
 
         var getterSetter = (prop.HasGetter || prop.HasSetter)
             ? $" {{ {(prop.HasGetter ? "get;" : "")}{(prop.HasSetter ? " set;" : "")} }}"
             : "";
-        var defaultVal = string.IsNullOrWhiteSpace(prop.DefaultValue)
-            ? ""
-            : $" = {prop.DefaultValue};";
 
         return $"{modifiers} {type} {prop.Name}{getterSetter}{defaultVal}";
+    }
+
+    /// <summary>
+    /// A target-typed initializer of the source does not compile once the declaration
+    /// becomes an interface - new() not at all, [] not over ISet&lt;T&gt; - so a stated
+    /// initializer is rewritten to the empty concrete instantiation. The empty forms mean
+    /// exactly that and are replaced silently; anything else loses its content in the
+    /// rewrite and is reported as a loss (decision 004).
+    /// </summary>
+    private string RewriteCollectionInitializer(EntityMap entityMap, Property prop, string concreteType)
+    {
+        if (string.IsNullOrWhiteSpace(prop.DefaultValue))
+        {
+            return string.Empty;
+        }
+
+        var rewritten = $"new {concreteType}()";
+
+        static string Strip(string text) => string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
+
+        var stated = Strip(prop.DefaultValue);
+        if (stated != "[]" && stated != "new()" && stated != Strip(rewritten))
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.CSharpEntity,
+                Entity = entityMap.Entity.Name,
+                Property = prop.Name,
+                Reason = $"NHibernate requires the collection declared by its interface, over which the "
+                    + $"initializer '{prop.DefaultValue}' does not survive; the empty '{rewritten}' is "
+                    + "written instead (decision 035).",
+            });
+        }
+
+        return $" = {rewritten};";
     }
 }

@@ -59,11 +59,6 @@ Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dia
 
 Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec, takže poddotaz projde parsováním, ale jeho výsledek se nikam neskládá. **Tiché to už není** — `Normalize()` v šabloně dotazového builderu (rozhodnutí [023](./decisions/023-query-builder-template-method.md)) vnořený poddotaz ohlásí záznamem o ztrátě —, ale vykreslit ho to neumí. Vedle toho `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu), takže složený dotaz se poskládá špatně; množinovou operaci navíc dnes vykresluje jedině Dapper builder, kdežto NHibernate ji podle deskriptoru vyjádřit neumí a EF Core builder pro ni nemá větev. Sem patří i stránkování, které mezireprezentace vůbec nenese — parsery ho hlásí jako ztrátu. Všechno tohle jsou kategorie dotazové matice podle T2, které tak nemají co měřit.
 
-### Kolekční vlastnosti pro NHibernate se generují konkrétním typem
-*Souvisí s rozhodnutím [016](./decisions/016-generated-artifact-verification-levels.md) — mezera je viditelná až na 4. stupni ověření, který nemá zástupce. Požadavek F3.*
-
-NHibernate vyžaduje, aby perzistentní kolekce byla deklarovaná rozhraním (`IList<T>`, `ISet<T>`): za běhu vlastnost nahrazuje vlastní implementací a ta se do konkrétního `List<T>` či `HashSet<T>` přiřadit nedá. Generovaná entita ale kolekce deklaruje konkrétně, protože sdílený převod jazykových typů vykresluje `List`/`HashSet` pro všechny cíle. Stavba session factory to přijímá — 3. stupeň ověření proto mlčí — a selhání by se ukázalo až při načtení entity, tedy na 4. stupni, který zástupce nemá. Náprava patří NHibernate builderu, stejně jako vynucené `virtual`: vykreslit rozhraní a přepsat inicializátor — `= new()` se nad rozhraním nepřeloží vůbec a `= []` nad `ISet<T>` také ne — ne měnit sdílený převod.
-
 ### Advisor nemá build nativní knihovny pro Windows
 *Mezera popsaná v [`architecture.md`](./architecture.md), §8. Souvisí s S5 a T7.*
 

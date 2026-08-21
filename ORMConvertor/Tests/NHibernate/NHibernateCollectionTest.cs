@@ -249,7 +249,7 @@ public class NHibernateCollectionTest
         // A <property> for a collection would make NHibernate refuse the whole document; the
         // class keeps the member, the mapping leaves it out, and the gap is on record.
         Assert.DoesNotContain("Tags", xml);
-        Assert.Contains("List<string> Tags", code);
+        Assert.Contains("IList<string> Tags", code);
         Assert.Contains(builder.Records, r =>
             r.Kind == ConversionRecordKind.Incompleteness && r.Property == "Tags");
     }

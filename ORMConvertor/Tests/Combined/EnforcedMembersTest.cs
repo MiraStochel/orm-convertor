@@ -122,6 +122,11 @@ public class EnforcedMembersTest
         builder.AddProperty("int", "PartTwo", "public", hasGetter: true, hasSetter: true);
         builder.AddProperty("string", "Description", "public", hasGetter: true, hasSetter: true);
 
+        // Exercises the forbidden concrete-collection markers of decision 035: without a
+        // collection in the artifact they would be satisfied by absence, not by the builder.
+        builder.AddProperty("List<Item>", "Items", "public", hasGetter: true, hasSetter: true, defaultValue: "[]");
+        builder.AddProperty("HashSet<Item>", "Tags", "public", hasGetter: true, hasSetter: true, defaultValue: "[]");
+
         if (keyParts == 1)
         {
             builder.AddPrimaryKey(PrimaryKeyStrategy.Identity, "PartOne");
