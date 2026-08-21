@@ -65,7 +65,7 @@ NHibernate vyžaduje, aby perzistentní kolekce byla deklarovaná rozhraním (`I
 `libadvisor.so` se kompiluje jen v Docker buildu (stage `advisor-native`) a název je v P/Invoke natvrdo linuxový, takže mimo Linux a Docker Advisor endpointy selhávají; překladová část na tom nezávisí. Soubor `ilp.c` má přitom exportní makra pro Windows připravená, jen build krok pro `advisor.dll` neexistuje. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) tuhle dvojici uzavřelo druhým způsobem: Advisor je ze záruk verze 1.0 vyňatý vcelku, takže doslovně linuxový název v `LibraryImport` odpovídá tomu, co o něm tvrdíme, a rozpor mizí bez zásahu do kódu. Zbývá tedy jen build krok pro `advisor.dll`, a ten je mimo verzi; `ilp.c` má pro něj exportní makra připravená. Nasazenou instanci to neshodí — `AdvisorRunHandler` výjimku z P/Invoke zachytává a vrací její text, takže uživatel dostane hlášku.
 
 ### Spuštění mimo Docker není ověřené ani popsané
-*Verze 1.0 — 18. Mezera popsaná v [`architecture.md`](./architecture.md), §6, kde je na tuhle položku odkaz. Souvisí s S5 a S7.*
+*Verze 1.0 — 18. Potom. Mezera popsaná v [`architecture.md`](./architecture.md), §6, kde je na tuhle položku odkaz. Souvisí s S5 a S7.*
 
 V repozitáři leží `ecosystem.config.js`, konfigurace pro proces manager PM2, tedy nasazení mimo Docker. Nikde není popsané, co ta cesta předpokládá — které proměnné prostředí, co servíruje statické soubory z `wwwroot` — a nikdo ji nespustil. Z lokálního spuštění je podobně ověřený jen `http` launch profil; ostatní profily jsou commitnuté a nevyzkoušené. Obojí je stejný druh dluhu: deklarovaná cesta, o které se neví, jestli funguje. Součástí zprovoznění instance je i vyplnění klíče `ConnectionStrings:CatalogDatabase` — v `appsettings.json` je prázdný, a dokud na nasazené instanci prázdný zůstane, fáze doplnění z katalogu se nikdy nespustí a kritéria F4 a F6 přes rozhraní neplatí (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)); odpověď `/convert` ten stav hlásí polem `CatalogState`.
 
@@ -81,13 +81,8 @@ Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný
 
 Do verze 1.0 položka nepatří. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo `Advisor` i `AdvisorBenchmarking` ze záruk vcelku právě proto, že netestované jsou; testovat oblast, na kterou verze neslibuje spoleh, by bylo otevírání nové části místo dokončení rozdělané.
 
-### Centrální správa verzí
-*Verze 1.0 — 15. Na řadě. Implementace rozhodnutí [034](./decisions/034-central-version-management.md). Podklad: audit 2026-08-02, kap. 3.4.1. Požadavky S2, S6.*
-
-Verze balíčků i cílový framework jsou dnes napsané v patnácti souborech `.csproj` a s tabulkou zafixovaných verzí v [`architecture.md`](./architecture.md) §1 je nespojuje nic: devět zápisů verze je duplicitních a samotné číslo `10.0.10` stojí na osmi místech ve třech projektech. Verze SDK není v repozitáři vůbec — CI, Dockerfile a vývojový stroj si ji každý určují po svém. Rozhodnutí [034](./decisions/034-central-version-management.md) volbu uzavřelo: v adresáři řešení vzniknou `Directory.Packages.props` se zákazem lokálního přebití, `global.json` s pásmem SDK a `Directory.Build.props` s `TargetFramework`, `ImplicitUsings` a `Nullable`, a patnáct projektů se o ten obsah zkrátí. Do téže práce patří dvě řádky v `ORMConvertorAPI/Dockerfile` — bez zkopírování obou souborů `props` do fáze obnovy by tam restore selhal — a věta v `architecture.md` §1 o tom, odkud se .NET řádky tabulky nově berou; §6.2 naopak ruční hlídání shody `Tests.csproj` s tabulkou přestane potřebovat.
-
 ### Překladový artefakt nenese přihlašovací údaje — a nikdo to netvrdí
-*Verze 1.0 — 16. Potom. Implementace rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md). Požadavky S4, S2.*
+*Verze 1.0 — 16. Na řadě. Implementace rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md). Požadavky S4, S2.*
 
 Rozhodnutí 029 uzavřelo, že připojení do databáze je fakt konzumentského projektu a do předávaného artefaktu nepatří. Dnes to platí konstrukcí: dotazový artefakt EF Core má tvar `Query(DbContext ctx)`, entitní buildery konfiguraci nevydávají, NHibernate mapování element pro spojení nemá a výstupem Dapperu je třída a holý dotaz. Netvrdí to ale žádný test, takže je ta vlastnost splněná náhodou a dá se porušit nepozorovaně — stačí, aby některý builder začal vydávat konfigurační soubor, u javového ekosystému `persistence.xml`. Zbývá aserce nad výstupem převodu ve všech třech směrech a k ní věta v [`architecture.md`](./architecture.md) o tom, že překladová cesta cizí kód nekompiluje ani nespouští; dnes to z textu plyne jen nepřímo, přes popis `Common.Compilation` a ověřovacích stupňů.
 

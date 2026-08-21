@@ -11,7 +11,7 @@ Aplikace překládá entity, mapování a dotazy mezi třemi .NET ORM frameworky
 
 ### Zafixované verze
 
-Veškerá tvrzení o chování frameworků v tomto dokumentu i v `docs/analysis/` platí proti těmto verzím. Tabulka je jejich kanonické místo; audity uvádějí verze jen jako snímek k datu svého vzniku. Proč právě tyhle, říká rozhodnutí [013](./decisions/013-target-framework-versions.md).
+Veškerá tvrzení o chování frameworků v tomto dokumentu i v `docs/analysis/` platí proti těmto verzím. Tabulka je jejich kanonické místo; audity uvádějí verze jen jako snímek k datu svého vzniku. Proč právě tyhle, říká rozhodnutí [013](./decisions/013-target-framework-versions.md). Verze se od zavedení centrální správy (rozhodnutí [034](./decisions/034-central-version-management.md)) píší jediným místem v adresáři řešení: .NET řádky tabulky se čtou jako záznam toho, co nese `ORMConvertor/Directory.Packages.props` — soubor jmenuje všech šestnáct přímo referencovaných balíčků, tabulka z nich jen ty, o jejichž chování něco tvrdíme —, řádek „.NET 10" nesou `Directory.Build.props` (`TargetFramework`) a `global.json` (pásmo SDK `10.0.100` s `rollForward: latestFeature`). Soubory `.csproj` žádné číslo verze neobsahují a lokální přebití je vypnuté (`CentralPackageVersionOverrideEnabled`).
 
 | Komponenta | Verze |
 |---|---|
@@ -314,7 +314,7 @@ Rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md) uzn
 
 První úlovek: XSD i `BuildSessionFactory` odmítly `precision="0"`, které builder NHibernate vypisoval z `[Precision(0)]` u datetime sloupce — schéma mapování připouští jen kladnou precision. Builder hodnotu menší než 1 nyní zahazuje se záznamem o ztrátě (viz §5).
 
-Tvrzení „framework to přijme" je tvrzením o verzi balíku v `Tests.csproj` (NHibernate, `Microsoft.EntityFrameworkCore.SqlServer`); dokud deskriptor verzi nenese (rozhodnutí [013](./decisions/013-target-framework-versions.md), otevřená položka), musí souhlasit s tabulkou verzí v §1 a shoda se hlídá ručně.
+Tvrzení „framework to přijme" je tvrzením o verzi balíku, kterou testovací projekt načítá (NHibernate, `Microsoft.EntityFrameworkCore.SqlServer`). Číslo té verze od zavedení centrální správy (rozhodnutí [034](./decisions/034-central-version-management.md)) `Tests.csproj` nenese — píše se jedině v `Directory.Packages.props` (§1), takže ruční hlídání shody s tabulkou odpadlo; vazbu deskriptoru na skutečně načtená sestavení drží test `DeclaredVersionsMatchTheVerificationPackages` (§1).
 
 **Dotazová větev má vlastní naplnění týchž stupňů** (rozhodnutí [027](./decisions/027-query-artifact-verification.md)); testy jsou v `Tests/Verification/QueryVerificationTest.cs` a všechny běží nasucho.
 

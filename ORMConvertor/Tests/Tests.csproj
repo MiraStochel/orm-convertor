@@ -1,11 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <OutputType>Exe</OutputType>
     <RootNamespace>Tests</RootNamespace>
-    <TargetFramework>net10.0</TargetFramework>
     <!-- Connection string of the test database lives in user secrets, never in the repository (S4). -->
     <UserSecretsId>ormconvertor-tests-1f0a2c64-3f1e-4a0b-9b7d-2c5b0f4d8e11</UserSecretsId>
     <!--
@@ -32,20 +29,20 @@
   <ItemGroup>
     <!-- Database-dependent tests (decision 016): client plus the configuration sources
          the connection string is read from. -->
-    <PackageReference Include="Dapper" Version="2.1.79" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
     <!-- Target framework packages for the acceptance level of artifact verification
          (decision 016): the frameworks themselves judge the generated mapping and class.
          S1 is not violated - the wrappers stay free of them, only the verification depends
-         on them. The versions must match the table in docs/architecture.md. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
-    <PackageReference Include="NHibernate" Version="5.7.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.10" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+         on them. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="NHibernate" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>

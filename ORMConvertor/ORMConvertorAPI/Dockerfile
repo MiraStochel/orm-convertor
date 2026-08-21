@@ -17,7 +17,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dotnet-build
 WORKDIR /app
 
 # Restore with project files only so cache survives source edits
-COPY ORMConvertor.sln ./
+COPY ORMConvertor.sln Directory.Build.props Directory.Packages.props ./
 COPY AbstractWrappers/AbstractWrappers.csproj AbstractWrappers/
 COPY Advisor/Advisor.csproj Advisor/
 COPY AdvisorBenchmarking/AdvisorBenchmarking.csproj AdvisorBenchmarking/
