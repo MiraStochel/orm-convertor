@@ -4,6 +4,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Version of the tool, for every assembly of the solution at once (decision 034).
+         S2 speaks of "the same version of the tool" and S6 wants it in the run record,
+         so this number is what ConversionResult.ToolVersion reports. An inherited
+         `Version` environment variable would override it, which is why ecosystem.config.js
+         blanks that variable before `dotnet run`. -->
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
 </Project>

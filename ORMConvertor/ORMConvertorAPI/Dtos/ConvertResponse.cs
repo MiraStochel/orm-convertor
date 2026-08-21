@@ -5,6 +5,9 @@ using Model;
 namespace ORMConvertorAPI.Dtos;
 
 /// <param name="RunId">Identifier of the conversion run (S6), fresh on every call.</param>
+/// <param name="ToolVersion">Version of ORMConvertor itself, read from the assembly. S6
+/// asks the run record to carry versions and S2 makes determinism conditional on the
+/// version of the tool, so the record names the tool alongside both frameworks.</param>
 /// <param name="SourceFrameworkVersion">Framework release the source was read against,
 /// from the source framework's descriptor (decision 013).</param>
 /// <param name="TargetFrameworkVersion">Framework release the artifacts are valid
@@ -18,6 +21,7 @@ namespace ORMConvertorAPI.Dtos;
 /// had nothing to do.</param>
 public record ConvertResponse(
     Guid RunId,
+    string ToolVersion,
     ORMEnum SourceFramework,
     string SourceFrameworkVersion,
     ORMEnum TargetFramework,

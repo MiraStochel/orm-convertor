@@ -156,8 +156,8 @@ export const getAdvisorSamples = () => getJson("samples-advisor");
 
 /**
  * POST /convert. Sources are { contentType, content } pairs; the response carries
- * runId, source/target framework with versions, sources (the generated artifacts),
- * records, catalogState and catalogReadMilliseconds.
+ * runId, toolVersion, source/target framework with versions, sources (the generated
+ * artifacts), records, catalogState and catalogReadMilliseconds.
  */
 export const convert = async (sourceOrm, targetOrm, sources) =>
   (await post("convert", { sourceOrm, targetOrm, sources })).json();

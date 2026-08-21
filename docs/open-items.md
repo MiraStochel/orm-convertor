@@ -66,10 +66,10 @@ Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný
 
 Do verze 1.0 položka nepatří. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo `Advisor` i `AdvisorBenchmarking` ze záruk vcelku právě proto, že netestované jsou; testovat oblast, na kterou verze neslibuje spoleh, by bylo otevírání nové části místo dokončení rozdělané.
 
-### Verze nástroje a značka vydání
+### Značka vydání v gitu
 *Verze 1.0 — 19. Na řadě. Uzavírá rozhodnutí [030](./decisions/030-scope-of-version-1-0.md). Požadavky S2, S6.*
 
-S2 mluví o „stejné verzi nástroje" a S6 žádá strojově čitelný záznam běhu včetně verzí; obojí předpokládá, že nástroj nějakou verzi má. Nemá: sestavení se nikde nečíslují a repozitář nenese značku vydání. Průchod obou `README.md` — třetí část položky — je hotový: kořenový říká, co nástroj v této verzi umí, co je z jeho záruk vyňaté (podle `architecture.md` §9) a jak se spouští. Zbývá tedy dvojí: číslo verze v sestaveních — nejlépe na jednom místě spolu s centrální správou verzí (rozhodnutí [034](./decisions/034-central-version-management.md)) — a značka v gitu. Je to poslední položka vydání, protože až do ní se obsah verze ještě mění.
+Verzi nástroje sestavení už nesou — `<Version>` v `Directory.Build.props` jediným zápisem pro celé řešení (rozhodnutí [034](./decisions/034-central-version-management.md)) — a záznam běhu ji vydává jako `ToolVersion` vedle obou verzí frameworků, takže S2 má na co ukázat, když determinismus podmiňuje „stejnou verzí nástroje", a S6 má v záznamu úplnou trojici verzí. Zbývá jediné, a je to krok mimo kód: **repozitář nenese značku vydání**, takže číslo `1.0.0` v sestaveních neodkazuje na žádný commit a tvrzení „stejná verze nástroje" nemá vnější kotvu. Značku vytváří a posílá Míra. Je to poslední krok vydání, protože až do něj se obsah verze ještě může měnit; s každou další změnou obsahu se musí číslo v `Directory.Build.props` a značka posunout společně.
 
 ---
 

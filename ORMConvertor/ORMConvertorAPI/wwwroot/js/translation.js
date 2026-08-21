@@ -149,6 +149,7 @@ function renderResult() {
   document.getElementById("run-frameworks").textContent =
     `${ORM_LABELS[response.sourceFramework]} ${response.sourceFrameworkVersion}` +
     ` → ${ORM_LABELS[response.targetFramework]} ${response.targetFrameworkVersion}`;
+  document.getElementById("tool-version").textContent = response.toolVersion;
   document.getElementById("run-id").textContent = response.runId;
   renderCatalogState(
     document.getElementById("catalog-state"),

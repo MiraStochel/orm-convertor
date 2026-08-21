@@ -18,6 +18,13 @@ public sealed class ConversionResult
     /// </summary>
     public required Guid RunId { get; init; }
 
+    /// <summary>
+    /// Version of the tool that produced this result (S6, and the "same version of the
+    /// tool" S2 makes determinism conditional on). Taken from the assembly through
+    /// <see cref="ToolRelease"/>, so it cannot disagree with the build that ran.
+    /// </summary>
+    public required string ToolVersion { get; init; }
+
     public required ORMEnum SourceFramework { get; init; }
 
     /// <summary>

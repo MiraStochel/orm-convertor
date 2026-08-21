@@ -84,6 +84,7 @@ public static class Endpoints
             var converted = ConversionHandler.Convert(req.SourceOrm, req.TargetOrm, req.Sources, catalogConnectionString);
             return Results.Ok(new ConvertResponse(
                 converted.RunId,
+                converted.ToolVersion,
                 converted.SourceFramework,
                 converted.SourceFrameworkVersion,
                 converted.TargetFramework,

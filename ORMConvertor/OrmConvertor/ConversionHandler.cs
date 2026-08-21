@@ -101,6 +101,7 @@ public static class ConversionHandler
         return new ConversionResult
         {
             RunId = Guid.NewGuid(),
+            ToolVersion = ToolRelease.Version,
             SourceFramework = sourceOrm,
             SourceFrameworkVersion = DescriptorFactory.Create(sourceOrm).Version,
             TargetFramework = targetOrm,
