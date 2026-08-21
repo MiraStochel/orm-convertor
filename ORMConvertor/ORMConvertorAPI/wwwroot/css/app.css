@@ -65,13 +65,28 @@ article.artifact {
   margin-bottom: 1rem;
 }
 
+/*
+ * The header row wraps instead of being a rigid grid, and that is the whole point.
+ * Pico gives inputs and selects width:100%, but a percentage is indefinite while the
+ * browser measures intrinsic sizes, so a form control falls back to its own default
+ * size (an <input> is 20 characters wide). As grid items those defaults become hard
+ * floors - name input, type select and Remove button together refuse to go below
+ * roughly 470px - and the row pushes past the viewport on a narrow window instead of
+ * reflowing. Flex with wrap has no such floor: the controls move onto a second line.
+ */
 .unit-header,
 .artifact-header {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
   margin-bottom: 0.75rem;
+}
+
+/* Nothing in the row may claim its intrinsic width as a minimum. */
+.unit-header > *,
+.artifact-header > * {
+  min-width: 0;
 }
 
 .unit-header input,
@@ -79,8 +94,40 @@ article.artifact {
   margin-bottom: 0;
 }
 
-.artifact-header {
-  grid-template-columns: 1fr auto;
+.unit-header .unit-name {
+  flex: 1 1 10rem;
+}
+
+.unit-header .unit-type {
+  flex: 0 1 auto;
+  width: auto;
+}
+
+/* Advisor: a label wrapping a number input. Without a width the input keeps its
+   20-character default and the weight field ends up wider than the query title. */
+.unit-header .unit-label {
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.unit-header .unit-weight-label {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  font-size: 0.85rem;
+}
+
+.unit-header .unit-weight {
+  width: 5rem;
+  margin-bottom: 0;
+}
+
+.unit-header .unit-remove,
+.artifact-header .artifact-copy {
+  margin-left: auto;
+}
+
+.artifact-header > span {
+  flex: 1 1 8rem;
 }
 
 .artifact-header .artifact-name {
@@ -89,9 +136,10 @@ article.artifact {
   overflow-wrap: anywhere;
 }
 
+/* No nowrap: the name box may shrink, and an unbreakable type label would then spill
+   out of it over the Copy button instead of moving to the next line. */
 .artifact-header small {
   color: var(--pico-muted-color);
-  white-space: nowrap;
 }
 
 .artifact-header button,
@@ -127,17 +175,25 @@ article.artifact {
   container-type: inline-size;
 }
 
+/* minmax(0, 1fr), never a bare 1fr: a bare fr track is floored at the item's
+   min-content width, so one long unbroken line of generated code would widen the
+   column rather than scroll inside its own <pre>. */
 .pane-grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
 
 @container (min-width: 58rem) {
   .pane-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+}
+
+/* The panel itself is the scroll container for over-wide content. */
+.pane-grid > article {
+  min-width: 0;
 }
 
 /* ---- validation and errors -------------------------------------------- */
@@ -206,8 +262,11 @@ article.artifact {
   vertical-align: top;
 }
 
+/* Reasons are sentences and need room, but a flat 20rem on a narrow screen makes the
+   table scroll further than it is wide. The cell keeps 20rem wherever the viewport can
+   spare it and gives way below that; the table scrolls inside .table-scroll either way. */
 .records-table td.reason {
-  min-width: 20rem;
+  min-width: min(20rem, 60vw);
 }
 
 /* ---- examples page ----------------------------------------------------- */
@@ -228,10 +287,12 @@ figure.diagram figcaption {
 
 /* ---- landing page cards ------------------------------------------------ */
 
+/* min(16rem, 100%) rather than a bare 16rem: below a 16rem-wide container the plain
+   form would keep the 16rem track and overflow instead of collapsing to one column. */
 .card-grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
 }
 
 .card-grid article {

@@ -227,5 +227,7 @@ export function saveBlob(blob, fileName) {
   document.body.append(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // The browser starts reading the blob URL after this turn of the event loop, so
+  // revoking it synchronously can cancel the download it was created for.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
