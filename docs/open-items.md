@@ -59,11 +59,6 @@ Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisi
 
 `libadvisor.so` se kompiluje jen v Docker buildu (stage `advisor-native`) a název je v P/Invoke natvrdo linuxový, takže mimo Linux a Docker Advisor endpointy selhávají; překladová část na tom nezávisí. Soubor `ilp.c` má přitom exportní makra pro Windows připravená, jen build krok pro `advisor.dll` neexistuje. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) tuhle dvojici uzavřelo druhým způsobem: Advisor je ze záruk verze 1.0 vyňatý vcelku, takže doslovně linuxový název v `LibraryImport` odpovídá tomu, co o něm tvrdíme, a rozpor mizí bez zásahu do kódu. Zbývá tedy jen build krok pro `advisor.dll`, a ten je mimo verzi; `ilp.c` má pro něj exportní makra připravená. Nasazenou instanci to neshodí — `AdvisorRunHandler` výjimku z P/Invoke zachytává a vrací její text, takže uživatel dostane hlášku.
 
-### Deskriptor deklaruje vynucené členy, které čte jen test
-*Souvisí s rozhodnutím [009](./decisions/009-target-framework-descriptor.md), které dělbu deklarace a emise zavedlo. Požadavek S2.*
-
-`EnforcedMembers` a `EnforcedMembersFor` volá jedině `EnforcedMembersTest`; produkční kód je nečte. Každý builder si vynucené členy vypisuje sám a nezávisle — `virtual` v `BuildPropertySignature`, `[Serializable]` v `BuildTableSchema`, `[Keyless]` u EF Core. Rozhodnutí 009 to tak popsalo záměrně: deskriptor deklaruje, builder implementuje, test je váže. Trojice ale drží jen tak dlouho, dokud test skutečně pokrývá každý člen za každé podmínky; jinak se deklarace a emise rozejdou a nikdo se to nedozví. Zbývá rozhodnout, jestli má vazbu držet test, nebo jestli si má builder vynucené členy z deskriptoru brát — s vědomím, že párování podle názvu vrací zpět riziko překlepu, kterým 009 tuhle variantu zamítlo.
-
 ### Advisor a benchmarking nemají žádné testy
 *Souvisí s [`architecture.md`](./architecture.md), §8. Požadavky T7, S6.*
 
@@ -74,7 +69,7 @@ Do verze 1.0 položka nepatří. Rozhodnutí [030](./decisions/030-scope-of-vers
 ### Verze nástroje a značka vydání
 *Verze 1.0 — 19. Na řadě. Uzavírá rozhodnutí [030](./decisions/030-scope-of-version-1-0.md). Požadavky S2, S6.*
 
-S2 mluví o „stejné verzi nástroje" a S6 žádá strojově čitelný záznam běhu včetně verzí; obojí předpokládá, že nástroj nějakou verzi má. Nemá. Sestavení se nikde nečíslují, repozitář nenese značku vydání a `README.md` je zděděný z původního prototypu, takže popisuje stav, který dávno neplatí. Zbývá tedy trojí: číslo verze v sestaveních — nejlépe na jednom místě spolu s centrální správou verzí —, značka v gitu, a průchod `README.md`, aby řekl, co nástroj v této verzi umí, co je z jeho záruk vyňaté a jak se spouští. Je to poslední položka vydání, protože až do ní se obsah verze ještě mění.
+S2 mluví o „stejné verzi nástroje" a S6 žádá strojově čitelný záznam běhu včetně verzí; obojí předpokládá, že nástroj nějakou verzi má. Nemá: sestavení se nikde nečíslují a repozitář nenese značku vydání. Průchod obou `README.md` — třetí část položky — je hotový: kořenový říká, co nástroj v této verzi umí, co je z jeho záruk vyňaté (podle `architecture.md` §9) a jak se spouští. Zbývá tedy dvojí: číslo verze v sestaveních — nejlépe na jednom místě spolu s centrální správou verzí (rozhodnutí [034](./decisions/034-central-version-management.md)) — a značka v gitu. Je to poslední položka vydání, protože až do ní se obsah verze ještě mění.
 
 ---
 

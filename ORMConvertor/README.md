@@ -14,7 +14,7 @@ This approach does not open a browser automatically. Instead, the local URL is p
 ## Docker (application + database)
 `docker-compose.yml` in this directory starts two containers:
 
-- `ormconvertor` – the application, built by the multi-stage `ORMConvertorAPI/Dockerfile` (compiles the Angular frontend, the native Advisor library `libadvisor.so`, and the .NET app). Exposed on [http://localhost:5072/orm/](http://localhost:5072/orm/).
+- `ormconvertor` – the application, built by the multi-stage `ORMConvertorAPI/Dockerfile` (compiles the native Advisor library `libadvisor.so` and the .NET app; the static frontend needs no build and enters the image as-is inside `wwwroot`). Exposed on [http://localhost:5072/orm/](http://localhost:5072/orm/).
 - `mssql_db` – Microsoft SQL Server initialized with the WideWorldImporters sample database (`database.Dockerfile`), exposed on `localhost,1444` (`SA` / `Testingorms123` – development credentials only).
 
 ```sh
@@ -40,16 +40,4 @@ dotnet test Tests/Tests.csproj --configuration Release
 The output displays the results of succeeded and failed tests. Tests are also run automatically by a GitHub Actions pipeline – on pushes to `main` and on pull requests, whenever something inside `ORMConvertor/**` changes. The pipeline configuration is located in the `.github` folder at the root of the repository.
 
 # Frontend
-The Angular frontend is precompiled and served by the ASP.NET web server running the API. To prepare the frontend, its source files must be compiled and copied to the `wwwroot` directory, from which they are served as static files. This process is performed by executing the following commands in the `ORMConvertorAPI/frontend` directory.
-```sh
-npm install
-ng build --configuration "production" --base-href "/orm/" --deploy-url "/orm/" && rmdir /s /q "..\wwwroot" && mkdir "..\wwwroot" && xcopy /s /e /y "dist\browser\*" "..\wwwroot\"
-```
-
-For Linux:
-```sh
-npm install
-ng build --configuration "production" --base-href "/orm/" --deploy-url "/orm/" && rm -rf "../wwwroot" && mkdir "../wwwroot" && cp -r dist/browser/* ../wwwroot/
-```
-
-The frontend is served by the backend application, there is no need to initialize it separately.
+The frontend is a set of hand-written static pages in `ORMConvertorAPI/wwwroot` — HTML, native ES modules, and CSS with no framework, no npm, and no build step. What is committed is exactly what the browser runs, so there is nothing to compile or copy; the ASP.NET application serves the files directly under `/orm/`. Third-party assets (Pico CSS, highlight.js) are vendored under `wwwroot/vendor/` with their versions and licenses.
