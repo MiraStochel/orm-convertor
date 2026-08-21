@@ -22,8 +22,13 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             artifact.Code.AppendLine();
         }
 
-        // Both [PrimaryKey] and [Keyless] live in this namespace.
-        if (entityMap.PrimaryKey is null || entityMap.PrimaryKey.Parts.Count > 1)
+        // [PrimaryKey], [Keyless] and [Precision] all live in this namespace and each is
+        // emitted under its own condition, so the import restates all three: it follows from
+        // the elements that are generated, not from the framework being EF Core.
+        bool keyAttribute = entityMap.PrimaryKey is null || entityMap.PrimaryKey.Parts.Count > 1;
+        bool precisionAttribute = entityMap.PropertyMaps.Any(pm => pm.Precision != null);
+
+        if (keyAttribute || precisionAttribute)
         {
             artifact.Code.AppendLine("using Microsoft.EntityFrameworkCore;");
         }

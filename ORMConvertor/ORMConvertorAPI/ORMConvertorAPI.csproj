@@ -1,5 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <!-- Connection strings live in user secrets, never in the repository (S4,
+         decision 029). Same arrangement as Tests.csproj. -->
+    <UserSecretsId>ormconvertor-api-b3a80a01-e8e9-489a-8809-7bff31df80f0</UserSecretsId>
+  </PropertyGroup>
+
   <ItemGroup>
     <Compile Remove="frontend\**" />
     <Content Remove="frontend\**" />

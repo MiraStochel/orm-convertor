@@ -69,11 +69,6 @@ NHibernate vyžaduje, aby perzistentní kolekce byla deklarovaná rozhraním (`I
 
 `libadvisor.so` se kompiluje jen v Docker buildu (stage `advisor-native`) a název je v P/Invoke natvrdo linuxový, takže mimo Linux a Docker Advisor endpointy selhávají; překladová část na tom nezávisí. Soubor `ilp.c` má přitom exportní makra pro Windows připravená, jen build krok pro `advisor.dll` neexistuje. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) tuhle dvojici uzavřelo druhým způsobem: Advisor je ze záruk verze 1.0 vyňatý vcelku, takže doslovně linuxový název v `LibraryImport` odpovídá tomu, co o něm tvrdíme, a rozpor mizí bez zásahu do kódu. Zbývá tedy jen build krok pro `advisor.dll`, a ten je mimo verzi; `ilp.c` má pro něj exportní makra připravená. Nasazenou instanci to neshodí — `AdvisorRunHandler` výjimku z P/Invoke zachytává a vrací její text, takže uživatel dostane hlášku.
 
-### Spuštění mimo Docker není ověřené ani popsané
-*Verze 1.0 — 18. Na řadě. Mezera popsaná v [`architecture.md`](./architecture.md), §6, kde je na tuhle položku odkaz. Souvisí s S5 a S7.*
-
-V repozitáři leží `ecosystem.config.js`, konfigurace pro proces manager PM2, tedy nasazení mimo Docker. Nikde není popsané, co ta cesta předpokládá — které proměnné prostředí, co servíruje statické soubory z `wwwroot` — a nikdo ji nespustil. Z lokálního spuštění je podobně ověřený jen `http` launch profil; ostatní profily jsou commitnuté a nevyzkoušené. Obojí je stejný druh dluhu: deklarovaná cesta, o které se neví, jestli funguje. Součástí zprovoznění instance je i vyplnění klíče `ConnectionStrings:CatalogDatabase` — v `appsettings.json` je prázdný, a dokud na nasazené instanci prázdný zůstane, fáze doplnění z katalogu se nikdy nespustí a kritéria F4 a F6 přes rozhraní neplatí (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)); odpověď `/convert` ten stav hlásí polem `CatalogState`.
-
 ### Deskriptor deklaruje vynucené členy, které čte jen test
 *Souvisí s rozhodnutím [009](./decisions/009-target-framework-descriptor.md), které dělbu deklarace a emise zavedlo. Požadavek S2.*
 
@@ -87,7 +82,7 @@ Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný
 Do verze 1.0 položka nepatří. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo `Advisor` i `AdvisorBenchmarking` ze záruk vcelku právě proto, že netestované jsou; testovat oblast, na kterou verze neslibuje spoleh, by bylo otevírání nové části místo dokončení rozdělané.
 
 ### Verze nástroje a značka vydání
-*Verze 1.0 — 19. Potom. Uzavírá rozhodnutí [030](./decisions/030-scope-of-version-1-0.md). Požadavky S2, S6.*
+*Verze 1.0 — 19. Na řadě. Uzavírá rozhodnutí [030](./decisions/030-scope-of-version-1-0.md). Požadavky S2, S6.*
 
 S2 mluví o „stejné verzi nástroje" a S6 žádá strojově čitelný záznam běhu včetně verzí; obojí předpokládá, že nástroj nějakou verzi má. Nemá. Sestavení se nikde nečíslují, repozitář nenese značku vydání a `README.md` je zděděný z původního prototypu, takže popisuje stav, který dávno neplatí. Zbývá tedy trojí: číslo verze v sestaveních — nejlépe na jednom místě spolu s centrální správou verzí —, značka v gitu, a průchod `README.md`, aby řekl, co nástroj v této verzi umí, co je z jeho záruk vyňaté a jak se spouští. Je to poslední položka vydání, protože až do ní se obsah verze ještě mění.
 

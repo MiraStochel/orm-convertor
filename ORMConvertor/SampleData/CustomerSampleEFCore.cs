@@ -8,6 +8,7 @@ public static class CustomerSampleEFCore
     public const string Entity = """
         namespace EFCoreEntities;
 
+        using Microsoft.EntityFrameworkCore;
         using System.ComponentModel.DataAnnotations;
         using System.ComponentModel.DataAnnotations.Schema;
 
