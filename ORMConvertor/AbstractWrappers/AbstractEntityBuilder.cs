@@ -119,8 +119,12 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Define the (possibly composite) primary key of the entity.
-    /// The whole key is defined by a single call; a repeated call replaces the previous key.
+    /// Define the (possibly composite) primary key of the entity. The whole key is one
+    /// compound fact under the source precedence rule (decision 036): the first call
+    /// defines it, and a repeated call is compared instead of replacing - an identical
+    /// restatement is no event, a claim over the same parts fills what the first left
+    /// empty (a part's Unspecified strategy, a missing key class record), and a different
+    /// part list is a conflict record with the first key kept whole, details included.
     /// </summary>
     /// <param name="parts">Key parts: property name, explicit 1-based order, and per-part generation strategy.</param>
     /// <param name="sourceKeyClass">Optional record of a key class used by the source; null when the source declared the key parts directly on the entity.</param>
@@ -132,6 +136,14 @@ public abstract class AbstractEntityBuilder
         {
             throw new ArgumentException("Primary key must have at least one part.", nameof(parts));
         }
+
+        if (EntityMap.PrimaryKey is { } existing)
+        {
+            ReconcileKeyClaim(existing, parts, sourceKeyClass);
+            return;
+        }
+
+        lastKeyClaimDiscards.Remove(EntityMap);
 
         var keyParts = new List<PrimaryKeyPart>();
 
@@ -163,10 +175,110 @@ public abstract class AbstractEntityBuilder
         => AddPrimaryKey([(propertyName, 1, strategy)]);
 
     /// <summary>
+    /// A later key claim against an already defined key (decision 036). The identity of
+    /// the key is the ordered list of its parts: a claim over the same parts fills what
+    /// the first left empty and a differing part list is discarded whole with a conflict
+    /// record - parts interlock, so a key merged from two claims would be one nobody
+    /// stated. What the claim discarded is remembered per part, so that the strategy
+    /// details trailing the discarded claim can fall with it in SetKeyStrategyDetails.
+    /// </summary>
+    private void ReconcileKeyClaim(
+        PrimaryKey existing,
+        IReadOnlyList<(string PropertyName, int Order, PrimaryKeyStrategy Strategy)> parts,
+        SourceKeyClass? sourceKeyClass)
+    {
+        // Both sides in key order: PrimaryKey.Parts is sorted by Order on construction.
+        var claimed = parts.OrderBy(p => p.Order).ToList();
+        var discarded = new HashSet<string>(StringComparer.Ordinal);
+        lastKeyClaimDiscards[EntityMap] = discarded;
+
+        if (!existing.Parts.Select(p => p.PropertyMap.Property.Name)
+                .SequenceEqual(claimed.Select(p => p.PropertyName), StringComparer.Ordinal))
+        {
+            foreach (var (propertyName, _, _) in claimed)
+            {
+                discarded.Add(propertyName);
+            }
+
+            ReportInputConflict(null, MappingFactCategory.PrimaryKey,
+                $"An earlier source states the primary key ({string.Join(", ", existing.Parts.Select(p => p.PropertyMap.Property.Name))}), "
+                + $"a later one ({string.Join(", ", claimed.Select(p => p.PropertyName))}).");
+            return;
+        }
+
+        // Same parts: only an empty fact is filled. An Unspecified strategy states
+        // nothing - like the collection kind - so a stated one fills it without an event.
+        var rebuilt = new List<PrimaryKeyPart>();
+        var changed = false;
+
+        for (var i = 0; i < existing.Parts.Count; i++)
+        {
+            var part = existing.Parts[i];
+            var strategy = claimed[i].Strategy;
+
+            if (part.Strategy == PrimaryKeyStrategy.Unspecified && strategy != PrimaryKeyStrategy.Unspecified)
+            {
+                rebuilt.Add(new PrimaryKeyPart
+                {
+                    PropertyMap = part.PropertyMap,
+                    Order = part.Order,
+                    Strategy = strategy,
+                    SourceStrategyName = part.SourceStrategyName,
+                    StrategyParameters = part.StrategyParameters,
+                    SourceStrategyParameters = part.SourceStrategyParameters,
+                });
+                changed = true;
+                continue;
+            }
+
+            if (strategy != PrimaryKeyStrategy.Unspecified && strategy != part.Strategy)
+            {
+                discarded.Add(part.PropertyMap.Property.Name);
+                ReportInputConflict(part.PropertyMap.Property.Name, MappingFactCategory.PrimaryKeyStrategy,
+                    $"An earlier source states the strategy {part.Strategy}, a later one {strategy}.");
+            }
+
+            rebuilt.Add(part);
+        }
+
+        var keyClass = existing.SourceKeyClass;
+
+        if (sourceKeyClass is not null)
+        {
+            if (keyClass is null)
+            {
+                keyClass = sourceKeyClass;
+                changed = true;
+            }
+            else if (!string.Equals(keyClass.ClassName, sourceKeyClass.ClassName, StringComparison.Ordinal))
+            {
+                ReportInputConflict(null, MappingFactCategory.PrimaryKey,
+                    $"An earlier source names the key class '{keyClass.ClassName}', a later one '{sourceKeyClass.ClassName}'.");
+            }
+        }
+
+        if (changed)
+        {
+            EntityMap.PrimaryKey = new PrimaryKey { Parts = rebuilt, SourceKeyClass = keyClass };
+        }
+    }
+
+    /// <summary>
+    /// Part names whose claim the last AddPrimaryKey call on the entity discarded - a
+    /// differing part list, or a differing stated strategy. SetKeyStrategyDetails follows
+    /// its AddPrimaryKey in every parser, so the details trailing a discarded claim are
+    /// recognized here and dropped with it instead of landing on the kept key; the
+    /// conflict record already stands at the key (decision 036).
+    /// </summary>
+    private readonly Dictionary<EntityMap, HashSet<string>> lastKeyClaimDiscards = [];
+
+    /// <summary>
     /// Record what the source said about a key part's strategy beyond the vocabulary value:
-    /// its own name for it and the generator parameters. Call after <see cref="AddPrimaryKey"/>,
-    /// which defines the key as a whole - a repeated AddPrimaryKey call discards these details
-    /// together with the key it replaces.
+    /// its own name for it and the generator parameters. Call after <see cref="AddPrimaryKey"/>.
+    /// Only an empty fact is filled - the name where none is recorded, parameters entry by
+    /// entry - and a differing later claim is a conflict record with the first value kept
+    /// (decisions 017 and 036). Details following a key claim that AddPrimaryKey discarded
+    /// are dropped with it: the conflict is already recorded at the key.
     /// </summary>
     /// <param name="propertyName">Name of a property that is already part of the key.</param>
     /// <param name="sourceStrategyName">The source's own name for the strategy, when the vocabulary lost it.</param>
@@ -181,8 +293,29 @@ public abstract class AbstractEntityBuilder
         var key = EntityMap.PrimaryKey
             ?? throw new InvalidOperationException("Key strategy details can only be set once the key is defined.");
 
+        // A detail whose key claim was discarded falls with its claim (decision 036).
+        if (lastKeyClaimDiscards.TryGetValue(EntityMap, out var discarded) && discarded.Contains(propertyName))
+        {
+            return;
+        }
+
         var target = key.Parts.FirstOrDefault(p => p.PropertyMap.Property.Name == propertyName)
             ?? throw new ArgumentException($"Property '{propertyName}' is not part of the primary key.", nameof(propertyName));
+
+        var mergedName = target.SourceStrategyName;
+
+        if (sourceStrategyName is not null)
+        {
+            if (mergedName is null)
+            {
+                mergedName = sourceStrategyName;
+            }
+            else if (!string.Equals(mergedName, sourceStrategyName, StringComparison.Ordinal))
+            {
+                ReportInputConflict(propertyName, MappingFactCategory.PrimaryKeyStrategy,
+                    $"An earlier source calls the strategy '{mergedName}', a later one '{sourceStrategyName}'.");
+            }
+        }
 
         // Key parts are init-only, so the detail lands on a replacement part and the key
         // is rebuilt around it. Rebuilding also re-checks the invariants of PrimaryKey.
@@ -191,13 +324,13 @@ public abstract class AbstractEntityBuilder
             PropertyMap = target.PropertyMap,
             Order = target.Order,
             Strategy = target.Strategy,
-            SourceStrategyName = sourceStrategyName ?? target.SourceStrategyName,
+            SourceStrategyName = mergedName,
             StrategyParameters = parameters is null
                 ? target.StrategyParameters
-                : new Dictionary<GeneratorParameter, string>(parameters),
+                : MergedParameters(target.StrategyParameters, parameters, propertyName),
             SourceStrategyParameters = sourceParameters is null
                 ? target.SourceStrategyParameters
-                : new Dictionary<string, string>(sourceParameters),
+                : MergedParameters(target.SourceStrategyParameters, sourceParameters, propertyName),
         };
 
         EntityMap.PrimaryKey = new PrimaryKey
@@ -205,6 +338,35 @@ public abstract class AbstractEntityBuilder
             Parts = [.. key.Parts.Select(p => ReferenceEquals(p, target) ? replacement : p)],
             SourceKeyClass = key.SourceKeyClass,
         };
+    }
+
+    /// <summary>
+    /// Generator parameters of two claims, entry by entry like the other key-value facts:
+    /// an entry nobody recorded is filled, an occupied one is kept and a differing later
+    /// value is a conflict record (decisions 017 and 036).
+    /// </summary>
+    private Dictionary<TKey, string> MergedParameters<TKey>(
+        IReadOnlyDictionary<TKey, string> existing,
+        IReadOnlyDictionary<TKey, string> claimed,
+        string propertyName)
+        where TKey : notnull
+    {
+        var merged = existing.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+        foreach (var (parameter, value) in claimed)
+        {
+            if (!merged.TryGetValue(parameter, out var current))
+            {
+                merged[parameter] = value;
+            }
+            else if (!string.Equals(current, value, StringComparison.Ordinal))
+            {
+                ReportInputConflict(propertyName, MappingFactCategory.PrimaryKeyStrategy,
+                    $"An earlier source states the generator parameter {parameter} '{current}', a later one '{value}'.");
+            }
+        }
+
+        return merged;
     }
 
     /// <summary>
