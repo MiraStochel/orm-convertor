@@ -1,7 +1,7 @@
 # 037 — Vazbu deklarace a emise vynucených členů drží test
 
 Datum: 2026-08-21
-Stav: platí
+Stav: revidováno
 Požadavky: S1, S2
 Podklad: audit 2026-08-21, nález 1.3; rozhodnutí [009](009-target-framework-descriptor.md)
 
@@ -25,7 +25,7 @@ Varianta 1 vypadá bezpečněji jen do chvíle, než se domyslí, co by builder 
 
 Test je naopak vazbou přiznaně vnější, a proto kontrolovatelnou. Jeho síla je přesně silou matice případů, takže ta se tímto rozhodnutím stává kontraktem:
 
-- **Matice pokrývá každý framework a každou hodnotu `EnforcedMemberCondition` v obou pravdivostních hodnotách.** Dnes: tři frameworky × tvar klíče žádný/jednodílný/složený, čímž jsou `Always`, `CompositePrimaryKey` i `NoPrimaryKey` u každého frameworku jednou splněné a jednou nesplněné. Jediná legitimní výjimka je NHibernate bez klíče — brána úplnosti entitu odmítne dřív, než artefakt vznikne, a odmítnutí tvrdí jiný test.
+- **Matice pokrývá každý framework a každou podmínku, kterou nějaký deskriptor u některého členu vyslovuje, v obou pravdivostních hodnotách.** Dnes: tři frameworky × tvar klíče žádný/jednodílný/složený, čímž `CompositePrimaryKey` i `NoPrimaryKey` jednou platí a jednou neplatí. Výjimky jsou dvě a obě plynou z výčtu, ne z mezery v matici. `Always` nepravdivá být nemůže, takže negativní polovinu z definice nemá — u ní kontrakt žádá jen to, aby platná polovina byla v matici u každého frameworku, jehož deskriptor takového člena nese. A NHibernate bez klíče v matici není, protože brána úplnosti entitu odmítne dřív, než artefakt vznikne; odmítnutí tvrdí jiný test. Podmínka, kterou u daného frameworku nepodmiňuje žádný člen, se nepočítá za pokrytou ani nesplněnou — deskriptor Dapperu vynucené členy nemá vůbec a EF Core má jediný, takže se jich týká jen ta jejich.
 - **Test má pozitivní i negativní polovinu:** člen s platnou podmínkou musí být přítomen (a zakázaná značka nepřítomna), člen s neplatnou podmínkou přítomen být nesmí. Bez negativní poloviny by prošel builder, který vypisuje všechno bezpodmínečně.
 - **Artefakt musí členy skutečně zaměstnat.** Zakázané kolekční značky rozhodnutí 035 splní i entita bez kolekce — nepřítomností, ne builderem; testovací entita proto kolekční vlastnosti nese. Totéž pravidlo platí pro každou budoucí značku: podmínky splněné prázdnem se do matice nepočítají.
 - **Nový člen nebo nová podmínka rozšiřuje matici v témž kroku, který je zavádí.** Pojistka proti tichému úniku existuje jen u podmínek: neznámou hodnotu `Applies` shodí výjimkou, takže podmínka bez vyhodnocení neprojde — ale obě pravdivostní hodnoty jí dodá až rozšířená matice, a to za kompilátor nikdo nepohlídá.
@@ -41,3 +41,7 @@ Vědomý strop z rozhodnutí 009 zůstává: značky se hledají podřetězcem, 
 **Produkční kód se nemění a chování také ne.** Rozhodnutí 009 platí dál beze změny; tohle rozhodnutí k němu doplňuje, o co se jeho dělba opírá, což 009 nechalo nevyslovené.
 
 **Pro nový framework (S1) znamená deskriptor, builder a řádek v matici.** Přidání frameworku do `Cases()` je součást jeho wrapperu stejně jako deskriptor sám.
+
+## Historie
+
+**2026-08-21 — revidováno.** Kontrakt pokrytí byl v původním znění nesplnitelný: žádal každou hodnotu `EnforcedMemberCondition` „v obou pravdivostních hodnotách", jenže `Always` z definice nikdy neplatí nepravdivě, takže negativní polovina pro ni existovat nemůže a `GeneratedArtifactOmitsMembersWhoseConditionDoesNotHold` ji nikdy neproběhne. Zároveň znění mlčky předpokládalo, že každou podmínku vyslovuje každý framework, kdežto Dapper vynucené členy nemá žádné a EF Core jediný. Kontrakt je proto přeformulovaný na podmínky, které nějaký deskriptor skutečně vyslovuje, a obě výjimky — `Always` bez negativní poloviny, NHibernate bez klíče — jsou v něm pojmenované. Volba sama se nemění: vazbu deklarace a emise dál drží test a matice zůstává táž, mění se jen věta, která ji popisuje. Revize na místě je bezpečná, protože podle původního znění nevznikl žádný kód — rozhodnutí produkční kód výslovně neměnilo a matice existovala už před ním.

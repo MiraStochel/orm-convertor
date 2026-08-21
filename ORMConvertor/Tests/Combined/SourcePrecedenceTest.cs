@@ -80,6 +80,32 @@ public class SourcePrecedenceTest
         Assert.Equal(MappingFactCategory.DatabaseType, record.Category);
     }
 
+    /// <summary>
+    /// The fourth conflict scenario the acceptance criterion of F5 names by hand, beside
+    /// the column name, the data type and the primary key. Its write path is the column
+    /// name's, but nothing exercised it: the nullability branch of
+    /// SetPropertyDatabaseMapping had no test at all, so a claimed criterion rested on an
+    /// unverified line.
+    /// </summary>
+    [Fact]
+    public void OccupiedNullabilityIsKeptAndTheLaterClaimIsAConflict()
+    {
+        var builder = new NHibernateEntityBuilder();
+        builder.AddClassHeader("public", "Customer");
+        builder.AddProperty("string", "Name", "public", hasGetter: true, hasSetter: true);
+        builder.SetPropertyDatabaseMapping("Name", new Dictionary<string, string> { ["nullable"] = "true" });
+        builder.SetPropertyDatabaseMapping("Name", new Dictionary<string, string> { ["nullable"] = "false" });
+
+        var propertyMap = builder.EntityMap.PropertyMaps.Single(pm => pm.Property.Name == "Name");
+        Assert.True(propertyMap.IsNullable);
+
+        var record = Assert.Single(builder.Records);
+        Assert.Equal(ConversionRecordKind.Conflict, record.Kind);
+        Assert.Equal("Customer", record.Entity);
+        Assert.Equal("Name", record.Property);
+        Assert.Equal(MappingFactCategory.Nullability, record.Category);
+    }
+
     [Fact]
     public void OccupiedKeyIsKeptWithItsDetailsAndTheLaterDifferentClaimIsAConflict()
     {

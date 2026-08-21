@@ -8,7 +8,7 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 **Kde se pokračuje, říká značka na řádku vazeb položky** (rozhodnutí [018](./decisions/018-work-order-as-item-marker.md)): značku „Na řadě" nese nejvýš jedna položka, značku „Potom" nejvýš dvě. Samostatný seznam pořadí tenhle soubor nemá — rozcházel se s položkami pod ním.
 
-**Co patří do verze 1.0, říká značka `Verze 1.0 — N.`** na témž řádku (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)), kde `N` je pořadí uvnitř vydání. Číslované pořadí dává smysl jen tam, kde je množina uzavřená, a obsah jednoho vydání uzavřený je; mimo něj platí předchozí odstavec beze změny. Značky se tím nezdvojují, nýbrž váží: „Na řadě" nese položka s nejnižším dosud neodbaveným číslem a „Potom" následující dvě, takže se jejich umístění dá zkontrolovat, ne jen přečíst. Položka bez čísla do verze 1.0 nepatří a bere se podle priorit plynoucích z požadavků F/S/T; kde je důvod jejího vynechání čerstvý, říká ho její vlastní text.
+**Verze 1.0 je vydaná a její devatenáctibodové pořadí (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)) je odbavené celé**, takže značku `Verze 1.0 — N.` už nenese žádná položka. Co zůstalo v tomhle souboru, stojí mimo vydání a řadí se podle priorit plynoucích z požadavků F/S/T; platí tedy předchozí odstavec beze změny. Kde je důvod vynechání položky z verze čerstvý, říká ho její vlastní text. Číslované pořadí se vrátí až s dalším vydáním, které si ho vyžádá — dává smysl jen tam, kde je množina uzavřená.
 
 ---
 
@@ -34,13 +34,29 @@ Dapper, EF Core, linq2db a RepoDB běží na `Microsoft.Data.SqlClient`, NHibern
 ## Otevřená práce
 
 ### Kontejnerová konfigurace prostředí
-*Dohnání S5 odložené rozhodnutím [016](./decisions/016-generated-artifact-verification-levels.md).*
+*Na řadě. Dohnání S5 odložené rozhodnutím [016](./decisions/016-generated-artifact-verification-levels.md). Odblokuje 4. stupeň ověření a zruší podmíněnost F4 a F6.*
 
 S5 žádá celý systém včetně databáze spustitelný dokumentovanou kontejnerovou konfigurací, kde čisté prostředí reprodukuje testy jedním hlavním příkazem. Lokální instance zvolená rozhodnutím 016 to nesplňuje a splnit nemá. Protože ale o hostiteli rozhoduje konfigurace, a ne kód testů, jde o přidání služby a proměnné prostředí, ne o návrat k rozhodnutí.
 
 Patří sem trojí: service container do workflow v `.github` spolu s proměnnou `ConnectionStrings__TestDatabase`, aby databázově závislé testy běžely i v CI (dnes se tam přeskakují, protože proměnná není nastavená), volba mezi Docker Compose a Testcontainers pro lokální reprodukci, a ověření `ConnectionStrings__AdvisorDatabase` v `docker-compose.yml` — commitnutá deklarace, kterou dosud nikdo nespustil a jejíž ověření dřívější plán čekal od stavby testovacího prostředí.
 
 Do verze 1.0 nic z toho nepatří (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)): nasazení řešíme jedinou ručně spravovanou instancí, ne kontejnerem. Důsledek je ale potřeba nést nahlas i v textu práce — bez databáze v CI se databázově závislé testy dál přeskakují, takže **kritéria F4 a F6 platí jen tam, kde běh s lokální databází skutečně proběhl**.
+
+### Generovaný artefakt nikdo nespustil proti databázi
+*Potom. 4. stupeň ověření podle rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md); popsaný stav je v [`architecture.md`](./architecture.md), §6.2. Blokuje ho kontejnerová konfigurace výše. Požadavky F3, F4, F6, F11, S2.*
+
+Rozhodnutí 016 uznává čtyři stupně ověření generovaných artefaktů a čtvrtý z nich — *entita se uloží a načte se stejnou identitou* — nemá jediného zástupce. Připravená je pro něj hranice transakce na `TestSchemaFixture`: metoda `OpenConnection()` existuje a volají ji testy v `TestSchemaFixtureTest`, ty ale hlídají schéma fixture samotné (F4 potřebuje znát očekávanou odpověď), nikoli generovaný artefakt. Chybí tedy scénář, ve kterém se vygenerovaná entita a její mapování skutečně použijí k zápisu a čtení řádku.
+
+Mezera není teoretická. Kolekce deklarovaná konkrétním typem místo rozhraní prošla druhým i třetím stupněm bez povšimnutí a odhalilo ji až čtení kódu — NHibernate váže kolekci na CLR typ vlastnosti teprve při načtení entity, takže právě tuhle třídu vad vidí jen 4. stupeň. Náhradou je dnes 1. stupeň se zakázanými značkami v deskriptoru (rozhodnutí [035](./decisions/035-nhibernate-collections-declared-by-interface.md)), což je kontrola tvaru, ne běhu. Až stupeň dostane prvního zástupce, patří načtení entity s kolekcí mezi první scénáře.
+
+Do verze 1.0 položka nepatřila: verze nárokuje F11 v rozsahu, kde se syntaktická správnost ověřuje testy, a stupně ověření běží v testovací sadě, ne nad odpovědí `/convert`. Věcně ji ale blokuje kontejnerová konfigurace — bez databáze v CI by scénář existoval jen na stroji, kde je připojení nastavené, tedy přesně v režimu, kvůli kterému jsou kritéria F4 a F6 dnes podmíněná.
+
+### HQL parser pro round-trip NHibernate → NHibernate
+*Vyňatá oblast 4 hranice záruk ([`architecture.md`](./architecture.md), §9). Navazuje na rozhodnutí [022](./decisions/022-native-query-syntax-in-builders.md) a [026](./decisions/026-home-of-shared-query-reading.md). Požadavky F7–F10, T2, T3.*
+
+Dotazová větev je hotová ve všech devíti směrech, ale jeden z nich není textovým round-tripem: u NHibernate se jako zdroj čte LINQ a jako cíl se generuje HQL (rozhodnutí 022 zvolilo nativní syntaxi cíle), takže převod NHibernate → NHibernate proběhne a vrátí platný dotaz, jen ne týž text, který přišel na vstupu. Parser HQL v řešení není a sdílené čtení dotazů (`LinqParsing`, rozhodnutí 026) mu nepomůže — HQL je vlastní gramatika, ne tvar LINQ.
+
+Dokud parser chybí, nemá požadavek T3 u tohohle směru co porovnávat a matice T2 v něm měří překlad z jiného jazyka, než v jakém je zdroj napsaný. Domovem takového parseru je `NHibernateWrappers`, ne `LinqParsing`: je to čtení nativní syntaxe jednoho frameworku, tedy táž kategorie jako `DapperSqlQueryParser` s gramatikou T-SQL.
 
 ### Cílový databázový dialekt v deskriptoru
 *Sem odkázalo rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md); deskriptor s cílovou verzí, na kterou se dialekt tvarem podobá, je hotový (rozhodnutí [013](./decisions/013-target-framework-versions.md)). Mimo verzi 1.0 (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)). Požadavky F7–F10, S2.*
@@ -50,7 +66,7 @@ Cílový databázový dialekt je fakt o cíli převodu téhož tvaru jako verze 
 Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dialektu ji nevyřeší: `DapperSqlQueryParser` čte T-SQL gramatikou `TSql160Parser` (rozhodnutí [026](./decisions/026-home-of-shared-query-reading.md)), takže SQL napsané pro jiný databázový systém — u MyBatisu (F8) běžné — touhle cestou neprojde. Řešením je vlastní parser SQL v javovém wrapperu, ne pole v deskriptoru.
 
 ### Poddotazy a množinové operace se nevykreslí
-*Podklad: audit 2026-08-02, kap. 8. Požadavek T2, který dotazovou matici dělí i podle poddotazů a množinových operací.*
+*Potom. Podklad: audit 2026-08-02, kap. 8. Požadavek T2, který dotazovou matici dělí i podle poddotazů a množinových operací.*
 
 Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec, takže poddotaz projde parsováním, ale jeho výsledek se nikam neskládá. **Tiché to už není** — `Normalize()` v šabloně dotazového builderu (rozhodnutí [023](./decisions/023-query-builder-template-method.md)) vnořený poddotaz ohlásí záznamem o ztrátě —, ale vykreslit ho to neumí. Vedle toho `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu), takže složený dotaz se poskládá špatně; množinovou operaci navíc dnes vykresluje jedině Dapper builder, kdežto NHibernate ji podle deskriptoru vyjádřit neumí a EF Core builder pro ni nemá větev. Sem patří i stránkování, které mezireprezentace vůbec nenese — parsery ho hlásí jako ztrátu. Všechno tohle jsou kategorie dotazové matice podle T2, které tak nemají co měřit.
 
@@ -62,14 +78,9 @@ Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisi
 ### Advisor a benchmarking nemají žádné testy
 *Souvisí s [`architecture.md`](./architecture.md), §8. Požadavky T7, S6.*
 
-Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný je tedy P/Invoke do ILP solveru, obě stavby benchmarkových harnessů i `HarnessGenerationUtilities`, které si názvy typů, jmenné prostory a atribut `[Table]` tahá z generovaného textu regulárními výrazy a nullabilitu hodnotových typů přepisuje textovou náhradou. Právě tahle část se nejsnáz rozejde s generátorem, protože stojí na jeho výstupním tvaru — a jednou už se rozešla: extrakce SQL z generované metody přestala být potřeba, teprve když builder začal vydávat holý dotaz zvlášť. Sem patří i to, že 4. stupeň ověření podle rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md) nemá jediného zástupce: `TestSchemaFixture.OpenConnection()` existuje i s popsanou hranicí transakce, ale nikdo ho nevolá.
+Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný je tedy P/Invoke do ILP solveru, obě stavby benchmarkových harnessů i `HarnessGenerationUtilities`, které si názvy typů, jmenné prostory a atribut `[Table]` tahá z generovaného textu regulárními výrazy a nullabilitu hodnotových typů přepisuje textovou náhradou. Právě tahle část se nejsnáz rozejde s generátorem, protože stojí na jeho výstupním tvaru — a jednou už se rozešla: extrakce SQL z generované metody přestala být potřeba, teprve když builder začal vydávat holý dotaz zvlášť.
 
 Do verze 1.0 položka nepatří. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo `Advisor` i `AdvisorBenchmarking` ze záruk vcelku právě proto, že netestované jsou; testovat oblast, na kterou verze neslibuje spoleh, by bylo otevírání nové části místo dokončení rozdělané.
-
-### Značka vydání v gitu
-*Verze 1.0 — 19. Na řadě. Uzavírá rozhodnutí [030](./decisions/030-scope-of-version-1-0.md). Požadavky S2, S6.*
-
-Verzi nástroje sestavení už nesou — `<Version>` v `Directory.Build.props` jediným zápisem pro celé řešení (rozhodnutí [034](./decisions/034-central-version-management.md)) — a záznam běhu ji vydává jako `ToolVersion` vedle obou verzí frameworků, takže S2 má na co ukázat, když determinismus podmiňuje „stejnou verzí nástroje", a S6 má v záznamu úplnou trojici verzí. Zbývá jediné, a je to krok mimo kód: **repozitář nenese značku vydání**, takže číslo `1.0.0` v sestaveních neodkazuje na žádný commit a tvrzení „stejná verze nástroje" nemá vnější kotvu. Značku vytváří a posílá Míra. Je to poslední krok vydání, protože až do něj se obsah verze ještě může měnit; s každou další změnou obsahu se musí číslo v `Directory.Build.props` a značka posunout společně.
 
 ---
 
@@ -79,10 +90,10 @@ Velké bloky ze zadání, každý si zaslouží vlastní rozhodnutí, než se do
 
 | Blok | Co odblokuje |
 |---|---|
-| **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech a kontrola úplnosti IR jsou hotové (rozhodnutí 010), syntaktické ověření generovaných souborů také (rozhodnutí 016, `architecture.md` §6.2) a záznam běhu podle S6 — identifikátor a verze frameworků z deskriptorů — vydává `/convert`; verzi nástroje do záznamu doplní položka o značce vydání |
+| **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech a kontrola úplnosti IR jsou hotové (rozhodnutí 010), syntaktické ověření generovaných souborů také (rozhodnutí 016, `architecture.md` §6.2) a záznam běhu podle S6 — identifikátor běhu, verze obou frameworků z deskriptorů a verze nástroje z `Directory.Build.props` (rozhodnutí 034) — vydává `/convert` |
 | **F7–F10** javový ekosystém a cross-ecosystem překlad | jádro rozšíření; typový model má zneutralizovaný na jazykové (rozhodnutí 014) i databázové straně (rozhodnutí 019) a parametry generátoru se nesou kanonicky s výběrem názvu ve výstupu (rozhodnutí 020 a 021, obojí implementované), takže slovníkové předpoklady jsou hotové |
 | **F12–F13** testovací infrastruktura pro Javu, diferenční ověření | důkaz funkční ekvivalence |
 | **F14–F15** dávkové vstupy a výběr cíle v UI | použitelnost nástroje mimo ruční zadávání; F14 je zároveň předpokladem třetí otázky u klíčové třídy |
 | **T1–T7** experimenty | T7 navazuje na existující ILP Advisor |
 
-Dotazová větev z původního zadání je hotová ve všech devíti směrech v rozsahu kategorií projekce, filtrace, join, agregace a řazení (rozhodnutí 022–027). Co z ní zbývá, jsou zbylé kategorie požadavku T2 — stránkování, poddotazy a množinové operace — a HQL parser, bez kterého NHibernate → NHibernate není textovým round-tripem.
+Dotazová větev z původního zadání je hotová ve všech devíti směrech v rozsahu kategorií projekce, filtrace, join, agregace a řazení (rozhodnutí 022–027). Co z ní zbývá, jsou zbylé kategorie požadavku T2 — stránkování, poddotazy a množinové operace — a HQL parser, bez kterého NHibernate → NHibernate není textovým round-tripem; obojí má vlastní položku výše.

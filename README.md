@@ -30,7 +30,9 @@ Version 1.0 draws an explicit line between what it vouches for and what merely s
 
 **Covered:** entity, mapping, and query translation as described above, merging of multi-file input into one conversion with per-file input and output, completion from the database catalog, structured diagnostics of every conversion — stamped with a run identifier and the versions of the tool and of both frameworks — deterministic output, and translation artifacts that never carry database credentials. Diagnostic records name the entity and property they concern rather than the source file: the units sent to `/convert` carry no names, so file names stay a display label on the client.
 
-**Exempt from guarantees:** the Advisor and its benchmarking infrastructure (untested; the native ILP library builds only inside Docker), inheritance, components, and `<join>` in NHibernate mappings, subqueries, set operations, and paging in queries, a textual NHibernate → NHibernate round-trip (there is no HQL parser), database dialects other than SQL Server, and containerized deployment. Input that touches an exempt area is reported in the conversion records rather than silently degraded.
+**Exempt from guarantees:** seven areas, each excluded as a whole rather than case by case — the Advisor and its benchmarking infrastructure (untested; the native ILP library builds only inside Docker); inheritance, components, and `<join>` in NHibernate mappings; subqueries, set operations, and paging in queries; a textual NHibernate → NHibernate round-trip (there is no HQL parser); database dialects other than SQL Server; containerized deployment and a database in CI; and the Java ecosystem together with the experimental part of the assignment, which this version does not claim at all. Being exempt is not the same as being absent: an exempt area may well ship in the repository and run, the version simply promises nothing about it. Input that touches one is reported in the conversion records rather than silently degraded.
+
+**One conditional claim.** Without a database in CI the database-dependent tests are skipped, so the acceptance criteria of F4 and F6 hold only where a run against a local database actually happened.
 
 The remaining work is tracked in [`docs/open-items.md`](docs/open-items.md).
 
@@ -55,6 +57,12 @@ The main directions of future work (detailed in [`docs/open-items.md`](docs/open
 - Extending the Advisor to all supported frameworks.
 - Java ecosystem support (Hibernate, MyBatis, EclipseLink) and cross-ecosystem translation between .NET and Java.
 - The remaining query categories: paging, subqueries, and set operations.
+
+## License
+
+Released under the [MIT License](LICENSE) — use, modify and redistribute it freely, commercially included, as long as the licence text and the copyright notice travel with it. The reasoning, including how this sits with the work being part of a master thesis at the Faculty of Mathematics and Physics, Charles University, is in [decision 038](docs/decisions/038-mit-license-for-the-repository.md).
+
+The licence covers the contents of this repository. Third-party assets vendored under `ORMConvertor/ORMConvertorAPI/wwwroot/vendor/` keep their own terms, stated in the licence file shipped beside each of them.
 
 ## Origin and attribution
 
