@@ -198,8 +198,9 @@ public class PrimaryKeyTest
         Assert.Null(keyMap.Type);
 
         // Until then the builder falls back to conventions: the property name as the
-        // column and a database type guessed from the CLR type. See the TODO in
-        // NHibernateEntityBuilder.ResolveNhType for the place the database will fill in.
+        // column and a database type guessed from the CLR type. That fallback lives in
+        // NHibernateEntityBuilder.ResolveNhType, which never queries the database itself -
+        // the completion phase fills the model before generation (decision 015).
         var xml = builder.Build().Single(o => o.ContentType == ConversionContentType.XML).Content;
         Assert.Contains("<id name=\"CustomerID\" column=\"CustomerID\" type=\"Int32\">", xml);
 

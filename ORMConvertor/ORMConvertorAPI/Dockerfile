@@ -22,8 +22,11 @@ COPY AbstractWrappers/AbstractWrappers.csproj AbstractWrappers/
 COPY Advisor/Advisor.csproj Advisor/
 COPY AdvisorBenchmarking/AdvisorBenchmarking.csproj AdvisorBenchmarking/
 COPY Common/Common.csproj Common/
+COPY CSharpEntityParsing/CSharpEntityParsing.csproj CSharpEntityParsing/
 COPY DapperWrappers/DapperWrappers.csproj DapperWrappers/
+COPY DatabaseCatalog/DatabaseCatalog.csproj DatabaseCatalog/
 COPY EFCoreWrappers/EFCoreWrappers.csproj EFCoreWrappers/
+COPY LinqParsing/LinqParsing.csproj LinqParsing/
 COPY Model/Model.csproj Model/
 COPY NHibernateWrappers/NHibernateWrappers.csproj NHibernateWrappers/
 COPY OrmConvertor/OrmConvertor.csproj OrmConvertor/

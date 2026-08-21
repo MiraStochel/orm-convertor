@@ -1,6 +1,6 @@
 ﻿namespace SampleData;
 
-public static class AdvisorEfCoreSamples
+public static class AdvisorEFCoreSamples
 {
     public const string Entity = """
         using System.ComponentModel.DataAnnotations;

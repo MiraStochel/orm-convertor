@@ -12,7 +12,7 @@ using EntityInfo = AdvisorBenchmarking.HarnessGenerationUtilities.EntityInfo;
 
 namespace AdvisorBenchmarking;
 
-internal static class EfCoreBenchmarkHarnessBuilder
+internal static class EFCoreBenchmarkHarnessBuilder
 {
     public static BenchmarkSource Build(
         IReadOnlyList<ConversionSource> sources,

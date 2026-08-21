@@ -6,7 +6,7 @@ using Model.QueryInstructions.Enums;
 
 namespace DapperWrappers;
 
-public class DapperSQLQueryVisitor : IQueryVisitor
+public class DapperSqlQueryVisitor : IQueryVisitor
 {
     public string Visit(FromInstruction instr)
     {

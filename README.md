@@ -11,7 +11,7 @@ This repository continues the development of a prototype originally created by M
 | Directory | Contents |
 |---|---|
 | `ORMConvertor/` | The translation and advisor tool: a .NET 10 solution — ASP.NET Core REST API serving a hand-written static web frontend (no framework, no build step). See [`ORMConvertor/README.md`](ORMConvertor/README.md) for build and run instructions. |
-| `docs/` | Project documentation: [how the tool works today](docs/architecture.md), [what remains](docs/open-items.md), [design decisions](docs/decisions/), and the [state at takeover](docs/baseline.md). |
+| `docs/` | Project documentation: [how the tool works today](docs/architecture.md), [what remains](docs/open-items.md), [design decisions](docs/decisions/), [dated state reviews](docs/audits/), [framework analyses](docs/analysis/), and the [state at takeover](docs/baseline.md). |
 | `benchmarks/` | Experimental comparison of seven .NET ORMs (unit tests and performance benchmarks) inherited from the original research. |
 | `diagrams/` | Diagrams created with [draw.io](https://www.drawio.com/). |
 | `notes/` | Research notes in Czech comparing ORM frameworks feature by feature. |

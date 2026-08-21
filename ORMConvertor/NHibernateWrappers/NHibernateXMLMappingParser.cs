@@ -132,18 +132,6 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     /// </summary>
     private void ParseClass(XElement classElement)
     {
-        // Header (class name)
-        //var nameAttr = classElement.Attribute("name")?.Value;
-        //if (!string.IsNullOrEmpty(nameAttr))
-        //{
-        //    var fullType = nameAttr.Split(',')[0].Trim();
-        //    var className = fullType.Contains('.')
-        //        ? fullType[(fullType.LastIndexOf('.') + 1)..]
-        //        : fullType;
-
-        //    entityBuilder.AddClassHeader(string.Empty, className);
-        //}
-
         // Table and schema
         var table = classElement.Attribute("table")?.Value;
         if (!string.IsNullOrEmpty(table))

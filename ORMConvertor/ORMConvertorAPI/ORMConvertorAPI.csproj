@@ -7,11 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="frontend\**" />
-    <Content Remove="frontend\**" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
@@ -21,10 +16,6 @@
     <ProjectReference Include="..\Advisor\Advisor.csproj" />
     <ProjectReference Include="..\OrmConvertor\OrmConvertor.csproj" />
     <ProjectReference Include="..\SampleData\SampleData.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="wwwroot\" />
   </ItemGroup>
 
 </Project>

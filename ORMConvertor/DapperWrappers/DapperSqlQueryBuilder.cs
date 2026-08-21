@@ -13,7 +13,7 @@ namespace DapperWrappers;
 /// </summary>
 public class DapperSqlQueryBuilder : AbstractQueryBuilder
 {
-    private readonly IQueryVisitor visitor = new DapperSQLQueryVisitor();
+    private readonly IQueryVisitor visitor = new DapperSqlQueryVisitor();
 
     public override TargetFrameworkDescriptor Descriptor => DapperDescriptor.Instance;
 

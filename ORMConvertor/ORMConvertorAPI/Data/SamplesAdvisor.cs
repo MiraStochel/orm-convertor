@@ -10,17 +10,17 @@ public static class SamplesAdvisor
 {
     public static Dictionary<int, string> GetSamples => new()
     {
-        // Dapper entity (append complete CustomerTransaction so benchmarks compile)
-        { 1, CustomerSampleDapper.Entity }, //+ "\n" + SharedSampleClasses.CustomerTransaction },
+        // Dapper entity
+        { 1, CustomerSampleDapper.Entity },
 
-        // NHibernate entity + mapping (append complete CustomerTransaction for completeness)
-        { 2, CustomerSampleNHibernate.Entity }, //+ "\n" + SharedSampleClasses.CustomerTransaction },
+        // NHibernate entity + mapping
+        { 2, CustomerSampleNHibernate.Entity },
         { 3, CustomerSampleNHibernate.XmlMapping },
 
         // EF Core advisor-only samples
-        { 4, AdvisorEfCoreSamples.Entity },
-        { 5, AdvisorEfCoreSamples.Query1 },
-        { 6, AdvisorEfCoreSamples.Query2 },
+        { 4, AdvisorEFCoreSamples.Entity },
+        { 5, AdvisorEFCoreSamples.Query1 },
+        { 6, AdvisorEFCoreSamples.Query2 },
     };
 }
 

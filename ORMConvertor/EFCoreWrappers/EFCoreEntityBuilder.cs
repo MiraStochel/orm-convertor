@@ -77,8 +77,6 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
         bool composite = entityMap.PrimaryKey.Parts.Count > 1;
 
-        // TODO primary key strategy
-
         foreach (var part in entityMap.PrimaryKey.Parts)
         {
             var propertyMap = part.PropertyMap;

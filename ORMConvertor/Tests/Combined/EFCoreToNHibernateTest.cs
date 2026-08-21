@@ -5,7 +5,7 @@ using NHibernateWrappers;
 
 namespace Tests.Combined;
 
-public class EFCoreToNHibernate
+public class EFCoreToNHibernateTest
 {
     [Fact]
     public void ConvertOrder()

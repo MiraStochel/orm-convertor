@@ -10,7 +10,7 @@ internal static class BenchmarkHarnessBuilder
         new Dictionary<ORMEnum, Func<IReadOnlyList<ConversionSource>, string, BenchmarkSource>>
         {
             [ORMEnum.Dapper] = DapperBenchmarkHarnessBuilder.Build,
-            [ORMEnum.EFCore] = EfCoreBenchmarkHarnessBuilder.Build
+            [ORMEnum.EFCore] = EFCoreBenchmarkHarnessBuilder.Build
         };
 
     public static BenchmarkSource Build(

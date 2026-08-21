@@ -1,8 +1,6 @@
 bin
 obj
 TestResults
-node_modules
-**/node_modules
 *.user
 *.suo
 *.vs
@@ -13,11 +11,9 @@ node_modules
 *.sqlite
 *.mdf
 *.ldf
-**/dist
 **/bin
 **/obj
 logs
 *.log
-npm-debug.log
 /.env
 /.idea

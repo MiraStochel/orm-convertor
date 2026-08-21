@@ -9,7 +9,7 @@ using Model.QueryInstructions.Enums;
 
 namespace Tests.Dapper;
 
-public class DapperSQLQueryBuilderTest
+public class DapperSqlQueryBuilderTest
 {
     private static QueryOperand Col(string table, string property, string? function = null)
         => QueryOperand.Column(table, property, function);

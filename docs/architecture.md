@@ -1,7 +1,7 @@
 # Architektura aplikace – současný stav
 
 **Účel:** referenční popis architektury tak, jak je dnes implementovaná, nezávisle na akademickém textu diplomky, ze které projekt vzešel. Odpovídá na otázku „jak to teď funguje"; proč jsme co zvolili, je v [`decisions/`](./decisions/README.md), co zbývá udělat, v [`open-items.md`](./open-items.md).
-**Zdroj faktů:** vlastní čtení zdrojového kódu + kapitola *Architecture and Implementation* z původní diplomky (fakta přepsaná vlastními slovy, ne citace). Naposledy ověřeno proti kódu: 2026-08-20.
+**Zdroj faktů:** vlastní čtení zdrojového kódu + kapitola *Architecture and Implementation* z původní diplomky (fakta přepsaná vlastními slovy, ne citace). Naposledy ověřeno proti kódu: 2026-08-21.
 
 ---
 
@@ -275,6 +275,8 @@ Aplikace je jediný proces ASP.NET Core (`ORMConvertorAPI`), který pod cestou `
 
 **Přes Visual Studio:** otevřít `ORMConvertor.sln`, nastavit `ORMConvertorAPI` jako startup projekt, spustit (`F5` / `Ctrl+F5`). Profily `http` (`http://localhost:5072`) i `https` (`https://localhost:7124` a vedle toho `http://localhost:5072`) jsou ověřené průchodem přes `dotnet run --launch-profile` (2026-08-21): aplikace naběhne, servíruje frontend a `/convert` s vyplněným klíčem hlásí `CatalogState = Reached`. Profil `https` předpokládá vývojový certifikát ASP.NET (`dotnet dev-certs https`). Oba profily nastavují `ASPNETCORE_ENVIRONMENT=Development`, což zapíná Swagger a čtení user secrets. Třetí profil `IIS Express` je pozůstatek šablony projektu; žádná popsaná cesta ho nepoužívá a ověřený není.
 
+Adresa, kterou profil otevře v prohlížeči, je **relativní `orm/`**, ne absolutní URL. Absolutní zápis nesl dvě vady zděděné po klientském směrování: mířil na `/orm/home`, což byla cesta Angularu a po rozhodnutí [032](./decisions/032-frontend-as-static-pages-without-a-build.md) vrací 404 (ověřeno spuštěním 2026-08-21), a u profilu `https` navíc psal schéma `https` k portu 5072, na kterém týž profil poslouchá nešifrovaně. Relativní zápis obojí ruší tím, že hostitele i schéma bere z `applicationUrl` profilu — tedy `http://localhost:5072/orm/`, respektive `https://localhost:7124/orm/`.
+
 **Přes .NET CLI:**
 
 ```
@@ -374,6 +376,8 @@ Poddotazy zůstávají ve visitor vrstvě dotažené jen napůl: `IQueryVisitor`
 ILP model je napsaný v C (`Advisor/ilp.c`) přímo přes GLPK C API (ne přes vyšší úroveň abstrakce): `glp_create_prob()` založí úlohu, `glp_add_cols()`/`glp_set_col_kind()` definují binární proměnné $x_{q,f}$ a $y_f$, `glp_set_obj_coef()` nastaví účelovou funkci, `glp_add_rows()`/`glp_set_row_bnds()` definují omezení, `glp_load_matrix()` nahraje řídkou matici koeficientů. Řešení spouští `glp_init_iocp()` (parametry solveru) a `glp_intopt()` (branch-and-bound). Výsledek se čte zpět přes `glp_mip_col_val()`.
 
 C# strana (`Advisor.Solve`) volá tenhle wrapper přes P/Invoke – `[LibraryImport("libadvisor.so")]`. Knihovna `libadvisor.so` se kompiluje jen v Docker buildu (stage `advisor-native`: gcc + `libglpk-dev`); název je natvrdo linuxový, takže Advisor mimo Linux/Docker neběží – překladová část aplikace na tom nezávisí a funguje všude. Build krok pro Windows (`advisor.dll`) neexistuje, i když `ilp.c` má exportní makra připravená.
+
+**Dva koncové body, ne jeden.** Uživatelskou cestou je `POST /advisor/run`: vezme entity a dotazy, přeloží je, zkompiluje, změří a teprve z naměřených nákladů sestaví ILP úlohu. Vedle něj stojí `POST /advisor-test`, který ILP model volá **přímo** – bere matice `Memory` a `Cost`, váhy `Z` a meze `MEM`, `N`, `Q`, `F` a vrací výběr frameworků a přiřazení dotazů. Nic ho nevolá, frontend ani testy; je to diagnostická cesta k solveru samotnému, která dovolí ověřit chování modelu na ručně zadaných číslech bez měření. Zůstává proto úmyslně, ne opomenutím – ale platí pro něj totéž vyňetí ze záruk jako pro zbytek Advisoru (§9, oblast 1) a bez `libadvisor.so` vrací hlášku z P/Invoke stejně jako `/advisor/run`.
 
 ## 9. Co verze 1.0 nárokuje a co je vyňaté ze záruk
 
