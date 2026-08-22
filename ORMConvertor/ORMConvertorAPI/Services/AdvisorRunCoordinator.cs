@@ -44,7 +44,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
 
     /// <summary>
     /// Validates the request, resolves target frameworks, translates the workload,
-    /// benchmarks it against the configured database, and runs the ILP optimisation.
+    /// benchmarks it against the configured database, and runs the ILP optimization.
     /// </summary>
     public Task<AdvisorRunResult> RunAsync(
         AdvisorRunRequest request,

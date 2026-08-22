@@ -29,7 +29,7 @@ public sealed class QueryArtifact
     public StringBuilder Projection { get; } = new();
 
     /// <summary>
-    /// Name of the entity the query materialises, as resolved by the source step. Every
+    /// Name of the entity the query materializes, as resolved by the source step. Every
     /// target needs it for the same reason — Dapper writes Query&lt;T&gt;, EF Core
     /// IQueryable&lt;T&gt;, NHibernate CreateQuery&lt;T&gt; — so it belongs to the artifact
     /// rather than to one builder's private state.

@@ -73,4 +73,4 @@ Ze stejné úvahy zamítáme i multidialektovou knihovnu třetí strany (`SqlPar
 
 ## Historie
 
-2026-08-19 — Doplněna volba parseru T-SQL, která v původním znění byla jen předpokladem Kontextu, ne argumentovanou variantou. Přibyla varianta 5 (vlastní tokenizer a parser), jmenovitě uvedený balíček i důvod, proč se na něj lze spolehnout, a tři důsledky, na které se při psaní nemyslelo: verze gramatiky vedle verze balíčku, zdrojová strana dialektu u F7–F10 a dotaz, který není řetězcovým literálem. Volba sama se nemění.
+**2026-08-19 — revidováno.** Doplněna volba parseru T-SQL, která v původním znění byla jen předpokladem Kontextu, ne argumentovanou variantou. Přibyla varianta 5 (vlastní tokenizer a parser), jmenovitě uvedený balíček i důvod, proč se na něj lze spolehnout, a tři důsledky, na které se při psaní nemyslelo: verze gramatiky vedle verze balíčku, zdrojová strana dialektu u F7–F10 a dotaz, který není řetězcovým literálem. Volba sama se nemění.

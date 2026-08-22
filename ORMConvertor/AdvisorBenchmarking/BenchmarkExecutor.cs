@@ -50,7 +50,7 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
             ?? throw new InvalidOperationException("Failed to instantiate benchmark harness.");
 
         // Warm-up and measurement configuration
-        const int warmupIterations = 2;         // non-measured iterations to stabilise JIT/caches
+        const int warmupIterations = 2;         // non-measured iterations to stabilize JIT/caches
         const int minIterations = 3;            // ensure some averaging
         const int maxIterations = 20;           // avoid overlong DB runs
         const double targetTotalMs = 500;       // aim for ~0.5s total per benchmark
@@ -76,7 +76,7 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
                 logger?.LogDebug(ex, "Preview invocation failed; continuing to benchmark.");
             }
 
-            // Additional warm-ups (non-measured) to stabilise caches/JIT.
+            // Additional warm-ups (non-measured) to stabilize caches/JIT.
             for (int i = 0; i < warmupIterations; i++)
             {
                 execute.Invoke(instance, null);

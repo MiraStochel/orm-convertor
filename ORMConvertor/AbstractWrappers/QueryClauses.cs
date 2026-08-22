@@ -33,7 +33,7 @@ public sealed class QueryClauses
     public bool HasAggregates => Projections.Any(p => p.Function is not null);
 
     /// <summary>
-    /// True when the query materialises whole entities because nobody named columns
+    /// True when the query materializes whole entities because nobody named columns
     /// (rule Q3). Kept as a question about the clauses rather than a decision each builder
     /// re-derives.
     /// </summary>

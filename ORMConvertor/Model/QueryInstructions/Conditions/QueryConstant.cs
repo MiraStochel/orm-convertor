@@ -34,7 +34,7 @@ public sealed class QueryConstant
 
     public static QueryConstant Of(string text, ScalarType type) => new(text, type);
 
-    public static QueryConstant Unrecognised(string text) => new(text, null);
+    public static QueryConstant Unrecognized(string text) => new(text, null);
 
     public override string ToString() => Type is null ? Text : $"{Text}:{Type}";
 }

@@ -17,7 +17,7 @@ public class NHibernateLinqQueryParser(AbstractQueryBuilder queryBuilder) : Linq
         root = null;
 
         // session.Query<Customer>() - the type argument names the entity, so unlike EF Core
-        // there is no DbSet name to un-pluralise.
+        // there is no DbSet name to un-pluralize.
         if (expression is InvocationExpressionSyntax invocation
             && invocation.Expression is MemberAccessExpressionSyntax member
             && member.Name.Identifier.Text == "Query"

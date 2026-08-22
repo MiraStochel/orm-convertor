@@ -3,7 +3,7 @@ using Model;
 namespace ORMConvertorAPI.Dtos.Advisor;
 
 /// <summary>
-/// Minimal payload for kicking off an advisor optimisation run.
+/// Minimal payload for kicking off an advisor optimization run.
 /// </summary>
 public record AdvisorRunRequest(
     ORMEnum SourceOrm,

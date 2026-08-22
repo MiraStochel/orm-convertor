@@ -1066,7 +1066,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         {
             // Nobody said which column carries the key, so neither do we: NHibernate falls back to
             // the property name, and a name of our own making would be a claim the source never
-            // made (rozhodnutí 008). Silence is allowed here precisely because the target fills in
+            // made (decision 015). Silence is allowed here precisely because the target fills in
             // the same thing we would have written - still its convention, so it is recorded.
             Report(new ConversionRecord
             {

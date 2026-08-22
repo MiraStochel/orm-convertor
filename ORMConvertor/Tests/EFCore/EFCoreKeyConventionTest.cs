@@ -7,7 +7,7 @@ namespace Tests.EFCore;
 
 /// <summary>
 /// EF Core states a key by convention as well as by attribute. The parser has to read both,
-/// because the builder turns a model without a key into a keyless type - see decision 008.
+/// because the builder turns a model without a key into a keyless type - see decision 015.
 /// </summary>
 public class EFCoreKeyConventionTest
 {

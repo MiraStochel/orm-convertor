@@ -108,7 +108,7 @@ public class PrimaryKeyTest
         builder.AddPrimaryKey(PrimaryKeyStrategy.Unspecified, "CustomerID");
 
         // NHibernate needs a generator, so the builder writes the convention of the target
-        // rather than a fact of the source (decision 008) - and that the source said nothing
+        // rather than a fact of the source (decision 015) - and that the source said nothing
         // does not survive the round trip. Reporting the difference is what diagnostics is for.
         var xml = builder.Build().Single(o => o.ContentType == ConversionContentType.XML).Content;
         Assert.Contains("<generator class=\"assigned\" />", xml);

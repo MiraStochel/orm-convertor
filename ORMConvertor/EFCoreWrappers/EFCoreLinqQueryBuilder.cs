@@ -274,7 +274,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
     protected override void BuildProjection(QueryClauses clauses, QueryArtifact artifact)
     {
-        // Rule Q3: no projection means the whole entity is materialised, and in LINQ that is
+        // Rule Q3: no projection means the whole entity is materialized, and in LINQ that is
         // simply the absence of a Select.
         if (clauses.ProjectsWholeEntity && !scope.Grouped)
         {

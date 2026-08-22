@@ -25,7 +25,7 @@ Poslední rok = 1 375 389 - 848 876 = 526 513
 Nepravidelný podle chyb a PR.
 Na NuGetu, častěji.
 Semantic Versioning + beta
-Aktuální verze (7.10.): [6.0.683]([6.0.683](https://www.nuget.org/packages/PetaPoco.Compiled/6.0.683 "6.0.683")) 20.9.2024
+Aktuální verze (7.10.): [6.0.683](https://www.nuget.org/packages/PetaPoco.Compiled/6.0.683) 20.9.2024
 # Komunita a podpora
 ## Udržovanost
 101 issues, 374 closed

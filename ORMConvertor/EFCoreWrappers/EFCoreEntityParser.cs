@@ -409,7 +409,7 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// <summary>
     /// The convention EF Core applies to a key that says nothing about generation: integer and
     /// Guid keys get a value on add, everything else does not. Reading the convention belongs to
-    /// the parser wherever its absence would change the meaning (decision 008), and it does here
+    /// the parser wherever its absence would change the meaning (decision 015), and it does here
     /// - assuming generation for a string key produces a target mapping the database rejects.
     ///
     /// The list describes EF Core: the unsigned types have no value in the neutral type model
@@ -437,11 +437,11 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// the parser records it: leaving it out would make it indistinguishable from an entity
     /// that genuinely has none, and the target builder would mark that one keyless.
     /// Reading the convention of the source framework is the parser's job precisely because
-    /// only the parser knows which framework the input came from - see decision 008.
+    /// only the parser knows which framework the input came from - see decision 015.
     ///
     /// The comparison is case-insensitive, so CustomerID counts as CustomerId. That matches
     /// what EF Core does, but the documentation page on keys does not spell it out, so the
-    /// claim rests on observed behaviour rather than on a quotable sentence.
+    /// claim rests on observed behavior rather than on a quotable sentence.
     /// </summary>
     private static string? FindConventionKey(string entityName, List<string> propertyNames)
     {

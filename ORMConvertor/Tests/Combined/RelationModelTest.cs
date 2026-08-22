@@ -107,7 +107,7 @@ public class RelationModelTest
         Assert.Equal(RelationRole.Owning, relation.Role);
 
         // The generator names the property the identity comes from, which is what makes the shared
-        // key recognisable later without reaching into the other entity (decision 011). A strategy
+        // key recognizable later without reaching into the other entity (decision 011). A strategy
         // on the escape path keeps its parameters there too (decision 020), so property stays
         // verbatim on the literal side, where SharesPrimaryKeyThrough reads it.
         var part = Assert.Single(builder.EntityMap.PrimaryKey!.Parts);

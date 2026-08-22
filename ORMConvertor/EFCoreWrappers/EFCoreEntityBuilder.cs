@@ -168,7 +168,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// Writes the scalar properties a foreign key consists of and returns their names in the order
     /// of the key they point at. [ForeignKey] names properties of the class, not columns, so where
     /// the model carries only a column the property has to be supplied here - the same division of
-    /// labour as with the members a composite key forces on NHibernate (decisions 006 and 012).
+    /// labor as with the members a composite key forces on NHibernate (decisions 006 and 012).
     /// </summary>
     private List<string> AppendForeignKeyProperties(
         StringBuilder code,

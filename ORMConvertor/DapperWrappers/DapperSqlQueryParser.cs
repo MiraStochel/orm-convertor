@@ -532,7 +532,7 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
                 {
                     var constant = ReadConstant(inner);
                     return QueryOperand.Value(constant.Type is null
-                        ? QueryConstant.Unrecognised("-" + constant.Text)
+                        ? QueryConstant.Unrecognized("-" + constant.Text)
                         : QueryConstant.Of("-" + constant.Text, constant.Type.Value));
                 }
 
@@ -572,17 +572,17 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
         MoneyLiteral money => QueryConstant.Of(money.Value, ScalarType.Decimal),
         RealLiteral real => QueryConstant.Of(real.Value, ScalarType.Double),
         StringLiteral text => QueryConstant.Of(text.Value, ScalarType.String),
-        _ => Unrecognised(literal),
+        _ => Unrecognized(literal),
     };
 
-    private QueryConstant Unrecognised(ScriptDomLiteral literal)
+    private QueryConstant Unrecognized(ScriptDomLiteral literal)
     {
         Report(
             ConversionRecordKind.Incompleteness,
             $"The literal '{literal.Value}' has no counterpart in the scalar vocabulary; it is carried verbatim.",
             QueryFeature.Filtering);
 
-        return QueryConstant.Unrecognised(literal.Value);
+        return QueryConstant.Unrecognized(literal.Value);
     }
 
     private static ComparisonOperator? MapOperator(BooleanComparisonType type) => type switch

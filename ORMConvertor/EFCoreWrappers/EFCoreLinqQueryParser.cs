@@ -25,7 +25,7 @@ public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : LinqQuer
                 root = new LinqQueryRoot(entity);
                 return true;
 
-            // ctx.Customers - a DbSet property on the context. The context is recognised by
+            // ctx.Customers - a DbSet property on the context. The context is recognized by
             // its position at the head of the chain, not by being called "ctx": a hard-coded
             // identifier made every other name silently unreadable.
             case MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax:

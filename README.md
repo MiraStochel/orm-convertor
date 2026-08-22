@@ -58,7 +58,7 @@ The main directions of future work (detailed in [`docs/open-items.md`](docs/open
 
 ## License
 
-Released under the [MIT License](LICENSE) — use, modify and redistribute it freely, commercially included, as long as the licence text and the copyright notice travel with it. The reasoning, including how this sits with the work being part of a master thesis at the Faculty of Mathematics and Physics, Charles University, is in [decision 038](docs/decisions/038-mit-license-for-the-repository.md).
+Released under the [MIT License](LICENSE) — use, modify and redistribute it freely, commercially included, as long as the licence text and the copyright notice travel with it.
 
 The licence covers the contents of this repository. Third-party assets vendored under `ORMConvertor/ORMConvertorAPI/wwwroot/vendor/` keep their own terms, stated in the licence file shipped beside each of them.
 

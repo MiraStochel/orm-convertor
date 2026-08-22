@@ -27,7 +27,7 @@ public class PrimaryKeyStrategyConvertor
 
     /// <summary>
     /// The generator name to emit. Unspecified falls back to assigned, which is a convention
-    /// of the target rather than a fact of the source and is reported as such (decision 008).
+    /// of the target rather than a fact of the source and is reported as such (decision 015).
     /// The mapping is total on purpose: no branch throws, because a combination the target
     /// cannot express belongs to diagnostics, not to a crash mid-generation (decision 010).
     /// </summary>

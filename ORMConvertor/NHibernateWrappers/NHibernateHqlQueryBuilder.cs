@@ -106,7 +106,7 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
 
     protected override void BuildProjection(QueryClauses clauses, QueryArtifact artifact)
     {
-        // Rule Q3: without a projection HQL materialises the whole entity, and the way to
+        // Rule Q3: without a projection HQL materializes the whole entity, and the way to
         // say that is to leave the select clause out entirely.
         if (clauses.ProjectsWholeEntity)
         {

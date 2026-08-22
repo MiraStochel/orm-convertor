@@ -4,7 +4,7 @@ using Model;
 namespace DapperWrappers;
 
 /// <summary>
-/// Dapper executes SQL and materialises results; it carries no mapping metadata of its
+/// Dapper executes SQL and materializes results; it carries no mapping metadata of its
 /// own. Every category is therefore inexpressible and the demand it places on database
 /// metadata is empty — as a target. As a source it is the opposite case: nothing arrives
 /// from the input, so everything has to come from elsewhere (F6).

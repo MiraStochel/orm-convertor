@@ -103,7 +103,7 @@ public class InventedFactsTest
                  && r.Reason.Contains(annotation.Split('(')[0]));
     }
 
-    /// <summary>A recognised annotation must not be reported as lost.</summary>
+    /// <summary>A recognized annotation must not be reported as lost.</summary>
     [Fact]
     public void ARecognisedAnnotationIsNotReported()
     {

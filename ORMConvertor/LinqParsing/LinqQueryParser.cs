@@ -323,7 +323,7 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
 
         switch (body)
         {
-            // Select(c => c) materialises the whole entity: rule Q3's default, so no
+            // Select(c => c) materializes the whole entity: rule Q3's default, so no
             // projection instruction is recorded.
             case IdentifierNameSyntax:
                 return;
@@ -347,7 +347,7 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             default:
                 Report(
                     ConversionRecordKind.Loss,
-                    $"The projection '{body}' is not a shape the query representation carries; the whole entity is materialised instead.",
+                    $"The projection '{body}' is not a shape the query representation carries; the whole entity is materialized instead.",
                     QueryFeature.Projection);
                 return;
         }
@@ -584,7 +584,7 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             return null;
         }
 
-        // A comparison with a null literal is normalised to IS NULL / IS NOT NULL
+        // A comparison with a null literal is normalized to IS NULL / IS NOT NULL
         // (decision 002).
         if (leftIsNull || rightIsNull)
         {
@@ -651,12 +651,12 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             $"The literal '{literal}' has no counterpart in the scalar vocabulary; it is carried verbatim.",
             QueryFeature.Filtering);
 
-        return QueryConstant.Unrecognised(literal.Token.ValueText);
+        return QueryConstant.Unrecognized(literal.Token.ValueText);
     }
 
     private static QueryConstant Negate(QueryConstant constant)
         => constant.Type is null
-            ? QueryConstant.Unrecognised("-" + constant.Text)
+            ? QueryConstant.Unrecognized("-" + constant.Text)
             : QueryConstant.Of("-" + constant.Text, constant.Type.Value);
 
     private static bool IsNullLiteral(ExpressionSyntax expression)

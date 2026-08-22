@@ -21,7 +21,7 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
     {
         artifact.Source.Append("FROM ").Append(clauses.From.Accept(visitor));
 
-        // Dapper materialises into a type the query itself never names, so the entity is
+        // Dapper materializes into a type the query itself never names, so the entity is
         // derived from the table - a convention of ours, and reported as one.
         var table = clauses.From.Table.Split('.').LastOrDefault();
         if (!string.IsNullOrEmpty(table))
@@ -96,7 +96,7 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
     {
         artifact.Projection.Append("SELECT ");
 
-        // Rule Q3: no projection means the whole entity is materialised.
+        // Rule Q3: no projection means the whole entity is materialized.
         artifact.Projection.Append(clauses.ProjectsWholeEntity
             ? "*"
             : string.Join(", ", clauses.Projections.Select(p => p.Accept(visitor))));

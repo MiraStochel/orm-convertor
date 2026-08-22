@@ -138,7 +138,7 @@ public class DapperSqlQueryVisitor : IQueryVisitor
     /// <summary>
     /// Writes a constant the way T-SQL wants it (decision 024). The model carries the value
     /// undecorated, so quoting is decided here from the scalar type rather than guessed from
-    /// the shape of the text. A value whose type nobody recognised goes out verbatim - that
+    /// the shape of the text. A value whose type nobody recognized goes out verbatim - that
     /// is what the parser already reported as a gap.
     /// </summary>
     private static string Literal(QueryConstant constant) => constant.Type switch

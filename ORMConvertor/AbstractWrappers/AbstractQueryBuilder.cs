@@ -14,7 +14,7 @@ namespace AbstractWrappers;
 ///
 /// Filling is the fluent half — From, Project, Where and the rest — and is implemented
 /// here, because it is a property of the query IR rather than of any framework. Generation
-/// is a template method (decision 023): <see cref="Build"/> normalises the recorded
+/// is a template method (decision 023): <see cref="Build"/> normalizes the recorded
 /// instructions into <see cref="QueryClauses"/>, reports what the target cannot express,
 /// then runs seven abstract steps in relational evaluation order and lets the framework
 /// assemble the text in <see cref="FinalizeQuery"/>.
@@ -198,7 +198,7 @@ public abstract class AbstractQueryBuilder
     }
 
     /// <summary>
-    /// Generates the target artifacts. Concrete here so that normalisation, capability
+    /// Generates the target artifacts. Concrete here so that normalization, capability
     /// reporting and step order cannot drift between frameworks (decision 023). Returns an
     /// empty list when the query could not be built; the reason is always in
     /// <see cref="Records"/> rather than in an exception (decision 010).

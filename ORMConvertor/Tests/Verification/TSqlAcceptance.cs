@@ -4,7 +4,7 @@ using Model.AbstractRepresentation;
 namespace Tests.Verification;
 
 /// <summary>
-/// Verification of a Dapper query (decision 027). Dapper is a materialiser, not a query
+/// Verification of a Dapper query (decision 027). Dapper is a materializer, not a query
 /// engine: it accepts any string, so "the framework accepts it" would be an empty claim and
 /// the third level collapses into the second. What can be said is stated here instead — the
 /// SQL parses, and every table and column it names is resolvable through the mapping IR,
