@@ -8,8 +8,6 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 **Kde se pokračuje, říká značka na řádku vazeb položky** (rozhodnutí [018](./decisions/018-work-order-as-item-marker.md)): značku „Na řadě" nese nejvýš jedna položka, značku „Potom" nejvýš dvě. Samostatný seznam pořadí tenhle soubor nemá — rozcházel se s položkami pod ním.
 
-**Verze 1.0 je vydaná a její devatenáctibodové pořadí (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)) je odbavené celé**, takže značku `Verze 1.0 — N.` už nenese žádná položka. Co zůstalo v tomhle souboru, stojí mimo vydání a řadí se podle priorit plynoucích z požadavků F/S/T; platí tedy předchozí odstavec beze změny. Kde je důvod vynechání položky z verze čerstvý, říká ho její vlastní text. Číslované pořadí se vrátí až s dalším vydáním, které si ho vyžádá — dává smysl jen tam, kde je množina uzavřená.
-
 ---
 
 ## Otevřená rozhodnutí
@@ -27,29 +25,18 @@ Rozhodnutí 017 uspořádalo zdroje faktů na vstupní text frameworku, pomocné
 ### Sjednocení ADO.NET provideru v benchmarcích
 *Souvisí s T-požadavky. Podklad: audit 2026-08-02, kap. 3.4.2.*
 
-Dapper, EF Core, linq2db a RepoDB běží na `Microsoft.Data.SqlClient`, NHibernate a EF6 na `System.Data.SqlClient`. Pro srovnání výkonu je to metodologický confound. Buď přepnout NHibernate na `MicrosoftDataSqlClientDriver`, ověřit provider u PetaPoco a EF6 a přeměřit, nebo confound explicitně popsat v textu práce. Do verze 1.0 to nepatří: rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo benchmarking ze záruk vcelku, takže srovnávat jeho konfiguraci nemá proti čemu.
+Dapper, EF Core, linq2db a RepoDB běží na `Microsoft.Data.SqlClient`, NHibernate a EF6 na `System.Data.SqlClient`. Pro srovnání výkonu je to metodologický confound. Buď přepnout NHibernate na `MicrosoftDataSqlClientDriver`, ověřit provider u PetaPoco a EF6 a přeměřit, nebo confound explicitně popsat v textu práce. Benchmarking stojí mimo záruky vcelku ([`architecture.md`](./architecture.md), §9), takže srovnávat jeho konfiguraci nemá dnes proti čemu.
 
 ---
 
 ## Otevřená práce
 
-### Kontejnerová konfigurace prostředí
-*Na řadě. Dohnání S5 odložené rozhodnutím [016](./decisions/016-generated-artifact-verification-levels.md). Odblokuje 4. stupeň ověření a zruší podmíněnost F4 a F6.*
-
-S5 žádá celý systém včetně databáze spustitelný dokumentovanou kontejnerovou konfigurací, kde čisté prostředí reprodukuje testy jedním hlavním příkazem. Lokální instance zvolená rozhodnutím 016 to nesplňuje a splnit nemá. Protože ale o hostiteli rozhoduje konfigurace, a ne kód testů, jde o přidání služby a proměnné prostředí, ne o návrat k rozhodnutí.
-
-Patří sem trojí: service container do workflow v `.github` spolu s proměnnou `ConnectionStrings__TestDatabase`, aby databázově závislé testy běžely i v CI (dnes se tam přeskakují, protože proměnná není nastavená), volba mezi Docker Compose a Testcontainers pro lokální reprodukci, a ověření `ConnectionStrings__AdvisorDatabase` v `docker-compose.yml` — commitnutá deklarace, kterou dosud nikdo nespustil a jejíž ověření dřívější plán čekal od stavby testovacího prostředí.
-
-Do verze 1.0 nic z toho nepatří (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)): nasazení řešíme jedinou ručně spravovanou instancí, ne kontejnerem. Důsledek je ale potřeba nést nahlas i v textu práce — bez databáze v CI se databázově závislé testy dál přeskakují, takže **kritéria F4 a F6 platí jen tam, kde běh s lokální databází skutečně proběhl**.
-
 ### Generovaný artefakt nikdo nespustil proti databázi
-*Potom. 4. stupeň ověření podle rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md); popsaný stav je v [`architecture.md`](./architecture.md), §6.2. Blokuje ho kontejnerová konfigurace výše. Požadavky F3, F4, F6, F11, S2.*
+*Na řadě. 4. stupeň ověření podle rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md); popsaný stav je v [`architecture.md`](./architecture.md), §6.2. Kontejnerová konfigurace ho odblokovala (rozhodnutí [039](./decisions/039-container-configuration-of-the-environment.md)). Požadavky F3, F4, F6, F11, S2.*
 
 Rozhodnutí 016 uznává čtyři stupně ověření generovaných artefaktů a čtvrtý z nich — *entita se uloží a načte se stejnou identitou* — nemá jediného zástupce. Připravená je pro něj hranice transakce na `TestSchemaFixture`: metoda `OpenConnection()` existuje a volají ji testy v `TestSchemaFixtureTest`, ty ale hlídají schéma fixture samotné (F4 potřebuje znát očekávanou odpověď), nikoli generovaný artefakt. Chybí tedy scénář, ve kterém se vygenerovaná entita a její mapování skutečně použijí k zápisu a čtení řádku.
 
 Mezera není teoretická. Kolekce deklarovaná konkrétním typem místo rozhraní prošla druhým i třetím stupněm bez povšimnutí a odhalilo ji až čtení kódu — NHibernate váže kolekci na CLR typ vlastnosti teprve při načtení entity, takže právě tuhle třídu vad vidí jen 4. stupeň. Náhradou je dnes 1. stupeň se zakázanými značkami v deskriptoru (rozhodnutí [035](./decisions/035-nhibernate-collections-declared-by-interface.md)), což je kontrola tvaru, ne běhu. Až stupeň dostane prvního zástupce, patří načtení entity s kolekcí mezi první scénáře.
-
-Do verze 1.0 položka nepatřila: verze nárokuje F11 v rozsahu, kde se syntaktická správnost ověřuje testy, a stupně ověření běží v testovací sadě, ne nad odpovědí `/convert`. Věcně ji ale blokuje kontejnerová konfigurace — bez databáze v CI by scénář existoval jen na stroji, kde je připojení nastavené, tedy přesně v režimu, kvůli kterému jsou kritéria F4 a F6 dnes podmíněná.
 
 ### HQL parser pro round-trip NHibernate → NHibernate
 *Vyňatá oblast 4 hranice záruk ([`architecture.md`](./architecture.md), §9). Navazuje na rozhodnutí [022](./decisions/022-native-query-syntax-in-builders.md) a [026](./decisions/026-home-of-shared-query-reading.md). Požadavky F7–F10, T2, T3.*
@@ -59,9 +46,9 @@ Dotazová větev je hotová ve všech devíti směrech, ale jeden z nich není t
 Dokud parser chybí, nemá požadavek T3 u tohohle směru co porovnávat a matice T2 v něm měří překlad z jiného jazyka, než v jakém je zdroj napsaný. Domovem takového parseru je `NHibernateWrappers`, ne `LinqParsing`: je to čtení nativní syntaxe jednoho frameworku, tedy táž kategorie jako `DapperSqlQueryParser` s gramatikou T-SQL.
 
 ### Cílový databázový dialekt v deskriptoru
-*Sem odkázalo rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md); deskriptor s cílovou verzí, na kterou se dialekt tvarem podobá, je hotový (rozhodnutí [013](./decisions/013-target-framework-versions.md)). Mimo verzi 1.0 (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)). Požadavky F7–F10, S2.*
+*Sem odkázalo rozhodnutí [019](./decisions/019-neutral-database-type-vocabulary.md); deskriptor s cílovou verzí, na kterou se dialekt tvarem podobá, je hotový (rozhodnutí [013](./decisions/013-target-framework-versions.md)). Vyňatá oblast hranice záruk ([`architecture.md`](./architecture.md), §9). Požadavky F7–F10, S2.*
 
-Cílový databázový dialekt je fakt o cíli převodu téhož tvaru jako verze frameworku v deskriptoru, a rozhodnutí 019 ho odmítlo řešit v typovém modelu. Bez jeho deklarace nelze emitovat `sql-type` odvozený z typové rodiny ani vybrat typ podle systému, protože konkrétní SQL typ z typu frameworku odvozuje právě dialekt — NHibernate builder dnes propisuje jen doslovný `SourceSqlType`, který nese zdroj. Dokud se dialekt nedeklaruje, je jediným dialektem SQL Server; verze 1.0 to říká a nic víc netvrdí.
+Cílový databázový dialekt je fakt o cíli převodu téhož tvaru jako verze frameworku v deskriptoru, a rozhodnutí 019 ho odmítlo řešit v typovém modelu. Bez jeho deklarace nelze emitovat `sql-type` odvozený z typové rodiny ani vybrat typ podle systému, protože konkrétní SQL typ z typu frameworku odvozuje právě dialekt — NHibernate builder dnes propisuje jen doslovný `SourceSqlType`, který nese zdroj. Dokud se dialekt nedeklaruje, je jediným dialektem SQL Server a nástroj nic víc netvrdí.
 
 Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dialektu ji nevyřeší: `DapperSqlQueryParser` čte T-SQL gramatikou `TSql160Parser` (rozhodnutí [026](./decisions/026-home-of-shared-query-reading.md)), takže SQL napsané pro jiný databázový systém — u MyBatisu (F8) běžné — touhle cestou neprojde. Řešením je vlastní parser SQL v javovém wrapperu, ne pole v deskriptoru.
 
@@ -71,22 +58,22 @@ Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dia
 Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec, takže poddotaz projde parsováním, ale jeho výsledek se nikam neskládá. **Tiché to už není** — `Normalize()` v šabloně dotazového builderu (rozhodnutí [023](./decisions/023-query-builder-template-method.md)) vnořený poddotaz ohlásí záznamem o ztrátě —, ale vykreslit ho to neumí. Vedle toho `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu), takže složený dotaz se poskládá špatně; množinovou operaci navíc dnes vykresluje jedině Dapper builder, kdežto NHibernate ji podle deskriptoru vyjádřit neumí a EF Core builder pro ni nemá větev. Sem patří i stránkování, které mezireprezentace vůbec nenese — parsery ho hlásí jako ztrátu. Všechno tohle jsou kategorie dotazové matice podle T2, které tak nemají co měřit.
 
 ### Advisor nemá build nativní knihovny pro Windows
-*Mezera popsaná v [`architecture.md`](./architecture.md), §8. Souvisí s S5 a T7.*
+*Mezera popsaná v [`architecture.md`](./architecture.md), §8. Souvisí s T7. Kontejnerová cesta Advisor pokrývá a je ověřená (rozhodnutí [039](./decisions/039-container-configuration-of-the-environment.md), `architecture.md` §6.4); tahle položka je o hostiteli bez Dockeru.*
 
-`libadvisor.so` se kompiluje jen v Docker buildu (stage `advisor-native`) a název je v P/Invoke natvrdo linuxový, takže mimo Linux a Docker Advisor endpointy selhávají; překladová část na tom nezávisí. Soubor `ilp.c` má přitom exportní makra pro Windows připravená, jen build krok pro `advisor.dll` neexistuje. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) tuhle dvojici uzavřelo druhým způsobem: Advisor je ze záruk verze 1.0 vyňatý vcelku, takže doslovně linuxový název v `LibraryImport` odpovídá tomu, co o něm tvrdíme, a rozpor mizí bez zásahu do kódu. Zbývá tedy jen build krok pro `advisor.dll`, a ten je mimo verzi; `ilp.c` má pro něj exportní makra připravená. Nasazenou instanci to neshodí — `AdvisorRunHandler` výjimku z P/Invoke zachytává a vrací její text, takže uživatel dostane hlášku.
+`libadvisor.so` se kompiluje jen v Docker buildu (stage `advisor-native`) a název je v P/Invoke natvrdo linuxový, takže mimo Linux a Docker Advisor endpointy selhávají; překladová část na tom nezávisí. Advisor je ze záruk vyňatý vcelku ([`architecture.md`](./architecture.md), §9), takže doslovně linuxový název v `LibraryImport` odpovídá tomu, co o něm tvrdíme; zbývá jen build krok pro `advisor.dll`, pro který má `ilp.c` exportní makra připravená. Nasazenou instanci to neshodí — `AdvisorRunHandler` výjimku z P/Invoke zachytává a vrací její text, takže uživatel dostane hlášku.
 
 ### Advisor a benchmarking nemají žádné testy
 *Souvisí s [`architecture.md`](./architecture.md), §8. Požadavky T7, S6.*
 
 Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný je tedy P/Invoke do ILP solveru, obě stavby benchmarkových harnessů i `HarnessGenerationUtilities`, které si názvy typů, jmenné prostory a atribut `[Table]` tahá z generovaného textu regulárními výrazy a nullabilitu hodnotových typů přepisuje textovou náhradou. Právě tahle část se nejsnáz rozejde s generátorem, protože stojí na jeho výstupním tvaru — a jednou už se rozešla: extrakce SQL z generované metody přestala být potřeba, teprve když builder začal vydávat holý dotaz zvlášť.
 
-Do verze 1.0 položka nepatří. Rozhodnutí [030](./decisions/030-scope-of-version-1-0.md) vyňalo `Advisor` i `AdvisorBenchmarking` ze záruk vcelku právě proto, že netestované jsou; testovat oblast, na kterou verze neslibuje spoleh, by bylo otevírání nové části místo dokončení rozdělané.
+Obojí je ze záruk vyňaté vcelku ([`architecture.md`](./architecture.md), §9) právě proto, že netestované je; testovat oblast, na kterou nástroj neslibuje spoleh, by znamenalo otevírat novou část místo dokončení rozdělané.
 
 ---
 
 ## Vzdálenější horizont
 
-Velké bloky ze zadání, každý si zaslouží vlastní rozhodnutí, než se do něj sáhne. F4–F6 mezi nimi už nejsou — jsou hotové a to, co z nich zbývá, je výše. Do verze 1.0 nepatří ani jeden z nich (rozhodnutí [030](./decisions/030-scope-of-version-1-0.md)); F14 je jedinou výjimkou, a to jen v rozsahu vícesouborového vstupu a diagnostiky po souborech.
+Velké bloky ze zadání, každý si zaslouží vlastní rozhodnutí, než se do něj sáhne. F4–F6 mezi nimi už nejsou — jsou hotové a to, co z nich zbývá, je výše. Z F14 je hotový vícesouborový vstup a výstup po souborech; zbytek bloku je tady.
 
 | Blok | Co odblokuje |
 |---|---|

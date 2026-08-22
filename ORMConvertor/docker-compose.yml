@@ -1,16 +1,29 @@
+# Container configuration of the environment (decision 039, requirement S5).
+#
+#   docker compose up --build                       the system: application + sample database
+#   docker compose --profile test run --rm tests    the test suite, in a clean environment
+#
+# The second command needs nothing on the host but Docker: it builds the solution, starts
+# a SQL Server of its own, waits for it, creates the database and runs the whole suite.
 services:
   ormconvertor:
     build:
       context: .
       dockerfile: ORMConvertorAPI/Dockerfile
+      target: runtime
     ports:
       - "5072:5072"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      # The Advisor benchmarks against the sample database, and the catalog completion
+      # phase reads its metadata. Without the second key the containerized instance would
+      # translate with the completion phase switched off - the very thing F4 and F6 claim.
       - ConnectionStrings__AdvisorDatabase=Server=mssql_db,1433;Database=WideWorldImporters;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
+      - ConnectionStrings__CatalogDatabase=Server=mssql_db,1433;Database=WideWorldImporters;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
     restart: unless-stopped
     depends_on:
-      - mssql_db
+      mssql_db:
+        condition: service_healthy
 
   mssql_db:
     build:
@@ -25,6 +38,60 @@ services:
     restart: unless-stopped
     volumes:
       - mssql_data:/var/opt/mssql
+
+  # Profile "test" - the containerized reproduction of the test suite. Nothing below
+  # starts with a plain `docker compose up`. The test database is deliberately not the
+  # WideWorldImporters one: the test schema is the expected answer F4 measures against,
+  # and the tests create it themselves (decision 016).
+  test_db:
+    profiles: ["test"]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=Testingorms123
+      - MSSQL_PID=Developer
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1'"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 15s
+
+  # The fixture creates a schema, not a database, so the database is the configuration's
+  # job. Ordering by the health check is also what keeps the suite from skipping merely
+  # because the server was still starting.
+  test_db_init:
+    profiles: ["test"]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    depends_on:
+      test_db:
+        condition: service_healthy
+    entrypoint:
+      - /opt/mssql-tools18/bin/sqlcmd
+      - -S
+      - test_db,1433
+      - -U
+      - sa
+      - -P
+      - Testingorms123
+      - -C
+      - -Q
+      - IF DB_ID('ORMConvertorTests') IS NULL CREATE DATABASE ORMConvertorTests;
+
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: ORMConvertorAPI/Dockerfile
+      target: tests
+    environment:
+      - ConnectionStrings__TestDatabase=Server=test_db,1433;Database=ORMConvertorTests;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
+      # Here the configuration promises a database, so its absence is a failure rather
+      # than a skip - a green run in which everything skipped would prove nothing.
+      - ORMCONVERTOR_REQUIRE_TEST_DATABASE=1
+    depends_on:
+      test_db_init:
+        condition: service_completed_successfully
 
 volumes:
   mssql_data:

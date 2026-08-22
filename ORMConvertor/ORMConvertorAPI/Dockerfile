@@ -48,7 +48,18 @@ COPY --from=advisor-native /artifacts/libadvisor.so Advisor/libadvisor.so
 RUN --mount=type=cache,target=/root/.nuget/packages dotnet publish ORMConvertorAPI/ORMConvertorAPI.csproj -c Release -o /app/out --no-restore \
     && cp Advisor/libadvisor.so /app/out/
 
-# Stage 3: Create runtime image
+# Stage 3: Test runner (decision 039). It builds on the same compilation the application
+# gets, so producing this image is itself a check that the solution builds on Linux.
+# The test run happens when the container starts, not while the image is built - at build
+# time there is no database service to talk to. Packages are therefore restored into the
+# image rather than into a cache mount, so the run needs no network of its own.
+FROM dotnet-build AS tests
+WORKDIR /app
+RUN dotnet restore Tests/Tests.csproj
+RUN dotnet build Tests/Tests.csproj --configuration Release --no-restore
+ENTRYPOINT ["dotnet", "test", "Tests/Tests.csproj", "--configuration", "Release", "--no-build"]
+
+# Stage 4: Create runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 

@@ -17,6 +17,27 @@ jobs:
       run:
         working-directory: ORMConvertor
 
+    services:
+      # The same SQL Server version the container configuration uses, so that what this
+      # workflow proves and what `docker compose --profile test run --rm tests`
+      # reproduces are one claim (decision 039). The password is a development credential
+      # of a throwaway instance that lives only inside this job - S4 bans credentials in
+      # generated artifacts and in logs, not in the description of an environment.
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: Testingorms123
+          MSSQL_PID: Developer
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Testingorms123 -C -Q 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 30
+          --health-start-period 15s
+
     steps:
       - uses: actions/checkout@v5
 
@@ -25,6 +46,14 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # The fixture creates a schema, not a database (decision 016), so the database is
+      # the environment's job here exactly as it is in docker-compose.yml.
+      - name: Create the test database
+        run: >-
+          docker exec ${{ job.services.sqlserver.id }}
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Testingorms123 -C
+          -Q "IF DB_ID('ORMConvertorTests') IS NULL CREATE DATABASE ORMConvertorTests;"
+
       - name: Restore
         run: dotnet restore ORMConvertor.sln
 
@@ -32,4 +61,9 @@ jobs:
         run: dotnet build ORMConvertor.sln --configuration Release --no-restore
 
       - name: Test (xUnit v3)
+        env:
+          ConnectionStrings__TestDatabase: Server=localhost,1433;Database=ORMConvertorTests;User ID=sa;Password=Testingorms123;TrustServerCertificate=True;
+          # This job started a database, so a database-dependent test that skipped would
+          # be a false green - here a missing database fails (decision 039).
+          ORMCONVERTOR_REQUIRE_TEST_DATABASE: "1"
         run: dotnet test Tests/Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=test_results.trx"

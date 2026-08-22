@@ -28,11 +28,9 @@ This repository continues the development of a prototype originally created by M
 
 Version 1.0 draws an explicit line between what it vouches for and what merely ships in the repository. The authoritative statement of the boundary is [`docs/architecture.md`](docs/architecture.md), §9 (in Czech); in short:
 
-**Covered:** entity, mapping, and query translation as described above, merging of multi-file input into one conversion with per-file input and output, completion from the database catalog, structured diagnostics of every conversion — stamped with a run identifier and the versions of the tool and of both frameworks — deterministic output, and translation artifacts that never carry database credentials. Diagnostic records name the entity and property they concern rather than the source file: the units sent to `/convert` carry no names, so file names stay a display label on the client.
+**Covered:** entity, mapping, and query translation as described above, merging of multi-file input into one conversion with per-file input and output, completion from the database catalog, structured diagnostics of every conversion — stamped with a run identifier and the versions of the tool and of both frameworks — deterministic output, translation artifacts that never carry database credentials, and a documented container configuration that both runs the system and reproduces the entire test suite on a machine with nothing installed but Docker. Diagnostic records name the entity and property they concern rather than the source file: the units sent to `/convert` carry no names, so file names stay a display label on the client.
 
-**Exempt from guarantees:** seven areas, each excluded as a whole rather than case by case — the Advisor and its benchmarking infrastructure (untested; the native ILP library builds only inside Docker); inheritance, components, and `<join>` in NHibernate mappings; subqueries, set operations, and paging in queries; a textual NHibernate → NHibernate round-trip (there is no HQL parser); database dialects other than SQL Server; containerized deployment and a database in CI; and the Java ecosystem together with the experimental part of the assignment, which this version does not claim at all. Being exempt is not the same as being absent: an exempt area may well ship in the repository and run, the version simply promises nothing about it. Input that touches one is reported in the conversion records rather than silently degraded.
-
-**One conditional claim.** Without a database in CI the database-dependent tests are skipped, so the acceptance criteria of F4 and F6 hold only where a run against a local database actually happened.
+**Exempt from guarantees:** six areas, each excluded as a whole rather than case by case — the Advisor and its benchmarking infrastructure (untested; the native ILP library builds only inside Docker); inheritance, components, and `<join>` in NHibernate mappings; subqueries, set operations, and paging in queries; a textual NHibernate → NHibernate round-trip (there is no HQL parser); database dialects other than SQL Server; and the Java ecosystem together with the experimental part of the assignment, which this version does not claim at all. Being exempt is not the same as being absent: an exempt area may well ship in the repository and run, the version simply promises nothing about it. Input that touches one is reported in the conversion records rather than silently degraded.
 
 The remaining work is tracked in [`docs/open-items.md`](docs/open-items.md).
 
@@ -44,7 +42,7 @@ The tool lives in the `ORMConvertor` directory. In short:
 dotnet run --configuration Release --launch-profile http --project ORMConvertorAPI/ORMConvertorAPI.csproj
 ```
 
-then open `http://localhost:5072/orm/`. The frontend is served as-is from `ORMConvertorAPI/wwwroot` — there is nothing to compile. For prerequisites, Docker deployment, and running tests, see [`ORMConvertor/README.md`](ORMConvertor/README.md).
+then open `http://localhost:5072/orm/`. The frontend is served as-is from `ORMConvertorAPI/wwwroot` — there is nothing to compile. On a machine with Docker, `docker compose up --build` from `ORMConvertor/` starts the application together with a SQL Server holding the sample database, and `docker compose --profile test run --rm tests` runs the whole test suite without a .NET SDK or a database of your own. For prerequisites and details, see [`ORMConvertor/README.md`](ORMConvertor/README.md).
 
 ## Benchmarks
 

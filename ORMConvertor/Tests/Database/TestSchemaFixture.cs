@@ -20,7 +20,8 @@ namespace Tests.Database;
 /// created, so a failed cleanup never blocks the next run.</item>
 /// </list>
 /// The fixture never fails on infrastructure: when there is no database, or the
-/// configured one cannot be reached, it records the reason and the tests skip with it.
+/// configured one cannot be reached, it records the reason. Whether the tests then skip
+/// with that reason or fail with it is decided by the environment (decision 039).
 /// </summary>
 public sealed class TestSchemaFixture : IAsyncLifetime
 {
@@ -138,12 +139,23 @@ public sealed class TestSchemaFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Skips the current test with the recorded reason when the database is not there.
-    /// Call it as the first statement of every database-dependent test.
+    /// Skips the current test with the recorded reason when the database is not there -
+    /// unless the environment stated that it provides one (decision 039), in which case
+    /// the same reason is reported as a failure instead. Call it as the first statement
+    /// of every database-dependent test.
     /// </summary>
     public void SkipIfUnavailable()
     {
-        if (!IsAvailable)
+        if (IsAvailable)
+        {
+            return;
+        }
+
+        if (TestDatabase.IsRequired)
+        {
+            Assert.Fail(TestDatabase.RequiredButMissingReason(SkipReason));
+        }
+        else
         {
             Assert.Skip(SkipReason);
         }

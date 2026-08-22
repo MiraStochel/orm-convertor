@@ -44,6 +44,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [036](036-primary-key-under-source-precedence.md) | Primární klíč pod pravidlem priority zdrojů | 2026-08-21 | platí | F5, F11, F14, S2 |
 | [037](037-enforced-member-binding-held-by-the-test.md) | Vazbu deklarace a emise vynucených členů drží test | 2026-08-21 | revidováno | S1, S2 |
 | [038](038-mit-license-for-the-repository.md) | Licence MIT pro repozitář | 2026-08-21 | platí | žádné |
+| [039](039-container-configuration-of-the-environment.md) | Kontejnerová konfigurace prostředí | 2026-08-22 | platí | F4, F6, S2, S4, S5, S6 |
 
 ## Formát
 
