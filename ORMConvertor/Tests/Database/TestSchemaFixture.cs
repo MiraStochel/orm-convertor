@@ -21,7 +21,7 @@ namespace Tests.Database;
 /// </list>
 /// The fixture never fails on infrastructure: when there is no database, or the
 /// configured one cannot be reached, it records the reason. Whether the tests then skip
-/// with that reason or fail with it is decided by the environment (decision 038).
+/// with that reason or fail with it is decided by the environment (decision 039).
 /// </summary>
 public sealed class TestSchemaFixture : IAsyncLifetime
 {
@@ -140,7 +140,7 @@ public sealed class TestSchemaFixture : IAsyncLifetime
 
     /// <summary>
     /// Skips the current test with the recorded reason when the database is not there -
-    /// unless the environment stated that it provides one (decision 038), in which case
+    /// unless the environment stated that it provides one (decision 039), in which case
     /// the same reason is reported as a failure instead. Call it as the first statement
     /// of every database-dependent test.
     /// </summary>

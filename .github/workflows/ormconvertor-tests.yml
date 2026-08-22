@@ -20,7 +20,7 @@ jobs:
     services:
       # The same SQL Server version the container configuration uses, so that what this
       # workflow proves and what `docker compose --profile test run --rm tests`
-      # reproduces are one claim (decision 038). The password is a development credential
+      # reproduces are one claim (decision 039). The password is a development credential
       # of a throwaway instance that lives only inside this job - S4 bans credentials in
       # generated artifacts and in logs, not in the description of an environment.
       sqlserver:
@@ -64,6 +64,6 @@ jobs:
         env:
           ConnectionStrings__TestDatabase: Server=localhost,1433;Database=ORMConvertorTests;User ID=sa;Password=Testingorms123;TrustServerCertificate=True;
           # This job started a database, so a database-dependent test that skipped would
-          # be a false green - here a missing database fails (decision 038).
+          # be a false green - here a missing database fails (decision 039).
           ORMCONVERTOR_REQUIRE_TEST_DATABASE: "1"
         run: dotnet test Tests/Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=test_results.trx"

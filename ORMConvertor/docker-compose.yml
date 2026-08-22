@@ -1,4 +1,4 @@
-# Container configuration of the environment (decision 038, requirement S5).
+# Container configuration of the environment (decision 039, requirement S5).
 #
 #   docker compose up --build                       the system: application + sample database
 #   docker compose --profile test run --rm tests    the test suite, in a clean environment

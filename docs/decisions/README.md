@@ -43,7 +43,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [035](035-nhibernate-collections-declared-by-interface.md) | Kolekce v NHibernate entitě deklarované rozhraním | 2026-08-21 | platí | F3, F11, S2 |
 | [036](036-primary-key-under-source-precedence.md) | Primární klíč pod pravidlem priority zdrojů | 2026-08-21 | platí | F5, F11, F14, S2 |
 | [037](037-enforced-member-binding-held-by-the-test.md) | Vazbu deklarace a emise vynucených členů drží test | 2026-08-21 | revidováno | S1, S2 |
-| [038](038-container-configuration-of-the-environment.md) | Kontejnerová konfigurace prostředí | 2026-08-22 | platí | F4, F6, S2, S4, S5, S6 |
+| [039](039-container-configuration-of-the-environment.md) | Kontejnerová konfigurace prostředí | 2026-08-22 | platí | F4, F6, S2, S4, S5, S6 |
 
 ## Formát
 

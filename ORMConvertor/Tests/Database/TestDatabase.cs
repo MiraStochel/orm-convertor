@@ -7,7 +7,7 @@ namespace Tests.Database;
 /// Where the test suite takes its database from. Decision 016 chose a local instance
 /// whose schema the tests own, and made the connection a matter of configuration rather
 /// than of code: the connection string is never in the repository (S4), so the move to
-/// Docker Compose (decision 038) was a change of configuration, not of tests.
+/// Docker Compose (decision 039) was a change of configuration, not of tests.
 /// </summary>
 public static class TestDatabase
 {
@@ -30,7 +30,7 @@ public static class TestDatabase
 
     /// <summary>
     /// Environment variable by which the environment states that it does provide a
-    /// database (decision 038). The container configuration and the CI workflow set it,
+    /// database (decision 039). The container configuration and the CI workflow set it,
     /// and set it exactly where they start a database of their own.
     /// </summary>
     private const string RequireEnvironmentVariable = "ORMCONVERTOR_REQUIRE_TEST_DATABASE";
@@ -54,7 +54,7 @@ public static class TestDatabase
     /// Whether the environment promised a database. Where it did, a missing one is a
     /// failure instead of a skip: a run that skipped everything database-dependent looks
     /// almost like a run that passed, and that is precisely what would keep the criteria
-    /// of F4 and F6 conditional (decision 038).
+    /// of F4 and F6 conditional (decision 039).
     /// </summary>
     public static bool IsRequired { get; } = ResolveRequired();
 

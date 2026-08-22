@@ -21,6 +21,9 @@ public class Program
         var app = builder.Build();
 
         app.UsePathBase("/orm");
+        // Before UseRouting: static assets are endpoints, so the rewrite of "/" to
+        // index.html has to happen before endpoint matching, not after it.
+        app.UseDefaultFiles();
         app.UseRouting();
 
         // Configure the HTTP request pipeline.
@@ -34,8 +37,9 @@ public class Program
 
         Endpoints.Map(app);
 
-        app.UseDefaultFiles();
-        app.UseStaticFiles();
+        // Serves the .br/.gz copies the publish already produces, chosen by the
+        // request's Accept-Encoding; UseStaticFiles never looked at them.
+        app.MapStaticAssets();
 
         app.Run();
     }
