@@ -14,6 +14,7 @@
 .env
 *.log
 
-# Measured benchmark output, kept out of git by decision 042. The run that produced it
-# is described in benchmarks/README.md; the R script that renders it is versioned.
+# Measured benchmark output, kept out of git by decision 042. The exclusion is whole-directory:
+# the measurements and the R script that renders the charts are outside git as well. The run that
+# produced it, and how to retrieve any of it from history, is described in benchmarks/README.md.
 benchmarks/results/

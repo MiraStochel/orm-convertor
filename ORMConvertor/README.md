@@ -84,7 +84,16 @@ The translation features work in any environment. The Advisor additionally needs
 docker compose --profile test run --rm tests
 ```
 
-This builds the solution, starts a SQL Server of its own, waits for it, creates the database and runs the whole suite. The first run also pulls the images and builds them, which takes a few minutes; later runs reuse the layer cache. A clean machine needs neither the .NET SDK nor a database of its own (requirement S5). The `test` profile adds three services: `test_db` (a plain SQL Server 2022 — the tests create their own schema in it and never touch WideWorldImporters), `test_db_init` (creates the `ORMConvertorTests` database once the server answers, because the test fixture creates a schema, not a database) and `tests` (the `tests` stage of `ORMConvertorAPI/Dockerfile`).
+This builds the solution, starts a SQL Server of its own, waits for it, creates the database and runs the whole suite. The first run also pulls the images and builds them, which takes a few minutes; later runs reuse the layer cache.
+
+**`run` does not rebuild the image.** The `tests` stage carries the sources and the compiled test assembly inside it — its entry point is `dotnet test --no-build` — so an existing image runs the suite of the revision it was built from, green and with nothing in the output to show that it describes a different tree. The only tell is the test count. After changing anything under `ORMConvertor/`, build the stage first:
+
+```sh
+docker compose --profile test build tests
+docker compose --profile test run --rm tests
+```
+
+A clean machine needs neither the .NET SDK nor a database of its own (requirement S5). The `test` profile adds three services: `test_db` (a plain SQL Server 2022 — the tests create their own schema in it and never touch WideWorldImporters), `test_db_init` (creates the `ORMConvertorTests` database once the server answers, because the test fixture creates a schema, not a database) and `tests` (the `tests` stage of `ORMConvertorAPI/Dockerfile`).
 
 ## On the host
 

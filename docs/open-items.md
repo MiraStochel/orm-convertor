@@ -39,7 +39,7 @@ Rozeznat ji počítáním `EntityMaps` před a po každém parseru nejde: u NHib
 ### Sjednocení ADO.NET provideru v benchmarcích
 *Souvisí s T-požadavky. Podklad: audit 2026-08-02, kap. 3.4.2.*
 
-Dapper, EF Core, linq2db a RepoDB běží na `Microsoft.Data.SqlClient`, NHibernate a EF6 na `System.Data.SqlClient`. Pro srovnání výkonu je to metodologický confound. Buď přepnout NHibernate na `MicrosoftDataSqlClientDriver`, ověřit provider u PetaPoco a EF6 a přeměřit, nebo confound explicitně popsat v textu práce. Benchmarking stojí mimo záruky vcelku ([`architecture.md`](./architecture.md), §9), takže srovnávat jeho konfiguraci nemá dnes proti čemu.
+Dapper, EF Core, linq2db a RepoDB běží na `Microsoft.Data.SqlClient`, NHibernate, EF6 a PetaPoco na `System.Data.SqlClient`, který k nim teče přes `benchmarks/Common`. Pro srovnání výkonu je to metodologický confound. **Rozsah je nově dohledaný celý** — u PetaPoco vyloučením, protože `Microsoft.Data.SqlClient` v grafu balíků obou jeho projektů není, u EF6 z `WWIDbConfiguration`; podrobnosti nese [srovnání frameworků](./analysis/orm-frameworks-comparison.md) a `benchmarks/README.md`. Zbývá tedy volba, ne zjišťování: buď přepnout NHibernate na `MicrosoftDataSqlClientDriver`, najít pro PetaPoco provider nad `Microsoft.Data.SqlClient` (samostatný balík, dnes nereferencovaný) a přeměřit, nebo confound explicitně popsat v textu práce. Benchmarking stojí mimo záruky vcelku ([`architecture.md`](./architecture.md), §9), takže srovnávat jeho konfiguraci nemá dnes proti čemu.
 
 ---
 
@@ -51,13 +51,6 @@ Dapper, EF Core, linq2db a RepoDB běží na `Microsoft.Data.SqlClient`, NHibern
 Rozhodnutí 016 uznává čtyři stupně ověření generovaných artefaktů a čtvrtý z nich — *entita se uloží a načte se stejnou identitou* — nemá jediného zástupce. Připravená je pro něj hranice transakce na `TestSchemaFixture`: metoda `OpenConnection()` existuje a volají ji testy v `TestSchemaFixtureTest`, ty ale hlídají schéma fixture samotné (F4 potřebuje znát očekávanou odpověď), nikoli generovaný artefakt. Chybí tedy scénář, ve kterém se vygenerovaná entita a její mapování skutečně použijí k zápisu a čtení řádku.
 
 Mezera není teoretická. Kolekce deklarovaná konkrétním typem místo rozhraní prošla druhým i třetím stupněm bez povšimnutí a odhalilo ji až čtení kódu — NHibernate váže kolekci na CLR typ vlastnosti teprve při načtení entity, takže právě tuhle třídu vad vidí jen 4. stupeň. Náhradou je dnes 1. stupeň se zakázanými značkami v deskriptoru (rozhodnutí [035](./decisions/035-nhibernate-collections-declared-by-interface.md)), což je kontrola tvaru, ne běhu. Až stupeň dostane prvního zástupce, patří načtení entity s kolekcí mezi první scénáře.
-
-### Kontejnerový běh nad dnešní testovací sadou
-*Potom. Doklad pro nárok S5 podle rozhodnutí [039](./decisions/039-container-configuration-of-the-environment.md); popsaný stav je v [`architecture.md`](./architecture.md), §6.4. Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), nález 1.1. Požadavky S5, F4, F6.*
-
-Kontejnerová cesta je ověřená spuštěním z 2026-08-22, jenže tehdejší sada byla o osmapadesát testů menší než dnešní — `ConsumerProjectFactsTest` přibyl až s posledním commitem před vydáním a testy REST kontraktu (rozhodnutí [043](./decisions/043-rest-contract-guarded-over-http.md)) až po něm. Vstup oblasti *přenositelné prostředí* do nároku je přitom jediný důvod, proč je 1.1.0 krokem MINOR, takže nejsilnější tvrzení vydání se opírá o běh jiné sady, než jakou vydání obsahuje.
-
-Není to podezření na vadu: sada prošla celá na hostiteli (2026-08-23, 450 prošlých, 0 přeskočených, viz §6.2) a od kontejnerového běhu se v konfiguraci prostředí nic nezměnilo. Chybí právě a jen průchod touhle cestou nad touhle sadou. Odbavení je jedno spuštění `docker compose --profile test run --rm tests` na stroji, kde Docker je, a přepis data v §6.4; stroj, na kterém vznikala tahle položka, ho nemá. Do té doby platí u S5 v [`traceability.md`](./traceability.md) poznámka, že doklad je starší než sada.
 
 ### HQL parser pro round-trip NHibernate → NHibernate
 *Vyňatá oblast 4 hranice záruk ([`architecture.md`](./architecture.md), §9). Navazuje na rozhodnutí [022](./decisions/022-native-query-syntax-in-builders.md) a [026](./decisions/026-home-of-shared-query-reading.md). Požadavky F7–F10, T2, T3.*

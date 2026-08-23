@@ -20,9 +20,11 @@ Run container:
 Test connection:
 `sqlcmd -S 127.0.0.1,1444 -U SA -P Testingorms123 -Q "SELECT * FROM [WideWorldImporters].[Purchasing].[PurchaseOrders]"`
 
-# Committed results
+# Measured results
 
-`results/` holds a single benchmark run from **2025-03-06**, inherited from the original research: `joined/` is the full cross-framework run (BenchmarkDotNet reports plus the plots `BuildPlots.R` derives from `-measurements.csv`), `separate/` the per-framework reports.
+`results/` is **not versioned** ([decision 042](../docs/decisions/042-measured-benchmark-output-out-of-git.md)): a clone contains the benchmark projects and this description, not their output, and the output of a future run does not go back into git either. The exclusion is whole-directory, so the measurements, the summaries and `BuildPlots.R` are outside git along with the rendered charts. Nothing is lost: every one of those files stays in earlier revisions, and `git show <commit>:benchmarks/results/…` retrieves any of it.
+
+Where the directory is present on disk, it holds a single benchmark run from **2025-03-06**, inherited from the original research: `joined/` is the full cross-framework run (BenchmarkDotNet reports plus the plots `BuildPlots.R` derives from `-measurements.csv`), `separate/` the per-framework reports.
 
 **These numbers do not describe the code in this solution as it stands today.** The run predates the migration to .NET 10, and every measured framework except PetaPoco has been raised since:
 
@@ -42,7 +44,7 @@ Test connection:
 
 It was measured on one machine (AMD Ryzen 5 5600H, 6 physical cores, Windows 11 23H2) with the database on the same host, and it has not been repeated.
 
-One caveat applies to the suite itself rather than to this run: the ADO.NET provider is not uniform. Dapper, EF Core, linq2db and RepoDB use `Microsoft.Data.SqlClient`; NHibernate (through `SqlClientDriver`) and EF6 use `System.Data.SqlClient`, which reaches them through `Common`. The provider used by PetaPoco has not been traced. This does not affect the feature tests, but in the performance comparison it is a confound.
+One caveat applies to the suite itself rather than to this run: the ADO.NET provider is not uniform, and the split is four frameworks to three. Dapper, EF Core, linq2db and RepoDB use `Microsoft.Data.SqlClient` — Dapper and linq2db by a direct package reference, EF Core and RepoDB through their SQL Server provider packages. NHibernate (through `db.Driver<SqlClientDriver>()`), EF6 and PetaPoco use `System.Data.SqlClient`, which reaches all three through `Common`, whose own code never opens a connection itself. PetaPoco is the case that used to be untraced, and it resolves by elimination: `PetaPoco.Compiled` 6.0.683 declares no provider dependency of its own, and `Microsoft.Data.SqlClient` appears nowhere in the package graph of either PetaPoco project, so the `SqlServerDatabaseProvider` both of them configure has nothing but `System.Data.SqlClient` to bind to. One reference muddies the reading without changing it: `EF6Features` names `Microsoft.Data.SqlClient` directly, but no code in that project uses it, and `EF6Performance` — the project that produces the measured numbers — does not reference it at all. This does not affect the feature tests, but in the performance comparison it is a confound.
 
 Treat the run as a historical record, quoted together with the versions above. A figure describing the current state of the solution needs a fresh run.
 
