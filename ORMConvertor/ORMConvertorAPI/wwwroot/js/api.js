@@ -103,9 +103,11 @@ export const QUERY_FEATURE_LABELS = Object.freeze({
 });
 
 /*
- * Error bodies: handlers return Results.BadRequest(message), which arrives as a
- * JSON-encoded string. Read the body, not the HTTP status line - the status line
- * was the bug of the old frontend.
+ * Error bodies: handlers answer with ProblemDetails per RFC 9457 (decision 044), so the
+ * reason is in `detail`; `title` is the generic "Bad Request" and would tell the user
+ * nothing. The string branch stays for a bare-string body, which costs nothing and reads
+ * an older instance. Read the body, not the HTTP status line - the status line was the
+ * bug of the old frontend.
  */
 async function errorMessage(response) {
   let text = "";
@@ -118,6 +120,7 @@ async function errorMessage(response) {
     try {
       const parsed = JSON.parse(text);
       if (typeof parsed === "string") return parsed;
+      if (parsed && typeof parsed.detail === "string") return parsed.detail;
       if (parsed && typeof parsed.title === "string") return parsed.title;
     } catch {
       return text;

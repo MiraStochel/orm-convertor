@@ -47,6 +47,9 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [040](040-boundary-of-the-handed-over-artifact.md) | Hranice předávaného artefaktu vůči konzumentskému projektu | 2026-08-22 | platí | F2, F5, F11, S1, S2 |
 | [041](041-versioning-and-release.md) | Verzování, vydání a posun zafixovaných verzí | 2026-08-22 | revidováno | S2, S4, S6 |
 | [042](042-measured-benchmark-output-out-of-git.md) | Naměřený výstup benchmarků mimo git | 2026-08-23 | platí | T1, T7, S5 |
+| [043](043-rest-contract-guarded-over-http.md) | REST kontrakt hlídaný testem přes HTTP | 2026-08-23 | platí | S2, S6, S7 |
+| [044](044-error-response-as-problem-details.md) | Chybová odpověď jako `ProblemDetails` | 2026-08-23 | platí | F11, S6, S7 |
+| [045](045-a-conversion-that-produced-nothing-says-so.md) | Převod, ze kterého nic nevyšlo, to musí říct | 2026-08-23 | platí | F11, F14, S6, S7 |
 
 ## Formát
 

@@ -48,6 +48,16 @@ public static class Endpoints
             .ProducesProblem(StatusCodes.Status400BadRequest);
     }
 
+    /// <summary>
+    /// The one shape a failing endpoint answers with: <c>ProblemDetails</c> per RFC 9457,
+    /// which is what every endpoint's <c>.ProducesProblem(400)</c> has described all along
+    /// (decision 044). The message travels in <c>detail</c>; it is the same text the handlers
+    /// used to return as a bare string, so threat 4 of the threat model - a server or instance
+    /// name can appear in it - is unchanged and this is not its fix.
+    /// </summary>
+    private static IResult Failure(Exception e) =>
+        Results.Problem(detail: e.Message, statusCode: StatusCodes.Status400BadRequest);
+
     // Packs client-named files into a ZIP for the complete-output download of S7
     // (decision 033); translates nothing.
     private static IResult ArchiveHandler(ArchiveRequest req)
@@ -68,7 +78,7 @@ public static class Endpoints
         }
         catch (Exception e)
         {
-            return Results.BadRequest(e.Message);
+            return Failure(e);
         }
     }
 
@@ -96,7 +106,7 @@ public static class Endpoints
         }
         catch (Exception e)
         {
-            return Results.BadRequest(e.Message);
+            return Failure(e);
         }
     }
 
@@ -117,7 +127,7 @@ public static class Endpoints
         }
         catch (Exception e)
         {
-            return Results.BadRequest(e.Message);
+            return Failure(e);
         }
     }
 
@@ -133,7 +143,7 @@ public static class Endpoints
         }
         catch (Exception e)
         {
-            return Results.BadRequest(e.Message);
+            return Failure(e);
         }
     }
 }

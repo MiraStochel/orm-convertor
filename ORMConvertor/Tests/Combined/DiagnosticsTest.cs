@@ -303,3 +303,98 @@ public class DiagnosticsTest
             r.Kind == ConversionRecordKind.Loss && r.Category == MappingFactCategory.PrimaryKey);
     }
 }
+
+/// <summary>
+/// A conversion that produced nothing says so (decision 045). Silence used to be the answer
+/// to input the parsers could not read: no artifact, no record, status 200 - a "done" about
+/// something that never happened. The same class of defect had already been closed one level
+/// up, where an unknown source framework used to return an empty result and no error at all.
+/// </summary>
+public class EmptyConversionTest
+{
+    private static List<ConversionSource> Entity(string content) =>
+        [new() { ContentType = ConversionContentType.CSharpEntity, Content = content }];
+
+    /// <summary>
+    /// Roslyn parses almost anything, so text that is not a class comes back as a parse tree
+    /// with no entity in it. Nothing to build from is a fact about the run, and the run says it.
+    /// </summary>
+    [Fact]
+    public void InputWithNoEntityInItIsReportedInsteadOfIgnored()
+    {
+        var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, Entity("this is not C#"));
+
+        Assert.Empty(result.Sources);
+        var record = Assert.Single(result.Records);
+        Assert.Equal(ConversionRecordKind.Failure, record.Kind);
+        Assert.Equal(ORMEnum.NHibernate, record.Framework);
+        Assert.Contains("yielded", record.Reason);
+    }
+
+    /// <summary>
+    /// An empty request is the other half of the same silence, and it gets its own wording:
+    /// "nothing came in" and "nothing came out of what came in" are different messages.
+    /// </summary>
+    [Fact]
+    public void ARequestWithoutUnitsIsReportedAsSuch()
+    {
+        var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, []);
+
+        Assert.Empty(result.Sources);
+        var record = Assert.Single(result.Records);
+        Assert.Equal(ConversionRecordKind.Failure, record.Kind);
+        Assert.Contains("no source unit", record.Reason);
+    }
+
+    /// <summary>
+    /// A unit in a language the source framework has no parser for used to fall through the
+    /// parser loop without a word - the loop asks parsers what they accept and never asks who
+    /// claimed nothing. Dapper reads C# entities and SQL queries, not hbm mapping.
+    /// </summary>
+    [Fact]
+    public void AUnitInALanguageTheSourceCannotReadIsReported()
+    {
+        var sources = new List<ConversionSource>
+        {
+            new() { ContentType = ConversionContentType.XML, Content = "<hibernate-mapping />" },
+        };
+
+        var result = ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.EFCore, sources);
+
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Failure
+            && r.Artifact == ConversionContentType.XML
+            && r.Reason.Contains("no parser"));
+    }
+
+    /// <summary>
+    /// An unfilled input box is not a claim (decision 025), so a blank unit stays silent - the
+    /// records must not fill up with what the user simply did not type. The run itself is still
+    /// reported as having generated nothing.
+    /// </summary>
+    [Fact]
+    public void ABlankUnitIsSkippedWithoutARecordOfItsOwn()
+    {
+        var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, Entity("   "));
+
+        var record = Assert.Single(result.Records);
+        Assert.Contains("no source unit", record.Reason);
+    }
+
+    /// <summary>
+    /// The record is written only when the run produced nothing: a conversion that generated
+    /// artifacts must not carry a failure about itself.
+    /// </summary>
+    [Fact]
+    public void AConversionThatProducedArtifactsCarriesNoSuchRecord()
+    {
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.NHibernate,
+            Entity(SampleData.CustomerSampleEFCore.Entity));
+
+        Assert.NotEmpty(result.Sources);
+        Assert.DoesNotContain(result.Records, r => r.Reason.Contains("nothing was generated"));
+        Assert.DoesNotContain(result.Records, r => r.Reason.Contains("yielded"));
+    }
+}

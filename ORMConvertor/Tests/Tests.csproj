@@ -27,6 +27,10 @@
          on them. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="NHibernate" />
+    <!-- HTTP-level tests of the REST contract (decision 043): the app is started in
+         memory and answered over a real HttpClient, so routing, model binding, status
+         codes and JSON serialization take part in the verdict. -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
