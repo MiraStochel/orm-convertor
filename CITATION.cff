@@ -1,0 +1,61 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: ORMConvertor
+abstract: >-
+  A tool for translating entities, mappings, and queries between .NET ORM frameworks
+  (Dapper, NHibernate, Entity Framework Core) through a framework-agnostic intermediate
+  representation, together with an ILP-based advisor that recommends a framework for a
+  query workload from real benchmark measurements. This repository continues and extends
+  the ORMorpher prototype created by Milan Abrahám; the publications listed under
+  references describe the design of that prototype.
+type: software
+authors:
+  - family-names: Štochel
+    given-names: Miroslav
+    email: miroslav@stochel.cz
+    affiliation: "Faculty of Mathematics and Physics, Charles University"
+version: 1.1.0
+date-released: "2026-08-23"
+license: MIT
+repository-code: "https://github.com/MiraStochel/orm-convertor"
+keywords:
+  - object-relational mapping
+  - ORM
+  - code translation
+  - intermediate representation
+  - .NET
+  - Dapper
+  - Entity Framework Core
+  - NHibernate
+  - integer linear programming
+references:
+  - type: thesis
+    title: "Framework-Agnostic Query Adaptation: Ensuring SQL Compatibility Across .NET Database Frameworks"
+    authors:
+      - family-names: Abrahám
+        given-names: Milan
+    year: 2025
+    thesis-type: "Master thesis"
+    institution:
+      name: "Charles University, Faculty of Mathematics and Physics"
+    url: "https://github.com/milan252525/orm-convertor"
+  - type: conference-paper
+    title: "ORMorpher: An Interactive Framework for ORM Translation and Optimization"
+    authors:
+      - family-names: Abrahám
+        given-names: Milan
+      - family-names: Koupil
+        given-names: Pavel
+    year: 2025
+    conference:
+      name: "40th International Conference on Automated Software Engineering (ASE 2025)"
+    location:
+      name: "Seoul, South Korea"
+  - type: article
+    title: "A Unified Framework for Object-Relational Mapping Translation and Performance-Aware Selection"
+    authors:
+      - family-names: Abrahám
+        given-names: Milan
+      - family-names: Koupil
+        given-names: Pavel
+    notes: "Extended journal version of the ASE 2025 paper."
