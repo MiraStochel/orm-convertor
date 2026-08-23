@@ -6,11 +6,18 @@ on:
     paths:
       - "ORMConvertor/**" # run only when something inside the solution changed
   pull_request:
+    # No pull request is ever opened here - development is solo and on `main` (see
+    # ORMConvertor/README.md) - so this trigger is for a future in which one is.
     paths:
       - "ORMConvertor/**"
+  schedule:
+    # An advisory against a pinned package appears without anyone pushing, so the
+    # dependency check needs a clock of its own (decision 041). Only that job runs then.
+    - cron: "0 6 * * 1"
 
 jobs:
   test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
 
     defaults: # all subsequent `run:` steps execute from ORMConvertor/
@@ -66,4 +73,48 @@ jobs:
           # This job started a database, so a database-dependent test that skipped would
           # be a false green - here a missing database fails (decision 039).
           ORMCONVERTOR_REQUIRE_TEST_DATABASE: "1"
-        run: dotnet test Tests/Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=test_results.trx"
+        # Coverage is collected, not gated: no threshold decides the build. It answers
+        # "how much of the code do the tests reach", which until now was read off the
+        # source rather than measured, and T3 reports numbers of the same family.
+        run: >-
+          dotnet test Tests/Tests.csproj --configuration Release --no-build
+          --logger "trx;LogFileName=test_results.trx"
+          --collect:"XPlat Code Coverage"
+
+      - name: Upload test results and coverage
+        if: always() # the coverage of a failed run is the interesting one
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ORMConvertor/Tests/TestResults/
+          if-no-files-found: warn
+
+  # Pinned versions (decisions 013 and 034) move deliberately, and a published advisory is
+  # one of the two reasons to move them (decision 041). This job is what notices.
+  dependencies:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ORMConvertor
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore ORMConvertor.sln
+
+      - name: Check pinned packages against known advisories
+        run: |
+          dotnet list ORMConvertor.sln package --vulnerable --include-transitive | tee vulnerable.txt
+          # The command reports advisories on stdout and still exits 0, so the exit code
+          # has to be made here.
+          if grep -q "has the following vulnerable packages" vulnerable.txt; then
+            echo "::error::A referenced package has a known advisory - see the listing above."
+            exit 1
+          fi

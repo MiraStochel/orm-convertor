@@ -9,8 +9,11 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        // Add services to the container.
-        builder.Services.AddAuthorization();
+        // Add services to the container. No authentication scheme and no authorization
+        // policy are registered: every endpoint is open, which is what the deployment
+        // assumes (a trusted network or a proxy in front) and what docs/threat-model.md
+        // records. The template's authorization services used to sit here and guarded
+        // nothing, which read as protection where there was none.
         builder.Services.AddSingleton<IBenchmarkExecutor, BenchmarkExecutor>();
         builder.Services.AddSingleton<IAdvisorRunCoordinator, AdvisorRunCoordinator>();
 
@@ -32,8 +35,6 @@ public class Program
             app.UseSwagger();
             app.UseSwaggerUI();
         }
-
-        app.UseAuthorization();
 
         Endpoints.Map(app);
 

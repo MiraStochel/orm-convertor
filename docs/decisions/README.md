@@ -44,6 +44,8 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [036](036-primary-key-under-source-precedence.md) | Primární klíč pod pravidlem priority zdrojů | 2026-08-21 | platí | F5, F11, F14, S2 |
 | [037](037-enforced-member-binding-held-by-the-test.md) | Vazbu deklarace a emise vynucených členů drží test | 2026-08-21 | revidováno | S1, S2 |
 | [039](039-container-configuration-of-the-environment.md) | Kontejnerová konfigurace prostředí | 2026-08-22 | platí | F4, F6, S2, S4, S5, S6 |
+| [040](040-boundary-of-the-handed-over-artifact.md) | Hranice předávaného artefaktu vůči konzumentskému projektu | 2026-08-22 | platí | F2, F5, F11, S1, S2 |
+| [041](041-versioning-and-release.md) | Verzování, vydání a posun zafixovaných verzí | 2026-08-22 | platí | S2, S4, S6 |
 
 ## Formát
 

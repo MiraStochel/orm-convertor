@@ -3,7 +3,7 @@ A web-based tool for translating across different .NET ORMs.
 # Deployment
 
 ## Visual Studio
-Open the solution file `ORMConvertor.sln` and set `ORMConvertorAPI` as the startup project, if not selected by default. The app can be launched in `Debug` configuration for development or compiled in `Release` configuration for production. Three launch profiles are defined in `ORMConvertorAPI/Properties/launchSettings.json` (`http`, `https`, `IIS Express`), but only `http` has been configured and tested. The application can be started with `CTRL + F5` to run without debugging or `F5` to launch with the debugger. A browser window should open automatically.
+Open the solution file `ORMConvertor.sln` and set `ORMConvertorAPI` as the startup project, if not selected by default. The app can be launched in `Debug` configuration for development or compiled in `Release` configuration for production. Three launch profiles are defined in `ORMConvertorAPI/Properties/launchSettings.json` (`http`, `https`, `IIS Express`). Both `http` (`http://localhost:5072`) and `https` (`https://localhost:7124`, with `http://localhost:5072` beside it) are configured and were verified on 2026-08-21; `https` additionally expects the ASP.NET development certificate (`dotnet dev-certs https`). `IIS Express` is a leftover of the project template: no documented path uses it and it is not verified. The application can be started with `CTRL + F5` to run without debugging or `F5` to launch with the debugger. A browser window should open automatically.
 
 ## .NET CLI
 ```sh
@@ -21,12 +21,12 @@ docker compose up --build
 starts two containers:
 
 - `ormconvertor` – the application, built by the multi-stage `ORMConvertorAPI/Dockerfile` (compiles the native Advisor library `libadvisor.so` and the .NET app; the static frontend needs no build and enters the image as-is inside `wwwroot`). Exposed on [http://localhost:5072/orm/](http://localhost:5072/orm/). It receives both connection strings — `ConnectionStrings__AdvisorDatabase` for the Advisor's benchmarking and `ConnectionStrings__CatalogDatabase` for the catalog completion phase — so the containerized instance translates with the catalog rather than without it.
-- `mssql_db` – Microsoft SQL Server 2022 initialized with the WideWorldImporters sample database (`database.Dockerfile`), exposed on `localhost,1444` (`SA` / `Testingorms123` – development credentials only).
+- `mssql_db` – Microsoft SQL Server 2022 initialized with the WideWorldImporters sample database (`database.Dockerfile`), exposed on `localhost,1444` (`SA` / `Testingorms123` – development credentials only). That host port is also what the inherited benchmarks bind: `benchmarks/README.md` documents `podman run -p 1444:1433` for their own SQL Server image, so the two cannot be up at the same time. Stop one before starting the other, or change the mapping in `docker-compose.yml`.
 
 Note: the compose file runs the app with `ASPNETCORE_ENVIRONMENT=Development`, so the Swagger UI is available at `/orm/swagger`.
 
 ## PM2
-`ecosystem.config.js` is a configuration for the [PM2](https://pm2.keymetrics.io/) process manager, used to run the app via `dotnet run` on a server without Docker: `pm2 start ecosystem.config.js`.
+`ecosystem.config.js` is a configuration for the [PM2](https://pm2.keymetrics.io/) process manager, used to run the app via `dotnet run` on a server without Docker: `pm2 start ecosystem.config.js` starts it, `pm2 delete orm` stops it. The host needs Node.js with PM2 installed (`npm install -g pm2`) and the .NET SDK, because this path builds from sources; the app then listens on `localhost:5072` only.
 
 ## Deploying a real instance
 The four paths above are development paths: every one of them runs in the `Development` environment and three of them run from sources. A real instance differs in four ways.
@@ -101,7 +101,9 @@ Server=(localdb)\MSSQLLocalDB;Database=ORMConvertorTests;Trusted_Connection=True
 The tests create and drop their own schema (`ormconvertor_test` by default; override with `ORMCONVERTOR_TEST_SCHEMA`), so any reachable SQL Server will do. Without a connection string those tests skip and say why, while everything else still runs. Where the environment states that it does provide a database — `ORMCONVERTOR_REQUIRE_TEST_DATABASE=1`, set by the compose `test` profile and by CI — a missing database is a failure instead of a skip, so a run that quietly skipped everything database-dependent cannot pass as green.
 
 ## Continuous integration
-A GitHub Actions pipeline runs the suite on pushes to `main` and on pull requests, whenever something inside `ORMConvertor/**` changes. It starts SQL Server 2022 as a service container, creates the test database and runs with the database required, so the database-dependent tests run there too. The pipeline configuration is located in the `.github` folder at the root of the repository.
+A GitHub Actions pipeline runs the suite on pushes to `main` and on pull requests, whenever something inside `ORMConvertor/**` changes. It starts SQL Server 2022 as a service container, creates the test database and runs with the database required, so the database-dependent tests run there too. Development is solo and on `main`, so no pull request is ever actually opened — that trigger is there for a future in which one is. The pipeline configuration is located in the `.github` folder at the root of the repository.
+
+Two more things it does. It collects **code coverage** through the `XPlat Code Coverage` collector (`coverlet.collector`) and uploads the results as a run artifact; no threshold gates the build — the measurement is there to be read, not to be passed. Locally the same thing is `dotnet test Tests/Tests.csproj --collect:"XPlat Code Coverage"`, which writes `coverage.cobertura.xml` under `Tests/TestResults/`. And a separate `dependencies` job runs `dotnet list package --vulnerable --include-transitive` and fails when a referenced package has a published advisory; because such an advisory appears without anyone pushing, that job also runs weekly on a schedule ([decision 041](../docs/decisions/041-versioning-and-release.md)).
 
 # API
 The REST API is the tool's actual product surface; the static frontend is one client of it. Everything is served under the path base `/orm`, so the paths below are relative to `http://<host>/orm`. The Swagger UI at `/orm/swagger` documents the same endpoints, but only in the `Development` environment — this table is what remains available in `Production`.
