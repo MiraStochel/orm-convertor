@@ -14,6 +14,9 @@ authors:
     given-names: Miroslav
     email: miroslav@stochel.cz
     affiliation: "Faculty of Mathematics and Physics, Charles University"
+  - family-names: Abrahám
+    given-names: Milan
+    affiliation: "Faculty of Mathematics and Physics, Charles University"
 version: 1.1.0
 date-released: "2026-08-23"
 license: MIT
@@ -38,7 +41,7 @@ references:
     thesis-type: "Master thesis"
     institution:
       name: "Charles University, Faculty of Mathematics and Physics"
-    url: "https://github.com/milan252525/orm-convertor"
+    url: "https://is.cuni.cz/studium/dipl_st/index.php?id=&tid=&do=main&doo=detail&did=277574"
   - type: conference-paper
     title: "ORMorpher: An Interactive Framework for ORM Translation and Optimization"
     authors:

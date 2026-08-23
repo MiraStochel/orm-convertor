@@ -1,19 +1,14 @@
-bin
-obj
-TestResults
-*.user
-*.suo
-*.vs
-.vscode
-*.dbmdl
-*.db
-*.sdf
-*.sqlite
-*.mdf
-*.ldf
+# Docker patterns are not recursive, so every one of these needs its ** prefix: the only
+# TestResults this project produces is Tests/TestResults, and the only .user file lives
+# beside ORMConvertorAPI.csproj - root-anchored patterns missed both and let a local
+# coverage run enter the build context through `COPY . .`.
 **/bin
 **/obj
-logs
-*.log
-/.env
-/.idea
+**/TestResults
+**/*.user
+**/*.suo
+**/*.log
+.vs
+.vscode
+.idea
+.env

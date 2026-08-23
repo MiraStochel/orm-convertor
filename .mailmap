@@ -1,0 +1,5 @@
+# Two people, five spellings. Without this file `git shortlog -sne` splits both of them,
+# which matters here because attribution is an explicit claim of this repository
+# (README.md, "Origin and attribution", and CITATION.cff). Nothing in history changes.
+Míra Štochel <miroslav@stochel.cz> <miroslav@stochel.cz>
+Milan Abrahám <milan.abraham2@seznam.cz> <milan.abraham2@seznam.cz>

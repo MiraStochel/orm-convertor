@@ -1,0 +1,813 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "ORMConvertor",
+    "version": "1.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5072/orm"
+    }
+  ],
+  "paths": {
+    "/required-content": {
+      "get": {
+        "tags": [
+          "ORMConvertorAPI"
+        ],
+        "operationId": "RequiredContent",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RequiredContentDefinition"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/required-content-advisor": {
+      "get": {
+        "tags": [
+          "ORMConvertorAPI"
+        ],
+        "operationId": "RequiredContentAdvisor",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RequiredContentDefinition"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/convert": {
+      "post": {
+        "tags": [
+          "Endpoints"
+        ],
+        "operationId": "Convert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConvertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvertResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/samples": {
+      "get": {
+        "tags": [
+          "ORMConvertorAPI"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/samples-advisor": {
+      "get": {
+        "tags": [
+          "ORMConvertorAPI"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/advisor-test": {
+      "post": {
+        "tags": [
+          "Endpoints"
+        ],
+        "operationId": "AdvisorTest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvisorSolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdvisorSolveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/advisor/run": {
+      "post": {
+        "tags": [
+          "Endpoints"
+        ],
+        "operationId": "AdvisorRun",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvisorRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdvisorRunResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/archive": {
+      "post": {
+        "tags": [
+          "Endpoints"
+        ],
+        "operationId": "Archive",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdvisorRunQuery": {
+        "required": [
+          "id",
+          "query",
+          "weight"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "query": {
+            "$ref": "#/components/schemas/ConversionSource"
+          },
+          "weight": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AdvisorRunRequest": {
+        "required": [
+          "sourceOrm",
+          "entities",
+          "queries",
+          "maxMemoryBytes",
+          "maxFrameworksToSelect"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceOrm": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "entities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversionSource"
+            }
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdvisorRunQuery"
+            }
+          },
+          "maxMemoryBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maxFrameworksToSelect": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "targetFrameworks": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ORMEnum"
+            }
+          }
+        }
+      },
+      "AdvisorRunResult": {
+        "required": [
+          "selectedFrameworks",
+          "queryAssignments",
+          "measurements"
+        ],
+        "type": "object",
+        "properties": {
+          "selectedFrameworks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ORMEnum"
+            }
+          },
+          "queryAssignments": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ORMEnum"
+            }
+          },
+          "measurements": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/components/schemas/BenchmarkMeasurementDto"
+              }
+            }
+          }
+        }
+      },
+      "AdvisorSolveRequest": {
+        "required": [
+          "memory",
+          "cost",
+          "z",
+          "mem",
+          "n",
+          "q",
+          "f"
+        ],
+        "type": "object",
+        "properties": {
+          "memory": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          },
+          "cost": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+              "type": [
+                "number",
+                "string"
+              ],
+              "format": "double"
+            }
+          },
+          "z": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          "mem": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "n": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "q": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "f": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AdvisorSolveResponse": {
+        "required": [
+          "status",
+          "objective",
+          "selected",
+          "assignment"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "objective": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "selected": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          "assignment": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        }
+      },
+      "ArchiveFile": {
+        "required": [
+          "name",
+          "content"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "ArchiveRequest": {
+        "required": [
+          "files"
+        ],
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchiveFile"
+            }
+          }
+        }
+      },
+      "BenchmarkMeasurementDto": {
+        "required": [
+          "meanDurationMilliseconds",
+          "allocatedBytes"
+        ],
+        "type": "object",
+        "properties": {
+          "meanDurationMilliseconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "allocatedBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "CatalogConnectionState": {
+        "type": "integer"
+      },
+      "ConversionContentType": {
+        "type": "integer"
+      },
+      "ConversionRecord": {
+        "required": [
+          "kind",
+          "framework",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ConversionRecordKind"
+          },
+          "framework": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "artifact": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConversionContentType"
+              }
+            ]
+          },
+          "entity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "property": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "category": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MappingFactCategory"
+              }
+            ]
+          },
+          "feature": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QueryFeature"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ConversionRecordKind": {
+        "type": "integer"
+      },
+      "ConversionSource": {
+        "required": [
+          "contentType",
+          "content"
+        ],
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "$ref": "#/components/schemas/ConversionContentType"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "ConvertRequest": {
+        "required": [
+          "sourceOrm",
+          "targetOrm",
+          "sources"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceOrm": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "targetOrm": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversionSource"
+            }
+          }
+        }
+      },
+      "ConvertResponse": {
+        "required": [
+          "runId",
+          "toolVersion",
+          "sourceFramework",
+          "sourceFrameworkVersion",
+          "targetFramework",
+          "targetFrameworkVersion",
+          "sources",
+          "records",
+          "catalogState"
+        ],
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toolVersion": {
+            "type": "string"
+          },
+          "sourceFramework": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "sourceFrameworkVersion": {
+            "type": "string"
+          },
+          "targetFramework": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "targetFrameworkVersion": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversionSource"
+            }
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversionRecord"
+            }
+          },
+          "catalogState": {
+            "$ref": "#/components/schemas/CatalogConnectionState"
+          },
+          "catalogReadMilliseconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "MappingFactCategory": {
+        "type": "integer"
+      },
+      "ORMEnum": {
+        "type": "integer"
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "QueryFeature": {
+        "type": "integer"
+      },
+      "RequiredContentDefinition": {
+        "required": [
+          "ormType",
+          "required"
+        ],
+        "type": "object",
+        "properties": {
+          "ormType": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "required": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequiredContentUnit"
+            }
+          }
+        }
+      },
+      "RequiredContentUnit": {
+        "required": [
+          "id",
+          "contentType",
+          "description"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ConversionContentType"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "ORMConvertorAPI"
+    },
+    {
+      "name": "Endpoints"
+    }
+  ]
+}

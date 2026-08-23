@@ -45,7 +45,8 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [037](037-enforced-member-binding-held-by-the-test.md) | Vazbu deklarace a emise vynucených členů drží test | 2026-08-21 | revidováno | S1, S2 |
 | [039](039-container-configuration-of-the-environment.md) | Kontejnerová konfigurace prostředí | 2026-08-22 | platí | F4, F6, S2, S4, S5, S6 |
 | [040](040-boundary-of-the-handed-over-artifact.md) | Hranice předávaného artefaktu vůči konzumentskému projektu | 2026-08-22 | platí | F2, F5, F11, S1, S2 |
-| [041](041-versioning-and-release.md) | Verzování, vydání a posun zafixovaných verzí | 2026-08-22 | platí | S2, S4, S6 |
+| [041](041-versioning-and-release.md) | Verzování, vydání a posun zafixovaných verzí | 2026-08-22 | revidováno | S2, S4, S6 |
+| [042](042-measured-benchmark-output-out-of-git.md) | Naměřený výstup benchmarků mimo git | 2026-08-23 | platí | T1, T7, S5 |
 
 ## Formát
 

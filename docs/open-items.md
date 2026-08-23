@@ -29,6 +29,13 @@ Rozhodnutí 017 uspořádalo zdroje faktů na vstupní text frameworku, pomocné
 
 Rozhodnout je třeba, **kde ta hranice povede**, a volba není bezplatná ani technicky, ani metodologicky: samostatný proces s limity operačního systému a kontejner na běh měří jinak než dnešní běh v procesu — startovní režie, jiný JIT stav a jiná paměťová stopa vstupují do čísel, o která u Advisoru celou dobu jde (T7). Třetí cestou je zúžit vstup natolik, aby se nespouštělo nic libovolného, což ale mění, co Advisor umí. Dokud volba nepadne, drží tu oblast jediné: předpoklad nasazení v důvěryhodné síti.
 
+### Čím je hlídaný REST kontrakt
+*Souvisí s rozhodnutím [041](./decisions/041-versioning-and-release.md), které z REST kontraktu udělalo jednu ze tří ploch chráněných číslem verze, a s [032](./decisions/032-frontend-as-static-pages-without-a-build.md), které vyslovilo, že frontend automatické testy nemá. Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), nález 8.2. Požadavky S2, S6, S7.*
+
+Rozhodnutí 041 říká, že rozbití REST kontraktu je změna MAJOR, a `ORMConvertor/README.md` nazývá to rozhraní „the tool's actual product surface". Přes HTTP ale nevede jediný test: obsluhy koncových bodů se ověřují přes orchestraci, takže `ORMConvertorAPI` má 6,0 % pokrytí řádků (`architecture.md` §6.2) a v řešení není `WebApplicationFactory` ani `HttpClient`. Co se dnes doopravdy hlídá, je chování `ConversionHandler`, ne tvar odpovědi, stavový kód ani serializace.
+
+Rozhodnout je třeba, **čím se ta plocha hlídá**, a jsou tři cesty. Testy přes `WebApplicationFactory` procházejí skutečnou serializací a směrováním, ale otevírají novou kategorii testů. Vygenerovaný `openapi.json` v repozitáři (`architecture.md` §6.5) je proti tomu levný a už existuje — porovnávat ho se souborem v gitu by z každé změny kontraktu udělalo viditelný diff, jenže dokument popisuje tvar, ne chování, a takový test se snadno stane jen otiskem výstupu. Třetí možností je nárok zúžit a vyslovit, že verze chrání kontrakt v rozsahu, který hlídá orchestrace. Dokud volba nepadne, opírá se MAJOR o plochu, přes kterou nevede žádné měření.
+
 ### Sjednocení ADO.NET provideru v benchmarcích
 *Souvisí s T-požadavky. Podklad: audit 2026-08-02, kap. 3.4.2.*
 
@@ -44,6 +51,13 @@ Dapper, EF Core, linq2db a RepoDB běží na `Microsoft.Data.SqlClient`, NHibern
 Rozhodnutí 016 uznává čtyři stupně ověření generovaných artefaktů a čtvrtý z nich — *entita se uloží a načte se stejnou identitou* — nemá jediného zástupce. Připravená je pro něj hranice transakce na `TestSchemaFixture`: metoda `OpenConnection()` existuje a volají ji testy v `TestSchemaFixtureTest`, ty ale hlídají schéma fixture samotné (F4 potřebuje znát očekávanou odpověď), nikoli generovaný artefakt. Chybí tedy scénář, ve kterém se vygenerovaná entita a její mapování skutečně použijí k zápisu a čtení řádku.
 
 Mezera není teoretická. Kolekce deklarovaná konkrétním typem místo rozhraní prošla druhým i třetím stupněm bez povšimnutí a odhalilo ji až čtení kódu — NHibernate váže kolekci na CLR typ vlastnosti teprve při načtení entity, takže právě tuhle třídu vad vidí jen 4. stupeň. Náhradou je dnes 1. stupeň se zakázanými značkami v deskriptoru (rozhodnutí [035](./decisions/035-nhibernate-collections-declared-by-interface.md)), což je kontrola tvaru, ne běhu. Až stupeň dostane prvního zástupce, patří načtení entity s kolekcí mezi první scénáře.
+
+### Kontejnerový běh nad dnešní testovací sadou
+*Potom. Doklad pro nárok S5 podle rozhodnutí [039](./decisions/039-container-configuration-of-the-environment.md); popsaný stav je v [`architecture.md`](./architecture.md), §6.4. Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), nález 1.1. Požadavky S5, F4, F6.*
+
+Kontejnerová cesta je ověřená spuštěním z 2026-08-22, jenže tehdejší sada byla o sedmadvacet testů menší než dnešní — `ConsumerProjectFactsTest` přibyl až s posledním commitem před vydáním. Vstup oblasti *přenositelné prostředí* do nároku je přitom jediný důvod, proč je 1.1.0 krokem MINOR, takže nejsilnější tvrzení vydání se opírá o běh jiné sady, než jakou vydání obsahuje.
+
+Není to podezření na vadu: sada prošla celá na hostiteli (2026-08-23, 419 prošlých, 0 přeskočených, viz §6.2) a od kontejnerového běhu se v konfiguraci prostředí nic nezměnilo. Chybí právě a jen průchod touhle cestou nad touhle sadou. Odbavení je jedno spuštění `docker compose --profile test run --rm tests` na stroji, kde Docker je, a přepis data v §6.4; stroj, na kterém vznikala tahle položka, ho nemá. Do té doby platí u S5 v [`traceability.md`](./traceability.md) poznámka, že doklad je starší než sada.
 
 ### HQL parser pro round-trip NHibernate → NHibernate
 *Vyňatá oblast 4 hranice záruk ([`architecture.md`](./architecture.md), §9). Navazuje na rozhodnutí [022](./decisions/022-native-query-syntax-in-builders.md) a [026](./decisions/026-home-of-shared-query-reading.md). Požadavky F7–F10, T2, T3.*

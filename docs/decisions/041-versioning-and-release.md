@@ -1,7 +1,7 @@
 # 041 — Verzování, vydání a posun zafixovaných verzí
 
 Datum: 2026-08-22
-Stav: platí
+Stav: revidováno
 Požadavky: S2, S4, S6
 Podklad: rozhodnutí [007](007-documentation-structure.md), [013](013-target-framework-versions.md), [030](030-scope-of-version-1-0.md) a [034](034-central-version-management.md); stav značky `1.0` v repozitáři k 2026-08-22
 
@@ -23,7 +23,7 @@ Poslední díl je opačný konec téhož: **zafixované verze cizích balíčků
 
 1. **Nechat verzi jako pořadové číslo vydání bez závazku.** Dnešní stav. Levné a nezavazující — jenže číslo už závazek nese, protože ho jmenuje S2 a vydává S6. Verze bez pravidla nedokáže odpovědět na jedinou otázku, kvůli které ji uživatel čte. Zamítáme.
 
-2. **Sémantické verzování nad rozhraním nástroje.** Tedy semver, kde veřejnou plochou je REST kontrakt. Zní to jako standardní volba a je špatná: rozhraní má devět koncových bodů, je stabilní a nudné, kdežto to, co konzumenta skutečně rozbije, je tvar generovaného kódu. Rozhodnutí 028 by pod tímhle pravidlem bylo záplatou, protože se žádný endpoint nezměnil — a to je pravý opak toho, co uživatel potřebuje vědět. Zamítáme.
+2. **Sémantické verzování nad rozhraním nástroje.** Tedy semver, kde veřejnou plochou je REST kontrakt. Zní to jako standardní volba a je špatná: rozhraní je malé, stabilní a nudné, kdežto to, co konzumenta skutečně rozbije, je tvar generovaného kódu. Rozhodnutí 028 by pod tímhle pravidlem bylo záplatou, protože se žádný endpoint nezměnil — a to je pravý opak toho, co uživatel potřebuje vědět. Zamítáme.
 
 3. **Kalendářní verzování (`2026.08`).** Poctivé v tom, co říká — kdy vydání vzniklo —, a mlčenlivé v tom, na co se ptá S2. Datum nerozliší opravu od změny tvaru výstupu, takže by si uživatel stejně musel číst poznámky. Navíc by se hůř snášelo s tím, že verze cestuje v záznamu běhu jako součást tvrzení o kompatibilitě. Zamítáme.
 
@@ -42,7 +42,7 @@ Poslední díl je opačný konec téhož: **zafixované verze cizích balíčků
 **Vydání je čtyřkrokový postup a pořadí je jeho podstatou:**
 
 1. Práce je hotová, pracovní kopie čistá a CI zelené.
-2. `<Version>` v `Directory.Build.props` se posune na vydávané číslo **vlastním commitem**.
+2. `<Version>` v `Directory.Build.props` se posune na vydávané číslo **vlastním commitem**. Týmž commitem se posunou i pole `version` a `date-released` v `CITATION.cff` — je to jediný další strojově čitelný nositel čísla (`architecture.md` §1) a jinam se číslo neopisuje.
 3. Anotovaná značka `MAJOR.MINOR.PATCH` vzniká **na tomhle commitu**, ne na jiném.
 4. Anotace značky nese poznámky k vydání.
 
@@ -64,4 +64,10 @@ Krok 2 před krokem 3 je celý smysl seznamu: verze v sestavení a verze ve zna�
 
 **CI může nově zčervenat bez jediného commitu.** To je záměr, ne vada: hlášení proti zafixovanému balíčku je zpráva, kterou chceme dostat v týdnu, kdy vyjde, ne v den, kdy se náhodou sáhne na řešení. Cenou je jedna úloha navíc v každém běhu workflow a jeden naplánovaný běh týdně.
 
+**Poznámky k vydání se píšou až po posledním commitu, který do vydání patří.** Krok 1 žádá hotovou práci a zelené CI, ale neříkal, kdy se pořizují doklady, o které se poznámky opírají — a u 1.1.0 se právě tohle rozešlo: doklad o kontejnerovém běhu vznikl o den dřív než posledních sedmadvacet testů, které vydání inzeruje (`architecture.md` §6.2 a §6.4). Doklad pořízený před posledním commitem popisuje jiný strom, než na kterém stojí značka.
+
 **Nevzniká tím proces pro předběžná vydání ani pro větve.** Značky jako `1.1.0-rc1`, podpora starší řady a hotfix větve jsou nástroje pro tým a pro uživatele, kteří nemůžou aktualizovat; vývoj je sólo a na `main` (rozhodnutí 003 a `CLAUDE.md`). Až se objeví někdo, kdo na verzi 1.x zůstane, bude to nové rozhodnutí, ne rozšíření tohohle.
+
+## Historie
+
+**2026-08-23 — revidováno.** Volba se nemění: sémantické verzování s toutéž veřejnou plochou, týž čtyřkrokový postup, totéž pravidlo pro posun zafixovaných verzí. Doplnily se dva případy, na které se při psaní nemyslelo, a oba našlo vydání 1.1.0 — tedy první vydání podle tohohle předpisu. Ke kroku 2 přibylo, že se týmž commitem posouvá i `CITATION.cff`: `architecture.md` §1 na tohle rozhodnutí odkazoval jako na místo, které tu povinnost ukládá, jenže tady nebyla. A k postupu přibyl odstavec o tom, že doklady k poznámkám se pořizují až po posledním commitu vydání. Vedle toho je opravená číslovka v zamítnuté variantě 2 — stálo tam, že rozhraní má devět koncových bodů, a má osm; počet se odtud vypustil, protože pro argument nebyl podstatný a byl to druhý zápis čísla, které patří jinam.
