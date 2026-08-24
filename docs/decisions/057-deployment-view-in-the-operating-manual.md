@@ -1,7 +1,7 @@
 # 057 — Nasazovací pohled bydlí v provozní příručce, ne v architektuře
 
 Datum: 2026-08-24
-Stav: platí
+Stav: nahrazeno 058
 Požadavky: žádné
 Podklad: rozhodnutí [007](007-documentation-structure.md), audit 2026-08-23, nálezy 1.1 a 1.2
 

@@ -61,7 +61,8 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [054](054-nullable-key-part-is-a-reported-loss.md) | Jazyková nullabilita části klíče je hlášená ztráta | 2026-08-24 | platí | F1, F11, S2 |
 | [055](055-unique-constraint-as-a-carried-mapping-fact.md) | Unikátní omezení je nesené mapovací fakt, ne vyňatá oblast | 2026-08-24 | platí | F2, F4, F5, F11, S1, S2 |
 | [056](056-work-in-progress-input-stays-in-the-browser.md) | Rozpracovaný vstup překladové obrazovky zůstává v prohlížeči | 2026-08-24 | platí | F14, S7 |
-| [057](057-deployment-view-in-the-operating-manual.md) | Nasazovací pohled bydlí v provozní příručce, ne v architektuře | 2026-08-24 | platí | žádné |
+| [057](057-deployment-view-in-the-operating-manual.md) | Nasazovací pohled bydlí v provozní příručce, ne v architektuře | 2026-08-24 | nahrazeno [058](058-only-the-operational-half-of-the-deployment-view-moves.md) | žádné |
+| [058](058-only-the-operational-half-of-the-deployment-view-moves.md) | Do provozní příručky patří jen provozní polovina nasazovacího pohledu | 2026-08-24 | platí | žádné |
 
 ## Formát
 
