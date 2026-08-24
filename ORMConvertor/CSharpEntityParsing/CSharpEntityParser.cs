@@ -23,9 +23,11 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     }
 
     /// <summary>
-    /// Parses a C# class definition (optionally within a namespace) from the provided source code string.
+    /// Parses the C# classes of one source into entities. Every class declaration in the
+    /// text becomes an entity of its own - multi-class input is a shipped form of F14 -
+    /// and a nested class becomes a peer entity beside its container, not a member of it.
     /// </summary>
-    /// <param name="source">C# source code containing a single class, optionally wrapped in a namespace.</param>
+    /// <param name="source">C# source code with one or more classes, optionally wrapped in a namespace.</param>
     public void Parse(string source)
     {
         var root = CSharpSyntaxTree.ParseText(source).GetCompilationUnitRoot();
@@ -138,12 +140,25 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
         return namespaces.Count == 0 ? null : string.Join(".", namespaces);
     }
 
+    /// <summary>
+    /// The class header. Only the access tokens are handed over, the same filtering
+    /// <see cref="ReadProperty"/> does: the builder reads one access modifier, so a joined
+    /// "public sealed" would match none of its arms and the class would be recorded as
+    /// internal. A class with no access token stays internal, which is what C# means by it.
+    /// The remaining modifiers have no home in the model and are not carried.
+    /// </summary>
     private void ParseClassHeader(ClassDeclarationSyntax classDeclaration)
     {
-        var modifiers = string.Join(" ", classDeclaration.Modifiers.Select(m => m.Text));
+        var accessModifiers = string.Join(" ", classDeclaration.Modifiers
+            .Where(m =>
+                m.IsKind(SyntaxKind.PublicKeyword) ||
+                m.IsKind(SyntaxKind.PrivateKeyword) ||
+                m.IsKind(SyntaxKind.InternalKeyword) ||
+                m.IsKind(SyntaxKind.ProtectedKeyword))
+            .Select(m => m.Text));
 
         entityBuilder.AddClassHeader(
-            modifiers,
+            accessModifiers,
             classDeclaration.Identifier.Text
         );
     }

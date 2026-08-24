@@ -30,6 +30,9 @@ internal static class NHibernateQueryAcceptance
         ResolveEventHandler resolveGeneratedEntities = (_, args) =>
             new AssemblyName(args.Name).Name == assemblyName ? entities : null;
 
+        // The same process-global handler as the entity acceptance, so the same gate.
+        using var gate = NHibernateAcceptance.AssemblyResolveGate.EnterScope();
+
         AppDomain.CurrentDomain.AssemblyResolve += resolveGeneratedEntities;
         try
         {

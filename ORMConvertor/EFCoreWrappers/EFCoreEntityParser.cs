@@ -466,13 +466,21 @@ public class EFCoreEntityParser : CSharpEntityParser
 
     /// <summary>
     /// Checks if the given type is a collection type and extracts the target type if it is.
+    /// The recognized names are the ones the shared type vocabulary reads as a collection
+    /// (<see cref="Common.Convertors.CSharpTypeConvertor"/>, decision 014); a name this
+    /// misses would be read as a scalar candidate and the navigation would fall away in
+    /// silence - and the interface spellings matter, because this solution's own
+    /// NHibernate output declares collections as IList&lt;T&gt;/ISet&lt;T&gt; (decision 035).
     /// </summary>
     private static bool IsCollection(TypeSyntax type, out string target)
     {
         target = string.Empty;
 
         if (type is GenericNameSyntax g &&
-            (g.Identifier.ValueText is "List" or "ICollection" or "IEnumerable" or "HashSet") &&
+            (g.Identifier.ValueText is
+                "List" or "IList" or "IReadOnlyList"
+                or "HashSet" or "ISet" or "IReadOnlySet"
+                or "ICollection" or "IEnumerable" or "IReadOnlyCollection") &&
             g.TypeArgumentList.Arguments.Count == 1)
         {
             target = g.TypeArgumentList.Arguments[0].ToString();

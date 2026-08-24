@@ -22,10 +22,7 @@ public static class CSharpTypeConvertor
     /// <param name="isNullable">Language-side nullability of the property.</param>
     public static LangType FromString(string? typeText, bool isNullable = false)
     {
-        if (string.IsNullOrWhiteSpace(typeText))
-        {
-            throw new ArgumentNullException(nameof(typeText));
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(typeText);
 
         var text = typeText.Trim();
 

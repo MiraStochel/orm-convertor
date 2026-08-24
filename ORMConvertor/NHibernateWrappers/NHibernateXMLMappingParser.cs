@@ -679,9 +679,19 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     /// </summary>
     private static void ReadFacetsInto(Dictionary<string, string> dbProps, XElement element)
     {
-        if (bool.TryParse(element.Attribute("not-null")?.Value, out var notNull))
+        // Read three-state through the same lexical space as the other boolean attributes
+        // (see IsTrue): an absent attribute states nothing, so it must not become a claim,
+        // while both `true`/`false` and `1`/`0` are legal spellings of one.
+        if (element.Attribute("not-null")?.Value is string notNullText)
         {
-            dbProps["nullable"] = (!notNull).ToString().ToLowerInvariant();
+            if (notNullText == "1" || (bool.TryParse(notNullText, out var parsed) && parsed))
+            {
+                dbProps["nullable"] = "false";
+            }
+            else if (notNullText == "0" || bool.TryParse(notNullText, out _))
+            {
+                dbProps["nullable"] = "true";
+            }
         }
 
         if (element.Attribute("precision")?.Value is string precision && !string.IsNullOrWhiteSpace(precision))
@@ -781,25 +791,37 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
             }
 
             var manyToMany = collection.Elements().FirstOrDefault(e => e.Name.LocalName == "many-to-many");
-            if (manyToMany != null)
+            if (manyToMany is null)
             {
-                var target = manyToMany.Attribute("class")?.Value;
-                if (!string.IsNullOrEmpty(target))
-                {
-                    // The <key> and <many-to-many> columns belong to a junction table, not
-                    // to the target entity; together with the collection's table they are
-                    // what the junction entity is synthesized from (decision 005).
-                    entityBuilder.AddForeignKey(
-                        Cardinality.ManyToMany,
-                        propName,
-                        target,
-                        foreignKeyColumns: keyColumns,
-                        junction: new JunctionFacts(
-                            collection.Attribute("table")?.Value,
-                            collection.Attribute("schema")?.Value,
-                            ReadRelationColumns(manyToMany)));
-                    ApplyCollectionShape(collection, propName);
-                }
+                // Neither association element is there, so the collection holds something
+                // the model has no place for - values (<element>), a component, a nested
+                // collection. The four collection names are on the read list, so the
+                // boundary reporter never sees them and this is the only place that can
+                // say so (decision 030).
+                ReportCollectionShapeLoss(
+                    propName,
+                    $"The <{collection.Name.LocalName}> of '{propName}' holds no <one-to-many> or "
+                    + "<many-to-many>, so it is not an association between entities and the "
+                    + "representation has nowhere to keep it; the collection is dropped.");
+                continue;
+            }
+
+            var manyToManyTarget = manyToMany.Attribute("class")?.Value;
+            if (!string.IsNullOrEmpty(manyToManyTarget))
+            {
+                // The <key> and <many-to-many> columns belong to a junction table, not
+                // to the target entity; together with the collection's table they are
+                // what the junction entity is synthesized from (decision 005).
+                entityBuilder.AddForeignKey(
+                    Cardinality.ManyToMany,
+                    propName,
+                    manyToManyTarget,
+                    foreignKeyColumns: keyColumns,
+                    junction: new JunctionFacts(
+                        collection.Attribute("table")?.Value,
+                        collection.Attribute("schema")?.Value,
+                        ReadRelationColumns(manyToMany)));
+                ApplyCollectionShape(collection, propName);
             }
         }
     }

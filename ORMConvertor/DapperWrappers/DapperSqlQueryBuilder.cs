@@ -21,12 +21,21 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
     {
         artifact.Source.Append("FROM ").Append(clauses.From.Accept(visitor));
 
-        // Dapper materializes into a type the query itself never names, so the entity is
-        // derived from the table - a convention of ours, and reported as one.
+        // Dapper materializes into a type the query itself never names. The entities of the
+        // conversion are the first answer - the orchestration hands them over before
+        // generating, the same inverse move the two name-based targets make - and only where
+        // no entity is mapped to the table does the name come from the table itself, which is
+        // a convention of ours and is reported as one.
+        var map = EntityFor(clauses.From.Table);
         var table = clauses.From.Table.Split('.').LastOrDefault();
-        if (!string.IsNullOrEmpty(table))
+
+        if (map is not null)
         {
-            artifact.ResultEntity = table.EndsWith('s') ? table[..^1] : table;
+            artifact.ResultEntity = map.Entity.Name;
+        }
+        else if (!string.IsNullOrEmpty(table))
+        {
+            artifact.ResultEntity = table.Length > 1 && table.EndsWith('s') ? table[..^1] : table;
             Report(
                 ConversionRecordKind.Convention,
                 $"The result type '{artifact.ResultEntity}' was derived from the table name '{clauses.From.Table}'; the query does not name it.",

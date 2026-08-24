@@ -1300,14 +1300,11 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Finds an entity of this conversion by name; the match is on the simple class name,
-    /// which is how relations reference entities (decision 001).
-    /// </summary>
-    /// <summary>
     /// The entity of this conversion a possibly qualified name refers to, or null when the
     /// name points outside the conversion. Protected so that a builder can ask about the
     /// far side of a relation - the NHibernate builder derives the inverse attribute of a
-    /// collection from whether the owning counterpart is at hand.
+    /// collection from whether the owning counterpart is at hand. The match is on the simple
+    /// class name, which is how relations reference entities (decision 001).
     /// </summary>
     protected EntityMap? FindEntityMap(string entityName)
     {
@@ -1423,6 +1420,11 @@ public abstract class AbstractEntityBuilder
                                 $"An earlier source states precision {propertyMap.Precision}, a later one {precision}.");
                         }
                     }
+                    else
+                    {
+                        ReportUnreadableFact(propertyName, MappingFactCategory.PrecisionAndScale, "precision", kvp.Value);
+                    }
+
                     break;
                 case "scale":
                     if (int.TryParse(kvp.Value, out var scale))
@@ -1437,6 +1439,11 @@ public abstract class AbstractEntityBuilder
                                 $"An earlier source states scale {propertyMap.Scale}, a later one {scale}.");
                         }
                     }
+                    else
+                    {
+                        ReportUnreadableFact(propertyName, MappingFactCategory.PrecisionAndScale, "scale", kvp.Value);
+                    }
+
                     break;
                 case "length":
                     if (int.TryParse(kvp.Value, out var length))
@@ -1451,6 +1458,11 @@ public abstract class AbstractEntityBuilder
                                 $"An earlier source states length {propertyMap.Length}, a later one {length}.");
                         }
                     }
+                    else
+                    {
+                        ReportUnreadableFact(propertyName, MappingFactCategory.Length, "length", kvp.Value);
+                    }
+
                     break;
                 case "isnullable" or "nullable":
                     if (bool.TryParse(kvp.Value, out var isNullable))
@@ -1465,6 +1477,10 @@ public abstract class AbstractEntityBuilder
                                 $"An earlier source states the property is {(propertyMap.IsNullable.Value ? "nullable" : "not nullable")}, a later one states the opposite.");
                         }
                     }
+                    else
+                    {
+                        ReportUnreadableFact(propertyName, MappingFactCategory.Nullability, "nullable", kvp.Value);
+                    }
 
                     break;
                 case "isversion" or "version":
@@ -1473,6 +1489,10 @@ public abstract class AbstractEntityBuilder
                     if (bool.TryParse(kvp.Value, out var isVersion) && isVersion)
                     {
                         propertyMap.IsVersion = true;
+                    }
+                    else if (!bool.TryParse(kvp.Value, out _))
+                    {
+                        ReportUnreadableFact(propertyName, MappingFactCategory.VersionColumn, "version", kvp.Value);
                     }
 
                     break;
@@ -1581,6 +1601,22 @@ public abstract class AbstractEntityBuilder
             Property = property,
             Category = category,
             Reason = reason + " A fact read earlier is never overwritten by a later input source (decision 017), so the first value is kept.",
+        });
+
+    /// <summary>
+    /// A fact the source stated in a spelling the model cannot read. Reported rather than
+    /// dropped: silence would leave the target filling its own default in the place of
+    /// something the input did say (decision 010).
+    /// </summary>
+    private void ReportUnreadableFact(string? property, MappingFactCategory? category, string key, string value)
+        => Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = Descriptor.Framework,
+            Entity = EntityMap.Entity.Name,
+            Property = property,
+            Category = category,
+            Reason = $"The source states {key} '{value}', which is not a value the representation can hold; the fact is dropped and the target's own default applies.",
         });
 
     /// <summary>

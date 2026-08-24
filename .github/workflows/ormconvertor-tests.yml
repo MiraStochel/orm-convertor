@@ -117,6 +117,10 @@ jobs:
 
       - name: Check pinned packages against known advisories
         run: |
+          # Without pipefail the pipeline would report the status of tee, which succeeds
+          # whenever it can write the file: a failing `dotnet list` would pass this gate
+          # having checked nothing.
+          set -o pipefail
           dotnet list ORMConvertor.sln package --vulnerable --include-transitive | tee vulnerable.txt
           # The command reports advisories on stdout and still exits 0, so the exit code
           # has to be made here.

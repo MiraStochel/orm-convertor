@@ -18,6 +18,18 @@ namespace Tests.Verification;
 internal static class NHibernateAcceptance
 {
     /// <summary>
+    /// Serializes every acceptance that installs an <c>AssemblyResolve</c> handler. The
+    /// event is process-global and matched by assembly name alone, so two handlers live at
+    /// once would each be offered the other's resolutions; with the test collections running
+    /// in parallel by default (xunit.runner.json states no otherwise), nothing but this keeps
+    /// two of them apart. Held by the HQL acceptance as well, which installs the same handler.
+    /// A convention that every test compiles under its own assembly name would be a rule held
+    /// by hand - and a rule held by hand is exactly the scheduling-dependent outcome S2 rules
+    /// out.
+    /// </summary>
+    internal static readonly Lock AssemblyResolveGate = new();
+
+    /// <summary>
     /// Builds (and disposes) a session factory from the compiled generated entities and the
     /// generated mapping documents. Throws whatever NHibernate throws when it refuses them.
     /// </summary>
@@ -28,11 +40,13 @@ internal static class NHibernateAcceptance
 
         // NHibernate resolves class names through Assembly.Load, which cannot see an
         // assembly loaded from a byte image; the handler hands it ours and nothing else.
-        // The event is process-global and matched by name alone, so every acceptance test
-        // has to compile under its own assembly name: two tests sharing one and running in
-        // parallel would answer each other's resolutions with the wrong assembly.
+        // The event is process-global and matched by name alone, so two handlers live at
+        // once could answer each other's resolutions with the wrong assembly - the gate
+        // below, not a naming convention, is what keeps only one of them installed.
         ResolveEventHandler resolveGeneratedEntities = (_, args) =>
             new AssemblyName(args.Name).Name == assemblyName ? entities : null;
+
+        using var gate = AssemblyResolveGate.EnterScope();
 
         AppDomain.CurrentDomain.AssemblyResolve += resolveGeneratedEntities;
         try

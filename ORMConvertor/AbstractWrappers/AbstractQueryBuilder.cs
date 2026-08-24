@@ -188,7 +188,9 @@ public abstract class AbstractQueryBuilder
 
     public void SetOperation(SetOperationType operation)
     {
-        if (instructions.Last() is not SubQueryInstruction subQuery)
+        // Guarded before Last(), which on an empty list throws "Sequence contains no
+        // elements" - the commonest misuse would otherwise never see the message below.
+        if (instructions.Count == 0 || instructions[^1] is not SubQueryInstruction subQuery)
         {
             throw new InvalidOperationException("Set operation can only be initiated after a subquery has been defined. Use Push() to start a subquery and Pop() to end it.");
         }
