@@ -24,4 +24,12 @@ public enum MappingFactCategory
     /// to put it.
     /// </summary>
     VersionColumn = 11,
+
+    /// <summary>
+    /// A unique constraint over one or more columns (decision 055) - [Index(…, IsUnique =
+    /// true)] in EF Core, unique or unique-key in NHibernate; Dapper has nowhere to put it.
+    /// The primary key is not one of these: it has its own category, and stating it twice
+    /// would report the same fact twice.
+    /// </summary>
+    UniqueConstraint = 12,
 }

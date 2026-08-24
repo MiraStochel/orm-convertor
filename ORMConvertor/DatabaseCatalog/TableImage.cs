@@ -21,6 +21,13 @@ public sealed class TableImage
 
     public required IReadOnlyList<ForeignKeyImage> ForeignKeys { get; init; }
 
+    /// <summary>
+    /// Unique constraints other than the primary key, which has its own member above
+    /// (decision 055). Empty for most tables, which is why - like
+    /// <see cref="ColumnImage.IsRowVersion"/> - it is not required.
+    /// </summary>
+    public IReadOnlyList<UniqueConstraintImage> UniqueConstraints { get; init; } = [];
+
     public string QualifiedName => $"{Schema}.{Name}";
 
     /// <summary>
@@ -86,3 +93,16 @@ public sealed class ForeignKeyImage
 
 /// <summary>One column pair of a foreign key: the referencing column and the key column it points at.</summary>
 public sealed record ForeignKeyColumn(string Column, string ReferencedColumn);
+
+/// <summary>
+/// One unique constraint of a table image (decision 055). Columns keep the order of the
+/// constraint's own index, which is the order the catalog states and the only one the
+/// image can claim; the name is always present, because a database names every constraint
+/// even where the script did not.
+/// </summary>
+public sealed class UniqueConstraintImage
+{
+    public required string Name { get; init; }
+
+    public required IReadOnlyList<string> Columns { get; init; }
+}

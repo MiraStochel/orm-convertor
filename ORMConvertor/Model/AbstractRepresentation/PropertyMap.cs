@@ -42,6 +42,4 @@ public class PropertyMap
     /// means nobody stated it - no source states the opposite positively.
     /// </summary>
     public bool IsVersion { get; set; }
-
-    public Dictionary<string, string> OtherDatabaseProperties { get; set; } = [];
 }

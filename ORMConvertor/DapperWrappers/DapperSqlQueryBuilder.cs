@@ -1,6 +1,7 @@
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Naming;
 using Model;
 using Model.QueryInstructions;
 
@@ -13,7 +14,15 @@ namespace DapperWrappers;
 /// </summary>
 public class DapperSqlQueryBuilder : AbstractQueryBuilder
 {
-    private readonly IQueryVisitor visitor = new DapperSqlQueryVisitor();
+    private readonly IQueryVisitor visitor;
+
+    public DapperSqlQueryBuilder()
+    {
+        // The visitor reports into this builder's channel, the same wiring the other two
+        // targets do inside BuildSource; Dapper's visitor is stateless, so it is built once
+        // (decision 053).
+        visitor = new DapperSqlQueryVisitor((kind, reason, feature) => Report(kind, reason, feature));
+    }
 
     public override TargetFrameworkDescriptor Descriptor => DapperDescriptor.Instance;
 
@@ -35,7 +44,7 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
         }
         else if (!string.IsNullOrEmpty(table))
         {
-            artifact.ResultEntity = table.Length > 1 && table.EndsWith('s') ? table[..^1] : table;
+            artifact.ResultEntity = EntityTableNaming.EntityNameFor(table);
             Report(
                 ConversionRecordKind.Convention,
                 $"The result type '{artifact.ResultEntity}' was derived from the table name '{clauses.From.Table}'; the query does not name it.",

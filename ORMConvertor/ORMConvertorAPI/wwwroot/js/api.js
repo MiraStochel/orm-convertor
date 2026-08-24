@@ -85,6 +85,7 @@ export const MAPPING_FACT_CATEGORY_LABELS = Object.freeze({
   9: "primary key strategy",
   10: "foreign key columns",
   11: "version column",
+  12: "unique constraint",
 });
 
 export const QUERY_FEATURE_LABELS = Object.freeze({

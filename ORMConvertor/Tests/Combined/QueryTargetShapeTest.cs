@@ -233,7 +233,7 @@ public class DapperSqlToNHibernateHqlTest
         // The mapping is read only to establish the column-to-property correspondence the
         // HQL builder has to invert; the query itself arrives as Dapper SQL.
         var builder = new NHibernateHqlQueryBuilder { EntityMaps = [.. ReadMaps()] };
-        new DapperWrappers.DapperSqlQueryParser(builder).Parse(Sql);
+        new DapperWrappers.DapperSqlQueryParser(builder).Parse(ConversionContentType.SqlQuery, Sql);
 
         var hql = builder.Build().Single(s => s.ContentType == Model.ConversionContentType.HqlQuery).Content;
 

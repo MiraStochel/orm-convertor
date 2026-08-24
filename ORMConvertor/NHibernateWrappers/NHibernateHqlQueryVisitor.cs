@@ -86,8 +86,11 @@ public sealed class NHibernateHqlQueryVisitor(
 
         if (cond.Right is null)
         {
-            report(ConversionRecordKind.Loss, $"Operator {cond.Operator} has no right operand; the comparison was dropped.", QueryFeature.Filtering);
-            return "1 = 1";
+            // Unreachable: the template refuses such a tree before any step runs
+            // (decision 053). The "1 = 1" that used to stand here was not a loss but a
+            // different query - it returns every row the source filtered out.
+            report(ConversionRecordKind.Failure, $"Operator {cond.Operator} has no right operand; the query was not generated.", QueryFeature.Filtering);
+            return string.Empty;
         }
 
         return $"{left} {Operator(cond.Operator)} {Operand(cond.Right)}";
@@ -107,17 +110,28 @@ public sealed class NHibernateHqlQueryVisitor(
 
     public string Visit(NotCondition cond) => $"not ({cond.Operand.Accept(this)})";
 
-    private static string Operator(ComparisonOperator op) => op switch
+    /// <summary>
+    /// The comparison operators HQL spells, exhaustively. No catch-all branch: it used to
+    /// answer "in" to anything unmapped, so a value the target has no form for would come
+    /// out as a different operator instead of as a refusal (decision 053).
+    /// </summary>
+    private string Operator(ComparisonOperator op)
     {
-        ComparisonOperator.Equal => "=",
-        ComparisonOperator.NotEqual => "<>",
-        ComparisonOperator.GreaterThan => ">",
-        ComparisonOperator.GreaterThanOrEqual => ">=",
-        ComparisonOperator.LessThan => "<",
-        ComparisonOperator.LessThanOrEqual => "<=",
-        ComparisonOperator.Like => "like",
-        _ => "in",
-    };
+        switch (op)
+        {
+            case ComparisonOperator.Equal: return "=";
+            case ComparisonOperator.NotEqual: return "<>";
+            case ComparisonOperator.GreaterThan: return ">";
+            case ComparisonOperator.GreaterThanOrEqual: return ">=";
+            case ComparisonOperator.LessThan: return "<";
+            case ComparisonOperator.LessThanOrEqual: return "<=";
+            case ComparisonOperator.Like: return "like";
+            case ComparisonOperator.In: return "in";
+            default:
+                report(ConversionRecordKind.Failure, $"Operator {op} has no HQL form; the query was not generated.", QueryFeature.Filtering);
+                return string.Empty;
+        }
+    }
 
     private string Operand(QueryOperand operand)
         => operand.IsConstant

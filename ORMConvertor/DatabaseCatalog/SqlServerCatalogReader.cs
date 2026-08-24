@@ -5,10 +5,10 @@ namespace DatabaseCatalog;
 
 /// <summary>
 /// Reads the SQL Server catalog. The whole batch of requests is served by one connection
-/// and three queries - columns, primary keys, foreign keys - regardless of how many tables
-/// take part, so the phase stays bounded and measurable (S3) instead of turning into one
-/// query per missing fact. The sys.* views are used rather than INFORMATION_SCHEMA because
-/// identity and key ordering live only there.
+/// and four queries - columns, primary keys, foreign keys, unique constraints - regardless
+/// of how many tables take part, so the phase stays bounded and measurable (S3) instead of
+/// turning into one query per missing fact. The sys.* views are used rather than
+/// INFORMATION_SCHEMA because identity and key ordering live only there.
 /// </summary>
 public sealed class SqlServerCatalogReader(string connectionString) : ICatalogReader
 {
@@ -133,6 +133,7 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
         var columns = new Dictionary<(string Schema, string Table), List<ColumnImage>>();
         var keys = new Dictionary<(string Schema, string Table), List<string>>();
         var foreignKeys = new Dictionary<(string Schema, string Table), List<ForeignKeyImage>>();
+        var uniques = new Dictionary<(string Schema, string Table), List<UniqueConstraintImage>>();
 
         var inClause = string.Join(", ", Enumerable.Range(0, names.Count).Select(i => $"@n{i}"));
 
@@ -205,6 +206,60 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
             }
         }
 
+        // Unique constraints (decision 055). The same view as the primary key with the
+        // other type, so the shape of the query and the ordering rule are identical; only
+        // here several constraints share a table, which is why the name is read too and
+        // the ordering is by name before column, so that a constraint's columns arrive in
+        // one uninterrupted run.
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"""
+                SELECT s.name, t.name, kc.name, col.name
+                FROM sys.key_constraints kc
+                JOIN sys.tables t ON t.object_id = kc.parent_object_id
+                JOIN sys.schemas s ON s.schema_id = t.schema_id
+                JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+                JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+                WHERE kc.type = 'UQ' AND t.name IN ({inClause})
+                ORDER BY s.name, t.name, kc.name, ic.key_ordinal
+                """;
+            AddNameParameters(command);
+
+            using var reader = command.ExecuteReader();
+            (string Schema, string Table, string Name)? current = null;
+            List<string> constraintColumns = [];
+
+            void Flush()
+            {
+                if (current is not { } c)
+                {
+                    return;
+                }
+
+                if (!uniques.TryGetValue((c.Schema, c.Table), out var list))
+                {
+                    uniques[(c.Schema, c.Table)] = list = [];
+                }
+
+                list.Add(new UniqueConstraintImage { Name = c.Name, Columns = constraintColumns });
+                constraintColumns = [];
+            }
+
+            while (reader.Read())
+            {
+                var row = (Schema: reader.GetString(0), Table: reader.GetString(1), Name: reader.GetString(2));
+                if (current != row)
+                {
+                    Flush();
+                    current = row;
+                }
+
+                constraintColumns.Add(reader.GetString(3));
+            }
+
+            Flush();
+        }
+
         using (var command = connection.CreateCommand())
         {
             command.CommandText = $"""
@@ -273,6 +328,7 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
             Columns = entry.Value,
             PrimaryKeyColumns = keys.TryGetValue(entry.Key, out var pk) ? pk : [],
             ForeignKeys = foreignKeys.TryGetValue(entry.Key, out var fks) ? fks : [],
+            UniqueConstraints = uniques.TryGetValue(entry.Key, out var uqs) ? uqs : [],
         })];
     }
 

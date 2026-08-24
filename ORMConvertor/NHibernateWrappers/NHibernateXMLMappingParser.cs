@@ -14,7 +14,7 @@ namespace NHibernateWrappers;
 /// Parses NHibernate mapping from XML file.
 /// Uses LINQ to XML to parse the mapping and extract relevant information.
 /// </summary>
-public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : IParser
+public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : IEntityParser
 {
     public bool CanParse(ConversionContentType contentType)
     {
@@ -526,6 +526,13 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     /// </summary>
     private void ParseProperties(XElement classElement)
     {
+        // Grouped rather than added one by one: a multi-column constraint is spread over as
+        // many <property> elements as it covers, and the model holds it as one fact
+        // (decision 055). Insertion order is kept so that the model states the columns in
+        // the order the document does (S2).
+        var uniqueKeys = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var singles = new List<string>();
+
         foreach (var prop in classElement.Elements().Where(e => e.Name.LocalName == "property"))
         {
             var propertyName = prop.Attribute("name")?.Value;
@@ -542,6 +549,60 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
             );
 
             ApplyTypeFacts(prop, propertyName);
+            ReadUniqueness(prop, propertyName, uniqueKeys, singles);
+        }
+
+        foreach (var propertyName in singles)
+        {
+            entityBuilder.AddUniqueConstraint(null, [propertyName]);
+        }
+
+        foreach (var (name, propertyNames) in uniqueKeys)
+        {
+            entityBuilder.AddUniqueConstraint(name, propertyNames);
+        }
+    }
+
+    /// <summary>
+    /// The uniqueness a property element states (decision 055): unique="true" is a
+    /// constraint over that column alone, unique-key groups the columns sharing its value.
+    /// Both are read from the element itself and from a nested &lt;column&gt;, the two forms
+    /// NHibernate admits for every column fact - the same pair <see cref="ReadColumnFacts"/>
+    /// reads the other facets from.
+    ///
+    /// A property stating both is stating one constraint over itself and membership of
+    /// another, which is legal and produces two.
+    /// </summary>
+    private static void ReadUniqueness(
+        XElement element,
+        string propertyName,
+        Dictionary<string, List<string>> uniqueKeys,
+        List<string> singles)
+    {
+        var columnElement = element.Elements().FirstOrDefault(e => e.Name.LocalName == "column");
+
+        if (IsTrue(element, "unique") || (columnElement is not null && IsTrue(columnElement, "unique")))
+        {
+            singles.Add(propertyName);
+        }
+
+        var key = element.Attribute("unique-key")?.Value
+            ?? columnElement?.Attribute("unique-key")?.Value;
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        // NHibernate admits several groups on one column, comma-separated.
+        foreach (var group in key.Split(',').Select(g => g.Trim()).Where(g => g.Length > 0))
+        {
+            if (!uniqueKeys.TryGetValue(group, out var members))
+            {
+                uniqueKeys[group] = members = [];
+            }
+
+            members.Add(propertyName);
         }
     }
 
@@ -623,10 +684,13 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     /// Only the first &lt;column&gt; is read, because the model maps a property to a single
     /// column; a property spread over several columns would take a composite user type
     /// the model does not carry, so each further column is dropped with a record instead
-    /// of vanishing (decision 030). Attributes with no counterpart in the model - unique,
-    /// index, check, default - are skipped. The type attribute and the sql-type of a
-    /// nested &lt;column&gt; do not travel through this dictionary: they go through the typed
-    /// channel of <see cref="ApplyTypeFacts"/> (decision 019).
+    /// of vanishing (decision 030). Uniqueness travels its own way, as a fact of the entity
+    /// rather than of the column (<see cref="ReadUniqueness"/>, decision 055); index, check
+    /// and default have no counterpart in the model at all and each is reported as a loss
+    /// rather than skipped, which is what decision 048 rules for a fact with no place. The
+    /// type attribute and the sql-type of a nested &lt;column&gt; do not travel through this
+    /// dictionary either: they go through the typed channel of
+    /// <see cref="ApplyTypeFacts"/> (decision 019).
     /// </summary>
     private Dictionary<string, string> ReadColumnFacts(XElement element, string propertyName)
     {
@@ -638,6 +702,7 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         }
 
         ReadFacetsInto(dbProps, element);
+        ReportUnmodelledFacets(element, propertyName);
 
         var columnElements = element.Elements().Where(e => e.Name.LocalName == "column").ToList();
 
@@ -670,8 +735,39 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         }
 
         ReadFacetsInto(dbProps, columnElement);
+        ReportUnmodelledFacets(columnElement, propertyName);
 
         return dbProps;
+    }
+
+    /// <summary>
+    /// Column attributes the intermediate representation has no place for (decision 055).
+    /// A plain index is a performance artifact rather than a mapping fact; check and default
+    /// carry a literal SQL expression, which is a claim about a database dialect the tool
+    /// neither verifies nor translates, and which EF Core could state only through fluent
+    /// configuration this solution does not emit. None of the three enters the model - but
+    /// none of them vanishes without a record either, which is what decision 048 rules for
+    /// a fact the model cannot keep.
+    /// </summary>
+    private void ReportUnmodelledFacets(XElement element, string propertyName)
+    {
+        foreach (var name in new[] { "index", "check", "default" })
+        {
+            if (element.Attribute(name)?.Value is not string value || string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = entityBuilder.Descriptor.Framework,
+                Entity = entityBuilder.EntityMap.Entity.Name,
+                Property = propertyName,
+                Reason = $"The attribute {name}=\"{value}\" has no counterpart in the intermediate "
+                    + "representation and was dropped (decision 055).",
+            });
+        }
     }
 
     /// <summary>

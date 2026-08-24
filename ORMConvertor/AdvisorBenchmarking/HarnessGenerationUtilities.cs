@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Common.Naming;
 using DatabaseCatalog;
 using Model;
 
@@ -186,7 +187,7 @@ internal static class HarnessGenerationUtilities
             .Select(entry => new TableRequest(
                 entry.Index.ToString(),
                 Schema: null,
-                TableNameCandidates.For(entry.Info.TableName)))
+                EntityTableNaming.TableCandidatesFor(entry.Info.TableName)))
             .ToList();
 
         if (requests.Count == 0)

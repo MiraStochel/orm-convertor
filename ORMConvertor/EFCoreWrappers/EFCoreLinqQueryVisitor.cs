@@ -61,13 +61,27 @@ public sealed class EFCoreLinqQueryVisitor(LinqScope scope, Action<ConversionRec
 
     public string Visit(JoinInstruction instr) => instr.OnCondition.Accept(this);
 
-    public string Visit(SetOperationInstruction instr) => instr.OperationType switch
+    /// <summary>
+    /// The set operations LINQ names, exhaustively. ExceptAll has no LINQ method and used to
+    /// fall into the Except branch, which deduplicates rows the source keeps - a silent change
+    /// of meaning of exactly the kind decision 004 forbids, closed here by decision 053.
+    /// </summary>
+    public string Visit(SetOperationInstruction instr)
     {
-        SetOperationType.Union => "Union",
-        SetOperationType.UnionAll => "Concat",
-        SetOperationType.Intersect => "Intersect",
-        _ => "Except",
-    };
+        switch (instr.OperationType)
+        {
+            case SetOperationType.Union: return "Union";
+            case SetOperationType.UnionAll: return "Concat";
+            case SetOperationType.Intersect: return "Intersect";
+            case SetOperationType.Except: return "Except";
+            default:
+                report(
+                    ConversionRecordKind.Failure,
+                    $"The set operation {instr.OperationType} has no LINQ form; the query was not generated.",
+                    QueryFeature.SetOperation);
+                return string.Empty;
+        }
+    }
 
     public string Visit(ComparisonCondition cond)
     {
@@ -85,26 +99,93 @@ public sealed class EFCoreLinqQueryVisitor(LinqScope scope, Action<ConversionRec
 
         if (cond.Right is null)
         {
-            report(ConversionRecordKind.Loss, $"Operator {cond.Operator} has no right operand; the comparison was dropped.", QueryFeature.Filtering);
-            return "true";
+            // Unreachable: the template refuses such a tree before any step runs
+            // (decision 053). Reported rather than substituted, because a tautology in
+            // place of a filter returns rows the source excluded.
+            report(ConversionRecordKind.Failure, $"Operator {cond.Operator} has no right operand; the query was not generated.", QueryFeature.Filtering);
+            return string.Empty;
         }
 
-        // LINQ has no LIKE or IN operator; the nearest expressions are method calls, and
-        // they read differently enough to be worth reporting rather than pretending.
         if (cond.Operator == ComparisonOperator.Like)
         {
-            report(ConversionRecordKind.Convention, "A LIKE comparison was written as string.Contains, which anchors differently.", QueryFeature.Filtering);
-            return $"{left}.Contains({Operand(cond.Right)})";
+            return Like(left, cond.Right);
         }
 
         if (cond.Operator == ComparisonOperator.In)
         {
-            report(ConversionRecordKind.Loss, "An IN comparison has no LINQ form the query representation can carry; it was dropped.", QueryFeature.Filtering);
-            return "true";
+            // LINQ expresses IN as Contains over a collection of values, which the query
+            // representation does not carry. Refused rather than approximated: a dropped
+            // filter would silently widen the result set (decision 053).
+            report(ConversionRecordKind.Failure, "An IN comparison has no LINQ form the query representation can carry; the query was not generated.", QueryFeature.Filtering);
+            return string.Empty;
         }
 
         return $"{left} {Operator(cond.Operator)} {Operand(cond.Right)}";
     }
+
+    /// <summary>
+    /// A LIKE pattern in LINQ (decision 051). Where the pattern is anchored only at its ends
+    /// and its core carries no wildcard, the exact LINQ counterpart exists and is written:
+    /// <c>%x%</c> is Contains, <c>x%</c> StartsWith, <c>%x</c> EndsWith and a pattern without
+    /// wildcards is equality. Anything else - a wildcard in the middle, an underscore, a
+    /// character class, or a right side that is not a literal at all - goes out as
+    /// EF.Functions.Like, which EF Core translates to LIKE unchanged. Handing the pattern to
+    /// Contains verbatim, as this used to, searched for literal percent signs.
+    /// </summary>
+    private string Like(string left, QueryOperand right)
+    {
+        var literalPattern = right.IsConstant && right.Function is null ? right.Constant!.Text : null;
+
+        if (literalPattern is not null && TryReadPattern(literalPattern, out var method, out var core))
+        {
+            return method is null
+                ? $"{left} == {StringLiteral(core)}"
+                : $"{left}.{method}({StringLiteral(core)})";
+        }
+
+        // A LIKE pattern is a string whatever scalar the parser managed to put on it, so a
+        // constant goes out quoted rather than through the general literal rendering, which
+        // would spell an untyped one bare and the result would not compile.
+        var pattern = literalPattern is not null ? StringLiteral(literalPattern) : Operand(right);
+
+        return $"EF.Functions.Like({left}, {pattern})";
+    }
+
+    /// <summary>
+    /// Splits a LIKE pattern into its anchors and its core, or refuses. The core has to be
+    /// free of every wildcard: EF Core escapes the argument of Contains and friends, so a
+    /// core holding <c>_</c> would come out matching a literal underscore where the source
+    /// matched any character.
+    /// </summary>
+    /// <param name="method">The string method to call, or null for plain equality.</param>
+    private static bool TryReadPattern(string pattern, out string? method, out string core)
+    {
+        method = null;
+        core = pattern;
+
+        var leading = pattern.StartsWith('%');
+        var trailing = pattern.Length > (leading ? 1 : 0) && pattern.EndsWith('%');
+
+        core = pattern[(leading ? 1 : 0)..(pattern.Length - (trailing ? 1 : 0))];
+
+        if (core.AsSpan().IndexOfAny('%', '_', '[') >= 0)
+        {
+            return false;
+        }
+
+        method = (leading, trailing) switch
+        {
+            (true, true) => "Contains",
+            (false, true) => "StartsWith",
+            (true, false) => "EndsWith",
+            _ => null,
+        };
+
+        return true;
+    }
+
+    private static string StringLiteral(string text)
+        => $"\"{text.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
 
     public string Visit(LogicalCondition cond)
     {
@@ -120,15 +201,27 @@ public sealed class EFCoreLinqQueryVisitor(LinqScope scope, Action<ConversionRec
 
     public string Visit(NotCondition cond) => $"!({cond.Operand.Accept(this)})";
 
-    private static string Operator(ComparisonOperator op) => op switch
+    /// <summary>
+    /// The relational operators, exhaustively. No catch-all branch: a value the target has
+    /// no form for used to come out as the neighbouring operator, which is a silent change
+    /// of meaning rather than a loss (decision 053). Like, In and the null tests never reach
+    /// here - they have their own shapes above.
+    /// </summary>
+    private string Operator(ComparisonOperator op)
     {
-        ComparisonOperator.Equal => "==",
-        ComparisonOperator.NotEqual => "!=",
-        ComparisonOperator.GreaterThan => ">",
-        ComparisonOperator.GreaterThanOrEqual => ">=",
-        ComparisonOperator.LessThan => "<",
-        _ => "<=",
-    };
+        switch (op)
+        {
+            case ComparisonOperator.Equal: return "==";
+            case ComparisonOperator.NotEqual: return "!=";
+            case ComparisonOperator.GreaterThan: return ">";
+            case ComparisonOperator.GreaterThanOrEqual: return ">=";
+            case ComparisonOperator.LessThan: return "<";
+            case ComparisonOperator.LessThanOrEqual: return "<=";
+            default:
+                report(ConversionRecordKind.Failure, $"Operator {op} has no LINQ form; the query was not generated.", QueryFeature.Filtering);
+                return string.Empty;
+        }
+    }
 
     public string Operand(QueryOperand operand)
         => operand.IsConstant ? Literal(operand.Constant!) : Column(operand.Table, operand.Property!, operand.Function);
@@ -250,7 +343,7 @@ public sealed class EFCoreLinqQueryVisitor(LinqScope scope, Action<ConversionRec
     /// </summary>
     private string Literal(QueryConstant constant) => constant.Type switch
     {
-        ScalarType.String => $"\"{constant.Text.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"",
+        ScalarType.String => StringLiteral(constant.Text),
         ScalarType.Char => $"'{constant.Text}'",
         ScalarType.Bool => constant.Text.ToLowerInvariant(),
         ScalarType.Long => constant.Text + "L",

@@ -1,4 +1,4 @@
--- Schema owned by the test suite (decision 016). It is created before the database
+﻿-- Schema owned by the test suite (decision 016). It is created before the database
 -- collection runs and dropped afterwards; nothing here refers to WideWorldImporters.
 --
 -- The fixture is at the same time the expected answer: with Dapper as the source only
@@ -111,7 +111,10 @@ CREATE TABLE [{{schema}}].[ProductSuppliers] (
     CONSTRAINT [FK_ProductSuppliers_Products] FOREIGN KEY ([ProductId])
         REFERENCES [{{schema}}].[Products] ([ProductId]),
     CONSTRAINT [FK_ProductSuppliers_Suppliers] FOREIGN KEY ([SupplierId])
-        REFERENCES [{{schema}}].[Suppliers] ([SupplierId])
+        REFERENCES [{{schema}}].[Suppliers] ([SupplierId]),
+    -- A unique constraint over two columns, so that reading them as one constraint in
+    -- the stated order is measurable against a real catalog (F4, decision 055).
+    CONSTRAINT [UQ_ProductSuppliers_SupplierSku] UNIQUE ([SupplierId], [SupplierSku])
 );
 GO
 

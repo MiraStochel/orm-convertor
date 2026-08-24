@@ -2,10 +2,12 @@
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Convertors;
+using Common.Xml;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers.Convertors;
+using System.Globalization;
 using System.Text;
 
 namespace NHibernateWrappers;
@@ -43,17 +45,20 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         }
 
         // XML: prolog + root <hibernate-mapping>
-        AppendXml(artifact.Mapping, 0, "<?xml version=\"1.0\" encoding=\"utf-8\" ?>");
-        var xmlNs = "urn:nhibernate-mapping-2.2";
-        var nsAttr = string.IsNullOrWhiteSpace(entityMap.Entity.Namespace)
-            ? string.Empty
-            : $" namespace=\"{entityMap.Entity.Namespace}\"";
+        XmlEmitter.Prolog(artifact.Mapping);
+
+        var rootAttrs = new List<XmlAttribute> { new("xmlns", "urn:nhibernate-mapping-2.2") };
+
+        if (!string.IsNullOrWhiteSpace(entityMap.Entity.Namespace))
+        {
+            rootAttrs.Add(new("namespace", entityMap.Entity.Namespace));
+        }
         // NHibernate resolves a persistent class by namespace and assembly. The namespace is
         // above; the assembly is a contribution of the consumer project, like the project
         // file or the connection string, so it is left out rather than invented from the
         // namespace (decision 028). No record: it is absent from every mapping we generate,
         // which makes it a property of the format and not a finding about this conversion.
-        AppendXml(artifact.Mapping, 0, $"<hibernate-mapping xmlns=\"{xmlNs}\"{nsAttr}>");
+        XmlEmitter.Open(artifact.Mapping, 0, "hibernate-mapping", rootAttrs);
     }
 
     /// <summary>
@@ -80,10 +85,14 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         // consumer project supplies, because which assembly the class ends up in is a fact
         // of that project and not of the conversion (decision 028).
         var table = entityMap.Table ?? name; // default = class name
-        var schema = entityMap.Schema ?? string.Empty;
-        var schemaAttr = string.IsNullOrWhiteSpace(schema) ? string.Empty : $" schema=\"{schema}\"";
+        var classAttrs = new List<XmlAttribute> { new("name", name), new("table", table) };
 
-        AppendXml(artifact.Mapping, 1, $"<class name=\"{name}\" table=\"{table}\"{schemaAttr}>");
+        if (!string.IsNullOrWhiteSpace(entityMap.Schema))
+        {
+            classAttrs.Add(new("schema", entityMap.Schema));
+        }
+
+        XmlEmitter.Open(artifact.Mapping, 1, "class", classAttrs);
         artifact.ClassOpened = true;
     }
 
@@ -104,27 +113,33 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             var prop = propertyMap.Property;
             var columnName = propertyMap.ColumnName ?? prop.Name;
 
+            ReportNullableKeyPartLoss(entityMap, prop, ConversionContentType.CSharpEntity);
             AppendPropertyToCode(artifact.Code, entityMap, prop, isPrimaryKey: true);
 
             var facets = BuildColumnFacets(entityMap, propertyMap);
+            var idAttrs = new List<XmlAttribute> { new("name", prop.Name) };
+
             if (facets.Count == 0)
             {
-                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\" column=\"{columnName}\"{TypeAttribute(entityMap, propertyMap)}>");
+                idAttrs.Add(new("column", columnName));
+                AddTypeAttribute(idAttrs, entityMap, propertyMap);
+                XmlEmitter.Open(artifact.Mapping, 2, "id", idAttrs);
             }
             else
             {
-                AppendXml(artifact.Mapping, 2, $"<id name=\"{prop.Name}\"{TypeAttribute(entityMap, propertyMap)}>");
-                AppendXml(artifact.Mapping, 3, $"<column name=\"{columnName}\" {string.Join(' ', facets)} />");
+                AddTypeAttribute(idAttrs, entityMap, propertyMap);
+                XmlEmitter.Open(artifact.Mapping, 2, "id", idAttrs);
+                XmlEmitter.Empty(artifact.Mapping, 3, "column", ColumnAttributes(columnName, facets));
             }
 
             AppendGenerator(artifact.Mapping, entityMap, part);
-            AppendXml(artifact.Mapping, 2, "</id>");
+            XmlEmitter.Close(artifact.Mapping, 2, "id");
             return;
         }
 
         // Composite key: <composite-id> without a generator (assigned semantics),
         // the order of <key-property> elements matches PrimaryKeyPart.Order.
-        AppendXml(artifact.Mapping, 2, "<composite-id>");
+        XmlEmitter.Open(artifact.Mapping, 2, "composite-id");
         foreach (var part in entityMap.PrimaryKey.Parts)
         {
             var propertyMap = part.PropertyMap;
@@ -147,21 +162,27 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 });
             }
 
+            ReportNullableKeyPartLoss(entityMap, prop, ConversionContentType.CSharpEntity);
             AppendPropertyToCode(artifact.Code, entityMap, prop, isPrimaryKey: true);
 
             var facets = BuildColumnFacets(entityMap, propertyMap);
+            var partAttrs = new List<XmlAttribute> { new("name", prop.Name) };
+
             if (facets.Count == 0)
             {
-                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\" column=\"{columnName}\"{TypeAttribute(entityMap, propertyMap)} />");
+                partAttrs.Add(new("column", columnName));
+                AddTypeAttribute(partAttrs, entityMap, propertyMap);
+                XmlEmitter.Empty(artifact.Mapping, 3, "key-property", partAttrs);
             }
             else
             {
-                AppendXml(artifact.Mapping, 3, $"<key-property name=\"{prop.Name}\"{TypeAttribute(entityMap, propertyMap)}>");
-                AppendXml(artifact.Mapping, 4, $"<column name=\"{columnName}\" {string.Join(' ', facets)} />");
-                AppendXml(artifact.Mapping, 3, "</key-property>");
+                AddTypeAttribute(partAttrs, entityMap, propertyMap);
+                XmlEmitter.Open(artifact.Mapping, 3, "key-property", partAttrs);
+                XmlEmitter.Empty(artifact.Mapping, 4, "column", ColumnAttributes(columnName, facets));
+                XmlEmitter.Close(artifact.Mapping, 3, "key-property");
             }
         }
-        AppendXml(artifact.Mapping, 2, "</composite-id>");
+        XmlEmitter.Close(artifact.Mapping, 2, "composite-id");
     }
 
     /// <summary>
@@ -208,8 +229,20 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// The type attribute of an &lt;id&gt; or &lt;key-property&gt;, empty when there is
     /// nothing to claim - NHibernate then infers the type from the persistent class.
     /// </summary>
-    private string TypeAttribute(EntityMap entityMap, PropertyMap propertyMap)
-        => ResolveNhType(entityMap, propertyMap) is string type ? $" type=\"{type}\"" : string.Empty;
+    private void AddTypeAttribute(List<XmlAttribute> attributes, EntityMap entityMap, PropertyMap propertyMap)
+    {
+        if (ResolveNhType(entityMap, propertyMap) is string type)
+        {
+            attributes.Add(new XmlAttribute("type", type));
+        }
+    }
+
+    /// <summary>The attributes of a nested column element: its name, then the facets.</summary>
+    private static List<XmlAttribute> ColumnAttributes(string columnName, IEnumerable<XmlAttribute> facets)
+        => [new XmlAttribute("name", columnName), .. facets];
+
+    /// <summary>A number in an attribute, spelled the same way in every culture (S2).</summary>
+    private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Facets of a key column that NHibernate accepts only inside a nested &lt;column&gt; element.
@@ -225,28 +258,28 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// An empty result means the compact form with a column attribute is enough, which keeps
     /// the output of a plain key exactly as it was.
     /// </summary>
-    private List<string> BuildColumnFacets(EntityMap entityMap, PropertyMap propertyMap)
+    private List<XmlAttribute> BuildColumnFacets(EntityMap entityMap, PropertyMap propertyMap)
     {
-        var facets = new List<string>();
+        var facets = new List<XmlAttribute>();
 
         if (propertyMap.Length.HasValue)
         {
-            facets.Add($"length=\"{propertyMap.Length.Value}\"");
+            facets.Add(new("length", Number(propertyMap.Length.Value)));
         }
 
         if (PrecisionIsExpressible(entityMap, propertyMap))
         {
-            facets.Add($"precision=\"{propertyMap.Precision!.Value}\"");
+            facets.Add(new("precision", Number(propertyMap.Precision!.Value)));
         }
 
         if (propertyMap.Scale.HasValue)
         {
-            facets.Add($"scale=\"{propertyMap.Scale.Value}\"");
+            facets.Add(new("scale", Number(propertyMap.Scale.Value)));
         }
 
         if (propertyMap.SourceSqlType is not null)
         {
-            facets.Add($"sql-type=\"{propertyMap.SourceSqlType}\"");
+            facets.Add(new("sql-type", propertyMap.SourceSqlType));
         }
 
         return facets;
@@ -291,6 +324,8 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// </summary>
     protected override void BuildProperties(EntityMap entityMap, EntityArtifact artifact)
     {
+        ReportUnplaceableUniqueConstraints(entityMap);
+
         var version = AppendVersion(entityMap, artifact);
 
         foreach (var pm in entityMap.PropertyMaps)
@@ -384,79 +419,74 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         AppendPropertyToCode(artifact.Code, entityMap, version.Property);
 
-        var attrs = new List<string> { $"name=\"{version.Property.Name}\"" };
+        var attrs = new List<XmlAttribute> { new("name", version.Property.Name) };
 
         if (version.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob)
         {
-            attrs.Add("generated=\"always\"");
+            attrs.Add(new("generated", "always"));
         }
 
-        var typeAttr = version.Type.HasValue
-            ? $"type=\"{ResolveNhType(entityMap, version)}\""
+        XmlAttribute? typeAttr = version.Type.HasValue
+            ? new XmlAttribute("type", ResolveNhType(entityMap, version)!)
             : null;
 
-        string? notNull = null;
+        var notNull = NotNullAttribute(version);
 
-        if (version.IsNullable.HasValue)
-        {
-            notNull = $"not-null=\"{(!version.IsNullable.Value).ToString().ToLowerInvariant()}\"";
-        }
-        else if (version.Property.Type is { IsNullable: false })
-        {
-            notNull = "not-null=\"true\"";
-        }
-
-        var columnFacets = new List<string>();
+        var columnFacets = new List<XmlAttribute>();
 
         if (notNull is not null)
         {
-            columnFacets.Add(notNull);
+            columnFacets.Add(notNull.Value);
         }
 
         if (version.Length.HasValue)
         {
-            columnFacets.Add($"length=\"{version.Length.Value}\"");
+            columnFacets.Add(new("length", Number(version.Length.Value)));
         }
 
         if (PrecisionIsExpressible(entityMap, version))
         {
-            columnFacets.Add($"precision=\"{version.Precision!.Value}\"");
+            columnFacets.Add(new("precision", Number(version.Precision!.Value)));
         }
 
         if (version.Scale.HasValue)
         {
-            columnFacets.Add($"scale=\"{version.Scale.Value}\"");
+            columnFacets.Add(new("scale", Number(version.Scale.Value)));
         }
 
         if (version.SourceSqlType is not null)
         {
-            columnFacets.Add($"sql-type=\"{version.SourceSqlType}\"");
+            columnFacets.Add(new("sql-type", version.SourceSqlType));
         }
 
         if (columnFacets.Count == 0)
         {
             if (!string.IsNullOrWhiteSpace(version.ColumnName))
             {
-                attrs.Add($"column=\"{version.ColumnName}\"");
+                attrs.Add(new("column", version.ColumnName));
             }
 
             if (typeAttr is not null)
             {
-                attrs.Add(typeAttr);
+                attrs.Add(typeAttr.Value);
             }
 
-            AppendXml(artifact.Mapping, 2, $"<version {string.Join(' ', attrs)} />");
+            XmlEmitter.Empty(artifact.Mapping, 2, "version", attrs);
             return version;
         }
 
         if (typeAttr is not null)
         {
-            attrs.Add(typeAttr);
+            attrs.Add(typeAttr.Value);
         }
 
-        AppendXml(artifact.Mapping, 2, $"<version {string.Join(' ', attrs)}>");
-        AppendXml(artifact.Mapping, 3, $"<column name=\"{version.ColumnName ?? version.Property.Name}\" {string.Join(' ', columnFacets)} />");
-        AppendXml(artifact.Mapping, 2, "</version>");
+        XmlEmitter.Open(artifact.Mapping, 2, "version", attrs);
+        XmlEmitter.Empty(
+            artifact.Mapping,
+            3,
+            "column",
+            ColumnAttributes(version.ColumnName ?? version.Property.Name, columnFacets));
+        XmlEmitter.Close(artifact.Mapping, 2, "version");
         return version;
     }
 
@@ -514,38 +544,38 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     {
         var element = propertyMap.Property.Type is { CollectionKind: CollectionKind.Set } ? "set" : "bag";
 
-        var attrs = new List<string> { $"name=\"{propertyMap.Property.Name}\"" };
+        var attrs = new List<XmlAttribute> { new("name", propertyMap.Property.Name) };
 
         var junction = relation.Cardinality == Cardinality.ManyToMany ? StatedJunctionFacts(relation) : null;
 
         if (junction?.Table is not null)
         {
-            attrs.Add($"table=\"{junction.Table}\"");
+            attrs.Add(new("table", junction.Table));
         }
 
         if (junction?.Schema is not null)
         {
-            attrs.Add($"schema=\"{junction.Schema}\"");
+            attrs.Add(new("schema", junction.Schema));
         }
 
         if (CollectionIsInverse(entityMap, relation))
         {
-            attrs.Add("inverse=\"true\"");
+            attrs.Add(new("inverse", "true"));
         }
 
-        AppendXml(mapping, 2, $"<{element} {string.Join(' ', attrs)}>");
+        XmlEmitter.Open(mapping, 2, element, attrs);
         AppendKey(mapping, entityMap, relation);
 
         if (relation.Cardinality == Cardinality.OneToMany)
         {
-            AppendXml(mapping, 3, $"<one-to-many class=\"{relation.TargetEntity}\" />");
+            XmlEmitter.Empty(mapping, 3, "one-to-many", [new XmlAttribute("class", relation.TargetEntity)]);
         }
         else // ManyToMany
         {
             AppendManyToMany(mapping, relation, junction);
         }
 
-        AppendXml(mapping, 2, $"</{element}>");
+        XmlEmitter.Close(mapping, 2, element);
     }
 
     /// <summary>
@@ -603,26 +633,28 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     {
         var columns = junction?.TargetColumns ?? [];
 
+        var classAttr = new XmlAttribute("class", relation.TargetEntity);
+
         if (columns.Count == 0)
         {
-            AppendXml(mapping, 3, $"<many-to-many class=\"{relation.TargetEntity}\" />");
+            XmlEmitter.Empty(mapping, 3, "many-to-many", [classAttr]);
             return;
         }
 
         if (columns.Count == 1)
         {
-            AppendXml(mapping, 3, $"<many-to-many class=\"{relation.TargetEntity}\" column=\"{columns[0]}\" />");
+            XmlEmitter.Empty(mapping, 3, "many-to-many", [classAttr, new XmlAttribute("column", columns[0])]);
             return;
         }
 
-        AppendXml(mapping, 3, $"<many-to-many class=\"{relation.TargetEntity}\">");
+        XmlEmitter.Open(mapping, 3, "many-to-many", [classAttr]);
 
         foreach (var column in columns)
         {
-            AppendXml(mapping, 4, $"<column name=\"{column}\" />");
+            XmlEmitter.Empty(mapping, 4, "column", [new XmlAttribute("name", column)]);
         }
 
-        AppendXml(mapping, 3, "</many-to-many>");
+        XmlEmitter.Close(mapping, 3, "many-to-many");
     }
 
     private static PropertyMap? FindNavigationPropertyMap(EntityMap em, Relation relation)
@@ -723,10 +755,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         if (artifact.ClassOpened)
         {
-            AppendXml(artifact.Mapping, 1, "</class>");
+            XmlEmitter.Close(artifact.Mapping, 1, "class");
         }
 
-        AppendXml(artifact.Mapping, 0, "</hibernate-mapping>", appendLine: false);
+        XmlEmitter.Close(artifact.Mapping, 0, "hibernate-mapping", appendLine: false);
 
         yield return new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = artifact.Code.ToString() };
         yield return new ConversionSource { ContentType = ConversionContentType.XML, Content = artifact.Mapping.ToString() };
@@ -743,6 +775,132 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
+    /// The unique attributes of a property element (decision 055): unique="true" where the
+    /// constraint covers this property alone, unique-key="…" where it groups several. Both
+    /// live on &lt;property&gt; and on a nested &lt;column&gt;, so the caller places them in
+    /// whichever form it is writing.
+    ///
+    /// The grouping token of a nameless multi-column constraint is derived rather than
+    /// asked for: NHibernate needs one to tie the columns together, and unique-key names a
+    /// group inside the document rather than a constraint in the database, so deriving it
+    /// claims nothing about the schema. It is reported as a convention of the target all the
+    /// same (decision 010), and derived deterministically so that the artifact stays
+    /// byte-wise stable (S2).
+    /// </summary>
+    private List<XmlAttribute> UniqueAttributes(EntityMap entityMap, PropertyMap propertyMap)
+    {
+        var attributes = new List<XmlAttribute>();
+
+        foreach (var constraint in PlaceableUniqueConstraints(entityMap))
+        {
+            if (constraint.PropertyNames.Count == 1)
+            {
+                if (constraint.PropertyNames[0] == propertyMap.Property.Name)
+                {
+                    attributes.Add(new("unique", "true"));
+                }
+
+                continue;
+            }
+
+            if (!constraint.PropertyNames.Contains(propertyMap.Property.Name, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            var key = constraint.Name;
+
+            if (key is null)
+            {
+                key = $"UQ_{entityMap.Entity.Name}_{string.Join("_", constraint.PropertyNames)}";
+
+                // Once per constraint, not once per column it covers: the convention is one
+                // decision of the tool, however many elements carry its result.
+                if (constraint.PropertyNames[0] == propertyMap.Property.Name)
+                {
+                    Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Convention,
+                        Framework = Descriptor.Framework,
+                        Artifact = ConversionContentType.XML,
+                        Entity = entityMap.Entity.Name,
+                        Property = propertyMap.Property.Name,
+                        Category = MappingFactCategory.UniqueConstraint,
+                        Reason = $"The unique constraint over ({string.Join(", ", constraint.PropertyNames)}) has no name and "
+                            + $"NHibernate groups its columns by one, so unique-key=\"{key}\" is written by the tool's own "
+                            + "convention (decision 055).",
+                    });
+                }
+            }
+
+            attributes.Add(new("unique-key", key));
+        }
+
+        return attributes;
+    }
+
+    /// <summary>
+    /// Constraints that can reach the mapping at all: every part has to be a plain mapped
+    /// property, because unique and unique-key are written on &lt;property&gt;. The
+    /// unplaceable ones are reported once per entity by
+    /// <see cref="ReportUnplaceableUniqueConstraints"/> and skipped here.
+    /// </summary>
+    private static IEnumerable<UniqueConstraint> PlaceableUniqueConstraints(EntityMap entityMap)
+        => entityMap.UniqueConstraints.Where(c => c.PropertyNames.All(name => IsPlainProperty(entityMap, name)));
+
+    /// <summary>
+    /// Whether a property reaches the mapping as a &lt;property&gt; element. A key part is
+    /// written as &lt;id&gt; or &lt;key-property&gt;, a navigation as an association and the
+    /// row version as &lt;version&gt;, and none of those three is a place where a unique
+    /// constraint of the schema could go: on an association the unique attribute already
+    /// means the owning side of a 1:1 (decision 012), and a second meaning would make the
+    /// output ambiguous.
+    /// </summary>
+    private static bool IsPlainProperty(EntityMap entityMap, string propertyName)
+    {
+        var propertyMap = entityMap.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == propertyName);
+
+        return propertyMap is not null
+            && !propertyMap.IsVersion
+            && entityMap.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == propertyName) != true
+            && !entityMap.Relations.Any(r => r.SourceNavigationProperty == propertyName)
+            && propertyMap.Property.Type is not { Category: LangTypeCategory.Collection };
+    }
+
+    /// <summary>
+    /// One loss record per constraint that has nowhere to go (decision 055). Written before
+    /// the properties, so the record stands whether or not the properties concerned reach
+    /// the output at all.
+    /// </summary>
+    private void ReportUnplaceableUniqueConstraints(EntityMap entityMap)
+    {
+        foreach (var constraint in entityMap.UniqueConstraints)
+        {
+            var unplaceable = constraint.PropertyNames
+                .Where(name => !IsPlainProperty(entityMap, name))
+                .ToList();
+
+            if (unplaceable.Count == 0)
+            {
+                continue;
+            }
+
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Entity = entityMap.Entity.Name,
+                Property = constraint.PropertyNames.Count == 1 ? constraint.PropertyNames[0] : null,
+                Category = MappingFactCategory.UniqueConstraint,
+                Reason = $"NHibernate states a unique constraint on the <property> elements it covers, and "
+                    + $"({string.Join(", ", unplaceable)}) {(unplaceable.Count == 1 ? "is" : "are")} not written as one - "
+                    + "an identifier, an association or the row version. The constraint is dropped (decision 004).",
+            });
+        }
+    }
+
+    /// <summary>
     /// Appends a property to the XML mapping. A column may be mapped writable only once:
     /// when a relation of the entity claims the same column through its pairs, the scalar
     /// property is mapped read-only and the association keeps the write, otherwise
@@ -756,46 +914,35 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     {
         var prop = propertyMap.Property;
 
-        var attrs = new List<string> { $"name=\"{prop.Name}\"" };
+        var attrs = new List<XmlAttribute> { new("name", prop.Name) };
 
         if (ColumnBelongsToRelation(entityMap, propertyMap.ColumnName ?? prop.Name))
         {
-            attrs.Add("insert=\"false\"");
-            attrs.Add("update=\"false\"");
+            attrs.Add(new("insert", "false"));
+            attrs.Add(new("update", "false"));
         }
 
-        string? notNull = null;
+        var notNull = NotNullAttribute(propertyMap);
 
-        if (propertyMap.IsNullable.HasValue)
-        {
-            notNull = $"not-null=\"{(!propertyMap.IsNullable.Value).ToString().ToLowerInvariant()}\"";
-        }
-        else if (prop.Type is { IsNullable: false })
-        {
-            // The language side is the fallback claim; a property with no stated type
-            // says nothing about nullability either.
-            notNull = "not-null=\"true\"";
-        }
-
-        var typeAttr = propertyMap.Type.HasValue
-            ? $"type=\"{ResolveNhType(entityMap, propertyMap)}\""
+        XmlAttribute? typeAttr = propertyMap.Type.HasValue
+            ? new XmlAttribute("type", ResolveNhType(entityMap, propertyMap)!)
             : null;
 
-        var sizeFacets = new List<string>();
+        var sizeFacets = new List<XmlAttribute>();
 
         if (PrecisionIsExpressible(entityMap, propertyMap))
         {
-            sizeFacets.Add($"precision=\"{propertyMap.Precision!.Value}\"");
+            sizeFacets.Add(new("precision", Number(propertyMap.Precision!.Value)));
         }
 
         if (propertyMap.Scale.HasValue)
         {
-            sizeFacets.Add($"scale=\"{propertyMap.Scale.Value}\"");
+            sizeFacets.Add(new("scale", Number(propertyMap.Scale.Value)));
         }
 
         if (propertyMap.Length.HasValue)
         {
-            sizeFacets.Add($"length=\"{propertyMap.Length.Value}\"");
+            sizeFacets.Add(new("length", Number(propertyMap.Length.Value)));
         }
 
         if (propertyMap.SourceSqlType is null)
@@ -803,43 +950,49 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             // The compact form: everything as attributes of the property element itself.
             if (!string.IsNullOrWhiteSpace(propertyMap.ColumnName))
             {
-                attrs.Add($"column=\"{propertyMap.ColumnName}\"");
+                attrs.Add(new("column", propertyMap.ColumnName));
             }
 
             if (notNull is not null)
             {
-                attrs.Add(notNull);
+                attrs.Add(notNull.Value);
             }
 
             if (typeAttr is not null)
             {
-                attrs.Add(typeAttr);
+                attrs.Add(typeAttr.Value);
             }
 
             attrs.AddRange(sizeFacets);
+            attrs.AddRange(UniqueAttributes(entityMap, propertyMap));
 
-            AppendXml(mappingResult, 2, $"<property {string.Join(' ', attrs)} />");
+            XmlEmitter.Empty(mappingResult, 2, "property", attrs);
             return;
         }
 
         if (typeAttr is not null)
         {
-            attrs.Add(typeAttr);
+            attrs.Add(typeAttr.Value);
         }
 
-        var columnAttrs = new List<string> { $"name=\"{propertyMap.ColumnName ?? prop.Name}\"" };
+        var columnFacets = new List<XmlAttribute>();
 
         if (notNull is not null)
         {
-            columnAttrs.Add(notNull);
+            columnFacets.Add(notNull.Value);
         }
 
-        columnAttrs.AddRange(sizeFacets);
-        columnAttrs.Add($"sql-type=\"{propertyMap.SourceSqlType}\"");
+        columnFacets.AddRange(sizeFacets);
+        columnFacets.Add(new("sql-type", propertyMap.SourceSqlType));
+        columnFacets.AddRange(UniqueAttributes(entityMap, propertyMap));
 
-        AppendXml(mappingResult, 2, $"<property {string.Join(' ', attrs)}>");
-        AppendXml(mappingResult, 3, $"<column {string.Join(' ', columnAttrs)} />");
-        AppendXml(mappingResult, 2, "</property>");
+        XmlEmitter.Open(mappingResult, 2, "property", attrs);
+        XmlEmitter.Empty(
+            mappingResult,
+            3,
+            "column",
+            ColumnAttributes(propertyMap.ColumnName ?? prop.Name, columnFacets));
+        XmlEmitter.Close(mappingResult, 2, "property");
     }
 
     /// <summary>
@@ -894,20 +1047,22 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         var parameters = TranslateGeneratorParameters(entityMap, part, generatorClass);
 
+        var classAttr = new XmlAttribute("class", generatorClass);
+
         if (parameters.Count == 0)
         {
-            AppendXml(mapping, 3, $"<generator class=\"{generatorClass}\" />");
+            XmlEmitter.Empty(mapping, 3, "generator", [classAttr]);
             return;
         }
 
-        AppendXml(mapping, 3, $"<generator class=\"{generatorClass}\">");
+        XmlEmitter.Open(mapping, 3, "generator", [classAttr]);
 
         foreach (var (name, value) in parameters)
         {
-            AppendXml(mapping, 4, $"<param name=\"{name}\">{value}</param>");
+            XmlEmitter.Text(mapping, 4, "param", value, [new XmlAttribute("name", name)]);
         }
 
-        AppendXml(mapping, 3, "</generator>");
+        XmlEmitter.Close(mapping, 3, "generator");
     }
 
     /// <summary>
@@ -1046,21 +1201,63 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             // the primary key, and constrained is how NHibernate says the identity comes from
             // there. The inverse side of a foreign key still points at the property holding it,
             // which is what property-ref names.
-            var constrained = sharedKey ? " constrained=\"true\"" : string.Empty;
-            var propertyRef = sharedKey ? string.Empty : PropertyRefAttribute(entityMap, relation);
-            AppendXml(mapping, 2, $"<one-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{propertyRef}{constrained} />");
+            var oneToOneAttrs = new List<XmlAttribute>
+            {
+                new("name", navigationProperty),
+                new("class", relation.TargetEntity),
+            };
+
+            if (!sharedKey && PropertyRefAttribute(entityMap, relation) is { } propertyRef)
+            {
+                oneToOneAttrs.Add(propertyRef);
+            }
+
+            if (sharedKey)
+            {
+                oneToOneAttrs.Add(new("constrained", "true"));
+            }
+
+            XmlEmitter.Empty(mapping, 2, "one-to-one", oneToOneAttrs);
             return;
         }
 
-        var unique = relation.Cardinality == Cardinality.OneToOne ? " unique=\"true\"" : string.Empty;
         var columns = relation.ColumnPairs.Select(pair => pair.Source.ColumnName ?? pair.Source.Property.Name).ToList();
+
+        var unique = relation.Cardinality == Cardinality.OneToOne
+            ? new XmlAttribute?(new XmlAttribute("unique", "true"))
+            : null;
 
         // The identifier owns the write on its columns; a reference over key columns -
         // a foreign key inside the primary key - is therefore mapped read-only, otherwise
         // NHibernate refuses the repeated column.
-        var readOnly = columns.Any(column => IsPrimaryKeyColumn(entityMap, column))
-            ? " insert=\"false\" update=\"false\""
-            : string.Empty;
+        var readOnly = columns.Any(column => IsPrimaryKeyColumn(entityMap, column));
+
+        List<XmlAttribute> ReferenceAttributes(string? column)
+        {
+            var attributes = new List<XmlAttribute>
+            {
+                new("name", navigationProperty),
+                new("class", relation.TargetEntity),
+            };
+
+            if (column is not null)
+            {
+                attributes.Add(new("column", column));
+            }
+
+            if (unique is not null)
+            {
+                attributes.Add(unique.Value);
+            }
+
+            if (readOnly)
+            {
+                attributes.Add(new("insert", "false"));
+                attributes.Add(new("update", "false"));
+            }
+
+            return attributes;
+        }
 
         if (columns.Count == 0)
         {
@@ -1078,24 +1275,26 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 Category = MappingFactCategory.ForeignKeyColumns,
                 Reason = $"No foreign key columns are known for the relation to '{relation.TargetEntity}'; the column attribute is left out and NHibernate derives the column from the property name (decision 012).",
             });
-            AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{unique} />");
+            // No columns, so no read-only claim either: the attribute pair only ever
+            // accompanies a column the identifier already writes.
+            XmlEmitter.Empty(mapping, 2, "many-to-one", ReferenceAttributes(null));
             return;
         }
 
         if (columns.Count == 1)
         {
-            AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\" column=\"{columns[0]}\"{unique}{readOnly} />");
+            XmlEmitter.Empty(mapping, 2, "many-to-one", ReferenceAttributes(columns[0]));
             return;
         }
 
-        AppendXml(mapping, 2, $"<many-to-one name=\"{navigationProperty}\" class=\"{relation.TargetEntity}\"{unique}{readOnly}>");
+        XmlEmitter.Open(mapping, 2, "many-to-one", ReferenceAttributes(null));
 
         foreach (var column in columns)
         {
-            AppendXml(mapping, 3, $"<column name=\"{column}\" />");
+            XmlEmitter.Empty(mapping, 3, "column", [new XmlAttribute("name", column)]);
         }
 
-        AppendXml(mapping, 2, "</many-to-one>");
+        XmlEmitter.Close(mapping, 2, "many-to-one");
     }
 
     /// <summary>
@@ -1111,13 +1310,13 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// the foreign key the inverse role asserts - and it is recorded as incompleteness.
     /// A target outside the conversion is already recorded by the resolution phase.
     /// </summary>
-    private string PropertyRefAttribute(EntityMap entityMap, Relation relation)
+    private XmlAttribute? PropertyRefAttribute(EntityMap entityMap, Relation relation)
     {
         var target = FindEntityMap(relation.TargetEntity);
 
         if (target is null)
         {
-            return string.Empty;
+            return null;
         }
 
         var counterpart = target.Relations.FirstOrDefault(r =>
@@ -1139,15 +1338,15 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                     + "property holding the foreign key; without the attribute NHibernate joins the "
                     + "association over the primary keys (decision 012).",
             });
-            return string.Empty;
+            return null;
         }
 
         if (SharesPrimaryKeyThrough(target, counterpart.SourceNavigationProperty!))
         {
-            return string.Empty;
+            return null;
         }
 
-        return $" property-ref=\"{counterpart.SourceNavigationProperty}\"";
+        return new XmlAttribute("property-ref", counterpart.SourceNavigationProperty!);
     }
 
     /// <summary>
@@ -1187,24 +1386,24 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 Category = MappingFactCategory.ForeignKeyColumns,
                 Reason = $"No key columns are known for the collection towards '{relation.TargetEntity}'; the owner's key column '{ownerColumn}' is written, which is the tool's fallback, not a fact of the source (decision 012).",
             });
-            AppendXml(mapping, 3, $"<key column=\"{ownerColumn}\" />");
+            XmlEmitter.Empty(mapping, 3, "key", [new XmlAttribute("column", ownerColumn)]);
             return;
         }
 
         if (columns.Count == 1)
         {
-            AppendXml(mapping, 3, $"<key column=\"{columns[0]}\" />");
+            XmlEmitter.Empty(mapping, 3, "key", [new XmlAttribute("column", columns[0])]);
             return;
         }
 
-        AppendXml(mapping, 3, "<key>");
+        XmlEmitter.Open(mapping, 3, "key");
 
         foreach (var column in columns)
         {
-            AppendXml(mapping, 4, $"<column name=\"{column}\" />");
+            XmlEmitter.Empty(mapping, 4, "column", [new XmlAttribute("name", column)]);
         }
 
-        AppendXml(mapping, 3, "</key>");
+        XmlEmitter.Close(mapping, 3, "key");
     }
 
     /// <summary>
@@ -1226,20 +1425,21 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Appends a line to the XML mapping with indentation.
+    /// The not-null claim of a column: what the mapping says where it says anything, the
+    /// language type as the fallback claim, and nothing at all where neither states it - a
+    /// property with no stated type says nothing about nullability either. One place, because
+    /// the version element and the property element used to spell the same three lines twice.
     /// </summary>
-    private static void AppendXml(StringBuilder mappingResult, int indentLevels, string content, bool appendLine = true)
+    private static XmlAttribute? NotNullAttribute(PropertyMap propertyMap)
     {
-        var indent = new string(' ', indentLevels * 4);
-        if (appendLine)
+        if (propertyMap.IsNullable.HasValue)
         {
-            mappingResult.AppendLine($"{indent}{content}");
-        }
-        else
-        {
-            mappingResult.Append($"{indent}{content}");
+            return new XmlAttribute("not-null", propertyMap.IsNullable.Value ? "false" : "true");
         }
 
+        return propertyMap.Property.Type is { IsNullable: false }
+            ? new XmlAttribute("not-null", "true")
+            : null;
     }
 
     /// <summary>

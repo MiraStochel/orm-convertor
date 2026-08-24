@@ -50,6 +50,16 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [043](043-rest-contract-guarded-over-http.md) | REST kontrakt hlídaný testem přes HTTP | 2026-08-23 | platí | S2, S6, S7 |
 | [044](044-error-response-as-problem-details.md) | Chybová odpověď jako `ProblemDetails` | 2026-08-23 | platí | F11, S6, S7 |
 | [045](045-a-conversion-that-produced-nothing-says-so.md) | Převod, ze kterého nic nevyšlo, to musí říct | 2026-08-23 | platí | F11, F14, S6, S7 |
+| [046](046-xml-mapping-written-through-an-element-writer.md) | XML mapování píše zapisovač prvků, ne interpolace | 2026-08-24 | platí | F11, S1, S2 |
+| [047](047-content-type-reaches-the-query-parser.md) | Typ obsahu dojde až do dotazového parseru | 2026-08-24 | platí | F7–F10, F11, F14, S1, S2, S7 |
+| [048](048-a-fact-with-no-place-in-the-model-is-a-loss.md) | Mapovací fakt, pro který model nemá místo, je ztráta, ne slovník | 2026-08-24 | platí | F5, F11, S1 |
+| [049](049-language-facts-under-source-precedence.md) | Jazyková fakta vlastnosti pod pravidlem priority zdrojů | 2026-08-24 | platí | F5, F11, F14, S2 |
+| [050](050-one-home-for-the-singular-plural-heuristic.md) | Jedno místo pro heuristiku jednotného a množného čísla | 2026-08-24 | platí | F5, F11, S1, S2 |
+| [051](051-like-pattern-translated-not-carried-over.md) | Vzorec `LIKE` se do LINQ překládá, ne přenáší | 2026-08-24 | platí | F7–F10, F11, T2, T3, S2 |
+| [052](052-literal-sql-type-reaches-the-ef-core-annotation.md) | Doslovný SQL typ dojde i do anotace EF Core | 2026-08-24 | platí | F2, F5, F11, S2 |
+| [053](053-a-query-that-would-return-other-rows-is-not-emitted.md) | Dotaz, který by vrátil jinou množinu řádků, se nevydá | 2026-08-24 | platí | F7–F10, F11, T2, T3, S1, S2 |
+| [054](054-nullable-key-part-is-a-reported-loss.md) | Jazyková nullabilita části klíče je hlášená ztráta | 2026-08-24 | platí | F1, F11, S2 |
+| [055](055-unique-constraint-as-a-carried-mapping-fact.md) | Unikátní omezení je nesené mapovací fakt, ne vyňatá oblast | 2026-08-24 | platí | F2, F4, F5, F11, S1, S2 |
 
 ## Formát
 

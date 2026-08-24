@@ -17,7 +17,7 @@ namespace DapperWrappers;
 /// Reads a Dapper query. Two stages, because a Dapper query in the wild is T-SQL inside C#:
 /// Roslyn finds the Query&lt;T&gt; call and takes its string literal, then a T-SQL parser
 /// turns that string into instructions (decision 026). A bare SQL source skips the first
-/// stage.
+/// stage, and which of the two it is, is the content type the unit declares (decision 047).
 ///
 /// The T-SQL parser is a parser of a <em>language</em>, exactly as Roslyn is for C#. It is
 /// not a dependency on Dapper, which is what S1 forbids.
@@ -37,11 +37,15 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
     public bool CanParse(ConversionContentType contentType) => contentType is
         ConversionContentType.SqlQuery or ConversionContentType.CSharpQuery;
 
-    public void Parse(string source) => Parse(source, null);
-
-    public void Parse(string source, IReadOnlyList<EntityMap>? entityMaps)
+    /// <summary>
+    /// Which of the two stages the unit enters is decided by the language it declares, not
+    /// by what its text looks like: a bare SELECT that happens to mention a table called
+    /// QueryLog used to be taken for a C# snippet and refused for carrying no Dapper call
+    /// (decisions 025 and 047).
+    /// </summary>
+    public void Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
-        var sql = LooksLikeCSharp(source) ? ExtractSql(source) : source;
+        var sql = contentType == ConversionContentType.CSharpQuery ? ExtractSql(source) : source;
         if (sql is null)
         {
             return;
@@ -79,10 +83,6 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
         ReadOrderBy(query);
         queryBuilder.Pop();
     }
-
-    private static bool LooksLikeCSharp(string source)
-        => source.Contains("Query", StringComparison.Ordinal)
-           && (source.Contains('(') && source.Contains(';'));
 
     /// <summary>
     /// Pulls the SQL out of a Dapper call. The literal is read through the token's value, so

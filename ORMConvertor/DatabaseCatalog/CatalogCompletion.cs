@@ -2,6 +2,7 @@ using System.Diagnostics;
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Naming;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 
@@ -94,7 +95,7 @@ public static class CatalogCompletion
             .Select(em => new TableRequest(
                 em.Entity.Name,
                 em.Schema,
-                em.Table is not null ? [em.Table] : TableNameCandidates.For(em.Entity.Name)))
+                em.Table is not null ? [em.Table] : EntityTableNaming.TableCandidatesFor(em.Entity.Name)))
             .ToList();
 
         var lookups = reader.ReadTables(requests);
@@ -424,6 +425,96 @@ public static class CatalogCompletion
         if (demand.Contains(MappingFactCategory.PrimaryKey) && image.PrimaryKeyColumns.Count > 0)
         {
             CompletePrimaryKey(builder, em, image);
+        }
+
+        if (demand.Contains(MappingFactCategory.UniqueConstraint) && image.UniqueConstraints.Count > 0)
+        {
+            CompleteUniqueConstraints(builder, em, image);
+        }
+    }
+
+    /// <summary>
+    /// Unique constraints the catalog states (decision 055). Each one is translated from
+    /// columns to properties, because that is what the model names; a constraint with a
+    /// column no property maps is not supplied, the same rule the primary key follows -
+    /// inventing the member would put into the class what the source never declared.
+    ///
+    /// Identity is the set of properties, not the name, so a constraint the source already
+    /// carries is not supplied a second time; where the two name it differently, the source
+    /// wins and the catalog's name is reported (rule E9, decision 015). The comparison is
+    /// made here rather than left to the builder, because only here is it a disagreement
+    /// with the catalog rather than between two input sources.
+    /// </summary>
+    private static void CompleteUniqueConstraints(AbstractEntityBuilder builder, EntityMap em, TableImage image)
+    {
+        foreach (var constraint in image.UniqueConstraints)
+        {
+            var propertyNames = new List<string>();
+            string? unmapped = null;
+
+            foreach (var column in constraint.Columns)
+            {
+                var pm = FindPropertyMapForColumn(em, column);
+
+                if (pm is null)
+                {
+                    unmapped = column;
+                    break;
+                }
+
+                propertyNames.Add(pm.Property.Name);
+            }
+
+            if (unmapped is not null)
+            {
+                builder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = builder.Descriptor.Framework,
+                    Entity = em.Entity.Name,
+                    Category = MappingFactCategory.UniqueConstraint,
+                    Reason = $"The catalog states the unique constraint '{constraint.Name}' "
+                        + $"({string.Join(", ", constraint.Columns)}) of '{image.QualifiedName}', "
+                        + $"but no property matches the column '{unmapped}'; the constraint is not supplied.",
+                });
+                continue;
+            }
+
+            var subject = propertyNames.Count == 1 ? propertyNames[0] : null;
+
+            var known = em.UniqueConstraints.FirstOrDefault(c =>
+                c.PropertyNames.Count == propertyNames.Count
+                && c.PropertyNames.ToHashSet(StringComparer.Ordinal).SetEquals(propertyNames));
+
+            if (known is not null)
+            {
+                if (known.Name is null)
+                {
+                    // The source stated the set without naming it, so the catalog completes
+                    // it rather than contradicting it.
+                    builder.EntityMap = em;
+                    builder.AddUniqueConstraint(constraint.Name, propertyNames);
+
+                    ReportSupplied(builder, em, subject, MappingFactCategory.UniqueConstraint,
+                        $"Name '{constraint.Name}' of the unique constraint over ({string.Join(", ", propertyNames)}) "
+                        + $"supplied by the database catalog from '{image.QualifiedName}'.");
+                }
+                else if (!string.Equals(known.Name, constraint.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    ReportConflict(builder, em, subject, MappingFactCategory.UniqueConstraint,
+                        $"The source names the unique constraint over ({string.Join(", ", propertyNames)}) "
+                        + $"'{known.Name}', the catalog names it '{constraint.Name}' in '{image.QualifiedName}'.");
+                }
+
+                continue;
+            }
+
+            builder.EntityMap = em;
+            builder.AddUniqueConstraint(constraint.Name, propertyNames);
+
+            ReportSupplied(builder, em, subject, MappingFactCategory.UniqueConstraint,
+                $"Unique constraint '{constraint.Name}' ({string.Join(", ", constraint.Columns)}) "
+                + $"supplied by the database catalog from '{image.QualifiedName}'.");
         }
     }
 

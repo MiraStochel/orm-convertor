@@ -1,6 +1,7 @@
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Naming;
 using Model;
 using Model.QueryInstructions;
 
@@ -154,9 +155,5 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
         ];
     }
 
-    private static string SingularOf(string table)
-    {
-        var bare = table.Split('.').LastOrDefault() ?? table;
-        return bare.EndsWith('s') ? bare[..^1] : bare;
-    }
+    private static string SingularOf(string table) => EntityTableNaming.EntityNameFor(table);
 }

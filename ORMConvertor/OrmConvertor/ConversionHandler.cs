@@ -30,7 +30,7 @@ public static class ConversionHandler
 
         // 1) Build entity maps using entity parsers only
         var entityParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb: null)
-            .Where(p => p is not IQueryParser)
+            .OfType<IEntityParser>()
             .ToList();
 
         // A non-blank unit written in a language the source framework cannot read would
@@ -110,7 +110,7 @@ public static class ConversionHandler
             // Exactly one parser per source ORM claims a given query language, so the choice
             // no longer depends on the order of the list (decision 025).
             qb.EntityMaps = entityBuilder.EntityMaps;
-            queryParsers[0].Parse(qsrc.Content, entityBuilder.EntityMaps);
+            queryParsers[0].Parse(qsrc.ContentType, qsrc.Content, entityBuilder.EntityMaps);
 
             results.AddRange(qb.Build());
             queryRecords.AddRange(qb.Records);

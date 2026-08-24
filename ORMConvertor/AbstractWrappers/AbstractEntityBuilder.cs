@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using Common.Convertors;
+using Common.Naming;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
@@ -486,6 +487,67 @@ public abstract class AbstractEntityBuilder
     public void AddRelation(Relation relation)
     {
         EntityMap.Relations.Add(relation);
+    }
+
+    /// <summary>
+    /// Adds a unique constraint over the named properties (decision 055). Constraints are
+    /// identified by the set of properties they cover, not by their name: one and the same
+    /// constraint reaches the model from the source and from the catalog under two
+    /// spellings, and the set is what decides. A repeated set is therefore not added twice;
+    /// where the two spellings of the name differ, the first is kept and the difference is
+    /// a conflict record, exactly as decision 017 rules for every other fact.
+    ///
+    /// An empty list is a no-op rather than an error: a source stating a constraint over
+    /// nothing said nothing, and the model does not validate (see the invariants).
+    /// </summary>
+    public void AddUniqueConstraint(string? name, IReadOnlyList<string> propertyNames)
+    {
+        ArgumentNullException.ThrowIfNull(propertyNames);
+
+        var parts = propertyNames
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (parts.Count == 0)
+        {
+            return;
+        }
+
+        var constraint = new UniqueConstraint
+        {
+            Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim(),
+            PropertyNames = parts,
+        };
+
+        var existing = EntityMap.UniqueConstraints.FirstOrDefault(c => c.CoversSameAs(constraint));
+
+        if (existing is null)
+        {
+            EntityMap.UniqueConstraints.Add(constraint);
+            return;
+        }
+
+        if (existing.Name is null && constraint.Name is not null)
+        {
+            // The set was already stated without a name; a later source naming the same
+            // set adds information rather than contradicting it.
+            EntityMap.UniqueConstraints[EntityMap.UniqueConstraints.IndexOf(existing)] = new UniqueConstraint
+            {
+                Name = constraint.Name,
+                PropertyNames = existing.PropertyNames,
+            };
+            return;
+        }
+
+        if (constraint.Name is not null && !string.Equals(existing.Name, constraint.Name, StringComparison.Ordinal))
+        {
+            ReportInputConflict(
+                parts.Count == 1 ? parts[0] : null,
+                MappingFactCategory.UniqueConstraint,
+                $"An earlier source names the unique constraint over ({string.Join(", ", existing.PropertyNames)}) "
+                + $"'{existing.Name}', a later one '{constraint.Name}'.");
+        }
     }
 
     /// <summary>
@@ -995,13 +1057,11 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Class name of a synthesized junction entity: the table name, singularized by the
-    /// same trailing-s heuristic the rest of the solution uses for the opposite direction.
+    /// Class name of a synthesized junction entity: the table name, singularized by the one
+    /// convention the whole solution shares (decision 050) rather than by a copy of it.
     /// </summary>
     private static string DeriveJunctionEntityName(string table)
-        => table.Length > 1 && (table.EndsWith('s') || table.EndsWith('S'))
-            ? table[..^1]
-            : table;
+        => EntityTableNaming.EntityNameFor(table);
 
     /// <summary>
     /// One property per junction column, its facts copied from the key part it references:
@@ -1325,7 +1385,12 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Add a property to the entity and its mapping.
+    /// Add a property to the entity and its mapping. Find-or-create, like
+    /// <see cref="GetOrCreatePropertyMap"/>: a second artifact declaring the same property -
+    /// a Java class beside orm.xml, a class beside a MyBatis resultMap - fills in only the
+    /// language facts nobody stated yet and leaves a conflict record where it claims
+    /// something else, which is the rule of decision 017 applied to the language side
+    /// (decision 049).
     /// </summary>
     /// <param name="type">Property C# type</param>
     /// <param name="propertyName">Property name</param>
@@ -1346,21 +1411,141 @@ public abstract class AbstractEntityBuilder
     bool isNullable = false
 )
     {
-        var property = new Property
+        // An unrecognized name becomes an Unknown type rather than an exception,
+        // so an entity referencing another one survives parsing (decision 014).
+        var langType = CSharpTypeConvertor.FromString(type, isNullable);
+        var access = AccessModifierConvertor.FromString(accessModifier);
+
+        // Copied, not aliased: a later declaration merges into this list, and mutating a
+        // list the caller still holds would be a surprise it never asked for.
+        List<string> modifiers = [.. OtherModifiers ?? []];
+
+        var existing = EntityMap.Entity.Properties.FirstOrDefault(p => p.Name == propertyName);
+
+        if (existing is null)
         {
-            Name = propertyName,
-            // An unrecognized name becomes an Unknown type rather than an exception,
-            // so an entity referencing another one survives parsing (decision 014).
-            Type = CSharpTypeConvertor.FromString(type, isNullable),
-            AccessModifier = AccessModifierConvertor.FromString(accessModifier),
-            OtherModifiers = OtherModifiers ?? [],
-            HasGetter = hasGetter,
-            HasSetter = hasSetter,
-            DefaultValue = defaultValue,
+            var property = new Property
+            {
+                Name = propertyName,
+                Type = langType,
+                AccessModifier = access,
+                OtherModifiers = modifiers,
+                HasGetter = hasGetter,
+                HasSetter = hasSetter,
+                DefaultValue = defaultValue,
+            };
+
+            EntityMap.Entity.Properties.Add(property);
+            EntityMap.PropertyMaps.Add(new PropertyMap { Property = property });
+            return;
+        }
+
+        MergeLanguageFacts(existing, langType, access, modifiers, hasGetter, hasSetter, defaultValue);
+
+        // A property the mapping named first has an entry among the entity's properties
+        // already; its map is created with it, but pairing them here costs nothing and
+        // keeps the two lists from drifting.
+        if (!EntityMap.PropertyMaps.Any(pm => pm.Property.Name == propertyName))
+        {
+            EntityMap.PropertyMaps.Add(new PropertyMap { Property = existing });
+        }
+    }
+
+    /// <summary>
+    /// Fills the language facts a second declaration of the same property brings, fact by
+    /// fact (decision 049). An empty fact is filled, a stated one is never overwritten and
+    /// a differing claim leaves a conflict record. Getter and setter are positive-only -
+    /// false means nobody said so, not that the property has none - and the other modifiers
+    /// are a set rather than a fact, so they merge instead of clashing.
+    /// </summary>
+    private void MergeLanguageFacts(
+        Property property,
+        LangType? type,
+        AccessModifier? access,
+        List<string> modifiers,
+        bool hasGetter,
+        bool hasSetter,
+        string? defaultValue)
+    {
+        if (type is not null)
+        {
+            if (property.Type is null)
+            {
+                property.Type = type;
+            }
+            else if (!SameLanguageType(property.Type, type))
+            {
+                ReportInputConflict(property.Name, null,
+                    $"An earlier source declares the property as '{Describe(property.Type)}', a later one as '{Describe(type)}'.");
+            }
+        }
+
+        if (access is not null)
+        {
+            if (property.AccessModifier is null)
+            {
+                property.AccessModifier = access;
+            }
+            else if (property.AccessModifier != access)
+            {
+                ReportInputConflict(property.Name, null,
+                    $"An earlier source declares the property {property.AccessModifier}, a later one {access}.");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(defaultValue))
+        {
+            if (string.IsNullOrWhiteSpace(property.DefaultValue))
+            {
+                property.DefaultValue = defaultValue;
+            }
+            else if (!string.Equals(property.DefaultValue, defaultValue, StringComparison.Ordinal))
+            {
+                ReportInputConflict(property.Name, null,
+                    $"An earlier source initializes the property with '{property.DefaultValue}', a later one with '{defaultValue}'.");
+            }
+        }
+
+        property.HasGetter |= hasGetter;
+        property.HasSetter |= hasSetter;
+
+        foreach (var modifier in modifiers.Where(m => !property.OtherModifiers.Contains(m, StringComparer.Ordinal)))
+        {
+            property.OtherModifiers.Add(modifier);
+        }
+    }
+
+    /// <summary>
+    /// Value comparison of two language types: instances are created per parse, so reference
+    /// equality would call two identical declarations a conflict.
+    /// </summary>
+    private static bool SameLanguageType(LangType left, LangType right)
+        => left.Category == right.Category
+           && left.IsNullable == right.IsNullable
+           && left.ScalarType == right.ScalarType
+           && left.CollectionKind == right.CollectionKind
+           && string.Equals(left.TargetEntity, right.TargetEntity, StringComparison.Ordinal)
+           && string.Equals(left.SourceName, right.SourceName, StringComparison.Ordinal)
+           && (left.ElementType is null
+               ? right.ElementType is null
+               : right.ElementType is not null && SameLanguageType(left.ElementType, right.ElementType));
+
+    /// <summary>
+    /// A language type in words, for a conflict record. Deliberately not the C# spelling:
+    /// the record talks about the model's claim, and the model is ecosystem-neutral
+    /// (decision 014).
+    /// </summary>
+    private static string Describe(LangType type)
+    {
+        var core = type.Category switch
+        {
+            LangTypeCategory.Scalar => type.ScalarType!.Value.ToString(),
+            LangTypeCategory.Reference => $"reference to {type.TargetEntity}",
+            LangTypeCategory.Collection => $"{type.CollectionKind} of {Describe(type.ElementType!)}",
+            _ => type.SourceName!,
         };
 
-        EntityMap.Entity.Properties.Add(property);
-        EntityMap.PropertyMaps.Add(new PropertyMap { Property = property });
+        return type.IsNullable ? core + ", nullable" : core;
     }
 
     /// <summary>
@@ -1497,15 +1682,7 @@ public abstract class AbstractEntityBuilder
 
                     break;
                 default:
-                    if (!propertyMap.OtherDatabaseProperties.TryGetValue(kvp.Key, out var existing))
-                    {
-                        propertyMap.OtherDatabaseProperties[kvp.Key] = kvp.Value;
-                    }
-                    else if (!string.Equals(existing, kvp.Value, StringComparison.Ordinal))
-                    {
-                        ReportInputConflict(propertyName, null,
-                            $"An earlier source states {kvp.Key} '{existing}', a later one '{kvp.Value}'.");
-                    }
+                    ReportUnknownFact(propertyName, kvp.Key, kvp.Value);
                     break;
             }
         }
@@ -1617,6 +1794,55 @@ public abstract class AbstractEntityBuilder
             Property = property,
             Category = category,
             Reason = $"The source states {key} '{value}', which is not a value the representation can hold; the fact is dropped and the target's own default applies.",
+        });
+
+    /// <summary>
+    /// The language nullability of a key part, which a flat key cannot carry: no target
+    /// admits a nullable identifier, so a source's <c>int?</c> is emitted as <c>int</c>
+    /// (decision 054). A loss and not a convention - the source did state something and the
+    /// artifact states the opposite - and the wording lives here so that the two C# builders
+    /// and the JPA builder after them cannot phrase the same fact differently. Called by the
+    /// builder that flattens: Dapper knows no keys and keeps the question mark, so there the
+    /// record would be untrue.
+    /// </summary>
+    protected void ReportNullableKeyPartLoss(EntityMap entityMap, Property property, ConversionContentType artifact)
+    {
+        if (property.Type is not { IsNullable: true })
+        {
+            return;
+        }
+
+        Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = Descriptor.Framework,
+            Artifact = artifact,
+            Entity = entityMap.Entity.Name,
+            Property = property.Name,
+            Category = MappingFactCategory.Nullability,
+            Reason = "The source declares the key part as nullable; an identifier cannot be nullable in "
+                + "the target, so the property is emitted without the language nullability.",
+        });
+    }
+
+    /// <summary>
+    /// A mapping fact the representation has no place for at all - as opposed to
+    /// <see cref="ReportUnreadableFact"/>, where the place exists and only the spelling
+    /// cannot be read. It used to land in a free dictionary on PropertyMap that nobody
+    /// ever read, so it reached the model and died at emission without a word; now it is
+    /// a loss like any other fact the target will not carry (decision 048). No category:
+    /// a key outside the vocabulary belongs to none of them, and picking the nearest one
+    /// would claim more about it than we know.
+    /// </summary>
+    private void ReportUnknownFact(string? property, string key, string value)
+        => Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = Descriptor.Framework,
+            Entity = EntityMap.Entity.Name,
+            Property = property,
+            Reason = $"The source states {key} '{value}', a mapping fact the representation has no place "
+                + "for; it is dropped and the target's own default applies.",
         });
 
     /// <summary>
@@ -1798,6 +2024,7 @@ public abstract class AbstractEntityBuilder
         MappingFactCategory.PrimaryKeyStrategy => em.PrimaryKey?.Parts.Any(p => p.Strategy != PrimaryKeyStrategy.Unspecified || p.SourceStrategyName is not null) == true,
         MappingFactCategory.ForeignKeyColumns => em.Relations.Any(r => r.ColumnPairs.Count > 0),
         MappingFactCategory.VersionColumn => em.PropertyMaps.Any(pm => pm.IsVersion),
+        MappingFactCategory.UniqueConstraint => em.UniqueConstraints.Count > 0,
         _ => throw new ArgumentOutOfRangeException(nameof(category), category, null),
     };
 
@@ -1820,6 +2047,10 @@ public abstract class AbstractEntityBuilder
             .Select(p => (string?)p.PropertyMap.Property.Name),
         MappingFactCategory.ForeignKeyColumns => em.Relations.Where(r => r.ColumnPairs.Count > 0).Select(r => r.SourceNavigationProperty),
         MappingFactCategory.VersionColumn => em.PropertyMaps.Where(pm => pm.IsVersion).Select(pm => (string?)pm.Property.Name),
+        // A constraint over one column concerns that property; over several it concerns
+        // the entity, and naming one of them would be arbitrary.
+        MappingFactCategory.UniqueConstraint => em.UniqueConstraints
+            .Select(c => c.PropertyNames.Count == 1 ? (string?)c.PropertyNames[0] : null),
         _ => [null],
     };
 

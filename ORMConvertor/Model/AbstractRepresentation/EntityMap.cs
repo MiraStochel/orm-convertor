@@ -14,5 +14,12 @@ public class EntityMap
 
     public List<Relation> Relations { get; set; } = [];
 
+    /// <summary>
+    /// Unique constraints of the entity (decision 055). A constraint may cover several
+    /// columns, so it belongs here rather than on a property map - like <see cref="Relation"/>.
+    /// Empty for most entities, which is why it is not required.
+    /// </summary>
+    public List<UniqueConstraint> UniqueConstraints { get; set; } = [];
+
     public bool IsJunctionTable { get; set; } = false;
 }

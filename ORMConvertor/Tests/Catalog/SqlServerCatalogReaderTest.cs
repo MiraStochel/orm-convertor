@@ -1,3 +1,4 @@
+using Common.Naming;
 using DatabaseCatalog;
 using Model.AbstractRepresentation.Enums;
 using Tests.Database;
@@ -18,7 +19,7 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
 
     private TableImage ImageOf(string entityName)
     {
-        var lookups = Read(new TableRequest(entityName, null, TableNameCandidates.For(entityName)));
+        var lookups = Read(new TableRequest(entityName, null, EntityTableNaming.TableCandidatesFor(entityName)));
         var image = lookups[entityName].Image;
         Assert.NotNull(image);
         return image;
@@ -105,6 +106,31 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
     }
 
     [Fact]
+    public void ReadsUniqueConstraintsAndKeepsThePrimaryKeyOutOfThem()
+    {
+        fixture.SkipIfUnavailable();
+
+        // F4 names unique constraints among the metadata to be read (decision 055).
+        var products = ImageOf("Product");
+
+        var sku = Assert.Single(products.UniqueConstraints);
+        Assert.Equal("UQ_Products_Sku", sku.Name);
+        Assert.Equal(new[] { "Sku" }, sku.Columns);
+
+        // The primary key is a unique index too, and reading it here would state the same
+        // fact twice under two categories.
+        Assert.DoesNotContain(products.UniqueConstraints, c => c.Columns.Contains("ProductId"));
+
+        // Several columns come back as one constraint, in the order the constraint declares.
+        var composite = Assert.Single(ImageOf("ProductSupplier").UniqueConstraints);
+        Assert.Equal("UQ_ProductSuppliers_SupplierSku", composite.Name);
+        Assert.Equal(new[] { "SupplierId", "SupplierSku" }, composite.Columns);
+
+        // A table declaring none says so with an empty list, not with a missing image.
+        Assert.Empty(ImageOf("Customer").UniqueConstraints);
+    }
+
+    [Fact]
     public void ReadsMultiColumnForeignKeysWithTheirPairs()
     {
         fixture.SkipIfUnavailable();
@@ -157,7 +183,7 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        var lookups = Read(new TableRequest("Nothing", null, TableNameCandidates.For("Nothing")));
+        var lookups = Read(new TableRequest("Nothing", null, EntityTableNaming.TableCandidatesFor("Nothing")));
 
         Assert.Null(lookups["Nothing"].Image);
         Assert.Empty(lookups["Nothing"].AmbiguousMatches);

@@ -22,7 +22,17 @@ public class EFCoreEntityParser : CSharpEntityParser
     }
 
     /// <summary>
-    /// Parses class attributes, specifically looking for EF Core table and schema attributes.
+    /// Parses class attributes: the table and schema of [Table], the unique constraints of
+    /// [Index] (decision 055), and a record for everything else.
+    ///
+    /// [PrimaryKey] is read by <see cref="GetClassPrimaryKeyNames"/> in the property step,
+    /// where the key part order can be matched against the properties, so it is recognized
+    /// here only in order not to be reported as dropped.
+    ///
+    /// The record for the rest is what decision 048 rules for a fact the model has no place
+    /// for. It is written here rather than left to the shared dictionary channel, because a
+    /// class annotation never reaches that channel at all - this loop used to be the one
+    /// place in the parser where an annotation fell out without a trace.
     /// </summary>
     protected override void ParseClassAttributes(ClassDeclarationSyntax classDeclaration)
     {
@@ -30,41 +40,147 @@ public class EFCoreEntityParser : CSharpEntityParser
         {
             var name = TrimAttribute(attr.Name.ToString());
 
+            if (name.Equals("Index", StringComparison.OrdinalIgnoreCase))
+            {
+                ReadIndexAttribute(attr, classDeclaration);
+                continue;
+            }
+
+            if (name.Equals("PrimaryKey", StringComparison.OrdinalIgnoreCase))
+            {
+                continue; // read by GetClassPrimaryKeyNames
+            }
+
             if (name.Equals("Table", StringComparison.OrdinalIgnoreCase))
             {
-                string? table = null;
-                string? schema = null;
-
-                foreach (var arg in attr.ArgumentList?.Arguments ?? Enumerable.Empty<AttributeArgumentSyntax>())
-                {
-                    var named = arg.NameEquals?.Name.Identifier.ValueText;
-
-                    if (named is null)
-                    {
-                        table = GetString(arg.Expression);
-                    }
-                    else if (named.Equals("Schema", StringComparison.OrdinalIgnoreCase))
-                    {
-                        schema = GetString(arg.Expression);
-                    }
-                    else if (named.Equals("Name", StringComparison.OrdinalIgnoreCase))
-                    {
-                        table = GetString(arg.Expression);
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(table))
-                {
-                    entityBuilder.AddTable(table);
-                }
-
-                if (!string.IsNullOrEmpty(schema))
-                {
-                    entityBuilder.AddSchema(schema);
-                }
+                ReadTableAttribute(attr);
+                continue;
             }
+
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = ORMEnum.EFCore,
+                Artifact = ConversionContentType.CSharpEntity,
+                Entity = classDeclaration.Identifier.Text,
+                Reason = $"The class annotation [{name}] has no counterpart in the intermediate representation and was dropped.",
+            });
         }
     }
+
+    /// <summary>
+    /// Reads the table and the schema out of [Table("Orders", Schema = "sales")].
+    /// </summary>
+    private void ReadTableAttribute(AttributeSyntax attribute)
+    {
+        string? table = null;
+        string? schema = null;
+
+        foreach (var arg in attribute.ArgumentList?.Arguments ?? Enumerable.Empty<AttributeArgumentSyntax>())
+        {
+            var named = arg.NameEquals?.Name.Identifier.ValueText;
+
+            if (named is null)
+            {
+                table = GetString(arg.Expression);
+            }
+            else if (named.Equals("Schema", StringComparison.OrdinalIgnoreCase))
+            {
+                schema = GetString(arg.Expression);
+            }
+            else if (named.Equals("Name", StringComparison.OrdinalIgnoreCase))
+            {
+                table = GetString(arg.Expression);
+            }
+        }
+
+        if (!string.IsNullOrEmpty(table))
+        {
+            entityBuilder.AddTable(table);
+        }
+
+        if (!string.IsNullOrEmpty(schema))
+        {
+            entityBuilder.AddSchema(schema);
+        }
+    }
+
+    /// <summary>
+    /// Reads [Index(nameof(A), nameof(B), IsUnique = true, Name = "…")] - EF Core's only
+    /// annotation for a unique constraint (decision 055). Argument order is the order of
+    /// the constraint's columns, and both the nameof form and a plain string are accepted,
+    /// as in [PrimaryKey].
+    ///
+    /// Without IsUnique the annotation declares a plain index, which is a performance
+    /// artifact rather than a mapping fact and has no place in the model; it is reported
+    /// as a loss instead of being read as a constraint it is not.
+    /// </summary>
+    private void ReadIndexAttribute(AttributeSyntax attribute, ClassDeclarationSyntax classDeclaration)
+    {
+        var propertyNames = new List<string>();
+        string? name = null;
+        bool isUnique = false;
+
+        foreach (var arg in attribute.ArgumentList?.Arguments ?? Enumerable.Empty<AttributeArgumentSyntax>())
+        {
+            var named = arg.NameEquals?.Name.Identifier.ValueText;
+
+            if (named is null)
+            {
+                if (ReadPropertyName(arg.Expression) is { Length: > 0 } propertyName)
+                {
+                    propertyNames.Add(propertyName);
+                }
+
+                continue;
+            }
+
+            if (named.Equals("IsUnique", StringComparison.OrdinalIgnoreCase))
+            {
+                isUnique = arg.Expression is LiteralExpressionSyntax { Token.Value: bool value } && value;
+            }
+            else if (named.Equals("Name", StringComparison.OrdinalIgnoreCase))
+            {
+                name = GetString(arg.Expression);
+            }
+        }
+
+        if (propertyNames.Count == 0)
+        {
+            return;
+        }
+
+        if (!isUnique)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = ORMEnum.EFCore,
+                Artifact = ConversionContentType.CSharpEntity,
+                Entity = classDeclaration.Identifier.Text,
+                Reason = $"The index over ({string.Join(", ", propertyNames)}) is not unique, so it states no "
+                    + "mapping fact the intermediate representation carries, and was dropped (decision 055).",
+            });
+            return;
+        }
+
+        entityBuilder.AddUniqueConstraint(name, propertyNames);
+    }
+
+    /// <summary>
+    /// A property named either through nameof or as a plain string, the two spellings
+    /// [Index] and [PrimaryKey] both admit.
+    /// </summary>
+    private static string? ReadPropertyName(ExpressionSyntax expression) => expression switch
+    {
+        InvocationExpressionSyntax inv
+            when inv.Expression is IdentifierNameSyntax id
+              && id.Identifier.Text == "nameof"
+              && inv.ArgumentList.Arguments.Count == 1
+              && inv.ArgumentList.Arguments[0].Expression is IdentifierNameSyntax propName
+            => propName.Identifier.Text,
+        _ => GetString(expression),
+    };
 
     /// <summary>
     /// Reads the EF Core 7+ class-level [PrimaryKey(nameof(A), nameof(B))] attribute.
@@ -83,18 +199,7 @@ public class EFCoreEntityParser : CSharpEntityParser
 
             foreach (var arg in attr.ArgumentList?.Arguments ?? Enumerable.Empty<AttributeArgumentSyntax>())
             {
-                string? name = arg.Expression switch
-                {
-                    // nameof(CustomerID)
-                    InvocationExpressionSyntax inv
-                        when inv.Expression is IdentifierNameSyntax id
-                          && id.Identifier.Text == "nameof"
-                          && inv.ArgumentList.Arguments.Count == 1
-                          && inv.ArgumentList.Arguments[0].Expression is IdentifierNameSyntax propName
-                        => propName.Identifier.Text,
-                    // "CustomerID"
-                    _ => GetString(arg.Expression),
-                };
+                var name = ReadPropertyName(arg.Expression);
 
                 if (!string.IsNullOrEmpty(name))
                 {

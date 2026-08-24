@@ -4,8 +4,8 @@ namespace DatabaseCatalog;
 /// One request for the image of one table. The caller states its policy through the
 /// candidates: a source-stated table name is a single exact candidate, an entity without a
 /// stated table offers its name and the plural/singular variant (see
-/// <see cref="TableNameCandidates"/>). Candidates are tried in order and the first one with
-/// a match wins.
+/// <see cref="Common.Naming.EntityTableNaming"/>, decision 050). Candidates are tried in
+/// order and the first one with a match wins.
 /// </summary>
 /// <param name="Key">Key the result is returned under, typically the entity name.</param>
 /// <param name="Schema">Schema the source stated, or null when any schema may match.</param>
@@ -45,28 +45,4 @@ public interface ICatalogReader
     /// in the schema, so only the catalog can name it (decisions 005 and 015).
     /// </summary>
     IReadOnlyList<TableImage> FindJunctionTables(IReadOnlyCollection<TableImage> referencedTables);
-}
-
-/// <summary>
-/// The one place the plural/singular candidate heuristic is written down. Both consumers
-/// of the reader use it: the completion phase for an entity without a stated table, the
-/// benchmark harness for an unqualified table name.
-/// </summary>
-public static class TableNameCandidates
-{
-    public static IReadOnlyList<string> For(string name)
-    {
-        var candidates = new List<string> { name };
-
-        if (name.EndsWith('s') || name.EndsWith('S'))
-        {
-            candidates.Add(name[..^1]);
-        }
-        else
-        {
-            candidates.Add(name + "s");
-        }
-
-        return candidates;
-    }
 }

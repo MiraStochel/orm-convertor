@@ -115,6 +115,11 @@ public static class NHibernateDescriptor
             [MappingFactCategory.PrimaryKeyStrategy] = FactSupport.Expressible, // <generator>
             [MappingFactCategory.ForeignKeyColumns] = FactSupport.Expressible,
             [MappingFactCategory.VersionColumn] = FactSupport.Expressible,   // <version> element
+
+            // unique="true" for one column, unique-key="…" to group several (decision 055).
+            // Both live on <property>, so a constraint over a key part or a navigation is
+            // the narrowing the builder reports at the point of emission.
+            [MappingFactCategory.UniqueConstraint] = FactSupport.Expressible,
         },
 
         // HQL covers every category except set operations: NHibernate 5.7.0 has no UNION,

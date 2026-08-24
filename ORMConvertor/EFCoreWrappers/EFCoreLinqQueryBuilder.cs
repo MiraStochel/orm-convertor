@@ -1,6 +1,7 @@
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Naming;
 using Model;
 using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
@@ -323,11 +324,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         return [new() { Content = method, ContentType = ConversionContentType.CSharpQuery }];
     }
 
-    private static string Bare(string table) => table.Split('.').LastOrDefault() ?? table;
+    private static string Bare(string table) => EntityTableNaming.BareName(table);
 
-    private static string SingularOf(string table)
-    {
-        var bare = Bare(table);
-        return bare.EndsWith('s') ? bare[..^1] : bare;
-    }
+    private static string SingularOf(string table) => EntityTableNaming.EntityNameFor(table);
 }

@@ -93,6 +93,8 @@ public abstract class AbstractQueryBuilder
 
     private readonly List<ConversionRecord> records = [];
 
+    private bool refused;
+
     /// <summary>
     /// Diagnostic records of this query's translation (decisions 010 and 022). A query
     /// builder is created per query, so the orchestration concatenates these with the
@@ -103,8 +105,22 @@ public abstract class AbstractQueryBuilder
     /// <summary>
     /// Adds a record. Public for the same reason it is on the entity builder: a loss can
     /// occur on the way into the model, so a parser reports here too.
+    ///
+    /// A <see cref="ConversionRecordKind.Failure"/> means the artifact does not come out -
+    /// the sentence the entity side has had since decision 010, now said here too
+    /// (decision 053). Held by the channel rather than by each builder remembering to
+    /// return early, so a query that cannot be rendered faithfully cannot leave a
+    /// half-rendered one behind.
     /// </summary>
-    public void Report(ConversionRecord record) => records.Add(record);
+    public void Report(ConversionRecord record)
+    {
+        records.Add(record);
+
+        if (record.Kind == ConversionRecordKind.Failure)
+        {
+            refused = true;
+        }
+    }
 
     protected void Report(
         ConversionRecordKind kind,
@@ -112,7 +128,7 @@ public abstract class AbstractQueryBuilder
         QueryFeature? feature = null,
         string? entity = null,
         string? property = null)
-        => records.Add(new ConversionRecord
+        => Report(new ConversionRecord
         {
             Kind = kind,
             Framework = Descriptor.Framework,
@@ -204,8 +220,19 @@ public abstract class AbstractQueryBuilder
     /// reporting and step order cannot drift between frameworks (decision 023). Returns an
     /// empty list when the query could not be built; the reason is always in
     /// <see cref="Records"/> rather than in an exception (decision 010).
+    ///
+    /// A failure reported anywhere along the way - by the parser, by the gate below or by a
+    /// visitor at the point of emission - discards the artifact even if the text has
+    /// meanwhile been assembled (decision 053).
     /// </summary>
     public List<ConversionSource> Build()
+    {
+        var artifacts = BuildArtifacts();
+
+        return refused ? [] : artifacts;
+    }
+
+    private List<ConversionSource> BuildArtifacts()
     {
         if (instructions.Count == 0)
         {
@@ -295,6 +322,18 @@ public abstract class AbstractQueryBuilder
                 QueryFeature.Subquery);
         }
 
+        // A malformed condition cannot be rendered without changing which rows the query
+        // returns, so it is refused here rather than approximated by each target in its own
+        // way (decision 053). One gate for all three, like the step order of decision 023.
+        var conditions = body.OfType<SelectInstruction>().Select(i => i.Condition)
+            .Concat(body.OfType<HavingInstruction>().Select(i => i.Condition))
+            .Concat(body.OfType<JoinInstruction>().Select(j => j.OnCondition));
+
+        if (conditions.Any(condition => !ConditionIsWellFormed(condition)))
+        {
+            return null;
+        }
+
         var projections = body.OfType<ProjectInstruction>().ToList();
         var groupBys = body.OfType<GroupByInstruction>().ToList();
 
@@ -320,6 +359,56 @@ public abstract class AbstractQueryBuilder
             PostFilter = Conjoin([.. body.OfType<HavingInstruction>().Select(i => i.Condition)]),
             OrderBys = [.. body.OfType<OrderByInstruction>()],
         };
+    }
+
+    /// <summary>
+    /// Whether a condition tree can be rendered at all (decision 053). Two shapes cannot:
+    /// a comparison whose operator needs a right operand and has none, and a logical node
+    /// with no operands. Both used to be answered by each visitor on its own - one threw,
+    /// two substituted a tautology - and a tautology in place of a filter returns every row
+    /// the source excluded, and inside a disjunction invalidates the whole condition. The
+    /// null tests are the exception the model itself defines: their right operand is
+    /// deliberately unused (decision 002).
+    /// </summary>
+    private bool ConditionIsWellFormed(ConditionNode node)
+    {
+        switch (node)
+        {
+            case ComparisonCondition comparison:
+                if (comparison.Operator is ComparisonOperator.IsNull or ComparisonOperator.IsNotNull)
+                {
+                    return true;
+                }
+
+                if (comparison.Right is null)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"A comparison with operator {comparison.Operator} carries no right operand, so the condition cannot be rendered without changing which rows the query returns; no artifact was generated.",
+                        QueryFeature.Filtering);
+                    return false;
+                }
+
+                return true;
+
+            case LogicalCondition logical:
+                if (logical.Operands.Count == 0)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"A logical {logical.Operator} carries no operand, so the condition cannot be rendered; no artifact was generated.",
+                        QueryFeature.Filtering);
+                    return false;
+                }
+
+                return logical.Operands.All(ConditionIsWellFormed);
+
+            case NotCondition negation:
+                return ConditionIsWellFormed(negation.Operand);
+
+            default:
+                return true;
+        }
     }
 
     /// <summary>

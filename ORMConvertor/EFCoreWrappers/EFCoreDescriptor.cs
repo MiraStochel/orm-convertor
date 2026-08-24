@@ -55,6 +55,11 @@ public static class EFCoreDescriptor
 
             [MappingFactCategory.ForeignKeyColumns] = FactSupport.Expressible, // [ForeignKey]
             [MappingFactCategory.VersionColumn] = FactSupport.Expressible,  // [Timestamp]
+
+            // [Index(nameof(A), IsUnique = true)] is a class-level annotation, which is
+            // exactly the surface this builder emits - no fluent configuration is needed
+            // for it (decision 055).
+            [MappingFactCategory.UniqueConstraint] = FactSupport.Expressible,
         },
 
         // LINQ over DbSet covers every category. The one narrowing inside JoinKind - EF Core 10

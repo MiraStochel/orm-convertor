@@ -13,7 +13,7 @@ namespace CSharpEntityParsing;
 /// is a property of <c>System.Linq</c> (decision 026). What a framework reads on top of
 /// the structure — annotations, conventions — is what a subclass adds through the hooks.
 /// </summary>
-public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : IParser
+public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : IEntityParser
 {
     protected readonly AbstractEntityBuilder entityBuilder = entityBuilder;
 

@@ -22,13 +22,14 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             artifact.Code.AppendLine();
         }
 
-        // [PrimaryKey], [Keyless] and [Precision] all live in this namespace and each is
-        // emitted under its own condition, so the import restates all three: it follows from
-        // the elements that are generated, not from the framework being EF Core.
+        // [PrimaryKey], [Keyless], [Precision] and [Index] all live in this namespace and
+        // each is emitted under its own condition, so the import restates all four: it
+        // follows from the elements that are generated, not from the framework being EF Core.
         bool keyAttribute = entityMap.PrimaryKey is null || entityMap.PrimaryKey.Parts.Count > 1;
         bool precisionAttribute = entityMap.PropertyMaps.Any(pm => pm.Precision != null);
+        bool indexAttribute = entityMap.UniqueConstraints.Count > 0;
 
-        if (keyAttribute || precisionAttribute)
+        if (keyAttribute || precisionAttribute || indexAttribute)
         {
             artifact.Code.AppendLine("using Microsoft.EntityFrameworkCore;");
         }
@@ -62,10 +63,54 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             artifact.Code.AppendLine($"[PrimaryKey({keyNames})]");
         }
 
+        AppendUniqueConstraints(entityMap, artifact);
+
         var modifier = AccessModifierConvertor.ToModifierString(entityMap.Entity.AccessModifier);
 
         artifact.Code.AppendLine($"{modifier} class {entityMap.Entity.Name}");
         artifact.Code.AppendLine("{");
+    }
+
+    /// <summary>
+    /// Unique constraints as class-level [Index(…, IsUnique = true)] annotations (decision
+    /// 055) - EF Core's only annotation for the fact, and a class annotation is exactly
+    /// what this step writes. The parts are emitted through nameof so that the artifact
+    /// stops compiling if a property is later renamed, the way the composite key does.
+    ///
+    /// A constraint naming a property the entity does not declare cannot be written at all:
+    /// nameof would not compile and a string would name nothing. That is a gap in the model
+    /// rather than a narrowing of EF Core, so it is reported as incompleteness and the
+    /// remaining constraints are still emitted.
+    /// </summary>
+    private void AppendUniqueConstraints(EntityMap entityMap, EntityArtifact artifact)
+    {
+        foreach (var constraint in entityMap.UniqueConstraints)
+        {
+            var missing = constraint.PropertyNames
+                .Where(name => !entityMap.PropertyMaps.Any(pm => pm.Property.Name == name))
+                .ToList();
+
+            if (missing.Count > 0)
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.CSharpEntity,
+                    Entity = entityMap.Entity.Name,
+                    Category = MappingFactCategory.UniqueConstraint,
+                    Reason = $"The unique constraint over ({string.Join(", ", constraint.PropertyNames)}) names "
+                        + $"{(missing.Count == 1 ? "a property" : "properties")} the entity does not declare "
+                        + $"({string.Join(", ", missing)}); it is not written.",
+                });
+                continue;
+            }
+
+            var parts = string.Join(", ", constraint.PropertyNames.Select(name => $"nameof({name})"));
+            var named = constraint.Name is null ? string.Empty : $", Name = \"{constraint.Name}\"";
+
+            artifact.Code.AppendLine($"[Index({parts}, IsUnique = true{named})]");
+        }
     }
 
     protected override void BuildPrimaryKey(EntityMap entityMap, EntityArtifact artifact)
@@ -80,6 +125,8 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         foreach (var part in entityMap.PrimaryKey.Parts)
         {
             var propertyMap = part.PropertyMap;
+
+            ReportNullableKeyPartLoss(entityMap, propertyMap.Property, ConversionContentType.CSharpEntity);
 
             // For a simple key [Key] goes on the property; for a composite key the class-level
             // [PrimaryKey(...)] attribute (see BuildTableSchema) defines it and [Key] is not emitted.
@@ -343,7 +390,20 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         var typeCarriedByTimestamp = propMap.IsVersion
             && propMap.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob;
 
-        if (propMap.ColumnName != null || (propMap.Type != null && !typeCarriedByTimestamp))
+        // The literal spelling of the source wins over the name derived from the family: it
+        // is what the source actually claimed, and the escape path of decision 019 exists
+        // precisely because the family is missing or coarser. The same rule the NHibernate
+        // builder applies to sql-type, so both .NET targets answer one model the same way -
+        // and a type with no family at all now reaches the annotation instead of vanishing
+        // (decision 052).
+        var typeText = typeCarriedByTimestamp
+            ? null
+            : propMap.SourceSqlType
+              ?? (propMap.Type.HasValue
+                  ? DatabaseTypeConvertor.ToEFCore(propMap.Type.Value, propMap.IsUnicode)
+                  : null);
+
+        if (propMap.ColumnName != null || typeText != null)
         {
             var parts = new List<string>();
             if (propMap.ColumnName != null)
@@ -351,9 +411,8 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 parts.Add($"\"{propMap.ColumnName}\"");
             }
 
-            if (propMap.Type.HasValue && !typeCarriedByTimestamp)
+            if (typeText != null)
             {
-                var typeText = DatabaseTypeConvertor.ToEFCore(propMap.Type.Value, propMap.IsUnicode);
                 parts.Add($"TypeName=\"{typeText}\"");
             }
 

@@ -1,12 +1,19 @@
+using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
 using Model.AbstractRepresentation.Enums;
-using Model.Exceptions;
 using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
 
 namespace DapperWrappers;
 
-public class DapperSqlQueryVisitor : IQueryVisitor
+/// <summary>
+/// Writes query instructions as SQL (decision 022). Carries the same report channel as the
+/// other two visitors: a shape the target cannot render is a record, not an exception -
+/// exceptions stay reserved for errors of the program, and a condition tree a foreign
+/// parser produced is not one (decisions 010 and 053).
+/// </summary>
+public class DapperSqlQueryVisitor(Action<ConversionRecordKind, string, QueryFeature?> report) : IQueryVisitor
 {
     public string Visit(FromInstruction instr)
     {
@@ -50,7 +57,11 @@ public class DapperSqlQueryVisitor : IQueryVisitor
 
         if (cond.Right is null)
         {
-            throw new QueryBuilderException($"Operator {cond.Operator} needs a right operand.");
+            // Unreachable: the template refuses such a tree before any step runs
+            // (decision 053). Reported rather than thrown, so that one unrenderable query
+            // no longer takes the whole conversion down with it.
+            report(ConversionRecordKind.Failure, $"Operator {cond.Operator} has no right operand; the query was not generated.", QueryFeature.Filtering);
+            return string.Empty;
         }
 
         string right = BuildOperand(cond.Right);
@@ -61,7 +72,9 @@ public class DapperSqlQueryVisitor : IQueryVisitor
     {
         if (cond.Operands.Count == 0)
         {
-            throw new QueryBuilderException("LogicalCondition must have at least one operand.");
+            // Unreachable for the same reason as above.
+            report(ConversionRecordKind.Failure, "A logical condition carries no operand; the query was not generated.", QueryFeature.Filtering);
+            return string.Empty;
         }
 
         string keyword = cond.Operator == LogicalOperator.And ? "AND" : "OR";
@@ -81,18 +94,27 @@ public class DapperSqlQueryVisitor : IQueryVisitor
         return $"NOT ({cond.Operand.Accept(this)})";
     }
 
-    private static string MapOperator(ComparisonOperator op) => op switch
+    /// <summary>
+    /// The comparison operators SQL spells. A value outside the set is a refusal, not an
+    /// exception: the artifact does not come out and the record says why (decision 053).
+    /// </summary>
+    private string MapOperator(ComparisonOperator op)
     {
-        ComparisonOperator.Equal => "=",
-        ComparisonOperator.NotEqual => "<>",
-        ComparisonOperator.GreaterThan => ">",
-        ComparisonOperator.GreaterThanOrEqual => ">=",
-        ComparisonOperator.LessThan => "<",
-        ComparisonOperator.LessThanOrEqual => "<=",
-        ComparisonOperator.Like => "LIKE",
-        ComparisonOperator.In => "IN",
-        _ => throw new QueryBuilderException($"Unsupported ComparisonOperator: {op}")
-    };
+        switch (op)
+        {
+            case ComparisonOperator.Equal: return "=";
+            case ComparisonOperator.NotEqual: return "<>";
+            case ComparisonOperator.GreaterThan: return ">";
+            case ComparisonOperator.GreaterThanOrEqual: return ">=";
+            case ComparisonOperator.LessThan: return "<";
+            case ComparisonOperator.LessThanOrEqual: return "<=";
+            case ComparisonOperator.Like: return "LIKE";
+            case ComparisonOperator.In: return "IN";
+            default:
+                report(ConversionRecordKind.Failure, $"Operator {op} has no SQL form; the query was not generated.", QueryFeature.Filtering);
+                return string.Empty;
+        }
+    }
 
     public string Visit(JoinInstruction instr)
     {
@@ -152,13 +174,21 @@ public class DapperSqlQueryVisitor : IQueryVisitor
 
     public string Visit(SetOperationInstruction instr)
     {
-        return instr.OperationType switch
+        switch (instr.OperationType)
         {
-            SetOperationType.Union => "UNION",
-            SetOperationType.UnionAll => "UNION ALL",
-            SetOperationType.Intersect => "INTERSECT",
-            SetOperationType.Except => "EXCEPT",
-            _ => throw new QueryBuilderException($"Unsupported SetOperationType: {instr.OperationType}")
-        };
+            case SetOperationType.Union: return "UNION";
+            case SetOperationType.UnionAll: return "UNION ALL";
+            case SetOperationType.Intersect: return "INTERSECT";
+            case SetOperationType.Except: return "EXCEPT";
+            default:
+                // ExceptAll has no T-SQL keyword; writing EXCEPT for it would silently
+                // deduplicate rows the source kept (decision 053, the same trap
+                // architecture.md §4.4 names for the EF Core side).
+                report(
+                    ConversionRecordKind.Failure,
+                    $"The set operation {instr.OperationType} has no SQL form; the query was not generated.",
+                    QueryFeature.SetOperation);
+                return string.Empty;
+        }
     }
 }

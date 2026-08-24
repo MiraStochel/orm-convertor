@@ -13,7 +13,7 @@ public class EFCoreLinqToDapperSqlTest
     private static string Translate(string linq, params EntityMap[] maps)
     {
         AbstractQueryBuilder builder = new DapperSqlQueryBuilder { EntityMaps = maps };
-        new EFCoreLinqQueryParser(builder).Parse(linq, maps);
+        new EFCoreLinqQueryParser(builder).Parse(ConversionContentType.CSharpQuery, linq, maps);
 
         return builder.Build()
             .Single(s => s.ContentType == ConversionContentType.SqlQuery)
@@ -191,7 +191,7 @@ public class EFCoreLinqToDapperSqlTest
         """;
 
         AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
-        new EFCoreLinqQueryParser(builder).Parse(linqSource, [Customers()]);
+        new EFCoreLinqQueryParser(builder).Parse(ConversionContentType.CSharpQuery, linqSource, [Customers()]);
         builder.Build();
 
         Assert.Contains(
@@ -214,7 +214,7 @@ public class EFCoreLinqToDapperSqlTest
         """;
 
         AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
-        new EFCoreLinqQueryParser(builder).Parse(linqSource, [Customers()]);
+        new EFCoreLinqQueryParser(builder).Parse(ConversionContentType.CSharpQuery, linqSource, [Customers()]);
         builder.Build();
 
         Assert.Contains(
