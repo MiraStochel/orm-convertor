@@ -13,7 +13,7 @@ internal static class HarnessGenerationUtilities
 {
     internal static List<EntityInfo> ExtractEntityInfos(
         IReadOnlyList<ConversionSource> sources,
-        string connectionString)
+        ICatalogReader catalogReader)
     {
         var entityInfos = sources
             .Where(s => s.ContentType == ConversionContentType.CSharpEntity)
@@ -30,7 +30,7 @@ internal static class HarnessGenerationUtilities
             })
             .ToList();
 
-        return QualifyEntityTableNames(entityInfos, connectionString);
+        return QualifyEntityTableNames(entityInfos, catalogReader);
     }
 
     internal static List<string> ExtractQuerySources(IReadOnlyList<ConversionSource> sources) =>
@@ -172,13 +172,15 @@ internal static class HarnessGenerationUtilities
     /// Qualifies unqualified table names against the advisor database, so generated SQL
     /// keeps working even when the translated entity omitted schema information (common
     /// with EF models). One mechanism answers the question for the whole solution: the
-    /// catalog reader of decision 015, one batch per run. A connection failure propagates
-    /// instead of being swallowed - the benchmark run needs the database anyway, and an
-    /// early clear error beats SQL that silently targets the wrong table.
+    /// catalog reader of decision 015, handed in by the run's coordinator so that its
+    /// cache serves every (query, framework) pair instead of one batch each. A connection
+    /// failure propagates instead of being swallowed - the benchmark run needs the
+    /// database anyway, and an early clear error beats SQL that silently targets the
+    /// wrong table.
     /// </summary>
     internal static List<EntityInfo> QualifyEntityTableNames(
         List<EntityInfo> entityInfos,
-        string connectionString)
+        ICatalogReader catalogReader)
     {
         var requests = entityInfos
             .Select((info, index) => (Info: info, Index: index))
@@ -195,7 +197,7 @@ internal static class HarnessGenerationUtilities
             return entityInfos;
         }
 
-        var lookups = new SqlServerCatalogReader(connectionString).ReadTables(requests);
+        var lookups = catalogReader.ReadTables(requests);
 
         return entityInfos
             .Select((info, index) =>

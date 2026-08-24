@@ -43,6 +43,16 @@ Rozhodnutí 053 zakázalo dosazovat náhražku za podmínku, kterou cíl vykresl
 
 Rozhodnout je třeba, jestli je hranicí pravidla *podmínka* (dnešní znění 053), nebo *množina řádků* (jeho vlastní argument). Druhá odpověď je přísnější a konzistentnější, ale není zadarmo: u joinu by znamenala nevydat artefakt tam, kde ho dnes uživatel dostane spolu se srozumitelným záznamem o tom, co se stalo, a matice T2 by v kategorii *druh joinu* přestala měřit překlad a začala měřit odmítnutí. Volba se navíc dotýká čtení T3: dnes se takový výstup počítá jako přeložený a funkčně neekvivalentní, po zpřísnění by se nepočítal vůbec. Poddotazová půlka se překrývá s položkou *Poddotazy a množinové operace se nevykreslí* — až se vykreslovat začnou, přestane být náhradou a otázka zbude jen u joinu.
 
+### Advisor měří nedoplněný překlad
+*Vyňatá oblast 1 hranice záruk ([`architecture.md`](./architecture.md), §9; popis v §8). Sem odkázalo rozhodnutí [059](./decisions/059-advisor-response-carries-the-measured-translations.md), které svou variantu 3 zamítlo jen pro teď. Souvisí s [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Požadavky F15, T7.*
+
+Překladová fáze `/advisor/run` volá `ConversionHandler.Convert` bez připojovacího řetězce, takže benchmark kompiluje a měří překlad bez katalogového doplnění — kdežto `/convert` tentýž vstup doplní a uživatel by nasadil doplněnou verzi. Čísla Advisoru tedy platí o jiném kódu, než jaký si uživatel z nástroje odnese. Od rozhodnutí 059 je to aspoň vidět: odpověď nese měřené artefakty a jejich stav říká, že katalog nebyl použit. Rozhodnout je třeba, jestli má překladová fáze dostat tutéž cachovanou čtečku jako fáze benchmarková — technicky je to po zavedení `CachingCatalogReader` levné, jedna dávka na framework — a co to udělá s naměřenými čísly: doplněné entity nesou jiné atributy a vztahy, takže se mění kompilovaný harness, a změna metodologie měření se musí přeměřit, ne jen zapnout.
+
+### Iterační politika benchmarku je konstanta v kódu
+*Vyňatá oblast 1 hranice záruk ([`architecture.md`](./architecture.md), §9; popis v §8). Souvisí s položkou „Advisor a benchmarking nemají žádné testy". Požadavek T7.*
+
+`BenchmarkExecutor` měří každý pár (dotaz × framework) pevným postupem: dvě zahřívací iterace, pilotní běh a z něj odvozených 3–20 měřených iterací s cílem ~500 ms celkem. Konstanty jsou zapsané v kódu bez odůvodnění a bez možnosti je ovlivnit z rozhraní, přitom právě ony určují rozptyl a délku běhu, o které v T7 jde; nadbytečná náhledová invokace — celé jedno provedení dotazu jen kvůli ladicímu výpisu — už je zrušená. Rozhodnout je třeba, jestli jsou tyhle hodnoty součástí metodologie, kterou text práce vysloví a odůvodní, nebo parametrem požadavku, a čím se volba podloží; měnit je bez rozhodnutí znamená měnit význam všech dosavadních čísel.
+
 ### Sjednocení ADO.NET provideru v benchmarcích
 *Souvisí s T-požadavky. Podklad: audit 2026-08-02, kap. 3.4.2.*
 
@@ -119,6 +129,16 @@ Zbývá zjistit, co první měření počítalo — nabízí se pracovní kopie 
 `solve_problem()` v `Advisor/ilp.c` vypisuje `No feasible solution found.` obyčejným `printf`. Standardní výstup je v kontejneru přesměrovaný na rouru, tedy plně bufferovaný, a nikdo ten buffer nevyprazdňuje. Hláška se do logu **dostane**, ale teprve až ji protlačí výstup dalšího volání: tři neřešitelné úlohy za sebou vydaly dvě hlášky, každou o jeden běh opožděnou. Vlastní výpis GLPK dorazí včas, protože nejde přes `stdio`, takže v logu stojí `PROBLEM HAS NO PRIMAL FEASIBLE SOLUTION` bez naší věty vedle sebe.
 
 Oprava je jednořádková — `fflush(stdout)` za tím výpisem, případně řádkové bufferování při inicializaci knihovny —, zadarmo ale není: `libadvisor.so` se překládá jedině v Docker buildu, takže změnu je nutné přeložit a ověřit v kontejneru, a sahá se přitom do oblasti bez jediného testu, kterou vyjímáme ze záruk vcelku. Dokud se to nestane, drží ten stav §8 svým popisem, aby nikdo nehledal hlášku, která po jeho volání v logu ještě není. Návratový kód ani tělo odpovědi to nijak nemění — neřešitelnou úlohu pozná volající z **400**, respektive ze `status: -1`, přesně jak §8 popisuje a jak jsme ověřili.
+
+### Tvar `IN` seznamu v katalogových dotazech — nejdřív změřit
+*Souvisí s [`architecture.md`](./architecture.md), §5.2, a rozhodnutím [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Požadavek S3.*
+
+Katalogové dotazy staví `IN` seznam z jednoho parametru na jméno tabulky, takže deset jmen a jedenáct jmen jsou dva různé texty příkazu a dvě položky plan cache SQL Serveru. Poloviční násobič — délku parametru odvozenou z hodnoty — odstranila výslovná deklarace `nvarchar(128)`; zbylý by odstranil jediný parametr nesoucí celý seznam (table-valued parameter, případně `OPENJSON`/`STRING_SPLIT`, které ale předpokládají úroveň kompatibility databáze 130). Před zásahem je třeba skutečnou cenu potvrdit pohledem do `sys.dm_exec_cached_plans` — dosavadní čtení je z kódu, ne z trasy — a bez potvrzené ceny se tvar nemění.
+
+### Překlad s připojeným katalogem nemá měření
+*Souvisí s rozhodnutím [015](./decisions/015-mapping-fact-completion-from-the-catalog.md) a s [`ORMConvertor/README.md`](../ORMConvertor/README.md#translation-performance-s3). Požadavek S3.*
+
+`TranslationPerformanceTest` (100 entit × 100 dotazů pod 30 s) volá `ConversionHandler.Convert` bez připojovacího řetězce, takže třicetisekundová mez měří jen parsování a generování — katalogová fáze do ní přispívá nulou a tvrzení o výkonu překladu s připojenou databází dnes žádné číslo nemá. Data k němu přitom existují: `CatalogPhaseResult.CatalogReadTime` fázi měří u každého převodu, jen je nikdo neskládá dohromady. Zbývá scénář, který S3 změří i s katalogem — proti testovací databázi kolekce `TestDatabaseSchema`, kde už čtečka běží —, a agregace `CatalogReadTime` přes běh Advisoru, má-li se o katalogové ceně běhu něco tvrdit.
 
 ---
 

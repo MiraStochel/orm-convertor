@@ -1,6 +1,6 @@
+using DatabaseCatalog;
 using Model;
 using OrmConvertor;
-using Tests.Database;
 
 namespace Tests.Verification;
 
@@ -79,9 +79,11 @@ internal static class DapperSourceEntities
 
     /// <summary>
     /// Runs the whole pipeline - parsing, catalog completion, generation - the way the
-    /// orchestration runs it, against the test database.
+    /// orchestration runs it, against the test database. The reader comes from the
+    /// fixture, so its cache spans the collection and eight tests re-reading the same
+    /// fixed schema cost one set of catalog statements.
     /// </summary>
-    public static ConversionResult Convert(ORMEnum target)
+    public static ConversionResult Convert(ORMEnum target, ICatalogReader catalogReader)
         => ConversionHandler.Convert(
             ORMEnum.Dapper,
             target,
@@ -90,5 +92,5 @@ internal static class DapperSourceEntities
                 new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = OrderSource },
                 new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = OrderLineSource },
             ],
-            TestDatabase.ConnectionString);
+            catalogReader);
 }

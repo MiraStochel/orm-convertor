@@ -336,7 +336,8 @@
         "required": [
           "selectedFrameworks",
           "queryAssignments",
-          "measurements"
+          "measurements",
+          "translations"
         ],
         "type": "object",
         "properties": {
@@ -359,6 +360,12 @@
               "additionalProperties": {
                 "$ref": "#/components/schemas/BenchmarkMeasurementDto"
               }
+            }
+          },
+          "translations": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AdvisorTranslationsDto"
             }
           }
         }
@@ -487,6 +494,30 @@
                 "string"
               ],
               "format": "int32"
+            }
+          }
+        }
+      },
+      "AdvisorTranslationsDto": {
+        "required": [
+          "entities",
+          "queries"
+        ],
+        "type": "object",
+        "properties": {
+          "entities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversionSource"
+            }
+          },
+          "queries": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ConversionSource"
+              }
             }
           }
         }

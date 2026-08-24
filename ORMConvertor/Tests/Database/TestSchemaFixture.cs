@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using DatabaseCatalog;
 using Microsoft.Data.SqlClient;
 
 namespace Tests.Database;
@@ -56,8 +57,29 @@ public sealed class TestSchemaFixture : IAsyncLifetime
             EXEC sp_executesql @sql;
         """;
 
+    private CachingCatalogReader? catalogReader;
+
     /// <summary>Schema the fixture owns.</summary>
     public string SchemaName => TestDatabase.SchemaName;
+
+    /// <summary>
+    /// One caching reader for the whole collection. The schema is written once by the
+    /// fixture and only read afterwards, so every test re-reading the same images would
+    /// pay the same catalog statements again; the cache's lifetime is the collection's,
+    /// which is exactly the span for which the schema is immutable.
+    /// </summary>
+    public ICatalogReader CatalogReader
+    {
+        get
+        {
+            if (!IsAvailable)
+            {
+                throw new InvalidOperationException(SkipReason);
+            }
+
+            return catalogReader ??= new CachingCatalogReader(new SqlServerCatalogReader(TestDatabase.ConnectionString!));
+        }
+    }
 
     /// <summary>Whether the schema really stands and tests may talk to it.</summary>
     public bool IsAvailable { get; private set; }
@@ -104,6 +126,8 @@ public sealed class TestSchemaFixture : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
+        catalogReader?.Dispose();
+
         if (!IsAvailable)
         {
             return;

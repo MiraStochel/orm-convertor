@@ -26,7 +26,7 @@ public class DapperToNHibernateVerificationTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        var result = DapperSourceEntities.Convert(ORMEnum.NHibernate);
+        var result = DapperSourceEntities.Convert(ORMEnum.NHibernate, fixture.CatalogReader);
 
         // NHibernate requires the identifier; only the catalog can supply it here. A
         // failure record would mean the completion did not reach the key.
@@ -41,7 +41,7 @@ public class DapperToNHibernateVerificationTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        CompileEntities(DapperSourceEntities.Convert(ORMEnum.NHibernate).Sources);
+        CompileEntities(DapperSourceEntities.Convert(ORMEnum.NHibernate, fixture.CatalogReader).Sources);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class DapperToNHibernateVerificationTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        var mappings = DapperSourceEntities.Convert(ORMEnum.NHibernate).Sources
+        var mappings = DapperSourceEntities.Convert(ORMEnum.NHibernate, fixture.CatalogReader).Sources
             .Where(o => o.ContentType == ConversionContentType.XML)
             .ToList();
         Assert.Equal(3, mappings.Count);
@@ -67,7 +67,7 @@ public class DapperToNHibernateVerificationTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        var mappings = DapperSourceEntities.Convert(ORMEnum.NHibernate).Sources
+        var mappings = DapperSourceEntities.Convert(ORMEnum.NHibernate, fixture.CatalogReader).Sources
             .Where(o => o.ContentType == ConversionContentType.XML)
             .ToList();
 
@@ -87,7 +87,7 @@ public class DapperToNHibernateVerificationTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        var outputs = DapperSourceEntities.Convert(ORMEnum.NHibernate).Sources;
+        var outputs = DapperSourceEntities.Convert(ORMEnum.NHibernate, fixture.CatalogReader).Sources;
 
         // Completing without an exception is the verdict: NHibernate bound the composite
         // keys, the supplied types and the synthesized references to the compiled classes.

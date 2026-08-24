@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using AdvisorBenchmarking;
+using DatabaseCatalog;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Model;
@@ -90,17 +91,27 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
                 "in appsettings.json or via environment variables (ConnectionStrings__AdvisorDatabase).");
         }
 
-        var measurements = RunBenchmarks(
-            request,
-            targetFrameworks,
-            translations,
-            cancellationToken);
+        // One caching reader for the whole run: every (query, framework) pair qualifies
+        // the same entity set, so without the cache the same catalog batch would run
+        // Q x F times (decision 015 is the seam, the cache its per-run lifetime).
+        IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, BenchmarkMeasurement>> measurements;
+        using (var catalogReader = new CachingCatalogReader(new SqlServerCatalogReader(connectionString)))
+        {
+            measurements = RunBenchmarks(
+                request,
+                targetFrameworks,
+                translations,
+                catalogReader,
+                cancellationToken);
+        }
+
         logger.LogInformation("Benchmarks completed for {QueryCount} queries.", request.Queries.Count);
 
         var result = ExecuteAdvisor(
             request,
             targetFrameworks,
-            measurements);
+            measurements,
+            translations);
 
         return Task.FromResult(result);
     }
@@ -189,6 +200,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         AdvisorRunRequest request,
         IReadOnlyList<ORMEnum> targetFrameworks,
         IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>>> translations,
+        ICatalogReader catalogReader,
         CancellationToken cancellationToken)
     {
         var results = new Dictionary<string, IReadOnlyDictionary<ORMEnum, BenchmarkMeasurement>>(StringComparer.Ordinal);
@@ -213,7 +225,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
                     throw new InvalidOperationException($"Missing translation for query '{query.Id}' and framework '{framework}'.");
                 }
 
-                var measurement = benchmarkExecutor.Execute(framework, sources, connectionString);
+                var measurement = benchmarkExecutor.Execute(framework, sources, connectionString, catalogReader);
                 perFramework[framework] = measurement;
                 logger.LogInformation("Benchmark {QueryId} on {Framework}: mean {Mean} ms, memory {Memory} bytes.", query.Id, framework, measurement.MeanDurationMilliseconds, measurement.AllocatedBytes);
             }
@@ -227,7 +239,8 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
     private static AdvisorRunResult ExecuteAdvisor(
         AdvisorRunRequest request,
         IReadOnlyList<ORMEnum> targetFrameworks,
-        IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, BenchmarkMeasurement>> measurements)
+        IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, BenchmarkMeasurement>> measurements,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>>> translations)
     {
         int queryCount = request.Queries.Count;
         int frameworkCount = targetFrameworks.Count;
@@ -309,7 +322,39 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
             dtoMeasurements[qid] = map;
         }
 
-        return new AdvisorRunResult(chosenFrameworks, assignments, dtoMeasurements);
+        return new AdvisorRunResult(chosenFrameworks, assignments, dtoMeasurements, GroupTranslations(request, targetFrameworks, translations));
     }
 
+    /// <summary>
+    /// The translations of phase one regrouped for the response (decision 059): the
+    /// entity artifacts once per framework - every query's conversion of the same entity
+    /// inputs emits the same ones, which is the determinism of S2, not hope - and each
+    /// query's own artifacts under the id its measurements use.
+    /// </summary>
+    private static IReadOnlyDictionary<ORMEnum, AdvisorTranslationsDto> GroupTranslations(
+        AdvisorRunRequest request,
+        IReadOnlyList<ORMEnum> targetFrameworks,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>>> translations)
+    {
+        var result = new Dictionary<ORMEnum, AdvisorTranslationsDto>();
+
+        foreach (var framework in targetFrameworks)
+        {
+            var entities = translations[request.Queries[0].Id][framework]
+                .Where(s => !s.ContentType.IsQuery())
+                .ToList();
+
+            var queries = new Dictionary<string, IReadOnlyList<ConversionSource>>(StringComparer.Ordinal);
+            foreach (var query in request.Queries)
+            {
+                queries[query.Id] = translations[query.Id][framework]
+                    .Where(s => s.ContentType.IsQuery())
+                    .ToList();
+            }
+
+            result[framework] = new AdvisorTranslationsDto(entities, queries);
+        }
+
+        return result;
+    }
 }

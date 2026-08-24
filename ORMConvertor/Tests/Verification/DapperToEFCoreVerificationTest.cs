@@ -26,7 +26,7 @@ public class DapperToEFCoreVerificationTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        var result = DapperSourceEntities.Convert(ORMEnum.EFCore);
+        var result = DapperSourceEntities.Convert(ORMEnum.EFCore, fixture.CatalogReader);
 
         Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure);
         Assert.Equal(CatalogConnectionState.Reached, result.CatalogState);
@@ -38,7 +38,7 @@ public class DapperToEFCoreVerificationTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        CompileEntities(DapperSourceEntities.Convert(ORMEnum.EFCore).Sources);
+        CompileEntities(DapperSourceEntities.Convert(ORMEnum.EFCore, fixture.CatalogReader).Sources);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class DapperToEFCoreVerificationTest(TestSchemaFixture fixture)
         fixture.SkipIfUnavailable();
 
         var model = EFCoreAcceptance.BuildModel(
-            CompileEntities(DapperSourceEntities.Convert(ORMEnum.EFCore).Sources));
+            CompileEntities(DapperSourceEntities.Convert(ORMEnum.EFCore, fixture.CatalogReader).Sources));
 
         // The framework's own reading of the artifact: everything below came from the
         // catalog, because a Dapper source cannot state any of it (F6).

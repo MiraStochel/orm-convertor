@@ -63,6 +63,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [056](056-work-in-progress-input-stays-in-the-browser.md) | Rozpracovaný vstup překladové obrazovky zůstává v prohlížeči | 2026-08-24 | platí | F14, S7 |
 | [057](057-deployment-view-in-the-operating-manual.md) | Nasazovací pohled bydlí v provozní příručce, ne v architektuře | 2026-08-24 | nahrazeno [058](058-only-the-operational-half-of-the-deployment-view-moves.md) | žádné |
 | [058](058-only-the-operational-half-of-the-deployment-view-moves.md) | Do provozní příručky patří jen provozní polovina nasazovacího pohledu | 2026-08-24 | platí | žádné |
+| [059](059-advisor-response-carries-the-measured-translations.md) | Odpověď Advisoru nese změřené překlady | 2026-08-24 | platí | F15, S2, S7, T7 |
 
 ## Formát
 

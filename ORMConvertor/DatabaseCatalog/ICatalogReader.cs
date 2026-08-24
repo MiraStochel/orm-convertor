@@ -39,10 +39,13 @@ public interface ICatalogReader
     IReadOnlyDictionary<string, TableLookup> ReadTables(IReadOnlyList<TableRequest> requests);
 
     /// <summary>
-    /// Full images of the junction-shaped tables (see <see cref="JunctionShape"/>) whose
-    /// two key-forming foreign keys both point at the given tables. This is how a
+    /// Images of the junction-shaped tables (see <see cref="JunctionShape"/>) whose two
+    /// key-forming foreign keys both point at the given tables. This is how a
     /// many-to-many nobody's artifact expresses is found: the junction table exists only
-    /// in the schema, so only the catalog can name it (decisions 005 and 015).
+    /// in the schema, so only the catalog can name it (decisions 005 and 015). The given
+    /// tables themselves are never returned - the caller already holds their images - and
+    /// the returned images carry columns, key and foreign keys, which is everything the
+    /// synthesis and its payload report read; unique constraints are not loaded.
     /// </summary>
     IReadOnlyList<TableImage> FindJunctionTables(IReadOnlyCollection<TableImage> referencedTables);
 }

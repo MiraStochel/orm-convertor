@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using DatabaseCatalog;
 using Microsoft.EntityFrameworkCore;
 using Model;
 using static AdvisorBenchmarking.HarnessGenerationUtilities;
@@ -16,10 +17,11 @@ internal static class EFCoreBenchmarkHarnessBuilder
 {
     public static BenchmarkSource Build(
         IReadOnlyList<ConversionSource> sources,
-        string connectionString)
+        string connectionString,
+        ICatalogReader catalogReader)
     {
         // Entities are shared across translated outputs. We load them once so the DbContext can register each type.
-        var entityInfos = ExtractEntityInfos(sources, connectionString);
+        var entityInfos = ExtractEntityInfos(sources, catalogReader);
         if (entityInfos.Count == 0)
         {
             throw new InvalidOperationException("EF Core harness requires at least one entity definition.");

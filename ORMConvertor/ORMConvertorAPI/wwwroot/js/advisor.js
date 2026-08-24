@@ -1,12 +1,16 @@
 /*
  * The advisor screen: same scope as before the rewrite (decision 033) - source
  * framework, entity units, weighted queries, constraints, then the ILP result with
- * measurements and the artifacts converted for the selected frameworks.
+ * measurements and the artifacts of the selected frameworks.
  *
  * The result table shows every candidate's measurement per query with the assigned one
  * marked. The server already sends them all (`measurements` is query -> framework ->
  * measurement), and the comparison is what the choice is made of; the winner's number
  * alone says what was chosen but never why.
+ *
+ * The artifacts come from the run response itself (`translations`, decision 059): they
+ * are the very sources the run compiled and measured, so the panels and the numbers
+ * talk about the same code and no extra /convert is issued after the run.
  */
 
 import {
@@ -18,7 +22,6 @@ import {
   getRequiredContentAdvisor,
   getAdvisorSamples,
   runAdvisor,
-  convert,
 } from "./api.js";
 import { cloneTemplate, renderArtifacts } from "./ui.js";
 
@@ -175,6 +178,25 @@ function measurementFor(measurements, queryId, framework) {
   );
 }
 
+/** One framework's translations from the run response, tolerant of the key shape. */
+function translationFor(translations, framework) {
+  if (!translations) return null;
+  return (
+    translations[framework] ??
+    translations[String(framework)] ??
+    translations[ORM_NAMES[framework]] ??
+    null
+  );
+}
+
+/** The measured artifacts of one framework: entities once, then each query's in order. */
+function artifactsFor(translations, framework, queryIds) {
+  const translation = translationFor(translations, framework);
+  if (!translation) return [];
+  const queryArtifacts = queryIds.flatMap((id) => translation.queries?.[id] ?? []);
+  return [...(translation.entities ?? []), ...queryArtifacts];
+}
+
 /** Every candidate measured for one query, fastest first. */
 function candidatesFor(measurements, queryId) {
   return Object.values(ORM)
@@ -317,7 +339,6 @@ async function onRun() {
   const labels = new Map(
     state.queryUnits.map((unit, index) => [String(index + 1), `${unit.description} ${index + 1}`]),
   );
-  const combinedSources = [...entities, ...queries.map((q) => q.query)];
 
   const memoryKb = Math.max(0, Math.trunc(Number(document.getElementById("memory-limit").value) || 0));
   const maxFrameworks = Math.max(1, Math.trunc(Number(document.getElementById("max-frameworks").value) || 1));
@@ -343,12 +364,11 @@ async function onRun() {
     });
 
     const selected = [...new Set(state.result.selectedFrameworks ?? [])];
-    const conversions = await Promise.all(
-      selected.map(async (framework) => ({
-        framework,
-        sources: (await convert(state.sourceOrm, framework, combinedSources)).sources,
-      })),
-    );
+    const queryIds = queries.map((q) => q.id);
+    const conversions = selected.map((framework) => ({
+      framework,
+      sources: artifactsFor(state.result.translations, framework, queryIds),
+    }));
     renderResult(labels, conversions);
     stopElapsed(started, "Finished");
     document.getElementById("result").scrollIntoView({ behavior: "smooth", block: "start" });

@@ -15,6 +15,23 @@ public static class ConversionHandler
         string? catalogConnectionString = null
     )
     {
+        // The reader lives and dies with the request; a caller holding a longer-lived
+        // one - a cache over an Advisor run or a test collection - uses the overload
+        // below and keeps ownership.
+        using SqlServerCatalogReader? reader = string.IsNullOrWhiteSpace(catalogConnectionString)
+            ? null
+            : new SqlServerCatalogReader(catalogConnectionString);
+
+        return Convert(sourceOrm, targetOrm, sources, reader);
+    }
+
+    public static ConversionResult Convert(
+        ORMEnum sourceOrm,
+        ORMEnum targetOrm,
+        List<ConversionSource> sources,
+        ICatalogReader? catalogReader
+    )
+    {
         var entityBuilder = EntityBuilderFactory.Create(targetOrm);
 
         if (entityBuilder == null)
@@ -60,11 +77,8 @@ public static class ConversionHandler
 
         // The completion phase of decision 015 sits between parsing and generation: the
         // target's descriptor formulates the demand, one component reads the catalog, and
-        // the phase is timed on its own (S3). The connection is an optional input - a
+        // the phase is timed on its own (S3). The reader is an optional input - a
         // translation without one proceeds on conventions and says so in the records.
-        var catalogReader = string.IsNullOrWhiteSpace(catalogConnectionString)
-            ? null
-            : new SqlServerCatalogReader(catalogConnectionString);
         var catalogPhase = CatalogCompletion.Complete(entityBuilder, catalogReader);
 
         // Emit entities for target ORM

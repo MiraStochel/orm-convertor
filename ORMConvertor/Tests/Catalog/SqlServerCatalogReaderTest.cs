@@ -15,7 +15,10 @@ namespace Tests.Catalog;
 public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
 {
     private IReadOnlyDictionary<string, TableLookup> Read(params TableRequest[] requests)
-        => new SqlServerCatalogReader(TestDatabase.ConnectionString!).ReadTables(requests);
+    {
+        using var reader = new SqlServerCatalogReader(TestDatabase.ConnectionString!);
+        return reader.ReadTables(requests);
+    }
 
     private TableImage ImageOf(string entityName)
     {
@@ -154,8 +157,8 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        var junctions = new SqlServerCatalogReader(TestDatabase.ConnectionString!)
-            .FindJunctionTables([ImageOf("Product"), ImageOf("Supplier")]);
+        using var reader = new SqlServerCatalogReader(TestDatabase.ConnectionString!);
+        var junctions = reader.FindJunctionTables([ImageOf("Product"), ImageOf("Supplier")]);
 
         // ProductSuppliers is the junction of the schema: its whole key is two foreign
         // keys, and the payload column does not disqualify it.
@@ -172,8 +175,8 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
 
         // Orders references Customers without being key-covered, CustomerProfiles covers
         // its key with a single foreign key - neither is the two-key junction shape.
-        var junctions = new SqlServerCatalogReader(TestDatabase.ConnectionString!)
-            .FindJunctionTables([ImageOf("Customer")]);
+        using var reader = new SqlServerCatalogReader(TestDatabase.ConnectionString!);
+        var junctions = reader.FindJunctionTables([ImageOf("Customer")]);
 
         Assert.Empty(junctions);
     }

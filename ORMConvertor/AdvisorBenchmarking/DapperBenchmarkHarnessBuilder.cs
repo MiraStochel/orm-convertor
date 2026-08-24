@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using DatabaseCatalog;
 using Model;
 using static AdvisorBenchmarking.HarnessGenerationUtilities;
 using EntityInfo = AdvisorBenchmarking.HarnessGenerationUtilities.EntityInfo;
@@ -13,10 +14,11 @@ internal static class DapperBenchmarkHarnessBuilder
 {
     public static BenchmarkSource Build(
         IReadOnlyList<ConversionSource> sources,
-        string connectionString)
+        string connectionString,
+        ICatalogReader catalogReader)
     {
         // Parse entity definitions up front so the generated harness can compile them alongside the benchmark.
-        var entityInfos = ExtractEntityInfos(sources, connectionString);
+        var entityInfos = ExtractEntityInfos(sources, catalogReader);
         if (entityInfos.Count == 0)
         {
             throw new InvalidOperationException("Dapper harness requires at least one entity definition.");

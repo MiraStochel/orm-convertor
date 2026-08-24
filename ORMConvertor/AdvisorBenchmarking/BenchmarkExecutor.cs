@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
+using DatabaseCatalog;
 using Microsoft.Extensions.Logging;
 using Model;
 using System.Reflection;
@@ -22,11 +22,12 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
     public BenchmarkMeasurement Execute(
         ORMEnum framework,
         IReadOnlyList<ConversionSource> sources,
-        string connectionString)
+        string connectionString,
+        ICatalogReader catalogReader)
     {
         logger?.LogInformation("Benchmark start for framework {Framework} with {SourceCount} sources.", framework, sources.Count);
 
-        var benchmarkSource = BenchmarkHarnessBuilder.Build(framework, sources, connectionString);
+        var benchmarkSource = BenchmarkHarnessBuilder.Build(framework, sources, connectionString, catalogReader);
         // logger?.LogDebug("Generated benchmark source (first 10000 chars): {SourceSnippet}", Truncate(benchmarkSource.Source, 10000));
 
         var assemblyName = $"DynamicBenchmarks_{Guid.NewGuid():N}";
@@ -65,18 +66,7 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
             setup?.Invoke(instance, null);
             logger?.LogDebug("Setup invoked.");
 
-            // Perform a non-measured preview invocation to report result count and first row.
-            try
-            {
-                var preview = execute.Invoke(instance, null);
-                LogPreviewResult(logger, preview);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogDebug(ex, "Preview invocation failed; continuing to benchmark.");
-            }
-
-            // Additional warm-ups (non-measured) to stabilize caches/JIT.
+            // Warm-ups (non-measured) to stabilize caches/JIT.
             for (int i = 0; i < warmupIterations; i++)
             {
                 execute.Invoke(instance, null);
@@ -157,95 +147,5 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
         logger?.LogInformation("Benchmark finished: {Iterations} iters, mean {Mean} ms/op, allocated {Allocated} bytes/op.", iterations, meanMilliseconds, allocatedBytesPerOp);
 
         return new BenchmarkMeasurement(meanMilliseconds, allocatedBytesPerOp);
-    }
-    
-    private static void LogPreviewResult(ILogger? logger, object? result)
-    {
-        if (logger is null)
-        {
-            return;
-        }
-
-        if (result is null)
-        {
-            logger.LogDebug("Query returned 0 rows (null result).");
-            return;
-        }
-
-        // Try to compute count without re-enumerating expensive sources; harness returns lists.
-        int count = result is System.Collections.ICollection coll ? coll.Count : CountEnumerable(result as System.Collections.IEnumerable);
-        logger.LogDebug("Query returned {Count} rows.", count);
-
-        if (count <= 0)
-        {
-            return;
-        }
-
-        var first = FirstOrDefault(result as System.Collections.IEnumerable) ?? result;
-        var formatted = FormatObject(first);
-        logger.LogDebug("First row: {Row}", formatted);
-    }
-
-    private static int CountEnumerable(System.Collections.IEnumerable? enumerable)
-    {
-        if (enumerable is null) { return 0; }
-        int i = 0;
-        var e = enumerable.GetEnumerator();
-        try
-        {
-            while (e.MoveNext()) { i++; }
-        }
-        finally
-        {
-            (e as IDisposable)?.Dispose();
-        }
-        return i;
-    }
-
-    private static object? FirstOrDefault(System.Collections.IEnumerable? enumerable)
-    {
-        if (enumerable is null) { return null; }
-        var e = enumerable.GetEnumerator();
-        try
-        {
-            return e.MoveNext() ? e.Current : null;
-        }
-        finally
-        {
-            (e as IDisposable)?.Dispose();
-        }
-    }
-
-    private static string FormatObject(object? obj)
-    {
-        if (obj is null)
-        {
-            return "<null>";
-        }
-
-        var type = obj.GetType();
-        // For simple primitives, just ToString
-        if (type.IsPrimitive || obj is string || obj is decimal || obj is DateTime || obj is Guid)
-        {
-            return obj is string s ? $"\"{s}\"" : Convert.ToString(obj) ?? string.Empty;
-        }
-
-        var props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
-            .Where(p => p.CanRead)
-            .Take(20) // avoid flooding
-            .Select(p => $"{p.Name}={(FormatScalar(p.GetValue(obj)))}");
-
-        return $"{type.Name} {{ {string.Join(", ", props)} }}";
-    }
-
-    private static string FormatScalar(object? value)
-    {
-        if (value is null) return "<null>";
-        return value switch
-        {
-            string s => $"\"{s}\"",
-            DateTime dt => dt.ToString("o"),
-            _ => Convert.ToString(value) ?? string.Empty
-        };
     }
 }

@@ -50,7 +50,7 @@ public class DapperManyToManyVerificationTest(TestSchemaFixture fixture)
         }
         """;
 
-    private static ConversionResult Convert(ORMEnum target)
+    private ConversionResult Convert(ORMEnum target)
         => ConversionHandler.Convert(
             ORMEnum.Dapper,
             target,
@@ -58,7 +58,7 @@ public class DapperManyToManyVerificationTest(TestSchemaFixture fixture)
                 new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = SupplierSource },
                 new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = ProductSource },
             ],
-            TestDatabase.ConnectionString);
+            fixture.CatalogReader);
 
     private static byte[] CompileEntities(
         IEnumerable<ConversionSource> outputs, IReadOnlyList<Microsoft.CodeAnalysis.MetadataReference> references)
