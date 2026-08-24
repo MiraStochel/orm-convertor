@@ -104,6 +104,22 @@ Testovací projekt nepokrývá `Advisor` ani `AdvisorBenchmarking`. Netestovaný
 
 Obojí je ze záruk vyňaté vcelku ([`architecture.md`](./architecture.md), §9) právě proto, že netestované je; testovat oblast, na kterou nástroj neslibuje spoleh, by znamenalo otevírat novou část místo dokončení rozdělané.
 
+### Dvě měření téže revize se rozešla v počtu testů
+*Nalezeno při ověření na druhém stroji (2026-08-24). Obě čísla dnes nese [`ORMConvertor/README.md`](../ORMConvertor/README.md#how-large-the-suite-is-and-what-it-covers); na počtu stojí důkazní sloupec S5 v [`traceability.md`](./traceability.md). Souvisí s rozhodnutím [039](./decisions/039-container-configuration-of-the-environment.md), které nulové přeskočení udělalo podmínkou důkazu F4 a F6. Požadavky F4, F6, S5, T3.*
+
+Nad touž revizí a v týž den vyšla sada na dvou strojích různě: **484 testů a pokrytí 70,8 % řádků / 58,1 % větví** na prvním, **507 testů a 71,3 % / 58,9 %** na druhém. Přeskočením to není — obě měření hlásí nula přeskočených —, a kontejnerový běh na druhém stroji došel k 507 nezávisle na tamním hostitelském běhu. Po projektech se přitom obě měření shodují do posledního čísla, které README jmenuje: `SampleData` a `CSharpEntityParsing` na 100 %, `OrmConvertor` 95,0 %, `Model` 93,3 %, `Advisor` a `AdvisorBenchmarking` 0,0 %, `ORMConvertorAPI` 42,4 %. Rozchází se tedy jedině součet, a poslední commit, který sáhl do `Tests/`, je starší než obě měření, takže mezitím přidaný test to nevysvětlí.
+
+Nejbližší vysvětlení navíc nesedí. U dvojice 419 a 392 z 2026-08-23 stačilo rozdíl spočítat — bylo to přesně dvacet sedm testů, které přidal `ConsumerProjectFactsTest`, a obě čísla platila, každé o jiné sadě. Tady rozdíl dělá dvacet tři, jenže poslední commit, který do `Tests/` sáhl (`91a5dc7`), přidal řádově sedmapadesát případů. Ani „změřeno nad předchozím stromem" tedy nevychází: před ním by sada měla mít o sedmapadesát méně, ne o dvacet tři.
+
+Zbývá zjistit, co první měření počítalo — nabízí se pracovní kopie s rozpracovanou změnou, běh s filtrem nebo znovu nepřeložené testovací sestavení — a sadu přeměřit na prvním stroji nad čistým checkoutem téže revize. Číslo, které přežije, ať v README zůstane samo; dnes tam jsou obě a S5 v `traceability.md` to říká také. Naléhavé to je proto, že tenhle jeden počet je jediné místo, kde se velikost sady vyslovuje, a opírá se o něj jak důkaz S5, tak údaj o pokrytí, který má obsloužit T3. Číslo, kterému si dvě měření protiřečí, není důkaz.
+
+### Hláška o neřešitelném ILP modelu dorazí do logu až s dalším voláním
+*Nalezeno při ověření na druhém stroji (2026-08-24); popis v [`architecture.md`](./architecture.md), §8, je podle toho opravený. Vyňatá oblast 1 hranice záruk (§9). Souvisí s položkou „Advisor a benchmarking nemají žádné testy". Požadavky T7, S6.*
+
+`solve_problem()` v `Advisor/ilp.c` vypisuje `No feasible solution found.` obyčejným `printf`. Standardní výstup je v kontejneru přesměrovaný na rouru, tedy plně bufferovaný, a nikdo ten buffer nevyprazdňuje. Hláška se do logu **dostane**, ale teprve až ji protlačí výstup dalšího volání: tři neřešitelné úlohy za sebou vydaly dvě hlášky, každou o jeden běh opožděnou. Vlastní výpis GLPK dorazí včas, protože nejde přes `stdio`, takže v logu stojí `PROBLEM HAS NO PRIMAL FEASIBLE SOLUTION` bez naší věty vedle sebe.
+
+Oprava je jednořádková — `fflush(stdout)` za tím výpisem, případně řádkové bufferování při inicializaci knihovny —, zadarmo ale není: `libadvisor.so` se překládá jedině v Docker buildu, takže změnu je nutné přeložit a ověřit v kontejneru, a sahá se přitom do oblasti bez jediného testu, kterou vyjímáme ze záruk vcelku. Dokud se to nestane, drží ten stav §8 svým popisem, aby nikdo nehledal hlášku, která po jeho volání v logu ještě není. Návratový kód ani tělo odpovědi to nijak nemění — neřešitelnou úlohu pozná volající z **400**, respektive ze `status: -1`, přesně jak §8 popisuje a jak jsme ověřili.
+
 ---
 
 ### Editor jednotky nemá čísla řádků, na která se odvolává chybová hláška
