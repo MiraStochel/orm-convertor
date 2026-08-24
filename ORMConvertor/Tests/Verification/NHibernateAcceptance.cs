@@ -13,7 +13,9 @@ namespace Tests.Verification;
 /// persistent class before any connection is attempted - a mapping naming a property the
 /// class does not have, a composite-id class without Equals/GetHashCode, a key part
 /// without a type all fail here, which is the class of errors decision 006 named and no
-/// shape assertion can catch.
+/// shape assertion can catch. The fourth level runs through here as well: a test that
+/// stores and loads rows takes the same factory over <see cref="UseSessionFactory"/> and
+/// supplies the session its own connection.
 /// </summary>
 internal static class NHibernateAcceptance
 {
@@ -34,6 +36,20 @@ internal static class NHibernateAcceptance
     /// generated mapping documents. Throws whatever NHibernate throws when it refuses them.
     /// </summary>
     public static void BuildSessionFactory(byte[] compiledEntities, IEnumerable<string> mappingXmls)
+        => UseSessionFactory(compiledEntities, mappingXmls, (_, _) => { });
+
+    /// <summary>
+    /// Builds the session factory the same way and hands it to the caller together with the
+    /// loaded entity assembly, for the fourth verification level: opening a session and
+    /// storing rows needs the factory alive, and creating key instances needs the entity
+    /// types. The callback runs under the same resolve handler and gate as the build - the
+    /// factory resolves nothing new at runtime, but a second acceptance starting meanwhile
+    /// would install a second handler, and the gate exists to rule exactly that out.
+    /// </summary>
+    public static void UseSessionFactory(
+        byte[] compiledEntities,
+        IEnumerable<string> mappingXmls,
+        Action<global::NHibernate.ISessionFactory, Assembly> use)
     {
         var entities = Assembly.Load(compiledEntities);
         var assemblyName = entities.GetName().Name!;
@@ -70,6 +86,7 @@ internal static class NHibernateAcceptance
             }
 
             using var sessionFactory = configuration.BuildSessionFactory();
+            use(sessionFactory, entities);
         }
         finally
         {
