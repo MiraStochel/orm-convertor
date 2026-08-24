@@ -5,6 +5,7 @@ Autoritativní a živě udržovaný popis projektu. **Členěný podle žánru, 
 | Dokument | Odpovídá na otázku | Životní cyklus |
 |---|---|---|
 | [`architecture.md`](architecture.md) | Jak nástroj funguje **dnes**. | živé; aktualizuje se s každou změnou chování |
+| [`../ORMConvertor/README.md`](../ORMConvertor/README.md) | Jak se nástroj **spouští, nasazuje, konfiguruje a testuje** a co je na které cestě ověřené — nasazovací pohled architektury (rozhodnutí [057](decisions/057-deployment-view-in-the-operating-manual.md)). Jediný živý dokument sady mimo `docs/`, a proto anglicky. | živé; aktualizuje se se změnou běhové cesty |
 | [`open-items.md`](open-items.md) | Co **zbývá** — otevřená rozhodnutí i rozhodnutá, ale nenapsaná práce. Značka `Na řadě` říká, kde se pokračuje. | živé; položka mizí, jakmile je hotová |
 | [`decisions/`](decisions/README.md) | **Proč** je nástroj takový, jaký je. Jedno rozhodnutí = jeden soubor. | neměnné; mění se jen pole `Stav` |
 | [`audits/`](audits/README.md) | Co jsme **kdy věděli**. Datované revize stavu k jednomu dni. | neměnné |
@@ -24,7 +25,7 @@ Dvě věci, které z toho členění plynou a pletou se nejčastěji. **Nálezy 
 
 - **Volba se nejdřív zapíše, pak naprogramuje.** Změna, která *volí* mezi možnostmi, začíná novým souborem v `decisions/` a řádkem v jeho rejstříku. Ne každá změna je volba: provedení už rozhodnutého, oprava chyby, doplnění testu k existujícímu chování ani přijetí licence rozhodnutí nejsou. Zkouška je otázka, jestli se čtenář později zeptá *proč tohle a ne něco jiného*.
 - **Rozhodnutí se nepřepisují.** Změněná volba znamená nový soubor a starému stav `nahrazeno NNN`; opravit na místě se smí jen doplnění případu, na který se nemyslelo (stav `revidováno`), a jen dokud podle rozhodnutí nevznikl kód. Podrobněji [`decisions/README.md`](decisions/README.md).
-- **Každá změna chování končí v `architecture.md`** a odbavená položka mizí z `open-items.md`. Bez toho je dokumentace nesprávná, ne jen neúplná.
+- **Každá změna chování končí v `architecture.md`** — a jde-li o spuštění, nasazení, konfiguraci nebo testy, v [`../ORMConvertor/README.md`](../ORMConvertor/README.md) (rozhodnutí [057](decisions/057-deployment-view-in-the-operating-manual.md)) — a odbavená položka mizí z `open-items.md`. Bez toho je dokumentace nesprávná, ne jen neúplná.
 - **Zmražené dokumenty se nepřepisují vůbec** — `requirements.md`, `baseline.md` a hotové audity jsou snímky ke dni svého vzniku.
 - **Žánr se nemíchá.** Do `architecture.md` nepatří odůvodnění volby, do `decisions/` popis současného stavu a do `audits/` seznam zbývající práce.
 

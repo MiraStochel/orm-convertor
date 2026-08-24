@@ -60,7 +60,7 @@ Do téhož rozhodnutí patří druhá otázka, protože obě mění tvar téže 
 ## Otevřená práce
 
 ### Generovaný artefakt nikdo nespustil proti databázi
-*Na řadě. 4. stupeň ověření podle rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md); popsaný stav je v [`architecture.md`](./architecture.md), §6.2. Kontejnerová konfigurace ho odblokovala (rozhodnutí [039](./decisions/039-container-configuration-of-the-environment.md)). Požadavky F3, F4, F6, F11, S2.*
+*Na řadě. 4. stupeň ověření podle rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md); popsaný stav je v [`ORMConvertor/README.md`](../ORMConvertor/README.md#verification-of-generated-artifacts). Kontejnerová konfigurace ho odblokovala (rozhodnutí [039](./decisions/039-container-configuration-of-the-environment.md)). Požadavky F3, F4, F6, F11, S2.*
 
 Rozhodnutí 016 uznává čtyři stupně ověření generovaných artefaktů a čtvrtý z nich — *entita se uloží a načte se stejnou identitou* — nemá jediného zástupce. Připravená je pro něj hranice transakce na `TestSchemaFixture`: metoda `OpenConnection()` existuje a volají ji testy v `TestSchemaFixtureTest`, ty ale hlídají schéma fixture samotné (F4 potřebuje znát očekávanou odpověď), nikoli generovaný artefakt. Chybí tedy scénář, ve kterém se vygenerovaná entita a její mapování skutečně použijí k zápisu a čtení řádku.
 
@@ -93,7 +93,7 @@ Zdrojová strana je jiná otázka než tahle položka a deklarace cílového dia
 Dotazová mezireprezentace zanoření nese, vykreslovací strana ne. `IQueryVisitor` nemá `Visit(SubQueryInstruction)` a `SubQueryInstruction.Accept` vrací prázdný řetězec, takže poddotaz projde parsováním, ale jeho výsledek se nikam neskládá. **Tiché to už není** — `Normalize()` v šabloně dotazového builderu (rozhodnutí [023](./decisions/023-query-builder-template-method.md)) vnořený poddotaz ohlásí záznamem o ztrátě —, ale vykreslit ho to neumí. Vedle toho `AbstractQueryBuilder.Pop()` nesleduje úroveň zanoření pro množinové operace (TODO v kódu), takže složený dotaz se poskládá špatně; množinovou operaci navíc dnes vykresluje jedině Dapper builder, kdežto NHibernate ji podle deskriptoru vyjádřit neumí a EF Core builder pro ni nemá větev. Sem patří i stránkování, které mezireprezentace vůbec nenese — parsery ho hlásí jako ztrátu. Všechno tohle jsou kategorie dotazové matice podle T2, které tak nemají co měřit.
 
 ### Advisor nemá build nativní knihovny pro Windows
-*Mezera popsaná v [`architecture.md`](./architecture.md), §8. Souvisí s T7. Kontejnerová cesta Advisor pokrývá a je ověřená (rozhodnutí [039](./decisions/039-container-configuration-of-the-environment.md), `architecture.md` §6.4); tahle položka je o hostiteli bez Dockeru.*
+*Mezera popsaná v [`architecture.md`](./architecture.md), §8. Souvisí s T7. Kontejnerová cesta Advisor pokrývá a je ověřená (rozhodnutí [039](./decisions/039-container-configuration-of-the-environment.md), [`ORMConvertor/README.md`](../ORMConvertor/README.md#tests)); tahle položka je o hostiteli bez Dockeru.*
 
 `libadvisor.so` se kompiluje jen v Docker buildu (stage `advisor-native`) a název je v P/Invoke natvrdo linuxový, takže mimo Linux a Docker Advisor endpointy selhávají; překladová část na tom nezávisí. Advisor je ze záruk vyňatý vcelku ([`architecture.md`](./architecture.md), §9), takže doslovně linuxový název v `LibraryImport` odpovídá tomu, co o něm tvrdíme; zbývá jen build krok pro `advisor.dll`, pro který má `ilp.c` exportní makra připravená. Nasazenou instanci to neshodí — `AdvisorRunHandler` výjimku z P/Invoke zachytává a vrací její text, takže uživatel dostane hlášku.
 
@@ -133,7 +133,7 @@ Velké bloky ze zadání, každý si zaslouží vlastní rozhodnutí, než se do
 
 | Blok | Co odblokuje |
 |---|---|
-| **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech a kontrola úplnosti IR jsou hotové (rozhodnutí 010), syntaktické ověření generovaných souborů také (rozhodnutí 016, `architecture.md` §6.2) a záznam běhu podle S6 — identifikátor běhu, verze obou frameworků z deskriptorů a verze nástroje z `Directory.Build.props` (rozhodnutí 034) — vydává `/convert` |
+| **F11** validace a strukturovaná diagnostika | varování o nevyjádřitelných faktech a kontrola úplnosti IR jsou hotové (rozhodnutí 010), syntaktické ověření generovaných souborů také (rozhodnutí 016, [`ORMConvertor/README.md`](../ORMConvertor/README.md#verification-of-generated-artifacts)) a záznam běhu podle S6 — identifikátor běhu, verze obou frameworků z deskriptorů a verze nástroje z `Directory.Build.props` (rozhodnutí 034) — vydává `/convert` |
 | **F7–F10** javový ekosystém a cross-ecosystem překlad | jádro rozšíření; typový model má zneutralizovaný na jazykové (rozhodnutí 014) i databázové straně (rozhodnutí 019) a parametry generátoru se nesou kanonicky s výběrem názvu ve výstupu (rozhodnutí 020 a 021, obojí implementované), takže slovníkové předpoklady jsou hotové |
 | **F12–F13** testovací infrastruktura pro Javu, diferenční ověření | důkaz funkční ekvivalence |
 | **F14–F15** dávkové vstupy a výběr cíle v UI | použitelnost nástroje mimo ruční zadávání; F14 je zároveň předpokladem třetí otázky u klíčové třídy |
