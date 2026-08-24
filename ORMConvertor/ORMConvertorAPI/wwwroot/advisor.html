@@ -5,10 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>ORMConvertor — Advisor</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
   <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
-  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" id="hljs-dark" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="css/app.css">
+  <script>
+    /* Applied before first paint: js/theme.js is a module and therefore deferred, so
+       restoring the theme there would repaint a page the reader can already see. */
+    try {
+      var storedTheme = localStorage.getItem("ormconvertor.theme");
+      if (storedTheme === "light" || storedTheme === "dark") {
+        document.documentElement.dataset.theme = storedTheme;
+        document.getElementById("hljs-dark").media = storedTheme === "dark" ? "all" : "not all";
+      }
+    } catch (e) { /* storage can be denied; the operating system's preference then decides */ }
+  </script>
 </head>
 <body>
   <header>
@@ -20,6 +32,13 @@
         <li><a href="translation.html">Translation</a></li>
         <li><a href="advisor.html" aria-current="page">Advisor</a></li>
         <li><a href="examples.html">Examples</a></li>
+        <li>
+          <select id="theme" aria-label="Colour theme">
+            <option value="system">System theme</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </li>
       </ul>
     </nav>
   </header>
@@ -60,32 +79,60 @@
       <h2>4. Constraints</h2>
       <label>Memory limit (KB, 0 = unconstrained)
         <input type="number" id="memory-limit" min="0" value="0">
+        <small class="hint">
+          An upper bound on the allocations of the whole workload, summed over the
+          measured queries. Leave it at 0 unless the deployment has a real budget.
+        </small>
       </label>
       <label>Maximum frameworks to select
         <input type="number" id="max-frameworks" min="1" value="2">
+        <small class="hint">
+          How many frameworks the solution may use at once. 1 forces a single framework
+          for the whole workload; a higher number lets each query go where it is fastest,
+          at the cost of running more than one ORM in the project.
+        </small>
       </label>
       <fieldset id="target-frameworks">
-        <legend>Candidate frameworks (none checked = all)</legend>
+        <legend>Candidate frameworks (none checked = all the advisor measures)</legend>
       </fieldset>
+      <p class="muted-note">
+        If the limits admit no solution, the run does not come back with an empty result:
+        it fails, and the message carries the solver's status code.
+      </p>
     </section>
 
     <section>
       <h2>5. Run</h2>
+      <p>
+        A run is not a translation. For every query and every candidate framework it
+        translates the workload, compiles the generated code with Roslyn, executes it
+        against the benchmark database to measure time and allocations, and only then
+        solves the ILP model. Expect minutes rather than seconds, and one measurement per
+        query and framework.
+      </p>
       <button type="button" id="run">Run the advisor</button>
-      <p id="run-error" class="problem" hidden></p>
+      <p id="run-status" role="status"></p>
+      <p id="run-elapsed" class="muted-note" aria-hidden="true"></p>
+      <p id="run-error" class="problem" role="alert" hidden></p>
     </section>
 
     <section id="result" hidden>
       <h2>Result</h2>
       <p id="selected-frameworks"></p>
+      <p class="muted-note">
+        Every candidate measured for a query is listed, fastest first, with the one the
+        model assigned marked. The assignment is not always the fastest row: the memory
+        limit and the cap on how many frameworks may be selected are part of the model,
+        and the totals below count the assigned rows only.
+      </p>
       <figure class="table-scroll">
         <table>
           <thead>
-            <tr><th>Query</th><th>Assigned framework</th><th>Mean time (ms)</th><th>Allocated (KB)</th></tr>
+            <tr><th>Query</th><th>Framework</th><th>Mean time (ms)</th><th>Allocated (KB)</th><th>Relative</th><th></th></tr>
           </thead>
           <tbody id="assignments"></tbody>
           <tfoot>
-            <tr><th>Total</th><th></th><th id="total-time"></th><th id="total-memory"></th></tr>
+            <tr><th>Total (assigned)</th><th></th><th id="total-time"></th><th id="total-memory"></th><th></th><th></th></tr>
           </tfoot>
         </table>
       </figure>
@@ -127,6 +174,10 @@
           <strong class="artifact-name"></strong>
           <small class="artifact-type"></small>
         </span>
+        <span class="artifact-actions">
+          <button type="button" class="artifact-copy secondary outline">Copy</button>
+          <button type="button" class="artifact-download secondary outline">Download</button>
+        </span>
       </header>
       <pre><code></code></pre>
     </article>
@@ -141,6 +192,7 @@
     </details>
   </template>
 
+  <script type="module" src="js/theme.js"></script>
   <script type="module" src="js/advisor.js"></script>
 </body>
 </html>

@@ -18,7 +18,7 @@ Všechno níž se čte proti tomuhle předpokladu. **Instance vystavená přímo
 |---|---|---|
 | Připojovací řetězce ke katalogu a k Advisor databázi | serverová konfigurace (proměnné prostředí, v Development user secrets); v repozitáři nikdy | Do generovaného artefaktu se nevypisují (rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md)), hlídá `ArtifactCarriesNoCredentialsTest`; do logů také ne — logy nesou počty a časy |
 | Databáze, ke které ty řetězce vedou | vně procesu | Nic víc než ty řetězce; oprávnění účtu je věc prostředí |
-| Zdrojový kód, který uživatel vloží | jen v paměti procesu po dobu požadavku | Neukládá se, nikam se neposílá; do logu se nedostane |
+| Zdrojový kód, který uživatel vloží | v paměti procesu po dobu požadavku; kopie rozpracovaného vstupu překladové obrazovky v `localStorage` prohlížeče uživatele (rozhodnutí [056](./decisions/056-work-in-progress-input-stays-in-the-browser.md)) | Na serveru se neukládá, nikam se neposílá a do logu se nedostane. Kopie v prohlížeči leží na stroji uživatele, pod původem té instance, takže na ni nedosáhne jiná stránka ani jiná instance; smaže ji tlačítko *Clear* na téže obrazovce. Na sdíleném prohlížečovém profilu ji do té doby přečte další uživatel |
 | CPU a paměť hostitele | proces aplikace | Nic — viz hrozby 1 a 2 |
 
 ## Vstupní body
@@ -44,7 +44,7 @@ Všechno níž se čte proti tomuhle předpokladu. **Instance vystavená přímo
 
 **5. Neomezený počet požadavků.** Žádné omezení frekvence neexistuje. Ve spojení s hrozbou 2 stačí k vyčerpání stroje běžný klient.
 
-**Co naopak hrozba není.** Vstup se nikam neukládá a neopouští proces. Do generovaného artefaktu se nedostanou přihlašovací údaje ani nic jiného, co nástroj nedostal na vstupu (rozhodnutí [040](./decisions/040-boundary-of-the-handed-over-artifact.md)), a obojí hlídá test. Heslo `sa` v `docker-compose.yml` a ve workflow je vývojový údaj zahoditelné instance — S4 zakazuje údaje v generovaných artefaktech a v logu, ne v popisu prostředí.
+**Co naopak hrozba není.** Vstup neopouští proces a server ho neukládá; kopie rozpracovaného vstupu, kterou si od rozhodnutí [056](./decisions/056-work-in-progress-input-stays-in-the-browser.md) drží překladová obrazovka, leží v prohlížeči na stroji uživatele a nikam se neodesílá. Do generovaného artefaktu se nedostanou přihlašovací údaje ani nic jiného, co nástroj nedostal na vstupu (rozhodnutí [040](./decisions/040-boundary-of-the-handed-over-artifact.md)), a obojí hlídá test. Heslo `sa` v `docker-compose.yml` a ve workflow je vývojový údaj zahoditelné instance — S4 zakazuje údaje v generovaných artefaktech a v logu, ne v popisu prostředí.
 
 ## Co by se dalo udělat, kdyby se na oblast sáhlo
 

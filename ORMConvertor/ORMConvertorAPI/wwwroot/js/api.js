@@ -14,6 +14,15 @@ export const ORM_LABELS = Object.freeze({
   [ORM.EFCore]: "EF Core",
 });
 
+/*
+ * Which frameworks the advisor can measure. It mirrors AdvisorRunCoordinator.SupportedFrameworks,
+ * and the server stays authoritative: a target it does not support is filtered out there and the
+ * run ends with "no supported target frameworks resolved". This copy exists so the screen can
+ * say so before the request goes out, and it lives here because api.js is the one module that
+ * mirrors server facts (decision 032).
+ */
+export const ADVISOR_FRAMEWORKS = Object.freeze([ORM.Dapper, ORM.EFCore]);
+
 export const ContentType = Object.freeze({
   CSharpEntity: 10,
   CSharpQuery: 20,

@@ -2,11 +2,17 @@
  * The advisor screen: same scope as before the rewrite (decision 033) - source
  * framework, entity units, weighted queries, constraints, then the ILP result with
  * measurements and the artifacts converted for the selected frameworks.
+ *
+ * The result table shows every candidate's measurement per query with the assigned one
+ * marked. The server already sends them all (`measurements` is query -> framework ->
+ * measurement), and the comparison is what the choice is made of; the winner's number
+ * alone says what was chosen but never why.
  */
 
 import {
   ORM,
   ORM_LABELS,
+  ADVISOR_FRAMEWORKS,
   ContentType,
   CONTENT_TYPE_LABELS,
   getRequiredContentAdvisor,
@@ -14,7 +20,7 @@ import {
   runAdvisor,
   convert,
 } from "./api.js";
-import { cloneTemplate, renderCode, artifactNames } from "./ui.js";
+import { cloneTemplate, renderArtifacts } from "./ui.js";
 
 // Enum member names, used when dictionary keys serialize as names rather than numbers.
 const ORM_NAMES = Object.freeze({
@@ -84,14 +90,24 @@ function renderSourceSelect() {
   }
 }
 
+/*
+ * Only the frameworks the advisor can actually measure are offerable. Checking one it
+ * cannot ends the run with "no supported target frameworks resolved" after the request
+ * has already gone out, which is the loader's sentence, not ours.
+ */
 function renderTargetCheckboxes() {
   const fieldset = document.getElementById("target-frameworks");
   for (const value of Object.values(ORM)) {
+    const supported = ADVISOR_FRAMEWORKS.includes(value);
     const label = document.createElement("label");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.value = String(value);
-    label.append(checkbox, ` ${ORM_LABELS[value]}`);
+    checkbox.disabled = !supported;
+    label.append(
+      checkbox,
+      supported ? ` ${ORM_LABELS[value]}` : ` ${ORM_LABELS[value]} (the advisor does not measure it)`,
+    );
     fieldset.append(label);
   }
 }
@@ -143,6 +159,11 @@ function renderQueryUnits() {
   });
 }
 
+/*
+ * Dictionary keys of an enum type can arrive as a number, as a numeric string or as the
+ * member name depending on how the server serializes them; asking for all three keeps the
+ * lookup independent of that.
+ */
 function measurementFor(measurements, queryId, framework) {
   const perFramework = measurements?.[queryId];
   if (!perFramework) return null;
@@ -152,6 +173,17 @@ function measurementFor(measurements, queryId, framework) {
     perFramework[ORM_NAMES[framework]] ??
     null
   );
+}
+
+/** Every candidate measured for one query, fastest first. */
+function candidatesFor(measurements, queryId) {
+  return Object.values(ORM)
+    .map((framework) => ({ framework, measurement: measurementFor(measurements, queryId, framework) }))
+    .filter((candidate) => candidate.measurement)
+    .sort(
+      (a, b) =>
+        a.measurement.meanDurationMilliseconds - b.measurement.meanDurationMilliseconds,
+    );
 }
 
 function renderResult(labels, conversions) {
@@ -177,46 +209,94 @@ function renderResult(labels, conversions) {
   const assignments = Object.entries(result.queryAssignments ?? {}).sort(
     (a, b) => Number(a[0]) - Number(b[0]),
   );
-  for (const [queryId, framework] of assignments) {
-    const row = document.createElement("tr");
-    const measurement = measurementFor(result.measurements, queryId, framework);
-    const time = measurement ? Math.round(measurement.meanDurationMilliseconds) : null;
-    const memory = measurement ? Math.round(measurement.allocatedBytes / 1024) : null;
-    totalTime += time ?? 0;
-    totalMemory += memory ?? 0;
-    for (const value of [
-      labels.get(queryId) ?? `Query ${queryId}`,
-      ORM_LABELS[framework] ?? String(framework),
-      time != null ? String(time) : "—",
-      memory != null ? String(memory) : "—",
-    ]) {
-      const cell = document.createElement("td");
-      cell.textContent = value;
-      row.append(cell);
-    }
-    body.append(row);
+
+  for (const [queryId, assigned] of assignments) {
+    const candidates = candidatesFor(result.measurements, queryId);
+    const rows = candidates.length > 0 ? candidates : [{ framework: assigned, measurement: null }];
+    const best = rows[0]?.measurement?.meanDurationMilliseconds;
+
+    rows.forEach((candidate, index) => {
+      const row = document.createElement("tr");
+      const isAssigned = candidate.framework === assigned;
+      if (isAssigned) row.className = "assigned";
+
+      if (index === 0) {
+        const queryCell = document.createElement("th");
+        queryCell.scope = "row";
+        queryCell.rowSpan = rows.length;
+        queryCell.textContent = labels.get(queryId) ?? `Query ${queryId}`;
+        row.append(queryCell);
+      }
+
+      const time = candidate.measurement
+        ? candidate.measurement.meanDurationMilliseconds
+        : null;
+      const memory = candidate.measurement
+        ? Math.round(candidate.measurement.allocatedBytes / 1024)
+        : null;
+      if (isAssigned) {
+        totalTime += time ?? 0;
+        totalMemory += memory ?? 0;
+      }
+
+      const relative =
+        time != null && best ? (time / best).toFixed(2) + "×" : time != null ? "1.00×" : "—";
+
+      for (const value of [
+        ORM_LABELS[candidate.framework] ?? String(candidate.framework),
+        time != null ? time.toFixed(1) : "—",
+        memory != null ? String(memory) : "—",
+        relative,
+        isAssigned ? "assigned" : "",
+      ]) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      }
+      body.append(row);
+    });
   }
-  document.getElementById("total-time").textContent = String(totalTime);
+  document.getElementById("total-time").textContent = totalTime.toFixed(1);
   document.getElementById("total-memory").textContent = String(totalMemory);
 
   const container = document.getElementById("conversions");
   container.replaceChildren();
-  for (const conversion of conversions) {
+  conversions.forEach((conversion, index) => {
     const details = cloneTemplate("conversion-template");
     details.querySelector("summary").textContent =
       `Artifacts for ${ORM_LABELS[conversion.framework] ?? conversion.framework}`;
-    const grid = details.querySelector(".conversion-artifacts");
-    const names = artifactNames(conversion.sources);
-    conversion.sources.forEach((artifact, index) => {
-      const article = cloneTemplate("artifact-template");
-      article.querySelector(".artifact-name").textContent = names[index];
-      article.querySelector(".artifact-type").textContent =
-        CONTENT_TYPE_LABELS[artifact.contentType] ?? "";
-      renderCode(article.querySelector("pre > code"), artifact.content, artifact.contentType);
-      grid.append(article);
+    renderArtifacts(details.querySelector(".conversion-artifacts"), conversion.sources, {
+      idPrefix: `conversion-${index + 1}-artifact`,
     });
     container.append(details);
-  }
+  });
+}
+
+/* ---- run status: the one operation here that legitimately takes minutes -- */
+
+let elapsedTimer = null;
+
+function startElapsed() {
+  const started = performance.now();
+  const elapsed = document.getElementById("run-elapsed");
+  document.getElementById("run-status").textContent =
+    "Running: translating, compiling, benchmarking and solving. This takes minutes.";
+  const tick = () => {
+    const seconds = Math.floor((performance.now() - started) / 1000);
+    elapsed.textContent =
+      `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} elapsed`;
+  };
+  tick();
+  elapsedTimer = setInterval(tick, 1000);
+  return started;
+}
+
+function stopElapsed(started, outcome) {
+  if (elapsedTimer !== null) clearInterval(elapsedTimer);
+  elapsedTimer = null;
+  const seconds = Math.round((performance.now() - started) / 1000);
+  document.getElementById("run-elapsed").textContent = "";
+  document.getElementById("run-status").textContent = `${outcome} after ${seconds} s.`;
 }
 
 /* ---- actions ----------------------------------------------------------- */
@@ -250,6 +330,7 @@ async function onRun() {
   button.setAttribute("aria-busy", "true");
   state.result = null;
   renderResult(labels, []);
+  const started = startElapsed();
 
   try {
     state.result = await runAdvisor({
@@ -269,7 +350,10 @@ async function onRun() {
       })),
     );
     renderResult(labels, conversions);
+    stopElapsed(started, "Finished");
+    document.getElementById("result").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
+    stopElapsed(started, "Failed");
     errorElement.textContent = error.message;
     errorElement.hidden = false;
   } finally {

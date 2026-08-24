@@ -60,6 +60,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [053](053-a-query-that-would-return-other-rows-is-not-emitted.md) | Dotaz, který by vrátil jinou množinu řádků, se nevydá | 2026-08-24 | platí | F7–F10, F11, T2, T3, S1, S2 |
 | [054](054-nullable-key-part-is-a-reported-loss.md) | Jazyková nullabilita části klíče je hlášená ztráta | 2026-08-24 | platí | F1, F11, S2 |
 | [055](055-unique-constraint-as-a-carried-mapping-fact.md) | Unikátní omezení je nesené mapovací fakt, ne vyňatá oblast | 2026-08-24 | platí | F2, F4, F5, F11, S1, S2 |
+| [056](056-work-in-progress-input-stays-in-the-browser.md) | Rozpracovaný vstup překladové obrazovky zůstává v prohlížeči | 2026-08-24 | platí | F14, S7 |
 
 ## Formát
 

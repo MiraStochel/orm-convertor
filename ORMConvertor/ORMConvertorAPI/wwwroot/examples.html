@@ -5,10 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>ORMConvertor — Examples</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
   <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
-  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" id="hljs-dark" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="css/app.css">
+  <script>
+    /* Applied before first paint: js/theme.js is a module and therefore deferred, so
+       restoring the theme there would repaint a page the reader can already see. */
+    try {
+      var storedTheme = localStorage.getItem("ormconvertor.theme");
+      if (storedTheme === "light" || storedTheme === "dark") {
+        document.documentElement.dataset.theme = storedTheme;
+        document.getElementById("hljs-dark").media = storedTheme === "dark" ? "all" : "not all";
+      }
+    } catch (e) { /* storage can be denied; the operating system's preference then decides */ }
+  </script>
 </head>
 <body>
   <header>
@@ -20,6 +32,13 @@
         <li><a href="translation.html">Translation</a></li>
         <li><a href="advisor.html">Advisor</a></li>
         <li><a href="examples.html" aria-current="page">Examples</a></li>
+        <li>
+          <select id="theme" aria-label="Colour theme">
+            <option value="system">System theme</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </li>
       </ul>
     </nav>
   </header>
@@ -108,7 +127,7 @@
         <button type="button" class="example-run secondary">Run again</button>
       </div>
       <p class="example-status" aria-busy="true">Running the conversion…</p>
-      <p class="example-error problem" hidden></p>
+      <p class="example-error problem" role="alert" hidden></p>
       <div class="panes">
         <h3>Input</h3>
         <div class="example-inputs pane-grid"></div>
@@ -134,7 +153,7 @@
         <button type="button" class="example-run secondary">Run again</button>
       </div>
       <p class="example-status" aria-busy="true">Running the conversion…</p>
-      <p class="example-error problem" hidden></p>
+      <p class="example-error problem" role="alert" hidden></p>
       <div class="panes">
         <h3>Input</h3>
         <div class="example-inputs pane-grid"></div>
@@ -157,11 +176,16 @@
           <strong class="artifact-name"></strong>
           <small class="artifact-type"></small>
         </span>
+        <span class="artifact-actions">
+          <button type="button" class="artifact-copy secondary outline">Copy</button>
+          <button type="button" class="artifact-download secondary outline">Download</button>
+        </span>
       </header>
       <pre><code></code></pre>
     </article>
   </template>
 
+  <script type="module" src="js/theme.js"></script>
   <script type="module" src="js/examples.js"></script>
 </body>
 </html>

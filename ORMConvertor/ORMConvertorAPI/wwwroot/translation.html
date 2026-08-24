@@ -5,10 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>ORMConvertor — Translation</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
   <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
-  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" id="hljs-dark" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="css/app.css">
+  <script>
+    /* Applied before first paint: js/theme.js is a module and therefore deferred, so
+       restoring the theme there would repaint a page the reader can already see. */
+    try {
+      var storedTheme = localStorage.getItem("ormconvertor.theme");
+      if (storedTheme === "light" || storedTheme === "dark") {
+        document.documentElement.dataset.theme = storedTheme;
+        document.getElementById("hljs-dark").media = storedTheme === "dark" ? "all" : "not all";
+      }
+    } catch (e) { /* storage can be denied; the operating system's preference then decides */ }
+  </script>
 </head>
 <body>
   <header>
@@ -20,6 +32,13 @@
         <li><a href="translation.html" aria-current="page">Translation</a></li>
         <li><a href="advisor.html">Advisor</a></li>
         <li><a href="examples.html">Examples</a></li>
+        <li>
+          <select id="theme" aria-label="Colour theme">
+            <option value="system">System theme</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </li>
       </ul>
     </nav>
   </header>
@@ -49,19 +68,27 @@
         <button type="button" id="add-files">Add files…</button>
         <button type="button" id="add-unit" class="secondary">Add empty unit</button>
         <button type="button" id="load-samples" class="secondary">Load sample set</button>
+        <button type="button" id="clear" class="secondary outline">Clear</button>
         <input type="file" id="file-input" multiple accept=".cs,.xml,.sql,.hql,.txt" hidden>
       </div>
+      <p id="storage-note" class="muted-note" hidden>
+        This browser is not storing the input, so a reload will lose it &mdash; private
+        windows and blocked site data both do this.
+      </p>
       <div id="units"></div>
     </section>
 
     <section>
       <h2>4. Convert</h2>
-      <div id="validation" hidden>
+      <div id="validation" role="alert" hidden>
         <p class="problem">The input is not ready to send:</p>
         <ul id="validation-list"></ul>
       </div>
       <button type="button" id="convert">Convert</button>
-      <p id="convert-error" class="problem" hidden></p>
+      <small class="hint">Ctrl+Enter (Cmd+Enter) converts from anywhere on the page.</small>
+      <p id="convert-status" role="status"></p>
+      <div id="convert-summary" class="summary-strip" hidden></div>
+      <p id="convert-error" class="problem" role="alert" hidden></p>
     </section>
 
     <section id="result" hidden>
@@ -79,6 +106,10 @@
         <div id="artifacts" class="pane-grid"></div>
       </div>
       <h3>Records</h3>
+      <p class="muted-note">
+        What the conversion could not carry, filled in by convention, or read from the
+        database catalog. Click a count to show only that kind.
+      </p>
       <div id="records"></div>
     </section>
   </main>
@@ -106,12 +137,16 @@
           <strong class="artifact-name"></strong>
           <small class="artifact-type"></small>
         </span>
-        <button type="button" class="artifact-copy secondary outline">Copy</button>
+        <span class="artifact-actions">
+          <button type="button" class="artifact-copy secondary outline">Copy</button>
+          <button type="button" class="artifact-download secondary outline">Download</button>
+        </span>
       </header>
       <pre><code></code></pre>
     </article>
   </template>
 
+  <script type="module" src="js/theme.js"></script>
   <script type="module" src="js/translation.js"></script>
 </body>
 </html>

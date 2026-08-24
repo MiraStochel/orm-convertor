@@ -24,6 +24,15 @@ body > header nav a[aria-current="page"] {
   text-underline-offset: 0.35em;
 }
 
+/* Pico sizes a <select> as a form field; in the nav it is a control, not a field. */
+body > header nav #theme {
+  width: auto;
+  margin-bottom: 0;
+  padding: 0.2rem 2rem 0.2rem 0.6rem;
+  font-size: 0.8rem;
+  background-position: center right 0.5rem;
+}
+
 body > footer {
   font-size: 0.85rem;
   color: var(--pico-muted-color);
@@ -121,13 +130,22 @@ article.artifact {
   margin-bottom: 0;
 }
 
-.unit-header .unit-remove,
-.artifact-header .artifact-copy {
+.unit-header .unit-remove {
   margin-left: auto;
 }
 
 .artifact-header > span {
   flex: 1 1 8rem;
+}
+
+/* The action buttons are a <span> too, so they match the rule above and would claim a
+   growing share of the row; they take only the width they need and push to the end. */
+.artifact-header .artifact-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
 .artifact-header .artifact-name {
@@ -308,4 +326,113 @@ figure.diagram figcaption {
 .card-grid article a[role="button"] {
   width: 100%;
   text-align: center;
+}
+
+/* ---- hints, notes and inline buttons ----------------------------------- */
+
+small.hint,
+.muted-note {
+  display: block;
+  color: var(--pico-muted-color);
+  font-size: 0.85rem;
+}
+
+small.hint {
+  margin-top: 0.25rem;
+}
+
+.muted-note {
+  max-width: 70ch;
+}
+
+/* A button that reads as text: used where a control has to sit inside a sentence or a
+   table cell (a validation problem that jumps to its unit, a record that points at the
+   artifact it is about). Pico would otherwise style it as a full-width block. */
+button.link-button {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--pico-primary);
+  font-size: inherit;
+  font-family: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+/* A badge that is also a filter. The badge keeps its own colour; the button around it
+   contributes nothing but the hit area and the pressed state. */
+button.badge-button {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  line-height: 1;
+  cursor: pointer;
+}
+
+button.badge-button[aria-pressed="true"] .badge {
+  outline: 2px solid var(--pico-primary);
+  outline-offset: 2px;
+}
+
+/* ---- the strip under the Convert button --------------------------------- */
+
+.summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.9rem;
+}
+
+/* ---- records legend and artifact flash ---------------------------------- */
+
+/* Two columns where there is room, one where there is not; the badge column sizes to
+   its content and the sentence takes the rest. */
+.record-legend {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--pico-muted-color);
+}
+
+.record-legend dt,
+.record-legend dd {
+  margin: 0;
+}
+
+@media (max-width: 40rem) {
+  .record-legend {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .record-legend dd {
+    margin-bottom: 0.4rem;
+  }
+}
+
+/* Marks the panel the records band scrolled to; without it the jump lands the reader
+   somewhere plausible with nothing saying which panel was meant. */
+article.artifact.artifact-flash {
+  outline: 2px solid var(--pico-primary);
+  outline-offset: 3px;
+  transition: outline-color 0.4s ease-out;
+}
+
+/* ---- advisor result ------------------------------------------------------ */
+
+#assignments tr.assigned {
+  font-weight: 600;
+}
+
+#assignments tr.assigned td:last-child {
+  color: var(--pico-primary);
 }
