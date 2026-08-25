@@ -8,6 +8,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
+using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
 
@@ -113,10 +114,34 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         }
     }
 
-    private void EmitSource(LinqQueryRoot root)
+    private void EmitSource(LinqQueryRoot root, string? elementParameter)
     {
-        sourceAlias = root.Name.Length > 0 ? root.Name[..1].ToLowerInvariant() : "t";
+        sourceAlias = elementParameter
+            ?? (root.Name.Length > 0 ? root.Name[..1].ToLowerInvariant() : "t");
         queryBuilder.From(ResolveTable(root.Name), sourceAlias);
+    }
+
+    /// <summary>
+    /// The parameter name of the chain's first lambda that ranges over source elements. The
+    /// operand qualifiers read from lambda bodies are these names, so the source alias has
+    /// to be the same name; the table's first letter is only the fallback for a chain that
+    /// opens without such a lambda. Deriving the alias from the table alone broke exactly
+    /// where C# forbids a nested lambda from reusing the enclosing parameter (decision 061):
+    /// a subquery over the outer query's own table would have claimed the outer alias and
+    /// with it the correlated references.
+    /// </summary>
+    private static string? FirstElementLambdaParameter(List<ChainStep> steps)
+    {
+        if (steps.Count == 0
+            || steps[0].Name is not ("Where" or "Select" or "OrderBy" or "OrderByDescending" or "GroupBy"))
+        {
+            return null;
+        }
+
+        return steps[0].Node.ArgumentList.Arguments.FirstOrDefault()?.Expression
+            is SimpleLambdaExpressionSyntax lambda
+            ? lambda.Parameter.Identifier.Text
+            : null;
     }
 
     /// <summary>
@@ -127,10 +152,10 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     /// emitted - as a failure where dropping it would change which rows come back
     /// (decision 053), as a loss elsewhere.
     /// </summary>
-    private void EmitChain(LinqQueryRoot root, List<ChainStep> steps)
+    private void EmitChain(LinqQueryRoot root, List<ChainStep> steps, Action? beforeClose = null)
     {
         queryBuilder.Push();
-        EmitSource(root);
+        EmitSource(root, FirstElementLambdaParameter(steps));
 
         bool inSetOperation = false;
         long? pendingOffset = null;
@@ -245,8 +270,16 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
 
         if (!inSetOperation)
         {
+            beforeClose?.Invoke();
             FlushPagination();
             queryBuilder.Pop();
+        }
+        else if (beforeClose is not null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "An aggregate over a set operation cannot be carried as a subquery; no artifact was generated.",
+                QueryFeature.Subquery);
         }
     }
 
@@ -672,8 +705,12 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     {
         function = table = attribute = null;
 
+        // The receiver has to be a bare identifier - the grouping's own lambda parameter.
+        // An aggregate whose receiver is a chain is a scalar subquery, not a group
+        // aggregate, and belongs to ReadScalarSubQuery (decision 061).
         if (expression is not InvocationExpressionSyntax invocation
-            || invocation.Expression is not MemberAccessExpressionSyntax member)
+            || invocation.Expression is not MemberAccessExpressionSyntax member
+            || member.Expression is not IdentifierNameSyntax)
         {
             return false;
         }
@@ -744,9 +781,89 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             case BinaryExpressionSyntax comparison:
                 return ParseComparison(comparison);
 
+            case InvocationExpressionSyntax invocation:
+                return ReadSubQueryCondition(invocation);
+
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// Reads Contains and Any over a query root as a subquery condition (decision 061):
+    /// <c>chain.Select(x =&gt; x.Col).Contains(value)</c> is IN,
+    /// <c>chain.Any()</c> is EXISTS and <c>chain.Any(predicate)</c> is
+    /// <c>Where(predicate).Any()</c> - the Any invocation itself has exactly the one-lambda
+    /// shape the Where handler reads. A Contains whose receiver is not a query chain - a
+    /// local collection, a string - is no subquery and stays unread.
+    /// </summary>
+    private ConditionNode? ReadSubQueryCondition(InvocationExpressionSyntax invocation)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax member)
+        {
+            return null;
+        }
+
+        switch (member.Name.Identifier.Text)
+        {
+            case "Contains":
+                {
+                    if (!TryDecompose(member.Expression, out var root, out var steps))
+                    {
+                        return null;
+                    }
+
+                    var value = invocation.ArgumentList.Arguments.Count == 1
+                        ? ReadOperand(invocation.ArgumentList.Arguments[0].Expression)
+                        : null;
+                    if (value is null)
+                    {
+                        return null;
+                    }
+
+                    var sub = ReadSubQueryOperand(root!, steps);
+                    return new ComparisonCondition(value, ComparisonOperator.In, QueryOperand.Nested(sub));
+                }
+
+            case "Any":
+                {
+                    if (!TryDecompose(member.Expression, out var root, out var steps))
+                    {
+                        return null;
+                    }
+
+                    if (invocation.ArgumentList.Arguments.Count == 1)
+                    {
+                        steps.Add(new ChainStep("Where", invocation));
+                    }
+
+                    var sub = ReadSubQueryOperand(root!, steps);
+                    return new ComparisonCondition(QueryOperand.Nested(sub), ComparisonOperator.Exists);
+                }
+
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads a nested chain into a subquery operand (decision 061). The scope is closed
+    /// with PopOperand, so its instructions become the operand's body rather than
+    /// instructions of the enclosing query, and the enclosing source alias survives the
+    /// nested source step.
+    /// </summary>
+    private SubQueryInstruction ReadSubQueryOperand(
+        LinqQueryRoot root,
+        List<ChainStep> steps,
+        Action? beforeClose = null)
+    {
+        var enclosingAlias = sourceAlias;
+
+        queryBuilder.Push();
+        EmitChain(root, steps, beforeClose);
+        sourceAlias = enclosingAlias;
+
+        return queryBuilder.PopOperand();
     }
 
     private static void Flatten(ConditionNode node, LogicalOperator op, List<ConditionNode> into)
@@ -814,8 +931,74 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         PrefixUnaryExpressionSyntax negation when negation.IsKind(SyntaxKind.UnaryMinusExpression)
             && negation.Operand is LiteralExpressionSyntax inner
             => QueryOperand.Value(Negate(ReadConstant(inner))),
+        InvocationExpressionSyntax invocation when ReadScalarSubQuery(invocation) is { } nested => nested,
         _ => null,
     };
+
+    /// <summary>
+    /// Reads a terminal aggregate over a query root - <c>ctx.Set&lt;T&gt;().Max(x =&gt;
+    /// x.Total)</c> - as a scalar subquery operand (decision 061): the aggregate becomes the
+    /// subquery's own projection, recorded just before the nested scope closes so that it
+    /// carries the nested source's alias. Count(predicate) folds its predicate into a Where
+    /// the way Any(predicate) does.
+    /// </summary>
+    private QueryOperand? ReadScalarSubQuery(InvocationExpressionSyntax invocation)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax member)
+        {
+            return null;
+        }
+
+        var function = member.Name.Identifier.Text switch
+        {
+            "Max" => "MAX",
+            "Min" => "MIN",
+            "Sum" => "SUM",
+            "Average" => "AVG",
+            "Count" => "COUNT",
+            _ => null,
+        };
+
+        if (function is null || !TryDecompose(member.Expression, out var root, out var steps))
+        {
+            return null;
+        }
+
+        string attribute;
+        var argument = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+        if (argument is null)
+        {
+            // Count() counts rows; every other aggregate needs a column to range over.
+            if (function != "COUNT")
+            {
+                return null;
+            }
+
+            attribute = "*";
+        }
+        else if (function == "COUNT" && argument is SimpleLambdaExpressionSyntax)
+        {
+            steps.Add(new ChainStep("Where", invocation));
+            attribute = "*";
+        }
+        else if (argument is SimpleLambdaExpressionSyntax lambda
+            && lambda.Body is ExpressionSyntax body
+            && MemberName(body) is { } column)
+        {
+            attribute = column;
+        }
+        else
+        {
+            return null;
+        }
+
+        var sub = ReadSubQueryOperand(
+            root!,
+            steps,
+            () => queryBuilder.Project(sourceAlias, attribute, null, function));
+
+        return QueryOperand.Nested(sub);
+    }
 
     /// <summary>
     /// Turns a C# literal into a typed constant (decision 024). The token's own value

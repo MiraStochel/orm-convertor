@@ -152,6 +152,43 @@ public class QueryVerificationTest
         Assert.Contains("OFFSET", sql);
     }
 
+    /// <summary>
+    /// Level 3 for a subquery condition (decision 061): the provider renders the generated
+    /// Any chain as an EXISTS, which also proves the correlated reference to the outer
+    /// lambda's parameter translates.
+    /// </summary>
+    [Fact]
+    public void EFCoreTranslatesAGeneratedExistsSubQuery()
+    {
+        const string existsQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => ctx.Set<Customer>().Any(x => x.CreditLimit > c.CreditLimit))
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.EFCore,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = existsQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_EFCore_Exists",
+            Query(result, ConversionContentType.CSharpQuery),
+            Entities(result),
+            GeneratedQueryCompiler.EFCoreConsumerReferences,
+            "using Microsoft.EntityFrameworkCore;");
+
+        var sql = EFCoreQueryAcceptance.Translate(compiled);
+
+        Assert.Contains("EXISTS", sql);
+    }
+
     /// <summary>A level that never says no proves nothing (decision 016).</summary>
     [Fact]
     public void EFCoreRefusesAnUntranslatableQuery()
@@ -407,6 +444,87 @@ public class QueryVerificationTest
         };
 
         TSqlAcceptance.ResolvesAgainst(sql, [map]);
+    }
+
+    /// <summary>
+    /// Rule Q13 for a subquery condition (decision 061): the generated IN (SELECT ...)
+    /// parses and every name in both scopes resolves through the mapping IR - the fragment
+    /// visitor descends into the subquery on its own.
+    /// </summary>
+    [Fact]
+    public void AGeneratedInSubQuerySqlParsesAndResolves()
+    {
+        const string containsQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => ctx.Set<Customer>().Select(x => x.CustomerId).Contains(c.CustomerId))
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.Dapper,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = containsQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var sql = Query(result, ConversionContentType.SqlQuery);
+        Assert.Contains("IN (SELECT", sql);
+
+        var map = new EntityMap
+        {
+            Entity = new Entity { Name = "Customer" },
+            Table = "Customers",
+            Schema = "Sales",
+            PropertyMaps =
+            [
+                new PropertyMap { Property = new Property { Name = "CustomerId" }, ColumnName = "CustomerId" },
+                new PropertyMap { Property = new Property { Name = "CustomerName" }, ColumnName = "CustomerName" },
+                new PropertyMap { Property = new Property { Name = "CreditLimit" }, ColumnName = "CreditLimit" },
+            ],
+        };
+
+        TSqlAcceptance.ResolvesAgainst(sql, [map]);
+    }
+
+    /// <summary>
+    /// Level 3 for a subquery on NHibernate (decision 061): the HQL with an exists compiles
+    /// against the mapped model, correlated reference included.
+    /// </summary>
+    [Fact]
+    public void NHibernateCompilesAGeneratedExistsHql()
+    {
+        const string existsQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => ctx.Set<Customer>().Any(x => x.CreditLimit > c.CreditLimit))
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.NHibernate,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = existsQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var hql = Query(result, ConversionContentType.HqlQuery);
+        Assert.Contains("exists (from Customer x where x.CreditLimit > c.CreditLimit)", hql);
+
+        var compiled = GeneratedEntityCompiler.CompileOrFail(
+            "QueryVerification_NHibernate_Exists",
+            Entities(result),
+            GeneratedEntityCompiler.NHibernateConsumerReferences);
+
+        var mappings = result.Sources.Where(s => s.ContentType == ConversionContentType.XML).Select(s => s.Content);
+
+        NHibernateQueryAcceptance.CompileQuery(compiled, mappings, hql);
     }
 
     [Fact]

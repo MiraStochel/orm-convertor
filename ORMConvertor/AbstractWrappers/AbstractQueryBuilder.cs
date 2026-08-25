@@ -154,11 +154,7 @@ public abstract class AbstractQueryBuilder
 
     public void Pop()
     {
-        var start = marks.Pop();
-        var body = instructions.GetRange(start, instructions.Count - start);
-        instructions.RemoveRange(start, instructions.Count - start);
-
-        var closed = new SubQueryInstruction(body);
+        var closed = CloseScope();
 
         // The closed scope is the right operand of an armed set operation only when this Pop
         // returns to the depth the operation was armed at; deeper scopes belong to the
@@ -171,6 +167,24 @@ public abstract class AbstractQueryBuilder
         }
 
         instructions.Add(closed);
+    }
+
+    /// <summary>
+    /// Closes the current scope and hands it back instead of appending it, which is how a
+    /// parser reads a subquery destined for an operand position (decision 061): the nested
+    /// instructions become the operand's own body rather than instructions of the enclosing
+    /// query. Completing an armed set operation is deliberately not attempted here - an
+    /// operand scope is never a set operation's right side.
+    /// </summary>
+    public SubQueryInstruction PopOperand() => CloseScope();
+
+    private SubQueryInstruction CloseScope()
+    {
+        var start = marks.Pop();
+        var body = instructions.GetRange(start, instructions.Count - start);
+        instructions.RemoveRange(start, instructions.Count - start);
+
+        return new SubQueryInstruction(body);
     }
 
     public void From(string table, string? alias = null)
@@ -351,13 +365,17 @@ public abstract class AbstractQueryBuilder
             return null;
         }
 
-        var nested = body.OfType<SubQueryInstruction>().ToList();
-        if (nested.Count > 0)
+        // A subquery left in the body as an instruction has no position the representation
+        // renders (decision 061 puts subqueries into condition operands), and emitting the
+        // query without it would return different rows - so it refuses rather than being the
+        // loss it used to be. No parser produces this shape any more.
+        if (body.OfType<SubQueryInstruction>().Any())
         {
             Report(
-                ConversionRecordKind.Loss,
-                "A nested subquery was read but is not rendered; the output is poorer than the input.",
+                ConversionRecordKind.Failure,
+                "A subquery stands in the body of the query, which is no position the representation renders; no artifact was generated.",
                 QueryFeature.Subquery);
+            return null;
         }
 
         // A malformed condition cannot be rendered without changing which rows the query
@@ -369,6 +387,19 @@ public abstract class AbstractQueryBuilder
 
         if (conditions.Any(condition => !ConditionIsWellFormed(condition)))
         {
+            return null;
+        }
+
+        // The only position a subquery renders in is a WHERE or HAVING operand
+        // (decision 061). A join's ON clause is not one: LINQ joins take two key selectors
+        // with no room for a subquery, and dropping the join instead would change which
+        // rows come back.
+        if (body.OfType<JoinInstruction>().Any(j => ContainsSubQuery(j.OnCondition)))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "A subquery inside a join's ON condition has no position the representation renders; no artifact was generated.",
+                QueryFeature.Subquery);
             return null;
         }
 
@@ -432,11 +463,40 @@ public abstract class AbstractQueryBuilder
                     return true;
                 }
 
+                // EXISTS is a predicate over a subquery the way IS NULL is a predicate over
+                // a column (decisions 002 and 061): the right operand is unused, the left
+                // must be the subquery.
+                if (comparison.Operator is ComparisonOperator.Exists)
+                {
+                    if (!comparison.Left.IsSubQuery)
+                    {
+                        Report(
+                            ConversionRecordKind.Failure,
+                            "An EXISTS whose operand is not a subquery cannot be rendered; no artifact was generated.",
+                            QueryFeature.Subquery);
+                        return false;
+                    }
+
+                    return true;
+                }
+
                 if (comparison.Right is null)
                 {
                     Report(
                         ConversionRecordKind.Failure,
                         $"A comparison with operator {comparison.Operator} carries no right operand, so the condition cannot be rendered without changing which rows the query returns; no artifact was generated.",
+                        QueryFeature.Filtering);
+                    return false;
+                }
+
+                // IN's only carried right side is a subquery (decision 061); the model has
+                // no place for a list of values, so refusing here is what keeps the three
+                // targets from each answering the gap in its own way.
+                if (comparison.Operator is ComparisonOperator.In && !comparison.Right.IsSubQuery)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        "An IN whose right side is not a subquery has no representation - the model carries no list of values; no artifact was generated.",
                         QueryFeature.Filtering);
                     return false;
                 }
@@ -461,6 +521,57 @@ public abstract class AbstractQueryBuilder
             default:
                 return true;
         }
+    }
+
+    /// <summary>Whether the condition tree holds a subquery operand anywhere (decision 061).</summary>
+    protected static bool ContainsSubQuery(ConditionNode? node) => node switch
+    {
+        null => false,
+        ComparisonCondition comparison => comparison.Left.IsSubQuery || comparison.Right?.IsSubQuery == true,
+        LogicalCondition logical => logical.Operands.Any(ContainsSubQuery),
+        NotCondition negation => ContainsSubQuery(negation.Operand),
+        _ => false,
+    };
+
+    /// <summary>
+    /// Normalizes the body of a subquery operand and applies the rules that hold for every
+    /// target (decision 061), so that the three builders refuse the same shapes because one
+    /// place refuses them: a body that is a set operation is not carried, and IN and scalar
+    /// comparisons need a subquery projecting exactly one column - zero (the whole entity)
+    /// or several is a query T-SQL itself rejects at run time, refused here earlier and with
+    /// a record. Returns null when the operand cannot be rendered, having reported why.
+    /// </summary>
+    protected QueryClauses? NormalizeSubQueryOperand(SubQueryInstruction subQuery, ComparisonOperator op)
+    {
+        ArgumentNullException.ThrowIfNull(subQuery);
+
+        var body = Unwrap(subQuery.Instructions);
+
+        if (body.Count == 1 && body[0] is SetOperationInstruction)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "A set operation as the body of a subquery operand is not carried - the operand holds one SELECT; no artifact was generated.",
+                QueryFeature.Subquery);
+            return null;
+        }
+
+        var clauses = Normalize(body);
+        if (clauses is null)
+        {
+            return null;
+        }
+
+        if (op is not ComparisonOperator.Exists && clauses.Projections.Count != 1)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The subquery projects {clauses.Projections.Count} columns where IN and scalar comparisons need exactly one; no artifact was generated.",
+                QueryFeature.Subquery);
+            return null;
+        }
+
+        return clauses;
     }
 
     /// <summary>
@@ -500,6 +611,7 @@ public abstract class AbstractQueryBuilder
         Check(QueryFeature.PostAggregationFiltering, clauses.PostFilter is not null);
         Check(QueryFeature.Ordering, clauses.OrderBys.Count > 0);
         Check(QueryFeature.Pagination, clauses.Offset is not null || clauses.Limit is not null);
+        Check(QueryFeature.Subquery, ContainsSubQuery(clauses.Filter) || ContainsSubQuery(clauses.PostFilter));
     }
 
     /// <summary>

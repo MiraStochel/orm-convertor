@@ -3,7 +3,9 @@ using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Naming;
 using Model;
+using Model.AbstractRepresentation;
 using Model.QueryInstructions;
+using Model.QueryInstructions.Conditions;
 
 namespace NHibernateWrappers;
 
@@ -20,13 +22,34 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
 {
     private NHibernateHqlQueryVisitor visitor = null!;
 
+    /// <summary>
+    /// Alias dictionary of the scope currently being composed, kept so that a nested
+    /// subquery can merge it under its own aliases: HQL writes a correlated reference to
+    /// the outer query's alias verbatim, so the inner visitor has to know the outer
+    /// entities too, with its own aliases shadowing (decision 061).
+    /// </summary>
+    private Dictionary<string, EntityMap> currentAliases = new(StringComparer.OrdinalIgnoreCase);
+
+    private Dictionary<string, EntityMap>? enclosingAliases;
+
     public override TargetFrameworkDescriptor Descriptor => NHibernateDescriptor.Instance;
 
     protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
     {
+        var aliased = AliasedEntities(clauses);
+        if (enclosingAliases is not null)
+        {
+            foreach (var (outerAlias, outerMap) in enclosingAliases)
+            {
+                aliased.TryAdd(outerAlias, outerMap);
+            }
+        }
+
+        currentAliases = aliased;
         visitor = new NHibernateHqlQueryVisitor(
-            AliasedEntities(clauses),
-            (kind, reason, feature) => Report(kind, reason, feature));
+            aliased,
+            (kind, reason, feature) => Report(kind, reason, feature),
+            RenderSubQuery);
 
         var map = EntityFor(clauses.From.Table);
         var entity = map?.Entity.Name ?? SingularOf(clauses.From.Table);
@@ -152,6 +175,69 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
         {
             artifact.Pagination.Append($"\n        .SetMaxResults({limit})");
         }
+    }
+
+    /// <summary>
+    /// Renders a subquery operand as a bare HQL select (decision 061). HQL admits subqueries
+    /// only in the select and where clauses, and inside one it takes neither an ordering nor
+    /// a pagination: the ordering is dropped with a record - reordering the rows of an IN,
+    /// EXISTS or scalar operand does not change which rows the outer query returns - while a
+    /// pagination lives only on the IQuery API, which cannot reach inside the HQL text, so
+    /// it refuses (the sentence decision 060 said for set-operation operands).
+    /// </summary>
+    private string? RenderSubQuery(SubQueryInstruction subQuery, ComparisonOperator op)
+    {
+        var clauses = NormalizeSubQueryOperand(subQuery, op);
+        if (clauses is null)
+        {
+            return null;
+        }
+
+        if (clauses.Offset is not null || clauses.Limit is not null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "A pagination inside a subquery cannot be carried in HQL text - SetFirstResult and SetMaxResults live on the IQuery, outside the query; no artifact was generated.",
+                QueryFeature.Pagination);
+            return null;
+        }
+
+        if (clauses.OrderBys.Count > 0)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "HQL does not allow an ordering inside a subquery; it was dropped, which does not change which rows the outer query returns.",
+                QueryFeature.Ordering);
+        }
+
+        var enclosingVisitor = visitor;
+        var enclosing = enclosingAliases;
+        var current = currentAliases;
+
+        enclosingAliases = currentAliases;
+        var artifact = Compose(clauses);
+
+        visitor = enclosingVisitor;
+        enclosingAliases = enclosing;
+        currentAliases = current;
+
+        var parts = new[]
+        {
+            artifact.Projection,
+            artifact.Source,
+            artifact.Joins,
+            artifact.Filter,
+            artifact.Grouping,
+            artifact.PostFilter,
+        };
+
+        // The slots are written for a multi-line query; inside parentheses the subquery
+        // reads as one line, so the lines are joined with their indentation trimmed.
+        return string.Join(" ", parts
+            .Where(p => p.Length > 0)
+            .Select(p => string.Join(" ", p.ToString()
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Trim()))));
     }
 
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)

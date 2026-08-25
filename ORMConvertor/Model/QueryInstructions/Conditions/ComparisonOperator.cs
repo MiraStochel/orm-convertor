@@ -12,4 +12,5 @@ public enum ComparisonOperator
     In = 8,                 // IN (...)
     IsNull = 9,             // IS NULL - right operand is ignored (decision 002)
     IsNotNull = 10,         // IS NOT NULL - right operand is ignored
+    Exists = 11,            // EXISTS (subquery as the left operand) - right operand is ignored (decision 061)
 }

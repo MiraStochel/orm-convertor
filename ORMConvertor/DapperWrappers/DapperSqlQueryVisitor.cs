@@ -13,7 +13,9 @@ namespace DapperWrappers;
 /// exceptions stay reserved for errors of the program, and a condition tree a foreign
 /// parser produced is not one (decisions 010 and 053).
 /// </summary>
-public class DapperSqlQueryVisitor(Action<ConversionRecordKind, string, QueryFeature?> report) : IQueryVisitor
+public class DapperSqlQueryVisitor(
+    Action<ConversionRecordKind, string, QueryFeature?> report,
+    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery) : IQueryVisitor
 {
     public string Visit(FromInstruction instr)
     {
@@ -43,6 +45,20 @@ public class DapperSqlQueryVisitor(Action<ConversionRecordKind, string, QueryFea
 
     public string Visit(ComparisonCondition cond)
     {
+        // EXISTS carries its subquery as the left operand, the way IS NULL carries its
+        // column (decisions 002 and 061). The nested scope is the builder's to render;
+        // null means it refused, and the refusal is already on the channel.
+        if (cond.Operator == ComparisonOperator.Exists)
+        {
+            var sub = renderSubQuery(cond.Left.SubQuery!, cond.Operator);
+            return sub is null ? string.Empty : $"EXISTS ({sub})";
+        }
+
+        if (cond.Left.IsSubQuery || cond.Right?.IsSubQuery == true)
+        {
+            return SubQueryComparison(cond);
+        }
+
         string left = BuildOperand(cond.Left);
 
         if (cond.Operator == ComparisonOperator.IsNull)
@@ -66,6 +82,33 @@ public class DapperSqlQueryVisitor(Action<ConversionRecordKind, string, QueryFea
 
         string right = BuildOperand(cond.Right);
         return $"{left} {MapOperator(cond.Operator)} {right}";
+    }
+
+    /// <summary>
+    /// A comparison one of whose sides is a subquery (decision 061): IN and the scalar
+    /// operators alike write the nested SELECT in parentheses in the operand's place.
+    /// </summary>
+    private string SubQueryComparison(ComparisonCondition cond)
+    {
+        var left = OperandOrSubQuery(cond.Left, cond.Operator);
+        var right = OperandOrSubQuery(cond.Right!, cond.Operator);
+        if (left is null || right is null)
+        {
+            return string.Empty;
+        }
+
+        return $"{left} {MapOperator(cond.Operator)} {right}";
+    }
+
+    private string? OperandOrSubQuery(QueryOperand operand, ComparisonOperator op)
+    {
+        if (!operand.IsSubQuery)
+        {
+            return BuildOperand(operand);
+        }
+
+        var sub = renderSubQuery(operand.SubQuery!, op);
+        return sub is null ? null : $"({sub})";
     }
 
     public string Visit(LogicalCondition cond)

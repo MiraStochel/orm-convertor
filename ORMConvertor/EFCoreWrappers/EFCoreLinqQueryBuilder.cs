@@ -25,6 +25,26 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
     private readonly List<string> tupleAliases = [];
     private string orderingAfterProjection = string.Empty;
 
+    /// <summary>
+    /// The visitor of the scope a subquery is being rendered inside, so that the nested
+    /// visitor can resolve correlated references to the outer lambda's parameter; null at
+    /// the top level (decision 061).
+    /// </summary>
+    private EFCoreLinqQueryVisitor? enclosingVisitor;
+
+    /// <summary>
+    /// Lambda parameters of every enclosing scope. C# forbids a nested lambda parameter
+    /// shadowing an enclosing one, so the nested source step renames on collision.
+    /// </summary>
+    private HashSet<string> enclosingParams = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Set while composing a subquery operand: the operator decides the chain's ending -
+    /// a bare one-column Select for IN, no projection for EXISTS, a terminal aggregate call
+    /// appended by the renderer for a scalar comparison (decision 061).
+    /// </summary>
+    private ComparisonOperator? operandContext;
+
     public override TargetFrameworkDescriptor Descriptor => EFCoreDescriptor.Instance;
 
     protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
@@ -35,11 +55,16 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         scope = new LinqScope
         {
             Entities = AliasedEntities(clauses),
-            Param = clauses.From.Alias ?? "c",
+            Param = FreshName(clauses.From.Alias ?? "c"),
         };
-        scope.ElementParam = scope.Param == "e" ? "el" : "e";
+        scope.ElementParam = FreshName(scope.Param == "e" ? "el" : "e");
+        scope.Aliases.Add(clauses.From.Alias ?? clauses.From.Table);
 
-        visitor = new EFCoreLinqQueryVisitor(scope, (kind, reason, feature) => Report(kind, reason, feature));
+        visitor = new EFCoreLinqQueryVisitor(
+            scope,
+            (kind, reason, feature) => Report(kind, reason, feature),
+            RenderSubQuery,
+            enclosingVisitor);
 
         tupleAliases.Clear();
         tupleAliases.Add(clauses.From.Alias ?? entity);
@@ -112,6 +137,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
                 $"({leftParam}, {rightAlias}) => new {{ {members} }})");
 
             tupleAliases.Add(rightAlias);
+            scope.Aliases.Add(join.RightTableAlias ?? join.RightTable);
             scope.Composite = true;
             scope.Param = FreshParam();
         }
@@ -124,13 +150,26 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
     {
         foreach (var candidate in new[] { "t", "row", "q", "z" })
         {
-            if (!tupleAliases.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+            if (!tupleAliases.Contains(candidate, StringComparer.OrdinalIgnoreCase)
+                && !enclosingParams.Contains(candidate))
             {
                 return candidate;
             }
         }
 
         return "row" + tupleAliases.Count;
+    }
+
+    /// <summary>A name not taken by any enclosing lambda parameter (decision 061).</summary>
+    private string FreshName(string candidate)
+    {
+        var name = candidate;
+        for (int i = 1; enclosingParams.Contains(name); i++)
+        {
+            name = candidate + i;
+        }
+
+        return name;
     }
 
     /// <summary>
@@ -275,6 +314,21 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
     protected override void BuildProjection(QueryClauses clauses, QueryArtifact artifact)
     {
+        // Inside a subquery operand the operator owns the ending (decision 061): EXISTS
+        // needs no projection under its Any(), IN needs the single column bare - an
+        // anonymous type would not Contains against the outer operand - and a scalar
+        // comparison gets its terminal aggregate appended by the renderer.
+        if (operandContext is { } context)
+        {
+            if (context == ComparisonOperator.In)
+            {
+                artifact.Projection.Append(
+                    $"\n        .Select({scope.Param} => {visitor.Visit(clauses.Projections[0])})");
+            }
+
+            return;
+        }
+
         // Rule Q3: no projection means the whole entity is materialized, and in LINQ that is
         // simply the absence of a Select.
         if (clauses.ProjectsWholeEntity && !scope.Grouped)
@@ -322,6 +376,129 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         {
             artifact.Pagination.Append($"\n        .Take({limit})");
         }
+    }
+
+    /// <summary>
+    /// Renders a subquery operand as a nested chain from its own <c>ctx.Set&lt;T&gt;()</c>
+    /// root (decision 061). The visitor decides what surrounds it - Contains for IN, Any for
+    /// EXISTS, nothing for a scalar - and this renderer decides how the chain ends: bare for
+    /// EXISTS, a one-column Select for IN, a terminal aggregate call for a scalar. A scalar
+    /// subquery that is not a single ungrouped aggregate has no faithful LINQ form -
+    /// First() would silently pick one row where SQL refuses several - and refuses.
+    /// </summary>
+    private string? RenderSubQuery(SubQueryInstruction subQuery, ComparisonOperator op)
+    {
+        var clauses = NormalizeSubQueryOperand(subQuery, op);
+        if (clauses is null)
+        {
+            return null;
+        }
+
+        var scalar = op is not (ComparisonOperator.Exists or ComparisonOperator.In);
+
+        if (scalar && (clauses.GroupBys.Count > 0 || clauses.Projections[0].Function is null))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "A scalar subquery that is not a single ungrouped aggregate has no LINQ form - First() would silently pick one row where SQL refuses several; no artifact was generated.",
+                QueryFeature.Subquery);
+            return null;
+        }
+
+        if (op == ComparisonOperator.In
+            && clauses.GroupBys.Count == 0
+            && clauses.Projections[0].Function is not null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "An aggregate projected without a grouping cannot stand inside a LINQ subquery's Select; no artifact was generated.",
+                QueryFeature.Subquery);
+            return null;
+        }
+
+        var savedScope = scope;
+        var savedVisitor = visitor;
+        var savedTuples = tupleAliases.ToList();
+        var savedOrderingAfter = orderingAfterProjection;
+        var savedContext = operandContext;
+        var savedEnclosingVisitor = enclosingVisitor;
+        var savedEnclosingParams = enclosingParams;
+
+        enclosingVisitor = visitor;
+        enclosingParams = new HashSet<string>(enclosingParams, StringComparer.Ordinal)
+        {
+            savedScope.Param,
+            savedScope.ElementParam,
+        };
+        operandContext = op;
+
+        var artifact = Compose(clauses);
+
+        var chain = string.Concat(
+            artifact.Source,
+            artifact.Joins,
+            artifact.Filter,
+            artifact.Grouping,
+            artifact.PostFilter,
+            artifact.Ordering,
+            artifact.Projection,
+            orderingAfterProjection,
+            artifact.Pagination);
+
+        if (scalar)
+        {
+            chain += TerminalAggregate(clauses.Projections[0]);
+        }
+
+        scope = savedScope;
+        visitor = savedVisitor;
+        tupleAliases.Clear();
+        tupleAliases.AddRange(savedTuples);
+        orderingAfterProjection = savedOrderingAfter;
+        operandContext = savedContext;
+        enclosingVisitor = savedEnclosingVisitor;
+        enclosingParams = savedEnclosingParams;
+
+        // The chain was written for a multi-line method body; embedded in a condition it
+        // reads as one expression, so the step breaks are flattened.
+        return chain.Replace("\n        ", "");
+    }
+
+    /// <summary>The terminal call a scalar subquery's single aggregate becomes.</summary>
+    private string TerminalAggregate(ProjectInstruction projection)
+    {
+        if (projection.Function == "COUNT")
+        {
+            if (projection.Attribute != "*")
+            {
+                Report(
+                    ConversionRecordKind.Convention,
+                    $"COUNT({projection.Attribute}) was written as Count(), which counts rows rather than non-null values.",
+                    QueryFeature.Aggregation);
+            }
+
+            return ".Count()";
+        }
+
+        var method = projection.Function switch
+        {
+            "SUM" => "Sum",
+            "MIN" => "Min",
+            "MAX" => "Max",
+            "AVG" => "Average",
+            _ => null,
+        };
+
+        if (method is null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"Aggregate function {projection.Function} has no LINQ counterpart; the query was not generated.",
+                QueryFeature.Aggregation);
+            return string.Empty;
+        }
+
+        return $".{method}({scope.Param} => {visitor.Column(projection.Table, projection.Attribute, null)})";
     }
 
     protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)

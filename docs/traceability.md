@@ -53,7 +53,7 @@ Všechny jsou **vyňaté** — verze netvrdí T1–T7 vůbec (§9, oblast 6). Sl
 | # | Co z toho existuje |
 |---|---|
 | **T1** — reálná případová studie | nic; scénář popisuje [`use-cases.md`](./use-cases.md), UC5 |
-| **T2** — matice překladů | devět .NET směrů v rozsahu projekce, filtrace, join, agregace, řazení a množinových operací (NHibernate je podle deskriptoru odmítá záznamem): `Combined/QueryMatrixTest`, `Combined/QueryTargetShapeTest`, `Combined/SetOperationQueryTest`, `Verification/QueryVerificationTest`. Chybí javová strana a kategorie, které mezireprezentace nenese (stránkování, poddotazy) |
+| **T2** — matice překladů | devět .NET směrů v rozsahu projekce, filtrace, join, agregace, řazení, stránkování (rozhodnutí [060](./decisions/060-pagination-as-a-query-instruction.md)), poddotazů v podmínce (rozhodnutí [061](./decisions/061-subquery-as-a-condition-operand.md)) a množinových operací (ty NHibernate podle deskriptoru odmítá záznamem): `Combined/QueryMatrixTest`, `Combined/QueryTargetShapeTest`, `Combined/SetOperationQueryTest`, `Combined/PaginationQueryTest`, `Combined/SubQueryConditionTest`, `Verification/QueryVerificationTest`. Chybí javová strana |
 | **T3** — metriky korektnosti | čtyřstupňový model ověření (rozhodnutí [016](./decisions/016-generated-artifact-verification-levels.md)) dává, co se dá počítat; jako čísla se dnes nevykazují |
 | **T4** — LLM baseline | nic |
 | **T5** — RAG / agentní varianta | nic |

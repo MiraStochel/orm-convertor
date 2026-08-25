@@ -7,6 +7,7 @@ using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
+using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
 using ScriptDomLiteral = Microsoft.SqlServer.TransactSql.ScriptDom.Literal;
@@ -684,6 +685,30 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
                         : new ComparisonCondition(left, op.Value, right);
                 }
 
+            case ExistsPredicate exists:
+                return new ComparisonCondition(
+                    QueryOperand.Nested(ReadSubQueryOperand(exists.Subquery.QueryExpression)),
+                    ComparisonOperator.Exists);
+
+            // IN with a subquery is the operator's only carried right side (decision 061);
+            // IN with a list of values has no place in the model and keeps falling through
+            // to the default, where the enclosing clause reports it.
+            case InPredicate inPredicate when inPredicate.Subquery is not null:
+                {
+                    var value = ReadOperand(inPredicate.Expression);
+                    if (value is null)
+                    {
+                        return null;
+                    }
+
+                    ConditionNode inNode = new ComparisonCondition(
+                        value,
+                        ComparisonOperator.In,
+                        QueryOperand.Nested(ReadSubQueryOperand(inPredicate.Subquery.QueryExpression)));
+
+                    return inPredicate.NotDefined ? new NotCondition(inNode) : inNode;
+                }
+
             case LikePredicate like:
                 {
                     var left = ReadOperand(like.FirstExpression);
@@ -777,9 +802,29 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
                     aggregated.Column,
                     call.FunctionName.Value.ToUpperInvariant());
 
+            case ScalarSubquery scalar:
+                return QueryOperand.Nested(ReadSubQueryOperand(scalar.QueryExpression));
+
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// Reads a nested query expression into a subquery operand (decision 061). The scope is
+    /// closed with PopOperand, so its instructions become the operand's body rather than
+    /// instructions of the enclosing query, and the enclosing source alias survives the
+    /// nested FROM.
+    /// </summary>
+    private SubQueryInstruction ReadSubQueryOperand(QueryExpression expression)
+    {
+        var enclosingAlias = sourceAlias;
+
+        queryBuilder.Push();
+        ReadQueryExpression(expression);
+        sourceAlias = enclosingAlias;
+
+        return queryBuilder.PopOperand();
     }
 
     private static (string? Table, string Column)? ReadColumn(ColumnReferenceExpression column)

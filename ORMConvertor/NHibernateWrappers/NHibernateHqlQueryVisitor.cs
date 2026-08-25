@@ -15,7 +15,8 @@ namespace NHibernateWrappers;
 /// </summary>
 public sealed class NHibernateHqlQueryVisitor(
     Dictionary<string, EntityMap> entities,
-    Action<ConversionRecordKind, string, QueryFeature?> report) : IQueryVisitor
+    Action<ConversionRecordKind, string, QueryFeature?> report,
+    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery) : IQueryVisitor
 {
     public string Visit(FromInstruction instr) => instr.Alias ?? instr.Table;
 
@@ -72,6 +73,20 @@ public sealed class NHibernateHqlQueryVisitor(
 
     public string Visit(ComparisonCondition cond)
     {
+        // EXISTS carries its subquery as the left operand, the way IS NULL carries its
+        // column (decisions 002 and 061). The nested scope is the builder's to render;
+        // null means it refused, and the refusal is already on the channel.
+        if (cond.Operator == ComparisonOperator.Exists)
+        {
+            var sub = renderSubQuery(cond.Left.SubQuery!, cond.Operator);
+            return sub is null ? string.Empty : $"exists ({sub})";
+        }
+
+        if (cond.Left.IsSubQuery || cond.Right?.IsSubQuery == true)
+        {
+            return SubQueryComparison(cond);
+        }
+
         var left = Operand(cond.Left);
 
         if (cond.Operator == ComparisonOperator.IsNull)
@@ -94,6 +109,33 @@ public sealed class NHibernateHqlQueryVisitor(
         }
 
         return $"{left} {Operator(cond.Operator)} {Operand(cond.Right)}";
+    }
+
+    /// <summary>
+    /// A comparison one of whose sides is a subquery (decision 061): IN and the scalar
+    /// operators alike write the nested select in parentheses in the operand's place.
+    /// </summary>
+    private string SubQueryComparison(ComparisonCondition cond)
+    {
+        var left = OperandOrSubQuery(cond.Left, cond.Operator);
+        var right = OperandOrSubQuery(cond.Right!, cond.Operator);
+        if (left is null || right is null)
+        {
+            return string.Empty;
+        }
+
+        return $"{left} {Operator(cond.Operator)} {right}";
+    }
+
+    private string? OperandOrSubQuery(QueryOperand operand, ComparisonOperator op)
+    {
+        if (!operand.IsSubQuery)
+        {
+            return Operand(operand);
+        }
+
+        var sub = renderSubQuery(operand.SubQuery!, op);
+        return sub is null ? null : $"({sub})";
     }
 
     public string Visit(LogicalCondition cond)

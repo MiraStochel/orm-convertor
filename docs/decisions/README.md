@@ -65,6 +65,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [058](058-only-the-operational-half-of-the-deployment-view-moves.md) | Do provozní příručky patří jen provozní polovina nasazovacího pohledu | 2026-08-24 | platí | žádné |
 | [059](059-advisor-response-carries-the-measured-translations.md) | Odpověď Advisoru nese změřené překlady | 2026-08-24 | platí | F15, S2, S7, T7 |
 | [060](060-pagination-as-a-query-instruction.md) | Stránkování jako nesená dotazová instrukce | 2026-08-25 | platí | F7–F10, F11, T2, T3, S1, S2 |
+| [061](061-subquery-as-a-condition-operand.md) | Poddotaz jako operand podmínky | 2026-08-25 | platí | F7–F10, F11, T2, T3, S1, S2 |
 
 ## Formát
 

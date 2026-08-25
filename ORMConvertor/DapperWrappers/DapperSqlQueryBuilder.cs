@@ -4,6 +4,7 @@ using AbstractWrappers.Diagnostics;
 using Common.Naming;
 using Model;
 using Model.QueryInstructions;
+using Model.QueryInstructions.Conditions;
 
 namespace DapperWrappers;
 
@@ -20,8 +21,48 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
     {
         // The visitor reports into this builder's channel, the same wiring the other two
         // targets do inside BuildSource; Dapper's visitor is stateless, so it is built once
-        // (decision 053).
-        visitor = new DapperSqlQueryVisitor((kind, reason, feature) => Report(kind, reason, feature));
+        // (decision 053). Rendering a subquery operand comes back here, because composing a
+        // nested scope is the builder's work (decision 061).
+        visitor = new DapperSqlQueryVisitor((kind, reason, feature) => Report(kind, reason, feature), RenderSubQuery);
+    }
+
+    /// <summary>
+    /// Renders a subquery operand as a bare SELECT (decision 061). The nested scope runs
+    /// through the same normalization and steps as a set-operation operand does. An ordering
+    /// without a pagination is dropped with a record: T-SQL does not allow ORDER BY inside a
+    /// subquery without TOP or OFFSET, and reordering the rows of an IN, EXISTS or scalar
+    /// operand does not change which rows the outer query returns.
+    /// </summary>
+    private string? RenderSubQuery(SubQueryInstruction subQuery, ComparisonOperator op)
+    {
+        var clauses = NormalizeSubQueryOperand(subQuery, op);
+        if (clauses is null)
+        {
+            return null;
+        }
+
+        if (clauses.OrderBys.Count > 0 && clauses.Offset is null && clauses.Limit is null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "T-SQL does not allow ORDER BY inside a subquery without TOP or OFFSET; the ordering was dropped, which does not change which rows the outer query returns.",
+                QueryFeature.Ordering);
+
+            clauses = new QueryClauses
+            {
+                From = clauses.From,
+                Projections = clauses.Projections,
+                Joins = clauses.Joins,
+                Filter = clauses.Filter,
+                GroupBys = clauses.GroupBys,
+                PostFilter = clauses.PostFilter,
+                OrderBys = [],
+                Offset = clauses.Offset,
+                Limit = clauses.Limit,
+            };
+        }
+
+        return RenderSelect(Compose(clauses)).Replace("\n", " ");
     }
 
     public override TargetFrameworkDescriptor Descriptor => DapperDescriptor.Instance;

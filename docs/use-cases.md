@@ -100,6 +100,6 @@ Vymezení je součástí zadání scénářů — bez něj se první tři body �
 
 - **Nepřevádí schéma databáze.** Ani ho nemění, ani negeneruje migrace; katalog jen čte (rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md)).
 - **Nevydává spustitelný projekt.** Soubor projektu, konfiguraci ani registraci v kontejneru negeneruje, a je to volba, ne mezera (rozhodnutí [040](./decisions/040-boundary-of-the-handed-over-artifact.md)).
-- **Nepíše dotazy.** Překládá ty, které dostane; co mezireprezentace neunese — dnes stránkování a poddotazy — hlásí záznamem, ne náhradou.
+- **Nepíše dotazy.** Překládá ty, které dostane; co mezireprezentace neunese, hlásí záznamem, ne náhradou.
 - **Nenahrazuje běhovou vrstvu.** Nic za běhu neproxuje ani nepřekládá; překlad je jednorázový úkon nad zdrojovým kódem.
 - **Nezkoumá repozitář.** Vstup vybírá uživatel; vyhledávání entit a dotazů v projektu není součástí rozsahu.

@@ -31,6 +31,13 @@ public sealed class LinqScope
 
     public Dictionary<string, EntityMap> Entities { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Aliases this scope itself declares - the source and each join, mapped or not. What a
+    /// nested subquery's scope does not declare it looks up in the enclosing scope, which is
+    /// how a correlated reference finds the outer lambda's parameter (decision 061).
+    /// </summary>
+    public HashSet<string> Aliases { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public string Row(string? alias) => Composite && alias is not null ? $"{Param}.{alias}" : Param;
 
     public string ElementRow(string? alias) => Composite && alias is not null ? $"{ElementParam}.{alias}" : ElementParam;
@@ -41,10 +48,17 @@ public sealed class LinqScope
 /// stateful: it reads <see cref="LinqScope"/> to know what the current lambda parameter
 /// stands for.
 /// </summary>
-public sealed class EFCoreLinqQueryVisitor(LinqScope scope, Action<ConversionRecordKind, string, QueryFeature?> report)
+public sealed class EFCoreLinqQueryVisitor(
+    LinqScope scope,
+    Action<ConversionRecordKind, string, QueryFeature?> report,
+    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery,
+    EFCoreLinqQueryVisitor? outer = null)
     : IQueryVisitor
 {
     public LinqScope Scope { get; } = scope;
+
+    /// <summary>Whether the alias belongs to this scope or one enclosing it (decision 061).</summary>
+    public bool Knows(string alias) => Scope.Aliases.Contains(alias) || outer?.Knows(alias) == true;
 
     public string Visit(FromInstruction instr) => Scope.Param;
 
@@ -85,6 +99,20 @@ public sealed class EFCoreLinqQueryVisitor(LinqScope scope, Action<ConversionRec
 
     public string Visit(ComparisonCondition cond)
     {
+        // EXISTS carries its subquery as the left operand, the way IS NULL carries its
+        // column (decisions 002 and 061). LINQ's EXISTS is Any() on the nested chain; the
+        // chain itself is the builder's to render, and null means it refused.
+        if (cond.Operator == ComparisonOperator.Exists)
+        {
+            var sub = renderSubQuery(cond.Left.SubQuery!, cond.Operator);
+            return sub is null ? string.Empty : $"{sub}.Any()";
+        }
+
+        if (cond.Left.IsSubQuery || cond.Right?.IsSubQuery == true)
+        {
+            return SubQueryComparison(cond);
+        }
+
         var left = Operand(cond.Left);
 
         if (cond.Operator == ComparisonOperator.IsNull)
@@ -113,15 +141,46 @@ public sealed class EFCoreLinqQueryVisitor(LinqScope scope, Action<ConversionRec
 
         if (cond.Operator == ComparisonOperator.In)
         {
-            // LINQ expresses IN as Contains over a collection of values, which the query
-            // representation does not carry. Refused rather than approximated: a dropped
-            // filter would silently widen the result set (decision 053).
-            report(ConversionRecordKind.Failure, "An IN comparison has no LINQ form the query representation can carry; the query was not generated.", QueryFeature.Filtering);
+            // Unreachable: an IN whose right side is not a subquery is refused by the
+            // template's gate - the model carries no list of values (decision 061).
+            report(ConversionRecordKind.Failure, "An IN whose right side is not a subquery has no LINQ form the query representation can carry; the query was not generated.", QueryFeature.Filtering);
             return string.Empty;
         }
 
         return $"{left} {Operator(cond.Operator)} {Operand(cond.Right)}";
     }
+
+    /// <summary>
+    /// A comparison one of whose sides is a subquery (decision 061). IN turns around into
+    /// Contains on the nested chain; the scalar operators compare against the chain's
+    /// terminal aggregate.
+    /// </summary>
+    private string SubQueryComparison(ComparisonCondition cond)
+    {
+        if (cond.Operator == ComparisonOperator.In)
+        {
+            var values = renderSubQuery(cond.Right!.SubQuery!, cond.Operator);
+            var element = OperandOrSubQuery(cond.Left);
+            return values is null || element is null ? string.Empty : $"{values}.Contains({element})";
+        }
+
+        var left = OperandOrSubQuery(cond.Left);
+        var right = OperandOrSubQuery(cond.Right!);
+        if (left is null || right is null)
+        {
+            return string.Empty;
+        }
+
+        return $"{left} {Operator(cond.Operator)} {right}";
+    }
+
+    /// <summary>
+    /// The operand's text, rendering a subquery in a scalar position - which is what a
+    /// subquery standing anywhere but as IN's right side is, whatever the operator around
+    /// it says.
+    /// </summary>
+    private string? OperandOrSubQuery(QueryOperand operand)
+        => operand.IsSubQuery ? renderSubQuery(operand.SubQuery!, ComparisonOperator.Equal) : Operand(operand);
 
     /// <summary>
     /// A LIKE pattern in LINQ (decision 051). Where the pattern is anchored only at its ends
@@ -232,6 +291,14 @@ public sealed class EFCoreLinqQueryVisitor(LinqScope scope, Action<ConversionRec
     /// </summary>
     public string Column(string? alias, string attribute, string? function)
     {
+        // A reference this scope does not declare but an enclosing one does is a correlated
+        // reference: it renders through the outer visitor, whose lambda parameter is still
+        // in scope inside the nested chain (decision 061).
+        if (alias is not null && outer is not null && !Scope.Aliases.Contains(alias) && outer.Knows(alias))
+        {
+            return outer.Column(alias, attribute, function);
+        }
+
         if (function is not null)
         {
             return Aggregate(alias, attribute, function);
