@@ -8,62 +8,21 @@ namespace Tests.Verification;
 
 /// <summary>
 /// The many-to-many nobody's artifact expresses, judged by the frameworks (decisions 005,
-/// 015 and 016): a Dapper source declares only the collections, the schema owns the
-/// junction table, and the conversion has to come out with a synthesized junction entity
-/// both targets accept. The junction exists only in the catalog, so the scenario needs the
-/// database and skips with the rest when none is configured.
+/// 015 and 016): from the Dapper source of <see cref="DapperJunctionSourceEntities"/> the
+/// conversion has to come out with a synthesized junction entity both targets accept. The
+/// junction exists only in the catalog, so the scenario needs the database and skips with
+/// the rest when none is configured.
 /// </summary>
 [Collection(TestSchemaCollection.Name)]
 public class DapperManyToManyVerificationTest(TestSchemaFixture fixture)
 {
-    private const string SupplierSource = """
-        namespace DapperJunctionEntities;
-
-        public class Supplier
-        {
-            public int SupplierId { get; set; }
-
-            public string SupplierName { get; set; } = string.Empty;
-
-            public List<Product> Products { get; set; } = [];
-        }
-        """;
-
-    private const string ProductSource = """
-        namespace DapperJunctionEntities;
-
-        public class Product
-        {
-            public int ProductId { get; set; }
-
-            public string ProductName { get; set; } = string.Empty;
-
-            public string Sku { get; set; } = string.Empty;
-
-            public decimal UnitPrice { get; set; }
-
-            public bool IsDiscontinued { get; set; }
-
-            public DateTime LastModified { get; set; }
-
-            public List<Supplier> Suppliers { get; set; } = [];
-        }
-        """;
-
     private ConversionResult Convert(ORMEnum target)
-        => ConversionHandler.Convert(
-            ORMEnum.Dapper,
-            target,
-            [
-                new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = SupplierSource },
-                new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = ProductSource },
-            ],
-            fixture.CatalogReader);
+        => DapperJunctionSourceEntities.Convert(target, fixture.CatalogReader);
 
     private static byte[] CompileEntities(
         IEnumerable<ConversionSource> outputs, IReadOnlyList<Microsoft.CodeAnalysis.MetadataReference> references)
         => GeneratedEntityCompiler.CompileOrFail(
-            "DapperJunctionEntities",
+            DapperJunctionSourceEntities.AssemblyName,
             outputs.Where(o => o.ContentType == ConversionContentType.CSharpEntity).Select(o => o.Content),
             references);
 
