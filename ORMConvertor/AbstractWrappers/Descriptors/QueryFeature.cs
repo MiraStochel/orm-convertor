@@ -17,8 +17,9 @@ public enum QueryFeature
 
     /// <summary>
     /// The kind of join, separate from <see cref="Join"/> because frameworks differ inside
-    /// it: EF Core 10 gained LeftJoin and RightJoin, so only a full outer join is beyond it,
-    /// and a descriptor that knew only "join" could not say that.
+    /// it: HQL has no full outer join at all, while EF Core 10 composes one from LeftJoin
+    /// and RightJoin (decision 065), and a descriptor that knew only "join" could not say
+    /// that.
     /// </summary>
     JoinKind = 4,
 

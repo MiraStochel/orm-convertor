@@ -1,3 +1,5 @@
+using DapperWrappers;
+using EFCoreWrappers;
 using Model;
 using Model.AbstractRepresentation;
 using NHibernate;
@@ -187,6 +189,51 @@ public class QueryVerificationTest
         var sql = EFCoreQueryAcceptance.Translate(compiled);
 
         Assert.Contains("EXISTS", sql);
+    }
+
+    /// <summary>
+    /// Level 3 for a full outer join (decision 065): EF Core 10 has no single operator for
+    /// it, so the builder composes it from LeftJoin, Concat and RightJoin - and the provider
+    /// renders the composition as LEFT JOIN ... UNION ALL ... RIGHT JOIN, which proves the
+    /// composition is one EF Core can actually map, entity null test included.
+    /// </summary>
+    [Fact]
+    public void EFCoreTranslatesAComposedFullOuterJoin()
+    {
+        var builder = new EFCoreLinqQueryBuilder();
+        new DapperSqlQueryParser(builder).Parse(
+            ConversionContentType.SqlQuery,
+            "SELECT c.CustomerName, o.OrderId FROM Customers c FULL JOIN Orders o ON o.CustomerId = c.CustomerId");
+        var method = builder.Build().Single().Content;
+
+        const string customer = """
+            public class Customer
+            {
+                public int CustomerId { get; set; }
+                public string CustomerName { get; set; }
+            }
+            """;
+
+        const string order = """
+            public class Order
+            {
+                public int OrderId { get; set; }
+                public int CustomerId { get; set; }
+            }
+            """;
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_EFCore_FullOuterJoin",
+            method,
+            [customer, order],
+            GeneratedQueryCompiler.EFCoreConsumerReferences,
+            "using Microsoft.EntityFrameworkCore;");
+
+        var sql = EFCoreQueryAcceptance.Translate(compiled);
+
+        Assert.Contains("LEFT JOIN", sql);
+        Assert.Contains("UNION ALL", sql);
+        Assert.Contains("RIGHT JOIN", sql);
     }
 
     /// <summary>A level that never says no proves nothing (decision 016).</summary>

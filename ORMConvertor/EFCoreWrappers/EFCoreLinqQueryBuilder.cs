@@ -93,31 +93,13 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
             if (!TryReadJoinKeys(join.OnCondition, rightAlias, out var pairs))
             {
+                // A join dropped in the condition's place would return different rows -
+                // it filters and it multiplies (decision 065).
                 Report(
-                    ConversionRecordKind.Loss,
-                    $"The join onto '{join.RightTable}' is not a conjunction of column equalities, which is the only form a LINQ join takes; it was dropped.",
+                    ConversionRecordKind.Failure,
+                    $"The join onto '{join.RightTable}' is not a conjunction of column equalities, which is the only form a LINQ join takes; no artifact was generated.",
                     QueryFeature.Join);
                 continue;
-            }
-
-            var method = join.Kind switch
-            {
-                JoinKind.Inner => "Join",
-                JoinKind.Left => "LeftJoin",
-                JoinKind.Right => "RightJoin",
-                _ => null,
-            };
-
-            if (method is null)
-            {
-                // EF Core 10 has LeftJoin and RightJoin but no full outer join. That is a
-                // narrowing inside the JoinKind category, so it is reported here at the point
-                // of emission rather than declared in the descriptor.
-                Report(
-                    ConversionRecordKind.Loss,
-                    "A full outer join has no LINQ operator in EF Core 10; an inner join was generated instead.",
-                    QueryFeature.JoinKind);
-                method = "Join";
             }
 
             var leftParam = scope.Param;
@@ -130,11 +112,56 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
                 ? string.Join(", ", tupleAliases.Select(a => $"{leftParam}.{a}")) + $", {rightAlias}"
                 : $"{leftParam}, {rightAlias}";
 
-            artifact.Joins.Append(
-                $"\n        .{method}(ctx.Set<{rightEntity}>(), " +
+            var arguments =
+                $"ctx.Set<{rightEntity}>(), " +
                 $"{leftParam} => {leftKeys}, " +
                 $"{rightAlias} => {rightKeys}, " +
-                $"({leftParam}, {rightAlias}) => new {{ {members} }})");
+                $"({leftParam}, {rightAlias}) => new {{ {members} }}";
+
+            if (join.Kind == JoinKind.Full)
+            {
+                // EF Core 10 has LeftJoin and RightJoin but no full outer join, and an inner
+                // join in its place would return different rows (decision 065). The full join
+                // is composed from the operators that do exist: the left join's rows,
+                // concatenated with the right join's rows that found no left match. Concat is
+                // UNION ALL, so matched pairs are not doubled - the filter excludes them from
+                // the right branch - and genuine duplicates are not collapsed the way Union
+                // would. The filter stands on the root member because that one is never null
+                // in the left branch. A faithful translation is neither a loss nor a
+                // convention, so no record is issued.
+                var root = scope.Composite ? tupleAliases[0] : leftParam;
+                var probe = FreshName("x");
+                var chainSoFar = string.Concat(artifact.Source.ToString(), artifact.Joins.ToString());
+
+                artifact.Joins.Append(
+                    $"\n        .LeftJoin({arguments})" +
+                    $"\n        .Concat({chainSoFar}" +
+                    $"\n            .RightJoin({arguments})" +
+                    $"\n            .Where({probe} => {probe}.{root} == null))");
+            }
+            else
+            {
+                var method = join.Kind switch
+                {
+                    JoinKind.Inner => "Join",
+                    JoinKind.Left => "LeftJoin",
+                    JoinKind.Right => "RightJoin",
+                    _ => null,
+                };
+
+                if (method is null)
+                {
+                    // No catch-all translation: a JoinKind value without an operator must not
+                    // come out as a neighbouring join (decision 053).
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"Join kind {join.Kind} has no LINQ operator; no artifact was generated.",
+                        QueryFeature.JoinKind);
+                    continue;
+                }
+
+                artifact.Joins.Append($"\n        .{method}({arguments})");
+            }
 
             tupleAliases.Add(rightAlias);
             scope.Aliases.Add(join.RightTableAlias ?? join.RightTable);

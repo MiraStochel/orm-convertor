@@ -1,10 +1,12 @@
 using AbstractWrappers;
+using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using DapperWrappers;
 using EFCoreWrappers;
 using Model;
 using Model.AbstractRepresentation.Enums;
 using Model.QueryInstructions.Conditions;
+using Model.QueryInstructions.Enums;
 using NHibernateWrappers;
 using OrmConvertor;
 
@@ -126,6 +128,71 @@ public class QueryFaithfulnessTest
         Assert.Contains(result.Sources, s => s.ContentType == ConversionContentType.CSharpEntity);
         Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.CSharpQuery);
         Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Failure);
+    }
+
+    [Fact]
+    public void AFullOuterJoinComposesFromLeftAndRightJoinForEFCore()
+    {
+        // EF Core 10 has no full outer join operator; an inner join in its place used to go
+        // out with a Loss record, and an inner join returns fewer rows (decision 065). The
+        // faithful composition is the left join concatenated with the right join's rows
+        // that found no left match.
+        var builder = new EFCoreLinqQueryBuilder();
+        new DapperSqlQueryParser(builder).Parse(
+            ConversionContentType.SqlQuery,
+            "SELECT c.CustomerName FROM Customers c FULL JOIN Orders o ON o.CustomerId = c.CustomerId");
+
+        var query = builder.Build().Single().Content;
+
+        Assert.Contains(".LeftJoin(", query, StringComparison.Ordinal);
+        Assert.Contains(".Concat(", query, StringComparison.Ordinal);
+        Assert.Contains(".RightJoin(", query, StringComparison.Ordinal);
+        Assert.Contains("== null", query, StringComparison.Ordinal);
+
+        // A faithful translation is neither a loss nor a convention of the join kind.
+        Assert.DoesNotContain(builder.Records, r => r.Feature == QueryFeature.JoinKind);
+    }
+
+    [Fact]
+    public void AFullOuterJoinRefusesTheArtifactForNHibernate()
+    {
+        // HQL 5.7.0 has neither a full outer join nor set operations to compose one from,
+        // and the inner join that used to go out in its place returned fewer rows.
+        var builder = new NHibernateHqlQueryBuilder();
+        builder.From("Customers", "c");
+        builder.Join(
+            JoinKind.Full,
+            "c",
+            "Orders",
+            new ComparisonCondition(
+                QueryOperand.Column("o", "CustomerId"),
+                ComparisonOperator.Equal,
+                QueryOperand.Column("c", "CustomerId")),
+            "o");
+        builder.Project("c", "CustomerName");
+
+        var outputs = builder.Build();
+
+        Assert.Empty(outputs);
+        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.Equal(QueryFeature.JoinKind, record.Feature);
+    }
+
+    [Fact]
+    public void AJoinWithoutKeyEqualitiesRefusesTheArtifactForEFCore()
+    {
+        // A LINQ join takes two key selectors, so this condition has no shape to go into;
+        // the join used to be dropped with a Loss, and a query without its join returns
+        // different rows - it neither filters nor multiplies (decision 065).
+        var builder = new EFCoreLinqQueryBuilder();
+        new DapperSqlQueryParser(builder).Parse(
+            ConversionContentType.SqlQuery,
+            "SELECT c.CustomerName FROM Customers c INNER JOIN Orders o ON o.OrderValue > c.CreditLimit");
+
+        var outputs = builder.Build();
+
+        Assert.Empty(outputs);
+        Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join);
     }
 
     [Fact]

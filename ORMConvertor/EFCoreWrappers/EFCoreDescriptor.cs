@@ -62,9 +62,9 @@ public static class EFCoreDescriptor
             [MappingFactCategory.UniqueConstraint] = FactSupport.Expressible,
         },
 
-        // LINQ over DbSet covers every category. The one narrowing inside JoinKind - EF Core 10
-        // has LeftJoin and RightJoin but no full outer join - is a value, not a category, so
-        // the builder reports it at the point of emission the way the entity branch does.
+        // LINQ over DbSet covers every category. Even the full outer join, which EF Core 10
+        // has no single operator for, is composed faithfully from LeftJoin, RightJoin and
+        // Concat (decision 065), so JoinKind holds no narrowing.
         QuerySupport = new Dictionary<QueryFeature, FactSupport>
         {
             [QueryFeature.Projection] = FactSupport.Expressible,

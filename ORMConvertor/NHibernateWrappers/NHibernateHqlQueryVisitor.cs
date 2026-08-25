@@ -47,11 +47,14 @@ public sealed class NHibernateHqlQueryVisitor(
 
         if (keyword is null)
         {
+            // An inner join in its place would return fewer rows than the source's full
+            // outer join, and HQL 5.7.0 has no set operation to compose a faithful one
+            // from the way the EF Core builder does (decision 065).
             report(
-                ConversionRecordKind.Loss,
-                "HQL has no full outer join; an inner join was generated instead.",
+                ConversionRecordKind.Failure,
+                "HQL in NHibernate 5.7.0 has no full outer join and no set operation to compose one from; no artifact was generated.",
                 QueryFeature.JoinKind);
-            keyword = "inner join";
+            return string.Empty;
         }
 
         var entity = EntityName(instr.RightTableAlias ?? instr.RightTable) ?? Bare(instr.RightTable);
