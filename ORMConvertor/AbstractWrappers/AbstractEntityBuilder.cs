@@ -176,6 +176,15 @@ public abstract class AbstractEntityBuilder
         => AddPrimaryKey([(propertyName, 1, strategy)]);
 
     /// <summary>
+    /// Records that the source explicitly states the entity has no key (decision 063) -
+    /// EF Core's [Keyless]. A statement, not an absence: it keeps the catalog from
+    /// supplying a key and the target's convention from deriving one. It is not
+    /// reconciled with a key claim here - the model does not validate, so both may
+    /// stand, and the completeness gate refuses the contradiction before generation.
+    /// </summary>
+    public void MarkNoKey() => EntityMap.HasNoKey = true;
+
+    /// <summary>
     /// A later key claim against an already defined key (decision 036). The identity of
     /// the key is the ordered list of its parts: a claim over the same parts fills what
     /// the first left empty and a differing part list is discarded whole with a conflict
@@ -1941,6 +1950,23 @@ public abstract class AbstractEntityBuilder
     {
         var complete = true;
 
+        // An entity stating both a key and that it has none is a contradiction no target
+        // can render, and the source framework builds no model from it either; the input
+        // has no meaning to reproduce, so no artifact is generated (decision 063).
+        if (entityMap.HasNoKey && entityMap.PrimaryKey is not null)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Category = MappingFactCategory.PrimaryKey,
+                Reason = $"The source states both the primary key ({string.Join(", ", entityMap.PrimaryKey.Parts.Select(p => p.PropertyMap.Property.Name))}) "
+                    + "and that the entity has no key; the two claims cannot both be reproduced, so the entity's artifacts are not generated (decision 063).",
+            });
+            complete = false;
+        }
+
         foreach (var category in Enum.GetValues<MappingFactCategory>())
         {
             if (Descriptor.SupportOf(category) == FactSupport.Required && !Carries(entityMap, category))
@@ -1951,7 +1977,11 @@ public abstract class AbstractEntityBuilder
                     Framework = Descriptor.Framework,
                     Entity = entityMap.Entity.Name,
                     Category = category,
-                    Reason = $"The target requires {category} and neither the source nor a catalog supplied it; the entity's artifacts are not generated.",
+                    // The denied key gets its own wording: "nobody supplied it" would send
+                    // the user looking for a missing fact instead of at a stated one (F11).
+                    Reason = category == MappingFactCategory.PrimaryKey && entityMap.HasNoKey
+                        ? $"The target requires {category} and the source states the entity has no key; the entity's artifacts are not generated."
+                        : $"The target requires {category} and neither the source nor a catalog supplied it; the entity's artifacts are not generated.",
                 });
                 complete = false;
             }

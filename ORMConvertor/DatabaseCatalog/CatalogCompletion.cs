@@ -623,6 +623,18 @@ public static class CatalogCompletion
 
     private static void CompletePrimaryKey(AbstractEntityBuilder builder, EntityMap em, TableImage image)
     {
+        // A stated "no key" is not an empty fact to fill (decision 063): the source
+        // answered the key question in the negative, so the catalog's key is a
+        // disagreement, not a supply. It is a conflict record rather than a refusal -
+        // a keyless entity over a table that does have a key is a legitimate mapping.
+        if (em.HasNoKey)
+        {
+            ReportConflict(builder, em, null, MappingFactCategory.PrimaryKey,
+                $"The source states the entity has no key; the catalog states the primary key "
+                + $"({string.Join(", ", image.PrimaryKeyColumns)}) of '{image.QualifiedName}'.");
+            return;
+        }
+
         if (em.PrimaryKey is null)
         {
             var parts = new List<(string PropertyName, int Order, PrimaryKeyStrategy Strategy)>();

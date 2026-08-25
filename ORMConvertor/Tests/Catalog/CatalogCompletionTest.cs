@@ -116,6 +116,37 @@ public class CatalogCompletionTest
         Assert.Equal("Name", conflict.Property);
     }
 
+    /// <summary>
+    /// A stated "no key" is the source answering the key question, not leaving it empty:
+    /// the catalog must not supply the key it knows, and the disagreement is a conflict
+    /// record with the source winning (decision 063).
+    /// </summary>
+    [Fact]
+    public void StatedKeylessnessKeepsTheCatalogKeyOut()
+    {
+        var builder = new NHibernateEntityBuilder();
+        new EFCoreWrappers.EFCoreEntityParser(builder).Parse("""
+            namespace EFCoreEntities;
+
+            using Microsoft.EntityFrameworkCore;
+
+            [Keyless]
+            public class Customer
+            {
+                public int CustomerId { get; set; }
+            }
+            """);
+
+        CatalogCompletion.Complete(builder, new FakeCatalogReader(CustomersImage()));
+
+        var em = builder.EntityMaps.Single();
+        Assert.Null(em.PrimaryKey);
+        Assert.True(em.HasNoKey);
+
+        var conflict = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Conflict);
+        Assert.Equal(MappingFactCategory.PrimaryKey, conflict.Category);
+    }
+
     [Fact]
     public void SuppliesTheVersionFlagForARowversionColumn()
     {

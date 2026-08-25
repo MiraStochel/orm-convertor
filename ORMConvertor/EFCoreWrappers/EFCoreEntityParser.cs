@@ -23,7 +23,8 @@ public class EFCoreEntityParser : CSharpEntityParser
 
     /// <summary>
     /// Parses class attributes: the table and schema of [Table], the unique constraints of
-    /// [Index] (decision 055), and a record for everything else.
+    /// [Index] (decision 055), the stated keylessness of [Keyless] (decision 063), and a
+    /// record for everything else.
     ///
     /// [PrimaryKey] is read by <see cref="GetClassPrimaryKeyNames"/> in the property step,
     /// where the key part order can be matched against the properties, so it is recognized
@@ -43,6 +44,12 @@ public class EFCoreEntityParser : CSharpEntityParser
             if (name.Equals("Index", StringComparison.OrdinalIgnoreCase))
             {
                 ReadIndexAttribute(attr, classDeclaration);
+                continue;
+            }
+
+            if (name.Equals("Keyless", StringComparison.OrdinalIgnoreCase))
+            {
+                entityBuilder.MarkNoKey();
                 continue;
             }
 
@@ -275,10 +282,10 @@ public class EFCoreEntityParser : CSharpEntityParser
                         dbProps["IsVersion"] = "true";
                         break;
 
-                    // Everything else used to fall out of this switch without a trace. Two of
-                    // them change what the artifact means rather than merely impoverishing it:
-                    // [NotMapped] says the property is not mapped at all and [Keyless] that the
-                    // type has no key, and both went through as if absent (decision 010).
+                    // Everything else used to fall out of this switch without a trace. Some
+                    // of it changes what the artifact means rather than merely impoverishing
+                    // it - [NotMapped] says the property is not mapped at all - and it went
+                    // through as if absent (decision 010).
                     default:
                         entityBuilder.Report(new ConversionRecord
                         {
@@ -365,6 +372,11 @@ public class EFCoreEntityParser : CSharpEntityParser
 
         // The key is defined by a single call for the whole entity.
         // The class-level [PrimaryKey(...)] takes precedence - it defines the explicit part order.
+        // A stated [Keyless] plays out the way EF Core itself plays it (decision 063): beside
+        // the class-level [PrimaryKey] both claims enter the model and the completeness gate
+        // refuses the entity, because EF Core builds no model from that input either.
+        bool statesNoKey = entityBuilder.EntityMap.HasNoKey;
+
         if (classKeyNames.Count > 0)
         {
             entityBuilder.AddPrimaryKey(
@@ -372,12 +384,33 @@ public class EFCoreEntityParser : CSharpEntityParser
         }
         else if (keyPropertyNames.Count > 0)
         {
-            bool isComposite = keyPropertyNames.Count > 1;
+            if (statesNoKey)
+            {
+                // EF Core ignores [Key] on a keyless type with a warning and the model
+                // builds keyless; the key claim is dropped the same way, out loud.
+                entityBuilder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Conflict,
+                    Framework = ORMEnum.EFCore,
+                    Artifact = ConversionContentType.CSharpEntity,
+                    Entity = classDeclaration.Identifier.Text,
+                    Property = keyPropertyNames.Count == 1 ? keyPropertyNames[0] : null,
+                    Category = MappingFactCategory.PrimaryKey,
+                    Reason = $"The class carries [Keyless] and [Key] on ({string.Join(", ", keyPropertyNames)}); "
+                        + "EF Core reads such a type as keyless and only warns about the KeyAttribute, "
+                        + "so the key claim is dropped and the entity stays keyless (decision 063).",
+                });
+            }
+            else
+            {
+                bool isComposite = keyPropertyNames.Count > 1;
 
-            entityBuilder.AddPrimaryKey(
-                keyPropertyNames.Select((n, i) => (n, i + 1, StrategyFor(n, isComposite))).ToList());
+                entityBuilder.AddPrimaryKey(
+                    keyPropertyNames.Select((n, i) => (n, i + 1, StrategyFor(n, isComposite))).ToList());
+            }
         }
-        else if (FindConventionKey(classDeclaration.Identifier.Text, conventionKeyCandidates) is { } conventionKey)
+        else if (!statesNoKey
+            && FindConventionKey(classDeclaration.Identifier.Text, conventionKeyCandidates) is { } conventionKey)
         {
             entityBuilder.AddPrimaryKey(StrategyFor(conventionKey, composite: false), conventionKey);
         }
@@ -543,6 +576,8 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// that genuinely has none, and the target builder would mark that one keyless.
     /// Reading the convention of the source framework is the parser's job precisely because
     /// only the parser knows which framework the input came from - see decision 015.
+    /// A class carrying [Keyless] never gets here: the convention may only speak where the
+    /// source is silent, and there the source spoke (decision 063).
     ///
     /// The comparison is case-insensitive, so CustomerID counts as CustomerId. That matches
     /// what EF Core does, but the documentation page on keys does not spell it out, so the

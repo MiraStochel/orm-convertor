@@ -1,4 +1,6 @@
 ﻿using AbstractWrappers;
+using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
 using EFCoreWrappers;
 using Model;
 using Model.AbstractRepresentation.Enums;
@@ -167,6 +169,129 @@ public class EFCoreKeyConventionTest
         var xml = builder.Build().Single(o => o.ContentType == ConversionContentType.XML).Content;
 
         Assert.Contains("<id name=\"Id\"", xml);
+    }
+
+    /// <summary>
+    /// [Keyless] is the source explicitly denying a key, so the convention must stay
+    /// silent even over a property it would otherwise pick - the opposite would let a
+    /// convention override a statement (decision 063). The denial is read, not lost,
+    /// and it survives the round trip as the [Keyless] the builder writes.
+    /// </summary>
+    [Fact]
+    public void KeylessSuppressesTheConventionKeyAndRoundTrips()
+    {
+        var builder = Parse("""
+            namespace EFCoreEntities;
+
+            using Microsoft.EntityFrameworkCore;
+
+            [Keyless]
+            public class Customer
+            {
+                public int Id { get; set; }
+            }
+            """);
+
+        Assert.Null(builder.EntityMap.PrimaryKey);
+        Assert.True(builder.EntityMap.HasNoKey);
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
+
+        var code = builder.Build()
+            .Single(o => o.ContentType == ConversionContentType.CSharpEntity)
+            .Content;
+
+        Assert.Contains("[Keyless]", code);
+        Assert.DoesNotContain("[Key]", code.Replace("[Keyless]", string.Empty));
+    }
+
+    /// <summary>
+    /// EF Core ignores [Key] on a keyless type with a warning and builds the model
+    /// keyless; the translation mirrors that as a conflict record and a keyless artifact
+    /// (decision 063).
+    /// </summary>
+    [Fact]
+    public void KeyAttributeBesideKeylessIsDroppedWithAConflict()
+    {
+        var builder = Parse("""
+            namespace EFCoreEntities;
+
+            using Microsoft.EntityFrameworkCore;
+            using System.ComponentModel.DataAnnotations;
+
+            [Keyless]
+            public class Customer
+            {
+                [Key]
+                public int CustomerNumber { get; set; }
+            }
+            """);
+
+        Assert.Null(builder.EntityMap.PrimaryKey);
+
+        var conflict = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Conflict);
+        Assert.Equal(MappingFactCategory.PrimaryKey, conflict.Category);
+        Assert.Equal("CustomerNumber", conflict.Property);
+
+        var code = builder.Build()
+            .Single(o => o.ContentType == ConversionContentType.CSharpEntity)
+            .Content;
+
+        Assert.Contains("[Keyless]", code);
+    }
+
+    /// <summary>
+    /// The class-level [PrimaryKey] beside [Keyless] is the case EF Core itself refuses
+    /// to build a model from, so there is no meaning to translate: the completeness gate
+    /// refuses the entity with a failure record (decision 063).
+    /// </summary>
+    [Fact]
+    public void PrimaryKeyAttributeBesideKeylessRefusesTheEntity()
+    {
+        var builder = Parse("""
+            namespace EFCoreEntities;
+
+            using Microsoft.EntityFrameworkCore;
+
+            [Keyless]
+            [PrimaryKey(nameof(Number))]
+            public class Customer
+            {
+                public int Number { get; set; }
+            }
+            """);
+
+        Assert.Empty(builder.Build());
+
+        var failure = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.Equal(MappingFactCategory.PrimaryKey, failure.Category);
+    }
+
+    /// <summary>
+    /// A target that requires a key refuses a keyless source as before, but the reason
+    /// has to say the key was denied, not that nobody supplied it - the two send the
+    /// user to different repairs (decision 063).
+    /// </summary>
+    [Fact]
+    public void KeylessSourceIsRefusedByATargetRequiringAKey()
+    {
+        var builder = new NHibernateWrappers.NHibernateEntityBuilder();
+        new EFCoreEntityParser(builder).Parse("""
+            namespace EFCoreEntities;
+
+            using Microsoft.EntityFrameworkCore;
+
+            [Keyless]
+            public class Customer
+            {
+                public int Id { get; set; }
+            }
+            """);
+
+        Assert.Empty(builder.Build());
+
+        var failure = Assert.Single(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Failure && r.Category == MappingFactCategory.PrimaryKey);
+        Assert.Contains("states the entity has no key", failure.Reason);
     }
 
     [Fact]

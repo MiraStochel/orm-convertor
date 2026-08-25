@@ -12,6 +12,14 @@ public class EntityMap
     
     public PrimaryKey? PrimaryKey { get; set; }
 
+    /// <summary>
+    /// True when the source explicitly states the entity has no key (decision 063) - a
+    /// different claim from <see cref="PrimaryKey"/> being null, which only records that
+    /// nobody stated one. The model does not validate: it holds this flag next to a filled
+    /// key as well, and the completeness gate is what refuses the contradiction.
+    /// </summary>
+    public bool HasNoKey { get; set; }
+
     public List<Relation> Relations { get; set; } = [];
 
     /// <summary>
