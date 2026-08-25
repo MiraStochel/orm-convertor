@@ -133,6 +133,57 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         EmitSource(root);
 
         bool inSetOperation = false;
+        long? pendingOffset = null;
+        long? pendingLimit = null;
+
+        // Pagination is recorded when the scope closes, so that Skip and Take collected
+        // along the chain end up as one instruction in offset-then-limit normal form
+        // (decision 060).
+        void FlushPagination()
+        {
+            queryBuilder.Paginate(pendingOffset, pendingLimit);
+            pendingOffset = pendingLimit = null;
+        }
+
+        void HandleSkipOrTake(ChainStep step)
+        {
+            if (step.Name == "Skip" && pendingLimit is not null)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    "Skip() after Take() slices differently from the offset-then-limit form the query representation carries; no artifact was generated.",
+                    QueryFeature.Pagination);
+                return;
+            }
+
+            if ((step.Name == "Skip" ? pendingOffset : pendingLimit) is not null)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"A repeated {step.Name}() has no counterpart in the query representation; no artifact was generated.",
+                    QueryFeature.Pagination);
+                return;
+            }
+
+            var argument = step.Node.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+            if (argument is not LiteralExpressionSyntax literal || literal.Token.Value is not int value || value < 0)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The argument of {step.Name}() is not a non-negative integer literal, and a pagination the artifact does not carry would change which rows the query returns; no artifact was generated.",
+                    QueryFeature.Pagination);
+                return;
+            }
+
+            if (step.Name == "Skip")
+            {
+                pendingOffset = value;
+            }
+            else
+            {
+                pendingLimit = value;
+            }
+        }
 
         for (int i = 0; i < steps.Count; i++)
         {
@@ -152,6 +203,7 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
 
                 if (!inSetOperation)
                 {
+                    FlushPagination();
                     queryBuilder.Pop();
                 }
 
@@ -169,14 +221,38 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
                 continue;
             }
 
+            if (step.Name is "Skip" or "Take")
+            {
+                HandleSkipOrTake(step);
+                continue;
+            }
+
+            // The representation carries pagination as the last relational operation, so a
+            // step that does not commute with the slice cannot follow it: a filter moved in
+            // front of the slice selects different rows (decision 060). Projection and
+            // materialization commute and pass.
+            if ((pendingOffset is not null || pendingLimit is not null) && !CommutesWithPagination(step.Name))
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"{step.Name}() after Skip() or Take() does not commute with the slice, which the query representation carries only as the last operation; no artifact was generated.",
+                    QueryFeature.Pagination);
+                continue;
+            }
+
             EmitStep(step, followsGrouping: i > 0 && steps[i - 1].Name == "GroupBy");
         }
 
         if (!inSetOperation)
         {
+            FlushPagination();
             queryBuilder.Pop();
         }
     }
+
+    private static bool CommutesWithPagination(string method) => method is
+        "Select" or "ToList" or "ToArray" or "ToListAsync" or "ToArrayAsync"
+        or "AsQueryable" or "AsNoTracking" or "AsNoTrackingWithIdentityResolution";
 
     private static bool TryMapSetOperation(string method, out SetOperationType operation)
     {
@@ -216,7 +292,10 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
 
             case "Take":
             case "Skip":
-                ReportUnsupported(step.Name, QueryFeature.Pagination);
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"{step.Name}() applied after a set operation cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
+                    QueryFeature.Pagination);
                 return;
 
             case "Select":
@@ -299,11 +378,6 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             case "AsQueryable":
             case "AsNoTracking":
             case "AsNoTrackingWithIdentityResolution":
-                break;
-
-            case "Take":
-            case "Skip":
-                ReportUnsupported(step.Name, QueryFeature.Pagination);
                 break;
 
             case "Distinct":

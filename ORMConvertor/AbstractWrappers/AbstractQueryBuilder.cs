@@ -16,7 +16,7 @@ namespace AbstractWrappers;
 /// here, because it is a property of the query IR rather than of any framework. Generation
 /// is a template method (decision 023): <see cref="Build"/> normalizes the recorded
 /// instructions into <see cref="QueryClauses"/>, reports what the target cannot express,
-/// then runs seven abstract steps in relational evaluation order and lets the framework
+/// then runs eight abstract steps in relational evaluation order and lets the framework
 /// assemble the text in <see cref="FinalizeQuery"/>.
 /// </summary>
 public abstract class AbstractQueryBuilder
@@ -208,6 +208,21 @@ public abstract class AbstractQueryBuilder
         instructions.Add(new HavingInstruction(condition));
     }
 
+    /// <summary>
+    /// Records the pagination of the current (sub)query scope in offset-then-limit normal
+    /// form (decision 060). Parsers call this once per scope; a source shape that does not
+    /// reduce to this form is theirs to refuse.
+    /// </summary>
+    public void Paginate(long? offset, long? limit)
+    {
+        if (offset is null && limit is null)
+        {
+            return;
+        }
+
+        instructions.Add(new PaginationInstruction(offset, limit));
+    }
+
     public void SetOperation(SetOperationType operation)
     {
         // The left operand is the last closed scope - or a completed set operation, which is
@@ -273,7 +288,7 @@ public abstract class AbstractQueryBuilder
     }
 
     /// <summary>
-    /// Runs the seven steps over one set of clauses. Separate from <see cref="Build"/> so
+    /// Runs the eight steps over one set of clauses. Separate from <see cref="Build"/> so
     /// that a builder overriding <see cref="BuildSetOperation"/> can render each operand
     /// through the same steps.
     /// </summary>
@@ -288,7 +303,8 @@ public abstract class AbstractQueryBuilder
         // Relational evaluation order, which is what a LINQ chain writes literally and what
         // SQL and HQL permute only on the surface. It is a data dependency, not a style: a
         // LINQ projection lambda binds a grouping after GroupBy and an element before it, so
-        // the projection cannot be composed until grouping is known.
+        // the projection cannot be composed until grouping is known. Pagination comes last
+        // because the slice is the last relational operator (decision 060).
         BuildSource(clauses, artifact);
         BuildJoins(clauses, artifact);
         BuildFilter(clauses, artifact);
@@ -296,6 +312,7 @@ public abstract class AbstractQueryBuilder
         BuildPostFilter(clauses, artifact);
         BuildOrdering(clauses, artifact);
         BuildProjection(clauses, artifact);
+        BuildPagination(clauses, artifact);
 
         return artifact;
     }
@@ -355,6 +372,18 @@ public abstract class AbstractQueryBuilder
             return null;
         }
 
+        // At most one pagination per (sub)query scope (decision 060). Parsers emit one;
+        // a second one has no defined composition, so it is refused rather than merged.
+        var paginations = body.OfType<PaginationInstruction>().ToList();
+        if (paginations.Count > 1)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The query carries {paginations.Count} pagination instructions; at most one is allowed.",
+                QueryFeature.Pagination);
+            return null;
+        }
+
         var projections = body.OfType<ProjectInstruction>().ToList();
         var groupBys = body.OfType<GroupByInstruction>().ToList();
 
@@ -379,6 +408,8 @@ public abstract class AbstractQueryBuilder
             GroupBys = groupBys,
             PostFilter = Conjoin([.. body.OfType<HavingInstruction>().Select(i => i.Condition)]),
             OrderBys = [.. body.OfType<OrderByInstruction>()],
+            Offset = paginations.FirstOrDefault()?.Offset,
+            Limit = paginations.FirstOrDefault()?.Limit,
         };
     }
 
@@ -468,6 +499,7 @@ public abstract class AbstractQueryBuilder
         Check(QueryFeature.Grouping, clauses.GroupBys.Count > 0);
         Check(QueryFeature.PostAggregationFiltering, clauses.PostFilter is not null);
         Check(QueryFeature.Ordering, clauses.OrderBys.Count > 0);
+        Check(QueryFeature.Pagination, clauses.Offset is not null || clauses.Limit is not null);
     }
 
     /// <summary>
@@ -496,6 +528,8 @@ public abstract class AbstractQueryBuilder
     protected abstract void BuildOrdering(QueryClauses clauses, QueryArtifact artifact);
 
     protected abstract void BuildProjection(QueryClauses clauses, QueryArtifact artifact);
+
+    protected abstract void BuildPagination(QueryClauses clauses, QueryArtifact artifact);
 
     /// <summary>
     /// Joins the slots into the artifacts of the target framework. The count of artifacts is

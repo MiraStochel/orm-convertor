@@ -295,6 +295,35 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         artifact.Projection.Append($"\n        .Select({scope.Param} => new {{ {string.Join(", ", members)} }})");
     }
 
+    protected override void BuildPagination(QueryClauses clauses, QueryArtifact artifact)
+    {
+        if (clauses.Offset is null && clauses.Limit is null)
+        {
+            return;
+        }
+
+        // T-SQL counts rows in bigint, Skip and Take in Int32; a value between the two has
+        // no faithful LINQ form and dropping it would change which rows come back.
+        if (clauses.Offset > int.MaxValue || clauses.Limit > int.MaxValue)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "The pagination value exceeds Int32, which Skip and Take cannot carry; no artifact was generated.",
+                QueryFeature.Pagination);
+            return;
+        }
+
+        if (clauses.Offset is { } offset)
+        {
+            artifact.Pagination.Append($"\n        .Skip({offset})");
+        }
+
+        if (clauses.Limit is { } limit)
+        {
+            artifact.Pagination.Append($"\n        .Take({limit})");
+        }
+    }
+
     protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)
     {
         var chain = RenderSetOperation(instruction, out var elementEntity);
@@ -385,7 +414,8 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             artifact.PostFilter,
             artifact.Ordering,
             artifact.Projection,
-            orderingAfterProjection);
+            orderingAfterProjection,
+            artifact.Pagination);
     }
 
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
@@ -398,7 +428,8 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             artifact.PostFilter,
             artifact.Ordering,
             artifact.Projection,
-            orderingAfterProjection);
+            orderingAfterProjection,
+            artifact.Pagination);
 
         // A projection into an anonymous type, a tuple produced by a join and a grouping all
         // have element types the artifact cannot name, so the method is typed non-generically.

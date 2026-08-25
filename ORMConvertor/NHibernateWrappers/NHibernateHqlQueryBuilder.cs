@@ -119,6 +119,41 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
             .Append(string.Join(", ", clauses.Projections.Select(p => p.Accept(visitor))));
     }
 
+    /// <summary>
+    /// HQL in NHibernate 5.7.0 has no limit or offset of its own: pagination belongs to the
+    /// IQuery the generated method returns, so this slot holds API calls rather than query
+    /// text and the final step places it after CreateQuery (decision 060). That the bare
+    /// HQL artifact does not carry it is a property of the format, not a finding about the
+    /// input, so no record is issued - the same reasoning decision 028 applied to the
+    /// missing assembly attribute.
+    /// </summary>
+    protected override void BuildPagination(QueryClauses clauses, QueryArtifact artifact)
+    {
+        if (clauses.Offset is null && clauses.Limit is null)
+        {
+            return;
+        }
+
+        if (clauses.Offset > int.MaxValue || clauses.Limit > int.MaxValue)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "The pagination value exceeds Int32, which SetFirstResult and SetMaxResults cannot carry; no artifact was generated.",
+                QueryFeature.Pagination);
+            return;
+        }
+
+        if (clauses.Offset is { } offset)
+        {
+            artifact.Pagination.Append($"\n        .SetFirstResult({offset})");
+        }
+
+        if (clauses.Limit is { } limit)
+        {
+            artifact.Pagination.Append($"\n        .SetMaxResults({limit})");
+        }
+    }
+
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
     {
         // HQL clause order is SQL's, so the projection moves back to the front here - the
@@ -144,7 +179,7 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
                 return session.CreateQuery(
                     """
             {{indented}}
-                    """);
+                    """){{artifact.Pagination}};
             }
             """";
 

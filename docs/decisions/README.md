@@ -64,6 +64,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [057](057-deployment-view-in-the-operating-manual.md) | Nasazovací pohled bydlí v provozní příručce, ne v architektuře | 2026-08-24 | nahrazeno [058](058-only-the-operational-half-of-the-deployment-view-moves.md) | žádné |
 | [058](058-only-the-operational-half-of-the-deployment-view-moves.md) | Do provozní příručky patří jen provozní polovina nasazovacího pohledu | 2026-08-24 | platí | žádné |
 | [059](059-advisor-response-carries-the-measured-translations.md) | Odpověď Advisoru nese změřené překlady | 2026-08-24 | platí | F15, S2, S7, T7 |
+| [060](060-pagination-as-a-query-instruction.md) | Stránkování jako nesená dotazová instrukce | 2026-08-25 | platí | F7–F10, F11, T2, T3, S1, S2 |
 
 ## Formát
 

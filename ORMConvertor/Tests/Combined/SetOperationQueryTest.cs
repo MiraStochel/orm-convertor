@@ -261,21 +261,4 @@ public class SetOperationQueryTest
             r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Filtering);
     }
 
-    /// <summary>
-    /// Pagination is not carried by the representation, and on the SQL side that used to be
-    /// silent: TOP and OFFSET/FETCH disappeared without a record, unlike Take and Skip on the
-    /// LINQ side (decision 004).
-    /// </summary>
-    [Theory]
-    [InlineData("SELECT TOP (10) c.CustomerName FROM Sales.Customers AS c")]
-    [InlineData("SELECT c.CustomerName FROM Sales.Customers AS c ORDER BY c.CustomerName OFFSET 10 ROWS FETCH NEXT 5 ROWS ONLY")]
-    public void SqlPaginationIsReportedAsALoss(string sql)
-    {
-        var builder = ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, sql);
-
-        Assert.NotEmpty(builder.Build());
-        Assert.Contains(
-            builder.Records,
-            r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Pagination);
-    }
 }

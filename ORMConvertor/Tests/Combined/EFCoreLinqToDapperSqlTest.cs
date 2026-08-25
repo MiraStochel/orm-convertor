@@ -199,26 +199,4 @@ public class EFCoreLinqToDapperSqlTest
             r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Filtering);
     }
 
-    /// <summary>
-    /// Take and Skip are outside the current scope, so they have to leave a record instead of
-    /// vanishing (decision 022).
-    /// </summary>
-    [Fact]
-    public void PaginationOutsideTheScopeIsReported()
-    {
-        const string linqSource = """
-        public void Query()
-        {
-            var q = ctx.Customers.Skip(10).Take(5).ToList();
-        }
-        """;
-
-        AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
-        new EFCoreLinqQueryParser(builder).Parse(ConversionContentType.CSharpQuery, linqSource, [Customers()]);
-        builder.Build();
-
-        Assert.Contains(
-            builder.Records,
-            r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Pagination);
-    }
 }

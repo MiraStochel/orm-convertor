@@ -114,6 +114,44 @@ public class QueryVerificationTest
         Assert.Contains("UNION", sql);
     }
 
+    /// <summary>
+    /// Level 3 for pagination (decision 060): the provider renders the generated Skip/Take
+    /// as an OFFSET clause, which also proves the counts landed as translatable constants.
+    /// </summary>
+    [Fact]
+    public void EFCoreTranslatesAGeneratedPaginatedQuery()
+    {
+        const string paginatedQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .OrderBy(c => c.CustomerName)
+                    .Skip(10)
+                    .Take(5)
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.EFCore,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_EFCore_Paginated",
+            Query(result, ConversionContentType.CSharpQuery),
+            Entities(result),
+            GeneratedQueryCompiler.EFCoreConsumerReferences,
+            "using Microsoft.EntityFrameworkCore;");
+
+        var sql = EFCoreQueryAcceptance.Translate(compiled);
+
+        Assert.Contains("OFFSET", sql);
+    }
+
     /// <summary>A level that never says no proves nothing (decision 016).</summary>
     [Fact]
     public void EFCoreRefusesAnUntranslatableQuery()
@@ -199,6 +237,45 @@ public class QueryVerificationTest
             "using NHibernate;");
     }
 
+    /// <summary>
+    /// Level 2 for pagination on NHibernate (decision 060): the slice is not in the HQL but
+    /// on the IQuery, so what proves it is the method with the SetFirstResult/SetMaxResults
+    /// chain compiling.
+    /// </summary>
+    [Fact]
+    public void TheNHibernatePaginatedQueryMethodCompiles()
+    {
+        const string paginatedQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .OrderBy(c => c.CustomerName)
+                    .Skip(10)
+                    .Take(5)
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.NHibernate,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var method = Query(result, ConversionContentType.CSharpQuery);
+        Assert.Contains(".SetFirstResult(10)", method);
+        Assert.Contains(".SetMaxResults(5)", method);
+
+        GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_NHibernate_Paginated",
+            method,
+            [],
+            GeneratedQueryCompiler.NHibernateConsumerReferences,
+            "using NHibernate;");
+    }
+
     // ---- Dapper --------------------------------------------------------------------
 
     /// <summary>
@@ -270,6 +347,51 @@ public class QueryVerificationTest
 
         var sql = Query(result, ConversionContentType.SqlQuery);
         Assert.Contains("UNION", sql);
+
+        var map = new EntityMap
+        {
+            Entity = new Entity { Name = "Customer" },
+            Table = "Customers",
+            Schema = "Sales",
+            PropertyMaps =
+            [
+                new PropertyMap { Property = new Property { Name = "CustomerId" }, ColumnName = "CustomerId" },
+                new PropertyMap { Property = new Property { Name = "CustomerName" }, ColumnName = "CustomerName" },
+                new PropertyMap { Property = new Property { Name = "CreditLimit" }, ColumnName = "CreditLimit" },
+            ],
+        };
+
+        TSqlAcceptance.ResolvesAgainst(sql, [map]);
+    }
+
+    /// <summary>
+    /// Rule Q13 for pagination on the SQL side (decision 060): the generated OFFSET/FETCH
+    /// parses and every name still resolves through the mapping IR.
+    /// </summary>
+    [Fact]
+    public void AGeneratedPaginatedSqlParsesAndResolves()
+    {
+        const string paginatedQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .OrderBy(c => c.CustomerName)
+                    .Skip(10)
+                    .Take(5)
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.Dapper,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var sql = Query(result, ConversionContentType.SqlQuery);
+        Assert.Contains("OFFSET 10 ROWS FETCH NEXT 5 ROWS ONLY", sql);
 
         var map = new EntityMap
         {

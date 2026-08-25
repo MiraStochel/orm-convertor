@@ -29,6 +29,12 @@ public sealed class QueryClauses
 
     public required IReadOnlyList<OrderByInstruction> OrderBys { get; init; }
 
+    /// <summary>Rows skipped before the slice, when the query paginates (decision 060).</summary>
+    public long? Offset { get; init; }
+
+    /// <summary>Rows the slice is limited to, when the query paginates (decision 060).</summary>
+    public long? Limit { get; init; }
+
     /// <summary>True when any projection carries an aggregate function.</summary>
     public bool HasAggregates => Projections.Any(p => p.Function is not null);
 

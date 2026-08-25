@@ -120,28 +120,77 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
             : string.Join(", ", clauses.Projections.Select(p => p.Accept(visitor))));
     }
 
+    /// <summary>
+    /// A limit alone is TOP; an offset needs OFFSET/FETCH, which T-SQL only writes after an
+    /// ORDER BY. Where the query has none, an order-neutral ORDER BY (SELECT NULL) carries
+    /// it - a rewrite rule Q14 permits, and one that asserts nothing the source did not say:
+    /// the source without an ordering returned a nondeterministic slice and so does this
+    /// (decision 060).
+    /// </summary>
+    protected override void BuildPagination(QueryClauses clauses, QueryArtifact artifact)
+    {
+        if (clauses.Offset is null && clauses.Limit is null)
+        {
+            return;
+        }
+
+        if (clauses.Offset is null)
+        {
+            artifact.Pagination.Append($"TOP ({clauses.Limit})");
+            return;
+        }
+
+        if (clauses.OrderBys.Count == 0)
+        {
+            artifact.Pagination.Append("ORDER BY (SELECT NULL)\n");
+            Report(
+                ConversionRecordKind.Convention,
+                "T-SQL does not write OFFSET/FETCH without an ORDER BY; an order-neutral ORDER BY (SELECT NULL) was added, which asserts no ordering.",
+                QueryFeature.Pagination);
+        }
+
+        artifact.Pagination.Append($"OFFSET {clauses.Offset} ROWS");
+
+        if (clauses.Limit is not null)
+        {
+            artifact.Pagination.Append($" FETCH NEXT {clauses.Limit} ROWS ONLY");
+        }
+    }
+
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
         => Emit(RenderSelect(artifact), artifact.ResultEntity);
 
     /// <summary>
     /// SQL clause order, which is the relational evaluation order with the projection moved
     /// to the front. The steps ran in the other order; joining the slots here is what lets
-    /// one template also serve a LINQ target (decision 023).
+    /// one template also serve a LINQ target (decision 023). Placement of the pagination is
+    /// this step's job too: TOP belongs textually inside the SELECT clause, OFFSET/FETCH
+    /// follows the ordering as its own lines.
     /// </summary>
     private static string RenderSelect(QueryArtifact artifact)
     {
+        var projection = artifact.Projection.ToString();
+        var pagination = artifact.Pagination.ToString();
+
+        if (pagination.StartsWith("TOP", StringComparison.Ordinal))
+        {
+            projection = $"SELECT {pagination} {projection["SELECT ".Length..]}";
+            pagination = string.Empty;
+        }
+
         var parts = new[]
         {
-            artifact.Projection,
-            artifact.Source,
-            artifact.Joins,
-            artifact.Filter,
-            artifact.Grouping,
-            artifact.PostFilter,
-            artifact.Ordering,
+            projection,
+            artifact.Source.ToString(),
+            artifact.Joins.ToString(),
+            artifact.Filter.ToString(),
+            artifact.Grouping.ToString(),
+            artifact.PostFilter.ToString(),
+            artifact.Ordering.ToString(),
+            pagination,
         };
 
-        return string.Join("\n", parts.Where(p => p.Length > 0).Select(p => p.ToString()));
+        return string.Join("\n", parts.Where(p => p.Length > 0));
     }
 
     protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)
@@ -165,7 +214,7 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
     }
 
     /// <summary>
-    /// One operand of a set operation: a SELECT run through the seven steps, or a nested set
+    /// One operand of a set operation: a SELECT run through the eight steps, or a nested set
     /// operation rendered recursively. The nested case is parenthesized, because T-SQL
     /// evaluates INTERSECT before UNION and EXCEPT and same-precedence operators left to
     /// right, so a nested operand written bare could regroup into a different row set.
@@ -183,6 +232,19 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
         var clauses = Normalize(body);
         if (clauses is null)
         {
+            resultEntity = null;
+            return null;
+        }
+
+        // TOP is legal inside a set operation operand, OFFSET/FETCH is not: T-SQL has no
+        // way to write it there, and emitting the operand without it would compose a
+        // different row set (decision 060).
+        if (clauses.Offset is not null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "T-SQL cannot write an OFFSET/FETCH clause inside a set operation operand; no artifact was generated.",
+                QueryFeature.Pagination);
             resultEntity = null;
             return null;
         }

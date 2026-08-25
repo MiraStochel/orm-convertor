@@ -231,7 +231,8 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
     /// <summary>
     /// ORDER BY and OFFSET written after a set operation apply to the whole composed result,
     /// for which the query representation has no slot. Ordering only reorders the rows, so
-    /// the query is still emitted; the record says what got poorer.
+    /// the query is still emitted with a loss record; a dropped OFFSET/FETCH would change
+    /// which rows come back, so it refuses the artifact instead (decision 060).
     /// </summary>
     private void ReadTrailingClauses(BinaryQueryExpression binary)
     {
@@ -246,35 +247,91 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
         if (binary.OffsetClause is not null)
         {
             Report(
-                ConversionRecordKind.Loss,
-                "An OFFSET/FETCH clause is not carried by the query representation; the output is poorer than the input.",
+                ConversionRecordKind.Failure,
+                "An OFFSET/FETCH clause over a set operation cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
                 QueryFeature.Pagination);
         }
     }
 
     /// <summary>
-    /// The query representation carries no pagination, and silence here would hide it: a
-    /// TOP or OFFSET/FETCH used to disappear without a record, unlike Take and Skip on the
-    /// LINQ side (decision 004).
+    /// TOP and OFFSET/FETCH become the pagination of the (sub)query (decision 060). Only
+    /// the shape whose meaning the representation holds is read - a non-negative integer
+    /// literal count. Everything else - PERCENT, WITH TIES, an expression or a variable -
+    /// refuses the artifact, because a query emitted without its pagination returns a
+    /// different set of rows.
     /// </summary>
     private void ReadPagination(QuerySpecification query)
     {
-        if (query.TopRowFilter is not null)
+        if (query.TopRowFilter is not null && query.OffsetClause is not null)
         {
             Report(
-                ConversionRecordKind.Loss,
-                "A TOP clause is not carried by the query representation; the output is poorer than the input.",
+                ConversionRecordKind.Failure,
+                "TOP and OFFSET/FETCH in the same query are not valid T-SQL; no artifact was generated.",
                 QueryFeature.Pagination);
+            return;
         }
 
-        if (query.OffsetClause is not null)
+        long? offset = null;
+        long? limit = null;
+
+        if (query.TopRowFilter is { } top)
         {
-            Report(
-                ConversionRecordKind.Loss,
-                "An OFFSET/FETCH clause is not carried by the query representation; the output is poorer than the input.",
-                QueryFeature.Pagination);
+            if (top.Percent || top.WithTies)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"TOP {(top.Percent ? "PERCENT" : "WITH TIES")} has no counterpart in the query representation, and dropping it would change which rows the query returns; no artifact was generated.",
+                    QueryFeature.Pagination);
+                return;
+            }
+
+            if (ReadRowCount(top.Expression) is not { } topCount)
+            {
+                ReportUnreadableRowCount("TOP");
+                return;
+            }
+
+            limit = topCount;
         }
+
+        if (query.OffsetClause is { } clause)
+        {
+            if (ReadRowCount(clause.OffsetExpression) is not { } skipped)
+            {
+                ReportUnreadableRowCount("OFFSET");
+                return;
+            }
+
+            offset = skipped;
+
+            if (clause.FetchExpression is not null)
+            {
+                if (ReadRowCount(clause.FetchExpression) is not { } fetched)
+                {
+                    ReportUnreadableRowCount("FETCH");
+                    return;
+                }
+
+                limit = fetched;
+            }
+        }
+
+        queryBuilder.Paginate(offset, limit);
     }
+
+    private void ReportUnreadableRowCount(string clause)
+        => Report(
+            ConversionRecordKind.Failure,
+            $"The {clause} value is not an integer literal, so the pagination cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
+            QueryFeature.Pagination);
+
+    /// <summary>A negative count arrives as a unary minus, which is not a literal here.</summary>
+    private static long? ReadRowCount(ScalarExpression? expression) => expression switch
+    {
+        ParenthesisExpression parenthesis => ReadRowCount(parenthesis.Expression),
+        IntegerLiteral integer when long.TryParse(integer.Value, out var value) => value,
+        _ => null,
+    };
 
     /// <summary>
     /// Pulls the SQL out of a Dapper call. The literal is read through the token's value, so
