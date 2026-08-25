@@ -109,6 +109,20 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
     }
 
     [Fact]
+    public void ReadsTheDefaultFlagOfAColumn()
+    {
+        fixture.SkipIfUnavailable();
+
+        var products = ImageOf("Product");
+
+        // LastModified is the schema's one default-backed column; the key deliberately
+        // carries no default, which is what lets the completion phase state Assigned
+        // over it (decision 064).
+        Assert.True(products.FindColumn("LastModified")!.HasDefault);
+        Assert.False(products.FindColumn("ProductId")!.HasDefault);
+    }
+
+    [Fact]
     public void ReadsUniqueConstraintsAndKeepsThePrimaryKeyOutOfThem()
     {
         fixture.SkipIfUnavailable();

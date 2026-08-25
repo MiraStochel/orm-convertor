@@ -79,6 +79,8 @@ CREATE TABLE [{{schema}}].[OrderLineAllocations] (
 GO
 
 -- Single-part key assigned by the application (no IDENTITY), and the widest type variety.
+-- LastModified carries a default constraint so that the HasDefault flag is measurable
+-- against a real catalog (decision 064) - both values of it live in this one table.
 CREATE TABLE [{{schema}}].[Products] (
     [ProductId]       INT             NOT NULL,
     [ProductName]     NVARCHAR(100)   NOT NULL,
@@ -87,7 +89,8 @@ CREATE TABLE [{{schema}}].[Products] (
     [Weight]          FLOAT           NULL,
     [IsDiscontinued]  BIT             NOT NULL,
     [IntroducedOn]    DATE            NULL,
-    [LastModified]    DATETIME2(3)    NOT NULL,
+    [LastModified]    DATETIME2(3)    NOT NULL
+        CONSTRAINT [DF_Products_LastModified] DEFAULT SYSUTCDATETIME(),
     [Description]     NVARCHAR(MAX)   NULL,
     CONSTRAINT [PK_Products] PRIMARY KEY ([ProductId]),
     CONSTRAINT [UQ_Products_Sku] UNIQUE ([Sku])

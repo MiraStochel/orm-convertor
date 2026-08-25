@@ -446,6 +446,11 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// It is emitted only where it changes what EF Core would do anyway. Restating the target's
     /// own convention adds noise, while leaving it out where the convention disagrees flips the
     /// claim - a string key marked Auto would silently stop being generated.
+    ///
+    /// An unspecified strategy over a key the convention generates is the one case where the
+    /// silence itself makes a claim: nothing is written, yet the output behaves as generated.
+    /// That claim is reported as a convention of the target - the mirror of the record
+    /// NHibernate emits for its written 'assigned' fallback (decision 064).
     /// </summary>
     private void AppendKeyStrategyAttribute(StringBuilder code, EntityMap entityMap, PrimaryKeyPart part, bool composite)
     {
@@ -465,6 +470,21 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         }
 
         bool generatedByConvention = IsGeneratedByConvention(part, composite);
+
+        if (part.Strategy is PrimaryKeyStrategy.Unspecified && generatedByConvention)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.CSharpEntity,
+                Entity = entityMap.Entity.Name,
+                Property = part.PropertyMap.Property.Name,
+                Category = MappingFactCategory.PrimaryKeyStrategy,
+                Reason = "No generation strategy was stated; EF Core generates the value of a single-property "
+                    + "integer or Guid key on its own, which is a convention of the target, not a fact of the source.",
+            });
+        }
 
         var option = part.Strategy switch
         {

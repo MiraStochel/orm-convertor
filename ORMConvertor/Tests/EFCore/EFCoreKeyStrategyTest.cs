@@ -1,4 +1,6 @@
-﻿using EFCoreWrappers;
+﻿using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
+using EFCoreWrappers;
 using Model;
 using Model.AbstractRepresentation.Enums;
 
@@ -71,6 +73,26 @@ public class EFCoreKeyStrategyTest
         // it was; the annotation appears only where it changes something.
         var code = builder.Build().Single().Content;
         Assert.DoesNotContain("[DatabaseGenerated", code);
+    }
+
+    [Fact]
+    public void ConventionalGenerationOfAnUnstatedStrategyIsReported()
+    {
+        var builder = new EFCoreEntityBuilder();
+        builder.AddClassHeader("public", "Customer");
+        builder.AddTable("Customers");
+        builder.AddProperty("int", "CustomerID", "public", hasGetter: true, hasSetter: true);
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Unspecified, "CustomerID");
+
+        var code = builder.Build().Single().Content;
+
+        // Nothing is written, yet the output behaves as generated: EF Core generates an
+        // int key on its own. The claim is the target's and the record says so - the
+        // mirror of NHibernate's record for its written assigned fallback (decision 064).
+        Assert.DoesNotContain("[DatabaseGenerated", code);
+        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Convention);
+        Assert.Equal(MappingFactCategory.PrimaryKeyStrategy, record.Category);
+        Assert.Equal("CustomerID", record.Property);
     }
 
     [Fact]

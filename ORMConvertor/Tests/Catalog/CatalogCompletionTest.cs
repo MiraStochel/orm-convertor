@@ -147,6 +147,98 @@ public class CatalogCompletionTest
         Assert.Equal(MappingFactCategory.PrimaryKey, conflict.Category);
     }
 
+    private static TableImage ProductsImage(bool keyHasDefault = false) => new()
+    {
+        Schema = "dbo",
+        Name = "Products",
+        Columns =
+        [
+            new ColumnImage
+            {
+                Name = "ProductId",
+                Type = DatabaseType.Integer,
+                IsNullable = false,
+                IsIdentity = false,
+                HasDefault = keyHasDefault,
+            },
+        ],
+        PrimaryKeyColumns = ["ProductId"],
+        ForeignKeys = [],
+    };
+
+    /// <summary>
+    /// The complement of the identity supply (decision 064): a key column that is neither
+    /// IDENTITY nor backed by a default is a positive statement of the schema - the value
+    /// must arrive with the INSERT - so the phase states Assigned instead of leaving the
+    /// two target conventions to contradict each other.
+    /// </summary>
+    [Fact]
+    public void SuppliesAssignedForAKeyColumnTheStoreDoesNotFill()
+    {
+        // The fresh-key path: a Dapper source states no key at all, so the whole key
+        // arrives from the catalog with the strategy the column states.
+        var builder = new NHibernateEntityBuilder();
+        new DapperEntityParser(builder).Parse("""
+            namespace DapperEntities;
+
+            public class Product
+            {
+                public int ProductId { get; set; }
+            }
+            """);
+
+        CatalogCompletion.Complete(builder, new FakeCatalogReader(ProductsImage()));
+
+        var part = Assert.Single(builder.EntityMaps.Single().PrimaryKey!.Parts);
+        Assert.Equal(PrimaryKeyStrategy.Assigned, part.Strategy);
+    }
+
+    [Fact]
+    public void SuppliesAssignedToAStatedKeyPartLeftUnspecified()
+    {
+        // The existing-key path: the source states the key but not how its value arises.
+        var builder = new NHibernateEntityBuilder();
+        builder.BeginEntity();
+        builder.AddClassHeader("public", "Product");
+        builder.AddTable("Products");
+        builder.AddProperty("int", "ProductId", "public", hasGetter: true, hasSetter: true);
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Unspecified, "ProductId");
+
+        CatalogCompletion.Complete(builder, new FakeCatalogReader(ProductsImage()));
+
+        var part = Assert.Single(builder.EntityMaps.Single().PrimaryKey!.Parts);
+        Assert.Equal(PrimaryKeyStrategy.Assigned, part.Strategy);
+        Assert.Contains(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Supplied
+            && r.Category == MappingFactCategory.PrimaryKeyStrategy
+            && r.Property == "ProductId");
+    }
+
+    [Fact]
+    public void AKeyColumnBackedByADefaultStaysUnspecifiedAndIsReported()
+    {
+        var builder = new NHibernateEntityBuilder();
+        builder.BeginEntity();
+        builder.AddClassHeader("public", "Product");
+        builder.AddTable("Products");
+        builder.AddProperty("int", "ProductId", "public", hasGetter: true, hasSetter: true);
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Unspecified, "ProductId");
+
+        CatalogCompletion.Complete(builder, new FakeCatalogReader(ProductsImage(keyHasDefault: true)));
+
+        // The store can fill the column, but a boolean flag cannot name the mechanism:
+        // Assigned here would be the false claim decision 064 forbids, so the strategy
+        // stays unspecified and the state is a record, not a guess.
+        var part = Assert.Single(builder.EntityMaps.Single().PrimaryKey!.Parts);
+        Assert.Equal(PrimaryKeyStrategy.Unspecified, part.Strategy);
+        Assert.Contains(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Incompleteness
+            && r.Category == MappingFactCategory.PrimaryKeyStrategy
+            && r.Property == "ProductId");
+        Assert.DoesNotContain(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Supplied && r.Category == MappingFactCategory.PrimaryKeyStrategy);
+    }
+
     [Fact]
     public void SuppliesTheVersionFlagForARowversionColumn()
     {

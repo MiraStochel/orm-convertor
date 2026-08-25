@@ -659,7 +659,13 @@ public static class CatalogCompletion
                     return;
                 }
 
-                parts.Add((pm.Property.Name, index + 1, StrategyFor(image, columnName)));
+                var column = image.FindColumn(columnName);
+                parts.Add((pm.Property.Name, index + 1, StrategyFor(column)));
+
+                if (column is { IsIdentity: false, HasDefault: true })
+                {
+                    ReportDefaultBackedKeyColumn(builder, em, pm.Property.Name, columnName, image);
+                }
             }
 
             builder.EntityMap = em;
@@ -685,9 +691,12 @@ public static class CatalogCompletion
     }
 
     /// <summary>
-    /// The one positive strategy fact the catalog knows is an identity column. A part the
-    /// source left unspecified gets it; a non-identity column stays unspecified, because
-    /// "the database does not generate it" does not say who does.
+    /// The catalog knows two strategy facts, one from each side (decision 064): an
+    /// identity column is store-generated, and a column that is neither identity nor
+    /// backed by a default must receive its value with the INSERT - which is what
+    /// Assigned names. A part the source left unspecified gets whichever the column
+    /// states; a non-identity column that carries a default stays unspecified, because
+    /// a boolean flag cannot name the mechanism behind the default.
     /// </summary>
     private static void CompleteKeyStrategies(AbstractEntityBuilder builder, EntityMap em, TableImage image)
     {
@@ -698,22 +707,32 @@ public static class CatalogCompletion
         foreach (var part in key.Parts)
         {
             var columnName = part.PropertyMap.ColumnName ?? part.PropertyMap.Property.Name;
-            var isIdentity = image.FindColumn(columnName)?.IsIdentity == true;
+            var column = image.FindColumn(columnName);
+            var isIdentity = column?.IsIdentity == true;
 
             if (part.Strategy == PrimaryKeyStrategy.Unspecified && isIdentity)
             {
-                rebuilt.Add(new PrimaryKeyPart
-                {
-                    PropertyMap = part.PropertyMap,
-                    Order = part.Order,
-                    Strategy = PrimaryKeyStrategy.Identity,
-                    SourceStrategyName = part.SourceStrategyName,
-                    StrategyParameters = part.StrategyParameters,
-                    SourceStrategyParameters = part.SourceStrategyParameters,
-                });
+                rebuilt.Add(RestrategizedPart(part, PrimaryKeyStrategy.Identity));
                 changed = true;
                 ReportSupplied(builder, em, part.PropertyMap.Property.Name, MappingFactCategory.PrimaryKeyStrategy,
                     $"Identity generation supplied by the database catalog: '{columnName}' is an IDENTITY column of '{image.QualifiedName}'.");
+                continue;
+            }
+
+            if (part.Strategy == PrimaryKeyStrategy.Unspecified && column is { IsIdentity: false, HasDefault: false })
+            {
+                rebuilt.Add(RestrategizedPart(part, PrimaryKeyStrategy.Assigned));
+                changed = true;
+                ReportSupplied(builder, em, part.PropertyMap.Property.Name, MappingFactCategory.PrimaryKeyStrategy,
+                    $"Assigned generation supplied by the database catalog: '{columnName}' of '{image.QualifiedName}' "
+                    + "is neither an IDENTITY column nor backed by a default, so the value must arrive with the INSERT (decision 064).");
+                continue;
+            }
+
+            if (part.Strategy == PrimaryKeyStrategy.Unspecified && column is { IsIdentity: false, HasDefault: true })
+            {
+                ReportDefaultBackedKeyColumn(builder, em, part.PropertyMap.Property.Name, columnName, image);
+                rebuilt.Add(part);
                 continue;
             }
 
@@ -737,10 +756,42 @@ public static class CatalogCompletion
         }
     }
 
-    private static PrimaryKeyStrategy StrategyFor(TableImage image, string columnName)
-        => image.FindColumn(columnName)?.IsIdentity == true
-            ? PrimaryKeyStrategy.Identity
-            : PrimaryKeyStrategy.Unspecified;
+    private static PrimaryKeyPart RestrategizedPart(PrimaryKeyPart part, PrimaryKeyStrategy strategy)
+        => new()
+        {
+            PropertyMap = part.PropertyMap,
+            Order = part.Order,
+            Strategy = strategy,
+            SourceStrategyName = part.SourceStrategyName,
+            StrategyParameters = part.StrategyParameters,
+            SourceStrategyParameters = part.SourceStrategyParameters,
+        };
+
+    private static PrimaryKeyStrategy StrategyFor(ColumnImage? column)
+        => column switch
+        {
+            { IsIdentity: true } => PrimaryKeyStrategy.Identity,
+            { HasDefault: false } => PrimaryKeyStrategy.Assigned,
+            _ => PrimaryKeyStrategy.Unspecified,
+        };
+
+    /// <summary>
+    /// A non-identity key column backed by a default constraint (decision 064): the store
+    /// can fill it, but the boolean flag cannot name the mechanism, so the strategy stays
+    /// unspecified and the state is reported instead of guessed.
+    /// </summary>
+    private static void ReportDefaultBackedKeyColumn(
+        AbstractEntityBuilder builder, EntityMap em, string property, string columnName, TableImage image)
+        => builder.Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Incompleteness,
+            Framework = builder.Descriptor.Framework,
+            Entity = em.Entity.Name,
+            Property = property,
+            Category = MappingFactCategory.PrimaryKeyStrategy,
+            Reason = $"The key column '{columnName}' of '{image.QualifiedName}' is filled by a default constraint; "
+                + "the catalog cannot name the mechanism, so the generation strategy stays unspecified (decision 064).",
+        });
 
     private static void CompleteForeignKeys(
         AbstractEntityBuilder builder, EntityMap em, TableImage image, Dictionary<(string Schema, string Table), EntityMap> entityByTable)

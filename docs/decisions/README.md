@@ -68,6 +68,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [061](061-subquery-as-a-condition-operand.md) | Poddotaz jako operand podmínky | 2026-08-25 | platí | F7–F10, F11, T2, T3, S1, S2 |
 | [062](062-hql-read-by-a-hand-written-parser.md) | HQL se čte vlastním sestupným parserem v NHibernate wrapperu | 2026-08-25 | platí | F7–F10, F11, T2, T3, S1, S2 |
 | [063](063-stated-keylessness-as-a-carried-fact.md) | Vyslovená bezklíčovost je nesený fakt a rozpor s klíčem soudí sémantika zdroje | 2026-08-25 | platí | F5, F11, S2 |
+| [064](064-absence-of-generation-as-a-catalog-fact.md) | Nepřítomnost generování je fakt katalogu | 2026-08-25 | platí | F4, F6, F11 |
 
 ## Formát
 

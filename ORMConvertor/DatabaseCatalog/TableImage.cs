@@ -69,6 +69,14 @@ public sealed class ColumnImage
     public required bool IsIdentity { get; init; }
 
     /// <summary>
+    /// Whether a default constraint fills the column when the insert omits it. Together
+    /// with <see cref="IsIdentity"/> this is what decides whether the store produces the
+    /// value: a key column with neither is a positive statement that the value must
+    /// arrive with the INSERT (decision 064). Defaults to false: most columns carry none.
+    /// </summary>
+    public bool HasDefault { get; init; }
+
+    /// <summary>
     /// Whether the column is a rowversion - a claim of its own beside the type, because
     /// the type family only says binary while the schema says the column carries the row
     /// version (decisions 019 and 030). Defaults to false: most columns are not one.

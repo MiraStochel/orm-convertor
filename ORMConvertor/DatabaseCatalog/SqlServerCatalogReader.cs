@@ -219,7 +219,7 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT s.name, t.name, c.name, ty.name, c.max_length, c.precision, c.scale,
-                   c.is_nullable, c.is_identity
+                   c.is_nullable, c.is_identity, c.default_object_id
             FROM sys.tables t
             JOIN sys.schemas s ON s.schema_id = t.schema_id
             JOIN sys.columns c ON c.object_id = t.object_id
@@ -245,7 +245,8 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
                 precision: reader.GetByte(5),
                 scale: reader.GetByte(6),
                 isNullable: reader.GetBoolean(7),
-                isIdentity: reader.GetBoolean(8)));
+                isIdentity: reader.GetBoolean(8),
+                hasDefault: reader.GetInt32(9) != 0));
         }
 
         return columns;
@@ -428,7 +429,8 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
     }
 
     private static ColumnImage ReadColumn(
-        string name, string sqlType, short maxLength, byte precision, byte scale, bool isNullable, bool isIdentity)
+        string name, string sqlType, short maxLength, byte precision, byte scale,
+        bool isNullable, bool isIdentity, bool hasDefault)
     {
         var (type, isUnicode, keepLiteral) = MapType(sqlType);
 
@@ -468,6 +470,9 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
             Scale = columnScale,
             IsNullable = isNullable,
             IsIdentity = isIdentity,
+            // default_object_id is nonzero exactly where a default constraint exists, so
+            // the flag rides the row the column query already reads (decision 064).
+            HasDefault = hasDefault,
             // In SQL Server a rowversion column carries the row version and nothing else,
             // so the type name alone states the versioning claim (decision 030); timestamp
             // is the same type's deprecated spelling.

@@ -1,5 +1,6 @@
 using AbstractWrappers.Diagnostics;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Model;
 using OrmConvertor;
 using Tests.Database;
@@ -71,6 +72,14 @@ public class DapperManyToManyVerificationTest(TestSchemaFixture fixture)
         Assert.Equal(2, keyParts.Count);
         Assert.Contains("ProductId", keyParts);
         Assert.Contains("SupplierId", keyParts);
+
+        // Products' key is application-assigned and the catalog said so: the model must
+        // not claim store generation the schema does not have (decision 064). Suppliers'
+        // IDENTITY is the mirror case - the convention claim the catalog confirms.
+        var product = model.FindEntityType("DapperJunctionEntities.Product");
+        Assert.Equal(ValueGenerated.Never, product!.FindProperty("ProductId")!.ValueGenerated);
+        var supplier = model.FindEntityType("DapperJunctionEntities.Supplier");
+        Assert.Equal(ValueGenerated.OnAdd, supplier!.FindProperty("SupplierId")!.ValueGenerated);
 
         var foreignKeys = junction.GetForeignKeys().ToList();
         Assert.Equal(2, foreignKeys.Count);
