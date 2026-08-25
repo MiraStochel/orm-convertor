@@ -54,7 +54,7 @@ Z toho plyne dělba práce, kterou je lepší říct nahlas, než ji nechat kaž
 
 **Co doplní konzument.** U opačného směru (do NHibernate) název sestavení v mapování a `hibernate.cfg.xml`; obojí je fakt jeho projektu, ne převodu (rozhodnutí [028](./decisions/028-assembly-name-is-not-ours-to-invent.md) a [040](./decisions/040-boundary-of-the-handed-over-artifact.md)).
 
-**Kde je dnes hranice.** Dědičnost, komponenty a `<join>` v NHibernate mapování se nečtou a hlásí se záznamem o ztrátě; převod NHibernate → NHibernate proběhne, ale dotaz se vrátí jako HQL, ne jako původní LINQ (`architecture.md` §9).
+**Kde je dnes hranice.** Dědičnost, komponenty a `<join>` v NHibernate mapování se nečtou a hlásí se záznamem o ztrátě (`architecture.md` §9). Dotaz poslaný jako LINQ se vrací přeložený do HQL, protože HQL je nativní cílový tvar (rozhodnutí [022](./decisions/022-native-query-syntax-in-builders.md)); dotaz poslaný jako holé HQL se vrací jako týž text (rozhodnutí [062](./decisions/062-hql-read-by-a-hand-written-parser.md)).
 
 ## UC3 — Výběr cílového frameworku podle naměřeného výkonu
 

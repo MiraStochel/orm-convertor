@@ -38,8 +38,8 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     /// <summary>
     /// The content type is not consulted here: LINQ is the only language this parser claims
     /// (see CanParse), so there is nothing to branch on. It is in the signature because the
-    /// unit declares its language and a parser reading two of them - the HQL one to come -
-    /// has to be told which (decision 047).
+    /// unit declares its language and a parser reading two of them - the Dapper one, with
+    /// SQL bare beside SQL wrapped in C# - has to be told which (decision 047).
     /// </summary>
     public void Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? maps = null)
     {

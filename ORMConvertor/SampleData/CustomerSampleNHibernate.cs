@@ -41,8 +41,9 @@ public class CustomerSampleNHibernate
         </hibernate-mapping>
         """;
     /// <summary>
-    /// NHibernate is read from LINQ and written as HQL (decisions 022 and 026), so the
-    /// sample input is a LINQ chain rooted in session.Query&lt;T&gt;().
+    /// NHibernate queries are read from two languages, told apart by the content type the
+    /// unit declares (decisions 025 and 062): a LINQ chain rooted in
+    /// session.Query&lt;T&gt;(), or bare HQL — the same shape the tool itself emits.
     /// </summary>
     public const string Query = """
         public List<Customer> Query()
@@ -53,6 +54,12 @@ public class CustomerSampleNHibernate
                .ThenBy(c => c.CustomerName)
                .ToList();
         }
+        """;
+
+    public const string HqlQuery = """
+        from Customer c
+        where c.CreditLimit > 2000
+        order by c.AccountOpenedDate desc, c.CustomerName asc
         """;
 
     public static EntityMap Map

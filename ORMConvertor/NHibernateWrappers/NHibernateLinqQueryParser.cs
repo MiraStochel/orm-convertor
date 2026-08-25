@@ -5,10 +5,10 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace NHibernateWrappers;
 
 /// <summary>
-/// Reads an NHibernate LINQ query. NHibernate is read from LINQ rather than from HQL
-/// because HQL would mean either a hand-written grammar or a reference to NHibernate inside
-/// the wrapper, which is what S1 forbids (decisions 022 and 026). As a target NHibernate
-/// still emits HQL, so the framework is deliberately asymmetric.
+/// Reads an NHibernate LINQ query. LINQ is one of two query languages the framework is read
+/// from: a unit declaring CSharpQuery comes here, a bare HQL unit goes to
+/// <see cref="NHibernateHqlQueryParser"/> (decisions 025 and 062) - one parser per language,
+/// told apart by the content type the unit declares, never by what its text looks like.
 /// </summary>
 public class NHibernateLinqQueryParser(AbstractQueryBuilder queryBuilder) : LinqQueryParser(queryBuilder)
 {

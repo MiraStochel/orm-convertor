@@ -32,7 +32,7 @@ internal class ParserFactory
             // coincidence: swapping the two would invert the source precedence (decision 017).
             ORMEnum.NHibernate => qb is null
                 ? [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb)]
-                : [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb), new NHibernateLinqQueryParser(qb)],
+                : [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb), new NHibernateLinqQueryParser(qb), new NHibernateHqlQueryParser(qb)],
 
             ORMEnum.EFCore => qb is null
                 ? [new EFCoreEntityParser(eb)]

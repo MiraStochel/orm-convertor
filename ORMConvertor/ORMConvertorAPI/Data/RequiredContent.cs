@@ -19,6 +19,7 @@ public static class RequiredContent
             new (2, ConversionContentType.CSharpEntity, "Entity Class"),
             new (3, ConversionContentType.XML, "XML Mapping"),
             new (9, ConversionContentType.CSharpQuery, "Query (LINQ)"),
+            new (10, ConversionContentType.HqlQuery, "Query (HQL)"),
         ]),
         new (ORMEnum.EFCore, [
             new(4, ConversionContentType.CSharpEntity, "Entity Class"),

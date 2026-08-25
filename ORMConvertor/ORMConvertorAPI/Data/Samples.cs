@@ -18,5 +18,6 @@ public static class Samples
         { 5, CustomerSampleEFCore.Query },
         { 8, CustomerSampleDapper.Query },
         { 9, CustomerSampleNHibernate.Query },
+        { 10, CustomerSampleNHibernate.HqlQuery },
     };
 }
