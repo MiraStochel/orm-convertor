@@ -23,7 +23,15 @@ public abstract class AbstractQueryBuilder
 {
     protected readonly List<QueryInstruction> instructions = [];
     protected readonly Stack<int> marks = [];
-    private SetOperationInstruction? initiatedSetOperation = null;
+
+    /// <summary>
+    /// Set operations armed by <see cref="SetOperation"/> and still waiting for their right
+    /// operand, each remembering how deep the mark stack stood when it was armed. Only the
+    /// Pop that returns to that depth completes the operation - a scope opened and closed
+    /// inside the right operand must not: a single flag used to complete the operation on
+    /// whichever Pop came first, which mis-assembled any nested right side.
+    /// </summary>
+    private readonly Stack<(SetOperationType Operation, SubQueryInstruction Left, int Depth)> pendingSetOperations = [];
 
     /// <summary>
     /// Declaration of what the target framework can express, mapping facts and query
@@ -150,21 +158,19 @@ public abstract class AbstractQueryBuilder
         var body = instructions.GetRange(start, instructions.Count - start);
         instructions.RemoveRange(start, instructions.Count - start);
 
-        // Store instruction into a subquery, unless there is an ongoing set operation.
-        if (initiatedSetOperation != null) // TODO does not keep track of level of nesting
+        var closed = new SubQueryInstruction(body);
+
+        // The closed scope is the right operand of an armed set operation only when this Pop
+        // returns to the depth the operation was armed at; deeper scopes belong to the
+        // operand's own inner structure.
+        if (pendingSetOperations.Count > 0 && pendingSetOperations.Peek().Depth == marks.Count)
         {
-            var newSetOp = new SetOperationInstruction(
-                initiatedSetOperation.OperationType,
-                initiatedSetOperation.Left,
-                new SubQueryInstruction(body)
-            );
-            instructions.Add(newSetOp);
-            initiatedSetOperation = null;
+            var (operation, left, _) = pendingSetOperations.Pop();
+            instructions.Add(new SetOperationInstruction(operation, left, closed));
+            return;
         }
-        else
-        {
-            instructions.Add(new SubQueryInstruction(body));
-        }
+
+        instructions.Add(closed);
     }
 
     public void From(string table, string? alias = null)
@@ -204,15 +210,24 @@ public abstract class AbstractQueryBuilder
 
     public void SetOperation(SetOperationType operation)
     {
-        // Guarded before Last(), which on an empty list throws "Sequence contains no
-        // elements" - the commonest misuse would otherwise never see the message below.
-        if (instructions.Count == 0 || instructions[^1] is not SubQueryInstruction subQuery)
+        // The left operand is the last closed scope - or a completed set operation, which is
+        // how A UNION B EXCEPT C chains: the finished (A UNION B) becomes the left side.
+        var left = instructions.Count > 0
+            ? instructions[^1] switch
+            {
+                SubQueryInstruction subQuery => subQuery,
+                SetOperationInstruction chained => new SubQueryInstruction([chained]),
+                _ => null,
+            }
+            : null;
+
+        if (left is null)
         {
             throw new InvalidOperationException("Set operation can only be initiated after a subquery has been defined. Use Push() to start a subquery and Pop() to end it.");
         }
-        instructions.RemoveAt(instructions.Count - 1);
 
-        initiatedSetOperation = new SetOperationInstruction(operation, subQuery, new SubQueryInstruction([]));
+        instructions.RemoveAt(instructions.Count - 1);
+        pendingSetOperations.Push((operation, left, marks.Count));
     }
 
     /// <summary>
@@ -240,14 +255,12 @@ public abstract class AbstractQueryBuilder
             return [];
         }
 
-        if (instructions[0] is SetOperationInstruction setOperation)
+        var body = Unwrap(instructions);
+
+        if (body.Count == 1 && body[0] is SetOperationInstruction setOperation)
         {
             return BuildSetOperation(setOperation);
         }
-
-        var body = instructions.Count == 1 && instructions[0] is SubQueryInstruction top
-            ? top.Instructions
-            : instructions;
 
         var clauses = Normalize(body);
         if (clauses is null)
@@ -286,6 +299,14 @@ public abstract class AbstractQueryBuilder
 
         return artifact;
     }
+
+    /// <summary>
+    /// Strips subquery wrappers that hold nothing but another subquery. Every scope a parser
+    /// opens is closed by a Pop that wraps, so a set-operation operand routinely arrives
+    /// double-wrapped; the wrapping carries no meaning of its own.
+    /// </summary>
+    protected static IReadOnlyList<QueryInstruction> Unwrap(IReadOnlyList<QueryInstruction> body)
+        => body.Count == 1 && body[0] is SubQueryInstruction inner ? Unwrap(inner.Instructions) : body;
 
     /// <summary>
     /// Sorts the recorded instructions into clauses and applies the rules that hold for

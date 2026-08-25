@@ -68,20 +68,212 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
             return;
         }
 
-        if (FindQuerySpecification(fragment) is not { } query)
+        if (FindSelectStatement(fragment) is not { } select)
         {
             Report(ConversionRecordKind.Failure, "The SQL contains no SELECT statement to translate.");
             return;
         }
 
+        ReadQueryExpression(select.QueryExpression);
+    }
+
+    /// <summary>
+    /// Reads one query expression: a SELECT into its own subquery scope, a set operation
+    /// recursively per rule Q12. The right operand always gets an explicit scope, so that a
+    /// nested right side - A UNION (B INTERSECT C) - closes its own operations at deeper
+    /// marks and cannot complete the outer one early.
+    /// </summary>
+    private void ReadQueryExpression(QueryExpression expression)
+    {
+        switch (expression)
+        {
+            case QueryParenthesisExpression parenthesis:
+                ReadQueryExpression(parenthesis.QueryExpression);
+                break;
+
+            case QuerySpecification query:
+                queryBuilder.Push();
+                ReadFrom(query);
+                ReadSelect(query);
+                ReadWhere(query);
+                ReadGroupBy(query);
+                ReadHaving(query);
+                ReadOrderBy(query);
+                ReadPagination(query);
+                queryBuilder.Pop();
+                break;
+
+            case BinaryQueryExpression binary:
+                ReadSetOperationChain(binary);
+                ReadTrailingClauses(binary);
+                break;
+
+            default:
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The query is a {Describe(expression)}, which the query representation cannot carry.");
+                break;
+        }
+    }
+
+    private abstract record SetNode;
+    private sealed record SetLeaf(QueryExpression Expression) : SetNode;
+    private sealed record SetBranch(SetOperationType Operation, SetNode Left, SetNode Right) : SetNode;
+
+    /// <summary>
+    /// Reads a chain of set operations with SQL Server's own precedence. ScriptDom hands the
+    /// chain over purely left-associated - A UNION B INTERSECT C arrives as
+    /// (A UNION B) INTERSECT C - but the engine documents INTERSECT as binding first, so
+    /// reading the tree literally would translate a different row set than the source means
+    /// (decision 053). Parentheses in the source are their own node type and stay hard
+    /// boundaries.
+    /// </summary>
+    private void ReadSetOperationChain(BinaryQueryExpression root)
+    {
+        var operands = new List<QueryExpression>();
+        var operations = new List<SetOperationType>();
+        Flatten(root, operands, operations);
+
+        var nodes = operands.Select(SetNode (o) => new SetLeaf(o)).ToList();
+
+        // An INTERSECT anywhere but at the front binds a pair the left-to-right fold would
+        // not, so the emitted text has to say the grouping out loud.
+        if (operations.Skip(1).Any(IsIntersect))
+        {
+            Report(
+                ConversionRecordKind.Convention,
+                "INTERSECT binds before UNION and EXCEPT (SQL Server operator precedence); the grouping was made explicit.",
+                QueryFeature.SetOperation);
+        }
+
+        for (int i = 0; i < operations.Count;)
+        {
+            if (IsIntersect(operations[i]))
+            {
+                nodes[i] = new SetBranch(operations[i], nodes[i], nodes[i + 1]);
+                nodes.RemoveAt(i + 1);
+                operations.RemoveAt(i);
+                continue;
+            }
+
+            i++;
+        }
+
+        while (operations.Count > 0)
+        {
+            nodes[0] = new SetBranch(operations[0], nodes[0], nodes[1]);
+            nodes.RemoveAt(1);
+            operations.RemoveAt(0);
+        }
+
+        EmitSetNode(nodes[0]);
+    }
+
+    private static bool IsIntersect(SetOperationType operation) => operation == SetOperationType.Intersect;
+
+    private void Flatten(QueryExpression expression, List<QueryExpression> operands, List<SetOperationType> operations)
+    {
+        if (expression is BinaryQueryExpression binary)
+        {
+            Flatten(binary.FirstQueryExpression, operands, operations);
+            operations.Add(MapSetOperation(binary));
+            operands.Add(binary.SecondQueryExpression);
+            return;
+        }
+
+        operands.Add(expression);
+    }
+
+    /// <summary>
+    /// Emits one node of the regrouped chain. The right operand always gets an explicit
+    /// scope, so that a nested right side closes its own operations at deeper marks and
+    /// cannot complete the outer one early.
+    /// </summary>
+    private void EmitSetNode(SetNode node)
+    {
+        if (node is SetLeaf leaf)
+        {
+            ReadQueryExpression(leaf.Expression);
+            return;
+        }
+
+        var branch = (SetBranch)node;
+        EmitSetNode(branch.Left);
+        queryBuilder.SetOperation(branch.Operation);
         queryBuilder.Push();
-        ReadFrom(query);
-        ReadSelect(query);
-        ReadWhere(query);
-        ReadGroupBy(query);
-        ReadHaving(query);
-        ReadOrderBy(query);
+        EmitSetNode(branch.Right);
         queryBuilder.Pop();
+    }
+
+    private SetOperationType MapSetOperation(BinaryQueryExpression binary)
+    {
+        switch (binary.BinaryQueryExpressionType)
+        {
+            case BinaryQueryExpressionType.Union:
+                return binary.All ? SetOperationType.UnionAll : SetOperationType.Union;
+            case BinaryQueryExpressionType.Intersect when !binary.All:
+                return SetOperationType.Intersect;
+            case BinaryQueryExpressionType.Except when !binary.All:
+                return SetOperationType.Except;
+            case BinaryQueryExpressionType.Except:
+                return SetOperationType.ExceptAll;
+            default:
+                // INTERSECT ALL has no place in the vocabulary; reading it as INTERSECT
+                // would silently deduplicate (decision 053).
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The set operation {binary.BinaryQueryExpressionType} ALL has no counterpart in the query representation; no artifact was generated.",
+                    QueryFeature.SetOperation);
+                return SetOperationType.Intersect;
+        }
+    }
+
+    /// <summary>
+    /// ORDER BY and OFFSET written after a set operation apply to the whole composed result,
+    /// for which the query representation has no slot. Ordering only reorders the rows, so
+    /// the query is still emitted; the record says what got poorer.
+    /// </summary>
+    private void ReadTrailingClauses(BinaryQueryExpression binary)
+    {
+        if (binary.OrderByClause is not null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "An ORDER BY over a set operation has no place in the query representation; it was dropped.",
+                QueryFeature.Ordering);
+        }
+
+        if (binary.OffsetClause is not null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "An OFFSET/FETCH clause is not carried by the query representation; the output is poorer than the input.",
+                QueryFeature.Pagination);
+        }
+    }
+
+    /// <summary>
+    /// The query representation carries no pagination, and silence here would hide it: a
+    /// TOP or OFFSET/FETCH used to disappear without a record, unlike Take and Skip on the
+    /// LINQ side (decision 004).
+    /// </summary>
+    private void ReadPagination(QuerySpecification query)
+    {
+        if (query.TopRowFilter is not null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "A TOP clause is not carried by the query representation; the output is poorer than the input.",
+                QueryFeature.Pagination);
+        }
+
+        if (query.OffsetClause is not null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "An OFFSET/FETCH clause is not carried by the query representation; the output is poorer than the input.",
+                QueryFeature.Pagination);
+        }
     }
 
     /// <summary>
@@ -123,7 +315,7 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
         return null;
     }
 
-    private static QuerySpecification? FindQuerySpecification(TSqlFragment fragment)
+    private static SelectStatement? FindSelectStatement(TSqlFragment fragment)
     {
         // Navigated explicitly rather than with a visitor: a visitor descends into subqueries
         // too, and their instructions would then be emitted into the outer scope.
@@ -132,23 +324,8 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
             return null;
         }
 
-        foreach (var statement in script.Batches.SelectMany(b => b.Statements))
-        {
-            if (statement is SelectStatement select)
-            {
-                return Unwrap(select.QueryExpression);
-            }
-        }
-
-        return null;
+        return script.Batches.SelectMany(b => b.Statements).OfType<SelectStatement>().FirstOrDefault();
     }
-
-    private static QuerySpecification? Unwrap(QueryExpression expression) => expression switch
-    {
-        QuerySpecification specification => specification,
-        QueryParenthesisExpression parenthesis => Unwrap(parenthesis.QueryExpression),
-        _ => null,
-    };
 
     private void ReadFrom(QuerySpecification query)
     {

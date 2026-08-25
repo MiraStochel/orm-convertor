@@ -47,8 +47,6 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         var tree = CSharpSyntaxTree.ParseText(Wrap(source));
         var root = tree.GetCompilationUnitRoot();
 
-        queryBuilder.Push();
-
         // Outer nodes come before inner ones in document order, so the first invocation that
         // decomposes to a query root is the outermost link of the chain. A root appearing
         // inside a Join argument therefore cannot be mistaken for the query's own.
@@ -56,13 +54,12 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         {
             if (TryDecompose(invocation, out var queryRoot, out var steps))
             {
-                EmitSource(queryRoot!);
-                EmitSteps(steps);
-                queryBuilder.Pop();
+                EmitChain(queryRoot!, steps);
                 return;
             }
         }
 
+        queryBuilder.Push();
         Report(
             ConversionRecordKind.Failure,
             "No LINQ query chain was found in the source; nothing was translated.");
@@ -122,83 +119,200 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         queryBuilder.From(ResolveTable(root.Name), sourceAlias);
     }
 
-    private void EmitSteps(List<ChainStep> steps)
+    /// <summary>
+    /// Emits one whole chain into its own subquery scope. A set-operation step closes the
+    /// scope as the left operand, arms the operation and reads its argument as a chain of its
+    /// own, recursively (rule Q12); whatever follows a set operation applies to the composed
+    /// result, for which the representation has no slot, so it is reported instead of
+    /// emitted - as a failure where dropping it would change which rows come back
+    /// (decision 053), as a loss elsewhere.
+    /// </summary>
+    private void EmitChain(LinqQueryRoot root, List<ChainStep> steps)
     {
+        queryBuilder.Push();
+        EmitSource(root);
+
+        bool inSetOperation = false;
+
         for (int i = 0; i < steps.Count; i++)
         {
             var step = steps[i];
-            bool followsGrouping = i > 0 && steps[i - 1].Name == "GroupBy";
 
-            switch (step.Name)
+            if (TryMapSetOperation(step.Name, out var operation))
             {
-                // A Where directly after a GroupBy filters the groups, which is HAVING.
-                case "Where" when followsGrouping:
-                    HandleHaving(step.Node);
-                    break;
-                case "Where":
-                    HandleWhere(step.Node);
-                    break;
+                var argument = step.Node.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+                if (argument is null || !TryDecompose(argument, out var innerRoot, out var innerSteps))
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"The argument of {step.Name}() is not a query chain, so the set operation could not be read; no artifact was generated.",
+                        QueryFeature.SetOperation);
+                    continue;
+                }
 
-                case "Join":
-                    HandleJoin(step.Node, JoinKind.Inner);
-                    break;
+                if (!inSetOperation)
+                {
+                    queryBuilder.Pop();
+                }
 
-                // EF Core 10 added explicit outer joins; before it, LINQ could only express
-                // an inner join directly.
-                case "LeftJoin":
-                    HandleJoin(step.Node, JoinKind.Left);
-                    break;
-                case "RightJoin":
-                    HandleJoin(step.Node, JoinKind.Right);
-                    break;
-
-                case "Select":
-                    HandleSelect(step.Node);
-                    break;
-
-                case "OrderBy":
-                case "ThenBy":
-                    HandleOrderBy(step.Node, asc: true);
-                    break;
-                case "OrderByDescending":
-                case "ThenByDescending":
-                    HandleOrderBy(step.Node, asc: false);
-                    break;
-
-                case "GroupBy":
-                    HandleGroupBy(step.Node);
-                    break;
-
-                // Materialisation and tracking say nothing about the query's structure.
-                case "ToList":
-                case "ToArray":
-                case "ToListAsync":
-                case "ToArrayAsync":
-                case "AsQueryable":
-                case "AsNoTracking":
-                case "AsNoTrackingWithIdentityResolution":
-                    break;
-
-                case "Take":
-                case "Skip":
-                    ReportUnsupported(step.Name, QueryFeature.Pagination);
-                    break;
-
-                case "Union":
-                case "Concat":
-                case "Intersect":
-                case "Except":
-                    ReportUnsupported(step.Name, QueryFeature.SetOperation);
-                    break;
-
-                case "Distinct":
-                    ReportUnsupported(step.Name, QueryFeature.Projection);
-                    break;
-
-                default:
-                    ReportUnsupported(step.Name, null);
-                    break;
+                queryBuilder.SetOperation(operation);
+                queryBuilder.Push();
+                EmitChain(innerRoot!, innerSteps);
+                queryBuilder.Pop();
+                inSetOperation = true;
+                continue;
             }
+
+            if (inSetOperation)
+            {
+                ReportStepAfterSetOperation(step);
+                continue;
+            }
+
+            EmitStep(step, followsGrouping: i > 0 && steps[i - 1].Name == "GroupBy");
+        }
+
+        if (!inSetOperation)
+        {
+            queryBuilder.Pop();
+        }
+    }
+
+    private static bool TryMapSetOperation(string method, out SetOperationType operation)
+    {
+        switch (method)
+        {
+            case "Union": operation = SetOperationType.Union; return true;
+            case "Concat": operation = SetOperationType.UnionAll; return true;
+            case "Intersect": operation = SetOperationType.Intersect; return true;
+            case "Except": operation = SetOperationType.Except; return true;
+            default: operation = default; return false;
+        }
+    }
+
+    private void ReportStepAfterSetOperation(ChainStep step)
+    {
+        switch (step.Name)
+        {
+            // Materialisation and tracking say nothing about the query's structure.
+            case "ToList":
+            case "ToArray":
+            case "ToListAsync":
+            case "ToArrayAsync":
+            case "AsQueryable":
+            case "AsNoTracking":
+            case "AsNoTrackingWithIdentityResolution":
+                return;
+
+            case "OrderBy":
+            case "OrderByDescending":
+            case "ThenBy":
+            case "ThenByDescending":
+                Report(
+                    ConversionRecordKind.Loss,
+                    "An ordering applied after a set operation has no place in the query representation; it was dropped.",
+                    QueryFeature.Ordering);
+                return;
+
+            case "Take":
+            case "Skip":
+                ReportUnsupported(step.Name, QueryFeature.Pagination);
+                return;
+
+            case "Select":
+            case "Distinct":
+                Report(
+                    ConversionRecordKind.Loss,
+                    $"{step.Name}() applied after a set operation has no place in the query representation; the operands' own shape is kept.",
+                    QueryFeature.Projection);
+                return;
+
+            case "Where":
+            case "Join":
+            case "LeftJoin":
+            case "RightJoin":
+            case "GroupBy":
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"{step.Name}() applied after a set operation cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
+                    step.Name switch
+                    {
+                        "Where" => QueryFeature.Filtering,
+                        "GroupBy" => QueryFeature.Grouping,
+                        _ => QueryFeature.Join,
+                    });
+                return;
+
+            default:
+                ReportUnsupported(step.Name, null);
+                return;
+        }
+    }
+
+    private void EmitStep(ChainStep step, bool followsGrouping)
+    {
+        switch (step.Name)
+        {
+            // A Where directly after a GroupBy filters the groups, which is HAVING.
+            case "Where" when followsGrouping:
+                HandleHaving(step.Node);
+                break;
+            case "Where":
+                HandleWhere(step.Node);
+                break;
+
+            case "Join":
+                HandleJoin(step.Node, JoinKind.Inner);
+                break;
+
+            // EF Core 10 added explicit outer joins; before it, LINQ could only express
+            // an inner join directly.
+            case "LeftJoin":
+                HandleJoin(step.Node, JoinKind.Left);
+                break;
+            case "RightJoin":
+                HandleJoin(step.Node, JoinKind.Right);
+                break;
+
+            case "Select":
+                HandleSelect(step.Node);
+                break;
+
+            case "OrderBy":
+            case "ThenBy":
+                HandleOrderBy(step.Node, asc: true);
+                break;
+            case "OrderByDescending":
+            case "ThenByDescending":
+                HandleOrderBy(step.Node, asc: false);
+                break;
+
+            case "GroupBy":
+                HandleGroupBy(step.Node);
+                break;
+
+            // Materialisation and tracking say nothing about the query's structure.
+            case "ToList":
+            case "ToArray":
+            case "ToListAsync":
+            case "ToArrayAsync":
+            case "AsQueryable":
+            case "AsNoTracking":
+            case "AsNoTrackingWithIdentityResolution":
+                break;
+
+            case "Take":
+            case "Skip":
+                ReportUnsupported(step.Name, QueryFeature.Pagination);
+                break;
+
+            case "Distinct":
+                ReportUnsupported(step.Name, QueryFeature.Projection);
+                break;
+
+            default:
+                ReportUnsupported(step.Name, null);
+                break;
         }
     }
 

@@ -195,6 +195,33 @@ public class QueryMatrixTest
     }
 
     /// <summary>
+    /// A set operation through the real orchestration: the parser reads the UNION, the
+    /// entity maps travel to the target builder, and the LINQ target composes with Union.
+    /// </summary>
+    [Fact]
+    public void AUnionTravelsThroughTheOrchestration()
+    {
+        const string unionQuery = """
+            SELECT c.CustomerName FROM Sales.Customers AS c
+            UNION
+            SELECT c.CustomerName FROM Sales.Customers AS c
+            """;
+
+        List<ConversionSource> sources =
+        [
+            new() { Content = DapperEntity, ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = unionQuery, ContentType = ConversionContentType.SqlQuery },
+        ];
+
+        var result = ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.EFCore, sources);
+
+        var query = result.Sources.Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
+
+        Assert.Contains(".Union(", query);
+        Assert.Contains("ctx.Set<Customer>()", query);
+    }
+
+    /// <summary>
     /// The source framework has no parser for this language, and that has to be said out loud
     /// - it was the silent `continue` decision 022 removed.
     /// </summary>

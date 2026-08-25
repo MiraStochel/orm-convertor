@@ -146,20 +146,50 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
 
     protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)
     {
-        var left = Normalize(instruction.Left.Instructions);
-        var right = Normalize(instruction.Right.Instructions);
+        var sql = RenderSetOperation(instruction, out var resultEntity);
+        return sql is null ? [] : Emit(sql, resultEntity);
+    }
+
+    private string? RenderSetOperation(SetOperationInstruction instruction, out string? resultEntity)
+    {
+        var left = RenderOperand(instruction.Left, out _);
+        var right = RenderOperand(instruction.Right, out resultEntity);
 
         if (left is null || right is null)
         {
-            return [];
+            return null;
         }
 
-        var leftSql = RenderSelect(Compose(left));
-        var rightArtifact = Compose(right);
-        var rightSql = RenderSelect(rightArtifact);
+        var keyword = visitor.Visit(instruction);
+        return keyword.Length == 0 ? null : $"{left}\n\n{keyword}\n\n{right}";
+    }
 
-        var sql = $"{leftSql}\n\n{visitor.Visit(instruction)}\n\n{rightSql}";
-        return Emit(sql, rightArtifact.ResultEntity);
+    /// <summary>
+    /// One operand of a set operation: a SELECT run through the seven steps, or a nested set
+    /// operation rendered recursively. The nested case is parenthesized, because T-SQL
+    /// evaluates INTERSECT before UNION and EXCEPT and same-precedence operators left to
+    /// right, so a nested operand written bare could regroup into a different row set.
+    /// </summary>
+    private string? RenderOperand(SubQueryInstruction operand, out string? resultEntity)
+    {
+        var body = Unwrap(operand.Instructions);
+
+        if (body.Count == 1 && body[0] is SetOperationInstruction nested)
+        {
+            var inner = RenderSetOperation(nested, out resultEntity);
+            return inner is null ? null : $"(\n{inner}\n)";
+        }
+
+        var clauses = Normalize(body);
+        if (clauses is null)
+        {
+            resultEntity = null;
+            return null;
+        }
+
+        var artifact = Compose(clauses);
+        resultEntity = artifact.ResultEntity;
+        return RenderSelect(artifact);
     }
 
     private static List<ConversionSource> Emit(string sql, string? resultEntity)

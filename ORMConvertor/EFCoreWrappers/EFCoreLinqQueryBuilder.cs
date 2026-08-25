@@ -295,6 +295,99 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         artifact.Projection.Append($"\n        .Select({scope.Param} => new {{ {string.Join(", ", members)} }})");
     }
 
+    protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)
+    {
+        var chain = RenderSetOperation(instruction, out var elementEntity);
+        if (chain is null)
+        {
+            return [];
+        }
+
+        var returnType = elementEntity is not null ? $"IQueryable<{elementEntity}>" : "IQueryable";
+        var method =
+            $$"""
+            public static {{returnType}} Query(DbContext ctx)
+            {
+                return {{chain}};
+            }
+            """;
+
+        return [new() { Content = method, ContentType = ConversionContentType.CSharpQuery }];
+    }
+
+    private string? RenderSetOperation(SetOperationInstruction instruction, out string? elementEntity)
+    {
+        elementEntity = null;
+
+        var left = RenderOperandChain(instruction.Left, out var leftEntity);
+        var right = RenderOperandChain(instruction.Right, out var rightEntity);
+        if (left is null || right is null)
+        {
+            return null;
+        }
+
+        // LINQ set operations compose two queryables of one element type. Two whole-entity
+        // operands of the same entity keep that type; two projections each build an anonymous
+        // type and are left to the compilation level to judge. What cannot type-check at all
+        // is a whole entity against anything else, and emitting it anyway would only move the
+        // error into the consumer's build (decision 053).
+        if (!string.Equals(leftEntity, rightEntity, StringComparison.Ordinal))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "The two sides of the set operation materialize different element types, which LINQ cannot compose; no artifact was generated.",
+                QueryFeature.SetOperation);
+            return null;
+        }
+
+        var method = visitor.Visit(instruction);
+        if (method.Length == 0)
+        {
+            return null;
+        }
+
+        elementEntity = leftEntity;
+        return $"{left}\n        .{method}({right})";
+    }
+
+    /// <summary>
+    /// One operand as a full chain from its own <c>ctx.Set&lt;T&gt;()</c> root. The entity
+    /// name comes out only when the operand materializes whole entities of a nameable type;
+    /// null stands for an anonymous element type.
+    /// </summary>
+    private string? RenderOperandChain(SubQueryInstruction operand, out string? elementEntity)
+    {
+        var body = Unwrap(operand.Instructions);
+
+        if (body.Count == 1 && body[0] is SetOperationInstruction nested)
+        {
+            return RenderSetOperation(nested, out elementEntity);
+        }
+
+        elementEntity = null;
+
+        var clauses = Normalize(body);
+        if (clauses is null)
+        {
+            return null;
+        }
+
+        var artifact = Compose(clauses);
+        elementEntity = clauses.ProjectsWholeEntity && !scope.Composite && !scope.Grouped
+            ? artifact.ResultEntity
+            : null;
+
+        return string.Concat(
+            artifact.Source,
+            artifact.Joins,
+            artifact.Filter,
+            artifact.Grouping,
+            artifact.PostFilter,
+            artifact.Ordering,
+            artifact.Projection,
+            orderingAfterProjection);
+    }
+
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
     {
         var chain = string.Concat(

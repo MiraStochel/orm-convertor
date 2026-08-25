@@ -143,6 +143,50 @@ public class DapperSqlQueryBuilderTest
     }
 
     /// <summary>
+    /// A set operation whose right operand is itself a set operation: the inner scopes open
+    /// and close while the outer operation is still armed, so completing on the wrong Pop -
+    /// what the old single-flag bookkeeping did - would tear the grouping apart.
+    /// </summary>
+    [Fact]
+    public void ASetOperationNestedOnTheRightKeepsItsGrouping()
+    {
+        AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
+
+        builder.Push();
+        builder.From("Sales.Customers", alias: "c");
+        builder.Pop();
+        builder.SetOperation(SetOperationType.Union);
+        builder.Push();
+        builder.Push();
+        builder.From("Sales.Prospects", alias: "p");
+        builder.Pop();
+        builder.SetOperation(SetOperationType.Intersect);
+        builder.Push();
+        builder.From("Sales.Banned", alias: "b");
+        builder.Pop();
+        builder.Pop();
+
+        string expected = """
+        SELECT *
+        FROM Sales.Customers AS c
+
+        UNION
+
+        (
+        SELECT *
+        FROM Sales.Prospects AS p
+
+        INTERSECT
+
+        SELECT *
+        FROM Sales.Banned AS b
+        )
+        """;
+
+        Assert.Equal(expected, Sql(builder), ignoreAllWhiteSpace: true, ignoreLineEndingDifferences: true);
+    }
+
+    /// <summary>
     /// The generated method used to carry a trailing comma in the argument list, so it never
     /// compiled and AdvisorBenchmarking had to dig the SQL back out with a regex. Level 2 of
     /// decision 016 now judges it, so the shape assertion here guards the call site itself.

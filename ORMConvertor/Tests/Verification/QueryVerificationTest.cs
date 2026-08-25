@@ -77,6 +77,43 @@ public class QueryVerificationTest
         Assert.Contains("ORDER BY", sql);
     }
 
+    /// <summary>
+    /// Level 3 for a set operation: EF Core's provider renders the generated Union chain as
+    /// UNION SQL, which also proves the two operand chains compose over one element type.
+    /// </summary>
+    [Fact]
+    public void EFCoreTranslatesAGeneratedUnion()
+    {
+        const string unionQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => c.CreditLimit > 2000)
+                    .Union(ctx.Set<Customer>().Where(c => c.CreditLimit < 100))
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.EFCore,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = unionQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_EFCore_Union",
+            Query(result, ConversionContentType.CSharpQuery),
+            Entities(result),
+            GeneratedQueryCompiler.EFCoreConsumerReferences,
+            "using Microsoft.EntityFrameworkCore;");
+
+        var sql = EFCoreQueryAcceptance.Translate(compiled);
+
+        Assert.Contains("UNION", sql);
+    }
+
     /// <summary>A level that never says no proves nothing (decision 016).</summary>
     [Fact]
     public void EFCoreRefusesAnUntranslatableQuery()
@@ -191,6 +228,48 @@ public class QueryVerificationTest
     {
         var result = Translate(ORMEnum.Dapper);
         var sql = Query(result, ConversionContentType.SqlQuery);
+
+        var map = new EntityMap
+        {
+            Entity = new Entity { Name = "Customer" },
+            Table = "Customers",
+            Schema = "Sales",
+            PropertyMaps =
+            [
+                new PropertyMap { Property = new Property { Name = "CustomerId" }, ColumnName = "CustomerId" },
+                new PropertyMap { Property = new Property { Name = "CustomerName" }, ColumnName = "CustomerName" },
+                new PropertyMap { Property = new Property { Name = "CreditLimit" }, ColumnName = "CreditLimit" },
+            ],
+        };
+
+        TSqlAcceptance.ResolvesAgainst(sql, [map]);
+    }
+
+    /// <summary>Rule Q13 for a set operation: both operands' names resolve through the IR.</summary>
+    [Fact]
+    public void AGeneratedUnionSqlParsesAndResolves()
+    {
+        const string unionQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => c.CreditLimit > 2000)
+                    .Select(c => new { Name = c.CustomerName })
+                    .Union(ctx.Set<Customer>().Where(c => c.CreditLimit < 100).Select(c => new { Name = c.CustomerName }))
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.Dapper,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = unionQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var sql = Query(result, ConversionContentType.SqlQuery);
+        Assert.Contains("UNION", sql);
 
         var map = new EntityMap
         {
