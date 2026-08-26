@@ -1,6 +1,6 @@
 A web-based tool for translating across different .NET ORMs.
 
-This file is the operating manual: how the tool is run, deployed, configured and tested, why each path is built the way it is, and what on it has actually been checked by running it. It holds the operational half of the deployment view (decision [058](../docs/decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)); what describes the tool rather than its operation — the verification levels of generated artifacts, the frontend, the REST interface, and the whole intermediate representation — is in Czech in [`docs/architecture.md`](../docs/architecture.md). **Last verified against the code: 2026-08-24.**
+This file is the operating manual: how the tool is run, deployed, configured and tested, why each path is built the way it is, and what on it has actually been checked by running it. It holds the operational half of the deployment view (decision [058](../docs/decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)); what describes the tool rather than its operation — the verification levels of generated artifacts, the frontend, the REST interface, and the whole intermediate representation — is in Czech in [`docs/architecture.md`](../docs/architecture.md). **Last verified against the code: 2026-08-26.**
 
 | Section | What it covers |
 |---|---|

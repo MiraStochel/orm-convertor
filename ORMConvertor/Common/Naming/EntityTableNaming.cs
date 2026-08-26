@@ -51,6 +51,19 @@ public static class EntityTableNaming
     }
 
     /// <summary>
+    /// The one table name an entity name suggests, for a caller that has no list to try
+    /// against: the plural, because that is the convention tables carry, and the name
+    /// itself when it already ends in s - including the single "s", which is not singular
+    /// enough to lengthen.
+    /// </summary>
+    public static string TableNameFor(string entityName)
+    {
+        ArgumentNullException.ThrowIfNull(entityName);
+
+        return EndsInS(entityName) ? entityName : entityName + "s";
+    }
+
+    /// <summary>
     /// The bare name of a qualified one: the schema belongs to the table, never to the
     /// entity, so it is dropped before the convention is applied.
     /// </summary>

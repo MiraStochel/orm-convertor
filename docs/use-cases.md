@@ -17,7 +17,7 @@ Dokument je živý: scénář přibude, když se objeví, a upraví se, když se
 
 ## Co je ve skutečnosti vstupem — a kde nástroj začíná a končí
 
-Ve skutečnosti má uživatel v ruce **projekt**: repozitář s entitami, mapovacími soubory, konfigurací a dotazy rozesetými po service třídách. Nástroj tuhle hierarchii **nevidí a nezkoumá**. Jednotkou převodu je *artefakt* — obsah jednoho souboru s entitou, jedno mapování, jeden dotaz —, převodem je **množina jednotek poslaná najednou**, a jméno souboru je popisek na klientovi: jednotky odeslané na `/convert` žádné jméno nenesou a server o souborech neví (rozhodnutí [033](./decisions/033-shape-of-the-static-frontend-screens.md), `architecture.md` §9).
+Ve skutečnosti má uživatel v ruce **projekt**: repozitář s entitami, mapovacími soubory, konfigurací a dotazy rozesetými po service třídách. Nástroj tuhle hierarchii **nevidí a nezkoumá**. Jednotkou převodu je *artefakt* — obsah jednoho souboru s entitou, jedno mapování, jeden dotaz —, převodem je **množina jednotek poslaná najednou**. Jednotka smí nést jméno a záznamy vzešlé z jejího čtení na ni tím jménem ukazují (rozhodnutí [066](./decisions/066-records-attributed-to-the-input-unit.md)); pořád je to ale popisek, který poslal klient — strukturu projektu server nezná a výstupní artefakty se jednotkám nepřipisují (`architecture.md` §9).
 
 Z toho plyne dělba práce, kterou je lepší říct nahlas, než ji nechat každého objevit:
 
@@ -40,7 +40,7 @@ Z toho plyne dělba práce, kterou je lepší říct nahlas, než ji nechat kaž
 
 **Co doplní konzument.** Soubor projektu se závislostmi, `DbContext` a jeho registraci, připojovací řetězec.
 
-**Kde je dnes hranice.** Bez připojeného katalogu tenhle scénář nedoběhne do konce: entita bez klíče u cíle, který klíč vyžaduje, se odmítne u kontroly úplnosti a řekne to záznamem (rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md)) — a to je správně, protože klíč není co uhodnout. Diagnostika se váže k entitě a vlastnosti, ne ke zdrojovému souboru.
+**Kde je dnes hranice.** Bez připojeného katalogu tenhle scénář nedoběhne do konce: entita bez klíče u cíle, který klíč vyžaduje, se odmítne u kontroly úplnosti a řekne to záznamem (rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md)) — a to je správně, protože klíč není co uhodnout. Záznamy vzešlé ze čtení jednotky ukazují na jednotku (rozhodnutí [066](./decisions/066-records-attributed-to-the-input-unit.md)); záznamy doplnění a generování se vážou k entitě a vlastnosti.
 
 ## UC2 — Sjednocení dvou frameworků v jednom řešení
 

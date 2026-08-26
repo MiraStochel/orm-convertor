@@ -125,9 +125,7 @@ internal static class HarnessGenerationUtilities
 
         if (!string.IsNullOrWhiteSpace(typeName))
         {
-            return typeName.EndsWith("s", StringComparison.OrdinalIgnoreCase)
-                ? typeName
-                : $"{typeName}s";
+            return EntityTableNaming.TableNameFor(typeName);
         }
 
         return "UnknownTable";

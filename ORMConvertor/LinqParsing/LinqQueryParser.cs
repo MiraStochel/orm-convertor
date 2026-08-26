@@ -2,6 +2,7 @@ using System.Globalization;
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Naming;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -1111,11 +1112,15 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
                 return Qualify(byEntity, byEntity.Table ?? name);
             }
 
-            var byPlural = entityMaps.FirstOrDefault(m =>
-                string.Equals((m.Entity?.Name ?? string.Empty) + "s", name, StringComparison.OrdinalIgnoreCase));
-            if (byPlural is not null)
+            // The other grammatical number comes from the one rule (decision 050); a glued
+            // "s" used to answer differently for an entity already ending in s.
+            var byConvention = entityMaps.FirstOrDefault(m =>
+                m.Entity?.Name is { Length: > 0 } entityName
+                && EntityTableNaming.TableCandidatesFor(entityName)
+                    .Any(candidate => string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase)));
+            if (byConvention is not null)
             {
-                return Qualify(byPlural, byPlural.Table ?? name);
+                return Qualify(byConvention, byConvention.Table ?? name);
             }
         }
 
