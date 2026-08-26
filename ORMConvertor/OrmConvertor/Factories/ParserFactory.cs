@@ -9,12 +9,16 @@ internal class ParserFactory
 {
     /// <summary>
     /// Parsers for one source framework, in the reading order that is a stated fact of
-    /// the framework, not an accident of the list (decision 017): the input text - the
-    /// entity class, level 1a - parses before its auxiliary mapping artifacts - level 1b,
-    /// for NHibernate the hbm.xml. The orchestration runs each parser over all its units
-    /// before the next one starts, so a fact of a higher level is already in place when
-    /// a lower level arrives, and the builder can keep the first value and report a
-    /// conflict without the model tracking the origin of a fact.
+    /// the framework, not an accident of the list (decision 017). The order follows the
+    /// precedence the framework documents for its own artifacts, strongest first; where
+    /// it documents none, the default holds: the input text - the entity class, level
+    /// 1a - parses before its auxiliary mapping artifacts - level 1b, for NHibernate
+    /// the hbm.xml (decision 068). Every list below is the default order; the first
+    /// fluent configuration parser will enter the EF Core list first, because EF Core
+    /// puts the fluent API above annotations. The orchestration runs each parser over
+    /// all its units before the next one starts, so a fact of a higher level is already
+    /// in place when a lower level arrives, and the builder can keep the first value
+    /// and report a conflict without the model tracking the origin of a fact.
     ///
     /// Query parsers appear only when a query builder is there to receive them; within
     /// one framework each query parser claims a different query language, so the caller
