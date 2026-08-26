@@ -45,7 +45,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [037](037-enforced-member-binding-held-by-the-test.md) | Vazbu deklarace a emise vynucených členů drží test | 2026-08-21 | revidováno | S1, S2 |
 | [039](039-container-configuration-of-the-environment.md) | Kontejnerová konfigurace prostředí | 2026-08-22 | platí | F4, F6, S2, S4, S5, S6 |
 | [040](040-boundary-of-the-handed-over-artifact.md) | Hranice předávaného artefaktu vůči konzumentskému projektu | 2026-08-22 | platí | F2, F5, F11, S1, S2 |
-| [041](041-versioning-and-release.md) | Verzování, vydání a posun zafixovaných verzí | 2026-08-22 | revidováno | S2, S4, S6 |
+| [041](041-versioning-and-release.md) | Verzování, vydání a posun zafixovaných verzí | 2026-08-22 | nahrazeno [069](069-major-marks-a-milestone-not-a-break.md) | S2, S4, S6 |
 | [042](042-measured-benchmark-output-out-of-git.md) | Naměřený výstup benchmarků mimo git | 2026-08-23 | platí | T1, T7, S5 |
 | [043](043-rest-contract-guarded-over-http.md) | REST kontrakt hlídaný testem přes HTTP | 2026-08-23 | platí | S2, S6, S7 |
 | [044](044-error-response-as-problem-details.md) | Chybová odpověď jako `ProblemDetails` | 2026-08-23 | platí | F11, S6, S7 |
@@ -73,6 +73,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [066](066-records-attributed-to-the-input-unit.md) | Záznam se připisuje vstupní jednotce, ze které vzešel | 2026-08-26 | platí | F11, F14, S1, S2, S6, S7 |
 | [067](067-a-derived-convention-is-a-statement-a-default-is-not.md) | Odvozující konvence zdroje je tvrzení, absenční výchozí ne | 2026-08-26 | platí | F2, F5, F6, F11, S1, S2 |
 | [068](068-source-framework-precedence-orders-the-reading.md) | Dokumentovaná precedence zdrojového frameworku řadí čtení jeho artefaktů | 2026-08-26 | platí | F2, F5, F7–F10, F11, S1, S2 |
+| [069](069-major-marks-a-milestone-not-a-break.md) | MAJOR označuje milník zadání, ne rozbitou plochu | 2026-08-26 | platí | S2, S6, F7–F10, F15, T7 |
 
 ## Formát
 

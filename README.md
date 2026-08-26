@@ -43,11 +43,13 @@ The remaining work is tracked in [`docs/open-items.md`](docs/open-items.md).
 
 ## Versioning and releases
 
-Version numbers follow semantic versioning, and the public surface they describe is **the shape of the generated artifact** as much as the REST contract and the guarantee boundary above ([decision 041](docs/decisions/041-versioning-and-release.md)). For a tool whose product is generated code, that is the distinction a consumer actually needs:
+Version numbers say **what the tool can do**, not what breaks if you upgrade ([decision 069](docs/decisions/069-major-marks-a-milestone-not-a-break.md)). That is a deliberate departure from ordinary semantic versioning, and it rests on a condition stated plainly: the tool is not published — no package in any registry, no released artifact besides the git tag, no consumer outside this repository. A promise not to break a consumer needs a consumer to make it to, and until there is one the number is better spent on the question that can be answered.
 
-- **MAJOR** — the same input now yields an artifact you have to adapt to, the REST contract breaks, or an area leaves the guarantee boundary.
-- **MINOR** — something new arrives and existing output is untouched: another framework, another query category, another kind of diagnostic record, or an area entering the boundary.
-- **PATCH** — a fix that changes the output only where it was wrong.
+- **MAJOR** — the tool crosses a milestone of the assignment: a whole new ecosystem (the three Java ORMs together with cross-ecosystem translation), or the Advisor working across all supported frameworks together with the experimental part. The next one is 2.0.0, for the Java ecosystem.
+- **MINOR** — a capability arrives within a milestone: another query category, another kind of diagnostic record, another endpoint, or an area entering the guarantee boundary.
+- **PATCH** — a fix, and equally any change of the public surface that brings no new capability with it: the same input yielding a differently shaped artifact, a field leaving the REST contract, an error body changing shape. A release carries the highest position any of its changes moved, so these ride along inside a MINOR release rather than being issued on their own.
+
+What a break gets instead of a digit is the first paragraph of the release notes. The three surfaces a release describes are unchanged — the shape of the generated artifact, the REST contract, and the guarantee boundary above — and the notes describe them in that order, output shape first. **Should the tool ever be published, this policy is replaced rather than reinterpreted**: a consumer is exactly the addressee semantic versioning is written for.
 
 A release is an annotated tag on the commit that already carries the released number in `ORMConvertor/Directory.Build.props`, and the release notes live in the tag's annotation (`git tag -n99`) rather than in a changelog file. Tags are never moved and numbers are never reused: a release that turns out wrong is corrected by the next number. Pinned dependency versions move for exactly two reasons — a published advisory or the needs of ongoing work — and CI checks the first of those on every run and once a week.
 

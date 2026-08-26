@@ -9,7 +9,7 @@
          so this number is what ConversionResult.ToolVersion reports. An inherited
          `Version` environment variable would override it, which is why ecosystem.config.js
          blanks that variable before `dotnet run`. -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
   </PropertyGroup>
 
 </Project>

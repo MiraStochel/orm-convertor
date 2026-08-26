@@ -1,7 +1,7 @@
 # 041 — Verzování, vydání a posun zafixovaných verzí
 
 Datum: 2026-08-22
-Stav: revidováno
+Stav: nahrazeno 069
 Požadavky: S2, S4, S6
 Podklad: rozhodnutí [007](007-documentation-structure.md), [013](013-target-framework-versions.md), [030](030-scope-of-version-1-0.md) a [034](034-central-version-management.md); stav značky `1.0` v repozitáři k 2026-08-22
 
