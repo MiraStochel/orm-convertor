@@ -10,6 +10,9 @@ namespace Tests.Combined;
 /// is EF Core to NHibernate because it exercises the most machinery: Roslyn reads both the
 /// attributed entities and the LINQ chains on the way in, and every entity leaves as two
 /// artifacts (class + hbm.xml) and every query as two more (method + bare HQL).
+/// This run is deliberately dry - no connection is passed, so the number covers parsing
+/// and generation; the same project with the catalog phase contributing is measured by
+/// <see cref="CatalogTranslationPerformanceTest"/>.
 /// </summary>
 public class TranslationPerformanceTest
 {
@@ -20,55 +23,14 @@ public class TranslationPerformanceTest
     {
         var sources = new List<ConversionSource>(EntityCount + QueryCount);
 
-        // The table name differs from the entity name on purpose: the HQL builder has to
-        // invert the mapping per query, so a same-named table would let a broken inversion
-        // pass unmeasured.
         for (int i = 0; i < EntityCount; i++)
         {
-            sources.Add(new()
-            {
-                ContentType = ConversionContentType.CSharpEntity,
-                Content = $$"""
-                    using System.ComponentModel.DataAnnotations;
-                    using System.ComponentModel.DataAnnotations.Schema;
-
-                    namespace Perf;
-
-                    [Table("Entity{{i}}Rows", Schema = "Perf")]
-                    public class Entity{{i}}
-                    {
-                        [Key]
-                        public int Entity{{i}}Id { get; set; }
-
-                        [MaxLength(200)]
-                        public string Name { get; set; }
-
-                        public decimal Amount { get; set; }
-
-                        public DateTime CreatedAt { get; set; }
-
-                        public bool IsActive { get; set; }
-                    }
-                    """,
-            });
+            sources.Add(PerformanceProject.SyntheticEntity(i));
         }
 
         for (int i = 0; i < QueryCount; i++)
         {
-            sources.Add(new()
-            {
-                ContentType = ConversionContentType.CSharpQuery,
-                Content = $$"""
-                    public void Query()
-                    {
-                        var q = ctx.Set<Entity{{i}}>()
-                            .Where(e => e.Amount > {{i}})
-                            .OrderBy(e => e.Name)
-                            .Select(e => new { Name = e.Name, Amount = e.Amount })
-                            .ToList();
-                    }
-                    """,
-            });
+            sources.Add(PerformanceProject.SyntheticQuery(i));
         }
 
         return sources;
