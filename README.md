@@ -55,6 +55,8 @@ A release is an annotated tag on the commit that already carries the released nu
 
 The tag `1.0` predates this policy, uses a two-part number this policy would not issue, and does not contain the container configuration described above. Its own guarantees section is consistent about that — it lists containerized deployment among the areas it exempts. What briefly claimed the configuration was the working `README.md` on `main`, whose heading still read *Version 1.0 guarantees* after its body had already moved on; that mismatch is what prompted the policy. Under the rule just stated the tag is not moved: the release `1.1.0` corrects the situation instead, and is a MINOR step for a single reason — an area entered the boundary above, while the generated artifacts and the REST contract are unchanged.
 
+The release `1.2.0` closes the first milestone: entity, mapping, and query translation across the three .NET frameworks, which is what everything above describes. It is MINOR for two reasons at once — capabilities arrived inside the milestone, and two whole areas left the boundary above, subqueries and the textual NHibernate → NHibernate round-trip, leaving the four that remain. The changes of artifact shape and the new error body ride along inside it as PATCH; each of them is named in the first paragraph of that tag's annotation, which is where to look before upgrading a consumer built against an older one.
+
 ## Getting started
 
 The tool lives in the `ORMConvertor` directory. In short:
@@ -73,10 +75,11 @@ The measured output of that comparison is **not versioned** ([decision 042](docs
 
 ## Beyond this version
 
-The main directions of future work (detailed in [`docs/open-items.md`](docs/open-items.md)):
+The work is grouped into milestones and taken in that order. The items themselves — and the marker saying which one is being worked on right now — are in [`docs/open-items.md`](docs/open-items.md).
 
-- Extending the Advisor to all supported frameworks.
-- Java ecosystem support (Hibernate, MyBatis, EclipseLink) and cross-ecosystem translation between .NET and Java.
+- **Next: the Java ecosystem.** Hibernate, MyBatis, and EclipseLink, cross-ecosystem translation between .NET and Java, and a Java test infrastructure that verifies query results differentially. This is the milestone the next MAJOR is reserved for, and none of it is claimed today.
+- **After that: the Advisor and the experiments.** Extending the Advisor beyond Dapper and EF Core to every supported framework, and the experimental part that stands on its measurements. Both are exempt from the guarantees above as they stand.
+- **Set aside from both:** interface work — batch input, and displaying the intermediate representation, which requirement F14 names and this version does not claim at all — and reproducibility of the build itself, meaning a dependency lock file, base images pinned by digest, and style rules enforced by CI rather than merely present in the repository.
 
 ## License
 
