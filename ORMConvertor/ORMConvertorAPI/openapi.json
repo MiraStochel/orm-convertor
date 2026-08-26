@@ -638,6 +638,12 @@
               }
             ]
           },
+          "unit": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "reason": {
             "type": "string"
           }
@@ -658,6 +664,12 @@
           },
           "content": {
             "type": "string"
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

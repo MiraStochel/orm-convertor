@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
+using Model.AbstractRepresentation;
 
 namespace CSharpEntityParsing;
 
@@ -28,13 +29,16 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// and a nested class becomes a peer entity beside its container, not a member of it.
     /// </summary>
     /// <param name="source">C# source code with one or more classes, optionally wrapped in a namespace.</param>
-    public void Parse(string source)
+    /// <returns>The entity maps the unit declared; empty when it held no class (decision 066).</returns>
+    public IReadOnlyCollection<EntityMap> Parse(string source)
     {
         var root = CSharpSyntaxTree.ParseText(source).GetCompilationUnitRoot();
 
         var classes = root.DescendantNodes()
             .OfType<ClassDeclarationSyntax>()
             .ToList();
+
+        var read = new List<EntityMap>();
 
         foreach (var cls in classes)
         {
@@ -49,7 +53,10 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
             ParseClassAttributes(cls);
             ParseClassHeader(cls);
             ParseProperties(cls);
+            read.Add(entityBuilder.EntityMap);
         }
+
+        return read;
     }
 
     /// <summary>

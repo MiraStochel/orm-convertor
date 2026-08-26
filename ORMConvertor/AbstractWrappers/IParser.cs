@@ -1,4 +1,5 @@
 ﻿using Model;
+using Model.AbstractRepresentation;
 
 namespace AbstractWrappers;
 
@@ -20,5 +21,11 @@ public interface IParser
 /// </summary>
 public interface IEntityParser : IParser
 {
-    void Parse(string source);
+    /// <summary>
+    /// Reads one unit and states what came of it: the entity maps the unit created or
+    /// enriched. An empty collection means the unit yielded nothing - a statement only the
+    /// parser can make, because an enriching parser adds no new map and counting maps
+    /// around the call would call an honest unit barren (decision 066).
+    /// </summary>
+    IReadOnlyCollection<EntityMap> Parse(string source);
 }

@@ -63,15 +63,37 @@ public static class ConversionHandler
                 runRecords.Add(NotTranslated(
                     targetOrm,
                     src.ContentType,
+                    UnitReference(src, sources),
                     $"{sourceOrm} has no parser for a {src.ContentType} artifact, so the unit was not read."));
             }
         }
 
+        // The parser-outer order is source precedence ordered in time (decision 017); the
+        // blank-unit filter keeps an unfilled box from being read at all. What each unit
+        // yielded is the parser's own statement, and a claimed unit nothing came of is a
+        // record - beside a productive unit it used to be the last silent case of decision
+        // 045. Records born during the reading are attributed to the unit, because its
+        // reading is their origin (decision 066).
         foreach (var parser in entityParsers)
         {
-            foreach (var src in sources.Where(x => parser.CanParse(x.ContentType)))
+            foreach (var src in sources.Where(x =>
+                parser.CanParse(x.ContentType) && !string.IsNullOrWhiteSpace(x.Content)))
             {
-                parser.Parse(src.Content);
+                var unit = UnitReference(src, sources);
+                var recordsBefore = entityBuilder.Records.Count;
+
+                var read = parser.Parse(src.Content);
+
+                entityBuilder.AttributeRecords(recordsBefore, unit);
+
+                if (read.Count == 0)
+                {
+                    runRecords.Add(NotTranslated(
+                        targetOrm,
+                        src.ContentType,
+                        unit,
+                        $"The unit was read as {src.ContentType} and no entity or mapping fact came of it; check that its content is what the declared type names."));
+                }
             }
         }
 
@@ -97,12 +119,15 @@ public static class ConversionHandler
 
         foreach (var qsrc in querySources)
         {
+            var unit = UnitReference(qsrc, sources);
+
             var qb = QueryBuilderFactory.Create(targetOrm);
             if (qb is null)
             {
                 queryRecords.Add(NotTranslated(
                     targetOrm,
                     qsrc.ContentType,
+                    unit,
                     $"{targetOrm} has no query builder, so the query was not translated."));
                 continue;
             }
@@ -117,6 +142,7 @@ public static class ConversionHandler
                 queryRecords.Add(NotTranslated(
                     targetOrm,
                     qsrc.ContentType,
+                    unit,
                     $"{sourceOrm} has no parser for a {qsrc.ContentType} query, so it was not translated."));
                 continue;
             }
@@ -127,7 +153,10 @@ public static class ConversionHandler
             queryParsers[0].Parse(qsrc.ContentType, qsrc.Content, entityBuilder.EntityMaps);
 
             results.AddRange(qb.Build());
-            queryRecords.AddRange(qb.Records);
+
+            // The builder was created for this one unit and dies with it, so every record it
+            // holds - the parser's and the build's alike - came from this unit (decision 066).
+            queryRecords.AddRange(qb.Records.Select(r => r with { Unit = unit }));
         }
 
         // A run that generated nothing at all has to say so. Answering with empty artifacts
@@ -176,19 +205,31 @@ public static class ConversionHandler
 
     /// <summary>
     /// One unit did not become an artifact: the target has no builder for its language, the
-    /// source has no parser for it, or nobody claimed it at all. One shape for all three,
-    /// because for the caller it is one event - the unit went in and nothing came of it
-    /// (decisions 025 and 045).
+    /// source has no parser for it, nobody claimed it at all, or it was read and nothing
+    /// came of it. One shape for all four, because for the caller it is one event - the
+    /// unit went in and nothing came of it (decisions 025, 045 and 066).
     /// </summary>
     private static ConversionRecord NotTranslated(
         ORMEnum targetOrm,
         ConversionContentType artifact,
+        string unit,
         string reason)
         => new()
         {
             Kind = ConversionRecordKind.Failure,
             Framework = targetOrm,
             Artifact = artifact,
+            Unit = unit,
             Reason = reason,
         };
+
+    /// <summary>
+    /// How a record points back at an input unit (decision 066): the name the client sent,
+    /// or the unit's 1-based position in the request - the one coordinate the caller can
+    /// always compute from its own list.
+    /// </summary>
+    private static string UnitReference(ConversionSource src, List<ConversionSource> sources)
+        => string.IsNullOrWhiteSpace(src.Name)
+            ? $"unit {sources.IndexOf(src) + 1}"
+            : src.Name.Trim();
 }

@@ -317,7 +317,9 @@ public class EmptyConversionTest
 
     /// <summary>
     /// Roslyn parses almost anything, so text that is not a class comes back as a parse tree
-    /// with no entity in it. Nothing to build from is a fact about the run, and the run says it.
+    /// with no entity in it. Two records on purpose: the unit's own (decision 066) and the
+    /// run's (decision 045) - one says this unit yielded nothing, the other that the whole
+    /// run generated nothing, and they answer different questions.
     /// </summary>
     [Fact]
     public void InputWithNoEntityInItIsReportedInsteadOfIgnored()
@@ -325,10 +327,14 @@ public class EmptyConversionTest
         var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, Entity("this is not C#"));
 
         Assert.Empty(result.Sources);
-        var record = Assert.Single(result.Records);
-        Assert.Equal(ConversionRecordKind.Failure, record.Kind);
-        Assert.Equal(ORMEnum.NHibernate, record.Framework);
-        Assert.Contains("yielded", record.Reason);
+        Assert.Equal(2, result.Records.Count);
+        Assert.All(result.Records, r =>
+        {
+            Assert.Equal(ConversionRecordKind.Failure, r.Kind);
+            Assert.Equal(ORMEnum.NHibernate, r.Framework);
+        });
+        Assert.Contains(result.Records, r => r.Unit == "unit 1" && r.Reason.Contains("came of it"));
+        Assert.Contains(result.Records, r => r.Unit == null && r.Reason.Contains("yielded"));
     }
 
     /// <summary>

@@ -397,9 +397,12 @@ async function onConvert() {
   renderResult();
 
   try {
+    // The name goes along so records can point back at the unit (decision 066); a unit
+    // the user left unnamed sends none and the server references it by position.
     const sources = state.units.map((unit) => ({
       contentType: unit.contentType,
       content: unit.content,
+      name: unit.name.trim() === "" ? null : unit.name.trim(),
     }));
     state.result = await convert(state.sourceOrm, state.targetOrm, sources);
     renderResult();

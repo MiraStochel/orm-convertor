@@ -7,9 +7,10 @@ namespace AbstractWrappers.Diagnostics;
 /// One structured diagnostic record of a conversion, returned next to the artifacts rather
 /// than thrown or logged (decision 010). Carries what F11 asks for: the target framework,
 /// the artifact, the entity and property concerned, the category of the mapping fact, and
-/// the reason.
+/// the reason. A record type so that the orchestration can attribute a finished record to
+/// an input unit by copy (decision 066).
 /// </summary>
-public sealed class ConversionRecord
+public sealed record ConversionRecord
 {
     public required ConversionRecordKind Kind { get; init; }
 
@@ -38,6 +39,15 @@ public sealed class ConversionRecord
     /// (decision 022).
     /// </summary>
     public QueryFeature? Feature { get; init; }
+
+    /// <summary>
+    /// The input unit the record came from: the unit's client-given name, or "unit N" with
+    /// the unit's 1-based position in the request where no name was sent. Carried only by
+    /// records whose origin is the reading of one unit; a record about the merged entity,
+    /// the completion phase or the run names no unit, because several units may
+    /// legitimately have declared the entity (decision 066).
+    /// </summary>
+    public string? Unit { get; init; }
 
     public required string Reason { get; init; }
 }

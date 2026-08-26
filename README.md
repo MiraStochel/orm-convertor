@@ -32,7 +32,7 @@ This section is the authoritative statement of the boundary between what the too
 
 Four of those hold in a narrower sense than the words alone suggest:
 
-- Diagnostic records name the entity and property they concern, not the source file — the units sent to `/convert` carry no names, so file names stay a display label on the client; displaying the intermediate representation is not claimed.
+- A diagnostic record born from reading one input unit points at that unit — by the name the client sent with it, or by its position in the request. Records from the completion and generation phases name the entity and property instead, deliberately: an entity may legitimately be declared by several units, so a record about the merged entity belongs to no single file. Displaying the intermediate representation is not claimed.
 - Syntactic correctness of generated files is proven by the test suite, not at run time: the translation path never compiles foreign code, and what every conversion does check is the completeness of the intermediate representation.
 - Client-side validation is a helper, not a gate — it catches empty and mistyped input and malformed XML, while C# and SQL syntax errors come back from the server (SQL with line and column).
 - The container configuration covers what the repository contains: the system, the database, and the .NET test project, not the Java test projects and experimental pipeline, which do not exist.

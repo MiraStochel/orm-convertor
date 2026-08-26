@@ -25,28 +25,35 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     /// Parses an NHibernate mapping XML file from the provided source code string.
     /// </summary>
     /// <param name="source">String containing XML mapping file</param>
-    public void Parse(string source)
+    /// <returns>
+    /// The entity maps the unit created or enriched; empty when the document holds no
+    /// hibernate-mapping root or no class element (decision 066). Enrichment counts the
+    /// same as creation - this parser usually adds no new map, which is exactly why the
+    /// orchestration cannot count maps instead.
+    /// </returns>
+    public IReadOnlyCollection<EntityMap> Parse(string source)
     {
         if (string.IsNullOrEmpty(source))
         {
-            return;
+            return [];
         }
 
         var xmlDoc = XDocument.Parse(source.Trim());
         var mapping = xmlDoc.Root;
         if (mapping == null || mapping.Name.LocalName != "hibernate-mapping")
         {
-            return;
+            return [];
         }
 
-        ParseMapping(mapping);
+        return ParseMapping(mapping);
     }
 
     /// <summary>
     /// Parses the mapping element of the NHibernate XML mapping file.
     /// </summary>
-    private void ParseMapping(XElement mapping)
+    private IReadOnlyCollection<EntityMap> ParseMapping(XElement mapping)
     {
+        var read = new List<EntityMap>();
         var mappingNamespace = mapping.Attribute("namespace")?.Value;
 
         foreach (var element in mapping.Elements().Where(e => e.Name.LocalName != "class"))
@@ -99,7 +106,14 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
             }
 
             ParseClass(classElement);
+
+            if (!read.Contains(entityBuilder.EntityMap))
+            {
+                read.Add(entityBuilder.EntityMap);
+            }
         }
+
+        return read;
     }
 
     private static (string? Namespace, string? Name) ParseClassIdentity(XElement classElement)

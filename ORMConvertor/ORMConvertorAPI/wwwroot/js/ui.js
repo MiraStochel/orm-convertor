@@ -60,9 +60,9 @@ export function saveText(content, fileName) {
 /* ---- artifact panels ---------------------------------------------------- */
 
 /*
- * Display names for artifacts: the server sends no names (units are nameless facts of
- * the conversion), so the class or mapped entity name is read out of the content.
- * A display heuristic, not a contract (decision 033).
+ * Display names for artifacts: generated artifacts carry no names (input units do since
+ * decision 066, output naming is a separate open item), so the class or mapped entity
+ * name is read out of the content. A display heuristic, not a contract (decision 033).
  */
 function artifactBaseName(artifact) {
   if (artifact.contentType === ContentType.Xml) {
@@ -281,7 +281,7 @@ export function renderRecords(container, records, options = {}) {
 
   const head = document.createElement("thead");
   const headRow = document.createElement("tr");
-  for (const title of ["Kind", "Entity", "Property", "Artifact", "Subject", "Reason"]) {
+  for (const title of ["Kind", "Entity", "Property", "Unit", "Artifact", "Subject", "Reason"]) {
     const cell = document.createElement("th");
     cell.textContent = title;
     headRow.append(cell);
@@ -323,7 +323,9 @@ export function renderRecords(container, records, options = {}) {
       kindCell.append(kindBadge(record.kind));
       row.append(kindCell);
 
-      for (const value of [record.entity ?? "", record.property ?? ""]) {
+      // The unit is where the record came from (decision 066): the name the client sent
+      // with the unit, or "unit N" by position where none was.
+      for (const value of [record.entity ?? "", record.property ?? "", record.unit ?? ""]) {
         const cell = document.createElement("td");
         cell.textContent = value;
         row.append(cell);

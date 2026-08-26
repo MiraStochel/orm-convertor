@@ -1891,6 +1891,20 @@ public abstract class AbstractEntityBuilder
     public void Report(ConversionRecord record) => records.Add(record);
 
     /// <summary>
+    /// Attributes every record from <paramref name="fromIndex"/> on to one input unit
+    /// (decision 066). Called by the orchestration around each entity parser's Parse call -
+    /// the only place that knows which unit a parser was fed; a record born during that
+    /// reading came from that unit. Parsers and builders never call this.
+    /// </summary>
+    public void AttributeRecords(int fromIndex, string unit)
+    {
+        for (var i = fromIndex; i < records.Count; i++)
+        {
+            records[i] = records[i] with { Unit = unit };
+        }
+    }
+
+    /// <summary>
     /// Builds the artifacts for every accumulated entity. The order of the steps is fixed
     /// here so that it cannot drift between frameworks; a framework with nothing to emit in
     /// a step overrides it with an empty body, which is a statement rather than dead code.

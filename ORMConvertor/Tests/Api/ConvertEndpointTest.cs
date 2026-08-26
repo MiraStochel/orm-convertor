@@ -182,10 +182,12 @@ public class ConvertEndpointTest(ApiTestHost host)
     }
 
     /// <summary>
-    /// Input the parsers cannot read answers 200 with no artifact - and with a record saying
-    /// why, instead of the empty <c>records</c> array that used to come back (decision 045).
-    /// The status code stays 200 on purpose: a partial conversion has to hand over what it
-    /// produced, so the reason belongs in the records and not in the status line.
+    /// Input the parsers cannot read answers 200 with no artifact - and with records saying
+    /// why, instead of the empty <c>records</c> array that used to come back: one about the
+    /// unit that yielded nothing (decision 066) and one about the run that generated nothing
+    /// (decision 045). The status code stays 200 on purpose: a partial conversion has to
+    /// hand over what it produced, so the reason belongs in the records and not in the
+    /// status line.
     /// </summary>
     [Fact]
     public async Task InputThatYieldsNothingIsAnsweredWithAReasonRatherThanSilence()
@@ -202,9 +204,15 @@ public class ConvertEndpointTest(ApiTestHost host)
 
         Assert.Empty(body.RootElement.GetProperty("sources").EnumerateArray());
 
-        var record = Assert.Single(body.RootElement.GetProperty("records").EnumerateArray().ToList());
-        Assert.Equal((int)ConversionRecordKind.Failure, record.GetProperty("kind").GetInt32());
-        Assert.False(string.IsNullOrWhiteSpace(record.GetProperty("reason").GetString()));
+        var records = body.RootElement.GetProperty("records").EnumerateArray().ToList();
+        Assert.Equal(2, records.Count);
+        Assert.All(records, record =>
+        {
+            Assert.Equal((int)ConversionRecordKind.Failure, record.GetProperty("kind").GetInt32());
+            Assert.False(string.IsNullOrWhiteSpace(record.GetProperty("reason").GetString()));
+        });
+        Assert.Contains(records, record => record.GetProperty("unit").GetString() == "unit 1");
+        Assert.Contains(records, record => record.GetProperty("unit").ValueKind == JsonValueKind.Null);
     }
 
     [Fact]
@@ -231,6 +239,33 @@ public class ConvertEndpointTest(ApiTestHost host)
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+    }
+
+    /// <summary>
+    /// The unit's client-given name travels the whole way (decision 066): sent with the
+    /// unit, it comes back on the record about that unit, so the caller can point at the
+    /// file it uploaded even when another unit of the same run produced artifacts.
+    /// </summary>
+    [Fact]
+    public async Task ARecordPointsAtTheUnitByItsGivenName()
+    {
+        var request = new
+        {
+            sourceOrm = (int)ORMEnum.EFCore,
+            targetOrm = (int)ORMEnum.NHibernate,
+            sources = new object[]
+            {
+                new { contentType = (int)ConversionContentType.CSharpEntity, content = CustomerSampleEFCore.Entity },
+                new { contentType = (int)ConversionContentType.CSharpEntity, content = "this is not C#", name = "Broken.cs" },
+            },
+        };
+
+        using var body = await ConvertAsync(request);
+
+        Assert.NotEqual(0, body.RootElement.GetProperty("sources").GetArrayLength());
+        Assert.Contains(
+            body.RootElement.GetProperty("records").EnumerateArray(),
+            record => record.GetProperty("unit").GetString() == "Broken.cs");
     }
 
     private async Task<JsonDocument> ConvertAsync(object request)
