@@ -71,6 +71,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [064](064-absence-of-generation-as-a-catalog-fact.md) | Nepřítomnost generování je fakt katalogu | 2026-08-25 | platí | F4, F6, F11 |
 | [065](065-row-set-as-the-boundary-of-rule-053.md) | Hranicí pravidla o nevydaném dotazu je množina řádků | 2026-08-25 | platí | F11, T2, T3, S2 |
 | [066](066-records-attributed-to-the-input-unit.md) | Záznam se připisuje vstupní jednotce, ze které vzešel | 2026-08-26 | platí | F11, F14, S1, S2, S6, S7 |
+| [067](067-a-derived-convention-is-a-statement-a-default-is-not.md) | Odvozující konvence zdroje je tvrzení, absenční výchozí ne | 2026-08-26 | platí | F2, F5, F6, F11, S1, S2 |
 
 ## Formát
 
