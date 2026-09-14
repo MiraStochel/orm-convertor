@@ -74,6 +74,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [067](067-a-derived-convention-is-a-statement-a-default-is-not.md) | Odvozující konvence zdroje je tvrzení, absenční výchozí ne | 2026-08-26 | platí | F2, F5, F6, F11, S1, S2 |
 | [068](068-source-framework-precedence-orders-the-reading.md) | Dokumentovaná precedence zdrojového frameworku řadí čtení jeho artefaktů | 2026-08-26 | platí | F2, F5, F7–F10, F11, S1, S2 |
 | [069](069-major-marks-a-milestone-not-a-break.md) | MAJOR označuje milník zadání, ne rozbitou plochu | 2026-08-26 | platí | S2, S6, F7–F10, F15, T7 |
+| [070](070-a-parser-refuses-what-would-change-the-row-set.md) | Parser odmítá dotaz, jehož nepřečtená část by změnila množinu řádků | 2026-09-14 | platí | F8, F11, T2, T3, S1, S2 |
 
 ## Formát
 

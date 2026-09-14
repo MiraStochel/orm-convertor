@@ -1,4 +1,5 @@
 using AbstractWrappers;
+using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using DapperWrappers;
 using Model;
@@ -181,61 +182,70 @@ public class NHibernateHqlQueryParserTest
     /* ---- what the model cannot carry is a record, never a guess --------------------- */
 
     [Fact]
-    public void AnAssociationPathJoinIsDroppedWithARecord()
+    public void AnAssociationPathJoinRefusesTheArtifact()
     {
         var builder = Parse(
             new NHibernateHqlQueryBuilder(),
             "from Order o join o.Customer c where o.Total > 100",
             Orders());
 
-        Assert.NotEmpty(builder.Build());
+        // A query without its join returns different rows (decision 070), so the join is no
+        // longer dropped with a loss: nothing comes out and the record says why.
+        Assert.Empty(builder.Build());
         Assert.Contains(
             builder.Records,
-            r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("association path"));
+            r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("association path"));
     }
 
     [Fact]
-    public void AnInWithAValueListDropsTheFilterWithARecord()
+    public void AnInWithAValueListRefusesTheArtifact()
     {
         var builder = Parse(
             new NHibernateHqlQueryBuilder(),
             "from Customer c where c.CustomerName in ('Alice', 'Bob')",
             Customers());
 
-        // The same road the Dapper parser takes: the artifact comes out without the filter
-        // and the clause says so.
-        Assert.NotEmpty(builder.Build());
+        // The same road the Dapper parser takes: the model has no place for a list of
+        // values, and a query emitted without the filter would return every customer.
+        Assert.Empty(builder.Build());
         Assert.Contains(
             builder.Records,
-            r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("where clause"));
+            r => r.Kind == ConversionRecordKind.Failure
+                 && r.Feature == QueryFeature.Filtering
+                 && r.Reason.Contains("list of values"));
     }
 
     [Fact]
-    public void AQueryParameterDropsTheFilterWithARecord()
+    public void AQueryParameterRefusesTheArtifactUnderItsOwnCategory()
     {
         var builder = Parse(
             new NHibernateHqlQueryBuilder(),
             "from Customer c where c.CreditLimit > :limit",
             Customers());
 
-        Assert.NotEmpty(builder.Build());
-        Assert.Contains(
-            builder.Records,
-            r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("where clause"));
+        // The representation has no parameter operand (decision 024 deferred it). The record
+        // names the parameter and carries the parameter's own category, so the caller learns
+        // the one thing that would help (decision 070).
+        Assert.Empty(builder.Build());
+        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.Equal(QueryFeature.QueryParameter, record.Feature);
+        Assert.Contains(":limit", record.Reason);
     }
 
     [Fact]
-    public void SelectDistinctIsALoss()
+    public void SelectDistinctRefusesTheArtifact()
     {
         var builder = Parse(
             new NHibernateHqlQueryBuilder(),
             "select distinct c.CustomerName from Customer c",
             Customers());
 
-        Assert.NotEmpty(builder.Build());
+        // Collapsing duplicates changes how many rows come back, so distinct is not a loss
+        // the output can carry on without.
+        Assert.Empty(builder.Build());
         Assert.Contains(
             builder.Records,
-            r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("distinct"));
+            r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("distinct"));
     }
 
     [Fact]

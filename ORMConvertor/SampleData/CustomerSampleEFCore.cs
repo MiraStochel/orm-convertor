@@ -40,7 +40,6 @@ public static class CustomerSampleEFCore
         {
             return ctx.Customers
                .Where(c => c.CreditLimit > 2000)
-               .Where(c => c.AccountOpenedDate > new System.DateTime(2025, 1, 1))
                .OrderByDescending(c => c.AccountOpenedDate)
                .ThenBy(c => c.CustomerName)
                .ToList();

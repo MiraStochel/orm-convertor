@@ -32,8 +32,11 @@ public enum QueryFeature
     SetOperation = 11,
 
     /// <summary>
-    /// A value the caller supplies at execution time. The query IR has no notion of one, so
-    /// a parameter in the source is a loss until it does (decision 024).
+    /// A value the caller supplies at execution time. The query IR has no operand for one
+    /// (decision 024 deferred it), so a parameter in the source refuses the artifact under
+    /// this category until it does (decision 070): the record names the operand the model
+    /// lacks, not an inability of the target, which is why every descriptor still marks the
+    /// category expressible.
     /// </summary>
     QueryParameter = 12,
 }

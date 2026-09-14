@@ -177,11 +177,12 @@ public class EFCoreLinqToDapperSqlTest
     }
 
     /// <summary>
-    /// An unreadable predicate used to drop the entire filter in silence, which is exactly
-    /// what F11 forbids.
+    /// An unreadable predicate used to drop the entire filter - first in silence, which F11
+    /// forbids, then with a loss record; either way the query went out returning rows the
+    /// source excluded. Since decision 070 it refuses the artifact.
     /// </summary>
     [Fact]
-    public void AnUnreadablePredicateIsReportedRatherThanDropped()
+    public void AnUnreadablePredicateRefusesTheArtifact()
     {
         const string linqSource = """
         public void Query()
@@ -192,11 +193,11 @@ public class EFCoreLinqToDapperSqlTest
 
         AbstractQueryBuilder builder = new DapperSqlQueryBuilder();
         new EFCoreLinqQueryParser(builder).Parse(ConversionContentType.CSharpQuery, linqSource, [Customers()]);
-        builder.Build();
 
+        Assert.Empty(builder.Build());
         Assert.Contains(
             builder.Records,
-            r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Filtering);
+            r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Filtering);
     }
 
 }

@@ -9,6 +9,7 @@ Podkladové materiály o frameworcích samotných: čím se liší, co který um
 | Dokument | Co obsahuje |
 |---|---|
 | [`orm-frameworks-comparison.md`](orm-frameworks-comparison.md) | Srovnání tří .NET ORM, které převodník zpracovává — NHibernate, EF Core, Dapper. Členěné tematicky, ne po frameworcích, protože tak je členěná i analytická kapitola; u každého tématu sleduje expresivitu, syntaxi a implicitní defaulty, které musí parser materializovat. |
+| [`java-orm-frameworks-comparison.md`](java-orm-frameworks-comparison.md) | Javový protějšek s týmiž čísly kapitol a řádky tabulek — Hibernate (F7), EclipseLink (F9), MyBatis (F8). Navíc značí řádky, kde se Hibernate a EclipseLink shodují proto, že to určuje Jakarta Persistence 3.2: ta množina je kandidát na sdílenou vrstvu obou wrapperů. Na rozdíl od .NET dílu nestojí na kódu v repozitáři — z trojice běžel jen Hibernate. |
 | [`tutorials/nhibernate-getting-started.md`](tutorials/nhibernate-getting-started.md) | NHibernate od nuly: doména `Author` 1:N `Book`, mapování v `hbm.xml`, konfigurace v kódu, schéma přes `SchemaExport`. |
 | [`tutorials/efcore-getting-started.md`](tutorials/efcore-getting-started.md) | EF Core od nuly, táž doména a totéž číslování kroků. |
 | [`tutorials/dapper-getting-started.md`](tutorials/dapper-getting-started.md) | Dapper od nuly, táž doména a totéž číslování kroků. |

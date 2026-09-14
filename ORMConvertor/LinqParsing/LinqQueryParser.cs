@@ -33,6 +33,15 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     private IReadOnlyList<EntityMap>? entityMaps;
     private string sourceAlias = "t";
 
+    /// <summary>
+    /// The construct that sank the condition being read, when the parser can name it - a
+    /// value from the enclosing scope, which is what a parameter looks like in LINQ - so
+    /// that the clause's refusal says what the caller would have to change (F11). The
+    /// category overrides the clause's own only for a parameter, which has a category of
+    /// its own (decision 070).
+    /// </summary>
+    private (string What, QueryFeature? Category)? unread;
+
     public bool CanParse(ConversionContentType contentType)
         => contentType == ConversionContentType.CSharpQuery;
 
@@ -333,10 +342,16 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
                 return;
 
             case "Select":
-            case "Distinct":
                 Report(
                     ConversionRecordKind.Loss,
-                    $"{step.Name}() applied after a set operation has no place in the query representation; the operands' own shape is kept.",
+                    "Select() applied after a set operation has no place in the query representation; the operands' own shape is kept.",
+                    QueryFeature.Projection);
+                return;
+
+            case "Distinct":
+                Report(
+                    ConversionRecordKind.Failure,
+                    "Distinct() applied after a set operation is not carried by the query representation, and a query emitted without it would return different rows; no artifact was generated.",
                     QueryFeature.Projection);
                 return;
 
@@ -414,8 +429,12 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             case "AsNoTrackingWithIdentityResolution":
                 break;
 
+            // Collapsing duplicates changes how many rows come back (decision 070).
             case "Distinct":
-                ReportUnsupported(step.Name, QueryFeature.Projection);
+                Report(
+                    ConversionRecordKind.Failure,
+                    "Distinct() is not carried by the query representation, and a query emitted without it would return different rows; no artifact was generated.",
+                    QueryFeature.Projection);
                 break;
 
             default:
@@ -424,40 +443,71 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         }
     }
 
+    /// <summary>
+    /// A step the parser does not know. It stays a loss on purpose (decision 070): the
+    /// parser cannot tell what an unknown call would change, and refusing every one of
+    /// them would refuse Include() or TagWith() too, which change no rows. The steps known
+    /// to change rows are named above; the record therefore claims only that the call was
+    /// left out, not that the output is merely poorer.
+    /// </summary>
     private void ReportUnsupported(string method, QueryFeature? feature)
         => Report(
             ConversionRecordKind.Loss,
-            $"The query calls {method}(), which the query representation does not carry; the output is poorer than the input.",
+            $"The query calls {method}(), which the query representation does not carry; the call was left out.",
             feature);
 
     private void HandleWhere(InvocationExpressionSyntax node)
     {
         if (!TryReadLambdaBody(node, out var body))
         {
-            Report(ConversionRecordKind.Loss, "A Where() argument was not a lambda and was dropped.", QueryFeature.Filtering);
+            Report(
+                ConversionRecordKind.Failure,
+                "A Where() whose argument is not a lambda cannot be read, and a query emitted without its filter would return different rows; no artifact was generated.",
+                QueryFeature.Filtering);
             return;
         }
 
         var condition = ParseCondition(body!);
         if (condition is null)
         {
-            // Silence here used to lose the whole predicate. F11 forbids exactly that.
-            Report(
-                ConversionRecordKind.Loss,
-                $"The predicate '{body}' uses a construct the condition tree cannot carry, so the whole filter was dropped.",
-                QueryFeature.Filtering);
+            // Silence here used to lose the whole predicate, then a loss record let the
+            // query go out without it; both returned rows the source excluded (decision 070).
+            Refuse($"predicate '{body}'", "a query emitted without its filter would return different rows", QueryFeature.Filtering);
             return;
         }
 
         queryBuilder.Where(condition);
     }
 
+    /// <summary>
+    /// Refuses the artifact for a clause the condition tree cannot carry (decision 070). A
+    /// query emitted without its filter, join or grouping returns different rows, which is
+    /// the line decision 053 drew for the builders; the parser holds it on the way in, over
+    /// the same channel, so no artifact comes out. Reading goes on afterwards so that every
+    /// reason reaches the caller at once.
+    /// </summary>
+    private void Refuse(string clause, string consequence, QueryFeature feature)
+    {
+        var (what, category) = unread ?? ("a construct the condition tree cannot carry", (QueryFeature?)null);
+        unread = null;
+
+        Report(
+            ConversionRecordKind.Failure,
+            $"The {clause} uses {what}, and {consequence}; no artifact was generated.",
+            category ?? feature);
+    }
+
     private void HandleJoin(InvocationExpressionSyntax node, JoinKind kind)
     {
+        // A join both filters and multiplies, so a query emitted without one returns
+        // different rows (decisions 065 and 070): refused, never dropped.
         var args = node.ArgumentList.Arguments;
         if (args.Count < 3)
         {
-            Report(ConversionRecordKind.Loss, "A join with too few arguments was dropped.", QueryFeature.Join);
+            Report(
+                ConversionRecordKind.Failure,
+                "A join with too few arguments cannot be read, and a query emitted without its join would return different rows; no artifact was generated.",
+                QueryFeature.Join);
             return;
         }
 
@@ -469,7 +519,10 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             || outer.Body is not ExpressionSyntax outerBody
             || inner.Body is not ExpressionSyntax innerBody)
         {
-            Report(ConversionRecordKind.Loss, "A join whose key selectors are not lambdas was dropped.", QueryFeature.Join);
+            Report(
+                ConversionRecordKind.Failure,
+                "A join whose key selectors are not lambdas cannot be read, and a query emitted without its join would return different rows; no artifact was generated.",
+                QueryFeature.Join);
             return;
         }
 
@@ -477,8 +530,8 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         if (onCondition is null)
         {
             Report(
-                ConversionRecordKind.Loss,
-                "A join whose key selectors do not pair up column for column was dropped.",
+                ConversionRecordKind.Failure,
+                "A join whose key selectors do not pair up column for column has no shape the query representation carries, and a query emitted without its join would return different rows; no artifact was generated.",
                 QueryFeature.Join);
             return;
         }
@@ -623,9 +676,14 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
 
     private void HandleGroupBy(InvocationExpressionSyntax node)
     {
+        // Grouping decides which rows come back, so a key left out is a different query
+        // (decision 070); a key inside an anonymous type used to vanish without a record.
         if (!TryReadLambdaBody(node, out var body))
         {
-            Report(ConversionRecordKind.Loss, "A GroupBy() argument was not a lambda and was dropped.", QueryFeature.Grouping);
+            Report(
+                ConversionRecordKind.Failure,
+                "A GroupBy() whose argument is not a lambda cannot be read, and a query grouped differently would return different rows; no artifact was generated.",
+                QueryFeature.Grouping);
             return;
         }
 
@@ -634,10 +692,13 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             foreach (var initializer in anon.Initializers)
             {
                 var key = MemberName(initializer.Expression);
-                if (key is not null)
+                if (key is null)
                 {
-                    queryBuilder.GroupBy(AliasOf(initializer.Expression), key);
+                    RefuseGroupingKey(initializer.Expression);
+                    continue;
                 }
+
+                queryBuilder.GroupBy(AliasOf(initializer.Expression), key);
             }
 
             return;
@@ -646,23 +707,26 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         var name = MemberName(body!);
         if (name is null)
         {
-            Report(
-                ConversionRecordKind.Loss,
-                $"The grouping key '{body}' is not a column reference and was dropped.",
-                QueryFeature.Grouping);
+            RefuseGroupingKey(body!);
             return;
         }
 
         queryBuilder.GroupBy(AliasOf(body!), name);
     }
 
+    private void RefuseGroupingKey(ExpressionSyntax key)
+        => Report(
+            ConversionRecordKind.Failure,
+            $"The grouping key '{key}' is not a column reference, and a query grouped differently would return different rows; no artifact was generated.",
+            QueryFeature.Grouping);
+
     private void HandleHaving(InvocationExpressionSyntax node)
     {
         if (!TryReadLambdaBody(node, out var body) || body is not BinaryExpressionSyntax binary)
         {
             Report(
-                ConversionRecordKind.Loss,
-                "A post-aggregation filter that is not a simple comparison was dropped.",
+                ConversionRecordKind.Failure,
+                "A post-aggregation filter that is not a simple comparison cannot be read, and a query emitted without it would return different rows; no artifact was generated.",
                 QueryFeature.PostAggregationFiltering);
             return;
         }
@@ -673,10 +737,7 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
 
         if (op is null || left is null || right is null)
         {
-            Report(
-                ConversionRecordKind.Loss,
-                $"The post-aggregation filter '{binary}' uses a construct the condition tree cannot carry and was dropped.",
-                QueryFeature.PostAggregationFiltering);
+            Refuse($"post-aggregation filter '{binary}'", "a query emitted without it would return different rows", QueryFeature.PostAggregationFiltering);
             return;
         }
 
@@ -933,8 +994,23 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             && negation.Operand is LiteralExpressionSyntax inner
             => QueryOperand.Value(Negate(ReadConstant(inner))),
         InvocationExpressionSyntax invocation when ReadScalarSubQuery(invocation) is { } nested => nested,
+        IdentifierNameSyntax identifier => ValueFromScope(identifier),
         _ => null,
     };
+
+    /// <summary>
+    /// A bare identifier in operand position is a value captured from the enclosing scope -
+    /// the LINQ form of a query parameter. The model has no operand for it (decision 024
+    /// deferred it), so it sinks the condition and is named, for the enclosing clause to
+    /// refuse under the parameter's own category (decision 070).
+    /// </summary>
+    private QueryOperand? ValueFromScope(IdentifierNameSyntax identifier)
+    {
+        unread ??= (
+            $"the value '{identifier.Identifier.Text}' from the enclosing scope, for which the query representation has no parameter operand",
+            QueryFeature.QueryParameter);
+        return null;
+    }
 
     /// <summary>
     /// Reads a terminal aggregate over a query root - <c>ctx.Set&lt;T&gt;().Max(x =&gt;

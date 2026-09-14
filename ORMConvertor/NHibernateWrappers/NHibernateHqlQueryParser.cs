@@ -66,6 +66,14 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     /// </summary>
     private Dictionary<string, EntityMap?> aliases = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// The construct that sank the condition being read, when the parser can name it - a
+    /// parameter, a list of values - so that the clause's refusal says what the caller
+    /// would have to change (F11). The category overrides the clause's own only for a
+    /// parameter, which has a category of its own (decision 070).
+    /// </summary>
+    private (string What, QueryFeature? Category)? unread;
+
     public bool CanParse(ConversionContentType contentType)
         => contentType == ConversionContentType.HqlQuery;
 
@@ -333,11 +341,12 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         var projections = new List<Projection>();
         if (TryConsumeKeyword("select"))
         {
+            // Collapsing duplicates changes how many rows come back (decision 070).
             if (TryConsumeKeyword("distinct"))
             {
                 Report(
-                    ConversionRecordKind.Loss,
-                    "select distinct is not carried by the query representation; the output is poorer than the input.",
+                    ConversionRecordKind.Failure,
+                    "select distinct is not carried by the query representation, and a query emitted without it would return different rows; no artifact was generated.",
                     QueryFeature.Projection);
             }
 
@@ -353,11 +362,14 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         sourceAlias = alias;
         queryBuilder.From(table, alias);
 
+        // A cross join multiplies rows, so reading the first source alone would translate a
+        // different query (decision 070). The rest is still consumed so that the clauses
+        // after it can report their own reasons.
         while (TryConsumeSymbol(","))
         {
             Report(
-                ConversionRecordKind.Loss,
-                "Comma-separated entity references are a cross join the query representation cannot carry; only the first was read.",
+                ConversionRecordKind.Failure,
+                "Comma-separated entity references are a cross join the query representation cannot carry, and a query emitted without it would return different rows; no artifact was generated.",
                 QueryFeature.Join);
             ParseEntityReference();
         }
@@ -374,10 +386,7 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             var condition = ParseCondition();
             if (condition is null)
             {
-                Report(
-                    ConversionRecordKind.Loss,
-                    "The where clause uses a construct the condition tree cannot carry and was dropped.",
-                    QueryFeature.Filtering);
+                Refuse("where clause", "a query emitted without its filter would return different rows", QueryFeature.Filtering);
             }
             else
             {
@@ -396,9 +405,10 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
                 }
                 else
                 {
+                    // Grouping decides which rows come back (decision 070).
                     Report(
-                        ConversionRecordKind.Loss,
-                        "A grouping key that is not a property reference was dropped.",
+                        ConversionRecordKind.Failure,
+                        "A grouping key that is not a property reference cannot be carried, and a query grouped differently would return different rows; no artifact was generated.",
                         QueryFeature.Grouping);
                 }
             }
@@ -410,10 +420,7 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             var condition = ParseCondition();
             if (condition is null)
             {
-                Report(
-                    ConversionRecordKind.Loss,
-                    "The having clause uses a construct the condition tree cannot carry and was dropped.",
-                    QueryFeature.PostAggregationFiltering);
+                Refuse("having clause", "a query emitted without its post-aggregation filter would return different rows", QueryFeature.PostAggregationFiltering);
             }
             else
             {
@@ -586,8 +593,10 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         var parts = ParseDottedName("expected an entity name after 'join'");
 
         // alias.Property is an association path, whose predicate lives in the mapping;
-        // JoinInstruction carries two tables and an explicit condition, so the join is
-        // dropped with a record — the road an unreadable join takes in the Dapper parser.
+        // JoinInstruction carries two tables and an explicit condition, so the join cannot
+        // be carried - and a query emitted without its join returns different rows, so it
+        // refuses the artifact (decision 070), the road an unreadable join takes in the
+        // Dapper parser too.
         if (parts.Count > 1 && aliases.ContainsKey(parts[0]))
         {
             if (ParseOptionalAlias() is { } pathAlias)
@@ -598,11 +607,12 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             if (TryConsumeKeyword("with"))
             {
                 ParseCondition();
+                unread = null;
             }
 
             Report(
-                ConversionRecordKind.Loss,
-                $"A join along the association path '{string.Join('.', parts)}' is not carried by the query representation; it was dropped.",
+                ConversionRecordKind.Failure,
+                $"A join along the association path '{string.Join('.', parts)}' is not carried by the query representation, and a query emitted without its join would return different rows; no artifact was generated.",
                 QueryFeature.Join);
             return;
         }
@@ -615,8 +625,8 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         if (!TryConsumeKeyword("with"))
         {
             Report(
-                ConversionRecordKind.Loss,
-                "An entity join without a with condition has no join predicate the query representation can carry; it was dropped.",
+                ConversionRecordKind.Failure,
+                "An entity join without a with condition has no join predicate the query representation can carry, and a query emitted without its join would return different rows; no artifact was generated.",
                 QueryFeature.Join);
             return;
         }
@@ -624,10 +634,7 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         var condition = ParseCondition();
         if (condition is null)
         {
-            Report(
-                ConversionRecordKind.Loss,
-                "A join condition the condition tree cannot carry was dropped along with its join.",
-                QueryFeature.Join);
+            Refuse("join's with condition", "a query emitted without its join would return different rows", QueryFeature.Join);
             return;
         }
 
@@ -710,7 +717,8 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
 
     /// <summary>
     /// Chains of the same operator flatten into one node; a null anywhere sinks the whole
-    /// condition, after every token of it has been consumed — the clause reports the drop.
+    /// condition, after every token of it has been consumed — the clause refuses the
+    /// artifact (decision 070).
     /// </summary>
     private static ConditionNode? Combine(List<ConditionNode?> parts, LogicalOperator op)
     {
@@ -831,10 +839,11 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             }
 
             // IN's only carried right side is a subquery (decision 061); a list of values
-            // has no place in the model and sinks the clause, the road it takes in the
-            // Dapper parser too.
+            // has no place in the model and sinks the clause, named, for the clause to
+            // refuse (decision 070) - the road it takes in the Dapper parser too.
             if (!NextIsSubQuery())
             {
+                unread ??= ("an in with a list of values, for which the query representation has no operand", null);
                 Advance();
                 SkipValueList();
                 ConsumeSymbol(")");
@@ -900,7 +909,7 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     /// <summary>
     /// An operand in a position the grammar requires one: nothing readable there is a
     /// syntax error with a position, while a consumed-but-uncarriable operand (a parameter)
-    /// stays null for the clause to report.
+    /// stays null for the clause to refuse.
     /// </summary>
     private QueryOperand? ParseRequiredOperand()
     {
@@ -1014,9 +1023,11 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
 
         if (Current.Kind == TokenKind.Parameter)
         {
-            // A named or positional parameter has no operand shape in the model; consuming
-            // it and answering null lets the enclosing clause report the drop, the same
+            // A named or positional parameter has no operand shape in the model (decision
+            // 024 deferred it); consuming it and answering null, named, lets the enclosing
+            // clause refuse under the parameter's own category (decision 070) - the same
             // road a T-SQL variable takes in the Dapper parser.
+            unread ??= ($"the parameter '{Current.Text}', for which the query representation has no operand", QueryFeature.QueryParameter);
             Advance();
             return null;
         }
@@ -1086,7 +1097,7 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     /// <summary>
     /// alias.Property or a bare property. Three or more segments navigate an association,
     /// which the flat operand does not carry — the tokens are consumed and null is the
-    /// answer, so the enclosing clause reports the drop.
+    /// answer, so the enclosing clause refuses the artifact.
     /// </summary>
     private PathReference? ParsePath()
     {
@@ -1137,6 +1148,24 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
                    .FirstOrDefault(p => string.Equals(p.Property.Name, property, StringComparison.OrdinalIgnoreCase))
                    ?.ColumnName
                ?? property;
+    }
+
+    /// <summary>
+    /// Refuses the artifact for a clause the condition tree cannot carry (decision 070). A
+    /// query emitted without its filter, join or grouping returns different rows, which is
+    /// the line decision 053 drew for the builders; the parser holds it on the way in, over
+    /// the same channel, so no artifact comes out. Reading goes on afterwards so that every
+    /// reason reaches the caller at once.
+    /// </summary>
+    private void Refuse(string clause, string consequence, QueryFeature feature)
+    {
+        var (what, category) = unread ?? ("a construct the condition tree cannot carry", (QueryFeature?)null);
+        unread = null;
+
+        Report(
+            ConversionRecordKind.Failure,
+            $"The {clause} uses {what}, and {consequence}; no artifact was generated.",
+            category ?? feature);
     }
 
     private void Report(ConversionRecordKind kind, string reason, QueryFeature? feature = null)

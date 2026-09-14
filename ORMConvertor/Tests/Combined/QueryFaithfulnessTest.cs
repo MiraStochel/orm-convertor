@@ -13,11 +13,13 @@ using OrmConvertor;
 namespace Tests.Combined;
 
 /// <summary>
-/// A generated query may be poorer than its source, never different from it. Two ways it used
-/// to end up different are covered here: a LIKE pattern handed to string.Contains verbatim,
-/// so the query searched for literal percent signs (decision 051), and a condition the target
-/// could not render replaced by a tautology, so the query returned every row the source
-/// filtered out (decision 053).
+/// A generated query may be poorer than its source, never different from it. Three ways it
+/// used to end up different are covered here: a LIKE pattern handed to string.Contains
+/// verbatim, so the query searched for literal percent signs (decision 051); a condition the
+/// target could not render replaced by a tautology, so the query returned every row the
+/// source filtered out (decision 053); and a construct the parser could not read dropped on
+/// the way in with a loss record, so the query went out without its filter, join, source or
+/// grouping (decision 070).
 /// </summary>
 public class QueryFaithfulnessTest
 {
@@ -211,5 +213,73 @@ public class QueryFaithfulnessTest
         // Dropping the filter and writing "true" widened the result set to the whole table.
         Assert.Empty(outputs);
         Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+    }
+
+    /* ---- the rule holds on the reading side too (decision 070) ---------------------- */
+
+    [Fact]
+    public void AQueryParameterRefusesTheArtifactInEveryParser()
+    {
+        // The representation has no operand for a parameter (decision 024 deferred it), and
+        // a query emitted without the filter that names one returns different rows. Each
+        // parser refuses under the parameter's own category and names it, so the caller
+        // learns the one thing that would help.
+        var byParser = new (string Name, Action<AbstractQueryBuilder> Parse)[]
+        {
+            ("@limit", b => new DapperSqlQueryParser(b).Parse(
+                ConversionContentType.SqlQuery,
+                "SELECT c.Id FROM Customers c WHERE c.CreditLimit > @limit")),
+            (":limit", b => new NHibernateHqlQueryParser(b).Parse(
+                ConversionContentType.HqlQuery,
+                "from Customer c where c.CreditLimit > :limit")),
+            ("limit", b => new EFCoreLinqQueryParser(b).Parse(
+                ConversionContentType.CSharpQuery,
+                "public void Query() { var q = ctx.Customers.Where(c => c.CreditLimit > limit).ToList(); }")),
+        };
+
+        foreach (var (name, parse) in byParser)
+        {
+            var builder = new DapperSqlQueryBuilder();
+            parse(builder);
+
+            Assert.Empty(builder.Build());
+            var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+            Assert.Equal(QueryFeature.QueryParameter, record.Feature);
+            Assert.Contains(name, record.Reason, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData("SELECT c.Id FROM Customers c, Orders o", QueryFeature.Join)]
+    [InlineData("SELECT DISTINCT c.Country FROM Customers c", QueryFeature.Projection)]
+    [InlineData("SELECT c.Country, COUNT(*) FROM Customers c GROUP BY ROLLUP(c.Country)", QueryFeature.Grouping)]
+    [InlineData("SELECT c.Id FROM Customers c WHERE c.Name LIKE 'A!_%' ESCAPE '!'", QueryFeature.Filtering)]
+    [InlineData("SELECT c.Id FROM Customers c WHERE c.Id IN (1, 2, 3)", QueryFeature.Filtering)]
+    public void AConstructWhoseOmissionWouldChangeTheRowsRefusesTheArtifact(string sql, QueryFeature feature)
+    {
+        // Each of these used to go out with a Loss record - SELECT DISTINCT even without one -
+        // and each returns different rows without the construct: a cross join multiplies,
+        // DISTINCT collapses, ROLLUP adds rows, an unescaped pattern matches more, a
+        // dropped IN filters nothing.
+        var builder = new EFCoreLinqQueryBuilder();
+        new DapperSqlQueryParser(builder).Parse(ConversionContentType.SqlQuery, sql);
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == feature);
+    }
+
+    [Fact]
+    public void AnOrderingKeyTheTreeCannotCarryIsStillALoss()
+    {
+        // The boundary from the other side: a dropped ordering key reorders rows, it does
+        // not change which ones come back, so the artifact goes out poorer with a record.
+        var builder = new EFCoreLinqQueryBuilder();
+        new DapperSqlQueryParser(builder).Parse(
+            ConversionContentType.SqlQuery,
+            "SELECT c.Id FROM Customers c ORDER BY LEN(c.Name)");
+
+        Assert.NotEmpty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Ordering);
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
     }
 }

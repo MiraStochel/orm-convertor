@@ -35,6 +35,14 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
 
     private string sourceAlias = "t";
 
+    /// <summary>
+    /// The construct that sank the condition being read, when the parser can name it - a
+    /// parameter, a list of values - so that the clause's refusal says what the caller
+    /// would have to change (F11). The category overrides the clause's own only for a
+    /// parameter, which has a category of its own (decision 070).
+    /// </summary>
+    private (string What, QueryFeature? Category)? unread;
+
     public bool CanParse(ConversionContentType contentType) => contentType is
         ConversionContentType.SqlQuery or ConversionContentType.CSharpQuery;
 
@@ -394,11 +402,14 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
             return;
         }
 
+        // A cross join multiplies rows, so reading the first source alone would translate a
+        // different query (decision 070). The first is still read so that the rest of the
+        // statement can report its own reasons.
         if (query.FromClause!.TableReferences.Count > 1)
         {
             Report(
-                ConversionRecordKind.Loss,
-                "Comma-separated table references are a cross join the query representation cannot carry; only the first was read.",
+                ConversionRecordKind.Failure,
+                "Comma-separated table references are a cross join the query representation cannot carry, and a query emitted without it would return different rows; no artifact was generated.",
                 QueryFeature.Join);
         }
 
@@ -435,11 +446,13 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
 
     private void ReadJoin(QualifiedJoin join)
     {
+        // A join both filters and multiplies, so a query emitted without one returns
+        // different rows (decisions 065 and 070): refused, never dropped.
         if (join.SecondTableReference is not NamedTableReference right)
         {
             Report(
-                ConversionRecordKind.Loss,
-                "A join onto something other than a table is not carried by the query representation; it was dropped.",
+                ConversionRecordKind.Failure,
+                "A join onto something other than a table is not carried by the query representation, and a query emitted without its join would return different rows; no artifact was generated.",
                 QueryFeature.Join);
             return;
         }
@@ -455,10 +468,7 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
         var condition = ReadCondition(join.SearchCondition);
         if (condition is null)
         {
-            Report(
-                ConversionRecordKind.Loss,
-                "A join condition the condition tree cannot carry was dropped along with its join.",
-                QueryFeature.Join);
+            Refuse("join's ON condition", "a query emitted without its join would return different rows", QueryFeature.Join);
             return;
         }
 
@@ -476,6 +486,16 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
 
     private void ReadSelect(QuerySpecification query)
     {
+        // DISTINCT collapses duplicate rows, so a query emitted without it returns a
+        // different multiset (decision 070). It used to be skipped without a record.
+        if (query.UniqueRowFilter == UniqueRowFilter.Distinct)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "SELECT DISTINCT is not carried by the query representation, and a query emitted without it would return different rows; no artifact was generated.",
+                QueryFeature.Projection);
+        }
+
         foreach (var element in query.SelectElements)
         {
             // Rule Q3: SELECT * is the absence of a projection, not a projection of everything.
@@ -549,10 +569,7 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
         var condition = ReadCondition(query.WhereClause.SearchCondition);
         if (condition is null)
         {
-            Report(
-                ConversionRecordKind.Loss,
-                "The WHERE clause uses a construct the condition tree cannot carry and was dropped.",
-                QueryFeature.Filtering);
+            Refuse("WHERE clause", "a query emitted without its filter would return different rows", QueryFeature.Filtering);
             return;
         }
 
@@ -569,10 +586,7 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
         var condition = ReadCondition(query.HavingClause.SearchCondition);
         if (condition is null)
         {
-            Report(
-                ConversionRecordKind.Loss,
-                "The HAVING clause uses a construct the condition tree cannot carry and was dropped.",
-                QueryFeature.PostAggregationFiltering);
+            Refuse("HAVING clause", "a query emitted without its post-aggregation filter would return different rows", QueryFeature.PostAggregationFiltering);
             return;
         }
 
@@ -586,11 +600,13 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
             return;
         }
 
+        // Grouping decides which rows come back, so a grouping read differently from the
+        // source - an option dropped, a key left out - is a different query (decision 070).
         if (query.GroupByClause.GroupByOption != GroupByOption.None)
         {
             Report(
-                ConversionRecordKind.Loss,
-                $"GROUP BY {query.GroupByClause.GroupByOption} is not carried by the query representation.",
+                ConversionRecordKind.Failure,
+                $"GROUP BY {query.GroupByClause.GroupByOption} is not carried by the query representation, and a query grouped differently would return different rows; no artifact was generated.",
                 QueryFeature.Grouping);
         }
 
@@ -605,8 +621,8 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
             }
 
             Report(
-                ConversionRecordKind.Loss,
-                "A grouping key that is not a column reference was dropped.",
+                ConversionRecordKind.Failure,
+                "A grouping key that is not a column reference cannot be carried, and a query grouped differently would return different rows; no artifact was generated.",
                 QueryFeature.Grouping);
         }
     }
@@ -691,8 +707,8 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
                     ComparisonOperator.Exists);
 
             // IN with a subquery is the operator's only carried right side (decision 061);
-            // IN with a list of values has no place in the model and keeps falling through
-            // to the default, where the enclosing clause reports it.
+            // IN with a list of values has no place in the model and sinks the condition,
+            // named, for the enclosing clause to refuse (decision 070).
             case InPredicate inPredicate when inPredicate.Subquery is not null:
                 {
                     var value = ReadOperand(inPredicate.Expression);
@@ -709,6 +725,10 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
                     return inPredicate.NotDefined ? new NotCondition(inNode) : inNode;
                 }
 
+            case InPredicate:
+                unread ??= ("an IN with a list of values, for which the query representation has no operand", null);
+                return null;
+
             case LikePredicate like:
                 {
                     var left = ReadOperand(like.FirstExpression);
@@ -718,11 +738,13 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
                         return null;
                     }
 
+                    // A pattern read without its escape treats the escaped wildcard as a
+                    // wildcard again and matches more rows (decision 070).
                     if (like.EscapeExpression is not null)
                     {
                         Report(
-                            ConversionRecordKind.Loss,
-                            "The ESCAPE clause of a LIKE predicate is not carried by the query representation.",
+                            ConversionRecordKind.Failure,
+                            "The ESCAPE clause of a LIKE predicate is not carried by the query representation, and a pattern matched without it would select different rows; no artifact was generated.",
                             QueryFeature.Filtering);
                     }
 
@@ -805,6 +827,13 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
             case ScalarSubquery scalar:
                 return QueryOperand.Nested(ReadSubQueryOperand(scalar.QueryExpression));
 
+            // A parameter has no operand shape in the model (decision 024 deferred it); it
+            // sinks the condition and is named, so that the refusal says what was met
+            // rather than "a construct" (decision 070).
+            case VariableReference variable:
+                unread ??= ($"the parameter '{variable.Name}', for which the query representation has no operand", QueryFeature.QueryParameter);
+                return null;
+
             default:
                 return null;
         }
@@ -877,6 +906,24 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
     };
 
     private static string Describe(TSqlFragment fragment) => fragment.GetType().Name;
+
+    /// <summary>
+    /// Refuses the artifact for a clause the condition tree cannot carry (decision 070). A
+    /// query emitted without its filter, join or grouping returns different rows, which is
+    /// the line decision 053 drew for the builders; the parser holds it on the way in, over
+    /// the same channel, so no artifact comes out. Reading goes on afterwards so that every
+    /// reason reaches the caller at once.
+    /// </summary>
+    private void Refuse(string clause, string consequence, QueryFeature feature)
+    {
+        var (what, category) = unread ?? ("a construct the condition tree cannot carry", (QueryFeature?)null);
+        unread = null;
+
+        Report(
+            ConversionRecordKind.Failure,
+            $"The {clause} uses {what}, and {consequence}; no artifact was generated.",
+            category ?? feature);
+    }
 
     private void Report(ConversionRecordKind kind, string reason, QueryFeature? feature = null)
         => queryBuilder.Report(new ConversionRecord
