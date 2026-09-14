@@ -136,7 +136,7 @@ Reprodukovatelnost sestavení jsme odložili stejně jako zásahy do rozhraní: 
 
 ## Stranou cílů — zdokumentované nálezy nad .NET frameworky
 
-Nálezy z porovnání [`analysis/`](./analysis/README.md) s kódem (2026-09-14). Jsou tu **zapsané, ne zařazené**: cíl 1 zůstává uzavřený vydáním 1.2.0, položky nedostávají značky pořadí a nepracuje se na nich, dokud běží cíle 2 a 3 — případně vůbec. Zapisujeme je proto, aby nález nezůstal jen v konverzaci a aby text práce věděl, co nástroj o .NET frameworcích netvrdí. Dvě z nich se dotýkají vět, které [`architecture.md`](./architecture.md), §5, dnes vyslovuje šířeji, než platí; obě místa jsou u položek jmenovaná a opraví se s nimi.
+Nálezy z porovnání [`analysis/`](./analysis/README.md) s kódem (2026-09-14) a k nim čtyři levné konstrukce, které rozhodnutí [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) vědomě nechalo odmítat, ač by je model unesl a všechny tři cíle vyjádří. Jsou tu **zapsané, ne zařazené**: cíl 1 zůstává uzavřený vydáním 1.2.0, položky nedostávají značky pořadí a nepracuje se na nich, dokud běží cíle 2 a 3 — případně vůbec. Zapisujeme je proto, aby nález nezůstal jen v konverzaci a aby text práce věděl, co nástroj o .NET frameworcích netvrdí. Jedna z nich se dotýká věty, kterou [`architecture.md`](./architecture.md), §5, dnes vyslovuje šířeji, než platí; místo je u položky jmenované a opraví se s ní.
 
 ### Rozhodnutí
 
@@ -170,6 +170,21 @@ Dapper.Contrib přidává k holému Dapperu atributy `[Table]`, `[Key]` a `[Expl
 
 `ScalarType` nezná `DateOnly`, `TimeOnly`, `DateTimeOffset`, `TimeSpan` ani pole bajtů, takže vlastnost takového typu se čte jako neznámý typ a vypisuje jménem ze zdroje — přeloží se, ale nic o ní netvrdíme a javový protějšek nebude z čeho odvodit. Odvození jazykového typu z katalogu tomu odpovídá: rodinu `Date` rozšiřuje na `DateTime` a rodiny `Time`, `TimestampWithTimeZone` a binární nedodá vůbec, takže vlastnost známou jen z mapování nad takovým sloupcem odmítne brána úplnosti. Srovnání frameworků přitom podporu `DateOnly` a `TimeOnly` v obou cílích uvádí jako jeden ze tří doložených případů verzování zjištění. Audit to našel 2026-08-02 a rozhodnutí 014 seznam uzavřelo bez nich.
 
+#### `DISTINCT` nemá v modelu místo
+*Souvisí s rozhodnutím [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md), které ho nechalo odmítat, a s [060](./decisions/060-pagination-as-a-query-instruction.md), které slovník instrukcí nad normalizovanou sadu článku už jednou rozšířilo. Požadavky F11, T3.*
+
+`SELECT DISTINCT`, `select distinct` i `Distinct()` odmítají od rozhodnutí 070 artefakt záznamem `Failure`, protože dotaz vydaný bez nich vrací jiný počet řádků a mezireprezentace příznak zhroucení duplicit nenese — T-SQL parser ho do té doby přeskakoval beze slova. Přitom všechny tři cíle ho vyjádří jedním slovem: `SELECT DISTINCT`, `.Distinct()`, `select distinct`. Rozhodnout je třeba, kam příznak v modelu patří — jako vlastnost (pod)dotazu vedle projekce, obdobně jako stránkování nese `PaginationInstruction` — a co znamená za množinovou operací, kde `Union` už duplicity zhroutil a `Concat` ne; slovník článku ho nezná, takže je to rozšíření téhož druhu, jaké 060 obhájilo u stránkování.
+
+#### `IN` s výčtem hodnot nemá operand
+*Rozhodnutí [061](./decisions/061-subquery-as-a-condition-operand.md) dalo operátoru `In` jedinou nesenou pravou stranu, poddotaz, a výčet hodnot vědomě odložilo; rozhodnutí [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) ho nechává odmítat už při čtení. Požadavky F11, T2, T3.*
+
+`WHERE Id IN (1, 2, 3)` a `where c.Name in ('Alice', 'Bob')` odmítají artefakt záznamem `Failure` kategorie `Filtering`, protože `QueryOperand` nese jednu konstantu, sloupec, nebo poddotaz, a seznam konstant nemá kam; LINQ tvar `new[] { 1, 2, 3 }.Contains(c.Id)` parser nečte vůbec. Všechny tři cíle výčet vyjádří: `IN (…)`, `Contains` nad polem, `in (…)`. Rozhodnout je třeba, jestli operand dostane čtvrtý tovární tvar — seznam typovaných konstant téhož skaláru — po vzoru trojice z rozhodnutí 024 a 061, a jak se čte smíšený seznam, kde se skaláry liší.
+
+#### Klauzule `ESCAPE` u `LIKE` nemá v podmínce místo
+*Souvisí s rozhodnutím [051](./decisions/051-like-pattern-translated-not-carried-over.md), které vzorek `LIKE` do LINQ překládá, a s [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md), které `ESCAPE` nechává odmítat. Požadavky F11, T2, T3.*
+
+`LIKE 'A!_%' ESCAPE '!'` odmítá artefakt záznamem `Failure`, protože `ComparisonCondition` s operátorem `Like` nese jen vzorek a vzorek čtený bez únikového znaku vybere jiné řádky — podtržítko by bylo zástupným znakem. Všechny tři cíle únikový znak nesou: T-SQL i HQL klauzulí `escape`, EF Core přetížením `EF.Functions.Like(x, vzorek, únik)`. Rozhodnout je třeba, jestli únikový znak dostane místo na porovnání s operátorem `Like`, a jak se s ním vypořádá překlad vzorku z rozhodnutí 051: kotvený vzorek s únikem před zástupným znakem má stále přesný protějšek (`'A!_%'` je `StartsWith("A_")`), jen ho rozpoznání musí číst po únikovém znaku.
+
 ### Práce
 
 #### Atributy NHibernate mapování, které parser přeskakuje bez záznamu
@@ -191,3 +206,8 @@ Sdílený C# parser čte z hlavičky třídy jen přístupový modifikátor a se
 *Práce podle rozhodnutí [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) a [005](./decisions/005-many-to-many-as-explicit-junction-entity.md); souvisí s [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §8. Požadavky F1, F3.*
 
 EF Core čte dvě kolekční navigace mezi touž dvojicí entit bez vlastnosti cizího klíče jako N:M s implicitní spojovací tabulkou (od verze 5). Parser EF Core registruje každou kolekci hned jako inverzní 1:N, takže z dvojice vzniknou dva vztahy, které tvrdí cizí klíč na obou stranách; a fáze doplnění nabídne spojovací tabulku z katalogu jen kolekci, která ještě žádný vztah nenese, takže tentýž katalog, který Dapper zdroji spojovací entitu syntetizuje, EF Core zdroj nespraví. Je to dokumentované odvození z toho, co artefakt tvrdí, a mezera putuje k jinému vztahu, takže podle kritéria 067 se materializuje. Práce je nechat kolekci čekat jako konvenční navigaci a po doparsování všech entit spárovat dvojici na N:M týmž mechanismem, jakým se dnes materializují konvenční navigace N:1.
+
+#### Konstruktor `DateTime` v LINQ predikátu se nečte jako konstanta
+*Práce podle rozhodnutí [024](./decisions/024-typed-query-operand.md) — slovník `ScalarType` hodnotu `DateTime` má a všechny tři visitory pro ni větev vypisují, jen bez výrobce —; rozhodnutí [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) konstrukci nechává odmítat a kvůli ní přišel vzorový dotaz EF Core o svůj filtr podle data. Požadavky F11, T2, T3.*
+
+Sdílený LINQ parser čte v pozici operandu literál, sloupec, poddotaz a hodnotu ze scope; `new DateTime(2025, 1, 1)` je konstrukce objektu a odmítá artefakt jako nepřečtený filtr. Práce je číst `new DateTime(r, m, d)` — i s kvalifikací `System.` a s časovými složkami — nad celočíselnými literály jako `QueryConstant` typu `DateTime` v ISO zápisu bez zdobení, jak žádá 024; visitory ho pak vypíší jako `'2025-01-01'` v SQL a HQL a `DateTime.Parse("2025-01-01")` v LINQ, protože ty větve už mají. Opačný směr — řetězcový literál T-SQL porovnaný s datovým sloupcem, který se čte jako `String` a do LINQ vyjde jako nepřeložitelné porovnání data s řetězcem — je jiná mezera a tahle položka ji neřeší.
