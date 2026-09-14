@@ -55,7 +55,7 @@ Tři skutečnosti o těchto verzích mají dopad na obsah tabulek:
 | **Zásah do `.csproj`** | nutný — `<EmbeddedResource Include="Mappings\**\*.hbm.xml" />`, jinak se mapování nenačte | žádný nad rámec `PackageReference` | žádný |
 | **Doplňkové balíčky v ekosystému** | Fluent NHibernate (fluent mapování), NHibernate.Caches.* (cache 2. úrovně) | `.Design` a `.Tools` pro migrace, `.Proxies` pro lazy loading, `.InMemory` pro testy | Dapper.Contrib, Dapper.SimpleCRUD, Dapper.FluentMap — samostatné balíčky, ne součást Dapperu |
 
-Dapper.Contrib zavádí atributy `[Table]`, `[Key]`, `[ExplicitKey]` a metody `Get`/`Insert`/`Update`. Zdrojový projekt používající Contrib by nesl podstatně víc informací než holý Dapper. Zbývá rozhodnout, jestli to spadá do rozsahu práce, nebo je explicitně mimo něj.
+Dapper.Contrib zavádí atributy `[Table]`, `[Key]`, `[ExplicitKey]` a metody `Get`/`Insert`/`Update`. Zdrojový projekt používající Contrib by nesl podstatně víc informací než holý Dapper. Nástroj čte jen holý Dapper — jeho entitní parser nečte žádný atribut — a jestli Contrib do rozsahu práce patří, je zapsané jako nerozhodnutá otázka v [`open-items.md`](../open-items.md), mezi nálezy z téhle analýzy.
 
 ---
 
@@ -67,11 +67,11 @@ Dapper.Contrib zavádí atributy `[Table]`, `[Key]`, `[ExplicitKey]` a metody `G
 | **Bezparametrický konstruktor** | **povinný**, stačí `protected`; proxy ho potřebuje | nepovinný; umí materializovat konstruktorem s parametry, pokud názvy odpovídají vlastnostem | nepovinný pro `Query<T>`; Dapper umí i konstruktorovou materializaci |
 | **Přístupnost setterů** | může být `protected`, mapování umí `access="field"` a další strategie | `private set` funguje; umí zapisovat přímo do backing fieldu | setter musí být přístupný, nebo musí sedět konstruktor |
 | **Modifikátor třídy** | nesmí být `sealed` (kvůli proxy) | může být `sealed` | může být `sealed` |
-| **Vlastnosti pro cizí klíč** | nemapují se samostatně — buď `<many-to-one>`, nebo `<property>`, ne obojí na týž sloupec | volitelně obojí: navigační vlastnost i skalární FK. Bez FK vlastnosti vznikne stínová (shadow) vlastnost v modelu | jen holý FK sloupec; navigační vlastnost by nikdy nebyla naplněná |
+| **Vlastnosti pro cizí klíč** | nemapují se samostatně; sloupec smí zapisovat jediný element, takže `<property>` vedle `<many-to-one>` na týž sloupec projde jen s `insert="false" update="false"`, jinak NHibernate mapování odmítne jako opakovaný sloupec | volitelně obojí: navigační vlastnost i skalární FK. Bez FK vlastnosti vznikne stínová (shadow) vlastnost v modelu | jen holý FK sloupec; navigační vlastnost by nikdy nebyla naplněná |
 | **Kolekce** | `ISet<T>`, `IList<T>`, `IDictionary<K,V>`, `ICollection<T>`; typ kolekce určuje element mapování (`<set>`, `<bag>`, `<list>`, `<map>`) a má sémantický význam | `ICollection<T>` a potomci; typ kolekce nemá vliv na mapování | libovolná kolekce; framework ji nikdy nenaplní sám |
 | **Nullable reference types** | bez vlivu na mapování; nullabilitu určuje `not-null` v XML | **má vliv** — `string` je NOT NULL, `string?` je NULL | bez vlivu; nullabilita je jen v DDL |
 
-**Důsledek pro IR.** Řádky „požadavky na entitu" jsou fakta, která nelze přenést ani odvodit — jsou to omezení cílového frameworku, ne informace o doméně. Builder je musí generovat automaticky (doplnit `virtual` při výstupu do NHibernate), parser je musí ignorovat (nepovažovat `virtual` za fakt o doméně).
+**Důsledek pro IR.** Řádky „požadavky na entitu" jsou fakta, která nelze přenést ani odvodit — jsou to omezení cílového frameworku, ne informace o doméně. Builder je musí generovat automaticky (doplnit `virtual` při výstupu do NHibernate), parser je musí ignorovat (nepovažovat `virtual` za fakt o doméně). Deskriptor cíle je tak dnes deklaruje (rozhodnutí [009](../decisions/009-target-framework-descriptor.md)) a NHibernate builder je doplňuje; parser je ale zatím nezahazuje — `virtual` ze zdrojové třídy podrží mezi modifikátory vlastnosti a Dapper i EF Core builder ho vypíší. Nález je zapsaný v [`open-items.md`](../open-items.md).
 
 ---
 
@@ -88,15 +88,17 @@ Dapper.Contrib zavádí atributy `[Table]`, `[Key]`, `[ExplicitKey]` a metody `G
 | **Nutná explicitní konfigurace pro funkční model** | ano, kompletní; bez mapování `No persister for: ...` | ne, konvence stačí na běžný model | nerelevantní — není co konfigurovat |
 | **Podpora v IDE** | pro `hbm.xml` ve Visual Studiu IntelliSense obvykle nefunguje (schéma není registrované); na běh to nemá vliv | plná | pro SQL řetězce žádná |
 
+Z forem EF Core čte nástroj dnes konvence a data annotations; fluent konfigurace v `DbContext`u, tedy forma, kterou tahle tabulka označuje za primární, se nečte (rozhodnutí [067](../decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) a [068](../decisions/068-source-framework-precedence-orders-the-reading.md) s jejím parserem počítají) a je to nález v [`open-items.md`](../open-items.md).
+
 ### Názvové defaulty
 
 | | NHibernate 5.7.0 | EF Core 10.0.10 | Dapper 2.1.79 |
 |---|---|---|---|
 | **Tabulka** | při vynechání `table` se použije **název třídy** (bez pluralizace) | při vynechání `ToTable` se použije **název `DbSet` vlastnosti**; bez `DbSet` název typu | není pojem tabulky |
 | **Sloupec** | při vynechání `column` se použije název vlastnosti | název vlastnosti | název sloupce musí odpovídat názvu vlastnosti |
-| **Porovnávání názvů** | přesné | přesné | **case-insensitive, podtržítka se ignorují** (`stock_item_id` se namapuje na `StockItemId`) |
+| **Porovnávání názvů** | přesné | přesné | **case-insensitive**; ignorování podtržítek (`stock_item_id` na `StockItemId`) je volitelné a ve výchozím stavu **vypnuté** — zapíná ho statický příznak `DefaultTypeMap.MatchNamesWithUnderscores` |
 
-**Důsledek pro IR.** Toto je jádro třetí osy analýzy. Parser musí defaulty materializovat — z `<property name="Name" />` odvodit sloupec `Name`, z `DbSet<Author> Authors` odvodit tabulku `Authors`. Bez toho by IR neslo neúplnou informaci a builder do jiného frameworku by odvodil jiné jméno (`Author` místo `Authors`), protože defaulty se mezi frameworky liší.
+**Důsledek pro IR.** Toto je jádro třetí osy analýzy a rozhodnutí [067](../decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) ji rozdělilo na dvě půlky. Konvence, která je *odvozením* z toho, co přečtený artefakt tvrdí — klíč z vlastnosti `Id`, generování z typu klíče —, je výrokem zdroje a parser ji materializuje. Absenční výchozí hodnota výrokem není: z `<property name="Name" />` parser sloupec `Name` neodvozuje a fakt nechává prázdný, protože mlčení doplní katalog nebo konvence cíle (rozhodnutí [015](../decisions/015-mapping-fact-completion-from-the-catalog.md)); a tabulka `Authors` z `DbSet<Author> Authors` se nematerializuje proto, že sedí v `DbContext`u, který nástroj zatím nečte. Právě tím ale hrozí to, co tahle osa popisuje: bez katalogu odvodí builder do NHibernate `Author` tam, kde EF Core používal `Authors`. Rozdílné defaulty frameworků jsou tedy důvod, proč existuje doplnění z katalogu (F6), ne důvod materializovat je v parseru.
 
 ---
 
@@ -107,12 +109,12 @@ Dapper.Contrib zavádí atributy `[Table]`, `[Key]`, `[ExplicitKey]` a metody `G
 | **Jednoduchý klíč, deklarace** | `<id name="Id" column="AuthorId" type="int">` s vnořeným `<generator>` | konvence (vlastnost `Id` nebo `<Typ>Id`), nebo `[Key]`, nebo `HasKey(a => a.Id)` | **nedeklaruje se nikde** |
 | **Kompozitní klíč, deklarace** | `<composite-id>` s vnořenými `<key-property>` nebo `<key-many-to-one>` | `HasKey(t => new { t.BookId, t.LanguageCode })`; nebo `[PrimaryKey(nameof(A), nameof(B))]` — atribut existuje od EF Core 7, v 10.0.10 je tedy dostupný | v ručním SQL, ve `WHERE` klauzuli |
 | **Požadavek na klíčovou třídu** | `<composite-id>` může použít samostatnou třídu (atribut `class`) nebo mapovat přímo vlastnosti entity; **v obou případech vyžaduje override `Equals` a `GetHashCode`**, protože identita entity je odvozená od hodnoty klíče | žádný; klíč je jen množina vlastností, žádná zvláštní třída, žádný požadavek na `Equals` | žádný |
-| **Generování hodnoty** | `<generator class="...">`: `identity`, `native`, `sequence`, `hilo`, `seqhilo`, `guid`, `guid.comb`, `uuid.hex`, `assigned`, `foreign`, `increment` | konvence pro `int` PK → IDENTITY; explicitně `ValueGeneratedOnAdd()`, `UseIdentityColumn()`, `UseHiLo()`, `UseSequence()`, `HasDefaultValueSql()` | `SCOPE_IDENTITY()` napsaný ručně a přiřazený do vlastnosti ručně |
+| **Generování hodnoty** | `<generator class="...">`: `identity`, `native`, `sequence`, `hilo`, `seqhilo`, `guid`, `guid.comb`, `uuid.hex`, `assigned`, `foreign`, `increment` | konvence pro `int` PK → IDENTITY; anotačně `[DatabaseGenerated(Identity \| None \| Computed)]`; fluent `ValueGeneratedOnAdd()`, `UseIdentityColumn()`, `UseHiLo()`, `UseSequence()`, `HasDefaultValueSql()` — sekvence a HiLo jsou jen fluent | `SCOPE_IDENTITY()` napsaný ručně a přiřazený do vlastnosti ručně |
 | **Naplnění klíče po insertu** | automatické; framework ví, který sloupec je klíč a že je generovaný | automatické | **ruční** — `QuerySingle<int>` nad `SELECT CAST(SCOPE_IDENTITY() AS INT)` |
 | **Entita bez klíče** | `<class>` klíč vyžaduje; pro readonly výsledky `<sql-query>` s `<return-scalar>` nebo dotaz na DTO | `HasNoKey()` — plnohodnotný keyless entity type (v benchmarcích u `PurchaseOrderUpdate`) | přirozený stav — každý dotaz vrací cokoli |
-| **Alternativní a unikátní klíče** | `<natural-id>`, případně `unique="true"` na `<property>` | `HasAlternateKey(...)`, `HasIndex(...).IsUnique()` | v DDL |
+| **Alternativní a unikátní klíče** | `<natural-id>`, případně `unique="true"` nebo `unique-key` na `<property>` | `HasAlternateKey(...)`, `HasIndex(...).IsUnique()`, anotačně `[Index(nameof(A), IsUnique = true)]` (od EF Core 5) | v DDL |
 
-**Důsledek pro IR.** Nejostřejší rozdíl je v tom, že u NHibernate a JPA kompozitní klíč táhne s sebou sémantiku identity — vyžaduje `Equals` a `GetHashCode`, případně samostatnou klíčovou třídu. U EF Core je to čistě množina sloupců. Otevřená otázka: stačí `PrimaryKeyPart` jako seřazený seznam sloupců, nebo IR potřebuje volitelný koncept „klíčové třídy", aby builder pro NHibernate a JPA uměl třídu syntetizovat a doplnit `Equals`? Bez toho bude výstup do NHibernate nekompilovatelný, respektive sémanticky vadný.
+**Důsledek pro IR.** Nejostřejší rozdíl je v tom, že u NHibernate a JPA kompozitní klíč táhne s sebou sémantiku identity — vyžaduje `Equals` a `GetHashCode`, případně samostatnou klíčovou třídu. U EF Core je to čistě množina sloupců. Otázku, jestli mezireprezentaci stačí seřazený seznam částí, nebo potřebuje pojem klíčové třídy, uzavřela rozhodnutí [006](../decisions/006-flat-composite-key-rendering.md) a [031](../decisions/031-key-class-as-declaration-of-key-parts.md): klíč zůstává seznamem částí, identitní členy — `Equals`, `GetHashCode`, `[Serializable]` — generuje builder cíle jako vynucené členy, a klíčovou třídu zdroje mezireprezentace jen zaznamenává (`SourceKeyClass`) a před generováním rozpouští na části klíče.
 
 ---
 
@@ -120,22 +122,22 @@ Dapper.Contrib zavádí atributy `[Table]`, `[Key]`, `[ExplicitKey]` a metody `G
 
 | | NHibernate 5.7.0 | EF Core 10.0.10 | Dapper 2.1.79 |
 |---|---|---|---|
-| **Deklarace sloupce** | `<property name="Title" column="Title" type="string" length="300" not-null="true" />` | `Property(b => b.Title).HasColumnName("Title").HasMaxLength(300).IsRequired()` | jen alias `AS` v SELECT |
+| **Deklarace sloupce** | `<property name="Title" column="Title" type="string" length="300" not-null="true" />` | `Property(b => b.Title).HasColumnName("Title").HasMaxLength(300).IsRequired()`; anotačně `[Column("Title")] [MaxLength(300)] [Required]` | jen alias `AS` v SELECT |
 | **Typový systém** | **vlastní vrstva NHibernate typů** (`string`, `AnsiString`, `DateTime`, `Timestamp`, `Decimal`, `Binary`, `Guid`, …), která stojí mezi CLR typem a SQL typem; lze psát vlastní `IUserType` | mapování CLR typ → SQL typ přes provider; `HasColumnType("...")` pro explicitní SQL typ; `ValueConverter` pro převod hodnot; `ValueComparer` pro porovnávání | výchozí mapování ADO.NET; `SqlMapper.AddTypeHandler` pro vlastní typy |
 | **`DateTime` v DDL** | `datetime2` — dialekty pro SQL Server 2008+ ho používají od NHibernate 5.0.0; návrat k `datetime` je možný nastavením `sql_types.keep_datetime` | `datetime2` | v DDL, volba je na autorovi schématu |
 | **`DateOnly` a `TimeOnly`** | podporované **až od 5.7.0**; ve verzi 5.5.2 nikoli | podporované | přes ADO.NET a provider |
-| **Délka řetězce** | `length="300"` | `HasMaxLength(300)` | v DDL |
-| **Přesnost decimal** | `precision="18" scale="2"`; maximální přesnost je pro většinu dialektů 28, což odpovídá limitu .NET `decimal`; hodnoty nad ni se ořežou | `HasPrecision(18, 2)` | v DDL |
-| **Nullabilita** | `not-null="true"`; výchozí stav je nullable | z nullable reference types a `?` u hodnotových typů; přebít lze `IsRequired()` / `IsRequired(false)` | v DDL |
+| **Délka řetězce** | `length="300"` | `HasMaxLength(300)`, `[MaxLength(300)]` nebo `[StringLength(300)]` | v DDL |
+| **Přesnost decimal** | `precision="18" scale="2"`; maximální přesnost je pro většinu dialektů 28, což odpovídá limitu .NET `decimal`; hodnoty nad ni se ořežou | `HasPrecision(18, 2)` nebo `[Precision(18, 2)]` | v DDL |
+| **Nullabilita** | `not-null="true"`; výchozí stav je nullable | z nullable reference types a `?` u hodnotových typů; přebít lze `IsRequired()` / `IsRequired(false)`, anotačně jen `[Required]` — opačný směr, tedy nullable sloupec za nenullovatelným typem, anotace nemá | v DDL |
 | **Výchozí hodnota** | `<property>` nemá přímý ekvivalent; řeší se přes `default` v DDL nebo v konstruktoru | `HasDefaultValue(...)`, `HasDefaultValueSql(...)` | v DDL |
 | **Počítané sloupce** | `formula="..."` na `<property>` | `HasComputedColumnSql(...)` | v SELECT |
 | **Ignorování vlastnosti** | prostě se nenamapuje | `Ignore(...)` nebo `[NotMapped]` | nerelevantní |
-| **Vlastní SQL typ** | `sql-type` na `<column>` | `HasColumnType("...")` | v DDL |
+| **Vlastní SQL typ** | `sql-type` na `<column>` | `HasColumnType("...")` nebo `[Column(TypeName = "...")]`; unicode režim `IsUnicode(false)` nebo `[Unicode(false)]` | v DDL |
 | **Kdo rozhoduje o SQL typu** | dialekt na základě NHibernate typu a délky | provider na základě CLR typu a anotací | autor DDL |
 | **Nativní typ `json`** | ne | podporovaný v EF Core 10, ale vyžaduje SQL Server 2025 nebo Azure SQL — v tomto prostředí (SQL Server 2022) nedostupné | ne |
 | **Typ `vector`** | ne | podporovaný v EF Core 10 včetně `VECTOR_DISTANCE()`, vyžaduje SQL Server 2025 nebo Azure SQL — zde nedostupné | ne |
 
-**Důsledek pro IR.** Zde je vidět problém, který čeká Java větev. NHibernate má vlastní typovou vrstvu mezi CLR a SQL — `type="string"` není `System.String`. EF Core mapuje CLR typ přímo. IR dnes drží CLR typ; jakmile přibude Java, ani jedno nebude stačit a bude potřeba jazykově neutrální reprezentace typu, kterou JSS článek označuje jako `LangType`. Typová vrstva NHibernate je přitom docela dobrý model toho, jak taková neutrální vrstva může vypadat.
+**Důsledek pro IR.** Zde byl vidět problém, který čekal Java větev. NHibernate má vlastní typovou vrstvu mezi CLR a SQL — `type="string"` není `System.String`. EF Core mapuje CLR typ přímo. Mezireprezentace proto drží obě strany neutrálně: jazykový typ jako `LangType` s uzavřeným seznamem skalárů (rozhodnutí [014](../decisions/014-language-type-model.md)) a databázový typ jako rodinu s facetami unicode, délky a přesnosti (rozhodnutí [019](../decisions/019-neutral-database-type-vocabulary.md)); typová vrstva NHibernate byla pro tu neutrální vrstvu užitečným vzorem. Co v uzavřeném seznamu skalárů chybí — `DateOnly`, `TimeOnly`, `DateTimeOffset`, `TimeSpan`, pole bajtů —, se dnes čte jako neznámý typ a je zapsané v [`open-items.md`](../open-items.md).
 
 Podpora `DateOnly` a `TimeOnly` je zároveň ukázkou, proč je nutné u každého zjištění evidovat verzi: na verzi 5.5.2 by tato buňka vyšla jako „nelze vyjádřit", na 5.7.0 vychází jako podporovaná.
 
@@ -145,10 +147,10 @@ Podpora `DateOnly` a `TimeOnly` je zároveň ukázkou, proč je nutné u každé
 
 | | NHibernate 5.7.0 | EF Core 10.0.10 | Dapper 2.1.79 |
 |---|---|---|---|
-| **Deklarace strany „jedna"** | `<set name="Books" inverse="true"><key column="AuthorId" /><one-to-many class="Book" /></set>` | `HasMany(a => a.Books).WithOne(b => b.Author)` | neexistuje |
-| **Deklarace strany „mnoho"** | `<many-to-one name="Author" column="AuthorId" class="Author" not-null="true" />` | `HasOne(b => b.Author).WithMany(a => a.Books).HasForeignKey(b => b.AuthorId)` | neexistuje |
+| **Deklarace strany „jedna"** | `<set name="Books" inverse="true"><key column="AuthorId" /><one-to-many class="Book" /></set>` | `HasMany(a => a.Books).WithOne(b => b.Author)`; anotačně `[InverseProperty("Author")]` na kolekci tam, kde konvence dvojici nespáruje | neexistuje |
+| **Deklarace strany „mnoho"** | `<many-to-one name="Author" column="AuthorId" class="Author" not-null="true" />` | `HasOne(b => b.Author).WithMany(a => a.Books).HasForeignKey(b => b.AuthorId)`; anotačně `[ForeignKey("AuthorId")]` na navigaci, nebo `[ForeignKey("Author")]` na klíčové vlastnosti | neexistuje |
 | **Určení vlastníka vztahu** | `inverse="true"` na kolekci znamená, že FK zapisuje druhá strana; bez toho pošle NHibernate po insertu zbytečný `UPDATE` | odvozeno z toho, kde je FK vlastnost; není to samostatný pojem | nerelevantní |
-| **Kaskády** | `cascade="none\|save-update\|delete\|all\|all-delete-orphan"` na kolekci i na `<many-to-one>` | `OnDelete(DeleteBehavior.Cascade \| Restrict \| SetNull \| NoAction \| ClientCascade \| ClientSetNull)`; konvence: non-nullable FK → Cascade | `ON DELETE CASCADE` v DDL |
+| **Kaskády** | `cascade="none\|save-update\|delete\|all\|all-delete-orphan"` na kolekci i na `<many-to-one>` | `OnDelete(DeleteBehavior.Cascade \| Restrict \| SetNull \| NoAction \| ClientCascade \| ClientSetNull)`, anotačně `[DeleteBehavior(...)]` na navigaci (od EF Core 7); konvence: non-nullable FK → Cascade | `ON DELETE CASCADE` v DDL |
 | **Sirotci** | `all-delete-orphan` — odebrání z kolekce znamená DELETE | odebrání z kolekce u required vztahu → DELETE; u optional → nastavení FK na NULL | ruční DELETE |
 | **Pořadí insertů** | odvozeno z grafu | odvozeno z grafu | řeší autor kódu |
 | **Naplnění FK** | automatické z navigační vlastnosti | automatické z navigační vlastnosti nebo přímo z FK vlastnosti | ruční přiřazení |
@@ -170,7 +172,7 @@ Podpora `DateOnly` a `TimeOnly` je zároveň ukázkou, proč je nutné u každé
 
 Zde vzniká rozpor, který je pro práci důležitý. Podle rozhodnutí [005](../decisions/005-many-to-many-as-explicit-junction-entity.md) generuje IR vztah N:M jako **explicitní junction entitu** (varianta B), zatímco idiomatický výstup pro NHibernate i EF Core je **skip navigation**. Benchmarky to potvrzují: `WWIContext.OnModelCreating` používá `HasMany().WithMany().UsingEntity(...)` a mapování NHibernate používá `<many-to-many>`; ani v jednom případě neexistuje entita pro `StockItemStockGroups`.
 
-Není to chyba návrhu. Explicitní junction entita je obecnější — unese payload i kompozitní klíč — a je to jediná forma, kterou umí vyjádřit všechny tři frameworky včetně Dapperu. Proto je v `EntityMap` příznak `IsJunctionTable` jako opt-in signál pro budoucí zploštění na skip navigation. Do analýzy tento případ patří jako doklad rozdílu mezi **expresivitou** (co lze vyjádřit) a **idiomatičností** (jak by to napsal člověk).
+Není to chyba návrhu. Explicitní junction entita je obecnější — unese payload i kompozitní klíč — a je to jediná forma, kterou umí vyjádřit všechny tři frameworky včetně Dapperu. Proto je v `EntityMap` příznak `IsJunctionTable` jako opt-in signál pro budoucí zploštění na skip navigation. Opačný směr — přečíst skip navigation ze zdroje — umí nástroj z `<many-to-many>` NHibernate a z katalogu; dvojici kolekčních navigací, kterou EF Core čte jako N:M konvencí, čte parser jako dva vztahy 1:N (nález v [`open-items.md`](../open-items.md)). Do analýzy tento případ patří jako doklad rozdílu mezi **expresivitou** (co lze vyjádřit) a **idiomatičností** (jak by to napsal člověk).
 
 ---
 
@@ -247,7 +249,7 @@ Migrations jsou koncept, který NHibernate v jádru nemá vůbec; externí proje
 | **Dávkování** | `adonet.batch_size` v konfiguraci; od verze 5.6.0 podpora `DbBatch` (dávkové API ADO.NET) | automatické; `MaxBatchSize` konfigurovatelné; využívá `MERGE` a vícenásobné `INSERT` | žádné — `Execute` s kolekcí provede příkaz opakovaně, ne v dávce |
 | **Získání generovaného klíče** | automatické | automatické | `SELECT CAST(SCOPE_IDENTITY() AS INT)` ručně |
 | **Hromadné operace bez načtení entit** | HQL `DELETE` a `UPDATE`, nebo native SQL | `ExecuteDelete()`, `ExecuteUpdate()` (od EF Core 7, v EF Core 10 vylepšené) | přirozený stav |
-| **Optimistické zamykání** | element `<version>`, atribut `optimistic-lock` na `<class>` | `IsRowVersion()`, `IsConcurrencyToken()` | ruční `WHERE` s verzovacím sloupcem |
+| **Optimistické zamykání** | element `<version>` (`<timestamp>` je jeho zkratka), atribut `optimistic-lock` na `<class>` | `[Timestamp]` nebo `IsRowVersion()` pro sloupec rowversion, `[ConcurrencyCheck]` nebo `IsConcurrencyToken()` pro libovolný sloupec | ruční `WHERE` s verzovacím sloupcem |
 
 ---
 
@@ -282,6 +284,8 @@ Migrations jsou koncept, který NHibernate v jádru nemá vůbec; externí proje
 | **Zobrazení SQL před spuštěním** | ne; jen logování při spuštění | **`ToQueryString()`** — vrátí SQL jako řetězec bez provedení dotazu | triviálně, SQL je vstup |
 
 `ToQueryString()` je metodologicky nejcennější metoda z celé trojice: dovoluje získat generované SQL bez běžící databáze a dělat srovnání jako čistou textovou analýzu. NHibernate ekvivalent nemá, tam je nutné dotaz spustit a odchytit log.
+
+Parametr dotazu je zároveň jediný řádek tabulky, který mezireprezentace neunese: konstanta je konstanta a pojem parametru rozhodnutí [024](../decisions/024-typed-query-operand.md) nezavedlo. Co s ním dnes dělají parsery, je zapsané v [`open-items.md`](../open-items.md).
 
 ---
 
@@ -351,27 +355,27 @@ Klíčová tabulka pro návrh IR a pro diagnostiku podle rozhodnutí [004](../de
 |---|---|---|---|
 | Název tabulky | `table` na `<class>` | `ToTable(...)` nebo konvence z `DbSet` | **jen v SQL řetězcích** |
 | Název sloupce | `column` na `<property>` | `HasColumnName(...)` nebo konvence | jen v aliasech `AS`, rozptýleně |
-| Datový typ | `type`, `length`, `precision` | CLR typ s `HasColumnType`, `HasMaxLength`, `HasPrecision` | **jen v DDL** |
-| Nullabilita | `not-null` | NRT a `IsRequired()` | **jen v DDL** |
+| Datový typ | `type`, `length`, `precision` | CLR typ s `[Column(TypeName)]`/`HasColumnType`, `[MaxLength]`/`[StringLength]`/`HasMaxLength`, `[Precision]`/`HasPrecision`, `[Unicode]`/`IsUnicode` | **jen v DDL** |
+| Nullabilita | `not-null` | NRT, `[Required]` a `IsRequired()` | **jen v DDL** |
 | Primární klíč | `<id>` nebo `<composite-id>` | `HasKey(...)`, `[Key]`, `[PrimaryKey]`, konvence | **nikde** |
 | Kompozitní klíč | `<composite-id>` s `Equals`/`GetHashCode` | `HasKey(t => new {...})`, `[PrimaryKey(...)]` | **nikde** |
-| Strategie generování klíče | `<generator>` | `ValueGenerated*`, `UseIdentityColumn` | **nikde** |
-| Alternativní klíč | `<natural-id>`, `unique` | `HasAlternateKey`, `HasIndex().IsUnique()` | **jen v DDL** |
-| Index | `<property index="...">` | `HasIndex(...)` | **jen v DDL** |
-| Relace 1:N | `<set>` s `<one-to-many>` | `HasMany().WithOne()` | **jen v JOIN klauzulích** |
-| Relace N:1 | `<many-to-one>` | `HasOne().WithMany()` | **jen v JOIN klauzulích** |
-| Relace N:M | `<many-to-many>` | `HasMany().WithMany()` | **jen v JOIN klauzulích** |
-| Vícesloupcový FK | víc `<column>` v `<key>` | `HasForeignKey(b => new {...})` | v `ON` klauzuli |
+| Strategie generování klíče | `<generator>` | `[DatabaseGenerated]`, `ValueGenerated*`, `UseIdentityColumn` | **nikde** |
+| Alternativní klíč | `<natural-id>`, `unique`, `unique-key` | `HasAlternateKey`, `HasIndex().IsUnique()`, `[Index(IsUnique = true)]` | **jen v DDL** |
+| Index | `<property index="...">` | `HasIndex(...)`, `[Index]` | **jen v DDL** |
+| Relace 1:N | `<set>` s `<one-to-many>` | `HasMany().WithOne()`, konvence z dvojice navigací, `[InverseProperty]` | **jen v JOIN klauzulích** |
+| Relace N:1 | `<many-to-one>` | `HasOne().WithMany()`, `[ForeignKey]` | **jen v JOIN klauzulích** |
+| Relace N:M | `<many-to-many>` | `HasMany().WithMany()`, konvence z dvojice kolekčních navigací | **jen v JOIN klauzulích** |
+| Vícesloupcový FK | víc `<column>` v `<key>` | `HasForeignKey(b => new {...})`, `[ForeignKey("X, Y")]` | v `ON` klauzuli |
 | Vlastník vztahu | `inverse="true"` | odvozeno z umístění FK | nerelevantní |
-| Kaskádové mazání | `cascade="..."` | `OnDelete(...)` | **jen v DDL** |
+| Kaskádové mazání | `cascade="..."` | `OnDelete(...)`, `[DeleteBehavior]` | **jen v DDL** |
 | Dědičnost | `<subclass>`, `<joined-subclass>`, `<union-subclass>` | TPH, TPT, TPC | **nikde** |
 | Identita entity | identity map session | `ChangeTracker` | **neexistuje** |
-| Verzování a concurrency | `<version>` | `IsRowVersion()` | ruční `WHERE` |
+| Verzování a concurrency | `<version>` | `[Timestamp]`, `IsRowVersion()`, `[ConcurrencyCheck]` | ruční `WHERE` |
 | Výchozí hodnota sloupce | přes DDL nebo konstruktor | `HasDefaultValue(Sql)` | **jen v DDL** |
 | Počítaný sloupec | `formula` | `HasComputedColumnSql` | v SELECT |
 | Filtr na úrovni modelu | `<filter-def>` | `HasQueryFilter(...)`, pojmenované filtry | **nikde** |
 
-Řádky, kde má Dapper hodnotu **nikde** nebo **jen v DDL**, tvoří přímý seznam varování, která musí Dapper builder emitovat: každý takový fakt při převodu do Dapperu nenávratně mizí a uživatel se to musí dozvědět.
+Řádky, kde má Dapper hodnotu **nikde** nebo **jen v DDL**, tvoří přímý seznam varování, která Dapper builder emituje — mechanicky z deskriptoru cíle, ve kterém má Dapper každou kategorii mapovacích faktů ve stavu *neumím vyjádřit* (rozhodnutí [009](../decisions/009-target-framework-descriptor.md)): každý takový fakt při převodu do Dapperu nenávratně mizí a uživatel se to dozví záznamem.
 
 Řádky, kde mají NHibernate i EF Core obsah, ale liší se strukturou — kompozitní klíč, N:M, vlastník vztahu — jsou kandidáti na místa, kde IR musí být obecnější než oba frameworky.
 
@@ -406,4 +410,4 @@ Výhrada k poslednímu bodu o ADO.NET: v `benchmarks/ORMComparison.sln` to nepla
 
 **Ground truth je generované SQL.** Dvě API mohou vypadat podobně a generovat jiné SQL. Pro citovatelný důkaz v textu práce je nejsilnější vygenerovaný DDL a vygenerovaný dotaz, ne popis API.
 
-**Cílové verze ORM nejsou v převodníku deklarované.** Wrappery v `ORMConvertor` nereferencují žádný ORM balíček, pouze Roslyn 5.6.0. Cílové verze frameworků tedy nejsou nikde uvedené a existuje jen implicitní předpoklad o cílové syntaxi — `[PrimaryKey]` vyžaduje EF Core 7 a vyšší, NHibernate builder generuje `urn:nhibernate-mapping-2.2`. Požadavek S6 přitom vyžaduje verze frameworků v záznamu překladu zaznamenávat. Je to otevřený bod k rozhodnutí, mimo rozsah této analýzy.
+**Cílové verze ORM deklaruje deskriptor každého wrapperu** (rozhodnutí [013](../decisions/013-target-framework-versions.md)) a záznam běhu je podle S6 vydává z téhož místa. Wrappery v `ORMConvertor` přitom dál nereferencují žádný ORM balíček — jen parsery jazyků, tedy Roslyn 5.6.0 a u Dapperu `Microsoft.SqlServer.TransactSql.ScriptDom` (rozhodnutí [026](../decisions/026-home-of-shared-query-reading.md)) —, takže generovaná syntaxe je předpokladem o cílové verzi, ne jejím důsledkem: `[PrimaryKey]` vyžaduje EF Core 7 a vyšší, NHibernate builder generuje `urn:nhibernate-mapping-2.2`. Shodu deklarované verze s balíčky, které načítá ověřovací stupeň, hlídá test `DeclaredVersionsMatchTheVerificationPackages`.

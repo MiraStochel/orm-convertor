@@ -27,7 +27,7 @@ Dvě dřívější otázky cíle 1 už otázky nejsou a u MyBatisu se jen apliku
 
 Řešení je .NET a javový projekt v repozitáři žádný není: javové řádky tabulky zafixovaných verzí — JDK, Jakarta Persistence, Hibernate, EclipseLink, MyBatis a `mssql-jdbc` — jsou zatím deklarace, ne závislost ([`architecture.md`](./architecture.md), „Zafixované verze"). Než se sáhne na Hibernate (F7), je proto potřeba rozhodnout **kudy javová strana do řešení vstupuje**: jestli si javový wrapper čte i zapisuje javový zdroj vlastním kódem v C#, jak to dnes dělá NHibernate wrapper s holým HQL (rozhodnutí [062](./decisions/062-hql-read-by-a-hand-written-parser.md)), nebo jestli k řešení přibývá javová komponenta a s ní JVM.
 
-Není to volba uvnitř jednoho wrapperu, protože nese trojí důsledek a každý sahá jinam. Ověřovací stupně stojí celé na .NET — 2. stupeň kompiluje generované C# Roslynem, 3. stupeň předkládá artefakt samotnému NHibernate nebo EF Core (§6.2) —, takže pro javový artefakt dnes není čím ověřovat víc než tvar. Diferenční ověření výsledků dotazů (F12, F13) žádá dotaz opravdu spustit, tedy JVM s JDBC připojením do téže databáze. A kontejnerová konfigurace nese .NET SDK a SQL Server; javové testovací projekty jmenuje S5 taky, a jen proto, že neexistují, drží je vyňatá oblast 6 (§9). Rozhodnutí tedy vyslovuje, co znamená „nový framework je nový wrapper", když ten framework není .NET — a teprve po něm dává smysl psát rozhodnutí k F7.
+Není to volba uvnitř jednoho wrapperu, protože nese trojí důsledek a každý sahá jinam. Ověřovací stupně stojí celé na .NET — 2. stupeň kompiluje generované C# Roslynem, 3. stupeň předkládá artefakt samotnému NHibernate nebo EF Core (§6.2) —, takže pro javový artefakt dnes není čím ověřovat víc než tvar. Diferenční ověření výsledků dotazů (F12, F13) žádá dotaz opravdu spustit, tedy JVM s JDBC připojením do téže databáze. A kontejnerová konfigurace nese .NET SDK a SQL Server; javové testovací projekty jmenuje S5 taky, a jen proto, že neexistují, drží je vyňatá oblast 6 (§9). Rozhodnutí tedy vyslovuje, co znamená „nový framework je nový wrapper", když ten framework není .NET — a teprve po něm dává smysl psát rozhodnutí k F7. Tutoriál k Hibernate k tomu dává tři vstupy, které rozhodnutí musí zodpovědět: profil cílového frameworku místo jediného čísla verze (vedle verze pojmenovací strategie a nationalizační režim), jazykovou osu vynucených členů (`virtual` proti „ne `final`") a sdílenou JPA vrstvu pro Hibernate a EclipseLink (F7, F9).
 
 ### Práce
 
@@ -133,3 +133,66 @@ Reprodukovatelnost sestavení jsme odložili stejně jako zásahy do rozhraní: 
 *Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.4. Souvisí s rozhodnutími [034](./decisions/034-central-version-management.md) a [039](./decisions/039-container-configuration-of-the-environment.md). Požadavky S2, S5.*
 
 „Reprodukovatelné prostředí" dnes znamená „jedním příkazem", ne „bajtově stejně": soubor zámku závislostí neexistuje, základní obrazy kontejnerů jsou připnuté na pohyblivé značky a pravidla stylu, která v repozitáři jsou, build nevynucuje. Rozhodnout je třeba, jestli se nárok S2 rozšiřuje z výstupu překladu i na sestavení samo — zámek závislostí, obrazy podle digestu, styl vynucený v CI — a jestli je to tvrzení, které text práce potřebuje, nebo údržba, která počká; dokud volba nepadne, platí dnešní užší čtení a nic víc se netvrdí.
+
+## Stranou cílů — zdokumentované nálezy nad .NET frameworky
+
+Nálezy z porovnání [`analysis/`](./analysis/README.md) s kódem (2026-09-14). Jsou tu **zapsané, ne zařazené**: cíl 1 zůstává uzavřený vydáním 1.2.0, položky nedostávají značky pořadí a nepracuje se na nich, dokud běží cíle 2 a 3 — případně vůbec. Zapisujeme je proto, aby nález nezůstal jen v konverzaci a aby text práce věděl, co nástroj o .NET frameworcích netvrdí. Dvě z nich se dotýkají vět, které [`architecture.md`](./architecture.md), §5, dnes vyslovuje šířeji, než platí; obě místa jsou u položek jmenovaná a opraví se s nimi.
+
+### Rozhodnutí
+
+#### Nepřečtený filtr se zahazuje a dotaz se vydá
+*Rozhodnutí [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) platí v šabloně builderu, ne v parserech; souvisí s [065](./decisions/065-row-set-as-the-boundary-of-rule-053.md) a s rozhodnutím [024](./decisions/024-typed-query-operand.md), které ztrátu parametru vědomě připustilo. [`architecture.md`](./architecture.md), §5, tvrdí pravidlo 053 bez téhle výhrady. Požadavky F11, T2.*
+
+Všechny tři dotazové parsery — T-SQL, LINQ i HQL — vydají u predikátu, který podmínkový strom neunese, záznam `Loss` a pokračují bez něj: dotaz odejde bez svého filtru, u T-SQL i bez joinu s nepřečtenou ON klauzulí a jen s prvním z tabulkových odkazů oddělených čárkou. Nejběžnějším spouštěčem je parametr dotazu — `@id` v T-SQL, `:id` v HQL, u LINQ hodnota, která není literál ani sloupec —, protože mezireprezentace pojem parametru nemá. Je to přesně změna množiny řádků, kterou rozhodnutí 053 na straně builderu zakázalo; rozhodnutí 024 ji jako ztrátu zapsalo dřív, než 053 vzniklo, a 053 se k parserům nevyjádřilo. Rozhodnout je třeba, jestli se 053 rozšiřuje i na parsery — nepřečtený filtr, join nebo zdroj je `Failure` bez artefaktu —, a zvlášť, jestli mezireprezentace dostane operand parametru, jak 024 slíbilo prvnímu dotazu, který ho potřebuje; deskriptory dnes tvrdí `QueryParameter` jako vyjádřitelný u všech tří cílů, ačkoli ho žádný parser nevyrobí.
+
+#### Nepersistovaná vlastnost nemá v modelu místo
+*Souvisí s rozhodnutími [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [004](./decisions/004-unexpressible-facts-as-warnings.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §6, řádek „Ignorování vlastnosti". Požadavek F11.*
+
+`PropertyMap` neumí říct, že vlastnost třídy není mapovaná: prázdný název sloupce znamená stejně „výchozí sloupec" jako „žádný sloupec". Důsledek je oboustranný. `[NotMapped]` z EF Core vydá záznam `Loss`, ale vlastnost projde dál a NHibernate builder jí vypíše `<property>`, takže mapování míří na sloupec, který v tabulce není. Opačně vlastnost třídy, kterou `hbm.xml` nejmenuje — v NHibernate transientní —, se v EF Core výstupu namapuje konvencí, a to bez jediného záznamu, protože XML parser prochází jen elementy mapování a třídu nemá s čím porovnat. Rozhodnout je třeba, jestli model dostane příznak nepersistované vlastnosti, který EF Core builder vypíše jako `[NotMapped]` a NHibernate builder jako vynechaný element, nebo jestli se taková vlastnost z modelu vyřadí a v cíli chybí i ve třídě.
+
+#### Modifikátor `virtual` je vynucený člen, a přesto cestuje
+*Souvisí s rozhodnutími [009](./decisions/009-target-framework-descriptor.md) a [049](./decisions/049-language-facts-under-source-precedence.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §3. Požadavek S2.*
+
+Deskriptor NHibernate deklaruje `virtual` jako vynucený člen, tedy požadavek frameworku, ne fakt o doméně, a srovnání frameworků z toho vyvozuje, že parser ho má zahodit. Sdílený C# parser ho ale podrží mezi ostatními modifikátory vlastnosti a Dapper i EF Core builder ho vypíší; `EFCoreNullabilityTest` tenhle tvar dokonce tvrdí. Rozhodnout je třeba, které modifikátory jsou jazykovým faktem domény (`required`, `override`) a které požadavkem zdrojového frameworku, a kde se ty druhé odkládají — při čtení podle deskriptoru zdroje, nebo při emisi podle deskriptoru cíle.
+
+#### Alias v SQL jako zdroj mapování Dapperu
+*Souvisí s rozhodnutími [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), [017](./decisions/017-source-precedence-for-mapping-facts.md) a [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §4, a [tutoriál k Dapperu](./analysis/tutorials/dapper-getting-started.md), krok 4. Požadavek F6.*
+
+Jedinou formou mapování, kterou Dapper má, je alias `AS` v dotazu, a nástroj ji nečte: SQL parser aliasy nese jen jako alias projekce a entitní mapa Dapper zdroje dostává sloupce až z katalogu, který páruje sloupec s vlastností podle jména. Doménu z tutoriálu — vlastnost `Id` nad sloupcem `AuthorId` — tak katalog nespáruje a klíč nedodá. Rozhodnout je třeba, jestli má alias z dotazové jednotky téhož převodu propsat název sloupce do entitní mapy jako tvrzení prvního stupně; je to fakt jednoho dotazu, ne třídy, a dva dotazy mohou týž sloupec aliasovat různě, takže rozhodnutí musí říct, co je konflikt a co ne.
+
+#### Fluent konfigurace EF Core jako vstupní jednotka
+*Rozhodnutí [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) a [068](./decisions/068-source-framework-precedence-orders-the-reading.md) s parserem fluent konfigurace počítají, ale položku k němu nikdo nezapsal. Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §4. Požadavky F1, F5.*
+
+Srovnání frameworků označuje fluent API v `OnModelCreating` za primární formu mapování EF Core a nástroj čte jen anotace a konvence. Třída kontextu navíc není ze čtení vyloučená: každá deklarace třídy v jednotce je entita, takže vložený `DbContext` vyjde jako entita s kolekčními vztahy na své `DbSet` vlastnosti. Rozhodnout je třeba, jestli fluent konfigurace vstupuje jako další artefakt EF Core, čtený v pořadí, které 068 stanovilo, a co se do té doby dělá s třídou kontextu ve vstupu — vyloučení se záznamem je levnější než dnešní tichý omyl.
+
+#### Dapper.Contrib v rozsahu, nebo mimo něj
+*Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §2. Souvisí s rozhodnutím [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md).*
+
+Dapper.Contrib přidává k holému Dapperu atributy `[Table]`, `[Key]` a `[ExplicitKey]`, tedy tři mapovací fakty, které holý Dapper nemá kde vyslovit. Nástroj čte jen holý Dapper. Rozhodnout je třeba, jestli je Contrib výslovně mimo rozsah, nebo jestli ho Dapper parser čte jako anotace — po vzoru EF Core parseru a s týmž kritériem rozhodnutí 067.
+
+#### Skaláry, které uzavřený seznam nezná
+*Rozhodnutí [014](./decisions/014-language-type-model.md) je implementované, takže rozšíření seznamu je nové rozhodnutí, ne revize. Souvisí s [019](./decisions/019-neutral-database-type-vocabulary.md). Podklad: audit [2026-08-02](./audits/2026-08-02-post-step-4-audit.md), kap. 2.2, a [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §6. Požadavky F1, F7–F10.*
+
+`ScalarType` nezná `DateOnly`, `TimeOnly`, `DateTimeOffset`, `TimeSpan` ani pole bajtů, takže vlastnost takového typu se čte jako neznámý typ a vypisuje jménem ze zdroje — přeloží se, ale nic o ní netvrdíme a javový protějšek nebude z čeho odvodit. Odvození jazykového typu z katalogu tomu odpovídá: rodinu `Date` rozšiřuje na `DateTime` a rodiny `Time`, `TimestampWithTimeZone` a binární nedodá vůbec, takže vlastnost známou jen z mapování nad takovým sloupcem odmítne brána úplnosti. Srovnání frameworků přitom podporu `DateOnly` a `TimeOnly` v obou cílích uvádí jako jeden ze tří doložených případů verzování zjištění. Audit to našel 2026-08-02 a rozhodnutí 014 seznam uzavřelo bez nich.
+
+### Práce
+
+#### Atributy NHibernate mapování, které parser přeskakuje bez záznamu
+*Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [004](./decisions/004-unexpressible-facts-as-warnings.md); vyňatá oblast 2 hranice záruk ([`architecture.md`](./architecture.md), §9) se týká prvků, ne atributů. Táž [`architecture.md`](./architecture.md), §5, tvrdí, že hranici plochého čtení vyslovuje záznam — u těchhle atributů zatím ne. Požadavek F11.*
+
+XML parser čte z `<property>` název, sloupec, typ, délku, přesnost, nullabilitu a unikátnost a z `<class>` název, tabulku a schéma; `index`, `check` a `default` hlásí záznamem. Zbytek mizí beze slova: na `<property>` `formula`, `access`, `insert`, `update`, `lazy`, `generated` a `optimistic-lock`, na `<class>` `discriminator-value`, `where`, `mutable`, `optimistic-lock`, `dynamic-insert`, `dynamic-update`, `batch-size` a `lazy`. Přinejmenším `formula` a `where` mění význam — vlastnost s `formula` nemá sloupec a výstup jí ho vymyslí — a srovnání frameworků obojí jmenuje jako výrazovou schopnost NHibernate. Práce je vydat u každého z nich záznam `Loss` týmž tvarem, jakým se hlásí `check` a `default`.
+
+#### Anotace EF Core, pro které model místo má, ale čtou se jako ztráta
+*Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md); souvisí s [049](./decisions/049-language-facts-under-source-precedence.md). Požadavky F1, F5.*
+
+Větev pro neznámou anotaci hlásí záznamem `Loss` i `[StringLength]`, což je délka, `[Unicode]`, což je faceta `IsUnicode`, a `[InverseProperty]`, pro které model nese dosud nevyužité pole `InverseRelationName`. `InventedFactsTest` přitom `[StringLength]` jako nepřečtenou anotaci tvrdí, takže se s ním pohne zároveň. Práce je číst tři anotace do faktů, které pro ně model má, a záznam nechat jen anotacím bez místa.
+
+#### Bázová třída entity mizí bez záznamu
+*Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md); dědičnost sama je vyňatá oblast 2 hranice záruk ([`architecture.md`](./architecture.md), §9). Požadavek F11.*
+
+Sdílený C# parser čte z hlavičky třídy jen přístupový modifikátor a seznam bázových typů nečte. Hierarchie v EF Core zdroji — třída odvozená od jiné entity převodu, kterou EF Core mapuje konvencí jako TPH — tak nezanechá žádnou stopu, kdežto týž fakt v NHibernate mapování (`<subclass>`) záznam dostane. Práce je vydat záznam `Loss` u bázového typu, který jmenuje entitu převodu; co dědičnost znamená pro mezireprezentaci, zůstává vyňatou oblastí.
+
+#### Dvojice kolekčních navigací EF Core je N:M, ne dvě 1:N
+*Práce podle rozhodnutí [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) a [005](./decisions/005-many-to-many-as-explicit-junction-entity.md); souvisí s [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §8. Požadavky F1, F3.*
+
+EF Core čte dvě kolekční navigace mezi touž dvojicí entit bez vlastnosti cizího klíče jako N:M s implicitní spojovací tabulkou (od verze 5). Parser EF Core registruje každou kolekci hned jako inverzní 1:N, takže z dvojice vzniknou dva vztahy, které tvrdí cizí klíč na obou stranách; a fáze doplnění nabídne spojovací tabulku z katalogu jen kolekci, která ještě žádný vztah nenese, takže tentýž katalog, který Dapper zdroji spojovací entitu syntetizuje, EF Core zdroj nespraví. Je to dokumentované odvození z toho, co artefakt tvrdí, a mezera putuje k jinému vztahu, takže podle kritéria 067 se materializuje. Práce je nechat kolekci čekat jako konvenční navigaci a po doparsování všech entit spárovat dvojici na N:M týmž mechanismem, jakým se dnes materializují konvenční navigace N:1.

@@ -189,7 +189,7 @@ public class Book
 }
 ```
 
-Fluent API je mocnější (annotations neumí například `OnDelete` nebo kompozitní klíč přes `HasKey` s více property) a drží mapování mimo doménovou třídu. Pro analýzu je podstatné, že **EF Core má tři vrstvy, které se skládají**: konvence → data annotations → fluent API, přičemž pozdější přebíjí dřívější. NHibernate má vrstvu jednu.
+Fluent API je širší a drží mapování mimo doménovou třídu; anotace přitom umí víc, než starší návody tvrdí — kaskádové chování přes `[DeleteBehavior]` a kompozitní klíč přes `[PrimaryKey]`, obojí od EF Core 7 —, ale dědičnost, filtry na úrovni modelu, alternativní klíče, výchozí hodnoty nebo `IsRequired(false)` anotačně vyjádřit nejdou. Pro analýzu je podstatné, že **EF Core má tři vrstvy, které se skládají**: konvence → data annotations → fluent API, přičemž pozdější přebíjí dřívější. NHibernate má vrstvu jednu.
 
 ---
 

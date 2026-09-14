@@ -143,7 +143,7 @@ SqlMapper.SetTypeMap(
 
 Zastav se u toho na chvíli, protože je to jádro věci pro tvoji analýzu. U EF Core je totéž jeden řádek `HasColumnName("AuthorId")` na jednom místě. U NHibernate `column="AuthorId"` v mapovacím souboru. U Dapperu buď **opakuješ alias v každém dotazu**, nebo saháš po globální reflexní registraci, která žije úplně jinde než dotazy, kterých se týká.
 
-To znamená, že parser pro Dapper nemá odkud číst mapování jinak než z SQL řetězců — a co v SQL řetězci není, to prostě neexistuje.
+To znamená, že parser pro Dapper nemá odkud číst mapování jinak než z SQL řetězců — a co v SQL řetězci není, to prostě neexistuje. Nástroj dnes jde ještě o krok dál: aliasy z SQL nečte vůbec a mapování Dapper zdroje bere z databázového katalogu (rozhodnutí [015](../../decisions/015-mapping-fact-completion-from-the-catalog.md), F6), který sloupec páruje s vlastností podle jména — takže právě dvojici `Id` a `AuthorId` z tohohle tutoriálu nespáruje. Nález je zapsaný v [`open-items.md`](../../open-items.md).
 
 Tenhle tutoriál používá alias, protože to je běžnější a je vidět přímo v dotazu.
 
@@ -343,7 +343,7 @@ Tohle je pro tvoji práci nejdůležitější sekce v celém dokumentu. Následu
 | Identita entity | nikde |
 | Dědičnost | nikde |
 
-Když tohle položíš vedle tabulek z předchozích dvou tutoriálů, máš přesně tu matici „nelze vyjádřit", o které jsme mluvili — a zároveň seznam případů, pro které musí Dapper builder podle rozhodnutí [004](../../decisions/004-unexpressible-facts-as-warnings.md) emitovat strukturovaná varování. Každý řádek téhle tabulky je jedno varování.
+Když tohle položíš vedle tabulek z předchozích dvou tutoriálů, máš přesně tu matici „nelze vyjádřit", o které jsme mluvili — a zároveň seznam případů, pro které Dapper builder podle rozhodnutí [004](../../decisions/004-unexpressible-facts-as-warnings.md) emituje strukturovaná varování — mechanicky z deskriptoru, ve kterém má Dapper každou kategorii ve stavu *neumím vyjádřit* (rozhodnutí [009](../../decisions/009-target-framework-descriptor.md)). Každý řádek téhle tabulky, který mezireprezentace nese, je jedno varování; co nenese — dědičnost, kaskády —, hlásí parser zdroje už při čtení (rozhodnutí [048](../../decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md)).
 
 Stojí za zmínku, že to není chyba návrhu Dapperu. Dapper záměrně nespravuje schéma; předpokládá, že databáze existuje a někdo jiný ji spravuje. Ztrátovost převodu je důsledek téhle volby, ne nedostatku.
 

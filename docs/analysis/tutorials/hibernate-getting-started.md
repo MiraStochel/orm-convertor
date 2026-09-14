@@ -294,7 +294,7 @@ Gettery a settery ti IntelliJ vygeneruje přes **Alt+Insert → Getter and Sette
 
 **`LocalDate` místo `DateTime?`.** Tohle je jediné místo, kde se doména proti .NET tutoriálům schválně liší. C# `DateTime` má v Javě dva protějšky — `LocalDate` (jen datum) a `LocalDateTime` (datum a čas) — a v DDL se to projeví: `date` proti `datetime2`. Až budeš mít vygenerované DDL, zkus si přepsat typ na `LocalDateTime` a rozdíl si prohlédnout. Je to nejlevnější dostupný důkaz, že typový model IR nemůže zůstat CLR-specifický.
 
-**`Set` proti `List`.** Typ kolekce má v JPA sémantický význam úplně stejně jako u NHibernate: `Set` vylučuje duplicity, `List` je bez `@OrderColumn` vlastně bag a s ním nese pořadí. Otevřená položka „NHibernate builder — kolekce jen jako `<bag>`" tedy není specifikum NHibernate; volbu tvaru kolekce bude potřeba nést v IR i kvůli Javě.
+**`Set` proti `List`.** Typ kolekce má v JPA sémantický význam úplně stejně jako u NHibernate: `Set` vylučuje duplicity, `List` je bez `@OrderColumn` vlastně bag a s ním nese pořadí. Druh kolekce proto nese mezireprezentace (`CollectionKind`, rozhodnutí [014](../../decisions/014-language-type-model.md)) a NHibernate builder podle něj volí `<set>`, nebo `<bag>` (rozhodnutí [035](../../decisions/035-nhibernate-collections-declared-by-interface.md)); u Javy je to tentýž fakt, ne nový.
 
 **`fetch = FetchType.LAZY` u `@ManyToOne`.** Výchozí hodnota je v JPA u `@ManyToOne` a `@OneToOne` `EAGER`, u `@OneToMany` a `@ManyToMany` `LAZY`. Ta asymetrie je notoricky známý zdroj problémů a je dobré ji do srovnání zaznamenat — ale do IR nepatří, článek strategie načítání explicitně vylučuje (§5.4).
 
@@ -330,7 +330,7 @@ Poslední řádek nemá v .NETu obdobu a stojí za zapamatování: **umístění
 
 Pojmenovací konvence jsou navíc v Hibernate **vyměnitelné** přes `hibernate.implicit_naming_strategy` a `hibernate.physical_naming_strategy`. Většina javových tutoriálů na internetu předpokládá Spring Boot, který dosazuje strategii převádějící `bornOn` na `born_on` — proto v nich DDL vypadá jinak než tady. Holý Hibernate nic takového nedělá.
 
-Pro převodník je to konkrétní zjištění: **znát cílovou verzi frameworku nestačí, parser i builder musí znát i nastavenou pojmenovací strategii**, jinak defaulty materializuje špatně. Patří to k otevřenému rozhodnutí o deklaraci cílových verzí.
+Pro převodník je to konkrétní zjištění: **znát cílovou verzi frameworku nestačí, parser i builder musí znát i nastavenou pojmenovací strategii**, jinak defaulty materializuje špatně. Deskriptor dnes nese jen číslo verze (rozhodnutí [013](../../decisions/013-target-framework-versions.md)); co víc bude javový deskriptor potřebovat, je vstupem rozhodnutí o javové straně v [`open-items.md`](../../open-items.md).
 
 ### Vlastnictví vztahu
 
@@ -549,9 +549,9 @@ Zelená šipka u `main`, nebo **Shift+F10**. V konzoli bys měl vidět:
 
 **`varchar` proti `nvarchar`.** Hibernate mapuje `String` ve výchozím stavu na `varchar`. Nationalizované typy se vyžádají anotací `@Nationalized` na atributu nebo globálně nastavením `hibernate.use_nationalized_character_data=true`. Oba .NET frameworky přitom generují `nvarchar` bez ptaní.
 
-Je to nejostřejší zatím doložený doklad pro rozhodnutí o neutralizaci typového modelu: **stejný jazykový typ na stejné databázi dá v .NETu a v Javě jiný sloupec.** `DatabaseType` v dnešní podobě, tedy fakticky výčet typů T-SQL, tenhle rozdíl neumí zaznamenat jako volbu — vypadá v něm jako dvě různé hodnoty bez vztahu, přestože jde o jeden typ ve dvou nationalizačních režimech.
+Je to nejostřejší doložený doklad pro neutralizaci typového modelu: **stejný jazykový typ na stejné databázi dá v .NETu a v Javě jiný sloupec.** Dřívější `DatabaseType`, fakticky výčet typů T-SQL, tenhle rozdíl neuměl zaznamenat jako volbu — vypadal v něm jako dvě různé hodnoty bez vztahu, přestože jde o jeden typ ve dvou nationalizačních režimech — a jednotlivý unicode znak (`char`) v něm neměl hodnotu vůbec, což byla otevřená otázka auditu z 2026-08-02.
 
-Mimochodem, tady je i konkrétní odpověď na otevřenou otázku z auditu, proč `CLRType.Char` nejde namapovat: `DatabaseType` nemá hodnotu pro jednotlivý unicode znak. Hibernate stejný problém řeší tím, že nationalizaci drží jako vlastnost mapování, ne jako jiný typ.
+Rozhodnutí [019](../../decisions/019-neutral-database-type-vocabulary.md) to vyřešilo přesně tak, jak to dělá Hibernate: `DatabaseType` je slovník rodin a nationalizace je faceta `IsUnicode` vedle rodiny, ne jiný typ; facet vznikl právě kvůli tomu jednomu znaku.
 
 ---
 
@@ -626,15 +626,15 @@ Kategorie `org.hibernate.orm.jdbc.bind` platí od Hibernate 6; starší návody 
 
 Pět zjištění, která mají přímý dopad na otevřené položky. Žádné z nich není překvapivé, ale všechna jsou teď doložená na běžícím kódu, ne odvozená z dokumentace.
 
-**1. Typový model musí být neutrální, a je to horší, než vypadalo.** Neutralizace se netýká jen jazykové strany (`CLRType` → `LangType`), ale i databázové. Jeden a týž `String`/`string` dá na stejném SQL Serveru `varchar` z Hibernate a `nvarchar` z obou .NET frameworků. `DatabaseType` jako výčet typů T-SQL to zachytí jen jako dvě nesouvisející hodnoty, přestože jde o jeden typ ve dvou režimech. Otevřená položka o neutralizaci tím dostává druhou, konkrétnější polovinu.
+**1. Typový model musí být neutrální, a je to horší, než vypadalo.** Neutralizace se netýkala jen jazykové strany (z `CLRType` na `LangType`, rozhodnutí [014](../../decisions/014-language-type-model.md)), ale i databázové. Jeden a týž `String`/`string` dá na stejném SQL Serveru `varchar` z Hibernate a `nvarchar` z obou .NET frameworků, a výčet typů T-SQL to zachytil jen jako dvě nesouvisející hodnoty, přestože jde o jeden typ ve dvou režimech. Obě půlky mezitím padly: rodiny s facetou unicode zavedlo rozhodnutí [019](../../decisions/019-neutral-database-type-vocabulary.md).
 
-**2. Klíčová třída je v JPA povinná, nikoli volitelná.** Rozhodnutí 006 zvolilo ploché vykreslení a `@IdClass` jako javový cíl. Ověření: u `@IdClass` jsou klíčové atributy skutečně přímo na entitě, takže cesty k vlastnostem v dotazech zůstávají ploché — v tomhle rozhodnutí obstálo. Zároveň ale JPA **vždycky** vyžaduje samostatnou třídu klíče, i u ploché varianty; není to volba jako u NHibernate, kde `<composite-id>` s `<key-property>` žádnou třídu nepotřebuje. Builder ji tedy bude muset syntetizovat vždy, ne jen někdy, a to potvrzuje směr otevřeného rozhodnutí o členech vynucených frameworkem.
+**2. Klíčová třída je v JPA povinná, nikoli volitelná.** Rozhodnutí 006 zvolilo ploché vykreslení a `@IdClass` jako javový cíl. Ověření: u `@IdClass` jsou klíčové atributy skutečně přímo na entitě, takže cesty k vlastnostem v dotazech zůstávají ploché — v tomhle rozhodnutí obstálo. Zároveň ale JPA **vždycky** vyžaduje samostatnou třídu klíče, i u ploché varianty; není to volba jako u NHibernate, kde `<composite-id>` s `<key-property>` žádnou třídu nepotřebuje. Builder ji tedy bude muset syntetizovat vždy, ne jen někdy — je to vynucený člen ve smyslu rozhodnutí [009](../../decisions/009-target-framework-descriptor.md), který javový deskriptor vysloví s podmínkou složeného klíče, jako NHibernate vyslovuje identitní členy; název jí dá zaznamenaná klíčová třída zdroje (rozhodnutí [031](../../decisions/031-key-class-as-declaration-of-key-parts.md)).
 
-**3. Vynucené členy závisí na cílovém jazyce, ne jen na frameworku.** `virtual` u NHibernate a „ne `final`" u Hibernate je tentýž požadavek proxy mechanismu, vyjádřený opačně jen proto, že C# a Java mají opačný default. Kategorie „členy vynucené frameworkem" tedy potřebuje osu jazyka.
+**3. Vynucené členy závisí na cílovém jazyce, ne jen na frameworku.** `virtual` u NHibernate a „ne `final`" u Hibernate je tentýž požadavek proxy mechanismu, vyjádřený opačně jen proto, že C# a Java mají opačný default. Kategorie „členy vynucené frameworkem" tedy potřebuje osu jazyka — dnešní deskriptor ji nemá a je to vstup rozhodnutí o javové straně v [`open-items.md`](../../open-items.md).
 
-**4. Cílová verze frameworku nestačí.** K deterministickému generování je u Hibernate potřeba znát i pojmenovací strategii a nationalizační režim. Otevřené rozhodnutí o deklaraci cílových verzí by mělo počítat s tím, že jde spíš o **profil cílového frameworku** než o jedno číslo verze.
+**4. Cílová verze frameworku nestačí.** K deterministickému generování je u Hibernate potřeba znát i pojmenovací strategii a nationalizační režim. Rozhodnutí [013](../../decisions/013-target-framework-versions.md) zavedlo verzi jako jediné číslo v deskriptoru; javový deskriptor bude potřebovat spíš **profil cílového frameworku** — verzi, pojmenovací strategii a nationalizační režim —, což je vstup rozhodnutí o javové straně v [`open-items.md`](../../open-items.md).
 
-**5. JPA je společný jmenovatel dvou ze tří javových frameworků.** Hibernate a EclipseLink jsou implementace téže specifikace. Kde to jde, vyplatí se generovat standardní JPA (`jakarta.persistence.*` anotace i nastavení) a implementačně specifické věci držet jako tenkou nadstavbu. To může výrazně zlevnit F9 proti F7 — a je to samostatné rozhodnutí, které je namístě sepsat dřív, než se začne psát první javový builder. MyBatis (F8) tuhle výhodu nemá; ten je javovým protějškem Dapperu.
+**5. JPA je společný jmenovatel dvou ze tří javových frameworků.** Hibernate a EclipseLink jsou implementace téže specifikace. Kde to jde, vyplatí se generovat standardní JPA (`jakarta.persistence.*` anotace i nastavení) a implementačně specifické věci držet jako tenkou nadstavbu. To může výrazně zlevnit F9 proti F7 — a je to samostatné rozhodnutí, které je namístě sepsat dřív, než se začne psát první javový builder; rozhodnutí o javové straně v [`open-items.md`](../../open-items.md) ho jmenuje mezi svými vstupy. MyBatis (F8) tuhle výhodu nemá; ten je javovým protějškem Dapperu.
 
 ---
 
