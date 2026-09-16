@@ -223,13 +223,13 @@ Proti NHibernate je dialekt u obou implementací JPA fakt, který v kódu vůbec
 |---|---|---|---|
 | **Vytvoření databáze** | ne — `Cannot open database "…"` | ne | ne |
 | **Vytvoření tabulek** | **(JPA)** `jakarta.persistence.schema-generation.database.action=create \| drop-and-create \| drop \| none`; hibernátovsky `hibernate.hbm2ddl.auto` (`create`, `create-drop`, `update`, `validate`, `none`) | **(JPA)** táž vlastnost; nativně `eclipselink.ddl-generation` (`create-tables`, `drop-and-create-tables`, `create-or-extend-tables`, `none`) s `eclipselink.ddl-generation.output-mode` (`database`, `sql-script`, `both`) | ručně psané DDL v `<update>`, nebo mimo aplikaci |
-| **DDL bez připojení k databázi** | **(JPA)** `schema-generation.scripts.action=create` s `scripts.create-source=metadata`; od 3.2 i API `SchemaManager` (`emf.getSchemaManager().create(true)`) | **(JPA)** totéž, ale s `Auto` platformou potřebuje spojení — bez něj nutné `eclipselink.target-database=SQLServer` | triviálně — DDL píše autor |
+| **DDL bez připojení k databázi** | **(JPA)** `schema-generation.scripts.action=create` s `scripts.create-source=metadata`; od 3.2 i API `SchemaManager` (`emf.getSchemaManager().create(true)`); **bez spojení navíc nutné `hibernate.dialect`** — standardní `jakarta.persistence.database-product-name` Hibernate 7.4.5 ignoruje a hlásí `Unable to determine Dialect without JDBC metadata` | **(JPA)** totéž, ale bez spojení **nestačí `eclipselink.target-database=SQLServer`** — samo o sobě skončí na `EclipseLink-4021`, teprve `jakarta.persistence.database-product-name` spojení odvolá | triviálně — DDL píše autor |
 | **Aktualizace existujícího schématu** | `hbm2ddl.auto=update` (best-effort, nedestruktivní) | `create-or-extend-tables` (přidá tabulky a sloupce, nikdy nemaže) | ručně; MyBatis Migrations je samostatný nástroj |
 | **Validace schématu proti modelu** | `hbm2ddl.auto=validate`, `SchemaManager.validate()` | `SchemaManager.validate()` (JPA 3.2) | žádná |
 | **Smazání schématu** | `drop`, `SchemaManager.drop()` | `drop-and-create-tables`, `SchemaManager.drop()` | `DROP TABLE IF EXISTS` |
 | **Vhodnost pro produkci** | generování ne, `update` s výhradami | generování ne, `create-or-extend-tables` s výhradami | ruční správa mimo aplikaci |
 
-Migrace nemá v jádře žádný z trojice; Flyway a Liquibase jsou externí nástroje stejně jako FluentMigrator v .NETu. Na obsah IR to nemá vliv. Podstatné je, že generování DDL je od JPA 3.2 **standardní** a shodné v obou implementacích — stejný `SchemaManager` a stejné vlastnosti dají DDL z Hibernate i z EclipseLinku, což je nejlevnější cesta k porovnání jejich výchozích typů (viz §22).
+Migrace nemá v jádře žádný z trojice; Flyway a Liquibase jsou externí nástroje stejně jako FluentMigrator v .NETu. Na obsah IR to nemá vliv. Podstatné je, že generování DDL je od JPA 3.2 **standardní** a v obou implementacích dostupné týmiž vlastnostmi, což je nejlevnější cesta k porovnání jejich výchozích typů (viz §22). Shodné ale není beze zbytku: mechanismus je standardní, kdežto to, čím se implementaci bez spojení řekne cílová databáze, standardní není — a každá chce něco jiného (viz řádek „DDL bez připojení" výš).
 
 ---
 
@@ -418,13 +418,13 @@ Následující vlastnosti sdílejí všechny tři frameworky. IR je proto nemus�
 - XML je u všech tří plnohodnotná forma mapování (`orm.xml`, `eclipselink-orm.xml`, XML mapper). V .NETu ji má jen NHibernate.
 - Jsou open source, dva pod Apache 2.0 a jeden pod EPL/EDL, a mají srovnatelně dlouhou historii produkčního nasazení — všechny tři sahají před rok 2005.
 
-Výhrada, která u .NETu neplatila: **nic z toho není podložené kódem v repozitáři.** Benchmarková sada `ORMComparison.sln` má jen .NET větev, javový testovací projekt neexistuje (vyňatá oblast 6 hranice záruk, [`architecture.md`](../architecture.md) §9) a z trojice jsme spustili jen Hibernate. Tvrzení o EclipseLinku a MyBatisu jsou z dokumentace zafixovaných verzí; tam, kde dokumentace mlčí — hodnota `AUTO` v EclipseLinku, chování MyBatisu při stejném id v anotaci a v XML —, jsou z chování implementace doloženého mimo repozitář a je to u položky řečeno.
+Výhrada, která u .NETu neplatila: **nic z toho není podložené kódem v repozitáři.** Benchmarková sada `ORMComparison.sln` má jen .NET větev a javový testovací projekt neexistuje (vyňatá oblast 6 hranice záruk, [`architecture.md`](../architecture.md) §9). Od 2026-09-16 je ale celá trojice podložená **během mimo repozitář**: tutoriály k [EclipseLinku](tutorials/eclipselink-getting-started.md) a [MyBatisu](tutorials/mybatis-getting-started.md) postavily obě zbylé implementace nad touž doménou v kontejneru `maven:3.9.11-eclipse-temurin-25-noble`. Místa, kde dokumentace mlčela — hodnota `AUTO` v EclipseLinku, velká písmena v názvech, líné `@ManyToOne` bez weavingu a chování MyBatisu při stejném id v anotaci a v XML —, jsou tím doložená výstupem, ne odvozená.
 
 ---
 
 ## 22. Metodické poznámky
 
-**Pokrytí v repozitáři.** Žádné. Z tutoriálů existuje jen Hibernate; díly pro MyBatis a EclipseLink ve stejné doméně a se stejným číslováním kroků jsou nejlevnější cesta, jak tabulky výš doložit během — a EclipseLink díl narazí hned v kroku 6 na weaving (§16) a v kroku 8 na velká písmena v DDL (§4). Kompozitní klíče, dědičnost, alternativní klíče a verzování bude nutné napsat od nuly stejně jako v .NETu.
+**Pokrytí v repozitáři.** Žádné, a tutoriály na tom nic nemění — běží mimo řešení, proti obrazu s pevnou verzí. Existují ale všechny tři a všechny se stejnou doménou i číslováním kroků, takže tabulky výš jsou doložené výstupem: EclipseLink díl narazil podle očekávání v kroku 6 na weaving (§16) a velká písmena v DDL (§4) doložil na druhé sadě entit bez jediného názvu, protože nad explicitně pojmenovanou doménou se rozdíl neprojeví. Kompozitní klíče, dědičnost, alternativní klíče a verzování bude nutné napsat od nuly stejně jako v .NETu.
 
 **Verzování zjištění je nutné, ne kosmetické.** Tento dokument nese čtyři případy, kdy by tvrzení bez verze bylo nepřesné:
 
