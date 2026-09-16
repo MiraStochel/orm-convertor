@@ -78,6 +78,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [071](071-five-scalars-with-a-counterpart-in-both-ecosystems.md) | Uzavřený seznam skalárů se rozšiřuje o pět hodnot s protějškem v obou ekosystémech | 2026-09-16 | platí | F1, F6, F7–F10, F11, S2 |
 | [072](072-a-transient-property-is-a-carried-mapping-fact.md) | Nepersistovaná vlastnost je nesený mapovací fakt, ne chybějící sloupec | 2026-09-16 | platí | F5, F6, F7–F11, S1, S2 |
 | [073](073-distinct-as-a-flag-of-the-query-scope.md) | `DISTINCT` jako příznak (pod)dotazu vykreslovaný projekčním krokem | 2026-09-16 | platí | F7–F10, F11, T2, T3, S1, S2 |
+| [074](074-a-list-of-values-as-the-fourth-operand-shape.md) | Výčet hodnot jako čtvrtý tvar operandu podmínky | 2026-09-16 | platí | F7–F10, F11, T2, T3, S1, S2 |
 
 ## Formát
 

@@ -37,9 +37,9 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
 
     /// <summary>
     /// The construct that sank the condition being read, when the parser can name it - a
-    /// parameter, a list of values - so that the clause's refusal says what the caller
-    /// would have to change (F11). The category overrides the clause's own only for a
-    /// parameter, which has a category of its own (decision 070).
+    /// parameter, a NULL among the values of an IN list - so that the clause's refusal says
+    /// what the caller would have to change (F11). The category overrides the clause's own
+    /// only for a parameter, which has a category of its own (decision 070).
     /// </summary>
     private (string What, QueryFeature? Category)? unread;
 
@@ -717,28 +717,22 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
                     QueryOperand.Nested(ReadSubQueryOperand(exists.Subquery.QueryExpression)),
                     ComparisonOperator.Exists);
 
-            // IN with a subquery is the operator's only carried right side (decision 061);
-            // IN with a list of values has no place in the model and sinks the condition,
-            // named, for the enclosing clause to refuse (decision 070).
-            case InPredicate inPredicate when inPredicate.Subquery is not null:
+            // IN carries two right sides: a subquery (decision 061) and a list of values
+            // (decision 074). NOT IN is a negation over either.
+            case InPredicate inPredicate:
                 {
                     var value = ReadOperand(inPredicate.Expression);
-                    if (value is null)
+                    var right = inPredicate.Subquery is not null
+                        ? QueryOperand.Nested(ReadSubQueryOperand(inPredicate.Subquery.QueryExpression))
+                        : ReadValueList(inPredicate.Values);
+                    if (value is null || right is null)
                     {
                         return null;
                     }
 
-                    ConditionNode inNode = new ComparisonCondition(
-                        value,
-                        ComparisonOperator.In,
-                        QueryOperand.Nested(ReadSubQueryOperand(inPredicate.Subquery.QueryExpression)));
-
+                    ConditionNode inNode = new ComparisonCondition(value, ComparisonOperator.In, right);
                     return inPredicate.NotDefined ? new NotCondition(inNode) : inNode;
                 }
-
-            case InPredicate:
-                unread ??= ("an IN with a list of values, for which the query representation has no operand", null);
-                return null;
 
             case LikePredicate like:
                 {
@@ -855,6 +849,52 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// Reads the values IN enumerates into a list operand (decision 074). Every element has
+    /// to be a literal, because the list carries values the query itself states: a variable
+    /// is a parameter and takes that road (decision 070), a NULL is no value the model
+    /// carries (decision 002) and would make NOT IN mean different things in SQL and in
+    /// LINQ, and a column or a function is no value at all. Each of them sinks the
+    /// condition, named, for the enclosing clause to refuse.
+    /// </summary>
+    private QueryOperand? ReadValueList(IList<ScalarExpression> elements)
+    {
+        var values = new List<QueryConstant>(elements.Count);
+
+        foreach (var element in elements)
+        {
+            if (element is NullLiteral)
+            {
+                unread ??= ("NULL among the values of an IN list, which is no value the query representation carries", null);
+                return null;
+            }
+
+            var operand = ReadOperand(element);
+            if (operand is null)
+            {
+                unread ??= ($"'{Print(element)}' among the values of an IN list, which is not a literal", null);
+                return null;
+            }
+
+            if (!operand.IsConstant || operand.Function is not null)
+            {
+                unread ??= ($"'{Print(element)}' among the values of an IN list, which is not a literal", null);
+                return null;
+            }
+
+            values.Add(operand.Constant!);
+        }
+
+        return values.Count == 0 ? null : QueryOperand.ValueList(values);
+    }
+
+    private static string Print(TSqlFragment fragment)
+    {
+        var generator = new Sql160ScriptGenerator();
+        generator.GenerateScript(fragment, out var text);
+        return text.Trim();
     }
 
     /// <summary>

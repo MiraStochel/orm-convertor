@@ -198,21 +198,37 @@ public class NHibernateHqlQueryParserTest
     }
 
     [Fact]
-    public void AnInWithAValueListRefusesTheArtifact()
+    public void AnInWithAValueListRoundTrips()
     {
         var builder = Parse(
             new NHibernateHqlQueryBuilder(),
             "from Customer c where c.CustomerName in ('Alice', 'Bob')",
             Customers());
 
-        // The same road the Dapper parser takes: the model has no place for a list of
-        // values, and a query emitted without the filter would return every customer.
+        // The list is the fourth operand shape (decision 074): read as typed constants and
+        // written back through the same literal rendering a lone constant gets.
+        var hql = builder.Build().Single(s => s.ContentType == ConversionContentType.HqlQuery).Content;
+
+        Assert.Contains("c.CustomerName in ('Alice', 'Bob')", hql);
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+    }
+
+    [Fact]
+    public void AnInWithANullAmongItsValuesRefusesTheArtifact()
+    {
+        var builder = Parse(
+            new NHibernateHqlQueryBuilder(),
+            "from Customer c where c.CustomerName not in ('Alice', null)",
+            Customers());
+
+        // Null is no value the model carries (decision 002), and a not in over it means
+        // different things in HQL and in LINQ; the record names it (decision 074).
         Assert.Empty(builder.Build());
         Assert.Contains(
             builder.Records,
             r => r.Kind == ConversionRecordKind.Failure
                  && r.Feature == QueryFeature.Filtering
-                 && r.Reason.Contains("list of values"));
+                 && r.Reason.Contains("null among the values"));
     }
 
     [Fact]

@@ -253,13 +253,15 @@ public class QueryFaithfulnessTest
     [InlineData("SELECT c.Id FROM Customers c, Orders o", QueryFeature.Join)]
     [InlineData("SELECT c.Country, COUNT(*) FROM Customers c GROUP BY ROLLUP(c.Country)", QueryFeature.Grouping)]
     [InlineData("SELECT c.Id FROM Customers c WHERE c.Name LIKE 'A!_%' ESCAPE '!'", QueryFeature.Filtering)]
-    [InlineData("SELECT c.Id FROM Customers c WHERE c.Id IN (1, 2, 3)", QueryFeature.Filtering)]
+    [InlineData("SELECT c.Id FROM Customers c WHERE c.Id IN (1, c.ParentId)", QueryFeature.Filtering)]
     public void AConstructWhoseOmissionWouldChangeTheRowsRefusesTheArtifact(string sql, QueryFeature feature)
     {
         // Each of these used to go out with a Loss record and each returns different rows
         // without the construct: a cross join multiplies, ROLLUP adds rows, an unescaped
-        // pattern matches more, a dropped IN filters nothing. SELECT DISTINCT stood here
-        // until the representation learned to carry it (decision 073, DistinctQueryTest).
+        // pattern matches more, a dropped IN filters nothing. SELECT DISTINCT and IN (1, 2, 3)
+        // stood here until the representation learned to carry them (decisions 073 and 074,
+        // DistinctQueryTest and InValueListTest); an IN whose list names a column still has
+        // no place, as the list carries values the query itself states.
         var builder = new EFCoreLinqQueryBuilder();
         new DapperSqlQueryParser(builder).Parse(ConversionContentType.SqlQuery, sql);
 

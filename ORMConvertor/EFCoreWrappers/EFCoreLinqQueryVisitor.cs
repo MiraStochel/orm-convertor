@@ -141,14 +141,24 @@ public sealed class EFCoreLinqQueryVisitor(
 
         if (cond.Operator == ComparisonOperator.In)
         {
-            // Unreachable: an IN whose right side is not a subquery is refused by the
-            // template's gate - the model carries no list of values (decision 061).
-            report(ConversionRecordKind.Failure, "An IN whose right side is not a subquery has no LINQ form the query representation can carry; the query was not generated.", QueryFeature.Filtering);
+            // IN over enumerated values (decision 074) turns around into Contains on an
+            // inline array of constants, which EF Core translates back to IN (...). The
+            // subquery right side went through SubQueryComparison above; anything else is
+            // unreachable, because the template's gate refuses it (decisions 061 and 074).
+            if (cond.Right.IsValueList)
+            {
+                return $"{ValueList(cond.Right)}.Contains({left})";
+            }
+
+            report(ConversionRecordKind.Failure, "An IN whose right side is neither a subquery nor a list of values has no LINQ form; the query was not generated.", QueryFeature.Filtering);
             return string.Empty;
         }
 
         return $"{left} {Operator(cond.Operator)} {Operand(cond.Right)}";
     }
+
+    private string ValueList(QueryOperand operand)
+        => $"new[] {{ {string.Join(", ", operand.Values!.Select(Literal))} }}";
 
     /// <summary>
     /// A comparison one of whose sides is a subquery (decision 061). IN turns around into
@@ -283,7 +293,11 @@ public sealed class EFCoreLinqQueryVisitor(
     }
 
     public string Operand(QueryOperand operand)
-        => operand.IsConstant ? Literal(operand.Constant!) : Column(operand.Table, operand.Property!, operand.Function);
+        => operand.IsValueList
+            ? ValueList(operand)
+            : operand.IsConstant
+                ? Literal(operand.Constant!)
+                : Column(operand.Table, operand.Property!, operand.Function);
 
     /// <summary>
     /// Renders a column reference in the current scope: a plain member access, a group key,

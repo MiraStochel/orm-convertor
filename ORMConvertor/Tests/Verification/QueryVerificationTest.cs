@@ -231,6 +231,43 @@ public class QueryVerificationTest
     }
 
     /// <summary>
+    /// Level 3 for IN over a list of values (decision 074): the provider renders the
+    /// generated Contains over an inline array of constants as an IN list, not as a
+    /// parameter, which is what makes the array the faithful LINQ form of the operand.
+    /// </summary>
+    [Fact]
+    public void EFCoreTranslatesAGeneratedValueList()
+    {
+        const string inQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => new[] { 1, 2, 3 }.Contains(c.CustomerId))
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.EFCore,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = inQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_EFCore_ValueList",
+            Query(result, ConversionContentType.CSharpQuery),
+            Entities(result),
+            GeneratedQueryCompiler.EFCoreConsumerReferences,
+            "using Microsoft.EntityFrameworkCore;");
+
+        var sql = EFCoreQueryAcceptance.Translate(compiled);
+
+        Assert.Contains("IN (1, 2, 3)", sql);
+    }
+
+    /// <summary>
     /// Level 3 for a full outer join (decision 065): EF Core 10 has no single operator for
     /// it, so the builder composes it from LeftJoin, Concat and RightJoin - and the provider
     /// renders the composition as LEFT JOIN ... UNION ALL ... RIGHT JOIN, which proves the
@@ -483,6 +520,46 @@ public class QueryVerificationTest
         TSqlAcceptance.ResolvesAgainst(sql, [map]);
     }
 
+    /// <summary>Level 3 for IN over a list of values on Dapper (decision 074): the SQL parses and resolves.</summary>
+    [Fact]
+    public void AGeneratedValueListSqlParsesAndResolves()
+    {
+        const string inQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => new[] { "Alice", "Bob" }.Contains(c.CustomerName))
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.Dapper,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = inQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var sql = Query(result, ConversionContentType.SqlQuery);
+        Assert.Contains("IN ('Alice', 'Bob')", sql);
+
+        var map = new EntityMap
+        {
+            Entity = new Entity { Name = "Customer" },
+            Table = "Customers",
+            Schema = "Sales",
+            PropertyMaps =
+            [
+                new PropertyMap { Property = new Property { Name = "CustomerId" }, ColumnName = "CustomerId" },
+                new PropertyMap { Property = new Property { Name = "CustomerName" }, ColumnName = "CustomerName" },
+                new PropertyMap { Property = new Property { Name = "CreditLimit" }, ColumnName = "CreditLimit" },
+            ],
+        };
+
+        TSqlAcceptance.ResolvesAgainst(sql, [map]);
+    }
+
     /// <summary>Rule Q13 for a set operation: both operands' names resolve through the IR.</summary>
     [Fact]
     public void AGeneratedUnionSqlParsesAndResolves()
@@ -688,6 +765,43 @@ public class QueryVerificationTest
 
         var compiled = GeneratedEntityCompiler.CompileOrFail(
             "QueryVerification_NHibernate_Exists",
+            Entities(result),
+            GeneratedEntityCompiler.NHibernateConsumerReferences);
+
+        var mappings = result.Sources.Where(s => s.ContentType == ConversionContentType.XML).Select(s => s.Content);
+
+        NHibernateQueryAcceptance.CompileQuery(compiled, mappings, hql);
+    }
+
+    /// <summary>
+    /// Level 3 for IN over a list of values on NHibernate (decision 074): the HQL with an
+    /// in list compiles against the mapped model.
+    /// </summary>
+    [Fact]
+    public void NHibernateCompilesAGeneratedValueListHql()
+    {
+        const string inQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => new[] { "Alice", "Bob" }.Contains(c.CustomerName))
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.NHibernate,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = inQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var hql = Query(result, ConversionContentType.HqlQuery);
+        Assert.Contains("c.CustomerName in ('Alice', 'Bob')", hql);
+
+        var compiled = GeneratedEntityCompiler.CompileOrFail(
+            "QueryVerification_NHibernate_ValueList",
             Entities(result),
             GeneratedEntityCompiler.NHibernateConsumerReferences);
 

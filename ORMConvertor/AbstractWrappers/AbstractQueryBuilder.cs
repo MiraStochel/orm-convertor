@@ -2,6 +2,7 @@ using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model;
 using Model.AbstractRepresentation;
+using Model.AbstractRepresentation.Enums;
 using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
@@ -612,6 +613,18 @@ public abstract class AbstractQueryBuilder
                     return true;
                 }
 
+                // A list of values stands only as IN's right side (decision 074); the
+                // template holds the position so that the three targets refuse the same
+                // trees because one place refuses them.
+                if (comparison.Left.IsValueList)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        "A list of values stands only as the right side of IN, not as the left operand of a comparison; no artifact was generated.",
+                        QueryFeature.Filtering);
+                    return false;
+                }
+
                 if (comparison.Right is null)
                 {
                     Report(
@@ -621,14 +634,32 @@ public abstract class AbstractQueryBuilder
                     return false;
                 }
 
-                // IN's only carried right side is a subquery (decision 061); the model has
-                // no place for a list of values, so refusing here is what keeps the three
-                // targets from each answering the gap in its own way.
-                if (comparison.Operator is ComparisonOperator.In && !comparison.Right.IsSubQuery)
+                if (comparison.Operator is ComparisonOperator.In)
+                {
+                    // IN carries two right sides: a subquery (decision 061) and a list of
+                    // values (decision 074). Anything else is a tree no target renders.
+                    if (comparison.Right.IsSubQuery)
+                    {
+                        return true;
+                    }
+
+                    if (comparison.Right.IsValueList)
+                    {
+                        return ValuesShareAScalar(comparison.Right.Values!);
+                    }
+
+                    Report(
+                        ConversionRecordKind.Failure,
+                        "An IN whose right side is neither a subquery nor a list of values has no representation; no artifact was generated.",
+                        QueryFeature.Filtering);
+                    return false;
+                }
+
+                if (comparison.Right.IsValueList)
                 {
                     Report(
                         ConversionRecordKind.Failure,
-                        "An IN whose right side is not a subquery has no representation - the model carries no list of values; no artifact was generated.",
+                        $"A list of values stands only as the right side of IN; as the operand of {comparison.Operator} it cannot be rendered; no artifact was generated.",
                         QueryFeature.Filtering);
                     return false;
                 }
@@ -653,6 +684,43 @@ public abstract class AbstractQueryBuilder
             default:
                 return true;
         }
+    }
+
+    /// <summary>
+    /// Whether the values IN enumerates share a scalar a target can type the list with
+    /// (decision 074). One scalar always does; so does one numeric family - the exact one
+    /// (integers with Decimal) or the floating one (integers with Float and Double) - because
+    /// both C#'s best common type and T-SQL's type precedence widen an integer literal into
+    /// either without changing its digits. Decimal with Float or Double does not: C# has no
+    /// implicit conversion between them, and T-SQL would convert the decimal to float and
+    /// compare a different value than the source wrote. Any other mix is a list whose type
+    /// the model cannot state, and the LINQ target has no compilable form for it. A value
+    /// whose scalar nobody recognized takes no part - it goes out verbatim, as a lone
+    /// constant does (decision 024).
+    /// </summary>
+    private bool ValuesShareAScalar(IReadOnlyList<QueryConstant> values)
+    {
+        var scalars = values
+            .Where(v => v.Type is not null)
+            .Select(v => v.Type!.Value)
+            .Distinct()
+            .ToList();
+
+        if (scalars.Count <= 1
+            || scalars.All(s => IsInteger(s) || s is ScalarType.Decimal)
+            || scalars.All(s => IsInteger(s) || s is ScalarType.Float or ScalarType.Double))
+        {
+            return true;
+        }
+
+        Report(
+            ConversionRecordKind.Failure,
+            $"The values of an IN list mix the scalars {string.Join(" and ", scalars)}, which no target can type as one list; no artifact was generated.",
+            QueryFeature.Filtering);
+        return false;
+
+        static bool IsInteger(ScalarType scalar)
+            => scalar is ScalarType.Byte or ScalarType.Short or ScalarType.Int or ScalarType.Long;
     }
 
     /// <summary>Whether the condition tree holds a subquery operand anywhere (decision 061).</summary>

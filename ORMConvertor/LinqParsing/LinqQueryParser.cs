@@ -883,8 +883,12 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     /// <c>chain.Select(x =&gt; x.Col).Contains(value)</c> is IN,
     /// <c>chain.Any()</c> is EXISTS and <c>chain.Any(predicate)</c> is
     /// <c>Where(predicate).Any()</c> - the Any invocation itself has exactly the one-lambda
-    /// shape the Where handler reads. A Contains whose receiver is not a query chain - a
-    /// local collection, a string - is no subquery and stays unread.
+    /// shape the Where handler reads. A Contains whose receiver is an inline collection of
+    /// literals - <c>new[] { 1, 2, 3 }</c>, <c>new int[] { … }</c>, <c>new List&lt;int&gt;
+    /// { … }</c> - is IN over a list of values (decision 074); a receiver that is a bare
+    /// identifier is a collection from the enclosing scope, which is a parameter (decision
+    /// 070). Any other receiver - a member access, a string - is no subquery and no list and
+    /// stays unread.
     /// </summary>
     private ConditionNode? ReadSubQueryCondition(InvocationExpressionSyntax invocation)
     {
@@ -897,7 +901,28 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         {
             case "Contains":
                 {
-                    if (!TryDecompose(member.Expression, out var root, out var steps))
+                    QueryOperand? right;
+                    if (TryDecompose(member.Expression, out var root, out var steps))
+                    {
+                        right = null;
+                    }
+                    else if (TryReadInlineCollection(member.Expression, out var values))
+                    {
+                        if (values is null)
+                        {
+                            return null;
+                        }
+
+                        right = values;
+                    }
+                    else if (member.Expression is IdentifierNameSyntax collection)
+                    {
+                        unread ??= (
+                            $"the collection '{collection.Identifier.Text}' from the enclosing scope, for which the query representation has no parameter operand",
+                            QueryFeature.QueryParameter);
+                        return null;
+                    }
+                    else
                     {
                         return null;
                     }
@@ -910,8 +935,8 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
                         return null;
                     }
 
-                    var sub = ReadSubQueryOperand(root!, steps);
-                    return new ComparisonCondition(value, ComparisonOperator.In, QueryOperand.Nested(sub));
+                    right ??= QueryOperand.Nested(ReadSubQueryOperand(root!, steps));
+                    return new ComparisonCondition(value, ComparisonOperator.In, right);
                 }
 
             case "Any":
@@ -933,6 +958,64 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// Reads an inline collection of literals as the values of an IN list (decision 074).
+    /// Three C# spellings carry one: an implicit array, a typed array with an initializer,
+    /// and an object creation with a collection initializer. Returns false when the
+    /// expression is none of them; returns true with a null operand when it is one but an
+    /// element sinks it - a null literal is no value the model carries (decision 002), a
+    /// bare identifier is a value from the enclosing scope, so a parameter (decision 070),
+    /// and an empty initializer is a predicate no target writes as a filter.
+    /// </summary>
+    private bool TryReadInlineCollection(ExpressionSyntax expression, out QueryOperand? values)
+    {
+        values = null;
+
+        var initializer = expression switch
+        {
+            ImplicitArrayCreationExpressionSyntax implicitArray => implicitArray.Initializer,
+            ArrayCreationExpressionSyntax array => array.Initializer,
+            ObjectCreationExpressionSyntax creation when creation.Initializer?.IsKind(SyntaxKind.CollectionInitializerExpression) == true
+                => creation.Initializer,
+            _ => null,
+        };
+
+        if (initializer is null)
+        {
+            return false;
+        }
+
+        if (initializer.Expressions.Count == 0)
+        {
+            unread ??= ("an empty collection as the receiver of Contains, which is a predicate no target writes as a filter", null);
+            return true;
+        }
+
+        var constants = new List<QueryConstant>(initializer.Expressions.Count);
+        foreach (var element in initializer.Expressions)
+        {
+            if (IsNullLiteral(element))
+            {
+                unread ??= ("null among the values of an inline collection, which is no value the query representation carries", null);
+                return true;
+            }
+
+            // A bare identifier among the elements goes through ReadOperand's own road: a
+            // value from the enclosing scope, so a parameter (decision 070).
+            var operand = ReadOperand(element);
+            if (operand is null || !operand.IsConstant || operand.Function is not null)
+            {
+                unread ??= ($"'{element}' among the values of an inline collection, which is not a literal", null);
+                return true;
+            }
+
+            constants.Add(operand.Constant!);
+        }
+
+        values = QueryOperand.ValueList(constants);
+        return true;
     }
 
     /// <summary>

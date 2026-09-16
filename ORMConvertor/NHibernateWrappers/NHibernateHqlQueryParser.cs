@@ -68,9 +68,9 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
 
     /// <summary>
     /// The construct that sank the condition being read, when the parser can name it - a
-    /// parameter, a list of values - so that the clause's refusal says what the caller
-    /// would have to change (F11). The category overrides the clause's own only for a
-    /// parameter, which has a category of its own (decision 070).
+    /// parameter, a null among the values of an in list - so that the clause's refusal says
+    /// what the caller would have to change (F11). The category overrides the clause's own
+    /// only for a parameter, which has a category of its own (decision 070).
     /// </summary>
     private (string What, QueryFeature? Category)? unread;
 
@@ -836,25 +836,26 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
                 throw Error("expected '(' after 'in'");
             }
 
-            // IN's only carried right side is a subquery (decision 061); a list of values
-            // has no place in the model and sinks the clause, named, for the clause to
-            // refuse (decision 070) - the road it takes in the Dapper parser too.
-            if (!NextIsSubQuery())
+            // IN carries two right sides: a subquery (decision 061) and a list of values
+            // (decision 074); the first keyword inside the parenthesis tells them apart.
+            QueryOperand? members;
+            if (NextIsSubQuery())
             {
-                unread ??= ("an in with a list of values, for which the query representation has no operand", null);
+                members = QueryOperand.Nested(ParseParenthesizedSubQuery());
+            }
+            else
+            {
                 Advance();
-                SkipValueList();
+                members = ParseValueList();
                 ConsumeSymbol(")");
-                return null;
             }
 
-            var sub = ParseParenthesizedSubQuery();
-            if (left is null)
+            if (left is null || members is null)
             {
                 return null;
             }
 
-            ConditionNode inNode = new ComparisonCondition(left, ComparisonOperator.In, QueryOperand.Nested(sub));
+            ConditionNode inNode = new ComparisonCondition(left, ComparisonOperator.In, members);
             return notPrefixed ? new NotCondition(inNode) : inNode;
         }
 
@@ -922,18 +923,58 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     }
 
     /// <summary>Consumes a parenthesized value list without keeping it (see the IN branch).</summary>
-    private void SkipValueList()
+    /// <summary>
+    /// Reads the values an in list enumerates into a list operand (decision 074). Every
+    /// element has to be a literal, because the list carries values the query itself
+    /// states: a parameter takes its own road (decision 070), a null is no value the model
+    /// carries (decision 002) and would make <c>not in</c> mean different things in HQL and
+    /// in LINQ, and a property path is no value at all. Each sinks the clause, named, for
+    /// the clause to refuse; the list is consumed to its end either way, so that reading
+    /// goes on and every reason reaches the caller.
+    /// </summary>
+    private QueryOperand? ParseValueList()
     {
+        var values = new List<QueryConstant>();
+        bool carried = true;
+
         do
         {
+            if (AtKeyword("null"))
+            {
+                unread ??= ("null among the values of an in list, which is no value the query representation carries", null);
+                Advance();
+                carried = false;
+                continue;
+            }
+
             var before = position;
-            ParseOperand();
+            var element = ParseOperand();
             if (position == before)
             {
                 throw Error("expected a value");
             }
+
+            if (element is null)
+            {
+                // A parameter has named itself through unread; anything else that consumed
+                // tokens and produced nothing is a path the flat operand does not carry.
+                unread ??= ("an element of an in list that is not a literal", null);
+                carried = false;
+                continue;
+            }
+
+            if (!element.IsConstant || element.Function is not null)
+            {
+                unread ??= ($"'{element}' among the values of an in list, which is not a literal", null);
+                carried = false;
+                continue;
+            }
+
+            values.Add(element.Constant!);
         }
         while (TryConsumeSymbol(","));
+
+        return carried && values.Count > 0 ? QueryOperand.ValueList(values) : null;
     }
 
     private ComparisonOperator? ParseComparisonOperator()

@@ -179,9 +179,12 @@ public sealed class NHibernateHqlQueryVisitor(
     }
 
     private string Operand(QueryOperand operand)
-        => operand.IsConstant
-            ? Wrap(Literal(operand.Constant!), operand.Function)
-            : Column(operand.Table, operand.Property!, operand.Function);
+        => operand.IsValueList
+            // The values IN enumerates (decision 074), each spelled as a lone constant is.
+            ? $"({string.Join(", ", operand.Values!.Select(Literal))})"
+            : operand.IsConstant
+                ? Wrap(Literal(operand.Constant!), operand.Function)
+                : Column(operand.Table, operand.Property!, operand.Function);
 
     private static string Wrap(string value, string? function)
         => function is null ? value : $"{function.ToLowerInvariant()}({value})";

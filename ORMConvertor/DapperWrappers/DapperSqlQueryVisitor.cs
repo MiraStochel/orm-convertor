@@ -193,6 +193,13 @@ public class DapperSqlQueryVisitor(
 
     private static string BuildOperand(QueryOperand operand)
     {
+        // The values IN enumerates (decision 074): each one spelled the way a lone constant
+        // is, so quoting and suffixes come from the scalar, not from the source text.
+        if (operand.IsValueList)
+        {
+            return $"({string.Join(", ", operand.Values!.Select(Literal))})";
+        }
+
         var text = operand.IsColumn
             ? (operand.Table is null ? operand.Property! : $"{operand.Table}.{operand.Property}")
             : Literal(operand.Constant!);
