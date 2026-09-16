@@ -237,8 +237,23 @@ public abstract class AbstractQueryBuilder
         instructions.Add(new PaginationInstruction(offset, limit));
     }
 
+    /// <summary>
+    /// Records that the current (sub)query scope collapses duplicate rows of its final
+    /// projection (decision 073). Idempotent, so a second call in the same scope needs no
+    /// rule against it.
+    /// </summary>
+    public void Distinct()
+    {
+        instructions.Add(new DistinctInstruction());
+    }
+
     public void SetOperation(SetOperationType operation)
     {
+        // A DISTINCT recorded over a completed set operation is folded into it before the
+        // operation becomes the left side of the next one (decision 073): the marker has no
+        // scope of its own, and the identity it stands for is the template's to apply.
+        FoldTrailingDistinct();
+
         // The left operand is the last closed scope - or a completed set operation, which is
         // how A UNION B EXCEPT C chains: the finished (A UNION B) becomes the left side.
         var left = instructions.Count > 0
@@ -257,6 +272,60 @@ public abstract class AbstractQueryBuilder
 
         instructions.RemoveAt(instructions.Count - 1);
         pendingSetOperations.Push((operation, left, marks.Count));
+    }
+
+    /// <summary>
+    /// Replaces a completed set operation followed by DISTINCT markers at the end of the
+    /// instruction list with the operation the pair means (decision 073). On a refusal the
+    /// operation stays as it was: the failure is already on the channel and no artifact
+    /// will come out.
+    /// </summary>
+    private void FoldTrailingDistinct()
+    {
+        while (instructions.Count >= 2
+               && instructions[^1] is DistinctInstruction
+               && instructions[^2] is SetOperationInstruction over)
+        {
+            instructions.RemoveRange(instructions.Count - 2, 2);
+            instructions.Add(DistinctOver(over) ?? over);
+        }
+    }
+
+    /// <summary>
+    /// The relational identities of DISTINCT over a set operation (decision 073). UNION,
+    /// INTERSECT and EXCEPT already return a set, so the marker collapses nothing and is
+    /// left out; DISTINCT over UNION ALL is UNION, a rewrite rule Q14 permits; DISTINCT over
+    /// EXCEPT ALL is not EXCEPT - for A = {1, 1, 2} and B = {1} the first gives {1, 2} and
+    /// the second {2} - and refuses. Each identity is a record, because the output text
+    /// differs from the input even where the rows do not. Returns null on refusal.
+    /// </summary>
+    private SetOperationInstruction? DistinctOver(SetOperationInstruction operation)
+    {
+        switch (operation.OperationType)
+        {
+            case SetOperationType.Union:
+            case SetOperationType.Intersect:
+            case SetOperationType.Except:
+                Report(
+                    ConversionRecordKind.Convention,
+                    $"DISTINCT over a {operation.OperationType} collapses nothing further, as the operation already returns a set; it was left out.",
+                    QueryFeature.Projection);
+                return operation;
+
+            case SetOperationType.UnionAll:
+                Report(
+                    ConversionRecordKind.Convention,
+                    "DISTINCT over a UNION ALL is a UNION; the operation was written as UNION.",
+                    QueryFeature.SetOperation);
+                return operation with { OperationType = SetOperationType.Union };
+
+            default:
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"DISTINCT over a {operation.OperationType} is not the operation without ALL and has no form the query representation carries; no artifact was generated.",
+                    QueryFeature.SetOperation);
+                return null;
+        }
     }
 
     /// <summary>
@@ -285,6 +354,13 @@ public abstract class AbstractQueryBuilder
         }
 
         var body = Unwrap(instructions);
+
+        // DISTINCT over a set operation is whatever the identity says it is (decision 073).
+        if (body.Count > 1 && body[0] is SetOperationInstruction over && body.Skip(1).All(i => i is DistinctInstruction))
+        {
+            var folded = DistinctOver(over);
+            return folded is null ? [] : BuildSetOperation(folded);
+        }
 
         if (body.Count == 1 && body[0] is SetOperationInstruction setOperation)
         {
@@ -417,6 +493,7 @@ public abstract class AbstractQueryBuilder
 
         var projections = body.OfType<ProjectInstruction>().ToList();
         var groupBys = body.OfType<GroupByInstruction>().ToList();
+        var orderBys = body.OfType<OrderByInstruction>().ToList();
 
         // Rule Q8: grouping is mandatory when aggregates sit next to plain columns. A query
         // that is nothing but aggregates needs no grouping, so that case is not reported.
@@ -430,6 +507,38 @@ public abstract class AbstractQueryBuilder
                 QueryFeature.Grouping);
         }
 
+        var distinct = body.OfType<DistinctInstruction>().Any();
+
+        // DISTINCT over a projection of nothing but ungrouped aggregates collapses nothing:
+        // the result is one row (decision 073). Left out with a record rather than carried,
+        // so that no target has to write it into a shape where it means something else - a
+        // LINQ Distinct().Count() counts distinct rows where SELECT DISTINCT COUNT(*) does not.
+        if (distinct && groupBys.Count == 0 && projections.Count > 0 && projections.All(p => p.Function is not null))
+        {
+            Report(
+                ConversionRecordKind.Convention,
+                "DISTINCT over a projection of nothing but ungrouped aggregates collapses nothing - the result is a single row; it was left out.",
+                QueryFeature.Projection);
+            distinct = false;
+        }
+
+        // Under DISTINCT every ordering key has to be a projected column or alias
+        // (decision 073): T-SQL rejects the query otherwise, and LINQ has no way to name a
+        // column the Select before Distinct() did not keep. A whole-entity projection keeps
+        // every column, so the rule does not arise there.
+        if (distinct && projections.Count > 0)
+        {
+            var unprojected = orderBys.FirstOrDefault(o => !projections.Any(p => Projects(p, o)));
+            if (unprojected is not null)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The ordering key '{unprojected.Attribute}' is not among the projected columns, which DISTINCT requires - T-SQL rejects the query and LINQ cannot name the key after Distinct(); no artifact was generated.",
+                    QueryFeature.Ordering);
+                return null;
+            }
+        }
+
         return new QueryClauses
         {
             From = sources[0],
@@ -438,10 +547,33 @@ public abstract class AbstractQueryBuilder
             Filter = Conjoin([.. body.OfType<SelectInstruction>().Select(i => i.Condition)]),
             GroupBys = groupBys,
             PostFilter = Conjoin([.. body.OfType<HavingInstruction>().Select(i => i.Condition)]),
-            OrderBys = [.. body.OfType<OrderByInstruction>()],
+            OrderBys = orderBys,
             Offset = paginations.FirstOrDefault()?.Offset,
             Limit = paginations.FirstOrDefault()?.Limit,
+            Distinct = distinct,
         };
+    }
+
+    /// <summary>
+    /// Whether the projection is the column the ordering names - by alias, or by the plain
+    /// column itself (decision 073). An aggregate projects its function's value, not the
+    /// column, so it matches only through its alias.
+    /// </summary>
+    protected static bool Projects(ProjectInstruction projection, OrderByInstruction order)
+    {
+        if (order.Table is null
+            && string.Equals(projection.Alias, order.Attribute, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (projection.Function is not null)
+        {
+            return false;
+        }
+
+        return (order.Table is null || string.Equals(projection.Table, order.Table, StringComparison.OrdinalIgnoreCase))
+               && string.Equals(projection.Attribute, order.Attribute, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -547,7 +679,7 @@ public abstract class AbstractQueryBuilder
 
         var body = Unwrap(subQuery.Instructions);
 
-        if (body.Count == 1 && body[0] is SetOperationInstruction)
+        if (body.Count > 0 && body[0] is SetOperationInstruction && body.Skip(1).All(i => i is DistinctInstruction))
         {
             Report(
                 ConversionRecordKind.Failure,
@@ -603,7 +735,7 @@ public abstract class AbstractQueryBuilder
             }
         }
 
-        Check(QueryFeature.Projection, clauses.Projections.Count > 0);
+        Check(QueryFeature.Projection, clauses.Projections.Count > 0 || clauses.Distinct);
         Check(QueryFeature.Filtering, clauses.Filter is not null);
         Check(QueryFeature.Join, clauses.Joins.Count > 0);
         Check(QueryFeature.Aggregation, clauses.HasAggregates);

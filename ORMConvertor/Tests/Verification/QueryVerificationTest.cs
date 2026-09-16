@@ -155,6 +155,45 @@ public class QueryVerificationTest
     }
 
     /// <summary>
+    /// Level 3 for DISTINCT (decision 073): the provider renders the generated Distinct()
+    /// after the Select as SELECT DISTINCT, and keeps the ordering written after it - the
+    /// order the builder chooses because EF Core drops an ordering placed before Distinct().
+    /// </summary>
+    [Fact]
+    public void EFCoreTranslatesAGeneratedDistinctQuery()
+    {
+        const string distinctQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => c.CreditLimit > 2000)
+                    .Select(c => new { Name = c.CustomerName })
+                    .Distinct()
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.EFCore,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = distinctQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_EFCore_Distinct",
+            Query(result, ConversionContentType.CSharpQuery),
+            Entities(result),
+            GeneratedQueryCompiler.EFCoreConsumerReferences,
+            "using Microsoft.EntityFrameworkCore;");
+
+        var sql = EFCoreQueryAcceptance.Translate(compiled);
+
+        Assert.Contains("DISTINCT", sql);
+    }
+
+    /// <summary>
     /// Level 3 for a subquery condition (decision 061): the provider renders the generated
     /// Any chain as an EXISTS, which also proves the correlated reference to the outer
     /// lambda's parameter translates.
@@ -360,6 +399,44 @@ public class QueryVerificationTest
             "using NHibernate;");
     }
 
+    /// <summary>
+    /// Level 3 for DISTINCT on NHibernate (decision 073): the generated select distinct
+    /// compiles against the mapped model.
+    /// </summary>
+    [Fact]
+    public void NHibernateCompilesAGeneratedDistinctHql()
+    {
+        const string distinctQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Select(c => c.CustomerName)
+                    .Distinct()
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.NHibernate,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = distinctQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var hql = Query(result, ConversionContentType.HqlQuery);
+        Assert.StartsWith("select distinct ", hql);
+
+        var compiled = GeneratedEntityCompiler.CompileOrFail(
+            "QueryVerification_NHibernate_Distinct",
+            Entities(result),
+            GeneratedEntityCompiler.NHibernateConsumerReferences);
+
+        var mappings = result.Sources.Where(s => s.ContentType == ConversionContentType.XML).Select(s => s.Content);
+
+        NHibernateQueryAcceptance.CompileQuery(compiled, mappings, hql);
+    }
+
     // ---- Dapper --------------------------------------------------------------------
 
     /// <summary>
@@ -431,6 +508,51 @@ public class QueryVerificationTest
 
         var sql = Query(result, ConversionContentType.SqlQuery);
         Assert.Contains("UNION", sql);
+
+        var map = new EntityMap
+        {
+            Entity = new Entity { Name = "Customer" },
+            Table = "Customers",
+            Schema = "Sales",
+            PropertyMaps =
+            [
+                new PropertyMap { Property = new Property { Name = "CustomerId" }, ColumnName = "CustomerId" },
+                new PropertyMap { Property = new Property { Name = "CustomerName" }, ColumnName = "CustomerName" },
+                new PropertyMap { Property = new Property { Name = "CreditLimit" }, ColumnName = "CreditLimit" },
+            ],
+        };
+
+        TSqlAcceptance.ResolvesAgainst(sql, [map]);
+    }
+
+    /// <summary>
+    /// Rule Q13 for DISTINCT on the SQL side (decision 073): SELECT DISTINCT TOP (n) parses
+    /// in the grammar's order and every name still resolves through the mapping IR.
+    /// </summary>
+    [Fact]
+    public void AGeneratedDistinctSqlParsesAndResolves()
+    {
+        const string distinctQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Select(c => new { Name = c.CustomerName })
+                    .Distinct()
+                    .Take(5)
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.Dapper,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = distinctQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var sql = Query(result, ConversionContentType.SqlQuery);
+        Assert.StartsWith("SELECT DISTINCT TOP (5) ", sql);
 
         var map = new EntityMap
         {

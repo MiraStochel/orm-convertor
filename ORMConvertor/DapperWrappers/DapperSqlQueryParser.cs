@@ -486,14 +486,12 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
 
     private void ReadSelect(QuerySpecification query)
     {
-        // DISTINCT collapses duplicate rows, so a query emitted without it returns a
-        // different multiset (decision 070). It used to be skipped without a record.
+        // DISTINCT is a property of the whole projection, carried per SELECT (decision 073)
+        // - inside set-operation operands and subqueries too, where the grammar puts it. It
+        // used to be skipped without a record, then refused (decision 070).
         if (query.UniqueRowFilter == UniqueRowFilter.Distinct)
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "SELECT DISTINCT is not carried by the query representation, and a query emitted without it would return different rows; no artifact was generated.",
-                QueryFeature.Projection);
+            queryBuilder.Distinct();
         }
 
         foreach (var element in query.SelectElements)
@@ -539,6 +537,19 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
     {
         var function = call.FunctionName.Value.ToUpperInvariant();
         var parameter = call.Parameters.FirstOrDefault();
+
+        // DISTINCT inside the aggregate is a modifier of the function, not of the query, and
+        // the projection vocabulary has no place for it (decision 073). It used to be dropped
+        // in silence and the aggregate written over all values - a different value, not a
+        // poorer one; now the projection goes, which leaves the rows as they are.
+        if (call.UniqueRowFilter == UniqueRowFilter.Distinct)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"{function}(DISTINCT ...) aggregates over collapsed values, which the query representation does not carry; the projection was dropped.",
+                QueryFeature.Aggregation);
+            return;
+        }
 
         // COUNT(*) parses as a function whose single parameter is a star.
         if (parameter is null || call.UniqueRowFilter == UniqueRowFilter.NotSpecified && parameter is ColumnReferenceExpression { ColumnType: ColumnType.Wildcard })
@@ -816,6 +827,13 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
                         ? QueryConstant.Unrecognized("-" + constant.Text)
                         : QueryConstant.Of("-" + constant.Text, constant.Type.Value));
                 }
+
+            // An aggregate over DISTINCT values is a modifier the model does not carry
+            // (decision 073); it sinks the condition and is named, so that the clause refuses
+            // for the right reason instead of aggregating over all values in silence.
+            case FunctionCall { UniqueRowFilter: UniqueRowFilter.Distinct } collapsed:
+                unread ??= ($"{collapsed.FunctionName.Value.ToUpperInvariant()}(DISTINCT ...), an aggregate over collapsed values, which the query representation does not carry", null);
+                return null;
 
             case FunctionCall call when call.Parameters.FirstOrDefault() is ColumnReferenceExpression parameter
                                         && ReadColumn(parameter) is { } aggregated:

@@ -168,6 +168,7 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         EmitSource(root, FirstElementLambdaParameter(steps));
 
         bool inSetOperation = false;
+        bool distinct = false;
         long? pendingOffset = null;
         long? pendingLimit = null;
 
@@ -275,6 +276,32 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
                 continue;
             }
 
+            if (step.Name == "Distinct")
+            {
+                queryBuilder.Distinct();
+                distinct = true;
+                continue;
+            }
+
+            // The representation carries DISTINCT over the final projection (decision 073),
+            // so a step that does not commute with the collapse cannot follow it: a
+            // projection after it returns duplicates SELECT DISTINCT would fold, a grouping
+            // or a join after it groups or multiplies other rows. Filters, orderings, the
+            // slice and materialization commute and pass.
+            if (distinct && DoesNotCommuteWithDistinct(step.Name))
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"{step.Name}() after Distinct() does not commute with the collapse, which the query representation carries over the final projection; no artifact was generated.",
+                    step.Name switch
+                    {
+                        "Select" => QueryFeature.Projection,
+                        "GroupBy" => QueryFeature.Grouping,
+                        _ => QueryFeature.Join,
+                    });
+                continue;
+            }
+
             EmitStep(step, followsGrouping: i > 0 && steps[i - 1].Name == "GroupBy");
         }
 
@@ -296,6 +323,14 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     private static bool CommutesWithPagination(string method) => method is
         "Select" or "ToList" or "ToArray" or "ToListAsync" or "ToArrayAsync"
         or "AsQueryable" or "AsNoTracking" or "AsNoTrackingWithIdentityResolution";
+
+    /// <summary>
+    /// The steps that read differently before and after a Distinct() (decision 073). An
+    /// unknown step is not among them on purpose: the parser cannot tell what it would
+    /// change, and it stays the loss decision 070 made it.
+    /// </summary>
+    private static bool DoesNotCommuteWithDistinct(string method) => method is
+        "Select" or "GroupBy" or "Join" or "LeftJoin" or "RightJoin";
 
     private static bool TryMapSetOperation(string method, out SetOperationType operation)
     {
@@ -348,11 +383,11 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
                     QueryFeature.Projection);
                 return;
 
+            // A Distinct() over the composed result is recorded beside the set operation;
+            // what it means there - an identity, a UNION ALL turned UNION, or a refusal - is
+            // the template's to say (decision 073).
             case "Distinct":
-                Report(
-                    ConversionRecordKind.Failure,
-                    "Distinct() applied after a set operation is not carried by the query representation, and a query emitted without it would return different rows; no artifact was generated.",
-                    QueryFeature.Projection);
+                queryBuilder.Distinct();
                 return;
 
             case "Where":
@@ -427,14 +462,6 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             case "AsQueryable":
             case "AsNoTracking":
             case "AsNoTrackingWithIdentityResolution":
-                break;
-
-            // Collapsing duplicates changes how many rows come back (decision 070).
-            case "Distinct":
-                Report(
-                    ConversionRecordKind.Failure,
-                    "Distinct() is not carried by the query representation, and a query emitted without it would return different rows; no artifact was generated.",
-                    QueryFeature.Projection);
                 break;
 
             default:
@@ -1067,6 +1094,32 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         else
         {
             return null;
+        }
+
+        // A terminal aggregate over Distinct() (decision 073): Count, Sum and Average
+        // aggregate over the collapsed set - COUNT(DISTINCT ...), which the model does not
+        // carry - and refuse; Max and Min do not depend on the collapse, so the call is left
+        // out with a record. Either way the marker goes, so that the scope does not also
+        // report the collapse over its single-row aggregate projection.
+        if (steps.Any(s => s.Name == "Distinct"))
+        {
+            var terminal = member.Name.Identifier.Text;
+            if (function is "MAX" or "MIN")
+            {
+                Report(
+                    ConversionRecordKind.Convention,
+                    $"Distinct() before {terminal}() changes nothing, as the extreme of a set does not depend on duplicates; the call was left out.",
+                    QueryFeature.Aggregation);
+            }
+            else
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"{terminal}() over Distinct() aggregates over the collapsed set - {function}(DISTINCT ...), which the query representation does not carry; no artifact was generated.",
+                    QueryFeature.Aggregation);
+            }
+
+            steps.RemoveAll(s => s.Name == "Distinct");
         }
 
         var sub = ReadSubQueryOperand(

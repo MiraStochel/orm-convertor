@@ -232,21 +232,16 @@ public class NHibernateHqlQueryParserTest
         Assert.Contains(":limit", record.Reason);
     }
 
-    [Fact]
-    public void SelectDistinctRefusesTheArtifact()
-    {
-        var builder = Parse(
-            new NHibernateHqlQueryBuilder(),
-            "select distinct c.CustomerName from Customer c",
-            Customers());
-
-        // Collapsing duplicates changes how many rows come back, so distinct is not a loss
-        // the output can carry on without.
-        Assert.Empty(builder.Build());
-        Assert.Contains(
-            builder.Records,
-            r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("distinct"));
-    }
+    /// <summary>
+    /// DISTINCT is a flag of the (sub)query scope written by the projection step
+    /// (decision 073); it used to refuse the artifact here. Over the whole entity the select
+    /// clause names the alias, the one case a select is written without a projection.
+    /// </summary>
+    [Theory]
+    [InlineData("select distinct c.CustomerName\nfrom Customer c")]
+    [InlineData("select distinct c\nfrom Customer c")]
+    public void SelectDistinctRoundTripsToTheSameText(string hql)
+        => Assert.Equal(hql, RoundTrip(hql, Customers()), ignoreLineEndingDifferences: true);
 
     [Fact]
     public void ABetweenIsRewrittenAsAPairOfComparisons()

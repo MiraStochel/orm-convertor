@@ -59,6 +59,7 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
                 OrderBys = [],
                 Offset = clauses.Offset,
                 Limit = clauses.Limit,
+                Distinct = clauses.Distinct,
             };
         }
 
@@ -153,7 +154,9 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
 
     protected override void BuildProjection(QueryClauses clauses, QueryArtifact artifact)
     {
-        artifact.Projection.Append("SELECT ");
+        // DISTINCT is a word inside the SELECT clause, so the projection step writes it
+        // (decision 073); the final step slots TOP in after it, as T-SQL's grammar orders them.
+        artifact.Projection.Append(clauses.Distinct ? "SELECT DISTINCT " : "SELECT ");
 
         // Rule Q3: no projection means the whole entity is materialized.
         artifact.Projection.Append(clauses.ProjectsWholeEntity
@@ -205,8 +208,9 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
     /// SQL clause order, which is the relational evaluation order with the projection moved
     /// to the front. The steps ran in the other order; joining the slots here is what lets
     /// one template also serve a LINQ target (decision 023). Placement of the pagination is
-    /// this step's job too: TOP belongs textually inside the SELECT clause, OFFSET/FETCH
-    /// follows the ordering as its own lines.
+    /// this step's job too: TOP belongs textually inside the SELECT clause - after DISTINCT,
+    /// which is the grammar's order (decision 073) - and OFFSET/FETCH follows the ordering
+    /// as its own lines.
     /// </summary>
     private static string RenderSelect(QueryArtifact artifact)
     {
@@ -215,7 +219,8 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
 
         if (pagination.StartsWith("TOP", StringComparison.Ordinal))
         {
-            projection = $"SELECT {pagination} {projection["SELECT ".Length..]}";
+            var head = projection.StartsWith("SELECT DISTINCT ", StringComparison.Ordinal) ? "SELECT DISTINCT " : "SELECT ";
+            projection = $"{head}{pagination} {projection[head.Length..]}";
             pagination = string.Empty;
         }
 

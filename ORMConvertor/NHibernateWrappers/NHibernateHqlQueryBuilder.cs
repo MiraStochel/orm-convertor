@@ -131,14 +131,22 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
     protected override void BuildProjection(QueryClauses clauses, QueryArtifact artifact)
     {
         // Rule Q3: without a projection HQL materializes the whole entity, and the way to
-        // say that is to leave the select clause out entirely.
+        // say that is to leave the select clause out entirely. DISTINCT needs the clause,
+        // though (decision 073), so a distinct whole-entity projection names the source
+        // alias - the one case in which a select clause is written without a projection.
         if (clauses.ProjectsWholeEntity)
         {
+            if (clauses.Distinct)
+            {
+                var alias = clauses.From.Alias ?? artifact.ResultEntity!.ToLowerInvariant();
+                artifact.Projection.Append($"select distinct {alias}");
+            }
+
             return;
         }
 
         artifact.Projection
-            .Append("select ")
+            .Append(clauses.Distinct ? "select distinct " : "select ")
             .Append(string.Join(", ", clauses.Projections.Select(p => p.Accept(visitor))));
     }
 

@@ -35,6 +35,14 @@ public sealed class QueryClauses
     /// <summary>Rows the slice is limited to, when the query paginates (decision 060).</summary>
     public long? Limit { get; init; }
 
+    /// <summary>
+    /// True when the (sub)query collapses duplicate rows of its final projection
+    /// (decision 073). A property of the whole projection, which is why it is one flag here
+    /// rather than a mark on each ProjectInstruction; the projection step of each builder
+    /// writes the word its target spells for it.
+    /// </summary>
+    public bool Distinct { get; init; }
+
     /// <summary>True when any projection carries an aggregate function.</summary>
     public bool HasAggregates => Projections.Any(p => p.Function is not null);
 

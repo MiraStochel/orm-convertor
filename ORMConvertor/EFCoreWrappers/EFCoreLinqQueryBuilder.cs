@@ -298,6 +298,20 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             return;
         }
 
+        // Under DISTINCT every ordering follows Distinct() (decision 073): EF Core drops an
+        // ordering that precedes a Distinct() without a row-limiting operator, so the
+        // artifact would lose an ordering the source stated. The keys are projected ones -
+        // the template's gate guarantees it - so they are named on the shape after the
+        // collapse: the row itself for a whole entity, a member of the projection otherwise.
+        if (clauses.Distinct)
+        {
+            orderingAfterProjection = Chain(
+                [.. clauses.OrderBys],
+                clauses.ProjectsWholeEntity && !scope.Grouped ? scope.Param : "p",
+                o => KeyAfterDistinct(clauses, o));
+            return;
+        }
+
         var before = new List<OrderByInstruction>();
         var after = new List<OrderByInstruction>();
 
@@ -315,6 +329,28 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
         artifact.Ordering.Append(Chain(before, scope.Param, o => visitor.Visit(o)));
         orderingAfterProjection = Chain(after, "p", o => $"p.{o.Attribute}");
+    }
+
+    /// <summary>
+    /// The ordering key as the element after Distinct() spells it (decision 073): the row
+    /// itself for a whole entity, a member of the grouping key for a grouped whole-entity
+    /// projection, and a member of the projected anonymous type otherwise.
+    /// </summary>
+    private string KeyAfterDistinct(QueryClauses clauses, OrderByInstruction order)
+    {
+        if (clauses.ProjectsWholeEntity)
+        {
+            var key = visitor.Visit(order);
+            var groupKey = $"{scope.Param}.Key";
+            return scope.Grouped && key.StartsWith(groupKey, StringComparison.Ordinal)
+                ? "p" + key[groupKey.Length..]
+                : key;
+        }
+
+        var projection = clauses.Projections.FirstOrDefault(p => Projects(p, order));
+        var member = projection?.Alias
+                     ?? visitor.Property(projection?.Table ?? order.Table, projection?.Attribute ?? order.Attribute);
+        return $"p.{member}";
     }
 
     private static string Chain(
@@ -353,6 +389,10 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
                     $"\n        .Select({scope.Param} => {visitor.Visit(clauses.Projections[0])})");
             }
 
+            // IN and EXISTS carry a DISTINCT literally (decision 073). A scalar operand never
+            // arrives with one: it is a single ungrouped aggregate, over which the template's
+            // gate has already left the collapse out as the identity it is.
+            AppendDistinct(clauses, artifact);
             return;
         }
 
@@ -360,12 +400,14 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         // simply the absence of a Select.
         if (clauses.ProjectsWholeEntity && !scope.Grouped)
         {
+            AppendDistinct(clauses, artifact);
             return;
         }
 
         if (clauses.ProjectsWholeEntity)
         {
             artifact.Projection.Append($"\n        .Select({scope.Param} => {scope.Param}.Key)");
+            AppendDistinct(clauses, artifact);
             return;
         }
 
@@ -374,6 +416,20 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             .ToList();
 
         artifact.Projection.Append($"\n        .Select({scope.Param} => new {{ {string.Join(", ", members)} }})");
+        AppendDistinct(clauses, artifact);
+    }
+
+    /// <summary>
+    /// Distinct() follows the projection it collapses (decision 073), which is why it is
+    /// written by the projection step rather than by a step of its own; the ordering and the
+    /// slice are appended after it.
+    /// </summary>
+    private static void AppendDistinct(QueryClauses clauses, QueryArtifact artifact)
+    {
+        if (clauses.Distinct)
+        {
+            artifact.Projection.Append("\n        .Distinct()");
+        }
     }
 
     protected override void BuildPagination(QueryClauses clauses, QueryArtifact artifact)

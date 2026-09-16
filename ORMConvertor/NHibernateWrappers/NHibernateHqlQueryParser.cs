@@ -341,13 +341,11 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         var projections = new List<Projection>();
         if (TryConsumeKeyword("select"))
         {
-            // Collapsing duplicates changes how many rows come back (decision 070).
+            // DISTINCT is a property of the whole projection, carried per (sub)query scope
+            // (decision 073); it used to be refused here (decision 070).
             if (TryConsumeKeyword("distinct"))
             {
-                Report(
-                    ConversionRecordKind.Failure,
-                    "select distinct is not carried by the query representation, and a query emitted without it would return different rows; no artifact was generated.",
-                    QueryFeature.Projection);
+                queryBuilder.Distinct();
             }
 
             do
