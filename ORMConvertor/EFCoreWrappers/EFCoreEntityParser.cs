@@ -241,6 +241,7 @@ public class EFCoreEntityParser : CSharpEntityParser
 
             var dbProps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             bool isPrimaryKey = false;
+            bool isTransient = false;
             bool requiredAttr = false;
             string? generatedOption = null;
             string? columnTypeName = null;
@@ -281,11 +282,16 @@ public class EFCoreEntityParser : CSharpEntityParser
                         // provider's business, so no type is invented here.
                         dbProps["IsVersion"] = "true";
                         break;
+                    case "NotMapped":
+                        // The property stays on the class and leaves EF Core's model
+                        // (decision 072); what that does to the rest of the reading is
+                        // decided once all annotations are known, below.
+                        isTransient = true;
+                        break;
 
-                    // Everything else used to fall out of this switch without a trace. Some
-                    // of it changes what the artifact means rather than merely impoverishing
-                    // it - [NotMapped] says the property is not mapped at all - and it went
-                    // through as if absent (decision 010).
+                    // Everything else used to fall out of this switch without a trace, and
+                    // some of it - [NotMapped] before decision 072 - changed what the artifact
+                    // means rather than merely impoverishing it (decision 010).
                     default:
                         entityBuilder.Report(new ConversionRecord
                         {
@@ -298,6 +304,29 @@ public class EFCoreEntityParser : CSharpEntityParser
                         });
                         break;
                 }
+            }
+
+            if (isTransient)
+            {
+                // [NotMapped] takes the property out of EF Core's model altogether: the
+                // other mapping annotations on it are not read by EF Core, the key
+                // convention does not consider it and a navigation so marked founds no
+                // relationship. Only the language facts and the statement itself travel
+                // (decision 072); the dead annotations produce no record, because they
+                // state nothing in the source's model and so nothing is lost. [Key] is the
+                // one claim that survives beside the flag: the two contradict each other,
+                // and both enter the model so that the completeness gate refuses the entity
+                // the way decision 063 refuses [Keyless] beside a class-level [PrimaryKey].
+                EmitProperty(reading);
+                entityBuilder.MarkTransient(name);
+                propertyTypes[name] = type;
+
+                if (isPrimaryKey)
+                {
+                    keyPropertyNames.Add(name);
+                }
+
+                continue;
             }
 
             // The two nullability channels travel apart: the question mark is the language

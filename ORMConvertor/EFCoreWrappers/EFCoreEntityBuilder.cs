@@ -80,12 +80,35 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// A constraint naming a property the entity does not declare cannot be written at all:
     /// nameof would not compile and a string would name nothing. That is a gap in the model
     /// rather than a narrowing of EF Core, so it is reported as incompleteness and the
-    /// remaining constraints are still emitted.
+    /// remaining constraints are still emitted. A constraint over a property the source
+    /// states as not persisted (decision 072) has no column to constrain either - EF Core
+    /// refuses an index over an ignored property - and is dropped with a loss record.
     /// </summary>
     private void AppendUniqueConstraints(EntityMap entityMap, EntityArtifact artifact)
     {
         foreach (var constraint in entityMap.UniqueConstraints)
         {
+            var transient = constraint.PropertyNames
+                .Where(name => entityMap.PropertyMaps.Any(pm => pm.Property.Name == name && pm.IsTransient))
+                .ToList();
+
+            if (transient.Count > 0)
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.CSharpEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = constraint.PropertyNames.Count == 1 ? constraint.PropertyNames[0] : null,
+                    Category = MappingFactCategory.UniqueConstraint,
+                    Reason = $"The unique constraint over ({string.Join(", ", constraint.PropertyNames)}) covers "
+                        + $"({string.Join(", ", transient)}), which the source states {(transient.Count == 1 ? "is" : "are")} not persisted; "
+                        + "EF Core cannot index an ignored property, so the constraint is dropped (decision 072).",
+                });
+                continue;
+            }
+
             var missing = constraint.PropertyNames
                 .Where(name => !entityMap.PropertyMaps.Any(pm => pm.Property.Name == name))
                 .ToList();
@@ -149,6 +172,17 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             if (entityMap.Relations.Any(r => r.SourceNavigationProperty == propertyMap.Property.Name))
             {
                 continue; // navigation property - handled in BuildForeignKey
+            }
+
+            if (propertyMap.IsTransient)
+            {
+                // The source states there is no column behind the property (decision 072).
+                // [NotMapped] is the whole statement: a column annotation beside it would
+                // claim a mapping EF Core does not read on an ignored property.
+                artifact.Code.AppendLine("    [NotMapped]");
+                artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
+                artifact.Code.AppendLine();
+                continue;
             }
 
             ReportNullableColumnLoss(entityMap, propertyMap);

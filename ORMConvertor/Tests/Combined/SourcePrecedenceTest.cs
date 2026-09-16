@@ -303,10 +303,17 @@ public class SourcePrecedenceTest
         Assert.DoesNotContain("<id name=\"CustomerNumber\"", mapping);
         Assert.DoesNotContain("customer_seq", mapping);
 
-        var record = Assert.Single(result.Records, r => r.Kind == ConversionRecordKind.Conflict);
+        var record = Assert.Single(result.Records, r =>
+            r.Kind == ConversionRecordKind.Conflict && r.Category == MappingFactCategory.PrimaryKey);
         Assert.Equal("Customer", record.Entity);
-        Assert.Equal(MappingFactCategory.PrimaryKey, record.Category);
         Assert.Contains("CustomerNumber", record.Reason);
+
+        // The second document also leaves CustomerID out, which in a mapping document states
+        // the property is not persisted (decision 072); against the first document's
+        // identifier that is a second conflict, and the mapping stays.
+        var transient = Assert.Single(result.Records, r =>
+            r.Kind == ConversionRecordKind.Conflict && r.Category == MappingFactCategory.TransientProperty);
+        Assert.Equal("CustomerID", transient.Property);
     }
 
     [Fact]

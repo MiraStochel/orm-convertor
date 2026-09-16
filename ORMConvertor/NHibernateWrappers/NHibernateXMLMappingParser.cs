@@ -164,6 +164,54 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         ParseProperties(classElement);
         ParseRelations(classElement);
         ReportUnreadClassChildren(classElement);
+        MarkTransientProperties(classElement);
+    }
+
+    /// <summary>
+    /// The class properties the mapping does not name are transient (decision 072). The
+    /// document is the list of persisted members - NHibernate neither reads nor writes a
+    /// member outside it - so a class property the document leaves out is stated not to be
+    /// persisted: a claim about the boundary of the list, not a default standing in for a
+    /// missing attribute (decision 067). Only a property the class declared can be meant -
+    /// one known solely from the mapping has no language type and is named by the mapping
+    /// by definition - and without a mapping document nothing is marked at all.
+    ///
+    /// "Named" is read widely, so that transience is claimed only where the mapping states
+    /// it. The name attribute of any element under the class counts, nested ones included:
+    /// the key parts of a composite-id, but also the components and the other elements this
+    /// parser does not read and reports (decision 030), which do map the property, in a
+    /// shape the model does not carry. So does a foreign key column of many-to-one and
+    /// key-many-to-one: a scalar property of that name is the flat form of the column, which
+    /// the resolution phase pairs with the relation and the EF Core builder writes as the
+    /// foreign key property - the column is in the table, even though NHibernate fills the
+    /// member through the association.
+    /// </summary>
+    private void MarkTransientProperties(XElement classElement)
+    {
+        var named = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var element in classElement.Descendants())
+        {
+            // A column, a generator parameter or a meta element names no property.
+            if (element.Name.LocalName is not ("column" or "param" or "meta")
+                && element.Attribute("name")?.Value is { Length: > 0 } name)
+            {
+                named.Add(name);
+            }
+
+            if (element.Name.LocalName is "many-to-one" or "key-many-to-one")
+            {
+                named.UnionWith(ReadRelationColumns(element) ?? []);
+            }
+        }
+
+        foreach (var property in entityBuilder.EntityMap.Entity.Properties)
+        {
+            if (property.Type is not null && !named.Contains(property.Name))
+            {
+                entityBuilder.MarkTransient(property.Name);
+            }
+        }
     }
 
     /// <summary>

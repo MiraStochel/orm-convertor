@@ -32,4 +32,11 @@ public enum MappingFactCategory
     /// would report the same fact twice.
     /// </summary>
     UniqueConstraint = 12,
+
+    /// <summary>
+    /// The source states that a property of the class has no column behind it (decision
+    /// 072) - [NotMapped] in EF Core, a class property the hbm.xml leaves out in
+    /// NHibernate, @Transient in JPA. Dapper's POCO has nowhere to record it.
+    /// </summary>
+    TransientProperty = 13,
 }

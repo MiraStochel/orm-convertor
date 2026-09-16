@@ -60,6 +60,10 @@ public static class EFCoreDescriptor
             // exactly the surface this builder emits - no fluent configuration is needed
             // for it (decision 055).
             [MappingFactCategory.UniqueConstraint] = FactSupport.Expressible,
+
+            // [NotMapped] takes the property out of the model while it stays on the class
+            // (decision 072).
+            [MappingFactCategory.TransientProperty] = FactSupport.Expressible,
         },
 
         // LINQ over DbSet covers every category. Even the full outer join, which EF Core 10

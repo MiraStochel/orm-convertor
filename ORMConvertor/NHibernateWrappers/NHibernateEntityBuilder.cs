@@ -354,6 +354,16 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             AppendPropertyToCode(artifact.Code, entityMap, pm.Property);
 
+            if (pm.IsTransient)
+            {
+                // The source states there is no column behind the property (decision 072).
+                // Leaving it out of the mapping is NHibernate's spelling of that fact - the
+                // document lists the persisted members and nothing else - so the class keeps
+                // the property and the mapping says nothing about it. No record: nothing is
+                // missing, and a transient collection is not a collection without a relation.
+                continue;
+            }
+
             if (pm.Property.Type is { Category: LangTypeCategory.Collection })
             {
                 // A collection with no relation behind it cannot become a <property> - NHibernate
@@ -401,7 +411,8 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         var version = flagged.FirstOrDefault(pm =>
             entityMap.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == pm.Property.Name) != true
             && !entityMap.Relations.Any(r => r.SourceNavigationProperty == pm.Property.Name)
-            && pm.Property.Type is not { Category: LangTypeCategory.Collection });
+            && pm.Property.Type is not { Category: LangTypeCategory.Collection }
+            && !pm.IsTransient);
 
         foreach (var dropped in flagged.Where(pm => pm != version))
         {
@@ -869,6 +880,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         return propertyMap is not null
             && !propertyMap.IsVersion
+            && !propertyMap.IsTransient
             && entityMap.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == propertyName) != true
             && !entityMap.Relations.Any(r => r.SourceNavigationProperty == propertyName)
             && propertyMap.Property.Type is not { Category: LangTypeCategory.Collection };
@@ -902,7 +914,8 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 Category = MappingFactCategory.UniqueConstraint,
                 Reason = $"NHibernate states a unique constraint on the <property> elements it covers, and "
                     + $"({string.Join(", ", unplaceable)}) {(unplaceable.Count == 1 ? "is" : "are")} not written as one - "
-                    + "an identifier, an association or the row version. The constraint is dropped (decision 004).",
+                    + "an identifier, an association, the row version or a property the source states is not persisted. "
+                    + "The constraint is dropped (decision 004).",
             });
         }
     }

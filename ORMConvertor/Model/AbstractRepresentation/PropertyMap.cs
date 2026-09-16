@@ -42,4 +42,16 @@ public class PropertyMap
     /// means nobody stated it - no source states the opposite positively.
     /// </summary>
     public bool IsVersion { get; set; }
+
+    /// <summary>
+    /// Whether the source states that the property is not persisted at all (decision 072):
+    /// [NotMapped] in EF Core, a class property the hbm.xml does not name in NHibernate,
+    /// @Transient in JPA. The property stays a member of the class with all its language
+    /// facts; only the mapping says there is no column behind it. Positive-only like
+    /// <see cref="IsVersion"/>: false means nobody stated it, and an empty column name
+    /// still means the default column, never "no column". The model does not validate:
+    /// the flag may stand beside a key part or column facts, and the completeness gate
+    /// and the target builders decide what such a combination means.
+    /// </summary>
+    public bool IsTransient { get; set; }
 }

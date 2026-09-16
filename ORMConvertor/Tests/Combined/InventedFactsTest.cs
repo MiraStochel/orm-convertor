@@ -69,11 +69,11 @@ public class InventedFactsTest
 
     /// <summary>
     /// The EF Core attribute switch had no default branch, so every annotation outside its
-    /// seven cases vanished without a record - including two that change what the artifact
-    /// means.
+    /// recognized cases vanished without a record. [NotMapped] used to be the example that
+    /// changed what the artifact means; since decision 072 it is read, so it is no longer
+    /// on this list.
     /// </summary>
     [Theory]
-    [InlineData("NotMapped")]
     [InlineData("ConcurrencyCheck")]
     [InlineData("StringLength(50)")]
     public void AnUnreadEFCoreAnnotationIsReported(string annotation)

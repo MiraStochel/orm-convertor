@@ -185,6 +185,58 @@ public abstract class AbstractEntityBuilder
     public void MarkNoKey() => EntityMap.HasNoKey = true;
 
     /// <summary>
+    /// Records that the source states the property is not persisted (decision 072) -
+    /// EF Core's [NotMapped], a class property the hbm.xml leaves out. Find-or-create like
+    /// every other write path, so that a mapping artifact can state it before or after
+    /// the class declared the property. A statement, not an absence: it keeps the catalog
+    /// from supplying a column and the target from mapping one by convention.
+    ///
+    /// Under source precedence (decision 017) the claim fills an empty fact only: where an
+    /// earlier source already mapped the property - a column fact, the version flag, a key
+    /// part, an association - the later claim that there is no column is a conflict record
+    /// and the mapping stays. Within one artifact the two never meet this way: a key claim
+    /// arrives after the property is read, so [Key] beside [NotMapped] puts both into the
+    /// model and the completeness gate refuses the contradiction before generation.
+    /// </summary>
+    public void MarkTransient(string propertyName)
+    {
+        var propertyMap = GetOrCreatePropertyMap(propertyName);
+
+        if (propertyMap.IsTransient)
+        {
+            return; // the same statement twice is not an event
+        }
+
+        if (StatesPersistence(propertyMap))
+        {
+            ReportInputConflict(propertyName, MappingFactCategory.TransientProperty,
+                "An earlier source maps the property to a column, a later one states it is not persisted.");
+            return;
+        }
+
+        propertyMap.IsTransient = true;
+    }
+
+    /// <summary>
+    /// Whether some source has stated that the property is persisted: any column fact, the
+    /// version flag, a place in the key or an association behind it. The opposite of the
+    /// transient claim, read from what was written rather than tracked as a fact of its
+    /// own - an unmapped property with none of these has simply not been spoken about.
+    /// </summary>
+    private bool StatesPersistence(PropertyMap propertyMap)
+        => propertyMap.ColumnName is not null
+           || propertyMap.Type is not null
+           || propertyMap.IsUnicode is not null
+           || propertyMap.SourceSqlType is not null
+           || propertyMap.Length is not null
+           || propertyMap.Precision is not null
+           || propertyMap.Scale is not null
+           || propertyMap.IsNullable is not null
+           || propertyMap.IsVersion
+           || EntityMap.PrimaryKey?.Parts.Any(p => p.PropertyMap == propertyMap) == true
+           || EntityMap.Relations.Any(r => r.SourceNavigationProperty == propertyMap.Property.Name);
+
+    /// <summary>
     /// A later key claim against an already defined key (decision 036). The identity of
     /// the key is the ordered list of its parts: a claim over the same parts fills what
     /// the first left empty and a differing part list is discarded whole with a conflict
@@ -1586,6 +1638,16 @@ public abstract class AbstractEntityBuilder
             property = propertyMap.Property;
         }
 
+        // The mirror image of MarkTransient under source precedence (decisions 017 and
+        // 072): a column fact arriving for a property an earlier source stated is not
+        // persisted contradicts that statement, and the first claim is kept.
+        if (propertyMap.IsTransient && databaseProperties.Count > 0)
+        {
+            ReportInputConflict(propertyName, MappingFactCategory.TransientProperty,
+                "An earlier source states the property is not persisted, a later one maps it to a column.");
+            return;
+        }
+
         foreach (var kvp in databaseProperties)
         {
             switch (kvp.Key.ToLowerInvariant())
@@ -1723,6 +1785,15 @@ public abstract class AbstractEntityBuilder
         int? scale = null)
     {
         var propertyMap = GetOrCreatePropertyMap(propertyName);
+
+        // See SetPropertyDatabaseMapping: a type claim for a property an earlier source
+        // stated is not persisted is a conflict, and the first claim is kept (decision 072).
+        if (propertyMap.IsTransient)
+        {
+            ReportInputConflict(propertyName, MappingFactCategory.TransientProperty,
+                "An earlier source states the property is not persisted, a later one maps it to a column type.");
+            return;
+        }
 
         if (type is not null)
         {
@@ -1981,6 +2052,24 @@ public abstract class AbstractEntityBuilder
             complete = false;
         }
 
+        // A key part the source states is not persisted is the same kind of contradiction
+        // (decision 072): an identifier without a column has no meaning in any target, and
+        // the source framework builds no model from such an input either.
+        foreach (var part in entityMap.PrimaryKey?.Parts.Where(p => p.PropertyMap.IsTransient) ?? [])
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Property = part.PropertyMap.Property.Name,
+                Category = MappingFactCategory.TransientProperty,
+                Reason = $"The source states that '{part.PropertyMap.Property.Name}' is part of the primary key and that it is not persisted; "
+                    + "an identifier without a column cannot be reproduced, so the entity's artifacts are not generated (decision 072).",
+            });
+            complete = false;
+        }
+
         foreach (var category in Enum.GetValues<MappingFactCategory>())
         {
             if (Descriptor.SupportOf(category) == FactSupport.Required && !Carries(entityMap, category))
@@ -2069,6 +2158,7 @@ public abstract class AbstractEntityBuilder
         MappingFactCategory.ForeignKeyColumns => em.Relations.Any(r => r.ColumnPairs.Count > 0),
         MappingFactCategory.VersionColumn => em.PropertyMaps.Any(pm => pm.IsVersion),
         MappingFactCategory.UniqueConstraint => em.UniqueConstraints.Count > 0,
+        MappingFactCategory.TransientProperty => em.PropertyMaps.Any(pm => pm.IsTransient),
         _ => throw new ArgumentOutOfRangeException(nameof(category), category, null),
     };
 
@@ -2095,6 +2185,7 @@ public abstract class AbstractEntityBuilder
         // the entity, and naming one of them would be arbitrary.
         MappingFactCategory.UniqueConstraint => em.UniqueConstraints
             .Select(c => c.PropertyNames.Count == 1 ? (string?)c.PropertyNames[0] : null),
+        MappingFactCategory.TransientProperty => em.PropertyMaps.Where(pm => pm.IsTransient).Select(pm => (string?)pm.Property.Name),
         _ => [null],
     };
 

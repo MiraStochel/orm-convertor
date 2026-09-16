@@ -399,7 +399,10 @@ public static class CatalogCompletion
 
         foreach (var pm in em.PropertyMaps)
         {
-            if (IsNavigation(builder, em, pm))
+            // A property the source states is not persisted has no column to complete, and
+            // a column of the same name is no statement about it (decision 072): the catalog
+            // has nothing to answer, so neither facts nor a record about a missing column.
+            if (pm.IsTransient || IsNavigation(builder, em, pm))
             {
                 continue;
             }
@@ -1164,11 +1167,17 @@ public static class CatalogCompletion
         return em.Relations.Any(r => r.SourceNavigationProperty == pm.Property.Name);
     }
 
+    /// <summary>
+    /// The property behind a catalog column: by stated column name first, then by the
+    /// property's own name. A property the source states is not persisted is never the
+    /// answer (decision 072) - the column the key, the foreign key or the constraint names
+    /// is not its column, whatever it is called.
+    /// </summary>
     private static PropertyMap? FindPropertyMapForColumn(EntityMap em, string column)
         => em.PropertyMaps.FirstOrDefault(pm =>
-                string.Equals(pm.ColumnName, column, StringComparison.OrdinalIgnoreCase))
+                !pm.IsTransient && string.Equals(pm.ColumnName, column, StringComparison.OrdinalIgnoreCase))
             ?? em.PropertyMaps.FirstOrDefault(pm =>
-                pm.ColumnName is null && string.Equals(pm.Property.Name, column, StringComparison.OrdinalIgnoreCase));
+                !pm.IsTransient && pm.ColumnName is null && string.Equals(pm.Property.Name, column, StringComparison.OrdinalIgnoreCase));
 
     private static string SimpleEntityName(string name)
     {

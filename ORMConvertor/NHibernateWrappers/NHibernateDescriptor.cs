@@ -120,6 +120,11 @@ public static class NHibernateDescriptor
             // Both live on <property>, so a constraint over a key part or a navigation is
             // the narrowing the builder reports at the point of emission.
             [MappingFactCategory.UniqueConstraint] = FactSupport.Expressible,
+
+            // The mapping document is the list of persisted members, so leaving the
+            // property out of it is NHibernate's spelling of the fact - the only one it
+            // has (decision 072).
+            [MappingFactCategory.TransientProperty] = FactSupport.Expressible,
         },
 
         // HQL covers every category except set operations: NHibernate 5.7.0 has no UNION,

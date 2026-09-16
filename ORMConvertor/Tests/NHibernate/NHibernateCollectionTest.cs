@@ -228,19 +228,27 @@ public class NHibernateCollectionTest
         Assert.Contains("<bag name=\"Orders\" inverse=\"true\">", CustomerXmlOf(builder));
     }
 
+    private const string CustomerWithTagsSource = """
+        public class Customer
+        {
+            public virtual int CustomerID { get; set; }
+
+            public virtual List<string> Tags { get; set; } = [];
+        }
+        """;
+
+    /// <summary>
+    /// The builder's branch for a collection nobody mapped: fed without a mapping document,
+    /// because a document that leaves the collection out states it is transient (decision
+    /// 072) and the branch would never be reached.
+    /// </summary>
     [Fact]
     public void ACollectionWithoutARelationStaysUnmapped()
     {
         var builder = new NHibernateEntityBuilder();
-        new NHibernateEntityParser(builder).Parse("""
-            public class Customer
-            {
-                public virtual int CustomerID { get; set; }
-
-                public virtual List<string> Tags { get; set; } = [];
-            }
-            """);
-        new NHibernateXMLMappingParser(builder).Parse(CustomerMappingWithCollection(string.Empty));
+        new NHibernateEntityParser(builder).Parse(CustomerWithTagsSource);
+        builder.AddTable("Customers");
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Identity, "CustomerID");
 
         var outputs = builder.Build();
         var xml = outputs.Single(o => o.ContentType == ConversionContentType.XML).Content;
@@ -252,6 +260,29 @@ public class NHibernateCollectionTest
         Assert.Contains("IList<string> Tags", code);
         Assert.Contains(builder.Records, r =>
             r.Kind == ConversionRecordKind.Incompleteness && r.Property == "Tags");
+    }
+
+    /// <summary>
+    /// The same class under a mapping document that does not name the collection: the
+    /// omission is the source's statement that the member is not persisted (decision 072),
+    /// so nothing is incomplete and nothing is on record.
+    /// </summary>
+    [Fact]
+    public void ACollectionTheMappingDoesNotNameIsTransient()
+    {
+        var builder = new NHibernateEntityBuilder();
+        new NHibernateEntityParser(builder).Parse(CustomerWithTagsSource);
+        new NHibernateXMLMappingParser(builder).Parse(CustomerMappingWithCollection(string.Empty));
+
+        Assert.True(builder.EntityMaps.Single().PropertyMaps.Single(pm => pm.Property.Name == "Tags").IsTransient);
+
+        var outputs = builder.Build();
+        var xml = outputs.Single(o => o.ContentType == ConversionContentType.XML).Content;
+        var code = outputs.Single(o => o.ContentType == ConversionContentType.CSharpEntity).Content;
+
+        Assert.DoesNotContain("Tags", xml);
+        Assert.Contains("IList<string> Tags", code);
+        Assert.DoesNotContain(builder.Records, r => r.Property == "Tags");
     }
 
     [Fact]

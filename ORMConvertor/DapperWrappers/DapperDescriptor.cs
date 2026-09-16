@@ -49,6 +49,11 @@ public static class DapperDescriptor
             // A POCO carries no schema constraints at all, so a unique constraint of the
             // source is a record about Dapper rather than about the tool (decision 055).
             [MappingFactCategory.UniqueConstraint] = FactSupport.NotExpressible,
+
+            // The class keeps the property like any other; that it has no column behind it
+            // is decided by the SQL of each query, not by anything the POCO can state
+            // (decision 072).
+            [MappingFactCategory.TransientProperty] = FactSupport.NotExpressible,
         },
 
         // SQL expresses every query category, so as a query target Dapper is the opposite of
