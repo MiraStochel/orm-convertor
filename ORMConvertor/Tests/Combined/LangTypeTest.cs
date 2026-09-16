@@ -1,3 +1,4 @@
+using AbstractWrappers.Diagnostics;
 using DapperWrappers;
 using EFCoreWrappers;
 using Model.AbstractRepresentation.Enums;
@@ -8,7 +9,8 @@ namespace Tests.Combined;
 /// <summary>
 /// The neutral language type model (decision 014): an unrecognized name survives the
 /// round trip instead of throwing, and a mapping's claim turns a navigation property
-/// into a reference the target builder can emit.
+/// into a reference the target builder can emit. A name nobody could place is said out
+/// loud once the names of the conversion have resolved (decision 075).
 /// </summary>
 public class LangTypeTest
 {
@@ -38,6 +40,53 @@ public class LangTypeTest
         var code = builder.Build().Single().Content;
         Assert.Contains("public uint Quantity { get; set; }", code);
         Assert.Contains("public OrderLineId Id { get; set; }", code);
+
+        // ...and the incomplete claim is said out loud (decision 075): one record per
+        // property the model could not place, without a category - the language type is
+        // outside the descriptor's vocabulary - and without a unit, the resolution phase
+        // running over the merged entity. The artifact is not refused.
+        var records = builder.Records.Where(r => r.Kind == ConversionRecordKind.Incompleteness).ToList();
+        Assert.Equal(new[] { "Quantity", "Id" }, records.Select(r => r.Property));
+        Assert.All(records, r =>
+        {
+            Assert.Equal("OrderLine", r.Entity);
+            Assert.Null(r.Category);
+            Assert.Null(r.Unit);
+        });
+        Assert.Contains("type 'uint' of the property", records[0].Reason);
+        Assert.Contains("type 'OrderLineId' of the property", records[1].Reason);
+    }
+
+    [Fact]
+    public void CollectionElementLeftUnplacedIsReportedOnceThroughItsProperty()
+    {
+        var source = """
+            public class Customer
+            {
+                public int CustomerID { get; set; }
+
+                public List<Order> Orders { get; set; } = [];
+
+                public List<Tag> Tags { get; set; } = [];
+            }
+
+            public class Order
+            {
+                public int OrderID { get; set; }
+            }
+            """;
+
+        var builder = new DapperEntityBuilder();
+        new DapperEntityParser(builder).Parse(source);
+        builder.Build();
+
+        // Order is an entity of the conversion, so its collection resolves and stays silent;
+        // Tag is nobody's, and the record names the element, once, through the property -
+        // the collection itself is placed, only its element is not.
+        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Incompleteness);
+        Assert.Equal("Customer", record.Entity);
+        Assert.Equal("Tags", record.Property);
+        Assert.Contains("element type 'Tag' of the collection property", record.Reason);
     }
 
     [Fact]

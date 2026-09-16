@@ -935,7 +935,8 @@ public abstract class AbstractEntityBuilder
     /// matching an entity of the same conversion becomes a reference. A name that resolves to
     /// nothing is left as it is and recorded as incompleteness (decision 010): it may be a
     /// typo, or a reference outside the conversion that the database catalog would resolve
-    /// (decision 015), and only the catalog can tell the two apart.
+    /// (decision 015), and only the catalog can tell the two apart. The same goes for a
+    /// property type that stays Unknown once every name has had its chance (decision 075).
     /// </summary>
     private void ResolveEntityNames()
     {
@@ -944,6 +945,7 @@ public abstract class AbstractEntityBuilder
             foreach (var property in entityMap.Entity.Properties)
             {
                 property.Type = ResolveUnknownType(property.Type);
+                ReportUnplacedType(entityMap, property);
             }
 
             foreach (var relation in entityMap.Relations)
@@ -1242,6 +1244,50 @@ public abstract class AbstractEntityBuilder
 
         return type;
     }
+
+    /// <summary>
+    /// The third clause of decision 014, given its event by decision 075: a property whose type
+    /// is still Unknown after every name of the conversion has had its chance to resolve is a
+    /// claim the model could not place - not a scalar of the closed list, not a collection of
+    /// one, not an entity of the conversion. The output repeats the name the source wrote, so
+    /// nothing is lost and nothing refused; but a target outside the source's ecosystem need
+    /// not accept the name, and this record is the only trace of why. It carries no category,
+    /// the language type being outside the descriptor's vocabulary, and no unit, the phase
+    /// running over the merged entity (decision 066). The element of a collection is reported
+    /// through its property, once.
+    /// </summary>
+    private void ReportUnplacedType(EntityMap entityMap, Property property)
+    {
+        if (UnplacedTypeOf(property.Type) is not { } unplaced)
+        {
+            return;
+        }
+
+        var subject = ReferenceEquals(unplaced, property.Type)
+            ? $"The type '{unplaced.SourceName}' of the property"
+            : $"The element type '{unplaced.SourceName}' of the collection property";
+
+        Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Incompleteness,
+            Framework = Descriptor.Framework,
+            Entity = entityMap.Entity.Name,
+            Property = property.Name,
+            Reason = $"{subject} is neither a scalar of the neutral type model, nor a collection of one, nor an entity of the conversion; "
+                + "the output repeats the name as the source wrote it, which a target outside the source's ecosystem need not accept (decisions 014 and 075).",
+        });
+    }
+
+    /// <summary>
+    /// The Unknown a type still holds after resolution: the type itself, or the innermost
+    /// element of a collection; null when every name is placed.
+    /// </summary>
+    private static LangType? UnplacedTypeOf(LangType? type) => type switch
+    {
+        { Category: LangTypeCategory.Unknown } => type,
+        { Category: LangTypeCategory.Collection } => UnplacedTypeOf(type.ElementType),
+        _ => null,
+    };
 
     /// <summary>
     /// Pairs the foreign key columns the source stated with the key they reference, once both

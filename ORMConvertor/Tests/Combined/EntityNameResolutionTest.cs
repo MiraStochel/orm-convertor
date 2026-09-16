@@ -1,3 +1,4 @@
+using AbstractWrappers.Diagnostics;
 using DapperWrappers;
 using EFCoreWrappers;
 using Model;
@@ -187,6 +188,13 @@ public class EntityNameResolutionTest
 
         var other = order.Entity.Properties.Single(p => p.Name == "Other");
         Assert.Equal(LangTypeCategory.Unknown, other.Type!.Category);
+
+        // The placed name is a claim the model made and gets no record; the one left unknown
+        // is reported as incompleteness once every name has had its chance (decision 075).
+        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Incompleteness);
+        Assert.Equal("Order", record.Entity);
+        Assert.Equal("Other", record.Property);
+        Assert.Contains("'OtherThing'", record.Reason);
     }
 
     [Fact]
