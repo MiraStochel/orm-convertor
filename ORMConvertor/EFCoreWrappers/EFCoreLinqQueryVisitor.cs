@@ -419,6 +419,12 @@ public sealed class EFCoreLinqQueryVisitor(
         ScalarType.Float => constant.Text + "f",
         ScalarType.DateTime => $"DateTime.Parse(\"{constant.Text}\")",
         ScalarType.Guid => $"Guid.Parse(\"{constant.Text}\")",
+        // The same shape for the temporal scalars of decision 071: a parsed constant EF
+        // Core evaluates on the client and sends as a parameter, like DateTime above.
+        ScalarType.Date => $"DateOnly.Parse(\"{constant.Text}\")",
+        ScalarType.TimeOfDay => $"TimeOnly.Parse(\"{constant.Text}\")",
+        ScalarType.DateTimeOffset => $"DateTimeOffset.Parse(\"{constant.Text}\")",
+        ScalarType.Duration => $"TimeSpan.Parse(\"{constant.Text}\")",
         _ => constant.Text,
     };
 }

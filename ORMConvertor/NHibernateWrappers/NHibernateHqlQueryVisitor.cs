@@ -220,7 +220,9 @@ public sealed class NHibernateHqlQueryVisitor(
     {
         ScalarType.String or ScalarType.Char or ScalarType.Guid
             => $"'{constant.Text.Replace("'", "''")}'",
-        ScalarType.DateTime => $"'{constant.Text}'",
+        // HQL reads every temporal literal from a quoted string (decision 071).
+        ScalarType.DateTime or ScalarType.Date or ScalarType.TimeOfDay
+            or ScalarType.DateTimeOffset or ScalarType.Duration => $"'{constant.Text}'",
         ScalarType.Bool => constant.Text.ToLowerInvariant(),
         _ => constant.Text,
     };

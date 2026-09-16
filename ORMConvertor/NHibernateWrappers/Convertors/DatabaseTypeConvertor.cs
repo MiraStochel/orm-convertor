@@ -64,11 +64,21 @@ public static class DatabaseTypeConvertor
             "single" or "float" => new(DatabaseType.Real),
             "double" => new(DatabaseType.DoublePrecision),
 
-            "date" => new(DatabaseType.Date),
-            "time" or "timeastimespan" => new(DatabaseType.Time),
+            // One column family, several CLR sides: Date and LocalDate read a DateTime,
+            // DateOnlyAsDate a DateOnly. Which side the property has is the claim of the
+            // class, not of the mapping, so only the family is read here (decision 071).
+            "date" or "localdate" or "dateonlyasdate" => new(DatabaseType.Date),
+
+            // Time reads a DateTime, TimeAsTimeSpan a TimeSpan, TimeOnlyAsTime a TimeOnly.
+            "time" or "timeastimespan" or "timeonlyastime" => new(DatabaseType.Time),
+
+            // TimeSpan and TimeOnlyAsTicks store ticks in a 64-bit integer column - the
+            // family is the column's, the CLR side stays the property's (decision 071).
+            "timespan" or "timeonlyasticks" => new(DatabaseType.BigInt),
 
             // Timestamp is NHibernate's DateTime-valued type, not a rowversion column.
-            "datetime" or "datetime2" or "dbtimestamp" or "timestamp" => new(DatabaseType.Timestamp),
+            "datetime" or "datetime2" or "dbtimestamp" or "timestamp"
+                or "localdatetime" or "utcdatetime" or "timeonlyasdatetime" => new(DatabaseType.Timestamp),
 
             // The name itself claims no fractional seconds.
             "datetimenoms" => new(DatabaseType.Timestamp, Precision: 0),
@@ -113,9 +123,25 @@ public static class DatabaseTypeConvertor
     /// the non-unicode large text (only StringClob exists). There the nearest registered
     /// name is written and the difference travels as the Narrowing of the result, for
     /// the builder to report at the point of emission.
+    ///
+    /// An NHibernate type name states the CLR side as much as the column side: Date,
+    /// DateOnlyAsDate and LocalDate all mean a date column, read into a DateTime, a
+    /// DateOnly and a DateTime of local kind. For the temporal families and for the
+    /// 64-bit integer family - where TimeSpan and TimeOnlyAsTicks keep ticks - the
+    /// language scalar of the property therefore picks the name (decision 071); a
+    /// name that cannot read the property would build a session factory and fail at
+    /// the first hydration. Where 5.7.0 registers no type for the pair, the type
+    /// NHibernate itself assumes for the property is written and the changed column
+    /// claim travels as the Narrowing. Without a scalar the family alone decides, as
+    /// it did before.
     /// </summary>
-    public static NHibernateTypeNaming ToNHibernate(DatabaseType type, bool? isUnicode = null, int? length = null) => type switch
+    public static NHibernateTypeNaming ToNHibernate(
+        DatabaseType type, bool? isUnicode = null, int? length = null, ScalarType? scalar = null) => type switch
     {
+        DatabaseType.Date or DatabaseType.Time or DatabaseType.Timestamp
+            or DatabaseType.TimestampWithTimeZone or DatabaseType.BigInt
+            when IsTemporal(scalar) => TemporalNaming(type, scalar!.Value),
+
         DatabaseType.Boolean => new("Boolean"),
         DatabaseType.TinyInt => new("Byte"),
         DatabaseType.SmallInt => new("Int16"),
@@ -156,11 +182,70 @@ public static class DatabaseTypeConvertor
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
 
+    private static bool IsTemporal(ScalarType? scalar) => scalar is ScalarType.DateTime
+        or ScalarType.Date or ScalarType.TimeOfDay or ScalarType.Duration or ScalarType.DateTimeOffset;
+
+    /// <summary>
+    /// The registered name of a (column family, temporal scalar) pair. Every name was
+    /// resolved through TypeFactory of NHibernate 5.7.0 before it was written here; the
+    /// heuristic defaults in <see cref="TemporalDefault"/> were read from
+    /// NHibernateUtil.GuessType of the same package.
+    /// </summary>
+    private static NHibernateTypeNaming TemporalNaming(DatabaseType type, ScalarType scalar)
+    {
+        var registered = (type, scalar) switch
+        {
+            (DatabaseType.Date, ScalarType.DateTime) => "Date",
+            (DatabaseType.Date, ScalarType.Date) => "DateOnlyAsDate",
+
+            (DatabaseType.Time, ScalarType.DateTime) => "Time",
+            (DatabaseType.Time, ScalarType.TimeOfDay) => "TimeOnlyAsTime",
+            (DatabaseType.Time, ScalarType.Duration) => "TimeAsTimeSpan",
+
+            (DatabaseType.Timestamp, ScalarType.DateTime) => "DateTime",
+            (DatabaseType.Timestamp, ScalarType.TimeOfDay) => "TimeOnlyAsDateTime",
+
+            (DatabaseType.TimestampWithTimeZone, ScalarType.DateTimeOffset) => "DateTimeOffset",
+
+            (DatabaseType.BigInt, ScalarType.Duration) => "TimeSpan",
+            (DatabaseType.BigInt, ScalarType.TimeOfDay) => "TimeOnlyAsTicks",
+
+            _ => null,
+        };
+
+        if (registered is not null)
+        {
+            return new(registered);
+        }
+
+        var fallback = TemporalDefault(scalar);
+
+        return new(fallback,
+            $"NHibernate 5.7.0 registers no type that reads a {scalar} property from a {type} column; "
+            + $"'{fallback}', the type NHibernate itself assumes for such a property, is written and the "
+            + "column claim changes with it (decision 071).");
+    }
+
+    /// <summary>The type NHibernate 5.7.0 assumes for a property of the scalar when the mapping names none.</summary>
+    private static string TemporalDefault(ScalarType scalar) => scalar switch
+    {
+        ScalarType.DateTime => "DateTime",
+        ScalarType.Date => "DateOnlyAsDate",
+        ScalarType.TimeOfDay => "TimeOnlyAsTime",
+        ScalarType.Duration => "TimeSpan",
+        ScalarType.DateTimeOffset => "DateTimeOffset",
+        _ => throw new ArgumentOutOfRangeException(nameof(scalar), scalar, null),
+    };
+
     /// <summary>
     /// NHibernate's own default assumption about the column behind a scalar - the
     /// language-to-database table of this framework, which is why it lives here and not
     /// in Common (decision 014). Null means no claim: for Object NHibernate decides at
     /// runtime, and writing anything down would state more than the source did.
+    ///
+    /// The five scalars of decision 071 follow NHibernateUtil.GuessType of 5.7.0, read
+    /// at runtime: a TimeSpan is ticks in a 64-bit integer column, not a time column -
+    /// the one place where NHibernate's default and EF Core's (time) part ways.
     /// </summary>
     public static string? GuessFromScalarType(ScalarType scalarType)
     {
@@ -182,6 +267,11 @@ public static class DatabaseTypeConvertor
             ScalarType.String => ToNHibernate(DatabaseType.VarChar, isUnicode: true).Name,
             ScalarType.DateTime => ToNHibernate(DatabaseType.Timestamp).Name,
             ScalarType.Guid => ToNHibernate(DatabaseType.Uuid).Name,
+            ScalarType.Date => ToNHibernate(DatabaseType.Date, scalar: ScalarType.Date).Name,
+            ScalarType.TimeOfDay => ToNHibernate(DatabaseType.Time, scalar: ScalarType.TimeOfDay).Name,
+            ScalarType.Duration => ToNHibernate(DatabaseType.BigInt, scalar: ScalarType.Duration).Name,
+            ScalarType.DateTimeOffset => ToNHibernate(DatabaseType.TimestampWithTimeZone, scalar: ScalarType.DateTimeOffset).Name,
+            ScalarType.ByteArray => ToNHibernate(DatabaseType.VarBinary).Name,
             ScalarType.Object => null,
             _ => null,
         };

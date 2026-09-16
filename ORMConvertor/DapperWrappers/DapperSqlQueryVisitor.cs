@@ -209,7 +209,11 @@ public class DapperSqlQueryVisitor(
     private static string Literal(QueryConstant constant) => constant.Type switch
     {
         null => constant.Text,
+        // The temporal scalars are quoted like DateTime: T-SQL reads a date, a time, a
+        // datetimeoffset and a time-typed interval from a string literal (decision 071).
+        // A byte array is not - a 0x… literal is already the SQL spelling.
         ScalarType.String or ScalarType.Char or ScalarType.Guid or ScalarType.DateTime
+            or ScalarType.Date or ScalarType.TimeOfDay or ScalarType.DateTimeOffset or ScalarType.Duration
             => $"'{constant.Text.Replace("'", "''")}'",
         ScalarType.Bool => string.Equals(constant.Text, "true", StringComparison.OrdinalIgnoreCase) ? "1" : "0",
         _ => constant.Text,

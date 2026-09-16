@@ -96,6 +96,8 @@ public class DatabaseTypeConvertor
             "double" => new(DatabaseType.DoublePrecision),
             "single" => new(DatabaseType.Real),
             "system.datetime" => new(DatabaseType.Timestamp),
+            "system.dateonly" or "dateonly" => new(DatabaseType.Date),
+            "system.timeonly" or "timeonly" => new(DatabaseType.Time),
             "system.timespan" or "timespan" => new(DatabaseType.Time),
             "system.datetimeoffset" => new(DatabaseType.TimestampWithTimeZone),
             "guid" or "system.guid" => new(DatabaseType.Uuid),

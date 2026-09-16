@@ -194,10 +194,17 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// </summary>
     private string? ResolveNhType(EntityMap entityMap, PropertyMap propertyMap)
     {
+        var scalar = propertyMap.Property.Type is { Category: LangTypeCategory.Scalar } scalarType
+            ? scalarType.ScalarType
+            : null;
+
         if (propertyMap.Type != null)
         {
+            // The scalar rides along because an NHibernate type name states the CLR side
+            // too: a date column is 'Date' for a DateTime property and 'DateOnlyAsDate' for
+            // a DateOnly one (decision 071).
             var naming = DatabaseTypeConvertor.ToNHibernate(
-                propertyMap.Type.Value, propertyMap.IsUnicode, propertyMap.Length);
+                propertyMap.Type.Value, propertyMap.IsUnicode, propertyMap.Length, scalar);
 
             if (naming.Narrowing is not null)
             {
@@ -220,8 +227,8 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         // before generation (decision 015). What is still missing at this point is guessed
         // from the language scalar; for anything else - a reference, a collection, an
         // unknown name - no claim is made and NHibernate decides itself.
-        return propertyMap.Property.Type is { Category: LangTypeCategory.Scalar } langType
-            ? DatabaseTypeConvertor.GuessFromScalarType(langType.ScalarType!.Value)
+        return scalar is ScalarType known
+            ? DatabaseTypeConvertor.GuessFromScalarType(known)
             : null;
     }
 

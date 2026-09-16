@@ -84,6 +84,11 @@ public static class CSharpTypeConvertor
         ScalarType.DateTime => "DateTime",
         ScalarType.Guid => "Guid",
         ScalarType.Object => "object",
+        ScalarType.Date => "DateOnly",
+        ScalarType.TimeOfDay => "TimeOnly",
+        ScalarType.DateTimeOffset => "DateTimeOffset",
+        ScalarType.Duration => "TimeSpan",
+        ScalarType.ByteArray => "byte[]",
         _ => throw new ArgumentOutOfRangeException(nameof(scalar), scalar, null),
     };
 
@@ -158,7 +163,9 @@ public static class CSharpTypeConvertor
         return false;
     }
 
-    private static ScalarType? TryReadScalar(string text) => StripNamespace(text).ToLowerInvariant() switch
+    // The array brackets are part of the name here: byte[] is a scalar of the vocabulary
+    // (decision 071), and the whitespace Roslyn may keep inside "byte [ ]" is not.
+    private static ScalarType? TryReadScalar(string text) => StripNamespace(text).Replace(" ", string.Empty).ToLowerInvariant() switch
     {
         "bool" or "boolean" => ScalarType.Bool,
         "byte" => ScalarType.Byte,
@@ -173,6 +180,11 @@ public static class CSharpTypeConvertor
         "datetime" => ScalarType.DateTime,
         "guid" => ScalarType.Guid,
         "object" => ScalarType.Object,
+        "dateonly" => ScalarType.Date,
+        "timeonly" => ScalarType.TimeOfDay,
+        "datetimeoffset" => ScalarType.DateTimeOffset,
+        "timespan" => ScalarType.Duration,
+        "byte[]" => ScalarType.ByteArray,
         _ => null,
     };
 
