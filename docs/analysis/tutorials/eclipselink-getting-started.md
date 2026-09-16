@@ -14,7 +14,7 @@ Ověřené verze: EclipseLink **5.0.0** (build `5.0.0.v202603230926-bc4f4eb36eb1
 
 **Tenhle díl neběží v IDE, ale v kontejneru.** Díl k Hibernate předpokládal IntelliJ IDEA s vlastním JDK a zabudovaným Mavenem; tady je jediný předpoklad Docker a na hostiteli není potřeba ani JDK, ani Maven, ani SQL Server.
 
-Důvod je metodický, ne pohodlnost: javová strana řešení zatím neexistuje ([`open-items.md`](../../open-items.md), „Kudy do řešení vstupuje javová strana") a kontejnerová konfigurace prostředí je rozhodnutí [039](../../decisions/039-container-configuration-of-the-environment.md). Běh v obrazu s pevnou verzí je doložitelný na cizím stroji přesně tak, jak je zapsaný, což u „nainstaluj si JDK a klikni na zelenou šipku" neplatí.
+Důvod je metodický, ne pohodlnost: javová strana řešení zatím neexistuje, kudy vstoupí, říká rozhodnutí [076](../../decisions/076-java-wrappers-in-csharp-jvm-in-containers.md), a kontejnerová konfigurace prostředí je rozhodnutí [039](../../decisions/039-container-configuration-of-the-environment.md). Běh v obrazu s pevnou verzí je doložitelný na cizím stroji přesně tak, jak je zapsaný, což u „nainstaluj si JDK a klikni na zelenou šipku" neplatí.
 
 | Díl k Hibernate | Tenhle díl |
 |---|---|

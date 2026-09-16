@@ -80,6 +80,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [073](073-distinct-as-a-flag-of-the-query-scope.md) | `DISTINCT` jako příznak (pod)dotazu vykreslovaný projekčním krokem | 2026-09-16 | platí | F7–F10, F11, T2, T3, S1, S2 |
 | [074](074-a-list-of-values-as-the-fourth-operand-shape.md) | Výčet hodnot jako čtvrtý tvar operandu podmínky | 2026-09-16 | platí | F7–F10, F11, T2, T3, S1, S2 |
 | [075](075-unknown-language-type-is-a-reported-incompleteness.md) | Neznámý jazykový typ je po rozresolvování jmen hlášená neúplnost | 2026-09-16 | platí | F10, F11, S1, S2, T3 |
+| [076](076-java-wrappers-in-csharp-jvm-in-containers.md) | Javová strana vstupuje jako wrappery v C#, JVM zůstává v kontejneru | 2026-09-16 | platí | F7–F10, F12, F13, F15, S1, S2, S4, S5, T7 |
 
 ## Formát
 
