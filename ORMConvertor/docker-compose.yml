@@ -5,7 +5,9 @@
 #   docker compose --profile test run --rm java_tests    the Java test suite, likewise
 #
 # The test commands need nothing on the host but Docker: each builds its suite, starts a
-# SQL Server of its own, waits for it, creates the database and runs the whole suite.
+# SQL Server of its own, waits for it, creates the database and runs the whole suite. The
+# Java suite additionally gets an instance of the application, because that is where it
+# takes the generated artifacts from (decision 078).
 services:
   ormconvertor:
     build:
@@ -94,11 +96,41 @@ services:
       test_db_init:
         condition: service_completed_successfully
 
-  # The Java suite (decision 076): the java-tests stage of the same Dockerfile, against the
-  # same SQL Server, in a schema of its own so that both suites may run at once. The JDBC
-  # URL carries user and password, as JDBC does; the credential is the same disposable one.
-  # There is no "require" variable here - the suite runs only where a database was started
-  # for it, so a missing one always fails.
+  # The instance the Java suite translates against (decision 078). The same runtime image
+  # the ormconvertor service runs, in the same environment a deployment assumes, with the
+  # catalog key aimed at the test database - so the completion phase is available to it
+  # exactly as it is to a deployed instance. The .NET suite needs nothing of this: it
+  # verifies in its own process and starts its own host for the contract tests.
+  test_app:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: ORMConvertorAPI/Dockerfile
+      target: runtime
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__CatalogDatabase=Server=test_db,1433;Database=ORMConvertorTests;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
+    # The service name is the one the sibling services use, with an underscore; the alias
+    # exists because the client is a JVM. An underscore is not a legal character in a
+    # host name, so java.net.URI parses "http://test_app:5072/orm" as having no host and
+    # the JDK's HttpClient refuses it outright ("unsupported URI"). The database services
+    # are reached by a JDBC driver, which does not care, so only this one needs it.
+    networks:
+      default:
+        aliases:
+          - testapp
+    depends_on:
+      test_db_init:
+        condition: service_completed_successfully
+
+  # The Java suite (decisions 076 and 078): the java-tests stage of the same Dockerfile,
+  # against the same SQL Server, in a schema of its own so that both suites may run at
+  # once, and against the instance above for the generated artifacts. The JDBC URL carries
+  # user and password, as JDBC does; the credential is the same disposable one. There is no
+  # "require" variable here - the suite runs only where a database and an instance were
+  # started for it, so a missing one always fails. The suite waits for the instance itself:
+  # the aspnet image carries no curl for a health check, so compose can only order the
+  # start, not the readiness.
   java_tests:
     profiles: ["test"]
     build:
@@ -107,9 +139,12 @@ services:
       target: java-tests
     environment:
       - ORMCONVERTOR_TEST_JDBC_URL=jdbc:sqlserver://test_db:1433;databaseName=ORMConvertorTests;user=sa;password=Testingorms123;encrypt=true;trustServerCertificate=true
+      - ORMCONVERTOR_API_URL=http://testapp:5072/orm
     depends_on:
       test_db_init:
         condition: service_completed_successfully
+      test_app:
+        condition: service_started
 
 volumes:
   mssql_data:

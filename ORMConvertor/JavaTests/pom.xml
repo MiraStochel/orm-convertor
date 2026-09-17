@@ -35,8 +35,11 @@
         <mybatis.version>3.5.19</mybatis.version>
         <mssql-jdbc.version>13.4.0.jre11</mssql-jdbc.version>
 
-        <!-- The suite's own tooling. -->
+        <!-- The suite's own tooling. Jackson reads the answers of the running instance
+             (decision 078); like JUnit it is the suite's tool, not a framework under
+             test, so its version is the implementation's own and no descriptor states it. -->
         <junit.version>6.1.3</junit.version>
+        <jackson.version>2.22.2</jackson.version>
         <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
         <maven-dependency-plugin.version>3.11.0</maven-dependency-plugin.version>
@@ -68,6 +71,13 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- The HTTP client is the JDK's; only the JSON needs a library (decision 078). -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
             <scope>test</scope>
         </dependency>
         <!-- Declared explicitly so that Surefire takes the launcher from the test classpath

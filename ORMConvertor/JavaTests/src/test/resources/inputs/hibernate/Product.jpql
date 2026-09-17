@@ -1,0 +1,4 @@
+select p
+from Product p
+where p.UnitPrice > 100
+order by p.ProductName asc

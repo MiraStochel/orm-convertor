@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  The database facts of both NHibernate source units in one mapping document, as a real
+  project keeps them. The generator is stated as assigned, because Products has no
+  IDENTITY; a <composite-id> admits no generator at all, which is assigned semantics.
+  No assembly attribute: which assembly the class ends up in is the consumer project's
+  fact (decision 028).
+-->
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="Shop">
+  <class name="Product" table="Products" schema="{{schema}}">
+    <id name="ProductId" column="ProductId" type="Int32">
+      <generator class="assigned" />
+    </id>
+    <property name="ProductName" column="ProductName" type="String" not-null="true" />
+    <property name="Sku" column="Sku" type="AnsiString" not-null="true" />
+    <property name="UnitPrice" column="UnitPrice" type="Decimal" not-null="true" />
+    <property name="IsDiscontinued" column="IsDiscontinued" type="Boolean" not-null="true" />
+  </class>
+  <class name="CustomerOrder" table="Orders" schema="{{schema}}">
+    <composite-id>
+      <key-property name="CompanyId" column="CompanyId" type="Int32" />
+      <key-property name="OrderId" column="OrderId" type="Int32" />
+    </composite-id>
+    <property name="CustomerId" column="CustomerId" type="Int32" not-null="true" />
+    <property name="OrderDate" column="OrderDate" type="DateOnlyAsDate" not-null="true" />
+    <property name="IsCancelled" column="IsCancelled" type="Boolean" not-null="true" />
+  </class>
+</hibernate-mapping>

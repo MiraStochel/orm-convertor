@@ -95,10 +95,13 @@ jobs:
           path: ORMConvertor/Tests/TestResults/
           if-no-files-found: warn
 
-  # The Java suite (decision 076): the same database, a JVM on the runner rather than in an
-  # image. This is the division of decision 039 - the workflow proves that the suite passes
-  # against SQL Server of the stated version, the compose profile that the same works where
-  # nothing is installed; compose here would rebuild the image without its layer cache.
+  # The Java suite (decisions 076 and 078): the same database, a JVM on the runner rather
+  # than in an image, and an instance of the application published and started here -
+  # that is where the suite takes the generated artifacts from. This is the division of
+  # decision 039 - the workflow proves that the suite passes against SQL Server of the
+  # stated version and against the tool of this checkout, the compose profile that the same
+  # works where nothing is installed; compose here would rebuild the image without its
+  # layer cache.
   java-test:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -136,17 +139,45 @@ jobs:
           cache: maven
           cache-dependency-path: ORMConvertor/JavaTests/pom.xml
 
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
       - name: Create the test database
         run: >-
           docker exec ${{ job.services.sqlserver.id }}
           /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Testingorms123 -C
           -Q "IF DB_ID('ORMConvertorTests') IS NULL CREATE DATABASE ORMConvertorTests;"
 
+      # The native Advisor library is not in this publication and does not need to be:
+      # the Java suite never calls the Advisor (decision 078).
+      - name: Publish the application
+        working-directory: ORMConvertor
+        run: >-
+          dotnet publish ORMConvertorAPI/ORMConvertorAPI.csproj
+          --configuration Release -o "${{ runner.temp }}/app"
+
+      # Started in the background and not waited for here: the suite polls
+      # /required-content itself, which is the one readiness mechanism that works both
+      # here and in compose (decision 078).
+      - name: Start the application
+        working-directory: ORMConvertor
+        env:
+          ASPNETCORE_ENVIRONMENT: Production
+          ASPNETCORE_URLS: http://localhost:5072
+          ConnectionStrings__CatalogDatabase: Server=localhost,1433;Database=ORMConvertorTests;User ID=sa;Password=Testingorms123;TrustServerCertificate=True;
+        run: >-
+          nohup dotnet "${{ runner.temp }}/app/ORMConvertorAPI.dll"
+          > "${{ runner.temp }}/app.log" 2>&1 &
+
       - name: Test (JUnit)
         env:
-          # The suite has no skip: where it runs, a database was started for it, and this
-          # job just did. The credential is that of the throwaway instance above.
+          # The suite has no skip: where it runs, a database and an instance were started
+          # for it, and this job just did both. The credential is that of the throwaway
+          # instance above.
           ORMCONVERTOR_TEST_JDBC_URL: jdbc:sqlserver://localhost:1433;databaseName=ORMConvertorTests;user=sa;password=Testingorms123;encrypt=true;trustServerCertificate=true
+          ORMCONVERTOR_API_URL: http://localhost:5072/orm
         run: mvn -B test
 
       - name: Upload test reports
@@ -155,6 +186,16 @@ jobs:
         with:
           name: java-test-results
           path: ORMConvertor/JavaTests/target/surefire-reports/
+          if-no-files-found: warn
+
+      # Where the suite fails because the instance did not come up, the reason is in its
+      # log and nowhere else.
+      - name: Upload the application log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-test-app-log
+          path: ${{ runner.temp }}/app.log
           if-no-files-found: warn
 
   # Pinned versions (decisions 013 and 034) move deliberately, and a published advisory is

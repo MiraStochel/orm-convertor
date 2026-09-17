@@ -82,6 +82,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [075](075-unknown-language-type-is-a-reported-incompleteness.md) | Neznámý jazykový typ je po rozresolvování jmen hlášená neúplnost | 2026-09-16 | platí | F10, F11, S1, S2, T3 |
 | [076](076-java-wrappers-in-csharp-jvm-in-containers.md) | Javová strana vstupuje jako wrappery v C#, JVM zůstává v kontejneru | 2026-09-16 | platí | F7–F10, F12, F13, F15, S1, S2, S4, S5, T7 |
 | [077](077-hibernate-wrapper-over-the-shared-jpa-layer.md) | Hibernate wrapper nad sdílenou JPA vrstvou | 2026-09-17 | platí | F1, F2, F3, F7, F9, F10, F11, F12, S1, S2 |
+| [078](078-java-suite-as-a-client-of-a-running-instance.md) | Javová sada je klientem běžící instance nástroje | 2026-09-17 | revidováno | F7, F9, F10, F12, F13, S2, S4, S5 |
 
 ## Formát
 

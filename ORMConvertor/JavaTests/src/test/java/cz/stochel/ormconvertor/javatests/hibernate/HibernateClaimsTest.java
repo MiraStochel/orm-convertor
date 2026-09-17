@@ -12,9 +12,6 @@ import java.util.List;
 import java.util.function.Function;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
-import org.hibernate.boot.MetadataSources;
-import org.hibernate.boot.registry.StandardServiceRegistry;
-import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -25,7 +22,7 @@ import org.junit.jupiter.api.Test;
  * generated column in Hibernate 7.4.5, and that Hibernate accepts the entity join with
  * {@code on} in every position the JPQL builder emits it. The entities are written by
  * hand in the shape the builder writes them; the generated artifacts themselves reach
- * this suite only once the decision on F12 says how.
+ * this suite over HTTP from a running instance (decision 078), once that work is done.
  */
 class HibernateClaimsTest {
 
@@ -54,7 +51,7 @@ class HibernateClaimsTest {
     void precisionIsIgnoredOnLocalDateTimeWhereSecondPrecisionIsNot() throws Exception {
         // Schema generation runs while the factory is built; the table lands in the
         // suite's schema, and the schema's catalog-driven drop takes it away again.
-        try (SessionFactory ignored = sessionFactory("create", Stamp.class)) {
+        try (SessionFactory ignored = HibernateBootstrap.build("create", Stamp.class)) {
             // nothing to run - the DDL is the point
         }
 
@@ -152,7 +149,7 @@ class HibernateClaimsTest {
      * rows the query saw.
      */
     private static int rows(Function<Session, List<?>> query) {
-        try (SessionFactory factory = sessionFactory("none", Customer.class, CustomerProfile.class);
+        try (SessionFactory factory = HibernateBootstrap.build("none", Customer.class, CustomerProfile.class);
              Session session = factory.openSession()) {
             session.beginTransaction();
             try {
@@ -167,29 +164,6 @@ class HibernateClaimsTest {
             } finally {
                 session.getTransaction().rollback();
             }
-        }
-    }
-
-    /**
-     * The bootstrap of the Hibernate tutorial, verified against the pinned release: the
-     * standard JPA property names, no dialect (Hibernate reads it from JDBC metadata),
-     * the suite's schema as the default one.
-     */
-    private static SessionFactory sessionFactory(String schemaAction, Class<?>... entities) {
-        StandardServiceRegistry registry = new StandardServiceRegistryBuilder()
-                .applySetting("jakarta.persistence.jdbc.url", TestDatabase.jdbcUrl())
-                .applySetting("hibernate.default_schema", TestDatabase.schemaName())
-                .applySetting("jakarta.persistence.schema-generation.database.action", schemaAction)
-                .build();
-        try {
-            MetadataSources sources = new MetadataSources(registry);
-            for (Class<?> entity : entities) {
-                sources.addAnnotatedClass(entity);
-            }
-            return sources.buildMetadata().buildSessionFactory();
-        } catch (RuntimeException e) {
-            StandardServiceRegistryBuilder.destroy(registry);
-            throw e;
         }
     }
 }
