@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Xml.Linq;
 using AbstractWrappers.Descriptors;
 using DapperWrappers;
 using EFCoreWrappers;
@@ -47,6 +48,46 @@ public class TargetFrameworkDescriptorTest
         Assert.Equal(PackageVersion(typeof(global::Dapper.SqlMapper).Assembly), DapperDescriptor.Instance.Version);
         Assert.Equal(PackageVersion(typeof(global::NHibernate.ISession).Assembly), NHibernateDescriptor.Instance.Version);
         Assert.Equal(PackageVersion(typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly), EFCoreDescriptor.Instance.Version);
+    }
+
+    /// <summary>
+    /// The Java counterpart of the test above, without a JVM (decision 076): the version
+    /// a Java descriptor declares must be the dependency the Java suite loads, and that
+    /// dependency is pinned as a property of JavaTests/pom.xml. The pom is read as text -
+    /// nothing here resolves or builds it - so a change of the pin on either side, or a
+    /// renamed property, fails here rather than in a container run nobody was watching.
+    /// </summary>
+    [Fact]
+    public void JavaSuiteDependenciesMatchTheJavaDescriptors()
+    {
+        var pom = XDocument.Load(Path.Combine(SolutionDirectory(), "JavaTests", "pom.xml"));
+        var ns = pom.Root!.GetDefaultNamespace();
+        var properties = pom.Root.Element(ns + "properties")!;
+
+        Assert.Equal(HibernateWrappers.HibernateDescriptor.Instance.Version, properties.Element(ns + "hibernate.version")?.Value);
+
+        // The dependency must really be bound to that property; a literal version beside
+        // an unused property would satisfy the assertion above and pin nothing.
+        var hibernate = pom.Descendants(ns + "dependency")
+            .Single(d => d.Element(ns + "artifactId")?.Value == "hibernate-core");
+        Assert.Equal("${hibernate.version}", hibernate.Element(ns + "version")?.Value);
+    }
+
+    /// <summary>
+    /// The solution directory, found by walking up from the test assembly: on the host
+    /// that is the checkout, in the container the copy the tests stage was built from.
+    /// </summary>
+    private static string SolutionDirectory()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "ORMConvertor.sln")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException("ORMConvertor.sln was not found above " + AppContext.BaseDirectory);
     }
 
     private static string PackageVersion(Assembly assembly)

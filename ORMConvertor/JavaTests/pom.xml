@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Java test suite (decision 076): the suite requirement F12 asks for and the
+  verification harness of levels 2 to 4 for the Java targets - what xUnit cannot claim
+  without a JVM. It lives inside the solution directory so that the CI trigger on
+  ORMConvertor/** covers it, and outside ORMConvertor.sln because .NET does not build it:
+  the java-tests stage of ORMConvertorAPI/Dockerfile and the java-test job of the
+  workflow are its only builders. There is no JDK on the development host.
+
+  Versions are pinned here and nowhere else on the Java side (decision 013, table in
+  docs/architecture.md). The property names are read as text by the xUnit test
+  JavaSuiteDependenciesMatchTheJavaDescriptors, which binds the version a wrapper's
+  descriptor declares to the release this suite really loads - the counterpart of
+  DeclaredVersionsMatchTheVerificationPackages, without a JVM. Rename a property and
+  that test fails.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>cz.stochel.ormconvertor</groupId>
+    <artifactId>java-tests</artifactId>
+    <!-- Never released; the tool's version lives in Directory.Build.props (decision 034). -->
+    <version>0.0.0</version>
+    <packaging>jar</packaging>
+
+    <properties>
+        <maven.compiler.release>25</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- The pinned Java frameworks and driver (decision 013). -->
+        <hibernate.version>7.4.5.Final</hibernate.version>
+        <eclipselink.version>5.0.0</eclipselink.version>
+        <mybatis.version>3.5.19</mybatis.version>
+        <mssql-jdbc.version>13.4.0.jre11</mssql-jdbc.version>
+
+        <!-- The suite's own tooling. -->
+        <junit.version>6.1.3</junit.version>
+        <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
+        <maven-dependency-plugin.version>3.11.0</maven-dependency-plugin.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <version>${hibernate.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.persistence</groupId>
+            <artifactId>eclipselink</artifactId>
+            <version>${eclipselink.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.mybatis</groupId>
+            <artifactId>mybatis</artifactId>
+            <version>${mybatis.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.sqlserver</groupId>
+            <artifactId>mssql-jdbc</artifactId>
+            <version>${mssql-jdbc.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Declared explicitly so that Surefire takes the launcher from the test classpath
+             instead of resolving one at run time - the container runs offline. -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <testResources>
+            <testResource>
+                <directory>${project.basedir}/src/test/resources</directory>
+            </testResource>
+            <!-- The schema stays one (decision 076): the script the .NET fixture embeds is
+                 read from its own place, ../Tests/Database, which the Docker stage copies
+                 beside this project and which the checkout has as it is. -->
+            <testResource>
+                <directory>${project.basedir}/../Tests/Database</directory>
+                <includes>
+                    <include>TestSchema.sql</include>
+                </includes>
+            </testResource>
+        </testResources>
+
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>${maven-dependency-plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-compiler-plugin.version}</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <configuration>
+                    <trimStackTrace>false</trimStackTrace>
+                </configuration>
+                <!-- The JUnit Platform provider, declared so that dependency:go-offline
+                     bakes it into the image; Surefire would otherwise fetch it at run time. -->
+                <dependencies>
+                    <dependency>
+                        <groupId>org.apache.maven.surefire</groupId>
+                        <artifactId>surefire-junit-platform</artifactId>
+                        <version>${maven-surefire-plugin.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+        </plugins>
+    </build>
+</project>

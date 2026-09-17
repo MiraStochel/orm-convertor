@@ -18,3 +18,7 @@
 # the measurements and the R script that renders the charts are outside git as well. The run that
 # produced it, and how to retrieve any of it from history, is described in benchmarks/README.md.
 benchmarks/results/
+
+# Maven build output of the Java test suite (decision 076); the suite is built only in
+# its container and on the CI runner, so this directory exists on neither by design.
+ORMConvertor/JavaTests/target/

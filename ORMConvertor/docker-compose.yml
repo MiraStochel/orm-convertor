@@ -1,10 +1,11 @@
 # Container configuration of the environment (decision 039, requirement S5).
 #
-#   docker compose up --build                       the system: application + sample database
-#   docker compose --profile test run --rm tests    the test suite, in a clean environment
+#   docker compose up --build                            the system: application + sample database
+#   docker compose --profile test run --rm tests         the .NET test suite, in a clean environment
+#   docker compose --profile test run --rm java_tests    the Java test suite, likewise
 #
-# The second command needs nothing on the host but Docker: it builds the solution, starts
-# a SQL Server of its own, waits for it, creates the database and runs the whole suite.
+# The test commands need nothing on the host but Docker: each builds its suite, starts a
+# SQL Server of its own, waits for it, creates the database and runs the whole suite.
 services:
   ormconvertor:
     build:
@@ -89,6 +90,23 @@ services:
       # Here the configuration promises a database, so its absence is a failure rather
       # than a skip - a green run in which everything skipped would prove nothing.
       - ORMCONVERTOR_REQUIRE_TEST_DATABASE=1
+    depends_on:
+      test_db_init:
+        condition: service_completed_successfully
+
+  # The Java suite (decision 076): the java-tests stage of the same Dockerfile, against the
+  # same SQL Server, in a schema of its own so that both suites may run at once. The JDBC
+  # URL carries user and password, as JDBC does; the credential is the same disposable one.
+  # There is no "require" variable here - the suite runs only where a database was started
+  # for it, so a missing one always fails.
+  java_tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: ORMConvertorAPI/Dockerfile
+      target: java-tests
+    environment:
+      - ORMCONVERTOR_TEST_JDBC_URL=jdbc:sqlserver://test_db:1433;databaseName=ORMConvertorTests;user=sa;password=Testingorms123;encrypt=true;trustServerCertificate=true
     depends_on:
       test_db_init:
         condition: service_completed_successfully

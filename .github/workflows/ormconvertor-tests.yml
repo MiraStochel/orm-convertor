@@ -95,6 +95,68 @@ jobs:
           path: ORMConvertor/Tests/TestResults/
           if-no-files-found: warn
 
+  # The Java suite (decision 076): the same database, a JVM on the runner rather than in an
+  # image. This is the division of decision 039 - the workflow proves that the suite passes
+  # against SQL Server of the stated version, the compose profile that the same works where
+  # nothing is installed; compose here would rebuild the image without its layer cache.
+  java-test:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+
+    defaults: # all subsequent `run:` steps execute from ORMConvertor/JavaTests/
+      run:
+        working-directory: ORMConvertor/JavaTests
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: Testingorms123
+          MSSQL_PID: Developer
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Testingorms123 -C -Q 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 30
+          --health-start-period 15s
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # Temurin 25 is the JDK of the pinned image maven:3.9.11-eclipse-temurin-25-noble;
+      # Maven itself is preinstalled on the runner.
+      - name: Install JDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: ORMConvertor/JavaTests/pom.xml
+
+      - name: Create the test database
+        run: >-
+          docker exec ${{ job.services.sqlserver.id }}
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Testingorms123 -C
+          -Q "IF DB_ID('ORMConvertorTests') IS NULL CREATE DATABASE ORMConvertorTests;"
+
+      - name: Test (JUnit)
+        env:
+          # The suite has no skip: where it runs, a database was started for it, and this
+          # job just did. The credential is that of the throwaway instance above.
+          ORMCONVERTOR_TEST_JDBC_URL: jdbc:sqlserver://localhost:1433;databaseName=ORMConvertorTests;user=sa;password=Testingorms123;encrypt=true;trustServerCertificate=true
+        run: mvn -B test
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-test-results
+          path: ORMConvertor/JavaTests/target/surefire-reports/
+          if-no-files-found: warn
+
   # Pinned versions (decisions 013 and 034) move deliberately, and a published advisory is
   # one of the two reasons to move them (decision 041). This job is what notices.
   dependencies:
