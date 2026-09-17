@@ -131,6 +131,13 @@ public abstract class AbstractQueryBuilder
         }
     }
 
+    /// <summary>
+    /// The language of the runnable method the builder emits, which the records of the
+    /// template name as their artifact: C# for the .NET targets, Java for the JPA ones
+    /// (decision 077).
+    /// </summary>
+    protected virtual ConversionContentType MethodArtifact => ConversionContentType.CSharpQuery;
+
     protected void Report(
         ConversionRecordKind kind,
         string reason,
@@ -141,7 +148,7 @@ public abstract class AbstractQueryBuilder
         {
             Kind = kind,
             Framework = Descriptor.Framework,
-            Artifact = ConversionContentType.CSharpQuery,
+            Artifact = MethodArtifact,
             Entity = entity,
             Property = property,
             Feature = feature,

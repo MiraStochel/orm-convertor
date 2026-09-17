@@ -99,46 +99,46 @@ public class NHibernateToEFCoreTest
         {
             [Key]
             [Column("OrderID", TypeName="int")]
-            public virtual required int OrderID { get; set; }
+            public required int OrderID { get; set; }
 
             [Column(TypeName="int")]
-            public virtual required int CustomerID { get; set; }
+            public required int CustomerID { get; set; }
 
-            public virtual required int SalespersonPersonID { get; set; }
+            public required int SalespersonPersonID { get; set; }
 
-            public virtual int? PickedByPersonID { get; set; }
+            public int? PickedByPersonID { get; set; }
 
-            public virtual required int ContactPersonID { get; set; }
+            public required int ContactPersonID { get; set; }
 
-            public virtual int? BackorderOrderID { get; set; }
-
-            [Column(TypeName="datetime2")]
-            public virtual required DateTime OrderDate { get; set; }
+            public int? BackorderOrderID { get; set; }
 
             [Column(TypeName="datetime2")]
-            public virtual required DateTime ExpectedDeliveryDate { get; set; }
+            public required DateTime OrderDate { get; set; }
 
-            public virtual string? CustomerPurchaseOrderNumber { get; set; }
+            [Column(TypeName="datetime2")]
+            public required DateTime ExpectedDeliveryDate { get; set; }
 
-            public virtual required bool IsUndersupplyBackordered { get; set; }
+            public string? CustomerPurchaseOrderNumber { get; set; }
+
+            public required bool IsUndersupplyBackordered { get; set; }
 
             [Column(TypeName="nvarchar")]
             [MaxLength(4000)]
-            public virtual string? Comments { get; set; }
+            public string? Comments { get; set; }
 
             [Column(TypeName="varchar")]
             [MaxLength(1000)]
-            public virtual string? DeliveryInstructions { get; set; }
+            public string? DeliveryInstructions { get; set; }
 
-            public virtual string? InternalComments { get; set; }
+            public string? InternalComments { get; set; }
 
-            public virtual DateTime? PickingCompletedWhen { get; set; }
+            public DateTime? PickingCompletedWhen { get; set; }
 
-            public virtual required int LastEditedBy { get; set; }
+            public required int LastEditedBy { get; set; }
 
-            public virtual required DateTime LastEditedWhen { get; set; }
+            public required DateTime LastEditedWhen { get; set; }
 
-            public virtual List<OrderLine> OrderLines { get; set; } = [];
+            public List<OrderLine> OrderLines { get; set; } = [];
 
         }
 

@@ -19,5 +19,9 @@ public static class Samples
         { 8, CustomerSampleDapper.Query },
         { 9, CustomerSampleNHibernate.Query },
         { 10, CustomerSampleNHibernate.HqlQuery },
+        { 11, CustomerSampleHibernate.Entity },
+        { 12, CustomerSampleHibernate.OrmXml },
+        { 13, CustomerSampleHibernate.Query },
+        { 14, CustomerSampleHibernate.JpqlQuery },
     };
 }

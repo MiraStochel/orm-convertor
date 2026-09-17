@@ -5,8 +5,9 @@ namespace ORMConvertorAPI.Data;
 
 /// <summary>
 /// What the interface has to collect for each source framework. Every unit names the
-/// language its content is written in (decision 025), so a Dapper query is asked for as SQL
-/// and an NHibernate query as the LINQ chain its parser reads.
+/// language its content is written in (decision 025), so a Dapper query is asked for as SQL,
+/// an NHibernate query as the LINQ chain its parser reads, and a Hibernate query as a Java
+/// method or as bare JPQL (decision 077).
 /// </summary>
 public static class RequiredContent
 {
@@ -24,6 +25,12 @@ public static class RequiredContent
         new (ORMEnum.EFCore, [
             new(4, ConversionContentType.CSharpEntity, "Entity Class"),
             new (5, ConversionContentType.CSharpQuery, "Query (LINQ)"),
+        ]),
+        new (ORMEnum.Hibernate, [
+            new (11, ConversionContentType.JavaEntity, "Entity Class (Java)"),
+            new (12, ConversionContentType.XML, "orm.xml Mapping"),
+            new (13, ConversionContentType.JavaQuery, "Query (Java method)"),
+            new (14, ConversionContentType.JpqlQuery, "Query (JPQL)"),
         ]),
     ];
 

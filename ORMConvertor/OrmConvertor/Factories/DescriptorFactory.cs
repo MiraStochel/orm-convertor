@@ -1,6 +1,7 @@
 using AbstractWrappers.Descriptors;
 using DapperWrappers;
 using EFCoreWrappers;
+using HibernateWrappers;
 using Model;
 using NHibernateWrappers;
 
@@ -18,6 +19,7 @@ internal static class DescriptorFactory
         ORMEnum.Dapper => DapperDescriptor.Instance,
         ORMEnum.NHibernate => NHibernateDescriptor.Instance,
         ORMEnum.EFCore => EFCoreDescriptor.Instance,
+        ORMEnum.Hibernate => HibernateDescriptor.Instance,
         _ => throw new InvalidOperationException("Source ORM not supported"),
     };
 }

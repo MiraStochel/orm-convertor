@@ -72,7 +72,7 @@ public class EFCoreNullabilityTest
         // that claim into the annotation artifact, and the language shape stays the
         // source's - the question mark survives.
         Assert.Contains("[Required]", code);
-        Assert.Contains("public virtual string? CustomerName { get; set; }", code);
+        Assert.Contains("public string? CustomerName { get; set; }", code);
     }
 
     [Fact]

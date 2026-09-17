@@ -1,6 +1,7 @@
-﻿using AbstractWrappers;
+using AbstractWrappers;
 using DapperWrappers;
 using EFCoreWrappers;
+using HibernateWrappers;
 using Model;
 using NHibernateWrappers;
 
@@ -12,7 +13,8 @@ internal static class EntityBuilderFactory
         {
             [ORMEnum.Dapper] = () => new DapperEntityBuilder(),
             [ORMEnum.NHibernate] = () => new NHibernateEntityBuilder(),
-            [ORMEnum.EFCore] = () => new EFCoreEntityBuilder()
+            [ORMEnum.EFCore] = () => new EFCoreEntityBuilder(),
+            [ORMEnum.Hibernate] = () => new HibernateEntityBuilder(),
         };
 
     public static AbstractEntityBuilder? Create(ORMEnum orm) =>

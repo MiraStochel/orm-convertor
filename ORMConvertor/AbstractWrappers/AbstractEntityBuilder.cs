@@ -176,6 +176,90 @@ public abstract class AbstractEntityBuilder
         => AddPrimaryKey([(propertyName, 1, strategy)]);
 
     /// <summary>
+    /// Records that the source expresses the key through a class held in one property and
+    /// names none of the parts itself - JPA's @EmbeddedId (decision 077). The parts are
+    /// the members of that class, which may lie in another unit of the conversion, so the
+    /// claim waits here and <see cref="DissolveKeyClasses"/> materializes it once every
+    /// unit is read: the key is then the class's properties in declaration order, each
+    /// Assigned, recorded as the Embedded form of decision 031 - or, when no unit declares
+    /// the class, the incompleteness that decision reports for a missing Embedded class.
+    /// A write path of the model like <see cref="MarkTransient"/>, not the logic of one
+    /// wrapper: the Embedded form has named @EmbeddedId as its example since it was written.
+    /// </summary>
+    public void AddEmbeddedPrimaryKey(string holdingProperty, string keyClassName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(holdingProperty);
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyClassName);
+
+        GetOrCreatePropertyMap(holdingProperty);
+        pendingEmbeddedKeys.Add(new PendingEmbeddedKey(EntityMap, holdingProperty, SimpleEntityName(keyClassName)));
+    }
+
+    private sealed record PendingEmbeddedKey(EntityMap Entity, string HoldingProperty, string KeyClassName);
+
+    /// <summary>
+    /// Embedded keys waiting for the class that declares their parts. Builder state like
+    /// the pending foreign key columns; consumed by <see cref="DissolveKeyClasses"/>.
+    /// </summary>
+    private readonly List<PendingEmbeddedKey> pendingEmbeddedKeys = [];
+
+    /// <summary>
+    /// Turns every pending embedded key into a key claim over the members of its class, so
+    /// that the dissolution below finds an ordinary Embedded key. A class nobody declares
+    /// yields no claim and the record decision 031 issues for that case; the holding
+    /// property is dropped either way, because the flat rendering has no place for it.
+    /// </summary>
+    private void MaterializeEmbeddedKeys()
+    {
+        var pending = pendingEmbeddedKeys.ToList();
+        pendingEmbeddedKeys.Clear();
+
+        foreach (var claim in pending)
+        {
+            var keyClassMap = FindEntityMap(claim.KeyClassName);
+            var keyClass = new SourceKeyClass(claim.KeyClassName, KeyClassForm.Embedded, claim.HoldingProperty);
+
+            if (keyClassMap is null)
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Entity = claim.Entity.Entity.Name,
+                    Property = claim.HoldingProperty,
+                    Category = MappingFactCategory.PrimaryKey,
+                    Reason = $"The mapping names '{claim.KeyClassName}' as the key class of the entity, but no "
+                        + "source of the conversion declares it; the key parts cannot be taken from it (decision 031).",
+                });
+                DissolveHoldingProperty(claim.Entity, keyClass);
+                continue;
+            }
+
+            var parts = keyClassMap.Entity.Properties
+                .Select((member, index) => (member.Name, index + 1, PrimaryKeyStrategy.Assigned))
+                .ToList();
+
+            if (parts.Count == 0)
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Entity = claim.Entity.Entity.Name,
+                    Property = claim.HoldingProperty,
+                    Category = MappingFactCategory.PrimaryKey,
+                    Reason = $"The key class '{claim.KeyClassName}' declares no member, so the embedded key has no part.",
+                });
+                DissolveHoldingProperty(claim.Entity, keyClass);
+                continue;
+            }
+
+            EntityMap = claim.Entity;
+            AddPrimaryKey(parts, keyClass);
+        }
+    }
+
+    /// <summary>
     /// Records that the source explicitly states the entity has no key (decision 063) -
     /// EF Core's [Keyless]. A statement, not an absence: it keeps the catalog from
     /// supplying a key and the target's convention from deriving one. It is not
@@ -685,6 +769,10 @@ public abstract class AbstractEntityBuilder
     /// </summary>
     public void DissolveKeyClasses()
     {
+        // An @EmbeddedId claim becomes an ordinary Embedded key first, over the members of
+        // its class, so that the loop below dissolves it like any other (decision 077).
+        MaterializeEmbeddedKeys();
+
         foreach (var entityMap in EntityMaps.ToList())
         {
             var key = entityMap.PrimaryKey;

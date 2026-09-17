@@ -121,7 +121,17 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     }
 
     /// <summary>
-    /// Writes the language facts of one property into the builder.
+    /// Modifiers the source framework forces onto its mapped members, which the parser
+    /// drops on reading (decision 076): the modifier is the framework's requirement, not a
+    /// fact about the domain, so it must not travel into the model - and the parser knows
+    /// only its own descriptor, which is what keeps the target free of knowing every
+    /// source. NHibernate's virtual is the one case today; the base defers none.
+    /// </summary>
+    protected virtual IReadOnlyCollection<string> DeferredModifiers => [];
+
+    /// <summary>
+    /// Writes the language facts of one property into the builder, without the modifiers
+    /// the source framework enforces.
     /// </summary>
     protected void EmitProperty(PropertyReading reading)
     {
@@ -129,7 +139,7 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
             reading.Type,
             reading.Name,
             reading.AccessModifiers,
-            reading.OtherModifiers,
+            [.. reading.OtherModifiers.Where(m => !DeferredModifiers.Contains(m, StringComparer.Ordinal))],
             hasGetter: reading.HasGetter,
             hasSetter: reading.HasSetter,
             defaultValue: reading.DefaultValue,

@@ -83,7 +83,6 @@ public class CustomerSampleNHibernate
                            Name = "CustomerID",
                            Type = LangType.Scalar(ScalarType.Int),
                            AccessModifier = AccessModifier.Public,
-                           OtherModifiers = ["virtual"],
                            HasGetter = true,
                            HasSetter = true,
                        },
@@ -96,7 +95,7 @@ public class CustomerSampleNHibernate
                            Name = "CustomerName",
                            Type = LangType.Scalar(ScalarType.String),
                            AccessModifier = AccessModifier.Public,
-                           OtherModifiers = ["virtual", "required"],
+                           OtherModifiers = ["required"],
                            HasGetter = true,
                            HasSetter = true
                        },
@@ -111,7 +110,6 @@ public class CustomerSampleNHibernate
                            Name = "AccountOpenedDate",
                            Type = LangType.Scalar(ScalarType.DateTime),
                            AccessModifier = AccessModifier.Public,
-                           OtherModifiers = ["virtual"],
                            HasGetter = true,
                            HasSetter = true
                        },
@@ -125,7 +123,6 @@ public class CustomerSampleNHibernate
                            Name = "CreditLimit",
                            Type = LangType.Scalar(ScalarType.Decimal, isNullable: true),
                            AccessModifier = AccessModifier.Public,
-                           OtherModifiers = ["virtual"],
                            HasGetter = true,
                            HasSetter = true
                        },
@@ -142,7 +139,6 @@ public class CustomerSampleNHibernate
                                LangType.Reference("CustomerTransaction"),
                                CollectionKind.List),
                            AccessModifier = AccessModifier.Public,
-                           OtherModifiers = ["virtual"],
                            HasGetter = true,
                            HasSetter = true,
                            DefaultValue = "new List<CustomerTransaction>()",

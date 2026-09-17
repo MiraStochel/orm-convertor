@@ -66,6 +66,10 @@ public static class CrossFrameworkInputs
             new() { Content = NHibernateEntity(withNamespace), ContentType = ConversionContentType.CSharpEntity },
             new() { Content = NHibernateMapping(withNamespace), ContentType = ConversionContentType.XML },
         ],
+        ORMEnum.Hibernate =>
+        [
+            new() { Content = HibernateEntity(withNamespace), ContentType = ConversionContentType.JavaEntity },
+        ],
         _ => throw NoRow(framework),
     };
 
@@ -75,6 +79,7 @@ public static class CrossFrameworkInputs
         ORMEnum.Dapper => new() { Content = DapperQuery, ContentType = ConversionContentType.SqlQuery },
         ORMEnum.EFCore => new() { Content = EFCoreQuery, ContentType = ConversionContentType.CSharpQuery },
         ORMEnum.NHibernate => new() { Content = NHibernateQuery, ContentType = ConversionContentType.CSharpQuery },
+        ORMEnum.Hibernate => new() { Content = HibernateQuery, ContentType = ConversionContentType.JpqlQuery },
         _ => throw NoRow(framework),
     };
 
@@ -145,6 +150,45 @@ public static class CrossFrameworkInputs
         </hibernate-mapping>
         """;
     }
+
+    // The Java sample: the same entity with jakarta.persistence annotations, a package
+    // where the C# samples have a namespace (decision 077).
+    private static string HibernateEntity(bool withNamespace) =>
+        (withNamespace ? $"package {Namespace};{Environment.NewLine}{Environment.NewLine}" : string.Empty) + """
+        import jakarta.persistence.Column;
+        import jakarta.persistence.Entity;
+        import jakarta.persistence.Id;
+        import jakarta.persistence.Table;
+        import java.math.BigDecimal;
+
+        @Entity
+        @Table(name = "Customers", schema = "Sales")
+        public class Customer {
+            @Id
+            @Column(name = "CustomerId")
+            private Integer CustomerId;
+
+            @Column(name = "CustomerName")
+            private String CustomerName;
+
+            @Column(name = "CreditLimit")
+            private BigDecimal CreditLimit;
+
+            public Integer getCustomerId() { return CustomerId; }
+            public void setCustomerId(Integer value) { this.CustomerId = value; }
+            public String getCustomerName() { return CustomerName; }
+            public void setCustomerName(String value) { this.CustomerName = value; }
+            public BigDecimal getCreditLimit() { return CreditLimit; }
+            public void setCreditLimit(BigDecimal value) { this.CreditLimit = value; }
+        }
+        """;
+
+    private const string HibernateQuery = """
+        select c.CustomerName as Name
+        from Customer c
+        where c.CreditLimit > 2000
+        order by c.CustomerName asc
+        """;
 
     private const string DapperQuery = """
         SELECT c.CustomerName

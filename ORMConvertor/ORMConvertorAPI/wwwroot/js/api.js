@@ -6,12 +6,13 @@
  * All paths are relative, so the deployment base path (/orm) is never written down.
  */
 
-export const ORM = Object.freeze({ Dapper: 10, NHibernate: 20, EFCore: 30 });
+export const ORM = Object.freeze({ Dapper: 10, NHibernate: 20, EFCore: 30, Hibernate: 40 });
 
 export const ORM_LABELS = Object.freeze({
   [ORM.Dapper]: "Dapper",
   [ORM.NHibernate]: "NHibernate",
   [ORM.EFCore]: "EF Core",
+  [ORM.Hibernate]: "Hibernate",
 });
 
 /*
@@ -29,6 +30,9 @@ export const ContentType = Object.freeze({
   Xml: 30,
   SqlQuery: 40,
   HqlQuery: 50,
+  JavaEntity: 60,
+  JavaQuery: 70,
+  JpqlQuery: 80,
 });
 
 export const CONTENT_TYPE_LABELS = Object.freeze({
@@ -37,24 +41,35 @@ export const CONTENT_TYPE_LABELS = Object.freeze({
   [ContentType.Xml]: "XML mapping",
   [ContentType.SqlQuery]: "SQL query",
   [ContentType.HqlQuery]: "HQL query",
+  [ContentType.JavaEntity]: "Java entity",
+  [ContentType.JavaQuery]: "Java query method",
+  [ContentType.JpqlQuery]: "JPQL query",
 });
 
+// The XML value covers hbm.xml and orm.xml alike (decision 077); ui.js names an
+// orm.xml artifact by its root element, this default is the NHibernate spelling.
 export const CONTENT_TYPE_EXTENSIONS = Object.freeze({
   [ContentType.CSharpEntity]: ".cs",
   [ContentType.CSharpQuery]: ".cs",
   [ContentType.Xml]: ".hbm.xml",
   [ContentType.SqlQuery]: ".sql",
   [ContentType.HqlQuery]: ".hql",
+  [ContentType.JavaEntity]: ".java",
+  [ContentType.JavaQuery]: ".java",
+  [ContentType.JpqlQuery]: ".jpql",
 });
 
-// HQL has no grammar of its own and is highlighted as SQL - an approximation,
-// not a claim about the language (decision 032d).
+// HQL and JPQL have no grammar of their own and are highlighted as SQL, Java as C# -
+// approximations over the vendored grammars, not claims about the languages (decision 032d).
 export const CONTENT_TYPE_HIGHLIGHT = Object.freeze({
   [ContentType.CSharpEntity]: "csharp",
   [ContentType.CSharpQuery]: "csharp",
   [ContentType.Xml]: "xml",
   [ContentType.SqlQuery]: "sql",
   [ContentType.HqlQuery]: "sql",
+  [ContentType.JavaEntity]: "csharp",
+  [ContentType.JavaQuery]: "csharp",
+  [ContentType.JpqlQuery]: "sql",
 });
 
 export const RecordKind = Object.freeze({

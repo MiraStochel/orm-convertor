@@ -16,6 +16,7 @@ public class TargetFrameworkDescriptorTest
         DapperDescriptor.Instance,
         EFCoreDescriptor.Instance,
         NHibernateDescriptor.Instance,
+        HibernateWrappers.HibernateDescriptor.Instance,
     ];
 
     /// <summary>
@@ -69,13 +70,15 @@ public class TargetFrameworkDescriptorTest
     }
 
     /// <summary>
-    /// The two full ORMs part company on exactly one category: NHibernate refuses a
-    /// mapping without an identifier, EF Core falls back to a keyless type.
+    /// The two full .NET ORMs part company on exactly one category: NHibernate refuses a
+    /// mapping without an identifier, EF Core falls back to a keyless type. Hibernate
+    /// stands with NHibernate: every JPA entity has an @Id (decision 077).
     /// </summary>
     [Fact]
-    public void OnlyNHibernateRequiresAPrimaryKey()
+    public void OnlyNHibernateAndHibernateRequireAPrimaryKey()
     {
         Assert.Equal(FactSupport.Required, NHibernateDescriptor.Instance.SupportOf(MappingFactCategory.PrimaryKey));
+        Assert.Equal(FactSupport.Required, HibernateWrappers.HibernateDescriptor.Instance.SupportOf(MappingFactCategory.PrimaryKey));
         Assert.Equal(FactSupport.Expressible, EFCoreDescriptor.Instance.SupportOf(MappingFactCategory.PrimaryKey));
         Assert.Equal(FactSupport.NotExpressible, DapperDescriptor.Instance.SupportOf(MappingFactCategory.PrimaryKey));
     }

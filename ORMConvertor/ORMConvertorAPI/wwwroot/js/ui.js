@@ -66,15 +66,22 @@ export function saveText(content, fileName) {
  */
 function artifactBaseName(artifact) {
   if (artifact.contentType === ContentType.Xml) {
+    if (/<entity-mappings\b/.test(artifact.content)) return "orm";
     const match = artifact.content.match(/<class\s[^>]*name="([^"]+)"/);
     if (match) return match[1].split(",")[0].trim().split(".").pop();
     return null;
   }
-  if (artifact.contentType === ContentType.CSharpEntity) {
+  if (
+    artifact.contentType === ContentType.CSharpEntity ||
+    artifact.contentType === ContentType.JavaEntity
+  ) {
     const match = artifact.content.match(/\bclass\s+([A-Za-z_]\w*)/);
     return match ? match[1] : null;
   }
-  if (artifact.contentType === ContentType.CSharpQuery) {
+  if (
+    artifact.contentType === ContentType.CSharpQuery ||
+    artifact.contentType === ContentType.JavaQuery
+  ) {
     // Query artifacts are bare methods (decision 027), so a class name is rare.
     const match = artifact.content.match(/\bclass\s+([A-Za-z_]\w*)/);
     return match ? match[1] : "query";
@@ -86,8 +93,13 @@ function artifactBaseName(artifact) {
 export function artifactNames(artifacts) {
   const used = new Map();
   return artifacts.map((artifact, index) => {
-    const extension = CONTENT_TYPE_EXTENSIONS[artifact.contentType] ?? ".txt";
     const base = artifactBaseName(artifact) ?? `artifact-${index + 1}`;
+    // An orm.xml is named orm.xml, not orm.hbm.xml: the one XML value carries both
+    // descriptors and the root element tells them apart (decision 077).
+    const extension =
+      artifact.contentType === ContentType.Xml && base === "orm"
+        ? ".xml"
+        : (CONTENT_TYPE_EXTENSIONS[artifact.contentType] ?? ".txt");
     const count = used.get(base + extension) ?? 0;
     used.set(base + extension, count + 1);
     return count === 0 ? `${base}${extension}` : `${base}-${count + 1}${extension}`;

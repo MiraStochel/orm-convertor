@@ -44,25 +44,27 @@ public class QueryMatrixTest
     /// <see cref="EnforcedMembersTest"/> (decision 037).
     /// </summary>
     [Theory]
-    [InlineData(ORMEnum.Dapper, "SELECT")]
-    [InlineData(ORMEnum.EFCore, "ctx.Set<")]
-    [InlineData(ORMEnum.NHibernate, "from ")]
-    public void EachTargetEmitsItsOwnQueryLanguage(ORMEnum target, string hallmark)
+    [InlineData(ORMEnum.Dapper, ConversionContentType.CSharpQuery, "SELECT")]
+    [InlineData(ORMEnum.EFCore, ConversionContentType.CSharpQuery, "ctx.Set<")]
+    [InlineData(ORMEnum.NHibernate, ConversionContentType.CSharpQuery, "from ")]
+    [InlineData(ORMEnum.Hibernate, ConversionContentType.JavaQuery, "em.createQuery(")]
+    public void EachTargetEmitsItsOwnQueryLanguage(ORMEnum target, ConversionContentType method, string hallmark)
     {
         var result = ConversionHandler.Convert(ORMEnum.EFCore, target, CrossFrameworkInputs.Units(ORMEnum.EFCore));
 
-        var query = result.Sources.First(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
+        var query = result.Sources.First(s => s.ContentType == method).Content;
 
         Assert.Contains(hallmark, query);
     }
 
     /// <summary>
     /// Decision 025: a language whose target form is a string is emitted bare as well, so no
-    /// consumer has to extract it from the surrounding C#.
+    /// consumer has to extract it from the surrounding C# or Java.
     /// </summary>
     [Theory]
     [InlineData(ORMEnum.Dapper, ConversionContentType.SqlQuery)]
     [InlineData(ORMEnum.NHibernate, ConversionContentType.HqlQuery)]
+    [InlineData(ORMEnum.Hibernate, ConversionContentType.JpqlQuery)]
     public void StringLanguagesAreAlsoEmittedBare(ORMEnum target, ConversionContentType expected)
     {
         var result = ConversionHandler.Convert(ORMEnum.EFCore, target, CrossFrameworkInputs.Units(ORMEnum.EFCore));

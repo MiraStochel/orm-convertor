@@ -66,25 +66,25 @@ public class EFCoreToNHibernateTest
         string expectedEntity = """
         public class Order
         {
-            public required virtual int OrderID { get; set; }
+            public virtual required int OrderID { get; set; }
 
-            public required virtual int CustomerID { get; set; }
+            public virtual required int CustomerID { get; set; }
 
-            public required virtual int SalespersonPersonID { get; set; }
+            public virtual required int SalespersonPersonID { get; set; }
 
             public virtual int? PickedByPersonID { get; set; }
 
-            public required virtual int ContactPersonID { get; set; }
+            public virtual required int ContactPersonID { get; set; }
 
             public virtual int? BackorderOrderID { get; set; }
 
-            public required virtual DateTime OrderDate { get; set; }
+            public virtual required DateTime OrderDate { get; set; }
 
-            public required virtual DateTime ExpectedDeliveryDate { get; set; }
+            public virtual required DateTime ExpectedDeliveryDate { get; set; }
 
             public virtual string? CustomerPurchaseOrderNumber { get; set; }
 
-            public required virtual bool IsUndersupplyBackordered { get; set; }
+            public virtual required bool IsUndersupplyBackordered { get; set; }
 
             public virtual string? Comments { get; set; }
 
@@ -94,9 +94,9 @@ public class EFCoreToNHibernateTest
 
             public virtual DateTime? PickingCompletedWhen { get; set; }
 
-            public required virtual int LastEditedBy { get; set; }
+            public virtual required int LastEditedBy { get; set; }
 
-            public required virtual DateTime LastEditedWhen { get; set; }
+            public virtual required DateTime LastEditedWhen { get; set; }
 
             public virtual IList<OrderLine> OrderLines { get; set; } = new List<OrderLine>();
 

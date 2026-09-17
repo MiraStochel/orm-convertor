@@ -1471,7 +1471,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         var otherMods = new List<string>(prop.OtherModifiers ?? []);
         if (!otherMods.Any(m => m.Equals("virtual", StringComparison.OrdinalIgnoreCase)))
         {
-            otherMods.Add("virtual");
+            otherMods.Insert(0, "virtual");
         }
 
         var access = AccessModifierConvertor.ToModifierString(prop.AccessModifier);

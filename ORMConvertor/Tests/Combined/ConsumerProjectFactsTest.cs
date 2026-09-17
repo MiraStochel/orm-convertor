@@ -33,20 +33,21 @@ public class ConsumerProjectFactsTest
     ];
 
     /// <summary>
-    /// Namespaces an artifact declares, in either language it can declare one in: the C#
-    /// declaration and the root of an NHibernate mapping. Query artifacts declare none, which
-    /// is why the assertions below read the entity and mapping artifacts.
+    /// Namespaces an artifact declares, in any language it can declare one in: the C#
+    /// declaration, the root of an NHibernate mapping and the Java package. Query artifacts
+    /// declare none, which is why the assertions below read the entity and mapping artifacts.
     /// </summary>
     private static List<string> DeclaredNamespaces(ConversionSource artifact) =>
     [
         .. Regex.Matches(artifact.Content, @"namespace\s+([\w.]+)\s*[;{]").Select(m => m.Groups[1].Value),
         .. Regex.Matches(artifact.Content, "namespace=\"([^\"]+)\"").Select(m => m.Groups[1].Value),
+        .. Regex.Matches(artifact.Content, @"package\s+([\w.]+)\s*;").Select(m => m.Groups[1].Value),
     ];
 
     private static List<ConversionSource> MappingArtifacts(ConversionResult result) =>
     [
         .. result.Sources.Where(a => a.ContentType
-            is ConversionContentType.CSharpEntity or ConversionContentType.XML)
+            is ConversionContentType.CSharpEntity or ConversionContentType.XML or ConversionContentType.JavaEntity)
     ];
 
     /// <summary>

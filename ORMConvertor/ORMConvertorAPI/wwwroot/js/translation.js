@@ -34,6 +34,8 @@ const EXTENSION_TYPES = {
   ".xml": ContentType.Xml,
   ".sql": ContentType.SqlQuery,
   ".hql": ContentType.HqlQuery,
+  ".java": ContentType.JavaEntity,
+  ".jpql": ContentType.JpqlQuery,
 };
 
 const STORAGE_KEY = "ormconvertor.translation";
