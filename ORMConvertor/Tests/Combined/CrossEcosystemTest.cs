@@ -159,7 +159,7 @@ public class CrossEcosystemTest
         // An initialized Java collection is never null; its initializer is Java's spelling
         // and does not travel, so the C# side is the non-nullable property without one.
         Assert.Contains("public required List<CustomerTransaction> Transactions { get; set; }", csharp);
-        Assert.Empty(result.Records.Where(r => r.Kind == ConversionRecordKind.Failure));
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure);
     }
 
     [Fact]

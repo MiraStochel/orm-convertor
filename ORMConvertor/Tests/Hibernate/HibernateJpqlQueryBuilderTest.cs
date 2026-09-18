@@ -23,7 +23,7 @@ public class HibernateJpqlQueryBuilderTest
     {
         // The Dapper sample states no key, so the entity is refused by the Hibernate target
         // (decision 010); only the query branch is under test here.
-        Assert.Empty(result.Records.Where(r => r.Kind == ConversionRecordKind.Failure && r.Artifact?.IsQuery() == true));
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure && r.Artifact?.IsQuery() == true);
         return result.Sources.Single(s => s.ContentType == ConversionContentType.JpqlQuery).Content;
     }
 

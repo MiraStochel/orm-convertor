@@ -21,7 +21,7 @@ public class HibernateEntityBuilderTest
         populate(builder);
         var artifacts = builder.Build();
 
-        Assert.Empty(builder.Records.Where(r => r.Kind == ConversionRecordKind.Failure));
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
         return (artifacts.First(a => a.ContentType == ConversionContentType.JavaEntity).Content, builder.Records);
     }
 
@@ -435,7 +435,9 @@ public class HibernateEntityBuilderTest
             builder.SetPropertyDatabaseType("CreditLimit", DatabaseType.Decimal, precision: 18, scale: 2);
         });
 
-        Assert.Contains("@Column(name = \"CreditLimit\", precision = 18, scale = 2, nullable = true)", code);
+        // Nullability is a fact of the column and this map states none for CreditLimit; the
+        // property's own nullability is the language axis and does not reach @Column.
+        Assert.Contains("@Column(name = \"CreditLimit\", precision = 18, scale = 2)", code);
         Assert.DoesNotContain("secondPrecision", code);
         Assert.DoesNotContain(records, r => r.Category == MappingFactCategory.PrecisionAndScale);
     }
