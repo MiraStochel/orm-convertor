@@ -30,20 +30,20 @@ public class InValueListTest
 
     private static AbstractQueryBuilder ParseSql(AbstractQueryBuilder builder, string sql)
     {
-        new DapperSqlQueryParser(builder).Parse(ConversionContentType.SqlQuery, sql);
+        new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery, sql);
         return builder;
     }
 
     private static AbstractQueryBuilder ParseLinq(AbstractQueryBuilder builder, string linq, params EntityMap[] maps)
     {
-        new EFCoreLinqQueryParser(builder).Parse(ConversionContentType.CSharpQuery, linq, maps);
+        new EFCoreLinqQueryParser(() => builder).Parse(ConversionContentType.CSharpQuery, linq, maps);
         return builder;
     }
 
     private static AbstractQueryBuilder ParseHql(AbstractQueryBuilder builder, string hql, params EntityMap[] maps)
     {
         builder.EntityMaps = maps;
-        new NHibernateHqlQueryParser(builder).Parse(ConversionContentType.HqlQuery, hql, maps);
+        new NHibernateHqlQueryParser(() => builder).Parse(ConversionContentType.HqlQuery, hql, maps);
         return builder;
     }
 

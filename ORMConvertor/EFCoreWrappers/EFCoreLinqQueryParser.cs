@@ -9,7 +9,7 @@ namespace EFCoreWrappers;
 /// <see cref="LinqQueryParser"/>, because it is System.Linq rather than EF Core
 /// (decision 026); what is genuinely EF Core is only how a query starts.
 /// </summary>
-public class EFCoreLinqQueryParser(AbstractQueryBuilder queryBuilder) : LinqQueryParser(queryBuilder)
+public class EFCoreLinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) : LinqQueryParser(queryBuilders)
 {
     protected override bool TryReadQueryRoot(ExpressionSyntax expression, out LinqQueryRoot? root)
     {

@@ -268,7 +268,7 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
 
         var method =
             $$""""
-            public static IQuery Query(ISession session)
+            public static IQuery {{MethodName}}(ISession session)
             {
                 return session.CreateQuery(
                     """

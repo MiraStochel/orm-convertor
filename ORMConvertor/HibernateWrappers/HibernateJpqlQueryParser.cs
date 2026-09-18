@@ -10,7 +10,7 @@ namespace HibernateWrappers;
 /// pagination of the scope (decision 060); what HQL adds and the model has no place for
 /// falls to the shared parser's records.
 /// </summary>
-public sealed class HibernateJpqlQueryParser(AbstractQueryBuilder queryBuilder) : JpqlQueryParser(queryBuilder)
+public sealed class HibernateJpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : JpqlQueryParser(queryBuilders)
 {
     protected override bool TryReadDialectClause()
     {

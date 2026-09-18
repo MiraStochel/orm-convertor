@@ -17,7 +17,7 @@ public class QueryInputLanguageTest
         string source)
     {
         var builder = new DapperSqlQueryBuilder();
-        new DapperSqlQueryParser(builder).Parse(contentType, source);
+        new DapperSqlQueryParser(() => builder).Parse(contentType, source);
         return (builder.Build(), builder.Records);
     }
 

@@ -23,8 +23,16 @@ namespace DapperWrappers;
 /// The T-SQL parser is a parser of a <em>language</em>, exactly as Roslyn is for C#. It is
 /// not a dependency on Dapper, which is what S1 forbids.
 /// </summary>
-public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryParser
+public class DapperSqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : IQueryParser
 {
+    /// <summary>
+    /// The builder of the query being read. Assigned at the start of every Parse from the
+    /// factory the orchestration supplied: one query, one fresh builder (decision 081). The
+    /// parser may not make one itself - a builder belongs to the target framework and this
+    /// parser to the source (S1) - and it is never touched outside a Parse call.
+    /// </summary>
+    private AbstractQueryBuilder queryBuilder = default!;
+
     private static readonly string[] DapperMethods =
     [
         "Query", "QueryAsync",
@@ -52,12 +60,17 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
     /// QueryLog used to be taken for a C# snippet and refused for carrying no Dapper call
     /// (decisions 025 and 047).
     /// </summary>
-    public void Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
+    public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
+        queryBuilder = queryBuilders();
+
+        // The builder leaves on every path, refused ones included: it holds the records of
+        // what went wrong, and only the parser can say that this unit yielded a query at all
+        // (decision 081).
         var sql = contentType == ConversionContentType.CSharpQuery ? ExtractSql(source) : source;
         if (sql is null)
         {
-            return;
+            return [queryBuilder];
         }
 
         var parser = new TSql160Parser(initialQuotedIdentifiers: true);
@@ -74,16 +87,18 @@ public class DapperSqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryPar
                     $"The SQL could not be parsed at line {error.Line}, column {error.Column}: {error.Message}");
             }
 
-            return;
+            return [queryBuilder];
         }
 
         if (FindSelectStatement(fragment) is not { } select)
         {
             Report(ConversionRecordKind.Failure, "The SQL contains no SELECT statement to translate.");
-            return;
+            return [queryBuilder];
         }
 
         ReadQueryExpression(select.QueryExpression);
+
+        return [queryBuilder];
     }
 
     /// <summary>

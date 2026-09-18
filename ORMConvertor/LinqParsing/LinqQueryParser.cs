@@ -26,9 +26,15 @@ namespace LinqParsing;
 /// head-to-tail order accidental and turned "a Where directly after a GroupBy is a HAVING"
 /// into a special case that had to look back up the tree.
 /// </summary>
-public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQueryParser
+public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) : IQueryParser
 {
-    protected readonly AbstractQueryBuilder queryBuilder = queryBuilder;
+    /// <summary>
+    /// The builder of the query being read. Assigned at the start of every Parse from the
+    /// factory the orchestration supplied: one query, one fresh builder (decision 081). The
+    /// parser may not make one itself - a builder belongs to the target framework and this
+    /// parser to the source (S1) - and it is never touched outside a Parse call.
+    /// </summary>
+    protected AbstractQueryBuilder queryBuilder = default!;
 
     private IReadOnlyList<EntityMap>? entityMaps;
     private string sourceAlias = "t";
@@ -51,8 +57,9 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     /// unit declares its language and a parser reading two of them - the Dapper one, with
     /// SQL bare beside SQL wrapped in C# - has to be told which (decision 047).
     /// </summary>
-    public void Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? maps = null)
+    public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? maps = null)
     {
+        queryBuilder = queryBuilders();
         entityMaps = maps;
 
         var tree = CSharpSyntaxTree.ParseText(Wrap(source));
@@ -66,7 +73,7 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             if (TryDecompose(invocation, out var queryRoot, out var steps))
             {
                 EmitChain(queryRoot!, steps);
-                return;
+                return [queryBuilder];
             }
         }
 
@@ -75,6 +82,10 @@ public abstract class LinqQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
             ConversionRecordKind.Failure,
             "No LINQ query chain was found in the source; nothing was translated.");
         queryBuilder.Pop();
+
+        // The builder leaves even when it was refused: it holds the records of what went
+        // wrong, and only the parser can say that this unit yielded a query (decision 081).
+        return [queryBuilder];
     }
 
     /// <summary>

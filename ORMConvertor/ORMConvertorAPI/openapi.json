@@ -644,6 +644,12 @@
               "string"
             ]
           },
+          "query": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "reason": {
             "type": "string"
           }

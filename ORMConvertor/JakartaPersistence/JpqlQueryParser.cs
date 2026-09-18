@@ -25,7 +25,7 @@ namespace JakartaPersistence;
 /// Dapper parser has for SQL in C#. What an implementation's dialect adds over JPQL is
 /// the fourth hook of decision 076: <see cref="TryReadDialectClause"/>.
 /// </summary>
-public abstract class JpqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryParser
+public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : IQueryParser
 {
     protected enum TokenKind { Identifier, Number, String, Symbol, Parameter, End }
 
@@ -46,7 +46,13 @@ public abstract class JpqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         "union", "intersect", "except", "all", "limit", "offset",
     };
 
-    protected readonly AbstractQueryBuilder queryBuilder = queryBuilder;
+    /// <summary>
+    /// The builder of the query being read. Assigned at the start of every Parse from the
+    /// factory the orchestration supplied: one query, one fresh builder (decision 081). The
+    /// parser may not make one itself - a builder belongs to the target framework and this
+    /// parser to the source (S1) - and it is never touched outside a Parse call.
+    /// </summary>
+    protected AbstractQueryBuilder queryBuilder = default!;
 
     private List<Token> tokens = [];
     private int position;
@@ -61,15 +67,19 @@ public abstract class JpqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     public bool CanParse(ConversionContentType contentType)
         => contentType is ConversionContentType.JpqlQuery or ConversionContentType.JavaQuery;
 
-    public void Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
+    public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
+        queryBuilder = queryBuilders();
         maps = entityMaps;
         aliases = new Dictionary<string, EntityMap?>(StringComparer.OrdinalIgnoreCase);
 
+        // The builder leaves on every path, refused ones included: it holds the records of
+        // what went wrong, and only the parser can say that this unit yielded a query at all
+        // (decision 081).
         var jpql = contentType == ConversionContentType.JavaQuery ? ExtractQueryLiteral(source) : source;
         if (jpql is null)
         {
-            return;
+            return [queryBuilder];
         }
 
         queryBuilder.Push();
@@ -99,6 +109,8 @@ public abstract class JpqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         }
 
         queryBuilder.Pop();
+
+        return [queryBuilder];
     }
 
     /// <summary>

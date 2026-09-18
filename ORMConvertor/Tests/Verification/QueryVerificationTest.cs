@@ -277,7 +277,7 @@ public class QueryVerificationTest
     public void EFCoreTranslatesAComposedFullOuterJoin()
     {
         var builder = new EFCoreLinqQueryBuilder();
-        new DapperSqlQueryParser(builder).Parse(
+        new DapperSqlQueryParser(() => builder).Parse(
             ConversionContentType.SqlQuery,
             "SELECT c.CustomerName, o.OrderId FROM Customers c FULL JOIN Orders o ON o.CustomerId = c.CustomerId");
         var method = builder.Build().Single().Content;

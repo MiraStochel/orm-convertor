@@ -300,14 +300,14 @@ public class DapperSqlQueryBuilder : AbstractQueryBuilder
         return RenderSelect(artifact);
     }
 
-    private static List<ConversionSource> Emit(string sql, string? resultEntity)
+    private List<ConversionSource> Emit(string sql, string? resultEntity)
     {
         var entity = resultEntity ?? "object";
         var indented = string.Join("\n", sql.Split('\n').Select(line => "        " + line));
 
         var method =
             $$""""
-            public static List<{{entity}}> Query(IDbConnection connection)
+            public static List<{{entity}}> {{MethodName}}(IDbConnection connection)
             {
                 return connection.Query<{{entity}}>(
                     """

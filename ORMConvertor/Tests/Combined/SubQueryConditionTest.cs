@@ -27,13 +27,13 @@ public class SubQueryConditionTest
 
     private static AbstractQueryBuilder ParseSql(AbstractQueryBuilder builder, string sql)
     {
-        new DapperSqlQueryParser(builder).Parse(ConversionContentType.SqlQuery, sql);
+        new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery, sql);
         return builder;
     }
 
     private static AbstractQueryBuilder ParseLinq(AbstractQueryBuilder builder, string linq, params EntityMap[] maps)
     {
-        new EFCoreLinqQueryParser(builder).Parse(ConversionContentType.CSharpQuery, linq, maps);
+        new EFCoreLinqQueryParser(() => builder).Parse(ConversionContentType.CSharpQuery, linq, maps);
         return builder;
     }
 

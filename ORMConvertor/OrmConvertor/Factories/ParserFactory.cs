@@ -25,11 +25,14 @@ internal class ParserFactory
     /// builder can keep the first value and report a conflict without the model tracking
     /// the origin of a fact.
     ///
-    /// Query parsers appear only when a query builder is there to receive them; within
-    /// one framework each query parser claims a different query language, so the caller
-    /// can pick by content type instead of by list order (decision 025).
+    /// Query parsers appear only when a factory of query builders is there to feed them;
+    /// within one framework each query parser claims a different query language, so the
+    /// caller can pick by content type instead of by list order (decision 025). A factory
+    /// rather than one builder, because a unit may hold several queries and each gets its
+    /// own (decision 081); a parser may not make one itself, since a builder belongs to
+    /// the target framework and a parser to the source (S1).
     /// </summary>
-    public static List<IParser> Create(ORMEnum orm, AbstractEntityBuilder eb, AbstractQueryBuilder? qb)
+    public static List<IParser> Create(ORMEnum orm, AbstractEntityBuilder eb, Func<AbstractQueryBuilder>? qb)
     {
         switch (orm)
         {
@@ -40,10 +43,13 @@ internal class ParserFactory
 
             // The entity parser stands before the XML mapping parser as a rule, not as a
             // coincidence: swapping the two would invert the source precedence (decision 017).
+            // The hbm.xml is claimed twice over, by the mapping parser on the entity pass and
+            // by the query parser on the query one: the document is a mapping and a query at
+            // once and the pair of parsers is what says so (decision 081).
             case ORMEnum.NHibernate:
                 return qb is null
                     ? [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb)]
-                    : [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb), new NHibernateLinqQueryParser(qb), new NHibernateHqlQueryParser(qb)];
+                    : [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb), new NHibernateLinqQueryParser(qb), new NHibernateHqlQueryParser(qb), new NHibernateXmlQueryParser(qb)];
 
             case ORMEnum.EFCore:
                 return qb is null

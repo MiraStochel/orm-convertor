@@ -36,10 +36,14 @@ export const ContentType = Object.freeze({
   JpqlQuery: 80,
 });
 
+// The XML value names a language and promises no role: the same value carries the hbm.xml,
+// the orm.xml and - with a class beside a named query in one file - a document that is a
+// mapping and a query at once (decisions 025 and 081). Which document a framework asks for
+// is said per framework, by the required-content list the server sends.
 export const CONTENT_TYPE_LABELS = Object.freeze({
   [ContentType.CSharpEntity]: "C# entity",
   [ContentType.CSharpQuery]: "C# query (LINQ)",
-  [ContentType.Xml]: "XML mapping",
+  [ContentType.Xml]: "XML document",
   [ContentType.SqlQuery]: "SQL query",
   [ContentType.HqlQuery]: "HQL query",
   [ContentType.JavaEntity]: "Java entity",

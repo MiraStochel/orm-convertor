@@ -58,8 +58,30 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
 
         foreach (var element in mapping.Elements().Where(e => e.Name.LocalName != "class"))
         {
+            // <query> is read - by NHibernateXmlQueryParser, on the query pass over this same
+            // unit (decision 081) - so it is no longer this parser's loss to report.
+            if (element.Name.LocalName == "query")
+            {
+                continue;
+            }
+
+            // <sql-query> is a query too, but a native one. Reading it means reading SQL, and
+            // the T-SQL grammar that reads SQL sits inside the Dapper wrapper, where S1 keeps
+            // it out of this one's reach until it moves into a shared project of its own; so
+            // it is a loss, and one that names its own reason rather than decision 030's
+            // flat-class boundary.
+            if (element.Name.LocalName == "sql-query")
+            {
+                ReportUnreadElement(
+                    element,
+                    entity: null,
+                    $"{Opening(element)} states a query in native SQL, which this parser does not read, "
+                        + "so the query is dropped; the HQL form <query> is read.");
+                continue;
+            }
+
             // <subclass> and its joined and union forms can sit here with an extends
-            // attribute, next to queries and imports; none of them is read (decision 030).
+            // attribute, next to imports; none of them is read (decision 030).
             ReportUnreadElement(element, entity: null);
         }
 
@@ -246,19 +268,33 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
         }
     }
 
-    private void ReportUnreadElement(XElement element, string? entity)
+    /// <summary>The element as the document opens it, which is how a record names it.</summary>
+    private static string Opening(XElement element)
     {
-        var name = element.Name.LocalName;
         var statedName = element.Attribute("name")?.Value;
-        var opening = statedName is null ? $"<{name}>" : $"<{name} name=\"{statedName}\">";
+
+        return statedName is null
+            ? $"<{element.Name.LocalName}>"
+            : $"<{element.Name.LocalName} name=\"{statedName}\">";
+    }
+
+    private void ReportUnreadElement(XElement element, string? entity)
+        => ReportUnreadElement(
+            element,
+            entity,
+            $"The parser reads only the flat class, so {Opening(element)} and everything it states are dropped (decision 030).");
+
+    private void ReportUnreadElement(XElement element, string? entity, string reason)
+    {
+        var statedName = element.Attribute("name")?.Value;
 
         entityBuilder.Report(new ConversionRecord
         {
             Kind = ConversionRecordKind.Loss,
             Framework = entityBuilder.Descriptor.Framework,
             Entity = entity,
-            Property = PropertyNamedElements.Contains(name) ? statedName : null,
-            Reason = $"The parser reads only the flat class, so {opening} and everything it states are dropped (decision 030).",
+            Property = PropertyNamedElements.Contains(element.Name.LocalName) ? statedName : null,
+            Reason = reason,
         });
     }
 

@@ -293,7 +293,7 @@ export function renderRecords(container, records, options = {}) {
 
   const head = document.createElement("thead");
   const headRow = document.createElement("tr");
-  for (const title of ["Kind", "Entity", "Property", "Unit", "Artifact", "Subject", "Reason"]) {
+  for (const title of ["Kind", "Entity", "Property", "Unit", "Query", "Artifact", "Subject", "Reason"]) {
     const cell = document.createElement("th");
     cell.textContent = title;
     headRow.append(cell);
@@ -336,8 +336,14 @@ export function renderRecords(container, records, options = {}) {
       row.append(kindCell);
 
       // The unit is where the record came from (decision 066): the name the client sent
-      // with the unit, or "unit N" by position where none was.
-      for (const value of [record.entity ?? "", record.property ?? "", record.unit ?? ""]) {
+      // with the unit, or "unit N" by position where none was. The query beside it names
+      // which query of that unit, for a document carrying several (decision 081).
+      for (const value of [
+        record.entity ?? "",
+        record.property ?? "",
+        record.unit ?? "",
+        record.query ?? "",
+      ]) {
         const cell = document.createElement("td");
         cell.textContent = value;
         row.append(cell);

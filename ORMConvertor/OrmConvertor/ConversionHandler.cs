@@ -45,55 +45,43 @@ public static class ConversionHandler
         // builders write about one entity or one instruction (decision 010).
         var runRecords = new List<ConversionRecord>();
 
+        // One row per non-blank unit, filled by both passes. Since decision 081 the
+        // orchestration no longer splits the units by language: every unit is offered to
+        // both passes and each takes what its parsers claim, so a document that is a mapping
+        // and a query at once - an hbm.xml with a class beside a named query - is read by
+        // both without the client cutting it up. Both questions the orchestration asks about
+        // a unit are therefore answered across the passes together: a unit both of them read
+        // must not collect two records about one event. A blank unit is not in this list at
+        // all - an unfilled input box is not a claim - so it is never handed to a parser and
+        // never spoken about.
+        var units = sources
+            .Where(s => !string.IsNullOrWhiteSpace(s.Content))
+            .Select(s => new UnitOutcome(s, UnitReference(s, sources)))
+            .ToList();
+
         // 1) Build entity maps using entity parsers only
         var entityParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb: null)
             .OfType<IEntityParser>()
             .ToList();
 
-        // A non-blank unit written in a language the source framework cannot read would
-        // otherwise fall through the loop below without a word - the loop only ever asks
-        // parsers what they accept, never what nobody claimed (decision 045). The query
-        // branch has reported the same situation since decision 025; this is its entity-side
-        // half. A blank unit stays silent: an unfilled input box is not a claim.
-        foreach (var src in sources.Where(x =>
-            !x.ContentType.IsQuery() && !string.IsNullOrWhiteSpace(x.Content)))
-        {
-            if (!entityParsers.Any(p => p.CanParse(src.ContentType)))
-            {
-                runRecords.Add(NotTranslated(
-                    targetOrm,
-                    src.ContentType,
-                    UnitReference(src, sources),
-                    $"{sourceOrm} has no parser for a {src.ContentType} artifact, so the unit was not read."));
-            }
-        }
-
-        // The parser-outer order is source precedence ordered in time (decision 017); the
-        // blank-unit filter keeps an unfilled box from being read at all. What each unit
-        // yielded is the parser's own statement, and a claimed unit nothing came of is a
-        // record - beside a productive unit it used to be the last silent case of decision
-        // 045. Records born during the reading are attributed to the unit, because its
-        // reading is their origin (decision 066).
+        // The parser-outer order is source precedence ordered in time (decision 017). What
+        // each unit yielded is the parser's own statement, because an enriching parser adds
+        // no new map and counting maps around the call would call an honest unit barren
+        // (decision 066). Records born during the reading are attributed to the unit,
+        // because its reading is their origin (decision 066).
         foreach (var parser in entityParsers)
         {
-            foreach (var src in sources.Where(x =>
-                parser.CanParse(x.ContentType) && !string.IsNullOrWhiteSpace(x.Content)))
+            foreach (var unit in units.Where(u => parser.CanParse(u.Source.ContentType)))
             {
-                var unit = UnitReference(src, sources);
+                unit.Claimed = true;
+
                 var recordsBefore = entityBuilder.Records.Count;
 
-                var read = parser.Parse(src.Content);
+                var read = parser.Parse(unit.Source.Content);
 
-                entityBuilder.AttributeRecords(recordsBefore, unit);
+                entityBuilder.AttributeRecords(recordsBefore, unit.Reference);
 
-                if (read.Count == 0)
-                {
-                    runRecords.Add(NotTranslated(
-                        targetOrm,
-                        src.ContentType,
-                        unit,
-                        $"The unit was read as {src.ContentType} and no entity or mapping fact came of it; check that its content is what the declared type names."));
-                }
+                unit.Yielded |= read.Count > 0;
             }
         }
 
@@ -111,52 +99,101 @@ public static class ConversionHandler
         //    asked for one conversion (decision 022).
         var queryRecords = new List<ConversionRecord>();
 
-        // An unfilled input box is not a claim, so a blank query source is skipped without a
-        // record; a non-blank one nobody can read is a Failure (decision 025).
-        var querySources = sources
-            .Where(s => s.ContentType.IsQuery() && !string.IsNullOrWhiteSpace(s.Content))
+        // The factory the query parsers are constructed with: one fresh builder per query,
+        // with this conversion's maps already on it (decision 081). The parser may not make
+        // one - a builder belongs to the target framework and a parser to the source (S1) -
+        // and the maps are set here rather than there for the same reason. A target without
+        // a query builder never reaches this delegate, because its units are recorded and
+        // skipped before any parse; the throw therefore marks a program error, not an input.
+        AbstractQueryBuilder NewQueryBuilder()
+        {
+            var builder = QueryBuilderFactory.Create(targetOrm)
+                ?? throw new InvalidOperationException($"{targetOrm} has no query builder.");
+
+            builder.EntityMaps = entityBuilder.EntityMaps;
+
+            return builder;
+        }
+
+        var queryParsers = ParserFactory.Create(sourceOrm, entityBuilder, NewQueryBuilder)
+            .OfType<IQueryParser>()
             .ToList();
 
-        foreach (var qsrc in querySources)
-        {
-            var unit = UnitReference(qsrc, sources);
+        var targetTakesQueries = QueryBuilderFactory.Supports(targetOrm);
 
-            var qb = QueryBuilderFactory.Create(targetOrm);
-            if (qb is null)
+        foreach (var unit in units)
+        {
+            // Exactly one parser per source ORM claims a given query language, so the choice
+            // does not depend on the order of the list (decision 025).
+            var parser = queryParsers.FirstOrDefault(p => p.CanParse(unit.Source.ContentType));
+            if (parser is null)
+            {
+                continue;
+            }
+
+            unit.Claimed = true;
+
+            // Only a unit some query parser claimed can be missing a query builder. Written
+            // for every unit, the record would land on each entity unit of a conversion into
+            // a target that generates no queries at all (decision 081).
+            if (!targetTakesQueries)
             {
                 queryRecords.Add(NotTranslated(
                     targetOrm,
-                    qsrc.ContentType,
-                    unit,
+                    unit.Source.ContentType,
+                    unit.Reference,
                     $"{targetOrm} has no query builder, so the query was not translated."));
                 continue;
             }
 
-            var queryParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb)
-                .OfType<IQueryParser>()
-                .Where(p => p.CanParse(qsrc.ContentType))
-                .ToList();
+            var filled = parser.Parse(unit.Source.ContentType, unit.Source.Content, entityBuilder.EntityMaps);
 
-            if (queryParsers.Count == 0)
+            // An empty collection is no error in itself: a mapping document that carries no
+            // query is an ordinary input, and whether the unit was barren is asked of both
+            // passes together below (decision 081).
+            unit.Yielded |= filled.Count > 0;
+
+            foreach (var queryBuilder in filled)
             {
-                queryRecords.Add(NotTranslated(
-                    targetOrm,
-                    qsrc.ContentType,
-                    unit,
-                    $"{sourceOrm} has no parser for a {qsrc.ContentType} query, so it was not translated."));
-                continue;
+                results.AddRange(queryBuilder.Build());
+
+                // Each builder was made for one query of this one unit and dies with it, so
+                // every record it holds - the parser's and the build's alike - came from that
+                // query (decisions 066 and 081). The query's own name is what tells the
+                // records of two queries of one document apart.
+                queryRecords.AddRange(queryBuilder.Records.Select(r => r with
+                {
+                    Unit = unit.Reference,
+                    Query = queryBuilder.QueryName,
+                }));
             }
+        }
 
-            // Exactly one parser per source ORM claims a given query language, so the choice
-            // no longer depends on the order of the list (decision 025).
-            qb.EntityMaps = entityBuilder.EntityMaps;
-            queryParsers[0].Parse(qsrc.ContentType, qsrc.Content, entityBuilder.EntityMaps);
-
-            results.AddRange(qb.Build());
-
-            // The builder was created for this one unit and dies with it, so every record it
-            // holds - the parser's and the build's alike - came from this unit (decision 066).
-            queryRecords.AddRange(qb.Records.Select(r => r with { Unit = unit }));
+        // Two statements about one unit, both made across both passes (decision 081). A
+        // non-blank unit written in a language nobody claimed would otherwise fall through
+        // without a word, because the loops only ever ask parsers what they accept, never
+        // what nobody claimed (decisions 025 and 045); and a unit that was read and yielded
+        // neither an entity map nor a query is a Failure of its own, written beside a
+        // productive unit as much as alone - the story of a unit does not change with what
+        // its neighbour produced (decision 066).
+        foreach (var unit in units)
+        {
+            if (!unit.Claimed)
+            {
+                runRecords.Add(NotTranslated(
+                    targetOrm,
+                    unit.Source.ContentType,
+                    unit.Reference,
+                    $"{sourceOrm} has no parser for a {unit.Source.ContentType} unit, so it was not read."));
+            }
+            else if (!unit.Yielded)
+            {
+                runRecords.Add(NotTranslated(
+                    targetOrm,
+                    unit.Source.ContentType,
+                    unit.Reference,
+                    $"The unit was read as {unit.Source.ContentType} and neither a mapping fact nor a query came of it; check that its content is what the declared type names."));
+            }
         }
 
         // A run that generated nothing at all has to say so. Answering with empty artifacts
@@ -204,10 +241,10 @@ public static class ConversionHandler
         };
 
     /// <summary>
-    /// One unit did not become an artifact: the target has no builder for its language, the
-    /// source has no parser for it, nobody claimed it at all, or it was read and nothing
-    /// came of it. One shape for all four, because for the caller it is one event - the
-    /// unit went in and nothing came of it (decisions 025, 045 and 066).
+    /// One unit did not become an artifact: the target has no query builder for it, nobody
+    /// claimed it at all, or it was read and nothing came of it. One shape for all three,
+    /// because for the caller it is one event - the unit went in and nothing came of it
+    /// (decisions 025, 045, 066 and 081).
     /// </summary>
     private static ConversionRecord NotTranslated(
         ORMEnum targetOrm,
@@ -232,4 +269,24 @@ public static class ConversionHandler
         => string.IsNullOrWhiteSpace(src.Name)
             ? $"unit {sources.IndexOf(src) + 1}"
             : src.Name.Trim();
+
+    /// <summary>
+    /// What became of one non-blank input unit, counted across both passes (decision 081).
+    /// Two flags rather than a loop of their own per pass, because a unit both passes read -
+    /// an hbm.xml with a class beside a named query - would otherwise be called unclaimed or
+    /// barren by whichever pass did not take it.
+    /// </summary>
+    private sealed class UnitOutcome(ConversionSource source, string reference)
+    {
+        public ConversionSource Source { get; } = source;
+
+        /// <summary>How a record points back at this unit (decision 066).</summary>
+        public string Reference { get; } = reference;
+
+        /// <summary>Some parser of either pass accepted the unit's language.</summary>
+        public bool Claimed { get; set; }
+
+        /// <summary>An entity map or a query came of it.</summary>
+        public bool Yielded { get; set; }
+    }
 }

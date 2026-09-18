@@ -10,7 +10,7 @@ namespace NHibernateWrappers;
 /// <see cref="NHibernateHqlQueryParser"/> (decisions 025 and 062) - one parser per language,
 /// told apart by the content type the unit declares, never by what its text looks like.
 /// </summary>
-public class NHibernateLinqQueryParser(AbstractQueryBuilder queryBuilder) : LinqQueryParser(queryBuilder)
+public class NHibernateLinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) : LinqQueryParser(queryBuilders)
 {
     protected override bool TryReadQueryRoot(ExpressionSyntax expression, out LinqQueryRoot? root)
     {

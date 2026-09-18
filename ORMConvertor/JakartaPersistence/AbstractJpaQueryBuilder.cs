@@ -28,6 +28,9 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
     protected override ConversionContentType MethodArtifact => ConversionContentType.JavaQuery;
 
+    /// <summary>Java methods are camelCase, so the name of a named query is spelled that way (decision 081).</summary>
+    protected override string MethodName => QueryMethodNaming.CamelCase(QueryName, "query");
+
     protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
     {
         var aliased = AliasedEntities(clauses);
@@ -308,7 +311,7 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     /// The two artifacts: a method returning the typed query for a whole-entity result and
     /// the untyped Query otherwise, and the bare JPQL in a text block.
     /// </summary>
-    private static List<ConversionSource> FinalizeText(string jpql, string? resultEntity, string pagination)
+    private List<ConversionSource> FinalizeText(string jpql, string? resultEntity, string pagination)
     {
         var indented = string.Join("\n", jpql.Split('\n').Select(line => "        " + line));
         var typed = resultEntity is not null;
@@ -317,7 +320,7 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
         var method =
             $$""""
-            public static {{returnType}} query(EntityManager em) {
+            public static {{returnType}} {{MethodName}}(EntityManager em) {
                 return em.createQuery("""
             {{indented}}
                     """{{resultClass}}){{pagination}};

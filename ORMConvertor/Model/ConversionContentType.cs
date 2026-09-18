@@ -14,9 +14,13 @@ public enum ConversionContentType
     CSharpQuery = 20,
 
     /// <summary>
-    /// An XML mapping document: the hbm.xml of NHibernate, the orm.xml of a Jakarta
-    /// Persistence implementation. One value for both, because it names the language and
-    /// the parser claims it within its own source framework (decision 025).
+    /// A document written in XML: the hbm.xml of NHibernate, the orm.xml of a Jakarta
+    /// Persistence implementation, the mapper of MyBatis. One value for all of them,
+    /// because it names the <em>language</em> and the source framework says which dialect
+    /// that is and what role it plays - the hbm.xml carries mapping and named queries
+    /// alike, and the MyBatis mapper is mapping and query in one document (decisions 025
+    /// and 081). The value therefore promises no role of its own; which document is asked
+    /// for is said per framework by RequiredContent.
     /// </summary>
     XML = 30,
 

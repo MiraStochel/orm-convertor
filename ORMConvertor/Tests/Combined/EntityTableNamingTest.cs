@@ -63,7 +63,7 @@ public class EntityTableNamingTest
     private static string TranslateLinq(string body, params EntityMap[] maps)
     {
         var builder = new DapperSqlQueryBuilder { EntityMaps = maps };
-        new EFCoreLinqQueryParser(builder).Parse(
+        new EFCoreLinqQueryParser(() => builder).Parse(
             ConversionContentType.CSharpQuery,
             $"public void Query()\n{{\n    {body}\n}}",
             maps);
@@ -79,11 +79,11 @@ public class EntityTableNamingTest
         const string sql = "SELECT a.Id FROM ADDRESS a";
 
         var dapper = new DapperSqlQueryBuilder();
-        new DapperSqlQueryParser(dapper).Parse(ConversionContentType.SqlQuery, sql);
+        new DapperSqlQueryParser(() => dapper).Parse(ConversionContentType.SqlQuery, sql);
         dapper.Build();
 
         var nhibernate = new NHibernateHqlQueryBuilder();
-        new DapperSqlQueryParser(nhibernate).Parse(ConversionContentType.SqlQuery, sql);
+        new DapperSqlQueryParser(() => nhibernate).Parse(ConversionContentType.SqlQuery, sql);
         var hql = nhibernate.Build().Single(s => s.ContentType == ConversionContentType.HqlQuery).Content;
 
         Assert.Contains(dapper.Records, r => r.Kind == ConversionRecordKind.Convention && r.Entity == "ADDRES");

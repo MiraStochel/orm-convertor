@@ -1,5 +1,6 @@
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Naming;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
@@ -137,6 +138,23 @@ public abstract class AbstractQueryBuilder
     /// (decision 077).
     /// </summary>
     protected virtual ConversionContentType MethodArtifact => ConversionContentType.CSharpQuery;
+
+    /// <summary>
+    /// The name the source gave this query, verbatim (decision 081): the name attribute of
+    /// an hbm.xml &lt;query&gt;, of a @NamedQuery, the id of a MyBatis &lt;select&gt;. Null for a bare
+    /// query unit, which carries exactly one query and needs no name to be told from a
+    /// neighbour. Set by the parser that read the query; the orchestration copies it into
+    /// the records of this builder, so three failed queries of one document stop being three
+    /// records distinguishable only by their order.
+    /// </summary>
+    public string? QueryName { get; set; }
+
+    /// <summary>
+    /// The name of the generated method: the source's name spelled as an identifier of the
+    /// target language, the fixed fallback where the source named nothing. Overridden by a
+    /// target whose methods are not PascalCase.
+    /// </summary>
+    protected virtual string MethodName => QueryMethodNaming.PascalCase(QueryName, "Query");
 
     protected void Report(
         ConversionRecordKind kind,
@@ -348,6 +366,15 @@ public abstract class AbstractQueryBuilder
     /// </summary>
     public List<ConversionSource> Build()
     {
+        // A builder that was already refused - by its parser, before a single instruction
+        // reached it - has nothing more to say. Running the steps over an empty body would
+        // add a second record about one event, "the query carries no instructions" on top of
+        // the reason it actually failed for, and discard the result all the same.
+        if (refused)
+        {
+            return [];
+        }
+
         var artifacts = BuildArtifacts();
 
         return refused ? [] : artifacts;

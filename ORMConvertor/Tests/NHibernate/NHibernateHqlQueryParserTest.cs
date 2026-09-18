@@ -58,7 +58,7 @@ public class NHibernateHqlQueryParserTest
     private static AbstractQueryBuilder Parse(AbstractQueryBuilder builder, string hql, params EntityMap[] maps)
     {
         builder.EntityMaps = maps;
-        new NHibernateHqlQueryParser(builder).Parse(ConversionContentType.HqlQuery, hql, maps);
+        new NHibernateHqlQueryParser(() => builder).Parse(ConversionContentType.HqlQuery, hql, maps);
         return builder;
     }
 

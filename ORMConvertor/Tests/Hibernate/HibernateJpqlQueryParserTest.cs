@@ -58,7 +58,7 @@ public class HibernateJpqlQueryParserTest
     private static AbstractQueryBuilder Parse(AbstractQueryBuilder builder, string jpql, params EntityMap[] maps)
     {
         builder.EntityMaps = maps;
-        new HibernateJpqlQueryParser(builder).Parse(ConversionContentType.JpqlQuery, jpql, maps);
+        new HibernateJpqlQueryParser(() => builder).Parse(ConversionContentType.JpqlQuery, jpql, maps);
         return builder;
     }
 
@@ -207,7 +207,7 @@ public class HibernateJpqlQueryParserTest
     public void TheJavaMethodIsReadThroughItsLiteral()
     {
         var builder = new HibernateJpqlQueryBuilder { EntityMaps = [Customers()] };
-        new HibernateJpqlQueryParser(builder).Parse(ConversionContentType.JavaQuery, SampleData.CustomerSampleHibernate.Query, [Customers()]);
+        new HibernateJpqlQueryParser(() => builder).Parse(ConversionContentType.JavaQuery, SampleData.CustomerSampleHibernate.Query, [Customers()]);
         var artifacts = builder.Build();
 
         Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
@@ -257,7 +257,7 @@ public class HibernateJpqlQueryParserTest
     public void AQueryComposedAtRunTimeIsAnIncompleteness()
     {
         var builder = new HibernateJpqlQueryBuilder();
-        new HibernateJpqlQueryParser(builder).Parse(ConversionContentType.JavaQuery, """
+        new HibernateJpqlQueryParser(() => builder).Parse(ConversionContentType.JavaQuery, """
             public static Query query(EntityManager em, String where) {
                 return em.createQuery("select c from Customer c " + where);
             }
@@ -269,7 +269,7 @@ public class HibernateJpqlQueryParserTest
     [Fact]
     public void TheParserClaimsBothQueryLanguages()
     {
-        var parser = new HibernateJpqlQueryParser(new HibernateJpqlQueryBuilder());
+        var parser = new HibernateJpqlQueryParser(() => new HibernateJpqlQueryBuilder());
 
         Assert.True(parser.CanParse(ConversionContentType.JpqlQuery));
         Assert.True(parser.CanParse(ConversionContentType.JavaQuery));
@@ -285,7 +285,7 @@ public class HibernateJpqlQueryParserTest
     public void NamesGoThroughTheMappingToColumns()
     {
         var builder = new DummyQueryBuilder { EntityMaps = [Customers()] };
-        new HibernateJpqlQueryParser(builder).Parse(ConversionContentType.JpqlQuery, "select c.CreditLimit from Customer c where c.CreditLimit > 1", [Customers()]);
+        new HibernateJpqlQueryParser(() => builder).Parse(ConversionContentType.JpqlQuery, "select c.CreditLimit from Customer c where c.CreditLimit > 1", [Customers()]);
 
         var body = ((SubQueryInstruction)builder.Instructions.Single()).Instructions;
         var from = Assert.Single(body.OfType<FromInstruction>());

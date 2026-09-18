@@ -26,7 +26,7 @@ public class QueryFaithfulnessTest
     private static string TranslateToLinq(string sql)
     {
         var builder = new EFCoreLinqQueryBuilder();
-        new DapperSqlQueryParser(builder).Parse(ConversionContentType.SqlQuery, sql);
+        new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery, sql);
         return builder.Build().Single().Content;
     }
 
@@ -140,7 +140,7 @@ public class QueryFaithfulnessTest
         // faithful composition is the left join concatenated with the right join's rows
         // that found no left match.
         var builder = new EFCoreLinqQueryBuilder();
-        new DapperSqlQueryParser(builder).Parse(
+        new DapperSqlQueryParser(() => builder).Parse(
             ConversionContentType.SqlQuery,
             "SELECT c.CustomerName FROM Customers c FULL JOIN Orders o ON o.CustomerId = c.CustomerId");
 
@@ -187,7 +187,7 @@ public class QueryFaithfulnessTest
         // the join used to be dropped with a Loss, and a query without its join returns
         // different rows - it neither filters nor multiplies (decision 065).
         var builder = new EFCoreLinqQueryBuilder();
-        new DapperSqlQueryParser(builder).Parse(
+        new DapperSqlQueryParser(() => builder).Parse(
             ConversionContentType.SqlQuery,
             "SELECT c.CustomerName FROM Customers c INNER JOIN Orders o ON o.OrderValue > c.CreditLimit");
 
@@ -226,13 +226,13 @@ public class QueryFaithfulnessTest
         // learns the one thing that would help.
         var byParser = new (string Name, Action<AbstractQueryBuilder> Parse)[]
         {
-            ("@limit", b => new DapperSqlQueryParser(b).Parse(
+            ("@limit", b => new DapperSqlQueryParser(() => b).Parse(
                 ConversionContentType.SqlQuery,
                 "SELECT c.Id FROM Customers c WHERE c.CreditLimit > @limit")),
-            (":limit", b => new NHibernateHqlQueryParser(b).Parse(
+            (":limit", b => new NHibernateHqlQueryParser(() => b).Parse(
                 ConversionContentType.HqlQuery,
                 "from Customer c where c.CreditLimit > :limit")),
-            ("limit", b => new EFCoreLinqQueryParser(b).Parse(
+            ("limit", b => new EFCoreLinqQueryParser(() => b).Parse(
                 ConversionContentType.CSharpQuery,
                 "public void Query() { var q = ctx.Customers.Where(c => c.CreditLimit > limit).ToList(); }")),
         };
@@ -263,7 +263,7 @@ public class QueryFaithfulnessTest
         // DistinctQueryTest and InValueListTest); an IN whose list names a column still has
         // no place, as the list carries values the query itself states.
         var builder = new EFCoreLinqQueryBuilder();
-        new DapperSqlQueryParser(builder).Parse(ConversionContentType.SqlQuery, sql);
+        new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery, sql);
 
         Assert.Empty(builder.Build());
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == feature);
@@ -275,7 +275,7 @@ public class QueryFaithfulnessTest
         // The boundary from the other side: a dropped ordering key reorders rows, it does
         // not change which ones come back, so the artifact goes out poorer with a record.
         var builder = new EFCoreLinqQueryBuilder();
-        new DapperSqlQueryParser(builder).Parse(
+        new DapperSqlQueryParser(() => builder).Parse(
             ConversionContentType.SqlQuery,
             "SELECT c.Id FROM Customers c ORDER BY LEN(c.Name)");
 

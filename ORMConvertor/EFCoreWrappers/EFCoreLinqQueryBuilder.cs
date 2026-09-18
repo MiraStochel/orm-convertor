@@ -595,7 +595,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         var returnType = elementEntity is not null ? $"IQueryable<{elementEntity}>" : "IQueryable";
         var method =
             $$"""
-            public static {{returnType}} Query(DbContext ctx)
+            public static {{returnType}} {{MethodName}}(DbContext ctx)
             {
                 return {{chain}};
             }
@@ -699,7 +699,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
         var method =
             $$"""
-            public static {{returnType}} Query(DbContext ctx)
+            public static {{returnType}} {{MethodName}}(DbContext ctx)
             {
                 return {{chain}};
             }

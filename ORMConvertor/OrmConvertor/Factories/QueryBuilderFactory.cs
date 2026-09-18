@@ -21,4 +21,11 @@ internal static class QueryBuilderFactory
 
     public static AbstractQueryBuilder? Create(ORMEnum orm) =>
         Map.TryGetValue(orm, out var ctor) ? ctor() : null;
+
+    /// <summary>
+    /// Whether the target can receive a query at all, asked without making a builder: the
+    /// orchestration has to know it before it offers a unit to the query pass, and the
+    /// builders themselves are made one per query (decision 081).
+    /// </summary>
+    public static bool Supports(ORMEnum orm) => Map.ContainsKey(orm);
 }

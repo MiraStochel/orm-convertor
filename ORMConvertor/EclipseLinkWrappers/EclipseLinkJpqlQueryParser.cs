@@ -18,4 +18,4 @@ namespace EclipseLinkWrappers;
 /// spells inside the query text has no counterpart here: EQL has no limit clause and the
 /// shared builder puts the window on the query object, where the specification puts it.
 /// </summary>
-public sealed class EclipseLinkJpqlQueryParser(AbstractQueryBuilder queryBuilder) : JpqlQueryParser(queryBuilder);
+public sealed class EclipseLinkJpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : JpqlQueryParser(queryBuilders);

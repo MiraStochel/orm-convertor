@@ -25,8 +25,16 @@ namespace NHibernateWrappers;
 /// HQL names entities and properties where the IR holds tables and columns, so every name
 /// goes through the mapping IR — the exact inverse of the builder's visitor.
 /// </summary>
-public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQueryParser
+public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : IQueryParser
 {
+    /// <summary>
+    /// The builder of the query being read. Assigned at the start of every Parse from the
+    /// factory the orchestration supplied: one query, one fresh builder (decision 081). The
+    /// parser may not make one itself - a builder belongs to the target framework and this
+    /// parser to the source (S1) - and it is never touched outside a Parse call.
+    /// </summary>
+    private AbstractQueryBuilder queryBuilder = default!;
+
     private enum TokenKind { Identifier, Number, String, Symbol, Parameter, End }
 
     private readonly record struct Token(TokenKind Kind, string Text, int Line, int Column);
@@ -82,8 +90,9 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
     /// (see CanParse). It is in the signature because the unit declares its language and the
     /// orchestration routes by it (decision 047).
     /// </summary>
-    public void Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
+    public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
+        queryBuilder = queryBuilders();
         maps = entityMaps;
         aliases = new Dictionary<string, EntityMap?>(StringComparer.OrdinalIgnoreCase);
 
@@ -109,6 +118,10 @@ public class NHibernateHqlQueryParser(AbstractQueryBuilder queryBuilder) : IQuer
         }
 
         queryBuilder.Pop();
+
+        // The builder leaves even when it was refused: it holds the records of what went
+        // wrong, and only the parser can say that this unit yielded a query (decision 081).
+        return [queryBuilder];
     }
 
     /* ---- lexer ---------------------------------------------------------------------- */

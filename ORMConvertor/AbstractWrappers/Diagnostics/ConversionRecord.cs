@@ -49,5 +49,14 @@ public sealed record ConversionRecord
     /// </summary>
     public string? Unit { get; init; }
 
+    /// <summary>
+    /// The query the record came from, named as the source named it - the name attribute of
+    /// an hbm.xml &lt;query&gt;, of a @NamedQuery, the id of a MyBatis &lt;select&gt;. Null for every
+    /// record of the mapping branch and for a query the source did not name, which is a
+    /// unit's only one (decision 081). One unit may carry several queries, so the unit
+    /// reference alone no longer tells the records of one document apart.
+    /// </summary>
+    public string? Query { get; init; }
+
     public required string Reason { get; init; }
 }
