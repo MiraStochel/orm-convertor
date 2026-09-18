@@ -68,7 +68,15 @@ public static class CrossFrameworkInputs
         ],
         ORMEnum.Hibernate =>
         [
-            new() { Content = HibernateEntity(withNamespace), ContentType = ConversionContentType.JavaEntity },
+            new() { Content = JpaEntity(withNamespace), ContentType = ConversionContentType.JavaEntity },
+        ],
+
+        // The same text for the second implementation of the specification, and that is the
+        // point rather than a shortcut: an entity that states every name has no room for the
+        // defaults the two differ in, so one source really is both (decisions 076 and 080).
+        ORMEnum.EclipseLink =>
+        [
+            new() { Content = JpaEntity(withNamespace), ContentType = ConversionContentType.JavaEntity },
         ],
         _ => throw NoRow(framework),
     };
@@ -79,7 +87,8 @@ public static class CrossFrameworkInputs
         ORMEnum.Dapper => new() { Content = DapperQuery, ContentType = ConversionContentType.SqlQuery },
         ORMEnum.EFCore => new() { Content = EFCoreQuery, ContentType = ConversionContentType.CSharpQuery },
         ORMEnum.NHibernate => new() { Content = NHibernateQuery, ContentType = ConversionContentType.CSharpQuery },
-        ORMEnum.Hibernate => new() { Content = HibernateQuery, ContentType = ConversionContentType.JpqlQuery },
+        ORMEnum.Hibernate => new() { Content = JpaQuery, ContentType = ConversionContentType.JpqlQuery },
+        ORMEnum.EclipseLink => new() { Content = JpaQuery, ContentType = ConversionContentType.JpqlQuery },
         _ => throw NoRow(framework),
     };
 
@@ -152,8 +161,9 @@ public static class CrossFrameworkInputs
     }
 
     // The Java sample: the same entity with jakarta.persistence annotations, a package
-    // where the C# samples have a namespace (decision 077).
-    private static string HibernateEntity(bool withNamespace) =>
+    // where the C# samples have a namespace (decision 077). It is named after the
+    // specification, not after an implementation, because both Java rows read this one text.
+    private static string JpaEntity(bool withNamespace) =>
         (withNamespace ? $"package {Namespace};{Environment.NewLine}{Environment.NewLine}" : string.Empty) + """
         import jakarta.persistence.Column;
         import jakarta.persistence.Entity;
@@ -183,7 +193,7 @@ public static class CrossFrameworkInputs
         }
         """;
 
-    private const string HibernateQuery = """
+    private const string JpaQuery = """
         select c.CustomerName as Name
         from Customer c
         where c.CreditLimit > 2000

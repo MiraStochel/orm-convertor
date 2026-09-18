@@ -95,7 +95,7 @@ public class HibernateEntityBuilderTest
         Assert.Contains("@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = \"Customer_CustomerId_gen\")", code);
         Assert.Contains("@SequenceGenerator(name = \"Customer_CustomerId_gen\", sequenceName = \"Customer_SEQ\", allocationSize = 50)", code);
         Assert.DoesNotContain("AUTO", code);
-        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Convention && r.Category == MappingFactCategory.PrimaryKeyStrategy && r.Reason.Contains("Hibernate resolves it to Sequence"));
+        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Convention && r.Category == MappingFactCategory.PrimaryKeyStrategy && r.Reason.Contains("Hibernate resolves it to SEQUENCE"));
     }
 
     [Fact]

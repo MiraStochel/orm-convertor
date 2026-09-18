@@ -32,6 +32,15 @@ public static class RequiredContent
             new (13, ConversionContentType.JavaQuery, "Query (Java method)"),
             new (14, ConversionContentType.JpqlQuery, "Query (JPQL)"),
         ]),
+        // The same four units as Hibernate's, because both implementations read the same
+        // specification and the same documents; only the samples behind them differ
+        // (decision 080).
+        new (ORMEnum.EclipseLink, [
+            new (15, ConversionContentType.JavaEntity, "Entity Class (Java)"),
+            new (16, ConversionContentType.XML, "orm.xml Mapping"),
+            new (17, ConversionContentType.JavaQuery, "Query (Java method)"),
+            new (18, ConversionContentType.JpqlQuery, "Query (JPQL)"),
+        ]),
     ];
 
     public static List<RequiredContentDefinition> GetRequiredContentAdvisor => [

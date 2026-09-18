@@ -1,5 +1,6 @@
 using AbstractWrappers;
 using DapperWrappers;
+using EclipseLinkWrappers;
 using EFCoreWrappers;
 using HibernateWrappers;
 using JakartaPersistence;
@@ -58,6 +59,17 @@ internal class ParserFactory
                 return qb is null
                     ? [new JpaOrmXmlParser(eb, context), new HibernateEntityParser(eb, context)]
                     : [new JpaOrmXmlParser(eb, context), new HibernateEntityParser(eb, context), new HibernateJpqlQueryParser(qb)];
+            }
+
+            // The same list and the same order for the second implementation of the same
+            // specification (decision 080): orm.xml is standard and so is its precedence,
+            // and what differs between the two is inside the wrapper's own parsers.
+            case ORMEnum.EclipseLink:
+            {
+                var context = new JpaReadingContext();
+                return qb is null
+                    ? [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context)]
+                    : [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context), new EclipseLinkJpqlQueryParser(qb)];
             }
 
             // Symmetric with the target side, which refuses an unsupported framework rather

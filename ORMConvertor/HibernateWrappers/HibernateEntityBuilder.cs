@@ -1,4 +1,3 @@
-using System.Text;
 using AbstractWrappers.Descriptors;
 using JakartaPersistence;
 using Model.AbstractRepresentation;
@@ -17,9 +16,10 @@ public sealed class HibernateEntityBuilder : AbstractJpaEntityBuilder
 
     protected override JpaImplementationProfile Profile => HibernateDescriptor.Profile;
 
-    protected override void AppendNationalization(EntityMap entityMap, PropertyMap propertyMap, StringBuilder code)
+    protected override void AppendNationalization(
+        EntityMap entityMap, PropertyMap propertyMap, List<string> arguments, List<string> annotations)
     {
         Import($"{Profile.VendorAnnotationPackage}.Nationalized");
-        code.AppendLine("    @Nationalized");
+        annotations.Add("    @Nationalized");
     }
 }

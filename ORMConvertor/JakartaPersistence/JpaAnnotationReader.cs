@@ -217,6 +217,11 @@ public class JpaAnnotationReader
                     facts.Unread.Add($"{annotation.SimpleName}(orphanRemoval)");
                 }
 
+                if (facts.Kind is JpaAttributeKind.ManyToOne or JpaAttributeKind.OneToOne && IsLazy(annotation))
+                {
+                    ReadLazyReference(annotation, facts);
+                }
+
                 break;
 
             case "JoinColumn":
@@ -261,6 +266,23 @@ public class JpaAnnotationReader
     /// </summary>
     protected virtual bool ReadVendorAnnotation(JavaAnnotation annotation, JpaEntityFacts? entity, JpaAttributeFacts? attribute)
         => false;
+
+    /// <summary>
+    /// fetch = LAZY on a single-valued reference. The loading strategy is kept out of the
+    /// representation by the paper (§5.4), so the base says nothing at all, which is what
+    /// decision 077 settled for Hibernate: there the annotation does what it promises and
+    /// leaving it behind is the ordinary price of the pivot. An implementation where the
+    /// same line is inert unless the consumer project weaves its bytecode says so here
+    /// (decision 080) - it is a fact about the source, not a strategy entering the model.
+    /// </summary>
+    protected virtual void ReadLazyReference(JavaAnnotation annotation, JpaAttributeFacts facts)
+    {
+    }
+
+    /// <summary>Whether the relation annotation states fetch = LAZY, however it qualifies the constant.</summary>
+    private static bool IsLazy(JavaAnnotation annotation)
+        => annotation["fetch"] is { Kind: JavaAnnotationValueKind.Name } fetch
+            && string.Equals(fetch.SimpleName, "LAZY", StringComparison.Ordinal);
 
     private static JpaGeneratorFacts? ReadGenerator(JavaAnnotation annotation)
     {

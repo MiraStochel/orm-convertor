@@ -18,6 +18,7 @@ public class TargetFrameworkDescriptorTest
         EFCoreDescriptor.Instance,
         NHibernateDescriptor.Instance,
         HibernateWrappers.HibernateDescriptor.Instance,
+        EclipseLinkWrappers.EclipseLinkDescriptor.Instance,
     ];
 
     /// <summary>
@@ -65,12 +66,45 @@ public class TargetFrameworkDescriptorTest
         var properties = pom.Root.Element(ns + "properties")!;
 
         Assert.Equal(HibernateWrappers.HibernateDescriptor.Instance.Version, properties.Element(ns + "hibernate.version")?.Value);
+        Assert.Equal(EclipseLinkWrappers.EclipseLinkDescriptor.Instance.Version, properties.Element(ns + "eclipselink.version")?.Value);
 
         // The dependency must really be bound to that property; a literal version beside
         // an unused property would satisfy the assertion above and pin nothing.
         var hibernate = pom.Descendants(ns + "dependency")
             .Single(d => d.Element(ns + "artifactId")?.Value == "hibernate-core");
         Assert.Equal("${hibernate.version}", hibernate.Element(ns + "version")?.Value);
+
+        var eclipseLink = pom.Descendants(ns + "dependency")
+            .Single(d => d.Element(ns + "artifactId")?.Value == "eclipselink");
+        Assert.Equal("${eclipselink.version}", eclipseLink.Element(ns + "version")?.Value);
+    }
+
+    /// <summary>
+    /// The two implementations of one specification declare the same members and the same
+    /// support, and differ only in what stands beside the descriptor: the profile
+    /// (decisions 076 and 080). If a difference ever appeared in the descriptor itself, the
+    /// shared layer would have stopped being shared and this test says so.
+    /// </summary>
+    [Fact]
+    public void TheJpaImplementationsShareEverythingButTheirProfileAndVersion()
+    {
+        var hibernate = HibernateWrappers.HibernateDescriptor.Instance;
+        var eclipseLink = EclipseLinkWrappers.EclipseLinkDescriptor.Instance;
+
+        Assert.Same(hibernate.EnforcedMembers, eclipseLink.EnforcedMembers);
+        Assert.Same(hibernate.Support, eclipseLink.Support);
+        Assert.Same(hibernate.QuerySupport, eclipseLink.QuerySupport);
+        Assert.NotEqual(hibernate.Version, eclipseLink.Version);
+
+        var hibernateProfile = HibernateWrappers.HibernateDescriptor.Profile;
+        var eclipseLinkProfile = EclipseLinkWrappers.EclipseLinkDescriptor.Profile;
+
+        Assert.Equal(hibernateProfile.SpecificationLevel, eclipseLinkProfile.SpecificationLevel);
+        Assert.NotEqual(hibernateProfile.AutoStrategy, eclipseLinkProfile.AutoStrategy);
+        Assert.False(hibernateProfile.UppercaseImplicitNames);
+        Assert.True(eclipseLinkProfile.UppercaseImplicitNames);
+        Assert.False(hibernateProfile.LazyReferenceNeedsWeaving);
+        Assert.True(eclipseLinkProfile.LazyReferenceNeedsWeaving);
     }
 
     /// <summary>
@@ -112,14 +146,16 @@ public class TargetFrameworkDescriptorTest
 
     /// <summary>
     /// The two full .NET ORMs part company on exactly one category: NHibernate refuses a
-    /// mapping without an identifier, EF Core falls back to a keyless type. Hibernate
-    /// stands with NHibernate: every JPA entity has an @Id (decision 077).
+    /// mapping without an identifier, EF Core falls back to a keyless type. Both JPA
+    /// implementations stand with NHibernate: every JPA entity has an @Id (decisions 077
+    /// and 080), and it is the specification saying so, not either of them.
     /// </summary>
     [Fact]
-    public void OnlyNHibernateAndHibernateRequireAPrimaryKey()
+    public void OnlyNHibernateAndTheJpaImplementationsRequireAPrimaryKey()
     {
         Assert.Equal(FactSupport.Required, NHibernateDescriptor.Instance.SupportOf(MappingFactCategory.PrimaryKey));
         Assert.Equal(FactSupport.Required, HibernateWrappers.HibernateDescriptor.Instance.SupportOf(MappingFactCategory.PrimaryKey));
+        Assert.Equal(FactSupport.Required, EclipseLinkWrappers.EclipseLinkDescriptor.Instance.SupportOf(MappingFactCategory.PrimaryKey));
         Assert.Equal(FactSupport.Expressible, EFCoreDescriptor.Instance.SupportOf(MappingFactCategory.PrimaryKey));
         Assert.Equal(FactSupport.NotExpressible, DapperDescriptor.Instance.SupportOf(MappingFactCategory.PrimaryKey));
     }

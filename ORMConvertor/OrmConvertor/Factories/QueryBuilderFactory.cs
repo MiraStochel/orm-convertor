@@ -1,5 +1,6 @@
 using AbstractWrappers;
 using DapperWrappers;
+using EclipseLinkWrappers;
 using EFCoreWrappers;
 using HibernateWrappers;
 using Model;
@@ -15,6 +16,7 @@ internal static class QueryBuilderFactory
             [ORMEnum.NHibernate] = () => new NHibernateHqlQueryBuilder(),
             [ORMEnum.EFCore] = () => new EFCoreLinqQueryBuilder(),
             [ORMEnum.Hibernate] = () => new HibernateJpqlQueryBuilder(),
+            [ORMEnum.EclipseLink] = () => new EclipseLinkJpqlQueryBuilder(),
         };
 
     public static AbstractQueryBuilder? Create(ORMEnum orm) =>

@@ -146,6 +146,18 @@ public final class JavaProject implements AutoCloseable {
         return loader;
     }
 
+    /**
+     * Where the compiled classes are, as a URL. A provider bootstrapped without a
+     * persistence.xml is told the root of its unit this way (decision 080).
+     */
+    public URL rootUrl() {
+        try {
+            return classes.toUri().toURL();
+        } catch (IOException e) {
+            throw new UncheckedIOException("The compiled artifacts have no usable URL.", e);
+        }
+    }
+
     public Class<?> load(String binaryName) {
         try {
             return loader().loadClass(binaryName);

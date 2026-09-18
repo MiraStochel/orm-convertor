@@ -1,5 +1,6 @@
 using AbstractWrappers;
 using DapperWrappers;
+using EclipseLinkWrappers;
 using EFCoreWrappers;
 using HibernateWrappers;
 using Model;
@@ -15,6 +16,7 @@ internal static class EntityBuilderFactory
             [ORMEnum.NHibernate] = () => new NHibernateEntityBuilder(),
             [ORMEnum.EFCore] = () => new EFCoreEntityBuilder(),
             [ORMEnum.Hibernate] = () => new HibernateEntityBuilder(),
+            [ORMEnum.EclipseLink] = () => new EclipseLinkEntityBuilder(),
         };
 
     public static AbstractEntityBuilder? Create(ORMEnum orm) =>

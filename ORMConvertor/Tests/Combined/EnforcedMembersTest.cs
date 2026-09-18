@@ -1,6 +1,7 @@
 ﻿using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using DapperWrappers;
+using EclipseLinkWrappers;
 using EFCoreWrappers;
 using HibernateWrappers;
 using Model;
@@ -25,16 +26,16 @@ public class EnforcedMembersTest
         // Written by hand on purpose, unlike the cross tests that take their directions from
         // ORMEnum through CrossFrameworkInputs: this matrix is the contract of decision 037
         // and a framework's row belongs to its wrapper, so the row is added, not derived.
-        foreach (var framework in new[] { "Dapper", "EFCore", "NHibernate", "Hibernate" })
+        foreach (var framework in new[] { "Dapper", "EFCore", "NHibernate", "Hibernate", "EclipseLink" })
         {
             foreach (var keyParts in new[] { 0, 1, 2 })
             {
-                if (framework is "NHibernate" or "Hibernate" && keyParts == 0)
+                if (framework is "NHibernate" or "Hibernate" or "EclipseLink" && keyParts == 0)
                 {
-                    // NHibernate and Hibernate require an identifier: the completeness gate
-                    // refuses the entity instead of generating anything (decision 010), so
-                    // there is no artifact to check here. The refusal itself is asserted in
-                    // DiagnosticsTest and in the Hibernate tests.
+                    // NHibernate and both JPA implementations require an identifier: the
+                    // completeness gate refuses the entity instead of generating anything
+                    // (decision 010), so there is no artifact to check here. The refusal
+                    // itself is asserted in DiagnosticsTest and in the Java wrappers' tests.
                     continue;
                 }
 
@@ -113,6 +114,7 @@ public class EnforcedMembersTest
             "EFCore" => new EFCoreEntityBuilder(),
             "NHibernate" => new NHibernateEntityBuilder(),
             "Hibernate" => new HibernateEntityBuilder(),
+            "EclipseLink" => new EclipseLinkEntityBuilder(),
             _ => throw new ArgumentOutOfRangeException(nameof(framework), framework, null),
         };
 

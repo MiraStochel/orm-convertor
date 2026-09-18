@@ -103,6 +103,13 @@ public sealed class JpaAttributeFacts
 
     /// <summary>Annotations or elements on the attribute the model has no place for, for the loss records.</summary>
     public List<string> Unread { get; } = [];
+
+    /// <summary>
+    /// Losses an implementation's own reader states in its own words (decision 080): the
+    /// generic sentence about an annotation without a counterpart would not say what the
+    /// reader knows, as at a lazy reference under EclipseLink. Each entry is a whole reason.
+    /// </summary>
+    public List<string> Notes { get; } = [];
 }
 
 public sealed record JpaUniqueConstraintFacts(string? Name, IReadOnlyList<string> ColumnNames);

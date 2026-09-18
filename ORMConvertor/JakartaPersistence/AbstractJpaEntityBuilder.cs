@@ -35,10 +35,15 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
     /// <summary>
     /// The second hook of decision 076: how the implementation spells national character
-    /// data on a column the model marks unicode. Hibernate adds an annotation; an
-    /// implementation without one answers with a column definition instead.
+    /// data on a column the model marks unicode. Hibernate adds an annotation of its own;
+    /// an implementation without one answers inside the column definition (decision 080),
+    /// which is why the hook is handed the arguments of the @Column being written and not
+    /// only the code after it.
     /// </summary>
-    protected abstract void AppendNationalization(EntityMap entityMap, PropertyMap propertyMap, StringBuilder code);
+    /// <param name="arguments">The arguments of the @Column, still open for one more.</param>
+    /// <param name="annotations">Lines to write after the @Column, for an implementation that has an annotation.</param>
+    protected abstract void AppendNationalization(
+        EntityMap entityMap, PropertyMap propertyMap, List<string> arguments, List<string> annotations);
 
     /// <summary>Adds an import the artifact needs; called by the hooks as well.</summary>
     protected void Import(string qualifiedName) => imports.Add(qualifiedName);
@@ -72,7 +77,10 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 Entity = entityMap.Entity.Name,
                 Category = MappingFactCategory.TableName,
                 Reason = $"No table name was stated; the artifact writes @Table(name = \"{table}\"), the entity name, "
-                    + "which is the JPA default made explicit (decision 077).",
+                    + "which is the JPA default made explicit (decision 077)"
+                    + (Profile.UppercaseImplicitNames
+                        ? $" - left implicit, {Profile.Implementation} would create the table upper case (decision 080)."
+                        : "."),
             });
         }
 
@@ -182,11 +190,6 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             AppendGeneration(entityMap, part, code);
             AppendColumn(entityMap, propertyMap, code, isKey: true);
 
-            if (propertyMap.IsUnicode == true)
-            {
-                AppendNationalization(entityMap, propertyMap, code);
-            }
-
             // An identifier is always a wrapper type: the unassigned state has to be
             // representable (decision 077), and the flat key of decision 006 never carries
             // the source's language nullability anyway - here nothing is lost by it.
@@ -227,12 +230,6 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             // so that the column is written once, by the relation - the rule NHibernate
             // has for the same shape (decision 012).
             AppendColumn(entityMap, propertyMap, code, isKey: false, readOnly: IsForeignKeyColumn(entityMap, propertyMap));
-
-            if (propertyMap.IsUnicode == true)
-            {
-                AppendNationalization(entityMap, propertyMap, code);
-            }
-
             AppendField(entityMap, propertyMap.Property, code);
         }
     }
@@ -735,9 +732,9 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             Entity = entityMap.Entity.Name,
             Property = part.PropertyMap.Property.Name,
             Category = MappingFactCategory.PrimaryKeyStrategy,
-            Reason = $"The source leaves the mechanism to the framework (Auto); {Profile.Implementation} resolves it to {mechanism} "
-                + "on the pinned dialect, and the artifact writes that mechanism out, because AUTO means something else "
-                + "under the other implementation (decisions 076 and 077).",
+            Reason = $"The source leaves the mechanism to the framework (Auto); {Profile.Implementation} resolves it to "
+                + $"{JpaSpelling(mechanism)} on the pinned dialect, and the artifact writes that mechanism out, because AUTO "
+                + "means something else under the other implementation (decisions 076, 077 and 080).",
         });
 
         switch (mechanism)
@@ -753,6 +750,18 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 break;
         }
     }
+
+    /// <summary>
+    /// The mechanism under the name GenerationType gives it, so that a record about AUTO
+    /// names what the reader will see in the artifact rather than the model's own word.
+    /// </summary>
+    private static string JpaSpelling(PrimaryKeyStrategy mechanism) => mechanism switch
+    {
+        PrimaryKeyStrategy.Sequence => "SEQUENCE",
+        PrimaryKeyStrategy.Identity => "IDENTITY",
+        PrimaryKeyStrategy.Uuid => "UUID",
+        _ => "TABLE",
+    };
 
     /// <summary>
     /// SEQUENCE with its generator written out: the sequence name from the canonical
@@ -839,16 +848,20 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
     /// <summary>
     /// TABLE with its generator: the counter's table and columns from the canonical
     /// parameters (decision 020 introduced the key column and key value for exactly this
-    /// generator); what is unstated stays with the implementation's default and is reported.
+    /// generator). What the source leaves unstated the profile fills where a run measured
+    /// the implementation's default (decision 080) - silence would not name one database
+    /// object, because each implementation reaches for a counter table of its own - and
+    /// where it did not, it stays with the target's default and is reported.
     /// </summary>
     private void AppendTable(EntityMap entityMap, PrimaryKeyPart part, StringBuilder code, bool silent = false)
     {
         var property = part.PropertyMap.Property.Name;
         var parameters = part.StrategyParameters;
+        var counter = Profile.DefaultCounterTable;
         var generatorName = $"{entityMap.Entity.Name}_{property}_gen";
         var arguments = new List<string> { $"name = \"{generatorName}\"" };
 
-        if (parameters.TryGetValue(GeneratorParameter.CounterTable, out var table))
+        if ((parameters.GetValueOrDefault(GeneratorParameter.CounterTable) ?? counter?.Table) is { } table)
         {
             arguments.Add($"table = \"{table}\"");
         }
@@ -858,17 +871,17 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             arguments.Add($"schema = \"{schema}\"");
         }
 
-        if (parameters.TryGetValue(GeneratorParameter.CounterKeyColumn, out var keyColumn))
+        if ((parameters.GetValueOrDefault(GeneratorParameter.CounterKeyColumn) ?? counter?.KeyColumn) is { } keyColumn)
         {
             arguments.Add($"pkColumnName = \"{keyColumn}\"");
         }
 
-        if (parameters.TryGetValue(GeneratorParameter.CounterValueColumn, out var valueColumn))
+        if ((parameters.GetValueOrDefault(GeneratorParameter.CounterValueColumn) ?? counter?.ValueColumn) is { } valueColumn)
         {
             arguments.Add($"valueColumnName = \"{valueColumn}\"");
         }
 
-        if (parameters.TryGetValue(GeneratorParameter.CounterKeyValue, out var keyValue))
+        if ((parameters.GetValueOrDefault(GeneratorParameter.CounterKeyValue) ?? counter?.KeyValue) is { } keyValue)
         {
             arguments.Add($"pkColumnValue = \"{keyValue}\"");
         }
@@ -896,7 +909,10 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 Property = property,
                 Category = MappingFactCategory.PrimaryKeyStrategy,
                 Reason = "The hi/lo mechanism over a counter table is written as TABLE with the block size as allocationSize; "
-                    + "parameters the source did not state stay with the implementation's default.",
+                    + (counter is null
+                        ? "parameters the source did not state stay with the implementation's default."
+                        : $"parameters the source did not state are written out from the default of {Profile.Implementation} "
+                          + $"('{counter.Table}'), so that the artifact names the counter rather than leaving it to the provider."),
             });
         }
 
@@ -974,7 +990,20 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             arguments.Add("updatable = false");
         }
 
+        // The unicode facet is asked for here, with the column still open: one implementation
+        // answers with an annotation beside the column, the other inside it (decision 080).
+        var annotations = new List<string>();
+        if (propertyMap.IsUnicode == true)
+        {
+            AppendNationalization(entityMap, propertyMap, arguments, annotations);
+        }
+
         code.AppendLine($"    @Column({string.Join(", ", arguments)})");
+
+        foreach (var annotation in annotations)
+        {
+            code.AppendLine(annotation);
+        }
     }
 
     /// <summary>

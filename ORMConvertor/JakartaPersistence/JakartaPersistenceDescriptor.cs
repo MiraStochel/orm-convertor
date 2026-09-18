@@ -26,8 +26,9 @@ public static class JakartaPersistenceDescriptor
             Name = "non-final entity class",
             Condition = EnforcedMemberCondition.Always,
             ForbiddenMarker = "final class",
-            Reason = "The entity class must not be final (Jakarta Persistence 3.2 §2.1): a proxy is a "
-                   + "subclass of the entity, and Hibernate gives up lazy loading on a final class.",
+            Reason = "The entity class must not be final (Jakarta Persistence 3.2 §2.1). Hibernate needs it "
+                   + "for the proxy, which is a subclass of the entity; EclipseLink rewrites the class instead "
+                   + "and would not mind, but the specification demands it of both (decision 080).",
         },
         new EnforcedMember
         {

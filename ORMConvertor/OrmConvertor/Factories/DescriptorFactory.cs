@@ -1,5 +1,6 @@
 using AbstractWrappers.Descriptors;
 using DapperWrappers;
+using EclipseLinkWrappers;
 using EFCoreWrappers;
 using HibernateWrappers;
 using Model;
@@ -20,6 +21,7 @@ internal static class DescriptorFactory
         ORMEnum.NHibernate => NHibernateDescriptor.Instance,
         ORMEnum.EFCore => EFCoreDescriptor.Instance,
         ORMEnum.Hibernate => HibernateDescriptor.Instance,
+        ORMEnum.EclipseLink => EclipseLinkDescriptor.Instance,
         _ => throw new InvalidOperationException("Source ORM not supported"),
     };
 }

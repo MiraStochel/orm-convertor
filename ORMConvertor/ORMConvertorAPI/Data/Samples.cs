@@ -23,5 +23,9 @@ public static class Samples
         { 12, CustomerSampleHibernate.OrmXml },
         { 13, CustomerSampleHibernate.Query },
         { 14, CustomerSampleHibernate.JpqlQuery },
+        { 15, CustomerSampleEclipseLink.Entity },
+        { 16, CustomerSampleEclipseLink.OrmXml },
+        { 17, CustomerSampleEclipseLink.Query },
+        { 18, CustomerSampleEclipseLink.JpqlQuery },
     };
 }

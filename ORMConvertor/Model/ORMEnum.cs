@@ -12,4 +12,11 @@ public enum ORMEnum
     /// C# with no JVM in the translation path (decision 076).
     /// </summary>
     Hibernate = 40,
+
+    /// <summary>
+    /// EclipseLink, the second implementation of Jakarta Persistence (decision 080): the
+    /// same shared layer as Hibernate with a profile of its own - AUTO is a counter table,
+    /// an implicit name is upper case and national character data has no annotation.
+    /// </summary>
+    EclipseLink = 50,
 }

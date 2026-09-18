@@ -6,13 +6,14 @@
  * All paths are relative, so the deployment base path (/orm) is never written down.
  */
 
-export const ORM = Object.freeze({ Dapper: 10, NHibernate: 20, EFCore: 30, Hibernate: 40 });
+export const ORM = Object.freeze({ Dapper: 10, NHibernate: 20, EFCore: 30, Hibernate: 40, EclipseLink: 50 });
 
 export const ORM_LABELS = Object.freeze({
   [ORM.Dapper]: "Dapper",
   [ORM.NHibernate]: "NHibernate",
   [ORM.EFCore]: "EF Core",
   [ORM.Hibernate]: "Hibernate",
+  [ORM.EclipseLink]: "EclipseLink",
 });
 
 /*

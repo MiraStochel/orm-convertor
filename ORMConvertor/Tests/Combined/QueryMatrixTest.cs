@@ -48,6 +48,7 @@ public class QueryMatrixTest
     [InlineData(ORMEnum.EFCore, ConversionContentType.CSharpQuery, "ctx.Set<")]
     [InlineData(ORMEnum.NHibernate, ConversionContentType.CSharpQuery, "from ")]
     [InlineData(ORMEnum.Hibernate, ConversionContentType.JavaQuery, "em.createQuery(")]
+    [InlineData(ORMEnum.EclipseLink, ConversionContentType.JavaQuery, "em.createQuery(")]
     public void EachTargetEmitsItsOwnQueryLanguage(ORMEnum target, ConversionContentType method, string hallmark)
     {
         var result = ConversionHandler.Convert(ORMEnum.EFCore, target, CrossFrameworkInputs.Units(ORMEnum.EFCore));
@@ -65,6 +66,7 @@ public class QueryMatrixTest
     [InlineData(ORMEnum.Dapper, ConversionContentType.SqlQuery)]
     [InlineData(ORMEnum.NHibernate, ConversionContentType.HqlQuery)]
     [InlineData(ORMEnum.Hibernate, ConversionContentType.JpqlQuery)]
+    [InlineData(ORMEnum.EclipseLink, ConversionContentType.JpqlQuery)]
     public void StringLanguagesAreAlsoEmittedBare(ORMEnum target, ConversionContentType expected)
     {
         var result = ConversionHandler.Convert(ORMEnum.EFCore, target, CrossFrameworkInputs.Units(ORMEnum.EFCore));

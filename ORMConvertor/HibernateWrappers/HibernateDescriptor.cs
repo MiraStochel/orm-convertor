@@ -40,5 +40,15 @@ public static class HibernateDescriptor
         NamingStrategy: "ImplicitNamingStrategyJpaCompliantImpl, PhysicalNamingStrategyStandardImpl",
         NationalizedByDefault: false,
         UppercaseImplicitNames: false,
-        VendorAnnotationPackage: "org.hibernate.annotations");
+        VendorAnnotationPackage: "org.hibernate.annotations",
+
+        // fetch = LAZY on a reference does what it says here: the proxy is a subclass and
+        // needs nothing of the consumer project (decision 080).
+        LazyReferenceNeedsWeaving: false,
+
+        // The counter table of a TABLE generator stays unstated because no run of ours has
+        // measured what Hibernate 7.4.5 creates for it; what the tutorial measured was AUTO,
+        // and AUTO is a sequence here. An unmeasured default is not ours to write down
+        // (decision 080), so a TABLE generator without parameters keeps the target's own.
+        DefaultCounterTable: null);
 }

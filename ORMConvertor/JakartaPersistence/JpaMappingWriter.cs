@@ -470,6 +470,13 @@ public sealed class JpaMappingWriter(AbstractEntityBuilder entityBuilder, Conver
             Report(ConversionRecordKind.Loss, attribute.Name, null,
                 $"The annotation {unread} has no counterpart in the intermediate representation and was dropped.");
         }
+
+        // What the implementation's own reader had more to say than the sentence above
+        // (decision 080); it arrives as a whole reason and is written out as it stands.
+        foreach (var note in attribute.Notes)
+        {
+            Report(ConversionRecordKind.Loss, attribute.Name, null, note);
+        }
     }
 
     private void Report(ConversionRecordKind kind, string? property, MappingFactCategory? category, string reason)
