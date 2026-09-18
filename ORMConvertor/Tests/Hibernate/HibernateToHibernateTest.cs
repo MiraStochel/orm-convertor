@@ -150,6 +150,47 @@ public class HibernateToHibernateTest
         Assert.Contains("@JoinColumn(name = \"AuthorId\", referencedColumnName = \"AuthorId\", nullable = false)", again);
     }
 
+    /// <summary>
+    /// Decision 079 through the round trip. secondPrecision is a fixed point; precision
+    /// over a temporal attribute comes back as a column without any precision at all - the
+    /// honest loss, because that is exactly the column the source ran over (datetime2(7)).
+    /// </summary>
+    [Fact]
+    public void ATemporalColumnKeepsItsSecondPrecisionAndLosesAMisplacedPrecision()
+    {
+        const string java = """
+            package Shop;
+
+            import jakarta.persistence.Column;
+            import jakarta.persistence.Entity;
+            import jakarta.persistence.Id;
+            import jakarta.persistence.Table;
+            import java.time.LocalDateTime;
+
+            @Entity
+            @Table(name = "Stamps")
+            public class Stamp {
+
+                @Id
+                @Column(name = "StampId")
+                private Integer StampId;
+
+                @Column(name = "SeenAt", secondPrecision = 3)
+                private LocalDateTime SeenAt;
+
+                @Column(name = "PlacedAt", precision = 3)
+                private LocalDateTime PlacedAt;
+            }
+            """;
+
+        var first = Rebuild(java);
+
+        Assert.Contains("@Column(name = \"SeenAt\", secondPrecision = 3)", first);
+        Assert.Contains("@Column(name = \"PlacedAt\")", first);
+        Assert.DoesNotContain("precision = 3)", first.Replace("secondPrecision = 3)", string.Empty));
+        Assert.Equal(first, Rebuild(first));
+    }
+
     [Fact]
     public void TheOrchestrationTranslatesHibernateToHibernate()
     {

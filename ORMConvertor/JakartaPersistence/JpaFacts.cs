@@ -57,6 +57,15 @@ public sealed class JpaAttributeFacts
 
     public int? Precision { get; set; }
 
+    /// <summary>
+    /// @Column(secondPrecision), the attribute Jakarta Persistence 3.2 added for the
+    /// fractional seconds of a time or timestamp column - the same fact the model carries
+    /// as the Precision facet of a temporal family (decisions 019 and 079). Kept apart
+    /// from <see cref="Precision"/> here so that the writer can see which of the two the
+    /// source actually spelled.
+    /// </summary>
+    public int? SecondPrecision { get; set; }
+
     public int? Scale { get; set; }
 
     public bool? Nullable { get; set; }

@@ -91,7 +91,9 @@ public static class JakartaPersistenceDescriptor
             [MappingFactCategory.ColumnName] = FactSupport.Expressible,         // @Column(name)
             [MappingFactCategory.DatabaseType] = FactSupport.Expressible,       // columnDefinition, @Nationalized
             [MappingFactCategory.Length] = FactSupport.Expressible,             // @Column(length)
-            [MappingFactCategory.PrecisionAndScale] = FactSupport.Expressible,  // @Column(precision, scale)
+            // @Column(precision, scale) on a decimal column, @Column(secondPrecision) on a
+            // time or timestamp one - two spellings of one expressible fact (decision 079).
+            [MappingFactCategory.PrecisionAndScale] = FactSupport.Expressible,
             [MappingFactCategory.Nullability] = FactSupport.Expressible,        // @Column(nullable)
             [MappingFactCategory.PrimaryKey] = FactSupport.Required,            // @Id
             [MappingFactCategory.PrimaryKeyStrategy] = FactSupport.Expressible, // @GeneratedValue

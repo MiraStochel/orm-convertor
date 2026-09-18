@@ -331,6 +331,8 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
         attribute.ColumnName = column.Attribute("name")?.Value;
         attribute.Length = ReadInt(column.Attribute("length")?.Value);
         attribute.Precision = ReadInt(column.Attribute("precision")?.Value);
+        // The XSD spelling of @Column(secondPrecision) (decision 079).
+        attribute.SecondPrecision = ReadInt(column.Attribute("second-precision")?.Value);
         attribute.Scale = ReadInt(column.Attribute("scale")?.Value);
         attribute.Nullable = ReadBoolean(column.Attribute("nullable")?.Value) ?? attribute.Nullable;
         attribute.Unique |= IsTrue(column.Attribute("unique")?.Value);

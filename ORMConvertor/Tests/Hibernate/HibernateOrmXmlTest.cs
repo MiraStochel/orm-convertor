@@ -182,6 +182,50 @@ public class HibernateOrmXmlTest
         Assert.Equal(KeyClassForm.Embedded, map.PrimaryKey.SourceKeyClass!.Form);
     }
 
+    /// <summary>
+    /// second-precision is the XSD spelling of @Column(secondPrecision) (decision 079).
+    /// The descriptor declares no Java type and is read before the class, so it is also the
+    /// one place where stating it is itself the statement that the column is temporal.
+    /// </summary>
+    [Fact]
+    public void TheDescriptorStatesTheFractionalSecondPrecision()
+    {
+        var (builder, _) = Read("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <entity-mappings xmlns="https://jakarta.ee/xml/ns/persistence/orm" version="3.2">
+                <entity class="Shop.Stamp">
+                    <table name="Stamps"/>
+                    <attributes>
+                        <id name="id">
+                            <column name="StampId"/>
+                        </id>
+                        <basic name="seenAt">
+                            <column name="SeenAt" second-precision="3"/>
+                        </basic>
+                    </attributes>
+                </entity>
+            </entity-mappings>
+            """, """
+            package Shop;
+
+            import jakarta.persistence.Entity;
+            import java.time.LocalDateTime;
+
+            @Entity
+            public class Stamp {
+                private Integer id;
+                private LocalDateTime seenAt;
+            }
+            """);
+
+        var map = builder.EntityMaps.Single();
+        var seenAt = map.PropertyMaps.Single(pm => pm.Property.Name == "seenAt");
+
+        Assert.Equal("SeenAt", seenAt.ColumnName);
+        Assert.Equal(3, seenAt.Precision);
+        Assert.DoesNotContain(builder.Records, r => r.Kind is ConversionRecordKind.Loss or ConversionRecordKind.Conflict);
+    }
+
     [Fact]
     public void TheOrchestrationReadsTheSampleDescriptorBesideTheClass()
     {

@@ -169,6 +169,7 @@ public class JpaAnnotationReader
                 facts.ColumnName = annotation.String("name") ?? facts.ColumnName;
                 facts.Length = annotation.Int("length") ?? facts.Length;
                 facts.Precision = annotation.Int("precision") ?? facts.Precision;
+                facts.SecondPrecision = annotation.Int("secondPrecision") ?? facts.SecondPrecision;
                 facts.Scale = annotation.Int("scale") ?? facts.Scale;
                 facts.Nullable = annotation.Boolean("nullable") ?? facts.Nullable;
                 facts.Unique |= annotation.Boolean("unique") == true;

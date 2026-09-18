@@ -382,6 +382,94 @@ public class HibernateEntityBuilderTest
         Assert.Contains(records, r => r.Kind == ConversionRecordKind.Loss && r.Property == "When" && r.Reason.Contains("DateTime.Now"));
     }
 
+    /// <summary>
+    /// Decision 079: the precision facet reaches the attribute its column family gives it.
+    /// On a temporal column that is secondPrecision - Hibernate 7.4.5 ignores precision
+    /// there and builds datetime2(7), which only the Java suite could see (§6.2).
+    /// </summary>
+    [Fact]
+    public void ATemporalColumnStatesItsPrecisionAsSecondPrecision()
+    {
+        var (code, records) = Build(builder =>
+        {
+            Customer(builder);
+            builder.AddProperty("DateTime", "PlacedAt", "public", hasGetter: true, hasSetter: true);
+            builder.SetPropertyDatabaseType("PlacedAt", DatabaseType.Timestamp, precision: 3);
+            builder.AddProperty("TimeOnly", "OpensAt", "public", hasGetter: true, hasSetter: true);
+            builder.SetPropertyDatabaseType("OpensAt", DatabaseType.Time, precision: 0);
+        });
+
+        Assert.Contains("@Column(name = \"PlacedAt\", secondPrecision = 3)", code);
+        Assert.Contains("@Column(name = \"OpensAt\", secondPrecision = 0)", code);
+        Assert.DoesNotContain("precision = 3,", code);
+        Assert.DoesNotContain("@Column(name = \"PlacedAt\", precision", code);
+
+        // Renaming the spelling of a fact the source stated is not a convention (decision 079).
+        Assert.DoesNotContain(records, r => r.Property is "PlacedAt" or "OpensAt");
+    }
+
+    /// <summary>
+    /// Where the map states no family, the language type answers the same question - it is
+    /// what the implementation itself consults when nothing names the SQL type (decision 079).
+    /// </summary>
+    [Fact]
+    public void TheLanguageTypeDecidesWhereTheMapStatesNoFamily()
+    {
+        var (code, _) = Build(builder =>
+        {
+            Customer(builder);
+            builder.AddProperty("DateTime", "SeenAt", "public", hasGetter: true, hasSetter: true);
+            builder.SetPropertyDatabaseMapping("SeenAt", new() { ["precision"] = "6" });
+        });
+
+        Assert.Contains("@Column(name = \"SeenAt\", secondPrecision = 6)", code);
+    }
+
+    /// <summary>A decimal column is untouched by decision 079: precision and scale as before.</summary>
+    [Fact]
+    public void ADecimalColumnKeepsPrecisionAndScale()
+    {
+        var (code, records) = Build(builder =>
+        {
+            Customer(builder);
+            builder.SetPropertyDatabaseType("CreditLimit", DatabaseType.Decimal, precision: 18, scale: 2);
+        });
+
+        Assert.Contains("@Column(name = \"CreditLimit\", precision = 18, scale = 2, nullable = true)", code);
+        Assert.DoesNotContain("secondPrecision", code);
+        Assert.DoesNotContain(records, r => r.Category == MappingFactCategory.PrecisionAndScale);
+    }
+
+    /// <summary>
+    /// The two shapes for which @Column has no attribute at all: a date column has no
+    /// fractional seconds, and a scale has no place on a temporal column (decision 079).
+    /// </summary>
+    [Fact]
+    public void APrecisionWithNowhereToGoIsALoss()
+    {
+        var (code, records) = Build(builder =>
+        {
+            Customer(builder);
+            builder.AddProperty("DateOnly", "BornOn", "public", hasGetter: true, hasSetter: true);
+            builder.SetPropertyDatabaseType("BornOn", DatabaseType.Date, precision: 3);
+            builder.AddProperty("DateTime", "ClosedAt", "public", hasGetter: true, hasSetter: true);
+            builder.SetPropertyDatabaseType("ClosedAt", DatabaseType.Timestamp, precision: 3, scale: 2);
+        });
+
+        Assert.Contains("@Column(name = \"BornOn\")", code);
+        Assert.Contains("@Column(name = \"ClosedAt\", secondPrecision = 3)", code);
+        Assert.DoesNotContain("scale", code);
+
+        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Loss
+            && r.Property == "BornOn"
+            && r.Category == MappingFactCategory.PrecisionAndScale
+            && r.Reason.Contains("date column"));
+        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Loss
+            && r.Property == "ClosedAt"
+            && r.Category == MappingFactCategory.PrecisionAndScale
+            && r.Reason.Contains("scale"));
+    }
+
     [Fact]
     public void AnEntityWithoutAKeyIsRefused()
     {

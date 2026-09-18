@@ -37,7 +37,9 @@ public class CrossEcosystemTest
         Assert.Contains("private Integer CustomerID;", java);
         Assert.Contains("@Column(name = \"CustomerName\", length = 200, nullable = false)", java);
         Assert.Contains("@Nationalized", java); // type="String" is nvarchar in NHibernate
-        Assert.Contains("@Column(name = \"AccountOpenedDate\", precision = 7, nullable = false)", java);
+        // A temporal column states its fractional seconds as secondPrecision (decision 079):
+        // Hibernate ignores precision there and would build datetime2(7) whatever it said.
+        Assert.Contains("@Column(name = \"AccountOpenedDate\", secondPrecision = 7, nullable = false)", java);
         Assert.Contains("private LocalDateTime AccountOpenedDate;", java);
         Assert.Contains("private BigDecimal CreditLimit;", java);
         Assert.DoesNotContain("virtual", java);

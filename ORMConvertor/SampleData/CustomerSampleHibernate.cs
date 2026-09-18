@@ -37,7 +37,7 @@ public static class CustomerSampleHibernate
             @Column(name = "CustomerName", length = 200, nullable = false)
             private String CustomerName;
 
-            @Column(name = "AccountOpenedDate", precision = 7, nullable = false)
+            @Column(name = "AccountOpenedDate", secondPrecision = 7, nullable = false)
             private LocalDateTime AccountOpenedDate;
 
             @Column(name = "CreditLimit", precision = 18, scale = 2, nullable = true)

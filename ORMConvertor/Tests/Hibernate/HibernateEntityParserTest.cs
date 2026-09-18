@@ -687,6 +687,99 @@ public class HibernateEntityParserTest
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Property == "when" && r.Reason.Contains("new Date()"));
     }
 
+    /// <summary>
+    /// Decision 079 on the way in: secondPrecision is the fractional-second precision and
+    /// fills the one Precision facet of the model; precision over a temporal attribute is
+    /// refused, because the value does not reach the column in Hibernate either and
+    /// reading it would put a column in the model that the source never had.
+    /// </summary>
+    [Fact]
+    public void SecondPrecisionIsReadAndPrecisionOverATemporalAttributeIsNot()
+    {
+        var (builder, _) = Parse("""
+            import jakarta.persistence.*;
+            import java.time.LocalDateTime;
+            import java.time.LocalTime;
+
+            @Entity
+            public class Stamp {
+                @Id private Integer id;
+
+                @Column(name = "SeenAt", secondPrecision = 3)
+                private LocalDateTime seenAt;
+
+                @Column(name = "PlacedAt", precision = 3)
+                private LocalDateTime placedAt;
+
+                @Column(name = "OpensAt", secondPrecision = 0)
+                private LocalTime opensAt;
+            }
+            """);
+
+        var map = builder.EntityMaps.Single();
+        Assert.Equal(3, Map(map, "seenAt").Precision);
+        Assert.Null(Map(map, "placedAt").Precision);
+        Assert.Equal(0, Map(map, "opensAt").Precision);
+
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss
+            && r.Property == "placedAt"
+            && r.Category == MappingFactCategory.PrecisionAndScale
+            && r.Reason.Contains("secondPrecision"));
+        Assert.DoesNotContain(builder.Records, r => r.Property is "seenAt" or "opensAt");
+    }
+
+    /// <summary>The symmetric half: secondPrecision on a column that is not temporal (decision 079).</summary>
+    [Fact]
+    public void SecondPrecisionOverADecimalAttributeIsALoss()
+    {
+        var (builder, _) = Parse("""
+            import jakarta.persistence.*;
+            import java.math.BigDecimal;
+
+            @Entity
+            public class Invoice {
+                @Id private Integer id;
+
+                @Column(name = "Total", precision = 18, scale = 2, secondPrecision = 3)
+                private BigDecimal total;
+            }
+            """);
+
+        var total = Map(builder.EntityMaps.Single(), "total");
+        Assert.Equal(18, total.Precision);
+        Assert.Equal(2, total.Scale);
+
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss
+            && r.Property == "total"
+            && r.Category == MappingFactCategory.PrecisionAndScale
+            && r.Reason.Contains("not a time or timestamp"));
+    }
+
+    /// <summary>
+    /// The family the columnDefinition states outranks the language type in the same
+    /// predicate (decision 079): a literal datetime2 is a temporal column whatever the
+    /// declaration is called.
+    /// </summary>
+    [Fact]
+    public void TheColumnDefinitionFamilyDecidesWhereItIsStated()
+    {
+        var (builder, _) = Parse("""
+            import jakarta.persistence.*;
+
+            @Entity
+            public class Reading {
+                @Id private Integer id;
+
+                @Column(name = "TakenAt", precision = 3, columnDefinition = "datetime2(3)")
+                private Instant takenAt;
+            }
+            """);
+
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss
+            && r.Property == "takenAt"
+            && r.Category == MappingFactCategory.PrecisionAndScale);
+    }
+
     [Fact]
     public void TheParserClaimsOnlyTheJavaEntityLanguage()
     {

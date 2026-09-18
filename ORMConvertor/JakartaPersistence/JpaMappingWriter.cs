@@ -90,10 +90,7 @@ public sealed class JpaMappingWriter(AbstractEntityBuilder entityBuilder, Conver
             dbProps["length"] = length.ToString();
         }
 
-        if (attribute.Precision is { } precision)
-        {
-            dbProps["precision"] = precision.ToString();
-        }
+        WritePrecision(attribute, dbProps);
 
         if (attribute.Scale is { } scale)
         {
@@ -138,6 +135,61 @@ public sealed class JpaMappingWriter(AbstractEntityBuilder entityBuilder, Conver
                     $"The type '{attribute.ColumnDefinition.Trim()}' has no family in the neutral vocabulary; its literal "
                     + "spelling is kept on the escape path and no family is claimed (decision 019).");
             }
+        }
+    }
+
+    /// <summary>
+    /// Which of @Column's two precision attributes fills the one Precision facet of the
+    /// model (decision 079): secondPrecision on a time or timestamp column, precision
+    /// elsewhere. The other one is refused rather than read, because the value never
+    /// reached the column in the source framework either and reading it would put a column
+    /// in the model that the source never had. The refusal is asked only where the reader
+    /// knows what the column is - orm.xml is read before the class (decision 068) and
+    /// declares no Java type, so from there precision fills the facet as it always did.
+    /// </summary>
+    private void WritePrecision(JpaAttributeFacts attribute, Dictionary<string, string> dbProps)
+    {
+        var kind = JpaColumnPrecision.Classify(
+            string.IsNullOrWhiteSpace(attribute.ColumnDefinition)
+                ? null
+                : JpaSqlTypeReading.FromColumnDefinition(attribute.ColumnDefinition).Type,
+            attribute.TypeText);
+
+        // secondPrecision exists for no column but a time or timestamp one, so spelling it
+        // is itself a statement about the column where nothing else says what it is.
+        var temporal = kind == JpaPrecisionKind.FractionalSeconds
+            || (kind == JpaPrecisionKind.Unknown && attribute.SecondPrecision is not null);
+
+        if (temporal)
+        {
+            if (attribute.SecondPrecision is { } seconds)
+            {
+                dbProps["precision"] = seconds.ToString();
+            }
+
+            if (attribute.Precision is { } ignored)
+            {
+                Report(ConversionRecordKind.Loss, attribute.Name, MappingFactCategory.PrecisionAndScale,
+                    $"@Column(precision = {ignored}) stands on a time or timestamp attribute, where Jakarta "
+                    + "Persistence 3.2 gives precision to a decimal column only; the value does not reach the "
+                    + "column in the source framework either, so it is not read as the fractional-second "
+                    + "precision - that is secondPrecision (decision 079).");
+            }
+
+            return;
+        }
+
+        if (attribute.Precision is { } precision)
+        {
+            dbProps["precision"] = precision.ToString();
+        }
+
+        if (kind != JpaPrecisionKind.Unknown && attribute.SecondPrecision is { } unusable)
+        {
+            Report(ConversionRecordKind.Loss, attribute.Name, MappingFactCategory.PrecisionAndScale,
+                $"@Column(secondPrecision = {unusable}) stands on an attribute that is not a time or timestamp "
+                + "column, where Jakarta Persistence 3.2 gives the attribute no meaning; it is dropped "
+                + "(decision 079).");
         }
     }
 

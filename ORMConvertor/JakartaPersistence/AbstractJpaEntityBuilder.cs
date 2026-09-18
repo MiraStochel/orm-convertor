@@ -180,7 +180,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             code.AppendLine();
             code.AppendLine("    @Id");
             AppendGeneration(entityMap, part, code);
-            AppendColumn(propertyMap, code, isKey: true);
+            AppendColumn(entityMap, propertyMap, code, isKey: true);
 
             if (propertyMap.IsUnicode == true)
             {
@@ -226,7 +226,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             // A scalar over a column a relation of the entity also maps is read-only here,
             // so that the column is written once, by the relation - the rule NHibernate
             // has for the same shape (decision 012).
-            AppendColumn(propertyMap, code, isKey: false, readOnly: IsForeignKeyColumn(entityMap, propertyMap));
+            AppendColumn(entityMap, propertyMap, code, isKey: false, readOnly: IsForeignKeyColumn(entityMap, propertyMap));
 
             if (propertyMap.IsUnicode == true)
             {
@@ -942,9 +942,9 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
     /// @Column with every fact the map states, the column name always (decision 076): the
     /// name restates the universal default where the source stated none, so it carries no
     /// record (decision 067). The literal SQL type reaches columnDefinition (decision 052);
-    /// precision serves the decimal and the temporal families alike, as Hibernate reads it.
+    /// the precision facet reaches the attribute its column family gives it (decision 079).
     /// </summary>
-    private void AppendColumn(PropertyMap propertyMap, StringBuilder code, bool isKey, bool readOnly = false)
+    private void AppendColumn(EntityMap entityMap, PropertyMap propertyMap, StringBuilder code, bool isKey, bool readOnly = false)
     {
         Import($"{Jakarta}.Column");
 
@@ -955,15 +955,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             arguments.Add($"length = {length}");
         }
 
-        if (propertyMap.Precision is { } precision)
-        {
-            arguments.Add($"precision = {precision}");
-        }
-
-        if (propertyMap.Scale is { } scale)
-        {
-            arguments.Add($"scale = {scale}");
-        }
+        AppendPrecision(entityMap, propertyMap, arguments);
 
         // A key column is never nullable, so the claim is not restated on it.
         if (!isKey && propertyMap.IsNullable is { } nullable)
@@ -984,6 +976,72 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
         code.AppendLine($"    @Column({string.Join(", ", arguments)})");
     }
+
+    /// <summary>
+    /// The precision facet under the spelling its column family gives it (decision 079):
+    /// secondPrecision on a time or timestamp column, precision on a decimal one. Both stand
+    /// beside columnDefinition exactly as length does - facets are not dropped because a
+    /// literal type might already contain them (decision 052). Renaming the spelling of a
+    /// fact the source stated carries no record; what does not reach the column at all is a
+    /// loss: a date column has no fractional seconds, and a scale has no place on a temporal
+    /// one.
+    /// </summary>
+    private void AppendPrecision(EntityMap entityMap, PropertyMap propertyMap, List<string> arguments)
+    {
+        switch (JpaColumnPrecision.Classify(propertyMap.Type, propertyMap.Property.Type))
+        {
+            case JpaPrecisionKind.FractionalSeconds:
+                if (propertyMap.Precision is { } seconds)
+                {
+                    arguments.Add($"secondPrecision = {seconds}");
+                }
+
+                if (propertyMap.Scale is not null)
+                {
+                    ReportPrecisionLoss(entityMap, propertyMap,
+                        "A scale belongs to a decimal column; on a time or timestamp column @Column has no "
+                        + "attribute for it, so it is dropped (decision 079).");
+                }
+
+                return;
+
+            case JpaPrecisionKind.Date:
+                if (propertyMap.Precision is not null || propertyMap.Scale is not null)
+                {
+                    ReportPrecisionLoss(entityMap, propertyMap,
+                        "A date column has no fractional-second part: @Column gives precision to a decimal column "
+                        + "and secondPrecision to a time or timestamp one, so the stated value reaches neither "
+                        + "and is dropped (decision 079).");
+                }
+
+                return;
+
+            default:
+                if (propertyMap.Precision is { } precision)
+                {
+                    arguments.Add($"precision = {precision}");
+                }
+
+                if (propertyMap.Scale is { } scale)
+                {
+                    arguments.Add($"scale = {scale}");
+                }
+
+                return;
+        }
+    }
+
+    private void ReportPrecisionLoss(EntityMap entityMap, PropertyMap propertyMap, string reason)
+        => Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = Descriptor.Framework,
+            Artifact = ConversionContentType.JavaEntity,
+            Entity = entityMap.Entity.Name,
+            Property = propertyMap.Property.Name,
+            Category = MappingFactCategory.PrecisionAndScale,
+            Reason = reason,
+        });
 
     /// <summary>
     /// The field itself, private, with the initializer the model carries where Java can
