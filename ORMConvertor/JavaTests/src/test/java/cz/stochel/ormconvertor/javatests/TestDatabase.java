@@ -44,6 +44,37 @@ public final class TestDatabase {
         return url;
     }
 
+    /**
+     * The user the JDBC URL carries, or null when it carries none (integrated security).
+     * Hibernate hands the whole URL to the driver and never needs this; EclipseLink builds
+     * its own connection properties and sends an empty user unless it is told one, which
+     * the first run of the suite over EclipseLink measured as {@code Login failed for user
+     * ''} (decision 080).
+     */
+    public static String jdbcUser() {
+        return property("user");
+    }
+
+    /** The password the JDBC URL carries, or null. See {@link #jdbcUser()}. */
+    public static String jdbcPassword() {
+        return property("password");
+    }
+
+    /**
+     * One {@code ;key=value} property of the JDBC URL. The value may itself contain an
+     * equals sign - a password often does - so only the first one separates.
+     */
+    private static String property(String name) {
+        for (String part : jdbcUrl().split(";")) {
+            int equals = part.indexOf('=');
+            if (equals > 0 && part.substring(0, equals).trim().equalsIgnoreCase(name)) {
+                return part.substring(equals + 1);
+            }
+        }
+
+        return null;
+    }
+
     public static String schemaName() {
         String schema = System.getenv(SCHEMA_VARIABLE);
         if (schema == null || schema.isBlank()) {

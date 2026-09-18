@@ -84,7 +84,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [077](077-hibernate-wrapper-over-the-shared-jpa-layer.md) | Hibernate wrapper nad sdílenou JPA vrstvou | 2026-09-17 | platí | F1, F2, F3, F7, F9, F10, F11, F12, S1, S2 |
 | [078](078-java-suite-as-a-client-of-a-running-instance.md) | Javová sada je klientem běžící instance nástroje | 2026-09-17 | revidováno | F7, F9, F10, F12, F13, S2, S4, S5 |
 | [079](079-fractional-second-precision-as-second-precision.md) | Přesnost zlomků sekundy nese `secondPrecision`, ne `precision` | 2026-09-18 | platí | F7, F9, F10, F11, F12, S1, S2 |
-| [080](080-eclipselink-as-the-second-profile-over-the-jpa-layer.md) | EclipseLink jako druhý profil nad JPA vrstvou | 2026-09-18 | platí | F9, F10, F12, S1, S2 |
+| [080](080-eclipselink-as-the-second-profile-over-the-jpa-layer.md) | EclipseLink jako druhý profil nad JPA vrstvou | 2026-09-18 | revidováno | F9, F10, F12, S1, S2 |
 
 ## Formát
 

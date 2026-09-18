@@ -2,15 +2,12 @@ package cz.stochel.ormconvertor.javatests.eclipselink;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.EntityManagerFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -35,23 +32,12 @@ class EclipseLinkClaimsTest {
     static void generateTheSchemaScript() throws IOException {
         Path target = Files.createTempFile("ormconvertor-eclipselink-", ".sql");
 
-        try (EntityManagerFactory factory = EclipseLinkBootstrap.build(
-                "none",
-                EclipseLinkClaimsTest.class.getClassLoader(),
-                null,
-                List.of(Widget.class),
-                Map.of(
-                        "jakarta.persistence.schema-generation.scripts.action", "create",
-                        "jakarta.persistence.schema-generation.scripts.create-target", target.toString()))) {
-
-            // The unit deploys on first use, and the script is written while it does.
-            try (EntityManager ignored = factory.createEntityManager()) {
-                // nothing to run - the script is the point
-            }
-        }
+        EclipseLinkBootstrap.generateScript(target, List.of(Widget.class));
 
         ddl = Files.readString(target, StandardCharsets.UTF_8);
         Files.deleteIfExists(target);
+
+        assertTrue(!ddl.isBlank(), "the provider wrote no schema script at all");
     }
 
     /**

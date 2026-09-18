@@ -87,7 +87,7 @@ public class HibernateToEclipseLinkTest
     [Fact]
     public void NationalizedBecomesALiteralTypeAndBackAnAnnotation()
     {
-        var toEclipseLink = Entity(Convert(ORMEnum.Hibernate, ORMEnum.EclipseLink, """
+        var toEclipseLinkResult = Convert(ORMEnum.Hibernate, ORMEnum.EclipseLink, """
             package Shop;
 
             import jakarta.persistence.*;
@@ -104,11 +104,18 @@ public class HibernateToEclipseLinkTest
                 @Column(name = "CustomerName", length = 200)
                 private String CustomerName;
             }
-            """));
+            """);
 
+        var toEclipseLink = Entity(toEclipseLinkResult);
+
+        // The source states the facet and no type at all, so the family comes from the
+        // language type and the artifact says so - the case the first CI run caught.
         Assert.Contains("columnDefinition = \"nvarchar(200)\"", toEclipseLink);
         Assert.DoesNotContain("@Nationalized", toEclipseLink);
         Assert.DoesNotContain("org.hibernate", toEclipseLink);
+        Assert.Contains(toEclipseLinkResult.Records, r => r.Kind == ConversionRecordKind.Convention
+            && r.Category == MappingFactCategory.DatabaseType
+            && r.Property == "CustomerName");
 
         var toHibernate = Entity(Convert(ORMEnum.EclipseLink, ORMEnum.Hibernate, """
             package Shop;

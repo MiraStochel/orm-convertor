@@ -131,6 +131,46 @@ public class EclipseLinkEntityBuilderTest
     }
 
     /// <summary>
+    /// The commonest shape of the facet, and the one the first CI run caught: @Nationalized
+    /// on a String states unicode and no database type at all. The family then comes from
+    /// the language type - the only place the source put it - and the artifact says so,
+    /// because leaving it out would hand the column to EclipseLink's own varchar default,
+    /// which is the very thing the source ruled out (decision 080).
+    /// </summary>
+    [Fact]
+    public void UnicodeWithoutAStatedTypeTakesTheFamilyFromTheLanguageType()
+    {
+        var (code, records) = Build(b =>
+        {
+            Customer(b);
+            b.SetPropertyDatabaseType("CustomerName", type: null, isUnicode: true);
+        });
+
+        Assert.Contains("columnDefinition = \"nvarchar(200)\"", code);
+        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Convention
+            && r.Category == MappingFactCategory.DatabaseType
+            && r.Property == "CustomerName");
+        Assert.DoesNotContain(records, r => r.Kind == ConversionRecordKind.Loss
+            && r.Category == MappingFactCategory.DatabaseType);
+    }
+
+    /// <summary>A unicode claim over a property that is not character data at all stays a loss.</summary>
+    [Fact]
+    public void UnicodeOverANonCharacterLanguageTypeIsStillALoss()
+    {
+        var (code, records) = Build(b =>
+        {
+            Customer(b);
+            b.SetPropertyDatabaseType("CreditLimit", type: null, isUnicode: true);
+        });
+
+        Assert.DoesNotContain("columnDefinition", code);
+        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Loss
+            && r.Category == MappingFactCategory.DatabaseType
+            && r.Property == "CreditLimit");
+    }
+
+    /// <summary>
     /// A literal type overrides the length beside it, so a length nobody stated becomes a
     /// claim of the artifact and is reported (decision 080).
     /// </summary>

@@ -32,7 +32,8 @@ public sealed class EclipseLinkEntityBuilder : AbstractJpaEntityBuilder
             return;
         }
 
-        var definition = JpaSqlTypeWriting.NationalizedColumnDefinition(propertyMap, out var lengthFromDefault);
+        var definition = JpaSqlTypeWriting.NationalizedColumnDefinition(
+            propertyMap, out var familyFromLanguageType, out var lengthFromDefault);
 
         if (definition is null)
         {
@@ -45,7 +46,7 @@ public sealed class EclipseLinkEntityBuilder : AbstractJpaEntityBuilder
                 Property = propertyMap.Property.Name,
                 Category = MappingFactCategory.DatabaseType,
                 Reason = "The source states national character data, which EclipseLink can express only as a literal column "
-                    + $"type, and {(propertyMap.Type is { } family ? $"the family {family}" : "a column with no family")} "
+                    + $"type, and {(propertyMap.Type is { } family ? $"the family {family}" : "a property whose language type is not character data")} "
                     + "has no national variant to write; the facet is dropped (decision 080).",
             });
 
@@ -53,6 +54,27 @@ public sealed class EclipseLinkEntityBuilder : AbstractJpaEntityBuilder
         }
 
         arguments.Add($"columnDefinition = \"{definition}\"");
+
+        // The commonest source of the facet - @Nationalized on a String - states no database
+        // family at all, so the artifact names a type the source never spelled. That is a
+        // statement of the target and is recorded as one; where the family was stated, the
+        // name is only its one spelling here and carries nothing, as it does for EF Core.
+        if (familyFromLanguageType)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.JavaEntity,
+                Entity = entityMap.Entity.Name,
+                Property = propertyMap.Property.Name,
+                Category = MappingFactCategory.DatabaseType,
+                Reason = $"The source states national character data over a column with no stated type; the artifact writes "
+                    + $"columnDefinition = \"{definition}\", the character type its language type implies, because EclipseLink "
+                    + "has no annotation for the facet and its own default would be the non-national column the source ruled "
+                    + "out (decision 080).",
+            });
+        }
 
         // The type name itself carries no record: it is the one spelling this target has
         // for a fact the source stated, the same way the EF Core builder writes a type name

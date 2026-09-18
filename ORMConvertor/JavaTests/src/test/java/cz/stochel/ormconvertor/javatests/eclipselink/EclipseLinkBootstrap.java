@@ -8,6 +8,7 @@ import jakarta.persistence.spi.ClassTransformer;
 import jakarta.persistence.spi.PersistenceUnitInfo;
 import jakarta.persistence.spi.PersistenceUnitTransactionType;
 import java.net.URL;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -46,30 +47,102 @@ public final class EclipseLinkBootstrap {
     }
 
     /**
-     * The whole call. Extra properties are the caller's own - a scenario that wants the
-     * DDL as a script rather than against the database says so there.
+     * The whole call. Extra properties are the caller's own.
      */
     public static EntityManagerFactory build(
             String schemaAction, ClassLoader loader, URL root, List<Class<?>> entities, Map<String, Object> extra) {
 
-        Map<String, Object> properties = new HashMap<>();
+        return new PersistenceProvider().createContainerEntityManagerFactory(
+                unit(loader, root, entities), properties(schemaAction, loader, extra));
+    }
+
+    /**
+     * The DDL of these classes as a script, written to the given file, with nothing created
+     * in the database. It is the provider's own call for exactly this - schema generation
+     * without a factory - so the script does not depend on when a unit happens to deploy,
+     * and it is the method the EclipseLink tutorial measured its defaults with.
+     */
+    public static void generateScript(Path target, List<Class<?>> entities) {
+        ClassLoader loader = EclipseLinkBootstrap.class.getClassLoader();
+
+        Map<String, Object> properties = common(loader);
+        properties.put("jakarta.persistence.schema-generation.database.action", "none");
+        properties.put("jakarta.persistence.schema-generation.scripts.action", "create");
+        properties.put("jakarta.persistence.schema-generation.scripts.create-target", target.toString());
+
+        // No connection at all, which is what makes this measurable anywhere: EclipseLink
+        // would otherwise try to read the platform from JDBC metadata and fail with 4021.
+        // The standard property is what convinces it not to connect - the tutorial's sixth
+        // step measured that the vendor's own target-database is not enough by itself.
+        properties.put("jakarta.persistence.database-product-name", "Microsoft SQL Server");
+        properties.put("eclipselink.target-database", "SQLServer");
+
+        new PersistenceProvider().generateSchema(unit(loader, null, entities), properties);
+    }
+
+    /** The unit the provider would otherwise read from a persistence.xml. */
+    private static PersistenceUnitInfo unit(ClassLoader loader, URL root, List<Class<?>> entities) {
+        List<String> names = new ArrayList<>();
+        for (Class<?> entity : entities) {
+            names.add(entity.getName());
+        }
+
+        return new Unit(loader, rootOrOwn(root), names);
+    }
+
+    private static Map<String, Object> properties(String schemaAction, ClassLoader loader, Map<String, Object> extra) {
+        Map<String, Object> properties = common(loader);
         properties.put("jakarta.persistence.jdbc.url", TestDatabase.jdbcUrl());
         properties.put("jakarta.persistence.schema-generation.database.action", schemaAction);
+
+        // Measured on the first run (2026-09-18): EclipseLink does not hand the URL to the
+        // driver as it stands the way Hibernate does - it builds its own connection
+        // properties and sends an empty user, which SQL Server refuses with 18456. The
+        // credentials the URL carries therefore have to be given as properties as well.
+        if (TestDatabase.jdbcUser() != null) {
+            properties.put("jakarta.persistence.jdbc.user", TestDatabase.jdbcUser());
+        }
+        if (TestDatabase.jdbcPassword() != null) {
+            properties.put("jakarta.persistence.jdbc.password", TestDatabase.jdbcPassword());
+        }
+
+        properties.putAll(extra);
+
+        return properties;
+    }
+
+    /** What every call sets, connection or no connection. */
+    private static Map<String, Object> common(ClassLoader loader) {
+        Map<String, Object> properties = new HashMap<>();
 
         // The provider looks classes up by name; without this it would use the loader that
         // loaded EclipseLink itself, which has never seen the scenario's temporary directory.
         properties.put("eclipselink.classloader", loader);
         properties.put("eclipselink.logging.level", "OFF");
         properties.put("eclipselink.weaving", "false");
-        properties.putAll(extra);
 
-        List<String> names = new ArrayList<>();
-        for (Class<?> entity : entities) {
-            names.add(entity.getName());
+        return properties;
+    }
+
+    /**
+     * The root of the unit. It may look optional - nothing is scanned from it, because the
+     * classes are listed - but EclipseLink builds the unit's name out of it and fails with
+     * a {@code NullPointerException} on a null one, measured on the first run of this suite
+     * (2026-09-18). A scenario passes the directory its classes were compiled into; a caller
+     * with no directory of its own gets the one this class itself was loaded from.
+     */
+    private static URL rootOrOwn(URL root) {
+        if (root != null) {
+            return root;
         }
 
-        return new PersistenceProvider()
-                .createContainerEntityManagerFactory(new Unit(loader, root, names), properties);
+        var source = EclipseLinkBootstrap.class.getProtectionDomain().getCodeSource();
+        if (source == null || source.getLocation() == null) {
+            throw new IllegalStateException(
+                    "The persistence unit has no root URL and this class has no code source to borrow one from.");
+        }
+
+        return source.getLocation();
     }
 
     /**
@@ -89,7 +162,10 @@ public final class EclipseLinkBootstrap {
             return PersistenceProvider.class.getName();
         }
 
+        // The interface still declares the spi enum that 3.2 deprecated for removal, so the
+        // implementation has to name it; the warning is the specification's, not ours.
         @Override
+        @SuppressWarnings("removal")
         public PersistenceUnitTransactionType getTransactionType() {
             return PersistenceUnitTransactionType.RESOURCE_LOCAL;
         }
