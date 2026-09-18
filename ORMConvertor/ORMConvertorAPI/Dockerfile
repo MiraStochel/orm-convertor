@@ -26,6 +26,7 @@ COPY CSharpEntityParsing/CSharpEntityParsing.csproj CSharpEntityParsing/
 COPY DapperWrappers/DapperWrappers.csproj DapperWrappers/
 COPY DatabaseCatalog/DatabaseCatalog.csproj DatabaseCatalog/
 COPY EFCoreWrappers/EFCoreWrappers.csproj EFCoreWrappers/
+COPY EclipseLinkWrappers/EclipseLinkWrappers.csproj EclipseLinkWrappers/
 COPY HibernateWrappers/HibernateWrappers.csproj HibernateWrappers/
 COPY JakartaPersistence/JakartaPersistence.csproj JakartaPersistence/
 COPY JavaEntityParsing/JavaEntityParsing.csproj JavaEntityParsing/
