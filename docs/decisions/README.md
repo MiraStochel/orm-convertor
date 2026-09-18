@@ -86,6 +86,8 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [079](079-fractional-second-precision-as-second-precision.md) | Přesnost zlomků sekundy nese `secondPrecision`, ne `precision` | 2026-09-18 | platí | F7, F9, F10, F11, F12, S1, S2 |
 | [080](080-eclipselink-as-the-second-profile-over-the-jpa-layer.md) | EclipseLink jako druhý profil nad JPA vrstvou | 2026-09-18 | revidováno | F9, F10, F12, S1, S2 |
 | [081](081-a-unit-may-be-a-mapping-and-a-query-at-once.md) | Jednotka smí být mapováním i dotazem zároveň | 2026-09-18 | platí | F8, F10, F11, F14, S1, S2, S7 |
+| [082](082-t-sql-read-and-written-by-a-shared-project.md) | Čtení i zápis T-SQL bydlí ve sdíleném projektu | 2026-09-18 | platí | F8, F10, F11, S1, S2 |
+| [083](083-parameter-as-the-fifth-operand-shape.md) | Parametr jako pátý tvar operandu podmínky | 2026-09-18 | platí | F7–F10, F11, T2, T3, S1, S2 |
 
 ## Formát
 
