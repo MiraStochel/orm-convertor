@@ -54,6 +54,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HibernateWrappers", "Hibern
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EclipseLinkWrappers", "EclipseLinkWrappers\EclipseLinkWrappers.csproj", "{6D1B0A53-4C7E-4F0B-9E2A-5B8C71D34F19}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TransactSql", "TransactSql\TransactSql.csproj", "{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -292,6 +294,18 @@ Global
 		{6D1B0A53-4C7E-4F0B-9E2A-5B8C71D34F19}.Release|x64.Build.0 = Release|Any CPU
 		{6D1B0A53-4C7E-4F0B-9E2A-5B8C71D34F19}.Release|x86.ActiveCfg = Release|Any CPU
 		{6D1B0A53-4C7E-4F0B-9E2A-5B8C71D34F19}.Release|x86.Build.0 = Release|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Debug|x64.Build.0 = Debug|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Debug|x86.Build.0 = Debug|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Release|x64.ActiveCfg = Release|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Release|x64.Build.0 = Release|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Release|x86.ActiveCfg = Release|Any CPU
+		{3F2A7C41-9D06-4B58-A1E7-0C5D83B62E47}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

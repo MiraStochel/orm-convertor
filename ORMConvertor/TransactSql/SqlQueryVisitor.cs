@@ -5,15 +5,19 @@ using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
 
-namespace DapperWrappers;
+namespace TransactSql;
 
 /// <summary>
-/// Writes query instructions as SQL (decision 022). Carries the same report channel as the
-/// other two visitors: a shape the target cannot render is a record, not an exception -
-/// exceptions stay reserved for errors of the program, and a condition tree a foreign
-/// parser produced is not one (decisions 010 and 053).
+/// Writes query instructions as T-SQL (decision 022). Shared by every framework that emits
+/// SQL rather than a query language of its own (decision 082), so it belongs to the
+/// language project and not to one wrapper.
+///
+/// Carries the same report channel as the visitors of the other languages: a shape the
+/// target cannot render is a record, not an exception - exceptions stay reserved for errors
+/// of the program, and a condition tree a foreign parser produced is not one
+/// (decisions 010 and 053).
 /// </summary>
-public class DapperSqlQueryVisitor(
+public class SqlQueryVisitor(
     Action<ConversionRecordKind, string, QueryFeature?> report,
     Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery) : IQueryVisitor
 {

@@ -170,13 +170,14 @@ public class DualUnitTest
     }
 
     /// <summary>
-    /// The other query form of an hbm.xml is native SQL, and reading SQL needs the T-SQL
-    /// grammar that still sits inside the Dapper wrapper (S1). It stays a loss - but one
-    /// that says what it is, instead of citing the flat-class boundary of decision 030 as it
-    /// did while &lt;query&gt; was unread beside it.
+    /// The other query form of an hbm.xml is native SQL, and since the T-SQL grammar moved
+    /// out of the Dapper wrapper into a shared project (decision 082) it is read like the
+    /// HQL form beside it. Both halves of the document reach a builder of their own, so the
+    /// mapping parser reports no loss about either any more - it used to report one about
+    /// each in turn.
     /// </summary>
     [Fact]
-    public void ANativeQueryIsALossThatNamesItself()
+    public void BothQueryFormsOfTheDocumentAreRead()
     {
         var result = ConversionHandler.Convert(
             ORMEnum.NHibernate,
@@ -185,19 +186,18 @@ public class DualUnitTest
                 Query("findAll", "select c.CustomerName from Customer c"),
                 "  <sql-query name=\"findAllNative\">SELECT CustomerName FROM Sales.Customers</sql-query>\n"));
 
+        var methods = result.Sources
+            .Where(s => s.ContentType == ConversionContentType.CSharpQuery)
+            .Select(s => s.Content)
+            .ToList();
+
+        Assert.Contains(methods, m => m.Contains("FindAll(IDbConnection connection)"));
+        Assert.Contains(methods, m => m.Contains("FindAllNative(IDbConnection connection)"));
+
         // Records about the unit itself, as opposed to the mechanical losses Dapper reports
         // about every mapping fact it cannot record (decision 066 attributes only the former
         // to a unit).
-        var loss = Assert.Single(
-            result.Records,
-            r => r.Kind == ConversionRecordKind.Loss && r.Unit == "customer.hbm.xml");
-
-        Assert.Contains("native SQL", loss.Reason);
-        Assert.Contains("findAllNative", loss.Reason);
-
-        // The HQL form beside it is read, so it leaves no loss of its own any more.
-        Assert.DoesNotContain(result.Records, r => r.Reason.Contains("<query name=\"findAll\">"));
-        Assert.Contains(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery);
+        Assert.DoesNotContain(result.Records, r => r.Unit == "customer.hbm.xml");
     }
 
     /// <summary>

@@ -37,6 +37,7 @@ COPY OrmConvertor/OrmConvertor.csproj OrmConvertor/
 COPY ORMConvertorAPI/ORMConvertorAPI.csproj ORMConvertorAPI/
 COPY SampleData/SampleData.csproj SampleData/
 COPY Tests/Tests.csproj Tests/
+COPY TransactSql/TransactSql.csproj TransactSql/
 RUN --mount=type=cache,target=/root/.nuget/packages dotnet restore ORMConvertorAPI/ORMConvertorAPI.csproj
 
 # Bring in the remaining source content

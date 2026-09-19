@@ -1,14 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AbstractWrappers\AbstractWrappers.csproj" />
-    <ProjectReference Include="..\CSharpEntityParsing\CSharpEntityParsing.csproj" />
+    <ProjectReference Include="..\Common\Common.csproj" />
     <ProjectReference Include="..\Model\Model.csproj" />
-    <ProjectReference Include="..\TransactSql\TransactSql.csproj" />
   </ItemGroup>
 
 </Project>

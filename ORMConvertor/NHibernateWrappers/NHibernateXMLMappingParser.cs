@@ -58,25 +58,12 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
 
         foreach (var element in mapping.Elements().Where(e => e.Name.LocalName != "class"))
         {
-            // <query> is read - by NHibernateXmlQueryParser, on the query pass over this same
-            // unit (decision 081) - so it is no longer this parser's loss to report.
-            if (element.Name.LocalName == "query")
+            // Both forms of a named query are read - by NHibernateXmlQueryParser, on the query
+            // pass over this same unit (decision 081): <query> as HQL and, since the T-SQL
+            // grammar moved into a shared project of its own (decision 082), <sql-query> as
+            // native SQL. Neither is this parser's loss to report any more.
+            if (element.Name.LocalName is "query" or "sql-query")
             {
-                continue;
-            }
-
-            // <sql-query> is a query too, but a native one. Reading it means reading SQL, and
-            // the T-SQL grammar that reads SQL sits inside the Dapper wrapper, where S1 keeps
-            // it out of this one's reach until it moves into a shared project of its own; so
-            // it is a loss, and one that names its own reason rather than decision 030's
-            // flat-class boundary.
-            if (element.Name.LocalName == "sql-query")
-            {
-                ReportUnreadElement(
-                    element,
-                    entity: null,
-                    $"{Opening(element)} states a query in native SQL, which this parser does not read, "
-                        + "so the query is dropped; the HQL form <query> is read.");
                 continue;
             }
 
