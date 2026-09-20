@@ -274,36 +274,16 @@ public class PaginationQueryTest
     }
 
     /// <summary>
-    /// Decision 083 gave the condition tree an operand for a parameter and deliberately left
-    /// the pagination without one: the instruction carries two numbers, not a tree
-    /// (decision 060), so giving it operands is a choice about the instruction and has an
-    /// open item of its own. The refusal is therefore still a refusal - but under the
-    /// parameter's own category and naming the clause, so the caller is told which limit it
-    /// met rather than being told the value is not a literal.
+    /// A row count is a number or a parameter, and nothing else (decision 085): an
+    /// expression has no place in either slot of the instruction, and emitting the query
+    /// without the slice would return a different set of rows. Where the shapes it does
+    /// carry go is <see cref="PaginationParameterTest"/>.
     /// </summary>
     [Theory]
-    [InlineData("SELECT TOP (@n) c.CustomerName FROM Sales.Customers AS c")]
-    [InlineData("SELECT c.CustomerName FROM Sales.Customers AS c ORDER BY c.CustomerName OFFSET @skip ROWS")]
-    public void AParameterizedSqlPaginationRefusesUnderTheParameterCategory(string sql)
-        => AssertRefused(
-            ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, sql),
-            QueryFeature.QueryParameter);
-
-    [Fact]
-    public void AParameterizedTakeRefusesUnderTheParameterCategory()
-    {
-        const string linq = """
-        public void Query()
-        {
-            var q = ctx.Customers.Take(pageSize).ToList();
-        }
-        """;
-
-        var builder = ParseLinq(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, linq, Customers());
-
-        AssertRefused(builder, QueryFeature.QueryParameter);
-        Assert.Contains(builder.Records, r => r.Reason.Contains("pageSize", StringComparison.Ordinal));
-    }
+    [InlineData("SELECT TOP (@n + 1) c.CustomerName FROM Sales.Customers AS c")]
+    [InlineData("SELECT c.CustomerName FROM Sales.Customers AS c ORDER BY c.CustomerName OFFSET (SELECT 1) ROWS")]
+    public void ARowCountThatIsNeitherANumberNorAParameterRefusesTheArtifact(string sql)
+        => AssertRefused(ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, sql));
 
     /// <summary>
     /// Take-then-Skip slices differently from the offset-then-limit normal form, and

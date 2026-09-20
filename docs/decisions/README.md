@@ -89,6 +89,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [082](082-t-sql-read-and-written-by-a-shared-project.md) | Čtení i zápis T-SQL bydlí ve sdíleném projektu | 2026-09-18 | platí | F8, F10, F11, S1, S2 |
 | [083](083-parameter-as-the-fifth-operand-shape.md) | Parametr jako pátý tvar operandu podmínky | 2026-09-18 | platí | F7–F10, F11, T2, T3, S1, S2 |
 | [084](084-mybatis-wrapper-over-the-shared-sql-reading.md) | MyBatis wrapper nad sdíleným čtením T-SQL | 2026-09-20 | revidováno | F6, F8, F10, F11, F12, S1, S2 |
+| [085](085-a-row-count-is-a-number-or-a-parameter.md) | Počet řádků je číslo, nebo parametr | 2026-09-20 | platí | F7–F10, F11, T2, T3, S1, S2 |
 
 ## Formát
 

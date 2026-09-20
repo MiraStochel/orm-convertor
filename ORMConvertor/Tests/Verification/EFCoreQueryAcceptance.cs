@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 
@@ -35,9 +36,9 @@ internal static class EFCoreQueryAcceptance
         var method = FindQueryMethod(assembly);
 
         // A query with parameters declares them after the context (decision 083). Translation
-        // is about the expression tree, not about the values, so each one is bound to its
-        // default: the provider renders a parameter placeholder whatever value stands there,
-        // and picking a value here would be a measurement, which this level is not.
+        // is about the expression tree, not about the values, so nothing here picks a value
+        // to mean anything - that would be a measurement, which this level is not - only one
+        // the provider will not short-circuit away.
         object?[] arguments = [context, .. method.GetParameters().Skip(1).Select(DefaultOf)];
 
         var queryable = method.Invoke(null, arguments) as IQueryable
@@ -65,10 +66,14 @@ internal static class EFCoreQueryAcceptance
                "No public static method taking a DbContext and returning IQueryable was generated.");
 
     /// <summary>
-    /// A value to bind a query parameter to. A scalar takes its type's default, because the
-    /// expression tree is the same whatever number stands there. A collection takes one
-    /// element instead of none: EF Core short-circuits an empty sequence without translating
-    /// the comparison, so an empty one would make the verdict vacuous.
+    /// A value to bind a query parameter to. Which value hardly matters for a condition -
+    /// the expression tree is the same whatever number stands there - but it matters
+    /// wherever EF Core short-circuits, because a query it never renders proves nothing.
+    ///
+    /// A collection therefore takes one element instead of none, and a number takes one
+    /// instead of zero: EF Core folds a Take(0) into WHERE 0 = 1 and writes no slice at all,
+    /// so a row count bound to the type's default (decision 085) would make the verdict
+    /// vacuous exactly as an empty sequence does.
     /// </summary>
     private static object? DefaultOf(ParameterInfo parameter)
     {
@@ -80,6 +85,12 @@ internal static class EFCoreQueryAcceptance
             var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(element))!;
             list.Add(element.IsValueType ? Activator.CreateInstance(element) : null);
             return list;
+        }
+
+        if (type == typeof(byte) || type == typeof(short) || type == typeof(int) || type == typeof(long)
+            || type == typeof(float) || type == typeof(double) || type == typeof(decimal))
+        {
+            return Convert.ChangeType(1, type, CultureInfo.InvariantCulture);
         }
 
         return type.IsValueType ? Activator.CreateInstance(type) : null;

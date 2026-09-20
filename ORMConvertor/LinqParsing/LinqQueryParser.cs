@@ -180,8 +180,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         bool inSetOperation = false;
         bool distinct = false;
-        long? pendingOffset = null;
-        long? pendingLimit = null;
+        RowCount? pendingOffset = null;
+        RowCount? pendingLimit = null;
 
         // Pagination is recorded when the scope closes, so that Skip and Take collected
         // along the chain end up as one instruction in offset-then-limit normal form
@@ -214,34 +214,36 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
             var argument = step.Node.ArgumentList.Arguments.FirstOrDefault()?.Expression;
 
-            // The pagination instruction carries two numbers rather than a tree, so a
-            // parameter has no place in it (decision 083); it is named under its own
-            // category, because that limit has an open item of its own.
+            RowCount? count;
+
+            // A value from the enclosing scope is the parameter of the same name, which is
+            // the shape a page size has in any real chain (decision 085). It is the same
+            // reading the parser does in operand position (decision 083); the scalar is the
+            // builder template's to fill in, and here it comes from the clause.
             if (argument is IdentifierNameSyntax fromScope)
             {
-                Report(
-                    ConversionRecordKind.Failure,
-                    $"The argument of {step.Name}() is the parameter '{fromScope.Identifier.Text}' from the enclosing scope, and the pagination of the query representation carries two numbers rather than operands; no artifact was generated.",
-                    QueryFeature.QueryParameter);
-                return;
+                count = RowCount.Bound(QueryParameter.Named(fromScope.Identifier.Text));
             }
-
-            if (argument is not LiteralExpressionSyntax literal || literal.Token.Value is not int value || value < 0)
+            else if (argument is LiteralExpressionSyntax literal && literal.Token.Value is int value && value >= 0)
+            {
+                count = RowCount.Literal(value);
+            }
+            else
             {
                 Report(
                     ConversionRecordKind.Failure,
-                    $"The argument of {step.Name}() is not a non-negative integer literal, and a pagination the artifact does not carry would change which rows the query returns; no artifact was generated.",
+                    $"The argument of {step.Name}() is neither a non-negative integer literal nor a value from the enclosing scope, and a pagination the artifact does not carry would change which rows the query returns; no artifact was generated.",
                     QueryFeature.Pagination);
                 return;
             }
 
             if (step.Name == "Skip")
             {
-                pendingOffset = value;
+                pendingOffset = count;
             }
             else
             {
-                pendingLimit = value;
+                pendingLimit = count;
             }
         }
 

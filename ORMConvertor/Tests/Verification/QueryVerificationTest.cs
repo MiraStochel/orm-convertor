@@ -155,6 +155,49 @@ public class QueryVerificationTest
     }
 
     /// <summary>
+    /// Level 3 for a bound row count (decision 085): the counts come out as parameters of
+    /// the generated method and the provider still renders an OFFSET clause, which is what
+    /// proves the chain captured values Skip and Take can take - an Int, where a Long would
+    /// not even have compiled.
+    /// </summary>
+    [Fact]
+    public void EFCoreTranslatesAGeneratedPaginatedQueryWhoseCountsAreBound()
+    {
+        const string paginatedQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .OrderBy(c => c.CustomerName)
+                    .Skip(skip)
+                    .Take(take)
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.EFCore,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var method = Query(result, ConversionContentType.CSharpQuery);
+        Assert.Contains("int skip, int take", method);
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_EFCore_BoundPagination",
+            method,
+            Entities(result),
+            GeneratedQueryCompiler.EFCoreConsumerReferences,
+            "using Microsoft.EntityFrameworkCore;");
+
+        var sql = EFCoreQueryAcceptance.Translate(compiled);
+
+        Assert.Contains("OFFSET", sql);
+    }
+
+    /// <summary>
     /// Level 3 for DISTINCT (decision 073): the provider renders the generated Distinct()
     /// after the Select as SELECT DISTINCT, and keeps the ordering written after it - the
     /// order the builder chooses because EF Core drops an ordering placed before Distinct().
@@ -482,6 +525,46 @@ public class QueryVerificationTest
     }
 
     /// <summary>
+    /// Level 2 for a bound row count on NHibernate (decision 085): the count is not a
+    /// parameter of the HQL but an argument of the call, so what proves it is that
+    /// SetFirstResult and SetMaxResults take the method's own parameters and compile - which
+    /// they do only because the template types them Int.
+    /// </summary>
+    [Fact]
+    public void TheNHibernatePaginatedQueryMethodCompilesWithBoundCounts()
+    {
+        const string paginatedQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .OrderBy(c => c.CustomerName)
+                    .Skip(skip)
+                    .Take(take)
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.NHibernate,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var method = Query(result, ConversionContentType.CSharpQuery);
+        Assert.Contains(".SetFirstResult(skip)", method);
+        Assert.Contains(".SetMaxResults(take)", method);
+
+        GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_NHibernate_BoundPagination",
+            method,
+            [],
+            GeneratedQueryCompiler.NHibernateConsumerReferences,
+            "using NHibernate;");
+    }
+
+    /// <summary>
     /// Level 3 for DISTINCT on NHibernate (decision 073): the generated select distinct
     /// compiles against the mapped model.
     /// </summary>
@@ -774,6 +857,52 @@ public class QueryVerificationTest
 
         var sql = Query(result, ConversionContentType.SqlQuery);
         Assert.Contains("OFFSET 10 ROWS FETCH NEXT 5 ROWS ONLY", sql);
+
+        var map = new EntityMap
+        {
+            Entity = new Entity { Name = "Customer" },
+            Table = "Customers",
+            Schema = "Sales",
+            PropertyMaps =
+            [
+                new PropertyMap { Property = new Property { Name = "CustomerId" }, ColumnName = "CustomerId" },
+                new PropertyMap { Property = new Property { Name = "CustomerName" }, ColumnName = "CustomerName" },
+                new PropertyMap { Property = new Property { Name = "CreditLimit" }, ColumnName = "CreditLimit" },
+            ],
+        };
+
+        TSqlAcceptance.ResolvesAgainst(sql, [map]);
+    }
+
+    /// <summary>
+    /// Rule Q13 for a bound row count (decision 085): the generated OFFSET/FETCH is written
+    /// with placeholders rather than numbers, and T-SQL takes a parameter in both clauses -
+    /// which the grammar is what says, since nothing here connects to a server.
+    /// </summary>
+    [Fact]
+    public void AGeneratedSqlWithBoundRowCountsParsesAndResolves()
+    {
+        const string paginatedQuery = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .OrderBy(c => c.CustomerName)
+                    .Skip(skip)
+                    .Take(take)
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.Dapper,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var sql = Query(result, ConversionContentType.SqlQuery);
+        Assert.Contains("OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY", sql);
 
         var map = new EntityMap
         {

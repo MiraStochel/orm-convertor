@@ -259,11 +259,11 @@ public class SqlQueryReader(
     }
 
     /// <summary>
-    /// TOP and OFFSET/FETCH become the pagination of the (sub)query (decision 060). Only
-    /// the shape whose meaning the representation holds is read - a non-negative integer
-    /// literal count. Everything else - PERCENT, WITH TIES, an expression or a variable -
-    /// refuses the artifact, because a query emitted without its pagination returns a
-    /// different set of rows.
+    /// TOP and OFFSET/FETCH become the pagination of the (sub)query (decision 060). Two
+    /// shapes carry a meaning the representation holds: a non-negative integer literal, and
+    /// a variable, which is the value the caller binds (decision 085). Everything else -
+    /// PERCENT, WITH TIES, an expression - refuses the artifact, because a query emitted
+    /// without its pagination returns a different set of rows.
     /// </summary>
     private void ReadPagination(QuerySpecification query)
     {
@@ -276,8 +276,8 @@ public class SqlQueryReader(
             return;
         }
 
-        long? offset = null;
-        long? limit = null;
+        RowCount? offset = null;
+        RowCount? limit = null;
 
         if (query.TopRowFilter is { } top)
         {
@@ -292,7 +292,7 @@ public class SqlQueryReader(
 
             if (ReadRowCount(top.Expression) is not { } topCount)
             {
-                ReportUnreadableRowCount("TOP", top.Expression);
+                ReportUnreadableRowCount("TOP");
                 return;
             }
 
@@ -303,7 +303,7 @@ public class SqlQueryReader(
         {
             if (ReadRowCount(clause.OffsetExpression) is not { } skipped)
             {
-                ReportUnreadableRowCount("OFFSET", clause.OffsetExpression);
+                ReportUnreadableRowCount("OFFSET");
                 return;
             }
 
@@ -313,7 +313,7 @@ public class SqlQueryReader(
             {
                 if (ReadRowCount(clause.FetchExpression) is not { } fetched)
                 {
-                    ReportUnreadableRowCount("FETCH", clause.FetchExpression);
+                    ReportUnreadableRowCount("FETCH");
                     return;
                 }
 
@@ -325,39 +325,45 @@ public class SqlQueryReader(
     }
 
     /// <summary>
-    /// A row count the representation cannot hold. A parameter is named under its own
-    /// category (decision 083): the pagination instruction carries two numbers and not a
-    /// tree, so giving it operands is a choice about the instruction and has an open item
-    /// of its own - the refusal says which clause met one rather than calling it a
-    /// non-literal.
+    /// A row count that is neither a number nor a parameter - an arithmetic expression, a
+    /// function call - so the representation cannot hold it, and a query emitted without its
+    /// pagination returns a different set of rows (decision 060).
     /// </summary>
-    private void ReportUnreadableRowCount(string clause, ScalarExpression? expression)
-    {
-        if (Unparenthesize(expression) is VariableReference parameter)
-        {
-            Report(
-                ConversionRecordKind.Failure,
-                $"The {clause} value is the parameter '{parameter.Name}', and the pagination of the query representation carries two numbers rather than operands; no artifact was generated.",
-                QueryFeature.QueryParameter);
-            return;
-        }
-
-        Report(
+    private void ReportUnreadableRowCount(string clause)
+        => Report(
             ConversionRecordKind.Failure,
-            $"The {clause} value is not an integer literal, so the pagination cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
+            $"The {clause} value is neither an integer literal nor a parameter, so the pagination cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
             QueryFeature.Pagination);
-    }
 
     private static ScalarExpression? Unparenthesize(ScalarExpression? expression)
         => expression is ParenthesisExpression parenthesis ? Unparenthesize(parenthesis.Expression) : expression;
 
-    /// <summary>A negative count arrives as a unary minus, which is not a literal here.</summary>
-    private static long? ReadRowCount(ScalarExpression? expression) => expression switch
+    /// <summary>
+    /// The count the clause states, or the parameter it leaves to the caller
+    /// (decision 085). A negative count arrives as a unary minus, which is not a literal
+    /// here, and the guard keeps it from reaching a factory that refuses one.
+    /// </summary>
+    private RowCount? ReadRowCount(ScalarExpression? expression) => Unparenthesize(expression) switch
     {
-        ParenthesisExpression parenthesis => ReadRowCount(parenthesis.Expression),
-        IntegerLiteral integer when long.TryParse(integer.Value, out var value) => value,
+        IntegerLiteral integer when long.TryParse(integer.Value, out var value) && value >= 0
+            => RowCount.Literal(value),
+        VariableReference variable => BoundRowCount(variable),
         _ => null,
     };
+
+    /// <summary>
+    /// A variable in a row count is the parameter of the same name, undecorated. Its scalar
+    /// is the builder template's to fill in from the clause, so nothing is read here but
+    /// what the source stated of its own - which for MyBatis includes that the value is a
+    /// list, and that is what makes the template able to refuse it (decision 085).
+    /// </summary>
+    private RowCount BoundRowCount(VariableReference variable)
+    {
+        var name = variable.Name.TrimStart('@');
+        var stated = StatedFor(name);
+
+        return RowCount.Bound(QueryParameter.Named(name, stated.Scalar, stated.IsCollection));
+    }
 
     private static SelectStatement? FindSelectStatement(TSqlFragment fragment)
     {
@@ -850,15 +856,18 @@ public class SqlQueryReader(
         }
 
         var name = variable.Name.TrimStart('@');
-        var stated = statedParameters?.TryGetValue(name, out var facts) == true ? facts : default;
+        var stated = StatedFor(name);
 
         return stated.IsCollection
             ? QueryOperand.Bound(QueryParameter.Named(name, stated.Scalar, isCollection: true))
             : null;
     }
 
-    private ScalarType? ScalarStatedFor(string name)
-        => statedParameters?.TryGetValue(name, out var facts) == true ? facts.Scalar : null;
+    private ScalarType? ScalarStatedFor(string name) => StatedFor(name).Scalar;
+
+    /// <summary>What the wrapper peeled off the source about one parameter, or nothing.</summary>
+    private SqlParameterFacts StatedFor(string name)
+        => statedParameters?.TryGetValue(name, out var facts) == true ? facts : default;
 
     /// <summary>
     /// Reads the values IN enumerates into a list operand (decision 074). Every element has

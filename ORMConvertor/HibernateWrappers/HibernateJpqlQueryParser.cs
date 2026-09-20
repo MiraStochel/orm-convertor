@@ -1,5 +1,6 @@
 using AbstractWrappers;
 using JakartaPersistence;
+using Model.QueryInstructions;
 
 namespace HibernateWrappers;
 
@@ -9,12 +10,15 @@ namespace HibernateWrappers;
 /// is the limit and offset clauses of HQL 6, which the representation carries as the
 /// pagination of the scope (decision 060); what HQL adds and the model has no place for
 /// falls to the shared parser's records.
+///
+/// Both clauses take a number or a parameter, which is the shape paged HQL is written in,
+/// and the representation carries either (decision 085).
 /// </summary>
 public sealed class HibernateJpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : JpqlQueryParser(queryBuilders)
 {
     protected override bool TryReadDialectClause()
     {
-        long? limit = null, offset = null;
+        RowCount? limit = null, offset = null;
         var read = false;
 
         while (AtKeyword("limit") || AtKeyword("offset"))
@@ -26,7 +30,7 @@ public sealed class HibernateJpqlQueryParser(Func<AbstractQueryBuilder> queryBui
                     throw Error("a second limit clause");
                 }
 
-                limit = ConsumeInteger();
+                limit = ConsumeRowCount();
             }
             else
             {
@@ -36,7 +40,7 @@ public sealed class HibernateJpqlQueryParser(Func<AbstractQueryBuilder> queryBui
                     throw Error("a second offset clause");
                 }
 
-                offset = ConsumeInteger();
+                offset = ConsumeRowCount();
                 TryConsumeKeyword("rows");
             }
 

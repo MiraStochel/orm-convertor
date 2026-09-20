@@ -1,3 +1,4 @@
+using System.Globalization;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Convertors;
@@ -252,9 +253,10 @@ public abstract class AbstractQueryBuilder
     /// <summary>
     /// Records the pagination of the current (sub)query scope in offset-then-limit normal
     /// form (decision 060). Parsers call this once per scope; a source shape that does not
-    /// reduce to this form is theirs to refuse.
+    /// reduce to this form is theirs to refuse. Each count is a number the source stated or
+    /// a parameter the caller binds (decision 085).
     /// </summary>
-    public void Paginate(long? offset, long? limit)
+    public void Paginate(RowCount? offset, RowCount? limit)
     {
         if (offset is null && limit is null)
         {
@@ -790,8 +792,8 @@ public abstract class AbstractQueryBuilder
             .ToList();
 
         if (scalars.Count <= 1
-            || scalars.All(s => IsInteger(s) || s is ScalarType.Decimal)
-            || scalars.All(s => IsInteger(s) || s is ScalarType.Float or ScalarType.Double))
+            || scalars.All(s => IsWholeNumber(s) || s is ScalarType.Decimal)
+            || scalars.All(s => IsWholeNumber(s) || s is ScalarType.Float or ScalarType.Double))
         {
             return true;
         }
@@ -801,10 +803,11 @@ public abstract class AbstractQueryBuilder
             $"The values of an IN list mix the scalars {string.Join(" and ", scalars)}, which no target can type as one list; no artifact was generated.",
             QueryFeature.Filtering);
         return false;
-
-        static bool IsInteger(ScalarType scalar)
-            => scalar is ScalarType.Byte or ScalarType.Short or ScalarType.Int or ScalarType.Long;
     }
+
+    /// <summary>Whether the scalar counts things: the four integer widths of decision 014.</summary>
+    private static bool IsWholeNumber(ScalarType scalar)
+        => scalar is ScalarType.Byte or ScalarType.Short or ScalarType.Int or ScalarType.Long;
 
     /* ---- parameters (decision 083) -------------------------------------------------- */
 
@@ -817,6 +820,35 @@ public abstract class AbstractQueryBuilder
     /// derivable, and a stored one could only drift from the tree it describes.
     /// </summary>
     protected IReadOnlyList<QueryParameter> Parameters => parameters;
+
+    /// <summary>
+    /// The names the query uses for nothing but a row count of its pagination
+    /// (decision 085), which is what tells the two kinds of target apart below.
+    /// </summary>
+    private readonly HashSet<string> rowCountOnly = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether the target writes a bound row count into the query text. The two targets
+    /// whose queries are SQL do - <c>FETCH NEXT @take</c> is part of the statement - while
+    /// the three that take the slice on the query object do not, and a LINQ chain captures
+    /// its values instead of binding them at all (decision 085).
+    /// </summary>
+    protected virtual bool WritesRowCountsIntoQueryText => true;
+
+    /// <summary>
+    /// The parameters a target binds into its query by name, which is every parameter of
+    /// the generated method except a row count the query text never names: binding that one
+    /// would name a parameter the query does not have, and both NHibernate and JPA throw on
+    /// it rather than ignore it. A name used as a row count <em>and</em> in a condition is
+    /// in the text all the same, so it stays.
+    ///
+    /// The signature is <see cref="Parameters"/> either way - the count is still an argument
+    /// the caller supplies, only one that reaches the query through SetMaxResults.
+    /// </summary>
+    protected IEnumerable<QueryParameter> BoundParameters
+        => WritesRowCountsIntoQueryText
+            ? Parameters
+            : Parameters.Where(p => !rowCountOnly.Contains(KeyOf(p)));
 
     /// <summary>
     /// Whether the target's query language spells a positional parameter (decision 083).
@@ -842,6 +874,7 @@ public abstract class AbstractQueryBuilder
         // Build is repeatable, so the list is rebuilt rather than appended to: a second call
         // used to double every parameter of the signature.
         parameters.Clear();
+        rowCountOnly.Clear();
 
         var occurrences = new List<ParameterOccurrence>();
         CollectParameters(body, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), occurrences);
@@ -951,6 +984,11 @@ public abstract class AbstractQueryBuilder
             return false;
         }
 
+        if (group.Any(o => o.IsRowCount))
+        {
+            return ResolveRowCount(group, first, named, stated, out parameter);
+        }
+
         var derived = group.Select(o => o.Derived).Where(t => t is not null).Distinct().ToList();
 
         if (stated.Count == 0 && derived.Count > 1)
@@ -983,6 +1021,94 @@ public abstract class AbstractQueryBuilder
         }
 
         parameter = first.WithType(scalar.Value);
+        return true;
+    }
+
+    /// <summary>
+    /// One parameter that stands as a row count of a pagination (decision 085). Its scalar
+    /// is <see cref="ScalarType.Int"/> and the clause decides it, not a comparison and not
+    /// the source: Skip, Take, SetFirstResult, SetMaxResults, setFirstResult and
+    /// setMaxResults all bind 32 bits, and T-SQL takes an int wherever it takes a bigint, so
+    /// one scalar is what lets one model yield one signature in every direction (S2).
+    ///
+    /// Which is why the precedence of decision 083 does not apply here: there a stated
+    /// scalar outranks a scalar <em>derived</em> from the other side of a comparison, and a
+    /// clause is not a derivation.
+    /// </summary>
+    private bool ResolveRowCount(
+        List<ParameterOccurrence> group,
+        QueryParameter first,
+        string named,
+        List<ScalarType?> stated,
+        out QueryParameter? parameter)
+    {
+        parameter = null;
+
+        // A row count is one number, so a parameter that binds a list is not one. Reachable
+        // rather than hypothetical: MyBatis's foreach writes itself into the text as a
+        // one-element IN list (decision 084) and could land in a FETCH clause.
+        if (first.IsCollection)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The parameter {named} binds a list of values and stands as a row count of the pagination, which is one number; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return false;
+        }
+
+        // Where the same name also stands in a condition, the two places have to agree, and
+        // the row count says Int. Unifying them would make one of the two mean something
+        // other than what the source wrote - the rule decision 083 states for two derived
+        // scalars, reaching the case it did not have yet.
+        var elsewhere = group
+            .Where(o => !o.IsRowCount)
+            .Select(o => o.Derived)
+            .Where(t => t is not null and not ScalarType.Int)
+            .Distinct()
+            .ToList();
+
+        if (elsewhere.Count > 0)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The parameter {named} stands as a row count of the pagination, which is {ScalarType.Int}, and is compared against values of {string.Join(" and ", elsewhere)}; the generated method cannot type it; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return false;
+        }
+
+        // MyBatis is the one source that states a scalar of its own (decision 084). A row
+        // count that is not a whole number is a contradiction between what the source says
+        // the value is and the position it wrote it in, and emitting either reading would
+        // bind something other than what the source declared.
+        if (stated.Count == 1 && !IsWholeNumber(stated[0]!.Value))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The source states the scalar {stated[0]} for the parameter {named}, which stands as a row count of the pagination and can only be a whole number; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return false;
+        }
+
+        // A wider whole number the source stated is carried no further: the generated method
+        // takes the count as Int, which is a fact the source stated and the artifact does not
+        // use - a loss, and not a conflict, because the two sides here are the source and the
+        // limit of the targets, not two sources of one fact.
+        if (stated.Count == 1 && stated[0] != ScalarType.Int)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"The source states the scalar {stated[0]} for the parameter {named}, which stands as a row count of the pagination; the generated method takes it as {ScalarType.Int}, which is the width every target's pagination binds.",
+                QueryFeature.QueryParameter);
+        }
+
+        // A name the query uses for nothing else is in no target's query text where the
+        // slice lives on the query object, so it is not bound there by name.
+        if (group.All(o => o.IsRowCount))
+        {
+            rowCountOnly.Add(KeyOf(first));
+        }
+
+        parameter = first.WithType(ScalarType.Int);
         return true;
     }
 
@@ -1036,6 +1162,32 @@ public abstract class AbstractQueryBuilder
                     CollectParameters(Unwrap(operation.Right.Instructions), aliases, found);
                     break;
             }
+        }
+
+        // The row counts of this scope are collected after its conditions, whatever order
+        // the parser recorded them in (decision 085). TOP sits inside the SELECT clause and
+        // Take at the end of a LINQ chain, so a signature that followed the recorded order
+        // would come out differently for two sources of one query, and the same model has to
+        // yield the same method (S2). Offset before limit, which is the normal form.
+        foreach (var pagination in body.OfType<PaginationInstruction>())
+        {
+            CollectRowCount(pagination.Offset, found);
+            CollectRowCount(pagination.Limit, found);
+        }
+    }
+
+    /// <summary>
+    /// A bound row count as one occurrence of a parameter (decision 085). The scalar it
+    /// contributes comes from the clause and not from a comparison - there is no other side
+    /// to a pagination - and it is <see cref="ScalarType.Int"/>, which is the width every
+    /// target's pagination API binds. It enters as a derived scalar, so that a name used
+    /// both here and in a condition goes through the same unification as any other.
+    /// </summary>
+    private static void CollectRowCount(RowCount? count, List<ParameterOccurrence> found)
+    {
+        if (count?.Parameter is { } parameter)
+        {
+            found.Add(new ParameterOccurrence(parameter, ScalarType.Int, IsRowCount: true));
         }
     }
 
@@ -1150,7 +1302,17 @@ public abstract class AbstractQueryBuilder
         => (char.IsLetter(name[0]) || name[0] == '_')
            && name.All(c => char.IsLetterOrDigit(c) || c == '_');
 
-    private readonly record struct ParameterOccurrence(QueryParameter Parameter, ScalarType? Derived);
+    /// <summary>
+    /// One place the query names a parameter, with the scalar that place implies.
+    /// <paramref name="IsRowCount"/> tells the two places apart: a condition operand takes
+    /// its scalar from the other side of the comparison and yields to a scalar the source
+    /// stated, whereas a row count takes it from the clause, which is not a guess and
+    /// therefore does not yield (decision 085).
+    /// </summary>
+    private readonly record struct ParameterOccurrence(
+        QueryParameter Parameter,
+        ScalarType? Derived,
+        bool IsRowCount = false);
 
     /// <summary>
     /// The parameters as C# declarations, each appended after the fixed first argument of
@@ -1168,6 +1330,21 @@ public abstract class AbstractQueryBuilder
     {
         var scalar = CSharpTypeConvertor.ToString(LangType.Scalar(parameter.Type!.Value));
         return parameter.IsCollection ? $"IEnumerable<{scalar}>" : scalar;
+    }
+
+    /// <summary>
+    /// A row count as it is written where the target takes the value itself: the number, or
+    /// the identifier the bound parameter is spelled with (decision 085). Three of the six
+    /// targets put the count into an API call and need exactly this; a target that writes it
+    /// into the query text wraps the same identifier in its own placeholder decoration.
+    /// </summary>
+    protected static string Spelled(RowCount count)
+    {
+        ArgumentNullException.ThrowIfNull(count);
+
+        return count.IsParameter
+            ? QueryParameterNaming.IdentifierFor(count.Parameter!)
+            : count.Value!.Value.ToString(CultureInfo.InvariantCulture);
     }
 
     /// <summary>Whether the condition tree holds a subquery operand anywhere (decision 061).</summary>

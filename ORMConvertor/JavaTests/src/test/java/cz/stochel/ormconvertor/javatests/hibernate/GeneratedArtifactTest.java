@@ -219,6 +219,76 @@ class GeneratedArtifactTest {
         }
     }
 
+    /**
+     * A row count the caller binds, against the database (decision 085). JPA takes the slice
+     * on the query object rather than in the text, so the bound count is not a parameter of
+     * the JPQL at all but an argument of the call - and the only thing that can prove it
+     * arrived is the size of the result: two products are written and the generated method,
+     * asked for one, brings back one.
+     */
+    @Test
+    void aBoundRowCountSlicesTheResultOfTheGeneratedQuery() throws Exception {
+        ToolResponse answer = ToolApi.convert(Orm.EF_CORE, Orm.HIBERNATE, List.of(
+                InputUnit.fromResource("efcore/Product.cs"),
+                InputUnit.fromResource("efcore/ProductPage.query.cs")));
+
+        assertEquals(200, answer.statusCode(), answer.body());
+
+        ConversionResponse response = answer.required();
+        assertTrue(response.recordsOf(RecordKind.FAILURE).isEmpty(),
+                "The tool refused an artifact of the paginated scenario:"
+                + System.lineSeparator() + response.describeRecords());
+
+        String method = response.artifactOf(ContentType.JAVA_QUERY).content();
+        assertTrue(method.contains(".setMaxResults(take)"),
+                "The method does not pass the bound count on:" + System.lineSeparator() + method);
+
+        try (JavaProject project = JavaProject.create("page")) {
+            String product = project.add(entityArtifact(response, "Product"));
+            String wrapper = project.add(JavaSources.wrapQuery(packageOf(response), "GeneratedQueries", method));
+
+            ClassLoader loader = project.compileAndLoad();
+            Class<?> productClass = project.load(product);
+            Class<?> queries = project.load(wrapper);
+
+            try (SessionFactory factory = HibernateBootstrap.build("none", loader, List.of(productClass));
+                 Session session = factory.openSession()) {
+                session.beginTransaction();
+                try {
+                    session.persist(product(productClass, PRODUCT_ID, "AAA " + PRODUCT_NAME, "GEN-0007"));
+                    session.persist(product(productClass, PRODUCT_ID + 1, "BBB " + PRODUCT_NAME, "GEN-0008"));
+                    session.flush();
+
+                    Object query = queryMethod(queries).invoke(null, session, 1);
+                    List<?> rows = (List<?>) query.getClass().getMethod("getResultList").invoke(query);
+
+                    assertEquals(1, rows.size(),
+                            "the query asked for one row and did not return exactly one");
+                } finally {
+                    session.getTransaction().rollback();
+                }
+            }
+        }
+    }
+
+    /** One instance of the generated entity class, filled through its generated setters. */
+    private static Object product(Class<?> productClass, int id, String name, String sku) throws Exception {
+        Object row = productClass.getConstructor().newInstance();
+        set(row, "ProductId", id);
+        set(row, "ProductName", name);
+        set(row, "Sku", sku);
+        set(row, "UnitPrice", UNIT_PRICE);
+        set(row, "IsDiscontinued", false);
+        return row;
+    }
+
+    /** The one generated query method of the wrapper class. */
+    private static Method queryMethod(Class<?> queries) {
+        return Arrays.stream(queries.getDeclaredMethods())
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("The wrapper class declares no query method"));
+    }
+
     // ---- the negative half: a level that never says no would prove nothing ---------------
 
     /**

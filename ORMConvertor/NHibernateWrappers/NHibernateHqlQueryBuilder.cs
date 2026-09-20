@@ -151,6 +151,11 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
     }
 
     /// <summary>
+    /// The slice is not in the HQL, so neither is a bound row count (decision 085).
+    /// </summary>
+    protected override bool WritesRowCountsIntoQueryText => false;
+
+    /// <summary>
     /// HQL in NHibernate 5.7.0 has no limit or offset of its own: pagination belongs to the
     /// IQuery the generated method returns, so this slot holds API calls rather than query
     /// text and the final step places it after CreateQuery (decision 060). That the bare
@@ -165,7 +170,9 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
             return;
         }
 
-        if (clauses.Offset > int.MaxValue || clauses.Limit > int.MaxValue)
+        // Only a stated number can be out of range; a bound count is typed Int by the
+        // template (decision 085).
+        if (clauses.Offset?.Value > int.MaxValue || clauses.Limit?.Value > int.MaxValue)
         {
             Report(
                 ConversionRecordKind.Failure,
@@ -174,14 +181,16 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
             return;
         }
 
+        // A bound count is not a parameter of the query here but an argument of the call, so
+        // it is passed on where a number would stand and nothing binds it by name.
         if (clauses.Offset is { } offset)
         {
-            artifact.Pagination.Append($"\n        .SetFirstResult({offset})");
+            artifact.Pagination.Append($"\n        .SetFirstResult({Spelled(offset)})");
         }
 
         if (clauses.Limit is { } limit)
         {
-            artifact.Pagination.Append($"\n        .SetMaxResults({limit})");
+            artifact.Pagination.Append($"\n        .SetMaxResults({Spelled(limit)})");
         }
     }
 
@@ -268,8 +277,10 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
 
         // A list is bound by its own call, because NHibernate expands it into as many
         // placeholders as the list has members (decision 083). The binding comes before the
-        // pagination, which is the call the slice goes on.
-        var binding = string.Concat(Parameters.Select(p =>
+        // pagination, which is the call the slice goes on - and it covers only the
+        // parameters the HQL names, since a row count of the slice is an argument of that
+        // call and SetParameter would name one the query does not have (decision 085).
+        var binding = string.Concat(BoundParameters.Select(p =>
         {
             var name = QueryParameterNaming.IdentifierFor(p);
             return p.IsCollection

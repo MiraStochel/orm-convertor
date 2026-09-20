@@ -172,6 +172,11 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
     /// it - a rewrite rule Q14 permits, and one that asserts nothing the source did not say:
     /// the source without an ordering returned a nondeterministic slice and so does this
     /// (decision 060).
+    ///
+    /// A bound count is written as the placeholder of the language (decision 085). TOP takes
+    /// it only in parentheses, which is where this step puts it either way, and OFFSET and
+    /// FETCH take a parameter as they take a constant. A framework whose placeholder is
+    /// spelled otherwise - MyBatis - rewrites it with the rest of them on the way out.
     /// </summary>
     protected override void BuildPagination(QueryClauses clauses, QueryArtifact artifact)
     {
@@ -182,7 +187,7 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
 
         if (clauses.Offset is null)
         {
-            artifact.Pagination.Append($"TOP ({clauses.Limit})");
+            artifact.Pagination.Append($"TOP ({Placeholder(clauses.Limit!)})");
             return;
         }
 
@@ -195,13 +200,17 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
                 QueryFeature.Pagination);
         }
 
-        artifact.Pagination.Append($"OFFSET {clauses.Offset} ROWS");
+        artifact.Pagination.Append($"OFFSET {Placeholder(clauses.Offset)} ROWS");
 
         if (clauses.Limit is not null)
         {
-            artifact.Pagination.Append($" FETCH NEXT {clauses.Limit} ROWS ONLY");
+            artifact.Pagination.Append($" FETCH NEXT {Placeholder(clauses.Limit)} ROWS ONLY");
         }
     }
+
+    /// <summary>The count as T-SQL writes it: the number, or the parameter behind an @.</summary>
+    private static string Placeholder(RowCount count)
+        => count.IsParameter ? $"@{Spelled(count)}" : Spelled(count);
 
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
         => Emit(RenderSelect(artifact), artifact.ResultEntity);

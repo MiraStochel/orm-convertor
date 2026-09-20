@@ -370,6 +370,27 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         return value;
     }
 
+    /// <summary>
+    /// A row count in a position that needs one: the number the query states, or the
+    /// parameter it leaves to the caller (decision 085). JPQL itself has no clause that
+    /// takes a row count - the slice is setFirstResult and setMaxResults on the query object
+    /// (decision 060) - so the only caller is the dialect hook of a profile whose language
+    /// does have one, which is HQL's limit and offset (decision 076).
+    /// </summary>
+    protected RowCount ConsumeRowCount()
+    {
+        if (Current.Kind != TokenKind.Parameter)
+        {
+            return RowCount.Literal(ConsumeInteger());
+        }
+
+        // Built before the token is consumed, so that it points at the parameter rather than
+        // at whatever follows it.
+        var malformed = Error("expected a parameter naming a name or an ordinal");
+
+        return ReadParameter() is { } parameter ? RowCount.Bound(parameter) : throw malformed;
+    }
+
     protected JpqlParseError Error(string message) => new(
         Current.Line,
         Current.Column,

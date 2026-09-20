@@ -32,11 +32,19 @@ public enum QueryFeature
     SetOperation = 11,
 
     /// <summary>
-    /// A value the caller supplies at execution time. The query IR has no operand for one
-    /// (decision 024 deferred it), so a parameter in the source refuses the artifact under
-    /// this category until it does (decision 070): the record names the operand the model
-    /// lacks, not an inability of the target, which is why every descriptor still marks the
-    /// category expressible.
+    /// A value the caller supplies at execution time. The model carries one as the fifth
+    /// shape of a condition operand (decision 083) and as either count of a pagination
+    /// (decision 085), and every descriptor marks the category expressible, so the
+    /// mechanical check of rule Q14 never fires on it.
+    ///
+    /// What is still recorded under this category is therefore never an inability of the
+    /// target. It is a limit of the model - a parameter among the values of an IN list,
+    /// which carries only values the query itself states (decision 074) - or a parameter
+    /// the generated method could not be given: one whose scalar does not follow from what
+    /// it is compared against, one that would need two scalars at once, a name that is no
+    /// plain identifier, named and positional forms mixed in one query, a collection
+    /// parameter outside the right side of IN, and MyBatis's <c>${}</c>, which substitutes
+    /// text rather than binding a value (decision 082).
     /// </summary>
     QueryParameter = 12,
 }

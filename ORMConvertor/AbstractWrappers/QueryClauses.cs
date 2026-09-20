@@ -29,11 +29,17 @@ public sealed class QueryClauses
 
     public required IReadOnlyList<OrderByInstruction> OrderBys { get; init; }
 
-    /// <summary>Rows skipped before the slice, when the query paginates (decision 060).</summary>
-    public long? Offset { get; init; }
+    /// <summary>
+    /// Rows skipped before the slice, when the query paginates (decision 060) - a number
+    /// the source stated or a parameter the caller binds (decision 085).
+    /// </summary>
+    public RowCount? Offset { get; init; }
 
-    /// <summary>Rows the slice is limited to, when the query paginates (decision 060).</summary>
-    public long? Limit { get; init; }
+    /// <summary>
+    /// Rows the slice is limited to, when the query paginates (decision 060) - a number the
+    /// source stated or a parameter the caller binds (decision 085).
+    /// </summary>
+    public RowCount? Limit { get; init; }
 
     /// <summary>
     /// True when the (sub)query collapses duplicate rows of its final projection

@@ -440,8 +440,10 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         }
 
         // T-SQL counts rows in bigint, Skip and Take in Int32; a value between the two has
-        // no faithful LINQ form and dropping it would change which rows come back.
-        if (clauses.Offset > int.MaxValue || clauses.Limit > int.MaxValue)
+        // no faithful LINQ form and dropping it would change which rows come back. Only a
+        // stated number can be out of range: a bound count is typed Int by the template
+        // (decision 085) and has nothing left to overflow.
+        if (clauses.Offset?.Value > int.MaxValue || clauses.Limit?.Value > int.MaxValue)
         {
             Report(
                 ConversionRecordKind.Failure,
@@ -450,14 +452,16 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             return;
         }
 
+        // A bound count is the parameter of the generated method, captured by the chain the
+        // way a parameter of a condition is captured by its lambda.
         if (clauses.Offset is { } offset)
         {
-            artifact.Pagination.Append($"\n        .Skip({offset})");
+            artifact.Pagination.Append($"\n        .Skip({Spelled(offset)})");
         }
 
         if (clauses.Limit is { } limit)
         {
-            artifact.Pagination.Append($"\n        .Take({limit})");
+            artifact.Pagination.Append($"\n        .Take({Spelled(limit)})");
         }
     }
 

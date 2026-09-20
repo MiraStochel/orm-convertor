@@ -39,6 +39,12 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     protected override bool WritesPositionalParameters => true;
 
     /// <summary>
+    /// The slice is setFirstResult and setMaxResults on the query object, so a bound row
+    /// count never reaches the JPQL text (decision 085).
+    /// </summary>
+    protected override bool WritesRowCountsIntoQueryText => false;
+
+    /// <summary>
     /// The parameters as Java declarations, appended after the EntityManager (decision 083).
     /// A scalar goes in as the primitive, because a comparison never tests NULL - that is its
     /// own operator (decision 002) - and a collection as Collection of the wrapper, which is
@@ -168,7 +174,9 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             return;
         }
 
-        if (clauses.Offset > int.MaxValue || clauses.Limit > int.MaxValue)
+        // Only a stated number can be out of range; a bound count is typed Int by the
+        // template (decision 085).
+        if (clauses.Offset?.Value > int.MaxValue || clauses.Limit?.Value > int.MaxValue)
         {
             Report(
                 ConversionRecordKind.Failure,
@@ -177,14 +185,16 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             return;
         }
 
+        // A bound count is not a parameter of the query here but an argument of the call, so
+        // it is passed on where a number would stand and nothing binds it by name.
         if (clauses.Offset is { } offset)
         {
-            artifact.Pagination.Append($"\n        .setFirstResult({offset})");
+            artifact.Pagination.Append($"\n        .setFirstResult({Spelled(offset)})");
         }
 
         if (clauses.Limit is { } limit)
         {
-            artifact.Pagination.Append($"\n        .setMaxResults({limit})");
+            artifact.Pagination.Append($"\n        .setMaxResults({Spelled(limit)})");
         }
     }
 
@@ -344,7 +354,10 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
         // setParameter takes the name or the order, whichever the query wrote, and takes a
         // collection for a collection parameter without a call of its own (decision 083).
-        var binding = string.Concat(Parameters.Select(p =>
+        // Only the parameters the JPQL names are bound: the slice lives on the query object,
+        // so a row count is an argument of setMaxResults and binding it by name again would
+        // name a parameter the query does not have, which JPA rejects (decision 085).
+        var binding = string.Concat(BoundParameters.Select(p =>
         {
             var name = QueryParameterNaming.IdentifierFor(p);
             var key = p.IsPositional ? p.Position!.Value.ToString() : $"\"{p.Name}\"";

@@ -215,6 +215,52 @@ class GeneratedArtifactTest {
         }
     }
 
+    /**
+     * A row count the caller binds, against the database (decision 085). The tool wrote the
+     * placeholder of the target into the TOP clause and the count into the signature of the
+     * mapper method; what proves it is not the text but the slice - two rows are written and
+     * the statement, asked for one, brings back one. Nothing but a real binding does that:
+     * an inlined literal would be the wrong page and an unbound placeholder would not run.
+     */
+    @Test
+    void aBoundRowCountSlicesTheResultOfTheGeneratedStatement() throws Exception {
+        ToolResponse answer = ToolApi.convert(Orm.EF_CORE, Orm.MYBATIS, List.of(
+                InputUnit.fromResource("efcore/Product.cs"),
+                InputUnit.fromResource("efcore/ProductPage.query.cs")));
+
+        assertEquals(200, answer.statusCode(), answer.body());
+
+        ConversionResponse response = answer.required();
+        assertTrue(response.recordsOf(RecordKind.FAILURE).isEmpty(),
+                "The tool refused an artifact of the paginated scenario:"
+                + System.lineSeparator() + response.describeRecords());
+
+        assertTrue(queryMapper(response).contains("#{take}"),
+                "The statement does not bind the row count:" + System.lineSeparator() + queryMapper(response));
+
+        try (JavaProject project = JavaProject.create("mb-page")) {
+            compileProjectOf(response, project);
+
+            SqlSessionFactory factory = MyBatisBootstrap.build(project.loader(), allMappers(response));
+            Class<?> mapper = project.load(MyBatisBootstrap.namespaceOf(queryMapper(response)));
+
+            try (SqlSession session = factory.openSession()) {
+                insertProduct(session.getConnection(), PRODUCT_ID, "AAA " + PRODUCT_NAME, "GEN-0005");
+                insertProduct(session.getConnection(), PRODUCT_ID + 1, "BBB " + PRODUCT_NAME, "GEN-0006");
+
+                Object rows = mapperMethod(mapper).invoke(session.getMapper(mapper), 1);
+
+                assertEquals(1, ((List<?>) rows).size(),
+                        "the statement asked for one row and did not return exactly one");
+
+                // The rollback has to be forced: DefaultSqlSession rolls back only what went
+                // through its own update, so the rows written on the connection would
+                // otherwise be committed when the session closes (decision 084).
+                session.rollback(true);
+            }
+        }
+    }
+
     // ---- the negative half ---------------------------------------------------------------
 
     /**
@@ -360,13 +406,17 @@ class GeneratedArtifactTest {
      * rollback at the end of the session takes it away again.
      */
     private static void insertProduct(Connection connection) throws Exception {
+        insertProduct(connection, PRODUCT_ID, PRODUCT_NAME, "GEN-0004");
+    }
+
+    private static void insertProduct(Connection connection, int id, String name, String sku) throws Exception {
         String sql = "INSERT INTO [" + TestDatabase.schemaName() + "].[Products] "
                 + "(ProductId, ProductName, Sku, UnitPrice, IsDiscontinued) VALUES (?, ?, ?, ?, 0)";
 
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setInt(1, PRODUCT_ID);
-            statement.setString(2, PRODUCT_NAME);
-            statement.setString(3, "GEN-0004");
+            statement.setInt(1, id);
+            statement.setString(2, name);
+            statement.setString(3, sku);
             statement.setBigDecimal(4, UNIT_PRICE);
             statement.executeUpdate();
         }

@@ -42,8 +42,10 @@ public sealed class QueryParameter
     /// <summary>
     /// Scalar type of the value, or null when nobody has stated it yet. The source states
     /// it only where its language can - MyBatis writes <c>#{id,javaType=Integer}</c> - so
-    /// the usual answer is null and the builder template derives it from the other side of
-    /// the comparison (decision 083).
+    /// the usual answer is null and the builder template fills it in: from the other side
+    /// of the comparison the parameter stands in (decision 083), or, where it stands as a
+    /// row count of a pagination, from the clause itself, which says the value is a whole
+    /// number of rows (decision 085).
     /// </summary>
     public ScalarType? Type { get; }
 
