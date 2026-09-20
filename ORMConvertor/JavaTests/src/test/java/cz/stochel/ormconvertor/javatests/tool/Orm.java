@@ -13,6 +13,7 @@ public final class Orm {
     public static final int EF_CORE = 30;
     public static final int HIBERNATE = 40;
     public static final int ECLIPSELINK = 50;
+    public static final int MYBATIS = 60;
 
     private Orm() {
     }
@@ -25,6 +26,7 @@ public final class Orm {
             case EF_CORE -> "EFCore";
             case HIBERNATE -> "Hibernate";
             case ECLIPSELINK -> "EclipseLink";
+            case MYBATIS -> "MyBatis";
             default -> "ORM " + orm;
         };
     }

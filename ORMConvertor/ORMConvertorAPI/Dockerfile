@@ -32,6 +32,7 @@ COPY JakartaPersistence/JakartaPersistence.csproj JakartaPersistence/
 COPY JavaEntityParsing/JavaEntityParsing.csproj JavaEntityParsing/
 COPY LinqParsing/LinqParsing.csproj LinqParsing/
 COPY Model/Model.csproj Model/
+COPY MyBatisWrappers/MyBatisWrappers.csproj MyBatisWrappers/
 COPY NHibernateWrappers/NHibernateWrappers.csproj NHibernateWrappers/
 COPY OrmConvertor/OrmConvertor.csproj OrmConvertor/
 COPY ORMConvertorAPI/ORMConvertorAPI.csproj ORMConvertorAPI/

@@ -30,10 +30,20 @@ public enum ConversionContentType
     /// <summary>A query written in HQL - the query language of NHibernate.</summary>
     HqlQuery = 50,
 
-    /// <summary>A Java class: an entity with jakarta.persistence annotations (decision 077).</summary>
+    /// <summary>
+    /// A Java class: an entity with jakarta.persistence annotations (decision 077), or a
+    /// plain domain class carrying no annotation at all, which is what MyBatis reads and
+    /// writes (decision 084). The value names the language, not the framework, so the sixth
+    /// framework entered it without a value of its own.
+    /// </summary>
     JavaEntity = 60,
 
-    /// <summary>A query written in Java: a method wrapping a JPQL string in createQuery.</summary>
+    /// <summary>
+    /// A Java file carrying queries: a method wrapping a JPQL string in createQuery, or the
+    /// mapper interface of MyBatis, whose method declarations carry @Select and @Results
+    /// (decision 084). Like the XML value, it promises no role of its own - the MyBatis
+    /// mapper interface is a mapping and a query at once (decision 081).
+    /// </summary>
     JavaQuery = 70,
 
     /// <summary>A query written in JPQL - or in HQL, which is its superset (decision 077).</summary>

@@ -41,6 +41,15 @@ public static class RequiredContent
             new (17, ConversionContentType.JavaQuery, "Query (Java method)"),
             new (18, ConversionContentType.JpqlQuery, "Query (JPQL)"),
         ]),
+        // Three units and no new content type (decisions 025 and 084): the mapper interface
+        // is Java like any other query unit and the mapper document is XML like any other
+        // mapping one. Two of the three are a mapping and a query at once, which is why
+        // neither is asked for twice - the orchestration offers every unit to both passes.
+        new (ORMEnum.MyBatis, [
+            new (19, ConversionContentType.JavaEntity, "Domain Class (Java)"),
+            new (20, ConversionContentType.JavaQuery, "Mapper Interface (Java)"),
+            new (21, ConversionContentType.XML, "XML Mapper"),
+        ]),
     ];
 
     public static List<RequiredContentDefinition> GetRequiredContentAdvisor => [

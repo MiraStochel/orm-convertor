@@ -67,6 +67,10 @@ export function saveText(content, fileName) {
 function artifactBaseName(artifact) {
   if (artifact.contentType === ContentType.Xml) {
     if (/<entity-mappings\b/.test(artifact.content)) return "orm";
+    // A MyBatis mapper is named after its namespace, which is the interface it belongs to
+    // and which the builder makes unique per artifact (decision 084).
+    const mapper = artifact.content.match(/<mapper\s[^>]*namespace="([^"]+)"/);
+    if (mapper) return mapper[1].split(".").pop();
     const match = artifact.content.match(/<class\s[^>]*name="([^"]+)"/);
     if (match) return match[1].split(",")[0].trim().split(".").pop();
     return null;
@@ -94,10 +98,11 @@ export function artifactNames(artifacts) {
   const used = new Map();
   return artifacts.map((artifact, index) => {
     const base = artifactBaseName(artifact) ?? `artifact-${index + 1}`;
-    // An orm.xml is named orm.xml, not orm.hbm.xml: the one XML value carries both
-    // descriptors and the root element tells them apart (decision 077).
+    // Only an hbm.xml is named .hbm.xml: the one XML value carries the descriptor of every
+    // framework that writes one - the orm.xml of JPA, the mapper of MyBatis - and the root
+    // element tells them apart (decisions 077 and 084).
     const extension =
-      artifact.contentType === ContentType.Xml && base === "orm"
+      artifact.contentType === ContentType.Xml && !/<hibernate-mapping\b/.test(artifact.content)
         ? ".xml"
         : (CONTENT_TYPE_EXTENSIONS[artifact.contentType] ?? ".txt");
     const count = used.get(base + extension) ?? 0;

@@ -23,8 +23,10 @@ public final class JavaSources {
     private static final Pattern PACKAGE = Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
 
     // Anchored at the start of a line: a nested key class is indented and declared static,
-    // so the top-level type of the file is the one this matches.
-    private static final Pattern PUBLIC_CLASS = Pattern.compile("(?m)^public\\s+class\\s+(\\w+)\\b");
+    // so the top-level type of the file is the one this matches. An interface counts as
+    // well since decision 084, because a MyBatis mapper is one and Java demands the same
+    // file name of it.
+    private static final Pattern PUBLIC_CLASS = Pattern.compile("(?m)^public\\s+(?:class|interface)\\s+(\\w+)\\b");
 
     private JavaSources() {
     }
@@ -80,6 +82,39 @@ public final class JavaSources {
                 .append(System.lineSeparator())
                 .append("public class ").append(className).append(" {").append(System.lineSeparator())
                 .append(method).append(System.lineSeparator())
+                .append("}").append(System.lineSeparator())
+                .toString();
+    }
+
+    /**
+     * The declaration of a mapper method inside the interface a MyBatis consumer project
+     * would declare it in (decision 084). The generated artifact is the declaration alone -
+     * a fragment, as every query artifact of the tool is - and the interface it belongs to
+     * is the consumer's, so the suite writes it the way a consumer would: in the package of
+     * the entities, under the name the mapper document's namespace already states, because
+     * that is what binds the two halves together.
+     */
+    public static String wrapMapperInterface(String packageName, String interfaceName, String method) {
+        StringBuilder source = new StringBuilder();
+        if (packageName != null) {
+            source.append("package ").append(packageName).append(";").append(System.lineSeparator())
+                    .append(System.lineSeparator());
+        }
+
+        return source
+                .append("import java.math.BigDecimal;").append(System.lineSeparator())
+                .append("import java.time.Duration;").append(System.lineSeparator())
+                .append("import java.time.LocalDate;").append(System.lineSeparator())
+                .append("import java.time.LocalDateTime;").append(System.lineSeparator())
+                .append("import java.time.LocalTime;").append(System.lineSeparator())
+                .append("import java.time.OffsetDateTime;").append(System.lineSeparator())
+                .append("import java.util.Collection;").append(System.lineSeparator())
+                .append("import java.util.List;").append(System.lineSeparator())
+                .append("import java.util.UUID;").append(System.lineSeparator())
+                .append("import org.apache.ibatis.annotations.Param;").append(System.lineSeparator())
+                .append(System.lineSeparator())
+                .append("public interface ").append(interfaceName).append(" {").append(System.lineSeparator())
+                .append("    ").append(method).append(System.lineSeparator())
                 .append("}").append(System.lineSeparator())
                 .toString();
     }

@@ -58,6 +58,7 @@
     <ProjectReference Include="..\JakartaPersistence\JakartaPersistence.csproj" />
     <ProjectReference Include="..\JavaEntityParsing\JavaEntityParsing.csproj" />
     <ProjectReference Include="..\Model\Model.csproj" />
+    <ProjectReference Include="..\MyBatisWrappers\MyBatisWrappers.csproj" />
     <ProjectReference Include="..\NHibernateWrappers\NHibernateWrappers.csproj" />
     <ProjectReference Include="..\OrmConvertor\OrmConvertor.csproj" />
     <ProjectReference Include="..\ORMConvertorAPI\ORMConvertorAPI.csproj" />

@@ -3,6 +3,7 @@ using DapperWrappers;
 using EclipseLinkWrappers;
 using EFCoreWrappers;
 using HibernateWrappers;
+using MyBatisWrappers;
 using Model;
 using NHibernateWrappers;
 
@@ -22,6 +23,7 @@ internal static class DescriptorFactory
         ORMEnum.EFCore => EFCoreDescriptor.Instance,
         ORMEnum.Hibernate => HibernateDescriptor.Instance,
         ORMEnum.EclipseLink => EclipseLinkDescriptor.Instance,
+        ORMEnum.MyBatis => MyBatisDescriptor.Instance,
         _ => throw new InvalidOperationException("Source ORM not supported"),
     };
 }

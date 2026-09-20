@@ -74,12 +74,38 @@ public sealed record JavaField(
     string? Initializer,
     int Line);
 
+/// <summary>
+/// One declared parameter of a method: the written type in its normalized spelling, the
+/// name, and the annotations in front of it. Read rather than counted since decision 084,
+/// because the signature of a MyBatis mapper method is the only place the type of a query
+/// parameter lives - the mapper states it nowhere.
+/// </summary>
+public sealed record JavaParameter(string Name, string Type, IReadOnlyList<JavaAnnotation> Annotations);
+
 public sealed record JavaMethod(
     string Name,
     string ReturnType,
     IReadOnlyList<string> Modifiers,
     IReadOnlyList<JavaAnnotation> Annotations,
-    int ParameterCount,
+    IReadOnlyList<JavaParameter> Parameters,
+    int Line)
+{
+    public int ParameterCount => Parameters.Count;
+}
+
+/// <summary>
+/// An interface declaration with its method headers (decision 084). Read because a MyBatis
+/// mapper is an interface: its methods carry the statements (@Select) and the mapping
+/// (@Results), and their parameters carry the types of the query's parameters. Nothing
+/// about it is MyBatis's own - an interface means the same thing under every Java
+/// framework, which is why it is read here and not in the wrapper.
+/// </summary>
+public sealed record JavaInterface(
+    string Name,
+    IReadOnlyList<string> Modifiers,
+    IReadOnlyList<JavaAnnotation> Annotations,
+    IReadOnlyList<JavaMethod> Methods,
+    IReadOnlyList<string> Extends,
     int Line);
 
 public sealed record JavaClass(
@@ -129,4 +155,8 @@ public sealed record JavaClass(
         => name.Length == 0 ? name : char.ToUpperInvariant(name[0]) + name[1..];
 }
 
-public sealed record JavaCompilationUnit(string? Package, IReadOnlyList<string> Imports, IReadOnlyList<JavaClass> Classes);
+public sealed record JavaCompilationUnit(
+    string? Package,
+    IReadOnlyList<string> Imports,
+    IReadOnlyList<JavaClass> Classes,
+    IReadOnlyList<JavaInterface> Interfaces);

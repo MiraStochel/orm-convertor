@@ -3,6 +3,7 @@ using DapperWrappers;
 using EclipseLinkWrappers;
 using EFCoreWrappers;
 using HibernateWrappers;
+using MyBatisWrappers;
 using JakartaPersistence;
 using Model;
 using NHibernateWrappers;
@@ -76,6 +77,24 @@ internal class ParserFactory
                 return qb is null
                     ? [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context)]
                     : [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context), new EclipseLinkJpqlQueryParser(qb)];
+            }
+
+            // MyBatis documents no precedence between its two mapping forms - it refuses the
+            // concurrence of both outright, which is a Failure and not a Conflict
+            // (decision 068) - so the list stands in the default order of decision 017: the
+            // framework's input text first (the domain class, level 1a), its auxiliary
+            // mapping artifacts after it (the mapper interface and the XML mapper, level 1b).
+            // Two of the three units are a mapping and a query at once and are therefore
+            // claimed twice over, which is the cleanest case decision 081 has; both passes
+            // read through one context, found through the entity builder, because the query
+            // pass needs what the entity pass saw - the method signatures above all, which
+            // are the only place the type of a MyBatis query parameter lives (decision 084).
+            case ORMEnum.MyBatis:
+            {
+                var context = MyBatisReadingContext.For(eb);
+                return qb is null
+                    ? [new MyBatisEntityParser(eb), new MyBatisMapperInterfaceParser(eb, context), new MyBatisXmlMappingParser(eb, context)]
+                    : [new MyBatisEntityParser(eb), new MyBatisMapperInterfaceParser(eb, context), new MyBatisXmlMappingParser(eb, context), new MyBatisAnnotationQueryParser(qb, context), new MyBatisXmlQueryParser(qb, context)];
             }
 
             // Symmetric with the target side, which refuses an unsupported framework rather

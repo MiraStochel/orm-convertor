@@ -4,6 +4,7 @@ using DapperWrappers;
 using EclipseLinkWrappers;
 using EFCoreWrappers;
 using HibernateWrappers;
+using MyBatisWrappers;
 using Model;
 using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers;
@@ -26,7 +27,7 @@ public class EnforcedMembersTest
         // Written by hand on purpose, unlike the cross tests that take their directions from
         // ORMEnum through CrossFrameworkInputs: this matrix is the contract of decision 037
         // and a framework's row belongs to its wrapper, so the row is added, not derived.
-        foreach (var framework in new[] { "Dapper", "EFCore", "NHibernate", "Hibernate", "EclipseLink" })
+        foreach (var framework in new[] { "Dapper", "EFCore", "NHibernate", "Hibernate", "EclipseLink", "MyBatis" })
         {
             foreach (var keyParts in new[] { 0, 1, 2 })
             {
@@ -115,6 +116,7 @@ public class EnforcedMembersTest
             "NHibernate" => new NHibernateEntityBuilder(),
             "Hibernate" => new HibernateEntityBuilder(),
             "EclipseLink" => new EclipseLinkEntityBuilder(),
+            "MyBatis" => new MyBatisEntityBuilder(),
             _ => throw new ArgumentOutOfRangeException(nameof(framework), framework, null),
         };
 

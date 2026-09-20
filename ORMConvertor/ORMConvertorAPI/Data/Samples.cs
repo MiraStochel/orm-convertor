@@ -27,5 +27,8 @@ public static class Samples
         { 16, CustomerSampleEclipseLink.OrmXml },
         { 17, CustomerSampleEclipseLink.Query },
         { 18, CustomerSampleEclipseLink.JpqlQuery },
+        { 19, CustomerSampleMyBatis.Entity },
+        { 20, CustomerSampleMyBatis.MapperInterface },
+        { 21, CustomerSampleMyBatis.XmlMapper },
     };
 }

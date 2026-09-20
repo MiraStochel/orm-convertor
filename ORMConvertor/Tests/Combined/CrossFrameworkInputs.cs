@@ -78,6 +78,15 @@ public static class CrossFrameworkInputs
         [
             new() { Content = JpaEntity(withNamespace), ContentType = ConversionContentType.JavaEntity },
         ],
+
+        // One unit, and the mapping is not in it: MyBatis keeps the mapping in the mapper
+        // beside the statement, so the mapper is the query unit below and carries both halves
+        // (decisions 081 and 084). The domain class alone is what the framework asks of the
+        // entity, which is nothing at all.
+        ORMEnum.MyBatis =>
+        [
+            new() { Content = MyBatisEntity(withNamespace), ContentType = ConversionContentType.JavaEntity },
+        ],
         _ => throw NoRow(framework),
     };
 
@@ -89,6 +98,11 @@ public static class CrossFrameworkInputs
         ORMEnum.NHibernate => new() { Content = NHibernateQuery, ContentType = ConversionContentType.CSharpQuery },
         ORMEnum.Hibernate => new() { Content = JpaQuery, ContentType = ConversionContentType.JpqlQuery },
         ORMEnum.EclipseLink => new() { Content = JpaQuery, ContentType = ConversionContentType.JpqlQuery },
+
+        // The one row whose query unit is a mapping as well: a MyBatis mapper carries the
+        // <resultMap> beside the <select>, so this document is read by both passes of the
+        // orchestration (decision 081) and the matrix exercises that without a case of its own.
+        ORMEnum.MyBatis => new() { Content = MyBatisMapper, ContentType = ConversionContentType.XML },
         _ => throw NoRow(framework),
     };
 
@@ -191,6 +205,50 @@ public static class CrossFrameworkInputs
             public BigDecimal getCreditLimit() { return CreditLimit; }
             public void setCreditLimit(BigDecimal value) { this.CreditLimit = value; }
         }
+        """;
+
+    // The MyBatis domain class: the same entity with nothing on it at all - no annotation,
+    // no base class, no import from the framework (decision 084). It is the poorest sample
+    // of the six by design, and the pair with Dapper is what makes the asymmetry of F6
+    // measurable in both ecosystems.
+    private static string MyBatisEntity(bool withNamespace) =>
+        (withNamespace ? $"package {Namespace};{Environment.NewLine}{Environment.NewLine}" : string.Empty) + """
+        import java.math.BigDecimal;
+
+        public class Customer {
+            private Integer CustomerId;
+            private String CustomerName;
+            private BigDecimal CreditLimit;
+
+            public Integer getCustomerId() { return CustomerId; }
+            public void setCustomerId(Integer value) { this.CustomerId = value; }
+            public String getCustomerName() { return CustomerName; }
+            public void setCustomerName(String value) { this.CustomerName = value; }
+            public BigDecimal getCreditLimit() { return CreditLimit; }
+            public void setCreditLimit(BigDecimal value) { this.CreditLimit = value; }
+        }
+        """;
+
+    // The mapper: the pairs of column and property, and the same query the Dapper row
+    // states, in the same language. The namespace is the mapper's own name and says nothing
+    // about the entity's package, which comes from the domain class.
+    private const string MyBatisMapper = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+                "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+        <mapper namespace="Shop.CustomerMapper">
+          <resultMap id="customer" type="Customer">
+            <id     column="CustomerId"   property="CustomerId"/>
+            <result column="CustomerName" property="CustomerName"/>
+            <result column="CreditLimit"  property="CreditLimit"/>
+          </resultMap>
+          <select id="findCustomers" resultMap="customer">
+            SELECT c.CustomerName
+            FROM Sales.Customers AS c
+            WHERE c.CreditLimit &gt; 2000
+            ORDER BY c.CustomerName ASC
+          </select>
+        </mapper>
         """;
 
     private const string JpaQuery = """

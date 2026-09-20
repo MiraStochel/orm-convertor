@@ -27,11 +27,14 @@ namespace TransactSql;
 ///
 /// One reader per query: the builder and the report channel are fixed at construction, the
 /// same shape <see cref="SqlQueryVisitor"/> has, so nothing carries over from one query of
-/// a document to the next.
+/// a document to the next. Beside them stands one optional argument, the facts the source
+/// stated about the query's parameters (decision 084) - nothing the grammar reads, and
+/// therefore nothing the grammar has to be taught.
 /// </summary>
 public class SqlQueryReader(
     AbstractQueryBuilder queryBuilder,
-    Action<ConversionRecordKind, string, QueryFeature?> report)
+    Action<ConversionRecordKind, string, QueryFeature?> report,
+    IReadOnlyDictionary<string, SqlParameterFacts>? statedParameters = null)
 {
     private string sourceAlias = "t";
 
@@ -699,7 +702,7 @@ public class SqlQueryReader(
                     var value = ReadOperand(inPredicate.Expression);
                     var right = inPredicate.Subquery is not null
                         ? QueryOperand.Nested(ReadSubQueryOperand(inPredicate.Subquery.QueryExpression))
-                        : ReadValueList(inPredicate.Values);
+                        : ReadCollectionParameter(inPredicate.Values) ?? ReadValueList(inPredicate.Values);
                     if (value is null || right is null)
                     {
                         return null;
@@ -817,13 +820,45 @@ public class SqlQueryReader(
             // A T-SQL variable in operand position is a parameter of the query: the value
             // the caller binds (decision 083). The @ is T-SQL's decoration and is stripped,
             // the way the quotes of a string literal are - the model carries the bare name.
+            // The scalar comes along only where the source stated one (decision 084);
+            // otherwise the builder template derives it from the other side.
             case VariableReference variable:
-                return QueryOperand.Bound(QueryParameter.Named(variable.Name.TrimStart('@')));
+                {
+                    var name = variable.Name.TrimStart('@');
+                    return QueryOperand.Bound(QueryParameter.Named(name, ScalarStatedFor(name)));
+                }
 
             default:
                 return null;
         }
     }
+
+    /// <summary>
+    /// The one right side of IN that is neither a subquery nor a list of values: a
+    /// collection parameter, whose elements the caller supplies (decisions 074 and 083).
+    /// T-SQL has no syntax of its own for it - the text says <c>IN (@ids)</c>, which is a
+    /// one-element list of values to the grammar - so it is read here only where the source
+    /// stated that the parameter binds a list, which is a fact the wrapper carried in and
+    /// the grammar could not have known. Null when it is not this shape, and the ordinary
+    /// list reading follows.
+    /// </summary>
+    private QueryOperand? ReadCollectionParameter(IList<ScalarExpression> elements)
+    {
+        if (elements.Count != 1 || Unparenthesize(elements[0]) is not VariableReference variable)
+        {
+            return null;
+        }
+
+        var name = variable.Name.TrimStart('@');
+        var stated = statedParameters?.TryGetValue(name, out var facts) == true ? facts : default;
+
+        return stated.IsCollection
+            ? QueryOperand.Bound(QueryParameter.Named(name, stated.Scalar, isCollection: true))
+            : null;
+    }
+
+    private ScalarType? ScalarStatedFor(string name)
+        => statedParameters?.TryGetValue(name, out var facts) == true ? facts.Scalar : null;
 
     /// <summary>
     /// Reads the values IN enumerates into a list operand (decision 074). Every element has

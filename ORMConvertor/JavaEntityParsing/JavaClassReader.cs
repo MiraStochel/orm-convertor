@@ -5,10 +5,12 @@ namespace JavaEntityParsing;
 /// <summary>
 /// Reads the subset of Java a mapped class is made of (decision 076): the package and
 /// the imports, the class header with its annotations and modifiers, the fields and the
-/// method headers with theirs, and nested classes. Everything else - method bodies,
-/// constructors, initializer blocks, interfaces, enums, records - is skipped by matching
-/// braces and parentheses over the complete token stream, so that a lambda or an anonymous
-/// class inside a body never reaches the reader.
+/// method headers with theirs, and nested classes. Since decision 084 a top-level
+/// interface is read too, with its method headers and their declared parameters, because
+/// a MyBatis mapper is an interface. Everything else - method bodies, constructors,
+/// initializer blocks, enums, records - is skipped by matching braces and parentheses over
+/// the complete token stream, so that a lambda or an anonymous class inside a body never
+/// reaches the reader.
 ///
 /// A shape the reader does not expect is a <see cref="JavaSyntaxError"/> with a line and a
 /// column, never a guess: the language read here is closed by what the intermediate
@@ -110,6 +112,7 @@ public sealed class JavaClassReader
         string? package = null;
         var imports = new List<string>();
         var classes = new List<JavaClass>();
+        var interfaces = new List<JavaInterface>();
 
         // A package declaration may carry annotations (package-info.java); they are skipped.
         var leading = position;
@@ -145,14 +148,19 @@ public sealed class JavaClassReader
                 continue;
             }
 
-            var declaration = ReadTypeDeclaration();
-            if (declaration is not null)
+            var (declaredClass, declaredInterface) = ReadTypeDeclaration();
+            if (declaredClass is not null)
             {
-                classes.Add(declaration);
+                classes.Add(declaredClass);
+            }
+
+            if (declaredInterface is not null)
+            {
+                interfaces.Add(declaredInterface);
             }
         }
 
-        return new JavaCompilationUnit(package, imports, classes);
+        return new JavaCompilationUnit(package, imports, classes, interfaces);
     }
 
     private string ReadQualifiedName()
@@ -170,11 +178,13 @@ public sealed class JavaClassReader
     /* ---- type declarations ---------------------------------------------------------- */
 
     /// <summary>
-    /// A class becomes a <see cref="JavaClass"/>; an interface, an enum, a record or an
-    /// annotation type is skipped whole, because none of them can be an entity (an entity
-    /// may not be a record, an enum or an interface - Jakarta Persistence 3.2 §2.1).
+    /// A class becomes a <see cref="JavaClass"/> and an interface a
+    /// <see cref="JavaInterface"/> (decision 084); an enum, a record or an annotation type
+    /// is skipped whole, because none of them can be an entity (an entity may not be a
+    /// record, an enum or an interface - Jakarta Persistence 3.2 §2.1) and none of them is
+    /// a mapper either.
     /// </summary>
-    private JavaClass? ReadTypeDeclaration()
+    private (JavaClass? Class, JavaInterface? Interface) ReadTypeDeclaration()
     {
         var line = Current.Line;
         var annotations = ReadAnnotations();
@@ -190,31 +200,142 @@ public sealed class JavaClassReader
 
             ConsumeIdentifier("expected a name");
             SkipBlock();
-            return null;
+            return (null, null);
         }
 
         if (TryConsumeWord("class"))
         {
-            return ReadClassBody(annotations, modifiers, line);
+            return (ReadClassBody(annotations, modifiers, line), null);
         }
 
-        if (TryConsumeWord("interface") || TryConsumeWord("enum"))
+        if (TryConsumeWord("interface"))
+        {
+            return (null, ReadInterfaceBody(annotations, modifiers, line));
+        }
+
+        if (TryConsumeWord("enum") || TryConsumeWord("record"))
         {
             ConsumeIdentifier("expected a name");
             SkipUntilBlock();
             SkipBlock();
-            return null;
-        }
-
-        if (TryConsumeWord("record"))
-        {
-            ConsumeIdentifier("expected a name");
-            SkipUntilBlock();
-            SkipBlock();
-            return null;
+            return (null, null);
         }
 
         throw Error("expected a type declaration");
+    }
+
+    /// <summary>
+    /// An interface body: its method headers with their annotations and declared
+    /// parameters. Constants, nested types and the bodies of default and static methods are
+    /// skipped the same way a class's are - what a mapper states, it states in the header.
+    /// </summary>
+    private JavaInterface ReadInterfaceBody(IReadOnlyList<JavaAnnotation> annotations, IReadOnlyList<string> modifiers, int line)
+    {
+        var name = ConsumeIdentifier("expected an interface name");
+
+        if (AtSymbol("<"))
+        {
+            SkipTypeArguments();
+        }
+
+        var extends = new List<string>();
+
+        if (TryConsumeWord("extends"))
+        {
+            do
+            {
+                extends.Add(ReadType());
+            }
+            while (TryConsumeSymbol(","));
+        }
+
+        if (TryConsumeWord("permits"))
+        {
+            do
+            {
+                ReadType();
+            }
+            while (TryConsumeSymbol(","));
+        }
+
+        ConsumeSymbol("{");
+
+        var methods = new List<JavaMethod>();
+
+        while (!AtSymbol("}"))
+        {
+            if (Current.Kind == JavaTokenKind.End)
+            {
+                throw Error($"expected '}}' closing interface {name}");
+            }
+
+            ReadInterfaceMember(methods);
+        }
+
+        ConsumeSymbol("}");
+
+        return new JavaInterface(name, modifiers, annotations, methods, extends, line);
+    }
+
+    private void ReadInterfaceMember(List<JavaMethod> methods)
+    {
+        if (TryConsumeSymbol(";"))
+        {
+            return;
+        }
+
+        var line = Current.Line;
+        var memberAnnotations = ReadAnnotations();
+        var modifiers = ReadModifiers();
+
+        if (AtSymbol("@") && Peek() is { Kind: JavaTokenKind.Identifier, Text: "interface" })
+        {
+            Advance();
+            Advance();
+            ConsumeIdentifier("expected a name");
+            SkipBlock();
+            return;
+        }
+
+        if (TryConsumeWord("class") || TryConsumeWord("interface") || TryConsumeWord("enum") || TryConsumeWord("record"))
+        {
+            ConsumeIdentifier("expected a name");
+            SkipUntilBlock();
+            SkipBlock();
+            return;
+        }
+
+        if (AtSymbol("<"))
+        {
+            SkipTypeArguments();
+        }
+
+        var type = ReadType();
+        var memberName = ConsumeIdentifier("expected a member name");
+
+        if (AtSymbol("("))
+        {
+            var parameters = ReadParameters();
+            while (TryConsumeSymbol("["))
+            {
+                ConsumeSymbol("]");
+            }
+
+            SkipThrows();
+
+            if (!TryConsumeSymbol(";"))
+            {
+                // A default or static method carries a body; the header is all that is read.
+                SkipBlock();
+            }
+
+            methods.Add(new JavaMethod(memberName, type, modifiers, memberAnnotations, parameters, line));
+            return;
+        }
+
+        // A constant: interface fields are implicitly public static final and are not read.
+        SkipUntilSymbolAtDepthZero(";");
+        ConsumeSymbol(";");
     }
 
     private JavaClass ReadClassBody(IReadOnlyList<JavaAnnotation> annotations, IReadOnlyList<string> modifiers, int line)
@@ -336,7 +457,7 @@ public sealed class JavaClassReader
 
         if (AtSymbol("("))
         {
-            var parameters = SkipParenthesized();
+            var parameters = ReadParameters();
             while (TryConsumeSymbol("["))
             {
                 ConsumeSymbol("]");
@@ -756,6 +877,48 @@ public sealed class JavaClassReader
     }
 
     /* ---- skipping ------------------------------------------------------------------- */
+
+    /// <summary>
+    /// The declared parameters of a method (decision 084). A parameter list is well formed
+    /// wherever it stands, so it is read rather than skipped: its annotations carry
+    /// MyBatis's @Param and its types are the only place the type of a query parameter
+    /// lives. A varargs parameter reads as an array, which is what it is.
+    /// </summary>
+    private List<JavaParameter> ReadParameters()
+    {
+        ConsumeSymbol("(");
+
+        var parameters = new List<JavaParameter>();
+
+        if (!AtSymbol(")"))
+        {
+            do
+            {
+                var annotations = ReadAnnotations();
+
+                while (TryConsumeWord("final"))
+                {
+                    // A parameter may be final; it says nothing about the declaration.
+                }
+
+                var type = ReadType();
+                var name = ConsumeIdentifier("expected a parameter name");
+
+                while (TryConsumeSymbol("["))
+                {
+                    ConsumeSymbol("]");
+                    type += "[]";
+                }
+
+                parameters.Add(new JavaParameter(name, type, annotations));
+            }
+            while (TryConsumeSymbol(","));
+        }
+
+        ConsumeSymbol(")");
+
+        return parameters;
+    }
 
     /// <summary>Skips a parenthesized list and returns the number of top-level comma-separated items in it.</summary>
     private int SkipParenthesized()

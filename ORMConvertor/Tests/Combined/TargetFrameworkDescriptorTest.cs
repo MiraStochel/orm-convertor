@@ -19,6 +19,7 @@ public class TargetFrameworkDescriptorTest
         NHibernateDescriptor.Instance,
         HibernateWrappers.HibernateDescriptor.Instance,
         EclipseLinkWrappers.EclipseLinkDescriptor.Instance,
+        MyBatisWrappers.MyBatisDescriptor.Instance,
     ];
 
     /// <summary>
@@ -67,6 +68,7 @@ public class TargetFrameworkDescriptorTest
 
         Assert.Equal(HibernateWrappers.HibernateDescriptor.Instance.Version, properties.Element(ns + "hibernate.version")?.Value);
         Assert.Equal(EclipseLinkWrappers.EclipseLinkDescriptor.Instance.Version, properties.Element(ns + "eclipselink.version")?.Value);
+        Assert.Equal(MyBatisWrappers.MyBatisDescriptor.Instance.Version, properties.Element(ns + "mybatis.version")?.Value);
 
         // The dependency must really be bound to that property; a literal version beside
         // an unused property would satisfy the assertion above and pin nothing.
@@ -77,6 +79,10 @@ public class TargetFrameworkDescriptorTest
         var eclipseLink = pom.Descendants(ns + "dependency")
             .Single(d => d.Element(ns + "artifactId")?.Value == "eclipselink");
         Assert.Equal("${eclipselink.version}", eclipseLink.Element(ns + "version")?.Value);
+
+        var myBatis = pom.Descendants(ns + "dependency")
+            .Single(d => d.Element(ns + "artifactId")?.Value == "mybatis");
+        Assert.Equal("${mybatis.version}", myBatis.Element(ns + "version")?.Value);
     }
 
     /// <summary>

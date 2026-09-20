@@ -3,6 +3,7 @@ using AbstractWrappers.Diagnostics;
 using DapperWrappers;
 using Model;
 using Model.AbstractRepresentation;
+using MyBatisWrappers;
 using NHibernateWrappers;
 
 namespace Tests.Combined;
@@ -53,6 +54,26 @@ public class SharedSqlReadingTest
         return builder;
     }
 
+    /// <summary>
+    /// The third reader of the same language (decision 084). Its own work is the same kind
+    /// as the NHibernate parser's - getting hold of plain T-SQL out of an XML document - and
+    /// the grammar it hands the text to is the same one.
+    /// </summary>
+    private static AbstractQueryBuilder FromMyBatisMapper(string sql)
+    {
+        AbstractQueryBuilder builder = new DapperSqlQueryBuilder { EntityMaps = [Customers()] };
+
+        new MyBatisXmlQueryParser(() => builder, MyBatisReadingContext.For(new DummyEntityBuilder()))
+            .Parse(ConversionContentType.XML, $"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <mapper namespace="Shop.CustomerMapper">
+                  <select id="findRich" resultType="Customer">{sql}</select>
+                </mapper>
+                """);
+
+        return builder;
+    }
+
     private static string? BareSql(AbstractQueryBuilder builder)
         => builder.Build().SingleOrDefault(s => s.ContentType == ConversionContentType.SqlQuery)?.Content;
 
@@ -69,6 +90,21 @@ public class SharedSqlReadingTest
 
         Assert.NotNull(fromDapper);
         Assert.Equal(fromDapper, fromNative);
+    }
+
+    /// <summary>
+    /// The same proof extended to the third reader of the language (decision 084). Three
+    /// wrappers, two ecosystems, one grammar: what differs between them is where the text
+    /// comes from, which is the wrapper's business and not the grammar's.
+    /// </summary>
+    [Fact]
+    public void TheSameSqlReadFromAMyBatisMapperGivesTheSameQuery()
+    {
+        var fromDapper = BareSql(FromDapperUnit(Sql));
+        var fromMyBatis = BareSql(FromMyBatisMapper(Sql));
+
+        Assert.NotNull(fromDapper);
+        Assert.Equal(fromDapper, fromMyBatis);
     }
 
     /// <summary>

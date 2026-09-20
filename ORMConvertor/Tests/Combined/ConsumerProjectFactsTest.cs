@@ -36,13 +36,31 @@ public class ConsumerProjectFactsTest
     /// Namespaces an artifact declares, in any language it can declare one in: the C#
     /// declaration, the root of an NHibernate mapping and the Java package. Query artifacts
     /// declare none, which is why the assertions below read the entity and mapping artifacts.
+    ///
+    /// The namespace attribute of a MyBatis mapper is the odd one out: it names the mapper
+    /// itself - package and type together, the way MyBatis addresses a statement - so the
+    /// package is its leading part and the last segment is the artifact's own name
+    /// (decision 084). Read whole it would look like a namespace the tool invented.
     /// </summary>
-    private static List<string> DeclaredNamespaces(ConversionSource artifact) =>
-    [
-        .. Regex.Matches(artifact.Content, @"namespace\s+([\w.]+)\s*[;{]").Select(m => m.Groups[1].Value),
-        .. Regex.Matches(artifact.Content, "namespace=\"([^\"]+)\"").Select(m => m.Groups[1].Value),
-        .. Regex.Matches(artifact.Content, @"package\s+([\w.]+)\s*;").Select(m => m.Groups[1].Value),
-    ];
+    private static List<string> DeclaredNamespaces(ConversionSource artifact)
+    {
+        var isMyBatisMapper = artifact.Content.Contains("<mapper ", StringComparison.Ordinal);
+
+        return
+        [
+            .. Regex.Matches(artifact.Content, @"namespace\s+([\w.]+)\s*[;{]").Select(m => m.Groups[1].Value),
+            .. Regex.Matches(artifact.Content, "namespace=\"([^\"]+)\"")
+                .Select(m => isMyBatisMapper ? PackageOf(m.Groups[1].Value) : m.Groups[1].Value)
+                .Where(n => n.Length > 0),
+            .. Regex.Matches(artifact.Content, @"package\s+([\w.]+)\s*;").Select(m => m.Groups[1].Value),
+        ];
+    }
+
+    private static string PackageOf(string qualifiedName)
+    {
+        var lastDot = qualifiedName.LastIndexOf('.');
+        return lastDot < 0 ? string.Empty : qualifiedName[..lastDot];
+    }
 
     private static List<ConversionSource> MappingArtifacts(ConversionResult result) =>
     [

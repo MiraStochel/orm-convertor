@@ -19,4 +19,13 @@ public enum ORMEnum
     /// an implicit name is upper case and national character data has no annotation.
     /// </summary>
     EclipseLink = 50,
+
+    /// <summary>
+    /// MyBatis, the third framework of the Java ecosystem and the only one of the six that
+    /// stands on no framework layer at all (decision 084): its wrapper is built over two
+    /// layers of <em>language</em> - Java for the entity, T-SQL for the query - because
+    /// MyBatis implements no specification. It is also the first framework whose mapping is
+    /// bound to a statement rather than to a class.
+    /// </summary>
+    MyBatis = 60,
 }

@@ -9,6 +9,7 @@
     <ProjectReference Include="..\HibernateWrappers\HibernateWrappers.csproj" />
     <ProjectReference Include="..\JakartaPersistence\JakartaPersistence.csproj" />
     <ProjectReference Include="..\Model\Model.csproj" />
+    <ProjectReference Include="..\MyBatisWrappers\MyBatisWrappers.csproj" />
     <ProjectReference Include="..\NHibernateWrappers\NHibernateWrappers.csproj" />
   </ItemGroup>
 
