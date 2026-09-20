@@ -41,12 +41,14 @@ public class PaginationQueryTest
     private static string Artifact(AbstractQueryBuilder builder, ConversionContentType type)
         => builder.Build().Single(s => s.ContentType == type).Content;
 
-    private static void AssertRefused(AbstractQueryBuilder builder)
+    private static void AssertRefused(
+        AbstractQueryBuilder builder,
+        QueryFeature feature = QueryFeature.Pagination)
     {
         Assert.Empty(builder.Build());
         Assert.Contains(
             builder.Records,
-            r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Pagination);
+            r => r.Kind == ConversionRecordKind.Failure && r.Feature == feature);
     }
 
     // ---- Carried shapes ------------------------------------------------------------
@@ -255,8 +257,6 @@ public class PaginationQueryTest
     [Theory]
     [InlineData("SELECT TOP (10) PERCENT c.CustomerName FROM Sales.Customers AS c")]
     [InlineData("SELECT TOP (10) WITH TIES c.CustomerName FROM Sales.Customers AS c ORDER BY c.CustomerName")]
-    [InlineData("SELECT TOP (@n) c.CustomerName FROM Sales.Customers AS c")]
-    [InlineData("SELECT c.CustomerName FROM Sales.Customers AS c ORDER BY c.CustomerName OFFSET @skip ROWS")]
     public void SqlPaginationTheRepresentationCannotCarryRefusesTheArtifact(string sql)
         => AssertRefused(ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, sql));
 
@@ -266,11 +266,43 @@ public class PaginationQueryTest
         const string linq = """
         public void Query()
         {
-            var q = ctx.Customers.Take(pageSize).ToList();
+            var q = ctx.Customers.Take(-1).ToList();
         }
         """;
 
         AssertRefused(ParseLinq(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, linq, Customers()));
+    }
+
+    /// <summary>
+    /// Decision 083 gave the condition tree an operand for a parameter and deliberately left
+    /// the pagination without one: the instruction carries two numbers, not a tree
+    /// (decision 060), so giving it operands is a choice about the instruction and has an
+    /// open item of its own. The refusal is therefore still a refusal - but under the
+    /// parameter's own category and naming the clause, so the caller is told which limit it
+    /// met rather than being told the value is not a literal.
+    /// </summary>
+    [Theory]
+    [InlineData("SELECT TOP (@n) c.CustomerName FROM Sales.Customers AS c")]
+    [InlineData("SELECT c.CustomerName FROM Sales.Customers AS c ORDER BY c.CustomerName OFFSET @skip ROWS")]
+    public void AParameterizedSqlPaginationRefusesUnderTheParameterCategory(string sql)
+        => AssertRefused(
+            ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, sql),
+            QueryFeature.QueryParameter);
+
+    [Fact]
+    public void AParameterizedTakeRefusesUnderTheParameterCategory()
+    {
+        const string linq = """
+        public void Query()
+        {
+            var q = ctx.Customers.Take(pageSize).ToList();
+        }
+        """;
+
+        var builder = ParseLinq(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, linq, Customers());
+
+        AssertRefused(builder, QueryFeature.QueryParameter);
+        Assert.Contains(builder.Records, r => r.Reason.Contains("pageSize", StringComparison.Ordinal));
     }
 
     /// <summary>

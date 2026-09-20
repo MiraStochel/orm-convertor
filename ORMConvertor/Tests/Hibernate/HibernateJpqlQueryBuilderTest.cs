@@ -149,6 +149,12 @@ public class HibernateJpqlQueryBuilderTest
         Assert.StartsWith("select distinct c.CustomerName", Jpql(result));
     }
 
+    /// <summary>
+    /// The refused query is one whose parameter nothing can type: this conversion carries no
+    /// mapping, so the scalar does not follow from the comparison and the gate of
+    /// decision 083 refuses it. What is asserted here is the artifact the records name, not
+    /// the refusal itself.
+    /// </summary>
     [Fact]
     public void TheRecordsOfTheQueryBranchNameTheJavaArtifact()
     {

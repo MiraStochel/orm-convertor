@@ -1,3 +1,4 @@
+using Common.Naming;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model.AbstractRepresentation.Enums;
@@ -204,9 +205,15 @@ public class SqlQueryVisitor(
             return $"({string.Join(", ", operand.Values!.Select(Literal))})";
         }
 
-        var text = operand.IsColumn
-            ? (operand.Table is null ? operand.Property! : $"{operand.Table}.{operand.Property}")
-            : Literal(operand.Constant!);
+        // T-SQL decorates a parameter with @ and has no positional form, so a positional one
+        // arrives here already named after its order (decision 083). A collection parameter
+        // is written bare, without parentheses: that is the shape Dapper expands into a list
+        // before the statement reaches the server.
+        var text = operand.IsParameter
+            ? $"@{QueryParameterNaming.IdentifierFor(operand.Parameter!)}"
+            : operand.IsColumn
+                ? (operand.Table is null ? operand.Property! : $"{operand.Table}.{operand.Property}")
+                : Literal(operand.Constant!);
 
         return operand.Function is null ? text : $"{operand.Function}({text})";
     }

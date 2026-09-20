@@ -231,21 +231,51 @@ public class NHibernateHqlQueryParserTest
                  && r.Reason.Contains("null among the values"));
     }
 
+    /// <summary>
+    /// A named parameter comes back as itself (decision 083): the colon is HQL's decoration,
+    /// stripped on the way in and added on the way out, and the generated method carries the
+    /// value typed from the column the parameter is compared against.
+    /// </summary>
     [Fact]
-    public void AQueryParameterRefusesTheArtifactUnderItsOwnCategory()
+    public void ANamedParameterRoundTripsAndTypesTheMethod()
     {
         var builder = Parse(
             new NHibernateHqlQueryBuilder(),
             "from Customer c where c.CreditLimit > :limit",
             Customers());
 
-        // The representation has no parameter operand (decision 024 deferred it). The record
-        // names the parameter and carries the parameter's own category, so the caller learns
-        // the one thing that would help (decision 070).
+        var outputs = builder.Build();
+
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.Contains(
+            "where c.CreditLimit > :limit",
+            outputs.Single(s => s.ContentType == ConversionContentType.HqlQuery).Content);
+
+        var method = outputs.Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
+        Assert.Contains("(ISession session, decimal limit)", method);
+        Assert.Contains(".SetParameter(\"limit\", limit)", method);
+    }
+
+    /// <summary>
+    /// The scalar comes from the mapping IR, so a parameter with nothing typed on the other
+    /// side of the comparison refuses the artifact under its own category (decision 083).
+    /// </summary>
+    [Fact]
+    public void AParameterWithoutADerivableScalarRefusesTheArtifact()
+    {
+        var builder = Parse(
+            new NHibernateHqlQueryBuilder(),
+            "from Customer c where :floor > :ceiling",
+            Customers());
+
+        // Both parameters are reported: reading goes on so that every reason reaches the
+        // caller at once, which is how this parser has always answered.
         Assert.Empty(builder.Build());
-        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
-        Assert.Equal(QueryFeature.QueryParameter, record.Feature);
-        Assert.Contains(":limit", record.Reason);
+        Assert.Contains(
+            builder.Records,
+            r => r.Kind == ConversionRecordKind.Failure
+                 && r.Feature == QueryFeature.QueryParameter
+                 && r.Reason.Contains("floor"));
     }
 
     /// <summary>

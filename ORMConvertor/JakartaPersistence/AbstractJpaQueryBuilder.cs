@@ -2,6 +2,7 @@ using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Naming;
+using JavaEntityParsing;
 using Model;
 using Model.AbstractRepresentation;
 using Model.QueryInstructions;
@@ -30,6 +31,29 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
     /// <summary>Java methods are camelCase, so the name of a named query is spelled that way (decision 081).</summary>
     protected override string MethodName => QueryMethodNaming.CamelCase(QueryName, "query");
+
+    /// <summary>
+    /// JPQL is the one target language of the six that spells a positional parameter, so a
+    /// positional parameter stays positional here and is renamed nowhere (decision 083).
+    /// </summary>
+    protected override bool WritesPositionalParameters => true;
+
+    /// <summary>
+    /// The parameters as Java declarations, appended after the EntityManager (decision 083).
+    /// A scalar goes in as the primitive, because a comparison never tests NULL - that is its
+    /// own operator (decision 002) - and a collection as Collection of the wrapper, which is
+    /// what setParameter binds and the only element form a Java generic takes.
+    /// </summary>
+    private string JavaParameters()
+        => string.Concat(Parameters.Select(p =>
+        {
+            var element = LangType.Scalar(p.Type!.Value);
+            var type = p.IsCollection
+                ? $"Collection<{JavaTypeConvertor.ToString(element, forceWrapper: true)}>"
+                : JavaTypeConvertor.ToString(element);
+
+            return $", {type} {QueryParameterNaming.IdentifierFor(p)}";
+        }));
 
     protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
     {
@@ -318,12 +342,21 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         var returnType = typed ? $"TypedQuery<{resultEntity}>" : "Query";
         var resultClass = typed ? $", {resultEntity}.class" : string.Empty;
 
+        // setParameter takes the name or the order, whichever the query wrote, and takes a
+        // collection for a collection parameter without a call of its own (decision 083).
+        var binding = string.Concat(Parameters.Select(p =>
+        {
+            var name = QueryParameterNaming.IdentifierFor(p);
+            var key = p.IsPositional ? p.Position!.Value.ToString() : $"\"{p.Name}\"";
+            return $"\n        .setParameter({key}, {name})";
+        }));
+
         var method =
             $$""""
-            public static {{returnType}} {{MethodName}}(EntityManager em) {
+            public static {{returnType}} {{MethodName}}(EntityManager em{{JavaParameters()}}) {
                 return em.createQuery("""
             {{indented}}
-                    """{{resultClass}}){{pagination}};
+                    """{{resultClass}}){{binding}}{{pagination}};
             }
             """";
 

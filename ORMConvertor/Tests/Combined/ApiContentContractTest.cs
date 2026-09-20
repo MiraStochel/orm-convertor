@@ -52,18 +52,29 @@ public class ApiContentContractTest
     /// <summary>
     /// A query unit the source framework has no parser for would be a box the user fills and
     /// the tool then refuses - the interface must not ask for one.
+    ///
+    /// Each query unit is converted beside the framework's other units, because that is what
+    /// the interface asks for and what the user fills: a query whose filter carries a
+    /// parameter takes its scalar from the mapping IR (decision 083), so the query unit on
+    /// its own is not the question the interface poses.
     /// </summary>
     [Fact]
     public void EveryQueryUnitIsAskedInALanguageTheSourceCanRead()
     {
         foreach (var definition in RequiredContent.GetRequiredContent)
         {
+            var mapping = definition.Required
+                .Where(c => !c.ContentType.IsQuery())
+                .Select(c => new ConversionSource { Content = Samples.GetSamples[c.Id], ContentType = c.ContentType })
+                .ToList();
+
             foreach (var unit in definition.Required.Where(c => c.ContentType.IsQuery()))
             {
-                var sources = new List<ConversionSource>
-                {
+                List<ConversionSource> sources =
+                [
+                    .. mapping,
                     new() { Content = Samples.GetSamples[unit.Id], ContentType = unit.ContentType },
-                };
+                ];
 
                 var result = OrmConvertor.ConversionHandler.Convert(definition.OrmType, ORMEnum.Dapper, sources);
 

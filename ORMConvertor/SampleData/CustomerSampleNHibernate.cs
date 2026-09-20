@@ -1,4 +1,4 @@
-﻿using Model.AbstractRepresentation;
+using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 
 namespace SampleData;
@@ -44,12 +44,19 @@ public class CustomerSampleNHibernate
     /// NHibernate queries are read from two languages, told apart by the content type the
     /// unit declares (decisions 025 and 062): a LINQ chain rooted in
     /// session.Query&lt;T&gt;(), or bare HQL — the same shape the tool itself emits.
+    ///
+    /// Both spell the filter with a parameter (decision 083), which is the shape a real
+    /// query has: the value comes from the caller, the generated method of every target
+    /// declares it typed from the column it is compared against, and each target writes its
+    /// own placeholder and its own binding. The mapping states the table, which is what lets
+    /// the scalar be derived without reaching the catalog - a Dapper source cannot, and that
+    /// is why the sample lives here.
     /// </summary>
     public const string Query = """
-        public List<Customer> Query()
+        public List<Customer> Query(decimal minimumCreditLimit)
         {
             return session.Query<Customer>()
-               .Where(c => c.CreditLimit > 2000)
+               .Where(c => c.CreditLimit > minimumCreditLimit)
                .OrderByDescending(c => c.AccountOpenedDate)
                .ThenBy(c => c.CustomerName)
                .ToList();
@@ -58,7 +65,7 @@ public class CustomerSampleNHibernate
 
     public const string HqlQuery = """
         from Customer c
-        where c.CreditLimit > 2000
+        where c.CreditLimit > :minimumCreditLimit
         order by c.AccountOpenedDate desc, c.CustomerName asc
         """;
 

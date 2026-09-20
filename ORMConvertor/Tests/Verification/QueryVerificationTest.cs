@@ -268,6 +268,51 @@ public class QueryVerificationTest
     }
 
     /// <summary>
+    /// Levels 2 and 3 for a query parameter (decision 083): the generated method compiles
+    /// with the parameter EF Core captures in its lambda, and the provider translates the
+    /// chain into SQL that carries a placeholder rather than the value - which is the whole
+    /// point of a parameter. A collection parameter goes the same road through Contains.
+    /// </summary>
+    [Theory]
+    [InlineData("c.CreditLimit > minimum", "decimal minimum", "@")]
+    [InlineData("ids.Contains(c.CustomerId)", "IEnumerable<int> ids", "[CustomerId]")]
+    public void EFCoreTranslatesAGeneratedParameterizedQuery(string predicate, string declaration, string hallmark)
+    {
+        var parameterized = $$"""
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => {{predicate}})
+                    .ToList();
+            }
+            """;
+
+        var result = ConversionHandler.Convert(
+            ORMEnum.EFCore,
+            ORMEnum.EFCore,
+            [
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = parameterized, ContentType = ConversionContentType.CSharpQuery },
+            ]);
+
+        var method = Query(result, ConversionContentType.CSharpQuery);
+        Assert.Contains($"(DbContext ctx, {declaration})", method);
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_EFCore_Parameter_" + declaration.Split(' ')[^1],
+            method,
+            Entities(result),
+            GeneratedQueryCompiler.EFCoreConsumerReferences,
+            "using Microsoft.EntityFrameworkCore;");
+
+        var sql = EFCoreQueryAcceptance.Translate(compiled);
+
+        // The value never reaches the text: a scalar comes out as a placeholder, and a
+        // collection as whatever shape the provider expands it into over the same column.
+        Assert.Contains(hallmark, sql, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Level 3 for a full outer join (decision 065): EF Core 10 has no single operator for
     /// it, so the builder composes it from LeftJoin, Concat and RightJoin - and the provider
     /// renders the composition as LEFT JOIN ... UNION ALL ... RIGHT JOIN, which proves the
@@ -492,6 +537,60 @@ public class QueryVerificationTest
             Entities(result),
             GeneratedQueryCompiler.DapperConsumerReferences,
             "using System.Data;\nusing Dapper;");
+    }
+
+    /// <summary>
+    /// Level 2 for a query parameter on the two targets that bind it by a call
+    /// (decision 083): what proves the binding is the method compiling with it - Dapper's
+    /// anonymous object and NHibernate's SetParameter/SetParameterList, the latter over a
+    /// collection, which is the shape that would not compile if the parameter were declared
+    /// as a scalar.
+    /// </summary>
+    [Fact]
+    public void TheParameterizedQueryMethodsCompile()
+    {
+        const string parameterized = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => c.CreditLimit > minimum)
+                    .ToList();
+            }
+            """;
+
+        const string collectionParameterized = """
+            public void Query()
+            {
+                var q = ctx.Customers
+                    .Where(c => ids.Contains(c.CustomerId))
+                    .ToList();
+            }
+            """;
+
+        foreach (var (source, name) in new[] { (parameterized, "Scalar"), (collectionParameterized, "Collection") })
+        {
+            var units = new List<ConversionSource>
+            {
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
+                new() { Content = source, ContentType = ConversionContentType.CSharpQuery },
+            };
+
+            var dapper = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.Dapper, units);
+            GeneratedQueryCompiler.CompileOrFail(
+                "QueryVerification_Dapper_Parameter_" + name,
+                Query(dapper, ConversionContentType.CSharpQuery),
+                Entities(dapper),
+                GeneratedQueryCompiler.DapperConsumerReferences,
+                "using System.Data;\nusing Dapper;");
+
+            var nhibernate = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, units);
+            GeneratedQueryCompiler.CompileOrFail(
+                "QueryVerification_NHibernate_Parameter_" + name,
+                Query(nhibernate, ConversionContentType.CSharpQuery),
+                [],
+                GeneratedQueryCompiler.NHibernateConsumerReferences,
+                "using NHibernate;");
+        }
     }
 
     /// <summary>

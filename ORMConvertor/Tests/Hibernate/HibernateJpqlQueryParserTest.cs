@@ -226,14 +226,48 @@ public class HibernateJpqlQueryParserTest
         Assert.Contains("line 1, column", failure.Reason);
     }
 
+    /// <summary>
+    /// A parameter whose scalar nothing states and nothing implies refuses the artifact
+    /// under its own category (decision 083): a method parameter has to have a type, and
+    /// guessing one would bind a different value than the source compared.
+    /// </summary>
     [Fact]
-    public void AParameterRefusesUnderItsOwnCategory()
+    public void AParameterWithoutADerivableScalarRefusesUnderItsOwnCategory()
     {
-        var builder = Parse(new HibernateJpqlQueryBuilder(), "select c from Customer c where c.CreditLimit > :limit", Customers());
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select c from Customer c where :floor > :ceiling", Customers());
 
         Assert.Empty(builder.Build());
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.QueryParameter && r.Reason.Contains(":limit"));
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.QueryParameter && r.Reason.Contains("floor"));
     }
+
+    /// <summary>
+    /// The round-trip identity of this parser holds over a parameter too: JPQL is the one
+    /// target language with a positional form, so both spellings come back unchanged
+    /// (decision 083).
+    /// </summary>
+    [Fact]
+    public void ANamedParameterRoundTrips()
+        => AssertFixedPoint("""
+            select c
+            from Customer c
+            where c.CreditLimit > :limit
+            """, Customers());
+
+    [Fact]
+    public void APositionalParameterRoundTrips()
+        => AssertFixedPoint("""
+            select c
+            from Customer c
+            where c.CreditLimit > ?1
+            """, Customers());
+
+    [Fact]
+    public void ACollectionParameterRoundTrips()
+        => AssertFixedPoint("""
+            select c
+            from Customer c
+            where c.CustomerName in :names
+            """, Customers());
 
     [Fact]
     public void AnAssociationJoinRefuses()

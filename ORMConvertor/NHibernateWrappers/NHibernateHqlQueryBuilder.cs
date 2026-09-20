@@ -266,14 +266,25 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
         var hql = string.Join("\n", parts.Where(p => p.Length > 0).Select(p => p.ToString()));
         var indented = string.Join("\n", hql.Split('\n').Select(line => "        " + line));
 
+        // A list is bound by its own call, because NHibernate expands it into as many
+        // placeholders as the list has members (decision 083). The binding comes before the
+        // pagination, which is the call the slice goes on.
+        var binding = string.Concat(Parameters.Select(p =>
+        {
+            var name = QueryParameterNaming.IdentifierFor(p);
+            return p.IsCollection
+                ? $"\n        .SetParameterList(\"{name}\", {name})"
+                : $"\n        .SetParameter(\"{name}\", {name})";
+        }));
+
         var method =
             $$""""
-            public static IQuery {{MethodName}}(ISession session)
+            public static IQuery {{MethodName}}(ISession session{{CSharpParameters()}})
             {
                 return session.CreateQuery(
                     """
             {{indented}}
-                    """){{artifact.Pagination}};
+                    """){{binding}}{{artifact.Pagination}};
             }
             """";
 

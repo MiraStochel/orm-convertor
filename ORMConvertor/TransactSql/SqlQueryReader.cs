@@ -289,7 +289,7 @@ public class SqlQueryReader(
 
             if (ReadRowCount(top.Expression) is not { } topCount)
             {
-                ReportUnreadableRowCount("TOP");
+                ReportUnreadableRowCount("TOP", top.Expression);
                 return;
             }
 
@@ -300,7 +300,7 @@ public class SqlQueryReader(
         {
             if (ReadRowCount(clause.OffsetExpression) is not { } skipped)
             {
-                ReportUnreadableRowCount("OFFSET");
+                ReportUnreadableRowCount("OFFSET", clause.OffsetExpression);
                 return;
             }
 
@@ -310,7 +310,7 @@ public class SqlQueryReader(
             {
                 if (ReadRowCount(clause.FetchExpression) is not { } fetched)
                 {
-                    ReportUnreadableRowCount("FETCH");
+                    ReportUnreadableRowCount("FETCH", clause.FetchExpression);
                     return;
                 }
 
@@ -321,11 +321,32 @@ public class SqlQueryReader(
         queryBuilder.Paginate(offset, limit);
     }
 
-    private void ReportUnreadableRowCount(string clause)
-        => Report(
+    /// <summary>
+    /// A row count the representation cannot hold. A parameter is named under its own
+    /// category (decision 083): the pagination instruction carries two numbers and not a
+    /// tree, so giving it operands is a choice about the instruction and has an open item
+    /// of its own - the refusal says which clause met one rather than calling it a
+    /// non-literal.
+    /// </summary>
+    private void ReportUnreadableRowCount(string clause, ScalarExpression? expression)
+    {
+        if (Unparenthesize(expression) is VariableReference parameter)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The {clause} value is the parameter '{parameter.Name}', and the pagination of the query representation carries two numbers rather than operands; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return;
+        }
+
+        Report(
             ConversionRecordKind.Failure,
             $"The {clause} value is not an integer literal, so the pagination cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
             QueryFeature.Pagination);
+    }
+
+    private static ScalarExpression? Unparenthesize(ScalarExpression? expression)
+        => expression is ParenthesisExpression parenthesis ? Unparenthesize(parenthesis.Expression) : expression;
 
     /// <summary>A negative count arrives as a unary minus, which is not a literal here.</summary>
     private static long? ReadRowCount(ScalarExpression? expression) => expression switch
@@ -793,12 +814,11 @@ public class SqlQueryReader(
             case ScalarSubquery scalar:
                 return QueryOperand.Nested(ReadSubQueryOperand(scalar.QueryExpression));
 
-            // A parameter has no operand shape in the model (decision 024 deferred it); it
-            // sinks the condition and is named, so that the refusal says what was met
-            // rather than "a construct" (decision 070).
+            // A T-SQL variable in operand position is a parameter of the query: the value
+            // the caller binds (decision 083). The @ is T-SQL's decoration and is stripped,
+            // the way the quotes of a string literal are - the model carries the bare name.
             case VariableReference variable:
-                unread ??= ($"the parameter '{variable.Name}', for which the query representation has no operand", QueryFeature.QueryParameter);
-                return null;
+                return QueryOperand.Bound(QueryParameter.Named(variable.Name.TrimStart('@')));
 
             default:
                 return null;
@@ -808,10 +828,11 @@ public class SqlQueryReader(
     /// <summary>
     /// Reads the values IN enumerates into a list operand (decision 074). Every element has
     /// to be a literal, because the list carries values the query itself states: a variable
-    /// is a parameter and takes that road (decision 070), a NULL is no value the model
-    /// carries (decision 002) and would make NOT IN mean different things in SQL and in
-    /// LINQ, and a column or a function is no value at all. Each of them sinks the
-    /// condition, named, for the enclosing clause to refuse.
+    /// is a parameter, which decision 083 keeps out of the list even though it gave it an
+    /// operand of its own, a NULL is no value the model carries (decision 002) and would
+    /// make NOT IN mean different things in SQL and in LINQ, and a column or a function is
+    /// no value at all. Each of them sinks the condition, named, for the enclosing clause to
+    /// refuse.
     /// </summary>
     private QueryOperand? ReadValueList(IList<ScalarExpression> elements)
     {
@@ -829,6 +850,14 @@ public class SqlQueryReader(
             if (operand is null)
             {
                 unread ??= ($"'{Print(element)}' among the values of an IN list, which is not a literal", null);
+                return null;
+            }
+
+            if (operand.IsParameter)
+            {
+                unread ??= (
+                    $"the parameter '{Print(element)}' among the values of an IN list, which carries only values the query itself states",
+                    QueryFeature.QueryParameter);
                 return null;
             }
 

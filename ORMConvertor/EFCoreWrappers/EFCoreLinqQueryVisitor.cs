@@ -1,3 +1,4 @@
+using Common.Naming;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model.AbstractRepresentation;
@@ -150,7 +151,15 @@ public sealed class EFCoreLinqQueryVisitor(
                 return $"{ValueList(cond.Right)}.Contains({left})";
             }
 
-            report(ConversionRecordKind.Failure, "An IN whose right side is neither a subquery nor a list of values has no LINQ form; the query was not generated.", QueryFeature.Filtering);
+            // A collection parameter turns around the same way (decision 083): the sequence
+            // the caller binds is the receiver, which is the shape the source wrote in the
+            // first place when the source was LINQ.
+            if (cond.Right.IsParameter && cond.Right.Parameter!.IsCollection)
+            {
+                return $"{QueryParameterNaming.IdentifierFor(cond.Right.Parameter!)}.Contains({left})";
+            }
+
+            report(ConversionRecordKind.Failure, "An IN whose right side is neither a subquery, a list of values nor a collection parameter has no LINQ form; the query was not generated.", QueryFeature.Filtering);
             return string.Empty;
         }
 
@@ -295,9 +304,13 @@ public sealed class EFCoreLinqQueryVisitor(
     public string Operand(QueryOperand operand)
         => operand.IsValueList
             ? ValueList(operand)
-            : operand.IsConstant
-                ? Literal(operand.Constant!)
-                : Column(operand.Table, operand.Property!, operand.Function);
+            : operand.IsParameter
+                // LINQ has no placeholder: the parameter of the generated method is captured
+                // by the lambda and written under its own name (decision 083).
+                ? QueryParameterNaming.IdentifierFor(operand.Parameter!)
+                : operand.IsConstant
+                    ? Literal(operand.Constant!)
+                    : Column(operand.Table, operand.Property!, operand.Function);
 
     /// <summary>
     /// Renders a column reference in the current scope: a plain member access, a group key,

@@ -113,14 +113,21 @@ public class DualUnitTest
             ORMEnum.Dapper,
             UnitsWith(
                 Query("findAll", "select c.CustomerName from Customer c"),
-                // A query parameter is refused at reading (decision 070), so this one leaves
-                // a record and no artifact - and the record has to say which query it was.
-                Query("byLimit", "select c.CustomerName from Customer c where c.CreditLimit > :limit")));
+                // A parameter compared against another parameter has no scalar to take, so
+                // the gate of decision 083 refuses it: this query leaves a record and no
+                // artifact - and the record has to say which query it was.
+                Query("byLimit", "select c.CustomerName from Customer c where :floor > :ceiling")));
 
-        var refused = Assert.Single(result.Records, r => r.Kind == ConversionRecordKind.Failure);
+        // The gate reports each unusable parameter, so the claim is about every record of
+        // the refusal rather than about one: each of them names the query it came from.
+        var refused = result.Records.Where(r => r.Kind == ConversionRecordKind.Failure).ToList();
 
-        Assert.Equal("byLimit", refused.Query);
-        Assert.Equal("customer.hbm.xml", refused.Unit);
+        Assert.NotEmpty(refused);
+        Assert.All(refused, r =>
+        {
+            Assert.Equal("byLimit", r.Query);
+            Assert.Equal("customer.hbm.xml", r.Unit);
+        });
 
         // The neighbour is untouched: a fresh builder per query is what keeps one query's
         // refusal from reaching the next one.

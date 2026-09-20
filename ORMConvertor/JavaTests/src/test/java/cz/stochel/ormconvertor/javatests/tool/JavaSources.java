@@ -50,6 +50,13 @@ public final class JavaSources {
      * The query method inside the class and the imports a consumer project would give it.
      * The class goes into the package of the entities so that the entity the method names
      * is in scope without an import of its own.
+     *
+     * <p>The types a parameter of the generated method can be declared with are imported
+     * too (decision 083): the scalar vocabulary maps onto {@code java.math} and
+     * {@code java.time} beside the primitives, and a collection parameter is declared as a
+     * {@code Collection}. Unused imports are legal Java, and leaving them out would make a
+     * parameterized query fail to compile for a reason that is the consumer project's, not
+     * the artifact's.
      */
     public static String wrapQuery(String packageName, String className, String method) {
         StringBuilder source = new StringBuilder();
@@ -62,6 +69,14 @@ public final class JavaSources {
                 .append("import jakarta.persistence.EntityManager;").append(System.lineSeparator())
                 .append("import jakarta.persistence.Query;").append(System.lineSeparator())
                 .append("import jakarta.persistence.TypedQuery;").append(System.lineSeparator())
+                .append("import java.math.BigDecimal;").append(System.lineSeparator())
+                .append("import java.time.Duration;").append(System.lineSeparator())
+                .append("import java.time.LocalDate;").append(System.lineSeparator())
+                .append("import java.time.LocalDateTime;").append(System.lineSeparator())
+                .append("import java.time.LocalTime;").append(System.lineSeparator())
+                .append("import java.time.OffsetDateTime;").append(System.lineSeparator())
+                .append("import java.util.Collection;").append(System.lineSeparator())
+                .append("import java.util.UUID;").append(System.lineSeparator())
                 .append(System.lineSeparator())
                 .append("public class ").append(className).append(" {").append(System.lineSeparator())
                 .append(method).append(System.lineSeparator())

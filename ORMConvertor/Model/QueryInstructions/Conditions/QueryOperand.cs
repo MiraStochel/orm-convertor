@@ -5,7 +5,8 @@ namespace Model.QueryInstructions.Conditions;
 /// optional table qualifier — or a constant, optionally wrapped in an aggregate function;
 /// or a nested subquery (decision 061), which is the third operand shape the paper's
 /// condition-tree grammar names; or a list of values (decision 074), the fourth shape,
-/// which stands only as the right side of IN.
+/// which stands only as the right side of IN; or a parameter (decision 083), the fifth -
+/// a value the query names and the caller supplies.
 ///
 /// Both sides of a comparison are this same type, so they cannot drift apart the way two
 /// parallel quadruples of loose strings did. Instances come only from the factory methods,
@@ -20,7 +21,8 @@ public sealed class QueryOperand
         QueryConstant? constant,
         string? function,
         SubQueryInstruction? subQuery,
-        IReadOnlyList<QueryConstant>? values)
+        IReadOnlyList<QueryConstant>? values,
+        QueryParameter? parameter)
     {
         Table = table;
         Property = property;
@@ -28,6 +30,7 @@ public sealed class QueryOperand
         Function = function;
         SubQuery = subQuery;
         Values = values;
+        Parameter = parameter;
     }
 
     /// <summary>Table or alias qualifying <see cref="Property"/>; null when unqualified.</summary>
@@ -51,6 +54,15 @@ public sealed class QueryOperand
     /// </summary>
     public IReadOnlyList<QueryConstant>? Values { get; }
 
+    /// <summary>
+    /// The parameter standing in the operand's place (decision 083); null otherwise. One
+    /// field, the way a constant is one field, rather than four loose ones: what holds only
+    /// of a parameter - a name against an order, collectionness - stays together, and
+    /// <see cref="IQueryVisitor"/> does not change, which is the surface S1 promises to
+    /// keep stable for the seventh framework.
+    /// </summary>
+    public QueryParameter? Parameter { get; }
+
     public bool IsColumn => Property is not null;
 
     public bool IsConstant => Constant is not null;
@@ -59,22 +71,24 @@ public sealed class QueryOperand
 
     public bool IsValueList => Values is not null;
 
+    public bool IsParameter => Parameter is not null;
+
     public static QueryOperand Column(string? table, string property, string? function = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(property);
-        return new QueryOperand(table, property, null, function, null, null);
+        return new QueryOperand(table, property, null, function, null, null, null);
     }
 
     public static QueryOperand Value(QueryConstant constant, string? function = null)
     {
         ArgumentNullException.ThrowIfNull(constant);
-        return new QueryOperand(null, null, constant, function, null, null);
+        return new QueryOperand(null, null, constant, function, null, null, null);
     }
 
     public static QueryOperand Nested(SubQueryInstruction subQuery)
     {
         ArgumentNullException.ThrowIfNull(subQuery);
-        return new QueryOperand(null, null, null, null, subQuery, null);
+        return new QueryOperand(null, null, null, null, subQuery, null, null);
     }
 
     public static QueryOperand ValueList(IReadOnlyList<QueryConstant> values)
@@ -85,14 +99,29 @@ public sealed class QueryOperand
             throw new ArgumentException("A list of values carries at least one value.", nameof(values));
         }
 
-        return new QueryOperand(null, null, null, null, null, values);
+        return new QueryOperand(null, null, null, null, null, values, null);
+    }
+
+    /// <summary>
+    /// A parameter in the operand's place (decision 083) - the value the caller binds.
+    /// Named for the verb every target spells rather than for the field it fills, because
+    /// the field is <see cref="Parameter"/>, after <see cref="Constant"/>, and a factory
+    /// cannot share a name with a property. Takes an aggregate function for the same reason
+    /// a constant does: a parameter stands wherever a constant stands.
+    /// </summary>
+    public static QueryOperand Bound(QueryParameter parameter, string? function = null)
+    {
+        ArgumentNullException.ThrowIfNull(parameter);
+        return new QueryOperand(null, null, null, function, null, null, parameter);
     }
 
     public override string ToString() => IsSubQuery
         ? "(subquery)"
         : IsValueList
             ? $"({string.Join(", ", Values!.Select(v => v.Text))})"
-            : IsColumn
-                ? (Table is null ? Property! : $"{Table}.{Property}")
-                : Constant!.Text;
+            : IsParameter
+                ? Parameter!.ToString()
+                : IsColumn
+                    ? (Table is null ? Property! : $"{Table}.{Property}")
+                    : Constant!.Text;
 }

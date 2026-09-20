@@ -140,9 +140,27 @@ public sealed class JpqlQueryVisitor(
     private string Operand(QueryOperand operand)
         => operand.IsValueList
             ? $"({string.Join(", ", operand.Values!.Select(Literal))})"
-            : operand.IsConstant
-                ? Wrap(Literal(operand.Constant!), operand.Function)
-                : Column(operand.Table, operand.Property!, operand.Function);
+            : operand.IsParameter
+                ? Parameter(operand.Parameter!, operand.Function)
+                : operand.IsConstant
+                    ? Wrap(Literal(operand.Constant!), operand.Function)
+                    : Column(operand.Table, operand.Property!, operand.Function);
+
+    /// <summary>
+    /// A parameter in JPQL (decision 083). The one target language with a positional form,
+    /// so a positional parameter keeps its order here instead of being renamed. A collection
+    /// parameter is written without parentheses: the grammar of Jakarta Persistence 3.2
+    /// puts a collection-valued input parameter in IN's place itself, and parentheses there
+    /// would make it one item of a list.
+    /// </summary>
+    private static string Parameter(QueryParameter parameter, string? function)
+    {
+        var placeholder = parameter.IsPositional
+            ? $"?{parameter.Position}"
+            : $":{parameter.Name}";
+
+        return parameter.IsCollection ? placeholder : Wrap(placeholder, function);
+    }
 
     private static string Wrap(string value, string? function)
         => function is null ? value : $"{function.ToLowerInvariant()}({value})";

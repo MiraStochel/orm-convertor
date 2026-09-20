@@ -213,6 +213,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             }
 
             var argument = step.Node.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+
+            // The pagination instruction carries two numbers rather than a tree, so a
+            // parameter has no place in it (decision 083); it is named under its own
+            // category, because that limit has an open item of its own.
+            if (argument is IdentifierNameSyntax fromScope)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The argument of {step.Name}() is the parameter '{fromScope.Identifier.Text}' from the enclosing scope, and the pagination of the query representation carries two numbers rather than operands; no artifact was generated.",
+                    QueryFeature.QueryParameter);
+                return;
+            }
+
             if (argument is not LiteralExpressionSyntax literal || literal.Token.Value is not int value || value < 0)
             {
                 Report(
@@ -897,9 +910,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// shape the Where handler reads. A Contains whose receiver is an inline collection of
     /// literals - <c>new[] { 1, 2, 3 }</c>, <c>new int[] { … }</c>, <c>new List&lt;int&gt;
     /// { … }</c> - is IN over a list of values (decision 074); a receiver that is a bare
-    /// identifier is a collection from the enclosing scope, which is a parameter (decision
-    /// 070). Any other receiver - a member access, a string - is no subquery and no list and
-    /// stays unread.
+    /// identifier is a collection from the enclosing scope, which is a collection parameter
+    /// (decision 083). Any other receiver - a member access, a string - is no subquery and
+    /// no list and stays unread.
     /// </summary>
     private ConditionNode? ReadSubQueryCondition(InvocationExpressionSyntax invocation)
     {
@@ -928,10 +941,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     }
                     else if (member.Expression is IdentifierNameSyntax collection)
                     {
-                        unread ??= (
-                            $"the collection '{collection.Identifier.Text}' from the enclosing scope, for which the query representation has no parameter operand",
-                            QueryFeature.QueryParameter);
-                        return null;
+                        right = QueryOperand.Bound(
+                            QueryParameter.Named(collection.Identifier.Text, isCollection: true));
                     }
                     else
                     {
@@ -977,7 +988,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// and an object creation with a collection initializer. Returns false when the
     /// expression is none of them; returns true with a null operand when it is one but an
     /// element sinks it - a null literal is no value the model carries (decision 002), a
-    /// bare identifier is a value from the enclosing scope, so a parameter (decision 070),
+    /// bare identifier is a value from the enclosing scope, so a parameter, which decision
+    /// 083 keeps out of the list even though it gave it an operand of its own,
     /// and an empty initializer is a predicate no target writes as a filter.
     /// </summary>
     private bool TryReadInlineCollection(ExpressionSyntax expression, out QueryOperand? values)
@@ -1013,9 +1025,15 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return true;
             }
 
-            // A bare identifier among the elements goes through ReadOperand's own road: a
-            // value from the enclosing scope, so a parameter (decision 070).
             var operand = ReadOperand(element);
+            if (operand is not null && operand.IsParameter)
+            {
+                unread ??= (
+                    $"the parameter '{element}' from the enclosing scope among the values of an inline collection, which carries only values the query itself states",
+                    QueryFeature.QueryParameter);
+                return true;
+            }
+
             if (operand is null || !operand.IsConstant || operand.Function is not null)
             {
                 unread ??= ($"'{element}' among the values of an inline collection, which is not a literal", null);
@@ -1121,17 +1139,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     /// <summary>
     /// A bare identifier in operand position is a value captured from the enclosing scope -
-    /// the LINQ form of a query parameter. The model has no operand for it (decision 024
-    /// deferred it), so it sinks the condition and is named, for the enclosing clause to
-    /// refuse under the parameter's own category (decision 070).
+    /// the LINQ form of a query parameter, and the one form that needs no decoration
+    /// stripping, because C# writes the name itself (decision 083). What the value is, the
+    /// chain does not say; the builder template derives the scalar from the other side of
+    /// the comparison.
     /// </summary>
-    private QueryOperand? ValueFromScope(IdentifierNameSyntax identifier)
-    {
-        unread ??= (
-            $"the value '{identifier.Identifier.Text}' from the enclosing scope, for which the query representation has no parameter operand",
-            QueryFeature.QueryParameter);
-        return null;
-    }
+    private static QueryOperand ValueFromScope(IdentifierNameSyntax identifier)
+        => QueryOperand.Bound(QueryParameter.Named(identifier.Identifier.Text));
 
     /// <summary>
     /// Reads a terminal aggregate over a query root - <c>ctx.Set&lt;T&gt;().Max(x =&gt;

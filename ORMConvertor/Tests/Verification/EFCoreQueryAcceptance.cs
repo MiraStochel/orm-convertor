@@ -33,7 +33,14 @@ internal static class EFCoreQueryAcceptance
         using var context = new QueryVerificationContext(options, entityTypes);
 
         var method = FindQueryMethod(assembly);
-        var queryable = method.Invoke(null, [context]) as IQueryable
+
+        // A query with parameters declares them after the context (decision 083). Translation
+        // is about the expression tree, not about the values, so each one is bound to its
+        // default: the provider renders a parameter placeholder whatever value stands there,
+        // and picking a value here would be a measurement, which this level is not.
+        object?[] arguments = [context, .. method.GetParameters().Skip(1).Select(DefaultOf)];
+
+        var queryable = method.Invoke(null, arguments) as IQueryable
             ?? throw new InvalidOperationException("The generated query method did not return an IQueryable.");
 
         return queryable.ToQueryString();
@@ -41,18 +48,42 @@ internal static class EFCoreQueryAcceptance
 
     /// <summary>
     /// The artifact's shape is part of its contract (decision 027): a public static method
-    /// with a single DbContext parameter returning IQueryable. AdvisorBenchmarking looks for
-    /// the same shape, which is why the builder emits it rather than a method returning a list.
+    /// whose first parameter is a DbContext and which returns IQueryable. The parameters of
+    /// the query follow it (decision 083), so the count is not fixed - only the first
+    /// parameter is. AdvisorBenchmarking looks for the same shape, except that it still
+    /// insists on exactly one parameter and therefore does not find a parameterized query;
+    /// that is an open item, not a rule of the artifact.
     /// </summary>
     private static MethodInfo FindQueryMethod(Assembly assembly)
         => assembly.GetTypes()
                .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static))
                .FirstOrDefault(method =>
                    typeof(IQueryable).IsAssignableFrom(method.ReturnType)
-                   && method.GetParameters() is [{ } parameter]
+                   && method.GetParameters() is [{ } parameter, ..]
                    && typeof(DbContext).IsAssignableFrom(parameter.ParameterType))
            ?? throw new InvalidOperationException(
                "No public static method taking a DbContext and returning IQueryable was generated.");
+
+    /// <summary>
+    /// A value to bind a query parameter to. A scalar takes its type's default, because the
+    /// expression tree is the same whatever number stands there. A collection takes one
+    /// element instead of none: EF Core short-circuits an empty sequence without translating
+    /// the comparison, so an empty one would make the verdict vacuous.
+    /// </summary>
+    private static object? DefaultOf(ParameterInfo parameter)
+    {
+        var type = parameter.ParameterType;
+
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+        {
+            var element = type.GetGenericArguments()[0];
+            var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(element))!;
+            list.Add(element.IsValueType ? Activator.CreateInstance(element) : null);
+            return list;
+        }
+
+        return type.IsValueType ? Activator.CreateInstance(type) : null;
+    }
 
     private sealed class QueryVerificationContext(
         DbContextOptions<QueryVerificationContext> options,

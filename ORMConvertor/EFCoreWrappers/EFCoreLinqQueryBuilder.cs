@@ -595,7 +595,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         var returnType = elementEntity is not null ? $"IQueryable<{elementEntity}>" : "IQueryable";
         var method =
             $$"""
-            public static {{returnType}} {{MethodName}}(DbContext ctx)
+            public static {{returnType}} {{MethodName}}(DbContext ctx{{CSharpParameters()}})
             {
                 return {{chain}};
             }
@@ -697,9 +697,11 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             ? $"IQueryable<{artifact.ResultEntity}>"
             : "IQueryable";
 
+        // EF Core needs no binding call: the parameters of the method are captured by the
+        // lambdas of the chain, which is how the source wrote them too (decision 083).
         var method =
             $$"""
-            public static {{returnType}} {{MethodName}}(DbContext ctx)
+            public static {{returnType}} {{MethodName}}(DbContext ctx{{CSharpParameters()}})
             {
                 return {{chain}};
             }

@@ -217,27 +217,31 @@ public class QueryFaithfulnessTest
 
     /* ---- the rule holds on the reading side too (decision 070) ---------------------- */
 
+    /// <summary>
+    /// A parameter is carried since decision 083, but only where the generated method can
+    /// type it: the scalar comes from the mapping IR through the other side of the
+    /// comparison, and a conversion given no mapping has nothing to take it from. Every
+    /// parser then ends at the same refusal, under the parameter's own category and naming
+    /// the parameter - the reading side of the line decision 053 drew for the builders. What
+    /// the parameter does when it can be typed is <see cref="QueryParameterTest"/>.
+    /// </summary>
     [Fact]
-    public void AQueryParameterRefusesTheArtifactInEveryParser()
+    public void AParameterNoMappingCanTypeRefusesTheArtifactInEveryParser()
     {
-        // The representation has no operand for a parameter (decision 024 deferred it), and
-        // a query emitted without the filter that names one returns different rows. Each
-        // parser refuses under the parameter's own category and names it, so the caller
-        // learns the one thing that would help.
-        var byParser = new (string Name, Action<AbstractQueryBuilder> Parse)[]
+        var byParser = new Action<AbstractQueryBuilder>[]
         {
-            ("@limit", b => new DapperSqlQueryParser(() => b).Parse(
+            b => new DapperSqlQueryParser(() => b).Parse(
                 ConversionContentType.SqlQuery,
-                "SELECT c.Id FROM Customers c WHERE c.CreditLimit > @limit")),
-            (":limit", b => new NHibernateHqlQueryParser(() => b).Parse(
+                "SELECT c.Id FROM Customers c WHERE c.CreditLimit > @limit"),
+            b => new NHibernateHqlQueryParser(() => b).Parse(
                 ConversionContentType.HqlQuery,
-                "from Customer c where c.CreditLimit > :limit")),
-            ("limit", b => new EFCoreLinqQueryParser(() => b).Parse(
+                "from Customer c where c.CreditLimit > :limit"),
+            b => new EFCoreLinqQueryParser(() => b).Parse(
                 ConversionContentType.CSharpQuery,
-                "public void Query() { var q = ctx.Customers.Where(c => c.CreditLimit > limit).ToList(); }")),
+                "public void Query() { var q = ctx.Customers.Where(c => c.CreditLimit > limit).ToList(); }"),
         };
 
-        foreach (var (name, parse) in byParser)
+        foreach (var parse in byParser)
         {
             var builder = new DapperSqlQueryBuilder();
             parse(builder);
@@ -245,7 +249,7 @@ public class QueryFaithfulnessTest
             Assert.Empty(builder.Build());
             var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
             Assert.Equal(QueryFeature.QueryParameter, record.Feature);
-            Assert.Contains(name, record.Reason, StringComparison.Ordinal);
+            Assert.Contains("limit", record.Reason, StringComparison.Ordinal);
         }
     }
 

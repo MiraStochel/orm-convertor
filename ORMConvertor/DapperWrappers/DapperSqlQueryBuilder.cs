@@ -1,3 +1,4 @@
+using Common.Naming;
 using AbstractWrappers.Descriptors;
 using Model;
 using TransactSql;
@@ -23,14 +24,20 @@ public class DapperSqlQueryBuilder : AbstractSqlQueryBuilder
         var entity = resultEntity ?? "object";
         var indented = string.Join("\n", sql.Split('\n').Select(line => "        " + line));
 
+        // Dapper binds from an anonymous object whose members are the placeholders of the
+        // text, so the binding is the parameter list spelled once more (decision 083).
+        var binding = Parameters.Count == 0
+            ? string.Empty
+            : $", new {{ {string.Join(", ", Parameters.Select(QueryParameterNaming.IdentifierFor))} }}";
+
         var method =
             $$""""
-            public static List<{{entity}}> {{MethodName}}(IDbConnection connection)
+            public static List<{{entity}}> {{MethodName}}(IDbConnection connection{{CSharpParameters()}})
             {
                 return connection.Query<{{entity}}>(
                     """
             {{indented}}
-                    """).ToList();
+                    """{{binding}}).ToList();
             }
             """";
 

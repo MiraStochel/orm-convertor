@@ -1,5 +1,6 @@
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Convertors;
 using Common.Naming;
 using Model;
 using Model.AbstractRepresentation;
@@ -390,6 +391,16 @@ public abstract class AbstractQueryBuilder
 
         var body = Unwrap(instructions);
 
+        // The parameters of the whole query, resolved once and before anything is rendered
+        // (decision 083): a scope that never gets normalized - a subquery operand of a
+        // condition the gate below refuses - must not be able to leave a parameter out of
+        // the signature, and the order of the signature must not depend on the order the
+        // text happens to be assembled in (S2).
+        if (!ResolveParameters(body))
+        {
+            return [];
+        }
+
         // DISTINCT over a set operation is whatever the identity says it is (decision 073).
         if (body.Count > 1 && body[0] is SetOperationInstruction over && body.Skip(1).All(i => i is DistinctInstruction))
         {
@@ -659,6 +670,18 @@ public abstract class AbstractQueryBuilder
                     return false;
                 }
 
+                // A collection parameter is bound to the same position and by the same rule
+                // (decision 083): it is a list of values the caller writes instead of the
+                // query, so it stands where a list of values stands and nowhere else.
+                if (comparison.Left.Parameter?.IsCollection == true)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        "A collection parameter stands only as the right side of IN, not as the left operand of a comparison; no artifact was generated.",
+                        QueryFeature.QueryParameter);
+                    return false;
+                }
+
                 if (comparison.Right is null)
                 {
                     Report(
@@ -682,9 +705,26 @@ public abstract class AbstractQueryBuilder
                         return ValuesShareAScalar(comparison.Right.Values!);
                     }
 
+                    // The third right side, since decision 083: a collection parameter, whose
+                    // elements the caller supplies. A scalar parameter is not one - it binds a
+                    // single value, which IN has no form for.
+                    if (comparison.Right.IsParameter)
+                    {
+                        if (comparison.Right.Parameter!.IsCollection)
+                        {
+                            return true;
+                        }
+
+                        Report(
+                            ConversionRecordKind.Failure,
+                            "An IN whose right side is a parameter binding a single value has no representation; no artifact was generated.",
+                            QueryFeature.QueryParameter);
+                        return false;
+                    }
+
                     Report(
                         ConversionRecordKind.Failure,
-                        "An IN whose right side is neither a subquery nor a list of values has no representation; no artifact was generated.",
+                        "An IN whose right side is neither a subquery, a list of values nor a collection parameter has no representation; no artifact was generated.",
                         QueryFeature.Filtering);
                     return false;
                 }
@@ -695,6 +735,15 @@ public abstract class AbstractQueryBuilder
                         ConversionRecordKind.Failure,
                         $"A list of values stands only as the right side of IN; as the operand of {comparison.Operator} it cannot be rendered; no artifact was generated.",
                         QueryFeature.Filtering);
+                    return false;
+                }
+
+                if (comparison.Right.Parameter?.IsCollection == true)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"A collection parameter stands only as the right side of IN; as the operand of {comparison.Operator} it cannot be rendered; no artifact was generated.",
+                        QueryFeature.QueryParameter);
                     return false;
                 }
 
@@ -755,6 +804,370 @@ public abstract class AbstractQueryBuilder
 
         static bool IsInteger(ScalarType scalar)
             => scalar is ScalarType.Byte or ScalarType.Short or ScalarType.Int or ScalarType.Long;
+    }
+
+    /* ---- parameters (decision 083) -------------------------------------------------- */
+
+    private readonly List<QueryParameter> parameters = [];
+
+    /// <summary>
+    /// The parameters of the generated method, in order of first occurrence, each carrying
+    /// the scalar the gate resolved (decision 083). Computed from the condition trees rather
+    /// than declared on the query: the same name is the same value, so the list is
+    /// derivable, and a stored one could only drift from the tree it describes.
+    /// </summary>
+    protected IReadOnlyList<QueryParameter> Parameters => parameters;
+
+    /// <summary>
+    /// Whether the target's query language spells a positional parameter (decision 083).
+    /// Only JPQL does; in every other target a positional parameter comes out named after
+    /// its order, which is a recorded convention rather than a loss - the query binds the
+    /// same value, only by another road.
+    /// </summary>
+    protected virtual bool WritesPositionalParameters => false;
+
+    /// <summary>
+    /// Resolves every parameter of the query into <see cref="Parameters"/> (decision 083).
+    /// The shared gate the template holds so that all targets answer the same way: the
+    /// parser reads what the source wrote, and the question "can this be typed and bound?"
+    /// is asked once here, exactly as decision 074 asked its question about IN lists and
+    /// decision 053 about the condition tree.
+    ///
+    /// Here and not in the parser because the scalar comes from the <em>mapping</em> IR,
+    /// which only a builder has (<see cref="EntityMaps"/>, handed over by the orchestration
+    /// before generating). Returns false when the query cannot be built, having reported why.
+    /// </summary>
+    private bool ResolveParameters(IReadOnlyList<QueryInstruction> body)
+    {
+        // Build is repeatable, so the list is rebuilt rather than appended to: a second call
+        // used to double every parameter of the signature.
+        parameters.Clear();
+
+        var occurrences = new List<ParameterOccurrence>();
+        CollectParameters(body, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), occurrences);
+
+        if (occurrences.Count == 0)
+        {
+            return true;
+        }
+
+        // The one target that has both forms - JPQL - does not take them in one query, and
+        // every other target has only the named form, so one of the two would have to be
+        // invented. Refused rather than mixed (decision 083).
+        if (occurrences.Any(o => o.Parameter.Name is not null) && occurrences.Any(o => o.Parameter.IsPositional))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "The query mixes named and positional parameters, which no target's query language binds together; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return false;
+        }
+
+        var order = new List<string>();
+        var grouped = new Dictionary<string, List<ParameterOccurrence>>(StringComparer.Ordinal);
+
+        foreach (var occurrence in occurrences)
+        {
+            var key = KeyOf(occurrence.Parameter);
+            if (!grouped.TryGetValue(key, out var group))
+            {
+                grouped[key] = group = [];
+                order.Add(key);
+            }
+
+            group.Add(occurrence);
+        }
+
+        var resolved = true;
+
+        foreach (var key in order)
+        {
+            if (Resolve(grouped[key], out var parameter))
+            {
+                parameters.Add(parameter!);
+            }
+            else
+            {
+                resolved = false;
+            }
+        }
+
+        if (!resolved)
+        {
+            return false;
+        }
+
+        if (!WritesPositionalParameters && parameters.Any(p => p.IsPositional))
+        {
+            var named = parameters.Where(p => p.IsPositional).Select(QueryParameterNaming.IdentifierFor);
+            Report(
+                ConversionRecordKind.Convention,
+                $"The target's query language has no positional parameter, so the positional parameters were named after their order ({string.Join(", ", named)}); the query binds the same values.",
+                QueryFeature.QueryParameter);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// One parameter, from every place the query names it. The same name is the same value
+    /// and therefore one parameter of the method; two occurrences that imply different
+    /// scalars are refused rather than unified, because unifying them would make one of the
+    /// two comparisons compare something other than what the source wrote.
+    /// </summary>
+    private bool Resolve(List<ParameterOccurrence> group, out QueryParameter? parameter)
+    {
+        parameter = null;
+        var first = group[0].Parameter;
+        var named = Describe(first);
+
+        // A name that is not a plain identifier - a MyBatis property path, say - has no form
+        // in the signature of a method, and the model does not carry what the path means.
+        if (first.Name is { } name && !IsPlainIdentifier(name))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The parameter {named} is not a plain identifier, so no target can name it in the signature of the generated method; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return false;
+        }
+
+        if (group.Any(o => o.Parameter.IsCollection != first.IsCollection))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The parameter {named} stands once as a list of values and once as a single value, which is one name for two bindings; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return false;
+        }
+
+        var stated = group.Select(o => o.Parameter.Type).Where(t => t is not null).Distinct().ToList();
+        if (stated.Count > 1)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The source states two scalars for the parameter {named} ({string.Join(" and ", stated)}); no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return false;
+        }
+
+        var derived = group.Select(o => o.Derived).Where(t => t is not null).Distinct().ToList();
+
+        if (stated.Count == 0 && derived.Count > 1)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The parameter {named} is compared against values of two scalars ({string.Join(" and ", derived)}), so the generated method cannot type it; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return false;
+        }
+
+        var scalar = stated.Count == 1 ? stated[0] : derived.Count == 1 ? derived[0] : null;
+        if (scalar is null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The scalar of the parameter {named} does not follow from what it is compared against, so the generated method cannot type it; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return false;
+        }
+
+        // Two sources of one fact are never reconciled in silence - the answer decision 015
+        // gives when the catalog and the mapping disagree.
+        if (stated.Count == 1 && derived.Any(d => d != stated[0]))
+        {
+            Report(
+                ConversionRecordKind.Conflict,
+                $"The source states the scalar {stated[0]} for the parameter {named} while the comparison implies {string.Join(" and ", derived)}; the stated one was kept.",
+                QueryFeature.QueryParameter);
+        }
+
+        parameter = first.WithType(scalar.Value);
+        return true;
+    }
+
+    /// <summary>
+    /// Walks one scope for parameters, carrying the aliases of the scopes around it so that
+    /// a column named inside a subquery still finds the entity it belongs to. The order of
+    /// the walk is the order of the signature: instructions as recorded, the left operand
+    /// of a comparison before the right one (decision 083).
+    /// </summary>
+    private void CollectParameters(
+        IReadOnlyList<QueryInstruction> body,
+        Dictionary<string, EntityMap> enclosing,
+        List<ParameterOccurrence> found)
+    {
+        var aliases = new Dictionary<string, EntityMap>(enclosing, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var source in body.OfType<FromInstruction>())
+        {
+            if (EntityFor(source.Table) is { } entity)
+            {
+                aliases[source.Alias ?? source.Table] = entity;
+            }
+        }
+
+        foreach (var join in body.OfType<JoinInstruction>())
+        {
+            if (EntityFor(join.RightTable) is { } entity)
+            {
+                aliases[join.RightTableAlias ?? join.RightTable] = entity;
+            }
+        }
+
+        foreach (var instruction in body)
+        {
+            switch (instruction)
+            {
+                case SelectInstruction filter:
+                    CollectParameters(filter.Condition, aliases, found);
+                    break;
+                case HavingInstruction postFilter:
+                    CollectParameters(postFilter.Condition, aliases, found);
+                    break;
+                case JoinInstruction join:
+                    CollectParameters(join.OnCondition, aliases, found);
+                    break;
+                case SubQueryInstruction nested:
+                    CollectParameters(Unwrap(nested.Instructions), aliases, found);
+                    break;
+                case SetOperationInstruction operation:
+                    CollectParameters(Unwrap(operation.Left.Instructions), aliases, found);
+                    CollectParameters(Unwrap(operation.Right.Instructions), aliases, found);
+                    break;
+            }
+        }
+    }
+
+    private void CollectParameters(
+        ConditionNode? node,
+        Dictionary<string, EntityMap> aliases,
+        List<ParameterOccurrence> found)
+    {
+        switch (node)
+        {
+            case ComparisonCondition comparison:
+                CollectParameters(comparison.Left, comparison.Right, comparison.Operator, aliases, found);
+                CollectParameters(comparison.Right, comparison.Left, comparison.Operator, aliases, found);
+                return;
+            case LogicalCondition logical:
+                foreach (var operand in logical.Operands)
+                {
+                    CollectParameters(operand, aliases, found);
+                }
+
+                return;
+            case NotCondition negation:
+                CollectParameters(negation.Operand, aliases, found);
+                return;
+        }
+    }
+
+    private void CollectParameters(
+        QueryOperand? operand,
+        QueryOperand? other,
+        ComparisonOperator op,
+        Dictionary<string, EntityMap> aliases,
+        List<ParameterOccurrence> found)
+    {
+        if (operand is null)
+        {
+            return;
+        }
+
+        if (operand.IsSubQuery)
+        {
+            CollectParameters(Unwrap(operand.SubQuery!.Instructions), aliases, found);
+            return;
+        }
+
+        if (operand.IsParameter)
+        {
+            found.Add(new ParameterOccurrence(operand.Parameter!, ScalarOfOther(other, op, aliases)));
+        }
+    }
+
+    /// <summary>
+    /// The scalar a parameter takes from the other side of its comparison (decision 083).
+    /// A subquery and a second parameter say nothing, and neither does a constant whose own
+    /// scalar nobody recognized; each of those ends as a refusal above, because a parameter
+    /// of a method has to have a type.
+    /// </summary>
+    private ScalarType? ScalarOfOther(QueryOperand? other, ComparisonOperator op, Dictionary<string, EntityMap> aliases)
+    {
+        // A LIKE pattern is a string whichever side of the operator it stands on, and
+        // whatever the column it matches is typed as (decision 051).
+        if (op is ComparisonOperator.Like)
+        {
+            return ScalarType.String;
+        }
+
+        if (other is null || !other.IsColumn)
+        {
+            return other?.Constant?.Type;
+        }
+
+        // COUNT answers with a count, not in the type of what it counted; the other
+        // aggregates answer in the type of their column.
+        return string.Equals(other.Function, "COUNT", StringComparison.OrdinalIgnoreCase)
+            ? ScalarType.Long
+            : ScalarOfColumn(aliases, other.Table, other.Property!);
+    }
+
+    private ScalarType? ScalarOfColumn(Dictionary<string, EntityMap> aliases, string? table, string column)
+    {
+        if (table is not null)
+        {
+            var qualified = aliases.GetValueOrDefault(table) ?? EntityFor(table);
+            return qualified is null ? null : ScalarIn(qualified, column);
+        }
+
+        // Unqualified: the entities this scope names answer first and the whole conversion
+        // after them, which is the widening order EntityFor uses.
+        return aliases.Values.Select(map => ScalarIn(map, column)).FirstOrDefault(s => s is not null)
+               ?? EntityMaps.Select(map => ScalarIn(map, column)).FirstOrDefault(s => s is not null);
+    }
+
+    /// <summary>
+    /// The scalar of the property a column maps, matched the way <see cref="PropertyFor"/>
+    /// matches it. A property whose language type nobody stated, or whose type is not a
+    /// scalar, answers nothing: that is the gap decision 075 reports, not a type to guess at.
+    /// </summary>
+    private static ScalarType? ScalarIn(EntityMap map, string column)
+        => map.PropertyMaps
+            .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase))
+            ?.Property.Type is { Category: LangTypeCategory.Scalar } type
+            ? type.ScalarType
+            : null;
+
+    private static string KeyOf(QueryParameter parameter)
+        => parameter.Name ?? $"?{parameter.Position}";
+
+    private static string Describe(QueryParameter parameter)
+        => parameter.Name is { } name ? $"'{name}'" : $"at position {parameter.Position}";
+
+    private static bool IsPlainIdentifier(string name)
+        => (char.IsLetter(name[0]) || name[0] == '_')
+           && name.All(c => char.IsLetterOrDigit(c) || c == '_');
+
+    private readonly record struct ParameterOccurrence(QueryParameter Parameter, ScalarType? Derived);
+
+    /// <summary>
+    /// The parameters as C# declarations, each appended after the fixed first argument of
+    /// the generated method (decision 083). A collection parameter is declared as the
+    /// sequence it binds, which is what Dapper expands, what SetParameterList takes and what
+    /// EF Core translates back into IN. The scalar goes in non-nullable: a comparison never
+    /// tests NULL - that is its own operator (decision 002) - so a nullable property still
+    /// yields a plain parameter.
+    /// </summary>
+    protected string CSharpParameters()
+        => string.Concat(Parameters.Select(p =>
+            $", {CSharpParameterType(p)} {QueryParameterNaming.IdentifierFor(p)}"));
+
+    private static string CSharpParameterType(QueryParameter parameter)
+    {
+        var scalar = CSharpTypeConvertor.ToString(LangType.Scalar(parameter.Type!.Value));
+        return parameter.IsCollection ? $"IEnumerable<{scalar}>" : scalar;
     }
 
     /// <summary>Whether the condition tree holds a subquery operand anywhere (decision 061).</summary>

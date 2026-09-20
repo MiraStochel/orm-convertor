@@ -1,3 +1,4 @@
+using Common.Naming;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model.AbstractRepresentation;
@@ -182,9 +183,23 @@ public sealed class NHibernateHqlQueryVisitor(
         => operand.IsValueList
             // The values IN enumerates (decision 074), each spelled as a lone constant is.
             ? $"({string.Join(", ", operand.Values!.Select(Literal))})"
-            : operand.IsConstant
-                ? Wrap(Literal(operand.Constant!), operand.Function)
-                : Column(operand.Table, operand.Property!, operand.Function);
+            : operand.IsParameter
+                ? Parameter(operand.Parameter!, operand.Function)
+                : operand.IsConstant
+                    ? Wrap(Literal(operand.Constant!), operand.Function)
+                    : Column(operand.Table, operand.Property!, operand.Function);
+
+    /// <summary>
+    /// A parameter in HQL (decision 083): always the named form, because HQL's positional
+    /// one is a bare ? whose order the text decides, and a query rewritten into another
+    /// clause order would bind different values. A collection parameter is parenthesized,
+    /// which is the only shape NHibernate's grammar takes after IN.
+    /// </summary>
+    private static string Parameter(QueryParameter parameter, string? function)
+    {
+        var placeholder = $":{QueryParameterNaming.IdentifierFor(parameter)}";
+        return parameter.IsCollection ? $"({placeholder})" : Wrap(placeholder, function);
+    }
 
     private static string Wrap(string value, string? function)
         => function is null ? value : $"{function.ToLowerInvariant()}({value})";

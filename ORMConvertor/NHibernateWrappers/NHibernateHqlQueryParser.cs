@@ -286,6 +286,9 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private Token Next => tokens[Math.Min(position + 1, tokens.Count - 1)];
 
+    /// <summary>The token n places ahead, clamped to the end marker.</summary>
+    private Token Ahead(int n) => tokens[Math.Min(position + n, tokens.Count - 1)];
+
     private void Advance() => position++;
 
     private bool AtKeyword(string keyword)
@@ -849,12 +852,21 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 throw Error("expected '(' after 'in'");
             }
 
-            // IN carries two right sides: a subquery (decision 061) and a list of values
-            // (decision 074); the first keyword inside the parenthesis tells them apart.
+            // IN carries three right sides: a subquery (decision 061), a list of values
+            // (decision 074) and a collection parameter (decision 083). The first token
+            // inside the parenthesis tells them apart - a lone parameter is the collection
+            // the caller binds, which NHibernate expands into as many placeholders as it has
+            // members.
             QueryOperand? members;
             if (NextIsSubQuery())
             {
                 members = QueryOperand.Nested(ParseParenthesizedSubQuery());
+            }
+            else if (Next.Kind == TokenKind.Parameter && Ahead(2) is { Kind: TokenKind.Symbol, Text: ")" })
+            {
+                Advance();
+                members = QueryOperand.Bound(ReadParameter(isCollection: true));
+                ConsumeSymbol(")");
             }
             else
             {
@@ -939,7 +951,8 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <summary>
     /// Reads the values an in list enumerates into a list operand (decision 074). Every
     /// element has to be a literal, because the list carries values the query itself
-    /// states: a parameter takes its own road (decision 070), a null is no value the model
+    /// states: a parameter, which decision 083 keeps out of the list even though it gave it
+    /// an operand of its own, a null is no value the model
     /// carries (decision 002) and would make <c>not in</c> mean different things in HQL and
     /// in LINQ, and a property path is no value at all. Each sinks the clause, named, for
     /// the clause to refuse; the list is consumed to its end either way, so that reading
@@ -969,9 +982,16 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
             if (element is null)
             {
-                // A parameter has named itself through unread; anything else that consumed
-                // tokens and produced nothing is a path the flat operand does not carry.
                 unread ??= ("an element of an in list that is not a literal", null);
+                carried = false;
+                continue;
+            }
+
+            if (element.IsParameter)
+            {
+                unread ??= (
+                    $"the parameter '{(before < position ? tokens[before].Text : element.ToString())}' among the values of an in list, which carries only values the query itself states",
+                    QueryFeature.QueryParameter);
                 carried = false;
                 continue;
             }
@@ -1075,13 +1095,7 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         if (Current.Kind == TokenKind.Parameter)
         {
-            // A named or positional parameter has no operand shape in the model (decision
-            // 024 deferred it); consuming it and answering null, named, lets the enclosing
-            // clause refuse under the parameter's own category (decision 070) - the same
-            // road a T-SQL variable takes in the Dapper parser.
-            unread ??= ($"the parameter '{Current.Text}', for which the query representation has no operand", QueryFeature.QueryParameter);
-            Advance();
-            return null;
+            return QueryOperand.Bound(ReadParameter());
         }
 
         if (Current.Kind != TokenKind.Identifier)
@@ -1133,6 +1147,25 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             ? null
             : QueryOperand.Column(reference.Qualifier, ColumnFor(reference.Qualifier, reference.Attribute));
     }
+
+    /// <summary>
+    /// One parameter token as the model carries it (decision 083): <c>:id</c> is the name
+    /// id, the colon being HQL's decoration and stripped like the quotes of a string, and a
+    /// bare <c>?</c> is positional with the order of its occurrence in the text, counted
+    /// from one. The order is counted here because nothing else in the text states it - HQL
+    /// says "the next one" and the model needs the number.
+    /// </summary>
+    private QueryParameter ReadParameter(bool isCollection = false)
+    {
+        var text = Current.Text;
+        Advance();
+
+        return text == "?"
+            ? QueryParameter.Positional(++positionalParameters, isCollection: isCollection)
+            : QueryParameter.Named(text[1..], isCollection: isCollection);
+    }
+
+    private int positionalParameters;
 
     private QueryOperand? ParseOperandOrSubQuery()
     {

@@ -310,6 +310,9 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     protected Token Next => tokens[Math.Min(position + 1, tokens.Count - 1)];
 
+    /// <summary>The token n places ahead, clamped to the end marker.</summary>
+    protected Token Ahead(int n) => tokens[Math.Min(position + n, tokens.Count - 1)];
+
     protected void Advance() => position++;
 
     protected bool AtKeyword(string keyword)
@@ -894,6 +897,22 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         if (TryConsumeKeyword("in"))
         {
+            // The grammar of Jakarta Persistence 3.2 puts a collection-valued input
+            // parameter in IN's place itself, without parentheses; both implementations also
+            // take it parenthesized, so both spellings are read as the same collection
+            // parameter (decision 083).
+            if (Current.Kind == TokenKind.Parameter)
+            {
+                var bound = ReadParameter(isCollection: true);
+                if (bound is null || left is null)
+                {
+                    return null;
+                }
+
+                ConditionNode bare = new ComparisonCondition(left, ComparisonOperator.In, QueryOperand.Bound(bound));
+                return notPrefixed ? new NotCondition(bare) : bare;
+            }
+
             if (!AtSymbol("("))
             {
                 throw Error("expected '(' after 'in'");
@@ -903,6 +922,13 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             if (NextIsSubQuery())
             {
                 members = QueryOperand.Nested(ParseParenthesizedSubQuery());
+            }
+            else if (Next.Kind == TokenKind.Parameter && Ahead(2) is { Kind: TokenKind.Symbol, Text: ")" })
+            {
+                Advance();
+                var bound = ReadParameter(isCollection: true);
+                ConsumeSymbol(")");
+                members = bound is null ? null : QueryOperand.Bound(bound);
             }
             else
             {
@@ -994,6 +1020,15 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             if (position == before)
             {
                 throw Error("expected a value");
+            }
+
+            if (element is not null && element.IsParameter)
+            {
+                unread ??= (
+                    $"the parameter '{(before < position ? tokens[before].Text : element.ToString())}' among the values of an in list, which carries only values the query itself states",
+                    QueryFeature.QueryParameter);
+                carried = false;
+                continue;
             }
 
             if (element is null)
@@ -1102,9 +1137,7 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         if (Current.Kind == TokenKind.Parameter)
         {
-            unread ??= ($"the parameter '{Current.Text}', for which the query representation has no operand", QueryFeature.QueryParameter);
-            Advance();
-            return null;
+            return ReadParameter() is { } parameter ? QueryOperand.Bound(parameter) : null;
         }
 
         if (Current.Kind != TokenKind.Identifier)
@@ -1190,6 +1223,34 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         };
 
         return QueryOperand.Value(QueryConstant.Of(text, scalar));
+    }
+
+    /// <summary>
+    /// One parameter token as the model carries it (decision 083): <c>:id</c> is the name
+    /// id and <c>?1</c> is the order 1, the colon and the question mark being JPQL's
+    /// decoration and stripped like the quotes of a string. A bare <c>?</c> is not JPQL -
+    /// the specification writes an ordinal after it - and there is no order to carry, so it
+    /// sinks the clause under the parameter's own category.
+    /// </summary>
+    private QueryParameter? ReadParameter(bool isCollection = false)
+    {
+        var text = Current.Text;
+        Advance();
+
+        if (text[0] == ':')
+        {
+            return QueryParameter.Named(text[1..], isCollection: isCollection);
+        }
+
+        if (text.Length > 1 && int.TryParse(text[1..], out var order) && order >= 1)
+        {
+            return QueryParameter.Positional(order, isCollection: isCollection);
+        }
+
+        unread ??= (
+            $"the parameter '{text}', which names neither a name nor an ordinal",
+            QueryFeature.QueryParameter);
+        return null;
     }
 
     private QueryOperand? ParseOperandOrSubQuery()
