@@ -146,13 +146,17 @@ public class LangTypeTest
         var builder = new EFCoreEntityBuilder();
         new EFCoreEntityParser(builder).Parse(source);
 
+        // A collection states its relation by EF Core's convention, and which convention
+        // it is depends on the far side, so the claim materializes in the phase after
+        // parsing rather than during it; the upgrade of the element comes with it.
+        var code = builder.Build().Single().Content;
+
         var orders = builder.EntityMap.Entity.Properties.Single(p => p.Name == "Orders");
         Assert.Equal(LangTypeCategory.Collection, orders.Type!.Category);
         Assert.Equal(CollectionKind.Set, orders.Type.CollectionKind);
         Assert.Equal(LangTypeCategory.Reference, orders.Type.ElementType!.Category);
         Assert.Equal("Order", orders.Type.ElementType.TargetEntity);
 
-        var code = builder.Build().Single().Content;
         Assert.Contains("public HashSet<Order> Orders { get; set; } = [];", code);
     }
 }

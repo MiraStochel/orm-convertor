@@ -17,6 +17,11 @@ public class EFCoreToAbstractTest
         var entityParser = new EFCoreEntityParser(builder);
         entityParser.Parse(CustomerSampleEFCore.Entity);
 
+        // What EF Core states by convention - here the collection navigation - is decided
+        // once every source of the conversion is parsed, so the map is complete only after
+        // the phase that materializes those claims.
+        builder.ResolveConventionNavigations();
+
         Assert.Equal(JsonSerializer.Serialize(CustomerSampleEFCore.Map), JsonSerializer.Serialize(builder.EntityMap), ignoreLineEndingDifferences: true);
     }
 

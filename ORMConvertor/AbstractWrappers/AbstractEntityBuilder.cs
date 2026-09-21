@@ -867,20 +867,31 @@ public abstract class AbstractEntityBuilder
     /// entity or a scalar the language vocabulary does not capture (uint, a key class) is
     /// decidable no sooner than after the last source of the conversion is parsed, so the
     /// claim waits here and <see cref="ResolveConventionNavigations"/> materializes it. The
-    /// optional callback derives the foreign key columns by the source framework's own
-    /// convention once the target entity and its key are known - the framework knowledge
-    /// stays in the wrapper, this mechanism is neutral.
+    /// optional callbacks are where the source framework's own convention is applied once
+    /// the far side is known - the framework knowledge stays in the wrapper, this mechanism
+    /// is neutral.
     /// </summary>
+    /// <param name="foreignKeyColumns">Derives the foreign key columns by the source
+    /// framework's own convention once the target entity and its key are known.</param>
+    /// <param name="shape">What the claim becomes once the far side is known - for a
+    /// collection navigation a question only the far side answers, because a collection
+    /// answering back is a many-to-many rather than a one-to-many. Returning null drops the
+    /// claim: the convention derives nothing there, so the fact is left empty for whoever
+    /// speaks later (decision 067). Unlike the cardinality passed in, which stands on its
+    /// own, the callback is asked even where the name resolves to no entity of the
+    /// conversion - a claim may hold without the far class at hand - and receives null for
+    /// it then.</param>
     public void AddConventionNavigation(
         Cardinality cardinality,
         string propertyName,
         string targetTypeName,
         RelationRole? role = null,
         Func<EntityMap, EntityMap, IReadOnlyList<string>?>? foreignKeyColumns = null,
-        string? inverseNavigation = null)
+        string? inverseNavigation = null,
+        Func<EntityMap, EntityMap?, Cardinality?>? shape = null)
     {
         conventionNavigations.Add(new ConventionNavigation(
-            EntityMap, cardinality, propertyName, targetTypeName, role, foreignKeyColumns, inverseNavigation));
+            EntityMap, cardinality, propertyName, targetTypeName, role, foreignKeyColumns, inverseNavigation, shape));
     }
 
     /// <summary>
@@ -889,7 +900,8 @@ public abstract class AbstractEntityBuilder
     /// source's conventional claims outrank the catalog (decision 015), and
     /// <see cref="Build"/> calls it for conversions that never meet a catalog. A name that
     /// resolves to no entity was not a navigation and the candidate is dropped without a
-    /// record, exactly like any other unknown type name; a property that meanwhile carries
+    /// record, exactly like any other unknown type name - unless it came with a shape
+    /// callback, which is asked about that case as well; a property that meanwhile carries
     /// a relation (an annotation, an earlier call) or sits in the primary key is skipped.
     /// </summary>
     public void ResolveConventionNavigations()
@@ -901,20 +913,29 @@ public abstract class AbstractEntityBuilder
         {
             var target = FindEntityMap(candidate.TargetTypeName);
 
-            if (target is null
+            if ((target is null && candidate.Shape is null)
                 || candidate.Entity.Relations.Any(r => r.SourceNavigationProperty == candidate.PropertyName)
                 || candidate.Entity.PrimaryKey?.Parts.Any(p => p.PropertyMap.Property.Name == candidate.PropertyName) == true)
             {
                 continue;
             }
 
+            var cardinality = candidate.Shape is null
+                ? candidate.Cardinality
+                : candidate.Shape(candidate.Entity, target);
+
+            if (cardinality is null)
+            {
+                continue;
+            }
+
             EntityMap = candidate.Entity;
             AddForeignKey(
-                candidate.Cardinality,
+                cardinality.Value,
                 candidate.PropertyName,
-                target.Entity.Name,
+                target?.Entity.Name ?? candidate.TargetTypeName,
                 candidate.Role,
-                candidate.ForeignKeyColumns?.Invoke(candidate.Entity, target),
+                target is null ? null : candidate.ForeignKeyColumns?.Invoke(candidate.Entity, target),
                 inverseNavigation: candidate.InverseNavigation);
         }
     }
@@ -1198,7 +1219,8 @@ public abstract class AbstractEntityBuilder
         string TargetTypeName,
         RelationRole? Role,
         Func<EntityMap, EntityMap, IReadOnlyList<string>?>? ForeignKeyColumns,
-        string? InverseNavigation = null);
+        string? InverseNavigation = null,
+        Func<EntityMap, EntityMap?, Cardinality?>? Shape = null);
 
     /// <summary>
     /// Convention navigations waiting for the entities of the conversion to be known.

@@ -15,6 +15,12 @@ public class RelationModelTest
 
         parser.Parse(SampleData.CustomerSampleEFCore.Entity);
 
+        // The collection is EF Core's convention and its shape depends on what the far
+        // entity declares back, so the claim materializes in the phase after parsing. Here
+        // nothing declares anything back - CustomerTransaction is not part of this
+        // conversion - and the one-to-many stands as it always did.
+        builder.ResolveConventionNavigations();
+
         var relation = Assert.Single(builder.EntityMap.Relations);
         Assert.Equal(Cardinality.OneToMany, relation.Cardinality);
         Assert.Equal(RelationRole.Inverse, relation.Role);

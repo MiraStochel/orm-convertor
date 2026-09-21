@@ -413,9 +413,28 @@ public class EFCoreEntityParser : CSharpEntityParser
 
             if (IsCollection(prop.Type, out var target))
             {
-                entityBuilder.AddForeignKey(
-                    Cardinality.OneToMany, name, target,
-                    foreignKeyColumns: foreignKeyNames, inverseNavigation: inverseNavigation);
+                if (foreignKeyNames is not null)
+                {
+                    // [ForeignKey] on a collection names the key properties of the entity on
+                    // the far side, which is the annotation stating a one-to-many outright:
+                    // the dependent holds the columns, so nothing waits for the far side.
+                    entityBuilder.AddForeignKey(
+                        Cardinality.OneToMany, name, target,
+                        foreignKeyColumns: foreignKeyNames, inverseNavigation: inverseNavigation);
+                }
+                else
+                {
+                    // Without the annotation the collection is EF Core's convention, and
+                    // which convention it is depends on what the far entity declares back
+                    // (decision 067): the claim waits like a reference navigation does and
+                    // CollectionCardinality answers once the entities of the conversion are
+                    // known. Only the cardinality is left open - the role follows from it,
+                    // and neither shape puts a column on this side.
+                    entityBuilder.AddConventionNavigation(
+                        Cardinality.OneToMany, name, target,
+                        inverseNavigation: inverseNavigation,
+                        shape: (owner, targetMap) => CollectionCardinality(owner, targetMap, name, inverseNavigation));
+                }
             }
             else if (foreignKeyNames is not null && !IsScalarTypeName(type))
             {
@@ -584,6 +603,102 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// </summary>
     private static bool IsScalarTypeName(string typeText)
         => CSharpTypeConvertor.FromString(typeText).Category == LangTypeCategory.Scalar;
+
+    /// <summary>
+    /// What EF Core's convention makes of a collection navigation once the far entity is
+    /// known: collection navigations on both sides pointing at each other are a many-to-many
+    /// over an implicit junction table (EF Core 5 and later), a collection whose far side
+    /// answers with a reference or with nothing at all is a one-to-many. The question cannot
+    /// be answered while the far class is still unparsed, which is why the claim waits
+    /// (decision 067); read as two one-to-many relations it used to claim a foreign key on
+    /// both sides at once.
+    ///
+    /// [InverseProperty] settles the pairing itself - that is what the annotation is for -
+    /// and the far end it names decides the shape. Without it the pairing is by convention
+    /// and EF Core only pairs where a single candidate stands on each side; where several
+    /// do, EF Core builds no model at all, so no shape is derived, the claim is dropped and
+    /// the state is recorded. The collection then carries no relation, which is exactly what
+    /// leaves the catalog free to supply one (decision 015).
+    ///
+    /// A far side outside the conversion is not ambiguity but absence: one artifact at a
+    /// time is the ordinary unit of conversion, so the far class is usually just in another
+    /// file. EF Core reads the collection as its one-to-many either way, and that is what
+    /// the claim becomes; the resolution phase records the unresolved target.
+    /// </summary>
+    private Cardinality? CollectionCardinality(
+        EntityMap owner, EntityMap? target, string navigationName, string? inverseNavigation)
+    {
+        if (target is null)
+        {
+            return Cardinality.OneToMany;
+        }
+
+        if (inverseNavigation is not null)
+        {
+            return NavigationsTowards(target, owner.Entity.Name)
+                .FirstOrDefault(p => p.Name.Equals(inverseNavigation, StringComparison.Ordinal))
+                is { Type.Category: LangTypeCategory.Collection }
+                ? Cardinality.ManyToMany
+                : Cardinality.OneToMany;
+        }
+
+        var farSide = NavigationsTowards(target, owner.Entity.Name);
+
+        if (farSide.Count == 0)
+        {
+            // Nothing answers back: a unidirectional one-to-many whose foreign key EF Core
+            // puts on the far entity as a shadow property.
+            return Cardinality.OneToMany;
+        }
+
+        if (farSide.Count > 1 || NavigationsTowards(owner, target.Entity.Name).Count > 1)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Incompleteness,
+                Framework = ORMEnum.EFCore,
+                Artifact = ConversionContentType.CSharpEntity,
+                Entity = owner.Entity.Name,
+                Property = navigationName,
+                Category = MappingFactCategory.ForeignKeyColumns,
+                Reason = $"Several navigations pair '{owner.Entity.Name}' with '{target.Entity.Name}', so EF Core's "
+                    + "convention cannot tell which of them belongs to this collection - it builds no model from "
+                    + "such a source either, and [InverseProperty] is what would name the far end. No relation is "
+                    + "derived for the collection; the database catalog may still supply one (decision 015).",
+            });
+
+            return null;
+        }
+
+        // A collection answering a collection is EF Core's implicit junction table; the
+        // table itself is a fact of the schema, so it stays for the catalog to name
+        // (decision 005) and the junction entity is synthesized once it does.
+        return farSide[0].Type is { Category: LangTypeCategory.Collection }
+            ? Cardinality.ManyToMany
+            : Cardinality.OneToMany;
+    }
+
+    /// <summary>
+    /// The properties of an entity whose written type names the given entity - a reference
+    /// navigation or a collection of one - which is the set EF Core looks through for the far
+    /// end of a navigation. A property the source took out of the model with [NotMapped]
+    /// founds no relationship in EF Core (decision 072) and is not among them. The element
+    /// may still be an unresolved name: the pairing runs before the resolution phase, which
+    /// is the whole point of it running after parsing.
+    /// </summary>
+    private static List<Property> NavigationsTowards(EntityMap entity, string entityName)
+        => entity.Entity.Properties
+            .Where(p => TypeNames(p.Type, entityName)
+                && entity.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == p.Name)?.IsTransient != true)
+            .ToList();
+
+    private static bool TypeNames(LangType? type, string entityName) => type switch
+    {
+        { Category: LangTypeCategory.Reference } => type.TargetEntity == entityName,
+        { Category: LangTypeCategory.Unknown } => type.SourceName == entityName,
+        { Category: LangTypeCategory.Collection } => TypeNames(type.ElementType, entityName),
+        _ => false,
+    };
 
     /// <summary>
     /// EF Core's discovery of the foreign key property behind a bare reference navigation,
