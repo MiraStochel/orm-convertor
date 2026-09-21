@@ -40,6 +40,23 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     private string sourceAlias = "t";
 
     /// <summary>
+    /// The grouping keys recorded in the scope being read, which is what <c>g.Key</c> names
+    /// on the LINQ side - and exactly what the EF Core builder writes for a projection of
+    /// that key. Without reading it back the round trip broke in the middle: <c>g.Key</c>
+    /// went into the representation as a column <c>Key</c> of a table <c>g</c>, so every
+    /// target wrote a column nobody declared and the SQL did not even parse. Saved and
+    /// restored around a nested chain, because each scope groups on its own.
+    /// </summary>
+    private List<GroupingKey> groupingKeys = [];
+
+    /// <summary>
+    /// One column of the grouping of a scope, under the name the key object gives it: for
+    /// <c>GroupBy(c =&gt; new { N = c.CustomerName })</c> the column is CustomerName and the
+    /// name is N, which is what <c>g.Key.N</c> then says.
+    /// </summary>
+    private readonly record struct GroupingKey(string Table, string Attribute, string Name);
+
+    /// <summary>
     /// The construct that sank the condition being read, when the parser can name it - a
     /// value from the enclosing scope, which is what a parameter looks like in LINQ - so
     /// that the clause's refusal says what the caller would have to change (F11). The
@@ -174,6 +191,21 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// (decision 053), as a loss elsewhere.
     /// </summary>
     private void EmitChain(LinqQueryRoot root, List<ChainStep> steps, Action? beforeClose = null)
+    {
+        var enclosingGroupingKeys = groupingKeys;
+        groupingKeys = [];
+
+        try
+        {
+            EmitChainCore(root, steps, beforeClose);
+        }
+        finally
+        {
+            groupingKeys = enclosingGroupingKeys;
+        }
+    }
+
+    private void EmitChainCore(LinqQueryRoot root, List<ChainStep> steps, Action? beforeClose)
     {
         queryBuilder.Push();
         EmitSource(root, FirstElementLambdaParameter(steps));
@@ -433,6 +465,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return;
 
             default:
+                // The same enumeration as on the ordinary chain: a step that decides what
+                // comes back is refused wherever it stands, and a set operation behind it
+                // changes nothing about that.
+                if (ChangesTheRowSet(step.Name) is { } feature)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"{step.Name}() applied after a set operation decides what the query returns and the representation does not carry it; no artifact was generated.",
+                        feature);
+                    return;
+                }
+
                 ReportUnsupported(step.Name, null);
                 return;
         }
@@ -491,10 +535,40 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 break;
 
             default:
+                if (ChangesTheRowSet(step.Name) is { } feature)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"{step.Name}() decides what the query returns and the representation does not carry it, so an artifact emitted without it would answer something else; no artifact was generated.",
+                        feature);
+                    break;
+                }
+
                 ReportUnsupported(step.Name, null);
                 break;
         }
     }
+
+    /// <summary>
+    /// Steps of <c>System.Linq</c> the representation does not carry and which nevertheless
+    /// decide what comes back: a filter, a slice, a join, or a terminal that answers with one
+    /// value instead of rows. Naming them is what decision 070 asks for - the enumeration
+    /// used to stop at Where, Join, GroupBy, Skip and Take, so OfType() (a filter), First()
+    /// (a slice of one row) and a terminal Count() (a number instead of rows) fell through to
+    /// the unknown step and left with a loss record while the artifact went out returning
+    /// every row. Null means the step is not one of them.
+    /// </summary>
+    private static QueryFeature? ChangesTheRowSet(string method) => method switch
+    {
+        "OfType" => QueryFeature.Filtering,
+        "SkipWhile" or "TakeWhile" or "DefaultIfEmpty" => QueryFeature.Pagination,
+        "First" or "FirstOrDefault" or "Single" or "SingleOrDefault"
+            or "Last" or "LastOrDefault" or "ElementAt" or "ElementAtOrDefault" => QueryFeature.Pagination,
+        "GroupJoin" or "SelectMany" or "Zip" => QueryFeature.Join,
+        "Count" or "LongCount" or "Sum" or "Average" or "Min" or "Max" or "Aggregate" => QueryFeature.Aggregation,
+        "Any" or "All" or "Contains" => QueryFeature.Filtering,
+        _ => null,
+    };
 
     /// <summary>
     /// A step the parser does not know. It stays a loss on purpose (decision 070): the
@@ -693,6 +767,21 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
+        if (NamesTheGroupingKey(expression))
+        {
+            if (ResolveGroupingKey(expression) is { } key)
+            {
+                queryBuilder.Project(key.Table, key.Attribute, alias);
+                return;
+            }
+
+            Report(
+                ConversionRecordKind.Loss,
+                $"The projected expression '{expression}' names the grouping key, which this query does not group by in a shape the representation can point at; the column was dropped.",
+                QueryFeature.Projection);
+            return;
+        }
+
         var name = MemberName(expression);
         if (name is null)
         {
@@ -711,6 +800,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         if (!TryReadLambdaBody(node, out var body))
         {
             Report(ConversionRecordKind.Loss, "An ordering argument was not a lambda and was dropped.", QueryFeature.Ordering);
+            return;
+        }
+
+        if (NamesTheGroupingKey(body!) && ResolveGroupingKey(body!) is { } groupingKey)
+        {
+            queryBuilder.OrderBy(groupingKey.Table, groupingKey.Attribute, asc);
             return;
         }
 
@@ -751,7 +846,10 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     continue;
                 }
 
-                queryBuilder.GroupBy(AliasOf(initializer.Expression), key);
+                RecordGroupingKey(
+                    AliasOf(initializer.Expression),
+                    key,
+                    initializer.NameEquals?.Name.Identifier.Text ?? key);
             }
 
             return;
@@ -764,7 +862,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        queryBuilder.GroupBy(AliasOf(body!), name);
+        RecordGroupingKey(AliasOf(body!), name, name);
+    }
+
+    private void RecordGroupingKey(string table, string attribute, string name)
+    {
+        queryBuilder.GroupBy(table, attribute);
+        groupingKeys.Add(new GroupingKey(table, attribute, name));
     }
 
     private void RefuseGroupingKey(ExpressionSyntax key)
@@ -772,6 +876,62 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             ConversionRecordKind.Failure,
             $"The grouping key '{key}' is not a column reference, and a query grouped differently would return different rows; no artifact was generated.",
             QueryFeature.Grouping);
+
+    /// <summary>
+    /// Whether the expression reaches for the grouping key rather than for a column of the
+    /// source: <c>g.Key</c>, or <c>g.Key.Part</c> for a key of several columns. It is the
+    /// spelling LINQ gives the key of a group and the one the EF Core builder emits, so the
+    /// parser has to recognise it for the round trip to close.
+    ///
+    /// Two things keep an entity whose column happens to be called Key out of this: the scope
+    /// has to have grouped at all, and the qualifier has to be something other than the source
+    /// alias - after a GroupBy the lambda ranges over the group, so a row's own column is not
+    /// reachable under that name.
+    /// </summary>
+    private bool NamesTheGroupingKey(ExpressionSyntax expression)
+        => groupingKeys.Count > 0
+           && ReachesForKey(expression)
+           && !string.Equals(RootIdentifier(expression), sourceAlias, StringComparison.Ordinal);
+
+    private static bool ReachesForKey(ExpressionSyntax expression) => expression switch
+    {
+        MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Key" } => true,
+        MemberAccessExpressionSyntax member => ReachesForKey(member.Expression),
+        _ => false,
+    };
+
+    private static string? RootIdentifier(ExpressionSyntax expression) => expression switch
+    {
+        MemberAccessExpressionSyntax member => RootIdentifier(member.Expression),
+        IdentifierNameSyntax identifier => identifier.Identifier.ValueText,
+        _ => null,
+    };
+
+    /// <summary>
+    /// The column of the grouping the expression names, or null when this scope groups by
+    /// several columns and the expression does not say which - <c>g.Key</c> over a composite
+    /// key is the key object itself, which no clause of the representation points at.
+    /// </summary>
+    private GroupingKey? ResolveGroupingKey(ExpressionSyntax expression)
+    {
+        // g.Key.Part names one column of a composite key by the name the grouping gave it.
+        if (expression is MemberAccessExpressionSyntax { Name.Identifier.ValueText: not "Key" } part
+            && part.Expression is MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Key" })
+        {
+            var named = part.Name.Identifier.ValueText;
+            foreach (var key in groupingKeys)
+            {
+                if (string.Equals(key.Name, named, StringComparison.Ordinal))
+                {
+                    return key;
+                }
+            }
+
+            return null;
+        }
+
+        return groupingKeys.Count == 1 ? groupingKeys[0] : null;
+    }
 
     private void HandleHaving(InvocationExpressionSyntax node)
     {

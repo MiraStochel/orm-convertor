@@ -41,6 +41,36 @@ public class ApiContentContractTest
         }
     }
 
+    /// <summary>
+    /// A framework the interface never asks about is a framework nobody can convert from,
+    /// whatever the wrapper behind it can do: the screen is built from this list alone
+    /// (decision 025), so a value of the enum missing here is a wrapper that shipped without
+    /// a way in. The cross-framework matrices take their directions from the enum for the
+    /// same reason; this is the same guard on the interface's side.
+    /// </summary>
+    [Fact]
+    public void EveryFrameworkHasARowOfItsOwn()
+    {
+        var declared = RequiredContent.GetRequiredContent.Select(d => d.OrmType).ToList();
+
+        Assert.Equal(Enum.GetValues<ORMEnum>().OrderBy(f => f), declared.OrderBy(f => f));
+    }
+
+    /// <summary>
+    /// And each row asks for both halves of a conversion. A framework that asked only for a
+    /// mapping would leave its query branch unreachable from the interface even where its
+    /// parser reads one.
+    /// </summary>
+    [Fact]
+    public void EveryFrameworkAsksForAMappingUnitAndForAQueryUnit()
+    {
+        foreach (var definition in RequiredContent.GetRequiredContent)
+        {
+            Assert.Contains(definition.Required, u => !u.ContentType.IsQuery());
+            Assert.Contains(definition.Required, u => u.ContentType.IsQuery());
+        }
+    }
+
     [Fact]
     public void UnitIdsAreUnique()
     {

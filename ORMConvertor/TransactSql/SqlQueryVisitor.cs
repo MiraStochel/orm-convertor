@@ -30,15 +30,15 @@ public class SqlQueryVisitor(
 
     public string Visit(ProjectInstruction instr)
     {
-        string value;
-        if (instr.Function != null)
-        {
-            value = $"{instr.Function}({instr.Table}.{instr.Attribute})";
-        }
-        else
-        {
-            value = $"{instr.Table}.{instr.Attribute}";
-        }
+        // COUNT(*) is the one aggregate whose argument is not a column, so it is the one the
+        // table alias must not qualify: `COUNT(c.*)` is not T-SQL at all, and the artifact
+        // used to come out unparseable rather than merely poorer. The HQL and JPQL visitors
+        // have made the same distinction all along.
+        string value = instr.Function is null
+            ? $"{instr.Table}.{instr.Attribute}"
+            : instr.Attribute == "*"
+                ? $"{instr.Function}(*)"
+                : $"{instr.Function}({instr.Table}.{instr.Attribute})";
 
         var alias = instr.Alias is null ? string.Empty : $" AS {instr.Alias}";
         return $"{value}{alias}";

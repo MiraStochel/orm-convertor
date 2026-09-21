@@ -127,6 +127,40 @@ Reprodukovatelnost sestavení jsme odložili stejně jako zásahy do rozhraní: 
 
 „Reprodukovatelné prostředí" dnes znamená „jedním příkazem", ne „bajtově stejně": soubor zámku závislostí neexistuje, základní obrazy kontejnerů jsou připnuté na pohyblivé značky a pravidla stylu, která v repozitáři jsou, build nevynucuje. Rozhodnout je třeba, jestli se nárok S2 rozšiřuje z výstupu překladu i na sestavení samo — zámek závislostí, obrazy podle digestu, styl vynucený v CI — a jestli je to tvrzení, které text práce potřebuje, nebo údržba, která počká; dokud volba nepadne, platí dnešní užší čtení a nic víc se netvrdí.
 
+## Stranou cílů — nálezy revize 2026-09-21
+
+Nálezy revize celého repozitáře z 2026-09-21. Co z ní byla oprava, je v kódu a v [`architecture.md`](./architecture.md) — sdílená čtečka T-SQL odmítá příkaz stojící vedle překládaného `SELECT`u, klauzuli `WITH`, `INTO`, `FOR XML`/`FOR JSON` a `TABLESAMPLE` a hlásí nápovědy ztrátou; sdílený LINQ parser jmenuje kroky, které mění množinu řádků, a čte zpět `g.Key`; T-SQL visitor vypisuje `COUNT(*)` bez aliasu. Tady zůstává to, co je **volba**, ne oprava: čtyři otázky, na které se dá odpovědět dvěma způsoby a odpověď patří do `decisions/`. Značky pořadí nedostávají a nepracuje se na nich, dokud běží cíl 2.
+
+### Rozhodnutí
+
+#### Hloubka vstupu u tří sestupných parserů není omezená a přeteče zásobník
+*Nalezeno měřením 2026-09-21; popis nese [`threat-model.md`](./threat-model.md), hrozba 2. Souvisí s rozhodnutími [062](./decisions/062-hql-read-by-a-hand-written-parser.md) a [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md), která ty parsery zavedla. Požadavky S4, S7, F11.*
+
+HQL, JPQL a javová třída se čtou vlastními sestupnými parsery, takže hloubka zanoření vstupu je hloubkou rekurze. Změřeno na HQL: podmínka se dvěma tisíci závorkami projde a vydá artefakt, s dvaceti tisíci **přeteče zásobník a proces skončí** (`0xC00000FD`). Přetečení zásobníku se v .NET nedá zachytit, takže z toho není ani `Failure`, ani čtyřistovka — instance prostě spadne, a s ní všechny souběžné požadavky. Je to jediný známý vstup s takovým následkem a od ostatních položek hrozby 2 se liší právě tím, že není o pomalé odpovědi.
+
+Rozhodnout je třeba dvě věci a ani jedna není mechanická. **Kde ten strop vede** — hloubka je vlastnost parseru, ne požadavku, takže číslo musí být vysloveno jednou pro všechny tři a odůvodněno proti tomu, co ještě je legitimní dotaz; a **co se stane při jeho dosažení**: `Failure` s pozicí je tvar, kterým ty parsery hlásí syntaktickou chybu, takže by se nová větev nemusela učit nic nového, ale znamená to, že nástroj odmítne vstup, který by jinak přeložil. Do téhož rozhodnutí patří i otázka, jestli strop dostane i gramatika `TSql160Parser` a Roslyn, kde horní mez neznáme a měřit ji znamená měřit cizí knihovnu.
+
+#### Jednotka SQL nese právě jeden příkaz, a víc jich odmítá
+*Vyplynulo z opravy z 2026-09-21 (viz [`architecture.md`](./architecture.md), §5). Souvisí s rozhodnutími [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) a [081](./decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md). Požadavky F8, F11, F14.*
+
+Sdílená čtečka T-SQL brala z textu první `SELECT` a zbytek ignorovala, takže `DELETE FROM T; SELECT …` odcházelo jako artefakt pro čtení a o smazání neřeklo nic. Od 2026-09-21 je každý příkaz vedle překládaného `SELECT`u `Failure`, který ho jmenuje — to je odpověď rozhodnutí 070 a táž, jakou dává MyBatis wrapper zapisujícímu `<insert>`.
+
+Odmítnutí je ale jen bezpečná polovina odpovědi. Rozhodnutí 081 dalo jednotce právo nést **víc dotazů** a `IQueryParser.Parse` vrací builder na každý z nich; hbm.xml i mapper MyBatisu toho využívají a jednotka `SqlQuery` s dvěma `SELECT`y by mohla také. Rozhodnout je třeba, jestli se dva `SELECT`y jedné jednotky mají číst jako dva dotazy — a pokud ano, čím se pojmenují, když `SELECT` na rozdíl od `<query name>` a `<select id>` jméno nenese, takže by ho musel vymyslet nástroj (proti čemuž stojí rozhodnutí [028](./decisions/028-assembly-name-is-not-ours-to-invent.md)). Zapisující příkaz zůstane odmítnutý tak jako tak.
+
+#### Dvě jednotky deklarující tutéž třídu vydají dva stejnojmenné artefakty
+*Souvisí s rozhodnutími [017](./decisions/017-source-precedence-for-mapping-facts.md), [049](./decisions/049-language-facts-under-source-precedence.md) a [066](./decisions/066-records-attributed-to-the-input-unit.md). Požadavky F5, F11, F14.*
+
+Priorita zdrojů slučuje fakty entity vyslovené víc jednotkami, a `architecture.md` §9 na to u F14 přímo odkazuje („entita je legitimně vyslovená víc jednotkami"). Platí to ale jen tam, kde entitu založil první parser a druhý ji dohledal podle jména — tak to dělá NHibernate XML parser. Dvě jednotky `CSharpEntity`, z nichž každá deklaruje třídu `Customer`, projdou sdíleným C# parserem dvakrát, pokaždé přes `BeginEntity`, takže vzniknou **dvě mapy téhož jména** a převod vydá dva artefakty se stejnojmennou veřejnou třídou. Ty se do jednoho konzumentského projektu nevejdou a nic to neřekne — žádný záznam nevzniká.
+
+Rozhodnout je třeba, co to má být. Sloučení podle jména je v duchu rozhodnutí 017, jenže jméno třídy není v .NET identita (dva jmenné prostory, dvě různé entity), takže klíčem by musela být dvojice jmenný prostor + jméno, a shodu bez jmenného prostoru pak nelze odlišit od dvou opravdu různých tříd. `Conflict` po vzoru rozhodnutí 049 nic neslučuje a jen to řekne. Třetí možnost je nechat obojí projít a hlásit až kolizi *výstupních* artefaktů, což je ale otázka pojmenování artefaktů, tedy položka rozhraní níž.
+
+#### Neparsovatelné XML shodí celý převod, kdežto neparsovatelné SQL a Java ne
+*Souvisí s rozhodnutími [010](./decisions/010-diagnostics-as-returned-data.md), [044](./decisions/044-error-response-as-problem-details.md) a [045](./decisions/045-a-conversion-that-produced-nothing-says-so.md). Požadavky F11, F14, S7.*
+
+`architecture.md` §5.1 vyhrazuje výjimky „chybám programu (nepodporovaný framework, neparsovatelný vstup)", a XML parser se toho drží: `XDocument.Parse` nad rozbitým `hbm.xml` vyhodí `XmlException`, orchestrace ji nechá projít a rozhraní z ní udělá čtyřistovku (rozhodnutí 044). Jenže SQL a javový parser dělají u téhož druhu vstupu opak — vydají `Failure` s řádkem a sloupcem a ostatní jednotky převodu se přeloží dál, jak žádá rozhodnutí 045 („částečný převod musí vydat, co vyrobil"). Jedna vadná jednotka XML tedy sebere výsledek i všem ostatním, jedna vadná jednotka SQL ne.
+
+Rozhodnout je třeba, která z těch dvou odpovědí platí pro všechny jazyky. Pro `Failure` mluví rozhodnutí 045 a S7 (chyba se má vázat k jednotce a nést řádek), proti němu to, že `XDocument` hlásí pozici jinak a že klient XML validuje `DOMParser`em ještě před odesláním (rozhodnutí 033), takže dnešní stav je v praxi méně vidět, než jak zní. Je to volba o kontraktu `/convert`, ne o parseru.
+
 ## Stranou cílů — zdokumentované nálezy nad .NET frameworky
 
 Nálezy z porovnání [`analysis/`](./analysis/README.md) s kódem (2026-09-14) a k nim čtyři levné konstrukce, které rozhodnutí [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) vědomě nechalo odmítat, ač by je model unesl a všechny tři cíle vyjádří. Jsou tu **zapsané, ne zařazené**: cíl 1 zůstává uzavřený vydáním 1.2.0, položky nedostávají značky pořadí a nepracuje se na nich, dokud běží cíle 2 a 3 — případně vůbec. Pět původních položek jsme 2026-09-15 přeřadili do cíle 2 — skaláry mimo uzavřený seznam, modifikátor `virtual`, nepersistovanou vlastnost, `DISTINCT` a výčet v `IN` —, protože každá rozšiřuje model nebo slovník, který javové buildery zdědí, a rozšíření je levnější před šesti buildery než po nich; tady zůstává, co javové větvi nepřekáží. Zapisujeme je proto, aby nález nezůstal jen v konverzaci a aby text práce věděl, co nástroj o .NET frameworcích netvrdí. Jedna z nich se dotýká věty, kterou [`architecture.md`](./architecture.md), §5, dnes vyslovuje šířeji, než platí; místo je u položky jmenované a opraví se s ní.

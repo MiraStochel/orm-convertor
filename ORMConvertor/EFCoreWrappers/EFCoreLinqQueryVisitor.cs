@@ -351,13 +351,19 @@ public sealed class EFCoreLinqQueryVisitor(
 
     private string Aggregate(string? alias, string attribute, string function)
     {
+        // An aggregate over an ungrouped scope has no place inside a LINQ projection: the
+        // chain must end in the aggregate call, which is not the IQueryable this builder
+        // emits. Writing the bare column instead answers with every row where the source
+        // answered with one number - a different result, not a poorer one (decision 053) -
+        // and over COUNT(*) it wrote `c.*`, which is not even valid C#. The same shape inside
+        // a subquery operand is refused by RenderSubQuery for the same reason.
         if (!Scope.Grouped)
         {
             report(
-                ConversionRecordKind.Loss,
-                $"{function} appears without a grouping, which LINQ cannot express inside a query; the aggregate was dropped.",
+                ConversionRecordKind.Failure,
+                $"{function} is projected without a grouping, which a LINQ chain can only express by ending in the aggregate call rather than by a query; no artifact was generated.",
                 QueryFeature.Aggregation);
-            return $"{Scope.Row(alias)}.{Property(alias, attribute)}";
+            return string.Empty;
         }
 
         if (function == "COUNT")

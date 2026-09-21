@@ -49,6 +49,10 @@ public class QueryMatrixTest
     [InlineData(ORMEnum.NHibernate, ConversionContentType.CSharpQuery, "from ")]
     [InlineData(ORMEnum.Hibernate, ConversionContentType.JavaQuery, "em.createQuery(")]
     [InlineData(ORMEnum.EclipseLink, ConversionContentType.JavaQuery, "em.createQuery(")]
+    // MyBatis is the one target whose runnable half carries no statement: the SQL lives in
+    // the mapper document and the method is a declaration of the mapper interface, because
+    // emitting both would be the very input the reading side refuses (decision 084).
+    [InlineData(ORMEnum.MyBatis, ConversionContentType.JavaQuery, "List<Customer> query(")]
     public void EachTargetEmitsItsOwnQueryLanguage(ORMEnum target, ConversionContentType method, string hallmark)
     {
         var result = ConversionHandler.Convert(ORMEnum.EFCore, target, CrossFrameworkInputs.Units(ORMEnum.EFCore));
@@ -72,6 +76,22 @@ public class QueryMatrixTest
         var result = ConversionHandler.Convert(ORMEnum.EFCore, target, CrossFrameworkInputs.Units(ORMEnum.EFCore));
 
         Assert.Contains(result.Sources, s => s.ContentType == expected);
+    }
+
+    /// <summary>
+    /// MyBatis is the exception to the rule above and it is the framework saying so: its
+    /// native form of a statement is the mapper document, so the second artifact is that
+    /// document rather than the bare SQL the other two string targets emit (decision 084).
+    /// </summary>
+    [Fact]
+    public void TheMyBatisStatementTravelsInItsMapperDocument()
+    {
+        var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.MyBatis, CrossFrameworkInputs.Units(ORMEnum.EFCore));
+
+        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery);
+        Assert.Contains(
+            result.Sources,
+            s => s.ContentType == ConversionContentType.XML && s.Content.Contains("<select id=\"query\"", StringComparison.Ordinal));
     }
 
     /// <summary>A blank query box is not a claim, so it produces neither artifact nor record.</summary>

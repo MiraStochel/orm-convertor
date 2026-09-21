@@ -14,7 +14,7 @@ on:
       - ".github/workflows/**"
   schedule:
     # An advisory against a pinned package appears without anyone pushing, so the
-    # dependency check needs a clock of its own (decision 041). Only that job runs then.
+    # dependency check needs a clock of its own (decision 069). Only that job runs then.
     - cron: "0 6 * * 1"
 
 # Neither job writes anything back, so neither needs more than read access to the code.
@@ -199,7 +199,7 @@ jobs:
           if-no-files-found: warn
 
   # Pinned versions (decisions 013 and 034) move deliberately, and a published advisory is
-  # one of the two reasons to move them (decision 041). This job is what notices.
+  # one of the two reasons to move them (decision 069). This job is what notices.
   dependencies:
     runs-on: ubuntu-latest
 

@@ -73,10 +73,59 @@ public class SqlQueryReader(
             return;
         }
 
-        if (FindSelectStatement(fragment) is not { } select)
+        var statements = Statements(fragment);
+
+        if (statements.OfType<SelectStatement>().FirstOrDefault() is not { } select)
         {
             Report(ConversionRecordKind.Failure, "The SQL contains no SELECT statement to translate.");
             return;
+        }
+
+        // Everything the text says besides that one SELECT (decisions 048 and 070): a second
+        // query, a DECLARE, and above all a statement that writes - the text used to be read
+        // as if it held the SELECT alone, so `DELETE FROM T; SELECT …` came back as a
+        // read-only artifact with nothing to say that the DELETE had been dropped. A writing
+        // statement is outside what the tool translates for any framework, which is the
+        // refusal the MyBatis wrapper already makes by element name (decision 084).
+        var others = statements.Where(statement => !ReferenceEquals(statement, select)).ToList();
+        if (others.Count > 0)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"Besides the SELECT it would translate, the text states {string.Join(", ", others.Select(Describe))}; "
+                    + "translating the SELECT alone would hand over less than the source says, so no artifact was generated.");
+            return;
+        }
+
+        // A common table expression is the source of the SELECT that follows it, and the
+        // representation carries one named table (rule Q2). Read without it, the query would
+        // stand over a table nobody declared - the same case as a derived table in FROM, which
+        // has been refused all along (decision 070).
+        if (select.WithCtesAndXmlNamespaces is not null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "The SELECT stands over a common table expression, which the query representation does not carry, and a query emitted without its WITH clause would name a table that does not exist; no artifact was generated.");
+            return;
+        }
+
+        // SELECT ... INTO creates a table and fills it; dropping the INTO would turn a
+        // statement that writes into one that reads (decision 070).
+        if (select.Into is not null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "The SELECT writes its result into a table with an INTO clause, which is not a read-only query the tool translates; no artifact was generated.");
+            return;
+        }
+
+        // A query hint steers the plan, not the rows, so it is a loss rather than a refusal
+        // (decision 048) - but it is not nothing, which is what it used to be.
+        if (select.OptimizerHints.Count > 0)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "The SELECT carries an OPTION clause, which the query representation does not carry; the query hints were dropped.");
         }
 
         ReadQueryExpression(select.QueryExpression);
@@ -97,6 +146,17 @@ public class SqlQueryReader(
                 break;
 
             case QuerySpecification query:
+                // FOR XML and FOR JSON turn the rows into one value; a query read without the
+                // clause returns something else entirely (decision 070).
+                if (query.ForClause is not null)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        "The SELECT carries a FOR clause, which returns one document instead of rows and which the query representation does not carry; no artifact was generated.",
+                        QueryFeature.Projection);
+                    break;
+                }
+
                 queryBuilder.Push();
                 ReadFrom(query);
                 ReadSelect(query);
@@ -365,17 +425,29 @@ public class SqlQueryReader(
         return RowCount.Bound(QueryParameter.Named(name, stated.Scalar, stated.IsCollection));
     }
 
-    private static SelectStatement? FindSelectStatement(TSqlFragment fragment)
-    {
+    private static List<TSqlStatement> Statements(TSqlFragment fragment)
         // Navigated explicitly rather than with a visitor: a visitor descends into subqueries
         // too, and their instructions would then be emitted into the outer scope.
-        if (fragment is not TSqlScript script)
-        {
-            return null;
-        }
+        => fragment is TSqlScript script
+            ? [.. script.Batches.SelectMany(b => b.Statements)]
+            : [];
 
-        return script.Batches.SelectMany(b => b.Statements).OfType<SelectStatement>().FirstOrDefault();
-    }
+    /// <summary>
+    /// A statement by the keyword it opens with, which is how the refusal names what it found
+    /// without the caller having to read a type name out of the grammar.
+    /// </summary>
+    private static string Describe(TSqlStatement statement) => statement switch
+    {
+        SelectStatement => "SELECT",
+        InsertStatement => "INSERT",
+        UpdateStatement => "UPDATE",
+        DeleteStatement => "DELETE",
+        MergeStatement => "MERGE",
+        TruncateTableStatement => "TRUNCATE TABLE",
+        DeclareVariableStatement => "DECLARE",
+        SetVariableStatement => "SET",
+        _ => statement.GetType().Name,
+    };
 
     private void ReadFrom(QuerySpecification query)
     {
@@ -418,6 +490,11 @@ public class SqlQueryReader(
             return;
         }
 
+        if (!ReadTableModifiers(table))
+        {
+            return;
+        }
+
         var (name, alias) = NameAndAlias(table);
         sourceAlias = alias;
         queryBuilder.From(name, alias);
@@ -456,6 +533,11 @@ public class SqlQueryReader(
             return;
         }
 
+        if (!ReadTableModifiers(right))
+        {
+            return;
+        }
+
         var (name, alias) = NameAndAlias(right);
         queryBuilder.Join(kind, sourceAlias, name, condition, alias);
     }
@@ -466,6 +548,33 @@ public class SqlQueryReader(
         var bare = table.SchemaObject.BaseIdentifier.Value;
         var name = schema is null ? bare : $"{schema}.{bare}";
         return (name, table.Alias?.Value ?? bare);
+    }
+
+    /// <summary>
+    /// What a table reference may carry beside its name. TABLESAMPLE returns a sample of the
+    /// rows, so a query read without it returns a different set and is refused (decision 070);
+    /// a hint changes how the server reads, not which rows the query names, so it is a loss
+    /// with the artifact still emitted (decision 048). Both used to be dropped without a word.
+    /// Returns false when the reference cannot be read at all.
+    /// </summary>
+    private bool ReadTableModifiers(NamedTableReference table)
+    {
+        if (table.TableSampleClause is not null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The table '{NameAndAlias(table).Name}' is read with TABLESAMPLE, which returns a sample of its rows and which the query representation does not carry; no artifact was generated.");
+            return false;
+        }
+
+        if (table.TableHints.Count > 0)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"The table '{NameAndAlias(table).Name}' is read with a table hint, which the query representation does not carry; the hint was dropped.");
+        }
+
+        return true;
     }
 
     private void ReadSelect(QuerySpecification query)
@@ -535,10 +644,35 @@ public class SqlQueryReader(
             return;
         }
 
+        // A windowed function computes its value over a frame of rows, which the projection
+        // vocabulary has no place for; carried as a plain aggregate it would lose the frame
+        // and hold something else (decision 070 applied to the projection, which stays a loss
+        // because the rows themselves do not change).
+        if (call.OverClause is not null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"{function} is computed over a window, which the query representation does not carry; the projection was dropped.",
+                QueryFeature.Projection);
+            return;
+        }
+
         // COUNT(*) parses as a function whose single parameter is a star.
-        if (parameter is null || call.UniqueRowFilter == UniqueRowFilter.NotSpecified && parameter is ColumnReferenceExpression { ColumnType: ColumnType.Wildcard })
+        if (parameter is ColumnReferenceExpression { ColumnType: ColumnType.Wildcard })
         {
             queryBuilder.Project(sourceAlias, "*", alias, function);
+            return;
+        }
+
+        // A function with no argument at all is not that shape - GETDATE(), CURRENT_TIMESTAMP -
+        // and projecting it as a star used to make the target write `c.*`, which is not even
+        // valid C#: the artifact came out unusable rather than poorer.
+        if (parameter is null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"{function} takes no argument, so it is neither a column nor an aggregate over one; the projection was dropped.",
+                QueryFeature.Projection);
             return;
         }
 

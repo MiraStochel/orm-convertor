@@ -273,6 +273,100 @@ public class QueryFaithfulnessTest
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == feature);
     }
 
+    /// <summary>
+    /// The rule reaches past the SELECT the reader translates: a statement beside it, a WITH
+    /// clause in front of it, an INTO after it, a FOR clause at its end or a TABLESAMPLE on
+    /// its table each decide what the text answers, and the reader used to translate the
+    /// SELECT as if none of them were there. <c>DELETE … ; SELECT …</c> came back as a
+    /// read-only artifact with nothing said about the DELETE, and a query over a common table
+    /// expression came back standing over a table nobody declared - SQL that does not even
+    /// parse. The refusal a MyBatis <c>&lt;insert&gt;</c> already met is the same one
+    /// (decisions 070 and 084).
+    /// </summary>
+    [Theory]
+    [InlineData("WITH x AS (SELECT c.Id FROM Customers c) SELECT x.Id FROM x", "common table expression")]
+    [InlineData("SELECT c.Id INTO CustomerCopy FROM Customers c", "INTO")]
+    [InlineData("SELECT c.Id FROM Customers c FOR XML AUTO", "FOR clause")]
+    [InlineData("SELECT c.Id FROM Customers c FOR JSON AUTO", "FOR clause")]
+    [InlineData("SELECT c.Id FROM Customers c TABLESAMPLE (10 PERCENT)", "TABLESAMPLE")]
+    [InlineData("DELETE FROM Customers; SELECT c.Id FROM Customers c", "DELETE")]
+    [InlineData("UPDATE Customers SET Name = 'x'; SELECT c.Id FROM Customers c", "UPDATE")]
+    [InlineData("SELECT c.Id FROM Customers c; SELECT c.Name FROM Customers c", "SELECT")]
+    public void AStatementLevelConstructWhoseOmissionWouldChangeTheAnswerRefusesTheArtifact(string sql, string named)
+    {
+        var builder = new EFCoreLinqQueryBuilder();
+        new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery, sql);
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(
+            builder.Records,
+            r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains(named, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The boundary from the other side: a hint steers how the server reads, not which rows
+    /// the query names, so the artifact goes out poorer and with a record rather than being
+    /// refused - and rather than the silence both hints used to meet.
+    /// </summary>
+    [Theory]
+    [InlineData("SELECT c.Id FROM Customers c WITH (NOLOCK)", "table hint")]
+    [InlineData("SELECT c.Id FROM Customers c OPTION (MAXDOP 1)", "OPTION")]
+    public void AHintIsDroppedWithARecordAndTheArtifactStillComesOut(string sql, string named)
+    {
+        var builder = new EFCoreLinqQueryBuilder();
+        new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery, sql);
+
+        Assert.NotEmpty(builder.Build());
+        Assert.Contains(
+            builder.Records,
+            r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains(named, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The same rule over the LINQ chain. The enumeration of row-changing steps used to stop
+    /// at Where, Join, GroupBy, Skip and Take, so everything else fell through to the unknown
+    /// step and left with a loss record while the artifact went out returning every row:
+    /// OfType() is a filter, First() is a slice of one row, GroupJoin() is a join and a
+    /// terminal Count() answers with a number rather than with rows. Include(), which changes
+    /// no rows, must stay a loss - that is what decision 070 kept the unknown step for.
+    /// </summary>
+    [Theory]
+    [InlineData("OfType<Customer>()")]
+    [InlineData("SkipWhile(c => c.CreditLimit > 1)")]
+    [InlineData("TakeWhile(c => c.CreditLimit > 1)")]
+    [InlineData("DefaultIfEmpty()")]
+    [InlineData("First()")]
+    [InlineData("Single()")]
+    [InlineData("ElementAt(2)")]
+    [InlineData("Count()")]
+    [InlineData("Any()")]
+    [InlineData("GroupJoin(ctx.Customers, c => c.Id, d => d.Id, (c, d) => c)")]
+    public void ALinqStepThatDecidesWhatComesBackRefusesTheArtifact(string step)
+    {
+        var builder = new DapperSqlQueryBuilder();
+        new EFCoreLinqQueryParser(() => builder).Parse(
+            ConversionContentType.CSharpQuery,
+            $"public void Query() {{ var q = ctx.Customers.{step}; }}");
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+    }
+
+    [Fact]
+    public void ALinqStepThatChangesNoRowsIsStillALoss()
+    {
+        var builder = new DapperSqlQueryBuilder();
+        new EFCoreLinqQueryParser(() => builder).Parse(
+            ConversionContentType.CSharpQuery,
+            "public void Query() { var q = ctx.Customers.Include(c => c.Orders).ToList(); }");
+
+        Assert.NotEmpty(builder.Build());
+        Assert.Contains(
+            builder.Records,
+            r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("Include()", StringComparison.Ordinal));
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+    }
+
     [Fact]
     public void AnOrderingKeyTheTreeCannotCarryIsStillALoss()
     {

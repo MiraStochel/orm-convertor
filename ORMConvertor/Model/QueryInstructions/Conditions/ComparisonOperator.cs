@@ -6,7 +6,7 @@ public enum ComparisonOperator
     NotEqual = 2,           // <>
     GreaterThan = 3,        // >
     GreaterThanOrEqual = 4, // >=
-    LessThan = 5,           // 
+    LessThan = 5,           // <
     LessThanOrEqual = 6,    // <=
     Like = 7,               // LIKE
     In = 8,                 // IN (...)

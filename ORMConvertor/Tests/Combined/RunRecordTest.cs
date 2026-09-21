@@ -110,4 +110,47 @@ public class RunRecordTest
         Assert.Equal(first.SourceFrameworkVersion, second.SourceFrameworkVersion);
         Assert.Equal(first.TargetFrameworkVersion, second.TargetFrameworkVersion);
     }
+
+    /// <summary>
+    /// S2 is a claim about the tool, not about one direction, so the claim is made in every
+    /// direction the enum yields (<see cref="CrossFrameworkInputs"/>). The test above holds
+    /// one pair in detail; this one holds the whole matrix, so a step that happened to be
+    /// order-dependent in a wrapper nobody repeated the claim for cannot hide.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(CrossFrameworkInputs.Directions), MemberType = typeof(CrossFrameworkInputs))]
+    public void EveryDirectionRepeatsItself(ORMEnum source, ORMEnum target)
+    {
+        var first = ConversionHandler.Convert(source, target, CrossFrameworkInputs.Units(source));
+        var second = ConversionHandler.Convert(source, target, CrossFrameworkInputs.Units(source));
+
+        Assert.Equal(
+            first.Sources.Select(s => (s.ContentType, s.Content)),
+            second.Sources.Select(s => (s.ContentType, s.Content)));
+
+        Assert.Equal(
+            first.Records.Select(r => (r.Kind, r.Entity, r.Property, r.Artifact, r.Category, r.Feature, r.Unit, r.Query, r.Reason)),
+            second.Records.Select(r => (r.Kind, r.Entity, r.Property, r.Artifact, r.Category, r.Feature, r.Unit, r.Query, r.Reason)));
+    }
+
+    /// <summary>
+    /// The other half of the same claim: the input is a set of units, not a sequence, wherever
+    /// the source framework does not itself order its artifacts (decision 068). NHibernate
+    /// states that order, so this asks it of the pair whose order the reader must not depend
+    /// on - the class and the mapping - and expects the same artifacts either way round.
+    /// </summary>
+    [Fact]
+    public void TheOrderOfTheInputUnitsDoesNotDecideTheOutput()
+    {
+        var units = CrossFrameworkInputs.MappingUnits(ORMEnum.NHibernate);
+        var reversed = Enumerable.Reverse(units).ToList();
+
+        var forward = ConversionHandler.Convert(ORMEnum.NHibernate, ORMEnum.EFCore, units);
+        var backward = ConversionHandler.Convert(ORMEnum.NHibernate, ORMEnum.EFCore, reversed);
+
+        Assert.NotEmpty(forward.Sources);
+        Assert.Equal(
+            forward.Sources.Select(s => (s.ContentType, s.Content)),
+            backward.Sources.Select(s => (s.ContentType, s.Content)));
+    }
 }

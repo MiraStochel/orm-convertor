@@ -47,6 +47,20 @@ public class EnforcedMembersTest
         return data;
     }
 
+    /// <summary>
+    /// The matrix above is written by hand, which decision 037 asks for - but "every
+    /// framework and every condition, in both truth values" is its contract, and a row is
+    /// easy to forget. The names are therefore checked against the enum: a framework whose
+    /// wrapper shipped without its row fails here instead of passing by absence.
+    /// </summary>
+    [Fact]
+    public void TheMatrixNamesEveryFramework()
+    {
+        var named = Cases().Select(row => row.Data.Item1).Distinct().Order().ToList();
+
+        Assert.Equal(Enum.GetNames<ORMEnum>().Order(), named);
+    }
+
     [Theory]
     [MemberData(nameof(Cases))]
     public void GeneratedArtifactSatisfiesTheDescriptor(string framework, int keyParts)
