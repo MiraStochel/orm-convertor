@@ -42,6 +42,14 @@ public sealed class ConversionResult
     /// </summary>
     public required string TargetFrameworkVersion { get; init; }
 
+    /// <summary>
+    /// Database system the artifacts are written for, taken from the target's descriptor
+    /// (decision 086) - the record cannot name a system the generator did not write for.
+    /// It is the answer to a question the caller had to guess until now: for which database
+    /// the literal column types in the artifact hold.
+    /// </summary>
+    public required DatabaseDialect TargetDatabaseDialect { get; init; }
+
     public required List<ConversionSource> Sources { get; init; }
 
     public required List<ConversionRecord> Records { get; init; }

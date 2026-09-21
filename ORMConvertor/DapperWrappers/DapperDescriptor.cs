@@ -19,6 +19,10 @@ public static class DapperDescriptor
         // test binds this value to the package the verification level loads.
         Version = "2.1.79",
 
+        // The database system these artifacts are written for (decision 086); the
+        // only dialect this version targets, declared rather than assumed.
+        Dialect = DatabaseDialect.SqlServer2022,
+
         // Dapper imposes nothing on the generated class. An empty list is a statement,
         // not an omission.
         EnforcedMembers = [],

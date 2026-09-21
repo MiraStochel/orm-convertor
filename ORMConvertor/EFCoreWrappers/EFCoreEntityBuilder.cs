@@ -2,7 +2,7 @@
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Convertors;
-using EFCoreWrappers.Convertors;
+using Common.Sql;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
@@ -429,12 +429,13 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         // precisely because the family is missing or coarser. The same rule the NHibernate
         // builder applies to sql-type, so both .NET targets answer one model the same way -
         // and a type with no family at all now reaches the annotation instead of vanishing
-        // (decision 052).
+        // (decision 052). The derived name is the declared dialect's, and bare: the facets
+        // travel in [MaxLength] and [Precision] beside it (decision 086).
         var typeText = typeCarriedByTimestamp
             ? null
             : propMap.SourceSqlType
               ?? (propMap.Type.HasValue
-                  ? DatabaseTypeConvertor.ToEFCore(propMap.Type.Value, propMap.IsUnicode)
+                  ? SqlTypeSpelling.Name(EFCoreDescriptor.Instance.Dialect, propMap.Type.Value, propMap.IsUnicode)
                   : null);
 
         if (propMap.ColumnName != null || typeText != null)

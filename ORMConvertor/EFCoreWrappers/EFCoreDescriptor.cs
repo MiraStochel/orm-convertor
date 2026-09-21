@@ -20,6 +20,10 @@ public static class EFCoreDescriptor
         // decides which syntax the artifact means - [PrimaryKey] exists since EF Core 7.
         Version = "10.0.10",
 
+        // The database system these artifacts are written for (decision 086); the
+        // only dialect this version targets, declared rather than assumed.
+        Dialect = DatabaseDialect.SqlServer2022,
+
         EnforcedMembers =
         [
             new EnforcedMember

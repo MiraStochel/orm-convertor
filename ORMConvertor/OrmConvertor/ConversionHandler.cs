@@ -218,6 +218,7 @@ public static class ConversionHandler
             SourceFrameworkVersion = DescriptorFactory.Create(sourceOrm).Version,
             TargetFramework = targetOrm,
             TargetFrameworkVersion = entityBuilder.Descriptor.Version,
+            TargetDatabaseDialect = entityBuilder.Descriptor.Dialect,
             Sources = results,
             Records = [.. entityBuilder.Records, .. queryRecords, .. runRecords],
             CatalogState = catalogPhase.ConnectionState,

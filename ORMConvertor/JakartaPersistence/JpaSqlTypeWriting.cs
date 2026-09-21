@@ -1,3 +1,5 @@
+using Common.Sql;
+using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 
@@ -6,10 +8,10 @@ namespace JakartaPersistence;
 /// <summary>
 /// The literal type of a national character column, for the implementation that has no
 /// annotation for the unicode facet and can state it only inside a columnDefinition
-/// (decision 080). It is the writing direction of <see cref="JpaSqlTypeReading"/> and the
-/// same copy of the EF Core wrapper's T-SQL names (decision 077): the pinned target is
-/// SQL Server 2022 (decision 013) and the shared T-SQL reading project of the item for F8
-/// is the future home of both directions.
+/// (decision 080). It is one instance of the general rule of decision 086 - a claim the
+/// target's own vocabulary cannot carry is written as the declared dialect's literal type -
+/// and since that decision the spelling itself comes from the shared dialect table, so what
+/// is left here is only what is JPA's own.
 ///
 /// Only the character families have a national variant, which is the whole point of the
 /// facet; a unicode claim over any other family has nowhere to go and the caller reports
@@ -32,13 +34,16 @@ public static class JpaSqlTypeWriting
     public const int DefaultLength = 255;
 
     /// <summary>
-    /// The national type of the column, or null when neither the database family nor the
-    /// language type names a character column.
+    /// The national type of the column in the target's declared dialect, or null when
+    /// neither the database family nor the language type names a character column.
     /// </summary>
     /// <param name="familyFromLanguageType">Whether the family was read from the language type rather than stated.</param>
     /// <param name="lengthFromDefault">Whether the length in the name is the default rather than the source's.</param>
     public static string? NationalizedColumnDefinition(
-        PropertyMap propertyMap, out bool familyFromLanguageType, out bool lengthFromDefault)
+        DatabaseDialect dialect,
+        PropertyMap propertyMap,
+        out bool familyFromLanguageType,
+        out bool lengthFromDefault)
     {
         lengthFromDefault = false;
         familyFromLanguageType = false;
@@ -53,20 +58,16 @@ public static class JpaSqlTypeWriting
 
         switch (family)
         {
-            // No length argument at all: ntext is the deprecated large form and takes none.
+            // The large form takes no length argument at all.
             case DatabaseType.Text:
-                return "ntext";
+                return SqlTypeSpelling.Literal(dialect, DatabaseType.Text, isUnicode: true);
 
             case DatabaseType.Char:
             case DatabaseType.VarChar:
-                var name = family == DatabaseType.Char ? "nchar" : "nvarchar";
-                if (propertyMap.Length is { } length)
-                {
-                    return $"{name}({length})";
-                }
+                lengthFromDefault = propertyMap.Length is null;
 
-                lengthFromDefault = true;
-                return $"{name}({DefaultLength})";
+                return SqlTypeSpelling.Literal(
+                    dialect, family.Value, isUnicode: true, length: propertyMap.Length ?? DefaultLength);
 
             default:
                 return null;

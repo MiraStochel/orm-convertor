@@ -2,6 +2,7 @@
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Convertors;
+using Common.Sql;
 using Common.Xml;
 using Model;
 using Model.AbstractRepresentation;
@@ -116,18 +117,19 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             ReportNullableKeyPartLoss(entityMap, prop, ConversionContentType.CSharpEntity);
             AppendPropertyToCode(artifact.Code, entityMap, prop, isPrimaryKey: true);
 
-            var facets = BuildColumnFacets(entityMap, propertyMap);
+            var claim = ResolveColumnType(entityMap, propertyMap);
+            var facets = BuildColumnFacets(entityMap, propertyMap, claim.SqlType);
             var idAttrs = new List<XmlAttribute> { new("name", prop.Name) };
 
             if (facets.Count == 0)
             {
                 idAttrs.Add(new("column", columnName));
-                AddTypeAttribute(idAttrs, entityMap, propertyMap);
+                AddTypeAttribute(idAttrs, claim);
                 XmlEmitter.Open(artifact.Mapping, 2, "id", idAttrs);
             }
             else
             {
-                AddTypeAttribute(idAttrs, entityMap, propertyMap);
+                AddTypeAttribute(idAttrs, claim);
                 XmlEmitter.Open(artifact.Mapping, 2, "id", idAttrs);
                 XmlEmitter.Empty(artifact.Mapping, 3, "column", ColumnAttributes(columnName, facets));
             }
@@ -165,18 +167,19 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             ReportNullableKeyPartLoss(entityMap, prop, ConversionContentType.CSharpEntity);
             AppendPropertyToCode(artifact.Code, entityMap, prop, isPrimaryKey: true);
 
-            var facets = BuildColumnFacets(entityMap, propertyMap);
+            var claim = ResolveColumnType(entityMap, propertyMap);
+            var facets = BuildColumnFacets(entityMap, propertyMap, claim.SqlType);
             var partAttrs = new List<XmlAttribute> { new("name", prop.Name) };
 
             if (facets.Count == 0)
             {
                 partAttrs.Add(new("column", columnName));
-                AddTypeAttribute(partAttrs, entityMap, propertyMap);
+                AddTypeAttribute(partAttrs, claim);
                 XmlEmitter.Empty(artifact.Mapping, 3, "key-property", partAttrs);
             }
             else
             {
-                AddTypeAttribute(partAttrs, entityMap, propertyMap);
+                AddTypeAttribute(partAttrs, claim);
                 XmlEmitter.Open(artifact.Mapping, 3, "key-property", partAttrs);
                 XmlEmitter.Empty(artifact.Mapping, 4, "column", ColumnAttributes(columnName, facets));
                 XmlEmitter.Close(artifact.Mapping, 3, "key-property");
@@ -186,59 +189,111 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
-    /// The NHibernate type name of a property's claim, with the narrowing the conversion
-    /// table states reported at the point of emission - the counterpart of the Narrowing
-    /// channel the parser reads through (decision 010). A claim NHibernate 5.7.0 has no
-    /// registered name for comes out under the nearest registered one with a loss record
-    /// instead of as a name the framework would refuse.
+    /// The two type claims of one property: the NHibernate type name for the type attribute
+    /// and, where one is due, the literal column type for sql-type. They are different facts
+    /// rather than one fact twice - the first says which IType reads and writes the value on
+    /// the .NET side, the second describes the column NHibernate exports and validates the
+    /// schema against (decision 086).
     /// </summary>
-    private string? ResolveNhType(EntityMap entityMap, PropertyMap propertyMap)
+    private readonly record struct ColumnTypeClaim(string? TypeName, string? SqlType);
+
+    /// <summary>
+    /// The type claim of a property, with whatever the conversion table states about it
+    /// reported at the point of emission - the counterpart of the Narrowing channel the
+    /// parser reads through (decision 010). A claim NHibernate 5.7.0 has no registered name
+    /// for comes out under the nearest registered one rather than as a name the framework
+    /// would refuse.
+    ///
+    /// Where the nearest name changes the claim, decision 086 gives the claim a second
+    /// channel: the literal column type of the declared dialect. It is used under three
+    /// conditions, all of them necessary. The source states no literal type of its own -
+    /// that one wins and carries the claim already (decision 052), so nothing is derived and
+    /// nothing is reported beside it. The conversion table says the substitution is one a
+    /// column type can restore, which rules out the temporal fallback of decision 071, where
+    /// the written name reads a different kind of value altogether. And the dialect can
+    /// spell the claim from the facets the model carries - a fixed-length column of unknown
+    /// length it cannot, and there the nearest name stands alone with the loss record it
+    /// always had.
+    ///
+    /// Reports, so it is called exactly once per property.
+    /// </summary>
+    private ColumnTypeClaim ResolveColumnType(EntityMap entityMap, PropertyMap propertyMap)
     {
         var scalar = propertyMap.Property.Type is { Category: LangTypeCategory.Scalar } scalarType
             ? scalarType.ScalarType
             : null;
 
-        if (propertyMap.Type != null)
+        if (propertyMap.Type is null)
         {
-            // The scalar rides along because an NHibernate type name states the CLR side
-            // too: a date column is 'Date' for a DateTime property and 'DateOnlyAsDate' for
-            // a DateOnly one (decision 071).
-            var naming = DatabaseTypeConvertor.ToNHibernate(
-                propertyMap.Type.Value, propertyMap.IsUnicode, propertyMap.Length, scalar);
-
-            if (naming.Narrowing is not null)
-            {
-                Report(new ConversionRecord
-                {
-                    Kind = ConversionRecordKind.Loss,
-                    Framework = Descriptor.Framework,
-                    Artifact = ConversionContentType.XML,
-                    Entity = entityMap.Entity.Name,
-                    Property = propertyMap.Property.Name,
-                    Category = MappingFactCategory.DatabaseType,
-                    Reason = naming.Narrowing,
-                });
-            }
-
-            return naming.Name;
+            // The database is never queried from here - the completion phase fills the model
+            // before generation (decision 015). What is still missing at this point is guessed
+            // from the language scalar; for anything else - a reference, a collection, an
+            // unknown name - no claim is made and NHibernate decides itself.
+            return new(
+                scalar is ScalarType known ? DatabaseTypeConvertor.GuessFromScalarType(known) : null,
+                propertyMap.SourceSqlType);
         }
 
-        // The database is never queried from here - the completion phase fills the model
-        // before generation (decision 015). What is still missing at this point is guessed
-        // from the language scalar; for anything else - a reference, a collection, an
-        // unknown name - no claim is made and NHibernate decides itself.
-        return scalar is ScalarType known
-            ? DatabaseTypeConvertor.GuessFromScalarType(known)
+        // The scalar rides along because an NHibernate type name states the CLR side
+        // too: a date column is 'Date' for a DateTime property and 'DateOnlyAsDate' for
+        // a DateOnly one (decision 071).
+        var naming = DatabaseTypeConvertor.ToNHibernate(
+            propertyMap.Type.Value, propertyMap.IsUnicode, propertyMap.Length, scalar);
+
+        if (naming.Narrowing is null || propertyMap.SourceSqlType is not null)
+        {
+            return new(naming.Name, propertyMap.SourceSqlType);
+        }
+
+        var literal = naming.RestoredByColumnType
+            ? SqlTypeSpelling.Literal(
+                Descriptor.Dialect,
+                propertyMap.Type.Value,
+                propertyMap.IsUnicode,
+                propertyMap.Length,
+                propertyMap.Precision,
+                propertyMap.Scale)
             : null;
+
+        if (literal is null)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Entity = entityMap.Entity.Name,
+                Property = propertyMap.Property.Name,
+                Category = MappingFactCategory.DatabaseType,
+                Reason = naming.Narrowing,
+            });
+
+            return new(naming.Name, null);
+        }
+
+        Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Convention,
+            Framework = Descriptor.Framework,
+            Artifact = ConversionContentType.XML,
+            Entity = entityMap.Entity.Name,
+            Property = propertyMap.Property.Name,
+            Category = MappingFactCategory.DatabaseType,
+            Reason = $"{naming.Narrowing} The column carries the claim instead, as sql-type=\"{literal}\" - "
+                + $"the spelling of {Descriptor.Dialect}, which the artifact thereby names and the source did not "
+                + "(decision 086).",
+        });
+
+        return new(naming.Name, literal);
     }
 
     /// <summary>
     /// The type attribute of an &lt;id&gt; or &lt;key-property&gt;, empty when there is
     /// nothing to claim - NHibernate then infers the type from the persistent class.
     /// </summary>
-    private void AddTypeAttribute(List<XmlAttribute> attributes, EntityMap entityMap, PropertyMap propertyMap)
+    private static void AddTypeAttribute(List<XmlAttribute> attributes, ColumnTypeClaim claim)
     {
-        if (ResolveNhType(entityMap, propertyMap) is string type)
+        if (claim.TypeName is string type)
         {
             attributes.Add(new XmlAttribute("type", type));
         }
@@ -255,8 +310,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// Facets of a key column that NHibernate accepts only inside a nested &lt;column&gt; element.
     /// &lt;property&gt; can carry length, precision and scale as its own attributes, &lt;id&gt; and
     /// &lt;key-property&gt; cannot - so without the nested form a key column loses them silently.
-    /// The literal SQL type of the source travels the same way: sql-type exists only on
-    /// &lt;column&gt;, and what came in through it goes back out through it (decision 019).
+    /// The literal SQL type travels the same way: sql-type exists only on &lt;column&gt;, and
+    /// what came in through it goes back out through it (decision 019), as does the type the
+    /// declared dialect supplies where the type attribute alone would change the claim
+    /// (decision 086).
     ///
     /// Nullability is deliberately left out: a column that carries the identifier is not
     /// nullable, and emitting not-null="false" there would produce a mapping that contradicts
@@ -265,7 +322,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// An empty result means the compact form with a column attribute is enough, which keeps
     /// the output of a plain key exactly as it was.
     /// </summary>
-    private List<XmlAttribute> BuildColumnFacets(EntityMap entityMap, PropertyMap propertyMap)
+    private List<XmlAttribute> BuildColumnFacets(EntityMap entityMap, PropertyMap propertyMap, string? sqlType)
     {
         var facets = new List<XmlAttribute>();
 
@@ -284,9 +341,9 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             facets.Add(new("scale", Number(propertyMap.Scale.Value)));
         }
 
-        if (propertyMap.SourceSqlType is not null)
+        if (sqlType is not null)
         {
-            facets.Add(new("sql-type", propertyMap.SourceSqlType));
+            facets.Add(new("sql-type", sqlType));
         }
 
         return facets;
@@ -444,8 +501,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             attrs.Add(new("generated", "always"));
         }
 
+        var claim = ResolveColumnType(entityMap, version);
+
         XmlAttribute? typeAttr = version.Type.HasValue
-            ? new XmlAttribute("type", ResolveNhType(entityMap, version)!)
+            ? new XmlAttribute("type", claim.TypeName!)
             : null;
 
         var notNull = NotNullAttribute(version);
@@ -472,9 +531,9 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             columnFacets.Add(new("scale", Number(version.Scale.Value)));
         }
 
-        if (version.SourceSqlType is not null)
+        if (claim.SqlType is not null)
         {
-            columnFacets.Add(new("sql-type", version.SourceSqlType));
+            columnFacets.Add(new("sql-type", claim.SqlType));
         }
 
         if (columnFacets.Count == 0)
@@ -944,8 +1003,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         var notNull = NotNullAttribute(propertyMap);
 
+        var claim = ResolveColumnType(entityMap, propertyMap);
+
         XmlAttribute? typeAttr = propertyMap.Type.HasValue
-            ? new XmlAttribute("type", ResolveNhType(entityMap, propertyMap)!)
+            ? new XmlAttribute("type", claim.TypeName!)
             : null;
 
         var sizeFacets = new List<XmlAttribute>();
@@ -965,7 +1026,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             sizeFacets.Add(new("length", Number(propertyMap.Length.Value)));
         }
 
-        if (propertyMap.SourceSqlType is null)
+        if (claim.SqlType is null)
         {
             // The compact form: everything as attributes of the property element itself.
             if (!string.IsNullOrWhiteSpace(propertyMap.ColumnName))
@@ -1003,7 +1064,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         }
 
         columnFacets.AddRange(sizeFacets);
-        columnFacets.Add(new("sql-type", propertyMap.SourceSqlType));
+        columnFacets.Add(new("sql-type", claim.SqlType));
         columnFacets.AddRange(UniqueAttributes(entityMap, propertyMap));
 
         XmlEmitter.Open(mappingResult, 2, "property", attrs);

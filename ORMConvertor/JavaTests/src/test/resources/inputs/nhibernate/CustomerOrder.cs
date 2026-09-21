@@ -12,5 +12,7 @@ public class CustomerOrder
 
     public virtual DateOnly OrderDate { get; set; }
 
+    public virtual DateTime PlacedAt { get; set; }
+
     public virtual bool IsCancelled { get; set; }
 }

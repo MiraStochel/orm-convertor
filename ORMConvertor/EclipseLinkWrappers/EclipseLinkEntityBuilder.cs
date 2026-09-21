@@ -33,7 +33,7 @@ public sealed class EclipseLinkEntityBuilder : AbstractJpaEntityBuilder
         }
 
         var definition = JpaSqlTypeWriting.NationalizedColumnDefinition(
-            propertyMap, out var familyFromLanguageType, out var lengthFromDefault);
+            Descriptor.Dialect, propertyMap, out var familyFromLanguageType, out var lengthFromDefault);
 
         if (definition is null)
         {

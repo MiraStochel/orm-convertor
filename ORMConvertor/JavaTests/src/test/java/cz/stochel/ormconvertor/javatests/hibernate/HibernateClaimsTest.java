@@ -14,6 +14,7 @@ import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.Test;
  * hand in the shape the builder writes them; the generated artifacts themselves reach
  * this suite over HTTP from a running instance (decision 078), once that work is done.
  */
+@Tag("integration")
 class HibernateClaimsTest {
 
     @BeforeAll

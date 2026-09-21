@@ -90,6 +90,8 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [083](083-parameter-as-the-fifth-operand-shape.md) | Parametr jako pátý tvar operandu podmínky | 2026-09-18 | platí | F7–F10, F11, T2, T3, S1, S2 |
 | [084](084-mybatis-wrapper-over-the-shared-sql-reading.md) | MyBatis wrapper nad sdíleným čtením T-SQL | 2026-09-20 | revidováno | F6, F8, F10, F11, F12, S1, S2 |
 | [085](085-a-row-count-is-a-number-or-a-parameter.md) | Počet řádků je číslo, nebo parametr | 2026-09-20 | platí | F7–F10, F11, T2, T3, S1, S2 |
+| [086](086-target-database-dialect-declared-by-the-descriptor.md) | Cílový databázový dialekt deklaruje deskriptor | 2026-09-21 | platí | F2, F5, F7–F10, F11, S1, S2, S6 |
+| [087](087-an-integration-test-is-a-run-against-the-database.md) | Integrační test je běh proti databázi a sada si ho počítá sama | 2026-09-21 | platí | F1, F2, F12, S2, S5, S6 |
 
 ## Formát
 

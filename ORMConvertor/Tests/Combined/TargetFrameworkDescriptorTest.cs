@@ -36,6 +36,22 @@ public class TargetFrameworkDescriptorTest
     }
 
     /// <summary>
+    /// Every descriptor names the database system its artifacts are written for, and today
+    /// all of them name the same one (decision 086). The agreement is held here rather than
+    /// by the type, because it is a fact about this version and not about the design: a
+    /// second dialect is a decision, and this test is where it will first be noticed.
+    /// </summary>
+    [Fact]
+    public void EveryDescriptorDeclaresTheOnlyDialectThisVersionTargets()
+    {
+        Assert.All(AllDescriptors, d => Assert.Equal(DatabaseDialect.SqlServer2022, d.Dialect));
+
+        // The vocabulary is closed and has one member; a second one must not slip in as an
+        // unnoticed default anywhere.
+        Assert.Single(Enum.GetValues<DatabaseDialect>());
+    }
+
+    /// <summary>
     /// The declared version must be the release the acceptance level of verification
     /// actually loads (decision 016) - the same pinned set as the table in
     /// architecture.md (decision 013). The informational version is compared because
@@ -178,6 +194,7 @@ public class TargetFrameworkDescriptorTest
         {
             Framework = ORMEnum.Dapper,
             Version = DapperDescriptor.Instance.Version,
+            Dialect = DapperDescriptor.Instance.Dialect,
             Support = incomplete,
             QuerySupport = DapperDescriptor.Instance.QuerySupport,
         });
@@ -197,6 +214,7 @@ public class TargetFrameworkDescriptorTest
         {
             Framework = ORMEnum.Dapper,
             Version = DapperDescriptor.Instance.Version,
+            Dialect = DapperDescriptor.Instance.Dialect,
             Support = DapperDescriptor.Instance.Support,
             QuerySupport = incomplete,
         });
@@ -209,6 +227,7 @@ public class TargetFrameworkDescriptorTest
         {
             Framework = ORMEnum.Dapper,
             Version = DapperDescriptor.Instance.Version,
+            Dialect = DapperDescriptor.Instance.Dialect,
             Support = DapperDescriptor.Instance.Support,
             QuerySupport = DapperDescriptor.Instance.QuerySupport,
             EnforcedMembers =

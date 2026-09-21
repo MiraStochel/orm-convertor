@@ -21,6 +21,7 @@ import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.Test;
  * over HTTP in {@link GeneratedArtifactTest}, and what is under test here is the shape
  * itself rather than one conversion.
  */
+@Tag("integration")
 class MyBatisClaimsTest {
 
     private static final int FIRST_ID = 990101;

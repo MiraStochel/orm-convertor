@@ -99,6 +99,7 @@ public static class Endpoints
                 converted.SourceFrameworkVersion,
                 converted.TargetFramework,
                 converted.TargetFrameworkVersion,
+                converted.TargetDatabaseDialect,
                 converted.Sources,
                 converted.Records,
                 converted.CatalogState,

@@ -2,9 +2,11 @@ package cz.stochel.ormconvertor.javatests.hibernate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cz.stochel.ormconvertor.javatests.TestRows;
 import cz.stochel.ormconvertor.javatests.TestSchema;
 import cz.stochel.ormconvertor.javatests.tool.ContentType;
 import cz.stochel.ormconvertor.javatests.tool.ConversionResponse;
@@ -16,8 +18,11 @@ import cz.stochel.ormconvertor.javatests.tool.Orm;
 import cz.stochel.ormconvertor.javatests.tool.RecordKind;
 import cz.stochel.ormconvertor.javatests.tool.ToolApi;
 import cz.stochel.ormconvertor.javatests.tool.ToolResponse;
+import jakarta.persistence.IdClass;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
@@ -29,6 +34,7 @@ import org.hibernate.SessionFactory;
 import org.hibernate.Version;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -52,6 +58,11 @@ class GeneratedArtifactTest {
     private static final int PRODUCT_ID = 990001;
     private static final String PRODUCT_NAME = "Generated widget";
     private static final BigDecimal UNIT_PRICE = new BigDecimal("12.3400");
+
+    /** The two-part key of the level-4 composite-key scenario. */
+    private static final Integer COMPANY_ID = 7;
+    private static final Integer ORDER_ID = 990002;
+    private static final LocalDateTime PLACED_AT = LocalDateTime.of(2026, 9, 21, 8, 30, 0);
 
     private static final Map<Scenario, ConversionResponse> ANSWERS = new EnumMap<>(Scenario.class);
 
@@ -182,6 +193,7 @@ class GeneratedArtifactTest {
      * reflection, which stands for the reference a consumer project would have at compile
      * time (the {@code dynamic} of the .NET scenarios).
      */
+    @Tag("integration")
     @ParameterizedTest
     @EnumSource(Scenario.class)
     void aProductIsStoredAndReadBackThroughTheGeneratedEntity(Scenario scenario) throws Exception {
@@ -220,12 +232,86 @@ class GeneratedArtifactTest {
     }
 
     /**
+     * The composite key, carried out by the framework rather than asserted (decisions 006
+     * and 087). An order with a two-part key is stored through the generated entity, the
+     * session is cleared and the row is found again by an instance of the generated
+     * {@code @IdClass} - so it is Hibernate that compares both parts, through the
+     * {@code equals} and {@code hashCode} the builder wrote. The customer the order points
+     * at is written on the same connection, because the schema states the foreign key and
+     * the rollback has to take both rows away.
+     */
+    @Tag("integration")
+    @ParameterizedTest
+    @EnumSource(Scenario.class)
+    void anOrderIsFoundByBothPartsOfItsGeneratedKeyClass(Scenario scenario) throws Exception {
+        ConversionResponse response = answerFor(scenario);
+
+        try (JavaProject project = JavaProject.create("composite")) {
+            String order = project.add(entityArtifact(response, "CustomerOrder"));
+            ClassLoader loader = project.compileAndLoad();
+            Class<?> orderClass = project.load(order);
+            Class<?> keyClass = keyClassOf(orderClass);
+
+            try (SessionFactory factory = HibernateBootstrap.build("none", loader, List.of(orderClass));
+                 Session session = factory.openSession()) {
+                session.beginTransaction();
+                try {
+                    int[] customer = new int[1];
+                    session.doWork(connection ->
+                            customer[0] = TestRows.insertCustomer(connection, "Generated order customer"));
+
+                    Object row = orderClass.getConstructor().newInstance();
+                    set(row, "CompanyId", COMPANY_ID);
+                    set(row, "OrderId", ORDER_ID);
+                    set(row, "CustomerId", customer[0]);
+                    set(row, "OrderDate", LocalDate.of(2026, 9, 21));
+                    set(row, "PlacedAt", PLACED_AT);
+                    set(row, "IsCancelled", false);
+
+                    session.persist(row);
+                    session.flush();
+                    session.clear();
+
+                    Object key = keyClass.getConstructor(Integer.class, Integer.class)
+                            .newInstance(COMPANY_ID, ORDER_ID);
+                    Object reloaded = session.find(orderClass, key);
+
+                    assertNotNull(reloaded, "the stored order was not found by its two-part key");
+                    assertEquals(COMPANY_ID, get(reloaded, "CompanyId"));
+                    assertEquals(ORDER_ID, get(reloaded, "OrderId"));
+                    assertEquals(customer[0], get(reloaded, "CustomerId"));
+
+                    // The other half of what the key class is for: a key differing in one
+                    // part only is a different row, and nothing stands behind it.
+                    Object otherKey = keyClass.getConstructor(Integer.class, Integer.class)
+                            .newInstance(COMPANY_ID + 1, ORDER_ID);
+
+                    assertNull(session.find(orderClass, otherKey),
+                            "a key differing in its first part found the same row");
+                } finally {
+                    session.getTransaction().rollback();
+                }
+            }
+        }
+    }
+
+    /** The key class the generated entity names in its {@code @IdClass}. */
+    private static Class<?> keyClassOf(Class<?> entityClass) {
+        IdClass declared = entityClass.getAnnotation(IdClass.class);
+
+        assertNotNull(declared, "The generated entity " + entityClass.getName() + " declares no @IdClass");
+
+        return declared.value();
+    }
+
+    /**
      * A row count the caller binds, against the database (decision 085). JPA takes the slice
      * on the query object rather than in the text, so the bound count is not a parameter of
      * the JPQL at all but an argument of the call - and the only thing that can prove it
      * arrived is the size of the result: two products are written and the generated method,
      * asked for one, brings back one.
      */
+    @Tag("integration")
     @Test
     void aBoundRowCountSlicesTheResultOfTheGeneratedQuery() throws Exception {
         ToolResponse answer = ToolApi.convert(Orm.EF_CORE, Orm.HIBERNATE, List.of(
@@ -326,6 +412,7 @@ class GeneratedArtifactTest {
      * it has to instantiate the entity, which is any read: so the enforced member is real,
      * and the level that catches its absence is the fourth, not the third.
      */
+    @Tag("integration")
     @Test
     void anEntityThatLostItsNoArgConstructorFailsOnTheReadThatInstantiatesIt() throws Exception {
         ConversionResponse response = answerFor(Scenario.HIBERNATE);

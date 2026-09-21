@@ -35,6 +35,21 @@ public sealed class TargetFrameworkDescriptor
         }
     }
 
+    /// <summary>
+    /// The database system the generated artifacts of this framework are written for
+    /// (decision 086) - the fact of the same shape as <see cref="Version"/>, which decision
+    /// 019 sent here rather than into the type model. It selects the spelling of a literal
+    /// column type where the framework's own type vocabulary cannot carry the claim, and
+    /// the run record reports it from here (S6), so the record cannot name a system the
+    /// generator did not write for.
+    ///
+    /// Stated per framework rather than once for the tool because a target framework does
+    /// not support every database system - NHibernate registers a finite list of dialects,
+    /// EclipseLink a finite list of platforms. That all six descriptors name the same value
+    /// today is a fact about today, held by a test rather than by the type.
+    /// </summary>
+    public required DatabaseDialect Dialect { get; init; }
+
     private readonly IReadOnlyList<EnforcedMember> enforcedMembers = [];
 
     /// <summary>

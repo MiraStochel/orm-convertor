@@ -20,6 +20,10 @@ public static class HibernateDescriptor
         // test suite of decision 076 binds this value to the dependency of its pom.xml.
         Version = "7.4.5.Final",
 
+        // The database system these artifacts are written for (decision 086); the
+        // only dialect this version targets, declared rather than assumed.
+        Dialect = DatabaseDialect.SqlServer2022,
+
         // Hibernate adds no enforced member of its own to the specification's (decision 077).
         EnforcedMembers = JakartaPersistenceDescriptor.EnforcedMembers,
         Support = JakartaPersistenceDescriptor.Support,

@@ -23,6 +23,7 @@
     </composite-id>
     <property name="CustomerId" column="CustomerId" type="Int32" not-null="true" />
     <property name="OrderDate" column="OrderDate" type="DateOnlyAsDate" not-null="true" />
+    <property name="PlacedAt" column="PlacedAt" type="DateTime" not-null="true" />
     <property name="IsCancelled" column="IsCancelled" type="Boolean" not-null="true" />
   </class>
 </hibernate-mapping>

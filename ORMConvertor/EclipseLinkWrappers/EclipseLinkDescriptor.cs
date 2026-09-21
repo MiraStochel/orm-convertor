@@ -22,6 +22,10 @@ public static class EclipseLinkDescriptor
         // test suite of decision 076 binds this value to the dependency of its pom.xml.
         Version = "5.0.0",
 
+        // The database system these artifacts are written for (decision 086); the
+        // only dialect this version targets, declared rather than assumed.
+        Dialect = DatabaseDialect.SqlServer2022,
+
         // EclipseLink adds no enforced member of its own to the specification's: its
         // indirection rewrites the entity rather than subclassing it, so it does not even
         // need the non-final class §2.1 demands anyway (decision 080).

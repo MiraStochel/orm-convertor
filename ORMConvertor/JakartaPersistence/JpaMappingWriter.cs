@@ -1,6 +1,7 @@
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Sql;
 using JavaEntityParsing;
 using Model;
 using Model.AbstractRepresentation;
@@ -118,7 +119,7 @@ public sealed class JpaMappingWriter(AbstractEntityBuilder entityBuilder, Conver
 
         if (!string.IsNullOrWhiteSpace(attribute.ColumnDefinition))
         {
-            var reading = JpaSqlTypeReading.FromColumnDefinition(attribute.ColumnDefinition);
+            var reading = SqlTypeSpelling.Read(attribute.ColumnDefinition);
 
             entityBuilder.SetPropertyDatabaseType(
                 attribute.Name,
@@ -152,7 +153,7 @@ public sealed class JpaMappingWriter(AbstractEntityBuilder entityBuilder, Conver
         var kind = JpaColumnPrecision.Classify(
             string.IsNullOrWhiteSpace(attribute.ColumnDefinition)
                 ? null
-                : JpaSqlTypeReading.FromColumnDefinition(attribute.ColumnDefinition).Type,
+                : SqlTypeSpelling.Read(attribute.ColumnDefinition).Type,
             attribute.TypeText);
 
         // secondPrecision exists for no column but a time or timestamp one, so spelling it

@@ -25,6 +25,10 @@ public static class MyBatisDescriptor
         // Java test suite of decision 076 binds this value to the dependency of its pom.xml.
         Version = "3.5.19",
 
+        // The database system these artifacts are written for (decision 086); the
+        // only dialect this version targets, declared rather than assumed.
+        Dialect = DatabaseDialect.SqlServer2022,
+
         EnforcedMembers =
         [
             new EnforcedMember

@@ -53,6 +53,11 @@ public class ConvertEndpointTest(ApiTestHost host)
         Assert.Equal((int)ORMEnum.NHibernate, body.RootElement.GetProperty("targetFramework").GetInt32());
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("sourceFrameworkVersion").GetString()));
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("targetFrameworkVersion").GetString()));
+
+        // The database the artifacts are written for travels with them (decision 086).
+        Assert.Equal(
+            (int)DatabaseDialect.SqlServer2022,
+            body.RootElement.GetProperty("targetDatabaseDialect").GetInt32());
     }
 
     /// <summary>

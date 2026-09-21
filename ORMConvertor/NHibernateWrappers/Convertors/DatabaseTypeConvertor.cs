@@ -24,8 +24,19 @@ public readonly record struct NHibernateTypeReading(
 /// claim - the reason the nearest registered name changes the claim. The counterpart of
 /// Narrowing on <see cref="NHibernateTypeReading"/>: the table states the difference,
 /// the builder reports it at the point of emission (decision 010).
+///
+/// <para><see cref="RestoredByColumnType"/> answers the question decision 086 asks of a
+/// narrowing: can a literal column type of the declared dialect carry the claim the
+/// substituted name lost? Only the table can answer it, because only the table knows what
+/// it substituted. It is true where the substitution changed a facet and the written IType
+/// still binds its values against a column of the claimed family - fixed against variable
+/// length, unicode against not. It is false where the substitution changed the family
+/// itself: there a literal column type would produce a mapping at odds with its own type
+/// attribute, which NHibernate accepts at build time and fails on at the first
+/// hydration.</para>
 /// </summary>
-public readonly record struct NHibernateTypeNaming(string Name, string? Narrowing = null);
+public readonly record struct NHibernateTypeNaming(
+    string Name, string? Narrowing = null, bool RestoredByColumnType = false);
 
 public static class DatabaseTypeConvertor
 {
@@ -160,14 +171,17 @@ public static class DatabaseTypeConvertor
         DatabaseType.Char when length == 1 => isUnicode == false ? new("AnsiChar") : new("Char"),
         DatabaseType.Char when isUnicode == false => new("AnsiString",
             "NHibernate 5.7.0 registers no fixed-length string type ('AnsiStringFixedLength' is not in TypeFactory), "
-            + "so 'AnsiString' is written and the claim changes from fixed-length to variable-length character data (decision 019)."),
+            + "so 'AnsiString' is written and the claim changes from fixed-length to variable-length character data (decision 019).",
+            RestoredByColumnType: true),
         DatabaseType.Char => new("String",
             "NHibernate 5.7.0 registers no fixed-length string type ('StringFixedLength' is not in TypeFactory), "
-            + "so 'String' is written and the claim changes from fixed-length to variable-length character data (decision 019)."),
+            + "so 'String' is written and the claim changes from fixed-length to variable-length character data (decision 019).",
+            RestoredByColumnType: true),
         DatabaseType.VarChar => isUnicode == false ? new("AnsiString") : new("String"),
         DatabaseType.Text when isUnicode == false => new("StringClob",
             "NHibernate 5.7.0 registers no non-unicode large-text type ('AnsiStringClob' is not in TypeFactory), "
-            + "so 'StringClob' is written and the non-unicode facet of the claim is dropped (decision 019)."),
+            + "so 'StringClob' is written and the non-unicode facet of the claim is dropped (decision 019).",
+            RestoredByColumnType: true),
         DatabaseType.Text => new("StringClob"),
 
         // TypeFactory of 5.7.0 registers the binary type under the lowercase alias -
@@ -220,6 +234,9 @@ public static class DatabaseTypeConvertor
 
         var fallback = TemporalDefault(scalar);
 
+        // Not restorable by a column type: the substituted name reads a different kind of
+        // value, so stating the claimed column beside it would build a mapping that fails
+        // at the first hydration rather than one that is merely poorer (decision 086).
         return new(fallback,
             $"NHibernate 5.7.0 registers no type that reads a {scalar} property from a {type} column; "
             + $"'{fallback}', the type NHibernate itself assumes for such a property, is written and the "

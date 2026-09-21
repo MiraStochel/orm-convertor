@@ -11,6 +11,7 @@ import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
 import java.io.Serializable;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Objects;
 
 @Entity
@@ -31,6 +32,9 @@ public class CustomerOrder {
 
     @Column(name = "OrderDate", nullable = false)
     private LocalDate OrderDate;
+
+    @Column(name = "PlacedAt", nullable = false, secondPrecision = 3)
+    private LocalDateTime PlacedAt;
 
     @Column(name = "IsCancelled", nullable = false)
     private boolean IsCancelled;
@@ -85,6 +89,14 @@ public class CustomerOrder {
 
     public void setOrderDate(LocalDate value) {
         this.OrderDate = value;
+    }
+
+    public LocalDateTime getPlacedAt() {
+        return PlacedAt;
+    }
+
+    public void setPlacedAt(LocalDateTime value) {
+        this.PlacedAt = value;
     }
 
     public boolean isIsCancelled() {

@@ -23,6 +23,10 @@ public class CustomerOrder
     [Column("OrderDate")]
     public DateOnly OrderDate { get; set; }
 
+    [Column("PlacedAt")]
+    [Precision(3)]
+    public DateTime PlacedAt { get; set; }
+
     [Column("IsCancelled")]
     public bool IsCancelled { get; set; }
 }

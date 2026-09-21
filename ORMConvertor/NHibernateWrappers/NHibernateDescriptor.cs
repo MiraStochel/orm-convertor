@@ -21,6 +21,10 @@ public static class NHibernateDescriptor
         // against the TypeFactory registry of exactly this version (decision 019).
         Version = "5.7.0",
 
+        // The database system these artifacts are written for (decision 086); the
+        // only dialect this version targets, declared rather than assumed.
+        Dialect = DatabaseDialect.SqlServer2022,
+
         EnforcedMembers =
         [
             new EnforcedMember

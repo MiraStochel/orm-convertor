@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cz.stochel.ormconvertor.javatests.TestDatabase;
+import cz.stochel.ormconvertor.javatests.TestRows;
 import cz.stochel.ormconvertor.javatests.TestSchema;
 import cz.stochel.ormconvertor.javatests.tool.ContentType;
 import cz.stochel.ormconvertor.javatests.tool.ConversionResponse;
@@ -22,6 +23,8 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
@@ -30,6 +33,7 @@ import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -54,6 +58,12 @@ class GeneratedArtifactTest {
     private static final int PRODUCT_ID = 990004;
     private static final String PRODUCT_NAME = "Generated mapper widget";
     private static final BigDecimal UNIT_PRICE = new BigDecimal("199.9900");
+
+    /** The two-part key of the level-4 composite-identity scenario. */
+    private static final int COMPANY_ID = 9;
+    private static final int ORDER_ID = 990005;
+    private static final String ORDER_QUERY_NAMESPACE = "Shop.OrderByKeyQueries";
+    private static final String ORDER_QUERY = ORDER_QUERY_NAMESPACE + ".byKey";
 
     private static final Map<Scenario, ConversionResponse> ANSWERS = new EnumMap<>(Scenario.class);
 
@@ -183,6 +193,7 @@ class GeneratedArtifactTest {
      * read back by the generated statement into the generated class, and rolled back. The
      * types exist only at run time, so the test reaches them by reflection.
      */
+    @Tag("integration")
     @ParameterizedTest
     @EnumSource(Scenario.class)
     void aProductIsReadBackThroughTheGeneratedMapper(Scenario scenario) throws Exception {
@@ -216,12 +227,104 @@ class GeneratedArtifactTest {
     }
 
     /**
+     * The composite identity of the generated result map, against the database (decisions
+     * 084 and 087). MyBatis has no key class and no identifier of an entity - what the
+     * builder writes for a two-part key is two {@code <id>} elements, the columns that
+     * identify a row of the result - so the statement reading the order back is the
+     * consumer project's and names both parts as its parameters. What the generated
+     * artifact answers for is the mapping: both key columns reach the object, and so do
+     * the rest. The customer the order points at is written on the session's own
+     * connection, because the schema states the foreign key and the rollback has to take
+     * both rows away.
+     */
+    @Tag("integration")
+    @ParameterizedTest
+    @EnumSource(Scenario.class)
+    void anOrderIsReadBackThroughBothIdColumnsOfItsGeneratedResultMap(Scenario scenario) throws Exception {
+        ConversionResponse response = answerFor(scenario);
+
+        try (JavaProject project = JavaProject.create("mb-composite")) {
+            compileProjectOf(response, project);
+
+            String orderMapper = entityMapperOf(response, "CustomerOrder");
+            List<String> documents = new ArrayList<>(allMappers(response));
+            documents.add(orderByKeyStatement(MyBatisBootstrap.namespaceOf(orderMapper)));
+
+            SqlSessionFactory factory = MyBatisBootstrap.build(project.loader(), documents);
+
+            try (SqlSession session = factory.openSession()) {
+                int customer = TestRows.insertCustomer(session.getConnection(), "Generated order customer");
+                insertOrder(session.getConnection(), customer);
+
+                List<?> orders = session.selectList(ORDER_QUERY,
+                        Map.of("companyId", COMPANY_ID, "orderId", ORDER_ID));
+
+                assertEquals(1, orders.size(),
+                        "the statement asked by both key parts did not return exactly one row");
+
+                Object order = orders.get(0);
+
+                assertEquals(COMPANY_ID, ((Number) read(order, "getCompanyId")).intValue());
+                assertEquals(ORDER_ID, ((Number) read(order, "getOrderId")).intValue());
+                assertEquals(customer, ((Number) read(order, "getCustomerId")).intValue());
+                assertEquals(LocalDate.of(2026, 9, 21), read(order, "getOrderDate"));
+
+                session.rollback(true);
+            }
+        }
+    }
+
+    /**
+     * The statement of the consumer project: it names the generated result map by its
+     * qualified id, so what is under test is the mapping the tool wrote and not one
+     * written here. Nothing stands behind this namespace, which is why the rows are asked
+     * for by the statement's id rather than through a mapper interface.
+     */
+    private static String orderByKeyStatement(String resultMapNamespace) {
+        return """
+                <?xml version="1.0" encoding="utf-8" ?>
+                <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+                        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+                <mapper namespace="%s">
+                    <select id="byKey" resultMap="%s.CustomerOrder">
+                        SELECT CompanyId, OrderId, CustomerId, OrderDate, IsCancelled
+                        FROM [%s].[Orders]
+                        WHERE CompanyId = #{companyId} AND OrderId = #{orderId}
+                    </select>
+                </mapper>
+                """.formatted(ORDER_QUERY_NAMESPACE, resultMapNamespace, TestDatabase.schemaName());
+    }
+
+    /** The order the statement is to find, on the session's own connection. */
+    private static void insertOrder(Connection connection, int customerId) throws Exception {
+        String sql = "INSERT INTO [" + TestDatabase.schemaName() + "].[Orders] "
+                + "(CompanyId, OrderId, CustomerId, OrderDate, PlacedAt, IsCancelled) "
+                + "VALUES (?, ?, ?, '2026-09-21', SYSUTCDATETIME(), 0)";
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, COMPANY_ID);
+            statement.setInt(2, ORDER_ID);
+            statement.setInt(3, customerId);
+            statement.executeUpdate();
+        }
+    }
+
+    /** The mapper document of one entity: the one whose result map is named after it. */
+    private static String entityMapperOf(ConversionResponse response, String className) {
+        return entityMappers(response).stream()
+                .filter(content -> content.contains("id=\"" + className + "\""))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("The answer carries no mapper for " + className));
+    }
+
+    /**
      * A row count the caller binds, against the database (decision 085). The tool wrote the
      * placeholder of the target into the TOP clause and the count into the signature of the
      * mapper method; what proves it is not the text but the slice - two rows are written and
      * the statement, asked for one, brings back one. Nothing but a real binding does that:
      * an inlined literal would be the wrong page and an unbound placeholder would not run.
      */
+    @Tag("integration")
     @Test
     void aBoundRowCountSlicesTheResultOfTheGeneratedStatement() throws Exception {
         ToolResponse answer = ToolApi.convert(Orm.EF_CORE, Orm.MYBATIS, List.of(

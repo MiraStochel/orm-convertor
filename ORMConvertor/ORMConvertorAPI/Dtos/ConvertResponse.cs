@@ -12,6 +12,9 @@ namespace ORMConvertorAPI.Dtos;
 /// from the source framework's descriptor (decision 013).</param>
 /// <param name="TargetFrameworkVersion">Framework release the artifacts are valid
 /// against, from the target framework's descriptor (decision 013).</param>
+/// <param name="TargetDatabaseDialect">Database system the artifacts are written for,
+/// from the target framework's descriptor (decision 086). It is what the literal column
+/// types in the output hold against, and until now the caller had to assume it.</param>
 /// <param name="CatalogState">State of the catalog connection during the completion
 /// phase. The connection lives in server configuration and the interface only shows its
 /// state (decision 030), so this field is how a user learns whether the translation had
@@ -26,6 +29,7 @@ public record ConvertResponse(
     string SourceFrameworkVersion,
     ORMEnum TargetFramework,
     string TargetFrameworkVersion,
+    DatabaseDialect TargetDatabaseDialect,
     List<ConversionSource> Sources,
     List<ConversionRecord> Records,
     CatalogConnectionState CatalogState,
