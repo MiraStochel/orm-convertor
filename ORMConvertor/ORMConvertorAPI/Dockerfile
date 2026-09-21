@@ -70,8 +70,7 @@ ENTRYPOINT ["dotnet", "test", "Tests/Tests.csproj", "--configuration", "Release"
 # ran in rather than from dotnet-build; a JDK exists nowhere else in the project. The same
 # reasoning as for the tests stage applies: dependencies are resolved while the image is
 # built, so the run - `mvn -o`, offline - needs no network, and the tests execute when the
-# container starts, because only then is there a database. The schema script is copied to
-# the same relative place it has in the checkout, where the pom reads it from.
+# container starts, because only then is there a database.
 FROM maven:3.9.11-eclipse-temurin-25-noble AS java-tests
 WORKDIR /src/JavaTests
 COPY JavaTests/pom.xml ./
@@ -81,7 +80,13 @@ COPY JavaTests/pom.xml ./
 # run will use, plugins and Surefire's provider included.
 RUN mvn -B dependency:go-offline test
 COPY JavaTests/src ./src
-COPY Tests/Database/TestSchema.sql /src/Tests/Database/TestSchema.sql
+# The whole directory, and to the same relative place it has in the checkout, because that
+# is where the pom reads it from. Not the files the pom names: Tests/Database is the one
+# place a test resource shared with the .NET suite lives, and the pom's <testResources>
+# already says which of it Maven takes. Naming them here too was a second, silent copy of
+# that list - when decision 089 added Differential/ to the pom, this line still named only
+# the schema, and the suite failed in the container while it was green on a checkout.
+COPY Tests/Database/ /src/Tests/Database/
 RUN mvn -B -o test-compile
 ENTRYPOINT ["mvn", "-B", "-o", "test"]
 
