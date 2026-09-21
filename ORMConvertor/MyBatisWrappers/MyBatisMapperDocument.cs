@@ -1,5 +1,5 @@
-using System.Xml;
 using System.Xml.Linq;
+using AbstractWrappers;
 
 namespace MyBatisWrappers;
 
@@ -12,20 +12,22 @@ namespace MyBatisWrappers;
 /// </summary>
 internal static class MyBatisMapperDocument
 {
-    /// <summary>The &lt;mapper&gt; root of the document, or null when the unit is not one.</summary>
-    public static XElement? Root(string source)
+    /// <summary>
+    /// The &lt;mapper&gt; root of the document, or the reason the text could not be read at all
+    /// (decision 093). A unit that reads as XML but is not a mapper is neither: it carries no
+    /// root and no reason, because a document of some other form is nothing this parser has to
+    /// say anything about.
+    /// </summary>
+    public static XmlReadResult Read(string source)
     {
-        if (string.IsNullOrWhiteSpace(source))
+        var read = XmlSource.Read(source, ignoreDoctype: true);
+
+        if (read.Reason is not null)
         {
-            return null;
+            return read;
         }
 
-        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Ignore, XmlResolver = null };
-
-        using var reader = XmlReader.Create(new StringReader(source.Trim()), settings);
-        var root = XDocument.Load(reader).Root;
-
-        return root?.Name.LocalName == "mapper" ? root : null;
+        return read.Root?.Name.LocalName == "mapper" ? read : default;
     }
 
     /// <summary>The namespace the document declares; the empty string where it declares none.</summary>

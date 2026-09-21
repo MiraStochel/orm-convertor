@@ -220,6 +220,38 @@ public class ConvertEndpointTest(ApiTestHost host)
         Assert.Contains(records, record => record.GetProperty("unit").ValueKind == JsonValueKind.Null);
     }
 
+    /// <summary>
+    /// A unit that is not well-formed XML used to leave the wrapper as an <c>XmlException</c>,
+    /// pass through the orchestration untouched and end as a 400, so one broken document took
+    /// the artifacts of every healthy unit of the same request with it. Since decision 093 it
+    /// is a record like any other: the status stays 200, the healthy units are translated, and
+    /// the reason names the unit and the position where the reading stopped.
+    /// </summary>
+    [Fact]
+    public async Task ABrokenXmlUnitNoLongerTakesTheWholeRunDown()
+    {
+        using var body = await ConvertAsync(new
+        {
+            sourceOrm = (int)ORMEnum.NHibernate,
+            targetOrm = (int)ORMEnum.EFCore,
+            sources = new[]
+            {
+                new { name = "Customer.cs", contentType = (int)ConversionContentType.CSharpEntity, content = CustomerSampleNHibernate.Entity },
+                new { name = "customer.hbm.xml", contentType = (int)ConversionContentType.XML, content = CustomerSampleNHibernate.XmlMapping },
+                new { name = "broken.hbm.xml", contentType = (int)ConversionContentType.XML, content = "<hibernate-mapping>\n  <class name=\"Customer\">\n</hibernate-mapping>" },
+            },
+        });
+
+        Assert.NotEmpty(body.RootElement.GetProperty("sources").EnumerateArray());
+
+        var refusal = Assert.Single(
+            body.RootElement.GetProperty("records").EnumerateArray(),
+            record => record.GetProperty("reason").GetString()!.StartsWith("The XML could not be read", StringComparison.Ordinal));
+
+        Assert.Equal((int)ConversionRecordKind.Failure, refusal.GetProperty("kind").GetInt32());
+        Assert.Equal("broken.hbm.xml", refusal.GetProperty("unit").GetString());
+    }
+
     [Fact]
     public async Task AMalformedBodyIsRefused()
     {

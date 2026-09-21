@@ -30,7 +30,25 @@ public sealed class MyBatisXmlMappingParser(AbstractEntityBuilder entityBuilder,
 
     public override IReadOnlyCollection<EntityMap> Parse(string source)
     {
-        if (MyBatisMapperDocument.Root(source) is not { } root)
+        var (document, unreadable) = MyBatisMapperDocument.Read(source);
+
+        // The mapper that cannot be read is a failure of this unit (decision 093), said here
+        // and not on the query pass: both passes read the same document and the earlier one
+        // speaks.
+        if (unreadable is not null)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = entityBuilder.Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Reason = unreadable,
+            });
+
+            return [];
+        }
+
+        if (document is not { } root)
         {
             return [];
         }

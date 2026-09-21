@@ -50,7 +50,24 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
             return [];
         }
 
-        var root = XDocument.Parse(source.Trim()).Root;
+        var (root, unreadable) = XmlSource.Read(source);
+
+        // The descriptor that cannot be read is a failure of this unit alone (decision 093);
+        // both JPA wrappers read orm.xml through here and neither has a second reading of the
+        // same document, so this is the only place that can say it.
+        if (unreadable is not null)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = entityBuilder.Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Reason = unreadable,
+            });
+
+            return [];
+        }
+
         if (root is null || root.Name.LocalName != "entity-mappings")
         {
             return [];

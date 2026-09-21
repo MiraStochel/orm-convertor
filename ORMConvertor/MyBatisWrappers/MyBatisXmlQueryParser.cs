@@ -36,7 +36,9 @@ public sealed class MyBatisXmlQueryParser(
         string source,
         IReadOnlyList<EntityMap>? entityMaps = null)
     {
-        if (MyBatisMapperDocument.Root(source) is not { } root)
+        // A document that cannot be read leaves no record here (decision 093): the mapping
+        // parser read the same unit on the earlier pass and has already said so.
+        if (MyBatisMapperDocument.Read(source).Root is not { } root)
         {
             return [];
         }

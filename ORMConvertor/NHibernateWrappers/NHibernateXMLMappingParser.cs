@@ -54,8 +54,26 @@ public class NHibernateXMLMappingParser(
             return [];
         }
 
-        var xmlDoc = XDocument.Parse(source.Trim());
-        var mapping = xmlDoc.Root;
+        var (mapping, unreadable) = XmlSource.Read(source);
+
+        // A document that cannot be read is a fact about this unit and nothing else
+        // (decision 093): it used to leave as an XmlException and end as a 400, taking the
+        // artifacts of every healthy unit of the same conversion with it. This parser is the
+        // one that says it, because it reads the hbm.xml on the earlier pass; the query
+        // parser over the same document then stays silent.
+        if (unreadable is not null)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = entityBuilder.Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Reason = unreadable,
+            });
+
+            return [];
+        }
+
         if (mapping == null || mapping.Name.LocalName != "hibernate-mapping")
         {
             return [];

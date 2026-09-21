@@ -97,6 +97,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [090](090-the-cross-ecosystem-matrix-counts-itself.md) | Cross-ecosystem překlad je celý převod přes vyslovenou hranici a matice si ho počítá sama | 2026-09-21 | platí | F6, F10, S1, T2 |
 | [091](091-the-catalog-completes-a-foreign-source-and-says-so.md) | Katalog doplní i deklarovaně cizí zdroj a řekne to | 2026-09-21 | platí | F4, F5, F6, F11, S6 |
 | [092](092-input-nesting-depth-capped-before-the-descent.md) | Strop hloubky zanoření vstupu, vynucený nad tokeny před sestupem | 2026-09-21 | revidováno | F11, S4, S7 |
+| [093](093-unreadable-input-is-a-unit-failure.md) | Neparsovatelný vstup je selhání jednotky, ne výjimka převodu | 2026-09-21 | platí | F11, F14, S7 |
 
 ## Formát
 

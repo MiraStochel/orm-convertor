@@ -68,9 +68,11 @@ public class NHibernateXmlQueryParser(
             return [];
         }
 
-        // Malformed XML throws here as it does in the mapping parser, which reads the same
-        // unit on the earlier pass and therefore throws first.
-        var mapping = XDocument.Parse(source.Trim()).Root;
+        // A document that cannot be read leaves no record here (decision 093): the mapping
+        // parser reads the same unit on the earlier pass and has already said so, and the
+        // rule is that the reading which comes first speaks - one broken document is one
+        // fact about the unit, not two.
+        var mapping = XmlSource.Read(source).Root;
         if (mapping is null || mapping.Name.LocalName != "hibernate-mapping")
         {
             return [];
