@@ -1332,8 +1332,91 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         PrefixUnaryExpressionSyntax negation when negation.IsKind(SyntaxKind.UnaryMinusExpression)
             && negation.Operand is LiteralExpressionSyntax inner
             => QueryOperand.Value(Negate(ReadConstant(inner))),
+        ObjectCreationExpressionSyntax creation when ReadMoment(creation) is { } moment
+            => QueryOperand.Value(moment),
         InvocationExpressionSyntax invocation when ReadScalarSubQuery(invocation) is { } nested => nested,
         IdentifierNameSyntax identifier => ValueFromScope(identifier),
+        _ => null,
+    };
+
+    /// <summary>
+    /// Reads <c>new DateTime(2025, 1, 1)</c> in operand position as a DateTime constant
+    /// (decision 024). The constructor is the one way C# spells a moment inside a
+    /// predicate, so until it was read the filter around it stayed unread and decision 070
+    /// refused the whole artifact - which is what took the date filter out of the EF Core
+    /// sample. Three spellings of the type are the same type (<c>DateTime</c>,
+    /// <c>System.DateTime</c>, <c>global::System.DateTime</c>) and three arities are read:
+    /// the date, the date with a time of day, and the same with milliseconds.
+    ///
+    /// Every argument has to be a non-negative integer literal. Anything computed is a
+    /// value this parser cannot evaluate without running the program, and components that
+    /// do not make a real date - month 13 - stay unread rather than leaving as text no
+    /// target could use; both keep the refusal they have today instead of inventing a
+    /// moment. Other arities stay unread too: <c>new DateTime(ticks)</c> says the same
+    /// thing in a unit no target writes, and the overloads taking a DateTimeKind or a
+    /// Calendar carry a fact the model has no place for.
+    ///
+    /// The value goes into the model undecorated, in the ISO spelling and always with the
+    /// time of day - a .NET DateTime has one even when the source left it at midnight, and
+    /// the JDBC escape the JPQL builder writes it into (<c>{ts '…'}</c>) is defined for no
+    /// shorter form. Quoting is each target's own, as decision 024 divided the work.
+    /// </summary>
+    private static QueryConstant? ReadMoment(ObjectCreationExpressionSyntax creation)
+    {
+        if (TypeName(creation.Type) is not ("DateTime" or "System.DateTime" or "global::System.DateTime"))
+        {
+            return null;
+        }
+
+        var arguments = creation.ArgumentList?.Arguments ?? default;
+        if (arguments.Count is not (3 or 6 or 7))
+        {
+            return null;
+        }
+
+        var parts = new int[arguments.Count];
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            if (arguments[i].Expression is not LiteralExpressionSyntax literal
+                || literal.Token.Value is not int part
+                || part < 0)
+            {
+                return null;
+            }
+
+            parts[i] = part;
+        }
+
+        DateTime moment;
+        try
+        {
+            moment = arguments.Count == 3
+                ? new DateTime(parts[0], parts[1], parts[2])
+                : new DateTime(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5],
+                    arguments.Count == 7 ? parts[6] : 0);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+
+        var text = moment.ToString(
+            arguments.Count == 7 ? "yyyy-MM-dd HH:mm:ss.fff" : "yyyy-MM-dd HH:mm:ss",
+            CultureInfo.InvariantCulture);
+
+        return QueryConstant.Of(text, ScalarType.DateTime);
+    }
+
+    /// <summary>
+    /// The written name of a type in source, with the generic arguments and the nullable
+    /// question mark left out - what is left is what the operand reader compares against.
+    /// </summary>
+    private static string? TypeName(TypeSyntax type) => type switch
+    {
+        NullableTypeSyntax nullable => TypeName(nullable.ElementType),
+        AliasQualifiedNameSyntax aliased => $"{aliased.Alias.Identifier.Text}::{TypeName(aliased.Name)}",
+        QualifiedNameSyntax qualified => $"{TypeName(qualified.Left)}.{TypeName(qualified.Right)}",
+        SimpleNameSyntax simple => simple.Identifier.Text,
         _ => null,
     };
 
