@@ -2,7 +2,7 @@
 
 Datum: 2026-09-21
 Stav: platí
-Požadavky: žádné — je to volba o dokumentaci
+Požadavky: žádné
 Podklad: revize [2026-09-21](../audits/2026-09-21-pre-release-2-0-0-audit.md), nález 6.2; rozhodnutí [007](007-documentation-structure.md); článek §5 a §6
 
 ## Kontext
