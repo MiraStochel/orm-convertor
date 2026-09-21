@@ -15,6 +15,11 @@ namespace Common.Sql;
 /// jdbcType of a MyBatis parameter - is a language of a framework rather than of a database
 /// system and is read whatever the declaration says; widening the guard to them would refuse
 /// input that does not depend on the dialect at all.
+///
+/// The catalog completion phase is a third consumer and not a reading site (decision 091):
+/// it asks a different question - <see cref="ContradictsTheCatalog"/> rather than
+/// <see cref="StopsReading"/> - and the answer costs it nothing but a record, because a
+/// fact read from a live schema is exact and only its provenance is in doubt.
 /// </summary>
 public static class ForeignDialect
 {
@@ -25,6 +30,18 @@ public static class ForeignDialect
     /// who speaks up, and that is the price of the choice rather than a gap in it.
     /// </summary>
     public static bool StopsReading(SourceSqlDialect? declared)
+        => declared is SourceSqlDialect.AnotherSystem;
+
+    /// <summary>
+    /// Whether the declaration contradicts the system the database catalog speaks for
+    /// (decision 091). The catalog reader is SQL Server and the tool has no other, so a
+    /// source that declares another system and still gets mapping facts from a catalog gets
+    /// them from a system it said it is not written for. It is a different question from
+    /// <see cref="StopsReading"/> and only happens to have the same answer today: once
+    /// <see cref="SourceSqlDialect.AnotherSystem"/> breaks up into named systems, a readable
+    /// foreign dialect will stop no reading and still contradict a SQL Server catalog.
+    /// </summary>
+    public static bool ContradictsTheCatalog(SourceSqlDialect? declared)
         => declared is SourceSqlDialect.AnotherSystem;
 
     /// <summary>
@@ -53,4 +70,22 @@ public static class ForeignDialect
         + "not read: the grammar filters syntax and not vocabulary, so `SUBSTR(name, 1, 3)` passes through it as an "
         + "ordinary function call and would be emitted under a name T-SQL does not have. No artifact was generated "
         + "(decision 088).";
+
+    /// <summary>
+    /// Why a run in which a declaredly foreign source met a catalog fact says so, once
+    /// (decision 091). A conflict rather than an origin: the source's declaration and the
+    /// system the catalog speaks for disagree, and the tool does not resolve that silently.
+    /// Unlike every other conflict the source does not win here - it stated no value at all,
+    /// which is why the phase ran - so the catalog's facts are used and the doubt is handed
+    /// to the only one who can settle it. The record is one per run, without a category and
+    /// without an entity, because the doubt is no property of one fact.
+    /// </summary>
+    public const string CatalogReason =
+        "The source declares that its literal SQL is written for another database system, yet the mapping facts "
+        + "below were completed from a SQL Server catalog - the only kind this version reads. The connection is "
+        + "server configuration rather than part of the request (decisions 029 and 030), so the tool cannot tell a "
+        + "database migrated to SQL Server - the ordinary reason to convert such a project - from a connection "
+        + "pointing at a database the source project never talks to. The facts were used and the source still "
+        + "outranks them wherever it stated a value of its own; check that the connected database is the one this "
+        + "source belongs to (decision 091).";
 }

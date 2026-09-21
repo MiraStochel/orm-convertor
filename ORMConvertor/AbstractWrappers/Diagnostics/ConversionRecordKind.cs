@@ -50,6 +50,13 @@ public enum ConversionRecordKind
     /// as when a class named as a key class carries a mapping of its own (decision 031).
     /// Against the catalog the source outranks it (rule E9, decision 015), so translation
     /// continues with the source value and this record says what the catalog stated instead.
+    ///
+    /// "The source wins" is the rule for a disagreement about a value, not the definition of
+    /// the kind: what defines it is that the tool does not settle a disagreement silently.
+    /// Where the source stated no value at all the catalog's fact therefore stands and the
+    /// record says the origin is disputed - which is the one such record there is, the run in
+    /// which a source declaring another database system was completed from a SQL Server
+    /// catalog (decision 091).
     /// </summary>
     Conflict = 6,
 }

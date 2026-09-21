@@ -33,7 +33,10 @@ public static class ConversionHandler
     /// anything - reads exactly as before, and the run record tells the two apart (S6).
     /// The guard itself sits in the readers rather than here, because at this level a unit
     /// that is a mapping and a query at once shows only its content type, which does not
-    /// tell the two halves apart (decision 081).
+    /// tell the two halves apart (decision 081). It reaches the completion phase for a
+    /// different reason (decision 091): the phase reads the connected database rather than
+    /// the source, so nothing stops there, but the catalog is always SQL Server and a source
+    /// that declared another system says so about the facts it took from one.
     /// </param>
     public static ConversionResult Convert(
         ORMEnum sourceOrm,
@@ -100,7 +103,7 @@ public static class ConversionHandler
         // target's descriptor formulates the demand, one component reads the catalog, and
         // the phase is timed on its own (S3). The reader is an optional input - a
         // translation without one proceeds on conventions and says so in the records.
-        var catalogPhase = CatalogCompletion.Complete(entityBuilder, catalogReader);
+        var catalogPhase = CatalogCompletion.Complete(entityBuilder, catalogReader, declaredSourceDialect);
 
         // Emit entities for target ORM
         results.AddRange(entityBuilder.Build());

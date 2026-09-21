@@ -3,6 +3,8 @@ using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Naming;
+using Common.Sql;
+using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 
@@ -26,7 +28,17 @@ public static class CatalogCompletion
     /// can be reported separately from translation time (S3); a null time means the
     /// connection was never tried - an empty demand means zero queries (decision 015).
     /// </summary>
-    public static CatalogPhaseResult Complete(AbstractEntityBuilder builder, ICatalogReader? reader)
+    /// <param name="declaredSourceDialect">
+    /// The dialect the source declared for its literal SQL (decision 088). It stops nothing
+    /// here - the phase reads the connected database, not the source's artifact - but a
+    /// declaration of another system contradicts the catalog, which is always SQL Server, so
+    /// a run in which such a source met a catalog fact carries one record saying so
+    /// (decision 091).
+    /// </param>
+    public static CatalogPhaseResult Complete(
+        AbstractEntityBuilder builder,
+        ICatalogReader? reader,
+        SourceSqlDialect? declaredSourceDialect = null)
     {
         // A key class named by a composite key is not an entity of the conversion and
         // has no table, so it dissolves into the key before the catalog would look one
@@ -57,6 +69,13 @@ public static class CatalogCompletion
             }
             else
             {
+                // The baseline is taken here rather than at the head of the phase: the two
+                // steps above it write records of their own - a class named as a key class
+                // that carries a mapping is a Conflict between two first-degree sources of
+                // the input (decision 031) - and a run the catalog never spoke in has
+                // nothing to warn about (decision 091).
+                var recordsBeforeCatalog = builder.Records.Count;
+
                 var stopwatch = Stopwatch.StartNew();
                 try
                 {
@@ -79,12 +98,59 @@ public static class CatalogCompletion
 
                 stopwatch.Stop();
                 elapsed = stopwatch.Elapsed;
+
+                ReportForeignCatalog(builder, declaredSourceDialect, recordsBeforeCatalog);
             }
         }
 
         InferLanguageTypes(builder);
 
         return new CatalogPhaseResult(state, elapsed);
+    }
+
+    /// <summary>
+    /// One record per run for a source that declared another database system and still met a
+    /// fact from the catalog, which is always SQL Server (decision 091). The facts are used -
+    /// a fact read from a live schema is exact, and only the question of which schema it came
+    /// from is open, which is a different doubt from the one decision 088 refused to guess at.
+    /// Silence would be a claim of the same kind that decision removed: the origin of the fact
+    /// would be stated and the dispute about it would not.
+    ///
+    /// It is a Conflict rather than a Supplied because two things the tool holds disagree and
+    /// it does not resolve that silently; unlike a value conflict, the source has no value to
+    /// win with here - that is why the phase ran - so the catalog's fact stands. One record,
+    /// because the sentence is the same for every fact; no category and no entity, because the
+    /// doubt is no property of one fact (decision 048). Which facts it covers is derivable:
+    /// every Supplied and Conflict the phase wrote.
+    /// </summary>
+    private static void ReportForeignCatalog(
+        AbstractEntityBuilder builder, SourceSqlDialect? declaredSourceDialect, int recordsBeforeCatalog)
+    {
+        if (!ForeignDialect.ContradictsTheCatalog(declaredSourceDialect))
+        {
+            return;
+        }
+
+        // A catalog that supplied nothing at all - a target whose demand is empty, an entity
+        // whose table was not found - put nothing of SQL Server's into the mapping, and a
+        // record about it would describe the arrangement rather than this run (decision 028).
+        // A fact that only lost to the source counts as much as one that was written: it met
+        // the mapping too, and the caveat is what explains a catalog disagreeing throughout.
+        var met = builder.Records
+            .Skip(recordsBeforeCatalog)
+            .Any(r => r.Kind is ConversionRecordKind.Supplied or ConversionRecordKind.Conflict);
+
+        if (!met)
+        {
+            return;
+        }
+
+        builder.Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Conflict,
+            Framework = builder.Descriptor.Framework,
+            Reason = ForeignDialect.CatalogReason,
+        });
     }
 
     private static void Apply(AbstractEntityBuilder builder, ICatalogReader reader, HashSet<MappingFactCategory> demand)
