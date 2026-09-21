@@ -920,6 +920,89 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
+    /// A base type the source states on the header of an entity class. Whether it names an
+    /// entity of this conversion - and the claim is therefore a mapped hierarchy - is
+    /// decidable no sooner than after the last source of the conversion is parsed, exactly
+    /// as with <see cref="AddConventionNavigation"/>, so the claim waits here and
+    /// <see cref="ReportStatedBaseTypes"/> judges it. The same pair stated twice is one
+    /// claim: a partial class may repeat its base type in another part and two units may be
+    /// the same file (decision 094), and identical repetition is not an event.
+    /// </summary>
+    public void AddStatedBaseType(string baseTypeName)
+    {
+        var claim = new StatedBaseType(EntityMap, baseTypeName);
+
+        if (!statedBaseTypes.Contains(claim))
+        {
+            statedBaseTypes.Add(claim);
+        }
+    }
+
+    /// <summary>
+    /// Reports the stated base types that name an entity of this conversion (decision 048).
+    /// Such a header says the source maps a hierarchy, and the intermediate representation
+    /// has no place for one at all - inheritance is excluded area 2 of the guarantees
+    /// (decision 030, architecture.md §9) - so without the record the fact would die on the
+    /// way into the model, while the same fact in an NHibernate mapping (&lt;subclass&gt;) has
+    /// had a record since that decision. What inheritance should mean for the model is not
+    /// answered here; the record only ends the silence.
+    ///
+    /// A name that resolves to no entity is dropped without a record, the way any unknown
+    /// type name is: the header of a class does not say which of its base types is the
+    /// class and which are interfaces, and about a type no unit of the conversion declares
+    /// the parser knows nothing at all, so a record there would claim more than is known.
+    /// Entities are referenced by simple name (decision 001), so a base type from outside
+    /// the conversion whose simple name is the deriving entity's own resolves to itself and
+    /// is dropped too - no class extends itself.
+    ///
+    /// The record carries no <see cref="MappingFactCategory"/>, for the reason decision 048
+    /// gives: the categories are a closed vocabulary of facts the model holds, and a
+    /// hierarchy is not one of them. It carries no unit either, because it is a statement
+    /// about two entities of the conversion and either may have been declared by several
+    /// units (decision 066) - the same reason the phases beside it name none.
+    /// </summary>
+    public void ReportStatedBaseTypes()
+    {
+        var pending = statedBaseTypes.ToList();
+        statedBaseTypes.Clear();
+
+        foreach (var claim in pending)
+        {
+            var baseEntity = FindEntityMap(claim.BaseTypeName);
+
+            if (baseEntity is null || baseEntity == claim.Entity)
+            {
+                continue;
+            }
+
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Entity = claim.Entity.Entity.Name,
+                Reason = $"The class {claim.Entity.Entity.Name} derives from {claim.BaseTypeName}, which is an "
+                    + "entity of this conversion, so the source maps a hierarchy over the two. The intermediate "
+                    + "representation has no place for inheritance (decision 048), so both are translated as "
+                    + "unrelated entities: what the base declares reaches the target on the base entity alone, "
+                    + "and a target that would map the hierarchy by convention - table per hierarchy in EF "
+                    + "Core - is given nothing to map.",
+            });
+        }
+    }
+
+    /// <summary>
+    /// One pending base type claim; see <see cref="AddStatedBaseType"/>.
+    /// </summary>
+    private sealed record StatedBaseType(EntityMap Entity, string BaseTypeName);
+
+    /// <summary>
+    /// Stated base types waiting for the entities of the conversion to be known. Emptied by
+    /// <see cref="ReportStatedBaseTypes"/>, so a second <see cref="Build"/> does not report
+    /// the same claim twice.
+    /// </summary>
+    private readonly List<StatedBaseType> statedBaseTypes = [];
+
+    /// <summary>
     /// The dissolution phase of decision 031: the name a mapping recorded in
     /// <see cref="SourceKeyClass"/> is a reference to a class of the same conversion, and
     /// what that class declares are the parts of the key, not the properties of another
@@ -2377,6 +2460,13 @@ public abstract class AbstractEntityBuilder
         // both here; after one that did, both find everything handled already.
         DissolveKeyClasses();
         ResolveConventionNavigations();
+
+        // The one step here that changes nothing in the model: a base type naming another
+        // entity of the conversion is a mapped hierarchy, the model has no place for one,
+        // so all that is left to do about it is say so (decision 048). It stands here
+        // because it needs the same complete entity set the phases do, and after the
+        // dissolution so that a dissolved key class is not taken for a base entity.
+        ReportStatedBaseTypes();
 
         // The junction entities have to stand before names resolve, so that their relations
         // and the retargeted collections pair like any others; both phases sit between

@@ -26,26 +26,26 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Příští položky
 
-Na těchhle položkách se pracuje teď a do téhle kategorie je dostalo jedno společné: každá buď dělá nepravdivou větu, kterou [`architecture.md`](./architecture.md) dnes vyslovuje, nebo vydá tiše špatný výstup. Přesně to by jinak našla revize, která stojí za nimi — a opravovalo by se pod hotovou revizí. Přišly z porovnání [`analysis/`](./analysis/README.md) s kódem — poslední z revize celého repozitáře z 2026-09-21 odbavilo rozhodnutí [094](./decisions/094-entity-identity-inside-a-conversion.md) —; co z obou nálezů zůstalo otázkou, leží ve [Zbytcích](#zbytky).
+Na těchhle položkách se pracuje teď a do téhle kategorie je dostalo jedno společné: každá buď dělá nepravdivou větu, kterou [`architecture.md`](./architecture.md) dnes vyslovuje, nebo vydá tiše špatný výstup. Přesně to by jinak našla revize, která stojí za nimi — a opravovalo by se pod hotovou revizí. Přišly z porovnání [`analysis/`](./analysis/README.md) s kódem — poslední z revize celého repozitáře z 2026-09-21 odbavilo rozhodnutí [094](./decisions/094-entity-identity-inside-a-conversion.md) —, s jednou výjimkou: javové `extends` sem přibylo 2026-09-21 při psaní C# poloviny téže mezery; co z obou nálezů zůstalo otázkou, leží ve [Zbytcích](#zbytky).
 
 Za položkami stojí **revize a vydání `2.0.0`**, v tomhle pořadí. Kód se kvůli nim nezmrazuje: položky se odbavují dál a revize měří strom, až bude řada nad ní prázdná.
 
 ### Práce
 
-#### Bázová třída entity mizí bez záznamu
-*Na řadě. Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md); dědičnost sama je vyňatá oblast 2 hranice záruk ([`architecture.md`](./architecture.md), §9). Požadavek F11.*
-
-Sdílený C# parser čte z hlavičky třídy jen přístupový modifikátor a seznam bázových typů nečte. Hierarchie v EF Core zdroji — třída odvozená od jiné entity převodu, kterou EF Core mapuje konvencí jako TPH — tak nezanechá žádnou stopu, kdežto týž fakt v NHibernate mapování (`<subclass>`) záznam dostane. Práce je vydat záznam `Loss` u bázového typu, který jmenuje entitu převodu; co dědičnost znamená pro mezireprezentaci, zůstává vyňatou oblastí.
-
 #### Dvojice kolekčních navigací EF Core je N:M, ne dvě 1:N
-*Potom. Práce podle rozhodnutí [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) a [005](./decisions/005-many-to-many-as-explicit-junction-entity.md); souvisí s [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §8. Požadavky F1, F3.*
+*Na řadě. Práce podle rozhodnutí [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) a [005](./decisions/005-many-to-many-as-explicit-junction-entity.md); souvisí s [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §8. Požadavky F1, F3.*
 
 EF Core čte dvě kolekční navigace mezi touž dvojicí entit bez vlastnosti cizího klíče jako N:M s implicitní spojovací tabulkou (od verze 5). Parser EF Core registruje každou kolekci hned jako inverzní 1:N, takže z dvojice vzniknou dva vztahy, které tvrdí cizí klíč na obou stranách; a fáze doplnění nabídne spojovací tabulku z katalogu jen kolekci, která ještě žádný vztah nenese, takže tentýž katalog, který Dapper zdroji spojovací entitu syntetizuje, EF Core zdroj nespraví. Je to dokumentované odvození z toho, co artefakt tvrdí, a mezera putuje k jinému vztahu, takže podle kritéria 067 se materializuje. Práce je nechat kolekci čekat jako konvenční navigaci a po doparsování všech entit spárovat dvojici na N:M týmž mechanismem, jakým se dnes materializují konvenční navigace N:1.
 
 #### Konstruktor `DateTime` v LINQ predikátu se nečte jako konstanta
-*Práce podle rozhodnutí [024](./decisions/024-typed-query-operand.md) — slovník `ScalarType` hodnotu `DateTime` má a všechny tři visitory pro ni větev vypisují, jen bez výrobce —; rozhodnutí [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) konstrukci nechává odmítat a kvůli ní přišel vzorový dotaz EF Core o svůj filtr podle data. Požadavky F11, T2, T3.*
+*Potom. Práce podle rozhodnutí [024](./decisions/024-typed-query-operand.md) — slovník `ScalarType` hodnotu `DateTime` má a všechny tři visitory pro ni větev vypisují, jen bez výrobce —; rozhodnutí [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) konstrukci nechává odmítat a kvůli ní přišel vzorový dotaz EF Core o svůj filtr podle data. Požadavky F11, T2, T3.*
 
 Sdílený LINQ parser čte v pozici operandu literál, sloupec, poddotaz a hodnotu ze scope; `new DateTime(2025, 1, 1)` je konstrukce objektu a odmítá artefakt jako nepřečtený filtr. Práce je číst `new DateTime(r, m, d)` — i s kvalifikací `System.` a s časovými složkami — nad celočíselnými literály jako `QueryConstant` typu `DateTime` v ISO zápisu bez zdobení, jak žádá 024; visitory ho pak vypíší jako `'2025-01-01'` v SQL a HQL a `DateTime.Parse("2025-01-01")` v LINQ, protože ty větve už mají. Opačný směr — řetězcový literál T-SQL porovnaný s datovým sloupcem, který se čte jako `String` a do LINQ vyjde jako nepřeložitelné porovnání data s řetězcem — je jiná mezera a tahle položka ji neřeší.
+
+#### Holé `extends` javové entity mizí bez záznamu
+*Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md); dědičnost sama je vyňatá oblast 2 hranice záruk ([`architecture.md`](./architecture.md), §9). Požadavek F11.*
+
+Javová strana je ve stejném stavu, v jakém byla do 2026-09-21 strana C#, jen o kus dál: anotaci `@Inheritance` hlásí JPA vrstva jako nemodelovanou anotaci, kdežto `extends` mezi dvěma `@Entity` třídami — výchozí strategii JPA, která žádnou anotaci nepotřebuje — nehlásí nikdo. `JavaClassReader` bázový typ přečte a uloží do `JavaClass.Extends`, ale tu vlastnost nečte žádný parser ani builder, takže hierarchie zdroje zmizí beze slova. Práce je předat tvrzení builderu týmž kanálem, jakým ho od 2026-09-21 předává sdílené čtení C# (`AddStatedBaseType`), a spolu s tím zodpovědět, co se hlásí u `@MappedSuperclass`: tam bázová třída entitou převodu není, nese ale mapovaná pole, takže se ztrácí něco jiného než u dědičnosti mezi dvěma entitami a kritérium „jmenuje jinou entitu převodu" na ni nesedne.
 
 #### Revize před vydáním 2.0.0
 *Práce, která uzavírá řadu nad sebou a předchází vydání pod ní. Žánr popisuje [`audits/README.md`](./audits/README.md) a rozhodnutí [007](./decisions/007-documentation-structure.md); předchůdcem je [revize připravenosti verze 1.0](./audits/2026-08-21-version-1-0-readiness-audit.md). Značku pořadí dostane, až bude řada nad ní prázdná.*

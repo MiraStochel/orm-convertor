@@ -231,6 +231,13 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// "public sealed" would match none of its arms and the class would be recorded as
     /// internal. A class with no access token stays internal, which is what C# means by it.
     /// The remaining modifiers have no home in the model and are not carried.
+    ///
+    /// The base list has no home in the model either, and that is exactly why it is handed
+    /// over: a base type naming another entity of the conversion is a hierarchy the source
+    /// maps - EF Core maps one by convention, table per hierarchy - and a fact the model
+    /// cannot keep is a loss that says so (decision 048). The judgement waits for the whole
+    /// entity set, so the builder collects the claim and reports what it resolves; nothing
+    /// here decides what the base type was.
     /// </summary>
     private void ParseClassHeader(ClassDeclarationSyntax classDeclaration)
     {
@@ -246,5 +253,13 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
             accessModifiers,
             classDeclaration.Identifier.Text
         );
+
+        if (classDeclaration.BaseList is { } baseList)
+        {
+            foreach (var baseType in baseList.Types)
+            {
+                entityBuilder.AddStatedBaseType(baseType.Type.ToString());
+            }
+        }
     }
 }
