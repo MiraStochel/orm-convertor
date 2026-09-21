@@ -1,4 +1,5 @@
 ﻿using System.IO.Compression;
+using AbstractWrappers;
 using OrmConvertor;
 using ORMConvertorAPI.Data;
 using ORMConvertorAPI.Dtos;
@@ -82,7 +83,7 @@ public static class Endpoints
         }
     }
 
-    private static IResult ConvertHandler(ConvertRequest req, IConfiguration configuration)
+    private static IResult ConvertHandler(ConvertRequest req, IConfiguration configuration, ParseLimits limits)
     {
         try
         {
@@ -91,8 +92,10 @@ public static class Endpoints
             // proceeds on conventions and the records say so.
             var catalogConnectionString = configuration.GetConnectionString("CatalogDatabase");
 
+            // The limits come from the container, not from req: an operator's fact, not the
+            // sender's (decision 092).
             var converted = ConversionHandler.Convert(
-                req.SourceOrm, req.TargetOrm, req.Sources, catalogConnectionString, req.DeclaredSourceDialect);
+                req.SourceOrm, req.TargetOrm, req.Sources, catalogConnectionString, req.DeclaredSourceDialect, limits);
             return Results.Ok(new ConvertResponse(
                 converted.RunId,
                 converted.ToolVersion,
@@ -105,7 +108,8 @@ public static class Endpoints
                 converted.Records,
                 converted.CatalogState,
                 converted.CatalogReadTime?.TotalMilliseconds,
-                converted.DeclaredSourceDialect));
+                converted.DeclaredSourceDialect,
+                converted.MaxNestingDepth));
         }
         catch (Exception e)
         {

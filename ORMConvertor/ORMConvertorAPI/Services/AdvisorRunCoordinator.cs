@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using AbstractWrappers;
 using AdvisorBenchmarking;
 using DatabaseCatalog;
 using Microsoft.Extensions.Configuration;
@@ -17,6 +18,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
     private readonly IBenchmarkExecutor benchmarkExecutor;
     private readonly ILogger<AdvisorRunCoordinator> logger;
     private readonly string connectionString;
+    private readonly ParseLimits limits;
 
     private static readonly ORMEnum[] KnownFrameworks =
     [
@@ -34,10 +36,12 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
     public AdvisorRunCoordinator(
         IBenchmarkExecutor benchmarkExecutor,
         IConfiguration configuration,
-        ILogger<AdvisorRunCoordinator> logger)
+        ILogger<AdvisorRunCoordinator> logger,
+        ParseLimits limits)
     {
         this.benchmarkExecutor = benchmarkExecutor ?? throw new ArgumentNullException(nameof(benchmarkExecutor));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        this.limits = limits ?? throw new ArgumentNullException(nameof(limits));
         connectionString = configuration.GetConnectionString("AdvisorDatabase")
             ?? configuration["Advisor:ConnectionString"]
             ?? string.Empty;
@@ -80,7 +84,8 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         var translations = BuildTranslations(
             request,
             targetFrameworks,
-            cancellationToken);
+            cancellationToken,
+            limits);
         logger.LogInformation("Translations built for all queries.");
 
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -139,7 +144,8 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
     private static IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>>> BuildTranslations(
         AdvisorRunRequest request,
         IReadOnlyList<ORMEnum> targetFrameworks,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ParseLimits limits)
     {
         var result = new Dictionary<string, IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>>>(StringComparer.Ordinal);
 
@@ -158,7 +164,10 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
                 artifacts = ConversionHandler.Convert(
                     request.SourceOrm,
                     framework,
-                    sources).Sources;
+                    sources,
+                    catalogConnectionString: null,
+                    declaredSourceDialect: null,
+                    limits).Sources;
 
                 perFramework[framework] = artifacts;
             }

@@ -41,11 +41,33 @@ internal class ParserFactory
     /// so a fact about the source travelling through a target object would invert that
     /// boundary (S1).
     /// </summary>
+    /// <param name="limits">
+    /// The limits the parsers read under (decision 092). Unlike the declared dialect it is no
+    /// fact of the request but of the instance, so it is stated once here for every parser
+    /// built rather than threaded through twenty constructors - and no wrapper can forget it.
+    /// </param>
     public static List<IParser> Create(
         ORMEnum orm,
         AbstractEntityBuilder eb,
         Func<AbstractQueryBuilder>? qb,
-        SourceSqlDialect? declaredSourceDialect = null)
+        SourceSqlDialect? declaredSourceDialect = null,
+        ParseLimits? limits = null)
+    {
+        var parsers = Build(orm, eb, qb, declaredSourceDialect);
+
+        foreach (var parser in parsers)
+        {
+            parser.Limits = limits ?? ParseLimits.Default;
+        }
+
+        return parsers;
+    }
+
+    private static List<IParser> Build(
+        ORMEnum orm,
+        AbstractEntityBuilder eb,
+        Func<AbstractQueryBuilder>? qb,
+        SourceSqlDialect? declaredSourceDialect)
     {
         switch (orm)
         {

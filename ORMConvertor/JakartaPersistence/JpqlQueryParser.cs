@@ -64,6 +64,13 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private (string What, QueryFeature? Category)? unread;
 
+    /// <summary>
+    /// The limits this parser reads its input under (decision 092). The orchestration sets
+    /// them on every parser it creates; one constructed by hand - in a test - runs under the
+    /// default, which is the cap the application uses unless its operator moved it.
+    /// </summary>
+    public ParseLimits Limits { get; set; } = ParseLimits.Default;
+
     public bool CanParse(ConversionContentType contentType)
         => contentType is ConversionContentType.JpqlQuery or ConversionContentType.JavaQuery;
 
@@ -86,20 +93,32 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         try
         {
             tokens = Lex(jpql);
-            position = 0;
-            ParseQueryBody();
 
-            while (TryParseSetOperator() is { } operation)
+            // Before the descent, because the descent is what the cap protects: from here on
+            // the depth of the input is the depth of the recursion, and an overflow is not a
+            // record but the end of the process (decision 092). Lexing is a loop, so reaching
+            // this line is safe at any depth, and the tokens are already in hand.
+            if (NestingDepthGuard.FirstBeyond(Tracked(tokens), Limits) is { } tooDeep)
             {
-                queryBuilder.Pop();
-                queryBuilder.SetOperation(operation);
-                queryBuilder.Push();
-                ParseQueryBody();
+                Report(ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep, Limits));
             }
-
-            if (Current.Kind != TokenKind.End)
+            else
             {
-                throw Error("expected the end of the query");
+                position = 0;
+                ParseQueryBody();
+
+                while (TryParseSetOperator() is { } operation)
+                {
+                    queryBuilder.Pop();
+                    queryBuilder.SetOperation(operation);
+                    queryBuilder.Push();
+                    ParseQueryBody();
+                }
+
+                if (Current.Kind != TokenKind.End)
+                {
+                    throw Error("expected the end of the query");
+                }
             }
         }
         catch (JpqlParseError error)
@@ -303,6 +322,14 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         read.Add(new Token(TokenKind.End, string.Empty, line, column));
         return read;
     }
+
+    /// <summary>
+    /// The lexer's own tokens as the shared nesting guard reads them - text and position, and
+    /// nothing else, because that is all a token type has in common across five languages
+    /// (decision 092). Lazy on purpose: the guard stops at the first token past the cap.
+    /// </summary>
+    private static IEnumerable<SourceToken> Tracked(IEnumerable<Token> read)
+        => read.Select(token => new SourceToken(token.Text, token.Line, token.Column));
 
     /* ---- token helpers -------------------------------------------------------------- */
 

@@ -80,7 +80,7 @@ The publish output carries `wwwroot` with it, so the frontend needs no copy step
 Two further facts a fresh instance inherits rather than configures. The Advisor needs the native `libadvisor.so`, which is built only inside the Docker image, so anywhere else the Advisor endpoints fail while translation keeps working. And with `ConnectionStrings__CatalogDatabase` left empty the catalog completion phase never runs: translation falls back on conventions and every `/convert` response reports it in `CatalogState`.
 
 # Configuration
-Six variables decide what an instance can do. None of them carries a value in the repository — `appsettings.json` ships both connection strings deliberately empty (requirement S4, decision [029](../docs/decisions/029-database-connection-is-the-consumer-projects-fact.md)), so each environment supplies its own. In `Development` the application and the tests also read user secrets, where the key is spelled with a colon (`ConnectionStrings:CatalogDatabase`); everywhere else it arrives as an environment variable, where the separator is a double underscore.
+Seven variables decide what an instance can do. None of them carries a value in the repository — `appsettings.json` ships both connection strings deliberately empty (requirement S4, decision [029](../docs/decisions/029-database-connection-is-the-consumer-projects-fact.md)), so each environment supplies its own. The last one below is the exception that proves the rule: it is the only setting with a working default, and the default is in the code rather than in `appsettings.json` so that the number is written down once. In `Development` the application and the tests also read user secrets, where the key is spelled with a colon (`ConnectionStrings:CatalogDatabase`); everywhere else it arrives as an environment variable, where the separator is a double underscore.
 
 | Variable | What it enables | Without it |
 |---|---|---|
@@ -90,8 +90,11 @@ Six variables decide what an instance can do. None of them carries a value in th
 | `ORMCONVERTOR_REQUIRE_TEST_DATABASE` | Turns that skip into a failure. Set it wherever the environment does provide a database. | A run that quietly skipped everything database-dependent passes as green. |
 | `ORMCONVERTOR_TEST_SCHEMA` | The schema the tests create and drop. | Defaults to `ormconvertor_test`. |
 | `ASPNETCORE_ENVIRONMENT` | `Development` maps the Swagger UI and reads user secrets. | Defaults to `Production`: neither. |
+| `Parsing__MaxNestingDepth` | How deep a unit may nest before every parser refuses it (decision [092](../docs/decisions/092-input-nesting-depth-capped-before-the-descent.md)). `0` switches the cap off. | Defaults to 128, which is what the tests and the guarantees are stated against. |
 
 `docker-compose.yml` sets the environment and both application connection strings for the app service, and the test connection string plus the requirement flag for the test service; CI sets those last two. A host deployment normally has to think only about the first two.
+
+**Raising or switching off the nesting cap is an operator's decision, and only an operator's.** No request can move it: the input the cap defends against would otherwise carry its own permission to exceed it, so the value is read once at startup and `/convert` has no field for it. What it defends against is not a slow answer but the end of the process — deeply nested input overflows the stack, which .NET cannot catch, and the instance dies with every request it was serving. Switching the cap off takes that back whole ([`threat-model.md`](../docs/threat-model.md), threat 2). Every `/convert` response reports the cap the run was read under, in `maxNestingDepth`.
 
 # Advisor prerequisites
 The translation features work in any environment. The Advisor additionally needs:

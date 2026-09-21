@@ -1,3 +1,4 @@
+using AbstractWrappers;
 using AbstractWrappers.Diagnostics;
 using DatabaseCatalog;
 using Model;
@@ -26,6 +27,10 @@ namespace ORMConvertorAPI.Dtos;
 /// <param name="CatalogReadMilliseconds">Duration of the catalog completion phase
 /// (decision 015), reported separately from translation time (S3); null when the phase
 /// had nothing to do.</param>
+/// <param name="MaxNestingDepth">How deep this instance let the parsers read, or 0 where
+/// the operator switched the cap off (decision 092). It stands beside the tool version for
+/// the same reason that one does: S2 promises determinism for the same version of the tool,
+/// and a movable cap is the second thing the answer depends on.</param>
 public record ConvertResponse(
     Guid RunId,
     string ToolVersion,
@@ -38,4 +43,5 @@ public record ConvertResponse(
     List<ConversionRecord> Records,
     CatalogConnectionState CatalogState,
     double? CatalogReadMilliseconds = null,
-    SourceSqlDialect? DeclaredSourceDialect = null);
+    SourceSqlDialect? DeclaredSourceDialect = null,
+    int MaxNestingDepth = ParseLimits.DefaultMaxNestingDepth);

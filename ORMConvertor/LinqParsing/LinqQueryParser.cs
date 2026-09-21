@@ -6,6 +6,7 @@ using Common.Naming;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
@@ -65,6 +66,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private (string What, QueryFeature? Category)? unread;
 
+    /// <summary>
+    /// The limits this parser reads its input under (decision 092). The orchestration sets
+    /// them on every parser it creates; one constructed by hand - in a test - runs under the
+    /// default, which is the cap the application uses unless its operator moved it.
+    /// </summary>
+    public ParseLimits Limits { get; set; } = ParseLimits.Default;
+
     public bool CanParse(ConversionContentType contentType)
         => contentType == ConversionContentType.CSharpQuery;
 
@@ -78,6 +86,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     {
         queryBuilder = queryBuilders();
         entityMaps = maps;
+
+        // Before Roslyn, and over the source as the caller wrote it rather than the wrapped
+        // text, so the position in the record is a position in their input (decision 092).
+        // The two levels the wrapper adds are lost from the count and no one misses them: the
+        // cap sits an order of magnitude below where the stack gives out.
+        if (NestingDepthGuard.FirstBeyond(Tracked(source), Limits) is { } tooDeep)
+        {
+            queryBuilder.Push();
+            Report(ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep, Limits));
+            queryBuilder.Pop();
+
+            return [queryBuilder];
+        }
 
         var tree = CSharpSyntaxTree.ParseText(Wrap(source));
         var root = tree.GetCompilationUnitRoot();
@@ -110,6 +131,23 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <c>session.Query&lt;T&gt;()</c> — and says what it names.
     /// </summary>
     protected abstract bool TryReadQueryRoot(ExpressionSyntax expression, out LinqQueryRoot? root);
+
+    /// <summary>
+    /// The C# text as the shared nesting guard reads it (decision 092): Roslyn's own lexer,
+    /// which is a loop, projected onto text and position. Each reading layer writes this for
+    /// its own lexer rather than sharing one - a token type is exactly what the five languages
+    /// do not have in common, and the number they are measured against is shared instead.
+    /// </summary>
+    private static IEnumerable<SourceToken> Tracked(string source)
+    {
+        var text = SourceText.From(source);
+
+        foreach (var token in SyntaxFactory.ParseTokens(source))
+        {
+            var position = text.Lines.GetLinePosition(token.SpanStart);
+            yield return new SourceToken(token.Text, position.Line + 1, position.Character + 1);
+        }
+    }
 
     private static string Wrap(string source) =>
         "using System;\n" +

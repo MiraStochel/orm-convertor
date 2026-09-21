@@ -1,7 +1,9 @@
 using AbstractWrappers;
+using AbstractWrappers.Diagnostics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 using Model;
 using Model.AbstractRepresentation;
 
@@ -18,6 +20,13 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
 {
     protected readonly AbstractEntityBuilder entityBuilder = entityBuilder;
 
+    /// <summary>
+    /// The limits this parser reads its input under (decision 092). The orchestration sets
+    /// them on every parser it creates; one constructed by hand - in a test - runs under the
+    /// default, which is the cap the application uses unless its operator moved it.
+    /// </summary>
+    public ParseLimits Limits { get; set; } = ParseLimits.Default;
+
     public bool CanParse(ConversionContentType contentType)
     {
         return contentType == ConversionContentType.CSharpEntity;
@@ -32,6 +41,23 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// <returns>The entity maps the unit declared; empty when it held no class (decision 066).</returns>
     public IReadOnlyCollection<EntityMap> Parse(string source)
     {
+        // Before Roslyn, and not because Roslyn is careless: it is the only one of the five
+        // grammars with a guard of its own, but that guard reports a diagnostic at 4096 levels
+        // and the process still dies below 6000 (decision 092). Its lexer is a loop, so the
+        // scan below is safe at any depth; building the tree is what is not.
+        if (NestingDepthGuard.FirstBeyond(Tracked(source), Limits) is { } tooDeep)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = entityBuilder.Descriptor.Framework,
+                Artifact = ConversionContentType.CSharpEntity,
+                Reason = NestingDepthGuard.Reason(tooDeep, Limits),
+            });
+
+            return [];
+        }
+
         var root = CSharpSyntaxTree.ParseText(source).GetCompilationUnitRoot();
 
         var classes = root.DescendantNodes()
@@ -57,6 +83,25 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
         }
 
         return read;
+    }
+
+    /// <summary>
+    /// The C# text as the shared nesting guard reads it (decision 092): Roslyn's own lexer,
+    /// which is a loop, projected onto text and position. Each reading layer writes this for
+    /// its own lexer rather than sharing one - a token type is exactly what the five languages
+    /// do not have in common, and the number they are measured against is shared instead.
+    /// Counting brackets in the raw text would be cheaper and wrong: a parenthesis inside a
+    /// string literal is not nesting, and a Dapper unit is C# full of SQL literals.
+    /// </summary>
+    private static IEnumerable<SourceToken> Tracked(string source)
+    {
+        var text = SourceText.From(source);
+
+        foreach (var token in SyntaxFactory.ParseTokens(source))
+        {
+            var position = text.Lines.GetLinePosition(token.SpanStart);
+            yield return new SourceToken(token.Text, position.Line + 1, position.Character + 1);
+        }
     }
 
     /// <summary>

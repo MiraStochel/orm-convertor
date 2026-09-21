@@ -102,7 +102,8 @@ public sealed class MyBatisXmlQueryParser(
             builder,
             (kind, reason, feature) => ReportSql(builder, kind, reason, feature),
             declaredSourceDialect,
-            text.Parameters)
+            text.Parameters,
+            Limits)
             .Read(sql);
 
         return builder;

@@ -24,6 +24,13 @@ public abstract class MyBatisQueryParser(Func<AbstractQueryBuilder> queryBuilder
 {
     protected readonly MyBatisReadingContext context = context;
 
+    /// <summary>
+    /// The limits this parser reads its input under (decision 092). The orchestration sets
+    /// them on every parser it creates; one constructed by hand - in a test - runs under the
+    /// default, which is the cap the application uses unless its operator moved it.
+    /// </summary>
+    public ParseLimits Limits { get; set; } = ParseLimits.Default;
+
     public abstract bool CanParse(ConversionContentType contentType);
 
     public abstract IReadOnlyCollection<AbstractQueryBuilder> Parse(

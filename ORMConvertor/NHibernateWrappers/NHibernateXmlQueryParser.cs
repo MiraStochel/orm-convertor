@@ -42,6 +42,13 @@ public class NHibernateXmlQueryParser(
         @"\{[A-Za-z_][A-Za-z0-9_]*(\.([A-Za-z_][A-Za-z0-9_]*|\*))?\}",
         RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// The limits this parser reads its input under (decision 092). The orchestration sets
+    /// them on every parser it creates; one constructed by hand - in a test - runs under the
+    /// default, which is the cap the application uses unless its operator moved it.
+    /// </summary>
+    public ParseLimits Limits { get; set; } = ParseLimits.Default;
+
     public bool CanParse(ConversionContentType contentType)
         => contentType == ConversionContentType.XML;
 
@@ -155,7 +162,9 @@ public class NHibernateXmlQueryParser(
         new SqlQueryReader(
             builder,
             (kind, reason, feature) => Report(builder, kind, ConversionContentType.SqlQuery, reason, feature),
-            declaredSourceDialect)
+            declaredSourceDialect,
+            statedParameters: null,
+            Limits)
             .Read(sql);
 
         return [builder];

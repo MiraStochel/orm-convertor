@@ -38,12 +38,18 @@ public sealed class MyBatisMapperInterfaceParser(AbstractEntityBuilder entityBui
         JavaCompilationUnit unit;
         try
         {
-            unit = JavaClassReader.Read(source);
+            unit = JavaClassReader.Read(source, Limits);
         }
         catch (JavaSyntaxError error)
         {
             Report(ConversionRecordKind.Failure, null, null, null,
                 $"The Java source could not be read at line {error.Line}, column {error.Column}: {error.Message}.");
+            return [];
+        }
+        catch (JavaInputTooDeep tooDeep)
+        {
+            Report(ConversionRecordKind.Failure, null, null, null,
+                NestingDepthGuard.Reason(tooDeep.Token, Limits));
             return [];
         }
 

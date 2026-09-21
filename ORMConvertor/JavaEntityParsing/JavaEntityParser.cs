@@ -16,6 +16,13 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
 {
     protected readonly AbstractEntityBuilder entityBuilder = entityBuilder;
 
+    /// <summary>
+    /// The limits this parser reads its input under (decision 092). The orchestration sets
+    /// them on every parser it creates; one constructed by hand - in a test - runs under the
+    /// default, which is the cap the application uses unless its operator moved it.
+    /// </summary>
+    public ParseLimits Limits { get; set; } = ParseLimits.Default;
+
     public bool CanParse(ConversionContentType contentType)
         => contentType == ConversionContentType.JavaEntity;
 
@@ -31,7 +38,7 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
         JavaCompilationUnit unit;
         try
         {
-            unit = JavaClassReader.Read(source);
+            unit = JavaClassReader.Read(source, Limits);
         }
         catch (JavaSyntaxError error)
         {
@@ -41,6 +48,19 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
                 Framework = entityBuilder.Descriptor.Framework,
                 Artifact = ConversionContentType.JavaEntity,
                 Reason = $"The Java source could not be read at line {error.Line}, column {error.Column}: {error.Message}.",
+            });
+            return [];
+        }
+        catch (JavaInputTooDeep tooDeep)
+        {
+            // Not a malformed source and not reported as one (decision 092): the sentence is
+            // the one all five languages refuse with, and the unit yields nothing.
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = entityBuilder.Descriptor.Framework,
+                Artifact = ConversionContentType.JavaEntity,
+                Reason = NestingDepthGuard.Reason(tooDeep.Token, Limits),
             });
             return [];
         }

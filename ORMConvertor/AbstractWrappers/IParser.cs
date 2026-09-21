@@ -11,6 +11,14 @@ namespace AbstractWrappers;
 public interface IParser
 {
     bool CanParse(ConversionContentType contentType);
+
+    /// <summary>
+    /// The limits the parser reads its input under (decision 092). It is settable rather than
+    /// a constructor argument so that the orchestration can state it once for every parser it
+    /// built, instead of every wrapper threading it through a constructor of its own - the
+    /// limit is a fact about the instance, not about the framework being read (S1).
+    /// </summary>
+    ParseLimits Limits { get; set; }
 }
 
 /// <summary>

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using AbstractWrappers;
 
 namespace JavaEntityParsing;
 
@@ -30,6 +31,17 @@ public sealed class JavaSyntaxError(int line, int column, string message) : Exce
     public int Line { get; } = line;
 
     public int Column { get; } = column;
+}
+
+/// <summary>
+/// Input that nests deeper than the cap of decision 092 allows. Kept apart from
+/// <see cref="JavaSyntaxError"/> on purpose: the source is not malformed and saying so would
+/// be a lie - it is legal Java the instance declines to read that far into, and the caller
+/// says so in the one sentence all five languages share.
+/// </summary>
+public sealed class JavaInputTooDeep(SourceToken token) : Exception
+{
+    public SourceToken Token { get; } = token;
 }
 
 /// <summary>

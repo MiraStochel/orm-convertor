@@ -60,6 +60,16 @@ public sealed class ConversionResult
     /// </summary>
     public SourceSqlDialect? DeclaredSourceDialect { get; init; }
 
+    /// <summary>
+    /// How deep the parsers were allowed to read on this run, or <see cref="ParseLimits.Unlimited"/>
+    /// where the operator switched the cap off (decision 092). It belongs beside the tool
+    /// version for the same reason that one does: S2 promises determinism for the same version
+    /// of the tool, and a movable cap is the second thing the answer depends on - the same unit
+    /// can be translated on one instance and refused on another without the versions differing.
+    /// A caller comparing two runs needs to see which cap each was measured under.
+    /// </summary>
+    public required int MaxNestingDepth { get; init; }
+
     public required List<ConversionSource> Sources { get; init; }
 
     public required List<ConversionRecord> Records { get; init; }

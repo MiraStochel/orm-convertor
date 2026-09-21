@@ -45,8 +45,11 @@ public class SqlQueryReader(
     AbstractQueryBuilder queryBuilder,
     Action<ConversionRecordKind, string, QueryFeature?> report,
     SourceSqlDialect? declaredSourceDialect,
-    IReadOnlyDictionary<string, SqlParameterFacts>? statedParameters = null)
+    IReadOnlyDictionary<string, SqlParameterFacts>? statedParameters = null,
+    ParseLimits? limits = null)
 {
+    private readonly ParseLimits limits = limits ?? ParseLimits.Default;
+
     private string sourceAlias = "t";
 
     /// <summary>
@@ -76,6 +79,17 @@ public class SqlQueryReader(
         if (ForeignDialect.StopsReading(declaredSourceDialect))
         {
             Report(ConversionRecordKind.Failure, ForeignDialect.QueryReason);
+            return;
+        }
+
+        // Before the grammar for a second reason, and the graver one: of all five languages
+        // the tool reads, T-SQL gives out first - 1024 levels of parentheses read, 2048 kill
+        // the process (decision 092). The grammar has no guard of its own and no way to be
+        // given one, but its lexer is separate and is a loop, so the depth is measured on the
+        // token stream and the grammar never sees what would overflow it.
+        if (NestingDepthGuard.FirstBeyond(Tracked(sql), limits) is { } tooDeep)
+        {
+            Report(ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep, limits));
             return;
         }
 
@@ -152,6 +166,20 @@ public class SqlQueryReader(
         }
 
         ReadQueryExpression(select.QueryExpression);
+    }
+
+    /// <summary>
+    /// The SQL as the shared nesting guard reads it (decision 092): ScriptDom's own lexer,
+    /// which is a loop, projected onto text and position. Lexical errors are dropped here on
+    /// purpose - the grammar reports them a moment later, with the position S7 asks the
+    /// interface to show.
+    /// </summary>
+    private static IEnumerable<SourceToken> Tracked(string sql)
+    {
+        using var reader = new StringReader(sql);
+        var read = new TSql160Parser(initialQuotedIdentifiers: true).GetTokenStream(reader, out _);
+
+        return read.Select(token => new SourceToken(token.Text, token.Line, token.Column));
     }
 
     /// <summary>

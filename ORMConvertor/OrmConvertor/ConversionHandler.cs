@@ -13,7 +13,8 @@ public static class ConversionHandler
         ORMEnum targetOrm,
         List<ConversionSource> sources,
         string? catalogConnectionString = null,
-        SourceSqlDialect? declaredSourceDialect = null
+        SourceSqlDialect? declaredSourceDialect = null,
+        ParseLimits? limits = null
     )
     {
         // The reader lives and dies with the request; a caller holding a longer-lived
@@ -23,7 +24,7 @@ public static class ConversionHandler
             ? null
             : new SqlServerCatalogReader(catalogConnectionString);
 
-        return Convert(sourceOrm, targetOrm, sources, reader, declaredSourceDialect);
+        return Convert(sourceOrm, targetOrm, sources, reader, declaredSourceDialect, limits);
     }
 
     /// <param name="declaredSourceDialect">
@@ -38,14 +39,23 @@ public static class ConversionHandler
     /// the source, so nothing stops there, but the catalog is always SQL Server and a source
     /// that declared another system says so about the facts it took from one.
     /// </param>
+    /// <param name="limits">
+    /// The limits the parsers read under (decision 092). It comes from the application's own
+    /// configuration, never from the request: the input a cap defends against must not be able
+    /// to carry permission to exceed it. Null is the default cap, which is what every caller
+    /// but the API - a test, an Advisor run - reads under.
+    /// </param>
     public static ConversionResult Convert(
         ORMEnum sourceOrm,
         ORMEnum targetOrm,
         List<ConversionSource> sources,
         ICatalogReader? catalogReader,
-        SourceSqlDialect? declaredSourceDialect = null
+        SourceSqlDialect? declaredSourceDialect = null,
+        ParseLimits? limits = null
     )
     {
+        var parseLimits = limits ?? ParseLimits.Default;
+
         var entityBuilder = EntityBuilderFactory.Create(targetOrm);
 
         if (entityBuilder == null)
@@ -74,7 +84,7 @@ public static class ConversionHandler
             .ToList();
 
         // 1) Build entity maps using entity parsers only
-        var entityParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb: null, declaredSourceDialect)
+        var entityParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb: null, declaredSourceDialect, parseLimits)
             .OfType<IEntityParser>()
             .ToList();
 
@@ -129,7 +139,7 @@ public static class ConversionHandler
             return builder;
         }
 
-        var queryParsers = ParserFactory.Create(sourceOrm, entityBuilder, NewQueryBuilder, declaredSourceDialect)
+        var queryParsers = ParserFactory.Create(sourceOrm, entityBuilder, NewQueryBuilder, declaredSourceDialect, parseLimits)
             .OfType<IQueryParser>()
             .ToList();
 
@@ -234,6 +244,7 @@ public static class ConversionHandler
             TargetFrameworkVersion = entityBuilder.Descriptor.Version,
             TargetDatabaseDialect = entityBuilder.Descriptor.Dialect,
             DeclaredSourceDialect = declaredSourceDialect,
+            MaxNestingDepth = parseLimits.MaxNestingDepth,
             Sources = results,
             Records = [.. entityBuilder.Records, .. queryRecords, .. runRecords],
             CatalogState = catalogPhase.ConnectionState,

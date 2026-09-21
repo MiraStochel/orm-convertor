@@ -37,13 +37,19 @@ public sealed class MyBatisAnnotationQueryParser(
         JavaCompilationUnit unit;
         try
         {
-            unit = JavaClassReader.Read(source);
+            unit = JavaClassReader.Read(source, Limits);
         }
         catch (JavaSyntaxError error)
         {
             var refused = Named(null);
             Report(refused, ConversionRecordKind.Failure,
                 $"The Java source could not be read at line {error.Line}, column {error.Column}: {error.Message}.");
+            return [refused];
+        }
+        catch (JavaInputTooDeep tooDeep)
+        {
+            var refused = Named(null);
+            Report(refused, ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep.Token, Limits));
             return [refused];
         }
 
@@ -122,7 +128,8 @@ public sealed class MyBatisAnnotationQueryParser(
             builder,
             (kind, reason, feature) => ReportSql(builder, kind, reason, feature),
             declaredSourceDialect,
-            text.Parameters)
+            text.Parameters,
+            Limits)
             .Read(sql);
 
         return builder;

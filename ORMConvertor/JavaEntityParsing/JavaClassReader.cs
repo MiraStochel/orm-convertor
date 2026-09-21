@@ -1,4 +1,5 @@
 using System.Text;
+using AbstractWrappers;
 
 namespace JavaEntityParsing;
 
@@ -32,19 +33,52 @@ public sealed class JavaClassReader
 
     private readonly string source;
     private readonly List<JavaToken> tokens;
+    private readonly ParseLimits limits;
     private int position;
 
-    private JavaClassReader(string source)
+    /// <summary>
+    /// How deep the type arguments being read are nested. Counted here rather than by the
+    /// shared guard because Java's angle brackets are not brackets: &lt; is a comparison in an
+    /// initializer and a type argument in a declaration, and only the reader knows which it is
+    /// looking at (decision 092). The number it is measured against is the same one.
+    /// </summary>
+    private int typeArgumentDepth;
+
+    private JavaClassReader(string source, ParseLimits limits)
     {
         this.source = source;
+        this.limits = limits;
         tokens = JavaLexer.Lex(source);
     }
 
-    public static JavaCompilationUnit Read(string source)
+    /// <param name="limits">
+    /// The limits the caller reads under (decision 092); the default cap when it says nothing.
+    /// </param>
+    public static JavaCompilationUnit Read(string source, ParseLimits? limits = null)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return new JavaClassReader(source).ReadCompilationUnit();
+
+        var reader = new JavaClassReader(source, limits ?? ParseLimits.Default);
+
+        // Before the descent, because the descent is what the cap protects: from here on the
+        // depth of the input is the depth of the recursion, and an overflow ends the process
+        // rather than the reading. Lexing is a loop, so the tokens are safe to have at any
+        // depth - it is walking them as a tree that is not.
+        if (NestingDepthGuard.FirstBeyond(Tracked(reader.tokens), reader.limits) is { } tooDeep)
+        {
+            throw new JavaInputTooDeep(tooDeep);
+        }
+
+        return reader.ReadCompilationUnit();
     }
+
+    /// <summary>
+    /// The lexer's own tokens as the shared nesting guard reads them - text and position, and
+    /// nothing else, because that is all a token type has in common across five languages
+    /// (decision 092). Lazy on purpose: the guard stops at the first token past the cap.
+    /// </summary>
+    private static IEnumerable<SourceToken> Tracked(IEnumerable<JavaToken> read)
+        => read.Select(token => new SourceToken(token.Text, token.Line, token.Column));
 
     /* ---- token helpers -------------------------------------------------------------- */
 
@@ -620,6 +654,25 @@ public sealed class JavaClassReader
     }
 
     private string ReadTypeArguments()
+    {
+        // The one nesting the shared guard cannot count, so it is counted here, where the
+        // angle bracket is known to open a type argument and not a comparison (decision 092).
+        if (limits.CapsNesting && ++typeArgumentDepth > limits.MaxNestingDepth)
+        {
+            throw new JavaInputTooDeep(new SourceToken(Current.Text, Current.Line, Current.Column));
+        }
+
+        try
+        {
+            return ReadTypeArgumentsCore();
+        }
+        finally
+        {
+            typeArgumentDepth--;
+        }
+    }
+
+    private string ReadTypeArgumentsCore()
     {
         ConsumeSymbol("<");
         var arguments = new List<string>();
