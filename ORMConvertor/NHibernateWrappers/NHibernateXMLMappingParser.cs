@@ -202,6 +202,8 @@ public class NHibernateXMLMappingParser(
             entityBuilder.AddSchema(schema);
         }
 
+        ReportUnmodelledAttributes(classElement, UnmodelledClassAttributes, propertyName: null);
+
         ParsePrimaryKey(classElement);
         ParseVersion(classElement);
         ParseProperties(classElement);
@@ -326,8 +328,12 @@ public class NHibernateXMLMappingParser(
     /// so it carries the same flag and its element name itself is the type claim; the
     /// generated mapping states the same thing as a &lt;version&gt; element. The other
     /// attributes - unsaved-value, generated, access, source - have no counterpart in the
-    /// model and are skipped like any other unmapped attribute; the generated mapping
-    /// derives generated="always" from the binary type family itself.
+    /// model and are skipped without a record: the named lists of
+    /// <see cref="ReportUnmodelledAttributes"/> cover &lt;class&gt; and &lt;property&gt; only, and
+    /// this element is not among them - what the other elements still swallow is written
+    /// down in docs/open-items.md. generated is the one of the four that would say least
+    /// here anyway: the generated mapping derives generated="always" from the binary type
+    /// family itself.
     /// </summary>
     private void ParseVersion(XElement classElement)
     {
@@ -669,6 +675,7 @@ public class NHibernateXMLMappingParser(
 
             ApplyTypeFacts(prop, propertyName);
             ReadUniqueness(prop, propertyName, uniqueKeys, singles);
+            ReportUnmodelledAttributes(prop, UnmodelledPropertyAttributes, propertyName);
         }
 
         foreach (var propertyName in singles)
@@ -906,6 +913,89 @@ public class NHibernateXMLMappingParser(
                 Property = propertyName,
                 Reason = $"The attribute {name}=\"{value}\" has no counterpart in the intermediate "
                     + "representation and was dropped (decision 055).",
+            });
+        }
+    }
+
+    /// <summary>
+    /// The attributes of a &lt;class&gt; the model has no place for, each with what its loss
+    /// means for the generated artifact. The parser reads name, table and schema and used
+    /// to skip everything else without a word, which is the silence decisions 048 and 004
+    /// rule out: a mapping fact the model cannot keep is a loss and says so.
+    ///
+    /// Two of them change what the artifact means rather than only what it states. The
+    /// where condition is a permanent filter on every load of the entity, so an output
+    /// without it reads rows the source never saw; discriminator-value belongs to a
+    /// hierarchy the parser does not read at all, an area outside the guarantees of this
+    /// version as a whole (decision 030, see architecture.md §9). The rest are strategy
+    /// settings NHibernate applies its own default for once the attribute is gone.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledClassAttributes =
+    [
+        ("discriminator-value", "names the class in a table-per-hierarchy mapping, which the parser does not read at all (decision 030)"),
+        ("where", "restricts every load of the entity to the rows matching it, so without it the target reads the whole table"),
+        ("mutable", "says whether the entity may be updated at all, and without it the target treats it as writable"),
+        ("optimistic-lock", "chooses the concurrency strategy of the entity, and without it the target applies its own"),
+        ("dynamic-insert", "limits the generated INSERT to the columns actually set, and without it the target writes all of them"),
+        ("dynamic-update", "limits the generated UPDATE to the columns actually changed, and without it the target writes all of them"),
+        ("batch-size", "sizes the batch the framework fetches proxies of this class in, which is a fetching strategy and not a mapping fact"),
+        ("lazy", "says whether the class is proxied for lazy loading, and without it the target applies its own default"),
+    ];
+
+    /// <summary>
+    /// The same for a &lt;property&gt;, whose read attributes are name, column, type and the
+    /// facets <see cref="ReadFacetsInto"/> and <see cref="ReadUniqueness"/> take.
+    ///
+    /// formula is the one that changes what the artifact means: a property read from a SQL
+    /// expression has no column at all, while the model requires one, so the output does
+    /// not merely lose the expression - it invents a column in its place. The framework
+    /// comparison (docs/analysis/orm-frameworks-comparison.md) names it as an expressive
+    /// capability of NHibernate, which is exactly the kind of fact F11 asks to be told
+    /// about rather than left to be discovered in the output.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledPropertyAttributes =
+    [
+        ("formula", "reads the property from a SQL expression instead of a column, so it has no column of its own; the model requires one and the output names it after the property"),
+        ("access", "chooses how the framework reaches the member, and without it the target goes through the property"),
+        ("insert", "says whether the column takes part in the generated INSERT, and without it the target writes it"),
+        ("update", "says whether the column takes part in the generated UPDATE, and without it the target writes it"),
+        ("lazy", "defers loading of this one property until it is read, and without it the target loads it with the row"),
+        ("generated", "says the database produces the value and the framework reads it back, and without it the target treats the value as the application's"),
+        ("optimistic-lock", "says whether a change to this property takes part in the entity's optimistic lock, and without it the target counts it in"),
+    ];
+
+    /// <summary>
+    /// Reports every attribute of the list the element actually states (decision 048). The
+    /// list is named rather than derived as the complement of what is read: an attribute
+    /// gets a record because it carries a mapping fact the model cannot keep, and what each
+    /// one costs is said in the record instead of being left to the reader - which a
+    /// complement could not do. Nothing here parses the value; the record repeats it as the
+    /// source wrote it, which is what makes it possible to put the fact back by hand.
+    ///
+    /// The record carries no <see cref="MappingFactCategory"/>, for the reason decision 048
+    /// gives: the categories are a closed vocabulary of facts the model holds, and none of
+    /// these is one of them, so naming the nearest would claim more than is known.
+    /// </summary>
+    private void ReportUnmodelledAttributes(
+        XElement element,
+        (string Name, string Consequence)[] attributes,
+        string? propertyName)
+    {
+        foreach (var (name, consequence) in attributes)
+        {
+            if (element.Attribute(name)?.Value is not string value || string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = entityBuilder.Descriptor.Framework,
+                Entity = entityBuilder.EntityMap.Entity.Name,
+                Property = propertyName,
+                Reason = $"The attribute {name}=\"{value}\" of <{element.Name.LocalName}> has no counterpart "
+                    + $"in the intermediate representation and was dropped (decision 048): it {consequence}.",
             });
         }
     }

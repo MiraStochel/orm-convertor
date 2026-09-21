@@ -26,24 +26,19 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Příští položky
 
-Na těchhle položkách se pracuje teď a do téhle kategorie je dostalo jedno společné: každá buď dělá nepravdivou větu, kterou [`architecture.md`](./architecture.md) dnes vyslovuje, nebo vydá tiše špatný výstup. Přesně to by jinak našla revize, která stojí za nimi — a opravovalo by se pod hotovou revizí. Přišly z porovnání [`analysis/`](./analysis/README.md) s kódem — poslední z revize celého repozitáře z 2026-09-21 odbavilo rozhodnutí [094](./decisions/094-entity-identity-inside-a-conversion.md) —; co z obou nálezů zůstalo otázkou, leží ve [Zbytcích](#zbytky). U atributů NHibernate mapování jde navíc přímo o větu [`architecture.md`](./architecture.md), §5, která hranici plochého čtení vyslovuje šířeji, než dnes platí; opraví se s tou položkou.
+Na těchhle položkách se pracuje teď a do téhle kategorie je dostalo jedno společné: každá buď dělá nepravdivou větu, kterou [`architecture.md`](./architecture.md) dnes vyslovuje, nebo vydá tiše špatný výstup. Přesně to by jinak našla revize, která stojí za nimi — a opravovalo by se pod hotovou revizí. Přišly z porovnání [`analysis/`](./analysis/README.md) s kódem — poslední z revize celého repozitáře z 2026-09-21 odbavilo rozhodnutí [094](./decisions/094-entity-identity-inside-a-conversion.md) —; co z obou nálezů zůstalo otázkou, leží ve [Zbytcích](#zbytky).
 
 Za položkami stojí **revize a vydání `2.0.0`**, v tomhle pořadí. Kód se kvůli nim nezmrazuje: položky se odbavují dál a revize měří strom, až bude řada nad ní prázdná.
 
 ### Práce
 
-#### Atributy NHibernate mapování, které parser přeskakuje bez záznamu
-*Na řadě. Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [004](./decisions/004-unexpressible-facts-as-warnings.md); vyňatá oblast 2 hranice záruk ([`architecture.md`](./architecture.md), §9) se týká prvků, ne atributů. Táž [`architecture.md`](./architecture.md), §5, tvrdí, že hranici plochého čtení vyslovuje záznam — u těchhle atributů zatím ne. Požadavek F11.*
-
-XML parser čte z `<property>` název, sloupec, typ, délku, přesnost, nullabilitu a unikátnost a z `<class>` název, tabulku a schéma; `index`, `check` a `default` hlásí záznamem. Zbytek mizí beze slova: na `<property>` `formula`, `access`, `insert`, `update`, `lazy`, `generated` a `optimistic-lock`, na `<class>` `discriminator-value`, `where`, `mutable`, `optimistic-lock`, `dynamic-insert`, `dynamic-update`, `batch-size` a `lazy`. Přinejmenším `formula` a `where` mění význam — vlastnost s `formula` nemá sloupec a výstup jí ho vymyslí — a srovnání frameworků obojí jmenuje jako výrazovou schopnost NHibernate. Práce je vydat u každého z nich záznam `Loss` týmž tvarem, jakým se hlásí `check` a `default`.
-
 #### Anotace EF Core, pro které model místo má, ale čtou se jako ztráta
-*Potom. Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md); souvisí s [049](./decisions/049-language-facts-under-source-precedence.md). Požadavky F1, F5.*
+*Na řadě. Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md); souvisí s [049](./decisions/049-language-facts-under-source-precedence.md). Požadavky F1, F5.*
 
 Větev pro neznámou anotaci hlásí záznamem `Loss` i `[StringLength]`, což je délka, `[Unicode]`, což je faceta `IsUnicode`, a `[InverseProperty]`, pro které model nese dosud nevyužité pole `InverseRelationName`. `InventedFactsTest` přitom `[StringLength]` jako nepřečtenou anotaci tvrdí, takže se s ním pohne zároveň. Práce je číst tři anotace do faktů, které pro ně model má, a záznam nechat jen anotacím bez místa.
 
 #### Bázová třída entity mizí bez záznamu
-*Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md); dědičnost sama je vyňatá oblast 2 hranice záruk ([`architecture.md`](./architecture.md), §9). Požadavek F11.*
+*Potom. Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md); dědičnost sama je vyňatá oblast 2 hranice záruk ([`architecture.md`](./architecture.md), §9). Požadavek F11.*
 
 Sdílený C# parser čte z hlavičky třídy jen přístupový modifikátor a seznam bázových typů nečte. Hierarchie v EF Core zdroji — třída odvozená od jiné entity převodu, kterou EF Core mapuje konvencí jako TPH — tak nezanechá žádnou stopu, kdežto týž fakt v NHibernate mapování (`<subclass>`) záznam dostane. Práce je vydat záznam `Loss` u bázového typu, který jmenuje entitu převodu; co dědičnost znamená pro mezireprezentaci, zůstává vyňatou oblastí.
 
@@ -215,6 +210,15 @@ Kořenový [`README.md`](../README.md) žádá citovat verzi a `CITATION.cff` k 
 Rozhodnout je třeba dvojí. **Jestli se fork cizího prototypu archivuje pod vlastním identifikátorem**, a pokud ano, kde a s jakým autorstvím; `LICENSE` nese dva držitele autorských práv právě proto, že repozitář je napůl zděděný. A **jestli záznam v registru znamená, že nástroj je publikovaný** ve smyslu předpokladu rozhodnutí 069: to rozhodnutí se má podle vlastní věty nahradit, ne dovysvětlit, jakmile předpoklad přestane platit, a archiv s identifikátorem je té hranici blízko, byť konzumenta nevyrábí.
 
 Do té doby stojí citace na značce a na `CITATION.cff`, a je to vědomé: identifikátor se razí z vydání, takže se přidá až docela nakonec, ne uprostřed vývoje.
+
+### Práce
+
+#### Atributy ostatních prvků NHibernate mapování mizí dál beze slova
+*Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [004](./decisions/004-unexpressible-facts-as-warnings.md), táž látka jako u atributů `<class>` a `<property>`, kterou jsme odbavili 2026-09-21. Značku pořadí nemá: hranice je vyslovená v [`architecture.md`](./architecture.md), §5, takže žádná věta není nepravdivá a nic tím není blokované. Požadavek F11.*
+
+Seznamy hlášených atributů jsou jmenné a prošly jimi dva prvky, `<class>` a `<property>`. Atributy zbylých prvků se dál přeskakují beze slova: `access` a `unsaved-value` na `<id>`, k nim `generated`, `insert` a `source` na `<version>`, a u vztahových prvků `cascade`, `fetch`, `lazy`, `not-found` a `formula` na `<many-to-one>` a `<one-to-one>` — z celé té skupiny má dnes záznam jediný `property-ref`. Mimo jmenný seznam zůstávají i ostatní atributy `<class>` (`catalog`, `proxy`, `persister`, `entity-name`, `subselect`, `abstract`, `rowid`, `polymorphism`, `select-before-update`, `check`).
+
+Práce to není mechanická a proto nešla s předchozí položkou. Každý prvek potřebuje vlastní úvahu o tom, co ztráta stojí — `generated` na `<version>` si builder odvodí z binární typové rodiny sám, takže ztráta to není —, a hlavně: `insert="false" update="false"` na `<many-to-one>` **vypisuje náš vlastní builder** u ploché části kompozitního klíče a u syntetizované junction entity (rozhodnutí [005](./decisions/005-many-to-many-as-explicit-junction-entity.md) a [006](./decisions/006-flat-composite-key-rendering.md)), takže paušální hlášení by z převodu NHibernate → NHibernate udělalo hlásiče ztrát nad vlastním výstupem. Je třeba oddělit atribut, který zdroj tvrdí, od atributu, který je odvozený — což je kritérium rozhodnutí [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) z druhé strany.
 
 ## Zbytky
 
