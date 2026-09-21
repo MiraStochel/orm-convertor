@@ -94,6 +94,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [087](087-an-integration-test-is-a-run-against-the-database.md) | Integrační test je běh proti databázi a sada si ho počítá sama | 2026-09-21 | platí | F1, F2, F12, S2, S5, S6 |
 | [088](088-a-declared-foreign-source-dialect-is-not-read.md) | Deklarovaný cizí dialekt zdroje se nečte | 2026-09-21 | platí | F5, F6, F7–F10, F11, F14, S1, S2, S6 |
 | [089](089-differential-verification-as-the-fourth-level-over-a-query.md) | Diferenční ověření je čtvrtý stupeň nad dotazem | 2026-09-21 | revidováno | F12, F13, T2, T3, S2, S5 |
+| [090](090-the-cross-ecosystem-matrix-counts-itself.md) | Cross-ecosystem překlad je celý převod přes vyslovenou hranici a matice si ho počítá sama | 2026-09-21 | platí | F6, F10, S1, T2 |
 
 ## Formát
 

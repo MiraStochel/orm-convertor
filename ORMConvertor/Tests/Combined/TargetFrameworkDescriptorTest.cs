@@ -12,15 +12,7 @@ namespace Tests.Combined;
 
 public class TargetFrameworkDescriptorTest
 {
-    private static readonly TargetFrameworkDescriptor[] AllDescriptors =
-    [
-        DapperDescriptor.Instance,
-        EFCoreDescriptor.Instance,
-        NHibernateDescriptor.Instance,
-        HibernateWrappers.HibernateDescriptor.Instance,
-        EclipseLinkWrappers.EclipseLinkDescriptor.Instance,
-        MyBatisWrappers.MyBatisDescriptor.Instance,
-    ];
+    private static readonly IReadOnlyList<TargetFrameworkDescriptor> AllDescriptors = FrameworkDescriptors.All;
 
     /// <summary>
     /// Adding a framework without adding its descriptor is exactly the kind of omission
@@ -49,6 +41,32 @@ public class TargetFrameworkDescriptorTest
         // The vocabulary is closed and has one member; a second one must not slip in as an
         // unnoticed default anywhere.
         Assert.Single(Enum.GetValues<DatabaseDialect>());
+    }
+
+    /// <summary>
+    /// Every descriptor names the ecosystem its artifacts belong to (decision 090), and
+    /// both ecosystems really have frameworks in them. The second half is what makes the
+    /// F10 count mean anything: a vocabulary with everything on one side would draw no
+    /// boundary at all, and every direction of the matrix would then be cross-ecosystem
+    /// or none of them would.
+    /// </summary>
+    [Fact]
+    public void EveryDescriptorDeclaresAnInhabitedEcosystem()
+    {
+        var byEcosystem = AllDescriptors
+            .GroupBy(d => d.Ecosystem)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        Assert.All(
+            Enum.GetValues<Ecosystem>(),
+            ecosystem => Assert.True(
+                byEcosystem.GetValueOrDefault(ecosystem) > 0,
+                $"No framework declares {ecosystem}, so the boundary F10 counts across has one side."));
+
+        // A fact about today rather than about the design, held the way the dialect above
+        // is: three frameworks per ecosystem is what the assignment asks for (F7-F9).
+        Assert.Equal(3, byEcosystem[Ecosystem.DotNet]);
+        Assert.Equal(3, byEcosystem[Ecosystem.Java]);
     }
 
     /// <summary>
@@ -193,6 +211,7 @@ public class TargetFrameworkDescriptorTest
         Assert.Throws<ArgumentException>(() => _ = new TargetFrameworkDescriptor
         {
             Framework = ORMEnum.Dapper,
+            Ecosystem = DapperDescriptor.Instance.Ecosystem,
             Version = DapperDescriptor.Instance.Version,
             Dialect = DapperDescriptor.Instance.Dialect,
             Support = incomplete,
@@ -213,6 +232,7 @@ public class TargetFrameworkDescriptorTest
         Assert.Throws<ArgumentException>(() => _ = new TargetFrameworkDescriptor
         {
             Framework = ORMEnum.Dapper,
+            Ecosystem = DapperDescriptor.Instance.Ecosystem,
             Version = DapperDescriptor.Instance.Version,
             Dialect = DapperDescriptor.Instance.Dialect,
             Support = DapperDescriptor.Instance.Support,
@@ -226,6 +246,7 @@ public class TargetFrameworkDescriptorTest
         Assert.Throws<InvalidOperationException>(() => _ = new TargetFrameworkDescriptor
         {
             Framework = ORMEnum.Dapper,
+            Ecosystem = DapperDescriptor.Instance.Ecosystem,
             Version = DapperDescriptor.Instance.Version,
             Dialect = DapperDescriptor.Instance.Dialect,
             Support = DapperDescriptor.Instance.Support,

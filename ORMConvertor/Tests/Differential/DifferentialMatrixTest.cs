@@ -34,12 +34,14 @@ public class DifferentialMatrixTest
     [Fact]
     public void EveryPairIsOwnedByASuite()
     {
-        var javaSide = new[] { ORMEnum.Hibernate, ORMEnum.EclipseLink, ORMEnum.MyBatis };
-
+        // Which suite a target belongs to is its ecosystem, and the ecosystem is the
+        // descriptor's own word (decision 090) rather than a list written here that a
+        // seventh framework would not be on.
         Assert.All(
             DifferentialMatrix.Pairs(),
             pair => Assert.True(
-                DotNetQueryRunner.Owns(pair.Target) || javaSide.Contains(pair.Target),
+                DotNetQueryRunner.Owns(pair.Target)
+                    || FrameworkDescriptors.EcosystemOf(pair.Target) == Ecosystem.Java,
                 $"{pair.Query.Id}: no suite runs {pair.Target}, so this pair is in the matrix and in no run."));
     }
 

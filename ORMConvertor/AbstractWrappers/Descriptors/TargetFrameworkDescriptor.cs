@@ -16,6 +16,20 @@ public sealed class TargetFrameworkDescriptor
 
     public required ORMEnum Framework { get; init; }
 
+    /// <summary>
+    /// The ecosystem this framework's artifacts belong to (decision 090) - the fact of the
+    /// same shape as <see cref="Dialect"/>, declared once per framework rather than derived
+    /// from a list somewhere else. Nothing in the translation path branches on it: the pivot
+    /// is ecosystem-neutral by design (S1) and a builder knows its own language without
+    /// asking. What reads it is the verification of F10, which counts translations across
+    /// the boundary between the two ecosystems and cannot count a boundary nobody states.
+    ///
+    /// Declared rather than inferred from the artifacts a framework emits, because the
+    /// inference would be a claim about output where the criterion makes a claim about the
+    /// framework - and a framework emitting nothing at all would have no ecosystem.
+    /// </summary>
+    public required Ecosystem Ecosystem { get; init; }
+
     private readonly string version = "";
 
     /// <summary>

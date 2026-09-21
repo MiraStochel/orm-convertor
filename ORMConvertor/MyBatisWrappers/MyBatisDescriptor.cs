@@ -20,6 +20,7 @@ public static class MyBatisDescriptor
     public static TargetFrameworkDescriptor Instance { get; } = new()
     {
         Framework = ORMEnum.MyBatis,
+        Ecosystem = Ecosystem.Java,
 
         // Pinned by decision 013; the canonical table is in docs/architecture.md, and the
         // Java test suite of decision 076 binds this value to the dependency of its pom.xml.

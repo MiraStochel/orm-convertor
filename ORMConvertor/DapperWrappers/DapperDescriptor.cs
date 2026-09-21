@@ -14,6 +14,7 @@ public static class DapperDescriptor
     public static TargetFrameworkDescriptor Instance { get; } = new()
     {
         Framework = ORMEnum.Dapper,
+        Ecosystem = Ecosystem.DotNet,
 
         // Pinned by decision 013; the canonical table is in docs/architecture.md and a
         // test binds this value to the package the verification level loads.
