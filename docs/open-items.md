@@ -28,25 +28,28 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 Do téhle kategorie dostalo položky jedno společné: každá buď dělala nepravdivou větu, kterou [`architecture.md`](./architecture.md) vyslovuje, nebo vydávala tiše špatný výstup. Přesně to by jinak našla revize, která stojí za nimi — a opravovalo by se pod hotovou revizí. **Od 2026-09-21 jsou všechny odbavené.** Přišly z porovnání [`analysis/`](./analysis/README.md) s kódem a z revize celého repozitáře z 2026-09-21 — poslední z revize odbavilo rozhodnutí [094](./decisions/094-entity-identity-inside-a-conversion.md), poslední z porovnání týž den konstruktor `DateTime` v predikátu LINQ —, s jednou výjimkou: javové `extends` sem přibylo 2026-09-21 při psaní C# poloviny téže mezery a odbavené bylo jako poslední. Co z obou nálezů zůstalo otázkou, leží ve [Zbytcích](#zbytky).
 
-**Řada nad revizí je tím prázdná**, takže zbývá **revize a vydání `2.0.0`**, v tomhle pořadí. Kód se kvůli nim nezmrazuje: kdyby sem ještě něco přibylo, odbaví se a revize měří strom, až bude řada nad ní zase prázdná.
+**Revize proběhla 2026-09-21** ([soubor](./audits/2026-09-21-pre-release-2-0-0-audit.md)) a je to první, která ověřovala spuštěním. Co z ní byla oprava, leží v kódu a v dokumentech; co si žádá rozmyslet, stojí níž jako dvě rozhodnutí a **předchází vydání `2.0.0`**, protože jedno z nich říká, co smí nést anotace značky — a ta se nikdy neposouvá.
+
+### Rozhodnutí
+
+#### Kde bydlí velikost sady a čím se datovaný záznam o běhu odliší
+*Podklad: revize [2026-09-21](./audits/2026-09-21-pre-release-2-0-0-audit.md), nálezy 2.2 a 2.3. Souvisí s rozhodnutími [058](./decisions/058-only-the-operational-half-of-the-deployment-view-moves.md) a [069](./decisions/069-major-marks-a-milestone-not-a-break.md). Požadavky S2, S5, S6.*
+
+[`ORMConvertor/README.md`](../ORMConvertor/README.md) o sobě říká, že je **jediným** místem, které uvádí velikost sady, a že ostatní na něj odkazují, protože dvě čísla na dvou místech se už jednou rozešla. Číslo 1442 .NET testů a 146 javových přesto stojí ještě na čtyřech dalších místech — v [`architecture.md`](./architecture.md) §6.2 a §9, v [`traceability.md`](./traceability.md) u F13 a v sekci *Guarantees* kořenového [`README.md`](../README.md) —, a jediná práce je všechna naráz zneplatnila.
+
+Rozhodnout je třeba dvojí a je to jedna volba, ne dvě, protože obě půlky se navzájem podmiňují. **Jestli datovaný záznam o běhu smí číslo nést**: bez čísla není doklad, s číslem je to opis, který zastará. A **čím se dva takové záznamy z téhož dne odliší**: 2026-09-21 vznikly dva, jeden nad 1442 testy a druhý nad 1551, a datum je nerozliší. Do téže volby patří i to, co smí nést **anotace značky**, protože ta se nikdy neposouvá, takže co do ní jednou půjde, zastará tam natrvalo.
+
+#### Jestli se pravidla článku mají vázat na místo v repozitáři
+*Podklad: revize [2026-09-21](./audits/2026-09-21-pre-release-2-0-0-audit.md), nález 6.2. Souvisí s rozhodnutím [007](./decisions/007-documentation-structure.md). Požadavky žádné — je to volba o dokumentaci.*
+
+Rozhodnutí i [`architecture.md`](./architecture.md) argumentují překladovými pravidly článku jménem (E1–E10, Q1–Q15), ale pět z pětadvaceti — **E6, E7, Q6, Q7 a Q9** — se napříč celým `docs/` nevyskytuje ani jednou. Všech pět je přitom implementovaných: E7 je doslova invariant `Role`, Q9 je `HavingInstruction`.
+
+Rozhodnout je třeba, jestli vzniká **druhá mapa** vedle [`traceability.md`](./traceability.md) — pravidlo → místo v repozitáři —, nebo jestli se pravidlo cituje jen tam, kde nese odůvodnění volby, a pět chybějících zmínek je pouhá oprava. Konzistence s článkem je jedno ze čtyř kritérií, podle kterých se hodnotí výzkumný artefakt, takže mlčet o pěti pravidlech z pětadvaceti nelze; druhá mapa je ale druhé místo téhož tvrzení, a právě tomu se tahle sada dokumentů jinde vyhýbá.
 
 ### Práce
 
-#### Revize před vydáním 2.0.0
-*Na řadě. Práce, která uzavírá řadu nad sebou a předchází vydání pod ní. Žánr popisuje [`audits/README.md`](./audits/README.md) a rozhodnutí [007](./decisions/007-documentation-structure.md); předchůdcem je [revize připravenosti verze 1.0](./audits/2026-08-21-version-1-0-readiness-audit.md). Řada nad ní je od 2026-09-21 prázdná.*
-
-Poznámky k vydání bydlí v anotaci značky a značka se nikdy neposouvá (rozhodnutí [069](./decisions/069-major-marks-a-milestone-not-a-break.md)), takže každé tvrzení, které do anotace půjde, musí být ověřené dřív, než se značka vyrazí. Proto revize stojí **před** vydáním: po něm by se opravovalo pod hotovou značkou.
-
-Čím má projít: (1) co `2.0.0` nárokuje, proti otevřeným položkám; (2) [`architecture.md`](./architecture.md) proti kódu, v rozsahu toho, co se pohnulo od `1.2.0` — šest wrapperů, `TransactSql`, `JakartaPersistence`, diferenční ověření, deklarace dialektu, strop zanoření; (3) hranice záruk vyslovená na třech místech (sekce *Guarantees* kořenového [`README.md`](../README.md), §9 a [`traceability.md`](./traceability.md)), tedy kapitola, která v obou předchozích revizích nesla kritické nálezy; (4) rozhodnutí 069–092 a jejich rejstřík — stavy, odkazy na nahrazení, zápisy `revidováno`; (5) mrtvý kód a deklarace bez čtenáře, a k tomu otázka, jestli velikost sdílených bází, které dědí všech šest wrapperů (`AbstractEntityBuilder` má 2362 řádků, `AbstractQueryBuilder` 1475), neohrožuje invariant „nový framework je nový wrapper" (S1); (6) srovnání s vnější praxí.
-
-**Šestá kapitola má tentokrát doslovné měřítko.** Kritéria hodnocení výzkumných artefaktů — dokumentovanost, konzistence s článkem, úplnost a **spustitelnost** — se na tenhle repozitář vztahují přímo, protože artefaktem za článkem je on sám; spustitelnost se navíc dá vyzkoušet cizíma rukama: Docker, kořenový [`README.md`](../README.md) a nic dalšího. K téže kapitole patří číslo pokrytí testy, které CI sbírá (`XPlat Code Coverage`) a které nikde neuvádíme — ne jako hranici, ale aby se pozdější tvrzení nemělo od čeho odchýlit.
-
-**Tahle revize běží na MIS3, takže smí ověřovat spuštěním** — obě sady v profilu `test`, stavbu obrazu i běh systému. Žádná z předchozích revizí build nespustila a ta z 2026-08-23 to o sobě v kapitole 9 výslovně říká.
-
-**Jednu věc si revize vyřeší sama na sobě.** Kategorie [Zbytky](#zbytky) se odvolává na „revizi celého repozitáře z 2026-09-21", a ta nemá v [`audits/`](./audits/README.md) žádný soubor — její nálezy jsou rozepsané rovnou do položek. Položky stojí samy o sobě, jak pravidlo žádá, takže k práci nechybí nic; chybí snímek, na který se ten název odvolává. Buď ho tahle revize nahradí a název se přesměruje na ni, nebo ten název zmizí.
-
 #### Vydání 2.0.0
-*Práce podle rozhodnutí [069](./decisions/069-major-marks-a-milestone-not-a-break.md), které nese kritérium MAJOR i čtyřkrokový postup vydání (ten přenáší z [041](./decisions/041-versioning-and-release.md)). Podmínka je od 2026-09-21 splněná; předchází revize nad touhle položkou. Požadavky S2, S6.*
+*Práce podle rozhodnutí [069](./decisions/069-major-marks-a-milestone-not-a-break.md), které nese kritérium MAJOR i čtyřkrokový postup vydání (ten přenáší z [041](./decisions/041-versioning-and-release.md)). Podmínka je od 2026-09-21 splněná a revize, která vydání předcházela, týž den proběhla ([2026-09-21](./audits/2026-09-21-pre-release-2-0-0-audit.md)); zbývají dvě rozhodnutí, která si vyžádala, a pak už jen tahle položka. Požadavky S2, S6.*
 
 Cíl 2 je uzavřený, takže vydání, které ho zavírá, je podle rozhodnutí 069 první **MAJOR**. Samo vydání je ale samostatný krok a zatím neproběhlo: `<Version>` v `ORMConvertor/Directory.Build.props` i `CITATION.cff` pořád nesou `1.2.0`.
 
@@ -191,6 +194,15 @@ Rozhodnout je třeba dvojí. **Jestli se fork cizího prototypu archivuje pod vl
 
 Do té doby stojí citace na značce a na `CITATION.cff`, a je to vědomé: identifikátor se razí z vydání, takže se přidá až docela nakonec, ne uprostřed vývoje.
 
+#### Sdílená entitní báze roste a rozšiřovací plocha ne
+*Podklad: revize [2026-09-21](./audits/2026-09-21-pre-release-2-0-0-audit.md), nález 5.4. Souvisí s invariantem S1 a s rozhodnutím [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md). Značku pořadí nemá a nedostane: invariant dnes platí a žádná položka na tom nestojí. Požadavek S1.*
+
+Invariant „nový framework je nový wrapper" dnes **platí** a revize ho ověřila třemi způsoby: jméno frameworku neprosakuje do `AbstractWrappers`, `Common` ani `Model`, `ConversionHandler` ho nejmenuje ani jednou a jedinými místy, která je jmenují, jsou čtyři továrny v `OrmConvertor/Factories/`. Nový wrapper je přitom opravdu levný — `HibernateWrappers` má 185 řádků a `EclipseLinkWrappers` 226 nad sdílenou vrstvou o 5 251 řádcích.
+
+Posunul se ale poměr. Od značky `1.2.0` vyrostl `AbstractEntityBuilder` z 2 137 na 2 728 řádků (+27,7 %) a počet jeho `virtual`/`abstract` členů zůstal na devíti, z nichž sedm jsou kroky šablonové metody s pevným počtem — volné zásuvné body jsou tedy fakticky dva. `AbstractQueryBuilder` vyrostl víc (651 → 1 475), ale jeho plocha rostla s ním (12 → 16). Framework, jehož potřeba se do dvou volných háčků netrefí, nemá kam jinam než do těla báze.
+
+Není to překážka ničeho a odbavit se to dá kdykoli — nebo nikdy. Rozmyslet je třeba, jestli se ten poměr má **měřit** (dvě čísla u každého vydání jsou levná), jestli se má entitní báze rozdělit tak, jak je rozdělená vrstva JPA, a co by vlastně bylo prahem: sedmý framework, nebo zásah do těla báze kvůli jedinému z nich.
+
 ### Práce
 
 #### Atributy ostatních prvků NHibernate mapování mizí dál beze slova
@@ -204,7 +216,7 @@ Práce to není mechanická a proto nešla s předchozí položkou. Každý prve
 
 Zdokumentované mezery a nezodpovězené otázky, na které se nesahá. Jsou tu **zapsané, ne zařazené**: značky pořadí nedostávají a dojít na ně může kdykoli — nebo vůbec. Zapisujeme je proto, aby nález nezůstal jen v konverzaci a aby text práce věděl, co nástroj o svých frameworcích netvrdí.
 
-Zdroje jsou tři. **Revize celého repozitáře z 2026-09-21**, z níž to, co byla oprava, leží v kódu a v [`architecture.md`](./architecture.md) — sdílená čtečka T-SQL odmítá příkaz stojící vedle překládaného `SELECT`u, klauzuli `WITH`, `INTO`, `FOR XML`/`FOR JSON` a `TABLESAMPLE` a hlásí nápovědy ztrátou; sdílený LINQ parser jmenuje kroky, které mění množinu řádků, a čte zpět `g.Key`; T-SQL visitor vypisuje `COUNT(*)` bez aliasu. Ze čtyř otázek, které po opravách zbyly, je jedna od 2026-09-21 zodpovězená rozhodnutím [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md) a týž den naimplementovaná — strop hloubky zanoření, u kterého měření ukázalo, že vada je širší, než jak ji revize našla: padá i `TSql160Parser`, na prosté závorce ze všech nejdřív, takže strop dostalo všech pět rekurzivně čtených jazyků, ne tři. Druhá je od téhož dne zodpovězená rozhodnutím [093](./decisions/093-unreadable-input-is-a-unit-failure.md) a týž den naimplementovaná — neparsovatelné XML shazovalo celý převod, dnes je to `Failure` jedné jednotky jako u zbylých čtyř jazyků —, třetí je mezi [příštími položkami](#příští-položky) a tady zůstává jedna.
+Zdroje jsou tři. **Revize celého repozitáře z 2026-09-21** — vlastní soubor v [`audits/`](./audits/README.md) nemá, protože se její nálezy rozepsaly rovnou do položek; zapsána je v kapitole 8 revize [2026-09-21](./audits/2026-09-21-pre-release-2-0-0-audit.md), která ji **nenahrazuje**, jen jí dává místo, kam ukazovat —, z níž to, co byla oprava, leží v kódu a v [`architecture.md`](./architecture.md) — sdílená čtečka T-SQL odmítá příkaz stojící vedle překládaného `SELECT`u, klauzuli `WITH`, `INTO`, `FOR XML`/`FOR JSON` a `TABLESAMPLE` a hlásí nápovědy ztrátou; sdílený LINQ parser jmenuje kroky, které mění množinu řádků, a čte zpět `g.Key`; T-SQL visitor vypisuje `COUNT(*)` bez aliasu. Ze čtyř otázek, které po opravách zbyly, je jedna od 2026-09-21 zodpovězená rozhodnutím [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md) a týž den naimplementovaná — strop hloubky zanoření, u kterého měření ukázalo, že vada je širší, než jak ji revize našla: padá i `TSql160Parser`, na prosté závorce ze všech nejdřív, takže strop dostalo všech pět rekurzivně čtených jazyků, ne tři. Druhá je od téhož dne zodpovězená rozhodnutím [093](./decisions/093-unreadable-input-is-a-unit-failure.md) a týž den naimplementovaná — neparsovatelné XML shazovalo celý převod, dnes je to `Failure` jedné jednotky jako u zbylých čtyř jazyků —, třetí je mezi [příštími položkami](#příští-položky) a tady zůstává jedna.
 
 Druhým zdrojem je **porovnání [`analysis/`](./analysis/README.md) s kódem z 2026-09-14** a k němu čtyři levné konstrukce, které rozhodnutí [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) vědomě nechalo odmítat, ač by je model unesl a všechny cíle vyjádří. Pět položek odsud jsme 2026-09-15 přeřadili do tehdejšího cíle 2 — skaláry mimo uzavřený seznam, modifikátor `virtual`, nepersistovanou vlastnost, `DISTINCT` a výčet v `IN` —, protože každá rozšiřuje model nebo slovník, který javové buildery zdědí, a rozšíření je levnější před šesti buildery než po nich; pět dalších dorazilo mezi [příští položky](#příští-položky) a 2026-09-21 je odbavená poslední z nich, konstruktor `DateTime` v predikátu LINQ — z tohohle zdroje už tam nezbývá nic.
 
