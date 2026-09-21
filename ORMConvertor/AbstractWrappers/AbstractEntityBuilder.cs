@@ -696,13 +696,18 @@ public abstract class AbstractEntityBuilder
     /// junction table for a many-to-many, where they reference this entity's key.</param>
     /// <param name="junction">Many-to-many only: what the source stated about the junction
     /// table, waiting for the synthesis of the junction entity (decision 005).</param>
+    /// <param name="inverseNavigation">The navigation on the target entity that is the other
+    /// end of this relation, where the source names it - EF Core's [InverseProperty], JPA's
+    /// mappedBy. The convention pairs the two sides on its own wherever only one pair runs
+    /// between two entities; the name is what settles it where several do.</param>
     public void AddForeignKey(
         Cardinality cardinality,
         string propertyName,
         string target,
         RelationRole? role = null,
         IReadOnlyList<string>? foreignKeyColumns = null,
-        JunctionFacts? junction = null)
+        JunctionFacts? junction = null,
+        string? inverseNavigation = null)
     {
         var propertyMap = GetOrCreatePropertyMap(propertyName); // the navigation property must exist in the model
 
@@ -738,6 +743,20 @@ public abstract class AbstractEntityBuilder
         if (cardinality == Cardinality.ManyToMany && junction is not null && !pendingJunctionFacts.ContainsKey(standing))
         {
             pendingJunctionFacts[standing] = junction;
+        }
+
+        if (!string.IsNullOrWhiteSpace(inverseNavigation))
+        {
+            if (standing.InverseRelationName is null)
+            {
+                standing.InverseRelationName = inverseNavigation;
+            }
+            else if (!string.Equals(standing.InverseRelationName, inverseNavigation, StringComparison.Ordinal))
+            {
+                ReportInputConflict(propertyName, null,
+                    $"An earlier source names '{standing.InverseRelationName}' as the far end of the navigation, "
+                    + $"a later one '{inverseNavigation}'.");
+            }
         }
     }
 
@@ -857,10 +876,11 @@ public abstract class AbstractEntityBuilder
         string propertyName,
         string targetTypeName,
         RelationRole? role = null,
-        Func<EntityMap, EntityMap, IReadOnlyList<string>?>? foreignKeyColumns = null)
+        Func<EntityMap, EntityMap, IReadOnlyList<string>?>? foreignKeyColumns = null,
+        string? inverseNavigation = null)
     {
         conventionNavigations.Add(new ConventionNavigation(
-            EntityMap, cardinality, propertyName, targetTypeName, role, foreignKeyColumns));
+            EntityMap, cardinality, propertyName, targetTypeName, role, foreignKeyColumns, inverseNavigation));
     }
 
     /// <summary>
@@ -894,7 +914,8 @@ public abstract class AbstractEntityBuilder
                 candidate.PropertyName,
                 target.Entity.Name,
                 candidate.Role,
-                candidate.ForeignKeyColumns?.Invoke(candidate.Entity, target));
+                candidate.ForeignKeyColumns?.Invoke(candidate.Entity, target),
+                inverseNavigation: candidate.InverseNavigation);
         }
     }
 
@@ -1093,7 +1114,8 @@ public abstract class AbstractEntityBuilder
         string PropertyName,
         string TargetTypeName,
         RelationRole? Role,
-        Func<EntityMap, EntityMap, IReadOnlyList<string>?>? ForeignKeyColumns);
+        Func<EntityMap, EntityMap, IReadOnlyList<string>?>? ForeignKeyColumns,
+        string? InverseNavigation = null);
 
     /// <summary>
     /// Convention navigations waiting for the entities of the conversion to be known.

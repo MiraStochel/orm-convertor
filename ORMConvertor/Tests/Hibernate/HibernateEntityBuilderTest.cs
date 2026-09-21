@@ -317,6 +317,43 @@ public class HibernateEntityBuilderTest
         Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
     }
 
+    /// <summary>
+    /// Two pairs of navigations between the same two entities: the convention has two
+    /// candidates for each collection and can answer neither, so mappedBy comes from the
+    /// name the source itself gave (Relation.InverseRelationName - EF Core's
+    /// [InverseProperty]). Without it both collections would fall back to the join-column
+    /// form and the two relations would collapse onto one column.
+    /// </summary>
+    [Fact]
+    public void ANamedFarEndDecidesMappedByWhereTheConventionCannot()
+    {
+        var builder = new HibernateEntityBuilder();
+
+        builder.AddClassHeader("public", "Employee");
+        builder.AddTable("Employees");
+        builder.AddProperty("int", "EmployeeId", "public", hasGetter: true, hasSetter: true);
+        builder.AddProperty("List<Article>", "Written", "public", hasGetter: true, hasSetter: true);
+        builder.AddProperty("List<Article>", "Reviewed", "public", hasGetter: true, hasSetter: true);
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Identity, "EmployeeId");
+        builder.AddForeignKey(Cardinality.OneToMany, "Written", "Article", inverseNavigation: "Author");
+        builder.AddForeignKey(Cardinality.OneToMany, "Reviewed", "Article", inverseNavigation: "Reviewer");
+
+        builder.BeginEntity();
+        builder.AddClassHeader("public", "Article");
+        builder.AddTable("Articles");
+        builder.AddProperty("int", "ArticleId", "public", hasGetter: true, hasSetter: true);
+        builder.AddProperty("Employee", "Author", "public", hasGetter: true, hasSetter: true);
+        builder.AddProperty("Employee", "Reviewer", "public", hasGetter: true, hasSetter: true);
+        builder.AddPrimaryKey(PrimaryKeyStrategy.Identity, "ArticleId");
+        builder.AddForeignKey(Cardinality.ManyToOne, "Author", "Employee", RelationRole.Owning, ["AuthorId"]);
+        builder.AddForeignKey(Cardinality.ManyToOne, "Reviewer", "Employee", RelationRole.Owning, ["ReviewerId"]);
+
+        var employee = builder.Build()[0].Content;
+
+        Assert.Contains("@OneToMany(mappedBy = \"Author\")", employee);
+        Assert.Contains("@OneToMany(mappedBy = \"Reviewer\")", employee);
+    }
+
     [Fact]
     public void AUnidirectionalCollectionCarriesTheChildsKeyColumn()
     {

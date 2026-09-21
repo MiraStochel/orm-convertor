@@ -438,11 +438,12 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
-    /// The inverse side of a one-to-one names the owning navigation through mappedBy; the
-    /// model does not carry that name (decision 001), so it is derived from the counterpart
-    /// when it takes part in the conversion. Without one the mapping cannot be written -
-    /// a bare @OneToOne would claim an owning side and a column that does not exist - so
-    /// the member stays on the class as @Transient and the gap is reported.
+    /// The inverse side of a one-to-one names the owning navigation through mappedBy, which
+    /// the model carries only where the source named it itself (InverseRelationName); it is
+    /// otherwise derived from the counterpart when it takes part in the conversion. Without
+    /// either the mapping cannot be written - a bare @OneToOne would claim an owning side and
+    /// a column that does not exist - so the member stays on the class as @Transient and the
+    /// gap is reported.
     /// </summary>
     private void AppendInverseReference(EntityMap entityMap, Relation relation, PropertyMap propertyMap, StringBuilder code)
     {
@@ -528,11 +529,15 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
     {
         Import($"{Jakarta}.ManyToMany");
 
-        var counterpart = relation.Role == RelationRole.Inverse
+        var manyToManyCandidates = relation.Role == RelationRole.Inverse
             ? FindEntityMap(relation.TargetEntity)?.Relations
-                .FirstOrDefault(r => r.Cardinality == Cardinality.ManyToMany && r.Role == RelationRole.Owning
-                    && FindEntityMap(r.TargetEntity) == entityMap)?.SourceNavigationProperty
-            : null;
+                .Where(r => r.Cardinality == Cardinality.ManyToMany && r.Role == RelationRole.Owning
+                    && FindEntityMap(r.TargetEntity) == entityMap)
+                .ToList() ?? []
+            : [];
+
+        var counterpart = StatedCounterpart(relation, manyToManyCandidates)
+            ?? manyToManyCandidates.FirstOrDefault()?.SourceNavigationProperty;
 
         if (counterpart is not null)
         {
@@ -578,8 +583,11 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
     /// <summary>
     /// The navigation on the far side that owns the relation back to this entity, when the
-    /// far side takes part in the conversion: what mappedBy names. The pairs decide where
-    /// both sides carry them; otherwise the one owning relation towards this entity.
+    /// far side takes part in the conversion: what mappedBy names. A source that names it
+    /// itself decides (InverseRelationName - EF Core's [InverseProperty]), because that is
+    /// the very case the conventions below cannot settle: two pairs of navigations between
+    /// the same two entities. Otherwise the pairs decide where both sides carry them, and
+    /// failing that the one owning relation towards this entity.
     /// </summary>
     private string? OwningCounterpart(EntityMap entityMap, Relation relation)
     {
@@ -596,6 +604,11 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 && r.SourceNavigationProperty is not null)
             .ToList();
 
+        if (StatedCounterpart(relation, candidates) is { } stated)
+        {
+            return stated;
+        }
+
         if (relation.ColumnPairs.Count > 0)
         {
             var columns = relation.ColumnPairs.Select(p => p.Source.ColumnName ?? p.Source.Property.Name).ToList();
@@ -611,6 +624,19 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
         return candidates.Count == 1 ? candidates[0].SourceNavigationProperty : null;
     }
+
+    /// <summary>
+    /// The navigation the source itself named as the far end of this relation, where the
+    /// target entity really declares it. A name that matches nothing among the candidates
+    /// is not written out: mappedBy pointing at a member the class does not have would not
+    /// compile, and the conventions below still answer what they can. The model does not
+    /// validate, the builder does (see the invariants).
+    /// </summary>
+    private static string? StatedCounterpart(Relation relation, IReadOnlyList<Relation> candidates)
+        => relation.InverseRelationName is { } stated
+            && candidates.Any(r => string.Equals(r.SourceNavigationProperty, stated, StringComparison.Ordinal))
+            ? stated
+            : null;
 
     /// <summary>
     /// The strategy, always concrete (decision 076). Auto resolves through the profile of

@@ -28,8 +28,9 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         bool keyAttribute = entityMap.PrimaryKey is null || entityMap.PrimaryKey.Parts.Count > 1;
         bool precisionAttribute = entityMap.PropertyMaps.Any(pm => pm.Precision != null);
         bool indexAttribute = entityMap.UniqueConstraints.Count > 0;
+        bool unicodeAttribute = entityMap.PropertyMaps.Any(NeedsUnicodeAttribute);
 
-        if (keyAttribute || precisionAttribute || indexAttribute)
+        if (keyAttribute || precisionAttribute || indexAttribute || unicodeAttribute)
         {
             artifact.Code.AppendLine("using Microsoft.EntityFrameworkCore;");
         }
@@ -418,25 +419,12 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             attributes.AppendLine("    [Timestamp]");
         }
 
-        // [Timestamp] itself makes a binary column a rowversion on the target, so the
-        // type and length of such a column are already stated; a TypeName would override
-        // the rowversion mapping with plain varbinary and change the column.
+        // [Timestamp] states the type and the length of a rowversion column itself, so
+        // neither travels beside it - see TypeNameFor.
         var typeCarriedByTimestamp = propMap.IsVersion
             && propMap.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob;
 
-        // The literal spelling of the source wins over the name derived from the family: it
-        // is what the source actually claimed, and the escape path of decision 019 exists
-        // precisely because the family is missing or coarser. The same rule the NHibernate
-        // builder applies to sql-type, so both .NET targets answer one model the same way -
-        // and a type with no family at all now reaches the annotation instead of vanishing
-        // (decision 052). The derived name is the declared dialect's, and bare: the facets
-        // travel in [MaxLength] and [Precision] beside it (decision 086).
-        var typeText = typeCarriedByTimestamp
-            ? null
-            : propMap.SourceSqlType
-              ?? (propMap.Type.HasValue
-                  ? SqlTypeSpelling.Name(EFCoreDescriptor.Instance.Dialect, propMap.Type.Value, propMap.IsUnicode)
-                  : null);
+        var typeText = TypeNameFor(propMap);
 
         if (propMap.ColumnName != null || typeText != null)
         {
@@ -455,6 +443,11 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         }
 
 
+        if (NeedsUnicodeAttribute(propMap))
+        {
+            attributes.AppendLine("    [Unicode(false)]");
+        }
+
         if (propMap.Length != null && !typeCarriedByTimestamp)
         {
             attributes.AppendLine($"    [MaxLength({propMap.Length})]");
@@ -471,6 +464,46 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
         return attributes.ToString();
     }
+
+    /// <summary>
+    /// The TypeName the [Column] annotation carries, or null where none goes out.
+    ///
+    /// The literal spelling of the source wins over the name derived from the family: it is
+    /// what the source actually claimed, and the escape path of decision 019 exists precisely
+    /// because the family is missing or coarser. The same rule the NHibernate builder applies
+    /// to sql-type, so both .NET targets answer one model the same way - and a type with no
+    /// family at all reaches the annotation instead of vanishing (decision 052). The derived
+    /// name is the declared dialect's, and bare: the facets travel in [MaxLength] and
+    /// [Precision] beside it (decision 086).
+    ///
+    /// [Timestamp] itself makes a binary column a rowversion on the target, so the type and
+    /// length of such a column are already stated; a TypeName would override the rowversion
+    /// mapping with plain varbinary and change the column.
+    /// </summary>
+    private static string? TypeNameFor(PropertyMap propMap)
+    {
+        if (propMap.IsVersion && propMap.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob)
+        {
+            return null;
+        }
+
+        return propMap.SourceSqlType
+            ?? (propMap.Type.HasValue
+                ? SqlTypeSpelling.Name(EFCoreDescriptor.Instance.Dialect, propMap.Type.Value, propMap.IsUnicode)
+                : null);
+    }
+
+    /// <summary>
+    /// Whether [Unicode] has to be written for the property. The facet is part of the type
+    /// claim (decision 019) and a type name states it on its own - nvarchar against varchar -
+    /// so the annotation is due only where no type name goes out and the facet would
+    /// otherwise be lost: EF Core's own convention maps a string to national character data,
+    /// which is exactly what a source stating the opposite ruled out. A stated unicode is
+    /// that same convention restated and is not written, the rule the key strategy follows
+    /// below.
+    /// </summary>
+    private static bool NeedsUnicodeAttribute(PropertyMap propMap)
+        => propMap.IsUnicode == false && TypeNameFor(propMap) is null;
 
     /// <summary>
     /// The strategy as an annotation. [DatabaseGenerated] can say two things: that the store

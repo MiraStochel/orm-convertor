@@ -258,6 +258,8 @@ public class EFCoreEntityParser : CSharpEntityParser
             bool requiredAttr = false;
             string? generatedOption = null;
             string? columnTypeName = null;
+            bool? unicodeAttr = null;
+            string? inverseNavigation = null;
             List<string>? foreignKeyNames = null;
 
             foreach (var attribute in prop.AttributeLists.SelectMany(l => l.Attributes))
@@ -273,7 +275,36 @@ public class EFCoreEntityParser : CSharpEntityParser
                         columnTypeName = HandleColumn(attribute, dbProps) ?? columnTypeName;
                         break;
                     case "MaxLength":
-                        dbProps["Length"] = GetInt(attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression).ToString();
+                    case "StringLength":
+                        // Two spellings of one mapping fact: EF Core reads the maximum length
+                        // out of either. What [StringLength] says beyond it - MinimumLength and
+                        // the message - is validation, which EF Core's own model does not carry
+                        // and this one therefore loses nothing by not carrying either. Stated
+                        // twice with different numbers, the first reading stands and the
+                        // difference is a record (decision 017); the dictionary alone would let
+                        // the later attribute overwrite the earlier one in silence.
+                        HandleLength(
+                            GetInt(attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression),
+                            attrName, dbProps, classDeclaration.Identifier.Text, name);
+                        break;
+                    case "Unicode":
+                        // The bare annotation claims unicode, [Unicode(false)] the opposite. It
+                        // is a facet of the type claim, so it travels through the typed channel
+                        // (decision 019) and is applied after [Column(TypeName)]: EF Core lets an
+                        // explicit store type decide and ignores the facet beside it, so the type
+                        // name's claim stands and a disagreeing [Unicode] becomes a conflict.
+                        unicodeAttr = attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression is { } unicodeArgument
+                            ? GetBool(unicodeArgument)
+                            : true;
+                        break;
+                    case "InverseProperty":
+                        // The navigation on the far side that is the other end of this one -
+                        // what EF Core needs where two pairs of navigations run between the same
+                        // two entities and the convention cannot tell which belongs to which.
+                        // Relation.InverseRelationName is that fact's place in the model.
+                        inverseNavigation = attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression is { } inverseArgument
+                            ? ReadPropertyName(inverseArgument)
+                            : null;
                         break;
                     case "Precision":
                         HandlePrecision(attribute, dbProps);
@@ -362,6 +393,12 @@ public class EFCoreEntityParser : CSharpEntityParser
                 ApplyColumnTypeName(name, columnTypeName);
             }
 
+            if (unicodeAttr is not null)
+            {
+                // After the type name on purpose - see the [Unicode] branch above.
+                entityBuilder.SetPropertyDatabaseType(name, type: null, isUnicode: unicodeAttr);
+            }
+
             propertyTypes[name] = type;
 
             if (generatedOption is not null)
@@ -376,7 +413,9 @@ public class EFCoreEntityParser : CSharpEntityParser
 
             if (IsCollection(prop.Type, out var target))
             {
-                entityBuilder.AddForeignKey(Cardinality.OneToMany, name, target, foreignKeyColumns: foreignKeyNames);
+                entityBuilder.AddForeignKey(
+                    Cardinality.OneToMany, name, target,
+                    foreignKeyColumns: foreignKeyNames, inverseNavigation: inverseNavigation);
             }
             else if (foreignKeyNames is not null && !IsScalarTypeName(type))
             {
@@ -386,7 +425,9 @@ public class EFCoreEntityParser : CSharpEntityParser
                 // survives the reading. The scalar guard keeps out the other legal form of the
                 // attribute - [ForeignKey("Navigation")] sitting on the key property itself -
                 // whose claim points the opposite way and has no place in the model yet.
-                entityBuilder.AddForeignKey(Cardinality.ManyToOne, name, type, RelationRole.Owning, foreignKeyNames);
+                entityBuilder.AddForeignKey(
+                    Cardinality.ManyToOne, name, type, RelationRole.Owning, foreignKeyNames,
+                    inverseNavigation: inverseNavigation);
             }
             else
             {
@@ -402,7 +443,23 @@ public class EFCoreEntityParser : CSharpEntityParser
                     // property by EF Core's naming convention once the target's key stands.
                     entityBuilder.AddConventionNavigation(
                         Cardinality.ManyToOne, name, type, RelationRole.Owning,
-                        (ownerMap, targetMap) => ConventionForeignKeyProperties(ownerMap, targetMap, name));
+                        (ownerMap, targetMap) => ConventionForeignKeyProperties(ownerMap, targetMap, name),
+                        inverseNavigation);
+                }
+                else if (inverseNavigation is not null)
+                {
+                    // [InverseProperty] pairs two navigations, and a scalar is neither: the
+                    // claim has no relation to sit on and therefore no place in the model.
+                    entityBuilder.Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Loss,
+                        Framework = ORMEnum.EFCore,
+                        Artifact = ConversionContentType.CSharpEntity,
+                        Entity = classDeclaration.Identifier.Text,
+                        Property = name,
+                        Reason = $"The annotation [InverseProperty(\"{inverseNavigation}\")] names the far end of a "
+                            + "relationship and the property it sits on is not a navigation; the claim was dropped.",
+                    });
                 }
 
                 // Candidates for the key EF Core derives by convention. Only a scalar can
@@ -688,6 +745,45 @@ public class EFCoreEntityParser : CSharpEntityParser
     {
         return expression is LiteralExpressionSyntax lit 
             && lit.Token.Value is int i ? i : 0;
+    }
+
+    /// <summary>
+    /// A boolean written out as a literal; null where the argument is anything else, which
+    /// claims nothing rather than claiming the default.
+    /// </summary>
+    private static bool? GetBool(ExpressionSyntax? expression)
+    {
+        return expression is LiteralExpressionSyntax lit
+            && lit.Token.Value is bool b ? b : null;
+    }
+
+    /// <summary>
+    /// The maximum length both [MaxLength] and [StringLength] state. The first reading
+    /// stands and a second, differing one is a conflict record (decision 017): the two
+    /// annotations may sit on one property, and the fact dictionary carries a single key,
+    /// so without this the later attribute would overwrite the earlier one in silence.
+    /// </summary>
+    private void HandleLength(
+        int length, string attributeName, Dictionary<string, string> dbProps, string entityName, string propertyName)
+    {
+        var stated = length.ToString();
+
+        if (dbProps.TryAdd("Length", stated) || string.Equals(dbProps["Length"], stated, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        entityBuilder.Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Conflict,
+            Framework = ORMEnum.EFCore,
+            Artifact = ConversionContentType.CSharpEntity,
+            Entity = entityName,
+            Property = propertyName,
+            Category = MappingFactCategory.Length,
+            Reason = $"The property states length {dbProps["Length"]} and [{attributeName}] states {stated}; "
+                + "a fact read earlier is never overwritten by a later one (decision 017), so the first value is kept.",
+        });
     }
 
     /// <summary>

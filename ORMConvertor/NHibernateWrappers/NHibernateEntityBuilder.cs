@@ -228,9 +228,13 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             // The database is never queried from here - the completion phase fills the model
             // before generation (decision 015). What is still missing at this point is guessed
             // from the language scalar; for anything else - a reference, a collection, an
-            // unknown name - no claim is made and NHibernate decides itself.
+            // unknown name - no claim is made and NHibernate decides itself. A unicode facet
+            // stated without a family rides along, because the two together are one NHibernate
+            // type name: [Unicode(false)] on a string is AnsiString, not String.
             return new(
-                scalar is ScalarType known ? DatabaseTypeConvertor.GuessFromScalarType(known) : null,
+                scalar is ScalarType known
+                    ? DatabaseTypeConvertor.GuessFromScalarType(known, propertyMap.IsUnicode)
+                    : null,
                 propertyMap.SourceSqlType);
         }
 
@@ -286,6 +290,20 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         return new(naming.Name, literal);
     }
+
+    /// <summary>
+    /// Whether the unicode facet the source stated makes the guess from the language scalar
+    /// differ from the one NHibernate would arrive at by itself - which is the whole of when
+    /// a family-less facet is worth a type attribute on a &lt;property&gt;. Comparing the two
+    /// guesses rather than naming the character scalars keeps the answer with the conversion
+    /// table that owns it.
+    /// </summary>
+    private static bool FacetChangesTheGuessedType(PropertyMap propertyMap)
+        => propertyMap.Type is null
+            && propertyMap.IsUnicode is not null
+            && propertyMap.Property.Type is { Category: LangTypeCategory.Scalar, ScalarType: { } scalar }
+            && DatabaseTypeConvertor.GuessFromScalarType(scalar, propertyMap.IsUnicode)
+                != DatabaseTypeConvertor.GuessFromScalarType(scalar);
 
     /// <summary>
     /// The type attribute of an &lt;id&gt; or &lt;key-property&gt;, empty when there is
@@ -1005,7 +1023,13 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         var claim = ResolveColumnType(entityMap, propertyMap);
 
-        XmlAttribute? typeAttr = propertyMap.Type.HasValue
+        // Without a stated family the type attribute stays out: NHibernate reads the CLR type
+        // and writing its own answer back would claim more than the source did. The exception
+        // is a unicode facet stated without a family, which has no attribute of its own here -
+        // the type name says both at once - and whose target default is national character
+        // data, exactly what such a source ruled out. That is the same argument @Nationalized
+        // makes on the JPA side (decision 080), read from the other end.
+        XmlAttribute? typeAttr = propertyMap.Type.HasValue || FacetChangesTheGuessedType(propertyMap)
             ? new XmlAttribute("type", claim.TypeName!)
             : null;
 

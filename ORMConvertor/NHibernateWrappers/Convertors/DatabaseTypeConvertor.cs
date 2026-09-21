@@ -264,7 +264,7 @@ public static class DatabaseTypeConvertor
     /// at runtime: a TimeSpan is ticks in a 64-bit integer column, not a time column -
     /// the one place where NHibernate's default and EF Core's (time) part ways.
     /// </summary>
-    public static string? GuessFromScalarType(ScalarType scalarType)
+    public static string? GuessFromScalarType(ScalarType scalarType, bool? isUnicode = null)
     {
         // Every claim guessed here has an exactly matching registered name, so taking
         // the name alone drops no narrowing.
@@ -274,14 +274,16 @@ public static class DatabaseTypeConvertor
             ScalarType.Byte => ToNHibernate(DatabaseType.TinyInt).Name,
             ScalarType.Short => ToNHibernate(DatabaseType.SmallInt).Name,
             // The reference documentation's default for System.Char is the unicode
-            // single character - the case the unicode facet exists for (decision 019).
-            ScalarType.Char => ToNHibernate(DatabaseType.Char, isUnicode: true, length: 1).Name,
+            // single character - the case the unicode facet exists for (decision 019) -
+            // and a source that stated the facet without a family gets its own answer
+            // rather than the default.
+            ScalarType.Char => ToNHibernate(DatabaseType.Char, isUnicode: isUnicode ?? true, length: 1).Name,
             ScalarType.Int => ToNHibernate(DatabaseType.Integer).Name,
             ScalarType.Long => ToNHibernate(DatabaseType.BigInt).Name,
             ScalarType.Double => ToNHibernate(DatabaseType.DoublePrecision).Name,
             ScalarType.Float => ToNHibernate(DatabaseType.Real).Name,
             ScalarType.Decimal => ToNHibernate(DatabaseType.Decimal).Name,
-            ScalarType.String => ToNHibernate(DatabaseType.VarChar, isUnicode: true).Name,
+            ScalarType.String => ToNHibernate(DatabaseType.VarChar, isUnicode: isUnicode ?? true).Name,
             ScalarType.DateTime => ToNHibernate(DatabaseType.Timestamp).Name,
             ScalarType.Guid => ToNHibernate(DatabaseType.Uuid).Name,
             ScalarType.Date => ToNHibernate(DatabaseType.Date, scalar: ScalarType.Date).Name,

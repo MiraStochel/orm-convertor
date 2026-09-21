@@ -71,11 +71,14 @@ public class InventedFactsTest
     /// The EF Core attribute switch had no default branch, so every annotation outside its
     /// recognized cases vanished without a record. [NotMapped] used to be the example that
     /// changed what the artifact means; since decision 072 it is read, so it is no longer
-    /// on this list.
+    /// on this list - nor is [StringLength], which the model holds as a length. What is
+    /// left here is what the representation really has no place for: the record is the
+    /// answer to a fact with nowhere to go, not to an annotation nobody got round to
+    /// (decision 048).
     /// </summary>
     [Theory]
     [InlineData("ConcurrencyCheck")]
-    [InlineData("StringLength(50)")]
+    [InlineData("Comment(\"why\")")]
     public void AnUnreadEFCoreAnnotationIsReported(string annotation)
     {
         var source = $$"""
