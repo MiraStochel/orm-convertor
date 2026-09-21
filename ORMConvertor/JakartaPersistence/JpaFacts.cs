@@ -27,6 +27,13 @@ public sealed class JpaEntityFacts
 
     /// <summary>Class-level annotations or elements the model has no place for, for the loss records.</summary>
     public List<string> Unread { get; } = [];
+
+    /// <summary>
+    /// The source declared the class a mapped superclass, which says it is not an entity
+    /// at all. Kept apart from <see cref="Unread"/> because the loss is a different one -
+    /// see the record the writer emits for it.
+    /// </summary>
+    public bool IsMappedSuperclass { get; set; }
 }
 
 public enum JpaAttributeKind

@@ -83,6 +83,21 @@ public sealed class JpaMappingWriter(
             Report(ConversionRecordKind.Loss, null, null,
                 $"The class annotation {unread} has no counterpart in the intermediate representation and was dropped.");
         }
+
+        if (facts.IsMappedSuperclass)
+        {
+            // The companion of the record a stated base type gets (decision 048): that one
+            // says the hierarchy is gone, this one says what the hierarchy was carrying.
+            // A mapped superclass is not an entity, and the attributes it declares belong
+            // to the tables of the entities extending it; the model has no place for
+            // either fact, so the class leaves as an entity of its own - a table nobody
+            // asked for - and the entities that extend it leave without its attributes.
+            Report(ConversionRecordKind.Loss, null, null,
+                $"The class annotation @MappedSuperclass says {facts.ClassName} is not an entity: it declares "
+                + "mapped attributes that belong to the tables of the entities extending it. The intermediate "
+                + "representation has no place for a hierarchy, so the class is translated as an entity of its "
+                + "own and the entities extending it do not receive its attributes.");
+        }
     }
 
     private void WriteColumn(JpaAttributeFacts attribute)

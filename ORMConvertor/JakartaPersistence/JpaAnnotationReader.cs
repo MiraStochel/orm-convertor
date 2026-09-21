@@ -93,6 +93,13 @@ public class JpaAnnotationReader
 
                 break;
 
+            case "MappedSuperclass":
+                // Not an Unread entry: the class is not an entity at all, which is a
+                // heavier statement than an annotation the model cannot keep, and the
+                // writer says so in its own words.
+                facts.IsMappedSuperclass = true;
+                break;
+
             case "IdClass":
                 facts.IdClass = annotation["value"] is { Kind: JavaAnnotationValueKind.ClassLiteral } literal
                     ? literal.SimpleName

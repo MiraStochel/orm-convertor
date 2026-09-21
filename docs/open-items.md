@@ -26,19 +26,14 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 ## Příští položky
 
-Na těchhle položkách se pracuje teď a do téhle kategorie je dostalo jedno společné: každá buď dělá nepravdivou větu, kterou [`architecture.md`](./architecture.md) dnes vyslovuje, nebo vydá tiše špatný výstup. Přesně to by jinak našla revize, která stojí za nimi — a opravovalo by se pod hotovou revizí. Přišly z porovnání [`analysis/`](./analysis/README.md) s kódem — poslední z revize celého repozitáře z 2026-09-21 odbavilo rozhodnutí [094](./decisions/094-entity-identity-inside-a-conversion.md), poslední z porovnání týž den konstruktor `DateTime` v predikátu LINQ —, s jednou výjimkou: javové `extends` sem přibylo 2026-09-21 při psaní C# poloviny téže mezery, a je to jediná práce, která tu dnes zbývá. Co z obou nálezů zůstalo otázkou, leží ve [Zbytcích](#zbytky).
+Do téhle kategorie dostalo položky jedno společné: každá buď dělala nepravdivou větu, kterou [`architecture.md`](./architecture.md) vyslovuje, nebo vydávala tiše špatný výstup. Přesně to by jinak našla revize, která stojí za nimi — a opravovalo by se pod hotovou revizí. **Od 2026-09-21 jsou všechny odbavené.** Přišly z porovnání [`analysis/`](./analysis/README.md) s kódem a z revize celého repozitáře z 2026-09-21 — poslední z revize odbavilo rozhodnutí [094](./decisions/094-entity-identity-inside-a-conversion.md), poslední z porovnání týž den konstruktor `DateTime` v predikátu LINQ —, s jednou výjimkou: javové `extends` sem přibylo 2026-09-21 při psaní C# poloviny téže mezery a odbavené bylo jako poslední. Co z obou nálezů zůstalo otázkou, leží ve [Zbytcích](#zbytky).
 
-Za položkami stojí **revize a vydání `2.0.0`**, v tomhle pořadí. Kód se kvůli nim nezmrazuje: položky se odbavují dál a revize měří strom, až bude řada nad ní prázdná.
+**Řada nad revizí je tím prázdná**, takže zbývá **revize a vydání `2.0.0`**, v tomhle pořadí. Kód se kvůli nim nezmrazuje: kdyby sem ještě něco přibylo, odbaví se a revize měří strom, až bude řada nad ní zase prázdná.
 
 ### Práce
 
-#### Holé `extends` javové entity mizí bez záznamu
-*Na řadě. Práce podle rozhodnutí [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md); dědičnost sama je vyňatá oblast 2 hranice záruk ([`architecture.md`](./architecture.md), §9). Požadavek F11.*
-
-Javová strana je ve stejném stavu, v jakém byla do 2026-09-21 strana C#, jen o kus dál: anotaci `@Inheritance` hlásí JPA vrstva jako nemodelovanou anotaci, kdežto `extends` mezi dvěma `@Entity` třídami — výchozí strategii JPA, která žádnou anotaci nepotřebuje — nehlásí nikdo. `JavaClassReader` bázový typ přečte a uloží do `JavaClass.Extends`, ale tu vlastnost nečte žádný parser ani builder, takže hierarchie zdroje zmizí beze slova. Práce je předat tvrzení builderu týmž kanálem, jakým ho od 2026-09-21 předává sdílené čtení C# (`AddStatedBaseType`), a spolu s tím zodpovědět, co se hlásí u `@MappedSuperclass`: tam bázová třída entitou převodu není, nese ale mapovaná pole, takže se ztrácí něco jiného než u dědičnosti mezi dvěma entitami a kritérium „jmenuje jinou entitu převodu" na ni nesedne.
-
 #### Revize před vydáním 2.0.0
-*Práce, která uzavírá řadu nad sebou a předchází vydání pod ní. Žánr popisuje [`audits/README.md`](./audits/README.md) a rozhodnutí [007](./decisions/007-documentation-structure.md); předchůdcem je [revize připravenosti verze 1.0](./audits/2026-08-21-version-1-0-readiness-audit.md). Značku pořadí dostane, až bude řada nad ní prázdná.*
+*Na řadě. Práce, která uzavírá řadu nad sebou a předchází vydání pod ní. Žánr popisuje [`audits/README.md`](./audits/README.md) a rozhodnutí [007](./decisions/007-documentation-structure.md); předchůdcem je [revize připravenosti verze 1.0](./audits/2026-08-21-version-1-0-readiness-audit.md). Řada nad ní je od 2026-09-21 prázdná.*
 
 Poznámky k vydání bydlí v anotaci značky a značka se nikdy neposouvá (rozhodnutí [069](./decisions/069-major-marks-a-milestone-not-a-break.md)), takže každé tvrzení, které do anotace půjde, musí být ověřené dřív, než se značka vyrazí. Proto revize stojí **před** vydáním: po něm by se opravovalo pod hotovou značkou.
 

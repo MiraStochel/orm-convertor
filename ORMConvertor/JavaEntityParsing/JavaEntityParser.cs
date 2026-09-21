@@ -78,6 +78,19 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
             var entityMap = entityBuilder.DeclareEntity(cls.Name, unit.Package, declaringType);
 
             entityBuilder.AddClassHeader(AccessOf(cls.Modifiers), cls.Name);
+
+            // A base class naming another entity of the conversion is a hierarchy the
+            // source maps, and the model has no place for one, so the claim is handed to
+            // the builder to judge once the whole entity set is known (decision 048) -
+            // the same channel the shared C# reading uses, because the fact is the same
+            // fact under both ecosystems. Java says outright which base type is the class,
+            // so unlike C# nothing but the extends clause is handed over; the interfaces
+            // are not candidates and never have to be resolved away.
+            if (cls.Extends is { } baseType)
+            {
+                entityBuilder.AddStatedBaseType(baseType);
+            }
+
             ParseClassBody(cls);
 
             if (!read.Contains(entityMap))

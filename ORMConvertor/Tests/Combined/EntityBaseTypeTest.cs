@@ -5,16 +5,18 @@ using OrmConvertor;
 namespace Tests.Combined;
 
 /// <summary>
-/// The base list of a C# entity class (decision 048). Inheritance itself stays excluded
-/// area 2 of the guarantees (architecture, §9) - the model has no place for a hierarchy and
-/// this does not give it one. What used to be missing is the word about it: the same fact
-/// in an NHibernate mapping (&lt;subclass&gt;) has had a loss record since decision 030, while
-/// a class deriving from another entity of the conversion left no trace at all, although EF
-/// Core maps exactly that by convention as table per hierarchy.
+/// The stated base class of an entity, in both ecosystems (decision 048). Inheritance
+/// itself stays excluded area 2 of the guarantees (architecture, §9) - the model has no
+/// place for a hierarchy and this does not give it one. What used to be missing is the word
+/// about it: the same fact in an NHibernate mapping (&lt;subclass&gt;) has had a loss record
+/// since decision 030, while a class deriving from another entity of the conversion left no
+/// trace at all, although EF Core maps exactly that by convention as table per hierarchy.
 ///
-/// The reading is the shared one, so the record does not belong to EF Core: all three .NET
-/// entity parsers inherit it from <c>CSharpEntityParser</c>, and the theory below is what
-/// holds them to it.
+/// The reading is the shared one in each ecosystem, so the record belongs to no single
+/// framework: all three .NET entity parsers inherit it from <c>CSharpEntityParser</c> and
+/// both Java ones from <c>JavaEntityParser</c>, and the theories below are what hold them
+/// to it. The judgement is one judgement - the builder's, once the whole entity set is
+/// known - so the two halves cannot drift apart.
 /// </summary>
 public class EntityBaseTypeTest
 {
@@ -267,5 +269,196 @@ public class EntityBaseTypeTest
         Assert.Equal(2, losses.Count);
         Assert.Contains(losses, r => r.Entity == "Employee" && r.Reason.Contains("from Person"));
         Assert.Contains(losses, r => r.Entity == "Manager" && r.Reason.Contains("from Employee"));
+    }
+
+    // ---- The Java half: the same fact, the same channel, the same record ------------
+
+    private static ConversionSource JavaSource(string content, string name) => new()
+    {
+        Name = name,
+        ContentType = ConversionContentType.JavaEntity,
+        Content = content,
+    };
+
+    private static ConversionResult ConvertJava(ORMEnum sourceFramework, params ConversionSource[] units)
+        => ConversionHandler.Convert(sourceFramework, ORMEnum.EFCore, [.. units]);
+
+    private const string JavaHierarchy = """
+        package shop;
+
+        import jakarta.persistence.Entity;
+        import jakarta.persistence.Id;
+        import jakarta.persistence.Table;
+
+        @Entity
+        @Table(name = "People")
+        class Person {
+            @Id
+            private Integer personId;
+            private String personName;
+        }
+
+        @Entity
+        @Table(name = "Employees")
+        class Employee extends Person {
+            private java.math.BigDecimal salary;
+        }
+        """;
+
+    /// <summary>
+    /// Until this was read the Java side was silent where the C# side had just learned to
+    /// speak: <c>@Inheritance</c> is reported as an annotation the model cannot keep, but
+    /// the default strategy of JPA needs no annotation, so a bare <c>extends</c> between two
+    /// entities said nothing at all. <c>JavaClass.Extends</c> was read and then read by
+    /// nobody.
+    /// </summary>
+    [Theory]
+    [InlineData(ORMEnum.Hibernate)]
+    [InlineData(ORMEnum.EclipseLink)]
+    public void EverySharedJavaParserReportsAStatedBaseClass(ORMEnum sourceFramework)
+    {
+        var result = ConvertJava(sourceFramework, JavaSource(JavaHierarchy, "People.java"));
+
+        var loss = Assert.Single(BaseTypeLosses(result));
+
+        Assert.Equal("Employee", loss.Entity);
+        Assert.Contains("Person", loss.Reason);
+        Assert.Null(loss.Property);
+        Assert.Null(loss.Category);
+        Assert.Null(loss.Unit);
+    }
+
+    /// <summary>
+    /// The word, not a refusal - the same as in C#.
+    /// </summary>
+    [Fact]
+    public void BothJavaClassesOfTheHierarchyAreStillTranslated()
+    {
+        var result = ConvertJava(ORMEnum.Hibernate, JavaSource(JavaHierarchy, "People.java"));
+
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure);
+
+        var entities = result.Sources
+            .Where(s => s.ContentType == ConversionContentType.CSharpEntity)
+            .ToList();
+
+        Assert.Equal(2, entities.Count);
+        Assert.Contains(entities, s => s.Content.Contains("class Person"));
+        Assert.Contains(entities, s => s.Content.Contains("class Employee"));
+    }
+
+    /// <summary>
+    /// Java says outright which base type is the class, so the interfaces are never
+    /// candidates and a base class no unit declares stays silent, as in C#.
+    /// </summary>
+    [Theory]
+    [InlineData("implements java.io.Serializable")]
+    [InlineData("extends AuditedEntity")]
+    [InlineData("extends shop.legacy.Employee")]
+    public void AJavaBaseTypeOutsideTheConversionIsSilent(string header)
+    {
+        var result = ConvertJava(ORMEnum.Hibernate, JavaSource($$"""
+            package shop;
+
+            import jakarta.persistence.Entity;
+            import jakarta.persistence.Id;
+
+            @Entity
+            class Employee {{header}} {
+                @Id
+                private Integer employeeId;
+            }
+            """, "Employee.java"));
+
+        Assert.Empty(BaseTypeLosses(result));
+    }
+
+    /// <summary>
+    /// A mapped superclass is the case the criterion "names another entity of the
+    /// conversion" does not describe by itself: the base is no entity in the source, yet it
+    /// carries mapped attributes that belong to the table of every entity extending it. Two
+    /// facts are lost, so two records are written - one about the hierarchy, one about what
+    /// the hierarchy carried - and the second no longer arrives as the generic sentence
+    /// about an annotation with no counterpart, which said far less than the annotation
+    /// means.
+    /// </summary>
+    [Theory]
+    [InlineData(ORMEnum.Hibernate)]
+    [InlineData(ORMEnum.EclipseLink)]
+    public void AMappedSuperclassLosesItsHierarchyAndItsAttributes(ORMEnum sourceFramework)
+    {
+        var result = ConvertJava(sourceFramework, JavaSource("""
+            package shop;
+
+            import jakarta.persistence.Entity;
+            import jakarta.persistence.Id;
+            import jakarta.persistence.MappedSuperclass;
+
+            @MappedSuperclass
+            class Auditable {
+                private java.time.LocalDateTime createdAt;
+            }
+
+            @Entity
+            class Employee extends Auditable {
+                @Id
+                private Integer employeeId;
+            }
+            """, "Employee.java"));
+
+        var hierarchy = Assert.Single(BaseTypeLosses(result));
+        Assert.Equal("Employee", hierarchy.Entity);
+        Assert.Contains("Auditable", hierarchy.Reason);
+
+        var carried = Assert.Single(
+            result.Records,
+            r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("@MappedSuperclass"));
+
+        Assert.Contains("Auditable is not an entity", carried.Reason);
+        Assert.Contains("do not receive its attributes", carried.Reason);
+
+        // The generic sentence is what it replaced, not what it sits beside.
+        Assert.DoesNotContain(
+            result.Records,
+            r => r.Reason.Contains("The class annotation @MappedSuperclass has no counterpart"));
+    }
+
+    /// <summary>
+    /// The judgement waits for the whole entity set on this side too, so the order of the
+    /// units does not decide whether the hierarchy is seen (S2).
+    /// </summary>
+    [Fact]
+    public void TheJavaBaseMayBeDeclaredAfterTheDerivedClass()
+    {
+        const string derived = """
+            package shop;
+
+            import jakarta.persistence.Entity;
+
+            @Entity
+            class Employee extends Person {
+                private java.math.BigDecimal salary;
+            }
+            """;
+
+        const string basis = """
+            package shop;
+
+            import jakarta.persistence.Entity;
+            import jakarta.persistence.Id;
+
+            @Entity
+            class Person {
+                @Id
+                private Integer personId;
+            }
+            """;
+
+        var loss = Assert.Single(BaseTypeLosses(ConvertJava(
+            ORMEnum.Hibernate,
+            JavaSource(derived, "Employee.java"),
+            JavaSource(basis, "Person.java"))));
+
+        Assert.Equal("Employee", loss.Entity);
     }
 }
