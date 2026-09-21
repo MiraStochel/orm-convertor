@@ -98,6 +98,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [091](091-the-catalog-completes-a-foreign-source-and-says-so.md) | Katalog doplní i deklarovaně cizí zdroj a řekne to | 2026-09-21 | platí | F4, F5, F6, F11, S6 |
 | [092](092-input-nesting-depth-capped-before-the-descent.md) | Strop hloubky zanoření vstupu, vynucený nad tokeny před sestupem | 2026-09-21 | revidováno | F11, S4, S7 |
 | [093](093-unreadable-input-is-a-unit-failure.md) | Neparsovatelný vstup je selhání jednotky, ne výjimka převodu | 2026-09-21 | platí | F11, F14, S7 |
+| [094](094-entity-identity-inside-a-conversion.md) | Totožnost entity uvnitř převodu je dvojice jmenný prostor a název | 2026-09-21 | platí | F5, F11, F14, S1, S2 |
 
 ## Formát
 

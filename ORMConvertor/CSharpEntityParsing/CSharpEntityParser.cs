@@ -68,18 +68,25 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
 
         foreach (var cls in classes)
         {
-            entityBuilder.BeginEntity();
-
-            var ns = GetNamespace(cls);
-            if (!string.IsNullOrEmpty(ns))
-            {
-                entityBuilder.AddNamespace(ns);
-            }
+            // Find-or-create over the pair of namespace and name (decision 094): a class
+            // another unit of this conversion already declared - the other half of a partial
+            // class, the same file pasted twice - is this entity, not a second one of its
+            // name, and what this declaration adds merges into it under decision 017. A
+            // nested class is an entity beside its container and carries it in the identity
+            // only, because two containers make two types out of one name.
+            var entityMap = entityBuilder.DeclareEntity(
+                cls.Identifier.Text,
+                GetNamespace(cls),
+                GetDeclaringType(cls));
 
             ParseClassAttributes(cls);
             ParseClassHeader(cls);
             ParseProperties(cls);
-            read.Add(entityBuilder.EntityMap);
+
+            if (!read.Contains(entityMap))
+            {
+                read.Add(entityMap);
+            }
         }
 
         return read;
@@ -200,6 +207,22 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
             .ToList();
 
         return namespaces.Count == 0 ? null : string.Join(".", namespaces);
+    }
+
+    /// <summary>
+    /// The classes this one is nested in, outermost first, or null for a top-level one. Half
+    /// of what identifies the entity beside the namespace (decision 094), and nothing the
+    /// model records: a nested class becomes an entity beside its container.
+    /// </summary>
+    private static string? GetDeclaringType(ClassDeclarationSyntax classDeclaration)
+    {
+        var containers = classDeclaration.Ancestors()
+            .OfType<ClassDeclarationSyntax>()
+            .Select(cls => cls.Identifier.Text)
+            .Reverse()
+            .ToList();
+
+        return containers.Count == 0 ? null : string.Join(".", containers);
     }
 
     /// <summary>

@@ -67,52 +67,26 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
 
         var read = new List<EntityMap>();
 
-        foreach (var cls in Flatten(unit.Classes))
+        foreach (var (cls, declaringType) in Flatten(unit.Classes))
         {
-            // Find-or-create by class name: a mapping descriptor read before the class - the
-            // orm.xml of decision 068 - has founded the entity already, and the class
-            // enriches it rather than standing beside it as a second one.
-            var existing = FindDeclared(cls.Name, unit.Package);
-            if (existing is null)
-            {
-                entityBuilder.BeginEntity();
-            }
-            else
-            {
-                entityBuilder.EntityMap = existing;
-            }
-
-            if (!string.IsNullOrEmpty(unit.Package) && string.IsNullOrEmpty(entityBuilder.EntityMap.Entity.Namespace))
-            {
-                entityBuilder.AddNamespace(unit.Package);
-            }
+            // Find-or-create over the pair of package and name (decision 094): a mapping
+            // descriptor read before the class - the orm.xml of decision 068 - or another
+            // unit declaring the same class has founded the entity already, and this
+            // declaration enriches it rather than standing beside it as a second one. A map
+            // another unit founded with a package of its own is a different class, and so is
+            // a nested class of another container.
+            var entityMap = entityBuilder.DeclareEntity(cls.Name, unit.Package, declaringType);
 
             entityBuilder.AddClassHeader(AccessOf(cls.Modifiers), cls.Name);
             ParseClassBody(cls);
-            read.Add(entityBuilder.EntityMap);
+
+            if (!read.Contains(entityMap))
+            {
+                read.Add(entityMap);
+            }
         }
 
         return read;
-    }
-
-    private EntityMap? FindDeclared(string className, string? package)
-    {
-        EntityMap? existing = null;
-
-        if (!string.IsNullOrEmpty(package))
-        {
-            existing = entityBuilder.EntityMaps.FirstOrDefault(em =>
-                string.Equals(em.Entity.Name, className, StringComparison.Ordinal)
-                && string.Equals(em.Entity.Namespace, package, StringComparison.Ordinal));
-        }
-
-        existing ??= entityBuilder.EntityMaps.FirstOrDefault(em =>
-            string.Equals(em.Entity.Name, className, StringComparison.Ordinal)
-            && string.IsNullOrEmpty(em.Entity.Namespace));
-
-        // A map another Java unit founded with a package of its own is a different class;
-        // only a descriptor without a package or with the same one is this class's.
-        return existing;
     }
 
     /// <summary>
@@ -301,13 +275,22 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
     protected static string AccessOf(IReadOnlyList<string> modifiers)
         => modifiers.FirstOrDefault(m => m is "public" or "private" or "protected") ?? string.Empty;
 
-    private static IEnumerable<JavaClass> Flatten(IReadOnlyList<JavaClass> classes)
+    /// <summary>
+    /// Every class of the unit with the container it is nested in, outermost first and null
+    /// for a top-level one: an entity beside its container in the model, and a type of its
+    /// own for the identity rule of decision 094.
+    /// </summary>
+    private static IEnumerable<(JavaClass Class, string? DeclaringType)> Flatten(
+        IReadOnlyList<JavaClass> classes,
+        string? declaringType = null)
     {
         foreach (var cls in classes)
         {
-            yield return cls;
+            yield return (cls, declaringType);
 
-            foreach (var nested in Flatten(cls.NestedClasses))
+            var container = declaringType is null ? cls.Name : $"{declaringType}.{cls.Name}";
+
+            foreach (var nested in Flatten(cls.NestedClasses, container))
             {
                 yield return nested;
             }

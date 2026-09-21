@@ -55,6 +55,103 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
+    /// The entity a class declaration states, found among those of the conversion or founded
+    /// here, and made current (decision 094). The identity is the pair of namespace and name:
+    /// two declarations of one pair are one entity and merge under the source-precedence rule
+    /// (decision 017), two different pairs are two entities even where the simple names agree.
+    /// A namespace nobody stated does not distinguish - the exact pair is looked for first and
+    /// the bare name only where one side is silent about it - and the rule is symmetric on
+    /// purpose: were it not, the order of the units would decide whether one entity arises or
+    /// two (S2). For the reading of a class text, which is what this is: a mapping artifact
+    /// says nothing about a namespace, so its own lookup stays as decisions 017 and 068 left it.
+    /// </summary>
+    /// <param name="className">The declared class name, without a namespace.</param>
+    /// <param name="namespaceName">The namespace the declaration states, or null where it states none.</param>
+    /// <param name="declaringType">
+    /// The enclosing class of a nested declaration, dotted where it nests deeper, and null for
+    /// a top-level one. It takes part in the identity and not in the model: the representation
+    /// places a nested class beside its container rather than inside it (architecture, §5), so
+    /// the container is not part of the entity's name - but Customer.Key and Order.Key are two
+    /// types, and reading them as one entity would give one of the two the other's key parts.
+    /// </param>
+    public EntityMap DeclareEntity(string className, string? namespaceName, string? declaringType = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(className);
+
+        var stated = Stated(namespaceName);
+        var container = Stated(declaringType);
+
+        var qualifier = (stated, container) switch
+        {
+            (null, null) => null,
+            (null, _) => container,
+            (_, null) => stated,
+            _ => $"{stated}.{container}",
+        };
+
+        var existing =
+            EntityMaps.FirstOrDefault(em =>
+                Named(em, className)
+                && string.Equals(DeclaredUnder(em), qualifier ?? string.Empty, StringComparison.Ordinal))
+            ?? EntityMaps.FirstOrDefault(em =>
+                Named(em, className)
+                && (qualifier is null || string.IsNullOrEmpty(DeclaredUnder(em))));
+
+        if (existing is null)
+        {
+            BeginEntity();
+            EntityMap.Entity.Name = className;
+            declaredUnder[EntityMap] = qualifier ?? string.Empty;
+        }
+        else
+        {
+            EntityMap = existing;
+        }
+
+        if (stated is not null)
+        {
+            AddNamespace(stated);
+        }
+
+        // A declaration that says where it is turns an entity nobody had placed into a placed
+        // one: what was matched loosely because nobody had said is said now, so a third
+        // declaration from somewhere else is a different class rather than a third loose
+        // match. Without it the answer would depend on the order the units arrived in (S2).
+        if (qualifier is not null && string.IsNullOrEmpty(DeclaredUnder(EntityMap)))
+        {
+            declaredUnder[EntityMap] = qualifier;
+        }
+
+        return EntityMap;
+    }
+
+    private static string? Stated(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static bool Named(EntityMap entityMap, string className)
+        => string.Equals(entityMap.Entity.Name, className, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Where a class declaration placed the entity: the namespace, and the enclosing class
+    /// after it where one declared it (decision 094). Builder state rather than a field of the
+    /// model, because the model knows no nesting; an entity a mapping artifact founded is not
+    /// in the table at all and answers with its namespace, which is all such an artifact has.
+    /// </summary>
+    private readonly Dictionary<EntityMap, string> declaredUnder = [];
+
+    private string DeclaredUnder(EntityMap entityMap)
+        => declaredUnder.TryGetValue(entityMap, out var qualifier)
+            ? qualifier
+            : entityMap.Entity.Namespace ?? string.Empty;
+
+    /// <summary>
+    /// Whether the entity list has been spoken about (decision 094). The phase that reports it
+    /// is called twice in a conversion that met the catalog, and the second call has nothing
+    /// new to say - by then the reading is long over.
+    /// </summary>
+    private bool sharedNamesReported;
+
+    /// <summary>
     /// Add a table name. Only an empty fact is filled: a table an earlier-read source
     /// already stated stays, and a different later claim is a conflict record (decision 017).
     /// </summary>
@@ -100,12 +197,27 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Add a namespace to the entity.
+    /// Add a namespace to the entity. Fills only an empty fact, like <see cref="AddTable"/>
+    /// (decision 017): the namespace is half of what identifies the entity (decision 094), so
+    /// a later source placing it elsewhere is a conflict record rather than an overwrite.
     /// </summary>
     /// <param name="namespaceName">Namespace name</param>
     public void AddNamespace(string namespaceName)
     {
-        EntityMap.Entity.Namespace = namespaceName;
+        if (string.IsNullOrEmpty(namespaceName))
+        {
+            return;
+        }
+
+        if (string.IsNullOrEmpty(EntityMap.Entity.Namespace))
+        {
+            EntityMap.Entity.Namespace = namespaceName;
+        }
+        else if (!string.Equals(EntityMap.Entity.Namespace, namespaceName, StringComparison.Ordinal))
+        {
+            ReportInputConflict(null, null,
+                $"An earlier source declares the entity in the namespace '{EntityMap.Entity.Namespace}', a later one in '{namespaceName}'.");
+        }
     }
 
     /// <summary>
@@ -613,25 +725,60 @@ public abstract class AbstractEntityBuilder
             SourceNavigationProperty = propertyName,
         };
 
-        AddRelation(relation);
+        // What stands on the entity afterwards, which is the relation just added or the one a
+        // source read earlier already put there; the pending facts belong to that one, and the
+        // later source fills what it left empty rather than replacing it (decisions 017, 094).
+        var standing = AddRelation(relation);
 
-        if (foreignKeyColumns is { Count: > 0 })
+        if (foreignKeyColumns is { Count: > 0 } && !pendingForeignKeyColumns.ContainsKey(standing))
         {
-            pendingForeignKeyColumns[relation] = foreignKeyColumns;
+            pendingForeignKeyColumns[standing] = foreignKeyColumns;
         }
 
-        if (cardinality == Cardinality.ManyToMany && junction is not null)
+        if (cardinality == Cardinality.ManyToMany && junction is not null && !pendingJunctionFacts.ContainsKey(standing))
         {
-            pendingJunctionFacts[relation] = junction;
+            pendingJunctionFacts[standing] = junction;
         }
     }
 
     /// <summary>
-    /// Registers a fully specified relation (including ColumnPairs, junction scenarios, …).
+    /// Registers a fully specified relation (including ColumnPairs, junction scenarios, …) and
+    /// returns the one that stands on the entity afterwards. Find-or-add over the navigation
+    /// property, which carries exactly one relation (decision 094): a second declaration of the
+    /// same class states the same navigation again, and adding it twice would emit the foreign
+    /// key twice and synthesize an N:M junction entity twice. The same target and cardinality
+    /// are one sentence said twice and no event; a different one is a conflict record with the
+    /// relation read first left standing, as decision 017 rules for every other fact. A relation
+    /// without a navigation property - a purely physical one - is added as it comes.
     /// </summary>
-    public void AddRelation(Relation relation)
+    public Relation AddRelation(Relation relation)
     {
+        ArgumentNullException.ThrowIfNull(relation);
+
+        var navigation = relation.SourceNavigationProperty;
+
+        if (!string.IsNullOrEmpty(navigation))
+        {
+            var existing = EntityMap.Relations.FirstOrDefault(r =>
+                string.Equals(r.SourceNavigationProperty, navigation, StringComparison.Ordinal));
+
+            if (existing is not null)
+            {
+                if (!string.Equals(existing.TargetEntity, relation.TargetEntity, StringComparison.Ordinal)
+                    || existing.Cardinality != relation.Cardinality)
+                {
+                    ReportInputConflict(navigation, null,
+                        $"An earlier source points the navigation at '{existing.TargetEntity}' as {existing.Cardinality}, "
+                        + $"a later one at '{relation.TargetEntity}' as {relation.Cardinality}.");
+                }
+
+                return existing;
+            }
+        }
+
         EntityMap.Relations.Add(relation);
+
+        return relation;
     }
 
     /// <summary>
@@ -769,6 +916,14 @@ public abstract class AbstractEntityBuilder
     /// </summary>
     public void DissolveKeyClasses()
     {
+        // The entity list is spoken about as the reading left it, before this phase takes a
+        // key class out of it again (decision 094): a key class that two entities declared
+        // under one name is exactly the pair that record is about, and it would be gone by
+        // the time anything else looked. The phase is the first one over the list whoever
+        // calls it - the completion phase, or Build where no catalog was met - and the
+        // record is written once.
+        ReportSharedEntityNames();
+
         // An @EmbeddedId claim becomes an ordinary Embedded key first, over the members of
         // its class, so that the loop below dissolves it like any other (decision 077).
         MaterializeEmbeddedKeys();
@@ -1065,6 +1220,53 @@ public abstract class AbstractEntityBuilder
 
                 ResolveColumnPairs(entityMap, relation, target);
             }
+        }
+    }
+
+    /// <summary>
+    /// Two entities of one conversion left carrying the same simple name, which after the
+    /// identity rule of decision 094 means two namespaces or two containers. One record per
+    /// name, and it belongs to the conversion rather than to a unit, like every other record
+    /// about a merged entity (decision 066). Conflict rather than Incompleteness: two
+    /// first-degree sources claim one name, the tool settles nothing and only refuses to keep
+    /// quiet about it (decision 010) - whereas what Incompleteness reports is a fact the
+    /// catalog might still supply, and this one it cannot. Written whether or not anything
+    /// references the name: the ambiguity is a property of the conversion, not of one
+    /// reference to it.
+    /// </summary>
+    private void ReportSharedEntityNames()
+    {
+        if (sharedNamesReported)
+        {
+            return;
+        }
+
+        sharedNamesReported = true;
+
+        var shared = EntityMaps
+            .Where(em => !string.IsNullOrEmpty(em.Entity.Name))
+            .GroupBy(em => em.Entity.Name, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1);
+
+        foreach (var group in shared)
+        {
+            var places = group.Select(em =>
+            {
+                var qualifier = DeclaredUnder(em);
+                return string.IsNullOrEmpty(qualifier) ? "(no namespace)" : qualifier;
+            });
+
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Conflict,
+                Framework = Descriptor.Framework,
+                Entity = group.Key,
+                Reason = $"The conversion holds {group.Count()} entities named '{group.Key}', declared in "
+                    + $"{string.Join(" and ", places)}. The representation references an entity by its name "
+                    + "(decision 001), so a reference to that name - a relation target, a key class, a "
+                    + "property type - resolves against the first one read, and an artifact generated for "
+                    + "each of them carries the same class name.",
+            });
         }
     }
 
@@ -1668,7 +1870,7 @@ public abstract class AbstractEntityBuilder
             {
                 property.Type = type;
             }
-            else if (!SameLanguageType(property.Type, type))
+            else if (!SameLanguageType(property.Type, type) && !IsUnresolvedFormOf(property.Type, type))
             {
                 ReportInputConflict(property.Name, null,
                     $"An earlier source declares the property as '{Describe(property.Type)}', a later one as '{Describe(type)}'.");
@@ -1724,6 +1926,36 @@ public abstract class AbstractEntityBuilder
            && (left.ElementType is null
                ? right.ElementType is null
                : right.ElementType is not null && SameLanguageType(left.ElementType, right.ElementType));
+
+    /// <summary>
+    /// One claim at two stages of resolution rather than two claims: a later declaration
+    /// writes the property's type as the source spells it - Unknown under that name - where
+    /// an earlier reading has already turned the same name into a reference to the entity it
+    /// denotes (decision 014, <see cref="ReferenceTypeFor"/>). Which of the two forms is in
+    /// the model when the second declaration arrives depends only on whether a mapping had
+    /// claimed the navigation by then, so calling the difference a disagreement would report
+    /// the input against itself (decisions 049 and 094). The resolved form stands, as the
+    /// earlier fact always does.
+    /// </summary>
+    private static bool IsUnresolvedFormOf(LangType resolved, LangType written)
+    {
+        if (resolved.IsNullable != written.IsNullable)
+        {
+            return false;
+        }
+
+        if (resolved.Category == LangTypeCategory.Reference && written.Category == LangTypeCategory.Unknown)
+        {
+            return string.Equals(SimpleEntityName(written.SourceName!), resolved.TargetEntity, StringComparison.Ordinal);
+        }
+
+        return resolved.Category == LangTypeCategory.Collection
+            && written.Category == LangTypeCategory.Collection
+            && resolved.CollectionKind == written.CollectionKind
+            && resolved.ElementType is not null
+            && written.ElementType is not null
+            && IsUnresolvedFormOf(resolved.ElementType, written.ElementType);
+    }
 
     /// <summary>
     /// A language type in words, for a conflict record. Deliberately not the C# spelling:
