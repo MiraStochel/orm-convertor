@@ -94,6 +94,30 @@ Z toho plyne dělba práce, kterou je lepší říct nahlas, než ji nechat kaž
 
 ---
 
+## UC6 — Migrace přes hranici ekosystémů
+
+*Aktér: migrující vývojář. Požadavky: F7, F8, F9, F10, F11, F14. Scénář, kvůli kterému vznikl javový ekosystém (rozhodnutí [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)).*
+
+**Výchozí stav.** Tým má perzistenci v jednom ekosystému a druhý ekosystém je cílem: .NET řešení, které se má přestěhovat na JVM, nebo javová aplikace, jejíž datová vrstva se má přepsat do .NETu. Rozdíl proti UC1 a UC2 není v množství práce, nýbrž v tom, že se mění **jazyk**: entita je `class` s vlastnostmi na jedné straně a `class` s poli a přístupovými metodami na druhé, mapování je atribut proti anotaci nebo `orm.xml`, dotaz je LINQ, HQL nebo SQL proti JPQL nebo mapperu MyBatisu.
+
+**Tok.** Uživatel pošle entity, mapování a dotazy jednoho frameworku a zvolí framework z druhého ekosystému. Nástroj čte a píše obě strany ve vlastním překladovém procesu — **žádná JVM v cestě překladu není** (rozhodnutí 076) —, takže z entity EF Core vyjde javová třída s anotacemi `jakarta.persistence`, z hbm.xml NHibernate `orm.xml` a z holého SQL Dapperu mapper MyBatisu. Jazykové fakty, které druhý ekosystém nevysloví stejně, se překládají podle jeho vlastního profilu: nullabilita má v Javě jedinou osu, `AUTO` je pro Hibernate sekvence a pro EclipseLink tabulka čítače, nationalizace se u jednoho vyslovuje anotací a u druhého doslovným typem sloupce.
+
+**Výsledek.** Artefakty cílového frameworku a záznamy o všem, co hranici nepřešlo beze změny — včetně těch faktů, které jeden ekosystém unese a druhý ne.
+
+**Kde je dnes hranice.** Javové frameworky jsou nárokované **samy za sebe, ne jako ekosystém**: Hibernate, EclipseLink a MyBatis ano, jiný javový ORM ne. Dědičnost, komponenty a spojené tabulky hranici nepřecházejí na žádné straně, protože je nečte už ta zdrojová (`architecture.md` §9, oblast 2). U MyBatisu navíc nepřejde **dynamický příkaz**: `<select>` se značkou `<if>` je rodina příkazů a mezireprezentace rodinu nenese, takže se odmítne se záznamem, který značku jmenuje. A u EclipseLinku nástroj **netvrdí líné načtení reference**, protože bez weavingu je tiše eager.
+
+## UC7 — Doklad, že přeložený kód opravdu běží a vrací totéž
+
+*Aktér: autor experimentu a migrující vývojář zároveň — první ho potřebuje do textu, druhý před nasazením. Požadavky: F12, F13, F11, S5. Význam obou pojmů vyslovila rozhodnutí [087](./decisions/087-an-integration-test-is-a-run-against-the-database.md) a [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md).*
+
+**Výchozí stav.** Překlad proběhl a vypadá správně. To ale není totéž jako „je správný": artefakt může být syntakticky bezvadný, framework ho může přijmout — a dotaz přesto vrátí jiné řádky. Mezi „vypadá správně" a „vrací totéž" je celá kapitola, kterou nelze přečíst, jen spustit.
+
+**Tok.** Sada si vezme generované artefakty **z běžící instance nástroje** přes HTTP (rozhodnutí [078](./decisions/078-java-suite-as-a-client-of-a-running-instance.md)), přeloží je `javac`em, předloží je Hibernate, EclipseLinku a MyBatisu a spustí proti SQL Serveru nad společným schématem. U dotazu jde ještě o krok dál: **obě varianty přeložené dvojice se spustí a jejich normalizované výsledky se porovnají proti jedinému kanonickému výsledku zapsanému v repozitáři**; pořadí se zohlední jen tam, kde ho dotaz sám určuje. Negativní polovina je stejně podstatná — záměrně zmutovaný artefakt (vypuštěný filtr, obrácený operátor, vypuštěné řazení, změněný počet řádků, prohozená projekce) **musí** skončit rozdílem.
+
+**Výsledek.** Číslo, které se dá citovat, a vada, kterou žádná aserce nad tvarem najít neumí. Tenhle scénář jich vynesl několik a všechny se týkaly něčeho jiného než tvaru textu: metoda vázala počet řádků jménem, ačkoli výřez žije na dotazovém objektu; vstupní jednotka popisovala tabulku neúplně, takže generovanou entitou nešlo nic zapsat; a testovací obraz neobsahoval soubory, které si sada z checkoutu brala.
+
+**Kde je dnes hranice.** Sada běží jediným příkazem tam, kde není nic než Docker, a **sama si tvrdí, jak je velká** — označuje, které testy sahají do databáze, a odmítne se sestavit, když jich je málo (rozhodnutí 087), takže velikost nemůže tiše zastarat v dokumentu. Měřítkem diferenčního ověření je zapsaný kanonický výsledek: měřítko desetinných čísel volí matice u každého dotazu, kdežto null je vždy holé `NULL` — to konfigurovatelné není (`architecture.md` §9).
+
 ## Co nástroj nedělá
 
 Vymezení je součástí zadání scénářů — bez něj se první tři body čtou jako sliby:

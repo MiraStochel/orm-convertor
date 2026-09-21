@@ -8,7 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="Database\TestSchema.sql" />
     <!-- Data, matrix and canonical results of the differential verification (decision 089).
          Embedded rather than copied, for the reason the schema script is: the Java suite

@@ -2,12 +2,14 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata below."
 title: ORMConvertor
 abstract: >-
-  A tool for translating entities, mappings, and queries between .NET ORM frameworks
-  (Dapper, NHibernate, Entity Framework Core) through a framework-agnostic intermediate
-  representation, together with an ILP-based advisor that recommends a framework for a
-  query workload from real benchmark measurements. This repository continues and extends
-  the ORMorpher prototype created by Milan Abrahám; the publications listed under
-  references describe the design of that prototype.
+  A tool for translating entities, mappings, and queries between ORM frameworks of two
+  ecosystems - Dapper, NHibernate and Entity Framework Core on .NET, Hibernate,
+  EclipseLink and MyBatis on Java - through a framework-agnostic intermediate
+  representation, in either direction across the ecosystem boundary, together with an
+  ILP-based advisor that recommends a framework for a query workload from real benchmark
+  measurements. This repository continues and extends the ORMorpher prototype created by
+  Milan Abrahám; the publications listed under references describe the design of that
+  prototype.
 type: software
 authors:
   - family-names: Štochel
@@ -27,9 +29,14 @@ keywords:
   - code translation
   - intermediate representation
   - .NET
+  - Java
   - Dapper
   - Entity Framework Core
   - NHibernate
+  - Hibernate
+  - EclipseLink
+  - MyBatis
+  - Jakarta Persistence
   - integer linear programming
 references:
   - type: thesis
