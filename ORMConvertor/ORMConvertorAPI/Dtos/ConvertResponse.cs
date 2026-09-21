@@ -15,6 +15,10 @@ namespace ORMConvertorAPI.Dtos;
 /// <param name="TargetDatabaseDialect">Database system the artifacts are written for,
 /// from the target framework's descriptor (decision 086). It is what the literal column
 /// types in the output hold against, and until now the caller had to assume it.</param>
+/// <param name="DeclaredSourceDialect">What the source declared about the dialect of its
+/// own literal SQL (decision 088), or null where it declared nothing. The two are different
+/// facts - read as T-SQL because the source said so, read as T-SQL because nobody said
+/// anything - and the run record is where they are told apart (S6).</param>
 /// <param name="CatalogState">State of the catalog connection during the completion
 /// phase. The connection lives in server configuration and the interface only shows its
 /// state (decision 030), so this field is how a user learns whether the translation had
@@ -33,4 +37,5 @@ public record ConvertResponse(
     List<ConversionSource> Sources,
     List<ConversionRecord> Records,
     CatalogConnectionState CatalogState,
-    double? CatalogReadMilliseconds = null);
+    double? CatalogReadMilliseconds = null,
+    SourceSqlDialect? DeclaredSourceDialect = null);

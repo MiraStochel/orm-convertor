@@ -1,7 +1,9 @@
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Sql;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
+using Model;
 using Model.AbstractRepresentation.Enums;
 using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
@@ -27,13 +29,22 @@ namespace TransactSql;
 ///
 /// One reader per query: the builder and the report channel are fixed at construction, the
 /// same shape <see cref="SqlQueryVisitor"/> has, so nothing carries over from one query of
-/// a document to the next. Beside them stands one optional argument, the facts the source
-/// stated about the query's parameters (decision 084) - nothing the grammar reads, and
-/// therefore nothing the grammar has to be taught.
+/// a document to the next. Beside them stand the facts the source stated about the text -
+/// the dialect it is written in (decision 088) and its parameters (decision 084) - neither
+/// of which the grammar reads, and therefore neither of which the grammar has to be taught.
 /// </summary>
+/// <param name="declaredSourceDialect">
+/// The dialect the source declared for this text (decision 088). A declaration of a system
+/// this version does not read stops the reading: the text is refused and no artifact comes
+/// of it. The parameter is required rather than defaulted, because a seventh framework
+/// writing its queries in SQL must say where its declaration comes from instead of falling
+/// silently through the guard (S1); null is the answer for a source that declared nothing,
+/// and it reads exactly as it did before.
+/// </param>
 public class SqlQueryReader(
     AbstractQueryBuilder queryBuilder,
     Action<ConversionRecordKind, string, QueryFeature?> report,
+    SourceSqlDialect? declaredSourceDialect,
     IReadOnlyDictionary<string, SqlParameterFacts>? statedParameters = null)
 {
     private string sourceAlias = "t";
@@ -55,6 +66,18 @@ public class SqlQueryReader(
     public void Read(string sql)
     {
         ArgumentNullException.ThrowIfNull(sql);
+
+        // Before the grammar, because the grammar is not what decides this (decision 088).
+        // It filters syntax and not vocabulary: LIMIT 10 and || fail here as parse errors,
+        // whereas SUBSTR(name, 1, 3) is an ordinary function call to TSql160Parser and
+        // would come out of the target's visitor under a name T-SQL does not have. The
+        // refusal carries no category, being no property of the query (decision 048); the
+        // channel is the one a syntax error already leaves by, and only the reason is new.
+        if (ForeignDialect.StopsReading(declaredSourceDialect))
+        {
+            Report(ConversionRecordKind.Failure, ForeignDialect.QueryReason);
+            return;
+        }
 
         var parser = new TSql160Parser(initialQuotedIdentifiers: true);
         var fragment = parser.Parse(new StringReader(sql), out var errors);

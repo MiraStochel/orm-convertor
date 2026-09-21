@@ -91,7 +91,8 @@ public static class Endpoints
             // proceeds on conventions and the records say so.
             var catalogConnectionString = configuration.GetConnectionString("CatalogDatabase");
 
-            var converted = ConversionHandler.Convert(req.SourceOrm, req.TargetOrm, req.Sources, catalogConnectionString);
+            var converted = ConversionHandler.Convert(
+                req.SourceOrm, req.TargetOrm, req.Sources, catalogConnectionString, req.DeclaredSourceDialect);
             return Results.Ok(new ConvertResponse(
                 converted.RunId,
                 converted.ToolVersion,
@@ -103,7 +104,8 @@ public static class Endpoints
                 converted.Sources,
                 converted.Records,
                 converted.CatalogState,
-                converted.CatalogReadTime?.TotalMilliseconds));
+                converted.CatalogReadTime?.TotalMilliseconds,
+                converted.DeclaredSourceDialect));
         }
         catch (Exception e)
         {

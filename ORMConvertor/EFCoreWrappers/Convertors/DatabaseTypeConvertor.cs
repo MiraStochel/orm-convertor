@@ -1,4 +1,5 @@
 using Common.Sql;
+using Model;
 using Model.AbstractRepresentation.Enums;
 
 namespace EFCoreWrappers.Convertors;
@@ -11,15 +12,25 @@ public class DatabaseTypeConvertor
     /// or a CLR type name, which is EF Core's own liberty and is read here, because a CLR
     /// name is no SQL at all. Never throws on an unknown name: the literal spelling is kept
     /// on the escape path and the caller records it (decisions 010 and 019).
+    ///
+    /// Null when the source declared the dialect of some other database system
+    /// (decision 088): the attribute is then not read at all and the caller records the
+    /// loss. The whole value goes, the CLR half of it included, and that is the rule rather
+    /// than an oversight - telling a CLR name from a SQL one means first reading it as
+    /// T-SQL and keeping what T-SQL did not recognize, which is a guess about which
+    /// language the string is written in and precisely what the declaration removes.
     /// </summary>
-    public static SqlTypeReading FromEfCore(string? columnTypeOrClr)
+    public static SqlTypeReading? FromEfCore(string? columnTypeOrClr, SourceSqlDialect? declaredSourceDialect)
     {
         if (string.IsNullOrWhiteSpace(columnTypeOrClr))
         {
             throw new ArgumentNullException(nameof(columnTypeOrClr));
         }
 
-        var reading = SqlTypeSpelling.Read(columnTypeOrClr);
+        if (SqlTypeSpelling.Read(columnTypeOrClr, declaredSourceDialect) is not { } reading)
+        {
+            return null;
+        }
 
         if (reading.Type is not null)
         {

@@ -15,7 +15,15 @@ namespace JakartaPersistence;
 /// fill-only paths, so the precedence between orm.xml and the annotations is the
 /// builder's rule (decisions 017 and 068), not this writer's.
 /// </summary>
-public sealed class JpaMappingWriter(AbstractEntityBuilder entityBuilder, ConversionContentType artifact)
+/// <param name="declaredSourceDialect">
+/// What the source declared about the dialect of its literal SQL (decision 088), taken from
+/// the reading context both parsers share. It governs one attribute of one annotation -
+/// columnDefinition, the only place a JPA source spells a database system's own type.
+/// </param>
+public sealed class JpaMappingWriter(
+    AbstractEntityBuilder entityBuilder,
+    ConversionContentType artifact,
+    SourceSqlDialect? declaredSourceDialect = null)
 {
     /// <summary>Writes the facts of the current entity of the builder.</summary>
     public void Write(JpaEntityFacts facts)
@@ -119,7 +127,18 @@ public sealed class JpaMappingWriter(AbstractEntityBuilder entityBuilder, Conver
 
         if (!string.IsNullOrWhiteSpace(attribute.ColumnDefinition))
         {
-            var reading = SqlTypeSpelling.Read(attribute.ColumnDefinition);
+            // The source said its SQL is another system's, so this column definition is not
+            // read and its literal spelling does not travel either (decision 088): a
+            // VARCHAR2(50) copied onto the escape path would end up in an artifact the
+            // descriptor says is written for SQL Server 2022. The target derives the column
+            // type from the Java type instead, or the catalog supplies it.
+            if (SqlTypeSpelling.Read(attribute.ColumnDefinition, declaredSourceDialect) is not { } reading)
+            {
+                Report(ConversionRecordKind.Loss, attribute.Name, MappingFactCategory.DatabaseType,
+                    ForeignDialect.Reason($"columnDefinition = \"{attribute.ColumnDefinition.Trim()}\""));
+
+                return;
+            }
 
             entityBuilder.SetPropertyDatabaseType(
                 attribute.Name,
@@ -147,13 +166,17 @@ public sealed class JpaMappingWriter(AbstractEntityBuilder entityBuilder, Conver
     /// in the model that the source never had. The refusal is asked only where the reader
     /// knows what the column is - orm.xml is read before the class (decision 068) and
     /// declares no Java type, so from there precision fills the facet as it always did.
+    ///
+    /// A columnDefinition the source declared foreign (decision 088) classifies as no column
+    /// at all, exactly as a missing one does: the guard stops the reading of the name, and
+    /// classifying it anyway would be the same reading under another word.
     /// </summary>
     private void WritePrecision(JpaAttributeFacts attribute, Dictionary<string, string> dbProps)
     {
         var kind = JpaColumnPrecision.Classify(
             string.IsNullOrWhiteSpace(attribute.ColumnDefinition)
                 ? null
-                : SqlTypeSpelling.Read(attribute.ColumnDefinition).Type,
+                : SqlTypeSpelling.Read(attribute.ColumnDefinition, declaredSourceDialect)?.Type,
             attribute.TypeText);
 
         // secondPrecision exists for no column but a time or timestamp one, so spelling it

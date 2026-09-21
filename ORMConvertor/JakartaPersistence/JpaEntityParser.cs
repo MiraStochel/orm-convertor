@@ -21,7 +21,7 @@ public abstract class JpaEntityParser(
     JpaReadingContext context,
     JpaAnnotationReader reader) : JavaEntityParser(entityBuilder)
 {
-    private readonly JpaMappingWriter writer = new(entityBuilder, ConversionContentType.JavaEntity);
+    private readonly JpaMappingWriter writer = new(entityBuilder, ConversionContentType.JavaEntity, context.DeclaredSourceDialect);
 
     protected override void ParseClassBody(JavaClass cls)
     {

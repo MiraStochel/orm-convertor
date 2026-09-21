@@ -18,7 +18,7 @@ namespace JakartaPersistence;
 /// </summary>
 public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaReadingContext context) : IEntityParser
 {
-    private readonly JpaMappingWriter writer = new(entityBuilder, ConversionContentType.XML);
+    private readonly JpaMappingWriter writer = new(entityBuilder, ConversionContentType.XML, context.DeclaredSourceDialect);
 
     private static readonly HashSet<string> ReadEntityChildren =
     [

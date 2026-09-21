@@ -13,6 +13,8 @@ import {
   ORM_LABELS,
   ContentType,
   CONTENT_TYPE_LABELS,
+  SourceDialect,
+  SOURCE_DIALECT_LABELS,
   convert,
   getRequiredContent,
   getSamples,
@@ -43,6 +45,9 @@ const STORAGE_KEY = "ormconvertor.translation";
 const state = {
   sourceOrm: ORM.EFCore,
   targetOrm: ORM.NHibernate,
+  // null is the third state and the default: the source declares nothing about the dialect
+  // of its literal SQL, and that SQL is read as it always was (decision 088).
+  sourceDialect: null,
   units: [],
   requiredContent: [],
   samples: {},
@@ -91,6 +96,7 @@ function saveState() {
       JSON.stringify({
         sourceOrm: state.sourceOrm,
         targetOrm: state.targetOrm,
+        sourceDialect: state.sourceDialect,
         units: state.units.map(({ name, contentType, content }) => ({
           name,
           contentType,
@@ -121,6 +127,9 @@ function restoreState() {
   const frameworks = Object.values(ORM);
   if (frameworks.includes(stored.sourceOrm)) state.sourceOrm = stored.sourceOrm;
   if (frameworks.includes(stored.targetOrm)) state.targetOrm = stored.targetOrm;
+  if (Object.values(SourceDialect).includes(stored.sourceDialect)) {
+    state.sourceDialect = stored.sourceDialect;
+  }
 
   if (!Array.isArray(stored.units)) return;
   const types = Object.values(ContentType);
@@ -152,6 +161,28 @@ function renderFrameworkSelects() {
       option.selected = value === selected;
       element.append(option);
     }
+  }
+}
+
+/*
+ * The declaration of decision 088, with its undeclared state first because that is what a
+ * source says until somebody says otherwise. The empty option carries no value, so an
+ * undeclared conversion sends no field at all.
+ */
+function renderSourceDialectSelect() {
+  const element = document.getElementById("source-dialect");
+  element.replaceChildren();
+
+  for (const [value, label] of [
+    [null, "Source SQL dialect: not declared"],
+    [SourceDialect.SqlServer2022, `Source SQL is ${SOURCE_DIALECT_LABELS[SourceDialect.SqlServer2022]}`],
+    [SourceDialect.AnotherSystem, `Source SQL is ${SOURCE_DIALECT_LABELS[SourceDialect.AnotherSystem]}`],
+  ]) {
+    const option = document.createElement("option");
+    option.value = value === null ? "" : String(value);
+    option.textContent = label;
+    option.selected = value === state.sourceDialect;
+    element.append(option);
   }
 }
 
@@ -284,6 +315,12 @@ function renderResult() {
   document.getElementById("run-frameworks").textContent =
     `${ORM_LABELS[response.sourceFramework]} ${response.sourceFrameworkVersion}` +
     ` → ${ORM_LABELS[response.targetFramework]} ${response.targetFrameworkVersion}`;
+  // Stated and unstated are different facts about the run, so the strip shows both rather
+  // than only the stated one (S6, decision 088).
+  document.getElementById("source-dialect-fact").textContent =
+    response.declaredSourceDialect == null
+      ? "source SQL dialect not declared"
+      : `source declares ${SOURCE_DIALECT_LABELS[response.declaredSourceDialect] ?? response.declaredSourceDialect}`;
   document.getElementById("tool-version").textContent = response.toolVersion;
   document.getElementById("run-id").textContent = response.runId;
   renderCatalogState(
@@ -406,7 +443,7 @@ async function onConvert() {
       content: unit.content,
       name: unit.name.trim() === "" ? null : unit.name.trim(),
     }));
-    state.result = await convert(state.sourceOrm, state.targetOrm, sources);
+    state.result = await convert(state.sourceOrm, state.targetOrm, sources, state.sourceDialect);
     renderResult();
 
     const artifacts = state.result.sources?.length ?? 0;
@@ -503,6 +540,7 @@ function onClear() {
 async function init() {
   restoreState();
   renderFrameworkSelects();
+  renderSourceDialectSelect();
   renderUnits();
 
   document.getElementById("source-orm").addEventListener("change", (event) => {
@@ -513,6 +551,10 @@ async function init() {
   });
   document.getElementById("target-orm").addEventListener("change", (event) => {
     state.targetOrm = Number(event.target.value);
+    saveState();
+  });
+  document.getElementById("source-dialect").addEventListener("change", (event) => {
+    state.sourceDialect = event.target.value === "" ? null : Number(event.target.value);
     saveState();
   });
   document.getElementById("add-unit").addEventListener("click", () => {

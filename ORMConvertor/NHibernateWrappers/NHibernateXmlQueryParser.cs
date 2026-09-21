@@ -28,7 +28,9 @@ namespace NHibernateWrappers;
 /// parser is therefore the reader of two languages at once, which is why it composes the
 /// shared SQL reading rather than inheriting it.
 /// </summary>
-public class NHibernateXmlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : IQueryParser
+public class NHibernateXmlQueryParser(
+    Func<AbstractQueryBuilder> queryBuilders,
+    SourceSqlDialect? declaredSourceDialect = null) : IQueryParser
 {
     /// <summary>
     /// The placeholders NHibernate substitutes into a native query before handing it to the
@@ -152,7 +154,8 @@ public class NHibernateXmlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         new SqlQueryReader(
             builder,
-            (kind, reason, feature) => Report(builder, kind, ConversionContentType.SqlQuery, reason, feature))
+            (kind, reason, feature) => Report(builder, kind, ConversionContentType.SqlQuery, reason, feature),
+            declaredSourceDialect)
             .Read(sql);
 
         return [builder];

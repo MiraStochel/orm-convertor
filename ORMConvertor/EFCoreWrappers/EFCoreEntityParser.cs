@@ -2,6 +2,7 @@
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Convertors;
+using Common.Sql;
 using CSharpEntityParsing;
 using EFCoreWrappers.Convertors;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -17,8 +18,20 @@ namespace EFCoreWrappers;
 /// </summary>
 public class EFCoreEntityParser : CSharpEntityParser
 {
-    public EFCoreEntityParser(AbstractEntityBuilder entityBuilder) : base(entityBuilder)
+    /// <summary>
+    /// What the source declared about the dialect of the literal SQL it spells
+    /// (decision 088); null where it declared nothing, which reads as it always did. It is
+    /// a fact about the source and therefore arrives at the parser, not at the builder -
+    /// the builder belongs to the target framework (S1). The only thing it governs here is
+    /// the TypeName of a [Column], the one place an EF Core class spells a database
+    /// system's own type.
+    /// </summary>
+    private readonly SourceSqlDialect? declaredSourceDialect;
+
+    public EFCoreEntityParser(AbstractEntityBuilder entityBuilder, SourceSqlDialect? declaredSourceDialect = null)
+        : base(entityBuilder)
     {
+        this.declaredSourceDialect = declaredSourceDialect;
     }
 
     /// <summary>
@@ -708,10 +721,30 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// on the escape path where the family is coarser or missing. A name outside the
     /// vocabulary is a record, not an exception - the family fact is missing rather than
     /// lost, and the catalog may still supply it (decision 010).
+    ///
+    /// Where the source declared the dialect of another database system, the attribute is
+    /// not read at all and the record is a loss (decision 088). The literal spelling does
+    /// not travel either: were it kept, a name that system knows and SQL Server does not
+    /// would be copied into an artifact the descriptor says is written for SQL Server 2022.
+    /// The target derives the column type from the language type instead (decision 014),
+    /// or the catalog supplies it (F6) - the output is poorer, not different.
     /// </summary>
     private void ApplyColumnTypeName(string propertyName, string columnTypeName)
     {
-        var reading = DatabaseTypeConvertor.FromEfCore(columnTypeName);
+        if (DatabaseTypeConvertor.FromEfCore(columnTypeName, declaredSourceDialect) is not { } reading)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = entityBuilder.Descriptor.Framework,
+                Entity = entityBuilder.EntityMap.Entity.Name,
+                Property = propertyName,
+                Category = MappingFactCategory.DatabaseType,
+                Reason = ForeignDialect.Reason($"[Column(TypeName = \"{columnTypeName.Trim()}\")]"),
+            });
+
+            return;
+        }
 
         entityBuilder.SetPropertyDatabaseType(
             propertyName,

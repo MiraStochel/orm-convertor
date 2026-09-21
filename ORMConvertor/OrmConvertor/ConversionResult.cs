@@ -50,6 +50,16 @@ public sealed class ConversionResult
     /// </summary>
     public required DatabaseDialect TargetDatabaseDialect { get; init; }
 
+    /// <summary>
+    /// What the source declared about the dialect of its own literal SQL (decision 088), or
+    /// null where it declared nothing. The two are not the same answer and the field exists
+    /// to tell them apart: a run that read the source as T-SQL because the source said so is
+    /// a different fact from one that read it as T-SQL because nobody said anything, and
+    /// until now the record could not distinguish the two. For a measurement that is exactly
+    /// the provenance a green cell was missing (S6).
+    /// </summary>
+    public SourceSqlDialect? DeclaredSourceDialect { get; init; }
+
     public required List<ConversionSource> Sources { get; init; }
 
     public required List<ConversionRecord> Records { get; init; }

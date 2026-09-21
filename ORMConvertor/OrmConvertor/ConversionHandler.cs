@@ -12,7 +12,8 @@ public static class ConversionHandler
         ORMEnum sourceOrm,
         ORMEnum targetOrm,
         List<ConversionSource> sources,
-        string? catalogConnectionString = null
+        string? catalogConnectionString = null,
+        SourceSqlDialect? declaredSourceDialect = null
     )
     {
         // The reader lives and dies with the request; a caller holding a longer-lived
@@ -22,14 +23,24 @@ public static class ConversionHandler
             ? null
             : new SqlServerCatalogReader(catalogConnectionString);
 
-        return Convert(sourceOrm, targetOrm, sources, reader);
+        return Convert(sourceOrm, targetOrm, sources, reader, declaredSourceDialect);
     }
 
+    /// <param name="declaredSourceDialect">
+    /// The dialect the source declares for its literal SQL (decision 088). It is the one
+    /// optional input the orchestration gained with that decision and it decides nothing
+    /// else: whether the literal SQL of the source is read at all. Null - nobody said
+    /// anything - reads exactly as before, and the run record tells the two apart (S6).
+    /// The guard itself sits in the readers rather than here, because at this level a unit
+    /// that is a mapping and a query at once shows only its content type, which does not
+    /// tell the two halves apart (decision 081).
+    /// </param>
     public static ConversionResult Convert(
         ORMEnum sourceOrm,
         ORMEnum targetOrm,
         List<ConversionSource> sources,
-        ICatalogReader? catalogReader
+        ICatalogReader? catalogReader,
+        SourceSqlDialect? declaredSourceDialect = null
     )
     {
         var entityBuilder = EntityBuilderFactory.Create(targetOrm);
@@ -60,7 +71,7 @@ public static class ConversionHandler
             .ToList();
 
         // 1) Build entity maps using entity parsers only
-        var entityParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb: null)
+        var entityParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb: null, declaredSourceDialect)
             .OfType<IEntityParser>()
             .ToList();
 
@@ -115,7 +126,7 @@ public static class ConversionHandler
             return builder;
         }
 
-        var queryParsers = ParserFactory.Create(sourceOrm, entityBuilder, NewQueryBuilder)
+        var queryParsers = ParserFactory.Create(sourceOrm, entityBuilder, NewQueryBuilder, declaredSourceDialect)
             .OfType<IQueryParser>()
             .ToList();
 
@@ -219,6 +230,7 @@ public static class ConversionHandler
             TargetFramework = targetOrm,
             TargetFrameworkVersion = entityBuilder.Descriptor.Version,
             TargetDatabaseDialect = entityBuilder.Descriptor.Dialect,
+            DeclaredSourceDialect = declaredSourceDialect,
             Sources = results,
             Records = [.. entityBuilder.Records, .. queryRecords, .. runRecords],
             CatalogState = catalogPhase.ConnectionState,

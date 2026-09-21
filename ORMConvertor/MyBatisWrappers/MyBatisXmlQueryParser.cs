@@ -20,7 +20,10 @@ namespace MyBatisWrappers;
 /// refusal a Dapper unit carrying an INSERT meets in the shared reader - so each is named
 /// and refused rather than dropped in silence (decision 048).
 /// </summary>
-public sealed class MyBatisXmlQueryParser(Func<AbstractQueryBuilder> queryBuilders, MyBatisReadingContext context)
+public sealed class MyBatisXmlQueryParser(
+    Func<AbstractQueryBuilder> queryBuilders,
+    MyBatisReadingContext context,
+    SourceSqlDialect? declaredSourceDialect = null)
     : MyBatisQueryParser(queryBuilders, context)
 {
     protected override ConversionContentType Artifact => ConversionContentType.XML;
@@ -98,6 +101,7 @@ public sealed class MyBatisXmlQueryParser(Func<AbstractQueryBuilder> queryBuilde
         new SqlQueryReader(
             builder,
             (kind, reason, feature) => ReportSql(builder, kind, reason, feature),
+            declaredSourceDialect,
             text.Parameters)
             .Read(sql);
 

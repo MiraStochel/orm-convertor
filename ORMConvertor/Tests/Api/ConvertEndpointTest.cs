@@ -273,6 +273,46 @@ public class ConvertEndpointTest(ApiTestHost host)
             record => record.GetProperty("unit").GetString() == "Broken.cs");
     }
 
+    /// <summary>
+    /// The optional declaration of decision 088 over the wire, in its three states. The
+    /// absent field and the declared SQL Server are different answers of the run record and
+    /// the same translation; the foreign declaration is the same record shape and no query
+    /// artifact. The field travels as a number, as every enum of this contract does.
+    /// </summary>
+    [Fact]
+    public async Task TheDeclaredSourceDialectTravelsBothWays()
+    {
+        using var undeclared = await ConvertAsync(EFCoreEntityRequest);
+
+        // Present and null rather than missing: the caller must be able to read "nobody said
+        // anything" off the record instead of inferring it from an absent property.
+        Assert.Equal(
+            JsonValueKind.Null,
+            undeclared.RootElement.GetProperty("declaredSourceDialect").ValueKind);
+
+        using var declared = await ConvertAsync(new
+        {
+            sourceOrm = (int)ORMEnum.Dapper,
+            targetOrm = (int)ORMEnum.EFCore,
+            sources = new[]
+            {
+                new { contentType = (int)ConversionContentType.SqlQuery, content = "SELECT c.CustomerName FROM Customers AS c" },
+            },
+            declaredSourceDialect = (int)SourceSqlDialect.AnotherSystem,
+        });
+
+        Assert.Equal(
+            (int)SourceSqlDialect.AnotherSystem,
+            declared.RootElement.GetProperty("declaredSourceDialect").GetInt32());
+
+        // The guard reached the reader through the whole stack: no artifact, and a record
+        // that says why.
+        Assert.Empty(declared.RootElement.GetProperty("sources").EnumerateArray());
+        Assert.Contains(
+            declared.RootElement.GetProperty("records").EnumerateArray(),
+            record => record.GetProperty("reason").GetString()!.Contains("another database system"));
+    }
+
     private async Task<JsonDocument> ConvertAsync(object request)
     {
         var response = await client.PostAsJsonAsync(

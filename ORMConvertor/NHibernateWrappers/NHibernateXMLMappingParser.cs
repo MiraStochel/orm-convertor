@@ -1,6 +1,7 @@
 ﻿using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Sql;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
@@ -14,7 +15,15 @@ namespace NHibernateWrappers;
 /// Parses NHibernate mapping from XML file.
 /// Uses LINQ to XML to parse the mapping and extract relevant information.
 /// </summary>
-public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : IEntityParser
+/// <param name="declaredSourceDialect">
+/// What the source declared about the dialect of its literal SQL (decision 088). This parser
+/// is the third place the declaration reaches and the only one that does not read a type name
+/// at all: the sql-type of a nested &lt;column&gt; travels verbatim on the escape path, so the
+/// guard here is a single condition before the write rather than a reading that stops.
+/// </param>
+public class NHibernateXMLMappingParser(
+    AbstractEntityBuilder entityBuilder,
+    SourceSqlDialect? declaredSourceDialect = null) : IEntityParser
 {
     public bool CanParse(ConversionContentType contentType)
     {
@@ -697,12 +706,33 @@ public class NHibernateXMLMappingParser(AbstractEntityBuilder entityBuilder) : I
     /// sql-type of a nested &lt;column&gt; travels verbatim on the escape path. A type name
     /// outside the vocabulary keeps only its literal spelling and is reported - the family
     /// fact is missing rather than lost, and the catalog may still supply it (decision 010).
+    ///
+    /// Where the source declared the dialect of another database system, sql-type is dropped
+    /// with a loss record and only the type attribute is read (decision 088). The two are not
+    /// the same kind of claim: sql-type names a type of one database system, whereas type
+    /// names a registered NHibernate IType - "AnsiString" is the framework's own vocabulary
+    /// and means the same over every system, so the declaration has nothing to say about it.
     /// </summary>
     private void ApplyTypeFacts(XElement element, string propertyName)
     {
         var columnElement = element.Elements().FirstOrDefault(e => e.Name.LocalName == "column");
         var sqlType = columnElement?.Attribute("sql-type")?.Value;
         sqlType = string.IsNullOrWhiteSpace(sqlType) ? null : sqlType.Trim();
+
+        if (sqlType is not null && ForeignDialect.StopsReading(declaredSourceDialect))
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = entityBuilder.Descriptor.Framework,
+                Entity = entityBuilder.EntityMap.Entity.Name,
+                Property = propertyName,
+                Category = MappingFactCategory.DatabaseType,
+                Reason = ForeignDialect.Reason($"sql-type=\"{sqlType}\""),
+            });
+
+            sqlType = null;
+        }
 
         var typeAttr = element.Attribute("type")?.Value;
 

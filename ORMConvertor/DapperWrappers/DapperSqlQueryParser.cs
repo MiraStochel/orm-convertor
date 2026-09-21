@@ -21,7 +21,9 @@ namespace DapperWrappers;
 /// the grammar lives in <see cref="SqlQueryReader"/>. Depending on that reader is not
 /// depending on Dapper, which is what S1 forbids.
 /// </summary>
-public class DapperSqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : IQueryParser
+public class DapperSqlQueryParser(
+    Func<AbstractQueryBuilder> queryBuilders,
+    SourceSqlDialect? declaredSourceDialect = null) : IQueryParser
 {
     /// <summary>
     /// The builder of the query being read. Assigned at the start of every Parse from the
@@ -61,7 +63,7 @@ public class DapperSqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : IQ
             return [queryBuilder];
         }
 
-        new SqlQueryReader(queryBuilder, Report).Read(sql);
+        new SqlQueryReader(queryBuilder, Report, declaredSourceDialect).Read(sql);
 
         return [queryBuilder];
     }

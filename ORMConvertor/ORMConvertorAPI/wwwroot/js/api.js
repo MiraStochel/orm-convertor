@@ -26,6 +26,20 @@ export const ORM_LABELS = Object.freeze({
  */
 export const ADVISOR_FRAMEWORKS = Object.freeze([ORM.Dapper, ORM.EFCore]);
 
+/*
+ * What the source may declare about the dialect of its own literal SQL (decision 088).
+ * Two values and no list of system names: the tool behaves identically towards every system
+ * it does not read, so a name would select nothing - and a vocabulary of names of systems we
+ * do not read would promise a reading we do not have. Undeclared is the third state and it
+ * is the absence of the field, not a value of it.
+ */
+export const SourceDialect = Object.freeze({ SqlServer2022: 10, AnotherSystem: 1000 });
+
+export const SOURCE_DIALECT_LABELS = Object.freeze({
+  [SourceDialect.SqlServer2022]: "SQL Server 2022",
+  [SourceDialect.AnotherSystem]: "another database system",
+});
+
 export const ContentType = Object.freeze({
   CSharpEntity: 10,
   CSharpQuery: 20,
@@ -191,10 +205,19 @@ export const getAdvisorSamples = () => getJson("samples-advisor");
 /**
  * POST /convert. Sources are { contentType, content } pairs; the response carries
  * runId, toolVersion, source/target framework with versions, sources (the generated
- * artifacts), records, catalogState and catalogReadMilliseconds.
+ * artifacts), records, catalogState, catalogReadMilliseconds and declaredSourceDialect.
+ *
+ * declaredSourceDialect is optional on the way in and null means the source declares
+ * nothing, which reads as it always did (decision 088); the field is sent only when it has
+ * a value, so an undeclared conversion is byte for byte the request it was before.
  */
-export const convert = async (sourceOrm, targetOrm, sources) =>
-  (await post("convert", { sourceOrm, targetOrm, sources })).json();
+export const convert = async (sourceOrm, targetOrm, sources, declaredSourceDialect = null) =>
+  (await post("convert", {
+    sourceOrm,
+    targetOrm,
+    sources,
+    ...(declaredSourceDialect == null ? {} : { declaredSourceDialect }),
+  })).json();
 
 /** POST /advisor/run - needs the native ILP solver, available only in the Docker image. */
 export const runAdvisor = async (advisorRequest) =>

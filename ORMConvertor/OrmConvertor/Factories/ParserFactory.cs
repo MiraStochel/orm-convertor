@@ -32,15 +32,27 @@ internal class ParserFactory
     /// rather than one builder, because a unit may hold several queries and each gets its
     /// own (decision 081); a parser may not make one itself, since a builder belongs to
     /// the target framework and a parser to the source (S1).
+    ///
+    /// The dialect the source declared for its literal SQL (decision 088) travels the same
+    /// way the query builder factory does: it is an input of the parsers' construction, and
+    /// only those parsers that read literal SQL take it. It is deliberately not hung on the
+    /// entity builder, although every parser already holds one and that would be the
+    /// shortest path - a builder belongs to the target framework and a parser to the source,
+    /// so a fact about the source travelling through a target object would invert that
+    /// boundary (S1).
     /// </summary>
-    public static List<IParser> Create(ORMEnum orm, AbstractEntityBuilder eb, Func<AbstractQueryBuilder>? qb)
+    public static List<IParser> Create(
+        ORMEnum orm,
+        AbstractEntityBuilder eb,
+        Func<AbstractQueryBuilder>? qb,
+        SourceSqlDialect? declaredSourceDialect = null)
     {
         switch (orm)
         {
             case ORMEnum.Dapper:
                 return qb is null
                     ? [new DapperEntityParser(eb)]
-                    : [new DapperEntityParser(eb), new DapperSqlQueryParser(qb)];
+                    : [new DapperEntityParser(eb), new DapperSqlQueryParser(qb, declaredSourceDialect)];
 
             // The entity parser stands before the XML mapping parser as a rule, not as a
             // coincidence: swapping the two would invert the source precedence (decision 017).
@@ -49,20 +61,20 @@ internal class ParserFactory
             // once and the pair of parsers is what says so (decision 081).
             case ORMEnum.NHibernate:
                 return qb is null
-                    ? [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb)]
-                    : [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb), new NHibernateLinqQueryParser(qb), new NHibernateHqlQueryParser(qb), new NHibernateXmlQueryParser(qb)];
+                    ? [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb, declaredSourceDialect)]
+                    : [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb, declaredSourceDialect), new NHibernateLinqQueryParser(qb), new NHibernateHqlQueryParser(qb), new NHibernateXmlQueryParser(qb, declaredSourceDialect)];
 
             case ORMEnum.EFCore:
                 return qb is null
-                    ? [new EFCoreEntityParser(eb)]
-                    : [new EFCoreEntityParser(eb), new EFCoreLinqQueryParser(qb)];
+                    ? [new EFCoreEntityParser(eb, declaredSourceDialect)]
+                    : [new EFCoreEntityParser(eb, declaredSourceDialect), new EFCoreLinqQueryParser(qb)];
 
             // orm.xml before the class: the specification's precedence (Jakarta Persistence
             // 3.2 §12.1 - XML metadata overrides annotations, and metadata-complete switches
             // them off), read through one context the two parsers share (decision 077).
             case ORMEnum.Hibernate:
             {
-                var context = new JpaReadingContext();
+                var context = new JpaReadingContext(declaredSourceDialect);
                 return qb is null
                     ? [new JpaOrmXmlParser(eb, context), new HibernateEntityParser(eb, context)]
                     : [new JpaOrmXmlParser(eb, context), new HibernateEntityParser(eb, context), new HibernateJpqlQueryParser(qb)];
@@ -73,7 +85,7 @@ internal class ParserFactory
             // and what differs between the two is inside the wrapper's own parsers.
             case ORMEnum.EclipseLink:
             {
-                var context = new JpaReadingContext();
+                var context = new JpaReadingContext(declaredSourceDialect);
                 return qb is null
                     ? [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context)]
                     : [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context), new EclipseLinkJpqlQueryParser(qb)];
@@ -94,7 +106,7 @@ internal class ParserFactory
                 var context = MyBatisReadingContext.For(eb);
                 return qb is null
                     ? [new MyBatisEntityParser(eb), new MyBatisMapperInterfaceParser(eb, context), new MyBatisXmlMappingParser(eb, context)]
-                    : [new MyBatisEntityParser(eb), new MyBatisMapperInterfaceParser(eb, context), new MyBatisXmlMappingParser(eb, context), new MyBatisAnnotationQueryParser(qb, context), new MyBatisXmlQueryParser(qb, context)];
+                    : [new MyBatisEntityParser(eb), new MyBatisMapperInterfaceParser(eb, context), new MyBatisXmlMappingParser(eb, context), new MyBatisAnnotationQueryParser(qb, context, declaredSourceDialect), new MyBatisXmlQueryParser(qb, context, declaredSourceDialect)];
             }
 
             // Symmetric with the target side, which refuses an unsupported framework rather

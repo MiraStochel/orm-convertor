@@ -18,7 +18,10 @@ namespace MyBatisWrappers;
 /// program rather than an artifact, and running it to find out what it says is on the far
 /// side of the line decision 040 draws.
 /// </summary>
-public sealed class MyBatisAnnotationQueryParser(Func<AbstractQueryBuilder> queryBuilders, MyBatisReadingContext context)
+public sealed class MyBatisAnnotationQueryParser(
+    Func<AbstractQueryBuilder> queryBuilders,
+    MyBatisReadingContext context,
+    SourceSqlDialect? declaredSourceDialect = null)
     : MyBatisQueryParser(queryBuilders, context)
 {
     protected override ConversionContentType Artifact => ConversionContentType.JavaQuery;
@@ -118,6 +121,7 @@ public sealed class MyBatisAnnotationQueryParser(Func<AbstractQueryBuilder> quer
         new SqlQueryReader(
             builder,
             (kind, reason, feature) => ReportSql(builder, kind, reason, feature),
+            declaredSourceDialect,
             text.Parameters)
             .Read(sql);
 

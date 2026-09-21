@@ -23,17 +23,37 @@ public static class SqlTypeSpelling
     /// unknown name: the literal spelling is kept on the escape path and the caller records
     /// it (decisions 010 and 019).
     ///
-    /// It takes no dialect, and the asymmetry with the writing direction is the point. The
-    /// writing direction is governed by the dialect the target descriptor declares; the
-    /// reading direction reads the only SQL this tool knows. Decision 082 said that of query
-    /// text and it holds of type names: a literal type in a source artifact is written in
-    /// the source project's dialect, about which the tool has no declaration at all, and
-    /// pretending to read it in the target's dialect would be a false claim. A second
-    /// dialect needs a declaration for the source side, which is an open item.
+    /// It takes no <em>target</em> dialect, and the asymmetry with the writing direction is
+    /// the point. The writing direction is governed by the dialect the target descriptor
+    /// declares; the reading direction reads the only SQL this tool knows. Decision 082 said
+    /// that of query text and it holds of type names: a literal type in a source artifact is
+    /// written in the source project's dialect, and pretending to read it in the target's
+    /// dialect would be a false claim - the source has nothing to do with the target.
+    ///
+    /// What it does take, since decision 088, is what the <em>source</em> declared about its
+    /// own dialect, and that is one of the two places in the solution where the declaration
+    /// is acted upon - the other is the T-SQL grammar of SqlQueryReader. A declaration of a
+    /// system this version does not read stops the reading here: null comes back, the caller
+    /// writes no type fact at all - not even the literal spelling on the escape path - and
+    /// records the loss. Reading it anyway is not merely coarse, it is wrong without a
+    /// trace: a name legal in both dialects with a different meaning - `timestamp`, `money`,
+    /// a bare `float` - is read by this table without hesitation and without a record,
+    /// because the table is a table of names and not of meanings.
+    ///
+    /// The parameter is required rather than defaulted on purpose (S1): a seventh framework
+    /// that spells literal column types has to say where its declaration comes from, instead
+    /// of silently falling through the guard. Null is the answer for a source that declared
+    /// nothing, and it reads exactly as it did before decision 088 (decision 067: what is
+    /// unstated is not a statement).
     /// </summary>
-    public static SqlTypeReading Read(string? type)
+    public static SqlTypeReading? Read(string? type, SourceSqlDialect? declaredSourceDialect)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(type);
+
+        if (ForeignDialect.StopsReading(declaredSourceDialect))
+        {
+            return null;
+        }
 
         var (name, first, second) = SplitArguments(type.Trim());
 

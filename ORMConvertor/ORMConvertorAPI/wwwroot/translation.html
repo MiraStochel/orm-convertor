@@ -54,6 +54,14 @@
     <section>
       <h2>1. Source framework</h2>
       <select id="source-orm" aria-label="Source framework"></select>
+      <select id="source-dialect" aria-label="Dialect of the source's literal SQL"></select>
+      <small class="hint">
+        Which database system the literal SQL in your source is written for &mdash; the text
+        of a SQL query and the literal type of a column. Say &ldquo;another system&rdquo; and
+        that SQL is not read at all: a query is refused and a column type is dropped with a
+        record, rather than read as T&#8209;SQL and quietly turned into something else.
+        Framework query languages (LINQ, HQL, JPQL) do not depend on it and are read either way.
+      </small>
     </section>
 
     <section>
@@ -95,6 +103,7 @@
       <h2>5. Result</h2>
       <div class="run-facts">
         <span id="run-frameworks"></span>
+        <span id="source-dialect-fact"></span>
         <span id="catalog-state"></span>
         <span>ORMConvertor <code id="tool-version"></code></span>
         <span>run <code id="run-id"></code></span>

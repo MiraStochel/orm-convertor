@@ -698,6 +698,16 @@
             "items": {
               "$ref": "#/components/schemas/ConversionSource"
             }
+          },
+          "declaredSourceDialect": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceSqlDialect"
+              }
+            ]
           }
         }
       },
@@ -709,6 +719,7 @@
           "sourceFrameworkVersion",
           "targetFramework",
           "targetFrameworkVersion",
+          "targetDatabaseDialect",
           "sources",
           "records",
           "catalogState"
@@ -734,6 +745,9 @@
           "targetFrameworkVersion": {
             "type": "string"
           },
+          "targetDatabaseDialect": {
+            "$ref": "#/components/schemas/DatabaseDialect"
+          },
           "sources": {
             "type": "array",
             "items": {
@@ -757,8 +771,21 @@
               "string"
             ],
             "format": "double"
+          },
+          "declaredSourceDialect": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceSqlDialect"
+              }
+            ]
           }
         }
+      },
+      "DatabaseDialect": {
+        "type": "integer"
       },
       "MappingFactCategory": {
         "type": "integer"
@@ -848,6 +875,9 @@
             "type": "string"
           }
         }
+      },
+      "SourceSqlDialect": {
+        "type": "integer"
       }
     }
   },
