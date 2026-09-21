@@ -28,16 +28,7 @@ Položka odsud zmizí, jakmile je hotová. Kdo ji odbavil a kdy, je v git histor
 
 Do téhle kategorie dostalo položky jedno společné: každá buď dělala nepravdivou větu, kterou [`architecture.md`](./architecture.md) vyslovuje, nebo vydávala tiše špatný výstup. Přesně to by jinak našla revize, která stojí za nimi — a opravovalo by se pod hotovou revizí. **Od 2026-09-21 jsou všechny odbavené.** Přišly z porovnání [`analysis/`](./analysis/README.md) s kódem a z revize celého repozitáře z 2026-09-21 — poslední z revize odbavilo rozhodnutí [094](./decisions/094-entity-identity-inside-a-conversion.md), poslední z porovnání týž den konstruktor `DateTime` v predikátu LINQ —, s jednou výjimkou: javové `extends` sem přibylo 2026-09-21 při psaní C# poloviny téže mezery a odbavené bylo jako poslední. Co z obou nálezů zůstalo otázkou, leží ve [Zbytcích](#zbytky).
 
-**Revize proběhla 2026-09-21** ([soubor](./audits/2026-09-21-pre-release-2-0-0-audit.md)) a je to první, která ověřovala spuštěním. Co z ní byla oprava, leží v kódu a v dokumentech; co si žádá rozmyslet, stojí níž jako dvě rozhodnutí a **předchází vydání `2.0.0`**, protože jedno z nich říká, co smí nést anotace značky — a ta se nikdy neposouvá.
-
-### Rozhodnutí
-
-#### Jestli se pravidla článku mají vázat na místo v repozitáři
-*Podklad: revize [2026-09-21](./audits/2026-09-21-pre-release-2-0-0-audit.md), nález 6.2. Souvisí s rozhodnutím [007](./decisions/007-documentation-structure.md). Požadavky žádné — je to volba o dokumentaci.*
-
-Rozhodnutí i [`architecture.md`](./architecture.md) argumentují překladovými pravidly článku jménem (E1–E10, Q1–Q15), ale pět z pětadvaceti — **E6, E7, Q6, Q7 a Q9** — se napříč celým `docs/` nevyskytuje ani jednou. Všech pět je přitom implementovaných: E7 je doslova invariant `Role`, Q9 je `HavingInstruction`.
-
-Rozhodnout je třeba, jestli vzniká **druhá mapa** vedle [`traceability.md`](./traceability.md) — pravidlo → místo v repozitáři —, nebo jestli se pravidlo cituje jen tam, kde nese odůvodnění volby, a pět chybějících zmínek je pouhá oprava. Konzistence s článkem je jedno ze čtyř kritérií, podle kterých se hodnotí výzkumný artefakt, takže mlčet o pěti pravidlech z pětadvaceti nelze; druhá mapa je ale druhé místo téhož tvrzení, a právě tomu se tahle sada dokumentů jinde vyhýbá.
+**Revize proběhla 2026-09-21** ([soubor](./audits/2026-09-21-pre-release-2-0-0-audit.md)) a je to první, která ověřovala spuštěním. Co z ní byla oprava, leží v kódu a v dokumentech, a obě rozhodnutí, která si vyžádala, jsou týž den zapsaná — [095](./decisions/095-a-dated-run-record-names-its-commit.md) o tom, kde bydlí velikost sady a co smí nést anotace značky, a [096](./decisions/096-a-rule-of-the-paper-is-cited-where-it-argues.md) o tom, kdy se cituje pravidlo článku. **Nad vydáním `2.0.0` tak už nic nestojí.**
 
 ### Práce
 
@@ -186,6 +177,13 @@ Kořenový [`README.md`](../README.md) žádá citovat verzi a `CITATION.cff` k 
 Rozhodnout je třeba dvojí. **Jestli se fork cizího prototypu archivuje pod vlastním identifikátorem**, a pokud ano, kde a s jakým autorstvím; `LICENSE` nese dva držitele autorských práv právě proto, že repozitář je napůl zděděný. A **jestli záznam v registru znamená, že nástroj je publikovaný** ve smyslu předpokladu rozhodnutí 069: to rozhodnutí se má podle vlastní věty nahradit, ne dovysvětlit, jakmile předpoklad přestane platit, a archiv s identifikátorem je té hranici blízko, byť konzumenta nevyrábí.
 
 Do té doby stojí citace na značce a na `CITATION.cff`, a je to vědomé: identifikátor se razí z vydání, takže se přidá až docela nakonec, ne uprostřed vývoje.
+
+#### Join po asociační cestě jde odvodit ze vztahu, a neodvozuje se
+*Vyslovila to revize [2026-09-21](./audits/2026-09-21-pre-release-2-0-0-audit.md), nález 6.2, a pojmenovalo rozhodnutí [096](./decisions/096-a-rule-of-the-paper-is-cited-where-it-argues.md). Souvisí s rozhodnutím [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md), které cestu nechává odmítat, a s [001](./decisions/001-entity-reference-by-name.md). Značku pořadí nemá: hranice je vyslovená v [`architecture.md`](./architecture.md), §5, takže žádná věta není nepravdivá. Požadavky F8, F9, F11, T2.*
+
+Pravidlo **Q7** článku odvozuje podmínku implicitního joinu z metadat vztahu — `FK(levá) = PK(pravá)` —, a je to jediné z pětadvaceti pravidel, které nástroj nesplňuje. `from Customer c join c.orders o` v HQL i v JPQL končí od rozhodnutí 070 záznamem `Failure`, protože čtečka cestu nepřečte; odmítnutí je správné potud, že dotaz bez joinu vrací jiné řádky, ale přečíst se ta cesta **dá**. Mezireprezentace nese všechno, co je k tomu třeba: `Relation` na `EntityMap`, `ColumnPairs` s uspořádanými dvojicemi sloupců i pro kompozitní klíč, a `Role`, která říká, která strana nese fyzický cizí klíč.
+
+Rozhodnout je třeba dvojí. **Odkud se vztah vezme, když ho zdroj nevyslovil** — `c.orders` je jméno vlastnosti, ne tabulky, takže se musí spárovat s `Relation` cílové entity, a ta v převodu být nemusí; převod jediné dotazové jednotky bez entit ji nemá vůbec. A **co se stane, když se vztah najde, ale `ColumnPairs` jsou prázdné**, protože je nikdo nedoplnil ani z katalogu, ani z druhé entity převodu: dohadovat jméno sloupce by bylo přesně to hádání, které rozhodnutí [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) váže na vyslovené tvrzení. Obě odpovědi musí platit pro HQL i JPQL zároveň, protože cesta je v obou týmž tvarem.
 
 #### Sdílená entitní báze roste a rozšiřovací plocha ne
 *Podklad: revize [2026-09-21](./audits/2026-09-21-pre-release-2-0-0-audit.md), nález 5.4. Souvisí s invariantem S1 a s rozhodnutím [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md). Značku pořadí nemá a nedostane: invariant dnes platí a žádná položka na tom nestojí. Požadavek S1.*

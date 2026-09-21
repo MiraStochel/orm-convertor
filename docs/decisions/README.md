@@ -100,6 +100,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [093](093-unreadable-input-is-a-unit-failure.md) | Neparsovatelný vstup je selhání jednotky, ne výjimka převodu | 2026-09-21 | platí | F11, F14, S7 |
 | [094](094-entity-identity-inside-a-conversion.md) | Totožnost entity uvnitř převodu je dvojice jmenný prostor a název | 2026-09-21 | platí | F5, F11, F14, S1, S2 |
 | [095](095-a-dated-run-record-names-its-commit.md) | Datovaný záznam o běhu jmenuje commit; velikost sady tvrdí jediné místo | 2026-09-21 | platí | S2, S5, S6 |
+| [096](096-a-rule-of-the-paper-is-cited-where-it-argues.md) | Pravidlo článku se cituje tam, kde odůvodňuje volbu; druhá mapa nevzniká | 2026-09-21 | platí | žádné |
 
 ## Formát
 
