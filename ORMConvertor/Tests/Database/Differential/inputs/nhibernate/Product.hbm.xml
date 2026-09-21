@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The mapping half of the NHibernate source unit. The key is assigned: the Products
+     table of the fixture has no IDENTITY, so a generator that expected one would describe
+     a column that is not there. -->
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="Shop">
+  <class name="DifferentialProduct" table="DifferentialProducts" schema="{{schema}}">
+    <id name="ProductId" column="ProductId" type="Int32">
+      <generator class="assigned" />
+    </id>
+    <property name="ProductName" column="ProductName" type="String" not-null="true" />
+    <property name="Sku" column="Sku" type="AnsiString" not-null="true" />
+    <property name="UnitPrice" column="UnitPrice" type="Decimal" not-null="true" />
+    <property name="Weight" column="Weight" type="Double" />
+    <property name="IsDiscontinued" column="IsDiscontinued" type="Boolean" not-null="true" />
+  </class>
+</hibernate-mapping>

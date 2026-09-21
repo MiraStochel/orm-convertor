@@ -44,8 +44,12 @@ class TestSchemaTest {
         }
 
         assertEquals(
+                // DifferentialProducts is not part of TestSchema.sql: it comes with the
+                // read-only data of the differential verification (decision 089), which
+                // brings its own table rather than seeding one that others write to.
                 new TreeSet<>(Set.of("Customers", "CustomerProfiles", "Orders", "OrderLines",
-                        "OrderLineAllocations", "Products", "Suppliers", "ProductSuppliers")),
+                        "OrderLineAllocations", "Products", "Suppliers", "ProductSuppliers",
+                        "DifferentialProducts")),
                 tables);
     }
 
@@ -86,7 +90,9 @@ class TestSchemaTest {
     /** {@link DatabaseMetaData} is the reader here; nothing else in the suite reads the catalog. */
     @Test
     void theScriptSplitsIntoOneBatchPerStatementGroup() throws Exception {
-        // CREATE SCHEMA, eight CREATE TABLE and one ALTER TABLE - one batch each.
-        assertEquals(10, TestSchema.batches().size());
+        // CREATE SCHEMA, eight CREATE TABLE and one ALTER TABLE of the schema script, and
+        // the CREATE TABLE and the INSERT the differential data brings with it
+        // (decision 089) - one batch each.
+        assertEquals(12, TestSchema.batches().size());
     }
 }

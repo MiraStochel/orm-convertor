@@ -29,10 +29,13 @@ public class TestSchemaFixtureTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
+        // DifferentialProducts is not part of TestSchema.sql: it comes with the read-only
+        // data of the differential verification (decision 089), which brings its own table
+        // rather than seeding one that other scenarios write to.
         string[] expected =
         [
-            "CustomerProfiles", "Customers", "OrderLineAllocations", "OrderLines",
-            "Orders", "ProductSuppliers", "Products", "Suppliers"
+            "CustomerProfiles", "Customers", "DifferentialProducts", "OrderLineAllocations",
+            "OrderLines", "Orders", "ProductSuppliers", "Products", "Suppliers"
         ];
 
         using var connection = fixture.OpenConnection();

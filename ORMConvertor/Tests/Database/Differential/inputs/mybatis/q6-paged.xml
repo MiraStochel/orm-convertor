@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- The MyBatis source unit is a mapping and a query at once (decision 081): the
+     <resultMap> pairs columns with properties and the <select> is the query. Its row
+     count is what the changed-row-count mutation of decision 089 attacks, and three of
+     six rows is a proper prefix, so the mutation cannot pass unnoticed. -->
+<mapper namespace="Shop.ProductMapper">
+  <resultMap id="product" type="DifferentialProduct">
+    <id     column="ProductId"      property="ProductId"/>
+    <result column="ProductName"    property="ProductName"/>
+    <result column="Sku"            property="Sku"/>
+    <result column="UnitPrice"      property="UnitPrice"/>
+    <result column="Weight"         property="Weight"/>
+    <result column="IsDiscontinued" property="IsDiscontinued"/>
+  </resultMap>
+  <select id="findProducts" resultMap="product">
+    SELECT TOP (3) *
+    FROM {{schema}}.DifferentialProducts AS p
+    ORDER BY p.ProductName ASC
+  </select>
+</mapper>

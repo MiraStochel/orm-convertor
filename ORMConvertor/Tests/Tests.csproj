@@ -10,6 +10,15 @@
   <ItemGroup>
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="Database\TestSchema.sql" />
+    <!-- Data, matrix and canonical results of the differential verification (decision 089).
+         Embedded rather than copied, for the reason the schema script is: the Java suite
+         reads the very same files from ../Tests/Database as a test resource, so there is
+         one copy of each and no step that keeps two in sync. -->
+    <EmbeddedResource Include="Database\Differential\**\*" />
+    <!-- The matrix inputs are written in the languages of the source frameworks, C# among
+         them, and they are input to the tool - not source of this project. Without this the
+         SDK's default glob would hand them to the compiler. -->
+    <Compile Remove="Database\Differential\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

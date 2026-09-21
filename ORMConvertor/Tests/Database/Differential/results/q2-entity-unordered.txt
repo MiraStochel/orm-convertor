@@ -1,0 +1,2 @@
+2	"Yarn"	"SKU-002"	99.9900	NULL	false
+4	"Whistle"	"SKU-004"	12.5000	0.5	false

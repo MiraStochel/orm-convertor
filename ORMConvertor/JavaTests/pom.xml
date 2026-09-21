@@ -102,6 +102,11 @@
                 <directory>${project.basedir}/../Tests/Database</directory>
                 <includes>
                     <include>TestSchema.sql</include>
+                    <!-- Data, matrix, canonical results and matrix inputs of the
+                         differential verification (decision 089). They are read from the
+                         same place for the same reason: two copies of a canonical result
+                         would be two answers to one question. -->
+                    <include>Differential/**</include>
                 </includes>
             </testResource>
         </testResources>

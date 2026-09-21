@@ -1,0 +1,4 @@
+"Ukulele"	320.2500
+"Violin"	2100.7500
+"Xylophone"	450.0000
+"Zither"	1250.5000

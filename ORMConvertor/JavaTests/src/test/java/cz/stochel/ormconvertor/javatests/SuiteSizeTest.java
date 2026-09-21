@@ -10,6 +10,7 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * What this suite claims about itself (decision 087). Requirement F12 is verified by three
@@ -109,7 +111,8 @@ class SuiteSizeTest {
 
     /**
      * How many times JUnit runs one method: once for a {@code @Test}, once per constant for
-     * a {@code @ParameterizedTest} over an enum, and never for anything else.
+     * a {@code @ParameterizedTest} over an enum, once per case for one over a method source,
+     * and never for anything else.
      *
      * <p>A parameterization this does not know is a failure rather than a one, on purpose:
      * counting it as a single invocation would understate the suite by however many cases
@@ -122,6 +125,11 @@ class SuiteSizeTest {
 
         if (!method.isAnnotationPresent(ParameterizedTest.class)) {
             return 0;
+        }
+
+        MethodSource methodSource = method.getAnnotation(MethodSource.class);
+        if (methodSource != null) {
+            return casesOf(testClass, method, methodSource);
         }
 
         EnumSource source = method.getAnnotation(EnumSource.class);
@@ -140,6 +148,45 @@ class SuiteSizeTest {
         }
 
         return constants.getEnumConstants().length;
+    }
+
+    /**
+     * How many cases a {@code @MethodSource} yields. The source is asked rather than
+     * guessed at: a matrix that grows by a query has to move this number, and a count
+     * written down beside it would be the very thing decision 087 took away.
+     *
+     * <p>Calling the source here means the differential matrix is read while the suite is
+     * being measured, which is deliberate - a matrix that cannot be read is a failure of
+     * the claim, not a smaller claim.
+     */
+    private static int casesOf(Class<?> testClass, Method method, MethodSource source) {
+        String[] names = source.value().length > 0 ? source.value() : new String[] {method.getName()};
+        int cases = 0;
+
+        for (String name : names) {
+            try {
+                Method factory = testClass.getDeclaredMethod(name);
+                factory.setAccessible(true);
+                Object produced = factory.invoke(null);
+
+                if (produced instanceof Stream<?> stream) {
+                    cases += (int) stream.count();
+                } else if (produced instanceof Collection<?> collection) {
+                    cases += collection.size();
+                } else {
+                    throw new AssertionError(
+                            "The source " + testClass.getName() + "#" + name + " yields a "
+                            + produced.getClass().getName() + ", which this counter does not know how to "
+                            + "measure (decision 087).");
+                }
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError(
+                        "The source " + testClass.getName() + "#" + name + " of the parameterized test "
+                        + method.getName() + " could not be asked how many cases it yields (decision 087).", e);
+            }
+        }
+
+        return cases;
     }
 
     private static boolean isTagged(Tag[] tags) {

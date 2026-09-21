@@ -1,0 +1,4 @@
+6	"Ukulele"	"SKU-006"	320.2500	1.75	false
+5	"Violin"	"SKU-005"	2100.7500	3	true
+3	"Xylophone"	"SKU-003"	450.0000	1.25	true
+1	"Zither"	"SKU-001"	1250.5000	2.5	false

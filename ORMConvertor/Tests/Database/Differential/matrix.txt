@@ -1,0 +1,82 @@
+# The differential matrix (decision 089). One section per query; the pairs of the
+# criterion are this query's source framework against each of the other five, so six
+# queries make the thirty pairs F13 asks for.
+#
+# Read by both suites from this one file, beside the schema script - the mechanism
+# decision 076 set up so that the schema stays one. The format is deliberately poorer
+# than JSON: two parsers in two languages have to agree about it, and a line of
+# "key = value" cannot be read two ways.
+#
+#   source          the framework the query is written in. Its own run is what fixes the
+#                   canonical result; every other framework is a pair against it.
+#   units           the input files of a conversion, entity units first, query unit last.
+#                   A MyBatis mapper is both at once (decision 081), so it appears once.
+#   fields          the fields of a result row, in the order the canonical form states
+#                   them. A by-name target reads these names off the entity, a positional
+#                   one reads by index; both give the same ordered values.
+#   shape           entity   - every target returns instances of the generated entity
+#                   projection - the targets that project return tuples, and HQL and JPQL
+#                               return them positionally
+#   ordered         whether the query carries an ordering instruction. When it does not,
+#                   both sides sort by the rendered line before comparing.
+#   decimalScale    decimal places an exact decimal is rounded to (default 6)
+#   floatDigits     significant digits of an approximate number (default 12)
+#   arguments       values of the query's parameters, name:type=value (decision 083)
+#   mutations       the wrong translations this query can carry (decision 089), of
+#                   filter, operator, ordering, rowCount, projection. Stated rather than
+#                   discovered, so that a mutation which stops reaching the artifact is a
+#                   failure instead of a case that quietly stops running.
+
+[q1-entity-filter-ordered]
+source = Dapper
+units = dapper/Product.cs, dapper/q1-entity-filter-ordered.sql
+fields = ProductId, ProductName, Sku, UnitPrice, Weight, IsDiscontinued
+shape = entity
+ordered = true
+decimalScale = 4
+mutations = filter, operator, ordering
+
+[q2-entity-unordered]
+source = EFCore
+units = efcore/Product.cs, efcore/q2-entity-unordered.query.cs
+fields = ProductId, ProductName, Sku, UnitPrice, Weight, IsDiscontinued
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter, operator
+
+[q3-projection-ordered]
+source = NHibernate
+units = nhibernate/Product.cs, nhibernate/Product.hbm.xml, nhibernate/q3-projection-ordered.query.cs
+fields = ProductName, UnitPrice
+shape = projection
+ordered = true
+decimalScale = 4
+mutations = filter, operator, ordering, projection
+
+[q4-parameter-ordered]
+source = Hibernate
+units = jpa/DifferentialProduct.java, jpa/q4-parameter-ordered.jpql
+fields = ProductId, ProductName, Sku, UnitPrice, Weight, IsDiscontinued
+shape = entity
+ordered = true
+decimalScale = 4
+arguments = minPrice:decimal=100
+mutations = filter, operator, ordering
+
+[q5-projection-descending]
+source = EclipseLink
+units = jpa/DifferentialProduct.java, jpa/q5-projection-descending.jpql
+fields = Sku, ProductName
+shape = projection
+ordered = true
+mutations = filter, operator, ordering, projection
+
+[q6-paged]
+source = MyBatis
+units = mybatis/DifferentialProduct.java, mybatis/q6-paged.xml
+fields = ProductId, ProductName, Sku, UnitPrice, Weight, IsDiscontinued
+shape = entity
+ordered = true
+decimalScale = 4
+mutations = ordering, rowCount

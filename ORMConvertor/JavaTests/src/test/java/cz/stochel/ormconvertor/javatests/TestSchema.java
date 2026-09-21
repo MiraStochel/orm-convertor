@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
 public final class TestSchema {
 
     private static final String SCRIPT_RESOURCE = "/TestSchema.sql";
+    private static final String DATA_RESOURCE = "/Differential/FixtureData.sql";
     private static final String SCHEMA_PLACEHOLDER = "{{schema}}";
 
     // GO is a client-side separator, not T-SQL; CREATE SCHEMA has to start its own batch.
@@ -86,11 +87,23 @@ public final class TestSchema {
         }
     }
 
+    /**
+     * The batches of the DDL script followed by those of the read-only data the
+     * differential verification reads (decision 089). The data belongs to the fixture and
+     * not to a test: it is written once, never changed, and both suites make it from this
+     * one script, so the two halves of a pair read rows made by the same statements.
+     */
     static List<String> batches() throws IOException {
-        try (InputStream stream = TestSchema.class.getResourceAsStream(SCRIPT_RESOURCE)) {
+        List<String> batches = new ArrayList<>(batchesOf(SCRIPT_RESOURCE));
+        batches.addAll(batchesOf(DATA_RESOURCE));
+        return batches;
+    }
+
+    private static List<String> batchesOf(String resource) throws IOException {
+        try (InputStream stream = TestSchema.class.getResourceAsStream(resource)) {
             if (stream == null) {
                 throw new IllegalStateException(
-                        "Test resource " + SCRIPT_RESOURCE + " is missing: the pom reads it from ../Tests/Database.");
+                        "Test resource " + resource + " is missing: the pom reads it from ../Tests/Database.");
             }
             String script = new String(stream.readAllBytes(), StandardCharsets.UTF_8)
                     .replace("﻿", "")

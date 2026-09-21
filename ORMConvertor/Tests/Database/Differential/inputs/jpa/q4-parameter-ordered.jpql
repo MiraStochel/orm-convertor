@@ -1,0 +1,4 @@
+select p
+from DifferentialProduct p
+where p.UnitPrice > :minPrice
+order by p.Sku desc

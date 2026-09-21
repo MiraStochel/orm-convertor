@@ -27,6 +27,7 @@ namespace Tests.Database;
 public sealed class TestSchemaFixture : IAsyncLifetime
 {
     private const string ScriptResourceName = "Tests.Database.TestSchema.sql";
+    private const string DataResourceName = "Tests.Database.Differential.FixtureData.sql";
     private const string SchemaPlaceholder = "{{schema}}";
 
     /// <summary>
@@ -193,11 +194,20 @@ public sealed class TestSchemaFixture : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
     }
 
+    /// <summary>
+    /// The batches of the DDL script followed by those of the read-only data the
+    /// differential verification reads (decision 089). The data belongs to the fixture and
+    /// not to a test: it is written once, never changed, and both suites make it from this
+    /// one script, so the two halves of a pair read rows made by the same statements.
+    /// </summary>
     private IEnumerable<string> ReadScriptBatches()
+        => [.. Batches(ScriptResourceName), .. Batches(DataResourceName)];
+
+    private IEnumerable<string> Batches(string resourceName)
     {
-        using var stream = typeof(TestSchemaFixture).Assembly.GetManifestResourceStream(ScriptResourceName)
+        using var stream = typeof(TestSchemaFixture).Assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException(
-                $"Embedded resource \"{ScriptResourceName}\" is missing from the test assembly.");
+                $"Embedded resource \"{resourceName}\" is missing from the test assembly.");
         using var reader = new StreamReader(stream);
         var script = reader.ReadToEnd().Replace(SchemaPlaceholder, SchemaName, StringComparison.Ordinal);
 

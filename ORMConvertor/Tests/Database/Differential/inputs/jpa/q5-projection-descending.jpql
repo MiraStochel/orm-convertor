@@ -1,0 +1,4 @@
+select p.Sku as Sku, p.ProductName as ProductName
+from DifferentialProduct p
+where p.UnitPrice > 100
+order by p.Sku desc
