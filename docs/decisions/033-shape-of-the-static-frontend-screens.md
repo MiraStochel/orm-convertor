@@ -1,7 +1,7 @@
 # 033 — Podoba obrazovek statického frontendu
 
 Datum: 2026-08-20
-Stav: platí
+Stav: nahrazeno [099](099-examples-are-content-not-a-choice.md)
 Požadavky: F11, F14, S6, S7
 Podklad: rozhodnutí [032](032-frontend-as-static-pages-without-a-build.md), [010](010-diagnostics-as-returned-data.md), [013](013-target-framework-versions.md), [025](025-query-language-as-content-type.md), [029](029-database-connection-is-the-consumer-projects-fact.md) a [030](030-scope-of-version-1-0.md); položka „Frontend zaostal za API a nevaliduje vstup" v `open-items.md`
 

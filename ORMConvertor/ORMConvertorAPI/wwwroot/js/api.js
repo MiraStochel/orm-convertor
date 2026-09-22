@@ -203,6 +203,13 @@ export const getSamples = () => getJson("samples");
 export const getAdvisorSamples = () => getJson("samples-advisor");
 
 /**
+ * GET /examples - the explanatory page's examples as whole conversion inputs (decision 099):
+ * { key, sourceOrm, targetOrm, units }, each unit the { contentType, content, name } that
+ * /convert takes, so the page sends it unchanged.
+ */
+export const getExamples = () => getJson("examples");
+
+/**
  * POST /convert. Sources are { contentType, content } pairs; the response carries
  * runId, toolVersion, source/target framework with versions, sources (the generated
  * artifacts), records, catalogState, catalogReadMilliseconds and declaredSourceDialect.

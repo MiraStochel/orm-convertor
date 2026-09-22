@@ -140,6 +140,29 @@
         }
       }
     },
+    "/examples": {
+      "get": {
+        "tags": [
+          "ORMConvertorAPI"
+        ],
+        "operationId": "Examples",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExampleDefinition"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/advisor-test": {
       "post": {
         "tags": [
@@ -795,6 +818,32 @@
       },
       "DatabaseDialect": {
         "type": "integer"
+      },
+      "ExampleDefinition": {
+        "required": [
+          "key",
+          "sourceOrm",
+          "targetOrm",
+          "units"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "sourceOrm": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "targetOrm": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "units": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversionSource"
+            }
+          }
+        }
       },
       "MappingFactCategory": {
         "type": "integer"

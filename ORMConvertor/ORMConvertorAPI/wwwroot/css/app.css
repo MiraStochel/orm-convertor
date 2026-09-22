@@ -303,6 +303,28 @@ figure.diagram figcaption {
   color: var(--pico-muted-color);
 }
 
+/* The index of the examples: one card per boundary, its list the navigation (decision 099). */
+.example-index ul {
+  margin-bottom: 0;
+  padding-left: 1.1rem;
+}
+
+.example-index li {
+  font-size: 0.9rem;
+}
+
+/* Input and output of an example fold: the larger examples carry dozens of files, so they
+   start folded and the summary says how many there are before the reader opens them. */
+details.example-pane > summary {
+  font-weight: 600;
+}
+
+details.example-pane > summary small {
+  margin-left: 0.35rem;
+  font-weight: normal;
+  color: var(--pico-muted-color);
+}
+
 /* ---- landing page cards ------------------------------------------------ */
 
 /* min(16rem, 100%) rather than a bare 16rem: below a 16rem-wide container the plain

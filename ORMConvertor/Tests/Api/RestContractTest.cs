@@ -23,6 +23,7 @@ public class RestContractTest(ApiTestHost host)
         "/required-content-advisor",
         "/samples",
         "/samples-advisor",
+        "/examples",
     ];
 
     [Theory]
@@ -101,6 +102,41 @@ public class RestContractTest(ApiTestHost host)
             Assert.False(
                 string.IsNullOrWhiteSpace(wire.RootElement.GetProperty(unit.Id.ToString()).GetString()),
                 $"Sample {unit.Id} came over the wire empty.");
+        }
+    }
+
+    /// <summary>
+    /// The examples arrive as whole conversion inputs (decision 099), in the order the page
+    /// shows them: the direction as numbers of the enum, and every unit with the name, content
+    /// type and content the page then sends to /convert unchanged. <c>Combined/ExampleCatalogTest</c>
+    /// asserts that each of them converts; this asserts that what converts is what the client
+    /// receives.
+    /// </summary>
+    [Fact]
+    public async Task ExamplesArriveAsWholeConversionInputs()
+    {
+        using var wire = await ReadAsync("/examples");
+
+        Assert.Equal(JsonValueKind.Array, wire.RootElement.ValueKind);
+
+        var expected = Examples.GetExamples;
+        Assert.Equal(expected.Count, wire.RootElement.GetArrayLength());
+
+        foreach (var (example, element) in expected.Zip(wire.RootElement.EnumerateArray()))
+        {
+            Assert.Equal(example.Key, element.GetProperty("key").GetString());
+            Assert.Equal((int)example.SourceOrm, element.GetProperty("sourceOrm").GetInt32());
+            Assert.Equal((int)example.TargetOrm, element.GetProperty("targetOrm").GetInt32());
+
+            var units = element.GetProperty("units").EnumerateArray().ToList();
+            Assert.Equal(example.Units.Count, units.Count);
+
+            foreach (var (unit, serialized) in example.Units.Zip(units))
+            {
+                Assert.Equal(unit.Name, serialized.GetProperty("name").GetString());
+                Assert.Equal((int)unit.ContentType, serialized.GetProperty("contentType").GetInt32());
+                Assert.Equal(unit.Content, serialized.GetProperty("content").GetString());
+            }
         }
     }
 

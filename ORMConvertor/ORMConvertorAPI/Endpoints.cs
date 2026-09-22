@@ -33,6 +33,12 @@ public static class Endpoints
         group.MapGet("/samples-advisor", () => SamplesAdvisor.GetSamples)
             .Produces<Dictionary<int, string>>(StatusCodes.Status200OK);
 
+        // Whole conversion inputs for the explanatory page (decision 099): the direction and
+        // the named units, which the page sends to /convert unchanged.
+        group.MapGet("/examples", () => Examples.GetExamples)
+            .WithName("Examples")
+            .Produces<List<ExampleDefinition>>(StatusCodes.Status200OK);
+
         group.MapPost("/advisor-test", AdvisorTestHandler)
             .WithName("AdvisorTest")
               .Produces<AdvisorSolveResponse>(StatusCodes.Status200OK)

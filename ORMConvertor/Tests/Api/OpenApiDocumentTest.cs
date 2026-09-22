@@ -34,6 +34,7 @@ public class OpenApiDocumentTest(ApiTestHost host)
         "/convert",
         "/samples",
         "/samples-advisor",
+        "/examples",
         "/advisor-test",
         "/advisor/run",
         "/archive",

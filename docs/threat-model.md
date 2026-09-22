@@ -29,7 +29,7 @@ Všechno níž se čte proti tomuhle předpokladu. **Instance vystavená přímo
 | `POST /archive` | seznam dvojic *jméno + obsah* od klienta | Sestaví ZIP v paměti a vrátí ho; nepřekládá nic | Nic. Jména položek se zapisují tak, jak přišla, a velikost archivu je součet toho, co klient poslal |
 | `POST /advisor/run` | entity a dotazy | Přeloží je, **Roslynem zkompiluje a v procesu spustí** proti nastavené databázi a změří běh | **Nic.** Kolektibilní `AssemblyLoadContext` je úklid paměti, ne izolace: žádný limit CPU, paměti ani času, žádný samostatný proces |
 | `POST /advisor-test` | matice nákladů a rozměry úlohy | Předá je přes P/Invoke nativní knihovně GLPK; pole se alokují podle čísel z požadavku | Nic nad rámec kontrol .NET; nesmyslné rozměry skončí výjimkou a odpovědí 400 |
-| `GET /samples`, `/samples-advisor`, `/required-content`, `/required-content-advisor` | nic | Vrací statická data ze sestavení | — |
+| `GET /samples`, `/samples-advisor`, `/examples`, `/required-content`, `/required-content-advisor` | nic | Vrací statická data ze sestavení | — |
 | statické soubory `/orm/…` | nic | `wwwroot` tak, jak je v gitu (rozhodnutí [032](./decisions/032-frontend-as-static-pages-without-a-build.md)) | — |
 
 ## Hrozby

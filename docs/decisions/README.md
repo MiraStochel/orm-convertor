@@ -38,7 +38,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [030](030-scope-of-version-1-0.md) | Rozsah verze 1.0 | 2026-08-20 | revidováno | F1–F15, S1–S7, T1–T7 |
 | [031](031-key-class-as-declaration-of-key-parts.md) | Klíčová třída je deklarací částí klíče, ne entitou převodu | 2026-08-20 | platí | F1, F2, F5, F7–F10, F11, F14, S1, S2 |
 | [032](032-frontend-as-static-pages-without-a-build.md) | Frontend jako statické stránky bez buildu | 2026-08-20 | platí | F11, F14, S5, S7 |
-| [033](033-shape-of-the-static-frontend-screens.md) | Podoba obrazovek statického frontendu | 2026-08-20 | platí | F11, F14, S6, S7 |
+| [033](033-shape-of-the-static-frontend-screens.md) | Podoba obrazovek statického frontendu | 2026-08-20 | nahrazeno [099](099-examples-are-content-not-a-choice.md) | F11, F14, S6, S7 |
 | [034](034-central-version-management.md) | Centrální správa verzí | 2026-08-20 | platí | S2, S6 |
 | [035](035-nhibernate-collections-declared-by-interface.md) | Kolekce v NHibernate entitě deklarované rozhraním | 2026-08-21 | platí | F3, F11, S2 |
 | [036](036-primary-key-under-source-precedence.md) | Primární klíč pod pravidlem priority zdrojů | 2026-08-21 | platí | F5, F11, F14, S2 |
@@ -103,6 +103,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [096](096-a-rule-of-the-paper-is-cited-where-it-argues.md) | Pravidlo článku se cituje tam, kde odůvodňuje volbu; druhá mapa nevzniká | 2026-09-21 | platí | žádné |
 | [097](097-an-exception-type-lives-where-it-is-thrown.md) | Vlastní typ výjimky bydlí tam, kde se vyhazuje; `Model` žádný nenese | 2026-09-21 | platí | S1 |
 | [098](098-the-number-is-decided-once-per-release.md) | Číslo verze se rozhoduje jednou za vydání, ne u každé změny | 2026-09-22 | platí | S2, S6 |
+| [099](099-examples-are-content-not-a-choice.md) | Příklady výkladové stránky jsou její obsah, ne volba; ostatní podoba obrazovek zůstává | 2026-09-22 | platí | F7–F11, F14, S6, S7 |
 
 ## Formát
 

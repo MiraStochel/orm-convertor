@@ -8,7 +8,7 @@ This file is the operating manual: how the tool is run, deployed, configured and
 | [Configuration](#configuration) | The six variables that decide what an instance can do. |
 | [Advisor prerequisites](#advisor-prerequisites) | What the Advisor needs beyond the translation features. |
 | [Tests](#tests) | Running the .NET suite on the host or in a container, the Java suite in its container, the test database, CI, size and coverage, translation performance. |
-| [API](#api) | The eight endpoints, their request and response shapes, and the OpenAPI document. |
+| [API](#api) | The nine endpoints, their request and response shapes, and the OpenAPI document. |
 | [Frontend](#frontend) | Where the static pages live and what they are built from. |
 
 # Deployment
@@ -251,6 +251,7 @@ The **Swagger UI** at `/orm/swagger` renders that same document, but only in the
 | `GET` | `/required-content-advisor` | The same list for the Advisor screen. | → `List<RequiredContentDefinition>` |
 | `GET` | `/samples` | One sample input per unit above, keyed by the same id. | → `Dictionary<int, string>` |
 | `GET` | `/samples-advisor` | The same for the Advisor screen. | → `Dictionary<int, string>` |
+| `GET` | `/examples` | The examples of the explanatory page as whole conversion inputs: a key, the source and target framework, and named units in the shape `/convert` takes (decision [099](../docs/decisions/099-examples-are-content-not-a-choice.md)). | → `List<ExampleDefinition>` |
 | `POST` | `/convert` | The translation itself: parses the sources in the source framework, completes them from the catalog if a connection string is configured, and builds the artifacts for the target framework. The request may declare the dialect the source's literal SQL is written in (decision [088](../docs/decisions/088-a-declared-foreign-source-dialect-is-not-read.md)); declaring another system than SQL Server 2022 stops the reading of that SQL, so a query is refused and a literal column type is dropped, each with a record. | `ConvertRequest` → `ConvertResponse` |
 | `POST` | `/archive` | Packs client-named files into a ZIP for the complete-output download (decision [033](../docs/decisions/033-shape-of-the-static-frontend-screens.md)). Translates nothing. | `ArchiveRequest` → `application/zip` |
 | `POST` | `/advisor/run` | A full Advisor run: translates the queries into the candidate frameworks, compiles and benchmarks them, and solves the ILP model. The response carries the translated artifacts the run measured next to the numbers (decision [059](../docs/decisions/059-advisor-response-carries-the-measured-translations.md)). Needs both a database and `libadvisor.so`. | `AdvisorRunRequest` → `AdvisorRunResult` |

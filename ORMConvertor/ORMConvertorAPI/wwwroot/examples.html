@@ -46,10 +46,10 @@
   <main>
     <h1>How a translation works</h1>
     <p class="lede">
-      The examples on this page are live: each one loads a built-in sample, sends
-      it to the same <code>/convert</code> endpoint the translator uses, and shows
-      the real output next to the real input. They cannot drift away from the tool,
-      because the tool produces them.
+      The examples on this page are live: each one is a set of input files the
+      server hands out, sent to the same <code>/convert</code> endpoint the
+      translator uses and shown with the real output next to the real input. They
+      cannot drift away from the tool, because the tool produces them.
     </p>
 
     <h2>The pipeline</h2>
@@ -112,8 +112,50 @@
       </figcaption>
     </figure>
 
-    <section data-example="efcore-to-nhibernate">
-      <h2>Example 1: EF Core &rarr; NHibernate</h2>
+    <h2>The examples</h2>
+    <p>
+      Seven examples, grouped by the boundary the translation crosses: two stay
+      inside .NET, two inside Java, and three cross between the ecosystems &mdash;
+      the last two over a whole domain rather than a single class. Below each one,
+      the records list every place where the output could not carry a fact of the
+      input, or states something the input did not. That is where a translation
+      explains itself.
+    </p>
+
+    <div class="card-grid example-index">
+      <article>
+        <h3>Within .NET</h3>
+        <ul>
+          <li><a href="#efcore-to-nhibernate">EF Core &rarr; NHibernate</a> &mdash; attributes become an XML mapping</li>
+          <li><a href="#dapper-to-efcore">Dapper &rarr; EF Core</a> &mdash; a source that states little</li>
+        </ul>
+      </article>
+      <article>
+        <h3>Within Java</h3>
+        <ul>
+          <li><a href="#hibernate-to-eclipselink">Hibernate &rarr; EclipseLink</a> &mdash; one specification, two sets of defaults</li>
+          <li><a href="#hibernate-to-mybatis">Hibernate &rarr; MyBatis</a> &mdash; from an ORM to a SQL mapper</li>
+        </ul>
+      </article>
+      <article>
+        <h3>Across the ecosystems</h3>
+        <ul>
+          <li><a href="#mybatis-to-dapper">MyBatis &rarr; Dapper</a> &mdash; SQL stays SQL, the parameter keeps its type</li>
+        </ul>
+      </article>
+      <article>
+        <h3>Whole domains</h3>
+        <ul>
+          <li><a href="#order-book">Order book: EF Core &rarr; Hibernate</a> &mdash; four entities, six LINQ queries</li>
+          <li><a href="#lending-library">Lending library: Hibernate &rarr; NHibernate</a> &mdash; five entities, five JPQL queries</li>
+        </ul>
+      </article>
+    </div>
+
+    <h2>Within .NET</h2>
+
+    <section id="efcore-to-nhibernate" data-example="efcore-to-nhibernate">
+      <h3>EF Core &rarr; NHibernate</h3>
       <p>
         The source states a lot: an EF Core entity annotated with attributes
         (table, column types, keys) and a LINQ query. Watch how the attributes
@@ -129,17 +171,21 @@
       <p class="example-status" aria-busy="true">Running the conversion…</p>
       <p class="example-error problem" role="alert" hidden></p>
       <div class="panes">
-        <h3>Input</h3>
-        <div class="example-inputs pane-grid"></div>
-        <h3>Output</h3>
-        <div class="example-outputs pane-grid"></div>
+        <details class="example-pane" open>
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane" open>
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
       </div>
-      <h3>Records</h3>
+      <h4>Records</h4>
       <div class="example-records"></div>
     </section>
 
-    <section data-example="dapper-to-efcore">
-      <h2>Example 2: Dapper &rarr; EF Core</h2>
+    <section id="dapper-to-efcore" data-example="dapper-to-efcore">
+      <h3>Dapper &rarr; EF Core</h3>
       <p>
         The opposite direction: the source states very little. A Dapper entity is
         a plain C# class and the query is raw SQL, so most mapping facts &mdash;
@@ -155,12 +201,216 @@
       <p class="example-status" aria-busy="true">Running the conversion…</p>
       <p class="example-error problem" role="alert" hidden></p>
       <div class="panes">
-        <h3>Input</h3>
-        <div class="example-inputs pane-grid"></div>
-        <h3>Output</h3>
-        <div class="example-outputs pane-grid"></div>
+        <details class="example-pane" open>
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane" open>
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
       </div>
-      <h3>Records</h3>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <h2>Within Java</h2>
+    <p>
+      Both examples start from the same Hibernate project: a customer whose key the
+      framework generates, a national column written with Hibernate's own
+      annotation, a version column, and a query that takes one page of results with
+      the <code>limit</code> clause only HQL has. Whatever differs between the two
+      outputs is the difference between the two targets.
+    </p>
+
+    <section id="hibernate-to-eclipselink" data-example="hibernate-to-eclipselink">
+      <h3>Hibernate &rarr; EclipseLink</h3>
+      <p>
+        Two implementations of one specification read the same annotations, so
+        everything the source states travels unchanged. What differs is what the
+        source leaves unsaid. A bare <code>@GeneratedValue</code> means a sequence to
+        Hibernate and a counter table to EclipseLink; <code>@Nationalized</code> is
+        Hibernate's own annotation and EclipseLink has none; <code>limit</code> and
+        <code>offset</code> exist only in HQL. The artifact therefore writes each of
+        them out &mdash; the counter table in full, the national column as a literal
+        <code>nvarchar(200)</code>, the page of results on the query object &mdash;
+        and the two conventions in the records name exactly those places.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane" open>
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane" open>
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="hibernate-to-mybatis" data-example="hibernate-to-mybatis">
+      <h3>Hibernate &rarr; MyBatis</h3>
+      <p>
+        The same input, towards the other end of the Java ecosystem. MyBatis maps
+        results rather than tables: the entity becomes a plain class that imports
+        nothing from the framework, and the mapping shrinks to pairs of column and
+        property in a result map. The query turns into SQL inside a mapper document
+        &mdash; entity and attribute names become the table and its columns, the
+        parameter becomes <code>#{…}</code>, the page becomes
+        <code>OFFSET … FETCH</code> &mdash; and a mapper interface declares the method
+        with its typed parameter. Everything the mapper has no place for &mdash; the
+        table, lengths, precision, nullability, key generation, the version column
+        &mdash; is a loss in the records, one line per fact.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane" open>
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane" open>
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <h2>Across the ecosystems</h2>
+
+    <section id="mybatis-to-dapper" data-example="mybatis-to-dapper">
+      <h3>MyBatis &rarr; Dapper</h3>
+      <p>
+        Two frameworks that both keep SQL as it is, one on each side of the
+        boundary. The statements travel as T-SQL: the <code>&lt;include&gt;</code>
+        fragment and the <code>&lt;where&gt;</code> element are expanded,
+        <code>#{creditLimit}</code> becomes <code>@creditLimit</code>, and each
+        statement becomes a Dapper method named after its id. The parameter's type
+        is not in the SQL at all &mdash; it comes from the Java mapper interface,
+        where <code>BigDecimal creditLimit</code> becomes
+        <code>decimal creditLimit</code>. The records show the other side of the
+        bargain: a Dapper class has no place for column names or types, and a
+        MyBatis <code>&lt;id&gt;</code> marks the identity of a result row, not the
+        primary key of a table.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane" open>
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane" open>
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <h2>Whole domains</h2>
+    <p>
+      A real project hands over a domain, not a class, and some phases of the
+      pipeline only run when there are several entities: a relation is paired with
+      the key it points to, a many-to-many gets its junction entity, a composite key
+      gets the members its target requires. The two examples below are larger, one
+      in each direction across the ecosystems. Their input and output are folded
+      because they carry dozens of files; open them from the summaries. Every
+      generated query method is called <code>Query</code> or <code>query</code>: a
+      LINQ method's or a JPQL file's own name is not read as the name of its query,
+      so the output panels follow the order of the input files.
+    </p>
+
+    <section id="order-book" data-example="order-book">
+      <h3>Order book: EF Core &rarr; Hibernate</h3>
+      <p>
+        Four annotated EF Core entities and six LINQ queries become JPA entities and
+        JPQL. The order line is keyed by its order and its number, and the first part
+        of that key is at the same time the foreign key to the order: the key becomes
+        <code>@IdClass</code> with a nested key class, and the relation over that
+        column is kept from writing it (<code>insertable = false</code>). Every
+        <code>[ForeignKey]</code> is paired with the key of the entity it points to,
+        unique indexes become <code>@UniqueConstraint</code>, the row version becomes
+        <code>@Version</code> and the unmapped property <code>@Transient</code>. In the
+        queries, captured variables become named parameters, <code>Skip</code> and
+        <code>Take</code> move to the query object, a <code>GroupBy</code> followed by
+        <code>Where</code> becomes <code>having</code>, <code>Any</code> and
+        <code>Contains</code> over another set become <code>exists</code> and
+        <code>in</code> subqueries, <code>Average</code> becomes a scalar subquery,
+        and <code>Union</code> stays a union.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="lending-library" data-example="lending-library">
+      <h3>Lending library: Hibernate &rarr; NHibernate</h3>
+      <p>
+        The opposite direction over a second domain: five annotated Java entities
+        and five JPQL queries become C# classes, <code>hbm.xml</code> mappings and
+        HQL. The many-to-many between books and authors is declared by
+        <code>@JoinTable</code> and has no class of its own in Java; NHibernate gets
+        it as an explicit junction entity, <code>BookAuthor</code>, with a composite
+        key and two many-to-one relations. A copy of a book is keyed by two columns
+        through <code>@IdClass</code>, which becomes a <code>&lt;composite-id&gt;</code>
+        and the <code>Equals</code>, <code>GetHashCode</code> and
+        <code>[Serializable]</code> NHibernate requires of it; a loan points at that
+        copy through both columns, in their order. The sequence keeps its name and
+        schema, the version column becomes <code>&lt;version&gt;</code>, and the
+        literal <code>char(2)</code> survives as an <code>sql-type</code>. In the
+        queries, the entity join becomes <code>join … with</code>, a collection
+        parameter goes through <code>SetParameterList</code>, <code>between</code>
+        becomes two comparisons, and the page given by <code>limit</code> and
+        <code>offset</code> moves to <code>SetFirstResult</code> and
+        <code>SetMaxResults</code>, because HQL has no clause for it.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
       <div class="example-records"></div>
     </section>
   </main>

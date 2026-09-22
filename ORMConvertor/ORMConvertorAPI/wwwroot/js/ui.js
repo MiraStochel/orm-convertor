@@ -93,21 +93,38 @@ function artifactBaseName(artifact) {
   return "query";
 }
 
-/** Unique display file names for a list of artifacts. */
+function derivedName(artifact, index) {
+  const base = artifactBaseName(artifact) ?? `artifact-${index + 1}`;
+  // Only an hbm.xml is named .hbm.xml: the one XML value carries the descriptor of every
+  // framework that writes one - the orm.xml of JPA, the mapper of MyBatis - and the root
+  // element tells them apart (decisions 077 and 084).
+  const extension =
+    artifact.contentType === ContentType.Xml && !/<hibernate-mapping\b/.test(artifact.content)
+      ? ".xml"
+      : (CONTENT_TYPE_EXTENSIONS[artifact.contentType] ?? ".txt");
+  return `${base}${extension}`;
+}
+
+/** Numbers a repeated name before its extension: query.cs, query-2.cs, query-3.cs. */
+function numbered(fileName, number) {
+  const dot = fileName.indexOf(".");
+  return dot > 0
+    ? `${fileName.slice(0, dot)}-${number}${fileName.slice(dot)}`
+    : `${fileName}-${number}`;
+}
+
+/**
+ * Unique display file names for a list of artifacts. A unit that carries a name of its own -
+ * the file an example unit stands for (decision 099) - keeps it; everything else is named
+ * from its content.
+ */
 export function artifactNames(artifacts) {
   const used = new Map();
   return artifacts.map((artifact, index) => {
-    const base = artifactBaseName(artifact) ?? `artifact-${index + 1}`;
-    // Only an hbm.xml is named .hbm.xml: the one XML value carries the descriptor of every
-    // framework that writes one - the orm.xml of JPA, the mapper of MyBatis - and the root
-    // element tells them apart (decisions 077 and 084).
-    const extension =
-      artifact.contentType === ContentType.Xml && !/<hibernate-mapping\b/.test(artifact.content)
-        ? ".xml"
-        : (CONTENT_TYPE_EXTENSIONS[artifact.contentType] ?? ".txt");
-    const count = used.get(base + extension) ?? 0;
-    used.set(base + extension, count + 1);
-    return count === 0 ? `${base}${extension}` : `${base}-${count + 1}${extension}`;
+    const name = artifact.name || derivedName(artifact, index);
+    const count = used.get(name) ?? 0;
+    used.set(name, count + 1);
+    return count === 0 ? name : numbered(name, count + 1);
   });
 }
 
@@ -167,6 +184,10 @@ export function renderArtifacts(container, artifacts, options = {}) {
 function revealArtifact(id) {
   const panel = document.getElementById(id);
   if (!panel) return;
+  // The larger examples fold their output (decision 099); a jump into a folded pane would
+  // land on nothing, so the pane opens first.
+  const folded = panel.closest("details:not([open])");
+  if (folded) folded.open = true;
   panel.scrollIntoView({ behavior: "smooth", block: "start" });
   panel.classList.remove("artifact-flash");
   // Reading a layout property restarts the animation when the same panel is picked twice.
