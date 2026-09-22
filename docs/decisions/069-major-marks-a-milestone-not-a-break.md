@@ -1,7 +1,7 @@
 # 069 — MAJOR označuje milník zadání, ne rozbitou plochu
 
 Datum: 2026-08-26
-Stav: platí
+Stav: nahrazeno [098](098-the-number-is-decided-once-per-release.md)
 Požadavky: S2, S6, F7–F10, F15, T7
 Podklad: rozhodnutí [041](041-versioning-and-release.md), které tímto nahrazujeme, a jeho důsledek nesený rozhodnutím [044](044-error-response-as-problem-details.md); dále [007](007-documentation-structure.md), [013](013-target-framework-versions.md), [030](030-scope-of-version-1-0.md) a [034](034-central-version-management.md); stav repozitáře k 2026-08-26
 

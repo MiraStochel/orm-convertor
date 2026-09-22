@@ -73,7 +73,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [066](066-records-attributed-to-the-input-unit.md) | Záznam se připisuje vstupní jednotce, ze které vzešel | 2026-08-26 | platí | F11, F14, S1, S2, S6, S7 |
 | [067](067-a-derived-convention-is-a-statement-a-default-is-not.md) | Odvozující konvence zdroje je tvrzení, absenční výchozí ne | 2026-08-26 | platí | F2, F5, F6, F11, S1, S2 |
 | [068](068-source-framework-precedence-orders-the-reading.md) | Dokumentovaná precedence zdrojového frameworku řadí čtení jeho artefaktů | 2026-08-26 | platí | F2, F5, F7–F10, F11, S1, S2 |
-| [069](069-major-marks-a-milestone-not-a-break.md) | MAJOR označuje milník zadání, ne rozbitou plochu | 2026-08-26 | platí | S2, S6, F7–F10, F15, T7 |
+| [069](069-major-marks-a-milestone-not-a-break.md) | MAJOR označuje milník zadání, ne rozbitou plochu | 2026-08-26 | nahrazeno [098](098-the-number-is-decided-once-per-release.md) | S2, S6, F7–F10, F15, T7 |
 | [070](070-a-parser-refuses-what-would-change-the-row-set.md) | Parser odmítá dotaz, jehož nepřečtená část by změnila množinu řádků | 2026-09-14 | platí | F8, F11, T2, T3, S1, S2 |
 | [071](071-five-scalars-with-a-counterpart-in-both-ecosystems.md) | Uzavřený seznam skalárů se rozšiřuje o pět hodnot s protějškem v obou ekosystémech | 2026-09-16 | platí | F1, F6, F7–F10, F11, S2 |
 | [072](072-a-transient-property-is-a-carried-mapping-fact.md) | Nepersistovaná vlastnost je nesený mapovací fakt, ne chybějící sloupec | 2026-09-16 | platí | F5, F6, F7–F11, S1, S2 |
@@ -102,6 +102,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [095](095-a-dated-run-record-names-its-commit.md) | Datovaný záznam o běhu jmenuje commit; velikost sady tvrdí jediné místo | 2026-09-21 | platí | S2, S5, S6 |
 | [096](096-a-rule-of-the-paper-is-cited-where-it-argues.md) | Pravidlo článku se cituje tam, kde odůvodňuje volbu; druhá mapa nevzniká | 2026-09-21 | platí | žádné |
 | [097](097-an-exception-type-lives-where-it-is-thrown.md) | Vlastní typ výjimky bydlí tam, kde se vyhazuje; `Model` žádný nenese | 2026-09-21 | platí | S1 |
+| [098](098-the-number-is-decided-once-per-release.md) | Číslo verze se rozhoduje jednou za vydání, ne u každé změny | 2026-09-22 | platí | S2, S6 |
 
 ## Formát
 
