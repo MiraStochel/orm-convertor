@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "ORMConvertor",
-    "version": "1.2.0"
+    "version": "2.0.0"
   },
   "servers": [
     {
@@ -781,6 +781,15 @@
                 "$ref": "#/components/schemas/SourceSqlDialect"
               }
             ]
+          },
+          "maxNestingDepth": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 128
           }
         }
       },
