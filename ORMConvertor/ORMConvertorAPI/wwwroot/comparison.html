@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ORMConvertor — Interactive comparison (mockup)</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
+  <link rel="stylesheet" id="hljs-dark" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    /* Applied before first paint: js/theme.js is a module and therefore deferred, so
+       restoring the theme there would repaint a page the reader can already see. */
+    try {
+      var storedTheme = localStorage.getItem("ormconvertor.theme");
+      if (storedTheme === "light" || storedTheme === "dark") {
+        document.documentElement.dataset.theme = storedTheme;
+        document.getElementById("hljs-dark").media = storedTheme === "dark" ? "all" : "not all";
+      }
+    } catch (e) { /* storage can be denied; the operating system's preference then decides */ }
+  </script>
+</head>
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><strong><a href="index.html">ORMConvertor</a></strong></li>
+      </ul>
+      <ul>
+        <li><a href="translation.html">Translation</a></li>
+        <li><a href="advisor.html">Advisor</a></li>
+        <li><a href="examples.html">Examples</a></li>
+        <li><a href="comparison.html" aria-current="page">Comparison <small class="nav-tag">mockup</small></a></li>
+        <li>
+          <select id="theme" aria-label="Colour theme">
+            <option value="system">System theme</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Interactive comparison</h1>
+    <p class="lede">
+      The source artifacts and the generated ones side by side, with the connections
+      between them drawn in. Point at a word or a number in any window and every place
+      the same fact shows itself lights up &mdash; in the other window, and in the rest of
+      this window too.
+    </p>
+
+    <aside class="mockup-banner" role="note">
+      <h2>This page is a mockup</h2>
+      <p>
+        <strong>The artifacts are real; the connections between them are not the
+        tool&rsquo;s.</strong> Everything in the windows below is one recorded run of the
+        seven examples of the <a href="examples.html">explanatory page</a> &mdash; captured
+        on 2026&#8209;09&#8209;23 from commit <code>4042360</code>, against an instance with
+        a database catalog configured &mdash; frozen into the page, so nothing here calls
+        the server and nothing here is converted while you read it.
+      </p>
+      <p>
+        The tool does not report <em>which word of the output came from which word of the
+        input</em>. Its records say what could not be carried, what a convention filled in
+        and what the database supplied; they never say what travelled and where it landed.
+        Every connection on this page was therefore written by hand, to show what such a
+        screen could look like if the pipeline carried that information. Not every word is
+        connected: only what was worth pointing at.
+      </p>
+      <p class="mockup-banner-footnote">
+        Why this exists, and what it is material for, is decision 100 and the open item
+        <em>Translation direction as one thing and input beside output</em>. Nothing on this
+        page is part of what the tool claims.
+      </p>
+    </aside>
+
+    <h2>How to read it</h2>
+    <p>
+      Every connection is one fact and says what happened to it. Three things can happen,
+      and the colours are the page&rsquo;s own:
+    </p>
+    <dl class="kind-legend" id="kind-legend"></dl>
+    <p class="muted-note">
+      Where the tool wrote a record about a fact &mdash; a loss, a convention of the target
+      framework, a value the database catalog supplied &mdash; the caption quotes that
+      record word for word. Those sentences are the tool&rsquo;s; the labels beside them are
+      the page&rsquo;s.
+    </p>
+
+    <div class="toolbar comparison-toolbar">
+      <label class="show-all-toggle">
+        <input type="checkbox" id="show-all" checked>
+        Underline every connected word
+      </label>
+      <span class="muted-note" id="link-count"></span>
+    </div>
+
+    <h2>The examples</h2>
+    <nav class="example-picker" id="example-picker" aria-label="Which example to compare"></nav>
+
+    <div id="example"></div>
+  </main>
+
+  <footer>
+    <p>ORMConvertor &mdash; a research prototype. This page is a mockup and converts nothing.</p>
+  </footer>
+
+  <template id="window-template">
+    <article class="window">
+      <header class="window-header">
+        <strong class="window-name"></strong>
+        <small class="window-type"></small>
+        <span class="window-side"></span>
+      </header>
+      <pre><code></code></pre>
+    </article>
+  </template>
+
+  <script type="module" src="js/theme.js"></script>
+  <script type="module" src="js/comparison.js"></script>
+</body>
+</html>

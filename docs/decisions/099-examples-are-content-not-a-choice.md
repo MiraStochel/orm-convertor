@@ -1,7 +1,7 @@
 # 099 — Příklady výkladové stránky jsou její obsah, ne volba; ostatní podoba obrazovek zůstává
 
 Datum: 2026-09-22
-Stav: platí
+Stav: nahrazeno [100](100-interactive-comparison-as-a-frozen-mockup.md)
 Požadavky: F7–F11, F14, S6, S7
 Podklad: rozhodnutí [033](033-shape-of-the-static-frontend-screens.md), které tímto nahrazujeme, a [032](032-frontend-as-static-pages-without-a-build.md), bod e; dále [043](043-rest-contract-guarded-over-http.md), [066](066-records-attributed-to-the-input-unit.md), [090](090-the-cross-ecosystem-matrix-counts-itself.md) a [098](098-the-number-is-decided-once-per-release.md); [`architecture.md`](../architecture.md), §6.3 a §6.5
 

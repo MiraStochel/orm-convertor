@@ -9,7 +9,7 @@ This file is the operating manual: how the tool is run, deployed, configured and
 | [Advisor prerequisites](#advisor-prerequisites) | What the Advisor needs beyond the translation features. |
 | [Tests](#tests) | Running the .NET suite on the host or in a container, the Java suite in its container, the test database, CI, size and coverage, translation performance. |
 | [API](#api) | The nine endpoints, their request and response shapes, and the OpenAPI document. |
-| [Frontend](#frontend) | Where the static pages live and what they are built from. |
+| [Frontend](#frontend) | Where the static pages live, what they are built from, and which of them is a mockup. |
 
 # Deployment
 
@@ -261,3 +261,7 @@ Every `POST` answers a failure with `400` and a `ProblemDetails` body per RFC 94
 
 # Frontend
 The frontend is a set of hand-written static pages in `ORMConvertorAPI/wwwroot` — HTML, native ES modules, and CSS with no framework, no npm, and no build step. What is committed is exactly what the browser runs, so there is nothing to compile or copy; the ASP.NET application serves the files directly under `/orm/`. Third-party assets (Pico CSS, highlight.js) are vendored under `wwwroot/vendor/` with their versions and licenses.
+
+Five pages: the landing page, the translator, the Advisor, the explanatory page with live examples, and `comparison.html`, which is **a mockup and says so on itself** (decision [100](../docs/decisions/100-interactive-comparison-as-a-frozen-mockup.md)). The mockup lays the source artifacts beside the generated ones and lights up every place one fact shows itself when you point at it. It calls no endpoint: the artifacts are a recorded run of the seven examples frozen into `js/comparison-run.js`, and the connections between their words are hand-written data in `js/comparison-links.js`, because the tool does not report which word of the output came from which word of the input. It claims nothing, it is dated and names the commit it was captured from, and it is meant to be deleted once the screen it proposes exists. It is also what makes the frontend weigh what it does: 521 kB in the repository, 289 kB of which is that page's frozen data, downloaded by nobody who does not open it.
+
+One thing to know before editing the mockup's data: a connection points at literal text inside a frozen file, so a typo lights up nothing and looks exactly like a word nobody connected. The page therefore resolves every connection of every example when it loads — not only the one on screen — and writes the totals to the browser console, naming each span that matched nothing; open the console once after editing the data and the line tells you whether it is intact. Finding the connections is a module of its own with no DOM dependency (`js/comparison-marking.js`), so the same can be run over the data outside a browser. There is no test in the repository for any of it, because the frontend has none at all (decision [032](../docs/decisions/032-frontend-as-static-pages-without-a-build.md)).
