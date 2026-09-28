@@ -29,7 +29,21 @@ public record InputUnit(String name, int contentType, String content) {
      * the content type follows the extension.
      */
     public static InputUnit fromResource(String path) {
-        String resource = RESOURCE_DIRECTORY + path;
+        return fromClasspath(RESOURCE_DIRECTORY + path);
+    }
+
+    /**
+     * Reads a file shared with the .NET suite under {@code ../Tests/Database}, which the
+     * pom takes as a test resource at the classpath root: {@code QueryShapes/...} for the
+     * inputs of the query-shape matrices. The same naming rules apply as for the suite's
+     * own resources.
+     */
+    public static InputUnit fromShared(String path) {
+        return fromClasspath("/" + path);
+    }
+
+    private static InputUnit fromClasspath(String resource) {
+        String path = resource;
         try (InputStream stream = InputUnit.class.getResourceAsStream(resource)) {
             if (stream == null) {
                 throw new IllegalStateException("The input resource " + resource + " is missing.");

@@ -56,7 +56,16 @@ public sealed class JpqlQueryVisitor(
         var entity = EntityName(instr.RightTableAlias ?? instr.RightTable) ?? EntityTableNaming.EntityNameFor(instr.RightTable);
         var alias = instr.RightTableAlias ?? entity.ToLowerInvariant();
 
-        return $"{keyword} {entity} {alias} on {instr.OnCondition.Accept(this)}";
+        // A condition of several conjuncts goes in parentheses: EclipseLink 5.0 reads an
+        // unparenthesized `on a = b and c = d join …` on to the next clause instead of
+        // stopping at the next join and refuses it as "the right expression is not a valid
+        // expression", whereas the parenthesized form is the same JPQL expression and
+        // Hibernate reads it as well. Found by the Java suite over the deeply nested query.
+        var condition = instr.OnCondition is LogicalCondition
+            ? $"({instr.OnCondition.Accept(this)})"
+            : instr.OnCondition.Accept(this);
+
+        return $"{keyword} {entity} {alias} on {condition}";
     }
 
     public string Visit(SetOperationInstruction instr) => string.Empty; // composed by the builder

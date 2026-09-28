@@ -61,7 +61,12 @@ public abstract class AbstractQueryBuilder
 
         void Add(string? alias, string table)
         {
-            var map = EntityFor(table);
+            // A source that states no table - Dapper, MyBatis - still names its class the
+            // way the one naming convention derives it from the table (decision 050), and
+            // the alias resolves to that class, so that a column renders as the property
+            // the class really declares and typed as it declares it. The scalar gate keeps
+            // its own resolution, so what a parameter's scalar follows from is unchanged.
+            var map = EntityFor(table) ?? ByDerivedName(table);
             if (map is not null && alias is not null)
             {
                 byAlias[alias] = map;
@@ -91,6 +96,14 @@ public abstract class AbstractQueryBuilder
                    string.Equals(m.Table, bare, StringComparison.OrdinalIgnoreCase))
                ?? EntityMaps.FirstOrDefault(m =>
                    string.Equals(m.Entity.Name, bare, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The entity whose name the naming convention derives from the table (decision 050), where no mapping names the table.</summary>
+    private EntityMap? ByDerivedName(string table)
+    {
+        var derived = EntityTableNaming.EntityNameFor(table.Split('.').LastOrDefault() ?? table);
+
+        return EntityMaps.FirstOrDefault(m => string.Equals(m.Entity.Name, derived, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

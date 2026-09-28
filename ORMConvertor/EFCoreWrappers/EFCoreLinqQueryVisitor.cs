@@ -1,3 +1,4 @@
+using Common.Convertors;
 using Common.Naming;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
@@ -148,15 +149,19 @@ public sealed class EFCoreLinqQueryVisitor(
             // unreachable, because the template's gate refuses it (decisions 061 and 074).
             if (cond.Right.IsValueList)
             {
-                return $"{ValueList(cond.Right)}.Contains({left})";
+                return $"{ValueList(cond.Right, NullableElementType(cond.Left))}.Contains({left})";
             }
 
             // A collection parameter turns around the same way (decision 083): the sequence
             // the caller binds is the receiver, which is the shape the source wrote in the
-            // first place when the source was LINQ.
+            // first place when the source was LINQ. The sequence is declared over the plain
+            // scalar (decision 083), and IEnumerable<int> has no Contains that takes an
+            // int?, so a nullable column offers its value - which EF Core translates as the
+            // column itself, and IN never matches a NULL anyway.
             if (cond.Right.IsParameter && cond.Right.Parameter!.IsCollection)
             {
-                return $"{QueryParameterNaming.IdentifierFor(cond.Right.Parameter!)}.Contains({left})";
+                var member = NullableElementType(cond.Left) is null ? left : $"{left}.Value";
+                return $"{QueryParameterNaming.IdentifierFor(cond.Right.Parameter!)}.Contains({member})";
             }
 
             report(ConversionRecordKind.Failure, "An IN whose right side is neither a subquery, a list of values nor a collection parameter has no LINQ form; the query was not generated.", QueryFeature.Filtering);
@@ -166,8 +171,50 @@ public sealed class EFCoreLinqQueryVisitor(
         return $"{left} {Operator(cond.Operator)} {Operand(cond.Right)}";
     }
 
-    private string ValueList(QueryOperand operand)
-        => $"new[] {{ {string.Join(", ", operand.Values!.Select(Literal))} }}";
+    /// <summary>
+    /// The inline array of an IN list (decision 074). Its element type is inferred from the
+    /// literals unless the column it is compared with is a nullable value type: int[] has
+    /// no Contains that takes an int?, so against such a column the array declares the
+    /// nullable element type and the artifact compiles - which the inferred form did not.
+    /// </summary>
+    private string ValueList(QueryOperand operand, string? elementType = null)
+        => $"new{(elementType is null ? string.Empty : " " + elementType)}[] {{ {string.Join(", ", operand.Values!.Select(Literal))} }}";
+
+    /// <summary>
+    /// The C# spelling of the column's type when the mapping makes it a nullable value
+    /// type (<c>int?</c>), which is the one case an IN over it has to be typed for; null
+    /// for a column that is not mapped, not nullable, or of a reference type, where the
+    /// inferred element type is the right one already.
+    /// </summary>
+    private string? NullableElementType(QueryOperand operand)
+    {
+        if (operand.IsParameter || operand.IsConstant || operand.IsValueList || operand.IsSubQuery || operand.Function is not null)
+        {
+            return null;
+        }
+
+        var type = PropertyType(operand.Table, operand.Property!);
+        if (type?.ScalarType is not { } scalar || !type.IsNullable || scalar is ScalarType.String or ScalarType.Object or ScalarType.ByteArray)
+        {
+            return null;
+        }
+
+        return CSharpTypeConvertor.ToString(LangType.Scalar(scalar)) + "?";
+    }
+
+    /// <summary>The language type the mapping gives a column of the scope, or of an enclosing scope for a correlated reference; null where nothing maps it.</summary>
+    private LangType? PropertyType(string? alias, string column)
+    {
+        if (alias is not null && outer is not null && !Scope.Aliases.Contains(alias) && outer.Knows(alias))
+        {
+            return outer.PropertyType(alias, column);
+        }
+
+        var map = alias is not null && Scope.Entities.TryGetValue(alias, out var found) ? found : null;
+        return map?.PropertyMaps
+            .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase))
+            ?.Property.Type;
+    }
 
     /// <summary>
     /// A comparison one of whose sides is a subquery (decision 061). IN turns around into

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The mapping of the five classes in one document, as a real project keeps them. A
+  <composite-id> admits no generator, which is assigned semantics; the two one-part keys
+  state theirs. No assembly attribute: which assembly the classes end up in is the consumer
+  project's fact (decision 028).
+-->
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="Shop">
+  <class name="Customer" table="Customers" schema="Sales">
+    <id name="CustomerId" column="CustomerId" type="Int32">
+      <generator class="identity" />
+    </id>
+    <property name="Name" column="Name" type="String" not-null="true" />
+    <property name="Notes" column="Notes" type="String" />
+  </class>
+  <class name="CustomerOrder" table="Orders" schema="Sales">
+    <composite-id>
+      <key-property name="CompanyId" column="CompanyId" type="Int32" />
+      <key-property name="OrderId" column="OrderId" type="Int32" />
+    </composite-id>
+    <property name="CustomerId" column="CustomerId" type="Int32" not-null="true" />
+    <property name="PlacedAt" column="PlacedAt" type="DateTime" not-null="true" />
+    <property name="IsCancelled" column="IsCancelled" type="Boolean" not-null="true" />
+  </class>
+  <class name="OrderLine" table="OrderLines" schema="Sales">
+    <composite-id>
+      <key-property name="CompanyId" column="CompanyId" type="Int32" />
+      <key-property name="OrderId" column="OrderId" type="Int32" />
+      <key-property name="LineNumber" column="LineNumber" type="Int32" />
+    </composite-id>
+    <property name="ProductId" column="ProductId" type="Int32" not-null="true" />
+    <property name="Description" column="Description" type="String" not-null="true" />
+    <property name="Quantity" column="Quantity" type="Int32" not-null="true" />
+    <property name="UnitPrice" column="UnitPrice" type="Decimal" not-null="true" />
+  </class>
+  <class name="OrderLineAllocation" table="OrderLineAllocations" schema="Sales">
+    <composite-id>
+      <key-property name="CompanyId" column="CompanyId" type="Int32" />
+      <key-property name="OrderId" column="OrderId" type="Int32" />
+      <key-property name="LineNumber" column="LineNumber" type="Int32" />
+      <key-property name="AllocationId" column="AllocationId" type="Int32" />
+    </composite-id>
+    <property name="AllocatedQuantity" column="AllocatedQuantity" type="Int32" not-null="true" />
+    <property name="Notes" column="Notes" type="String" />
+  </class>
+  <class name="Product" table="Products" schema="Sales">
+    <id name="ProductId" column="ProductId" type="Int32">
+      <generator class="assigned" />
+    </id>
+    <property name="ProductName" column="ProductName" type="String" not-null="true" />
+    <property name="Sku" column="Sku" type="AnsiString" not-null="true" />
+    <property name="UnitPrice" column="UnitPrice" type="Decimal" not-null="true" />
+    <property name="IsDiscontinued" column="IsDiscontinued" type="Boolean" not-null="true" />
+  </class>
+</hibernate-mapping>

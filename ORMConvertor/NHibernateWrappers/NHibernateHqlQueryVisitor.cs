@@ -58,7 +58,11 @@ public sealed class NHibernateHqlQueryVisitor(
             return string.Empty;
         }
 
-        var entity = EntityName(instr.RightTableAlias ?? instr.RightTable) ?? Bare(instr.RightTable);
+        // A table no entity maps to takes the name the one naming convention derives
+        // (decision 050), as the source step does for the from clause and as the JPQL
+        // visitor does here; the bare table name used to stand in its place, which named an
+        // entity no mapping declares.
+        var entity = EntityName(instr.RightTableAlias ?? instr.RightTable) ?? EntityTableNaming.EntityNameFor(instr.RightTable);
         var alias = instr.RightTableAlias ?? Bare(instr.RightTable).ToLowerInvariant();
 
         // NHibernate 5 supports entity joins, where the predicate is given with `with`

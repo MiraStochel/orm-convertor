@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- The mapping of the MyBatis domain, in a mapper of its own beside the statements: the
+     pairs of column and property for every class. An <id> marks the identity of the
+     result, not a key of the table (decision 084), so no key is stated here. -->
+<mapper namespace="Shop.ShopMapper">
+  <resultMap id="customer" type="Customer">
+    <id     column="CustomerId" property="CustomerId"/>
+    <result column="Name"       property="Name"/>
+    <result column="Notes"      property="Notes"/>
+  </resultMap>
+  <resultMap id="customerOrder" type="CustomerOrder">
+    <id     column="CompanyId"   property="CompanyId"/>
+    <id     column="OrderId"     property="OrderId"/>
+    <result column="CustomerId"  property="CustomerId"/>
+    <result column="PlacedAt"    property="PlacedAt"/>
+    <result column="IsCancelled" property="IsCancelled"/>
+  </resultMap>
+  <resultMap id="orderLine" type="OrderLine">
+    <id     column="CompanyId"   property="CompanyId"/>
+    <id     column="OrderId"     property="OrderId"/>
+    <id     column="LineNumber"  property="LineNumber"/>
+    <result column="ProductId"   property="ProductId"/>
+    <result column="Description" property="Description"/>
+    <result column="Quantity"    property="Quantity"/>
+    <result column="UnitPrice"   property="UnitPrice"/>
+  </resultMap>
+  <resultMap id="orderLineAllocation" type="OrderLineAllocation">
+    <id     column="CompanyId"         property="CompanyId"/>
+    <id     column="OrderId"           property="OrderId"/>
+    <id     column="LineNumber"        property="LineNumber"/>
+    <id     column="AllocationId"      property="AllocationId"/>
+    <result column="AllocatedQuantity" property="AllocatedQuantity"/>
+    <result column="Notes"             property="Notes"/>
+  </resultMap>
+  <resultMap id="product" type="Product">
+    <id     column="ProductId"      property="ProductId"/>
+    <result column="ProductName"    property="ProductName"/>
+    <result column="Sku"            property="Sku"/>
+    <result column="UnitPrice"      property="UnitPrice"/>
+    <result column="IsDiscontinued" property="IsDiscontinued"/>
+  </resultMap>
+</mapper>
