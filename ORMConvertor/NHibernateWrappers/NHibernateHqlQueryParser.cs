@@ -54,7 +54,7 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     {
         "select", "distinct", "from", "as", "inner", "left", "right", "full", "outer",
         "join", "fetch", "with", "where", "group", "having", "order", "by", "asc", "desc",
-        "and", "or", "not", "like", "in", "is", "null", "between", "exists",
+        "and", "or", "not", "like", "in", "is", "null", "between", "exists", "escape",
 
         // Not part of the read subset - HQL in NHibernate 5.7.0 has no set operations - but
         // reserved so that "from Customer union ..." fails as a syntax error instead of
@@ -501,11 +501,13 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
     }
 
-    private sealed record Projection(string? Function, PathReference? Path, string? Alias);
+    /// <param name="Distinct">Whether the aggregate ranges over the distinct values of its argument (decision 102).</param>
+    private sealed record Projection(string? Function, PathReference? Path, string? Alias, bool Distinct = false);
 
     private Projection ParseProjection()
     {
         string? function = null;
+        bool distinct = false;
         PathReference? path;
 
         if (Current.Kind == TokenKind.Identifier && IsAggregate(Current.Text) && Next is { Kind: TokenKind.Symbol, Text: "(" })
@@ -513,6 +515,7 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             function = Current.Text.ToUpperInvariant();
             Advance();
             Advance();
+            distinct = TryConsumeKeyword("distinct");
             path = TryConsumeSymbol("*") ? new PathReference(null, "*") : ParsePath();
             ConsumeSymbol(")");
         }
@@ -533,7 +536,7 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             Advance();
         }
 
-        return new Projection(function, path, alias);
+        return new Projection(function, path, alias, distinct);
     }
 
     private void EmitProjections(List<Projection> projections)
@@ -568,7 +571,7 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
             if (attribute == "*")
             {
-                queryBuilder.Project(sourceAlias, "*", projection.Alias, projection.Function);
+                queryBuilder.Project(sourceAlias, "*", projection.Alias, projection.Function, projection.Distinct);
                 continue;
             }
 
@@ -576,7 +579,8 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 qualifier ?? sourceAlias,
                 ColumnFor(qualifier, attribute),
                 projection.Alias,
-                projection.Function);
+                projection.Function,
+                projection.Distinct);
         }
     }
 
@@ -977,12 +981,33 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         if (TryConsumeKeyword("like"))
         {
             var pattern = ParseRequiredOperand();
+
+            // The escape character travels on the comparison (decision 102), as the
+            // character the query wrote; an escape that is not a string literal - a
+            // parameter, which the grammar admits - is a fact about how the pattern reads
+            // that the caller would supply, which the representation does not carry.
+            string? escape = null;
+            if (TryConsumeKeyword("escape"))
+            {
+                if (Current.Kind != TokenKind.String)
+                {
+                    unread ??= (
+                        $"the escape '{Current.Text}' of a like, which is not a string literal; the query representation carries the escape as a character the query states",
+                        null);
+                    Advance();
+                    return null;
+                }
+
+                escape = Current.Text;
+                Advance();
+            }
+
             if (left is null || pattern is null)
             {
                 return null;
             }
 
-            ConditionNode like = new ComparisonCondition(left, ComparisonOperator.Like, pattern);
+            ConditionNode like = new ComparisonCondition(left, ComparisonOperator.Like, pattern, escape);
             return notPrefixed ? new NotCondition(like) : like;
         }
 
@@ -1091,17 +1116,15 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <summary>Consumes a parenthesized value list without keeping it (see the IN branch).</summary>
     /// <summary>
     /// Reads the values an in list enumerates into a list operand (decision 074). Every
-    /// element has to be a literal, because the list carries values the query itself
-    /// states: a parameter, which decision 083 keeps out of the list even though it gave it
-    /// an operand of its own, a null is no value the model
-    /// carries (decision 002) and would make <c>not in</c> mean different things in HQL and
-    /// in LINQ, and a property path is no value at all. Each sinks the clause, named, for
-    /// the clause to refuse; the list is consumed to its end either way, so that reading
-    /// goes on and every reason reaches the caller.
+    /// element has to be a literal or, since decision 102, a scalar parameter: a null is
+    /// no value the model carries (decision 002) and would make <c>not in</c> mean
+    /// different things in HQL and in LINQ, and a property path is no value at all. Each
+    /// of those sinks the clause, named, for the clause to refuse; the list is consumed to
+    /// its end either way, so that reading goes on and every reason reaches the caller.
     /// </summary>
     private QueryOperand? ParseValueList()
     {
-        var values = new List<QueryConstant>();
+        var values = new List<QueryOperand>();
         bool carried = true;
 
         do
@@ -1128,12 +1151,11 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
+            // A scalar parameter stands among the values (decision 102); its scalar comes
+            // from the left side of in through the builder's parameter gate.
             if (element.IsParameter)
             {
-                unread ??= (
-                    $"the parameter '{(before < position ? tokens[before].Text : element.ToString())}' among the values of an in list, which carries only values the query itself states",
-                    QueryFeature.QueryParameter);
-                carried = false;
+                values.Add(element);
                 continue;
             }
 
@@ -1144,7 +1166,7 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
-            values.Add(element.Constant!);
+            values.Add(element);
         }
         while (TryConsumeSymbol(","));
 
@@ -1265,18 +1287,19 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             var function = Current.Text.ToUpperInvariant();
             Advance();
             Advance();
+            var distinct = TryConsumeKeyword("distinct");
 
             QueryOperand? aggregated;
             if (TryConsumeSymbol("*"))
             {
-                aggregated = QueryOperand.Column(null, "*", function);
+                aggregated = QueryOperand.Column(null, "*", function, distinct);
             }
             else
             {
                 var path = ParsePath();
                 aggregated = path is null
                     ? null
-                    : QueryOperand.Column(path.Qualifier, ColumnFor(path.Qualifier, path.Attribute), function);
+                    : QueryOperand.Column(path.Qualifier, ColumnFor(path.Qualifier, path.Attribute), function, distinct);
             }
 
             ConsumeSymbol(")");

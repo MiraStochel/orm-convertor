@@ -551,10 +551,14 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         return chain.Replace("\n        ", "");
     }
 
-    /// <summary>The terminal call a scalar subquery's single aggregate becomes.</summary>
+    /// <summary>
+    /// The terminal call a scalar subquery's single aggregate becomes. Over the distinct
+    /// values of the column (decision 102) it is a Select of the column, collapsed, then
+    /// the parameterless aggregate - <c>.Select(o =&gt; o.CustomerId).Distinct().Count()</c>.
+    /// </summary>
     private string TerminalAggregate(ProjectInstruction projection)
     {
-        if (projection.Function == "COUNT")
+        if (projection.Function == "COUNT" && !projection.Distinct)
         {
             if (projection.Attribute != "*")
             {
@@ -569,6 +573,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
         var method = projection.Function switch
         {
+            "COUNT" => "Count",
             "SUM" => "Sum",
             "MIN" => "Min",
             "MAX" => "Max",
@@ -585,7 +590,10 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             return string.Empty;
         }
 
-        return $".{method}({scope.Param} => {visitor.Column(projection.Table, projection.Attribute, null)})";
+        var column = $"{scope.Param} => {visitor.Column(projection.Table, projection.Attribute, null)}";
+        return projection.Distinct
+            ? $".Select({column}).Distinct().{method}()"
+            : $".{method}({column})";
     }
 
     protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)

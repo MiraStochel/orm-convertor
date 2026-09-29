@@ -38,9 +38,9 @@ public enum QueryFeature
     /// mechanical check of rule Q14 never fires on it.
     ///
     /// What is still recorded under this category is therefore never an inability of the
-    /// target. It is a limit of the model - a parameter among the values of an IN list,
-    /// which carries only values the query itself states (decision 074) - or a parameter
-    /// the generated method could not be given: one whose scalar does not follow from what
+    /// target. It is a limit of the model - a collection parameter among the values of an
+    /// IN list, which takes single values (decision 102) - or a parameter the generated
+    /// method could not be given: one whose scalar does not follow from what
     /// it is compared against, one that would need two scalars at once, a name that is no
     /// plain identifier, named and positional forms mixed in one query, a collection
     /// parameter outside the right side of IN, and MyBatis's <c>${}</c>, which substitutes

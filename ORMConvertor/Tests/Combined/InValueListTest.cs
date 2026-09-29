@@ -17,13 +17,46 @@ namespace Tests.Combined;
 /// each visitor writes its own - IN (...), new[] { ... }.Contains(...), in (...) - and the
 /// template holds what every target needs: the list stands only as IN's right side, and
 /// its values share a scalar or one numeric family. What is not a value the query states -
-/// a null, a column, a parameter, a collection from the enclosing scope - refuses the
-/// artifact with a record that names it.
+/// a null, a column, a collection from the enclosing scope - refuses the artifact with a
+/// record that names it; a scalar parameter stands among the values since decision 102 and
+/// takes its scalar from the column on IN's left side, never from its neighbours.
 /// </summary>
 public class InValueListTest
 {
     private static EntityMap Customers() =>
         new() { Entity = new() { Name = "Customer" }, Table = "Customers", Schema = "Sales" };
+
+    /// <summary>The same entity with typed properties, which is what a parameter's scalar comes from (decision 083).</summary>
+    private static EntityMap TypedCustomers()
+    {
+        var id = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int) };
+        var name = new Property { Name = "CustomerName", Type = LangType.Scalar(ScalarType.String) };
+
+        return new EntityMap
+        {
+            Entity = new Entity { Name = "Customer", Properties = [id, name] },
+            Table = "Customers",
+            Schema = "Sales",
+            PropertyMaps =
+            [
+                new PropertyMap { Property = id, ColumnName = "CustomerID" },
+                new PropertyMap { Property = name, ColumnName = "CustomerName" },
+            ],
+        };
+    }
+
+    private static EntityMap TypedOrders()
+    {
+        var placed = new Property { Name = "PlacedAt", Type = LangType.Scalar(ScalarType.DateTime) };
+
+        return new EntityMap
+        {
+            Entity = new Entity { Name = "Order", Properties = [placed] },
+            Table = "Orders",
+            Schema = "Sales",
+            PropertyMaps = [new PropertyMap { Property = placed, ColumnName = "PlacedAt" }],
+        };
+    }
 
     private static EntityMap Orders() =>
         new() { Entity = new() { Name = "Order" }, Table = "Orders", Schema = "Sales" };
@@ -284,7 +317,7 @@ public class InValueListTest
         var builder = new DapperSqlQueryBuilder { EntityMaps = [Customers()] };
         builder.From("Sales.Customers", "c");
         builder.Where(new ComparisonCondition(
-            QueryOperand.ValueList([QueryConstant.Of("1", ScalarType.Int)]),
+            QueryOperand.ValueList([QueryOperand.Value(QueryConstant.Of("1", ScalarType.Int))]),
             ComparisonOperator.Equal,
             QueryOperand.Column("c", "CustomerID")));
 
@@ -298,28 +331,70 @@ public class InValueListTest
         Assert.Throws<ArgumentException>(() => QueryOperand.ValueList([]));
     }
 
-    // ---- Parameters, not values ----------------------------------------------------
+    // ---- A parameter among the values (decision 102) ---------------------------------
 
     [Fact]
-    public void AParameterAmongTheValuesIsRefusedUnderItsOwnCategory()
+    public void AParameterAmongTheValuesIsCarriedAndTypedFromTheColumn()
     {
         var byParser = new (string Name, Action<AbstractQueryBuilder> Parse)[]
         {
-            ("@p", b => ParseSql(b, "SELECT * FROM Sales.Customers AS c WHERE c.CustomerID IN (1, @p)")),
-            (":p", b => ParseHql(b, "from Customer c where c.CustomerID in (1, :p)", Customers())),
-            ("'id'", b => ParseLinq(b, LinqQuery("new[] { 1, id }.Contains(c.CustomerID)"), Customers())),
-            ("'ids'", b => ParseLinq(b, LinqQuery("ids.Contains(c.CustomerID)"), Customers())),
+            ("p", b => ParseSql(b, "SELECT * FROM Sales.Customers AS c WHERE c.CustomerID IN (1, @p)")),
+            ("p", b => ParseHql(b, "from Customer c where c.CustomerID in (1, :p)", TypedCustomers())),
+            ("id", b => ParseLinq(b, LinqQuery("new[] { 1, id }.Contains(c.CustomerID)"), TypedCustomers())),
         };
 
         foreach (var (name, parse) in byParser)
         {
-            var builder = new DapperSqlQueryBuilder { EntityMaps = [Customers()] };
-            parse(builder);
+            var dapper = new DapperSqlQueryBuilder { EntityMaps = [TypedCustomers()] };
+            parse(dapper);
+            Assert.Contains($"c.CustomerID IN (1, @{name})", Sql(dapper));
+            Assert.Contains($"int {name}", Artifact(dapper, ConversionContentType.CSharpQuery));
 
-            // A value the caller supplies is a parameter, whichever way it is spelled - even
-            // a whole collection from the enclosing scope (decisions 070 and 074).
-            var record = AssertRefused(builder, QueryFeature.QueryParameter);
-            Assert.Contains(name, record.Reason, StringComparison.Ordinal);
+            var efCore = new EFCoreLinqQueryBuilder { EntityMaps = [TypedCustomers()] };
+            parse(efCore);
+            var linq = Linq(efCore);
+            Assert.Contains($"new[] {{ 1, {name} }}.Contains(c.CustomerID)", linq);
+            Assert.Contains($"int {name}", linq);
+
+            var nhibernate = new NHibernateHqlQueryBuilder { EntityMaps = [TypedCustomers()] };
+            parse(nhibernate);
+            var hql = Hql(nhibernate);
+            Assert.Contains($"c.CustomerID in (1, :{name})", hql);
+            Assert.Contains($".SetParameter(\"{name}\", {name})", Artifact(nhibernate, ConversionContentType.CSharpQuery));
         }
+    }
+
+    /// <summary>The scalar comes from the column, so without a mapping the parameter cannot be typed - the refusal of decision 083.</summary>
+    [Fact]
+    public void AParameterAmongTheValuesWithoutAMappingIsRefused()
+    {
+        var builder = ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers()] },
+            "SELECT * FROM Sales.Customers AS c WHERE c.CustomerID IN (1, @p)");
+
+        var record = AssertRefused(builder, QueryFeature.QueryParameter);
+        Assert.Contains("p", record.Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>The constants beside the parameter are typed from the temporal column; the parameter takes the column's scalar through the gate.</summary>
+    [Fact]
+    public void AParameterBesideTemporalStringsIsTypedFromTheColumn()
+    {
+        var builder = new DapperSqlQueryBuilder { EntityMaps = [TypedOrders()] };
+        new DapperSqlQueryParser(() => builder).Parse(
+            ConversionContentType.SqlQuery,
+            "SELECT * FROM Sales.Orders AS o WHERE o.PlacedAt IN ('2025-01-01', @d)");
+
+        Assert.Contains("o.PlacedAt IN ('2025-01-01 00:00:00', @d)", Sql(builder));
+        Assert.Contains("DateTime d", Artifact(builder, ConversionContentType.CSharpQuery));
+    }
+
+    [Fact]
+    public void ACollectionParameterAmongTheValuesIsNotConstructible()
+    {
+        Assert.Throws<ArgumentException>(() => QueryOperand.ValueList(
+        [
+            QueryOperand.Value(QueryConstant.Of("1", ScalarType.Int)),
+            QueryOperand.Bound(QueryParameter.Named("ids", isCollection: true)),
+        ]));
     }
 }

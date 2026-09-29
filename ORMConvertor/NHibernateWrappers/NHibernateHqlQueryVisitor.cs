@@ -23,7 +23,7 @@ public sealed class NHibernateHqlQueryVisitor(
 
     public string Visit(ProjectInstruction instr)
     {
-        var value = Column(instr.Table, instr.Attribute, instr.Function);
+        var value = Column(instr.Table, instr.Attribute, instr.Function, instr.Distinct);
         return instr.Alias is null ? value : $"{value} as {instr.Alias}";
     }
 
@@ -116,8 +116,12 @@ public sealed class NHibernateHqlQueryVisitor(
             return string.Empty;
         }
 
-        return $"{left} {Operator(cond.Operator)} {Operand(cond.Right)}";
+        return $"{left} {Operator(cond.Operator)} {Operand(cond.Right)}{Escape(cond)}";
     }
+
+    /// <summary>The escape clause of a like (decision 102); the template holds it to like and to one character.</summary>
+    private static string Escape(ComparisonCondition cond)
+        => cond.Escape is null ? string.Empty : $" escape '{cond.Escape.Replace("'", "''")}'";
 
     /// <summary>
     /// A comparison one of whose sides is a subquery (decision 061): IN and the scalar
@@ -185,13 +189,14 @@ public sealed class NHibernateHqlQueryVisitor(
 
     private string Operand(QueryOperand operand)
         => operand.IsValueList
-            // The values IN enumerates (decision 074), each spelled as a lone constant is.
-            ? $"({string.Join(", ", operand.Values!.Select(Literal))})"
+            // The values IN enumerates (decision 074), each spelled as a lone constant is,
+            // a parameter among them (decision 102) as a lone parameter is.
+            ? $"({string.Join(", ", operand.Values!.Select(Operand))})"
             : operand.IsParameter
                 ? Parameter(operand.Parameter!, operand.Function)
                 : operand.IsConstant
                     ? Wrap(Literal(operand.Constant!), operand.Function)
-                    : Column(operand.Table, operand.Property!, operand.Function);
+                    : Column(operand.Table, operand.Property!, operand.Function, operand.Distinct);
 
     /// <summary>
     /// A parameter in HQL (decision 083): always the named form, because HQL's positional
@@ -205,10 +210,11 @@ public sealed class NHibernateHqlQueryVisitor(
         return parameter.IsCollection ? $"({placeholder})" : Wrap(placeholder, function);
     }
 
-    private static string Wrap(string value, string? function)
-        => function is null ? value : $"{function.ToLowerInvariant()}({value})";
+    private static string Wrap(string value, string? function, bool distinct = false)
+        => function is null ? value : $"{function.ToLowerInvariant()}({(distinct ? "distinct " : string.Empty)}{value})";
 
-    private string Column(string? alias, string attribute, string? function)
+    /// <param name="distinct">Whether the aggregate ranges over the distinct values of the column (decision 102).</param>
+    private string Column(string? alias, string attribute, string? function, bool distinct = false)
     {
         // count(*) is the one aggregate whose argument is not a property.
         if (function is not null && attribute == "*")
@@ -217,7 +223,7 @@ public sealed class NHibernateHqlQueryVisitor(
         }
 
         var path = alias is null ? Property(null, attribute) : $"{alias}.{Property(alias, attribute)}";
-        return Wrap(path, function);
+        return Wrap(path, function, distinct);
     }
 
     public string Property(string? alias, string column)

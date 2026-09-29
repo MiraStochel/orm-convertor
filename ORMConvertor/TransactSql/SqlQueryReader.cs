@@ -683,17 +683,9 @@ public class SqlQueryReader(
         var parameter = call.Parameters.FirstOrDefault();
 
         // DISTINCT inside the aggregate is a modifier of the function, not of the query, and
-        // the projection vocabulary has no place for it (decision 073). It used to be dropped
-        // in silence and the aggregate written over all values - a different value, not a
-        // poorer one; now the projection goes, which leaves the rows as they are.
-        if (call.UniqueRowFilter == UniqueRowFilter.Distinct)
-        {
-            Report(
-                ConversionRecordKind.Loss,
-                $"{function}(DISTINCT ...) aggregates over collapsed values, which the query representation does not carry; the projection was dropped.",
-                QueryFeature.Aggregation);
-            return;
-        }
+        // travels as the flag of the projection (decision 102). It used to be dropped in
+        // silence, then the projection was dropped with a record (decision 073).
+        var distinct = call.UniqueRowFilter == UniqueRowFilter.Distinct;
 
         // A windowed function computes its value over a frame of rows, which the projection
         // vocabulary has no place for; carried as a plain aggregate it would lose the frame
@@ -711,7 +703,7 @@ public class SqlQueryReader(
         // COUNT(*) parses as a function whose single parameter is a star.
         if (parameter is ColumnReferenceExpression { ColumnType: ColumnType.Wildcard })
         {
-            queryBuilder.Project(sourceAlias, "*", alias, function);
+            queryBuilder.Project(sourceAlias, "*", alias, function, distinct);
             return;
         }
 
@@ -729,7 +721,7 @@ public class SqlQueryReader(
 
         if (parameter is ColumnReferenceExpression column && ReadColumn(column) is { } reference)
         {
-            queryBuilder.Project(reference.Table ?? sourceAlias, reference.Column, alias, function);
+            queryBuilder.Project(reference.Table ?? sourceAlias, reference.Column, alias, function, distinct);
             return;
         }
 
@@ -912,17 +904,26 @@ public class SqlQueryReader(
                         return null;
                     }
 
-                    // A pattern read without its escape treats the escaped wildcard as a
-                    // wildcard again and matches more rows (decision 070).
-                    if (like.EscapeExpression is not null)
+                    // The escape character travels on the comparison (decision 102), as the
+                    // character the query wrote. A variable in its place is a fact about how
+                    // the pattern reads that the caller would supply, which the representation
+                    // does not carry - and a pattern read without its escape treats the
+                    // escaped wildcard as a wildcard again (decision 070).
+                    string? escape = null;
+                    if (like.EscapeExpression is StringLiteral literalEscape)
+                    {
+                        escape = literalEscape.Value;
+                    }
+                    else if (like.EscapeExpression is not null)
                     {
                         Report(
                             ConversionRecordKind.Failure,
-                            "The ESCAPE clause of a LIKE predicate is not carried by the query representation, and a pattern matched without it would select different rows; no artifact was generated.",
+                            $"The ESCAPE clause of a LIKE predicate names '{Print(like.EscapeExpression)}', which is not a string literal; the query representation carries the escape as a character the query states, and a pattern matched without it would select different rows; no artifact was generated.",
                             QueryFeature.Filtering);
+                        return null;
                     }
 
-                    ConditionNode node = new ComparisonCondition(left, ComparisonOperator.Like, right);
+                    ConditionNode node = new ComparisonCondition(left, ComparisonOperator.Like, right, escape);
                     return like.NotDefined ? new NotCondition(node) : node;
                 }
 
@@ -991,19 +992,15 @@ public class SqlQueryReader(
                         : QueryConstant.Of("-" + constant.Text, constant.Type.Value));
                 }
 
-            // An aggregate over DISTINCT values is a modifier the model does not carry
-            // (decision 073); it sinks the condition and is named, so that the clause refuses
-            // for the right reason instead of aggregating over all values in silence.
-            case FunctionCall { UniqueRowFilter: UniqueRowFilter.Distinct } collapsed:
-                unread ??= ($"{collapsed.FunctionName.Value.ToUpperInvariant()}(DISTINCT ...), an aggregate over collapsed values, which the query representation does not carry", null);
-                return null;
-
+            // An aggregate over DISTINCT values carries the modifier as the flag of the
+            // operand (decision 102); it used to sink the condition, named.
             case FunctionCall call when call.Parameters.FirstOrDefault() is ColumnReferenceExpression parameter
                                         && ReadColumn(parameter) is { } aggregated:
                 return QueryOperand.Column(
                     aggregated.Table,
                     aggregated.Column,
-                    call.FunctionName.Value.ToUpperInvariant());
+                    call.FunctionName.Value.ToUpperInvariant(),
+                    call.UniqueRowFilter == UniqueRowFilter.Distinct);
 
             case ScalarSubquery scalar:
                 return QueryOperand.Nested(ReadSubQueryOperand(scalar.QueryExpression));
@@ -1057,15 +1054,16 @@ public class SqlQueryReader(
     /// <summary>
     /// Reads the values IN enumerates into a list operand (decision 074). Every element has
     /// to be a literal, because the list carries values the query itself states: a variable
-    /// is a parameter, which decision 083 keeps out of the list even though it gave it an
-    /// operand of its own, a NULL is no value the model carries (decision 002) and would
-    /// make NOT IN mean different things in SQL and in LINQ, and a column or a function is
-    /// no value at all. Each of them sinks the condition, named, for the enclosing clause to
-    /// refuse.
+    /// is a parameter, which since decision 102 stands among the values as well - a scalar
+    /// one; a collection parameter, which MyBatis's foreach writes as a parenthesized
+    /// element (decision 084), is no element of a list -, a NULL is no value the model
+    /// carries (decision 002) and would make NOT IN mean different things in SQL and in
+    /// LINQ, and a column or a function is no value at all. Each of the refused ones sinks
+    /// the condition, named, for the enclosing clause to refuse.
     /// </summary>
     private QueryOperand? ReadValueList(IList<ScalarExpression> elements)
     {
-        var values = new List<QueryConstant>(elements.Count);
+        var values = new List<QueryOperand>(elements.Count);
 
         foreach (var element in elements)
         {
@@ -1084,10 +1082,16 @@ public class SqlQueryReader(
 
             if (operand.IsParameter)
             {
-                unread ??= (
-                    $"the parameter '{Print(element)}' among the values of an IN list, which carries only values the query itself states",
-                    QueryFeature.QueryParameter);
-                return null;
+                if (operand.Parameter!.IsCollection)
+                {
+                    unread ??= (
+                        $"the collection parameter '{Print(element)}' among the values of an IN list, which takes single values only",
+                        QueryFeature.QueryParameter);
+                    return null;
+                }
+
+                values.Add(operand);
+                continue;
             }
 
             if (!operand.IsConstant || operand.Function is not null)
@@ -1096,7 +1100,7 @@ public class SqlQueryReader(
                 return null;
             }
 
-            values.Add(operand.Constant!);
+            values.Add(operand);
         }
 
         return values.Count == 0 ? null : QueryOperand.ValueList(values);

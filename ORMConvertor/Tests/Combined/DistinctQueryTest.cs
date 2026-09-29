@@ -382,9 +382,14 @@ public class DistinctQueryTest
         AssertRefused(builder, QueryFeature.Ordering);
     }
 
-    /// <summary>Count() over Distinct() is COUNT(DISTINCT ...), an aggregate the model does not carry.</summary>
+    /// <summary>
+    /// Count() over a Distinct() of the whole entity is a count of distinct rows, which no
+    /// SQL target spells as one aggregate; the modifier over a column - a one-column Select
+    /// collapsed before the aggregate - is carried since decision 102
+    /// (<see cref="AggregateDistinctTest"/>).
+    /// </summary>
     [Fact]
-    public void ACountOverDistinctRefusesTheArtifact()
+    public void ACountOverDistinctOfTheWholeEntityRefusesTheArtifact()
     {
         const string linq = """
         public void Query()
@@ -411,37 +416,5 @@ public class DistinctQueryTest
         builder.Distinct();
 
         AssertRefused(builder, QueryFeature.SetOperation);
-    }
-
-    /// <summary>An aggregate over collapsed values in a filter used to be read as the aggregate over all of them.</summary>
-    [Fact]
-    public void ACountDistinctInAFilterRefusesTheArtifact()
-    {
-        var builder = ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, """
-            SELECT c.Country FROM Sales.Customers AS c
-            GROUP BY c.Country
-            HAVING COUNT(DISTINCT c.CustomerId) > 1
-            """);
-
-        AssertRefused(builder, QueryFeature.PostAggregationFiltering);
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("COUNT(DISTINCT"));
-    }
-
-    /// <summary>In a projection the same modifier is a dropped column - a poorer artifact, the same rows.</summary>
-    [Fact]
-    public void ACountDistinctProjectionIsALoss()
-    {
-        var builder = ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, """
-            SELECT c.Country, COUNT(DISTINCT c.CustomerId) AS N FROM Sales.Customers AS c
-            GROUP BY c.Country
-            """);
-
-        var sql = Sql(builder);
-
-        Assert.DoesNotContain("COUNT", sql);
-        Assert.Contains(
-            builder.Records,
-            r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Aggregation);
-        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
     }
 }

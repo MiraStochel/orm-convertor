@@ -414,6 +414,62 @@ public static class QueryShapeInputs
                 linq: ["p.ProductName.StartsWith(\"W\")"],
                 hql: ["p.ProductName like 'W%'"],
                 jpa: ["p.ProductName like 'W%'"])),
+
+        // The three constructs decision 102 carries, each added before the matrix is
+        // measured over it. The modifier of the aggregate is a one-column Select collapsed
+        // before the aggregate in LINQ and the word inside the function everywhere else.
+        Define(
+            "count over distinct values",
+            sql: """
+                SELECT ol.ProductId AS ProductId, COUNT(DISTINCT ol.OrderId) AS Orders
+                FROM Sales.OrderLines AS ol
+                GROUP BY ol.ProductId
+                """,
+            linq: """
+                ctx.OrderLines
+                    .GroupBy(ol => ol.ProductId)
+                    .Select(g => new { ProductId = g.Key, Orders = g.Select(x => x.OrderId).Distinct().Count() })
+                """,
+            hql: "select ol.ProductId as ProductId, count(distinct ol.OrderId) as Orders from OrderLine ol group by ol.ProductId",
+            jpql: "select ol.ProductId as ProductId, count(distinct ol.OrderId) as Orders from OrderLine ol group by ol.ProductId",
+            hallmarks: Hallmarks(
+                sql: ["COUNT(DISTINCT ol.OrderId) AS Orders", "GROUP BY ol.ProductId"],
+                linq: [".GroupBy(", ".Distinct().Count()", "g.Key"],
+                hql: ["count(distinct ol.OrderId) as Orders", "group by ol.ProductId"],
+                jpa: ["count(distinct ol.OrderId) as Orders", "group by ol.ProductId"])),
+
+        // An escaped wildcard: the LINQ target splits the pattern past the escape and the
+        // core goes out without it, as EF Core escapes the argument itself. No LINQ source,
+        // for the same reason as the row above.
+        Define(
+            "LIKE with an escaped wildcard",
+            sql: "SELECT * FROM Sales.Products AS p WHERE p.ProductName LIKE 'W!_%' ESCAPE '!'",
+            hql: "from Product p where p.ProductName like 'W!_%' escape '!'",
+            jpql: "select p from Product p where p.ProductName like 'W!_%' escape '!'",
+            resultType: "Product",
+            hallmarks: Hallmarks(
+                sql: ["p.ProductName LIKE 'W!_%' ESCAPE '!'"],
+                linq: ["p.ProductName.StartsWith(\"W_\")"],
+                hql: ["p.ProductName like 'W!_%' escape '!'"],
+                jpa: ["p.ProductName like 'W!_%' escape '!'"])),
+
+        // A bound value among the listed ones takes its scalar from the column, so the
+        // Dapper row is refused without a catalog as the other parameter rows are.
+        Define(
+            "in list with a bound value",
+            sql: "SELECT * FROM Sales.OrderLines AS ol WHERE ol.ProductId IN (1, 2, @extra)",
+            linq: "ctx.OrderLines.Where(ol => new[] { 1, 2, extra }.Contains(ol.ProductId))",
+            hql: "from OrderLine ol where ol.ProductId in (1, 2, :extra)",
+            jpql: "select ol from OrderLine ol where ol.ProductId in (1, 2, :extra)",
+            myBatisInterface: "    List<OrderLine> findInListWithABoundValue(@Param(\"extra\") int extra);",
+            refusedFrom: new() { [ORMEnum.Dapper] = QueryFeature.QueryParameter },
+            hallmarks: Hallmarks(
+                sql: ["ol.ProductId IN (1, 2, @extra)", "int extra"],
+                // Without the `new[]`, for the reason the list row gives.
+                linq: ["{ 1, 2, extra }.Contains(ol.ProductId)", "int extra"],
+                hql: ["ol.ProductId in (1, 2, :extra)", ".SetParameter(\"extra\", extra)"],
+                jpa: ["ol.ProductId in (1, 2, :extra)", ".setParameter(\"extra\", extra)"],
+                myBatis: ["ol.ProductId IN (1, 2, #{extra})", "@Param(\"extra\")"])),
     ];
 
     // ---- the deliberately bad query ------------------------------------------------------

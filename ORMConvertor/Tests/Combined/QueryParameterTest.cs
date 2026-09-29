@@ -24,9 +24,9 @@ namespace Tests.Combined;
 /// builder writes its target's placeholder together with a typed parameter of the generated
 /// method and its binding.
 ///
-/// Two limits are deliberate and tested as such: a parameter among the values of an IN list
-/// and a parameter in the pagination stay refused (the latter in
-/// <see cref="PaginationQueryTest"/>, the former in <see cref="InValueListTest"/>).
+/// The two limits the decision left - a parameter in the pagination and a parameter among
+/// the values of an IN list - have since been carried (decisions 085 and 102,
+/// <see cref="PaginationParameterTest"/> and <see cref="InValueListTest"/>).
 /// </summary>
 public class QueryParameterTest
 {

@@ -137,7 +137,7 @@ public class ModelFactoryTest
         Assert.True(constant.IsConstant);
         Assert.False(constant.IsColumn || constant.IsSubQuery || constant.IsValueList || constant.IsParameter);
 
-        var values = QueryOperand.ValueList([QueryConstant.Of("1", ScalarType.Int)]);
+        var values = QueryOperand.ValueList([QueryOperand.Value(QueryConstant.Of("1", ScalarType.Int))]);
         Assert.True(values.IsValueList);
         Assert.False(values.IsColumn || values.IsConstant || values.IsSubQuery || values.IsParameter);
 

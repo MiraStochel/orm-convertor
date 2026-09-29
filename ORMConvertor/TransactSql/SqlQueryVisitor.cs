@@ -34,11 +34,12 @@ public class SqlQueryVisitor(
         // table alias must not qualify: `COUNT(c.*)` is not T-SQL at all, and the artifact
         // used to come out unparseable rather than merely poorer. The HQL and JPQL visitors
         // have made the same distinction all along.
+        // DISTINCT inside the function is the modifier of the aggregate (decision 102).
         string value = instr.Function is null
             ? $"{instr.Table}.{instr.Attribute}"
             : instr.Attribute == "*"
                 ? $"{instr.Function}(*)"
-                : $"{instr.Function}({instr.Table}.{instr.Attribute})";
+                : $"{instr.Function}({(instr.Distinct ? "DISTINCT " : string.Empty)}{instr.Table}.{instr.Attribute})";
 
         var alias = instr.Alias is null ? string.Empty : $" AS {instr.Alias}";
         return $"{value}{alias}";
@@ -86,7 +87,11 @@ public class SqlQueryVisitor(
         }
 
         string right = BuildOperand(cond.Right);
-        return $"{left} {MapOperator(cond.Operator)} {right}";
+
+        // The escape character of a LIKE goes out as the clause T-SQL spells (decision 102);
+        // the template has already held it to LIKE and to one character.
+        var escape = cond.Escape is null ? string.Empty : $" ESCAPE '{cond.Escape.Replace("'", "''")}'";
+        return $"{left} {MapOperator(cond.Operator)} {right}{escape}";
     }
 
     /// <summary>
@@ -199,10 +204,11 @@ public class SqlQueryVisitor(
     private static string BuildOperand(QueryOperand operand)
     {
         // The values IN enumerates (decision 074): each one spelled the way a lone constant
-        // is, so quoting and suffixes come from the scalar, not from the source text.
+        // is, so quoting and suffixes come from the scalar, not from the source text; a
+        // parameter among them (decision 102) is spelled the way a lone parameter is.
         if (operand.IsValueList)
         {
-            return $"({string.Join(", ", operand.Values!.Select(Literal))})";
+            return $"({string.Join(", ", operand.Values!.Select(BuildOperand))})";
         }
 
         // T-SQL decorates a parameter with @ and has no positional form, so a positional one
@@ -215,7 +221,9 @@ public class SqlQueryVisitor(
                 ? (operand.Table is null ? operand.Property! : $"{operand.Table}.{operand.Property}")
                 : Literal(operand.Constant!);
 
-        return operand.Function is null ? text : $"{operand.Function}({text})";
+        return operand.Function is null
+            ? text
+            : $"{operand.Function}({(operand.Distinct ? "DISTINCT " : string.Empty)}{text})";
     }
 
     /// <summary>

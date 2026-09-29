@@ -1204,9 +1204,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private void EmitProjection(ExpressionSyntax expression, string? alias, Resolve? resolve = null)
     {
-        if (TryReadAggregate(expression, out var function, out var table, out var attribute))
+        if (TryReadAggregate(expression, out var function, out var table, out var attribute, out var distinct))
         {
-            queryBuilder.Project(table ?? sourceAlias, attribute!, alias, function);
+            queryBuilder.Project(table ?? sourceAlias, attribute!, alias, function, distinct);
             return;
         }
 
@@ -1420,9 +1420,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private QueryOperand? ReadHavingOperand(ExpressionSyntax expression)
     {
-        if (TryReadAggregate(expression, out var function, out var table, out var attribute))
+        if (TryReadAggregate(expression, out var function, out var table, out var attribute, out var distinct))
         {
-            return QueryOperand.Column(table ?? sourceAlias, attribute!, function);
+            return QueryOperand.Column(table ?? sourceAlias, attribute!, function, distinct);
         }
 
         return ReadOperand(expression);
@@ -1432,21 +1432,25 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// Reads g.Sum(x =&gt; x.Total), g.Count() and their kin. The element the lambda ranges
     /// over is a row of the source, so its columns are qualified by the source alias rather
     /// than by the lambda's own parameter name, which is not a table alias at all.
+    ///
+    /// The receiver may also be <c>g.Select(x =&gt; x.Total)</c>, optionally followed by
+    /// <c>.Distinct()</c>, with the aggregate then taking no lambda: the column comes from
+    /// the Select, and the Distinct() between them is the modifier of the aggregate
+    /// (decision 102) - <c>g.Select(x =&gt; x.Id).Distinct().Count()</c> is
+    /// <c>COUNT(DISTINCT Id)</c>, which is the shape EF Core translates it to.
     /// </summary>
     private bool TryReadAggregate(
         ExpressionSyntax expression,
         out string? function,
         out string? table,
-        out string? attribute)
+        out string? attribute,
+        out bool distinct)
     {
         function = table = attribute = null;
+        distinct = false;
 
-        // The receiver has to be a bare identifier - the grouping's own lambda parameter.
-        // An aggregate whose receiver is a chain is a scalar subquery, not a group
-        // aggregate, and belongs to ReadScalarSubQuery (decision 061).
         if (expression is not InvocationExpressionSyntax invocation
-            || invocation.Expression is not MemberAccessExpressionSyntax member
-            || member.Expression is not IdentifierNameSyntax)
+            || invocation.Expression is not MemberAccessExpressionSyntax member)
         {
             return false;
         }
@@ -1457,20 +1461,49 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return false;
         }
 
+        // The receiver has to be a bare identifier - the grouping's own lambda parameter -
+        // or a one-column Select over it, optionally collapsed. An aggregate whose receiver
+        // is a chain over a query root is a scalar subquery, not a group aggregate, and
+        // belongs to ReadScalarSubQuery (decision 061).
+        ExpressionSyntax? selected = null;
+        var receiver = member.Expression;
+        if (receiver is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Distinct" } collapse } collapsed
+            && collapsed.ArgumentList.Arguments.Count == 0)
+        {
+            distinct = true;
+            receiver = collapse.Expression;
+        }
+
+        if (receiver is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Select" } select } projection
+            && select.Expression is IdentifierNameSyntax
+            && projection.ArgumentList.Arguments.Count == 1
+            && projection.ArgumentList.Arguments[0].Expression is SimpleLambdaExpressionSyntax selector
+            && selector.Body is ExpressionSyntax selectedBody
+            && invocation.ArgumentList.Arguments.Count == 0)
+        {
+            selected = selectedBody;
+        }
+        else if (receiver is not IdentifierNameSyntax || distinct)
+        {
+            distinct = false;
+            return false;
+        }
+
         function = name;
         table = sourceAlias;
 
         var argument = invocation.ArgumentList.Arguments.FirstOrDefault();
-        if (argument is null)
+        if (argument is null && selected is null)
         {
             // g.Count() counts rows, not a column.
             attribute = "*";
             return true;
         }
 
-        if (argument.Expression is SimpleLambdaExpressionSyntax lambda
-            && lambda.Body is ExpressionSyntax lambdaBody
-            && MemberName(lambdaBody) is { } column)
+        var lambdaBody = selected
+            ?? (argument!.Expression is SimpleLambdaExpressionSyntax lambda ? lambda.Body as ExpressionSyntax : null);
+
+        if (lambdaBody is not null && MemberName(lambdaBody) is { } column)
         {
             attribute = column;
 
@@ -1485,6 +1518,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         function = table = null;
+        distinct = false;
         return false;
     }
 
@@ -1616,12 +1650,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <summary>
     /// Reads an inline collection of literals as the values of an IN list (decision 074).
     /// Three C# spellings carry one: an implicit array, a typed array with an initializer,
-    /// and an object creation with a collection initializer. Returns false when the
-    /// expression is none of them; returns true with a null operand when it is one but an
-    /// element sinks it - a null literal is no value the model carries (decision 002), a
-    /// bare identifier is a value from the enclosing scope, so a parameter, which decision
-    /// 083 keeps out of the list even though it gave it an operand of its own,
-    /// and an empty initializer is a predicate no target writes as a filter.
+    /// and an object creation with a collection initializer. A bare identifier among the
+    /// elements is a value from the enclosing scope, so a parameter, which stands among the
+    /// values since decision 102. Returns false when the expression is none of the three
+    /// spellings; returns true with a null operand when it is one but an element sinks it -
+    /// a null literal is no value the model carries (decision 002), and an empty
+    /// initializer is a predicate no target writes as a filter.
     /// </summary>
     private bool TryReadInlineCollection(ExpressionSyntax expression, out QueryOperand? values)
     {
@@ -1647,7 +1681,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return true;
         }
 
-        var constants = new List<QueryConstant>(initializer.Expressions.Count);
+        var elements = new List<QueryOperand>(initializer.Expressions.Count);
         foreach (var element in initializer.Expressions)
         {
             if (IsNullLiteral(element))
@@ -1659,10 +1693,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             var operand = ReadOperand(element);
             if (operand is not null && operand.IsParameter)
             {
-                unread ??= (
-                    $"the parameter '{element}' from the enclosing scope among the values of an inline collection, which carries only values the query itself states",
-                    QueryFeature.QueryParameter);
-                return true;
+                elements.Add(operand);
+                continue;
             }
 
             if (operand is null || !operand.IsConstant || operand.Function is not null)
@@ -1671,10 +1703,10 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return true;
             }
 
-            constants.Add(operand.Constant!);
+            elements.Add(operand);
         }
 
-        values = QueryOperand.ValueList(constants);
+        values = QueryOperand.ValueList(elements);
         return true;
     }
 
@@ -1901,8 +1933,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         string attribute;
         string? elementParameter = null;
+        var distinct = false;
         var argument = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
-        if (argument is null)
+
+        // A one-column Select just before the aggregate names the column the aggregate
+        // ranges over, and a Distinct() between them is the modifier of the aggregate
+        // (decision 102): .Select(o => o.CustomerId).Distinct().Count() is
+        // COUNT(DISTINCT CustomerId). Both steps leave the chain, being the aggregate's.
+        if (argument is null && TryTakeSelectedColumn(steps, out var selectedColumn, out var selectedParameter, out distinct))
+        {
+            attribute = selectedColumn!;
+            elementParameter = selectedParameter;
+        }
+        else if (argument is null)
         {
             // Count() counts rows; every other aggregate needs a column to range over.
             if (function != "COUNT")
@@ -1929,11 +1972,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return null;
         }
 
-        // A terminal aggregate over Distinct() (decision 073): Count, Sum and Average
-        // aggregate over the collapsed set - COUNT(DISTINCT ...), which the model does not
-        // carry - and refuse; Max and Min do not depend on the collapse, so the call is left
-        // out with a record. Either way the marker goes, so that the scope does not also
-        // report the collapse over its single-row aggregate projection.
+        // A terminal aggregate over a Distinct() of the whole entity (decision 073): Count,
+        // Sum and Average aggregate over the collapsed rows - a count of distinct rows, or a
+        // sum that SUM(DISTINCT ...) is not - and refuse; Max and Min do not depend on the
+        // collapse, so the call is left out with a record. Either way the marker goes, so
+        // that the scope does not also report the collapse over its single-row aggregate
+        // projection. A Distinct() over a one-column Select is the modifier instead, read
+        // above (decision 102).
         if (steps.Any(s => s.Name == "Distinct"))
         {
             var terminal = member.Name.Identifier.Text;
@@ -1958,10 +2003,49 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         var sub = ReadSubQueryOperand(
             root!,
             steps,
-            () => queryBuilder.Project(sourceAlias, attribute, null, function),
+            () => queryBuilder.Project(sourceAlias, attribute, null, function, distinct),
             elementParameter);
 
         return QueryOperand.Nested(sub);
+    }
+
+    /// <summary>
+    /// Takes a trailing <c>Select(x =&gt; x.Col)</c>, optionally followed by
+    /// <c>Distinct()</c>, off the chain of a scalar subquery whose terminal aggregate has
+    /// no lambda of its own (decision 102). Returns false and leaves the chain as it was
+    /// when the tail is not that shape.
+    /// </summary>
+    private static bool TryTakeSelectedColumn(
+        List<ChainStep> steps,
+        out string? column,
+        out string? elementParameter,
+        out bool distinct)
+    {
+        column = elementParameter = null;
+        distinct = false;
+
+        var last = steps.Count - 1;
+        if (last >= 0 && steps[last].Name == "Distinct" && steps[last].Node.ArgumentList.Arguments.Count == 0)
+        {
+            distinct = true;
+            last--;
+        }
+
+        if (last < 0
+            || steps[last].Name != "Select"
+            || steps[last].Node.ArgumentList.Arguments.Count != 1
+            || steps[last].Node.ArgumentList.Arguments[0].Expression is not SimpleLambdaExpressionSyntax lambda
+            || lambda.Body is not ExpressionSyntax body
+            || MemberName(body) is not { } selected)
+        {
+            distinct = false;
+            return false;
+        }
+
+        column = selected;
+        elementParameter = lambda.Parameter.Identifier.Text;
+        steps.RemoveRange(last, steps.Count - last);
+        return true;
     }
 
     /// <summary>

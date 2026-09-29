@@ -65,7 +65,7 @@ public sealed class EFCoreLinqQueryVisitor(
     public string Visit(FromInstruction instr) => Scope.Param;
 
     public string Visit(ProjectInstruction instr)
-        => Column(instr.Table, instr.Attribute, instr.Function);
+        => Column(instr.Table, instr.Attribute, instr.Function, instr.Distinct);
 
     public string Visit(SelectInstruction instr) => instr.Condition.Accept(this);
 
@@ -138,7 +138,7 @@ public sealed class EFCoreLinqQueryVisitor(
 
         if (cond.Operator == ComparisonOperator.Like)
         {
-            return Like(left, cond.Right);
+            return Like(left, cond.Right, cond.Escape);
         }
 
         if (cond.Operator == ComparisonOperator.In)
@@ -178,7 +178,7 @@ public sealed class EFCoreLinqQueryVisitor(
     /// nullable element type and the artifact compiles - which the inferred form did not.
     /// </summary>
     private string ValueList(QueryOperand operand, string? elementType = null)
-        => $"new{(elementType is null ? string.Empty : " " + elementType)}[] {{ {string.Join(", ", operand.Values!.Select(Literal))} }}";
+        => $"new{(elementType is null ? string.Empty : " " + elementType)}[] {{ {string.Join(", ", operand.Values!.Select(Operand))} }}";
 
     /// <summary>
     /// The C# spelling of the column's type when the mapping makes it a nullable value
@@ -256,12 +256,18 @@ public sealed class EFCoreLinqQueryVisitor(
     /// character class, or a right side that is not a literal at all - goes out as
     /// EF.Functions.Like, which EF Core translates to LIKE unchanged. Handing the pattern to
     /// Contains verbatim, as this used to, searched for literal percent signs.
+    ///
+    /// With an escape character (decision 102) the pattern is read past it: a wildcard
+    /// behind the escape is a literal character, the core goes out without the escapes -
+    /// EF Core escapes the argument of a string method itself, so <c>'A!_%' ESCAPE '!'</c>
+    /// is <c>StartsWith("A_")</c> - and where the split is not exact, the escape travels
+    /// as the third argument of EF.Functions.Like.
     /// </summary>
-    private string Like(string left, QueryOperand right)
+    private string Like(string left, QueryOperand right, string? escape)
     {
         var literalPattern = right.IsConstant && right.Function is null ? right.Constant!.Text : null;
 
-        if (literalPattern is not null && TryReadPattern(literalPattern, out var method, out var core))
+        if (literalPattern is not null && TryReadPattern(literalPattern, escape, out var method, out var core))
         {
             return method is null
                 ? $"{left} == {StringLiteral(core)}"
@@ -273,30 +279,53 @@ public sealed class EFCoreLinqQueryVisitor(
         // would spell an untyped one bare and the result would not compile.
         var pattern = literalPattern is not null ? StringLiteral(literalPattern) : Operand(right);
 
-        return $"EF.Functions.Like({left}, {pattern})";
+        return escape is null
+            ? $"EF.Functions.Like({left}, {pattern})"
+            : $"EF.Functions.Like({left}, {pattern}, {StringLiteral(escape)})";
     }
 
     /// <summary>
     /// Splits a LIKE pattern into its anchors and its core, or refuses. The core has to be
     /// free of every wildcard: EF Core escapes the argument of Contains and friends, so a
     /// core holding <c>_</c> would come out matching a literal underscore where the source
-    /// matched any character.
+    /// matched any character. A character behind the escape (decision 102) is no wildcard
+    /// and reaches the core without its escape; an escape character with nothing behind it
+    /// refuses the split, so that the text goes out as it was written.
     /// </summary>
     /// <param name="method">The string method to call, or null for plain equality.</param>
-    private static bool TryReadPattern(string pattern, out string? method, out string core)
+    private static bool TryReadPattern(string pattern, string? escape, out string? method, out string core)
     {
         method = null;
         core = pattern;
 
-        var leading = pattern.StartsWith('%');
-        var trailing = pattern.Length > (leading ? 1 : 0) && pattern.EndsWith('%');
+        var characters = new List<(char Value, bool Literal)>(pattern.Length);
+        for (var i = 0; i < pattern.Length; i++)
+        {
+            if (escape is not null && pattern[i] == escape[0])
+            {
+                if (i + 1 >= pattern.Length)
+                {
+                    return false;
+                }
 
-        core = pattern[(leading ? 1 : 0)..(pattern.Length - (trailing ? 1 : 0))];
+                characters.Add((pattern[++i], true));
+                continue;
+            }
 
-        if (core.AsSpan().IndexOfAny('%', '_', '[') >= 0)
+            characters.Add((pattern[i], false));
+        }
+
+        var leading = characters.Count > 0 && characters[0] is ('%', false);
+        var trailing = characters.Count > (leading ? 1 : 0) && characters[^1] is ('%', false);
+
+        var inner = characters[(leading ? 1 : 0)..(characters.Count - (trailing ? 1 : 0))];
+
+        if (inner.Any(c => !c.Literal && c.Value is '%' or '_' or '['))
         {
             return false;
         }
+
+        core = new string(inner.Select(c => c.Value).ToArray());
 
         method = (leading, trailing) switch
         {
@@ -357,25 +386,26 @@ public sealed class EFCoreLinqQueryVisitor(
                 ? QueryParameterNaming.IdentifierFor(operand.Parameter!)
                 : operand.IsConstant
                     ? Literal(operand.Constant!)
-                    : Column(operand.Table, operand.Property!, operand.Function);
+                    : Column(operand.Table, operand.Property!, operand.Function, operand.Distinct);
 
     /// <summary>
     /// Renders a column reference in the current scope: a plain member access, a group key,
-    /// or an aggregate over the group's elements.
+    /// or an aggregate over the group's elements - over their distinct values when
+    /// <paramref name="distinct"/> says so (decision 102).
     /// </summary>
-    public string Column(string? alias, string attribute, string? function)
+    public string Column(string? alias, string attribute, string? function, bool distinct = false)
     {
         // A reference this scope does not declare but an enclosing one does is a correlated
         // reference: it renders through the outer visitor, whose lambda parameter is still
         // in scope inside the nested chain (decision 061).
         if (alias is not null && outer is not null && !Scope.Aliases.Contains(alias) && outer.Knows(alias))
         {
-            return outer.Column(alias, attribute, function);
+            return outer.Column(alias, attribute, function, distinct);
         }
 
         if (function is not null)
         {
-            return Aggregate(alias, attribute, function);
+            return Aggregate(alias, attribute, function, distinct);
         }
 
         if (Scope.Grouped)
@@ -396,7 +426,7 @@ public sealed class EFCoreLinqQueryVisitor(
         return $"{Scope.Row(alias)}.{Property(alias, attribute)}";
     }
 
-    private string Aggregate(string? alias, string attribute, string function)
+    private string Aggregate(string? alias, string attribute, string function, bool distinct)
     {
         // An aggregate over an ungrouped scope has no place inside a LINQ projection: the
         // chain must end in the aggregate call, which is not the IQueryable this builder
@@ -413,7 +443,7 @@ public sealed class EFCoreLinqQueryVisitor(
             return string.Empty;
         }
 
-        if (function == "COUNT")
+        if (function == "COUNT" && !distinct)
         {
             if (attribute != "*")
             {
@@ -428,6 +458,7 @@ public sealed class EFCoreLinqQueryVisitor(
 
         var method = function switch
         {
+            "COUNT" => "Count",
             "SUM" => "Sum",
             "MIN" => "Min",
             "MAX" => "Max",
@@ -444,7 +475,18 @@ public sealed class EFCoreLinqQueryVisitor(
             return $"{Scope.Param}.Count()";
         }
 
-        return $"{Scope.Param}.{method}({Scope.ElementParam} => {Scope.ElementRow(alias)}.{Property(alias, attribute)})";
+        var element = $"{Scope.ElementParam} => {Scope.ElementRow(alias)}.{Property(alias, attribute)}";
+
+        // The aggregate over the distinct values of the column (decision 102): a Select of
+        // the column, collapsed, then the parameterless aggregate - the shape EF Core
+        // translates to COUNT(DISTINCT ...). It counts distinct non-null values, exactly as
+        // COUNT(DISTINCT x) does, so unlike Count() it needs no record.
+        if (distinct)
+        {
+            return $"{Scope.Param}.Select({element}).Distinct().{method}()";
+        }
+
+        return $"{Scope.Param}.{method}({element})";
     }
 
     /// <summary>

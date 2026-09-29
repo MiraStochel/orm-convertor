@@ -233,9 +233,14 @@ public abstract class AbstractQueryBuilder
         instructions.Add(new FromInstruction(table, alias));
     }
 
-    public void Project(string table, string attr, string? alias = null, string? function = null)
+    /// <summary>
+    /// Records one projected column, optionally under an aggregate function, optionally
+    /// over the distinct values of the column (decision 102) - the modifier is meaningful
+    /// with a function only, and the gate refuses it over <c>*</c>.
+    /// </summary>
+    public void Project(string table, string attr, string? alias = null, string? function = null, bool distinct = false)
     {
-        instructions.Add(new ProjectInstruction(table, attr, alias, function));
+        instructions.Add(new ProjectInstruction(table, attr, alias, function, distinct));
     }
 
     public void Where(ConditionNode condition)
@@ -577,6 +582,18 @@ public abstract class AbstractQueryBuilder
                 QueryFeature.Grouping);
         }
 
+        // An aggregate over the distinct values of the whole row - JPQL's count(distinct c),
+        // a count of distinct rows - has no form as a single aggregate in any SQL target
+        // (decision 102). Refused here once, so that six targets answer alike.
+        if (projections.Any(p => p.Distinct && p.Attribute == "*"))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "An aggregate over the distinct values of the whole row (COUNT(DISTINCT *)) has no form in any target; no artifact was generated.",
+                QueryFeature.Aggregation);
+            return null;
+        }
+
         var distinct = body.OfType<DistinctInstruction>().Any();
 
         // DISTINCT over a projection of nothing but ungrouped aggregates collapses nothing:
@@ -660,6 +677,42 @@ public abstract class AbstractQueryBuilder
         switch (node)
         {
             case ComparisonCondition comparison:
+                // The escape character of LIKE (decision 102): meaningful under LIKE only,
+                // and exactly one character, which is what T-SQL and JPQL take - a longer
+                // one the target would refuse at run time, without a record.
+                if (comparison.Escape is { } escape)
+                {
+                    if (comparison.Operator is not ComparisonOperator.Like)
+                    {
+                        Report(
+                            ConversionRecordKind.Failure,
+                            $"An escape character stands only on a LIKE comparison; under {comparison.Operator} no target has a place for it; no artifact was generated.",
+                            QueryFeature.Filtering);
+                        return false;
+                    }
+
+                    if (escape.Length != 1)
+                    {
+                        Report(
+                            ConversionRecordKind.Failure,
+                            $"The escape character '{escape}' of a LIKE is not a single character, which is all a target takes; no artifact was generated.",
+                            QueryFeature.Filtering);
+                        return false;
+                    }
+                }
+
+                // The same rule as for a projection above: no target aggregates over the
+                // distinct values of the whole row (decision 102).
+                if (comparison.Left.Distinct && comparison.Left.Property == "*"
+                    || comparison.Right is { Distinct: true, Property: "*" })
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        "An aggregate over the distinct values of the whole row (COUNT(DISTINCT *)) has no form in any target; no artifact was generated.",
+                        QueryFeature.Aggregation);
+                    return false;
+                }
+
                 if (comparison.Operator is ComparisonOperator.IsNull or ComparisonOperator.IsNotNull)
                 {
                     return true;
@@ -803,13 +856,14 @@ public abstract class AbstractQueryBuilder
     /// compare a different value than the source wrote. Any other mix is a list whose type
     /// the model cannot state, and the LINQ target has no compilable form for it. A value
     /// whose scalar nobody recognized takes no part - it goes out verbatim, as a lone
-    /// constant does (decision 024).
+    /// constant does (decision 024) - and neither does a parameter among the values
+    /// (decision 102), whose scalar the parameter gate takes from the left side of IN.
     /// </summary>
-    private bool ValuesShareAScalar(IReadOnlyList<QueryConstant> values)
+    private bool ValuesShareAScalar(IReadOnlyList<QueryOperand> values)
     {
         var scalars = values
-            .Where(v => v.Type is not null)
-            .Select(v => v.Type!.Value)
+            .Where(v => v.Constant?.Type is not null)
+            .Select(v => v.Constant!.Type!.Value)
             .Distinct()
             .ToList();
 
@@ -1242,6 +1296,21 @@ public abstract class AbstractQueryBuilder
         if (operand.IsParameter)
         {
             found.Add(new ParameterOccurrence(operand.Parameter!, ScalarOfOther(other, op, aliases)));
+            return;
+        }
+
+        // A parameter among the values of an IN list (decision 102) takes its scalar from
+        // the left side of IN, exactly as a collection parameter's element does - never
+        // from the constants beside it.
+        if (operand.IsValueList)
+        {
+            foreach (var value in operand.Values!)
+            {
+                if (value.IsParameter)
+                {
+                    found.Add(new ParameterOccurrence(value.Parameter!, ScalarOfOther(other, op, aliases)));
+                }
+            }
         }
     }
 
@@ -1471,17 +1540,27 @@ public abstract class AbstractQueryBuilder
             return Retype(constant, scalar, other!) is { } typed ? QueryOperand.Value(typed, operand.Function) : null;
         }
 
-        if (operand.Values is { } list && list.All(v => v.Type == ScalarType.String))
+        // A parameter among the values (decision 102) is left as it is - its scalar comes
+        // from the column through the parameter gate - and the constants beside it are typed.
+        if (operand.Values is { } list
+            && list.Any(v => v.IsConstant)
+            && list.All(v => v.IsParameter || v.Constant?.Type == ScalarType.String))
         {
-            var values = new List<QueryConstant>(list.Count);
+            var values = new List<QueryOperand>(list.Count);
             foreach (var value in list)
             {
-                if (Retype(value, scalar, other!) is not { } typed)
+                if (value.IsParameter)
+                {
+                    values.Add(value);
+                    continue;
+                }
+
+                if (Retype(value.Constant!, scalar, other!) is not { } typed)
                 {
                     return null;
                 }
 
-                values.Add(typed);
+                values.Add(QueryOperand.Value(typed));
             }
 
             return QueryOperand.ValueList(values);

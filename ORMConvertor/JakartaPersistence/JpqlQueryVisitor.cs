@@ -27,7 +27,7 @@ public sealed class JpqlQueryVisitor(
 
     public string Visit(ProjectInstruction instr)
     {
-        var value = Column(instr.Table, instr.Attribute, instr.Function);
+        var value = Column(instr.Table, instr.Attribute, instr.Function, instr.Distinct);
         return instr.Alias is null ? value : $"{value} as {instr.Alias}";
     }
 
@@ -103,8 +103,12 @@ public sealed class JpqlQueryVisitor(
             return string.Empty;
         }
 
-        return $"{operand} {Operator(cond.Operator)} {Operand(cond.Right)}";
+        return $"{operand} {Operator(cond.Operator)} {Operand(cond.Right)}{Escape(cond)}";
     }
+
+    /// <summary>The escape clause of a like (decision 102); the template holds it to like and to one character.</summary>
+    private static string Escape(ComparisonCondition cond)
+        => cond.Escape is null ? string.Empty : $" escape '{cond.Escape.Replace("'", "''")}'";
 
     private string? OperandOrSubQuery(QueryOperand operand, ComparisonOperator op)
     {
@@ -148,12 +152,12 @@ public sealed class JpqlQueryVisitor(
 
     private string Operand(QueryOperand operand)
         => operand.IsValueList
-            ? $"({string.Join(", ", operand.Values!.Select(Literal))})"
+            ? $"({string.Join(", ", operand.Values!.Select(Operand))})"
             : operand.IsParameter
                 ? Parameter(operand.Parameter!, operand.Function)
                 : operand.IsConstant
                     ? Wrap(Literal(operand.Constant!), operand.Function)
-                    : Column(operand.Table, operand.Property!, operand.Function);
+                    : Column(operand.Table, operand.Property!, operand.Function, operand.Distinct);
 
     /// <summary>
     /// A parameter in JPQL (decision 083). The one target language with a positional form,
@@ -171,10 +175,11 @@ public sealed class JpqlQueryVisitor(
         return parameter.IsCollection ? placeholder : Wrap(placeholder, function);
     }
 
-    private static string Wrap(string value, string? function)
-        => function is null ? value : $"{function.ToLowerInvariant()}({value})";
+    private static string Wrap(string value, string? function, bool distinct = false)
+        => function is null ? value : $"{function.ToLowerInvariant()}({(distinct ? "distinct " : string.Empty)}{value})";
 
-    private string Column(string? alias, string attribute, string? function)
+    /// <param name="distinct">Whether the aggregate ranges over the distinct values of the column (decision 102).</param>
+    private string Column(string? alias, string attribute, string? function, bool distinct = false)
     {
         // count(*) is not JPQL; the standard counts the identification variable.
         if (function is not null && attribute == "*")
@@ -183,7 +188,7 @@ public sealed class JpqlQueryVisitor(
         }
 
         var path = alias is null ? Property(null, attribute) : $"{alias}.{Property(alias, attribute)}";
-        return Wrap(path, function);
+        return Wrap(path, function, distinct);
     }
 
     public string Property(string? alias, string column)
