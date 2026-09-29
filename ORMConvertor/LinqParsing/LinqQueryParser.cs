@@ -58,6 +58,42 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     private readonly record struct GroupingKey(string Table, string Attribute, string Name);
 
     /// <summary>
+    /// The shape of the row the lambdas of a scope range over. Before a join it is the one
+    /// entity row of the source. The result selector of a join says what the joined row
+    /// carries from there on - <c>(ol, o) =&gt; new { ol, o }</c> makes a row whose members
+    /// ol and o are the two entity rows, and a further join flattens or nests it as its own
+    /// selector says - and the steps after the join reach a column through those members
+    /// (<c>x.o.PlacedAt</c>). The parser has to know them to say which table such a column
+    /// belongs to: until it did, the selector was not read at all, the middle member was
+    /// skipped and the column was qualified by the source, so a projection written in the
+    /// selector came out as every column of both tables without a record (decision 048)
+    /// and a filter on the joined table was refused as unreadable.
+    /// </summary>
+    private abstract record RowShape;
+
+    /// <summary>The row of one table, under the alias its clause declared.</summary>
+    private sealed record EntityRow(string Alias) : RowShape;
+
+    /// <summary>The row a result selector composed, member by member, under the names it gave them.</summary>
+    private sealed record JoinedRow(IReadOnlyDictionary<string, RowShape> Members) : RowShape;
+
+    /// <summary>
+    /// Resolves a member path to the row it ends on or to the column it names, from wherever
+    /// the caller knows the path starts: the parameters of a result selector, or the row of
+    /// the scope for a lambda whose parameter is not tracked.
+    /// </summary>
+    private delegate bool Resolve(ExpressionSyntax expression, out RowShape? endsOnRow, out (string Alias, string Column)? endsOnColumn);
+
+    /// <summary>
+    /// The row of the scope being read, and the rows of the scopes around it, innermost
+    /// last - a nested chain reaches the joined row of the chain it sits in the way it
+    /// reaches the outer alias (decision 061). Saved and restored around a nested chain
+    /// like the grouping keys.
+    /// </summary>
+    private RowShape row = new EntityRow("t");
+    private readonly List<RowShape> enclosingRows = [];
+
+    /// <summary>
     /// The construct that sank the condition being read, when the parser can name it - a
     /// value from the enclosing scope, which is what a parameter looks like in LINQ - so
     /// that the clause's refusal says what the caller would have to change (F11). The
@@ -194,6 +230,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     {
         sourceAlias = elementParameter
             ?? (root.Name.Length > 0 ? root.Name[..1].ToLowerInvariant() : "t");
+        row = new EntityRow(sourceAlias);
         queryBuilder.From(ResolveTable(root.Name), sourceAlias);
     }
 
@@ -204,18 +241,34 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// opens without such a lambda. Deriving the alias from the table alone broke exactly
     /// where C# forbids a nested lambda from reusing the enclosing parameter (decision 061):
     /// a subquery over the outer query's own table would have claimed the outer alias and
-    /// with it the correlated references.
+    /// with it the correlated references. A chain that opens with a join has such a lambda
+    /// too - the outer key selector ranges over the source - and taking its name keeps the
+    /// source alias apart from the one the result selector gives the joined row, which the
+    /// first letter of the table (o for OrderLines, o for Orders) did not.
     /// </summary>
     private static string? FirstElementLambdaParameter(List<ChainStep> steps)
     {
-        if (steps.Count == 0
-            || steps[0].Name is not ("Where" or "Select" or "OrderBy" or "OrderByDescending" or "GroupBy"))
+        if (steps.Count == 0)
         {
             return null;
         }
 
-        return steps[0].Node.ArgumentList.Arguments.FirstOrDefault()?.Expression
-            is SimpleLambdaExpressionSyntax lambda
+        var first = steps[0];
+        var arguments = first.Node.ArgumentList.Arguments;
+
+        if (first.Name is "Join" or "LeftJoin" or "RightJoin")
+        {
+            return arguments.Count > 1 && arguments[1].Expression is SimpleLambdaExpressionSyntax outerKey
+                ? outerKey.Parameter.Identifier.Text
+                : null;
+        }
+
+        if (first.Name is not ("Where" or "Select" or "OrderBy" or "OrderByDescending" or "GroupBy"))
+        {
+            return null;
+        }
+
+        return arguments.FirstOrDefault()?.Expression is SimpleLambdaExpressionSyntax lambda
             ? lambda.Parameter.Identifier.Text
             : null;
     }
@@ -231,7 +284,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     private void EmitChain(LinqQueryRoot root, List<ChainStep> steps, Action? beforeClose = null)
     {
         var enclosingGroupingKeys = groupingKeys;
+        var enclosingRow = row;
         groupingKeys = [];
+        enclosingRows.Add(enclosingRow);
 
         try
         {
@@ -240,6 +295,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         finally
         {
             groupingKeys = enclosingGroupingKeys;
+            row = enclosingRow;
+            enclosingRows.RemoveAt(enclosingRows.Count - 1);
         }
     }
 
@@ -677,7 +734,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         string rightTable = ResolveTable(NameOfSource(args[0].Expression));
-        string rightAlias = (rightTable.Split('.').LastOrDefault() ?? rightTable).ToLowerInvariant();
+        var selector = args.Count > 3 ? args[3].Expression as ParenthesizedLambdaExpressionSyntax : null;
+        string rightAlias = JoinedAlias(selector, rightTable);
 
         if (args[1].Expression is not SimpleLambdaExpressionSyntax outer
             || args[2].Expression is not SimpleLambdaExpressionSyntax inner
@@ -702,11 +760,340 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         queryBuilder.Join(kind, sourceAlias, rightTable, onCondition, rightAlias);
+        ReadResultSelector(selector, rightAlias);
+    }
+
+    /// <summary>
+    /// The alias of the joined table: the name the result selector gives the joined row -
+    /// <c>(ol, o) =&gt; …</c> names it o, and o is what the steps after the join then write
+    /// - unless the scope has that alias already, and the table's own name otherwise, made
+    /// unique the same way. Until the selector was read the alias was always the table's,
+    /// so a source that wrote <c>o.CustomerId</c> came out as <c>customerorders.CustomerId</c>.
+    /// </summary>
+    private string JoinedAlias(ParenthesizedLambdaExpressionSyntax? selector, string rightTable)
+    {
+        var taken = AliasesInScope();
+
+        if (selector?.ParameterList.Parameters.Count == 2)
+        {
+            var named = selector.ParameterList.Parameters[1].Identifier.Text;
+            if (!taken.Contains(named))
+            {
+                return named;
+            }
+        }
+
+        var derived = (rightTable.Split('.').LastOrDefault() ?? rightTable).ToLowerInvariant();
+        var candidate = derived;
+        for (int n = 2; taken.Contains(candidate); n++)
+        {
+            candidate = derived + n;
+        }
+
+        return candidate;
+    }
+
+    /// <summary>
+    /// Reads the fourth argument of a join, the result selector, which says what the joined
+    /// row carries from here on. Both rows under whatever names - <c>(ol, o) =&gt; new { ol, o
+    /// }</c>, or <c>(x, a) =&gt; new { x.ol, x.o, a }</c> after a second join, which is the
+    /// shape the EF Core builder writes - is the whole joined row, exactly what the
+    /// representation materializes for a join with no projection, so nothing is recorded
+    /// and only the row is shaped for the steps that follow. Columns in the selector are the
+    /// projection of the query. A row left out, or a whole row beside columns, is a shape
+    /// the representation does not carry: the row set is the same, the columns are not, so
+    /// it is a loss with the artifact (decision 070), and it is said (decision 048).
+    /// </summary>
+    private void ReadResultSelector(ParenthesizedLambdaExpressionSyntax? selector, string rightAlias)
+    {
+        var joined = new EntityRow(rightAlias);
+
+        if (selector is null
+            || selector.ParameterList.Parameters.Count != 2
+            || selector.Body is not ExpressionSyntax body)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "The result selector of the join is not a lambda over the two rows, so the shape it materializes was not read; the whole joined row is materialized instead.",
+                QueryFeature.Projection);
+            row = new JoinedRow(new Dictionary<string, RowShape>(StringComparer.Ordinal));
+            return;
+        }
+
+        var bindings = new Dictionary<string, RowShape>(StringComparer.Ordinal)
+        {
+            [selector.ParameterList.Parameters[0].Identifier.Text] = row,
+            [selector.ParameterList.Parameters[1].Identifier.Text] = joined,
+        };
+
+        var reach = AliasesOf(row);
+        reach.Add(rightAlias);
+
+        row = ReadMaterializedShape(
+            body,
+            (ExpressionSyntax expression, out RowShape? endsOnRow, out (string Alias, string Column)? endsOnColumn)
+                => TryResolveBound(expression, bindings, out endsOnRow, out endsOnColumn),
+            reach,
+            "result selector of the join");
+    }
+
+    /// <summary>
+    /// Reads what a selector materializes - a result selector, or a Select after a join -
+    /// as rows and columns. Rows only, all of them, is the whole joined row under the names
+    /// the selector gave, and no projection; columns only is the projection; a row left out
+    /// or a row beside columns is reported and the columns still projected. Returns the row
+    /// the lambdas after the selector range over: what it composed, or a row with no members
+    /// after a projection, because the representation has no clause to point at a projected
+    /// member through.
+    /// </summary>
+    private RowShape ReadMaterializedShape(ExpressionSyntax body, Resolve resolve, HashSet<string> reach, string clause)
+    {
+        var members = new Dictionary<string, RowShape>(StringComparer.Ordinal);
+        var columns = new List<(ExpressionSyntax Expression, string? Alias)>();
+
+        if (body is AnonymousObjectCreationExpressionSyntax anon)
+        {
+            foreach (var initializer in anon.Initializers)
+            {
+                var name = initializer.NameEquals?.Name.Identifier.Text ?? PathOf(initializer.Expression)?[^1];
+                if (name is not null
+                    && resolve(initializer.Expression, out var endsOnRow, out _)
+                    && endsOnRow is not null)
+                {
+                    members[name] = endsOnRow;
+                }
+                else
+                {
+                    columns.Add((initializer.Expression, name));
+                }
+            }
+        }
+        else if (resolve(body, out var endsOnRow, out _) && endsOnRow is not null)
+        {
+            ReportRowsLeftOut(reach, AliasesOf(endsOnRow), clause, $"'{body}' materializes one side of the join and leaves out");
+            return endsOnRow;
+        }
+        else
+        {
+            columns.Add((body, MemberName(body)));
+        }
+
+        if (columns.Count == 0)
+        {
+            var composed = new JoinedRow(members);
+            ReportRowsLeftOut(reach, AliasesOf(composed), clause, "leaves out");
+            return composed;
+        }
+
+        if (members.Count > 0)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"The {clause} puts the whole row{(members.Count == 1 ? string.Empty : "s")} {Listed(members.Keys)} beside columns, which is not a shape the query representation carries; {(members.Count == 1 ? "that member was" : "those members were")} dropped and the columns are projected.",
+                QueryFeature.Projection);
+        }
+
+        foreach (var (expression, alias) in columns)
+        {
+            EmitProjection(expression, alias, resolve);
+        }
+
+        return new JoinedRow(new Dictionary<string, RowShape>(StringComparer.Ordinal));
+    }
+
+    private void ReportRowsLeftOut(HashSet<string> reach, HashSet<string> carried, string clause, string how)
+    {
+        var leftOut = reach.Where(alias => !carried.Contains(alias)).ToList();
+        if (leftOut.Count == 0)
+        {
+            return;
+        }
+
+        Report(
+            ConversionRecordKind.Loss,
+            $"The {clause} {how} the row{(leftOut.Count == 1 ? string.Empty : "s")} {Listed(leftOut)} of the joined row, which is not a shape the query representation carries; the whole joined row is materialized instead.",
+            QueryFeature.Projection);
+    }
+
+    private static string Listed(IEnumerable<string> names)
+        => string.Join(", ", names.Select(name => $"'{name}'"));
+
+    /// <summary>
+    /// The identifiers of a member path, root first - <c>x.o.PlacedAt</c> gives x, o,
+    /// PlacedAt - or null when the expression is not one (a call, a literal, an index).
+    /// </summary>
+    private static List<string>? PathOf(ExpressionSyntax expression)
+    {
+        var path = new List<string>();
+        var current = expression;
+
+        while (true)
+        {
+            switch (current)
+            {
+                case MemberAccessExpressionSyntax member:
+                    path.Add(member.Name.Identifier.Text);
+                    current = member.Expression;
+                    continue;
+
+                case IdentifierNameSyntax identifier:
+                    path.Add(identifier.Identifier.Text);
+                    path.Reverse();
+                    return path;
+
+                default:
+                    return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Follows a member path from a row shape: through the members of a joined row, down to
+    /// the row it ends on or to the column of the entity row it ends in. A path that goes
+    /// on past an entity row is a navigation, which this parser does not read.
+    /// </summary>
+    private static bool TryWalk(
+        RowShape shape,
+        List<string> path,
+        int from,
+        out RowShape? endsOnRow,
+        out (string Alias, string Column)? endsOnColumn)
+    {
+        endsOnRow = null;
+        endsOnColumn = null;
+        var index = from;
+
+        while (true)
+        {
+            var remaining = path.Count - index;
+            switch (shape)
+            {
+                case EntityRow entity when remaining == 0:
+                    endsOnRow = entity;
+                    return true;
+
+                case EntityRow entity when remaining == 1:
+                    endsOnColumn = (entity.Alias, path[index]);
+                    return true;
+
+                case JoinedRow joined when remaining == 0:
+                    endsOnRow = joined;
+                    return true;
+
+                case JoinedRow joined when joined.Members.TryGetValue(path[index], out var member):
+                    shape = member;
+                    index++;
+                    continue;
+
+                default:
+                    return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves a path whose root is a parameter the caller has bound to a row - the two
+    /// parameters of a result selector.
+    /// </summary>
+    private static bool TryResolveBound(
+        ExpressionSyntax expression,
+        IReadOnlyDictionary<string, RowShape> bindings,
+        out RowShape? endsOnRow,
+        out (string Alias, string Column)? endsOnColumn)
+    {
+        endsOnRow = null;
+        endsOnColumn = null;
+
+        return PathOf(expression) is { Count: > 0 } path
+            && bindings.TryGetValue(path[0], out var shape)
+            && TryWalk(shape, path, 1, out endsOnRow, out endsOnColumn);
+    }
+
+    /// <summary>
+    /// Resolves a path written in a lambda whose parameter is not tracked - every step after
+    /// the join - against the joined row of this scope, then of the enclosing ones (a
+    /// correlated reference, decision 061). The first identifier is the parameter, whatever
+    /// it is called, and only a path with a member of the joined row between it and the
+    /// column is resolved here: a one-member path keeps the reading it always had, in which
+    /// the parameter name is the alias, because that is what a correlated reference to an
+    /// outer scope looks like.
+    /// </summary>
+    private bool TryResolveInScope(
+        ExpressionSyntax expression,
+        out RowShape? endsOnRow,
+        out (string Alias, string Column)? endsOnColumn)
+    {
+        endsOnRow = null;
+        endsOnColumn = null;
+
+        if (PathOf(expression) is not { Count: >= 2 } path)
+        {
+            return false;
+        }
+
+        foreach (var candidate in ScopeRows())
+        {
+            if (candidate is JoinedRow joined && joined.Members.ContainsKey(path[1]))
+            {
+                return TryWalk(joined, path, 1, out endsOnRow, out endsOnColumn);
+            }
+        }
+
+        return false;
+    }
+
+    private IEnumerable<RowShape> ScopeRows()
+    {
+        yield return row;
+
+        for (int i = enclosingRows.Count - 1; i >= 0; i--)
+        {
+            yield return enclosingRows[i];
+        }
+    }
+
+    private HashSet<string> AliasesInScope()
+    {
+        var aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { sourceAlias };
+        foreach (var shape in ScopeRows())
+        {
+            Collect(shape, aliases);
+        }
+
+        return aliases;
+    }
+
+    private static HashSet<string> AliasesOf(RowShape shape)
+    {
+        var aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Collect(shape, aliases);
+        return aliases;
+    }
+
+    private static void Collect(RowShape shape, HashSet<string> into)
+    {
+        switch (shape)
+        {
+            case EntityRow entity:
+                into.Add(entity.Alias);
+                break;
+
+            case JoinedRow joined:
+                foreach (var member in joined.Members.Values)
+                {
+                    Collect(member, into);
+                }
+
+                break;
+        }
     }
 
     /// <summary>
     /// Simple keys (ol =&gt; ol.OrderId) yield one equality; composite keys expressed with
-    /// anonymous types are paired positionally into an AND of several equalities.
+    /// anonymous types are paired positionally into an AND of several equalities. The outer
+    /// key ranges over the row as the joins so far shaped it, so <c>x =&gt; x.o.OrderId</c>
+    /// joins on the table an earlier join brought in; the inner key always ranges over the
+    /// table being joined.
     /// </summary>
     private ConditionNode? BuildJoinCondition(
         ExpressionSyntax outerBody,
@@ -726,7 +1113,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             var equalities = new List<ConditionNode>();
             for (int i = 0; i < outerAnon.Initializers.Count; i++)
             {
-                var left = MemberName(outerAnon.Initializers[i].Expression);
+                var outerKey = outerAnon.Initializers[i].Expression;
+                var left = MemberName(outerKey);
                 var right = MemberName(innerAnon.Initializers[i].Expression);
                 if (left is null || right is null)
                 {
@@ -734,7 +1122,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 }
 
                 equalities.Add(new ComparisonCondition(
-                    QueryOperand.Column(leftAlias, left),
+                    QueryOperand.Column(OuterKeyAlias(outerKey, leftAlias), left),
                     ComparisonOperator.Equal,
                     QueryOperand.Column(rightAlias, right)));
             }
@@ -752,10 +1140,15 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         return new ComparisonCondition(
-            QueryOperand.Column(leftAlias, outerName),
+            QueryOperand.Column(OuterKeyAlias(outerBody, leftAlias), outerName),
             ComparisonOperator.Equal,
             QueryOperand.Column(rightAlias, innerName));
     }
+
+    private string OuterKeyAlias(ExpressionSyntax outerKey, string leftAlias)
+        => TryResolveInScope(outerKey, out _, out var column) && column is { } resolved
+            ? resolved.Alias
+            : leftAlias;
 
     private void HandleSelect(InvocationExpressionSyntax node)
     {
@@ -772,20 +1165,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             case IdentifierNameSyntax:
                 return;
 
+            // The members may be columns, or after a join the rows of the joined result
+            // (Select(x => new { x.ol, x.o }) is that whole row under its names, as much
+            // as Select(x => x) is), or a mix, which is read the way a result selector is.
             case AnonymousObjectCreationExpressionSyntax anon:
-                foreach (var initializer in anon.Initializers)
-                {
-                    EmitProjection(
-                        initializer.Expression,
-                        initializer.NameEquals?.Name.Identifier.Text ?? MemberName(initializer.Expression));
-                }
-
+                row = ReadMaterializedShape(anon, TryResolveInScope, AliasesOf(row), "projection");
                 return;
 
             // Select(c => c.Name) is a projection of one column - the commonest shape there
-            // is, and one an earlier version dropped entirely.
+            // is, and one an earlier version dropped entirely. Select(x => x.o) after a join
+            // is one side of the joined row, which goes the same way as in a selector.
             case MemberAccessExpressionSyntax member:
-                EmitProjection(member, MemberName(member));
+                row = ReadMaterializedShape(member, TryResolveInScope, AliasesOf(row), "projection");
                 return;
 
             default:
@@ -797,7 +1188,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
     }
 
-    private void EmitProjection(ExpressionSyntax expression, string? alias)
+    private void EmitProjection(ExpressionSyntax expression, string? alias, Resolve? resolve = null)
     {
         if (TryReadAggregate(expression, out var function, out var table, out var attribute))
         {
@@ -816,6 +1207,24 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             Report(
                 ConversionRecordKind.Loss,
                 $"The projected expression '{expression}' names the grouping key, which this query does not group by in a shape the representation can point at; the column was dropped.",
+                QueryFeature.Projection);
+            return;
+        }
+
+        // A path the rows in scope resolve - ol.Description inside a result selector,
+        // x.o.PlacedAt after a join - says which table the column belongs to.
+        Resolve resolver = resolve ?? TryResolveInScope;
+        if (resolver(expression, out _, out var resolved))
+        {
+            if (resolved is { } column)
+            {
+                queryBuilder.Project(column.Alias, column.Column, alias);
+                return;
+            }
+
+            Report(
+                ConversionRecordKind.Loss,
+                $"The projected expression '{expression}' names a whole row of the joined result, which is not a shape the query representation carries; the member was dropped.",
                 QueryFeature.Projection);
             return;
         }
@@ -1050,6 +1459,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             && MemberName(lambdaBody) is { } column)
         {
             attribute = column;
+
+            // After a join the element is the joined row, and x.o.Amount says which of its
+            // tables the column belongs to.
+            if (TryResolveInScope(lambdaBody, out _, out var resolved) && resolved is { } joinedColumn)
+            {
+                table = joinedColumn.Alias;
+            }
+
             return true;
         }
 
@@ -1328,6 +1745,10 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     {
         MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax identifier
             => QueryOperand.Column(identifier.Identifier.Text, member.Name.Identifier.Text),
+        // x.o.PlacedAt after a join: the middle member is a row of the joined result, in
+        // this scope or an enclosing one, and names the table.
+        MemberAccessExpressionSyntax nested when TryResolveInScope(nested, out _, out var resolved) && resolved is { } column
+            => QueryOperand.Column(column.Alias, column.Column),
         LiteralExpressionSyntax literal => QueryOperand.Value(ReadConstant(literal)),
         PrefixUnaryExpressionSyntax negation when negation.IsKind(SyntaxKind.UnaryMinusExpression)
             && negation.Operand is LiteralExpressionSyntax inner
@@ -1594,12 +2015,25 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         _ => null,
     };
 
-    private string AliasOf(ExpressionSyntax expression) => expression switch
+    /// <summary>
+    /// The table alias a column reference is qualified by: the row of the joined result it
+    /// goes through (<c>x.o.PlacedAt</c>), else the identifier before the column, which is
+    /// the lambda parameter and, for the chain's first lambda, the source alias itself.
+    /// </summary>
+    private string AliasOf(ExpressionSyntax expression)
     {
-        MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax identifier
-            => identifier.Identifier.Text,
-        _ => sourceAlias,
-    };
+        if (TryResolveInScope(expression, out _, out var resolved) && resolved is { } column)
+        {
+            return column.Alias;
+        }
+
+        return expression switch
+        {
+            MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax identifier
+                => identifier.Identifier.Text,
+            _ => sourceAlias,
+        };
+    }
 
     private static string NameOfSource(ExpressionSyntax expression) => expression switch
     {

@@ -157,15 +157,18 @@ public static class QueryShapeInputs
                 INNER JOIN Sales.CustomerOrders AS o ON o.CompanyId = ol.CompanyId AND o.OrderId = ol.OrderId
                 WHERE o.CustomerId > 0
                 """,
-            // A LINQ join reads its keys from the root and materializes whole rows: the
-            // parser reads no member of the joined row after the join (see open-items.md).
+            // The whole joined row through the result selector, then the filter and the
+            // projection over the joined table through the members of that row - the same
+            // query as the other rows state, since 2026-09-29. A LINQ join writes its
+            // condition outer table first, which is why the hallmarks name no order.
             linq: """
                 ctx.OrderLines
-                    .Where(ol => ol.Quantity > 0)
                     .Join(ctx.Orders,
                         ol => new { ol.CompanyId, ol.OrderId },
                         o => new { o.CompanyId, o.OrderId },
                         (ol, o) => new { ol, o })
+                    .Where(x => x.o.CustomerId > 0)
+                    .Select(x => new { Text = x.ol.Description, x.o.CustomerId })
                 """,
             hql: """
                 select ol.Description as Text, o.CustomerId as CustomerId
@@ -180,12 +183,13 @@ public static class QueryShapeInputs
                 where o.CustomerId > 0
                 """,
             hallmarks: Hallmarks(
-                // Alias-agnostic on purpose: a LINQ source names a joined row after its
-                // table, the other sources after the alias they wrote.
-                sql: ["INNER JOIN Sales.", ".CompanyId = ", ".OrderId = ", " AND "],
-                linq: [".Join(", "ctx.Set<CustomerOrder>()", ".CompanyId", ".OrderId"],
-                hql: ["inner join CustomerOrder ", " with ", ".CompanyId = ", ".OrderId = ", " and "],
-                jpa: ["join CustomerOrder ", " on ", ".CompanyId = ", ".OrderId = ", " and "])),
+                // The aliases are the ones every source wrote: a LINQ source names the
+                // joined row after the result selector's parameter, o here as well, and the
+                // filter and the projection over the joined table reach every target.
+                sql: ["INNER JOIN Sales.", ".CompanyId = ", ".OrderId = ", " AND ", "ol.Description AS Text", "WHERE o.CustomerId > 0"],
+                linq: [".Join(", "ctx.Set<CustomerOrder>()", "ol.CompanyId", "ol.OrderId", ".o.CustomerId > 0", "Text = ", ".ol.Description"],
+                hql: ["inner join CustomerOrder o", " with ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"],
+                jpa: ["join CustomerOrder o", " on ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"])),
 
         Define(
             "aggregation, grouping and having",

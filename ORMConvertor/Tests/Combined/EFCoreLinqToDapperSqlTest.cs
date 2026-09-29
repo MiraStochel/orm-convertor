@@ -85,10 +85,14 @@ public class EFCoreLinqToDapperSqlTest
 
         var map = new EntityMap { Entity = new() { Name = "OrderLine" }, Table = "OrderLines", Schema = "Sales" };
 
+        // The result selector is the projection, and the aliases are the names the source
+        // gave the rows - ol from the outer key selector, o from the result selector. Until
+        // 2026-09-29 the selector was not read at all: this test expected SELECT * and the
+        // source alias o, the first letter of the table.
         string expected = """
-        SELECT *
-        FROM Sales.OrderLines AS o
-        INNER JOIN Orders orders ON o.OrderId = orders.OrderId AND o.CompanyId = orders.CompanyId
+        SELECT ol.Description AS Description
+        FROM Sales.OrderLines AS ol
+        INNER JOIN Orders o ON ol.OrderId = o.OrderId AND ol.CompanyId = o.CompanyId
         """;
 
         Assert.Equal(expected, Translate(linqSource, map), ignoreWhiteSpaceDifferences: true, ignoreLineEndingDifferences: true);
