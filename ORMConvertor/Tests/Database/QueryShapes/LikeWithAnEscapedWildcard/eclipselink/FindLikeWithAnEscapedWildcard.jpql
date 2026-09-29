@@ -1,1 +1,1 @@
-select p from Product p where p.ProductName like 'W!_%' escape '!'
+select p from ShopProduct p where p.ProductName like 'W!_%' escape '!'

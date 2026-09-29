@@ -2,7 +2,7 @@ package Shop;
 
 import java.math.BigDecimal;
 
-public class OrderLine {
+public class ShopOrderLine {
     private Integer CompanyId;
     private Integer OrderId;
     private Integer LineNumber;

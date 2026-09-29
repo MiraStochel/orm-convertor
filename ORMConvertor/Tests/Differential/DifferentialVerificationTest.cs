@@ -1,3 +1,5 @@
+using AbstractWrappers.Descriptors;
+using AbstractWrappers.Diagnostics;
 using Model;
 using Tests.Database;
 
@@ -15,7 +17,8 @@ namespace Tests.Differential;
 ///
 /// The canonical result belongs to the query and not to a direction, which is what keeps
 /// it honest: a translation broken in one direction cannot be fixed by moving the target,
-/// because moving it breaks every other direction of the same query at once.
+/// because moving it breaks every other direction of the same query at once. A category of
+/// T2 has several sources, and every one of their runs meets the same file too.
 /// </summary>
 [Collection(TestSchemaCollection.Name)]
 public class DifferentialVerificationTest(TestSchemaFixture fixture)
@@ -27,13 +30,16 @@ public class DifferentialVerificationTest(TestSchemaFixture fixture)
     /// </summary>
     private const string RecordVariable = "ORMCONVERTOR_RECORD_DIFFERENTIAL";
 
-    /// <summary>The queries whose source framework this suite can run.</summary>
-    public static TheoryData<string> SourceQueries()
+    /// <summary>The source variants this suite can run: every (query, source) whose source it owns.</summary>
+    public static TheoryData<string, ORMEnum> SourceVariants()
     {
-        var data = new TheoryData<string>();
-        foreach (var query in DifferentialMatrix.Queries.Where(q => DotNetQueryRunner.Owns(q.Source)))
+        var data = new TheoryData<string, ORMEnum>();
+        foreach (var query in DifferentialMatrix.Queries)
         {
-            data.Add(query.Id);
+            foreach (var source in query.Sources.Where(DotNetQueryRunner.Owns))
+            {
+                data.Add(query.Id, source);
+            }
         }
 
         return data;
@@ -44,29 +50,41 @@ public class DifferentialVerificationTest(TestSchemaFixture fixture)
     /// suite's, and each suite states that it ran every pair assigned to it
     /// (<see cref="DifferentialMatrixTest"/>), so neither half can be met by skipping.
     /// </summary>
-    public static TheoryData<string, ORMEnum> Pairs()
+    public static TheoryData<string, ORMEnum, ORMEnum> Pairs()
     {
-        var data = new TheoryData<string, ORMEnum>();
-        foreach (var (query, target) in DifferentialMatrix.Pairs().Where(p => DotNetQueryRunner.Owns(p.Target)))
+        var data = new TheoryData<string, ORMEnum, ORMEnum>();
+        foreach (var pair in DifferentialMatrix.Pairs().Where(p => DotNetQueryRunner.Owns(p.Target)))
         {
-            data.Add(query.Id, target);
+            data.Add(pair.Query.Id, pair.Source, pair.Target);
+        }
+
+        return data;
+    }
+
+    /// <summary>The directions the matrix states as refused whose target this suite owns.</summary>
+    public static TheoryData<string, ORMEnum, ORMEnum, QueryFeature> RefusedDirections()
+    {
+        var data = new TheoryData<string, ORMEnum, ORMEnum, QueryFeature>();
+        foreach (var refused in DifferentialMatrix.RefusedDirections().Where(r => DotNetQueryRunner.Owns(r.Target)))
+        {
+            data.Add(refused.Query.Id, refused.Source, refused.Target, refused.Feature);
         }
 
         return data;
     }
 
     [Theory]
-    [MemberData(nameof(SourceQueries))]
-    public void TheSourceVariantFixesTheCanonicalResult(string id)
+    [MemberData(nameof(SourceVariants))]
+    public void TheSourceVariantFixesTheCanonicalResult(string id, ORMEnum source)
     {
         fixture.SkipIfUnavailable();
 
         var query = Query(id);
-        var rows = DotNetQueryRunner.Run(query, query.Source, fixture);
+        var rows = DotNetQueryRunner.Run(query, source, source, fixture);
 
         if (Recording() is { } directory)
         {
-            Record(directory, query, rows);
+            Record(directory, query, source, rows);
             return;
         }
 
@@ -75,7 +93,7 @@ public class DifferentialVerificationTest(TestSchemaFixture fixture)
 
     [Theory]
     [MemberData(nameof(Pairs))]
-    public void TheTranslatedVariantMatchesTheCanonicalResult(string id, ORMEnum target)
+    public void TheTranslatedVariantMatchesTheCanonicalResult(string id, ORMEnum source, ORMEnum target)
     {
         fixture.SkipIfUnavailable();
 
@@ -85,9 +103,28 @@ public class DifferentialVerificationTest(TestSchemaFixture fixture)
         }
 
         var query = Query(id);
-        var rows = DotNetQueryRunner.Run(query, target, fixture);
+        var rows = DotNetQueryRunner.Run(query, source, target, fixture);
 
         Assert.Equal(query.CanonicalResult(), rows);
+    }
+
+    /// <summary>
+    /// A direction the matrix states as refused is refused: no query artifact comes out and
+    /// a record names the feature the target's descriptor cannot express (decision 053). It
+    /// is the word decision 089 asks the matrix to say instead of a missing row - and a
+    /// target that started accepting the query would show up here rather than nowhere.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RefusedDirections))]
+    public void ARefusedDirectionIsRefusedAsStated(string id, ORMEnum source, ORMEnum target, QueryFeature feature)
+    {
+        fixture.SkipIfUnavailable();
+
+        var query = Query(id);
+        var conversion = OrmConvertor.ConversionHandler.Convert(source, target, query.Units(source), fixture.CatalogReader);
+
+        Assert.DoesNotContain(conversion.Sources, artifact => artifact.ContentType.IsQuery());
+        Assert.Contains(conversion.Records, record => record.Feature == feature);
     }
 
     internal static DifferentialQuery Query(string id)
@@ -99,15 +136,32 @@ public class DifferentialVerificationTest(TestSchemaFixture fixture)
         return string.IsNullOrWhiteSpace(directory) ? null : directory;
     }
 
-    private static void Record(string directory, DifferentialQuery query, IEnumerable<string> rows)
+    /// <summary>
+    /// Writes the canonical result of the query. A category is stated by several sources
+    /// and every one of them records into the same file, so a second recording of a file
+    /// has to agree with the first: two sources that disagree about the rows are two
+    /// queries, and a file written by whichever ran last would hide that.
+    /// </summary>
+    private static void Record(string directory, DifferentialQuery query, ORMEnum source, IEnumerable<string> rows)
     {
         var results = Path.Combine(directory, "results");
         Directory.CreateDirectory(results);
 
         // CRLF because the repository stores these as text files under its own line-ending
         // rule; the comparison is by line, so the choice affects the diff and nothing else.
-        File.WriteAllText(
-            Path.Combine(results, query.Id + ".txt"),
-            string.Concat(rows.Select(row => row + "\r\n")));
+        var text = string.Concat(rows.Select(row => row + "\r\n"));
+        var file = Path.Combine(results, query.Id + ".txt");
+
+        if (File.Exists(file))
+        {
+            var recorded = File.ReadAllText(file);
+            Assert.True(
+                recorded == text,
+                $"{query.Id}: the source variant of {source} returned other rows than the source variant "
+                + $"recorded before it into {file}, so the sources do not state one query.");
+            return;
+        }
+
+        File.WriteAllText(file, text);
     }
 }

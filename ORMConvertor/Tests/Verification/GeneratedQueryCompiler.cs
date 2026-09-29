@@ -45,9 +45,13 @@ internal static class GeneratedQueryCompiler
                 typeof(System.Data.IDbConnection).Assembly,
                 typeof(global::Dapper.SqlMapper).Assembly,
                 typeof(Queryable).Assembly,
+                // A projection materializes as List<dynamic> (decision 104), and the compiler
+                // wants DynamicAttribute for a member typed dynamic; the runtime defines it in
+                // System.Linq.Expressions, which every consumer project references implicitly.
+                typeof(System.Linq.Expressions.Expression).Assembly,
             ],
             ["netstandard.dll", "System.Runtime.dll", "System.Collections.dll",
-             "System.Data.Common.dll", "System.Linq.dll"]);
+             "System.Data.Common.dll", "System.Linq.dll", "System.Linq.Expressions.dll"]);
 
     public static readonly IReadOnlyList<MetadataReference> NHibernateConsumerReferences =
         MetadataReferenceProvider.Create(

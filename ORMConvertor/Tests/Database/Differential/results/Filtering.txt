@@ -1,0 +1,7 @@
+1	1	7	1	"Widget, boxed"	3	120.0000
+1	1	8	6	"Zither"	12	1250.5000
+1	2	1	2	"W_Bolt, bag of ten"	20	15.5000
+1	2	2	1	"Widget, loose"	8	118.0000
+2	1	4	6	"Zither, left-handed"	1	1300.0000
+2	3	10	4	"Anvil, heavy"	2	300.0000
+2	3	9	2	"W_Bolt, single"	6	15.5000

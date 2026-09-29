@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="Shop.FindSubqueryAsTheRightSideOfInMapper">
-  <select id="findSubqueryAsTheRightSideOfIn" resultType="OrderLine">
-    SELECT * FROM Sales.OrderLines AS ol WHERE ol.ProductId IN (SELECT p.ProductId FROM Sales.Products AS p WHERE p.UnitPrice &gt; 100)
+  <select id="findSubqueryAsTheRightSideOfIn" resultType="ShopOrderLine">
+    SELECT * FROM {{schema}}.ShopOrderLines AS ol WHERE ol.ProductId IN (SELECT p.ProductId FROM {{schema}}.ShopProducts AS p WHERE p.UnitPrice &gt; 100)
   </select>
 </mapper>

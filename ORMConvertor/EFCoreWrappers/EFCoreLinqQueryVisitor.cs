@@ -227,7 +227,25 @@ public sealed class EFCoreLinqQueryVisitor(
         {
             var values = renderSubQuery(cond.Right!.SubQuery!, cond.Operator);
             var element = OperandOrSubQuery(cond.Left);
-            return values is null || element is null ? string.Empty : $"{values}.Contains({element})";
+            if (values is null || element is null)
+            {
+                return string.Empty;
+            }
+
+            // The nested chain projects the plain scalar where its column is not nullable -
+            // a key the catalog supplied is not -, and IQueryable<int> has no Contains that
+            // takes an int?, so a nullable column on the left offers its value, exactly as
+            // it does against a collection parameter below. EF Core translates the value as
+            // the column itself, and IN never matches a NULL anyway. Found by the fourth
+            // level over the categories of T2: a MyBatis source declares the column as
+            // Integer, the catalog makes the product's key an int, and the artifact did not
+            // compile in that one direction.
+            if (NullableElementType(cond.Left) is not null)
+            {
+                element += ".Value";
+            }
+
+            return $"{values}.Contains({element})";
         }
 
         var left = OperandOrSubQuery(cond.Left);

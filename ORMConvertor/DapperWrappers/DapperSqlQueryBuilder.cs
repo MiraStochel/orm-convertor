@@ -21,7 +21,6 @@ public class DapperSqlQueryBuilder : AbstractSqlQueryBuilder
 
     protected override List<ConversionSource> Emit(string sql, string? resultEntity)
     {
-        var entity = resultEntity ?? "object";
         var indented = string.Join("\n", sql.Split('\n').Select(line => "        " + line));
 
         // Dapper binds from an anonymous object whose members are the placeholders of the
@@ -30,11 +29,19 @@ public class DapperSqlQueryBuilder : AbstractSqlQueryBuilder
             ? string.Empty
             : $", new {{ {string.Join(", ", Parameters.Select(QueryParameterNaming.IdentifierFor))} }}";
 
+        // A query over the whole entity materializes into it; a projection materializes as
+        // Dapper's own untyped row - Query without a type parameter, a dynamic per row whose
+        // members are the columns the projection named (decision 104). Query<Entity> over a
+        // projection would fill none of them and say nothing about it.
+        var (returns, call) = resultEntity is null
+            ? ("List<dynamic>", "connection.Query(")
+            : ($"List<{resultEntity}>", $"connection.Query<{resultEntity}>(");
+
         var method =
             $$""""
-            public static List<{{entity}}> {{MethodName}}(IDbConnection connection{{CSharpParameters()}})
+            public static {{returns}} {{MethodName}}(IDbConnection connection{{CSharpParameters()}})
             {
-                return connection.Query<{{entity}}>(
+                return {{call}}
                     """
             {{indented}}
                     """{{binding}}).ToList();

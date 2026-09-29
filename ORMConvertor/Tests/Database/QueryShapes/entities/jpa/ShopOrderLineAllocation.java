@@ -1,5 +1,5 @@
-// The OrderLineAllocations table under a four-part key whose leading three parts are the
-// foreign key to OrderLines - the join over three columns of the matrices.
+// The ShopOrderLineAllocations table under a four-part key whose leading three parts are the
+// foreign key to ShopOrderLines - the join over three columns of the matrices.
 package Shop;
 
 import jakarta.persistence.Column;
@@ -11,9 +11,9 @@ import java.io.Serializable;
 import java.util.Objects;
 
 @Entity
-@Table(name = "OrderLineAllocations", schema = "Sales")
-@IdClass(OrderLineAllocation.OrderLineAllocationId.class)
-public class OrderLineAllocation {
+@Table(name = "ShopOrderLineAllocations", schema = "{{schema}}")
+@IdClass(ShopOrderLineAllocation.OrderLineAllocationId.class)
+public class ShopOrderLineAllocation {
     @Id
     @Column(name = "CompanyId")
     private Integer CompanyId;

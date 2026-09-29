@@ -1,20 +1,20 @@
 // The domain of the query-shape matrices as Dapper states it: plain classes, no attribute,
-// no key - every mapping fact is the catalog's to supply (F6). The class of the Orders
-// table is called CustomerOrder because `order` is a keyword of HQL and JPQL, so the SQL
-// of this source names the table CustomerOrders and the naming rule of decision 050
-// finds the class. Read by both test suites from this one file.
+// no key - every mapping fact is the catalog's to supply (F6). The five classes carry
+// the prefix Shop, so that the naming rule of decision 050 finds their tables - ShopOrders
+// from ShopOrder - and finds them once: the fixture schema holds Orders, OrderLines and
+// Products of its own. Read by both test suites from this one file.
 using System;
 
 namespace Shop;
 
-public class Customer
+public class ShopCustomer
 {
     public int CustomerId { get; set; }
     public string Name { get; set; }
     public string? Notes { get; set; }
 }
 
-public class CustomerOrder
+public class ShopOrder
 {
     public int CompanyId { get; set; }
     public int OrderId { get; set; }
@@ -23,7 +23,7 @@ public class CustomerOrder
     public bool IsCancelled { get; set; }
 }
 
-public class OrderLine
+public class ShopOrderLine
 {
     public int CompanyId { get; set; }
     public int OrderId { get; set; }
@@ -34,7 +34,7 @@ public class OrderLine
     public decimal UnitPrice { get; set; }
 }
 
-public class OrderLineAllocation
+public class ShopOrderLineAllocation
 {
     public int CompanyId { get; set; }
     public int OrderId { get; set; }
@@ -44,7 +44,7 @@ public class OrderLineAllocation
     public string? Notes { get; set; }
 }
 
-public class Product
+public class ShopProduct
 {
     public int ProductId { get; set; }
     public string ProductName { get; set; }

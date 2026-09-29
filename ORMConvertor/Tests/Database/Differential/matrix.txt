@@ -1,6 +1,7 @@
 # The differential matrix (decision 089). One section per query; the pairs of the
-# criterion are this query's source framework against each of the other five, so six
-# queries make the thirty pairs F13 asks for.
+# criterion are a source variant of the query against each framework that neither states
+# it nor refuses it. The six queries the matrix began with have one source each and make
+# thirty pairs; the categories of T2 below have every source that states them.
 #
 # Read by both suites from this one file, beside the schema script - the mechanism
 # decision 076 set up so that the schema stays one. The format is deliberately poorer
@@ -80,3 +81,183 @@ shape = entity
 ordered = true
 decimalScale = 4
 mutations = ordering, rowCount
+
+# ---- the categories of T2 -------------------------------------------------------------
+#
+# From here on every section is a category of the shared manifest QueryShapes/categories.txt,
+# named by the key below, and states neither a source nor units: the manifest says which
+# sources state the category and with which query units, the domain of five entities under
+# QueryShapes/entities is the mapping half of every one of them, and the rows they run over
+# are QueryShapes/FixtureData.sql. Every source variant of a category runs and has to meet
+# the one canonical result of the section, as every translation of it does, so a source
+# that read the category into another query is caught by its own run.
+#
+#   category        the section of categories.txt this query is. A target the manifest lists
+#                   under refusedBy is paired with no source of the category and is stated as
+#                   a refused direction instead, which a suite asserts (decision 053). A source
+#                   the manifest lists under refusedFrom is no source here either: the
+#                   refusal is of a Dapper parameter with nothing to type it from (decision
+#                   083), and the catalog of the fixture does not lift it for the source's own
+#                   run - that run is the identity direction, a Dapper target demands no
+#                   mapping fact, so the completion phase supplies no table to bind the
+#                   column to - and a query whose source variant cannot run is no query of
+#                   the matrix (decision 089). The three parameter categories therefore
+#                   have five sources, not six.
+#
+# Where none of the five mutations reaches a query, "mutations" is empty and the positive
+# half carries the category alone: a target that dropped the DISTINCT of a projection, or the
+# DISTINCT inside a COUNT, returns other rows than the canonical ones.
+
+[Projection]
+category = Projection
+fields = Text, Qty
+shape = projection
+ordered = false
+mutations = projection
+
+[Filtering]
+category = Filtering
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter, operator
+
+[JoinOverTwoColumns]
+category = JoinOverTwoColumns
+fields = Text, CustomerId
+shape = projection
+ordered = false
+mutations = filter, operator, projection
+
+# The HAVING is the query's only condition, and it is not a WHERE: the operator inside it
+# is what a wrong translation flips.
+[AggregationGroupingAndHaving]
+category = AggregationGroupingAndHaving
+fields = ProductId, Total, Lines
+shape = projection
+ordered = false
+mutations = operator
+
+[Ordering]
+category = Ordering
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = true
+decimalScale = 4
+mutations = ordering
+
+[PaginationWithBoundCounts]
+category = PaginationWithBoundCounts
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = true
+decimalScale = 4
+arguments = skip:int=2, take:int=3
+mutations = ordering, rowCount
+
+[SubqueryAsTheRightSideOfIn]
+category = SubqueryAsTheRightSideOfIn
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter, operator
+
+[CorrelatedExistsOverThreeColumns]
+category = CorrelatedExistsOverThreeColumns
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter
+
+[ScalarSubquery]
+category = ScalarSubquery
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter, operator
+
+# Both operands filter on one line in JPQL, so only the operator reaches every target.
+[SetOperation]
+category = SetOperation
+fields = Text
+shape = projection
+ordered = false
+mutations = operator
+
+[DistinctProjection]
+category = DistinctProjection
+fields = ProductId
+shape = projection
+ordered = false
+mutations =
+
+[InOverAListOfValues]
+category = InOverAListOfValues
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter
+
+[ScalarParameter]
+category = ScalarParameter
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+arguments = minQuantity:int=5
+mutations = filter, operator
+
+# A collection is written as its elements separated by semicolons, because the argument
+# list itself is separated by commas.
+[CollectionParameter]
+category = CollectionParameter
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+arguments = ids:int[]=2;4
+mutations = filter
+
+[ConstantOfAMoment]
+category = ConstantOfAMoment
+fields = CompanyId, OrderId, CustomerId, PlacedAt, IsCancelled
+shape = entity
+ordered = false
+mutations = filter, operator
+
+[LikeWithAnAnchoredPattern]
+category = LikeWithAnAnchoredPattern
+fields = ProductId, ProductName, Sku, UnitPrice, IsDiscontinued
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter
+
+[CountOverDistinctValues]
+category = CountOverDistinctValues
+fields = ProductId, Orders
+shape = projection
+ordered = false
+mutations =
+
+[LikeWithAnEscapedWildcard]
+category = LikeWithAnEscapedWildcard
+fields = ProductId, ProductName, Sku, UnitPrice, IsDiscontinued
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter
+
+[InListWithABoundValue]
+category = InListWithABoundValue
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+arguments = extra:int=5
+mutations = filter

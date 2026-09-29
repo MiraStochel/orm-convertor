@@ -2,9 +2,9 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="Shop.FindCorrelatedExistsOverThreeColumnsMapper">
-  <select id="findCorrelatedExistsOverThreeColumns" resultType="OrderLine">
-    SELECT * FROM Sales.OrderLines AS ol
-    WHERE EXISTS (SELECT a.AllocationId FROM Sales.OrderLineAllocations AS a
+  <select id="findCorrelatedExistsOverThreeColumns" resultType="ShopOrderLine">
+    SELECT * FROM {{schema}}.ShopOrderLines AS ol
+    WHERE EXISTS (SELECT a.AllocationId FROM {{schema}}.ShopOrderLineAllocations AS a
               WHERE a.CompanyId = ol.CompanyId AND a.OrderId = ol.OrderId AND a.LineNumber = ol.LineNumber)
   </select>
 </mapper>

@@ -28,6 +28,7 @@ public sealed class TestSchemaFixture : IAsyncLifetime
 {
     private const string ScriptResourceName = "Tests.Database.TestSchema.sql";
     private const string DataResourceName = "Tests.Database.Differential.FixtureData.sql";
+    private const string ShapesDataResourceName = "Tests.Database.QueryShapes.FixtureData.sql";
     private const string SchemaPlaceholder = "{{schema}}";
 
     /// <summary>
@@ -196,12 +197,14 @@ public sealed class TestSchemaFixture : IAsyncLifetime
 
     /// <summary>
     /// The batches of the DDL script followed by those of the read-only data the
-    /// differential verification reads (decision 089). The data belongs to the fixture and
-    /// not to a test: it is written once, never changed, and both suites make it from this
-    /// one script, so the two halves of a pair read rows made by the same statements.
+    /// differential verification reads (decision 089): the one table of the first six
+    /// queries of the matrix, then the five tables of the domain the query categories of
+    /// T2 are written over. The data belongs to the fixture and not to a test: it is written
+    /// once, never changed, and both suites make it from these scripts, so the two halves
+    /// of a pair read rows made by the same statements.
     /// </summary>
     private IEnumerable<string> ReadScriptBatches()
-        => [.. Batches(ScriptResourceName), .. Batches(DataResourceName)];
+        => [.. Batches(ScriptResourceName), .. Batches(DataResourceName), .. Batches(ShapesDataResourceName)];
 
     private IEnumerable<string> Batches(string resourceName)
     {

@@ -79,7 +79,7 @@ public class CrossEcosystemMatrixTest
     {
         var covered = DifferentialMatrix.Pairs()
             .Select(pair => (
-                Source: FrameworkDescriptors.EcosystemOf(pair.Query.Source),
+                Source: FrameworkDescriptors.EcosystemOf(pair.Source),
                 Target: FrameworkDescriptors.EcosystemOf(pair.Target)))
             .Distinct()
             .ToList();
@@ -128,5 +128,5 @@ public class CrossEcosystemMatrixTest
 
     private static int DifferentialCrossEcosystemPairs()
         => DifferentialMatrix.Pairs()
-            .Count(pair => FrameworkDescriptors.CrossEcosystem(pair.Query.Source, pair.Target));
+            .Count(pair => FrameworkDescriptors.CrossEcosystem(pair.Source, pair.Target));
 }

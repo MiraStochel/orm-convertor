@@ -36,7 +36,8 @@ public record InputUnit(String name, int contentType, String content) {
      * Reads a file shared with the .NET suite under {@code ../Tests/Database}, which the
      * pom takes as a test resource at the classpath root: {@code QueryShapes/...} for the
      * inputs of the query-shape matrices. The same naming rules apply as for the suite's
-     * own resources.
+     * own resources, and the same placeholder: the read-only tables of that domain stand in
+     * the suite's schema beside the fixture's own (decision 089).
      */
     public static InputUnit fromShared(String path) {
         return fromClasspath("/" + path);

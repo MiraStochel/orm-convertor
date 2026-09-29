@@ -160,18 +160,14 @@ public class DeeplyNestedQueryVerificationTest
         }
     }
 
-    /// <summary>
-    /// The five entities as the SQL of the source names them: the two sources without a
-    /// mapping call the orders table by the class name's plural (see the inputs), the four
-    /// with one by the table of the fixture schema.
-    /// </summary>
+    /// <summary>The five entities as every source of the domain names their tables (see the inputs).</summary>
     private static List<EntityMap> Maps(ORMEnum source) =>
     [
-        Map("Customer", "Customers", "CustomerId", "Name", "Notes"),
-        Map("CustomerOrder", QueryShapeInputs.OrdersTable(source), "CompanyId", "OrderId", "CustomerId", "PlacedAt", "IsCancelled"),
-        Map("OrderLine", "OrderLines", "CompanyId", "OrderId", "LineNumber", "ProductId", "Description", "Quantity", "UnitPrice"),
-        Map("OrderLineAllocation", "OrderLineAllocations", "CompanyId", "OrderId", "LineNumber", "AllocationId", "AllocatedQuantity", "Notes"),
-        Map("Product", "Products", "ProductId", "ProductName", "Sku", "UnitPrice", "IsDiscontinued"),
+        Map("ShopCustomer", "ShopCustomers", "CustomerId", "Name", "Notes"),
+        Map("ShopOrder", QueryShapeInputs.OrdersTable, "CompanyId", "OrderId", "CustomerId", "PlacedAt", "IsCancelled"),
+        Map("ShopOrderLine", "ShopOrderLines", "CompanyId", "OrderId", "LineNumber", "ProductId", "Description", "Quantity", "UnitPrice"),
+        Map("ShopOrderLineAllocation", "ShopOrderLineAllocations", "CompanyId", "OrderId", "LineNumber", "AllocationId", "AllocatedQuantity", "Notes"),
+        Map("ShopProduct", "ShopProducts", "ProductId", "ProductName", "Sku", "UnitPrice", "IsDiscontinued"),
     ];
 
     private static EntityMap Map(string entity, string table, params string[] columns) => new()

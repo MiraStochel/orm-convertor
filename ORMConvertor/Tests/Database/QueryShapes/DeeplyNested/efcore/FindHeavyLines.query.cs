@@ -4,24 +4,24 @@
 // the correlated subqueries included -, grouping and aggregates over the root's columns.
 public void Query()
 {
-    var q = ctx.OrderLines
-        .Join(ctx.Orders,
+    var q = ctx.ShopOrderLines
+        .Join(ctx.ShopOrders,
             ol => new { ol.CompanyId, ol.OrderId },
             o => new { o.CompanyId, o.OrderId },
             (ol, o) => new { ol, o })
-        .Join(ctx.OrderLineAllocations,
+        .Join(ctx.ShopOrderLineAllocations,
             x => new { x.ol.CompanyId, x.ol.OrderId, x.ol.LineNumber },
             a => new { a.CompanyId, a.OrderId, a.LineNumber },
             (x, a) => new { x.ol, x.o, a })
-        .LeftJoin(ctx.Products,
+        .LeftJoin(ctx.ShopProducts,
             x => x.ol.ProductId,
             p => p.ProductId,
             (x, p) => new { x.ol, x.o, x.a, p })
         .Where(x => x.ol.Quantity >= minQuantity
-            && ctx.Customers
-                .Where(c => ctx.Orders
-                    .Where(o2 => ctx.OrderLines
-                        .Where(ol2 => ol2.UnitPrice > ctx.Products
+            && ctx.ShopCustomers
+                .Where(c => ctx.ShopOrders
+                    .Where(o2 => ctx.ShopOrderLines
+                        .Where(ol2 => ol2.UnitPrice > ctx.ShopProducts
                             .Where(p2 => new[] { 1, 2, 3 }.Contains(p2.ProductId))
                             .Average(p2 => p2.UnitPrice))
                         .Select(ol2 => ol2.OrderId)
@@ -31,17 +31,17 @@ public void Query()
                 .Select(c => c.CustomerId)
                 .Distinct()
                 .Contains(x.o.CustomerId)
-            && ctx.OrderLineAllocations.Any(a2 => a2.CompanyId == x.ol.CompanyId
+            && ctx.ShopOrderLineAllocations.Any(a2 => a2.CompanyId == x.ol.CompanyId
                 && a2.OrderId == x.ol.OrderId
                 && a2.LineNumber == x.ol.LineNumber
-                && a2.AllocatedQuantity > ctx.OrderLines
+                && a2.AllocatedQuantity > ctx.ShopOrderLines
                     .Where(ol3 => ol3.ProductId == x.ol.ProductId)
                     .Min(ol3 => ol3.Quantity))
-            && !ctx.Products.Any(p3 => p3.ProductId == x.ol.ProductId
-                && p3.UnitPrice < ctx.OrderLines
+            && !ctx.ShopProducts.Any(p3 => p3.ProductId == x.ol.ProductId
+                && p3.UnitPrice < ctx.ShopOrderLines
                     .Where(ol4 => ol4.CompanyId == x.ol.CompanyId)
                     .Max(ol4 => ol4.UnitPrice))
-            && (x.ol.Description != null || x.ol.UnitPrice > ctx.OrderLines
+            && (x.ol.Description != null || x.ol.UnitPrice > ctx.ShopOrderLines
                 .Where(ol5 => ol5.Quantity > 0)
                 .Average(ol5 => ol5.UnitPrice)))
         .GroupBy(x => x.ol.ProductId)

@@ -1,6 +1,6 @@
 package Shop;
 
-public class OrderLineAllocation {
+public class ShopOrderLineAllocation {
     private Integer CompanyId;
     private Integer OrderId;
     private Integer LineNumber;

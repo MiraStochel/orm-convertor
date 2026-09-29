@@ -2,7 +2,7 @@ package Shop;
 
 import java.time.LocalDateTime;
 
-public class CustomerOrder {
+public class ShopOrder {
     private Integer CompanyId;
     private Integer OrderId;
     private Integer CustomerId;

@@ -1,1 +1,1 @@
-SELECT * FROM Sales.OrderLines AS ol WHERE ol.Quantity >= @minQuantity
+SELECT * FROM {{schema}}.ShopOrderLines AS ol WHERE ol.Quantity >= @minQuantity

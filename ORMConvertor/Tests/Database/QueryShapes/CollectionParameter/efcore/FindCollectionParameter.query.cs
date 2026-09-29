@@ -1,5 +1,5 @@
 public void Query()
 {
-    var q = ctx.OrderLines.Where(ol => ids.Contains(ol.ProductId))
+    var q = ctx.ShopOrderLines.Where(ol => ids.Contains(ol.ProductId))
         .ToList();
 }

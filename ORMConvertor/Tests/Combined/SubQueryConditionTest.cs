@@ -5,6 +5,7 @@ using DapperWrappers;
 using EFCoreWrappers;
 using Model;
 using Model.AbstractRepresentation;
+using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers;
 
 namespace Tests.Combined;
@@ -83,6 +84,36 @@ public class SubQueryConditionTest
         Assert.Contains(
             ".Where(c => ctx.Set<Order>().Where(o => o.CustomerID == c.CustomerID).Any())",
             method);
+    }
+
+    /// <summary>
+    /// A nullable column on the left of an IN over a subquery offers its value to Contains,
+    /// as it does against a collection parameter (decision 083): the nested chain is a
+    /// sequence over the plain scalar where its column is not nullable - a key the catalog
+    /// supplied is not - and IQueryable&lt;int&gt; has no Contains that takes an int?. Found by
+    /// the fourth level over the categories of T2, from a MyBatis source whose Integer column
+    /// comes out as int? while the product's key comes out as int.
+    /// </summary>
+    [Fact]
+    public void SqlInOverASubqueryOffersTheValueOfANullableColumn()
+    {
+        const string sql = """
+        SELECT *
+        FROM Sales.Customers AS c
+        WHERE c.CustomerID IN (SELECT o.CustomerID FROM Sales.Orders AS o)
+        """;
+
+        var customers = Customers();
+        customers.PropertyMaps.Add(new PropertyMap
+        {
+            Property = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int, true) },
+            ColumnName = "CustomerID",
+        });
+
+        var builder = ParseSql(new EFCoreLinqQueryBuilder { EntityMaps = [customers, Orders()] }, sql);
+        var method = Artifact(builder, ConversionContentType.CSharpQuery);
+
+        Assert.Contains(".Contains(c.CustomerID.Value)", method);
     }
 
     [Fact]

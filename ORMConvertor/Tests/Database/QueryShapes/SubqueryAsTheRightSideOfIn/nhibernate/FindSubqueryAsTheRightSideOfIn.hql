@@ -1,1 +1,1 @@
-from OrderLine ol where ol.ProductId in (select p.ProductId from Product p where p.UnitPrice > 100)
+from ShopOrderLine ol where ol.ProductId in (select p.ProductId from ShopProduct p where p.UnitPrice > 100)

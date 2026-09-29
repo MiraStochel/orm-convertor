@@ -40,7 +40,8 @@ public sealed class QueryArtifact
     /// Name of the entity the query materializes, as resolved by the source step. Every
     /// target needs it for the same reason — Dapper writes Query&lt;T&gt;, EF Core
     /// IQueryable&lt;T&gt;, NHibernate CreateQuery&lt;T&gt; — so it belongs to the artifact
-    /// rather than to one builder's private state.
+    /// rather than to one builder's private state. Null where the query materializes no
+    /// entity: a projection is a row of its own columns, not an instance (rule Q3, decision 104).
     /// </summary>
     public string? ResultEntity { get; set; }
 }

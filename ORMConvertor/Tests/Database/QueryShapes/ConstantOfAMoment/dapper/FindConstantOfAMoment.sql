@@ -1,1 +1,1 @@
-SELECT * FROM Sales.CustomerOrders AS o WHERE o.PlacedAt > '2025-01-01'
+SELECT * FROM {{schema}}.ShopOrders AS o WHERE o.PlacedAt > '2025-01-01'

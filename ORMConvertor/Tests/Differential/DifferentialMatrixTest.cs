@@ -1,4 +1,6 @@
+using AbstractWrappers.Descriptors;
 using Model;
+using Tests.Combined;
 
 namespace Tests.Differential;
 
@@ -22,8 +24,8 @@ public class DifferentialMatrixTest
         Assert.True(
             pairs >= DifferentialMatrix.RequiredPairs,
             $"F13 asks for at least {DifferentialMatrix.RequiredPairs} pairs of queries and the matrix "
-            + $"states {pairs}. A query added to matrix.txt brings five of them, one per framework "
-            + "other than its own source.");
+            + $"states {pairs}. A query added to matrix.txt brings five of them per source, one per "
+            + "framework other than that source.");
     }
 
     /// <summary>
@@ -53,11 +55,34 @@ public class DifferentialMatrixTest
     [Fact]
     public void EveryFrameworkIsTheSourceOfAQuery()
     {
-        var sources = DifferentialMatrix.Queries.Select(query => query.Source).Distinct().ToList();
+        var sources = DifferentialMatrix.Queries.SelectMany(query => query.Sources).Distinct().ToList();
 
         Assert.All(
             Enum.GetValues<ORMEnum>(),
             framework => Assert.Contains(framework, sources));
+    }
+
+    /// <summary>
+    /// Every category of T2 the shared manifest states is a query of the matrix, so every
+    /// category has the fourth level in every direction its sources and targets allow. This
+    /// is the claim the row T2 of the traceability makes since the matrix grew over the
+    /// categories: a category added to the manifest without a canonical result is a failure
+    /// here, not a category measured at the first three levels and quietly not at the fourth.
+    /// </summary>
+    [Fact]
+    public void EveryCategoryOfTheManifestIsAQueryOfTheMatrix()
+    {
+        var measured = DifferentialMatrix.Queries
+            .Where(query => query.Category is not null)
+            .Select(query => query.Category!)
+            .ToList();
+
+        Assert.All(
+            QueryShapeInputs.Categories,
+            category => Assert.True(
+                measured.Contains(category.Name),
+                $"categories.txt states the category {category.Name} and matrix.txt has no query for it, "
+                + "so the category is measured at levels 1 to 3 and not at the fourth."));
     }
 
     /// <summary>
@@ -76,5 +101,21 @@ public class DifferentialMatrixTest
                 query.Fields.Count,
                 row.Split(ResultRow.Separator).Length));
         });
+    }
+
+    /// <summary>
+    /// The matrix says a refused direction in that word (decision 089): a target the
+    /// manifest names as refusing a category is paired with none of its sources, and is
+    /// listed among the refused directions instead, where a suite asserts the refusal.
+    /// </summary>
+    [Fact]
+    public void ARefusedTargetIsNoPairAndIsStatedAsRefused()
+    {
+        var refused = DifferentialMatrix.RefusedDirections().ToList();
+
+        Assert.NotEmpty(refused);
+        Assert.All(refused, direction => Assert.DoesNotContain(
+            DifferentialMatrix.Pairs(),
+            pair => pair.Query.Id == direction.Query.Id && pair.Source == direction.Source && pair.Target == direction.Target));
     }
 }

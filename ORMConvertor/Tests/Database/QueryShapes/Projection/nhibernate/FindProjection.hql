@@ -1,1 +1,1 @@
-select ol.Description as Text, ol.Quantity as Qty from OrderLine ol
+select ol.Description as Text, ol.Quantity as Qty from ShopOrderLine ol

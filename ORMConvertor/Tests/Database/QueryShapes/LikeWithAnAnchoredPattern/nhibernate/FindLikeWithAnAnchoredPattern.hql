@@ -1,1 +1,1 @@
-from Product p where p.ProductName like 'W%'
+from ShopProduct p where p.ProductName like 'W%'

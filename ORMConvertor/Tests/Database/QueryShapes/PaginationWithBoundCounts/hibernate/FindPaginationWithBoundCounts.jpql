@@ -1,1 +1,1 @@
-select ol from OrderLine ol order by ol.LineNumber asc limit :take offset :skip
+select ol from ShopOrderLine ol order by ol.LineNumber asc limit :take offset :skip

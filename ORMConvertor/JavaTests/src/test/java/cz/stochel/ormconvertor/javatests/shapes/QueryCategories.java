@@ -85,6 +85,14 @@ public final class QueryCategories {
         }
     }
 
+    /** The category of the manifest with this id, or a failure that says there is none. */
+    public static Category byId(String id) {
+        return all().stream()
+                .filter(category -> category.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("categories.txt states no category \"" + id + "\"."));
+    }
+
     /** Every category the manifest states, in its order. */
     public static synchronized List<Category> all() {
         if (cached == null) {
@@ -111,17 +119,17 @@ public final class QueryCategories {
                     "QueryShapes/entities/nhibernate/Shop.cs",
                     "QueryShapes/entities/nhibernate/Shop.hbm.xml");
             case Orm.HIBERNATE, Orm.ECLIPSELINK -> List.of(
-                    "QueryShapes/entities/jpa/Customer.java",
-                    "QueryShapes/entities/jpa/CustomerOrder.java",
-                    "QueryShapes/entities/jpa/OrderLine.java",
-                    "QueryShapes/entities/jpa/OrderLineAllocation.java",
-                    "QueryShapes/entities/jpa/Product.java");
+                    "QueryShapes/entities/jpa/ShopCustomer.java",
+                    "QueryShapes/entities/jpa/ShopOrder.java",
+                    "QueryShapes/entities/jpa/ShopOrderLine.java",
+                    "QueryShapes/entities/jpa/ShopOrderLineAllocation.java",
+                    "QueryShapes/entities/jpa/ShopProduct.java");
             case Orm.MYBATIS -> List.of(
-                    "QueryShapes/entities/mybatis/Customer.java",
-                    "QueryShapes/entities/mybatis/CustomerOrder.java",
-                    "QueryShapes/entities/mybatis/OrderLine.java",
-                    "QueryShapes/entities/mybatis/OrderLineAllocation.java",
-                    "QueryShapes/entities/mybatis/Product.java",
+                    "QueryShapes/entities/mybatis/ShopCustomer.java",
+                    "QueryShapes/entities/mybatis/ShopOrder.java",
+                    "QueryShapes/entities/mybatis/ShopOrderLine.java",
+                    "QueryShapes/entities/mybatis/ShopOrderLineAllocation.java",
+                    "QueryShapes/entities/mybatis/ShopProduct.java",
                     "QueryShapes/entities/mybatis/ShopMapper.xml");
             default -> throw new IllegalArgumentException(Orm.nameOf(source) + " has no domain under QueryShapes/entities.");
         };

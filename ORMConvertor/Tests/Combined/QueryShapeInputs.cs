@@ -43,20 +43,38 @@ public sealed record QueryShape(
 /// by the manifest's section, and the two lists are checked against each other when the
 /// categories are read, so neither can name a category the other lacks.
 ///
-/// The domain is the one of the shared fixture schema (<c>Tests/Database/TestSchema.sql</c>):
+/// The domain is the shape of the shared fixture schema (<c>Tests/Database/TestSchema.sql</c>):
 /// customers, orders under a two-part key, order lines under a three-part key whose leading
 /// parts are a multi-column foreign key, allocations under a four-part key, and products -
 /// so the joins here run over two and three columns, which is what makes the join category
-/// worth measuring. The order entity is called <c>CustomerOrder</c> because <c>order</c> is
-/// a keyword of HQL and JPQL; the two sources that state no table (Dapper, MyBatis) name it
-/// <c>CustomerOrders</c> so that the singular-plural rule of decision 050 finds the class.
+/// worth measuring. Since the differential matrix measures every category at the fourth
+/// level (decision 089), the domain also has read-only data of its own,
+/// <c>QueryShapes/FixtureData.sql</c>, in the fixture's schema beside the fixture's own
+/// tables: the shared files carry the <c>{{schema}}</c> placeholder for it and every
+/// reader substitutes <see cref="Schema"/>, so a dry text and a run against the database
+/// read the same input. The five entities carry the prefix <c>Shop</c> - <c>ShopOrder</c>,
+/// <c>ShopOrderLine</c> and so on - and every source names their tables by the plural, which
+/// is what the singular-plural rule of decision 050 derives from the class for the two
+/// sources that state no table; the prefix is what keeps those tables apart from the
+/// fixture schema's own <c>Customers</c>, <c>OrderLines</c> and <c>Products</c>, a table
+/// found under two names being a match the catalog refuses to guess at.
 /// </summary>
 public static class QueryShapeInputs
 {
     public const string Namespace = "Shop";
-    public const string Schema = "Sales";
+
+    /// <summary>
+    /// The schema of the domain, substituted for the placeholder of every shared file: the
+    /// schema of the test fixture, which holds its read-only data. Declared before the
+    /// hallmark table below, which interpolates it.
+    /// </summary>
+    public static readonly string Schema = TestDatabase.SchemaName;
+
+    /// <summary>The table of the order entity, as every source of the domain names it.</summary>
+    public const string OrdersTable = "ShopOrders";
 
     private const string ResourcePrefix = "Tests.Database.QueryShapes.";
+    private const string SchemaPlaceholder = "{{schema}}";
 
     /// <summary>Every source x target pair, identity directions included, for a theory over one shape.</summary>
     public static TheoryData<QueryShape, ORMEnum, ORMEnum> Directions(IEnumerable<QueryShape> shapes)
@@ -95,16 +113,13 @@ public static class QueryShapeInputs
         _ => throw new ArgumentOutOfRangeException(nameof(framework), framework, $"{framework} has no inputs in {nameof(QueryShapeInputs)}; its wrapper brings them."),
     };
 
-    private static readonly string[] JpaEntities = ["Customer", "CustomerOrder", "OrderLine", "OrderLineAllocation", "Product"];
-
-    /// <summary>The table the order entity maps to, as the source names it (see the class remarks).</summary>
-    public static string OrdersTable(ORMEnum source) =>
-        source is ORMEnum.Dapper or ORMEnum.MyBatis ? "CustomerOrders" : "Orders";
+    private static readonly string[] JpaEntities = ["ShopCustomer", "ShopOrder", "ShopOrderLine", "ShopOrderLineAllocation", "ShopProduct"];
 
     /// <summary>
     /// Text of one shared file under <c>Tests/Database/QueryShapes</c>, embedded by
     /// Tests.csproj; a new file needs no entry there, but it does need to be in the working
-    /// copy. The Java suite reads the same path from its test resources.
+    /// copy. The Java suite reads the same path from its test resources, and substitutes the
+    /// schema placeholder the same way (<c>InputUnit.fromShared</c>).
     /// </summary>
     public static string Read(string path)
     {
@@ -112,7 +127,7 @@ public static class QueryShapeInputs
         using var stream = typeof(QueryShapeInputs).Assembly.GetManifestResourceStream(resource)
             ?? throw new InvalidOperationException($"The query-shape resource \"{resource}\" is missing under Tests/Database/QueryShapes.");
         using var reader = new StreamReader(stream);
-        return reader.ReadToEnd().Replace("﻿", string.Empty);
+        return reader.ReadToEnd().Replace("﻿", string.Empty).Replace(SchemaPlaceholder, Schema, StringComparison.Ordinal);
     }
 
     /// <summary>One shared file as a unit of the conversion input, its language taken from its name.</summary>
@@ -229,10 +244,10 @@ public static class QueryShapeInputs
         // projection over the joined table reach every target. A LINQ join writes its
         // condition outer table first, which is why the hallmarks name no order.
         ["JoinOverTwoColumns"] = Hallmarks(
-            sql: ["INNER JOIN Sales.", ".CompanyId = ", ".OrderId = ", " AND ", "ol.Description AS Text", "WHERE o.CustomerId > 0"],
-            linq: [".Join(", "ctx.Set<CustomerOrder>()", "ol.CompanyId", "ol.OrderId", ".o.CustomerId > 0", "Text = ", ".ol.Description"],
-            hql: ["inner join CustomerOrder o", " with ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"],
-            jpa: ["join CustomerOrder o", " on ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"]),
+            sql: [$"INNER JOIN {Schema}.", ".CompanyId = ", ".OrderId = ", " AND ", "ol.Description AS Text", "WHERE o.CustomerId > 0"],
+            linq: [".Join(", "ctx.Set<ShopOrder>()", "ol.CompanyId", "ol.OrderId", ".o.CustomerId > 0", "Text = ", ".ol.Description"],
+            hql: ["inner join ShopOrder o", " with ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"],
+            jpa: ["join ShopOrder o", " on ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"]),
 
         ["AggregationGroupingAndHaving"] = Hallmarks(
             sql: ["GROUP BY ol.ProductId", "HAVING SUM(ol.Quantity) > 10", "COUNT(*)"],
@@ -255,7 +270,9 @@ public static class QueryShapeInputs
 
         ["SubqueryAsTheRightSideOfIn"] = Hallmarks(
             sql: ["IN (SELECT p.ProductId", "p.UnitPrice > 100"],
-            linq: ["ctx.Set<Product>()", ".Contains(ol.ProductId)", "p.UnitPrice > 100"],
+            // The member's value where the column is nullable (`ol.ProductId.Value`), as the
+            // collection-parameter row has it: a MyBatis source declares the column as Integer.
+            linq: ["ctx.Set<ShopProduct>()", ".Contains(ol.ProductId", "p.UnitPrice > 100"],
             hql: ["in (select p.ProductId", "p.UnitPrice > 100"],
             jpa: ["in (select p.ProductId", "p.UnitPrice > 100"]),
 
@@ -273,7 +290,7 @@ public static class QueryShapeInputs
 
         ["SetOperation"] = Hallmarks(
             sql: ["UNION", "p.ProductName AS Text"],
-            linq: [".Union(", "ctx.Set<Product>()"],
+            linq: [".Union(", "ctx.Set<ShopProduct>()"],
             jpa: ["union", "p.ProductName as Text"]),
 
         ["DistinctProjection"] = Hallmarks(
@@ -378,7 +395,7 @@ public static class QueryShapeInputs
         Hallmarks(
             sql:
             [
-                "INNER JOIN Sales.", "LEFT JOIN Sales.Products p",
+                $"INNER JOIN {Schema}.", $"LEFT JOIN {Schema}.ShopProducts p",
                 ".LineNumber = ", ".OrderId = ",
                 "GROUP BY ol.ProductId", "HAVING SUM(ol.Quantity) >",
                 "IN (SELECT DISTINCT ", "EXISTS (SELECT", "NOT (EXISTS (SELECT",
@@ -387,14 +404,14 @@ public static class QueryShapeInputs
             ],
             linq:
             [
-                ".Join(", ".LeftJoin(", "ctx.Set<CustomerOrder>()", "ctx.Set<OrderLineAllocation>()", "ctx.Set<Product>()",
+                ".Join(", ".LeftJoin(", "ctx.Set<ShopOrder>()", "ctx.Set<ShopOrderLineAllocation>()", "ctx.Set<ShopProduct>()",
                 ".LineNumber }", ".GroupBy(", "g.Sum(", "g.Count()",
                 ".Distinct()", ".Any(", "!", "{ 1, 2, 3 }.Contains(", ".Average(", ".Min(", ".Max(",
                 "ol.Description != null ||",
             ],
             hql:
             [
-                "inner join CustomerOrder ", "left join Product ", " with ", ".LineNumber = ",
+                "inner join ShopOrder ", "left join ShopProduct ", " with ", ".LineNumber = ",
                 "group by ol.ProductId", "having sum(ol.Quantity) >",
                 "in (select distinct ", "exists (", "not (exists (",
                 "in (1, 2, 3)", "avg(p2.UnitPrice)", "min(ol3.Quantity)", "max(ol4.UnitPrice)",
@@ -402,7 +419,7 @@ public static class QueryShapeInputs
             ],
             jpa:
             [
-                "join CustomerOrder ", "left join Product ", " on ", ".LineNumber = ",
+                "join ShopOrder ", "left join ShopProduct ", " on ", ".LineNumber = ",
                 "group by ol.ProductId", "having sum(ol.Quantity) >",
                 "in (select distinct ", "exists (", "not (exists (",
                 "in (1, 2, 3)", "avg(p2.UnitPrice)", "min(ol3.Quantity)", "max(ol4.UnitPrice)",

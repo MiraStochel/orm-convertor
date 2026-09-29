@@ -4,14 +4,14 @@ using System;
 
 namespace Shop;
 
-public class Customer
+public class ShopCustomer
 {
     public virtual int CustomerId { get; set; }
     public virtual string Name { get; set; }
     public virtual string? Notes { get; set; }
 }
 
-public class CustomerOrder
+public class ShopOrder
 {
     public virtual int CompanyId { get; set; }
     public virtual int OrderId { get; set; }
@@ -20,7 +20,7 @@ public class CustomerOrder
     public virtual bool IsCancelled { get; set; }
 }
 
-public class OrderLine
+public class ShopOrderLine
 {
     public virtual int CompanyId { get; set; }
     public virtual int OrderId { get; set; }
@@ -31,7 +31,7 @@ public class OrderLine
     public virtual decimal UnitPrice { get; set; }
 }
 
-public class OrderLineAllocation
+public class ShopOrderLineAllocation
 {
     public virtual int CompanyId { get; set; }
     public virtual int OrderId { get; set; }
@@ -41,7 +41,7 @@ public class OrderLineAllocation
     public virtual string? Notes { get; set; }
 }
 
-public class Product
+public class ShopProduct
 {
     public virtual int ProductId { get; set; }
     public virtual string ProductName { get; set; }

@@ -284,6 +284,8 @@ public class MyBatisBuilderTest
     /// The two artifacts of a query, and the one thing they must not do: overlap. Writing the
     /// SQL into the method as well would make the generated project exactly the input the
     /// reading side refuses, because MyBatis would not build a factory from it (decision 068).
+    /// The query projects one column, so its row is a Map and its resultType is "map"
+    /// (decision 104); the whole-entity shape below keeps the entity.
     /// </summary>
     [Fact]
     public void AQueryBecomesAMethodDeclarationAndAMapperThatDoNotOverlap()
@@ -292,7 +294,7 @@ public class MyBatisBuilderTest
 
         var method = result.Sources.Single(s => s.ContentType == ConversionContentType.JavaQuery).Content;
 
-        Assert.Equal("List<Customer> query(@Param(\"limit\") BigDecimal limit);", method);
+        Assert.Equal("List<Map<String, Object>> query(@Param(\"limit\") BigDecimal limit);", method);
         Assert.DoesNotContain("@Select", method);
 
         Assert.Equal(Expected("""
@@ -300,13 +302,28 @@ public class MyBatisBuilderTest
             <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                     "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
             <mapper namespace="Shop.QueryMapper">
-                <select id="query" resultType="Shop.Customer">
+                <select id="query" resultType="map">
                     SELECT c.CustomerName
                     FROM Customer AS c
                     WHERE c.CreditLimit &gt; #{limit}
                 </select>
             </mapper>
             """), QueryMapper(result));
+    }
+
+    /// <summary>
+    /// A query over the whole entity materializes into it: the resultType is the entity in
+    /// its package and the declaration returns a list of it (decision 104).
+    /// </summary>
+    [Fact]
+    public void AWholeEntityQueryMaterializesIntoTheEntity()
+    {
+        var result = QueryToMyBatis("SELECT * FROM Customer AS c WHERE c.CreditLimit > @limit");
+
+        Assert.Equal(
+            "List<Customer> query(@Param(\"limit\") BigDecimal limit);",
+            result.Sources.Single(s => s.ContentType == ConversionContentType.JavaQuery).Content);
+        Assert.Contains("<select id=\"query\" resultType=\"Shop.Customer\">", QueryMapper(result));
     }
 
     /// <summary>

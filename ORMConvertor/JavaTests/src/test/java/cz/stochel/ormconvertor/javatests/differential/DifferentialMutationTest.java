@@ -38,28 +38,29 @@ class DifferentialMutationTest {
 
     @AfterAll
     static void cleanUp() throws Exception {
+        JavaQueryRunner.closeAll();
         TestSchema.drop();
     }
 
     /**
-     * Every (query, target, mutation) this suite runs. Which mutations a query carries is
-     * the matrix's statement - a query with no ordering cannot lose one - and it is stated
-     * rather than discovered, so nothing here can quietly stop running.
+     * Every (query, source, target, mutation) this suite runs. Which mutations a query
+     * carries is the matrix's statement - a query with no ordering cannot lose one - and it
+     * is stated rather than discovered, so nothing here can quietly stop running.
      */
     static Stream<Arguments> mutations() {
         return DifferentialMatrix.pairs().stream()
                 .filter(pair -> JavaQueryRunner.owns(pair.target()))
                 .flatMap(pair -> DifferentialMatrix.query(pair.queryId()).mutations().stream()
-                        .map(key -> Arguments.of(pair.queryId(), pair.target(), key)));
+                        .map(key -> Arguments.of(pair.queryId(), pair.source(), pair.target(), key)));
     }
 
-    @ParameterizedTest(name = "{0} -> {1}: {2}")
+    @ParameterizedTest(name = "{0}: {1} -> {2}: {3}")
     @MethodSource("mutations")
-    void aMutatedTranslationDoesNotMatchTheCanonicalResult(String id, int target, String mutationKey)
+    void aMutatedTranslationDoesNotMatchTheCanonicalResult(String id, int source, int target, String mutationKey)
             throws Exception {
 
         DifferentialQuery query = DifferentialMatrix.query(id);
-        ConversionResponse response = JavaQueryRunner.translate(query, target);
+        ConversionResponse response = JavaQueryRunner.translate(query, source, target);
 
         String artifact = JavaQueryRunner.mutableArtifact(response, target, id);
         DifferentialMutation mutation = DifferentialMutation.of(mutationKey);
@@ -69,8 +70,8 @@ class DifferentialMutationTest {
         // here, so that one which stops reaching the artifact of some target is a failure
         // instead of a case that quietly stops running.
         assertNotEquals(artifact, mutated,
-                id + " -> " + Orm.nameOf(target) + ": the matrix says this query carries \"" + mutationKey
-                        + "\", and the rule changed nothing in the artifact:" + System.lineSeparator() + artifact);
+                id + ": " + Orm.nameOf(source) + " -> " + Orm.nameOf(target) + ": the matrix says this query carries \""
+                        + mutationKey + "\", and the rule changed nothing in the artifact:" + System.lineSeparator() + artifact);
 
         // A mutation is detected the moment the artifact stops answering with the canonical
         // result, and there are two ways for that to happen. It can run and return other
@@ -79,14 +80,14 @@ class DifferentialMutationTest {
         // Both are the wrong translation being caught; only silence would not be.
         List<String> rows;
         try {
-            rows = JavaQueryRunner.run(query, target, mutated);
+            rows = JavaQueryRunner.run(query, source, target, mutated);
         } catch (Exception detected) {
             return;
         }
 
         assertNotEquals(query.canonicalResult(), rows,
-                id + " -> " + Orm.nameOf(target) + ": " + mutation.name() + ", and the result was the canonical one "
-                        + "all the same. Either the fixture does not separate the two, or the comparison does not "
-                        + "look at what the mutation changed.");
+                id + ": " + Orm.nameOf(source) + " -> " + Orm.nameOf(target) + ": " + mutation.name()
+                        + ", and the result was the canonical one all the same. Either the fixture does not separate "
+                        + "the two, or the comparison does not look at what the mutation changed.");
     }
 }

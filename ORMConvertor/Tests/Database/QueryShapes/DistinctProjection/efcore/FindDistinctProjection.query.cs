@@ -1,5 +1,5 @@
 public void Query()
 {
-    var q = ctx.OrderLines.Select(ol => new { ProductId = ol.ProductId }).Distinct()
+    var q = ctx.ShopOrderLines.Select(ol => new { ProductId = ol.ProductId }).Distinct()
         .ToList();
 }

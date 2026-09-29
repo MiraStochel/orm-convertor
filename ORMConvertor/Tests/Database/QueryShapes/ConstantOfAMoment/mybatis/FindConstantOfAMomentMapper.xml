@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="Shop.FindConstantOfAMomentMapper">
-  <select id="findConstantOfAMoment" resultType="CustomerOrder">
-    SELECT * FROM Sales.CustomerOrders AS o WHERE o.PlacedAt &gt; '2025-01-01'
+  <select id="findConstantOfAMoment" resultType="ShopOrder">
+    SELECT * FROM {{schema}}.ShopOrders AS o WHERE o.PlacedAt &gt; '2025-01-01'
   </select>
 </mapper>

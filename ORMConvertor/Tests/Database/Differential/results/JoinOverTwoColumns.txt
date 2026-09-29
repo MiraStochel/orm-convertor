@@ -1,0 +1,7 @@
+"Anvil, standard"	3
+"Bracket"	1
+"W_Bolt, bag of ten"	2
+"Widget, boxed"	1
+"Widget, loose"	2
+"Zither"	1
+"Zither, left-handed"	3

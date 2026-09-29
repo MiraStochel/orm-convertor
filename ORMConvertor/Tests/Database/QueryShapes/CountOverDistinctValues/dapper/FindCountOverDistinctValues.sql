@@ -1,3 +1,3 @@
 SELECT ol.ProductId AS ProductId, COUNT(DISTINCT ol.OrderId) AS Orders
-FROM Sales.OrderLines AS ol
+FROM {{schema}}.ShopOrderLines AS ol
 GROUP BY ol.ProductId

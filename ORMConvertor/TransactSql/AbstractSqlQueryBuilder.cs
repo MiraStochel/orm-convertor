@@ -79,6 +79,19 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
         // generating, the same inverse move the two name-based targets make - and only where
         // no entity is mapped to the table does the name come from the table itself, which is
         // a convention of ours and is reported as one.
+        //
+        // Only a query without a projection materializes into that type (rule Q3). A
+        // projection names its own columns - an alias, an aggregate, a column of a joined
+        // table - and neither framework would find them on the entity: Dapper skips a column
+        // with no property and MyBatis ignores an unknown one, both in silence, so the rows
+        // would come back as instances holding none of the projected values. Such a query
+        // materializes as an untyped row instead, which is what a null result entity means to
+        // the wrapper (decision 104), and no type is derived or reported for it.
+        if (!clauses.ProjectsWholeEntity)
+        {
+            return;
+        }
+
         var map = EntityFor(clauses.From.Table);
         var table = clauses.From.Table.Split('.').LastOrDefault();
 
@@ -316,7 +329,9 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
     /// is wrapped into the artifacts it publishes (decision 082). Dapper makes a method over
     /// an IDbConnection and publishes the bare query beside it (decision 025); a MyBatis
     /// mapper puts the same text into a &lt;select&gt; with a resultType. The result type
-    /// itself is derived above, because neither framework names it in the query.
+    /// itself is derived above, because neither framework names it in the query - and it is
+    /// null for a query with a projection, which materializes as an untyped row in the
+    /// framework's own spelling of one (decision 104).
     /// </summary>
     protected abstract List<ConversionSource> Emit(string sql, string? resultEntity);
 }

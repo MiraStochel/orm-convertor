@@ -51,8 +51,9 @@ public class QueryMatrixTest
     [InlineData(ORMEnum.EclipseLink, ConversionContentType.JavaQuery, "em.createQuery(")]
     // MyBatis is the one target whose runnable half carries no statement: the SQL lives in
     // the mapper document and the method is a declaration of the mapper interface, because
-    // emitting both would be the very input the reading side refuses (decision 084).
-    [InlineData(ORMEnum.MyBatis, ConversionContentType.JavaQuery, "List<Customer> query(")]
+    // emitting both would be the very input the reading side refuses (decision 084). The
+    // sample projects, so the declaration returns the untyped row of decision 104.
+    [InlineData(ORMEnum.MyBatis, ConversionContentType.JavaQuery, "List<Map<String, Object>> query(")]
     public void EachTargetEmitsItsOwnQueryLanguage(ORMEnum target, ConversionContentType method, string hallmark)
     {
         var result = ConversionHandler.Convert(ORMEnum.EFCore, target, CrossFrameworkInputs.Units(ORMEnum.EFCore));

@@ -2,9 +2,9 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="Shop.FindAggregationGroupingAndHavingMapper">
-  <select id="findAggregationGroupingAndHaving" resultType="OrderLine">
+  <select id="findAggregationGroupingAndHaving" resultType="ShopOrderLine">
     SELECT ol.ProductId AS ProductId, SUM(ol.Quantity) AS Total, COUNT(*) AS Lines
-    FROM Sales.OrderLines AS ol
+    FROM {{schema}}.ShopOrderLines AS ol
     GROUP BY ol.ProductId
     HAVING SUM(ol.Quantity) &gt; 10
   </select>

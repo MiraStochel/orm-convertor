@@ -35,9 +35,18 @@ public class MyBatisSqlQueryBuilder : TransactSql.AbstractSqlQueryBuilder
 
     protected override List<ConversionSource> Emit(string sql, string? resultEntity)
     {
-        var entity = resultEntity ?? "Object";
-        var package = EntityMaps.FirstOrDefault(m => m.Entity.Name == entity)?.Entity.Namespace;
-        var qualified = string.IsNullOrEmpty(package) ? entity : $"{package}.{entity}";
+        // The package the artifacts go into is the entities' - the one of the materialized
+        // entity, or of any entity of the conversion where the query materializes none.
+        var package = (EntityMaps.FirstOrDefault(m => m.Entity.Name == resultEntity) ?? EntityMaps.FirstOrDefault())
+            ?.Entity.Namespace;
+
+        // A query over the whole entity materializes into it; a projection materializes as
+        // MyBatis's own untyped row - resultType="map", a Map per row keyed by the columns the
+        // projection named (decision 104). An entity resultType over a projection would leave
+        // every projected value out of the instance without a word.
+        var (resultType, returns) = resultEntity is null
+            ? ("map", "List<Map<String, Object>>")
+            : (string.IsNullOrEmpty(package) ? resultEntity : $"{package}.{resultEntity}", $"List<{resultEntity}>");
 
         // The document's own name, which the tool invents the way it invents the name of a
         // generated method: our artifact's identity, made the same way at every conversion,
@@ -47,7 +56,7 @@ public class MyBatisSqlQueryBuilder : TransactSql.AbstractSqlQueryBuilder
         var mapper = $"{JavaClass.Capitalize(MethodName)}Mapper";
         var mapperNamespace = string.IsNullOrEmpty(package) ? mapper : $"{package}.{mapper}";
 
-        var method = $"List<{entity}> {MethodName}({JavaParameters()});";
+        var method = $"{returns} {MethodName}({JavaParameters()});";
 
         var document = new StringBuilder();
         XmlEmitter.Prolog(document);
@@ -62,7 +71,7 @@ public class MyBatisSqlQueryBuilder : TransactSql.AbstractSqlQueryBuilder
             // the materialized type in the query, so the shared builder derives it from the
             // table - and a resultMap would point into a second document, which a conversion
             // of a query alone does not have.
-            new XmlAttribute("resultType", qualified),
+            new XmlAttribute("resultType", resultType),
         ]);
 
         foreach (var line in Placeholders(XmlEmitter.EscapeText(sql)).Split('\n'))

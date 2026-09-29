@@ -5,45 +5,45 @@
      states with the two thresholds and the slice as placeholders; the interface beside
      this document types them (decision 084). -->
 <mapper namespace="Shop.FindHeavyLinesMapper">
-  <select id="findHeavyLines" resultType="OrderLine">
+  <select id="findHeavyLines" resultType="ShopOrderLine">
     SELECT ol.ProductId AS ProductId, SUM(ol.Quantity) AS TotalQuantity, COUNT(*) AS Lines
-    FROM Sales.OrderLines AS ol
-    INNER JOIN Sales.CustomerOrders AS o ON o.CompanyId = ol.CompanyId AND o.OrderId = ol.OrderId
-    INNER JOIN Sales.OrderLineAllocations AS a ON a.CompanyId = ol.CompanyId AND a.OrderId = ol.OrderId AND a.LineNumber = ol.LineNumber
-    LEFT JOIN Sales.Products AS p ON p.ProductId = ol.ProductId
+    FROM {{schema}}.ShopOrderLines AS ol
+    INNER JOIN {{schema}}.ShopOrders AS o ON o.CompanyId = ol.CompanyId AND o.OrderId = ol.OrderId
+    INNER JOIN {{schema}}.ShopOrderLineAllocations AS a ON a.CompanyId = ol.CompanyId AND a.OrderId = ol.OrderId AND a.LineNumber = ol.LineNumber
+    LEFT JOIN {{schema}}.ShopProducts AS p ON p.ProductId = ol.ProductId
     WHERE ol.Quantity &gt;= #{minQuantity}
       AND o.CustomerId IN (
         SELECT DISTINCT c.CustomerId
-        FROM Sales.Customers AS c
+        FROM {{schema}}.ShopCustomers AS c
         WHERE c.CustomerId IN (
           SELECT o2.CustomerId
-          FROM Sales.CustomerOrders AS o2
+          FROM {{schema}}.ShopOrders AS o2
           WHERE o2.OrderId IN (
             SELECT ol2.OrderId
-            FROM Sales.OrderLines AS ol2
+            FROM {{schema}}.ShopOrderLines AS ol2
             WHERE ol2.UnitPrice &gt; (
               SELECT AVG(p2.UnitPrice)
-              FROM Sales.Products AS p2
+              FROM {{schema}}.ShopProducts AS p2
               WHERE p2.ProductId IN (1, 2, 3)))))
       AND EXISTS (
         SELECT a2.AllocationId
-        FROM Sales.OrderLineAllocations AS a2
+        FROM {{schema}}.ShopOrderLineAllocations AS a2
         WHERE a2.CompanyId = ol.CompanyId AND a2.OrderId = ol.OrderId AND a2.LineNumber = ol.LineNumber
           AND a2.AllocatedQuantity &gt; (
             SELECT MIN(ol3.Quantity)
-            FROM Sales.OrderLines AS ol3
+            FROM {{schema}}.ShopOrderLines AS ol3
             WHERE ol3.ProductId = ol.ProductId))
       AND NOT EXISTS (
         SELECT p3.ProductId
-        FROM Sales.Products AS p3
+        FROM {{schema}}.ShopProducts AS p3
         WHERE p3.ProductId = ol.ProductId
           AND p3.UnitPrice &lt; (
             SELECT MAX(ol4.UnitPrice)
-            FROM Sales.OrderLines AS ol4
+            FROM {{schema}}.ShopOrderLines AS ol4
             WHERE ol4.CompanyId = ol.CompanyId))
       AND (ol.Description IS NOT NULL OR ol.UnitPrice &gt; (
         SELECT AVG(ol5.UnitPrice)
-        FROM Sales.OrderLines AS ol5
+        FROM {{schema}}.ShopOrderLines AS ol5
         WHERE ol5.Quantity &gt; 0))
     GROUP BY ol.ProductId
     HAVING SUM(ol.Quantity) &gt; #{minTotal}

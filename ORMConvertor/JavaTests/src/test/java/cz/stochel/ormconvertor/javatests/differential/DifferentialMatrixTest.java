@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cz.stochel.ormconvertor.javatests.shapes.QueryCategories;
 import cz.stochel.ormconvertor.javatests.tool.Orm;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -29,8 +30,8 @@ class DifferentialMatrixTest {
 
         assertTrue(pairs >= DifferentialMatrix.REQUIRED_PAIRS,
                 "F13 asks for at least " + DifferentialMatrix.REQUIRED_PAIRS + " pairs of queries and the matrix "
-                        + "states " + pairs + ". A query added to matrix.txt brings five of them, one per framework "
-                        + "other than its own source.");
+                        + "states " + pairs + ". A query added to matrix.txt brings five of them per source, one per "
+                        + "framework other than that source.");
     }
 
     /**
@@ -40,11 +41,33 @@ class DifferentialMatrixTest {
      */
     @Test
     void everyFrameworkIsTheSourceOfAQuery() {
-        List<Integer> sources = DifferentialMatrix.queries().stream().map(DifferentialQuery::source).distinct().toList();
+        List<Integer> sources = DifferentialMatrix.queries().stream()
+                .flatMap(query -> query.sources().stream())
+                .distinct()
+                .toList();
 
         for (int orm : Orm.ALL) {
             assertTrue(sources.contains(orm),
                     Orm.nameOf(orm) + " is the source of no query, so the matrix never translates out of it.");
+        }
+    }
+
+    /**
+     * Every category of T2 the shared manifest states is a query of the matrix, so every
+     * category has the fourth level in every direction its sources and targets allow - the
+     * claim the row T2 of the traceability makes since the matrix grew over the categories.
+     */
+    @Test
+    void everyCategoryOfTheManifestIsAQueryOfTheMatrix() {
+        List<String> measured = DifferentialMatrix.queries().stream()
+                .map(DifferentialQuery::category)
+                .filter(category -> category != null)
+                .toList();
+
+        for (QueryCategories.Category category : QueryCategories.all()) {
+            assertTrue(measured.contains(category.id()),
+                    "categories.txt states the category " + category.id() + " and matrix.txt has no query for it, "
+                            + "so the category is measured at levels 1 to 3 and not at the fourth.");
         }
     }
 
@@ -63,6 +86,25 @@ class DifferentialMatrixTest {
                 assertEquals(query.fields().size(), row.split("\t", -1).length,
                         query.id() + ": the row \"" + row + "\" has not as many fields as the matrix states.");
             }
+        }
+    }
+
+    /**
+     * The matrix says a refused direction in that word (decision 089): a target the manifest
+     * names as refusing a category is paired with none of its sources and is listed among the
+     * refused directions instead, where the suite that owns the target asserts the refusal.
+     */
+    @Test
+    void aRefusedTargetIsNoPairAndIsStatedAsRefused() {
+        List<DifferentialMatrix.RefusedDirection> refused = DifferentialMatrix.refusedDirections();
+
+        assertFalse(refused.isEmpty(), "the matrix states no refused direction, and the set operation into NHibernate is one");
+
+        for (DifferentialMatrix.RefusedDirection direction : refused) {
+            assertFalse(DifferentialMatrix.pairs().contains(
+                            new DifferentialMatrix.Pair(direction.queryId(), direction.source(), direction.target())),
+                    direction.queryId() + ": " + Orm.nameOf(direction.source()) + " -> " + Orm.nameOf(direction.target())
+                            + " is stated as refused and is a pair all the same.");
         }
     }
 }

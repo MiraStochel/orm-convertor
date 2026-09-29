@@ -2,8 +2,8 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="Shop.FindCollectionParameterMapper">
-  <select id="findCollectionParameter" resultType="OrderLine">
-    SELECT * FROM Sales.OrderLines AS ol
+  <select id="findCollectionParameter" resultType="ShopOrderLine">
+    SELECT * FROM {{schema}}.ShopOrderLines AS ol
     WHERE ol.ProductId IN
     <foreach collection="ids" item="item" open="(" separator="," close=")">#{item}</foreach>
   </select>

@@ -110,6 +110,9 @@ public final class JavaSources {
                 .append("import java.time.OffsetDateTime;").append(System.lineSeparator())
                 .append("import java.util.Collection;").append(System.lineSeparator())
                 .append("import java.util.List;").append(System.lineSeparator())
+                // A projection comes back as a Map per row (decision 104), so a consumer
+                // imports it beside the List every declaration returns.
+                .append("import java.util.Map;").append(System.lineSeparator())
                 .append("import java.util.UUID;").append(System.lineSeparator())
                 .append("import org.apache.ibatis.annotations.Param;").append(System.lineSeparator())
                 .append(System.lineSeparator())

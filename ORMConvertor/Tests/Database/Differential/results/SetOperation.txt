@@ -1,0 +1,7 @@
+"Anvil"
+"W_Bolt, bag of ten"
+"W_Bolt, single"
+"Whistle"
+"Widget"
+"Widget, loose"
+"Zither"

@@ -5,19 +5,19 @@
      pairs of column and property for every class. An <id> marks the identity of the
      result, not a key of the table (decision 084), so no key is stated here. -->
 <mapper namespace="Shop.ShopMapper">
-  <resultMap id="customer" type="Customer">
+  <resultMap id="customer" type="ShopCustomer">
     <id     column="CustomerId" property="CustomerId"/>
     <result column="Name"       property="Name"/>
     <result column="Notes"      property="Notes"/>
   </resultMap>
-  <resultMap id="customerOrder" type="CustomerOrder">
+  <resultMap id="customerOrder" type="ShopOrder">
     <id     column="CompanyId"   property="CompanyId"/>
     <id     column="OrderId"     property="OrderId"/>
     <result column="CustomerId"  property="CustomerId"/>
     <result column="PlacedAt"    property="PlacedAt"/>
     <result column="IsCancelled" property="IsCancelled"/>
   </resultMap>
-  <resultMap id="orderLine" type="OrderLine">
+  <resultMap id="orderLine" type="ShopOrderLine">
     <id     column="CompanyId"   property="CompanyId"/>
     <id     column="OrderId"     property="OrderId"/>
     <id     column="LineNumber"  property="LineNumber"/>
@@ -26,7 +26,7 @@
     <result column="Quantity"    property="Quantity"/>
     <result column="UnitPrice"   property="UnitPrice"/>
   </resultMap>
-  <resultMap id="orderLineAllocation" type="OrderLineAllocation">
+  <resultMap id="orderLineAllocation" type="ShopOrderLineAllocation">
     <id     column="CompanyId"         property="CompanyId"/>
     <id     column="OrderId"           property="OrderId"/>
     <id     column="LineNumber"        property="LineNumber"/>
@@ -34,7 +34,7 @@
     <result column="AllocatedQuantity" property="AllocatedQuantity"/>
     <result column="Notes"             property="Notes"/>
   </resultMap>
-  <resultMap id="product" type="Product">
+  <resultMap id="product" type="ShopProduct">
     <id     column="ProductId"      property="ProductId"/>
     <result column="ProductName"    property="ProductName"/>
     <result column="Sku"            property="Sku"/>

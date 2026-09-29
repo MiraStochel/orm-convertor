@@ -75,8 +75,10 @@ public class EntityTableNamingTest
     public void TheQueryBuildersAnswerWithTheSameRuleAsTheRestOfTheTool()
     {
         // The two query builders used to singularize only a lowercase s, so a table written
-        // in capitals kept its plural while the junction phase shortened it.
-        const string sql = "SELECT a.Id FROM ADDRESS a";
+        // in capitals kept its plural while the junction phase shortened it. The whole
+        // entity is read, because that is the one shape whose type is derived from the
+        // table at all (decision 104).
+        const string sql = "SELECT * FROM ADDRESS a";
 
         var dapper = new DapperSqlQueryBuilder();
         new DapperSqlQueryParser(() => dapper).Parse(ConversionContentType.SqlQuery, sql);

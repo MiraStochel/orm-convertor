@@ -21,6 +21,7 @@ public final class TestSchema {
 
     private static final String SCRIPT_RESOURCE = "/TestSchema.sql";
     private static final String DATA_RESOURCE = "/Differential/FixtureData.sql";
+    private static final String SHAPES_DATA_RESOURCE = "/QueryShapes/FixtureData.sql";
     private static final String SCHEMA_PLACEHOLDER = "{{schema}}";
 
     // GO is a client-side separator, not T-SQL; CREATE SCHEMA has to start its own batch.
@@ -89,13 +90,16 @@ public final class TestSchema {
 
     /**
      * The batches of the DDL script followed by those of the read-only data the
-     * differential verification reads (decision 089). The data belongs to the fixture and
-     * not to a test: it is written once, never changed, and both suites make it from this
-     * one script, so the two halves of a pair read rows made by the same statements.
+     * differential verification reads (decision 089): the one table of the first six
+     * queries of the matrix, then the five tables of the domain the query categories of T2
+     * are written over. The data belongs to the fixture and not to a test: it is written
+     * once, never changed, and both suites make it from these scripts, so the two halves of
+     * a pair read rows made by the same statements.
      */
     static List<String> batches() throws IOException {
         List<String> batches = new ArrayList<>(batchesOf(SCRIPT_RESOURCE));
         batches.addAll(batchesOf(DATA_RESOURCE));
+        batches.addAll(batchesOf(SHAPES_DATA_RESOURCE));
         return batches;
     }
 

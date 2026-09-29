@@ -1,1 +1,1 @@
-from OrderLine ol where ol.ProductId in (:ids)
+from ShopOrderLine ol where ol.ProductId in (:ids)

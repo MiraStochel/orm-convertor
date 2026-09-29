@@ -20,7 +20,9 @@ import jakarta.persistence.EntityManagerFactory;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 
@@ -33,8 +35,19 @@ import org.apache.ibatis.session.SqlSessionFactory;
  *
  * <p>The artifacts come from a running instance of the tool over HTTP, as everything in
  * this suite does since decision 078.
+ *
+ * <p>A consumer project compiles its entities once and its queries against them, and so
+ * does this runner: the entity artifacts of a direction are compiled once and, for a JPA
+ * target, the framework's factory is built once over them; every query of the direction
+ * then compiles its method in a project of its own on top ({@code JavaProject.create(name,
+ * base)}). With every category stated by up to six sources, the matrix runs a few hundred
+ * queries through this class, and a factory per run would cost minutes for nothing the
+ * verdict depends on. The cache lives until {@link #closeAll()}, which the test classes call
+ * when they are done.
  */
 public final class JavaQueryRunner {
+
+    private static final Map<String, Domain> DOMAINS = new LinkedHashMap<>();
 
     private JavaQueryRunner() {
     }
@@ -45,17 +58,17 @@ public final class JavaQueryRunner {
     }
 
     /**
-     * Translates the query into the target and runs it, returning the rendered rows in the
-     * order the comparison wants them: as they came for a query that carries an ordering,
-     * sorted by the rendered line for one that does not.
+     * Translates the query from the source into the target and runs it, returning the
+     * rendered rows in the order the comparison wants them: as they came for a query that
+     * carries an ordering, sorted by the rendered line for one that does not.
      */
-    public static List<String> run(DifferentialQuery query, int target) throws Exception {
-        return run(query, target, null);
+    public static List<String> run(DifferentialQuery query, int source, int target) throws Exception {
+        return run(query, source, target, null);
     }
 
     /** The same, with the query artifact replaced by a mutation of it (the negative half). */
-    public static List<String> run(DifferentialQuery query, int target, String mutated) throws Exception {
-        ConversionResponse response = translate(query, target);
+    public static List<String> run(DifferentialQuery query, int source, int target, String mutated) throws Exception {
+        ConversionResponse response = translate(query, source, target);
         List<List<Object>> rows = execute(query, target, response, mutated);
 
         List<String> rendered = new ArrayList<>();
@@ -67,28 +80,38 @@ public final class JavaQueryRunner {
     }
 
     /** The conversion behind a run, refusals and all. */
-    public static ConversionResponse translate(DifferentialQuery query, int target) {
-        ToolResponse answer = ToolApi.convert(query.source(), target, query.units());
+    public static ConversionResponse translate(DifferentialQuery query, int source, int target) {
+        ToolResponse answer = ToolApi.convert(source, target, query.units(source));
         assertEquals(200, answer.statusCode(), answer.body());
 
         ConversionResponse response = answer.required();
 
         assertTrue(response.recordsOf(RecordKind.FAILURE).isEmpty(),
-                query.id() + ": " + Orm.nameOf(query.source()) + " -> " + Orm.nameOf(target)
+                query.id() + ": " + Orm.nameOf(source) + " -> " + Orm.nameOf(target)
                         + " was refused, so the pair has nothing to compare:"
                         + System.lineSeparator() + response.describeRecords());
 
         return response;
     }
 
+    /** Closes every compiled domain and the factories built over them. */
+    public static synchronized void closeAll() {
+        for (Domain domain : DOMAINS.values()) {
+            domain.close();
+        }
+        DOMAINS.clear();
+    }
+
     private static List<List<Object>> execute(
             DifferentialQuery query, int target, ConversionResponse response, String mutated) throws Exception {
 
+        Domain domain = domain(target, response);
+
         if (target == Orm.MYBATIS) {
-            return runMyBatis(query, response, mutated);
+            return runMyBatis(query, response, domain, mutated);
         }
 
-        return runJpa(query, target, response, mutated);
+        return runJpa(query, target, response, domain, mutated);
     }
 
     /**
@@ -97,31 +120,15 @@ public final class JavaQueryRunner {
      * Which factory builds it is the whole difference, exactly as decision 080 claimed.
      */
     private static List<List<Object>> runJpa(
-            DifferentialQuery query, int target, ConversionResponse response, String mutated) throws Exception {
+            DifferentialQuery query, int target, ConversionResponse response, Domain domain, String mutated) throws Exception {
 
-        try (JavaProject project = JavaProject.create("diff-" + Orm.nameOf(target).toLowerCase())) {
-            List<String> entityNames = new ArrayList<>();
-            for (ConversionUnit entity : response.artifactsOf(ContentType.JAVA_ENTITY)) {
-                entityNames.add(project.add(entity.content()));
-            }
+        try (JavaProject queries = JavaProject.create("diff-query", domain.project)) {
+            String wrapper = queries.add(JavaSources.wrapQuery(
+                    domain.entityPackage, "GeneratedQueries", queryArtifact(response, mutated)));
+            queries.compileAndLoad();
 
-            String packageName = JavaSources.packageOf(response.artifactsOf(ContentType.JAVA_ENTITY).get(0).content());
-            String wrapper = project.add(JavaSources.wrapQuery(
-                    packageName, "GeneratedQueries", queryArtifact(response, mutated)));
-
-            ClassLoader loader = project.compileAndLoad();
-
-            List<Class<?>> entities = new ArrayList<>();
-            for (String name : entityNames) {
-                entities.add(project.load(name));
-            }
-
-            EntityManagerFactory factory = target == Orm.HIBERNATE
-                    ? HibernateBootstrap.build("none", loader, entities)
-                    : EclipseLinkBootstrap.build("none", loader, project.rootUrl(), entities);
-
-            try (factory; EntityManager manager = factory.createEntityManager()) {
-                Object returned = invoke(project.load(wrapper), query, manager);
+            try (EntityManager manager = domain.factory(target).createEntityManager()) {
+                Object returned = invoke(queries.load(wrapper), query, manager);
                 List<?> rows = (List<?>) returned.getClass().getMethod("getResultList").invoke(returned);
 
                 // JPQL hands a projection back as an object array per row and an entity as
@@ -132,7 +139,7 @@ public final class JavaQueryRunner {
     }
 
     private static List<List<Object>> runMyBatis(
-            DifferentialQuery query, ConversionResponse response, String mutated) throws Exception {
+            DifferentialQuery query, ConversionResponse response, Domain domain, String mutated) throws Exception {
 
         List<String> mappers = new ArrayList<>();
         for (ConversionUnit unit : response.artifactsOf(ContentType.XML)) {
@@ -146,14 +153,9 @@ public final class JavaQueryRunner {
         String statementMapper = mutated != null ? mutated : original;
         mappers.set(mappers.indexOf(original), statementMapper);
 
-        try (JavaProject project = JavaProject.create("diff-mybatis")) {
-            for (ConversionUnit entity : response.artifactsOf(ContentType.JAVA_ENTITY)) {
-                project.add(entity.content());
-            }
-
-            String packageName = JavaSources.packageOf(response.artifactsOf(ContentType.JAVA_ENTITY).get(0).content());
+        try (JavaProject project = JavaProject.create("diff-mybatis", domain.project)) {
             project.add(JavaSources.wrapMapperInterface(
-                    packageName,
+                    domain.entityPackage,
                     MyBatisBootstrap.interfaceNameOf(statementMapper),
                     response.artifactOf(ContentType.JAVA_QUERY).content()));
 
@@ -166,8 +168,9 @@ public final class JavaQueryRunner {
                 Method method = mapper.getDeclaredMethods()[0];
                 Object returned = method.invoke(session.getMapper(mapper), values(query, method));
 
-                // MyBatis materializes into the domain class, and a projection fills only
-                // the properties it selected; both are therefore read by name.
+                // MyBatis materializes a whole-entity query into the domain class and a
+                // projection into a Map per row keyed by the projected columns (decision
+                // 104); both are therefore read by name.
                 return rows((List<?>) returned, query, false);
             }
         }
@@ -254,8 +257,25 @@ public final class JavaQueryRunner {
         return values;
     }
 
+    /**
+     * The fields of a row read by the names the matrix states: off the map MyBatis returns
+     * for a projection (decision 104), off the accessors of an entity otherwise.
+     */
     private static List<Object> byName(Object item, DifferentialQuery query) {
         List<Object> values = new ArrayList<>();
+
+        if (item instanceof Map<?, ?> columns) {
+            for (String field : query.fields()) {
+                if (!columns.containsKey(field)) {
+                    throw new IllegalStateException(
+                            query.id() + ": the row has no column \"" + field + "\"; it has " + columns.keySet()
+                                    + " and the matrix states the fields as " + query.fields() + ".");
+                }
+                values.add(columns.get(field));
+            }
+
+            return values;
+        }
 
         for (String field : query.fields()) {
             values.add(read(item, field, query));
@@ -282,5 +302,71 @@ public final class JavaQueryRunner {
         throw new IllegalStateException(
                 query.id() + ": the row type " + item.getClass().getName() + " has neither get" + field
                         + " nor is" + field + "; the matrix states the fields as " + query.fields() + ".");
+    }
+
+    /**
+     * The compiled entities of a direction, built from the first answer that reaches them.
+     * Keyed by the target and the entity artifacts themselves rather than by the direction,
+     * so that two queries whose entities come out the same share one compilation and two
+     * whose entities differ - the six queries of the matrix's own against the domain of the
+     * categories - never share by accident.
+     */
+    private static synchronized Domain domain(int target, ConversionResponse response) {
+        List<String> entities = response.artifactsOf(ContentType.JAVA_ENTITY).stream().map(ConversionUnit::content).toList();
+        String key = target + "|" + String.join("\u0000", entities);
+
+        return DOMAINS.computeIfAbsent(key, k -> new Domain("diff-" + Orm.nameOf(target).toLowerCase(), entities));
+    }
+
+    /**
+     * What one direction shares over every query: the entity artifacts compiled once, the
+     * package they declare, and - for a JPA target - the framework's factory built over
+     * them once.
+     */
+    private static final class Domain implements AutoCloseable {
+
+        private final String entityPackage;
+        private final JavaProject project;
+        private final ClassLoader loader;
+        private final List<Class<?>> mapped;
+
+        private EntityManagerFactory hibernate;
+        private EntityManagerFactory eclipseLink;
+
+        Domain(String name, List<String> entities) {
+            entityPackage = JavaSources.packageOf(entities.get(0));
+            project = JavaProject.create(name);
+            for (String entity : entities) {
+                project.add(entity);
+            }
+
+            loader = project.compileAndLoad();
+            mapped = project.loadAll();
+        }
+
+        synchronized EntityManagerFactory factory(int target) {
+            if (target == Orm.HIBERNATE) {
+                if (hibernate == null) {
+                    hibernate = HibernateBootstrap.build("none", loader, mapped);
+                }
+                return hibernate;
+            }
+
+            if (eclipseLink == null) {
+                eclipseLink = EclipseLinkBootstrap.build("none", loader, project.rootUrl(), mapped);
+            }
+            return eclipseLink;
+        }
+
+        @Override
+        public void close() {
+            if (hibernate != null) {
+                hibernate.close();
+            }
+            if (eclipseLink != null) {
+                eclipseLink.close();
+            }
+            project.close();
+        }
     }
 }

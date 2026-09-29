@@ -1,1 +1,1 @@
-from OrderLine ol where ol.Quantity >= :minQuantity
+from ShopOrderLine ol where ol.Quantity >= :minQuantity

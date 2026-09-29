@@ -1,1 +1,1 @@
-SELECT * FROM Sales.Products AS p WHERE p.ProductName LIKE 'W%'
+SELECT * FROM {{schema}}.ShopProducts AS p WHERE p.ProductName LIKE 'W%'

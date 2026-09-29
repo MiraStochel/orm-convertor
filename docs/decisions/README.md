@@ -108,6 +108,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [101](101-a-join-along-an-association-path-is-derived-from-the-relation.md) | Join po asociační cestě se odvozuje ze vztahu mezireprezentace; bez sloupců se odmítá jmenovitě | 2026-09-29 | platí | F7, F8, F9, F11, T1, T2 |
 | [102](102-aggregate-distinct-like-escape-and-a-parameter-among-listed-values-are-carried.md) | Agregační `DISTINCT`, únikový znak `LIKE` a parametr uvnitř výčtu hodnot se nesou v mezireprezentaci | 2026-09-29 | platí | F7–F10, F11, T2, T3, S1, S2 |
 | [103](103-a-query-expression-is-read-as-its-rewrite-and-a-single-row-terminal-as-a-slice.md) | Dotazový výraz LINQ se čte jako svůj přepis na řetěz a koncová metoda na jeden řádek jako výřez | 2026-09-29 | platí | F7–F10, F11, T1, T2 |
+| [104](104-a-projection-into-a-sql-target-materializes-as-an-untyped-row.md) | Projekce do SQL cíle se materializuje jako netypovaný řádek | 2026-09-29 | platí | F7–F10, F11, F13, T2, T3 |
 
 ## Formát
 

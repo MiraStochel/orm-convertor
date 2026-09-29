@@ -1,6 +1,6 @@
-// The Orders table under a two-part key, in the shape of decisions 006 and 077: flat key
-// attributes plus a nested key class named by @IdClass. Called CustomerOrder because
-// `order` is a keyword of JPQL and HQL.
+// The ShopOrders table under a two-part key, in the shape of decisions 006 and 077: flat key
+// attributes plus a nested key class named by @IdClass. The order of the shop domain, whose
+// five entities carry the prefix so that their tables stand beside the fixture schema's.
 package Shop;
 
 import jakarta.persistence.Column;
@@ -13,9 +13,9 @@ import java.time.LocalDateTime;
 import java.util.Objects;
 
 @Entity
-@Table(name = "Orders", schema = "Sales")
-@IdClass(CustomerOrder.CustomerOrderId.class)
-public class CustomerOrder {
+@Table(name = "ShopOrders", schema = "{{schema}}")
+@IdClass(ShopOrder.CustomerOrderId.class)
+public class ShopOrder {
     @Id
     @Column(name = "CompanyId")
     private Integer CompanyId;

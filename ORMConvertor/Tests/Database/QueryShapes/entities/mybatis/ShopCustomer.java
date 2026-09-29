@@ -2,7 +2,7 @@
 // the framework on them (decision 084). What maps them stands in ShopMapper.xml.
 package Shop;
 
-public class Customer {
+public class ShopCustomer {
     private Integer CustomerId;
     private String Name;
     private String Notes;

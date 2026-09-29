@@ -1,4 +1,4 @@
-// The Products table under an assigned one-part key.
+// The ShopProducts table under an assigned one-part key.
 package Shop;
 
 import jakarta.persistence.Column;
@@ -8,8 +8,8 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "Products", schema = "Sales")
-public class Product {
+@Table(name = "ShopProducts", schema = "{{schema}}")
+public class ShopProduct {
     @Id
     @Column(name = "ProductId")
     private Integer ProductId;

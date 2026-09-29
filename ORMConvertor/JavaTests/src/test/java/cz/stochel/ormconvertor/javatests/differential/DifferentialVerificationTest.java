@@ -1,22 +1,27 @@
 package cz.stochel.ormconvertor.javatests.differential;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import cz.stochel.ormconvertor.javatests.TestSchema;
+import cz.stochel.ormconvertor.javatests.tool.ContentType;
+import cz.stochel.ormconvertor.javatests.tool.ConversionResponse;
 import cz.stochel.ormconvertor.javatests.tool.Orm;
+import cz.stochel.ormconvertor.javatests.tool.QueryFeature;
 import cz.stochel.ormconvertor.javatests.tool.ToolApi;
+import cz.stochel.ormconvertor.javatests.tool.ToolResponse;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -33,7 +38,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  *
  * <p>The canonical result belongs to the query and not to a direction, which is what keeps
  * it honest: a translation broken in one direction cannot be fixed by moving the target,
- * because moving it breaks every other direction of the same query at once.
+ * because moving it breaks every other direction of the same query at once. A category of
+ * T2 has several sources, and every one of their runs meets the same file too.
  *
  * <p>Every case here is an integration test in the sense decision 087 gave the word - its
  * verdict depends on what happened in the database - so the count of F12 grows with the
@@ -57,14 +63,16 @@ class DifferentialVerificationTest {
 
     @AfterAll
     static void cleanUp() throws Exception {
+        JavaQueryRunner.closeAll();
         TestSchema.drop();
     }
 
-    /** The queries whose source framework this suite can run. */
-    static Stream<Arguments> sourceQueries() {
+    /** The source variants this suite can run: every (query, source) whose source it owns. */
+    static Stream<Arguments> sourceVariants() {
         return DifferentialMatrix.queries().stream()
-                .filter(query -> JavaQueryRunner.owns(query.source()))
-                .map(query -> Arguments.of(query.id()));
+                .flatMap(query -> query.sources().stream()
+                        .filter(JavaQueryRunner::owns)
+                        .map(source -> Arguments.of(query.id(), source)));
     }
 
     /**
@@ -75,35 +83,65 @@ class DifferentialVerificationTest {
     static Stream<Arguments> pairs() {
         return DifferentialMatrix.pairs().stream()
                 .filter(pair -> JavaQueryRunner.owns(pair.target()))
-                .map(pair -> Arguments.of(pair.queryId(), pair.target()));
+                .map(pair -> Arguments.of(pair.queryId(), pair.source(), pair.target()));
     }
 
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("sourceQueries")
-    void theSourceVariantFixesTheCanonicalResult(String id) throws Exception {
+    @ParameterizedTest(name = "{0} from {1}")
+    @MethodSource("sourceVariants")
+    void theSourceVariantFixesTheCanonicalResult(String id, int source) throws Exception {
         DifferentialQuery query = DifferentialMatrix.query(id);
-        List<String> rows = JavaQueryRunner.run(query, query.source());
+        List<String> rows = JavaQueryRunner.run(query, source, source);
 
         String directory = recording();
         if (directory != null) {
-            record(directory, query, rows);
+            record(directory, query, source, rows);
             return;
         }
 
-        assertEquals(query.canonicalResult(), rows);
+        assertEquals(query.canonicalResult(), rows, query.id() + " from " + Orm.nameOf(source));
     }
 
-    @ParameterizedTest(name = "{0} -> {1}")
+    @ParameterizedTest(name = "{0}: {1} -> {2}")
     @MethodSource("pairs")
-    void theTranslatedVariantMatchesTheCanonicalResult(String id, int target) throws Exception {
+    void theTranslatedVariantMatchesTheCanonicalResult(String id, int source, int target) throws Exception {
         assumeTrue(recording() == null,
                 "A recording run fixes the canonical results; comparing against them is the next run.");
 
         DifferentialQuery query = DifferentialMatrix.query(id);
-        List<String> rows = JavaQueryRunner.run(query, target);
+        List<String> rows = JavaQueryRunner.run(query, source, target);
 
         assertEquals(query.canonicalResult(), rows,
-                query.id() + ": " + Orm.nameOf(query.source()) + " -> " + Orm.nameOf(target));
+                query.id() + ": " + Orm.nameOf(source) + " -> " + Orm.nameOf(target));
+    }
+
+    /**
+     * A direction the matrix states as refused is refused: no query artifact comes out and a
+     * record names the feature the target's descriptor cannot express (decision 053). No
+     * Java target refuses a category today - the one refused direction is the set operation
+     * into NHibernate, which the .NET suite asserts - so this loop is empty until one does,
+     * and then it is not.
+     */
+    @Test
+    void aRefusedDirectionIsRefusedAsStated() {
+        for (DifferentialMatrix.RefusedDirection refused : DifferentialMatrix.refusedDirections()) {
+            if (!JavaQueryRunner.owns(refused.target())) {
+                continue;
+            }
+
+            DifferentialQuery query = DifferentialMatrix.query(refused.queryId());
+            ToolResponse answer = ToolApi.convert(refused.source(), refused.target(), query.units(refused.source()));
+            assertEquals(200, answer.statusCode(), answer.body());
+            ConversionResponse response = answer.required();
+
+            assertTrue(response.artifactsOf(ContentType.JAVA_QUERY).isEmpty()
+                            && response.artifactsOf(ContentType.JPQL_QUERY).isEmpty(),
+                    refused.queryId() + ": " + Orm.nameOf(refused.source()) + " -> " + Orm.nameOf(refused.target())
+                            + " is stated as refused and a query artifact came out.");
+            assertTrue(response.records().stream().anyMatch(record ->
+                            record.feature() != null && record.feature() == refused.feature()),
+                    refused.queryId() + ": no record names " + QueryFeature.nameOf(refused.feature()) + ":"
+                            + System.lineSeparator() + response.describeRecords());
+        }
     }
 
     private static String recording() {
@@ -111,7 +149,13 @@ class DifferentialVerificationTest {
         return directory == null || directory.isBlank() ? null : directory;
     }
 
-    private static void record(String directory, DifferentialQuery query, List<String> rows) {
+    /**
+     * Writes the canonical result of the query. A category is stated by several sources and
+     * every one of them records into the same file, so a second recording of a file has to
+     * agree with the first: two sources that disagree about the rows are two queries, and a
+     * file written by whichever ran last would hide that.
+     */
+    private static void record(String directory, DifferentialQuery query, int source, List<String> rows) {
         try {
             Path results = Path.of(directory, "results");
             Files.createDirectories(results);
@@ -119,13 +163,20 @@ class DifferentialVerificationTest {
             // CRLF because the repository stores these as text files under its own
             // line-ending rule; the comparison is by line, so the choice affects the diff
             // and nothing else.
-            List<String> lines = new ArrayList<>(rows);
             StringBuilder text = new StringBuilder();
-            for (String line : lines) {
+            for (String line : rows) {
                 text.append(line).append("\r\n");
             }
 
-            Files.writeString(results.resolve(query.id() + ".txt"), text.toString(), StandardCharsets.UTF_8);
+            Path file = results.resolve(query.id() + ".txt");
+            if (Files.exists(file)) {
+                assertEquals(Files.readString(file, StandardCharsets.UTF_8), text.toString(),
+                        query.id() + ": the source variant of " + Orm.nameOf(source) + " returned other rows than "
+                                + "the source variant recorded before it into " + file + ", so the sources do not state one query.");
+                return;
+            }
+
+            Files.writeString(file, text.toString(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new UncheckedIOException("The canonical result of " + query.id() + " could not be written.", e);
         }

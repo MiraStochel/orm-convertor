@@ -2,9 +2,9 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="Shop.FindSetOperationMapper">
-  <select id="findSetOperation" resultType="OrderLine">
-    SELECT ol.Description AS Text FROM Sales.OrderLines AS ol WHERE ol.Quantity &gt; 5
+  <select id="findSetOperation" resultType="ShopOrderLine">
+    SELECT ol.Description AS Text FROM {{schema}}.ShopOrderLines AS ol WHERE ol.Quantity &gt; 5
     UNION
-    SELECT p.ProductName AS Text FROM Sales.Products AS p WHERE p.UnitPrice &gt; 100
+    SELECT p.ProductName AS Text FROM {{schema}}.ShopProducts AS p WHERE p.UnitPrice &gt; 100
   </select>
 </mapper>

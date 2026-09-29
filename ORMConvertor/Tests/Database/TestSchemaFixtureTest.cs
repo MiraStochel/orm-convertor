@@ -29,13 +29,19 @@ public class TestSchemaFixtureTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        // DifferentialProducts is not part of TestSchema.sql: it comes with the read-only
-        // data of the differential verification (decision 089), which brings its own table
-        // rather than seeding one that other scenarios write to.
+        // DifferentialProducts and the five Shop tables are not part of TestSchema.sql: they
+        // come with the read-only data of the differential verification (decision 089), which
+        // brings its own tables rather than seeding ones that other scenarios write to - the
+        // one table of the first six queries of the matrix, and the domain of the query
+        // categories of T2 (QueryShapes/FixtureData.sql), whose names carry the prefix so
+        // that a class of that domain is found from its name in the catalog without meeting
+        // a table of this schema's own (decision 050).
         string[] expected =
         [
             "CustomerProfiles", "Customers", "DifferentialProducts", "OrderLineAllocations",
-            "OrderLines", "Orders", "ProductSuppliers", "Products", "Suppliers"
+            "OrderLines", "Orders", "ProductSuppliers", "Products",
+            "ShopCustomers", "ShopOrderLineAllocations", "ShopOrderLines", "ShopOrders", "ShopProducts",
+            "Suppliers"
         ];
 
         using var connection = fixture.OpenConnection();
@@ -51,6 +57,7 @@ public class TestSchemaFixtureTest(TestSchemaFixture fixture)
         // Sorted on this side, not by the server: the ordering of "Products" against
         // "ProductSuppliers" depends on the collation of the instance, and the claim
         // here is about which tables exist, not about how SQL Server sorts them.
+
         Assert.Equal(expected, actual.Order(StringComparer.Ordinal));
     }
 

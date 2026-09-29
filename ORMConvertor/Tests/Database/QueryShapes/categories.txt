@@ -25,15 +25,22 @@
 #                   by a stated rule, as Source:Feature - a parameter of a Dapper source has
 #                   no mapping to take its scalar from without a catalog (decision 083).
 #
-# The domain is the one of the shared fixture schema (TestSchema.sql): customers, orders
+# The domain has the shape of the shared fixture schema (TestSchema.sql): customers, orders
 # under a two-part key, order lines under a three-part key whose leading parts are a
 # multi-column foreign key, allocations under a four-part key, and products - so the joins
 # here run over two and three columns, which is what makes the join category worth
-# measuring. The order entity is called CustomerOrder because "order" is a keyword of HQL
-# and JPQL; the two sources that state no table (Dapper, MyBatis) name it CustomerOrders so
-# that the singular-plural rule of decision 050 finds the class. Every section names its
-# query "find" plus the category, so a MyBatis statement and its interface are found by
-# the name alone.
+# measuring. It has read-only data of its own, FixtureData.sql beside this file, which both
+# suites create in their schema right after the fixture's own tables (decision 089): the
+# differential matrix measures every category here at the fourth level. Every file here
+# writes that schema as {{schema}}, and both suites substitute it - the .NET matrices read
+# the texts dry with the same substitution the run against the database uses. The five
+# entities carry the prefix Shop, and every source names their tables by the plural -
+# ShopOrders from ShopOrder -, which is what the singular-plural rule of decision 050
+# derives from the class for the two sources that state no table (Dapper, MyBatis); the
+# prefix keeps those tables apart from the fixture schema's Customers, OrderLines and
+# Products, because a table found under two names is a match the catalog refuses to guess
+# at. Every section names its query "find" plus the category, so a MyBatis statement and
+# its interface are found by the name alone.
 
 [Projection]
 Dapper = dapper/FindProjection.sql

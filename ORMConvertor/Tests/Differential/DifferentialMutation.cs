@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace Tests.Differential;
@@ -36,46 +37,72 @@ internal sealed record DifferentialMutation(string Key, string Name, Func<string
                $"matrix.txt names the mutation \"{key}\", which is none of "
                + string.Join(", ", All().Select(mutation => mutation.Key)) + ".");
 
-    /// <summary>Every target writes its filter on a line of its own - WHERE, where, .Where(.</summary>
+    /// <summary>
+    /// Every target writes its filter on a line of its own - WHERE, where, .Where(. A HAVING
+    /// is not a filter in this sense and stays, so a query whose only condition is a HAVING
+    /// carries the operator mutation and not this one.
+    /// </summary>
     private static string DropFilter(string artifact)
         => Lines(artifact, line => !Regex.IsMatch(line, @"^\s*(WHERE|where)\b") && !line.Contains(".Where("));
 
     /// <summary>
-    /// The comparison the filter is built on. Over this fixture the two directions select
-    /// disjoint, non-empty sets, so the flip cannot go unnoticed.
+    /// The comparison the filter is built on: greater against less, and greater-or-equal
+    /// against less-or-equal. Over the fixture the two directions of every comparison select
+    /// different sets, so the flip cannot go unnoticed.
     /// </summary>
     private static string FlipOperator(string artifact)
     {
         // Whitespace on both sides, which is what tells a comparison from the angle
-        // brackets of List&lt;Product&gt; and from the arrow of a lambda. Without it the
-        // mutation rewrites the generics of the artifact and the thing does not compile -
-        // which would prove that a broken artifact differs, not that a wrong query does.
-        var flipped = Regex.Replace(artifact, @"(?<=\s)>(?=\s)", "\u0001");
+        // brackets of List<Product>, from the arrow of a lambda and from the equals of an
+        // assignment. Without it the mutation rewrites the generics of the artifact and the
+        // thing does not compile - which would prove that a broken artifact differs, not
+        // that a wrong query does. The bounded pair goes first, because ">=" ends in a
+        // character the bare rule would otherwise not see as whitespace-bounded anyway.
+        var flipped = Regex.Replace(artifact, @"(?<=\s)>=(?=\s)", "\u0003");
+        flipped = Regex.Replace(flipped, @"(?<=\s)<=(?=\s)", ">=");
+        flipped = flipped.Replace("\u0003", "<=");
+
+        flipped = Regex.Replace(flipped, @"(?<=\s)>(?=\s)", "\u0001");
         flipped = Regex.Replace(flipped, @"(?<=\s)<(?=\s)", ">");
         return flipped.Replace('\u0001', '<');
     }
 
     /// <summary>
-    /// Ordering lives on its own line as well - ORDER BY, order by, .OrderBy. The last one
-    /// without its parenthesis on purpose: a descending ordering reaches the EF Core
-    /// artifact as .OrderByDescending, and a rule that missed it would leave the artifact
-    /// untouched for every query that orders the other way.
+    /// Ordering lives on its own line as well - ORDER BY, order by, .OrderBy and the .ThenBy
+    /// a second key continues it with. The LINQ ones without their parenthesis on purpose: a
+    /// descending ordering reaches the EF Core artifact as .OrderByDescending, and a rule that
+    /// missed it would leave the artifact untouched for every query that orders the other way.
     /// </summary>
     private static string DropOrdering(string artifact)
-        => Lines(artifact, line => !Regex.IsMatch(line, @"(ORDER\s+BY|order\s+by)\b") && !line.Contains(".OrderBy"));
+        => Lines(artifact, line => !Regex.IsMatch(line, @"(ORDER\s+BY|order\s+by)\b")
+            && !line.Contains(".OrderBy")
+            && !line.Contains(".ThenBy"));
 
     /// <summary>
-    /// The row count of a paginated query, wherever the target put it: inside TOP, in a
-    /// Take call, on the query object. Three of six rows is a proper prefix, so two is a
-    /// different answer whichever way the target slices.
+    /// The row count of a paginated query, wherever the target put it: inside TOP, after
+    /// FETCH NEXT, in a Take call, on the query object. A literal count becomes one less, a
+    /// bound one - a parameter of the generated method (decision 085) - becomes itself plus
+    /// one, an expression every one of those places accepts; either way the slice is another
+    /// slice of the same ordered rows.
     /// </summary>
     private static string ChangeRowCount(string artifact)
-        => Regex.Replace(artifact, @"(TOP\s*\(\s*|\.Take\(|SetMaxResults\(|setMaxResults\()3(\s*\))", "${1}2${2}");
+    {
+        const string places = @"(TOP\s*\(\s*|\.Take\(|SetMaxResults\(|setMaxResults\(|FETCH NEXT )";
+
+        var changed = Regex.Replace(
+            artifact,
+            places + @"(\d+)(\s*\)| ROWS)",
+            match => match.Groups[1].Value
+                + (int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture) - 1).ToString(CultureInfo.InvariantCulture)
+                + match.Groups[3].Value);
+
+        return Regex.Replace(changed, places + @"(@?[A-Za-z_]\w*|#\{\w+\})(\s*\)| ROWS)", "$1$2 + 1$3");
+    }
 
     /// <summary>
     /// The two projected expressions swapped under their own aliases: the row keeps its
-    /// shape and every field holds the other one's value. Over this fixture Sku and
-    /// ProductName differ in every row, so nothing survives the swap by coincidence.
+    /// shape and every field holds the other one's value. Over the fixture no two projected
+    /// fields of a query agree in every row, so nothing survives the swap by coincidence.
     /// </summary>
     private static string SwapProjection(string artifact)
     {
@@ -90,10 +117,12 @@ internal sealed record DifferentialMutation(string Key, string Name, Func<string
             return swapped;
         }
 
-        // new { X = p.A, Y = p.B } - the shape of a LINQ projection.
+        // new { X = p.A, Y = t.p.B } - the shape of a LINQ projection, whose path may run
+        // through the joined row of a result selector (decision 103); the last member is what
+        // is swapped, the path in front of it stays.
         return Regex.Replace(
             artifact,
-            @"(\w+)(\s*=\s*)(\w+\.)(\w+)(,\s*)(\w+)(\s*=\s*)(\w+\.)(\w+)",
+            @"(\w+)(\s*=\s*)((?:\w+\.)+)(\w+)(,\s*)(\w+)(\s*=\s*)((?:\w+\.)+)(\w+)",
             "$1$2$3$9$5$6$7$8$4");
     }
 

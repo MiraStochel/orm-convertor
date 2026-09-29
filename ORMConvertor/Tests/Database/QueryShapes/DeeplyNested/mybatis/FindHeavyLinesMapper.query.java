@@ -8,7 +8,7 @@ import java.util.List;
 import org.apache.ibatis.annotations.Param;
 
 public interface FindHeavyLinesMapper {
-    List<OrderLine> findHeavyLines(
+    List<ShopOrderLine> findHeavyLines(
         @Param("minQuantity") int minQuantity,
         @Param("minTotal") int minTotal,
         @Param("skip") int skip,

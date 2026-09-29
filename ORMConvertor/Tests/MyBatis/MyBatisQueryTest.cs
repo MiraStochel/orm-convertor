@@ -132,14 +132,15 @@ public class MyBatisQueryTest
     /// <summary>
     /// The result mapping is the one thing a statement states that the query representation
     /// has no slot for - the same record and the same reason as the &lt;return&gt; of an
-    /// NHibernate native query (decision 082).
+    /// NHibernate native query (decision 082). The statement reads the whole entity, which is
+    /// the one shape that materializes into a type derived from the table (decision 104).
     /// </summary>
     [Fact]
     public void TheResultMappingIsALossAndTheResultTypeIsDerivedFromTheTable()
     {
         var result = Convert(ORMEnum.Dapper, null, Mapper("""
           <select id="findAll" resultMap="customer">
-            SELECT c.CustomerName FROM Sales.Customers AS c
+            SELECT * FROM Sales.Customers AS c
           </select>
         """));
 

@@ -1,5 +1,5 @@
-// The OrderLines table under a three-part key whose leading two parts are the foreign key
-// to Orders - the join over two columns of the matrices.
+// The ShopOrderLines table under a three-part key whose leading two parts are the foreign key
+// to ShopOrders - the join over two columns of the matrices.
 package Shop;
 
 import jakarta.persistence.Column;
@@ -12,9 +12,9 @@ import java.math.BigDecimal;
 import java.util.Objects;
 
 @Entity
-@Table(name = "OrderLines", schema = "Sales")
-@IdClass(OrderLine.OrderLineId.class)
-public class OrderLine {
+@Table(name = "ShopOrderLines", schema = "{{schema}}")
+@IdClass(ShopOrderLine.OrderLineId.class)
+public class ShopOrderLine {
     @Id
     @Column(name = "CompanyId")
     private Integer CompanyId;

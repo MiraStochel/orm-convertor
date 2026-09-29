@@ -1,4 +1,4 @@
 select ol.ProductId as ProductId, sum(ol.Quantity) as Total, count(ol) as Lines
-from OrderLine ol
+from ShopOrderLine ol
 group by ol.ProductId
 having sum(ol.Quantity) > 10

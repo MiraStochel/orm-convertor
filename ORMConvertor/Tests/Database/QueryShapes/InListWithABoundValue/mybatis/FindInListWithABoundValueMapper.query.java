@@ -4,5 +4,5 @@ import java.util.List;
 import org.apache.ibatis.annotations.Param;
 
 public interface FindInListWithABoundValueMapper {
-    List<OrderLine> findInListWithABoundValue(@Param("extra") int extra);
+    List<ShopOrderLine> findInListWithABoundValue(@Param("extra") int extra);
 }

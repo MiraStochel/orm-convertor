@@ -44,12 +44,15 @@ class TestSchemaTest {
         }
 
         assertEquals(
-                // DifferentialProducts is not part of TestSchema.sql: it comes with the
-                // read-only data of the differential verification (decision 089), which
-                // brings its own table rather than seeding one that others write to.
+                // DifferentialProducts and the five Shop tables are not part of
+                // TestSchema.sql: they come with the read-only data of the differential
+                // verification (decision 089), which brings its own tables rather than
+                // seeding ones that others write to - the one table of the first six queries
+                // of the matrix and the domain of the query categories of T2.
                 new TreeSet<>(Set.of("Customers", "CustomerProfiles", "Orders", "OrderLines",
                         "OrderLineAllocations", "Products", "Suppliers", "ProductSuppliers",
-                        "DifferentialProducts")),
+                        "DifferentialProducts",
+                        "ShopCustomers", "ShopOrders", "ShopOrderLines", "ShopOrderLineAllocations", "ShopProducts")),
                 tables);
     }
 
@@ -90,9 +93,10 @@ class TestSchemaTest {
     /** {@link DatabaseMetaData} is the reader here; nothing else in the suite reads the catalog. */
     @Test
     void theScriptSplitsIntoOneBatchPerStatementGroup() throws Exception {
-        // CREATE SCHEMA, eight CREATE TABLE and one ALTER TABLE of the schema script, and
-        // the CREATE TABLE and the INSERT the differential data brings with it
-        // (decision 089) - one batch each.
-        assertEquals(12, TestSchema.batches().size());
+        // CREATE SCHEMA, eight CREATE TABLE and one ALTER TABLE of the schema script, the
+        // CREATE TABLE and the INSERT the differential data brings with it (decision 089),
+        // and the five CREATE TABLE and five INSERT of the domain of the query categories
+        // (QueryShapes/FixtureData.sql) - one batch each.
+        assertEquals(22, TestSchema.batches().size());
     }
 }

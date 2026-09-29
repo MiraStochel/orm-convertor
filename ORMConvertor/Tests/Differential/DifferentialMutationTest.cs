@@ -19,19 +19,19 @@ namespace Tests.Differential;
 public class DifferentialMutationTest(TestSchemaFixture fixture)
 {
     /// <summary>
-    /// Every (query, target, mutation) this suite runs. Which mutations a query carries is
-    /// the matrix's statement - a query with no ordering cannot lose one - and it is stated
-    /// rather than discovered, so nothing here can quietly stop running.
+    /// Every (query, source, target, mutation) this suite runs. Which mutations a query
+    /// carries is the matrix's statement - a query with no ordering cannot lose one - and it
+    /// is stated rather than discovered, so nothing here can quietly stop running.
     /// </summary>
-    public static TheoryData<string, ORMEnum, string> Mutations()
+    public static TheoryData<string, ORMEnum, ORMEnum, string> Mutations()
     {
-        var data = new TheoryData<string, ORMEnum, string>();
+        var data = new TheoryData<string, ORMEnum, ORMEnum, string>();
 
-        foreach (var (query, target) in DifferentialMatrix.Pairs().Where(pair => DotNetQueryRunner.Owns(pair.Target)))
+        foreach (var pair in DifferentialMatrix.Pairs().Where(p => DotNetQueryRunner.Owns(p.Target)))
         {
-            foreach (var mutation in query.Mutations)
+            foreach (var mutation in pair.Query.Mutations)
             {
-                data.Add(query.Id, target, mutation);
+                data.Add(pair.Query.Id, pair.Source, pair.Target, mutation);
             }
         }
 
@@ -40,17 +40,14 @@ public class DifferentialMutationTest(TestSchemaFixture fixture)
 
     [Theory]
     [MemberData(nameof(Mutations))]
-    public void AMutatedTranslationDoesNotMatchTheCanonicalResult(string id, ORMEnum target, string mutationKey)
+    public void AMutatedTranslationDoesNotMatchTheCanonicalResult(string id, ORMEnum source, ORMEnum target, string mutationKey)
     {
         fixture.SkipIfUnavailable();
 
         var query = DifferentialVerificationTest.Query(id);
-        var conversion = DotNetQueryRunner.Translate(query, target, fixture);
+        var conversion = DotNetQueryRunner.Translate(query, source, target, fixture);
 
-        var artifact = conversion.Sources
-            .Single(source => source.ContentType == ConversionContentType.CSharpQuery)
-            .Content;
-
+        var artifact = DotNetQueryRunner.QueryMethod(conversion);
         var mutation = DifferentialMutation.Of(mutationKey);
         var mutated = mutation.Apply(artifact);
 
@@ -59,7 +56,7 @@ public class DifferentialMutationTest(TestSchemaFixture fixture)
         // instead of a case that quietly stops running.
         Assert.True(
             mutated != artifact,
-            $"{id} -> {target}: the matrix says this query carries \"{mutationKey}\", and the rule "
+            $"{id}: {source} -> {target}: the matrix says this query carries \"{mutationKey}\", and the rule "
             + $"changed nothing in the artifact:{Environment.NewLine}{artifact}");
 
         // A mutation is detected the moment the artifact stops answering with the canonical
@@ -73,7 +70,7 @@ public class DifferentialMutationTest(TestSchemaFixture fixture)
 
         try
         {
-            rows = DotNetQueryRunner.Run(query, target, fixture, mutated);
+            rows = DotNetQueryRunner.Run(query, source, target, fixture, mutated);
         }
         catch (Exception)
         {
@@ -86,7 +83,7 @@ public class DifferentialMutationTest(TestSchemaFixture fixture)
         {
             Assert.False(
                 query.CanonicalResult().SequenceEqual(rows),
-                $"{id} -> {target}: {mutation.Name}, and the result was the canonical one all the same. "
+                $"{id}: {source} -> {target}: {mutation.Name}, and the result was the canonical one all the same. "
                 + "Either the fixture does not separate the two, or the comparison does not look at "
                 + "what the mutation changed.");
         }

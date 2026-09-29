@@ -1,8 +1,8 @@
 // The domain of the query-shape matrices as EF Core states it: the table on the class,
 // [Key] on a one-part key and [PrimaryKey] in the order of the parts on a composite one.
-// Orders has a two-part key, OrderLines a three-part one whose leading parts are the
-// foreign key to Orders, OrderLineAllocations a four-part one - the shape the shared
-// fixture schema has, so that the joins of the matrices run over two and three columns.
+// ShopOrders has a two-part key, ShopOrderLines a three-part one whose leading parts are the
+// foreign key to it, ShopOrderLineAllocations a four-part one - the shape the read-only
+// fixture of this domain has, so that the joins of the matrices run over two and three columns.
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -10,8 +10,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Shop;
 
-[Table("Customers", Schema = "Sales")]
-public class Customer
+[Table("ShopCustomers", Schema = "{{schema}}")]
+public class ShopCustomer
 {
     [Key]
     public int CustomerId { get; set; }
@@ -19,9 +19,9 @@ public class Customer
     public string? Notes { get; set; }
 }
 
-[Table("Orders", Schema = "Sales")]
+[Table("ShopOrders", Schema = "{{schema}}")]
 [PrimaryKey(nameof(CompanyId), nameof(OrderId))]
-public class CustomerOrder
+public class ShopOrder
 {
     public int CompanyId { get; set; }
     public int OrderId { get; set; }
@@ -30,9 +30,9 @@ public class CustomerOrder
     public bool IsCancelled { get; set; }
 }
 
-[Table("OrderLines", Schema = "Sales")]
+[Table("ShopOrderLines", Schema = "{{schema}}")]
 [PrimaryKey(nameof(CompanyId), nameof(OrderId), nameof(LineNumber))]
-public class OrderLine
+public class ShopOrderLine
 {
     public int CompanyId { get; set; }
     public int OrderId { get; set; }
@@ -43,9 +43,9 @@ public class OrderLine
     public decimal UnitPrice { get; set; }
 }
 
-[Table("OrderLineAllocations", Schema = "Sales")]
+[Table("ShopOrderLineAllocations", Schema = "{{schema}}")]
 [PrimaryKey(nameof(CompanyId), nameof(OrderId), nameof(LineNumber), nameof(AllocationId))]
-public class OrderLineAllocation
+public class ShopOrderLineAllocation
 {
     public int CompanyId { get; set; }
     public int OrderId { get; set; }
@@ -55,8 +55,8 @@ public class OrderLineAllocation
     public string? Notes { get; set; }
 }
 
-[Table("Products", Schema = "Sales")]
-public class Product
+[Table("ShopProducts", Schema = "{{schema}}")]
+public class ShopProduct
 {
     [Key]
     public int ProductId { get; set; }

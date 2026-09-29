@@ -11,8 +11,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "Customers", schema = "Sales")
-public class Customer {
+@Table(name = "ShopCustomers", schema = "{{schema}}")
+public class ShopCustomer {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "CustomerId")

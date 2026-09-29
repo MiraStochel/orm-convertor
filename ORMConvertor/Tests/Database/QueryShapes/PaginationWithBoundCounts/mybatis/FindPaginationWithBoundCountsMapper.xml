@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="Shop.FindPaginationWithBoundCountsMapper">
-  <select id="findPaginationWithBoundCounts" resultType="OrderLine">
-    SELECT * FROM Sales.OrderLines AS ol ORDER BY ol.LineNumber ASC OFFSET #{skip} ROWS FETCH NEXT #{take} ROWS ONLY
+  <select id="findPaginationWithBoundCounts" resultType="ShopOrderLine">
+    SELECT * FROM {{schema}}.ShopOrderLines AS ol ORDER BY ol.LineNumber ASC OFFSET #{skip} ROWS FETCH NEXT #{take} ROWS ONLY
   </select>
 </mapper>

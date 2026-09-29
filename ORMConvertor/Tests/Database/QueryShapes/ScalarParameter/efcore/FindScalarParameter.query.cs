@@ -1,5 +1,5 @@
 public void Query()
 {
-    var q = ctx.OrderLines.Where(ol => ol.Quantity >= minQuantity)
+    var q = ctx.ShopOrderLines.Where(ol => ol.Quantity >= minQuantity)
         .ToList();
 }
