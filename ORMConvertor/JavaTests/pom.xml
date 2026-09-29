@@ -107,7 +107,8 @@
                          same place for the same reason: two copies of a canonical result
                          would be two answers to one question. -->
                     <include>Differential/**</include>
-                    <!-- The domain and the deeply nested query of the query-shape matrices
+                    <!-- The domain, the query categories of T2 with their manifest and the
+                         deeply nested query of the query-shape matrices
                          (Tests/Combined/QueryShapeInputs.cs), in the languages of all six
                          frameworks: the .NET matrices run them dry, this suite has each Java
                          framework compile and parse what the tool makes of them. -->

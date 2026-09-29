@@ -14,9 +14,10 @@
          reads the very same files from ../Tests/Database as a test resource, so there is
          one copy of each and no step that keeps two in sync. -->
     <EmbeddedResource Include="Database\Differential\**\*" />
-    <!-- The domain and the deeply nested query of the query-shape matrices, in the languages
-         of all six frameworks - shared with the Java suite the same way, so that the Java
-         targets are judged over the very inputs the .NET matrices run. -->
+    <!-- The domain, the query categories of T2 with their manifest, and the deeply nested
+         query of the query-shape matrices, in the languages of all six frameworks - shared
+         with the Java suite the same way, so that the Java targets are judged over the very
+         inputs the .NET matrices run. -->
     <EmbeddedResource Include="Database\QueryShapes\**\*" />
     <!-- The matrix inputs are written in the languages of the source frameworks, C# among
          them, and they are input to the tool - not source of this project. Without this the

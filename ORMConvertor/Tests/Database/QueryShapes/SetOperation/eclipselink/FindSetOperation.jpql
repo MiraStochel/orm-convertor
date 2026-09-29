@@ -1,0 +1,3 @@
+select ol.Description as Text from OrderLine ol where ol.Quantity > 5
+union
+select p.ProductName as Text from Product p where p.UnitPrice > 100

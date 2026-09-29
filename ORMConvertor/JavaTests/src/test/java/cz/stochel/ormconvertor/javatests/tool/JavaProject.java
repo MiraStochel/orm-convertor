@@ -30,24 +30,35 @@ import javax.tools.ToolProvider;
  * <p>A project of its own per scenario, in a temporary directory removed on close, so that
  * two scenarios cannot see each other's classes; the loader's parent is this suite's, so
  * {@code jakarta.persistence} and Hibernate are the same classes the test itself holds.
+ * A project may instead be built on another one - the entities compiled once, a query
+ * compiled against them - and then it compiles against that project's classes and loads
+ * with that project's loader as its parent, the way a consumer module depends on the
+ * module its entities live in.
  */
 public final class JavaProject implements AutoCloseable {
 
     private final Path sources;
     private final Path classes;
+    private final JavaProject base;
     private final List<Path> files = new ArrayList<>();
     private final List<String> types = new ArrayList<>();
 
     private URLClassLoader loader;
 
-    private JavaProject(Path root) throws IOException {
+    private JavaProject(Path root, JavaProject base) throws IOException {
         this.sources = Files.createDirectories(root.resolve("src"));
         this.classes = Files.createDirectories(root.resolve("classes"));
+        this.base = base;
     }
 
     public static JavaProject create(String name) {
+        return create(name, null);
+    }
+
+    /** A project that depends on {@code base}: it sees that project's compiled classes and nothing of its sources. */
+    public static JavaProject create(String name, JavaProject base) {
         try {
-            return new JavaProject(Files.createTempDirectory("ormconvertor-" + name + "-"));
+            return new JavaProject(Files.createTempDirectory("ormconvertor-" + name + "-"), base);
         } catch (IOException e) {
             throw new UncheckedIOException("A temporary directory for the scenario could not be created.", e);
         }
@@ -138,7 +149,7 @@ public final class JavaProject implements AutoCloseable {
             try {
                 loader = new URLClassLoader(
                         new URL[] {classes.toUri().toURL()},
-                        JavaProject.class.getClassLoader());
+                        base != null ? base.loader() : JavaProject.class.getClassLoader());
             } catch (IOException e) {
                 throw new UncheckedIOException("The class loader over the compiled artifacts failed.", e);
             }
@@ -190,13 +201,17 @@ public final class JavaProject implements AutoCloseable {
     }
 
     /**
-     * The suite's own classpath. Surefire hands the test JVM a manifest-only jar, whose
-     * {@code Class-Path} {@code javac} follows, and the two frameworks the artifacts
-     * reference are added from where their own classes were loaded from - so the artifact
-     * compiles against the very releases this suite runs, not against a repeated list.
+     * The suite's own classpath, and the compiled classes of the project this one is built
+     * on. Surefire hands the test JVM a manifest-only jar, whose {@code Class-Path}
+     * {@code javac} follows, and the two frameworks the artifacts reference are added from
+     * where their own classes were loaded from - so the artifact compiles against the very
+     * releases this suite runs, not against a repeated list.
      */
-    private static String classpath() {
+    private String classpath() {
         List<String> entries = new ArrayList<>();
+        if (base != null) {
+            entries.add(base.classes.toString());
+        }
         entries.add(System.getProperty("java.class.path"));
         entries.add(locationOf(jakarta.persistence.Entity.class));
         entries.add(locationOf(org.hibernate.annotations.Nationalized.class));

@@ -1,0 +1,1 @@
+from OrderLine ol where ol.ProductId in (1, 2, :extra)

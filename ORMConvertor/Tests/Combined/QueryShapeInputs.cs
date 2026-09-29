@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using AbstractWrappers.Descriptors;
 using Model;
+using Tests.Database;
 
 namespace Tests.Combined;
 
@@ -11,7 +12,7 @@ namespace Tests.Combined;
 /// deliberately bad query of <see cref="QueryShapeInputs.DeeplyNested"/> - and the matrix
 /// tests run every shape through every direction the enum yields.
 /// </summary>
-/// <param name="Name">The category, as the theory data names it.</param>
+/// <param name="Name">The category, as the shared manifest names it (the section of <c>categories.txt</c>) and as the theory data names it.</param>
 /// <param name="Sources">The query units per source framework - one, or for MyBatis the mapper and the interface that types its parameters. A source absent here cannot state the shape in its language.</param>
 /// <param name="Hallmarks">Substrings every query artifact of the target has to contain, joined over all query artifacts.</param>
 /// <param name="RefusedBy">Targets whose descriptor cannot express the shape, with the feature the refusal names.</param>
@@ -31,11 +32,16 @@ public sealed record QueryShape(
 /// all six frameworks, the query categories of requirement T2 written once per source
 /// language over it, and one deeply nested query per source that every target has to carry.
 ///
-/// The domain and the deeply nested query are read from <c>Tests/Database/QueryShapes</c>,
-/// the place both suites read from (the mechanism of decision 089): the .NET suite embeds
-/// the files, the Java suite takes them as a test resource, and the Java targets are judged
-/// over the very same inputs at verification levels 2 and 3. The categories are short and
-/// live here.
+/// All of it is read from <c>Tests/Database/QueryShapes</c>, the place both suites read
+/// from (the mechanism of decision 089): the .NET suite embeds the files, the Java suite
+/// takes them as a test resource, and the Java targets are judged over the very same
+/// inputs at verification levels 2 and 3 (<c>shapes/QueryCategoryTest</c> and
+/// <c>shapes/DeeplyNestedQueryTest</c> there). Which sources state a category, which
+/// target refuses it and which source the tool refuses it from is stated once, in
+/// <c>categories.txt</c> beside the files, and both suites read it there. What stays here
+/// is the .NET side's own assertion - the hallmarks the target's text has to carry - keyed
+/// by the manifest's section, and the two lists are checked against each other when the
+/// categories are read, so neither can name a category the other lacks.
 ///
 /// The domain is the one of the shared fixture schema (<c>Tests/Database/TestSchema.sql</c>):
 /// customers, orders under a two-part key, order lines under a three-part key whose leading
@@ -44,10 +50,6 @@ public sealed record QueryShape(
 /// worth measuring. The order entity is called <c>CustomerOrder</c> because <c>order</c> is
 /// a keyword of HQL and JPQL; the two sources that state no table (Dapper, MyBatis) name it
 /// <c>CustomerOrders</c> so that the singular-plural rule of decision 050 finds the class.
-///
-/// Until now every category but aggregation and the parameter was proved on the nine .NET
-/// directions only (§9 of architecture.md); the Java sources here - JPQL for both JPA
-/// implementations, a mapper document for MyBatis - are what widens that to the matrix.
 /// </summary>
 public static class QueryShapeInputs
 {
@@ -81,18 +83,14 @@ public static class QueryShapeInputs
     /// <summary>What the framework reads the five entities from, as the shared files state them.</summary>
     public static List<ConversionSource> MappingUnits(ORMEnum framework) => framework switch
     {
-        ORMEnum.Dapper => [Unit(Read("entities/dapper/Shop.cs"), ConversionContentType.CSharpEntity)],
-        ORMEnum.EFCore => [Unit(Read("entities/efcore/Shop.cs"), ConversionContentType.CSharpEntity)],
-        ORMEnum.NHibernate =>
-        [
-            Unit(Read("entities/nhibernate/Shop.cs"), ConversionContentType.CSharpEntity),
-            Unit(Read("entities/nhibernate/Shop.hbm.xml"), ConversionContentType.XML),
-        ],
-        ORMEnum.Hibernate or ORMEnum.EclipseLink => JpaEntities.Select(e => Unit(Read($"entities/jpa/{e}.java"), ConversionContentType.JavaEntity)).ToList(),
+        ORMEnum.Dapper => [Unit("entities/dapper/Shop.cs")],
+        ORMEnum.EFCore => [Unit("entities/efcore/Shop.cs")],
+        ORMEnum.NHibernate => [Unit("entities/nhibernate/Shop.cs"), Unit("entities/nhibernate/Shop.hbm.xml")],
+        ORMEnum.Hibernate or ORMEnum.EclipseLink => JpaEntities.Select(e => Unit($"entities/jpa/{e}.java")).ToList(),
         ORMEnum.MyBatis =>
         [
-            .. JpaEntities.Select(e => Unit(Read($"entities/mybatis/{e}.java"), ConversionContentType.JavaEntity)),
-            Unit(Read("entities/mybatis/ShopMapper.xml"), ConversionContentType.XML),
+            .. JpaEntities.Select(e => Unit($"entities/mybatis/{e}.java")),
+            Unit("entities/mybatis/ShopMapper.xml"),
         ],
         _ => throw new ArgumentOutOfRangeException(nameof(framework), framework, $"{framework} has no inputs in {nameof(QueryShapeInputs)}; its wrapper brings them."),
     };
@@ -117,360 +115,232 @@ public static class QueryShapeInputs
         return reader.ReadToEnd().Replace("﻿", string.Empty);
     }
 
-    private static ConversionSource Unit(string content, ConversionContentType type) =>
-        new() { Content = content, ContentType = type };
+    /// <summary>One shared file as a unit of the conversion input, its language taken from its name.</summary>
+    private static ConversionSource Unit(string path) => new()
+    {
+        Name = path[(path.LastIndexOf('/') + 1)..],
+        Content = Read(path),
+        ContentType = SharedInputs.ContentTypeOf(path),
+    };
 
     // ---- the query categories of T2 ------------------------------------------------------
 
-    /// <summary>The categories, one shape each; the theory data of the matrix tests.</summary>
-    public static IReadOnlyList<QueryShape> Categories { get; } =
-    [
-        Define(
-            "projection",
-            sql: "SELECT ol.Description AS Text, ol.Quantity AS Qty FROM Sales.OrderLines AS ol",
-            linq: "ctx.OrderLines.Select(ol => new { Text = ol.Description, Qty = ol.Quantity })",
-            hql: "select ol.Description as Text, ol.Quantity as Qty from OrderLine ol",
-            jpql: "select ol.Description as Text, ol.Quantity as Qty from OrderLine ol",
-            hallmarks: Hallmarks(
-                sql: ["ol.Description AS Text", "ol.Quantity AS Qty"],
-                linq: ["Text = ol.Description", "Qty = ol.Quantity"],
-                hql: ["ol.Description as Text", "ol.Quantity as Qty"],
-                jpa: ["ol.Description as Text", "ol.Quantity as Qty"])),
+    /// <summary>
+    /// The categories, one shape each, in the order <c>categories.txt</c> states them; the
+    /// theory data of the matrix tests. Read on first use, after the hallmark table below
+    /// exists.
+    /// </summary>
+    public static IReadOnlyList<QueryShape> Categories => CategoriesRead.Value;
 
-        Define(
-            "filtering",
-            sql: "SELECT * FROM Sales.OrderLines AS ol WHERE (ol.Quantity > 5 OR ol.UnitPrice >= 100.5) AND ol.Description IS NOT NULL AND NOT (ol.ProductId = 3)",
-            linq: "ctx.OrderLines.Where(ol => (ol.Quantity > 5 || ol.UnitPrice >= 100.5m) && ol.Description != null && !(ol.ProductId == 3))",
-            hql: "from OrderLine ol where (ol.Quantity > 5 or ol.UnitPrice >= 100.5) and ol.Description is not null and not (ol.ProductId = 3)",
-            jpql: "select ol from OrderLine ol where (ol.Quantity > 5 or ol.UnitPrice >= 100.5) and ol.Description is not null and not (ol.ProductId = 3)",
-            hallmarks: Hallmarks(
-                sql: ["WHERE", "ol.Quantity > 5 OR ol.UnitPrice >= 100.5", "ol.Description IS NOT NULL", "NOT ("],
-                linq: [".Where(", "ol.Quantity > 5 || ol.UnitPrice >= 100.5", "ol.Description != null", "!("],
-                hql: ["where", "ol.Quantity > 5 or ol.UnitPrice >= 100.5", "ol.Description is not null", "not ("],
-                jpa: ["where", "ol.Quantity > 5 or ol.UnitPrice >= 100.5", "ol.Description is not null", "not ("])),
+    private static readonly Lazy<IReadOnlyList<QueryShape>> CategoriesRead = new(ReadCategories);
 
-        Define(
-            "join over two columns",
-            sql: """
-                SELECT ol.Description AS Text, o.CustomerId AS CustomerId
-                FROM Sales.OrderLines AS ol
-                INNER JOIN Sales.CustomerOrders AS o ON o.CompanyId = ol.CompanyId AND o.OrderId = ol.OrderId
-                WHERE o.CustomerId > 0
-                """,
-            // The whole joined row through the result selector, then the filter and the
-            // projection over the joined table through the members of that row - the same
-            // query as the other rows state, since 2026-09-29. A LINQ join writes its
-            // condition outer table first, which is why the hallmarks name no order.
-            linq: """
-                ctx.OrderLines
-                    .Join(ctx.Orders,
-                        ol => new { ol.CompanyId, ol.OrderId },
-                        o => new { o.CompanyId, o.OrderId },
-                        (ol, o) => new { ol, o })
-                    .Where(x => x.o.CustomerId > 0)
-                    .Select(x => new { Text = x.ol.Description, x.o.CustomerId })
-                """,
-            hql: """
-                select ol.Description as Text, o.CustomerId as CustomerId
-                from OrderLine ol
-                inner join CustomerOrder o with o.CompanyId = ol.CompanyId and o.OrderId = ol.OrderId
-                where o.CustomerId > 0
-                """,
-            jpql: """
-                select ol.Description as Text, o.CustomerId as CustomerId
-                from OrderLine ol
-                inner join CustomerOrder o on o.CompanyId = ol.CompanyId and o.OrderId = ol.OrderId
-                where o.CustomerId > 0
-                """,
-            hallmarks: Hallmarks(
-                // The aliases are the ones every source wrote: a LINQ source names the
-                // joined row after the result selector's parameter, o here as well, and the
-                // filter and the projection over the joined table reach every target.
-                sql: ["INNER JOIN Sales.", ".CompanyId = ", ".OrderId = ", " AND ", "ol.Description AS Text", "WHERE o.CustomerId > 0"],
-                linq: [".Join(", "ctx.Set<CustomerOrder>()", "ol.CompanyId", "ol.OrderId", ".o.CustomerId > 0", "Text = ", ".ol.Description"],
-                hql: ["inner join CustomerOrder o", " with ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"],
-                jpa: ["join CustomerOrder o", " on ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"])),
+    private static IReadOnlyList<QueryShape> ReadCategories()
+    {
+        var shapes = new List<QueryShape>();
 
-        Define(
-            "aggregation, grouping and having",
-            sql: """
-                SELECT ol.ProductId AS ProductId, SUM(ol.Quantity) AS Total, COUNT(*) AS Lines
-                FROM Sales.OrderLines AS ol
-                GROUP BY ol.ProductId
-                HAVING SUM(ol.Quantity) > 10
-                """,
-            linq: """
-                ctx.OrderLines
-                    .GroupBy(ol => ol.ProductId)
-                    .Where(g => g.Sum(x => x.Quantity) > 10)
-                    .Select(g => new { ProductId = g.Key, Total = g.Sum(x => x.Quantity), Lines = g.Count() })
-                """,
-            hql: """
-                select ol.ProductId as ProductId, sum(ol.Quantity) as Total, count(*) as Lines
-                from OrderLine ol
-                group by ol.ProductId
-                having sum(ol.Quantity) > 10
-                """,
-            jpql: """
-                select ol.ProductId as ProductId, sum(ol.Quantity) as Total, count(ol) as Lines
-                from OrderLine ol
-                group by ol.ProductId
-                having sum(ol.Quantity) > 10
-                """,
-            hallmarks: Hallmarks(
-                sql: ["GROUP BY ol.ProductId", "HAVING SUM(ol.Quantity) > 10", "COUNT(*)"],
-                linq: [".GroupBy(", "g.Sum(", "g.Count()", "g.Key"],
-                hql: ["group by ol.ProductId", "having sum(ol.Quantity) > 10", "count(*)"],
-                jpa: ["group by ol.ProductId", "having sum(ol.Quantity) > 10", "count(ol)"])),
+        foreach (var (id, values) in SharedInputs.Sections("categories.txt", Read("categories.txt").Split('\n')))
+        {
+            if (!CategoryHallmarks.TryGetValue(id, out var hallmarks))
+            {
+                throw new InvalidOperationException(
+                    $"categories.txt states the category [{id}] and {nameof(QueryShapeInputs)} has no hallmarks for it; the two are one list.");
+            }
 
-        Define(
-            "ordering",
-            sql: "SELECT * FROM Sales.OrderLines AS ol ORDER BY ol.ProductId ASC, ol.Quantity DESC",
-            linq: "ctx.OrderLines.OrderBy(ol => ol.ProductId).ThenByDescending(ol => ol.Quantity)",
-            hql: "from OrderLine ol order by ol.ProductId asc, ol.Quantity desc",
-            jpql: "select ol from OrderLine ol order by ol.ProductId asc, ol.Quantity desc",
-            hallmarks: Hallmarks(
-                sql: ["ORDER BY ol.ProductId ASC, ol.Quantity DESC"],
-                linq: [".OrderBy(ol => ol.ProductId)", ".ThenByDescending(ol => ol.Quantity)"],
-                hql: ["order by ol.ProductId asc, ol.Quantity desc"],
-                jpa: ["order by ol.ProductId asc, ol.Quantity desc"])),
+            var units = new Dictionary<ORMEnum, string[]>();
+            var refusedBy = new Dictionary<ORMEnum, QueryFeature>();
+            var refusedFrom = new Dictionary<ORMEnum, QueryFeature>();
 
-        // The paginated shape is the parameterized one (decision 085), and only the sources
-        // whose query language has a slice can state it: HQL 5.7 and EclipseLink's JPQL put
-        // it on the query object, so those two rows have nothing to read.
-        Define(
-            "pagination with bound counts",
-            sql: "SELECT * FROM Sales.OrderLines AS ol ORDER BY ol.LineNumber ASC OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY",
-            linq: "ctx.OrderLines.OrderBy(ol => ol.LineNumber).Skip(skip).Take(take)",
-            hibernateJpql: "select ol from OrderLine ol order by ol.LineNumber asc limit :take offset :skip",
-            hallmarks: Hallmarks(
-                sql: ["OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY"],
-                linq: [".Skip(skip)", ".Take(take)"],
-                hql: [".SetFirstResult(skip)", ".SetMaxResults(take)"],
-                jpa: [".setFirstResult(skip)", ".setMaxResults(take)"],
-                myBatis: ["OFFSET #{skip} ROWS FETCH NEXT #{take} ROWS ONLY"])),
+            foreach (var (key, value) in values)
+            {
+                switch (key)
+                {
+                    case "refusedBy":
+                        refusedBy = Refusals(id, value);
+                        break;
+                    case "refusedFrom":
+                        refusedFrom = Refusals(id, value);
+                        break;
+                    default:
+                        if (!Enum.TryParse<ORMEnum>(key, ignoreCase: false, out var source) || !Enum.IsDefined(source))
+                        {
+                            throw new InvalidOperationException($"categories.txt: [{id}] has the key \"{key}\", which is neither a framework nor a refusal.");
+                        }
 
-        Define(
-            "subquery as the right side of IN",
-            sql: "SELECT * FROM Sales.OrderLines AS ol WHERE ol.ProductId IN (SELECT p.ProductId FROM Sales.Products AS p WHERE p.UnitPrice > 100)",
-            linq: "ctx.OrderLines.Where(ol => ctx.Products.Where(p => p.UnitPrice > 100).Select(p => p.ProductId).Contains(ol.ProductId))",
-            hql: "from OrderLine ol where ol.ProductId in (select p.ProductId from Product p where p.UnitPrice > 100)",
-            jpql: "select ol from OrderLine ol where ol.ProductId in (select p.ProductId from Product p where p.UnitPrice > 100)",
-            hallmarks: Hallmarks(
-                sql: ["IN (SELECT p.ProductId", "p.UnitPrice > 100"],
-                linq: ["ctx.Set<Product>()", ".Contains(ol.ProductId)", "p.UnitPrice > 100"],
-                hql: ["in (select p.ProductId", "p.UnitPrice > 100"],
-                jpa: ["in (select p.ProductId", "p.UnitPrice > 100"])),
+                        units[source] = [.. SharedInputs.List(value).Select(path => $"{id}/{path}")];
+                        break;
+                }
+            }
 
-        Define(
-            "correlated EXISTS over three columns",
-            sql: """
-                SELECT * FROM Sales.OrderLines AS ol
-                WHERE EXISTS (SELECT a.AllocationId FROM Sales.OrderLineAllocations AS a
-                              WHERE a.CompanyId = ol.CompanyId AND a.OrderId = ol.OrderId AND a.LineNumber = ol.LineNumber)
-                """,
-            linq: "ctx.OrderLines.Where(ol => ctx.OrderLineAllocations.Any(a => a.CompanyId == ol.CompanyId && a.OrderId == ol.OrderId && a.LineNumber == ol.LineNumber))",
-            hql: "from OrderLine ol where exists (select a.AllocationId from OrderLineAllocation a where a.CompanyId = ol.CompanyId and a.OrderId = ol.OrderId and a.LineNumber = ol.LineNumber)",
-            jpql: "select ol from OrderLine ol where exists (select a.AllocationId from OrderLineAllocation a where a.CompanyId = ol.CompanyId and a.OrderId = ol.OrderId and a.LineNumber = ol.LineNumber)",
-            hallmarks: Hallmarks(
-                sql: ["EXISTS (SELECT", "a.LineNumber = ol.LineNumber"],
-                linq: [".Any(", "a.LineNumber == ol.LineNumber"],
-                hql: ["exists (", "a.LineNumber = ol.LineNumber"],
-                jpa: ["exists (", "a.LineNumber = ol.LineNumber"])),
+            shapes.Add(Shape(id, units, hallmarks, refusedBy, refusedFrom));
+        }
 
-        Define(
-            "scalar subquery",
-            sql: "SELECT * FROM Sales.OrderLines AS ol WHERE ol.UnitPrice > (SELECT AVG(p.UnitPrice) FROM Sales.Products AS p WHERE p.UnitPrice > 1)",
-            linq: "ctx.OrderLines.Where(ol => ol.UnitPrice > ctx.Products.Where(p => p.UnitPrice > 1).Average(p => p.UnitPrice))",
-            hql: "from OrderLine ol where ol.UnitPrice > (select avg(p.UnitPrice) from Product p where p.UnitPrice > 1)",
-            jpql: "select ol from OrderLine ol where ol.UnitPrice > (select avg(p.UnitPrice) from Product p where p.UnitPrice > 1)",
-            hallmarks: Hallmarks(
-                sql: ["(SELECT AVG(p.UnitPrice)"],
-                linq: [".Average(p => p.UnitPrice)"],
-                hql: ["(select avg(p.UnitPrice)"],
-                jpa: ["(select avg(p.UnitPrice)"])),
+        var unstated = CategoryHallmarks.Keys.Except(shapes.Select(shape => shape.Name)).ToList();
+        if (unstated.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(QueryShapeInputs)} has hallmarks for {string.Join(", ", unstated)}, which categories.txt does not state; the two are one list.");
+        }
 
-        // HQL 5.7 has no set operation to read, so NHibernate is no source here - and as a
-        // target it refuses the shape by its descriptor, which is the one expected refusal
-        // of the matrix.
-        Define(
-            "set operation",
-            sql: """
-                SELECT ol.Description AS Text FROM Sales.OrderLines AS ol WHERE ol.Quantity > 5
-                UNION
-                SELECT p.ProductName AS Text FROM Sales.Products AS p WHERE p.UnitPrice > 100
-                """,
-            linq: """
-                ctx.OrderLines.Where(ol => ol.Quantity > 5).Select(ol => new { Text = ol.Description })
-                    .Union(ctx.Products.Where(p => p.UnitPrice > 100).Select(p => new { Text = p.ProductName }))
-                """,
-            jpql: """
-                select ol.Description as Text from OrderLine ol where ol.Quantity > 5
-                union
-                select p.ProductName as Text from Product p where p.UnitPrice > 100
-                """,
-            hallmarks: Hallmarks(
-                sql: ["UNION", "p.ProductName AS Text"],
-                linq: [".Union(", "ctx.Set<Product>()"],
-                jpa: ["union", "p.ProductName as Text"]),
-            refusedBy: new() { [ORMEnum.NHibernate] = QueryFeature.SetOperation }),
+        return shapes;
+    }
 
-        Define(
-            "distinct projection",
-            sql: "SELECT DISTINCT ol.ProductId AS ProductId FROM Sales.OrderLines AS ol",
-            linq: "ctx.OrderLines.Select(ol => new { ProductId = ol.ProductId }).Distinct()",
-            hql: "select distinct ol.ProductId as ProductId from OrderLine ol",
-            jpql: "select distinct ol.ProductId as ProductId from OrderLine ol",
-            hallmarks: Hallmarks(
-                sql: ["SELECT DISTINCT ol.ProductId"],
-                linq: [".Distinct()"],
-                hql: ["select distinct ol.ProductId"],
-                jpa: ["select distinct ol.ProductId"])),
+    /// <summary>A refusal list of the manifest: <c>Framework:Feature</c> entries, both spelled as the enums spell them.</summary>
+    private static Dictionary<ORMEnum, QueryFeature> Refusals(string id, string value)
+    {
+        var refusals = new Dictionary<ORMEnum, QueryFeature>();
 
-        Define(
-            "IN over a list of values",
-            sql: "SELECT * FROM Sales.OrderLines AS ol WHERE ol.ProductId IN (1, 2, 3)",
-            linq: "ctx.OrderLines.Where(ol => new[] { 1, 2, 3 }.Contains(ol.ProductId))",
-            hql: "from OrderLine ol where ol.ProductId in (1, 2, 3)",
-            jpql: "select ol from OrderLine ol where ol.ProductId in (1, 2, 3)",
-            hallmarks: Hallmarks(
-                sql: ["ol.ProductId IN (1, 2, 3)"],
-                // Without the `new[]`: against a nullable column the array declares its
-                // element type (`new int?[]`), which a MyBatis source's Integer field is.
-                linq: ["{ 1, 2, 3 }.Contains(ol.ProductId)"],
-                hql: ["ol.ProductId in (1, 2, 3)"],
-                jpa: ["ol.ProductId in (1, 2, 3)"])),
+        foreach (var entry in SharedInputs.List(value))
+        {
+            var colon = entry.IndexOf(':');
+            if (colon < 0
+                || !Enum.TryParse<ORMEnum>(entry[..colon], ignoreCase: false, out var framework) || !Enum.IsDefined(framework)
+                || !Enum.TryParse<QueryFeature>(entry[(colon + 1)..], ignoreCase: false, out var feature) || !Enum.IsDefined(feature))
+            {
+                throw new InvalidOperationException($"categories.txt: [{id}] states the refusal \"{entry}\", which is not written as Framework:Feature.");
+            }
 
-        // The scalar of a parameter is derived from the column it is compared with, which
-        // takes a mapping (decision 083): a Dapper source states neither table nor column,
-        // so without a catalog it is refused by a stated rule (§9 of architecture.md), and
-        // the MyBatis row states the type where the framework keeps it - in the signature
-        // of the mapper interface (decision 084).
-        Define(
-            "scalar parameter",
-            sql: "SELECT * FROM Sales.OrderLines AS ol WHERE ol.Quantity >= @minQuantity",
-            linq: "ctx.OrderLines.Where(ol => ol.Quantity >= minQuantity)",
-            hql: "from OrderLine ol where ol.Quantity >= :minQuantity",
-            jpql: "select ol from OrderLine ol where ol.Quantity >= :minQuantity",
-            myBatisInterface: "    List<OrderLine> findScalarParameter(@Param(\"minQuantity\") int minQuantity);",
-            refusedFrom: new() { [ORMEnum.Dapper] = QueryFeature.QueryParameter },
-            hallmarks: Hallmarks(
-                sql: ["ol.Quantity >= @minQuantity", "int minQuantity"],
-                linq: ["ol.Quantity >= minQuantity", "int minQuantity"],
-                hql: ["ol.Quantity >= :minQuantity", ".SetParameter(\"minQuantity\", minQuantity)"],
-                jpa: ["ol.Quantity >= :minQuantity", ".setParameter(\"minQuantity\", minQuantity)"],
-                myBatis: ["ol.Quantity &gt;= #{minQuantity}", "@Param(\"minQuantity\")"])),
+            refusals[framework] = feature;
+        }
 
-        Define(
-            "collection parameter",
-            sql: "SELECT * FROM Sales.OrderLines AS ol WHERE ol.ProductId IN (@ids)",
-            linq: "ctx.OrderLines.Where(ol => ids.Contains(ol.ProductId))",
-            hql: "from OrderLine ol where ol.ProductId in (:ids)",
-            jpql: "select ol from OrderLine ol where ol.ProductId in :ids",
-            myBatis: MyBatisMapper("findCollectionParameter", "OrderLine", """
-                SELECT * FROM Sales.OrderLines AS ol
-                WHERE ol.ProductId IN
-                <foreach collection="ids" item="item" open="(" separator="," close=")">#{item}</foreach>
-                """),
-            myBatisInterface: "    List<OrderLine> findCollectionParameter(@Param(\"ids\") List<Integer> ids);",
-            refusedFrom: new() { [ORMEnum.Dapper] = QueryFeature.QueryParameter },
-            hallmarks: Hallmarks(
-                sql: ["ol.ProductId IN @ids"],
-                // The member's value where the column is nullable (`ol.ProductId.Value`).
-                linq: ["ids.Contains(ol.ProductId"],
-                hql: ["ol.ProductId in (:ids)", ".SetParameterList(\"ids\", ids)"],
-                jpa: ["ol.ProductId in :ids"],
-                myBatis: ["<foreach"])),
+        return refusals;
+    }
 
-        // A moment is a constructor in LINQ and a JDBC escape in JPQL; T-SQL and HQL write
-        // it as a string, which the readers carry as a string and the builder template
-        // types from the column it is compared with (§7 of architecture.md) - so the string
-        // sources state the category too, and every target writes the moment with its time
-        // of day whichever source left it at the date.
-        Define(
-            "constant of a moment",
-            sql: "SELECT * FROM Sales.CustomerOrders AS o WHERE o.PlacedAt > '2025-01-01'",
-            linq: "ctx.Orders.Where(o => o.PlacedAt > new DateTime(2025, 1, 1))",
-            hql: "from CustomerOrder o where o.PlacedAt > '2025-01-01'",
-            jpql: "select o from CustomerOrder o where o.PlacedAt > {ts '2025-01-01 00:00:00'}",
-            resultType: "CustomerOrder",
-            hallmarks: Hallmarks(
-                sql: ["o.PlacedAt > '2025-01-01 00:00:00'"],
-                linq: ["o.PlacedAt > DateTime.Parse(\"2025-01-01 00:00:00\")"],
-                hql: ["o.PlacedAt > '2025-01-01 00:00:00'"],
-                jpa: ["o.PlacedAt > {ts '2025-01-01 00:00:00'}"],
-                myBatis: ["o.PlacedAt &gt; '2025-01-01 00:00:00'"])),
+    /// <summary>
+    /// What the target's text has to carry, per category of the manifest. The .NET side's
+    /// own assertion - level 1 over the artifact - and therefore here rather than in the
+    /// shared file; the Java suite asks the framework instead of the text.
+    /// </summary>
+    private static readonly Dictionary<string, Dictionary<ORMEnum, string[]>> CategoryHallmarks = new()
+    {
+        ["Projection"] = Hallmarks(
+            sql: ["ol.Description AS Text", "ol.Quantity AS Qty"],
+            linq: ["Text = ol.Description", "Qty = ol.Quantity"],
+            hql: ["ol.Description as Text", "ol.Quantity as Qty"],
+            jpa: ["ol.Description as Text", "ol.Quantity as Qty"]),
 
-        // The shared LINQ parser reads no string method, so EF Core is no source of a
-        // pattern; as a target it gets the translated form of decision 051.
-        Define(
-            "LIKE with an anchored pattern",
-            sql: "SELECT * FROM Sales.Products AS p WHERE p.ProductName LIKE 'W%'",
-            hql: "from Product p where p.ProductName like 'W%'",
-            jpql: "select p from Product p where p.ProductName like 'W%'",
-            resultType: "Product",
-            hallmarks: Hallmarks(
-                sql: ["p.ProductName LIKE 'W%'"],
-                linq: ["p.ProductName.StartsWith(\"W\")"],
-                hql: ["p.ProductName like 'W%'"],
-                jpa: ["p.ProductName like 'W%'"])),
+        ["Filtering"] = Hallmarks(
+            sql: ["WHERE", "ol.Quantity > 5 OR ol.UnitPrice >= 100.5", "ol.Description IS NOT NULL", "NOT ("],
+            linq: [".Where(", "ol.Quantity > 5 || ol.UnitPrice >= 100.5", "ol.Description != null", "!("],
+            hql: ["where", "ol.Quantity > 5 or ol.UnitPrice >= 100.5", "ol.Description is not null", "not ("],
+            jpa: ["where", "ol.Quantity > 5 or ol.UnitPrice >= 100.5", "ol.Description is not null", "not ("]),
 
-        // The three constructs decision 102 carries, each added before the matrix is
-        // measured over it. The modifier of the aggregate is a one-column Select collapsed
-        // before the aggregate in LINQ and the word inside the function everywhere else.
-        Define(
-            "count over distinct values",
-            sql: """
-                SELECT ol.ProductId AS ProductId, COUNT(DISTINCT ol.OrderId) AS Orders
-                FROM Sales.OrderLines AS ol
-                GROUP BY ol.ProductId
-                """,
-            linq: """
-                ctx.OrderLines
-                    .GroupBy(ol => ol.ProductId)
-                    .Select(g => new { ProductId = g.Key, Orders = g.Select(x => x.OrderId).Distinct().Count() })
-                """,
-            hql: "select ol.ProductId as ProductId, count(distinct ol.OrderId) as Orders from OrderLine ol group by ol.ProductId",
-            jpql: "select ol.ProductId as ProductId, count(distinct ol.OrderId) as Orders from OrderLine ol group by ol.ProductId",
-            hallmarks: Hallmarks(
-                sql: ["COUNT(DISTINCT ol.OrderId) AS Orders", "GROUP BY ol.ProductId"],
-                linq: [".GroupBy(", ".Distinct().Count()", "g.Key"],
-                hql: ["count(distinct ol.OrderId) as Orders", "group by ol.ProductId"],
-                jpa: ["count(distinct ol.OrderId) as Orders", "group by ol.ProductId"])),
+        // The aliases are the ones every source wrote: a LINQ source names the joined row
+        // after the result selector's parameter, o here as well, and the filter and the
+        // projection over the joined table reach every target. A LINQ join writes its
+        // condition outer table first, which is why the hallmarks name no order.
+        ["JoinOverTwoColumns"] = Hallmarks(
+            sql: ["INNER JOIN Sales.", ".CompanyId = ", ".OrderId = ", " AND ", "ol.Description AS Text", "WHERE o.CustomerId > 0"],
+            linq: [".Join(", "ctx.Set<CustomerOrder>()", "ol.CompanyId", "ol.OrderId", ".o.CustomerId > 0", "Text = ", ".ol.Description"],
+            hql: ["inner join CustomerOrder o", " with ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"],
+            jpa: ["join CustomerOrder o", " on ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"]),
 
-        // An escaped wildcard: the LINQ target splits the pattern past the escape and the
-        // core goes out without it, as EF Core escapes the argument itself. No LINQ source,
-        // for the same reason as the row above.
-        Define(
-            "LIKE with an escaped wildcard",
-            sql: "SELECT * FROM Sales.Products AS p WHERE p.ProductName LIKE 'W!_%' ESCAPE '!'",
-            hql: "from Product p where p.ProductName like 'W!_%' escape '!'",
-            jpql: "select p from Product p where p.ProductName like 'W!_%' escape '!'",
-            resultType: "Product",
-            hallmarks: Hallmarks(
-                sql: ["p.ProductName LIKE 'W!_%' ESCAPE '!'"],
-                linq: ["p.ProductName.StartsWith(\"W_\")"],
-                hql: ["p.ProductName like 'W!_%' escape '!'"],
-                jpa: ["p.ProductName like 'W!_%' escape '!'"])),
+        ["AggregationGroupingAndHaving"] = Hallmarks(
+            sql: ["GROUP BY ol.ProductId", "HAVING SUM(ol.Quantity) > 10", "COUNT(*)"],
+            linq: [".GroupBy(", "g.Sum(", "g.Count()", "g.Key"],
+            hql: ["group by ol.ProductId", "having sum(ol.Quantity) > 10", "count(*)"],
+            jpa: ["group by ol.ProductId", "having sum(ol.Quantity) > 10", "count(ol)"]),
 
-        // A bound value among the listed ones takes its scalar from the column, so the
-        // Dapper row is refused without a catalog as the other parameter rows are.
-        Define(
-            "in list with a bound value",
-            sql: "SELECT * FROM Sales.OrderLines AS ol WHERE ol.ProductId IN (1, 2, @extra)",
-            linq: "ctx.OrderLines.Where(ol => new[] { 1, 2, extra }.Contains(ol.ProductId))",
-            hql: "from OrderLine ol where ol.ProductId in (1, 2, :extra)",
-            jpql: "select ol from OrderLine ol where ol.ProductId in (1, 2, :extra)",
-            myBatisInterface: "    List<OrderLine> findInListWithABoundValue(@Param(\"extra\") int extra);",
-            refusedFrom: new() { [ORMEnum.Dapper] = QueryFeature.QueryParameter },
-            hallmarks: Hallmarks(
-                sql: ["ol.ProductId IN (1, 2, @extra)", "int extra"],
-                // Without the `new[]`, for the reason the list row gives.
-                linq: ["{ 1, 2, extra }.Contains(ol.ProductId)", "int extra"],
-                hql: ["ol.ProductId in (1, 2, :extra)", ".SetParameter(\"extra\", extra)"],
-                jpa: ["ol.ProductId in (1, 2, :extra)", ".setParameter(\"extra\", extra)"],
-                myBatis: ["ol.ProductId IN (1, 2, #{extra})", "@Param(\"extra\")"])),
-    ];
+        ["Ordering"] = Hallmarks(
+            sql: ["ORDER BY ol.ProductId ASC, ol.Quantity DESC"],
+            linq: [".OrderBy(ol => ol.ProductId)", ".ThenByDescending(ol => ol.Quantity)"],
+            hql: ["order by ol.ProductId asc, ol.Quantity desc"],
+            jpa: ["order by ol.ProductId asc, ol.Quantity desc"]),
+
+        ["PaginationWithBoundCounts"] = Hallmarks(
+            sql: ["OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY"],
+            linq: [".Skip(skip)", ".Take(take)"],
+            hql: [".SetFirstResult(skip)", ".SetMaxResults(take)"],
+            jpa: [".setFirstResult(skip)", ".setMaxResults(take)"],
+            myBatis: ["OFFSET #{skip} ROWS FETCH NEXT #{take} ROWS ONLY"]),
+
+        ["SubqueryAsTheRightSideOfIn"] = Hallmarks(
+            sql: ["IN (SELECT p.ProductId", "p.UnitPrice > 100"],
+            linq: ["ctx.Set<Product>()", ".Contains(ol.ProductId)", "p.UnitPrice > 100"],
+            hql: ["in (select p.ProductId", "p.UnitPrice > 100"],
+            jpa: ["in (select p.ProductId", "p.UnitPrice > 100"]),
+
+        ["CorrelatedExistsOverThreeColumns"] = Hallmarks(
+            sql: ["EXISTS (SELECT", "a.LineNumber = ol.LineNumber"],
+            linq: [".Any(", "a.LineNumber == ol.LineNumber"],
+            hql: ["exists (", "a.LineNumber = ol.LineNumber"],
+            jpa: ["exists (", "a.LineNumber = ol.LineNumber"]),
+
+        ["ScalarSubquery"] = Hallmarks(
+            sql: ["(SELECT AVG(p.UnitPrice)"],
+            linq: [".Average(p => p.UnitPrice)"],
+            hql: ["(select avg(p.UnitPrice)"],
+            jpa: ["(select avg(p.UnitPrice)"]),
+
+        ["SetOperation"] = Hallmarks(
+            sql: ["UNION", "p.ProductName AS Text"],
+            linq: [".Union(", "ctx.Set<Product>()"],
+            jpa: ["union", "p.ProductName as Text"]),
+
+        ["DistinctProjection"] = Hallmarks(
+            sql: ["SELECT DISTINCT ol.ProductId"],
+            linq: [".Distinct()"],
+            hql: ["select distinct ol.ProductId"],
+            jpa: ["select distinct ol.ProductId"]),
+
+        ["InOverAListOfValues"] = Hallmarks(
+            sql: ["ol.ProductId IN (1, 2, 3)"],
+            // Without the `new[]`: against a nullable column the array declares its
+            // element type (`new int?[]`), which a MyBatis source's Integer field is.
+            linq: ["{ 1, 2, 3 }.Contains(ol.ProductId)"],
+            hql: ["ol.ProductId in (1, 2, 3)"],
+            jpa: ["ol.ProductId in (1, 2, 3)"]),
+
+        ["ScalarParameter"] = Hallmarks(
+            sql: ["ol.Quantity >= @minQuantity", "int minQuantity"],
+            linq: ["ol.Quantity >= minQuantity", "int minQuantity"],
+            hql: ["ol.Quantity >= :minQuantity", ".SetParameter(\"minQuantity\", minQuantity)"],
+            jpa: ["ol.Quantity >= :minQuantity", ".setParameter(\"minQuantity\", minQuantity)"],
+            myBatis: ["ol.Quantity &gt;= #{minQuantity}", "@Param(\"minQuantity\")"]),
+
+        ["CollectionParameter"] = Hallmarks(
+            sql: ["ol.ProductId IN @ids"],
+            // The member's value where the column is nullable (`ol.ProductId.Value`).
+            linq: ["ids.Contains(ol.ProductId"],
+            hql: ["ol.ProductId in (:ids)", ".SetParameterList(\"ids\", ids)"],
+            jpa: ["ol.ProductId in :ids"],
+            myBatis: ["<foreach"]),
+
+        ["ConstantOfAMoment"] = Hallmarks(
+            sql: ["o.PlacedAt > '2025-01-01 00:00:00'"],
+            linq: ["o.PlacedAt > DateTime.Parse(\"2025-01-01 00:00:00\")"],
+            hql: ["o.PlacedAt > '2025-01-01 00:00:00'"],
+            jpa: ["o.PlacedAt > {ts '2025-01-01 00:00:00'}"],
+            myBatis: ["o.PlacedAt &gt; '2025-01-01 00:00:00'"]),
+
+        // The LINQ target gets the translated form of decision 051.
+        ["LikeWithAnAnchoredPattern"] = Hallmarks(
+            sql: ["p.ProductName LIKE 'W%'"],
+            linq: ["p.ProductName.StartsWith(\"W\")"],
+            hql: ["p.ProductName like 'W%'"],
+            jpa: ["p.ProductName like 'W%'"]),
+
+        ["CountOverDistinctValues"] = Hallmarks(
+            sql: ["COUNT(DISTINCT ol.OrderId) AS Orders", "GROUP BY ol.ProductId"],
+            linq: [".GroupBy(", ".Distinct().Count()", "g.Key"],
+            hql: ["count(distinct ol.OrderId) as Orders", "group by ol.ProductId"],
+            jpa: ["count(distinct ol.OrderId) as Orders", "group by ol.ProductId"]),
+
+        // The LINQ target splits the pattern past the escape and the core goes out without
+        // it, as EF Core escapes the argument itself.
+        ["LikeWithAnEscapedWildcard"] = Hallmarks(
+            sql: ["p.ProductName LIKE 'W!_%' ESCAPE '!'"],
+            linq: ["p.ProductName.StartsWith(\"W_\")"],
+            hql: ["p.ProductName like 'W!_%' escape '!'"],
+            jpa: ["p.ProductName like 'W!_%' escape '!'"]),
+
+        ["InListWithABoundValue"] = Hallmarks(
+            sql: ["ol.ProductId IN (1, 2, @extra)", "int extra"],
+            // Without the `new[]`, for the reason the list row gives.
+            linq: ["{ 1, 2, extra }.Contains(ol.ProductId)", "int extra"],
+            hql: ["ol.ProductId in (1, 2, :extra)", ".SetParameter(\"extra\", extra)"],
+            jpa: ["ol.ProductId in (1, 2, :extra)", ".setParameter(\"extra\", extra)"],
+            myBatis: ["ol.ProductId IN (1, 2, #{extra})", "@Param(\"extra\")"]),
+    };
 
     // ---- the deliberately bad query ------------------------------------------------------
 
@@ -494,16 +364,18 @@ public static class QueryShapeInputs
     /// parameter of a Dapper source has no mapping to take its scalar from without a
     /// catalog (decision 083, §9 of architecture.md); every other row binds them.
     /// </summary>
-    public static QueryShape DeeplyNested { get; } = Define(
-        "deeply nested",
-        sql: Read("DeeplyNested/dapper/FindHeavyLines.sql"),
-        linqMethod: Read("DeeplyNested/efcore/FindHeavyLines.query.cs"),
-        hql: Read("DeeplyNested/nhibernate/FindHeavyLines.hql"),
-        jpql: Read("DeeplyNested/eclipselink/FindHeavyLines.jpql"),
-        hibernateJpql: Read("DeeplyNested/hibernate/FindHeavyLines.jpql"),
-        myBatis: Read("DeeplyNested/mybatis/FindHeavyLinesMapper.xml"),
-        myBatisInterfaceUnit: Read("DeeplyNested/mybatis/FindHeavyLinesMapper.query.java"),
-        hallmarks: Hallmarks(
+    public static QueryShape DeeplyNested { get; } = Shape(
+        "DeeplyNested",
+        new Dictionary<ORMEnum, string[]>
+        {
+            [ORMEnum.Dapper] = ["DeeplyNested/dapper/FindHeavyLines.sql"],
+            [ORMEnum.EFCore] = ["DeeplyNested/efcore/FindHeavyLines.query.cs"],
+            [ORMEnum.NHibernate] = ["DeeplyNested/nhibernate/FindHeavyLines.hql"],
+            [ORMEnum.Hibernate] = ["DeeplyNested/hibernate/FindHeavyLines.jpql"],
+            [ORMEnum.EclipseLink] = ["DeeplyNested/eclipselink/FindHeavyLines.jpql"],
+            [ORMEnum.MyBatis] = ["DeeplyNested/mybatis/FindHeavyLinesMapper.query.java", "DeeplyNested/mybatis/FindHeavyLinesMapper.xml"],
+        },
+        Hallmarks(
             sql:
             [
                 "INNER JOIN Sales.", "LEFT JOIN Sales.Products p",
@@ -535,7 +407,9 @@ public static class QueryShapeInputs
                 "in (select distinct ", "exists (", "not (exists (",
                 "in (1, 2, 3)", "avg(p2.UnitPrice)", "min(ol3.Quantity)", "max(ol4.UnitPrice)",
                 "ol.Description is not null or",
-            ]));
+            ]),
+        refusedBy: [],
+        refusedFrom: []);
 
     /// <summary>How many query scopes the bad query has: the outer one and eight subqueries.</summary>
     public const int DeeplyNestedScopes = 9;
@@ -543,72 +417,24 @@ public static class QueryShapeInputs
     // ---- shapes: how a row is put together -----------------------------------------------
 
     /// <summary>
-    /// A shape from the texts a source can state. <paramref name="sql"/> feeds Dapper as a
-    /// bare SqlQuery unit and MyBatis as a mapper document (the parameter spelling switched
-    /// from @ to #{}) unless <paramref name="myBatis"/> gives the document itself; a MyBatis
-    /// row with parameters adds the mapper interface whose method signature types them -
-    /// the declarations (<paramref name="myBatisInterface"/>) or the whole unit
-    /// (<paramref name="myBatisInterfaceUnit"/>). <paramref name="linq"/> is a chain the
-    /// method is put around, <paramref name="linqMethod"/> the whole method. <paramref name="jpql"/>
-    /// feeds both JPA implementations, and <paramref name="hibernateJpql"/> only Hibernate,
-    /// for a text that uses the HQL dialect clause.
+    /// A shape from the shared files: per source, the paths of its query units under
+    /// <c>Tests/Database/QueryShapes</c>, each read and sent under the language its name
+    /// states, in the order given.
     /// </summary>
-    private static QueryShape Define(
+    private static QueryShape Shape(
         string name,
-        string? sql = null,
-        string? linq = null,
-        string? linqMethod = null,
-        string? hql = null,
-        string? jpql = null,
-        string? hibernateJpql = null,
-        string? myBatis = null,
-        string? myBatisInterface = null,
-        string? myBatisInterfaceUnit = null,
-        string resultType = "OrderLine",
-        Dictionary<ORMEnum, string[]>? hallmarks = null,
-        Dictionary<ORMEnum, QueryFeature>? refusedBy = null,
-        Dictionary<ORMEnum, QueryFeature>? refusedFrom = null)
+        Dictionary<ORMEnum, string[]> units,
+        Dictionary<ORMEnum, string[]> hallmarks,
+        Dictionary<ORMEnum, QueryFeature> refusedBy,
+        Dictionary<ORMEnum, QueryFeature> refusedFrom)
     {
         var sources = new Dictionary<ORMEnum, IReadOnlyList<ConversionSource>>();
-
-        if (sql is not null)
+        foreach (var (source, paths) in units)
         {
-            sources[ORMEnum.Dapper] = [Unit(sql, ConversionContentType.SqlQuery)];
+            sources[source] = [.. paths.Select(Unit)];
         }
 
-        var id = MethodNameOf(name);
-        var mapper = myBatis ?? (sql is null ? null : MyBatisMapper(id, resultType, ForXml(MyBatisPlaceholders(sql))));
-        if (mapper is not null)
-        {
-            var interfaceUnit = myBatisInterfaceUnit
-                ?? (myBatisInterface is null ? null : MyBatisInterface(MapperNamespaceOf(mapper), myBatisInterface));
-
-            sources[ORMEnum.MyBatis] = interfaceUnit is null
-                ? [Unit(mapper, ConversionContentType.XML)]
-                : [Unit(interfaceUnit, ConversionContentType.JavaQuery), Unit(mapper, ConversionContentType.XML)];
-        }
-
-        if (linqMethod is not null || linq is not null)
-        {
-            sources[ORMEnum.EFCore] = [Unit(linqMethod ?? LinqMethod(linq!), ConversionContentType.CSharpQuery)];
-        }
-
-        if (hql is not null)
-        {
-            sources[ORMEnum.NHibernate] = [Unit(hql, ConversionContentType.HqlQuery)];
-        }
-
-        if (hibernateJpql is not null || jpql is not null)
-        {
-            sources[ORMEnum.Hibernate] = [Unit(hibernateJpql ?? jpql!, ConversionContentType.JpqlQuery)];
-        }
-
-        if (jpql is not null)
-        {
-            sources[ORMEnum.EclipseLink] = [Unit(jpql, ConversionContentType.JpqlQuery)];
-        }
-
-        return new QueryShape(name, sources, hallmarks ?? [], refusedBy ?? [], refusedFrom ?? []);
+        return new QueryShape(name, sources, hallmarks, refusedBy, refusedFrom);
     }
 
     /// <summary>Hallmarks per target language, spread over the targets that write it.</summary>
@@ -653,62 +479,10 @@ public static class QueryShapeInputs
         return marks;
     }
 
-    private static string LinqMethod(string chain) => $$"""
-        public void Query()
-        {
-            var q = {{chain.Trim()}}
-                .ToList();
-        }
-        """;
-
     private static string MyBatisPlaceholders(string sql) => Regex.Replace(sql, @"@(\w+)", "#{$1}");
 
     private static string ForXml(string text) => text
         .Replace("&", "&amp;", StringComparison.Ordinal)
         .Replace("<", "&lt;", StringComparison.Ordinal)
         .Replace(">", "&gt;", StringComparison.Ordinal);
-
-    private static string MethodNameOf(string name) =>
-        "find" + string.Concat(Regex.Replace(name, @"[^A-Za-z0-9 ]", " ")
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Select(word => char.ToUpperInvariant(word[0]) + word[1..]));
-
-    /// <summary>The mapper interface a statement belongs to: the statement's name in the case of a Java type.</summary>
-    private static string MapperNameOf(string id) => char.ToUpperInvariant(id[0]) + id[1..] + "Mapper";
-
-    private static string MapperNamespaceOf(string mapper)
-        => Regex.Match(mapper, "namespace=\"([^\"]+)\"").Groups[1].Value;
-
-    /// <summary>A mapper document with one statement; the mapping of the domain lives in the shared ShopMapper.xml.</summary>
-    private static string MyBatisMapper(string id, string resultType, string statement) => $$"""
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-                "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-        <mapper namespace="Shop.{{MapperNameOf(id)}}">
-          <select id="{{id}}" resultType="{{resultType}}">
-            {{statement.Trim()}}
-          </select>
-        </mapper>
-        """;
-
-    /// <summary>
-    /// The mapper interface beside a mapper document, named by the document's namespace: the
-    /// one place MyBatis keeps the type of a parameter (decision 084), so the row states it
-    /// there and nowhere else.
-    /// </summary>
-    private static string MyBatisInterface(string mapperNamespace, string methods)
-    {
-        var name = mapperNamespace[(mapperNamespace.LastIndexOf('.') + 1)..];
-
-        return $$"""
-            package Shop;
-
-            import java.util.List;
-            import org.apache.ibatis.annotations.Param;
-
-            public interface {{name}} {
-            {{methods.TrimEnd()}}
-            }
-            """;
-    }
 }

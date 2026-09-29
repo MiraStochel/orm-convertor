@@ -1,4 +1,5 @@
 using Model;
+using Tests.Database;
 
 namespace Tests.Differential;
 
@@ -43,33 +44,17 @@ internal sealed record DifferentialQuery(
     public IEnumerable<ORMEnum> Targets()
         => Enum.GetValues<ORMEnum>().Where(framework => framework != Source);
 
-    /// <summary>The input units of a conversion, in the order the matrix states them (decision 017).</summary>
+    /// <summary>
+    /// The input units of a conversion, in the order the matrix states them (decision 017),
+    /// each under the language its file name states (<see cref="SharedInputs.ContentTypeOf"/>).
+    /// </summary>
     public List<ConversionSource> Units()
         => [.. UnitPaths.Select(path => new ConversionSource
         {
             Name = path[(path.LastIndexOf('/') + 1)..],
-            ContentType = ContentTypeOf(path),
+            ContentType = SharedInputs.ContentTypeOf(path),
             Content = DifferentialData.Read($"inputs/{path}"),
         })];
-
-    /// <summary>
-    /// The language a unit is written in, taken from its file name. The table is the Java
-    /// suite's <c>ContentType.forFileName</c> and has to stay it: the two suites read the
-    /// same files, so a unit that arrived under two different languages would be a finding
-    /// about the suites dressed as a finding about the tool.
-    /// </summary>
-    private static ConversionContentType ContentTypeOf(string path) => path switch
-    {
-        _ when path.EndsWith(".query.cs", StringComparison.Ordinal) => ConversionContentType.CSharpQuery,
-        _ when path.EndsWith(".query.java", StringComparison.Ordinal) => ConversionContentType.JavaQuery,
-        _ when path.EndsWith(".cs", StringComparison.Ordinal) => ConversionContentType.CSharpEntity,
-        _ when path.EndsWith(".java", StringComparison.Ordinal) => ConversionContentType.JavaEntity,
-        _ when path.EndsWith(".xml", StringComparison.Ordinal) => ConversionContentType.XML,
-        _ when path.EndsWith(".sql", StringComparison.Ordinal) => ConversionContentType.SqlQuery,
-        _ when path.EndsWith(".hql", StringComparison.Ordinal) => ConversionContentType.HqlQuery,
-        _ when path.EndsWith(".jpql", StringComparison.Ordinal) => ConversionContentType.JpqlQuery,
-        _ => throw new NotSupportedException($"No content type is defined for the extension of \"{path}\"."),
-    };
 }
 
 /// <summary>
@@ -91,49 +76,8 @@ internal static class DifferentialMatrix
         => Queries.SelectMany(query => query.Targets().Select(target => (query, target)));
 
     private static IReadOnlyList<DifferentialQuery> Parse()
-    {
-        var queries = new List<DifferentialQuery>();
-        string? id = null;
-        var values = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        void Flush()
-        {
-            if (id is not null)
-            {
-                queries.Add(Build(id, values));
-            }
-
-            values = new Dictionary<string, string>(StringComparer.Ordinal);
-        }
-
-        foreach (var raw in DifferentialData.ReadLines("matrix.txt"))
-        {
-            var line = raw.Trim();
-
-            if (line.Length == 0 || line.StartsWith('#'))
-            {
-                continue;
-            }
-
-            if (line.StartsWith('[') && line.EndsWith(']'))
-            {
-                Flush();
-                id = line[1..^1].Trim();
-                continue;
-            }
-
-            var separator = line.IndexOf('=');
-            if (separator < 0)
-            {
-                throw new InvalidOperationException($"matrix.txt: \"{line}\" is neither a section nor a key.");
-            }
-
-            values[line[..separator].Trim()] = line[(separator + 1)..].Trim();
-        }
-
-        Flush();
-        return queries;
-    }
+        => [.. SharedInputs.Sections("matrix.txt", DifferentialData.ReadLines("matrix.txt"))
+            .Select(section => Build(section.Id, section.Values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)))];
 
     private static DifferentialQuery Build(string id, Dictionary<string, string> values)
     {

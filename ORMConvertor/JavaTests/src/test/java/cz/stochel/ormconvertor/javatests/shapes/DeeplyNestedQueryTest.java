@@ -21,6 +21,7 @@ import cz.stochel.ormconvertor.javatests.tool.ToolApi;
 import cz.stochel.ormconvertor.javatests.tool.ToolResponse;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,55 +51,32 @@ import org.junit.jupiter.params.provider.EnumSource;
  */
 class DeeplyNestedQueryTest {
 
-    private static final String[] JPA_ENTITIES = {
-        "QueryShapes/entities/jpa/Customer.java",
-        "QueryShapes/entities/jpa/CustomerOrder.java",
-        "QueryShapes/entities/jpa/OrderLine.java",
-        "QueryShapes/entities/jpa/OrderLineAllocation.java",
-        "QueryShapes/entities/jpa/Product.java",
-    };
-
-    private static final String[] MYBATIS_ENTITIES = {
-        "QueryShapes/entities/mybatis/Customer.java",
-        "QueryShapes/entities/mybatis/CustomerOrder.java",
-        "QueryShapes/entities/mybatis/OrderLine.java",
-        "QueryShapes/entities/mybatis/OrderLineAllocation.java",
-        "QueryShapes/entities/mybatis/Product.java",
-        "QueryShapes/entities/mybatis/ShopMapper.xml",
-    };
-
-    /** A source framework and the shared files of its row: the domain, then the query. */
+    /**
+     * A source framework and the shared files of its row: the domain the whole package
+     * shares ({@link QueryCategories#domainOf}), then the query.
+     */
     enum Source {
-        DAPPER(Orm.DAPPER, new String[] {"QueryShapes/entities/dapper/Shop.cs"},
-                "QueryShapes/DeeplyNested/dapper/FindHeavyLines.sql"),
-        EF_CORE(Orm.EF_CORE, new String[] {"QueryShapes/entities/efcore/Shop.cs"},
-                "QueryShapes/DeeplyNested/efcore/FindHeavyLines.query.cs"),
-        NHIBERNATE(Orm.NHIBERNATE,
-                new String[] {"QueryShapes/entities/nhibernate/Shop.cs", "QueryShapes/entities/nhibernate/Shop.hbm.xml"},
-                "QueryShapes/DeeplyNested/nhibernate/FindHeavyLines.hql"),
-        HIBERNATE(Orm.HIBERNATE, JPA_ENTITIES, "QueryShapes/DeeplyNested/hibernate/FindHeavyLines.jpql"),
-        ECLIPSELINK(Orm.ECLIPSELINK, JPA_ENTITIES, "QueryShapes/DeeplyNested/eclipselink/FindHeavyLines.jpql"),
-        MYBATIS(Orm.MYBATIS, MYBATIS_ENTITIES,
+        DAPPER(Orm.DAPPER, "QueryShapes/DeeplyNested/dapper/FindHeavyLines.sql"),
+        EF_CORE(Orm.EF_CORE, "QueryShapes/DeeplyNested/efcore/FindHeavyLines.query.cs"),
+        NHIBERNATE(Orm.NHIBERNATE, "QueryShapes/DeeplyNested/nhibernate/FindHeavyLines.hql"),
+        HIBERNATE(Orm.HIBERNATE, "QueryShapes/DeeplyNested/hibernate/FindHeavyLines.jpql"),
+        ECLIPSELINK(Orm.ECLIPSELINK, "QueryShapes/DeeplyNested/eclipselink/FindHeavyLines.jpql"),
+        MYBATIS(Orm.MYBATIS,
                 "QueryShapes/DeeplyNested/mybatis/FindHeavyLinesMapper.query.java",
                 "QueryShapes/DeeplyNested/mybatis/FindHeavyLinesMapper.xml");
 
         private final int orm;
         private final List<String> resources;
 
-        Source(int orm, String[] entities, String... query) {
+        Source(int orm, String... query) {
             this.orm = orm;
-            this.resources = concat(entities, query);
+            List<String> all = new ArrayList<>(QueryCategories.domainOf(orm));
+            all.addAll(List.of(query));
+            this.resources = List.copyOf(all);
         }
 
         List<InputUnit> units() {
             return resources.stream().map(InputUnit::fromShared).toList();
-        }
-
-        private static List<String> concat(String[] first, String[] second) {
-            String[] all = new String[first.length + second.length];
-            System.arraycopy(first, 0, all, 0, first.length);
-            System.arraycopy(second, 0, all, first.length, second.length);
-            return List.of(all);
         }
     }
 
@@ -217,7 +195,7 @@ class DeeplyNestedQueryTest {
                 project.add(entity.content());
             }
 
-            String document = queryMapper(response);
+            String document = MyBatisAnswer.queryMapper(response);
             project.add(JavaSources.wrapMapperInterface(
                     packageOf(response),
                     MyBatisBootstrap.interfaceNameOf(document),
@@ -226,9 +204,9 @@ class DeeplyNestedQueryTest {
             project.compileAndLoad();
 
             String namespace = MyBatisBootstrap.namespaceOf(document);
-            SqlSessionFactory factory = MyBatisBootstrap.build(project.loader(), allMappers(response));
+            SqlSessionFactory factory = MyBatisBootstrap.build(project.loader(), MyBatisAnswer.allMappers(response));
 
-            assertTrue(factory.getConfiguration().hasStatement(namespace + "." + methodNameOf(response)),
+            assertTrue(factory.getConfiguration().hasStatement(namespace + "." + MyBatisAnswer.methodNameOf(response)),
                     "MyBatis did not register the statement of " + namespace);
             assertTrue(factory.getConfiguration().hasMapper(project.load(namespace)),
                     "MyBatis did not bind the mapper interface " + namespace);
@@ -262,26 +240,5 @@ class DeeplyNestedQueryTest {
 
     private static String packageOf(ConversionResponse response) {
         return JavaSources.packageOf(response.artifactsOf(ContentType.JAVA_ENTITY).get(0).content());
-    }
-
-    /** The mapper document carrying the statement - the only one of the answer that does. */
-    private static String queryMapper(ConversionResponse response) {
-        return response.artifactsOf(ContentType.XML).stream()
-                .map(ConversionUnit::content)
-                .filter(content -> content.contains("<select"))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("The answer carries no mapper with a statement"));
-    }
-
-    private static List<String> allMappers(ConversionResponse response) {
-        return response.artifactsOf(ContentType.XML).stream().map(ConversionUnit::content).toList();
-    }
-
-    /** The id of the statement, which is the name of the method the declaration carries. */
-    private static String methodNameOf(ConversionResponse response) {
-        String declaration = response.artifactOf(ContentType.JAVA_QUERY).content();
-        int parenthesis = declaration.indexOf('(');
-        int space = declaration.lastIndexOf(' ', parenthesis);
-        return declaration.substring(space + 1, parenthesis);
     }
 }

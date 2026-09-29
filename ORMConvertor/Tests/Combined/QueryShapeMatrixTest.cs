@@ -10,15 +10,18 @@ namespace Tests.Combined;
 /// <summary>
 /// The query categories requirement T2 divides the matrix by, each written in the language of
 /// every source that can state it and run through every direction the enum yields
-/// (<see cref="QueryShapeInputs.Categories"/>). Until now the categories other than
-/// aggregation and the parameter were proved on the nine .NET directions only, and
-/// aggregation on the eighteen with a .NET source; the JPQL and MyBatis rows of the inputs
-/// are what puts a Java source under every category the Java languages can state.
+/// (<see cref="QueryShapeInputs.Categories"/>, read from the shared files under
+/// <c>Tests/Database/QueryShapes</c>). Until now the categories other than aggregation and
+/// the parameter were proved on the nine .NET directions only, and aggregation on the
+/// eighteen with a .NET source; the JPQL and MyBatis rows of the inputs are what puts a
+/// Java source under every category the Java languages can state.
 ///
 /// Three claims per direction: the query comes out (or the target's descriptor refuses it
 /// with a record naming the feature), nothing about it is refused in silence, and the target
 /// writes the category in its own language - the hallmarks the inputs state per target.
-/// Level 2 for the two SQL targets follows: what they emit has to parse.
+/// Level 2 for the two SQL targets follows: what they emit has to parse. The Java targets
+/// are judged over the same files by the Java suite (<c>shapes/QueryCategoryTest</c>),
+/// which asks the framework rather than the text.
 /// </summary>
 public class QueryShapeMatrixTest
 {
@@ -248,13 +251,13 @@ public class QueryShapeMatrixTest
     /// what the parsers agree on. A source the tool refuses by rule is not in the comparison.
     /// </summary>
     [Theory]
-    [InlineData("filtering")]
-    [InlineData("subquery as the right side of IN")]
-    [InlineData("scalar subquery")]
-    [InlineData("IN over a list of values")]
-    [InlineData("scalar parameter")]
-    [InlineData("distinct projection")]
-    [InlineData("ordering")]
+    [InlineData("Filtering")]
+    [InlineData("SubqueryAsTheRightSideOfIn")]
+    [InlineData("ScalarSubquery")]
+    [InlineData("InOverAListOfValues")]
+    [InlineData("ScalarParameter")]
+    [InlineData("DistinctProjection")]
+    [InlineData("Ordering")]
     public void EverySourceLanguageReadsTheCategoryIntoTheSameSql(string name)
     {
         var shape = QueryShapeInputs.Categories.Single(s => s.Name == name);

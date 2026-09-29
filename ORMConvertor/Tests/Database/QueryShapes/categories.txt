@@ -1,0 +1,215 @@
+# The query categories of requirement T2: one section per category, one line per source
+# framework that can state it, naming the query units of that source relative to this
+# directory. Entity units stand nowhere here - the domain of five entities under
+# entities/ is the same for every category and each suite adds it itself. A source absent
+# from a section cannot state the category in its language; the absence is the statement,
+# and the comment above the section says why.
+#
+# Read by both suites from this one file, the way the differential matrix.txt is read
+# (decisions 076 and 089): the .NET matrices (Tests/Combined/QueryShapeMatrixTest.cs) run
+# every category dry through every direction and assert the target's text, the Java suite
+# (JavaTests, shapes/QueryCategoryTest) has each Java framework compile and judge what the
+# tool makes of the very same texts. The format is deliberately poorer than JSON: two
+# parsers in two languages have to agree about it, and a line of "key = value" cannot be
+# read two ways.
+#
+#   <Framework>     the query units of that source framework, in the order they are sent,
+#                   entity units excluded. A MyBatis row with parameters lists the mapper
+#                   interface before the document, because the interface is where MyBatis
+#                   keeps the type of a parameter (decision 084). The language of a unit
+#                   follows its extension, with the table matrix.txt uses.
+#   refusedBy       targets whose descriptor cannot express the category, as
+#                   Target:Feature - both suites expect a record naming the feature there
+#                   and no query artifact (decision 053).
+#   refusedFrom     sources that can write the category but whose reading the tool refuses
+#                   by a stated rule, as Source:Feature - a parameter of a Dapper source has
+#                   no mapping to take its scalar from without a catalog (decision 083).
+#
+# The domain is the one of the shared fixture schema (TestSchema.sql): customers, orders
+# under a two-part key, order lines under a three-part key whose leading parts are a
+# multi-column foreign key, allocations under a four-part key, and products - so the joins
+# here run over two and three columns, which is what makes the join category worth
+# measuring. The order entity is called CustomerOrder because "order" is a keyword of HQL
+# and JPQL; the two sources that state no table (Dapper, MyBatis) name it CustomerOrders so
+# that the singular-plural rule of decision 050 finds the class. Every section names its
+# query "find" plus the category, so a MyBatis statement and its interface are found by
+# the name alone.
+
+[Projection]
+Dapper = dapper/FindProjection.sql
+EFCore = efcore/FindProjection.query.cs
+NHibernate = nhibernate/FindProjection.hql
+Hibernate = hibernate/FindProjection.jpql
+EclipseLink = eclipselink/FindProjection.jpql
+MyBatis = mybatis/FindProjectionMapper.xml
+
+[Filtering]
+Dapper = dapper/FindFiltering.sql
+EFCore = efcore/FindFiltering.query.cs
+NHibernate = nhibernate/FindFiltering.hql
+Hibernate = hibernate/FindFiltering.jpql
+EclipseLink = eclipselink/FindFiltering.jpql
+MyBatis = mybatis/FindFilteringMapper.xml
+
+# The whole joined row through the LINQ result selector, then the filter and the
+# projection over the joined table through the members of that row - the same query the
+# other rows state (decision 103).
+[JoinOverTwoColumns]
+Dapper = dapper/FindJoinOverTwoColumns.sql
+EFCore = efcore/FindJoinOverTwoColumns.query.cs
+NHibernate = nhibernate/FindJoinOverTwoColumns.hql
+Hibernate = hibernate/FindJoinOverTwoColumns.jpql
+EclipseLink = eclipselink/FindJoinOverTwoColumns.jpql
+MyBatis = mybatis/FindJoinOverTwoColumnsMapper.xml
+
+[AggregationGroupingAndHaving]
+Dapper = dapper/FindAggregationGroupingAndHaving.sql
+EFCore = efcore/FindAggregationGroupingAndHaving.query.cs
+NHibernate = nhibernate/FindAggregationGroupingAndHaving.hql
+Hibernate = hibernate/FindAggregationGroupingAndHaving.jpql
+EclipseLink = eclipselink/FindAggregationGroupingAndHaving.jpql
+MyBatis = mybatis/FindAggregationGroupingAndHavingMapper.xml
+
+[Ordering]
+Dapper = dapper/FindOrdering.sql
+EFCore = efcore/FindOrdering.query.cs
+NHibernate = nhibernate/FindOrdering.hql
+Hibernate = hibernate/FindOrdering.jpql
+EclipseLink = eclipselink/FindOrdering.jpql
+MyBatis = mybatis/FindOrderingMapper.xml
+
+# The paginated shape is the parameterized one (decision 085), and only the sources whose
+# query language has a slice can state it: HQL 5.7 and EclipseLink's JPQL put it on the
+# query object, so those two have nothing to read. The Hibernate row uses the HQL
+# dialect clause.
+[PaginationWithBoundCounts]
+Dapper = dapper/FindPaginationWithBoundCounts.sql
+EFCore = efcore/FindPaginationWithBoundCounts.query.cs
+Hibernate = hibernate/FindPaginationWithBoundCounts.jpql
+MyBatis = mybatis/FindPaginationWithBoundCountsMapper.xml
+
+[SubqueryAsTheRightSideOfIn]
+Dapper = dapper/FindSubqueryAsTheRightSideOfIn.sql
+EFCore = efcore/FindSubqueryAsTheRightSideOfIn.query.cs
+NHibernate = nhibernate/FindSubqueryAsTheRightSideOfIn.hql
+Hibernate = hibernate/FindSubqueryAsTheRightSideOfIn.jpql
+EclipseLink = eclipselink/FindSubqueryAsTheRightSideOfIn.jpql
+MyBatis = mybatis/FindSubqueryAsTheRightSideOfInMapper.xml
+
+[CorrelatedExistsOverThreeColumns]
+Dapper = dapper/FindCorrelatedExistsOverThreeColumns.sql
+EFCore = efcore/FindCorrelatedExistsOverThreeColumns.query.cs
+NHibernate = nhibernate/FindCorrelatedExistsOverThreeColumns.hql
+Hibernate = hibernate/FindCorrelatedExistsOverThreeColumns.jpql
+EclipseLink = eclipselink/FindCorrelatedExistsOverThreeColumns.jpql
+MyBatis = mybatis/FindCorrelatedExistsOverThreeColumnsMapper.xml
+
+[ScalarSubquery]
+Dapper = dapper/FindScalarSubquery.sql
+EFCore = efcore/FindScalarSubquery.query.cs
+NHibernate = nhibernate/FindScalarSubquery.hql
+Hibernate = hibernate/FindScalarSubquery.jpql
+EclipseLink = eclipselink/FindScalarSubquery.jpql
+MyBatis = mybatis/FindScalarSubqueryMapper.xml
+
+# HQL 5.7 has no set operation to read, so NHibernate is no source here - and as a target
+# it refuses the shape by its descriptor, which is the one expected refusal of the matrix.
+[SetOperation]
+Dapper = dapper/FindSetOperation.sql
+EFCore = efcore/FindSetOperation.query.cs
+Hibernate = hibernate/FindSetOperation.jpql
+EclipseLink = eclipselink/FindSetOperation.jpql
+MyBatis = mybatis/FindSetOperationMapper.xml
+refusedBy = NHibernate:SetOperation
+
+[DistinctProjection]
+Dapper = dapper/FindDistinctProjection.sql
+EFCore = efcore/FindDistinctProjection.query.cs
+NHibernate = nhibernate/FindDistinctProjection.hql
+Hibernate = hibernate/FindDistinctProjection.jpql
+EclipseLink = eclipselink/FindDistinctProjection.jpql
+MyBatis = mybatis/FindDistinctProjectionMapper.xml
+
+[InOverAListOfValues]
+Dapper = dapper/FindInOverAListOfValues.sql
+EFCore = efcore/FindInOverAListOfValues.query.cs
+NHibernate = nhibernate/FindInOverAListOfValues.hql
+Hibernate = hibernate/FindInOverAListOfValues.jpql
+EclipseLink = eclipselink/FindInOverAListOfValues.jpql
+MyBatis = mybatis/FindInOverAListOfValuesMapper.xml
+
+# The scalar of a parameter is derived from the column it is compared with, which takes a
+# mapping (decision 083): a Dapper source states neither table nor column, so without a
+# catalog it is refused by a stated rule, and the MyBatis row states the type where the
+# framework keeps it - in the signature of the mapper interface (decision 084).
+[ScalarParameter]
+Dapper = dapper/FindScalarParameter.sql
+EFCore = efcore/FindScalarParameter.query.cs
+NHibernate = nhibernate/FindScalarParameter.hql
+Hibernate = hibernate/FindScalarParameter.jpql
+EclipseLink = eclipselink/FindScalarParameter.jpql
+MyBatis = mybatis/FindScalarParameterMapper.query.java, mybatis/FindScalarParameterMapper.xml
+refusedFrom = Dapper:QueryParameter
+
+# The MyBatis row binds the collection with the <foreach> the framework expands it by.
+[CollectionParameter]
+Dapper = dapper/FindCollectionParameter.sql
+EFCore = efcore/FindCollectionParameter.query.cs
+NHibernate = nhibernate/FindCollectionParameter.hql
+Hibernate = hibernate/FindCollectionParameter.jpql
+EclipseLink = eclipselink/FindCollectionParameter.jpql
+MyBatis = mybatis/FindCollectionParameterMapper.query.java, mybatis/FindCollectionParameterMapper.xml
+refusedFrom = Dapper:QueryParameter
+
+# A moment is a constructor in LINQ and a JDBC escape in JPQL; T-SQL and HQL write it as
+# a string, which the readers carry as a string and the builder template types from the
+# column it is compared with - so the string sources state the category too, and every
+# target writes the moment with its time of day whichever source left it at the date.
+[ConstantOfAMoment]
+Dapper = dapper/FindConstantOfAMoment.sql
+EFCore = efcore/FindConstantOfAMoment.query.cs
+NHibernate = nhibernate/FindConstantOfAMoment.hql
+Hibernate = hibernate/FindConstantOfAMoment.jpql
+EclipseLink = eclipselink/FindConstantOfAMoment.jpql
+MyBatis = mybatis/FindConstantOfAMomentMapper.xml
+
+# The shared LINQ parser reads no string method, so EF Core is no source of a pattern; as
+# a target it gets the translated form of decision 051.
+[LikeWithAnAnchoredPattern]
+Dapper = dapper/FindLikeWithAnAnchoredPattern.sql
+NHibernate = nhibernate/FindLikeWithAnAnchoredPattern.hql
+Hibernate = hibernate/FindLikeWithAnAnchoredPattern.jpql
+EclipseLink = eclipselink/FindLikeWithAnAnchoredPattern.jpql
+MyBatis = mybatis/FindLikeWithAnAnchoredPatternMapper.xml
+
+# The three constructs decision 102 carries, each added before the matrix was measured
+# over it. The modifier of the aggregate is a one-column Select collapsed before the
+# aggregate in LINQ and the word inside the function everywhere else.
+[CountOverDistinctValues]
+Dapper = dapper/FindCountOverDistinctValues.sql
+EFCore = efcore/FindCountOverDistinctValues.query.cs
+NHibernate = nhibernate/FindCountOverDistinctValues.hql
+Hibernate = hibernate/FindCountOverDistinctValues.jpql
+EclipseLink = eclipselink/FindCountOverDistinctValues.jpql
+MyBatis = mybatis/FindCountOverDistinctValuesMapper.xml
+
+# An escaped wildcard: the LINQ target splits the pattern past the escape and the core
+# goes out without it, as EF Core escapes the argument itself. No LINQ source, for the
+# same reason as the anchored pattern.
+[LikeWithAnEscapedWildcard]
+Dapper = dapper/FindLikeWithAnEscapedWildcard.sql
+NHibernate = nhibernate/FindLikeWithAnEscapedWildcard.hql
+Hibernate = hibernate/FindLikeWithAnEscapedWildcard.jpql
+EclipseLink = eclipselink/FindLikeWithAnEscapedWildcard.jpql
+MyBatis = mybatis/FindLikeWithAnEscapedWildcardMapper.xml
+
+# A bound value among the listed ones takes its scalar from the column, so the Dapper row
+# is refused without a catalog as the other parameter rows are.
+[InListWithABoundValue]
+Dapper = dapper/FindInListWithABoundValue.sql
+EFCore = efcore/FindInListWithABoundValue.query.cs
+NHibernate = nhibernate/FindInListWithABoundValue.hql
+Hibernate = hibernate/FindInListWithABoundValue.jpql
+EclipseLink = eclipselink/FindInListWithABoundValue.jpql
+MyBatis = mybatis/FindInListWithABoundValueMapper.query.java, mybatis/FindInListWithABoundValueMapper.xml
+refusedFrom = Dapper:QueryParameter

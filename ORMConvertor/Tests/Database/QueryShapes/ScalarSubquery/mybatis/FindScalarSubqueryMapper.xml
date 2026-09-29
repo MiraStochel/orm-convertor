@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindScalarSubqueryMapper">
+  <select id="findScalarSubquery" resultType="OrderLine">
+    SELECT * FROM Sales.OrderLines AS ol WHERE ol.UnitPrice &gt; (SELECT AVG(p.UnitPrice) FROM Sales.Products AS p WHERE p.UnitPrice &gt; 1)
+  </select>
+</mapper>
