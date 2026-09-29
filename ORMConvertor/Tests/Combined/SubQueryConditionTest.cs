@@ -186,8 +186,36 @@ public class SubQueryConditionTest
         var builder = ParseLinq(new DapperSqlQueryBuilder { EntityMaps = [Orders()] }, linq, Orders());
 
         Assert.Contains(
-            "WHERE o.Total >= (SELECT MAX(o.Total) FROM Sales.Orders AS o)",
+            "WHERE o.Total >= (SELECT MAX(m.Total) FROM Sales.Orders AS m)",
             Artifact(builder, ConversionContentType.SqlQuery));
+    }
+
+    /// <summary>
+    /// A terminal aggregate with no step before it has no chain lambda to name the nested
+    /// scope, and the table initial it used to fall back on is the outer alias whenever the
+    /// outer chain ranges over the same table: the subquery then shadowed p with p. The
+    /// aggregate's own lambda is the name the source gave the nested row, and the fallback
+    /// stays for Count(), which has no lambda at all.
+    /// </summary>
+    [Fact]
+    public void LinqScalarAggregateWithoutAStepTakesItsAliasFromItsOwnLambda()
+    {
+        const string linq = """
+        public void Query()
+        {
+            var q = ctx.Products
+                .Where(p => p.ListPrice > ctx.Products.Average(x => x.ListPrice)
+                    && ctx.Products.Count() > 1)
+                .ToList();
+        }
+        """;
+
+        var products = new EntityMap { Entity = new() { Name = "Product" }, Table = "Products", Schema = "Sales" };
+        var builder = ParseLinq(new DapperSqlQueryBuilder { EntityMaps = [products] }, linq, products);
+        var sql = Artifact(builder, ConversionContentType.SqlQuery);
+
+        Assert.Contains("p.ListPrice > (SELECT AVG(x.ListPrice) FROM Sales.Products AS x)", sql);
+        Assert.Contains("(SELECT COUNT(*) FROM Sales.Products AS p) > 1", sql);
     }
 
     [Fact]

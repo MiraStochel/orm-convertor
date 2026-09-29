@@ -245,6 +245,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// too - the outer key selector ranges over the source - and taking its name keeps the
     /// source alias apart from the one the result selector gives the joined row, which the
     /// first letter of the table (o for OrderLines, o for Orders) did not.
+    ///
+    /// A terminal aggregate is not a step of the chain, so its lambda is not seen here:
+    /// <c>ctx.Products.Average(x =&gt; x.ListPrice)</c> has no step at all, and the caller
+    /// that reads the aggregate supplies the parameter of its lambda as the fallback before
+    /// the table's first letter, so that the nested scope keeps the name the source gave it
+    /// instead of shadowing the outer alias with the table initial.
     /// </summary>
     private static string? FirstElementLambdaParameter(List<ChainStep> steps)
     {
@@ -281,7 +287,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// emitted - as a failure where dropping it would change which rows come back
     /// (decision 053), as a loss elsewhere.
     /// </summary>
-    private void EmitChain(LinqQueryRoot root, List<ChainStep> steps, Action? beforeClose = null)
+    private void EmitChain(
+        LinqQueryRoot root,
+        List<ChainStep> steps,
+        Action? beforeClose = null,
+        string? elementParameter = null)
     {
         var enclosingGroupingKeys = groupingKeys;
         var enclosingRow = row;
@@ -290,7 +300,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         try
         {
-            EmitChainCore(root, steps, beforeClose);
+            EmitChainCore(root, steps, beforeClose, elementParameter);
         }
         finally
         {
@@ -300,10 +310,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
     }
 
-    private void EmitChainCore(LinqQueryRoot root, List<ChainStep> steps, Action? beforeClose)
+    private void EmitChainCore(
+        LinqQueryRoot root,
+        List<ChainStep> steps,
+        Action? beforeClose,
+        string? elementParameter)
     {
         queryBuilder.Push();
-        EmitSource(root, FirstElementLambdaParameter(steps));
+        EmitSource(root, FirstElementLambdaParameter(steps) ?? elementParameter);
 
         bool inSetOperation = false;
         bool distinct = false;
@@ -1668,17 +1682,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// Reads a nested chain into a subquery operand (decision 061). The scope is closed
     /// with PopOperand, so its instructions become the operand's body rather than
     /// instructions of the enclosing query, and the enclosing source alias survives the
-    /// nested source step.
+    /// nested source step. The element parameter, when given, names the nested scope
+    /// where the chain itself has no lambda to take the name from.
     /// </summary>
     private SubQueryInstruction ReadSubQueryOperand(
         LinqQueryRoot root,
         List<ChainStep> steps,
-        Action? beforeClose = null)
+        Action? beforeClose = null,
+        string? elementParameter = null)
     {
         var enclosingAlias = sourceAlias;
 
         queryBuilder.Push();
-        EmitChain(root, steps, beforeClose);
+        EmitChain(root, steps, beforeClose, elementParameter);
         sourceAlias = enclosingAlias;
 
         return queryBuilder.PopOperand();
@@ -1856,7 +1872,10 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// x.Total)</c> - as a scalar subquery operand (decision 061): the aggregate becomes the
     /// subquery's own projection, recorded just before the nested scope closes so that it
     /// carries the nested source's alias. Count(predicate) folds its predicate into a Where
-    /// the way Any(predicate) does.
+    /// the way Any(predicate) does. The aggregate's own lambda names the nested scope when
+    /// the chain before it has no lambda step - <c>ctx.Products.Average(x =&gt;
+    /// x.ListPrice)</c> ranges over x, and the table initial would shadow an outer alias
+    /// that happens to be the same letter.
     /// </summary>
     private QueryOperand? ReadScalarSubQuery(InvocationExpressionSyntax invocation)
     {
@@ -1881,6 +1900,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         string attribute;
+        string? elementParameter = null;
         var argument = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
         if (argument is null)
         {
@@ -1902,6 +1922,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             && MemberName(body) is { } column)
         {
             attribute = column;
+            elementParameter = lambda.Parameter.Identifier.Text;
         }
         else
         {
@@ -1937,7 +1958,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         var sub = ReadSubQueryOperand(
             root!,
             steps,
-            () => queryBuilder.Project(sourceAlias, attribute, null, function));
+            () => queryBuilder.Project(sourceAlias, attribute, null, function),
+            elementParameter);
 
         return QueryOperand.Nested(sub);
     }
