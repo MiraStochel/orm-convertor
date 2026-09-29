@@ -1,0 +1,128 @@
+\documentclass{article}
+
+\usepackage[a-2u]{pdfx}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[czech]{babel}
+\usepackage{array}
+\usepackage[ddmmyyyy]{datetime}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{url}
+
+\renewcommand{\dateseparator}{.}
+\renewcommand{\baselinestretch}{1.5}
+
+\geometry{margin=2cm}
+
+\def\ResearchProject{Research project}
+\def\CompanyProject{Company project}
+\def\SoftwareProject{Software project}
+
+% METADATA SECTION START
+\def\StudentsFullName{Miroslav Štochel}
+\def\Obor{Informatika - Softwarové a datové inženýrství}
+\def\ProjectTitle{Rozšíření nástroje ORMorpher}
+% Use "\ResearchProject", "\CompanyProject", "\SoftwareProject"
+\def\ProjectType{\ResearchProject}
+\def\SupervisorFullName{Ing. Pavel Koupil, Ph.D.}
+\def\ConsultantsFullName{doc. RNDr. Irena Holubová, Ph.D., RNDr. Michal Kopecký, Ph.D.}
+\def\ExpectedStart{2026-07-01}
+\def\ExpectedEnd{2026-12-01}
+% METADATA SECTION END
+
+\title{\ProjectTitle}
+\author{\StudentsFullName}
+
+\begin{document}
+
+\centerline{\Large \textbf{Proposal of team software project}}
+\centerline{\textbf{Department of Software Engineering}}
+\centerline{\textbf{Faculty of Mathematics and Physics, Charles University}}
+\bigskip
+
+{\noindent\begin{tabular*}{\textwidth}{ >{\raggedleft}m{4cm} l}
+ {\bf Solver:} & \StudentsFullName \\
+ {\bf Study program:} & \Obor \\
+ & \\
+ {\bf Project title:} & \ProjectTitle \\
+ {\bf Project type:} & \ProjectType \\
+ & \\
+ {\bf Supervisor:} & \SupervisorFullName \\
+ {\bf Consultants:} & \ConsultantsFullName \\
+ & \\
+ {\bf Expected start:} & \ExpectedStart \\
+ {\bf Expected end:} & \ExpectedEnd \\
+\end{tabular*}}
+
+\section{Úvod}
+
+V oblasti databázových systémů existuje řada nástrojů a přístupů pro migraci dat, evoluci databázového schématu a propagaci změn do souvisejících datových struktur a dotazů. Výrazně omezenější je však podpora obdobných změn na úrovni aplikačního kódu. Změna databázové technologie, objektově-relačního mapovacího frameworku nebo způsobu perzistence proto obvykle vyžaduje ruční úpravy entit, mapování, dotazů a dalšího kódu datové vrstvy aplikace.
+
+Výzkumná skupina Adaptive Data Management (ADaM) Research Group\footnote{\url{https://www.cnaip.cz/en/entity/adaptive-data-management-research-group}} se mimo jiné zabývá automatizací migrace a transformace datových a aplikačních artefaktů napříč různými technologiemi. V rámci tohoto výzkumu vzniká nástroj ORMorpher\footnote{\url{https://www.ksi.mff.cuni.cz/~koupil/ormorpher/index.html}}, jehož původní implementaci vytvořil Milan Abrahám jako proof of concept pro ověření vybraných principů překladu mezi ORM a obdobnými frameworky.
+
+Současná implementace podporuje pouze vybrané konstrukce frameworků NHibernate, EF Core a Dapper. Cílem projektu je tento proof of concept rozšířit o složitější mapovací konstrukce, využití metadat z databázového schématu a podporu Java frameworků, zejména Hibernate, EclipseLink a MyBatis. Projekt má zároveň ověřit použitelnost společné mezireprezentace pro překlad napříč různými programovacími jazyky a technologickými ekosystémy.
+
+\subsection{Vztah k dalším projektům}
+
+Projekt přímo navazuje na projekt a diplomovou práci Milana Abraháma\footnote{\url{https://github.com/milan252525/orm-convertor}} a dále rozvíjí její návrh, implementaci a experimentální infrastrukturu.
+
+Tematicky souvisí také s nástrojem MM-mapsearch\footnote{\url{https://www.ksi.mff.cuni.cz/~koupil/software/mm-mapsearch/}}, který se zabývá hledáním vhodné reprezentace dat s ohledem na zadaný workload, zejména strukturu a charakter dotazů. Zatímco MM-mapsearch řeší volbu reprezentace především na úrovni dat a databázového systému, ORMorpher tuto problematiku doplňuje na úrovni aplikační datové vrstvy tím, že řeší transformaci mapování, entit a dotazů mezi jednotlivými frameworky.
+
+Další související směr představuje diplomová práce Martina Čorovčáka, která navrhuje univerzální objektový model (UOM) a migraci aplikačního kódu mezi relačními, grafovými a dokumentovými databázovými systémy, včetně mapování ORM, OGM a ODM. Tento přístup využívá velké jazykové modely, a je proto obecnější, ale současně potenciálně nedeterministický a výpočetně i finančně nákladnější. ORMorpher oproti tomu zkoumá deterministický překlad založený na explicitních pravidlech, heuristikách a mezireprezentaci.
+
+S projektem souvisí rovněž diplomová práce Ivony Oboňové zaměřená na migraci mezi relačními a grafovými databázovými systémy z pohledu dotazů s využitím velkých jazykových modelů. Společně tak tyto práce pokrývají několik komplementárních úrovní migrace: volbu datové reprezentace, transformaci aplikačního mapování a migraci dotazů mezi různými databázovými modely a technologiemi.
+
+\section{Očekávaný výsledek}
+
+Výsledkem projektu bude rozšířený proof of concept nástroje ORMorpher doplněný o dokumentaci, kontejnerovou konfiguraci a automatizované testy.
+
+Nástroj bude podporovat překlad vybrané podmnožiny mapovacích konstrukcí mezi podporovanými frameworky prostřednictvím společné mezireprezentace. Případy, ve kterých není možný úplný nebo jednoznačný překlad, budou v průběhu projektu identifikovány a zdokumentovány.
+
+Součástí projektu bude také rozšíření podpory read-only dotazů a příprava běhových prostředí, ve kterých bude možné generované artefakty sestavit, spustit, automatizovaně ověřovat a experimentálně vyhodnocovat.
+
+\section{Úkoly řešitele}
+
+\begin{itemize}[leftmargin=*]
+\item Rozšířit mezireprezentaci a stávající parsery a buildery .NET frameworků o složitější mapovací konstrukce, zejména komplexní identifikátory a související cizí klíče.
+\item Navrhnout a implementovat doplňování a slučování metadat získaných ze zdrojového kódu a databázového schématu.
+\item Implementovat podporu Java frameworků Hibernate, EclipseLink a MyBatis.
+\item Rozšířit podporu překladu read-only dotazů.
+\item Připravit testovací a běhové prostředí pro automatizované ověřování a experimenty.
+\end{itemize}
+
+\section{Technická realizace}
+
+ORMorpher je backendová aplikace postavená na platformě .NET a poskytující REST API prostřednictvím ASP.NET Core s jednoduchým frontendem. Zdrojové artefakty budou převáděny do společné mezireprezentace, ze které budou následně generovány artefakty cílového frameworku.
+
+Překlad bude možné doplnit o metadata získaná z databázového schématu. Součástí zpracování bude diagnostika nepodporovaných nebo nejednoznačných konstrukcí a případných konfliktů mezi různými zdroji metadat.
+
+Pro podporované frameworky budou připravena běhová prostředí umožňující generované artefakty sestavit, spustit a testovat. Pro zpracování C\# kódu bude využit Roslyn; vhodné nástroje pro Java frameworky budou vybrány na základě analýzy. Referenční databází bude SQL Server se vzorovou databází WideWorldImporters a prostředí bude kontejnerizováno pomocí Dockeru.
+
+\section{Harmonogram}
+
+\begin{itemize}[leftmargin=*]
+\item Analýza současného stavu a rozšíření mezireprezentace a stávajících frameworků
+\\1. -- 2. měsíc, 13 MD
+\item Analýza Java frameworků a návrh práce s databázovými metadaty
+\\3. měsíc, 5 MD
+\item Implementace podpory Java frameworků
+\\3. -- 4. měsíc, 10 MD
+\item Příprava testovacího a experimentálního prostředí
+\\4. měsíc, 5 MD
+\item Experimenty, dokumentace a odevzdání
+\\5. měsíc, 5 MD
+\end{itemize}
+
+\section{Využití pro výzkumnou činnost}
+
+Projekt umožní porovnat mapovací a dotazovací možnosti vybraných .NET a Java frameworků a identifikovat konstrukce, pro které není možný přímočarý sémanticky ekvivalentní překlad.
+
+Hlavním výzkumným přínosem bude ověření, že navržená mezireprezentace a překladový přístup jsou použitelné napříč různými programovacími jazyky a technologickými ekosystémy. Rozšíření proof of concept o Java frameworky zároveň umožní lépe posoudit praktickou použitelnost navrženého přístupu a jeho omezení.
+
+Připravené testovací prostředí bude sloužit k experimentálnímu ověření implementace a umožní porovnat deterministický algoritmický překlad s metodami založenými na velkých jazykových modelech, případně s využitím technik RAG nebo agentních přístupů.
+
+Výsledky projektu, zejména ověření cross-language použitelnosti přístupu, rozšíření proof of concept implementace a experimentální porovnání s LLM-based metodami, budou využity jako podklad pro vědeckou publikaci, přednostně v odborném vědeckém časopise.
+
+\end{document}

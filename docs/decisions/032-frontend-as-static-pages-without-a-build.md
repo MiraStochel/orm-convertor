@@ -89,8 +89,6 @@ Předpokladem je současný prohlížeč — ES moduly, `fetch`, `<template>`, `
 
 **Položka „Osud `wwwroot`" se nestává bezpředmětnou, mění se její obsah.** V číslovaném pořadí verze 1.0 zůstává jako 14 a rozhodnutí [030](030-scope-of-version-1-0.md) se nemění. Volba mezi automatizací buildu a odstraněním `wwwroot` z gitu ale odpadá — obojí odpovídalo na otázku, co s výstupem překladu, a ten už nevznikne. Zbývá odstranit starý bundle a složku `frontend/` a popsat nové uspořádání.
 
-**Zákaz čtení `wwwroot` v `CLAUDE.md` a v `.claude/settings.local.json` padá.** Existuje proto, že `wwwroot` byl commitnutý build; jakmile jsou to ručně psané zdroje, je to nejdůležitější složka frontendu. Vypustí se spolu s pravidlem pro `frontend/dist/`, které přestane mít předmět. Je to změna pravidla, takže se provede v `CLAUDE.md`, až podle tohoto rozhodnutí vznikne kód.
-
 **`Dockerfile` přijde o uzel Node.** Vícestupňové sestavení dnes staví frontend Angularem; nově je to kopie souborů. Kontejnerové nasazení je mimo záruky verze 1.0 (rozhodnutí [030](030-scope-of-version-1-0.md)), ale soubor v repozitáři zůstává a stavěl by něco, co neexistuje.
 
 **`architecture.md` se dotkne na dvou místech**, až podle tohoto rozhodnutí vznikne kód: §1 popisuje ASP.NET projekt jako toho, kdo „servíruje zkompilovaný Angular frontend", a §6 uvádí postup `npm install` a `ng build` s ručním kopírováním do `wwwroot`. Obojí se nahradí popisem statických stránek; verze vendorovaných knihoven patří do tabulky zafixovaných verzí v §1.

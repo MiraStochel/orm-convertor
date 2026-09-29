@@ -66,7 +66,7 @@ Krok 2 před krokem 3 je celý smysl seznamu: verze v sestavení a verze ve zna�
 
 **Poznámky k vydání se píšou až po posledním commitu, který do vydání patří.** Krok 1 žádá hotovou práci a zelené CI, ale neříkal, kdy se pořizují doklady, o které se poznámky opírají — a u 1.1.0 se právě tohle rozešlo: doklad o kontejnerovém běhu vznikl o den dřív než posledních sedmadvacet testů, které vydání inzeruje (`architecture.md` §6.2 a §6.4). Doklad pořízený před posledním commitem popisuje jiný strom, než na kterém stojí značka.
 
-**Nevzniká tím proces pro předběžná vydání ani pro větve.** Značky jako `1.1.0-rc1`, podpora starší řady a hotfix větve jsou nástroje pro tým a pro uživatele, kteří nemůžou aktualizovat; vývoj je sólo a na `main` (rozhodnutí 003 a `CLAUDE.md`). Až se objeví někdo, kdo na verzi 1.x zůstane, bude to nové rozhodnutí, ne rozšíření tohohle.
+**Nevzniká tím proces pro předběžná vydání ani pro větve.** Značky jako `1.1.0-rc1`, podpora starší řady a hotfix větve jsou nástroje pro tým a pro uživatele, kteří nemůžou aktualizovat; vývoj je sólo a na `main` (rozhodnutí 003). Až se objeví někdo, kdo na verzi 1.x zůstane, bude to nové rozhodnutí, ne rozšíření tohohle.
 
 ## Historie
 

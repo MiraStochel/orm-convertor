@@ -159,7 +159,7 @@ Invariant tedy dnes **platí** a nález není o jeho porušení; je o tom, že p
 
 ### 5.5 Solution Items nese jeden ze tří Dockerfilů — drobné
 
-`ORMConvertor.sln` má ve složce *Solution Items* `database.Dockerfile`, ale ne `ORMConvertorAPI/Dockerfile` — ten přitom nese pět stupňů včetně obou testovacích a seznamu projektů, který obraz už dvakrát rozbil. Je to táž past, na kterou upozorňuje `CLAUDE.md` u glob vzoru `Dockerfile*`, jen v jiném souboru. Tři centrální soubory, které revizi z 2026-08-23 ve složce chyběly (nález 7.6), doplněné jsou.
+`ORMConvertor.sln` má ve složce *Solution Items* `database.Dockerfile`, ale ne `ORMConvertorAPI/Dockerfile` — ten přitom nese pět stupňů včetně obou testovacích a seznamu projektů, který obraz už dvakrát rozbil. Tři centrální soubory, které revizi z 2026-08-23 ve složce chyběly (nález 7.6), doplněné jsou.
 
 ---
 

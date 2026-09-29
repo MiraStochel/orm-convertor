@@ -10,7 +10,7 @@ Požadavky: žádné
 
 Opravy z auditu stav srovnaly. Za tři dny se rozešel znovu. Pořadí dnes vede jako bod 1 „Klíčová třída u formy `Embedded`" a značí ji jako rozhodnutí, kdežto v souboru je pod nadpisem „Klíčová třída u kompozitního klíče na straně entity" a leží v sekci `## Otevřená práce`. Šest bodů před ní se odbavilo a ona zůstala — ne proto, že by ji někdo vybral jako další, ale proto, že zbyla. Plán tím přestal být plánem a stal se zbytkem.
 
-Chyba není v nepozornosti. Rozhodnutí [007](007-documentation-structure.md) uložilo, že položka odsud zmizí, jakmile je hotová, a CLAUDE.md k tomu žádá jako povinný uzavírací krok aktualizaci `architecture.md`. Odškrtnout hotovou položku tedy znamená tři úpravy na třech místech, z nichž jedno je duplikát druhého — a duplikát se vynechává právě tehdy, když je práce nejhustší. Pravidlo, které se dodrží jen při klidném dni, není pravidlo.
+Chyba není v nepozornosti. Rozhodnutí [007](007-documentation-structure.md) uložilo, že položka odsud zmizí, jakmile je hotová. Odškrtnout hotovou položku tedy znamená tři úpravy na třech místech, z nichž jedno je duplikát druhého — a duplikát se vynechává právě tehdy, když je práce nejhustší. Pravidlo, které se dodrží jen při klidném dni, není pravidlo.
 
 ## Zvažované varianty
 
@@ -36,8 +36,6 @@ Všechno ostatní je neuspořádané a bere se podle priorit plynoucích z poža
 ## Důsledky
 
 Povinný uzavírací krok se zkracuje. Hotová položka se smaže a značka se přesune; není co srovnávat, protože není druhý seznam.
-
-CLAUDE.md popisuje začátek práce větou, že „the recommended order at its top says where to continue". Ta přestává platit a mění se v témže průchodu. Jiný dokument na pořadí neodkazuje.
 
 Audit dostává mechanickou kontrolu, kterou dřív neměl: značek `Na řadě` smí být nejvýš jedna a `Potom` nejvýš dvě, a každá musí stát u položky, která v souboru existuje. To se ověří hledáním, ne čtením dvou seznamů proti sobě.
 

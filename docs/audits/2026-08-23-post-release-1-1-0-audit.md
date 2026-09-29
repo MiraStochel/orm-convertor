@@ -162,7 +162,7 @@ Rejstřík sám je v pořádku: 40 souborů proti 40 řádkům, bez rozdílu v d
 
 ### 5.1 Oba starší audity byly po svém datu editované — závažné
 
-Commit `a975a41` (2026-08-18) sáhl na `2026-08-02-post-step-4-audit.md` i na `2026-08-15-documentation-coherence-audit.md`. U prvního šlo o přeznačení požadavků E→T. U druhého jde jeden z hunků nad rámec přeznačení: **přepisuje citaci** a **přepisuje řádek v kapitole *Opravy***, ze kterého mizí dva předepsané cíle (`requirements.md` „v repozitáři i v souborech projektu" a `CLAUDE.md`).
+Commit `a975a41` (2026-08-18) sáhl na `2026-08-02-post-step-4-audit.md` i na `2026-08-15-documentation-coherence-audit.md`. U prvního šlo o přeznačení požadavků E→T. U druhého jde jeden z hunků nad rámec přeznačení: **přepisuje citaci** a **přepisuje řádek v kapitole *Opravy***, ze kterého mizí dva předepsané cíle (`requirements.md` „v repozitáři i v souborech projektu").
 
 `audits/README.md`:15 přitom o auditu z 2026-08-02 tvrdí, že „se kvůli nim nepřepisuje" — v době, kdy už přepsaný byl.
 
