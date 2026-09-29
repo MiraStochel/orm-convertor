@@ -137,7 +137,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         var tree = CSharpSyntaxTree.ParseText(Wrap(source));
-        var root = tree.GetCompilationUnitRoot();
+        SyntaxNode root = tree.GetCompilationUnitRoot();
+
+        // A query expression is read as the method chain the language defines it as
+        // (decision 103), so from here on there is only the one shape to read.
+        var rewriter = new QueryExpressionRewriter(root);
+        root = rewriter.Visit(root)!;
 
         // Outer nodes come before inner ones in document order, so the first invocation that
         // decomposes to a query root is the outermost link of the chain. A root appearing
@@ -147,14 +152,23 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             if (TryDecompose(invocation, out var queryRoot, out var steps))
             {
                 EmitChain(queryRoot!, steps);
+                ReportRefusedClauses(rewriter);
                 return [queryBuilder];
             }
         }
 
         queryBuilder.Push();
-        Report(
-            ConversionRecordKind.Failure,
-            "No LINQ query chain was found in the source; nothing was translated.");
+
+        // A query expression the rewrite stopped in has its reason already; saying that no
+        // chain was found on top of it would name the wrong cause.
+        if (rewriter.Refusals.Count == 0)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "No LINQ query chain was found in the source; nothing was translated.");
+        }
+
+        ReportRefusedClauses(rewriter);
         queryBuilder.Pop();
 
         // The builder leaves even when it was refused: it holds the records of what went
@@ -195,7 +209,23 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         source +
         "\n}\n";
 
-    private sealed record ChainStep(string Name, InvocationExpressionSyntax Node);
+    private void ReportRefusedClauses(QueryExpressionRewriter rewriter)
+    {
+        foreach (var (reason, feature) in rewriter.Refusals)
+        {
+            Report(ConversionRecordKind.Failure, reason, feature);
+        }
+    }
+
+    /// <summary>
+    /// One link of the chain. <paramref name="RewrittenFrom"/> is the terminal a step stands
+    /// in for (decision 103): a Take(1) that was First(), a Where that was the predicate of
+    /// FirstOrDefault(predicate), so that a record about the step names what was written.
+    /// </summary>
+    private sealed record ChainStep(string Name, InvocationExpressionSyntax Node, string? RewrittenFrom = null)
+    {
+        public string Written => RewrittenFrom ?? Name;
+    }
 
     private bool TryDecompose(
         ExpressionSyntax expression,
@@ -211,6 +241,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             {
                 steps.Reverse();
                 return true;
+            }
+
+            // (from c in ctx.Customers select c).ToList(): the parentheses a query expression
+            // needs before a terminal are no link of the chain.
+            if (current is ParenthesizedExpressionSyntax parenthesized)
+            {
+                current = parenthesized.Expression;
+                continue;
             }
 
             if (current is InvocationExpressionSyntax invocation
@@ -316,6 +354,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         Action? beforeClose,
         string? elementParameter)
     {
+        steps = ExpandSingleRowTerminals(steps);
+
         queryBuilder.Push();
         EmitSource(root, FirstElementLambdaParameter(steps) ?? elementParameter);
 
@@ -323,6 +363,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         bool distinct = false;
         RowCount? pendingOffset = null;
         RowCount? pendingLimit = null;
+        string? refusedTerminal = null;
 
         // Pagination is recorded when the scope closes, so that Skip and Take collected
         // along the chain end up as one instruction in offset-then-limit normal form
@@ -333,24 +374,26 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             pendingOffset = pendingLimit = null;
         }
 
-        void HandleSkipOrTake(ChainStep step)
+        bool HandleSkipOrTake(ChainStep step)
         {
             if (step.Name == "Skip" && pendingLimit is not null)
             {
                 Report(
                     ConversionRecordKind.Failure,
-                    "Skip() after Take() slices differently from the offset-then-limit form the query representation carries; no artifact was generated.",
+                    $"{step.Written}() after Take() slices differently from the offset-then-limit form the query representation carries; no artifact was generated.",
                     QueryFeature.Pagination);
-                return;
+                return false;
             }
 
             if ((step.Name == "Skip" ? pendingOffset : pendingLimit) is not null)
             {
                 Report(
                     ConversionRecordKind.Failure,
-                    $"A repeated {step.Name}() has no counterpart in the query representation; no artifact was generated.",
+                    step.RewrittenFrom is null
+                        ? $"A repeated {step.Name}() has no counterpart in the query representation; no artifact was generated."
+                        : $"{step.Written}() after {step.Name}() would slice a slice, which the query representation carries only once; no artifact was generated.",
                     QueryFeature.Pagination);
-                return;
+                return false;
             }
 
             var argument = step.Node.ArgumentList.Arguments.FirstOrDefault()?.Expression;
@@ -373,9 +416,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             {
                 Report(
                     ConversionRecordKind.Failure,
-                    $"The argument of {step.Name}() is neither a non-negative integer literal nor a value from the enclosing scope, and a pagination the artifact does not carry would change which rows the query returns; no artifact was generated.",
+                    $"The argument of {step.Written}() is neither a non-negative integer literal nor a value from the enclosing scope, and a pagination the artifact does not carry would change which rows the query returns; no artifact was generated.",
                     QueryFeature.Pagination);
-                return;
+                return false;
             }
 
             if (step.Name == "Skip")
@@ -386,11 +429,20 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             {
                 pendingLimit = count;
             }
+
+            return true;
         }
 
         for (int i = 0; i < steps.Count; i++)
         {
             var step = steps[i];
+
+            // The steps a terminal expanded into are one construct: once one of them is
+            // refused, the rest would only repeat the refusal in other words.
+            if (step.RewrittenFrom is not null && step.RewrittenFrom == refusedTerminal)
+            {
+                continue;
+            }
 
             if (TryMapSetOperation(step.Name, out var operation))
             {
@@ -426,7 +478,15 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
             if (step.Name is "Skip" or "Take")
             {
-                HandleSkipOrTake(step);
+                if (!HandleSkipOrTake(step))
+                {
+                    refusedTerminal = step.RewrittenFrom;
+                }
+                else if (step.Name == "Take" && step.RewrittenFrom is { } terminal)
+                {
+                    ReportSingleRowTerminal(terminal);
+                }
+
                 continue;
             }
 
@@ -438,8 +498,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             {
                 Report(
                     ConversionRecordKind.Failure,
-                    $"{step.Name}() after Skip() or Take() does not commute with the slice, which the query representation carries only as the last operation; no artifact was generated.",
+                    $"{step.Written}() after Skip() or Take() does not commute with the slice, which the query representation carries only as the last operation; no artifact was generated.",
                     QueryFeature.Pagination);
+                refusedTerminal = step.RewrittenFrom;
                 continue;
             }
 
@@ -459,7 +520,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             {
                 Report(
                     ConversionRecordKind.Failure,
-                    $"{step.Name}() after Distinct() does not commute with the collapse, which the query representation carries over the final projection; no artifact was generated.",
+                    $"{step.Written}() after Distinct() does not commute with the collapse, which the query representation carries over the final projection; no artifact was generated.",
                     step.Name switch
                     {
                         "Select" => QueryFeature.Projection,
@@ -539,7 +600,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             case "Skip":
                 Report(
                     ConversionRecordKind.Failure,
-                    $"{step.Name}() applied after a set operation cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
+                    $"{step.Written}() applied after a set operation cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
                     QueryFeature.Pagination);
                 return;
 
@@ -564,7 +625,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             case "GroupBy":
                 Report(
                     ConversionRecordKind.Failure,
-                    $"{step.Name}() applied after a set operation cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
+                    $"{step.Written}() applied after a set operation cannot be carried, and dropping it would change which rows the query returns; no artifact was generated.",
                     step.Name switch
                     {
                         "Where" => QueryFeature.Filtering,
@@ -644,6 +705,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 break;
 
             default:
+                // Last() is the one single-row terminal that is not a slice of the rows as
+                // ordered: it is the first row of the reversed ordering, and reversing every
+                // ordering key is a rewrite of another instruction, not of this step.
+                if (WithoutAsync(step.Name) is "Last" or "LastOrDefault")
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"{step.Name}() selects the last row of the ordering, which the query representation could carry only by reversing every ordering key, and an artifact emitted without it would answer something else; no artifact was generated.",
+                        QueryFeature.Pagination);
+                    break;
+                }
+
                 if (ChangesTheRowSet(step.Name) is { } feature)
                 {
                     Report(
@@ -662,22 +735,103 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// Steps of <c>System.Linq</c> the representation does not carry and which nevertheless
     /// decide what comes back: a filter, a slice, a join, or a terminal that answers with one
     /// value instead of rows. Naming them is what decision 070 asks for - the enumeration
-    /// used to stop at Where, Join, GroupBy, Skip and Take, so OfType() (a filter), First()
-    /// (a slice of one row) and a terminal Count() (a number instead of rows) fell through to
-    /// the unknown step and left with a loss record while the artifact went out returning
-    /// every row. Null means the step is not one of them.
+    /// used to stop at Where, Join, GroupBy, Skip and Take, so OfType() (a filter), Last()
+    /// (the row of a reversed ordering) and a terminal Count() (a number instead of rows)
+    /// fell through to the unknown step and left with a loss record while the artifact went
+    /// out returning every row. The async forms EF Core adds are the same steps. First(),
+    /// Single() and ElementAt() are not here: they are the slices the chain already carries,
+    /// and the chain is expanded to say so before it is read (decision 103). Null means the
+    /// step is not one of them.
     /// </summary>
-    private static QueryFeature? ChangesTheRowSet(string method) => method switch
+    private static QueryFeature? ChangesTheRowSet(string method) => WithoutAsync(method) switch
     {
         "OfType" => QueryFeature.Filtering,
         "SkipWhile" or "TakeWhile" or "DefaultIfEmpty" => QueryFeature.Pagination,
-        "First" or "FirstOrDefault" or "Single" or "SingleOrDefault"
-            or "Last" or "LastOrDefault" or "ElementAt" or "ElementAtOrDefault" => QueryFeature.Pagination,
+        "Last" or "LastOrDefault" => QueryFeature.Pagination,
         "GroupJoin" or "SelectMany" or "Zip" => QueryFeature.Join,
         "Count" or "LongCount" or "Sum" or "Average" or "Min" or "Max" or "Aggregate" => QueryFeature.Aggregation,
         "Any" or "All" or "Contains" => QueryFeature.Filtering,
         _ => null,
     };
+
+    private static string WithoutAsync(string method)
+        => method.Length > 5 && method.EndsWith("Async", StringComparison.Ordinal) ? method[..^5] : method;
+
+    /// <summary>
+    /// Replaces a single-row terminal by the steps it is short for (decision 103): First(),
+    /// FirstOrDefault(), Single() and SingleOrDefault() by Take(1), with the predicate form
+    /// putting the predicate in a Where() first, exactly as First(predicate) is defined;
+    /// ElementAt(n) and ElementAtOrDefault(n) by Skip(n).Take(1); the async forms EF Core
+    /// adds alike. The rows the chain describes are the same. What the terminal adds - one
+    /// object instead of a list, for Single() the check that there is no second row - is a
+    /// fact of the calling code, which the representation does not describe (decision 065),
+    /// so it is said in a convention record when the slice is recorded. Every step carries
+    /// the terminal it stands in for, so that a refusal names what was written.
+    /// </summary>
+    private static List<ChainStep> ExpandSingleRowTerminals(List<ChainStep> steps)
+    {
+        List<ChainStep>? expanded = null;
+
+        for (int i = 0; i < steps.Count; i++)
+        {
+            var step = steps[i];
+            var terminal = WithoutAsync(step.Name);
+
+            if (terminal is not ("First" or "FirstOrDefault" or "Single" or "SingleOrDefault" or "ElementAt" or "ElementAtOrDefault"))
+            {
+                expanded?.Add(step);
+                continue;
+            }
+
+            expanded ??= steps.Take(i).ToList();
+            var receiver = ((MemberAccessExpressionSyntax)step.Node.Expression).Expression;
+
+            if (terminal is "ElementAt" or "ElementAtOrDefault")
+            {
+                expanded.Add(new ChainStep("Skip", Synthesized(receiver, "Skip", step.Node.ArgumentList), step.Name));
+            }
+            else if (step.Node.ArgumentList.Arguments.FirstOrDefault(a => a.Expression is LambdaExpressionSyntax) is { } predicate)
+            {
+                // A cancellation token beside the predicate says nothing about the rows and
+                // is left alone, as it is on ToListAsync().
+                expanded.Add(new ChainStep(
+                    "Where",
+                    Synthesized(receiver, "Where", SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(predicate))),
+                    step.Name));
+            }
+
+            expanded.Add(new ChainStep(
+                "Take",
+                Synthesized(receiver, "Take", SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(
+                    SyntaxFactory.Argument(SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(1)))))),
+                step.Name));
+        }
+
+        return expanded ?? steps;
+    }
+
+    private static InvocationExpressionSyntax Synthesized(ExpressionSyntax receiver, string method, ArgumentListSyntax arguments)
+        => SyntaxFactory.InvocationExpression(
+            SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, receiver, SyntaxFactory.IdentifierName(method)),
+            arguments);
+
+    /// <summary>
+    /// The convention record of a single-row terminal read as a slice (decision 103): the
+    /// artifact says Take(1) where the source said First(), and what the source said beyond
+    /// the rows is named, because the artifact does not carry it.
+    /// </summary>
+    private void ReportSingleRowTerminal(string terminal)
+    {
+        var slice = WithoutAsync(terminal) is "ElementAt" or "ElementAtOrDefault" ? "Skip(n).Take(1)" : "Take(1)";
+        var beyondTheRows = WithoutAsync(terminal) is "Single" or "SingleOrDefault"
+            ? "the check that the query yields no second row"
+            : "that the caller receives it as a single value rather than as a list of one";
+
+        Report(
+            ConversionRecordKind.Convention,
+            $"{terminal}() is carried as {slice}, which selects the same row; {beyondTheRows} is a fact of the calling code, not of the query, and the artifact does not carry it.",
+            QueryFeature.Pagination);
+    }
 
     /// <summary>
     /// A step the parser does not know. It stays a loss on purpose (decision 070): the
@@ -1294,6 +1448,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 "A GroupBy() whose argument is not a lambda cannot be read, and a query grouped differently would return different rows; no artifact was generated.",
                 QueryFeature.Grouping);
             return;
+        }
+
+        // GroupBy(key, element) and GroupBy(key, (key, group) => …) group the same rows;
+        // what the second lambda changes is what the steps after the grouping range over,
+        // which the representation has no place for. The groups are the same, so it is a
+        // loss with the artifact (decision 070), said rather than skipped (decision 048). The
+        // first shape is what `group c.Name by c.City` rewrites to (decision 103).
+        if (node.ArgumentList.Arguments.Count > 1)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                "Only the key selector of GroupBy() was read; its further argument - an element or a result selector - has no place in the query representation, and the steps after the grouping range over the whole rows of each group.",
+                QueryFeature.Grouping);
         }
 
         if (body is AnonymousObjectCreationExpressionSyntax anon)

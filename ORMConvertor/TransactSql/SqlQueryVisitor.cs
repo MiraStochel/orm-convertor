@@ -215,10 +215,13 @@ public class SqlQueryVisitor(
         // arrives here already named after its order (decision 083). A collection parameter
         // is written bare, without parentheses: that is the shape Dapper expands into a list
         // before the statement reaches the server.
+        // COUNT(*) in operand position - a HAVING over the row count - is the same one
+        // aggregate whose argument is no column, and the alias must not qualify it here any
+        // more than in the projection above: `COUNT(o.*)` is not T-SQL.
         var text = operand.IsParameter
             ? $"@{QueryParameterNaming.IdentifierFor(operand.Parameter!)}"
             : operand.IsColumn
-                ? (operand.Table is null ? operand.Property! : $"{operand.Table}.{operand.Property}")
+                ? (operand.Table is null || operand.Property == "*" ? operand.Property! : $"{operand.Table}.{operand.Property}")
                 : Literal(operand.Constant!);
 
         return operand.Function is null

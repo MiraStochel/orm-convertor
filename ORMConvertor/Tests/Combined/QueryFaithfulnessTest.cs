@@ -327,19 +327,21 @@ public class QueryFaithfulnessTest
     /// The same rule over the LINQ chain. The enumeration of row-changing steps used to stop
     /// at Where, Join, GroupBy, Skip and Take, so everything else fell through to the unknown
     /// step and left with a loss record while the artifact went out returning every row:
-    /// OfType() is a filter, First() is a slice of one row, GroupJoin() is a join and a
-    /// terminal Count() answers with a number rather than with rows. Include(), which changes
-    /// no rows, must stay a loss - that is what decision 070 kept the unknown step for.
+    /// OfType() is a filter, Last() is the row of a reversed ordering, GroupJoin() is a join
+    /// and a terminal Count() answers with a number rather than with rows - in its async
+    /// form too. Include(), which changes no rows, must stay a loss - that is what decision
+    /// 070 kept the unknown step for. First(), Single() and ElementAt() are no longer here:
+    /// they are the slices the chain carries (decision 103, Combined/LinqSingleRowTerminalTest).
     /// </summary>
     [Theory]
     [InlineData("OfType<Customer>()")]
     [InlineData("SkipWhile(c => c.CreditLimit > 1)")]
     [InlineData("TakeWhile(c => c.CreditLimit > 1)")]
     [InlineData("DefaultIfEmpty()")]
-    [InlineData("First()")]
-    [InlineData("Single()")]
-    [InlineData("ElementAt(2)")]
+    [InlineData("Last()")]
+    [InlineData("LastOrDefault()")]
     [InlineData("Count()")]
+    [InlineData("CountAsync()")]
     [InlineData("Any()")]
     [InlineData("GroupJoin(ctx.Customers, c => c.Id, d => d.Id, (c, d) => c)")]
     public void ALinqStepThatDecidesWhatComesBackRefusesTheArtifact(string step)
