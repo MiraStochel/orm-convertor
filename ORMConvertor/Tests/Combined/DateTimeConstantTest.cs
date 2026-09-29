@@ -29,17 +29,43 @@ public class DateTimeConstantTest
     private static EntityMap Customers()
     {
         var id = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int) };
+        var name = new Property { Name = "CustomerName", Type = LangType.Scalar(ScalarType.String) };
         var opened = new Property { Name = "AccountOpenedDate", Type = LangType.Scalar(ScalarType.DateTime) };
+        var since = new Property { Name = "Since", Type = LangType.Scalar(ScalarType.Date) };
+        var opensAt = new Property { Name = "OpensAt", Type = LangType.Scalar(ScalarType.TimeOfDay) };
 
         return new EntityMap
         {
-            Entity = new Entity { Name = "Customer", Properties = [id, opened] },
+            Entity = new Entity { Name = "Customer", Properties = [id, name, opened, since, opensAt] },
             Table = "Customers",
             Schema = "Sales",
             PropertyMaps =
             [
                 new PropertyMap { Property = id, ColumnName = "CustomerID" },
+                new PropertyMap { Property = name, ColumnName = "CustomerName" },
                 new PropertyMap { Property = opened, ColumnName = "AccountOpenedDate" },
+                new PropertyMap { Property = since, ColumnName = "Since" },
+                new PropertyMap { Property = opensAt, ColumnName = "OpensAt" },
+            ],
+        };
+    }
+
+    private static EntityMap Orders()
+    {
+        var id = new Property { Name = "OrderID", Type = LangType.Scalar(ScalarType.Int) };
+        var customer = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int) };
+        var placed = new Property { Name = "PlacedAt", Type = LangType.Scalar(ScalarType.DateTime) };
+
+        return new EntityMap
+        {
+            Entity = new Entity { Name = "Order", Properties = [id, customer, placed] },
+            Table = "Orders",
+            Schema = "Sales",
+            PropertyMaps =
+            [
+                new PropertyMap { Property = id, ColumnName = "OrderID" },
+                new PropertyMap { Property = customer, ColumnName = "CustomerID" },
+                new PropertyMap { Property = placed, ColumnName = "PlacedAt" },
             ],
         };
     }
@@ -56,6 +82,25 @@ public class DateTimeConstantTest
             }
             """,
             [Customers()]);
+        return builder;
+    }
+
+    private static AbstractQueryBuilder ParseSql(AbstractQueryBuilder builder, string predicate)
+    {
+        builder.EntityMaps = [Customers(), Orders()];
+        new DapperSqlQueryParser(() => builder).Parse(
+            ConversionContentType.SqlQuery,
+            $"SELECT * FROM Sales.Customers AS c WHERE {predicate}");
+        return builder;
+    }
+
+    private static AbstractQueryBuilder ParseHql(AbstractQueryBuilder builder, string predicate)
+    {
+        builder.EntityMaps = [Customers(), Orders()];
+        new NHibernateHqlQueryParser(() => builder).Parse(
+            ConversionContentType.HqlQuery,
+            $"from Customer c where {predicate}",
+            [Customers(), Orders()]);
         return builder;
     }
 
@@ -174,5 +219,143 @@ public class DateTimeConstantTest
             [Customers()]);
 
         Assert.Contains("'2025-01-01 00:00:00'", Artifact(builder, ConversionContentType.SqlQuery));
+    }
+
+    // ---- The other direction: the string T-SQL and HQL write a moment as ----------------
+
+    /// <summary>
+    /// T-SQL and HQL have no literal for a moment either - they write it as a string, and
+    /// their grammars cannot tell it from one, so the readers carry it as a string. The
+    /// builder template types it from the column it is compared with, the way the gate of
+    /// decision 083 types a parameter, so that LINQ does not come out comparing a date with
+    /// a string; every target then writes the moment with its time of day, as it does for a
+    /// LINQ source.
+    /// </summary>
+    [Theory]
+    [InlineData("Dapper")]
+    [InlineData("NHibernate")]
+    public void AStringComparedWithAMomentColumnIsReadAsAMoment(string source)
+    {
+        var linq = source == "Dapper"
+            ? ParseSql(new EFCoreLinqQueryBuilder(), "c.AccountOpenedDate > '2025-01-01'")
+            : ParseHql(new EFCoreLinqQueryBuilder(), "c.AccountOpenedDate > '2025-01-01'");
+
+        Assert.Contains(
+            "c.AccountOpenedDate > DateTime.Parse(\"2025-01-01 00:00:00\")",
+            Artifact(linq, ConversionContentType.CSharpQuery));
+
+        var jpql = source == "Dapper"
+            ? ParseSql(new HibernateJpqlQueryBuilder(), "c.AccountOpenedDate > '2025-01-01'")
+            : ParseHql(new HibernateJpqlQueryBuilder(), "c.AccountOpenedDate > '2025-01-01'");
+
+        Assert.Contains(
+            "c.AccountOpenedDate > {ts '2025-01-01 00:00:00'}",
+            Artifact(jpql, ConversionContentType.JpqlQuery));
+
+        var sql = source == "Dapper"
+            ? ParseSql(new DapperSqlQueryBuilder(), "c.AccountOpenedDate > '2025-01-01'")
+            : ParseHql(new DapperSqlQueryBuilder(), "c.AccountOpenedDate > '2025-01-01'");
+
+        Assert.Contains(
+            "c.AccountOpenedDate > '2025-01-01 00:00:00'",
+            Artifact(sql, ConversionContentType.SqlQuery));
+    }
+
+    /// <summary>
+    /// The ISO 8601 forms accepted, and the one spelling they all become: the time of day
+    /// always (the JDBC escape knows no shorter form), the fraction of a second only when
+    /// the source wrote one, and the T of the source read as the space of the model.
+    /// </summary>
+    [Theory]
+    [InlineData("2025-01-01", "2025-01-01 00:00:00")]
+    [InlineData("2025-12-31 23:59", "2025-12-31 23:59:00")]
+    [InlineData("2025-12-31 23:59:58", "2025-12-31 23:59:58")]
+    [InlineData("2025-12-31T23:59:58", "2025-12-31 23:59:58")]
+    [InlineData("2025-12-31 23:59:58.123", "2025-12-31 23:59:58.123")]
+    [InlineData("2025-12-31 23:59:58.1234567", "2025-12-31 23:59:58.1234567")]
+    public void EveryAcceptedStringYieldsTheSameIsoMoment(string written, string expected)
+    {
+        var builder = ParseSql(new EFCoreLinqQueryBuilder(), $"c.AccountOpenedDate >= '{written}'");
+
+        Assert.Contains($">= DateTime.Parse(\"{expected}\")", Artifact(builder, ConversionContentType.CSharpQuery));
+    }
+
+    /// <summary>
+    /// The two temporal scalars of decision 071 with a literal of their own take the same
+    /// route: a string against a Date column is a date, against a TimeOfDay column a time
+    /// of day, each in the spelling the visitors of decision 071 write it in.
+    /// </summary>
+    [Fact]
+    public void AStringComparedWithADateOrTimeColumnTakesThatScalar()
+    {
+        var date = ParseSql(new EFCoreLinqQueryBuilder(), "c.Since >= '2024-01-31'");
+        Assert.Contains("c.Since >= DateOnly.Parse(\"2024-01-31\")", Artifact(date, ConversionContentType.CSharpQuery));
+
+        var dateJpql = ParseSql(new HibernateJpqlQueryBuilder(), "c.Since >= '2024-01-31'");
+        Assert.Contains("c.Since >= {d '2024-01-31'}", Artifact(dateJpql, ConversionContentType.JpqlQuery));
+
+        var time = ParseSql(new EFCoreLinqQueryBuilder(), "c.OpensAt < '08:30'");
+        Assert.Contains("c.OpensAt < TimeOnly.Parse(\"08:30:00\")", Artifact(time, ConversionContentType.CSharpQuery));
+
+        var timeJpql = ParseSql(new HibernateJpqlQueryBuilder(), "c.OpensAt < '08:30'");
+        Assert.Contains("c.OpensAt < {t '08:30:00'}", Artifact(timeJpql, ConversionContentType.JpqlQuery));
+    }
+
+    /// <summary>
+    /// A list of values is the right side of IN (decision 074) and the column on the left
+    /// types its elements, so a list of nothing but strings against a moment column is a
+    /// list of moments; and a column inside a subquery finds its entity the way a parameter
+    /// in one does, so the string in a nested scope is typed as well.
+    /// </summary>
+    [Fact]
+    public void AListOfStringsAndAStringInsideASubqueryAreTypedToo()
+    {
+        var list = ParseSql(new EFCoreLinqQueryBuilder(), "c.AccountOpenedDate IN ('2025-01-01', '2025-01-02')");
+
+        Assert.Contains(
+            "DateTime.Parse(\"2025-01-01 00:00:00\"), DateTime.Parse(\"2025-01-02 00:00:00\")",
+            Artifact(list, ConversionContentType.CSharpQuery));
+
+        var nested = ParseSql(
+            new EFCoreLinqQueryBuilder(),
+            "c.CustomerID IN (SELECT o.CustomerID FROM Sales.Orders AS o WHERE o.PlacedAt > '2025-01-01')");
+
+        Assert.Contains(
+            "o.PlacedAt > DateTime.Parse(\"2025-01-01 00:00:00\")",
+            Artifact(nested, ConversionContentType.CSharpQuery));
+    }
+
+    /// <summary>
+    /// Only the column decides: the same string against a string column is a string, and
+    /// so is a LIKE pattern whichever column it matches (decision 051).
+    /// </summary>
+    [Fact]
+    public void AStringComparedWithAStringColumnStaysAString()
+    {
+        var builder = ParseSql(new EFCoreLinqQueryBuilder(), "c.CustomerName = '2025-01-01'");
+
+        Assert.Contains("c.CustomerName == \"2025-01-01\"", Artifact(builder, ConversionContentType.CSharpQuery));
+    }
+
+    /// <summary>
+    /// A string the column's scalar cannot read is refused with a record, not carried: the
+    /// database would refuse it at run time, and a LINQ target could not even compile it.
+    /// A time of day against a Date column is the same refusal - the database would
+    /// truncate it in silence, which is the row set changing (decision 053).
+    /// </summary>
+    [Theory]
+    [InlineData("c.AccountOpenedDate > 'yesterday'")]
+    [InlineData("c.AccountOpenedDate > '2025-13-01'")]
+    [InlineData("c.AccountOpenedDate > '20250101'")]
+    [InlineData("c.Since > '2025-01-01 10:00'")]
+    [InlineData("c.OpensAt > '2025-01-01'")]
+    public void AStringThatIsNoMomentRefusesTheArtifact(string predicate)
+    {
+        var builder = ParseSql(new EFCoreLinqQueryBuilder(), predicate);
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(
+            builder.Records,
+            r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Filtering);
     }
 }

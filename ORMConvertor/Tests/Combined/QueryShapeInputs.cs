@@ -383,17 +383,23 @@ public static class QueryShapeInputs
                 myBatis: ["<foreach"])),
 
         // A moment is a constructor in LINQ and a JDBC escape in JPQL; T-SQL and HQL write
-        // it as a string, which the readers carry as a string (open-items.md), so those
-        // sources are not in this row until that item is done.
+        // it as a string, which the readers carry as a string and the builder template
+        // types from the column it is compared with (§7 of architecture.md) - so the string
+        // sources state the category too, and every target writes the moment with its time
+        // of day whichever source left it at the date.
         Define(
             "constant of a moment",
+            sql: "SELECT * FROM Sales.CustomerOrders AS o WHERE o.PlacedAt > '2025-01-01'",
             linq: "ctx.Orders.Where(o => o.PlacedAt > new DateTime(2025, 1, 1))",
+            hql: "from CustomerOrder o where o.PlacedAt > '2025-01-01'",
             jpql: "select o from CustomerOrder o where o.PlacedAt > {ts '2025-01-01 00:00:00'}",
+            resultType: "CustomerOrder",
             hallmarks: Hallmarks(
                 sql: ["o.PlacedAt > '2025-01-01 00:00:00'"],
                 linq: ["o.PlacedAt > DateTime.Parse(\"2025-01-01 00:00:00\")"],
                 hql: ["o.PlacedAt > '2025-01-01 00:00:00'"],
-                jpa: ["o.PlacedAt > {ts '2025-01-01 00:00:00'}"])),
+                jpa: ["o.PlacedAt > {ts '2025-01-01 00:00:00'}"],
+                myBatis: ["o.PlacedAt &gt; '2025-01-01 00:00:00'"])),
 
         // The shared LINQ parser reads no string method, so EF Core is no source of a
         // pattern; as a target it gets the translated form of decision 051.

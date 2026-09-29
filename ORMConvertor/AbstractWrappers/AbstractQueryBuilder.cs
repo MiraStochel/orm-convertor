@@ -406,6 +406,15 @@ public abstract class AbstractQueryBuilder
 
         var body = Unwrap(instructions);
 
+        // A string literal compared with a temporal column is the moment the source wrote
+        // - T-SQL and HQL have no other spelling - and takes the column's scalar here, over
+        // the whole query and before anything reads the comparisons (decision 024, the
+        // direction the readers cannot cover).
+        if (!TypeTemporalLiterals(body, [], out body))
+        {
+            return [];
+        }
+
         // The parameters of the whole query, resolved once and before anything is rendered
         // (decision 083): a scope that never gets normalized - a subquery operand of a
         // condition the gate below refuses - must not be able to leave a parameter out of
@@ -1136,23 +1145,7 @@ public abstract class AbstractQueryBuilder
         Dictionary<string, EntityMap> enclosing,
         List<ParameterOccurrence> found)
     {
-        var aliases = new Dictionary<string, EntityMap>(enclosing, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var source in body.OfType<FromInstruction>())
-        {
-            if (EntityFor(source.Table) is { } entity)
-            {
-                aliases[source.Alias ?? source.Table] = entity;
-            }
-        }
-
-        foreach (var join in body.OfType<JoinInstruction>())
-        {
-            if (EntityFor(join.RightTable) is { } entity)
-            {
-                aliases[join.RightTableAlias ?? join.RightTable] = entity;
-            }
-        }
+        var aliases = ScopeAliases(body, enclosing, EntityFor);
 
         foreach (var instruction in body)
         {
@@ -1304,6 +1297,297 @@ public abstract class AbstractQueryBuilder
             ?.Property.Type is { Category: LangTypeCategory.Scalar } type
             ? type.ScalarType
             : null;
+
+    /// <summary>
+    /// The entity behind every alias one scope names - its source and its joins - on top of
+    /// the aliases of the scopes around it, so that a column inside a subquery still finds
+    /// the entity it belongs to. The resolution is the caller's, because the two walks over
+    /// the query resolve differently: the scalar gate of decision 083 takes a stated mapping
+    /// only, the typing of a literal the same map the column renders from.
+    /// </summary>
+    private static Dictionary<string, EntityMap> ScopeAliases(
+        IReadOnlyList<QueryInstruction> body,
+        Dictionary<string, EntityMap> enclosing,
+        Func<string, EntityMap?> resolve)
+    {
+        var aliases = new Dictionary<string, EntityMap>(enclosing, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var source in body.OfType<FromInstruction>())
+        {
+            if (resolve(source.Table) is { } entity)
+            {
+                aliases[source.Alias ?? source.Table] = entity;
+            }
+        }
+
+        foreach (var join in body.OfType<JoinInstruction>())
+        {
+            if (resolve(join.RightTable) is { } entity)
+            {
+                aliases[join.RightTableAlias ?? join.RightTable] = entity;
+            }
+        }
+
+        return aliases;
+    }
+
+    // ---- Temporal literals -------------------------------------------------------------
+
+    /// <summary>
+    /// Types the string literals a source compares with a temporal column (decision 024,
+    /// in the direction the readers cannot cover). T-SQL and HQL write a moment as a string
+    /// - <c>o.PlacedAt > '2025-01-01'</c> - and their grammars cannot tell it from a string,
+    /// so the readers carry it as <see cref="ScalarType.String"/>; four targets write the
+    /// string back and let the database convert it, LINQ writes a comparison of a date with
+    /// a string, which does not compile. The scalar of the column is what the gate of
+    /// decision 083 already derives for a parameter, from the mapping representation only
+    /// the builder has, so the same derivation types the constant: a string compared with a
+    /// DateTime, Date or TimeOfDay column becomes that scalar in the ISO spelling every
+    /// visitor writes, and a string that does not read as one is refused - the database
+    /// would refuse it too, at run time and without a record. A string against a column of
+    /// any other scalar stays a string.
+    ///
+    /// Walks every scope the way <see cref="CollectParameters(IReadOnlyList{QueryInstruction}, Dictionary{string, EntityMap}, List{ParameterOccurrence})"/>
+    /// does, and resolves a column the way rendering does (<see cref="AliasedEntities"/>):
+    /// through the naming convention of decision 050 as well, because a source that states
+    /// no table - Dapper, MyBatis - renders the column as the property its class declares,
+    /// and the literal has to agree with that property. The parameter gate keeps its own,
+    /// narrower resolution: a scalar in a method signature is a claim about the caller and
+    /// follows from a stated mapping only. Returns false when a literal was refused, having
+    /// reported why.
+    /// </summary>
+    private bool TypeTemporalLiterals(
+        IReadOnlyList<QueryInstruction> body,
+        Dictionary<string, EntityMap> enclosing,
+        out IReadOnlyList<QueryInstruction> typed)
+    {
+        var aliases = ScopeAliases(body, enclosing, table => EntityFor(table) ?? ByDerivedName(table));
+        var result = new List<QueryInstruction>(body.Count);
+        typed = result;
+
+        foreach (var instruction in body)
+        {
+            QueryInstruction? replacement = instruction switch
+            {
+                SelectInstruction filter =>
+                    TypeTemporalLiterals(filter.Condition, aliases) is { } condition ? filter with { Condition = condition } : null,
+                HavingInstruction postFilter =>
+                    TypeTemporalLiterals(postFilter.Condition, aliases) is { } condition ? postFilter with { Condition = condition } : null,
+                JoinInstruction join =>
+                    TypeTemporalLiterals(join.OnCondition, aliases) is { } condition ? join with { OnCondition = condition } : null,
+                SubQueryInstruction nested => TypeTemporalLiterals(nested, aliases),
+                SetOperationInstruction operation =>
+                    TypeTemporalLiterals(operation.Left, aliases) is { } left && TypeTemporalLiterals(operation.Right, aliases) is { } right
+                        ? operation with { Left = left, Right = right }
+                        : null,
+                _ => instruction,
+            };
+
+            if (replacement is null)
+            {
+                return false;
+            }
+
+            result.Add(replacement);
+        }
+
+        return true;
+    }
+
+    private SubQueryInstruction? TypeTemporalLiterals(SubQueryInstruction subQuery, Dictionary<string, EntityMap> enclosing)
+        => TypeTemporalLiterals(subQuery.Instructions, enclosing, out var typed)
+            ? subQuery with { Instructions = [.. typed] }
+            : null;
+
+    private ConditionNode? TypeTemporalLiterals(ConditionNode node, Dictionary<string, EntityMap> aliases)
+    {
+        switch (node)
+        {
+            case ComparisonCondition comparison:
+                return TypeTemporalLiterals(comparison, aliases);
+
+            case LogicalCondition logical:
+                var operands = new List<ConditionNode>(logical.Operands.Count);
+                foreach (var operand in logical.Operands)
+                {
+                    if (TypeTemporalLiterals(operand, aliases) is not { } typed)
+                    {
+                        return null;
+                    }
+
+                    operands.Add(typed);
+                }
+
+                return logical with { Operands = operands };
+
+            case NotCondition negation:
+                return TypeTemporalLiterals(negation.Operand, aliases) is { } inner ? negation with { Operand = inner } : null;
+
+            default:
+                return node;
+        }
+    }
+
+    private ComparisonCondition? TypeTemporalLiterals(ComparisonCondition comparison, Dictionary<string, EntityMap> aliases)
+    {
+        var left = TypeTemporalLiteral(comparison.Left, comparison.Right, comparison.Operator, aliases);
+        if (left is null)
+        {
+            return null;
+        }
+
+        if (comparison.Right is null)
+        {
+            return comparison with { Left = left };
+        }
+
+        var right = TypeTemporalLiteral(comparison.Right, comparison.Left, comparison.Operator, aliases);
+        return right is null ? null : comparison with { Left = left, Right = right };
+    }
+
+    /// <summary>
+    /// One operand: a subquery has its own scopes walked; a string constant, or a list of
+    /// nothing but string constants (the right side of IN, decision 074), takes the scalar
+    /// of the temporal column on the other side. Everything else passes unchanged.
+    /// </summary>
+    private QueryOperand? TypeTemporalLiteral(
+        QueryOperand operand,
+        QueryOperand? other,
+        ComparisonOperator op,
+        Dictionary<string, EntityMap> aliases)
+    {
+        if (operand.IsSubQuery)
+        {
+            return TypeTemporalLiterals(operand.SubQuery!, aliases) is { } typed ? QueryOperand.Nested(typed) : null;
+        }
+
+        if (TemporalScalarOf(other, op, aliases) is not { } scalar)
+        {
+            return operand;
+        }
+
+        if (operand.Constant is { Type: ScalarType.String } constant)
+        {
+            return Retype(constant, scalar, other!) is { } typed ? QueryOperand.Value(typed, operand.Function) : null;
+        }
+
+        if (operand.Values is { } list && list.All(v => v.Type == ScalarType.String))
+        {
+            var values = new List<QueryConstant>(list.Count);
+            foreach (var value in list)
+            {
+                if (Retype(value, scalar, other!) is not { } typed)
+                {
+                    return null;
+                }
+
+                values.Add(typed);
+            }
+
+            return QueryOperand.ValueList(values);
+        }
+
+        return operand;
+    }
+
+    /// <summary>
+    /// The temporal scalar of the column on the other side of a comparison, or null when
+    /// there is no such column: the other side is not a column, is COUNT of one (which
+    /// answers with a count), or maps a property of another scalar or of none. LIKE is left
+    /// out as it is in <see cref="ScalarOfOther"/>: a pattern is a string whichever column
+    /// it matches (decision 051).
+    /// </summary>
+    private ScalarType? TemporalScalarOf(QueryOperand? other, ComparisonOperator op, Dictionary<string, EntityMap> aliases)
+    {
+        if (op is ComparisonOperator.Like
+            || other is null
+            || !other.IsColumn
+            || string.Equals(other.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var scalar = ScalarOfColumn(aliases, other.Table, other.Property!);
+        return scalar is ScalarType.DateTime or ScalarType.Date or ScalarType.TimeOfDay ? scalar : null;
+    }
+
+    /// <summary>
+    /// The constant in the scalar of its column and in the spelling the model carries - the
+    /// one the LINQ reader produces and every visitor writes: a moment always with its time
+    /// of day, because the JDBC escape the JPQL builder writes it into knows no shorter
+    /// form, and a fraction of a second only when the source wrote one. Accepted are the
+    /// extended ISO 8601 forms T-SQL and HQL both read unambiguously - a date, a date with
+    /// a time of day after a space or a T, a time of day, each with an optional fraction -
+    /// and nothing else: the value would fail in the database at run time, and here it
+    /// fails with a record naming the column and the scalar.
+    /// </summary>
+    private QueryConstant? Retype(QueryConstant constant, ScalarType scalar, QueryOperand column)
+    {
+        var spelled = scalar switch
+        {
+            ScalarType.DateTime => SpellMoment(constant.Text),
+            ScalarType.Date => SpellDate(constant.Text),
+            _ => SpellTimeOfDay(constant.Text),
+        };
+
+        if (spelled is null)
+        {
+            var expected = scalar switch
+            {
+                ScalarType.DateTime => "a date or a date with a time of day",
+                ScalarType.Date => "a date",
+                _ => "a time of day",
+            };
+
+            Report(
+                ConversionRecordKind.Failure,
+                $"The string '{constant.Text}' is compared with the column {column}, which is {scalar}, and does not read as {expected} in the ISO 8601 form; no artifact was generated.",
+                QueryFeature.Filtering);
+            return null;
+        }
+
+        return QueryConstant.Of(spelled, scalar);
+    }
+
+    private static readonly string[] MomentForms =
+    [
+        "yyyy-MM-dd",
+        "yyyy-MM-dd HH:mm",
+        "yyyy-MM-dd'T'HH:mm",
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd HH:mm:ss.FFFFFFF",
+        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF",
+    ];
+
+    private static readonly string[] TimeOfDayForms =
+    [
+        "HH:mm",
+        "HH:mm:ss",
+        "HH:mm:ss.FFFFFFF",
+    ];
+
+    private static string? SpellMoment(string text)
+        => DateTime.TryParseExact(text, MomentForms, CultureInfo.InvariantCulture, DateTimeStyles.None, out var moment)
+            ? moment.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + Fraction(moment.Ticks)
+            : null;
+
+    private static string? SpellDate(string text)
+        => DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : null;
+
+    private static string? SpellTimeOfDay(string text)
+        => TimeOnly.TryParseExact(text, TimeOfDayForms, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)
+            ? time.ToString("HH:mm:ss", CultureInfo.InvariantCulture) + Fraction(time.Ticks)
+            : null;
+
+    /// <summary>The fraction of a second when there is one, without the trailing zeros the source did not write.</summary>
+    private static string Fraction(long ticks)
+    {
+        var rest = ticks % TimeSpan.TicksPerSecond;
+        return rest == 0 ? string.Empty : "." + rest.ToString("D7", CultureInfo.InvariantCulture).TrimEnd('0');
+    }
 
     private static string KeyOf(QueryParameter parameter)
         => parameter.Name ?? $"?{parameter.Position}";
