@@ -733,20 +733,7 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         if (parts.Count > 1 && aliases.ContainsKey(parts[0]))
         {
-            if (ParseOptionalAlias() is { } pathAlias)
-            {
-                aliases[pathAlias] = null;
-            }
-
-            if (TryConsumeKeyword("on") || TryConsumeKeyword("with"))
-            {
-                ParseCondition();
-                unread = null;
-            }
-
-            Report(ConversionRecordKind.Failure,
-                $"A join along the association path '{string.Join('.', parts)}' is not carried by the query representation, and a query emitted without its join would return different rows; no artifact was generated.",
-                QueryFeature.Join);
+            ParseAssociationJoin(kind, parts);
             return;
         }
 
@@ -771,6 +758,136 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         queryBuilder.Join(kind, sourceAlias, TableFor(map, entity), condition, alias);
+    }
+
+    /// <summary>
+    /// A join along an association path - <c>join o.customer c</c>, the shape JPQL writes a
+    /// join in (decision 101, paper rule Q7). The predicate is not in the query but in the
+    /// mapping, so it is derived from the relation the path names, FK(left) = PK(right) over
+    /// its column pairs, and the join reaches the builder in the very shape an entity join
+    /// with a written condition takes. What the maps of the conversion do not hold is
+    /// refused by name and never guessed (decision 067): a query emitted without its join
+    /// would return different rows (decision 070). The syntax is consumed either way, so
+    /// that the clauses after it are still read and every reason arrives at once.
+    /// </summary>
+    private void ParseAssociationJoin(JoinKind kind, List<string> parts)
+    {
+        var association = ResolveAssociation(parts, out var failure);
+
+        // The alias is declared before the written condition is read, because that
+        // condition may refer to it; an unresolved path still declares it, as null.
+        var alias = ParseOptionalAlias() ?? parts[^1];
+        aliases[alias] = association?.Target;
+
+        ConditionNode? written = null;
+        if (TryConsumeKeyword("on") || TryConsumeKeyword("with"))
+        {
+            written = ParseCondition();
+            if (written is null)
+            {
+                if (failure is null)
+                {
+                    Refuse("join's on condition", "a query emitted without its join would return different rows", QueryFeature.Join);
+                    return;
+                }
+
+                unread = null;
+            }
+        }
+
+        if (association is null)
+        {
+            Report(ConversionRecordKind.Failure, failure!, QueryFeature.Join);
+            return;
+        }
+
+        var condition = AssociationCondition(association.Relation, parts[0], alias, written);
+        queryBuilder.Join(kind, sourceAlias, TableFor(association.Target, association.Relation.TargetEntity), condition, alias);
+    }
+
+    private sealed record AssociationJoin(Relation Relation, EntityMap Target);
+
+    /// <summary>
+    /// The relation a path names, or null with the sentence that says what the maps of the
+    /// conversion are missing (decision 101). The path is the alias and one association: a
+    /// longer one crosses an embeddable or an intermediate join the model does not carry.
+    /// A many-to-many relation stands on its junction entity (decision 005), so a path
+    /// across it would be two joins and an invented alias - a stated limit, refused by name.
+    /// </summary>
+    private AssociationJoin? ResolveAssociation(List<string> parts, out string? failure)
+    {
+        var path = string.Join('.', parts);
+        const string consequence = "a query emitted without its join would return different rows; no artifact was generated.";
+
+        if (parts.Count > 2)
+        {
+            failure = $"The join along the path '{path}' crosses more than one association, and exactly one association is read from an alias; {consequence}";
+            return null;
+        }
+
+        var owner = aliases[parts[0]];
+        if (owner is null)
+        {
+            failure = $"The join along the association path '{path}' needs the mapping of the entity behind '{parts[0]}', which is not part of the conversion, so no relation was there to derive the join condition from; {consequence}";
+            return null;
+        }
+
+        var relation = owner.Relations.FirstOrDefault(r =>
+            string.Equals(r.SourceNavigationProperty, parts[1], StringComparison.OrdinalIgnoreCase));
+        if (relation is null)
+        {
+            failure = $"The join along the association path '{path}' names no association the mapping of '{owner.Entity.Name}' declares, so no relation was there to derive the join condition from; {consequence}";
+            return null;
+        }
+
+        if (relation.Cardinality == Cardinality.ManyToMany)
+        {
+            failure = $"The join along the association path '{path}' crosses the many-to-many relation to '{relation.TargetEntity}', which would take two joins over its junction entity, and that is not derived; {consequence}";
+            return null;
+        }
+
+        var target = MapFor(relation.TargetEntity);
+        if (target is null)
+        {
+            failure = $"The join along the association path '{path}' leads to the entity '{relation.TargetEntity}', which is not part of the conversion; {consequence}";
+            return null;
+        }
+
+        if (relation.ColumnPairs.Count == 0)
+        {
+            failure = $"The join along the association path '{path}' has no foreign key columns to derive its condition from: the relation to '{relation.TargetEntity}' states none and the database catalog supplied none; {consequence}";
+            return null;
+        }
+
+        failure = null;
+        return new AssociationJoin(relation, target);
+    }
+
+    /// <summary>
+    /// FK(left) = PK(right) over the column pairs, in their order (decision 101). Which alias
+    /// holds the foreign key follows the role of the relation: the entity behind the path
+    /// for an owning one, the joined entity for an inverse one. A condition the source
+    /// wrote after the path narrows the join further and joins the conjunction.
+    /// </summary>
+    private static ConditionNode AssociationCondition(Relation relation, string pathAlias, string joinAlias, ConditionNode? written)
+    {
+        var (keyHolder, referenced) = relation.Role == RelationRole.Owning
+            ? (pathAlias, joinAlias)
+            : (joinAlias, pathAlias);
+
+        var conjuncts = relation.ColumnPairs
+            .Select(pair => (ConditionNode)new ComparisonCondition(
+                QueryOperand.Column(keyHolder, pair.Source.ColumnName ?? pair.Source.Property.Name),
+                ComparisonOperator.Equal,
+                QueryOperand.Column(referenced, pair.Target.ColumnName ?? pair.Target.Property.Name)))
+            .ToList();
+
+        if (written is not null)
+        {
+            conjuncts.Add(written);
+        }
+
+        return conjuncts.Count == 1 ? conjuncts[0] : new LogicalCondition(LogicalOperator.And, conjuncts);
     }
 
     private List<string> ParseDottedName(string expectation)

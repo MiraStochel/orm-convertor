@@ -181,20 +181,210 @@ public class NHibernateHqlQueryParserTest
 
     /* ---- what the model cannot carry is a record, never a guess --------------------- */
 
-    [Fact]
-    public void AnAssociationPathJoinRefusesTheArtifact()
-    {
-        var builder = Parse(
-            new NHibernateHqlQueryBuilder(),
-            "from Order o join o.Customer c where o.Total > 100",
-            Orders());
+    /* ---- a join along an association path is derived from the relation (decision 101) ---- */
 
-        // A query without its join returns different rows (decision 070), so the join is no
-        // longer dropped with a loss: nothing comes out and the record says why.
+    /// <summary>
+    /// Orders and customers linked by one relation seen from both sides: the owning
+    /// many-to-one from the order and the inverse one-to-many from the customer share the
+    /// column pairs, the way the resolution phase leaves them. Without pairs the relation
+    /// is what a source that stated no columns yields when no catalog was there.
+    /// </summary>
+    private static (EntityMap Orders, EntityMap Customers) Linked(bool withPairs = true, bool composite = false)
+    {
+        var customerKey = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int) };
+        var customerCompany = new Property { Name = "CompanyID", Type = LangType.Scalar(ScalarType.Int) };
+        var name = new Property { Name = "CustomerName", Type = LangType.Scalar(ScalarType.String) };
+        var customerKeyMap = new PropertyMap { Property = customerKey, ColumnName = "CustomerID" };
+        var customerCompanyMap = new PropertyMap { Property = customerCompany, ColumnName = "CompanyID" };
+
+        var customers = new EntityMap
+        {
+            Entity = new Entity { Name = "Customer", Properties = [customerCompany, customerKey, name] },
+            Table = "Customers",
+            Schema = "Sales",
+            PropertyMaps = [customerCompanyMap, customerKeyMap, new PropertyMap { Property = name, ColumnName = "CustomerName" }],
+        };
+
+        var orderCustomer = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int) };
+        var orderCompany = new Property { Name = "CompanyID", Type = LangType.Scalar(ScalarType.Int) };
+        var total = new Property { Name = "Total", Type = LangType.Scalar(ScalarType.Decimal) };
+        var orderCustomerMap = new PropertyMap { Property = orderCustomer, ColumnName = "CustomerID" };
+        var orderCompanyMap = new PropertyMap { Property = orderCompany, ColumnName = "CompanyID" };
+
+        var orders = new EntityMap
+        {
+            Entity = new Entity { Name = "Order", Properties = [orderCompany, orderCustomer, total] },
+            Table = "Orders",
+            Schema = "Sales",
+            PropertyMaps = [orderCompanyMap, orderCustomerMap, new PropertyMap { Property = total, ColumnName = "Total" }],
+        };
+
+        List<ColumnPair> pairs = [];
+        if (withPairs)
+        {
+            if (composite)
+            {
+                pairs.Add(new ColumnPair { Source = orderCompanyMap, Target = customerCompanyMap });
+            }
+
+            pairs.Add(new ColumnPair { Source = orderCustomerMap, Target = customerKeyMap });
+        }
+
+        orders.Relations.Add(new Relation
+        {
+            Cardinality = Cardinality.ManyToOne,
+            Role = RelationRole.Owning,
+            SourceEntity = "Order",
+            TargetEntity = "Customer",
+            SourceNavigationProperty = "Customer",
+            ColumnPairs = pairs,
+        });
+
+        customers.Relations.Add(new Relation
+        {
+            Cardinality = Cardinality.OneToMany,
+            Role = RelationRole.Inverse,
+            SourceEntity = "Customer",
+            TargetEntity = "Order",
+            SourceNavigationProperty = "Orders",
+            ColumnPairs = pairs,
+        });
+
+        return (orders, customers);
+    }
+
+    private static string Hql(AbstractQueryBuilder builder)
+    {
+        var artifacts = builder.Build();
+
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        return artifacts.Single(s => s.ContentType == ConversionContentType.HqlQuery).Content;
+    }
+
+    [Fact]
+    public void AnOwningAssociationPathJoinDerivesItsConditionFromTheRelation()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Order o join o.Customer c where c.CustomerName = 'Alice'", orders, customers);
+
+        // Rule Q7: FK(left) = PK(right), with the foreign key on the entity behind the path
+        // because the relation is the owning one; the builder writes it as the entity join
+        // it always writes, which returns the same rows (decision 065).
+        var hql = Hql(builder);
+
+        Assert.Contains("inner join Customer c with o.CustomerID = c.CustomerID", hql);
+        Assert.Contains("where c.CustomerName = 'Alice'", hql);
+    }
+
+    [Fact]
+    public void AnInverseAssociationPathJoinPutsTheForeignKeyOnTheJoinedEntity()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Customer c left join c.Orders o where o.Total > 100", orders, customers);
+
+        var hql = Hql(builder);
+
+        Assert.Contains("left join Order o with o.CustomerID = c.CustomerID", hql);
+    }
+
+    [Fact]
+    public void ACompositeKeyPathJoinsOverEveryPairInTheirOrder()
+    {
+        var (orders, customers) = Linked(composite: true);
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Order o join o.Customer c", orders, customers);
+
+        var hql = Hql(builder);
+
+        Assert.Matches(@"o\.CompanyID = c\.CompanyID and o\.CustomerID = c\.CustomerID", hql);
+    }
+
+    [Fact]
+    public void AWrittenWithConditionJoinsTheDerivedConjunction()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Order o join o.Customer c with c.CustomerName = 'Alice'", orders, customers);
+
+        var hql = Hql(builder);
+
+        Assert.Matches(@"o\.CustomerID = c\.CustomerID and c\.CustomerName = 'Alice'", hql);
+    }
+
+    [Fact]
+    public void AnAssociationPathJoinWithoutAnAliasTakesTheAttributeName()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Order o join fetch o.Customer", orders, customers);
+
+        var hql = Hql(builder);
+
+        Assert.Contains("with o.CustomerID = Customer.CustomerID", hql);
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("fetch"));
+    }
+
+    [Fact]
+    public void AnAssociationPathJoinReachesSqlAsAnOrdinaryJoin()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new DapperSqlQueryBuilder(), "from Order o join o.Customer c where c.CustomerName = 'Alice'", orders, customers);
+
+        var sql = builder.Build().Single(s => s.ContentType == ConversionContentType.SqlQuery).Content;
+
+        Assert.Contains("INNER JOIN Sales.Customers c ON o.CustomerID = c.CustomerID", sql);
+    }
+
+    [Theory]
+    [InlineData("from Order o join o.Customer c", false, "the mapping of the entity behind 'o'")]
+    [InlineData("from Order o join o.Shipper s", true, "names no association")]
+    [InlineData("from Order o join o.Customer.Region r", true, "crosses more than one association")]
+    public void AnAssociationPathTheMapsDoNotResolveRefusesByName(string hql, bool withMaps, string reason)
+    {
+        var (orders, customers) = Linked();
+        var builder = withMaps
+            ? Parse(new NHibernateHqlQueryBuilder(), hql, orders, customers)
+            : Parse(new NHibernateHqlQueryBuilder(), hql);
+
+        // Nothing is guessed (decision 067) and a query without its join would return
+        // different rows (decision 070): no artifact, and the record names the path and
+        // what is missing.
         Assert.Empty(builder.Build());
         Assert.Contains(
             builder.Records,
-            r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("association path"));
+            r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("o.") && r.Reason.Contains(reason));
+    }
+
+    [Fact]
+    public void AnAssociationPathWithoutResolvedColumnsRefusesRatherThanGuesses()
+    {
+        var (orders, customers) = Linked(withPairs: false);
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Order o join o.Customer c", orders, customers);
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(
+            builder.Records,
+            r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("no foreign key columns"));
+    }
+
+    [Fact]
+    public void AnAssociationPathAcrossAManyToManyRefuses()
+    {
+        var (orders, customers) = Linked();
+        customers.Relations.Add(new Relation
+        {
+            Cardinality = Cardinality.ManyToMany,
+            Role = RelationRole.Inverse,
+            SourceEntity = "Customer",
+            TargetEntity = "Order",
+            SourceNavigationProperty = "Favourites",
+        });
+
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Customer c join c.Favourites f", orders, customers);
+
+        // Two joins over the junction entity of decision 005 and an alias nobody wrote: a
+        // stated limit of decision 101, refused by name.
+        Assert.Empty(builder.Build());
+        Assert.Contains(
+            builder.Records,
+            r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("many-to-many"));
     }
 
     [Fact]

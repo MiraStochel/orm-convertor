@@ -1,4 +1,4 @@
-# Rozhodnutí
+﻿# Rozhodnutí
 
 Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vznikne nové rozhodnutí a to původní dostane stav `nahrazeno NNN` — původní úvaha včetně toho, proč tehdy dávala smysl, zůstává čitelná. Doplnění případu, na který se při psaní nemyslelo, je něco jiného: to se opraví na místě se stavem `revidováno`.
 
@@ -105,6 +105,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [098](098-the-number-is-decided-once-per-release.md) | Číslo verze se rozhoduje jednou za vydání, ne u každé změny | 2026-09-22 | platí | S2, S6 |
 | [099](099-examples-are-content-not-a-choice.md) | Příklady výkladové stránky jsou její obsah, ne volba; ostatní podoba obrazovek zůstává | 2026-09-22 | nahrazeno 100 | F7–F11, F14, S6, S7 |
 | [100](100-interactive-comparison-as-a-frozen-mockup.md) | Interaktivní srovnání je maketa nad zmrazeným během; pátý dokument frontendu | 2026-09-23 | platí | F11, F14, S7 |
+| [101](101-a-join-along-an-association-path-is-derived-from-the-relation.md) | Join po asociační cestě se odvozuje ze vztahu mezireprezentace; bez sloupců se odmítá jmenovitě | 2026-09-29 | platí | F7, F8, F9, F11, T1, T2 |
 
 ## Formát
 

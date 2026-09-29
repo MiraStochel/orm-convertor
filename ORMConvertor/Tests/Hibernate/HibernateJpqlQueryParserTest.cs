@@ -269,13 +269,126 @@ public class HibernateJpqlQueryParserTest
             where c.CustomerName in :names
             """, Customers());
 
-    [Fact]
-    public void AnAssociationJoinRefuses()
+    /* ---- a join along an association path is derived from the relation (decision 101) ---- */
+
+    /// <summary>
+    /// Orders and customers linked by one relation seen from both sides, sharing the
+    /// column pairs the way the resolution phase leaves them; without pairs it is what a
+    /// source without @JoinColumn yields when no catalog was there.
+    /// </summary>
+    private static (EntityMap Orders, EntityMap Customers) Linked(bool withPairs = true)
     {
+        var customerKey = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int) };
+        var name = new Property { Name = "CustomerName", Type = LangType.Scalar(ScalarType.String) };
+        var customerKeyMap = new PropertyMap { Property = customerKey, ColumnName = "CustomerID" };
+
+        var customers = new EntityMap
+        {
+            Entity = new Entity { Name = "Customer", Properties = [customerKey, name] },
+            Table = "Customers",
+            Schema = "Sales",
+            PropertyMaps = [customerKeyMap, new PropertyMap { Property = name, ColumnName = "CustomerName" }],
+        };
+
+        var orderCustomer = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int) };
+        var total = new Property { Name = "Total", Type = LangType.Scalar(ScalarType.Decimal) };
+        var orderCustomerMap = new PropertyMap { Property = orderCustomer, ColumnName = "CustomerID" };
+
+        var orders = new EntityMap
+        {
+            Entity = new Entity { Name = "Order", Properties = [orderCustomer, total] },
+            Table = "Orders",
+            Schema = "Sales",
+            PropertyMaps = [orderCustomerMap, new PropertyMap { Property = total, ColumnName = "Total" }],
+        };
+
+        List<ColumnPair> pairs = withPairs ? [new ColumnPair { Source = orderCustomerMap, Target = customerKeyMap }] : [];
+
+        orders.Relations.Add(new Relation
+        {
+            Cardinality = Cardinality.ManyToOne,
+            Role = RelationRole.Owning,
+            SourceEntity = "Order",
+            TargetEntity = "Customer",
+            SourceNavigationProperty = "customer",
+            ColumnPairs = pairs,
+        });
+
+        customers.Relations.Add(new Relation
+        {
+            Cardinality = Cardinality.OneToMany,
+            Role = RelationRole.Inverse,
+            SourceEntity = "Customer",
+            TargetEntity = "Order",
+            SourceNavigationProperty = "orders",
+            ColumnPairs = pairs,
+        });
+
+        return (orders, customers);
+    }
+
+    [Fact]
+    public void AnOwningAssociationPathJoinDerivesItsConditionFromTheRelation()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o join o.customer c where c.CustomerName = 'Alice'", orders, customers);
+
+        // Rule Q7: FK(left) = PK(right). The path is the shape JPQL writes a join in; the
+        // builder writes back the entity join both implementations read, which returns the
+        // same rows (decision 065).
+        var artifacts = builder.Build();
+
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        var jpql = artifacts.Single(s => s.ContentType == ConversionContentType.JpqlQuery).Content;
+        Assert.Contains("join Customer c on o.CustomerID = c.CustomerID", jpql);
+    }
+
+    [Fact]
+    public void AnInverseAssociationPathJoinPutsTheForeignKeyOnTheJoinedEntity()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select c from Customer c join c.orders o where o.Total > 100", orders, customers);
+
+        var artifacts = builder.Build();
+
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        var jpql = artifacts.Single(s => s.ContentType == ConversionContentType.JpqlQuery).Content;
+        Assert.Contains("join Order o on o.CustomerID = c.CustomerID", jpql);
+    }
+
+    [Fact]
+    public void AWrittenOnConditionJoinsTheDerivedConjunction()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o join o.customer c on c.CustomerName = 'Alice'", orders, customers);
+
+        var artifacts = builder.Build();
+
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        var jpql = artifacts.Single(s => s.ContentType == ConversionContentType.JpqlQuery).Content;
+        Assert.Contains("join Customer c on (o.CustomerID = c.CustomerID and c.CustomerName = 'Alice')", jpql);
+    }
+
+    [Fact]
+    public void AnAssociationPathWithoutARelationRefusesByName()
+    {
+        // The fixtures of this class declare no relation, so the path names nothing.
         var builder = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o join o.customer c where c.CreditLimit > 1", Orders(), Customers());
 
         Assert.Empty(builder.Build());
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("o.customer"));
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("o.customer") && r.Reason.Contains("names no association"));
+    }
+
+    [Fact]
+    public void AnAssociationPathWithoutResolvedColumnsRefusesRatherThanGuesses()
+    {
+        var (orders, customers) = Linked(withPairs: false);
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o join o.customer c", orders, customers);
+
+        // The JPA default join column is the entity parser's to state (decision 067), not
+        // the query reader's to guess.
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("no foreign key columns"));
     }
 
     [Fact]
