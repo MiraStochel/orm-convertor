@@ -157,8 +157,9 @@ public abstract class AbstractQueryBuilder
     /// <summary>
     /// The name the source gave this query, verbatim (decision 081): the name attribute of
     /// an hbm.xml &lt;query&gt;, of a @NamedQuery, the id of a MyBatis &lt;select&gt;. A bare SQL
-    /// unit names nothing, and when it carries several SELECTs, each gets its position in
-    /// the text - Query01, Query02 (decision 108, <c>QueryMethodNaming.Positional</c>) -
+    /// unit names nothing, and neither does a unit of code - a Dapper call, a createQuery, a
+    /// LINQ chain -, so when such a unit carries several queries, each gets its position in
+    /// the text - Query01, Query02 (decisions 108 and 109, <c>QueryMethodNaming.Positional</c>) -
     /// because that is the only name under which the user finds it among the output. Null
     /// for a query that shares its unit with no other, which needs no name to be told from a
     /// neighbour. Set by the parser that read the query; the orchestration copies it into

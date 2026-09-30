@@ -2,6 +2,7 @@ using System.Text;
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Naming;
 using JavaEntityParsing;
 using Model;
 using Model.AbstractRepresentation;
@@ -75,20 +76,71 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     public bool CanParse(ConversionContentType contentType)
         => contentType is ConversionContentType.JpqlQuery or ConversionContentType.JavaQuery;
 
+    /// <summary>
+    /// A bare JPQL unit is one query. A Java unit carries a query for every createQuery and
+    /// createSelectionQuery call in it, not for the first one alone (decision 109): each call
+    /// makes a query object of its own and is read into a builder of its own, so a call whose
+    /// query is composed at run time refuses itself alone. Queries of one unit are numbered by
+    /// the position of their call in the text, since the calls name nothing.
+    /// </summary>
     public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
-        queryBuilder = queryBuilders();
         maps = entityMaps;
-        aliases = new Dictionary<string, EntityMap?>(StringComparer.OrdinalIgnoreCase);
 
-        // The builder leaves on every path, refused ones included: it holds the records of
-        // what went wrong, and only the parser can say that this unit yielded a query at all
-        // (decision 081).
-        var jpql = contentType == ConversionContentType.JavaQuery ? ExtractQueryLiteral(source) : source;
-        if (jpql is null)
+        // Every builder leaves, refused ones included: it holds the records of what went
+        // wrong, and only the parser can say that this unit yielded a query at all (decision
+        // 081).
+        if (contentType != ConversionContentType.JavaQuery)
         {
+            queryBuilder = queryBuilders();
+            ReadQuery(source);
             return [queryBuilder];
         }
+
+        var calls = ExtractQueryLiterals(source, out var refusal);
+
+        if (refusal is { } unread)
+        {
+            queryBuilder = queryBuilders();
+            Report(unread.Kind, unread.Reason);
+            return [queryBuilder];
+        }
+
+        var builders = new List<AbstractQueryBuilder>(calls.Count);
+
+        for (var i = 0; i < calls.Count; i++)
+        {
+            queryBuilder = queryBuilders();
+
+            // Given before the reading, to every call, so that a refused query does not
+            // renumber its neighbours (decisions 108 and 109); a single query keeps the fixed
+            // name.
+            if (calls.Count > 1)
+            {
+                queryBuilder.QueryName = QueryMethodNaming.Positional(i + 1);
+            }
+
+            if (calls[i] is { } jpql)
+            {
+                ReadQuery(jpql);
+            }
+            else
+            {
+                Report(ConversionRecordKind.Incompleteness,
+                    "The query handed to createQuery is not a string literal - it is composed at run time - so the parser has nothing to read.");
+            }
+
+            builders.Add(queryBuilder);
+        }
+
+        return builders;
+    }
+
+    /// <summary>One query of JPQL into the builder of the moment, with the state of the previous one cleared.</summary>
+    private void ReadQuery(string jpql)
+    {
+        aliases = new Dictionary<string, EntityMap?>(StringComparer.OrdinalIgnoreCase);
+        unread = null;
 
         queryBuilder.Push();
         try
@@ -129,18 +181,20 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         queryBuilder.Pop();
-
-        return [queryBuilder];
     }
 
     /// <summary>
-    /// The JPQL inside a Java method: the first string literal handed to createQuery or
-    /// createSelectionQuery, whether a plain literal or a text block. A query composed at
-    /// run time - concatenation, a variable - is the same case the Dapper parser reports for
-    /// SQL that is not a literal (decision 026): an incompleteness, and nothing to read.
+    /// The JPQL inside a Java unit: for every createQuery or createSelectionQuery call, in the
+    /// order of the text, the string literal it is handed, whether a plain literal or a text
+    /// block (decision 109). A query composed at run time - concatenation, a variable - is null
+    /// in the list: the same case the Dapper parser reports for SQL that is not a literal
+    /// (decision 026), an incompleteness of that query and nothing to read. The refusal is
+    /// set, and the list empty, where the unit as a whole yields no query to read.
     /// </summary>
-    private string? ExtractQueryLiteral(string source)
+    private static List<string?> ExtractQueryLiterals(string source, out (ConversionRecordKind Kind, string Reason)? refusal)
     {
+        refusal = null;
+
         List<JavaToken> javaTokens;
         try
         {
@@ -148,10 +202,12 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
         catch (JavaSyntaxError error)
         {
-            Report(ConversionRecordKind.Failure,
+            refusal = (ConversionRecordKind.Failure,
                 $"The Java source could not be read at line {error.Line}, column {error.Column}: {error.Message}.");
-            return null;
+            return [];
         }
+
+        var calls = new List<string?>();
 
         for (var i = 0; i + 2 < javaTokens.Count; i++)
         {
@@ -159,21 +215,20 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 && javaTokens[i].Text is "createQuery" or "createSelectionQuery"
                 && javaTokens[i + 1] is { Kind: JavaTokenKind.Symbol, Text: "(" })
             {
-                if (javaTokens[i + 2].Kind == JavaTokenKind.String
-                    && !(javaTokens[i + 3] is { Kind: JavaTokenKind.Symbol, Text: "+" }))
-                {
-                    return javaTokens[i + 2].Text;
-                }
-
-                Report(ConversionRecordKind.Incompleteness,
-                    "The query handed to createQuery is not a string literal - it is composed at run time - so the parser has nothing to read.");
-                return null;
+                calls.Add(javaTokens[i + 2].Kind == JavaTokenKind.String
+                    && !(javaTokens[i + 3] is { Kind: JavaTokenKind.Symbol, Text: "+" })
+                        ? javaTokens[i + 2].Text
+                        : null);
             }
         }
 
-        Report(ConversionRecordKind.Incompleteness,
-            "The Java source calls neither createQuery nor createSelectionQuery with a literal, so no JPQL was found to read.");
-        return null;
+        if (calls.Count == 0)
+        {
+            refusal = (ConversionRecordKind.Incompleteness,
+                "The Java source calls neither createQuery nor createSelectionQuery with a literal, so no JPQL was found to read.");
+        }
+
+        return calls;
     }
 
     /* ---- lexer ---------------------------------------------------------------------- */

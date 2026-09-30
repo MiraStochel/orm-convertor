@@ -9,8 +9,9 @@ namespace Common.Naming;
 /// target's language decides how that name is spelled: PascalCase for the .NET targets,
 /// camelCase for the Java ones. A query the source did not name keeps the fixed fallback,
 /// which can never collide with itself: a unit carrying more than one query is either the
-/// unit whose queries the source named, or a bare SQL unit whose queries are numbered by
-/// their position in the text (decision 108) - <see cref="Positional"/>, spelled by the
+/// unit whose queries the source named, or a unit whose queries are numbered by their
+/// position in the text - the SELECTs of a bare SQL unit (decision 108), the calls and
+/// chains of a unit of code (decision 109) - <see cref="Positional"/>, spelled by the
 /// target like any other name, Query01 and query01.
 ///
 /// Lives in Common for the same reason <see cref="EntityTableNaming"/> does: every builder
@@ -19,7 +20,7 @@ namespace Common.Naming;
 public static class QueryMethodNaming
 {
     /// <summary>
-    /// The name of an unnamed query that shares its unit with others (decision 108): the
+    /// The name of an unnamed query that shares its unit with others (decisions 108 and 109): the
     /// fixed fallback with the query's 1-based position in the text, in two digits so that
     /// ordering by name gives the order of the text up to ninety-nine queries. Beyond that
     /// the number simply grows a digit - the name stays unique and only the ordering stops

@@ -28,21 +28,46 @@ namespace DapperWrappers;
 ///
 /// The two routes differ in one more fact, and it is Dapper's to state (decision 108). A
 /// bare SQL unit is a script, whose every SELECT is a query of its own with a builder of its
-/// own, numbered by its position when there are several; the literal of a Dapper call is one
-/// command, of which Query&lt;T&gt; maps the first result set alone, so a second SELECT in it
-/// is refused.
+/// own; the literal of a Dapper call is one command, of which Query&lt;T&gt; maps the first
+/// result set alone, so a second SELECT in it is refused - except in QueryMultiple, which
+/// maps every result set of its text and so hands over a script as much as a bare unit does.
+///
+/// A C# unit carries a query for every Dapper call in it, not for the first one alone
+/// (decision 109): each call is one exchange with the server, read into a builder of its
+/// own, and which calls those are is Dapper's API as a whole - Execute and ExecuteReader as
+/// much as Query - rather than the part of it whose text the tool can translate. A call whose
+/// text states a write is refused by name, the way the same statement in a bare unit is.
+/// Queries of one unit that the source did not name are numbered by their position in the
+/// text, the calls and the SELECTs of a script alike.
 /// </summary>
 public class DapperSqlQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
     SourceSqlDialect? declaredSourceDialect = null) : IQueryParser
 {
-    private static readonly string[] DapperMethods =
-    [
+    /// <summary>
+    /// The extension methods of Dapper's SqlMapper that send SQL to the server (decision 109):
+    /// every one of them is a place where the source hands over a query, whether its text
+    /// reads, writes, or returns several result sets.
+    /// </summary>
+    private static readonly HashSet<string> DapperMethods = new(StringComparer.Ordinal)
+    {
         "Query", "QueryAsync",
         "QueryFirst", "QueryFirstAsync", "QueryFirstOrDefault", "QueryFirstOrDefaultAsync",
         "QuerySingle", "QuerySingleAsync", "QuerySingleOrDefault", "QuerySingleOrDefaultAsync",
+        "QueryMultiple", "QueryMultipleAsync", "QueryUnbufferedAsync",
+        "Execute", "ExecuteAsync",
         "ExecuteScalar", "ExecuteScalarAsync",
-    ];
+        "ExecuteReader", "ExecuteReaderAsync",
+    };
+
+    /// <summary>
+    /// The methods that map every result set of their text (README of Dapper, "Multiple
+    /// Results"): their text is a script whose every SELECT is a query, like a bare unit.
+    /// </summary>
+    private static readonly HashSet<string> ScriptMethods = new(StringComparer.Ordinal)
+    {
+        "QueryMultiple", "QueryMultipleAsync",
+    };
 
     /// <summary>
     /// The limits this parser reads its input under (decision 092). The orchestration sets
@@ -62,100 +87,119 @@ public class DapperSqlQueryParser(
     /// </summary>
     public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
-        // The unit's first builder, fresh from the factory the orchestration supplied
-        // (decision 081): the parser may not make one itself - a builder belongs to the target
-        // framework and this parser to the source (S1). It carries whatever refuses the text
-        // as a whole, and it leaves on every path, refused ones included: it holds the records
-        // of what went wrong, and only the parser can say that this unit yielded a query at all.
-        var first = queryBuilders();
-        var report = ChannelOf(first);
+        var handovers = contentType == ConversionContentType.CSharpQuery
+            ? ExtractCalls(source)
+            : [new Handover(source, IsScript: true, Refusal: null)];
 
-        var sql = contentType == ConversionContentType.CSharpQuery ? ExtractSql(source, report) : source;
-        if (sql is null)
+        // Every query of the unit, each with a builder fresh from the factory the
+        // orchestration supplied (decision 081): the parser may not make one itself - a
+        // builder belongs to the target framework and this parser to the source (S1). A
+        // handover refused as a whole is one query holding the records of what went wrong,
+        // and it leaves with the rest: only the parser can say that this unit yielded a query.
+        var queries = new List<(AbstractQueryBuilder Builder, SqlSelect? Select, IReadOnlyDictionary<string, SqlParameterFacts>? Facts)>();
+
+        foreach (var handover in handovers)
         {
-            return [first];
+            var builder = queryBuilders();
+            var report = ChannelOf(builder);
+
+            if (handover.Refusal is { } refusal)
+            {
+                report(refusal.Kind, refusal.Reason, null);
+                queries.Add((builder, null, null));
+                continue;
+            }
+
+            // Dapper's own spelling of a list parameter, IN @ids, is not T-SQL; it is rewritten
+            // to the form the grammar reads and the fact that the parameter binds a list travels
+            // beside the text (decision 106), the way the MyBatis wrapper carries a <foreach>.
+            var text = DapperCollectionParameters.PeelOff(handover.Sql!, report, out var statedParameters);
+            var selects = text is null
+                ? null
+                : SqlText.Selects(text, report, declaredSourceDialect, Limits, handover.IsScript);
+
+            if (selects is null)
+            {
+                queries.Add((builder, null, null));
+                continue;
+            }
+
+            for (var i = 0; i < selects.Count; i++)
+            {
+                queries.Add((i == 0 ? builder : queryBuilders(), selects[i], statedParameters));
+            }
         }
 
-        // Dapper's own spelling of a list parameter, IN @ids, is not T-SQL; it is rewritten to
-        // the form the grammar reads and the fact that the parameter binds a list travels
-        // beside the text (decision 106), the way the MyBatis wrapper carries a <foreach>.
-        var text = DapperCollectionParameters.PeelOff(sql, report, out var statedParameters);
-        if (text is null)
-        {
-            return [first];
-        }
-
-        var selects = SqlText.Selects(
-            text,
-            report,
-            declaredSourceDialect,
-            Limits,
-            isScript: contentType == ConversionContentType.SqlQuery);
-
-        if (selects is null)
-        {
-            return [first];
-        }
-
-        // One query, one fresh builder and one reader (decision 081), so a SELECT the reading
-        // refuses refuses itself alone. The number is given before the reading, to every
-        // SELECT of the text, so that a refused query does not renumber its neighbours - and a
-        // later version that reads it does not either (decision 108). A single SELECT keeps
+        // One query, one fresh builder and one reader (decision 081), so a query the reading
+        // refuses refuses itself alone. The number is given before the reading, to every query
+        // of the unit, so that a refused query does not renumber its neighbours - and a later
+        // version that reads it does not either (decisions 108 and 109). A single query keeps
         // the fixed name, as there is nothing to tell it from.
-        var builders = new List<AbstractQueryBuilder>(selects.Count);
-
-        for (var i = 0; i < selects.Count; i++)
+        for (var i = 0; i < queries.Count; i++)
         {
-            var builder = i == 0 ? first : queryBuilders();
+            var (builder, select, facts) = queries[i];
 
-            if (selects.Count > 1)
+            if (queries.Count > 1)
             {
                 builder.QueryName = QueryMethodNaming.Positional(i + 1);
             }
 
-            new SqlQueryReader(builder, ChannelOf(builder), declaredSourceDialect, statedParameters, Limits).Read(selects[i]);
-            builders.Add(builder);
+            if (select is not null)
+            {
+                new SqlQueryReader(builder, ChannelOf(builder), declaredSourceDialect, facts!, Limits).Read(select);
+            }
         }
 
-        return builders;
+        return [.. queries.Select(query => query.Builder)];
     }
 
     /// <summary>
-    /// Pulls the SQL out of a Dapper call. The literal is read through the token's value, so
-    /// verbatim strings, raw string literals and escapes have already been resolved by
-    /// Roslyn rather than being unwound by hand.
+    /// A place where the source hands Dapper a text: the SQL with whether it is a script, or
+    /// the reason it could not be taken, for the query it is to report on.
     /// </summary>
-    private static string? ExtractSql(string source, Action<ConversionRecordKind, string, QueryFeature?> report)
+    private sealed record Handover(string? Sql, bool IsScript, (ConversionRecordKind Kind, string Reason)? Refusal);
+
+    /// <summary>
+    /// Every Dapper call of the unit, in the order of the text (decision 109). The SQL is the
+    /// argument named sql, or else the first positional one - the place every SqlMapper method
+    /// takes it -, and it is read through the token's value, so verbatim strings, raw string
+    /// literals and escapes have already been resolved by Roslyn rather than being unwound by
+    /// hand. A call with no argument at all is ADO.NET's own ExecuteReader or ExecuteScalar on
+    /// a command, not Dapper's, which always takes the SQL.
+    /// </summary>
+    private static List<Handover> ExtractCalls(string source)
     {
         var tree = CSharpSyntaxTree.ParseText("public class Snippet\n{\n" + source + "\n}\n");
         var root = tree.GetCompilationUnitRoot();
+        var handovers = new List<Handover>();
 
         foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
             if (invocation.Expression is not MemberAccessExpressionSyntax member
-                || !DapperMethods.Contains(member.Name.Identifier.Text))
+                || !DapperMethods.Contains(member.Name.Identifier.Text)
+                || invocation.ArgumentList.Arguments.Count == 0)
             {
                 continue;
             }
 
-            foreach (var argument in invocation.ArgumentList.Arguments)
-            {
-                if (argument.Expression is LiteralExpressionSyntax literal
-                    && literal.RawKind == (int)SyntaxKind.StringLiteralExpression)
-                {
-                    return literal.Token.ValueText;
-                }
-            }
+            var arguments = invocation.ArgumentList.Arguments;
+            var sql = arguments.FirstOrDefault(argument => argument.NameColon?.Name.Identifier.Text == "sql")
+                ?? arguments.FirstOrDefault(argument => argument.NameColon is null);
 
-            report(
-                ConversionRecordKind.Incompleteness,
-                "The Dapper call does not pass the SQL as a string literal, so the query could not be read.",
-                null);
-            return null;
+            handovers.Add(sql?.Expression is LiteralExpressionSyntax literal
+                && literal.RawKind == (int)SyntaxKind.StringLiteralExpression
+                    ? new Handover(literal.Token.ValueText, ScriptMethods.Contains(member.Name.Identifier.Text), null)
+                    : new Handover(null, false, (
+                        ConversionRecordKind.Incompleteness,
+                        "The Dapper call does not pass the SQL as a string literal, so the query could not be read.")));
         }
 
-        report(ConversionRecordKind.Failure, "No Dapper query call was found in the source.", null);
-        return null;
+        if (handovers.Count == 0)
+        {
+            handovers.Add(new Handover(null, false, (ConversionRecordKind.Failure, "No Dapper query call was found in the source.")));
+        }
+
+        return handovers;
     }
 
     /// <summary>

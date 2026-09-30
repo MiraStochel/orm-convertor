@@ -39,6 +39,17 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     protected AbstractQueryBuilder queryBuilder = default!;
 
     private IReadOnlyList<EntityMap>? entityMaps;
+
+    /// <summary>
+    /// The variables of the unit being read that hold a query (decision 109). Assigned at the
+    /// start of every Parse; empty until then, so a chain decomposed outside a Parse follows
+    /// nothing.
+    /// </summary>
+    private QueryVariables variables = new(SyntaxFactory.CompilationUnit(), _ => false);
+
+    /// <summary>The chains the variables on the way of the query being read held.</summary>
+    private readonly List<ExpressionSyntax> followed = [];
+
     private string sourceAlias = "t";
 
     /// <summary>
@@ -122,10 +133,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// (see CanParse), so there is nothing to branch on. It is in the signature because the
     /// unit declares its language and a parser reading two of them - the Dapper one, with
     /// SQL bare beside SQL wrapped in C# - has to be told which (decision 047).
+    ///
+    /// A unit carries a query for every chain over a query root in it, not for the first one
+    /// alone (decision 109), each read into a builder of its own, so a chain the reading
+    /// refuses refuses itself alone. Queries of one unit are numbered by the position of their
+    /// chain in the text, since a chain names nothing.
     /// </summary>
     public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? maps = null)
     {
-        queryBuilder = queryBuilders();
         entityMaps = maps;
 
         // Before Roslyn, and over the source as the caller wrote it rather than the wrapped
@@ -134,6 +149,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         // cap sits an order of magnitude below where the stack gives out.
         if (NestingDepthGuard.FirstBeyond(Tracked(source), Limits) is { } tooDeep)
         {
+            queryBuilder = queryBuilders();
             queryBuilder.Push();
             Report(ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep, Limits));
             queryBuilder.Pop();
@@ -149,36 +165,44 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         var rewriter = new QueryExpressionRewriter(root);
         root = rewriter.Visit(root)!;
 
-        // Outer nodes come before inner ones in document order, so the first invocation that
-        // decomposes to a query root is the outermost link of the chain. A root appearing
-        // inside a Join argument therefore cannot be mistaken for the query's own.
-        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
-        {
-            if (TryDecompose(invocation, out var queryRoot, out var steps))
-            {
-                EmitChain(queryRoot!, steps);
-                ReportRefusedClauses(rewriter);
-                return [queryBuilder];
-            }
-        }
-
-        queryBuilder.Push();
-
-        // A query expression the rewrite stopped in has its reason already; saying that no
-        // chain was found on top of it would name the wrong cause.
-        if (rewriter.Refusals.Count == 0)
-        {
-            Report(
-                ConversionRecordKind.Failure,
-                "No LINQ query chain was found in the source; nothing was translated.");
-        }
-
-        ReportRefusedClauses(rewriter);
-        queryBuilder.Pop();
+        variables = new QueryVariables(root, expression => TryDecompose(expression, out _, out _));
+        var queries = FindQueries(root, rewriter);
 
         // The builder leaves even when it was refused: it holds the records of what went
         // wrong, and only the parser can say that this unit yielded a query (decision 081).
-        return [queryBuilder];
+        if (queries.Count == 0)
+        {
+            queryBuilder = queryBuilders();
+            queryBuilder.Push();
+            Report(
+                ConversionRecordKind.Failure,
+                "No LINQ query chain was found in the source; nothing was translated.");
+            queryBuilder.Pop();
+
+            return [queryBuilder];
+        }
+
+        var builders = new List<AbstractQueryBuilder>(queries.Count);
+
+        for (var i = 0; i < queries.Count; i++)
+        {
+            queryBuilder = queryBuilders();
+            unread = null;
+            followed.Clear();
+
+            // Given before the reading, to every query, so that a refused one does not
+            // renumber its neighbours (decisions 108 and 109); a single query keeps the fixed
+            // name.
+            if (queries.Count > 1)
+            {
+                queryBuilder.QueryName = QueryMethodNaming.Positional(i + 1);
+            }
+
+            ReadQuery(root, queries[i], rewriter);
+            builders.Add(queryBuilder);
+        }
+
+        return builders;
     }
 
     /// <summary>
@@ -243,12 +267,146 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         source +
         "\n}\n";
 
-    private void ReportRefusedClauses(QueryExpressionRewriter rewriter)
+    /// <summary>
+    /// One query of the unit (decision 109): a chain over a query root, a chain whose query
+    /// the code composes at run time and which is refused naming the variable, or a query
+    /// expression the rewrite refused before it became a chain over a root.
+    /// </summary>
+    private sealed record QueryPlace(int Position, InvocationExpressionSyntax? Chain, string? ComposedIn);
+
+    /// <summary>
+    /// The queries of the unit in the order of the text. Outer nodes come before inner ones in
+    /// document order, so the first invocation of a chain that decomposes to a query root is
+    /// its outermost link, and everything inside it - the inner links, a subquery in a lambda,
+    /// a root inside a Join argument - is part of that query, not one of its own. A chain the
+    /// code keeps in a variable it only continues is the beginning of the queries that continue
+    /// it, not a query (<see cref="QueryVariables"/>).
+    ///
+    /// Reading every chain rather than the first makes one more line necessary. The root of
+    /// EF Core is recognized by its position - <c>x.Customers</c> is a DbSet on whatever x is
+    /// (decision 026) - and while the first chain alone was read, the first chain was the
+    /// query. Code around it may walk the rows it loaded, though, and <c>o.Lines.Sum(…)</c> on
+    /// an element is the same shape: so a root that is a member of an element - of a lambda
+    /// parameter or a foreach variable - is a navigation over objects in memory, not a query.
+    /// A root that is a call, <c>Set&lt;T&gt;()</c> or <c>Query&lt;T&gt;()</c>, names the
+    /// query API whatever it is called on and stays a root.
+    /// </summary>
+    private List<QueryPlace> FindQueries(SyntaxNode root, QueryExpressionRewriter rewriter)
     {
-        foreach (var (reason, feature) in rewriter.Refusals)
+        var queries = new List<QueryPlace>();
+        var taken = new List<TextSpan>();
+
+        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
-            Report(ConversionRecordKind.Failure, reason, feature);
+            if (taken.Any(span => span.Contains(invocation.Span))
+                || !TryDecompose(invocation, out _, out _, out var rootExpression)
+                || IsElementNavigation(rootExpression!))
+            {
+                continue;
+            }
+
+            taken.Add(invocation.Span);
+
+            var (kind, variable) = variables.StorageOf(invocation);
+            if (kind == QueryVariables.StorageKind.Prefix)
+            {
+                continue;
+            }
+
+            queries.Add(new QueryPlace(
+                invocation.SpanStart,
+                invocation,
+                kind == QueryVariables.StorageKind.RunTime ? variable : null));
         }
+
+        // A query expression refused before it became a chain over a root - a let right after
+        // the from clause leaves the bare DbSet - is a query of the unit all the same, refused.
+        foreach (var (_, _, anchor) in rewriter.Refusals)
+        {
+            foreach (var node in root.GetAnnotatedNodes(anchor))
+            {
+                if (!taken.Any(span => span.Contains(node.Span)))
+                {
+                    queries.Add(new QueryPlace(node.SpanStart, null, null));
+                }
+            }
+        }
+
+        return [.. queries.OrderBy(query => query.Position)];
+    }
+
+    /// <summary>
+    /// Reads one query into the builder of the moment, and reports on it every clause the
+    /// rewrite refused within what the reading covered: the chain itself and every chain a
+    /// variable on its way held.
+    /// </summary>
+    private void ReadQuery(SyntaxNode root, QueryPlace query, QueryExpressionRewriter rewriter)
+    {
+        if (query.Chain is null)
+        {
+            queryBuilder.Push();
+            ReportRefusedClauses(root, rewriter, node => node.SpanStart == query.Position);
+            queryBuilder.Pop();
+            return;
+        }
+
+        if (query.ComposedIn is { } variable)
+        {
+            queryBuilder.Push();
+            Report(
+                ConversionRecordKind.Failure,
+                $"The query is kept in the variable '{variable}', which the code continues in another statement but whose value the text does not fix - it is assigned more than once or chosen by a condition - so the query that reaches the provider is composed at run time; no artifact was generated.");
+            ReportRefusedClauses(root, rewriter, node => query.Chain.Span.Contains(node.Span));
+            queryBuilder.Pop();
+            return;
+        }
+
+        TryDecompose(query.Chain, out var queryRoot, out var steps);
+        EmitChain(queryRoot!, steps);
+
+        var covered = followed.Prepend(query.Chain).ToList();
+        ReportRefusedClauses(root, rewriter, node => covered.Any(read => read.Span.Contains(node.Span)));
+    }
+
+    private void ReportRefusedClauses(SyntaxNode root, QueryExpressionRewriter rewriter, Func<SyntaxNode, bool> belongs)
+    {
+        foreach (var (reason, feature, anchor) in rewriter.Refusals)
+        {
+            if (root.GetAnnotatedNodes(anchor).Any(belongs))
+            {
+                Report(ConversionRecordKind.Failure, reason, feature);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether the root of a chain is a member of an element variable - a lambda parameter or a
+    /// foreach variable - rather than of the context: <c>o.Lines</c> on an order the code
+    /// loaded. Only a root written as a member access can be one; a root that is a call names
+    /// the query API.
+    /// </summary>
+    private static bool IsElementNavigation(ExpressionSyntax rootExpression)
+    {
+        if (rootExpression is not MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax head })
+        {
+            return false;
+        }
+
+        var name = head.Identifier.Text;
+
+        foreach (var ancestor in rootExpression.Ancestors())
+        {
+            switch (ancestor)
+            {
+                case SimpleLambdaExpressionSyntax lambda when lambda.Parameter.Identifier.Text == name:
+                case ParenthesizedLambdaExpressionSyntax parenthesized when parenthesized.ParameterList.Parameters.Any(p => p.Identifier.Text == name):
+                case AnonymousMethodExpressionSyntax anonymous when anonymous.ParameterList?.Parameters.Any(p => p.Identifier.Text == name) == true:
+                case ForEachStatementSyntax loop when loop.Identifier.Text == name && loop.Statement.Span.Contains(rootExpression.Span):
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -265,6 +423,20 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         ExpressionSyntax expression,
         out LinqQueryRoot? root,
         out List<ChainStep> steps)
+        => TryDecompose(expression, out root, out steps, out _);
+
+    /// <summary>
+    /// The chain from its root to its last link. A head that is a variable holding a query the
+    /// text fixes is read on from the chain the variable holds (decision 109): the provider gets
+    /// one tree composed of both, and the tool reads that tree, as it reads a query expression
+    /// as the chain the language rewrites it into (decision 103). What a variable held is kept
+    /// in <see cref="followed"/>, so that what was refused inside it is reported on this query.
+    /// </summary>
+    private bool TryDecompose(
+        ExpressionSyntax expression,
+        out LinqQueryRoot? root,
+        out List<ChainStep> steps,
+        out ExpressionSyntax? rootExpression)
     {
         steps = [];
         var current = expression;
@@ -274,6 +446,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             if (TryReadQueryRoot(current, out root))
             {
                 steps.Reverse();
+                rootExpression = current;
                 return true;
             }
 
@@ -293,7 +466,15 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
+            if (current is IdentifierNameSyntax head && variables.TryFollow(head, out var held))
+            {
+                followed.Add(held!);
+                current = held!;
+                continue;
+            }
+
             root = null;
+            rootExpression = null;
             return false;
         }
     }

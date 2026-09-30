@@ -34,8 +34,12 @@ internal sealed class QueryExpressionRewriter : CSharpSyntaxRewriter
     private readonly HashSet<string> used;
     private int fresh;
 
-    /// <summary>What the rewrite refused, for the parser to report on the unit.</summary>
-    public List<(string Reason, QueryFeature Feature)> Refusals { get; } = [];
+    /// <summary>
+    /// What the rewrite refused, for the parser to report. Each refusal is anchored on the
+    /// chain its query expression was rewritten into as far as the rewrite went, so that a
+    /// unit of several queries reports it on the query it belongs to (decision 109).
+    /// </summary>
+    public List<(string Reason, QueryFeature Feature, SyntaxAnnotation Anchor)> Refusals { get; } = [];
 
     /// <summary>Whether the tree held a query expression at all.</summary>
     public bool Rewrote { get; private set; }
@@ -59,7 +63,17 @@ internal sealed class QueryExpressionRewriter : CSharpSyntaxRewriter
         // an entity set are its entities already, so the cast adds nothing the parser reads.
         var from = visited.FromClause;
         var state = new Translation(from.Expression, from.Identifier.Text);
-        return TranslateBody(state, visited.Body);
+        var refusedBefore = Refusals.Count;
+        var chain = TranslateBody(state, visited.Body);
+
+        // Inner query expressions anchored their own refusals when they were visited, before
+        // the count was taken; what was added since is this expression's.
+        for (var i = refusedBefore; i < Refusals.Count; i++)
+        {
+            chain = chain.WithAdditionalAnnotations(Refusals[i].Anchor);
+        }
+
+        return chain;
     }
 
     private ExpressionSyntax TranslateBody(Translation state, QueryBodySyntax body)
@@ -133,7 +147,8 @@ internal sealed class QueryExpressionRewriter : CSharpSyntaxRewriter
                 case LetClauseSyntax let:
                     Refusals.Add((
                         $"The clause 'let {let.Identifier.Text} = {let.Expression}' introduces a computed range variable, which the query representation has no place for; no artifact was generated.",
-                        QueryFeature.Projection));
+                        QueryFeature.Projection,
+                        new SyntaxAnnotation(nameof(QueryExpressionRewriter))));
                     return state.Chain;
             }
         }

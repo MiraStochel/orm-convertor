@@ -19,8 +19,10 @@ namespace TransactSql;
 /// statements run in order and whose every SELECT returns a result set of its own, so every
 /// SELECT is a query of its own. A text handed to a construct of a host framework - a Dapper
 /// call, a MyBatis &lt;select&gt;, an NHibernate &lt;sql-query&gt; - is one command mapping
-/// one result, and a second SELECT in it is refused as before. Which of the two a text is,
-/// is a fact of the source framework, so the wrapper states it (S1).
+/// one result, and a second SELECT in it is refused as before, unless the construct maps
+/// every result set of its text, as Dapper's QueryMultiple does, which makes the text a
+/// script again (decision 109). Which of the two a text is, is a fact of the source
+/// framework, so the wrapper states it (S1).
 /// </summary>
 public static class SqlText
 {

@@ -113,6 +113,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [106](106-a-bare-parameter-after-in-is-dappers-collection-parameter.md) | Holý parametr za `IN` je kolekční parametr Dapperu a wrapper ho odloupne před gramatikou | 2026-09-30 | platí | F10, F11, F13, T2, S1, S2 |
 | [107](107-an-expression-is-the-sixth-operand-shape-and-stands-wherever-an-operand-stands.md) | Výraz je šestý tvar operandu a stojí všude, kde stojí operand: uzavřený slovník funkcí, projekce i řazení nad operandem | 2026-09-30 | platí | F7–F10, F11, T1, T2, T3, S1, S2 |
 | [108](108-a-sql-unit-carries-a-query-per-select-numbered-by-position.md) | Holá jednotka SQL nese dotaz za každý `SELECT` a nepojmenované dotazy čísluje pořadím | 2026-09-30 | platí | F8, F11, F14, S1, S2, S7 |
+| [109](109-a-code-unit-carries-every-query-it-hands-over.md) | Dotazová jednotka v kódu nese každý dotaz, který předává frameworku, a dotaz složený přes proměnnou čte celý | 2026-09-30 | platí | F7, F8, F9, F10, F11, F14, S1, S2 |
 
 ## Formát
 
