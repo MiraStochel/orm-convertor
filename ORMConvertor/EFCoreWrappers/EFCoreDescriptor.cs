@@ -88,6 +88,11 @@ public static class EFCoreDescriptor
             [QueryFeature.Subquery] = FactSupport.Expressible,
             [QueryFeature.SetOperation] = FactSupport.Expressible,
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
+            [QueryFeature.Expression] = FactSupport.Expressible,
         },
+
+        // EF Core 10 translates every function of the expression vocabulary from the
+        // members of System.String and System.DateTime, Math.Abs and ?? (decision 107).
+        Functions = QueryFunctionVocabulary.All,
     };
 }

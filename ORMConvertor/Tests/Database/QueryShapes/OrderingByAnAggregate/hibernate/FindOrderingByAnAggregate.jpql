@@ -1,0 +1,1 @@
+select ol.ProductId as ProductId, count(ol) as Lines from ShopOrderLine ol group by ol.ProductId order by count(ol) desc, ol.ProductId asc

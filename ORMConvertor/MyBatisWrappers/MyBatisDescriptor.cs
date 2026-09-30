@@ -102,6 +102,10 @@ public static class MyBatisDescriptor
             [QueryFeature.Subquery] = FactSupport.Expressible,
             [QueryFeature.SetOperation] = FactSupport.Expressible,
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
+            [QueryFeature.Expression] = FactSupport.Expressible,
         },
+
+        // The same as Dapper's: the statement is T-SQL (decision 107).
+        Functions = QueryFunctionVocabulary.All,
     };
 }

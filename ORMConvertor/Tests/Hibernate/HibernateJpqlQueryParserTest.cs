@@ -437,7 +437,7 @@ public class HibernateJpqlQueryParserTest
         var body = ((SubQueryInstruction)builder.Instructions.Single()).Instructions;
         var from = Assert.Single(body.OfType<FromInstruction>());
         Assert.Equal("Sales.Customers", from.Table);
-        Assert.Equal("CreditLimitAmount", Assert.Single(body.OfType<ProjectInstruction>()).Attribute);
+        Assert.Equal("CreditLimitAmount", Assert.Single(body.OfType<ProjectInstruction>()).Operand.Property);
     }
 
     private sealed class DummyQueryBuilder : AbstractQueryBuilder

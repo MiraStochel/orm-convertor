@@ -239,3 +239,63 @@ Hibernate = hibernate/FindInListWithABoundValue.jpql
 EclipseLink = eclipselink/FindInListWithABoundValue.jpql
 MyBatis = mybatis/FindInListWithABoundValueMapper.query.java, mybatis/FindInListWithABoundValueMapper.xml
 refusedWithoutCatalog = Dapper:QueryParameter
+
+# The six rows of decision 107, the expression as the sixth operand shape, each from every
+# source that states it. The LINQ row of the bound prefix states the pattern as the string
+# method over a value from the enclosing scope, which the shared LINQ parser reads as LIKE
+# over a concatenation with the value escaped, as EF Core's provider escapes it; the other
+# rows concatenate the wildcard onto the bound value as their language writes it. The
+# parameter takes its scalar from its position in the concatenation, so no source is
+# refused without a catalog here.
+[LikeWithABoundPrefix]
+Dapper = dapper/FindLikeWithABoundPrefix.sql
+EFCore = efcore/FindLikeWithABoundPrefix.query.cs
+NHibernate = nhibernate/FindLikeWithABoundPrefix.hql
+Hibernate = hibernate/FindLikeWithABoundPrefix.jpql
+EclipseLink = eclipselink/FindLikeWithABoundPrefix.jpql
+MyBatis = mybatis/FindLikeWithABoundPrefixMapper.query.java, mybatis/FindLikeWithABoundPrefixMapper.xml
+
+[ArithmeticInAProjection]
+Dapper = dapper/FindArithmeticInAProjection.sql
+EFCore = efcore/FindArithmeticInAProjection.query.cs
+NHibernate = nhibernate/FindArithmeticInAProjection.hql
+Hibernate = hibernate/FindArithmeticInAProjection.jpql
+EclipseLink = eclipselink/FindArithmeticInAProjection.jpql
+MyBatis = mybatis/FindArithmeticInAProjectionMapper.xml
+
+# LEN in T-SQL, length everywhere else, .Length in LINQ: the one function of the vocabulary
+# whose spelling differs in every target, and one that agrees only over SQL Server, where
+# every provider maps length onto LEN (decision 107).
+[FunctionInAFilter]
+Dapper = dapper/FindFunctionInAFilter.sql
+EFCore = efcore/FindFunctionInAFilter.query.cs
+NHibernate = nhibernate/FindFunctionInAFilter.hql
+Hibernate = hibernate/FindFunctionInAFilter.jpql
+EclipseLink = eclipselink/FindFunctionInAFilter.jpql
+MyBatis = mybatis/FindFunctionInAFilterMapper.xml
+
+[CoalesceInAFilter]
+Dapper = dapper/FindCoalesceInAFilter.sql
+EFCore = efcore/FindCoalesceInAFilter.query.cs
+NHibernate = nhibernate/FindCoalesceInAFilter.hql
+Hibernate = hibernate/FindCoalesceInAFilter.jpql
+EclipseLink = eclipselink/FindCoalesceInAFilter.jpql
+MyBatis = mybatis/FindCoalesceInAFilterMapper.xml
+
+[CaseInAProjection]
+Dapper = dapper/FindCaseInAProjection.sql
+EFCore = efcore/FindCaseInAProjection.query.cs
+NHibernate = nhibernate/FindCaseInAProjection.hql
+Hibernate = hibernate/FindCaseInAProjection.jpql
+EclipseLink = eclipselink/FindCaseInAProjection.jpql
+MyBatis = mybatis/FindCaseInAProjectionMapper.xml
+
+# ORDER BY COUNT(*) DESC of a grouped query, the ordering that fell as a loss until the
+# ordering key became an operand (decision 107); the second key breaks the ties.
+[OrderingByAnAggregate]
+Dapper = dapper/FindOrderingByAnAggregate.sql
+EFCore = efcore/FindOrderingByAnAggregate.query.cs
+NHibernate = nhibernate/FindOrderingByAnAggregate.hql
+Hibernate = hibernate/FindOrderingByAnAggregate.jpql
+EclipseLink = eclipselink/FindOrderingByAnAggregate.jpql
+MyBatis = mybatis/FindOrderingByAnAggregateMapper.xml

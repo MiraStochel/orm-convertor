@@ -26,7 +26,7 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
         // targets do inside BuildSource; the SQL visitor is stateless, so it is built once
         // (decision 053). Rendering a subquery operand comes back here, because composing a
         // nested scope is the builder's work (decision 061).
-        visitor = new SqlQueryVisitor((kind, reason, feature) => Report(kind, reason, feature), RenderSubQuery);
+        visitor = new SqlQueryVisitor((kind, reason, feature) => Report(kind, reason, feature), RenderSubQuery, Expressions);
     }
 
     /// <summary>

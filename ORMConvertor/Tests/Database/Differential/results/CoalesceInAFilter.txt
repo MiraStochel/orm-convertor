@@ -1,0 +1,3 @@
+0	"Walk-in"	NULL
+1	"Alice"	NULL
+3	"Carol"	NULL

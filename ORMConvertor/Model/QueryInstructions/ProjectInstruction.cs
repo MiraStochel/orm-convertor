@@ -1,19 +1,23 @@
+using Model.QueryInstructions.Conditions;
+
 namespace Model.QueryInstructions;
 
 /// <summary>
-/// One projected column, optionally under an aggregate function. <paramref name="Distinct"/>
-/// is the modifier of the function (decision 102): <c>COUNT(DISTINCT x)</c> aggregates over
-/// the distinct values of its argument. It is a fact about the function and sits beside its
-/// name, which is why it is not the scope marker of decision 073 - <c>SELECT DISTINCT
-/// COUNT(DISTINCT x)</c> carries both. Meaningful only with a function; the builder
-/// template refuses it over <c>*</c>, which no SQL target spells.
+/// One projected value with an optional alias (decision 107). The operand is the same
+/// <see cref="QueryOperand"/> a comparison has on either side, so the projection stands
+/// over whatever an operand can be: a column, optionally under an aggregate function with
+/// its DISTINCT modifier (decision 102: the modifier sits beside the function, which now
+/// sits on the operand), the whole entity as a column whose property is <c>*</c>, a
+/// constant, or an expression. The loose quintuple this used to be was the very shape
+/// decision 024 took out of the comparison, and an expression had no place in it.
+///
+/// An expression without an alias has no name any by-name target could read the column
+/// under, and a name invented by the tool is forbidden (decision 028), so the builder
+/// template refuses it; a column needs none, being named already.
 /// </summary>
 public sealed record ProjectInstruction(
-    string Table,
-    string Attribute,
-    string? Alias = null,
-    string? Function = null,
-    bool Distinct = false
+    QueryOperand Operand,
+    string? Alias = null
 ) : QueryInstruction
 {
     public override string Accept(IQueryVisitor visitor) => visitor.Visit(this);

@@ -1,3 +1,4 @@
+using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Naming;
@@ -17,17 +18,22 @@ namespace JakartaPersistence;
 /// the alias instead of count(*). The entity join with on is the one form outside the
 /// standard, which both implementations add (decision 077).
 /// </summary>
+/// <param name="typing">The typed view of the query's expressions the builder's gate filled (decision 107): which <c>+</c> stands over a string, because JPQL spells a concatenation with a word of its own.</param>
 public sealed class JpqlQueryVisitor(
     Dictionary<string, EntityMap> entities,
     string sourceAlias,
     Action<ConversionRecordKind, string, QueryFeature?> report,
-    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery) : IQueryVisitor
+    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery,
+    ExpressionTyping typing) : IQueryVisitor
 {
+    /// <summary>The escape character of the like whose pattern is being written (decision 107); null outside a pattern.</summary>
+    private string? patternEscape;
+
     public string Visit(FromInstruction instr) => instr.Alias ?? instr.Table;
 
     public string Visit(ProjectInstruction instr)
     {
-        var value = Column(instr.Table, instr.Attribute, instr.Function, instr.Distinct);
+        var value = Operand(instr.Operand);
         return instr.Alias is null ? value : $"{value} as {instr.Alias}";
     }
 
@@ -38,7 +44,7 @@ public sealed class JpqlQueryVisitor(
     public string Visit(GroupByInstruction instr) => Column(instr.Table, instr.Attribute, null);
 
     public string Visit(OrderByInstruction instr)
-        => $"{Column(instr.Table, instr.Attribute, null)} {(instr.Asc ? "asc" : "desc")}";
+        => $"{Operand(instr.Operand)} {(instr.Asc ? "asc" : "desc")}";
 
     public string Visit(JoinInstruction instr)
     {
@@ -103,7 +109,11 @@ public sealed class JpqlQueryVisitor(
             return string.Empty;
         }
 
-        return $"{operand} {Operator(cond.Operator)} {Operand(cond.Right)}{Escape(cond)}";
+        patternEscape = cond.Operator == ComparisonOperator.Like ? cond.Escape : null;
+        var rightText = Operand(cond.Right);
+        patternEscape = null;
+
+        return $"{operand} {Operator(cond.Operator)} {rightText}{Escape(cond)}";
     }
 
     /// <summary>The escape clause of a like (decision 102); the template holds it to like and to one character.</summary>
@@ -151,13 +161,36 @@ public sealed class JpqlQueryVisitor(
     }
 
     private string Operand(QueryOperand operand)
-        => operand.IsValueList
-            ? $"({string.Join(", ", operand.Values!.Select(Operand))})"
-            : operand.IsParameter
-                ? Parameter(operand.Parameter!, operand.Function)
-                : operand.IsConstant
-                    ? Wrap(Literal(operand.Constant!), operand.Function)
-                    : Column(operand.Table, operand.Property!, operand.Function, operand.Distinct);
+    {
+        if (operand.IsValueList)
+        {
+            return $"({string.Join(", ", operand.Values!.Select(Operand))})";
+        }
+
+        if (operand.IsParameter)
+        {
+            return Parameter(operand.Parameter!, operand.Function);
+        }
+
+        if (operand.IsConstant)
+        {
+            return Wrap(Literal(operand.Constant!), operand.Function);
+        }
+
+        // A subquery in a scalar position - a leaf of an expression (decision 107).
+        if (operand.IsSubQuery)
+        {
+            var sub = renderSubQuery(operand.SubQuery!, ComparisonOperator.Equal);
+            return sub is null ? string.Empty : $"({sub})";
+        }
+
+        if (operand.IsExpression)
+        {
+            return Wrap(Expression(operand.Expression!), operand.Function, operand.Distinct);
+        }
+
+        return Column(operand.Table, operand.Property!, operand.Function, operand.Distinct);
+    }
 
     /// <summary>
     /// A parameter in JPQL (decision 083). The one target language with a positional form,
@@ -202,6 +235,93 @@ public sealed class JpqlQueryVisitor(
 
     public string? EntityName(string alias)
         => entities.TryGetValue(alias, out var map) ? map.Entity.Name : null;
+
+    /* ---- expressions (decision 107) --------------------------------------------------- */
+
+    /// <summary>
+    /// An expression in the spelling of Jakarta Persistence 3.2 (decision 107):
+    /// <c>concat(a, b, …)</c> for a concatenation, flattened; the arithmetic operators and
+    /// <c>mod(a, b)</c>; the functions of the vocabulary in lower case, the parts of a date
+    /// through the standard <c>extract</c> - not Hibernate's <c>year()</c>, so that EclipseLink
+    /// reads it too -, <c>current_timestamp</c> without parentheses; and a searched case,
+    /// whose else the grammar demands, so a CASE without one writes <c>else null</c>.
+    /// </summary>
+    private string Expression(QueryExpression expression)
+    {
+        if (expression.IsBinary)
+        {
+            if (typing.IsConcatenation(expression))
+            {
+                return $"concat({string.Join(", ", Concatenated(expression).Select(Operand))})";
+            }
+
+            if (expression.Operator == ExpressionOperator.Modulo)
+            {
+                return $"mod({Operand(expression.Left!)}, {Operand(expression.Right!)})";
+            }
+
+            var symbol = expression.Operator!.Value switch
+            {
+                ExpressionOperator.Add => "+",
+                ExpressionOperator.Subtract => "-",
+                ExpressionOperator.Multiply => "*",
+                ExpressionOperator.Divide => "/",
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Operator, null),
+            };
+
+            return $"{Side(expression.Left!, expression, rightSide: false)} {symbol} {Side(expression.Right!, expression, rightSide: true)}";
+        }
+
+        if (expression.IsCall)
+        {
+            var arguments = expression.Arguments!.Select(Operand).ToList();
+            return expression.Function!.Value switch
+            {
+                QueryFunction.Upper => $"upper({arguments[0]})",
+                QueryFunction.Lower => $"lower({arguments[0]})",
+                QueryFunction.Trim => $"trim({arguments[0]})",
+                QueryFunction.Substring => $"substring({arguments[0]}, {arguments[1]}, {arguments[2]})",
+                QueryFunction.Length => $"length({arguments[0]})",
+                QueryFunction.Coalesce => $"coalesce({string.Join(", ", arguments)})",
+                QueryFunction.Abs => $"abs({arguments[0]})",
+                QueryFunction.Year => $"extract(year from {arguments[0]})",
+                QueryFunction.Month => $"extract(month from {arguments[0]})",
+                QueryFunction.Day => $"extract(day from {arguments[0]})",
+                QueryFunction.CurrentTimestamp => "current_timestamp",
+                QueryFunction.EscapePattern => ExpressionSpelling.EscapePattern(arguments[0], patternEscape ?? "!", "replace"),
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null),
+            };
+        }
+
+        var branches = string.Join(" ", expression.Branches!.Select(b => $"when {b.When.Accept(this)} then {Operand(b.Then)}"));
+        var otherwise = expression.Else is null ? "null" : Operand(expression.Else);
+        return $"case {branches} else {otherwise} end";
+    }
+
+    /// <summary>The operands of a concatenation, its nested concatenations flattened into one argument list.</summary>
+    private IEnumerable<QueryOperand> Concatenated(QueryExpression concatenation)
+    {
+        foreach (var side in new[] { concatenation.Left!, concatenation.Right! })
+        {
+            if (side is { IsExpression: true, IsAggregate: false } && side.Expression!.IsBinary && typing.IsConcatenation(side.Expression))
+            {
+                foreach (var inner in Concatenated(side.Expression))
+                {
+                    yield return inner;
+                }
+            }
+            else
+            {
+                yield return side;
+            }
+        }
+    }
+
+    private string Side(QueryOperand side, QueryExpression parent, bool rightSide)
+    {
+        var text = Operand(side);
+        return ExpressionSpelling.NeedsParentheses(side, parent, rightSide) ? $"({text})" : text;
+    }
 
     /// <summary>
     /// A constant the way JPQL wants it (decision 024): strings quoted, numbers bare, and

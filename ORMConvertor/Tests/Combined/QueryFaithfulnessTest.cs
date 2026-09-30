@@ -375,13 +375,16 @@ public class QueryFaithfulnessTest
     {
         // The boundary from the other side: a dropped ordering key reorders rows, it does
         // not change which ones come back, so the artifact goes out poorer with a record.
+        // The key used to be LEN(c.Name), which the reader carries as an expression since
+        // decision 107; a function outside the vocabulary stands in for it, and the record
+        // names it under the category of expressions.
         var builder = new EFCoreLinqQueryBuilder();
         new DapperSqlQueryParser(() => builder).Parse(
             ConversionContentType.SqlQuery,
-            "SELECT c.Id FROM Customers c ORDER BY LEN(c.Name)");
+            "SELECT c.Id FROM Customers c ORDER BY ROUND(c.Total, 0)");
 
         Assert.NotEmpty(builder.Build());
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Ordering);
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Expression && r.Reason.Contains("ROUND", StringComparison.Ordinal));
         Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
     }
 }

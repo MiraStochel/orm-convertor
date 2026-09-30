@@ -1,3 +1,4 @@
+using Model.QueryInstructions.Conditions;
 using AbstractWrappers.Descriptors;
 
 namespace JakartaPersistence;
@@ -123,5 +124,14 @@ public static class JakartaPersistenceDescriptor
             [QueryFeature.Subquery] = FactSupport.Expressible,
             [QueryFeature.SetOperation] = FactSupport.Expressible,
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
+            [QueryFeature.Expression] = FactSupport.Expressible,
         };
+
+    /// <summary>
+    /// JPQL 3.2 spells every function of the expression vocabulary (decision 107): the
+    /// string functions, coalesce, abs, the parts of a date through extract,
+    /// current_timestamp, and replace for the escaping of a pattern value - in the standard
+    /// form, so that both implementations read it.
+    /// </summary>
+    public static IReadOnlySet<QueryFunction> Functions { get; } = QueryFunctionVocabulary.All;
 }

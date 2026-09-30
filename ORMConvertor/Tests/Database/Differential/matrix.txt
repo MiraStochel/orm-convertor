@@ -259,3 +259,55 @@ ordered = false
 decimalScale = 4
 arguments = extra:int=5
 mutations = filter
+
+# ---- the expression rows of decision 107 ------------------------------------------------
+#
+# The swap of two projected fields knows the shape of a column projection; over a projected
+# expression it does not reach the artifact, so the two projection rows carry the category
+# alone, as the DISTINCT rows do.
+
+[LikeWithABoundPrefix]
+category = LikeWithABoundPrefix
+fields = ProductId, ProductName, Sku, UnitPrice, IsDiscontinued
+shape = entity
+ordered = false
+decimalScale = 4
+arguments = prefix:string=W
+mutations = filter
+
+[ArithmeticInAProjection]
+category = ArithmeticInAProjection
+fields = LineNumber, Total
+shape = projection
+ordered = false
+decimalScale = 4
+mutations = 
+
+[FunctionInAFilter]
+category = FunctionInAFilter
+fields = ProductId, ProductName, Sku, UnitPrice, IsDiscontinued
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter
+
+[CoalesceInAFilter]
+category = CoalesceInAFilter
+fields = CustomerId, Name, Notes
+shape = entity
+ordered = false
+mutations = filter
+
+[CaseInAProjection]
+category = CaseInAProjection
+fields = LineNumber, Volume
+shape = projection
+ordered = false
+mutations = 
+
+[OrderingByAnAggregate]
+category = OrderingByAnAggregate
+fields = ProductId, Lines
+shape = projection
+ordered = true
+mutations = ordering

@@ -357,6 +357,52 @@ public static class QueryShapeInputs
             hql: ["ol.ProductId in (1, 2, :extra)", ".SetParameter(\"extra\", extra)"],
             jpa: ["ol.ProductId in (1, 2, :extra)", ".setParameter(\"extra\", extra)"],
             myBatis: ["ol.ProductId IN (1, 2, #{extra})", "@Param(\"extra\")"]),
+
+        // ---- the expression rows of decision 107 ----
+        //
+        // The pattern differs by source: the LINQ source escapes the bound value (EF Core's
+        // provider does at run time), so the SQL targets get the chain of REPLACE and the
+        // LINQ target StartsWith(prefix); the other sources concatenate as written, so the
+        // LINQ target gets EF.Functions.Like over the concatenation. The hallmarks name what
+        // every source shares.
+        ["LikeWithABoundPrefix"] = Hallmarks(
+            sql: ["p.ProductName LIKE ", " + '%'", "string prefix"],
+            linq: ["p.ProductName", "prefix", "string prefix"],
+            hql: ["p.ProductName like concat(", "'%')", ".SetParameter(\"prefix\", prefix)"],
+            jpa: ["p.ProductName like concat(", "'%')", ".setParameter(\"prefix\", prefix)"],
+            myBatis: ["p.ProductName LIKE ", "#{prefix}", "@Param(\"prefix\") String prefix"]),
+
+        ["ArithmeticInAProjection"] = Hallmarks(
+            sql: ["ol.Quantity * ol.UnitPrice AS Total"],
+            linq: ["Total = ol.Quantity * ol.UnitPrice"],
+            // The HQL target casts the mixed arithmetic to decimal, which NHibernate 5.7.0 would
+            // otherwise cut to a whole number (a finding of the fourth level).
+            hql: ["cast(ol.Quantity * ol.UnitPrice as decimal) as Total"],
+            jpa: ["ol.Quantity * ol.UnitPrice as Total"]),
+
+        ["FunctionInAFilter"] = Hallmarks(
+            sql: ["LEN(p.ProductName) = 6"],
+            linq: ["p.ProductName.Length == 6"],
+            hql: ["length(p.ProductName) = 6"],
+            jpa: ["length(p.ProductName) = 6"]),
+
+        ["CoalesceInAFilter"] = Hallmarks(
+            sql: ["COALESCE(c.Notes, 'none') = 'none'"],
+            linq: ["(c.Notes ?? \"none\") == \"none\""],
+            hql: ["coalesce(c.Notes, 'none') = 'none'"],
+            jpa: ["coalesce(c.Notes, 'none') = 'none'"]),
+
+        ["CaseInAProjection"] = Hallmarks(
+            sql: ["CASE WHEN ol.Quantity > 5 THEN 'bulk' ELSE 'single' END AS Volume"],
+            linq: ["Volume = (ol.Quantity > 5 ? \"bulk\" : \"single\")"],
+            hql: ["case when ol.Quantity > 5 then 'bulk' else 'single' end as Volume"],
+            jpa: ["case when ol.Quantity > 5 then 'bulk' else 'single' end as Volume"]),
+
+        ["OrderingByAnAggregate"] = Hallmarks(
+            sql: ["ORDER BY COUNT(*) DESC, ol.ProductId ASC"],
+            linq: [".OrderByDescending(g => g.Count())", ".ThenBy(g => g.Key)"],
+            hql: ["order by count(*) desc, ol.ProductId asc"],
+            jpa: ["order by count(ol) desc, ol.ProductId asc"]),
     };
 
     // ---- the deliberately bad query ------------------------------------------------------

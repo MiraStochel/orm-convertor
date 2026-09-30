@@ -1584,9 +1584,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private void EmitProjection(ExpressionSyntax expression, string? alias, Resolve? resolve = null)
     {
-        if (TryReadAggregate(expression, out var function, out var table, out var attribute, out var distinct))
+        if (TryReadAggregate(expression, out var aggregate))
         {
-            queryBuilder.Project(table ?? sourceAlias, attribute!, alias, function, distinct);
+            queryBuilder.Project(aggregate!, alias);
             return;
         }
 
@@ -1623,19 +1623,28 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        var name = MemberName(expression);
-        if (name is null)
+        // A column of the row, or an expression over it (decision 107). A bare constant is
+        // not a shape any target names a column by and stays the loss it was; a construct
+        // outside the vocabulary is dropped with a record that names it.
+        var operand = ReadOperand(expression);
+        if (operand is null || (operand.IsConstant && !operand.IsAggregate) || operand.IsParameter || operand.IsValueList)
         {
+            var (what, category) = unread ?? ($"'{expression}'", QueryFeature.Projection);
+            unread = null;
             Report(
                 ConversionRecordKind.Loss,
-                $"The projected expression '{expression}' is not a column reference and was dropped.",
-                QueryFeature.Projection);
+                $"The projected expression {what} is not a column, an aggregate or an expression the query representation carries, and was dropped.",
+                category ?? QueryFeature.Projection);
             return;
         }
 
-        queryBuilder.Project(AliasOf(expression), name, alias);
+        queryBuilder.Project(operand, alias);
     }
 
+    /// <summary>
+    /// An ordering key (decision 107): the grouping key, an aggregate of the group
+    /// (<c>OrderByDescending(g =&gt; g.Count())</c>), a column, or an expression over the row.
+    /// </summary>
     private void HandleOrderBy(InvocationExpressionSyntax node, bool asc)
     {
         if (!TryReadLambdaBody(node, out var body))
@@ -1650,17 +1659,25 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        var name = MemberName(body!);
-        if (name is null)
+        if (TryReadAggregate(body!, out var aggregate))
         {
-            Report(
-                ConversionRecordKind.Loss,
-                $"The ordering key '{body}' is not a column reference and was dropped.",
-                QueryFeature.Ordering);
+            queryBuilder.OrderBy(aggregate!, asc);
             return;
         }
 
-        queryBuilder.OrderBy(AliasOf(body!), name, asc);
+        var key = ReadOperand(body!);
+        if (key is null || key.IsConstant || key.IsParameter || key.IsValueList)
+        {
+            var (what, category) = unread ?? ($"'{body}'", QueryFeature.Ordering);
+            unread = null;
+            Report(
+                ConversionRecordKind.Loss,
+                $"The ordering key {what} is not a column, an aggregate or an expression the query representation carries, and was dropped.",
+                category ?? QueryFeature.Ordering);
+            return;
+        }
+
+        queryBuilder.OrderBy(key, asc);
     }
 
     private void HandleGroupBy(InvocationExpressionSyntax node)
@@ -1694,7 +1711,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             foreach (var initializer in anon.Initializers)
             {
                 var key = MemberName(initializer.Expression);
-                if (key is null)
+                if (key is null || IsExpression(initializer.Expression))
                 {
                     RefuseGroupingKey(initializer.Expression);
                     continue;
@@ -1710,7 +1727,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         var name = MemberName(body!);
-        if (name is null)
+        if (name is null || IsExpression(body!))
         {
             RefuseGroupingKey(body!);
             return;
@@ -1725,11 +1742,35 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         groupingKeys.Add(new GroupingKey(table, attribute, name));
     }
 
+    /// <summary>Whether the expression reads as a computed value rather than as a column - <c>c.Name.Length</c> has a member name and is no column.</summary>
+    private bool IsExpression(ExpressionSyntax expression)
+    {
+        var read = ReadOperand(expression);
+        unread = null;
+        return read is { IsExpression: true };
+    }
+
+    /// <summary>
+    /// A grouping key the representation does not carry (decision 070): a grouping by an
+    /// expression is the one position the expression does not take (decision 107), and is
+    /// refused under its own category.
+    /// </summary>
     private void RefuseGroupingKey(ExpressionSyntax key)
-        => Report(
+    {
+        if (IsExpression(key))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The grouping key '{key}' is an expression, which the query representation carries in every position but the grouping, and a query grouped differently would return different rows; no artifact was generated.",
+                QueryFeature.Expression);
+            return;
+        }
+
+        Report(
             ConversionRecordKind.Failure,
             $"The grouping key '{key}' is not a column reference, and a query grouped differently would return different rows; no artifact was generated.",
             QueryFeature.Grouping);
+    }
 
     /// <summary>
     /// Whether the expression reaches for the grouping key rather than for a column of the
@@ -1813,18 +1854,20 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private QueryOperand? ReadHavingOperand(ExpressionSyntax expression)
     {
-        if (TryReadAggregate(expression, out var function, out var table, out var attribute, out var distinct))
+        if (TryReadAggregate(expression, out var aggregate))
         {
-            return QueryOperand.Column(table ?? sourceAlias, attribute!, function, distinct);
+            return aggregate;
         }
 
         return ReadOperand(expression);
     }
 
     /// <summary>
-    /// Reads g.Sum(x =&gt; x.Total), g.Count() and their kin. The element the lambda ranges
-    /// over is a row of the source, so its columns are qualified by the source alias rather
-    /// than by the lambda's own parameter name, which is not a table alias at all.
+    /// Reads g.Sum(x =&gt; x.Total), g.Count() and their kin as the aggregate operand of the
+    /// group. The element the lambda ranges over is a row of the source, so its columns are
+    /// qualified by the source alias rather than by the lambda's own parameter name, which is
+    /// not a table alias at all; the body may be a column or, since decision 107, an
+    /// expression over the element (<c>g.Sum(x =&gt; x.Price * x.Quantity)</c>).
     ///
     /// The receiver may also be <c>g.Select(x =&gt; x.Total)</c>, optionally followed by
     /// <c>.Distinct()</c>, with the aggregate then taking no lambda: the column comes from
@@ -1832,15 +1875,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// (decision 102) - <c>g.Select(x =&gt; x.Id).Distinct().Count()</c> is
     /// <c>COUNT(DISTINCT Id)</c>, which is the shape EF Core translates it to.
     /// </summary>
-    private bool TryReadAggregate(
-        ExpressionSyntax expression,
-        out string? function,
-        out string? table,
-        out string? attribute,
-        out bool distinct)
+    private bool TryReadAggregate(ExpressionSyntax expression, out QueryOperand? aggregate)
     {
-        function = table = attribute = null;
-        distinct = false;
+        aggregate = null;
 
         if (expression is not InvocationExpressionSyntax invocation
             || invocation.Expression is not MemberAccessExpressionSyntax member)
@@ -1858,7 +1895,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         // or a one-column Select over it, optionally collapsed. An aggregate whose receiver
         // is a chain over a query root is a scalar subquery, not a group aggregate, and
         // belongs to ReadScalarSubQuery (decision 061).
-        ExpressionSyntax? selected = null;
+        var distinct = false;
+        SimpleLambdaExpressionSyntax? selector = null;
         var receiver = member.Expression;
         if (receiver is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Distinct" } collapse } collapsed
             && collapsed.ArgumentList.Arguments.Count == 0)
@@ -1870,48 +1908,69 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         if (receiver is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Select" } select } projection
             && select.Expression is IdentifierNameSyntax
             && projection.ArgumentList.Arguments.Count == 1
-            && projection.ArgumentList.Arguments[0].Expression is SimpleLambdaExpressionSyntax selector
-            && selector.Body is ExpressionSyntax selectedBody
+            && projection.ArgumentList.Arguments[0].Expression is SimpleLambdaExpressionSyntax selected
             && invocation.ArgumentList.Arguments.Count == 0)
         {
-            selected = selectedBody;
+            selector = selected;
         }
         else if (receiver is not IdentifierNameSyntax || distinct)
         {
-            distinct = false;
             return false;
         }
 
-        function = name;
-        table = sourceAlias;
-
         var argument = invocation.ArgumentList.Arguments.FirstOrDefault();
-        if (argument is null && selected is null)
+        if (argument is null && selector is null)
         {
             // g.Count() counts rows, not a column.
-            attribute = "*";
+            aggregate = QueryOperand.Column(sourceAlias, "*", name);
             return true;
         }
 
-        var lambdaBody = selected
-            ?? (argument!.Expression is SimpleLambdaExpressionSyntax lambda ? lambda.Body as ExpressionSyntax : null);
-
-        if (lambdaBody is not null && MemberName(lambdaBody) is { } column)
+        var lambda = selector ?? argument!.Expression as SimpleLambdaExpressionSyntax;
+        if (lambda?.Body is not ExpressionSyntax body)
         {
-            attribute = column;
+            return false;
+        }
 
-            // After a join the element is the joined row, and x.o.Amount says which of its
-            // tables the column belongs to.
-            if (TryResolveInScope(lambdaBody, out _, out var resolved) && resolved is { } joinedColumn)
+        // The lambda's parameter is the element, a row of the source: while the body is
+        // read, its name stands for the source alias.
+        var element = lambda.Parameter.Identifier.Text;
+        var shadowed = aliasSubstitutions.TryGetValue(element, out var previous);
+        aliasSubstitutions[element] = sourceAlias;
+        QueryOperand? ranged;
+        try
+        {
+            ranged = ReadLeaf(body);
+        }
+        finally
+        {
+            if (shadowed)
             {
-                table = joinedColumn.Alias;
+                aliasSubstitutions[element] = previous!;
             }
+            else
+            {
+                aliasSubstitutions.Remove(element);
+            }
+        }
 
+        if (ranged is null)
+        {
+            return false;
+        }
+
+        if (ranged.IsColumn)
+        {
+            aggregate = QueryOperand.Column(ranged.Table ?? sourceAlias, ranged.Property!, name, distinct);
             return true;
         }
 
-        function = table = null;
-        distinct = false;
+        if (ranged.IsExpression)
+        {
+            aggregate = QueryOperand.Computed(ranged.Expression!, name, distinct);
+            return true;
+        }
+
         return false;
     }
 
@@ -2002,10 +2061,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return null;
             }
 
-            var pattern = ReadOperand(patternExpression!);
-            if (pattern is null || pattern.Function is not null || !(pattern.IsConstant || pattern.IsParameter))
+            // The pattern is a literal, a value from the enclosing scope, or since decision
+            // 107 an expression the caller composed - prefix + "%" -, which goes out as
+            // written: the caller made the pattern, so a wildcard in the value is a wildcard.
+            var pattern = ReadLeaf(patternExpression!);
+            if (pattern is null || pattern.Function is not null || !(pattern.IsConstant || pattern.IsParameter || pattern.IsExpression))
             {
-                unread ??= ($"'{patternExpression}' as the pattern of the pattern function, which is neither a literal nor a value from the enclosing scope", null);
+                unread ??= ($"'{patternExpression}' as the pattern of the pattern function, which is neither a literal, a value from the enclosing scope nor an expression", null);
                 return null;
             }
 
@@ -2063,30 +2125,63 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         var argument = invocation.ArgumentList.Arguments[0].Expression;
-        if (argument is IdentifierNameSyntax)
+
+        if (argument is LiteralExpressionSyntax literal)
         {
-            unread ??= ($"{method}() with a value from the enclosing scope, whose pattern would be that value joined with a wildcard - an expression the query representation has no operand for", QueryFeature.QueryParameter);
+            var core = ReadConstant(literal);
+            if (core.Type is not (ScalarType.String or ScalarType.Char))
+            {
+                unread ??= ($"{method}() with '{argument}', which is not a string literal", null);
+                return null;
+            }
+
+            var (text, escape2) = ProviderEscapesStringMethodArguments
+                ? EscapeCore(core.Text)
+                : (core.Text, (string?)null);
+
+            var likePattern = (leading ? "%" : string.Empty) + text + (trailing ? "%" : string.Empty);
+
+            return new ComparisonCondition(
+                receiver,
+                ComparisonOperator.Like,
+                QueryOperand.Value(QueryConstant.Of(likePattern, ScalarType.String)),
+                Escape: escape2);
+        }
+
+        // An argument that is not a literal - a value from the enclosing scope, a column, an
+        // expression - is the pattern that value joined with the wildcard (decision 107):
+        // LIKE over a concatenation. Where the provider escapes the argument at run time (EF
+        // Core), the value goes in as EscapePattern under the canonical escape, so that a
+        // wildcard in it stays literal in every target as it does in the source (decisions
+        // 053 and 065); NHibernate's provider concatenates as written, and so does the model.
+        var bound = ReadLeaf(argument);
+        if (bound is null)
+        {
+            unread ??= ($"{method}() with '{argument}', which is neither a string literal nor a value the query representation carries", null);
             return null;
         }
 
-        var core = argument is LiteralExpressionSyntax literal ? ReadConstant(literal) : null;
-        if (core?.Type is not (ScalarType.String or ScalarType.Char))
+        QueryOperand value = ProviderEscapesStringMethodArguments
+            ? QueryOperand.Computed(QueryExpression.Call(QueryFunction.EscapePattern, [bound]))
+            : bound;
+
+        var wildcard = QueryOperand.Value(QueryConstant.Of("%", ScalarType.String));
+        var anchored = value;
+        if (leading)
         {
-            unread ??= ($"{method}() with '{argument}', which is not a string literal", null);
-            return null;
+            anchored = QueryOperand.Computed(QueryExpression.Binary(ExpressionOperator.Concat, wildcard, anchored));
         }
 
-        var (text, escape2) = ProviderEscapesStringMethodArguments
-            ? EscapeCore(core.Text)
-            : (core.Text, (string?)null);
-
-        var likePattern = (leading ? "%" : string.Empty) + text + (trailing ? "%" : string.Empty);
+        if (trailing)
+        {
+            anchored = QueryOperand.Computed(QueryExpression.Binary(ExpressionOperator.Concat, anchored, wildcard));
+        }
 
         return new ComparisonCondition(
             receiver,
             ComparisonOperator.Like,
-            QueryOperand.Value(QueryConstant.Of(likePattern, ScalarType.String)),
-            Escape: escape2);
+            anchored,
+            Escape: ProviderEscapesStringMethodArguments ? PatternEscape.ToString() : null);
     }
 
     /// <summary>
@@ -2348,24 +2443,383 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         return new ComparisonCondition(left, op.Value, right);
     }
 
-    private QueryOperand? ReadOperand(ExpressionSyntax expression) => expression switch
+    /// <summary>
+    /// One operand of the six shapes (decisions 024, 061, 074, 083, 107): a column of a row
+    /// in scope, a literal, a moment, a terminal aggregate over a chain as a scalar subquery,
+    /// a value from the enclosing scope as a parameter, and since decision 107 an expression
+    /// - the arithmetic operators, <c>+</c> as a concatenation where a side is a string
+    /// literal, <c>??</c>, the conditional operator, the members and methods of System.String
+    /// and System.DateTime that the vocabulary names, <c>Math.Abs</c>, <c>DateTime.Now</c> -
+    /// and the aggregate of a group over a column or an expression. Null for what the
+    /// representation does not carry, with the construct named in <see cref="unread"/>
+    /// where the parser can name it.
+    /// </summary>
+    private QueryOperand? ReadOperand(ExpressionSyntax expression)
     {
-        MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax identifier
-            => QueryOperand.Column(identifier.Identifier.Text, member.Name.Identifier.Text),
-        // x.o.PlacedAt after a join: the middle member is a row of the joined result, in
-        // this scope or an enclosing one, and names the table.
-        MemberAccessExpressionSyntax nested when TryResolveInScope(nested, out _, out var resolved) && resolved is { } column
-            => QueryOperand.Column(column.Alias, column.Column),
-        LiteralExpressionSyntax literal => QueryOperand.Value(ReadConstant(literal)),
-        PrefixUnaryExpressionSyntax negation when negation.IsKind(SyntaxKind.UnaryMinusExpression)
-            && negation.Operand is LiteralExpressionSyntax inner
-            => QueryOperand.Value(Negate(ReadConstant(inner))),
-        ObjectCreationExpressionSyntax creation when ReadMoment(creation) is { } moment
-            => QueryOperand.Value(moment),
-        InvocationExpressionSyntax invocation when ReadScalarSubQuery(invocation) is { } nested => nested,
-        IdentifierNameSyntax identifier => ValueFromScope(identifier),
-        _ => null,
-    };
+        switch (expression)
+        {
+            case ParenthesizedExpressionSyntax parenthesized:
+                return ReadOperand(parenthesized.Expression);
+
+            // DateTime.Now is the current moment; UtcNow is another moment and stays refused
+            // by name (decision 107). Before the column reading, which the two-identifier
+            // shape would otherwise take for a column Now of a table DateTime.
+            case MemberAccessExpressionSyntax { Name.Identifier.Text: "Now" or "UtcNow" } clock
+                when WrittenName(clock.Expression) is "DateTime" or "System.DateTime" or "global::System.DateTime":
+                if (clock.Name.Identifier.Text == "UtcNow")
+                {
+                    unread ??= ("DateTime.UtcNow, which is another moment than the current timestamp of the database and outside the vocabulary of expressions", QueryFeature.Expression);
+                    return null;
+                }
+
+                return QueryOperand.Computed(QueryExpression.Call(QueryFunction.CurrentTimestamp, []));
+
+            case MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax identifier:
+                return QueryOperand.Column(AliasFor(identifier.Identifier.Text), member.Name.Identifier.Text);
+
+            // x.o.PlacedAt after a join: the middle member is a row of the joined result, in
+            // this scope or an enclosing one, and names the table.
+            case MemberAccessExpressionSyntax nested when TryResolveInScope(nested, out _, out var resolved) && resolved is { } column:
+                return QueryOperand.Column(column.Alias, column.Column);
+
+            // The members of the vocabulary over an operand: c.Name.Length, o.PlacedAt.Year.
+            case MemberAccessExpressionSyntax { Name.Identifier.Text: "Length" or "Year" or "Month" or "Day" } part:
+                {
+                    var receiver = ReadLeaf(part.Expression);
+                    if (receiver is null)
+                    {
+                        return null;
+                    }
+
+                    var function = part.Name.Identifier.Text switch
+                    {
+                        "Length" => QueryFunction.Length,
+                        "Year" => QueryFunction.Year,
+                        "Month" => QueryFunction.Month,
+                        _ => QueryFunction.Day,
+                    };
+
+                    return QueryOperand.Computed(QueryExpression.Call(function, [receiver]));
+                }
+
+            case LiteralExpressionSyntax literal:
+                return QueryOperand.Value(ReadConstant(literal));
+
+            case PrefixUnaryExpressionSyntax negation when negation.IsKind(SyntaxKind.UnaryMinusExpression)
+                                                          && negation.Operand is LiteralExpressionSyntax inner:
+                return QueryOperand.Value(Negate(ReadConstant(inner)));
+
+            case ObjectCreationExpressionSyntax creation when ReadMoment(creation) is { } moment:
+                return QueryOperand.Value(moment);
+
+            case BinaryExpressionSyntax binary:
+                return ReadBinary(binary);
+
+            case ConditionalExpressionSyntax conditional:
+                return ReadConditional(conditional);
+
+            case InvocationExpressionSyntax invocation:
+                if (ReadScalarSubQuery(invocation) is { } scalarSubQuery)
+                {
+                    return scalarSubQuery;
+                }
+
+                if (TryReadAggregate(invocation, out var aggregate))
+                {
+                    return aggregate;
+                }
+
+                return ReadFunctionInvocation(invocation);
+
+            case IdentifierNameSyntax identifier:
+                return ValueFromScope(identifier);
+
+            case InterpolatedStringExpressionSyntax:
+                unread ??= ($"the interpolated string '{expression}', which composes text in a way the vocabulary of expressions does not carry", QueryFeature.Expression);
+                return null;
+
+            default:
+                return null;
+        }
+    }
+
+    /* ---- expressions (decision 107) --------------------------------------------------- */
+
+    /// <summary>
+    /// The lambda parameters that stand for a row of the source without being its alias:
+    /// the element of a group inside an aggregate's lambda (<c>g.Sum(x =&gt; x.Price * x.Quantity)</c>),
+    /// whose columns belong to the source. Consulted by the column reading, so that an
+    /// expression inside the lambda qualifies its columns the way a bare column there always
+    /// has been.
+    /// </summary>
+    private readonly Dictionary<string, string> aliasSubstitutions = new(StringComparer.Ordinal);
+
+    private string AliasFor(string identifier)
+        => aliasSubstitutions.GetValueOrDefault(identifier, identifier);
+
+    /// <summary>An operand that may be a leaf of an expression: the lists and collections the factory refuses are refused here first, by name.</summary>
+    private QueryOperand? ReadLeaf(ExpressionSyntax expression)
+    {
+        var operand = ReadOperand(expression);
+        if (operand is null)
+        {
+            return null;
+        }
+
+        if (operand.IsValueList || operand.Parameter?.IsCollection == true)
+        {
+            unread ??= ($"the collection '{expression}' inside an expression, which no target computes with", QueryFeature.Expression);
+            return null;
+        }
+
+        return operand;
+    }
+
+    /// <summary>
+    /// The arithmetic operators and <c>??</c> as COALESCE; <c>+</c> is a concatenation where
+    /// a side is a string literal or an expression that yields a string, and an addition
+    /// otherwise, which the builder's gate resolves where the mapping says a side is a
+    /// string. C# takes a null operand of a string concatenation as the empty string, where
+    /// SQL and JPQL yield NULL; the model does not carry the difference (decision 048), so a
+    /// concatenation over a column says so in a record.
+    /// </summary>
+    private QueryOperand? ReadBinary(BinaryExpressionSyntax binary)
+    {
+        ExpressionOperator? op = binary.Kind() switch
+        {
+            SyntaxKind.AddExpression => ExpressionOperator.Add,
+            SyntaxKind.SubtractExpression => ExpressionOperator.Subtract,
+            SyntaxKind.MultiplyExpression => ExpressionOperator.Multiply,
+            SyntaxKind.DivideExpression => ExpressionOperator.Divide,
+            SyntaxKind.ModuloExpression => ExpressionOperator.Modulo,
+            _ => null,
+        };
+
+        if (binary.IsKind(SyntaxKind.CoalesceExpression))
+        {
+            var first = ReadLeaf(binary.Left);
+            var rest = ReadLeaf(binary.Right);
+            if (first is null || rest is null)
+            {
+                return null;
+            }
+
+            // a ?? b ?? c parses right-nested; the model carries one COALESCE of three.
+            var arguments = new List<QueryOperand> { first };
+            if (rest is { IsExpression: true, IsAggregate: false } && rest.Expression!.Function == QueryFunction.Coalesce)
+            {
+                arguments.AddRange(rest.Expression.Arguments!);
+            }
+            else
+            {
+                arguments.Add(rest);
+            }
+
+            return QueryOperand.Computed(QueryExpression.Call(QueryFunction.Coalesce, arguments));
+        }
+
+        if (op is null)
+        {
+            return null;
+        }
+
+        var left = ReadLeaf(binary.Left);
+        var right = ReadLeaf(binary.Right);
+        if (left is null || right is null)
+        {
+            return null;
+        }
+
+        if (op == ExpressionOperator.Add && (ReadsAsString(left) || ReadsAsString(right)))
+        {
+            return Concatenation(left, right);
+        }
+
+        return QueryOperand.Computed(QueryExpression.Binary(op.Value, left, right));
+    }
+
+    private QueryOperand Concatenation(QueryOperand left, QueryOperand right)
+    {
+        foreach (var side in new[] { left, right })
+        {
+            if (side.IsColumn)
+            {
+                Report(
+                    ConversionRecordKind.Loss,
+                    $"The concatenation over the column '{side}' takes a NULL as the empty string in C#, where SQL, HQL and JPQL yield NULL; the query representation does not carry the difference, and the targets concatenate as their language does.",
+                    QueryFeature.Expression);
+                break;
+            }
+        }
+
+        return QueryOperand.Computed(QueryExpression.Binary(ExpressionOperator.Concat, left, right));
+    }
+
+    private static bool ReadsAsString(QueryOperand operand)
+    {
+        if (operand.IsAggregate)
+        {
+            return false;
+        }
+
+        if (operand.IsConstant)
+        {
+            return operand.Constant!.Type is ScalarType.String or ScalarType.Char;
+        }
+
+        return operand.IsExpression
+               && (operand.Expression!.Operator == ExpressionOperator.Concat
+                   || operand.Expression.Function is QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim
+                       or QueryFunction.Substring or QueryFunction.EscapePattern);
+    }
+
+    /// <summary>
+    /// The conditional operator as a searched CASE (decision 107): the condition is a
+    /// condition tree, a nested conditional in the else position is a further branch, and a
+    /// null literal there is a CASE without an ELSE.
+    /// </summary>
+    private QueryOperand? ReadConditional(ConditionalExpressionSyntax conditional)
+    {
+        var branches = new List<CaseBranch>();
+        ExpressionSyntax current = conditional;
+
+        while (current is ConditionalExpressionSyntax ternary)
+        {
+            var when = ParseCondition(ternary.Condition);
+            var then = ReadLeaf(ternary.WhenTrue);
+            if (when is null || then is null)
+            {
+                unread ??= ($"the conditional '{conditional}', a branch of which the query representation does not carry", QueryFeature.Expression);
+                return null;
+            }
+
+            branches.Add(new CaseBranch(when, then));
+            current = ternary.WhenFalse;
+        }
+
+        QueryOperand? otherwise = null;
+        if (!IsNullLiteral(current))
+        {
+            otherwise = ReadLeaf(current);
+            if (otherwise is null)
+            {
+                unread ??= ($"the conditional '{conditional}', whose else the query representation does not carry", QueryFeature.Expression);
+                return null;
+            }
+        }
+
+        return QueryOperand.Computed(QueryExpression.Case(branches, otherwise));
+    }
+
+    /// <summary>
+    /// The methods of the vocabulary: <c>ToUpper()</c>, <c>ToLower()</c>, <c>Trim()</c>
+    /// and <c>Substring(start[, length])</c> over an operand, <c>string.Concat(…)</c> and
+    /// <c>Math.Abs(…)</c>. The start of a Substring is carried counted from one, as three of
+    /// the four languages count it (decision 107): a literal has one added, anything else
+    /// goes as <c>x + 1</c>, which the LINQ visitor takes off again. A Substring without a
+    /// length takes the length of the text as its third argument, which selects the same
+    /// characters. A method the vocabulary does not name is refused by name.
+    /// </summary>
+    private QueryOperand? ReadFunctionInvocation(InvocationExpressionSyntax invocation)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax member)
+        {
+            return null;
+        }
+
+        var arguments = invocation.ArgumentList.Arguments;
+        var name = member.Name.Identifier.Text;
+
+        if (WrittenName(member.Expression) is "string" or "String" or "System.String" && name == "Concat")
+        {
+            if (arguments.Count < 2)
+            {
+                unread ??= ($"'{invocation}', a Concat of fewer than two arguments", QueryFeature.Expression);
+                return null;
+            }
+
+            QueryOperand? result = null;
+            foreach (var argument in arguments)
+            {
+                var value = ReadLeaf(argument.Expression);
+                if (value is null)
+                {
+                    return null;
+                }
+
+                result = result is null ? value : Concatenation(result, value);
+            }
+
+            return result;
+        }
+
+        if (WrittenName(member.Expression) is "Math" or "System.Math" && name == "Abs")
+        {
+            var value = arguments.Count == 1 ? ReadLeaf(arguments[0].Expression) : null;
+            return value is null ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Abs, [value]));
+        }
+
+        switch (name)
+        {
+            case "ToUpper" or "ToLower" or "Trim" when arguments.Count == 0:
+                {
+                    var receiver = ReadLeaf(member.Expression);
+                    if (receiver is null)
+                    {
+                        return null;
+                    }
+
+                    var function = name switch
+                    {
+                        "ToUpper" => QueryFunction.Upper,
+                        "ToLower" => QueryFunction.Lower,
+                        _ => QueryFunction.Trim,
+                    };
+
+                    return QueryOperand.Computed(QueryExpression.Call(function, [receiver]));
+                }
+
+            case "Substring" when arguments.Count is 1 or 2:
+                {
+                    var receiver = ReadLeaf(member.Expression);
+                    var start = receiver is null ? null : ReadLeaf(arguments[0].Expression);
+                    if (receiver is null || start is null)
+                    {
+                        return null;
+                    }
+
+                    var position = start is { IsConstant: true, Function: null }
+                                   && int.TryParse(start.Constant!.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var zeroBased)
+                        ? QueryOperand.Value(QueryConstant.Of((zeroBased + 1).ToString(CultureInfo.InvariantCulture), ScalarType.Int))
+                        : QueryOperand.Computed(QueryExpression.Binary(ExpressionOperator.Add, start, QueryOperand.Value(QueryConstant.Of("1", ScalarType.Int))));
+
+                    var length = arguments.Count == 2
+                        ? ReadLeaf(arguments[1].Expression)
+                        : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Length, [receiver]));
+                    if (length is null)
+                    {
+                        return null;
+                    }
+
+                    return QueryOperand.Computed(QueryExpression.Call(QueryFunction.Substring, [receiver, position, length]));
+                }
+
+            case "ToUpper" or "ToLower" or "Trim" or "Substring":
+                unread ??= ($"{name}() with {arguments.Count} argument(s), an overload outside the vocabulary of expressions", QueryFeature.Expression);
+                return null;
+
+            default:
+                // Replace, PadLeft, ToString, Round, AddDays and the rest: outside the
+                // vocabulary, and named where the receiver is a column of a row in scope - a
+                // chain over a query root is no expression and keeps the reading it had.
+                if (IsColumnOfScope(member.Expression))
+                {
+                    unread ??= ($"the method {name}() in '{invocation}', which is outside the vocabulary of expressions the query representation carries", QueryFeature.Expression);
+                }
+
+                return null;
+        }
+    }
 
     /// <summary>
     /// Reads <c>new DateTime(2025, 1, 1)</c> in operand position as a DateTime constant
@@ -2436,6 +2890,21 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     }
 
     /// <summary>
+    /// The written name of a type standing as an expression - the receiver of a static
+    /// member such as <c>DateTime.Now</c>, <c>string.Concat</c>, <c>Math.Abs</c> -, dotted
+    /// and without an alias qualifier's separator changed; null for an expression that is
+    /// no name.
+    /// </summary>
+    private static string? WrittenName(ExpressionSyntax expression) => expression switch
+    {
+        PredefinedTypeSyntax predefined => predefined.Keyword.Text,
+        IdentifierNameSyntax identifier => identifier.Identifier.Text,
+        MemberAccessExpressionSyntax member when WrittenName(member.Expression) is { } head => $"{head}.{member.Name.Identifier.Text}",
+        AliasQualifiedNameSyntax aliased => $"{aliased.Alias.Identifier.Text}::{aliased.Name.Identifier.Text}",
+        _ => null,
+    };
+
+    /// <summary>
     /// The written name of a type in source, with the generic arguments and the nullable
     /// question mark left out - what is left is what the operand reader compares against.
     /// </summary>
@@ -2485,7 +2954,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             _ => null,
         };
 
-        if (function is null || !TryDecompose(member.Expression, out var root, out var steps))
+        // A receiver that is a lambda parameter standing for a row - the element of a group
+        // - is no query root, whatever the root recognizer makes of a bare identifier.
+        if (function is null
+            || (member.Expression is IdentifierNameSyntax head && aliasSubstitutions.ContainsKey(head.Identifier.Text))
+            || !TryDecompose(member.Expression, out var root, out var steps))
         {
             return null;
         }

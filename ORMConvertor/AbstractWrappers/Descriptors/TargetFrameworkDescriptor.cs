@@ -1,5 +1,6 @@
 ﻿using Model;
 using Model.AbstractRepresentation;
+using Model.QueryInstructions.Conditions;
 
 namespace AbstractWrappers.Descriptors;
 
@@ -146,6 +147,19 @@ public sealed class TargetFrameworkDescriptor
     }
 
     public FactSupport SupportOf(QueryFeature feature) => querySupport[feature];
+
+    /// <summary>
+    /// The scalar functions of the expression vocabulary the target's query language speaks
+    /// (decision 107) - the check of rule Q14 at a finer grain than <see cref="QuerySupport"/>,
+    /// because the spelling of a scalar function is the first place where the six targets
+    /// part company inside one category. A set rather than a table with enforced
+    /// completeness, because here silence is the safe side: a function a descriptor leaves
+    /// out is refused by the builder template with a record naming it and the target, never
+    /// emitted under a name the target does not have.
+    /// </summary>
+    public IReadOnlySet<QueryFunction> Functions { get; init; } = new HashSet<QueryFunction>();
+
+    public bool Speaks(QueryFunction function) => Functions.Contains(function);
 
     /// <summary>
     /// Enforced members applying to a given entity map.

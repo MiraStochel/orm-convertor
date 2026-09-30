@@ -64,6 +64,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             scope,
             (kind, reason, feature) => Report(kind, reason, feature),
             RenderSubQuery,
+            Expressions,
             enclosingVisitor);
 
         tupleAliases.Clear();
@@ -320,15 +321,15 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             // Ordering by a projection alias can only happen once the projection exists, so
             // it goes after Select. The slotted artifact is what makes that possible without
             // the step order having to change (decision 023).
-            var byAlias = order.Table is null
+            var byAlias = order.Operand is { IsColumn: true, Table: null, IsAggregate: false }
                           && clauses.Projections.Any(p =>
-                              string.Equals(p.Alias, order.Attribute, StringComparison.OrdinalIgnoreCase));
+                              string.Equals(p.Alias, order.Operand.Property, StringComparison.OrdinalIgnoreCase));
 
             (byAlias ? after : before).Add(order);
         }
 
         artifact.Ordering.Append(Chain(before, scope.Param, o => visitor.Visit(o)));
-        orderingAfterProjection = Chain(after, "p", o => $"p.{o.Attribute}");
+        orderingAfterProjection = Chain(after, "p", o => $"p.{o.Operand.Property}");
     }
 
     /// <summary>
@@ -348,10 +349,18 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         }
 
         var projection = clauses.Projections.FirstOrDefault(p => Projects(p, order));
-        var member = projection?.Alias
-                     ?? visitor.Property(projection?.Table ?? order.Table, projection?.Attribute ?? order.Attribute);
+        var member = projection?.Alias ?? MemberName(projection?.Operand ?? order.Operand);
         return $"p.{member}";
     }
+
+    /// <summary>
+    /// The member a projected operand is named by in the anonymous type when it carries no
+    /// alias: the property behind a column - an aggregate over a column included, as it has
+    /// been all along. An expression without an alias never reaches here: the template's
+    /// gate refuses it (decision 107).
+    /// </summary>
+    private string MemberName(QueryOperand operand)
+        => operand.IsColumn ? visitor.Property(operand.Table, operand.Property!) : operand.ToString();
 
     private static string Chain(
         List<OrderByInstruction> orders,
@@ -412,7 +421,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         }
 
         var members = clauses.Projections
-            .Select(p => $"{p.Alias ?? visitor.Property(p.Table, p.Attribute)} = {visitor.Visit(p)}")
+            .Select(p => $"{p.Alias ?? MemberName(p.Operand)} = {visitor.Visit(p)}")
             .ToList();
 
         artifact.Projection.Append($"\n        .Select({scope.Param} => new {{ {string.Join(", ", members)} }})");
@@ -483,7 +492,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
         var scalar = op is not (ComparisonOperator.Exists or ComparisonOperator.In);
 
-        if (scalar && (clauses.GroupBys.Count > 0 || clauses.Projections[0].Function is null))
+        if (scalar && (clauses.GroupBys.Count > 0 || !clauses.Projections[0].Operand.IsAggregate))
         {
             Report(
                 ConversionRecordKind.Failure,
@@ -494,7 +503,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
         if (op == ComparisonOperator.In
             && clauses.GroupBys.Count == 0
-            && clauses.Projections[0].Function is not null)
+            && clauses.Projections[0].Operand.IsAggregate)
         {
             Report(
                 ConversionRecordKind.Failure,
@@ -558,20 +567,23 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
     /// </summary>
     private string TerminalAggregate(ProjectInstruction projection)
     {
-        if (projection.Function == "COUNT" && !projection.Distinct)
+        var aggregated = projection.Operand;
+        var bare = aggregated.Bare();
+
+        if (aggregated.Function == "COUNT" && !aggregated.Distinct)
         {
-            if (projection.Attribute != "*")
+            if (bare.Property != "*")
             {
                 Report(
                     ConversionRecordKind.Convention,
-                    $"COUNT({projection.Attribute}) was written as Count(), which counts rows rather than non-null values.",
+                    $"COUNT({bare}) was written as Count(), which counts rows rather than non-null values.",
                     QueryFeature.Aggregation);
             }
 
             return ".Count()";
         }
 
-        var method = projection.Function switch
+        var method = aggregated.Function switch
         {
             "COUNT" => "Count",
             "SUM" => "Sum",
@@ -585,15 +597,17 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         {
             Report(
                 ConversionRecordKind.Failure,
-                $"Aggregate function {projection.Function} has no LINQ counterpart; the query was not generated.",
+                $"Aggregate function {aggregated.Function} has no LINQ counterpart; the query was not generated.",
                 QueryFeature.Aggregation);
             return string.Empty;
         }
 
-        var column = $"{scope.Param} => {visitor.Column(projection.Table, projection.Attribute, null)}";
-        return projection.Distinct
-            ? $".Select({column}).Distinct().{method}()"
-            : $".{method}({column})";
+        // The argument the aggregate ranges over - a column, or an expression (decision 107)
+        // - written over the row of the nested scope.
+        var argument = $"{scope.Param} => {visitor.Operand(bare)}";
+        return aggregated.Distinct
+            ? $".Select({argument}).Distinct().{method}()"
+            : $".{method}({argument})";
     }
 
     protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)

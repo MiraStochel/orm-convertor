@@ -82,7 +82,8 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             aliased,
             alias,
             (kind, reason, feature) => Report(kind, reason, feature),
-            RenderSubQuery);
+            RenderSubQuery,
+            Expressions);
 
         artifact.ResultEntity = entity;
         artifact.Source.Append($"from {entity} {alias}");

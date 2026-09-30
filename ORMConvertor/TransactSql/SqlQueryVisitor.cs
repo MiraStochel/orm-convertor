@@ -1,4 +1,5 @@
 using Common.Naming;
+using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model.AbstractRepresentation.Enums;
@@ -18,31 +19,34 @@ namespace TransactSql;
 /// of the program, and a condition tree a foreign parser produced is not one
 /// (decisions 010 and 053).
 /// </summary>
+/// <param name="typing">The typed view of the query's expressions the builder's gate filled (decision 107); T-SQL spells <c>+</c> for a concatenation and an addition alike, so this visitor reads nothing from it today and takes it so that the four visitors have one shape.</param>
 public class SqlQueryVisitor(
     Action<ConversionRecordKind, string, QueryFeature?> report,
-    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery) : IQueryVisitor
+    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery,
+    ExpressionTyping typing) : IQueryVisitor
 {
+    /// <summary>
+    /// The escape character of the LIKE whose pattern is being written, so that an
+    /// <see cref="QueryFunction.EscapePattern"/> inside the pattern escapes with the character
+    /// the comparison declares (decision 107). Null outside a pattern.
+    /// </summary>
+    private string? patternEscape;
+
     public string Visit(FromInstruction instr)
     {
         var alias = instr.Alias is null ? string.Empty : $" AS {instr.Alias}";
         return $"{instr.Table}{alias}";
     }
 
+    /// <summary>
+    /// A projected value with its alias (decision 107). COUNT(*) is the one aggregate whose
+    /// argument is not a column, so it is the one the table alias must not qualify:
+    /// `COUNT(c.*)` is not T-SQL at all, which the operand rendering below knows.
+    /// </summary>
     public string Visit(ProjectInstruction instr)
     {
-        // COUNT(*) is the one aggregate whose argument is not a column, so it is the one the
-        // table alias must not qualify: `COUNT(c.*)` is not T-SQL at all, and the artifact
-        // used to come out unparseable rather than merely poorer. The HQL and JPQL visitors
-        // have made the same distinction all along.
-        // DISTINCT inside the function is the modifier of the aggregate (decision 102).
-        string value = instr.Function is null
-            ? $"{instr.Table}.{instr.Attribute}"
-            : instr.Attribute == "*"
-                ? $"{instr.Function}(*)"
-                : $"{instr.Function}({(instr.Distinct ? "DISTINCT " : string.Empty)}{instr.Table}.{instr.Attribute})";
-
         var alias = instr.Alias is null ? string.Empty : $" AS {instr.Alias}";
-        return $"{value}{alias}";
+        return $"{BuildOperand(instr.Operand)}{alias}";
     }
 
     public string Visit(SelectInstruction instr) => instr.Condition.Accept(this);
@@ -86,7 +90,9 @@ public class SqlQueryVisitor(
             return string.Empty;
         }
 
+        patternEscape = cond.Operator == ComparisonOperator.Like ? cond.Escape : null;
         string right = BuildOperand(cond.Right);
+        patternEscape = null;
 
         // The escape character of a LIKE goes out as the clause T-SQL spells (decision 102);
         // the template has already held it to LIKE and to one character.
@@ -187,13 +193,11 @@ public class SqlQueryVisitor(
         return $"{joinType} {rightTable} ON {instr.OnCondition.Accept(this)}";
     }
 
+    /// <summary>An ordering key with its direction (decision 107): a column, an aggregate, an expression or a projection alias.</summary>
     public string Visit(OrderByInstruction instr)
     {
-        string column = instr.Table != null
-            ? $"{instr.Table}.{instr.Attribute}"
-            : instr.Attribute;
         string direction = instr.Asc ? "ASC" : "DESC";
-        return $"{column} {direction}";
+        return $"{BuildOperand(instr.Operand)} {direction}";
     }
 
     public string Visit(GroupByInstruction instr)
@@ -201,7 +205,7 @@ public class SqlQueryVisitor(
         return $"{instr.Table}.{instr.Attribute}";
     }
 
-    private static string BuildOperand(QueryOperand operand)
+    private string BuildOperand(QueryOperand operand)
     {
         // The values IN enumerates (decision 074): each one spelled the way a lone constant
         // is, so quoting and suffixes come from the scalar, not from the source text; a
@@ -209,6 +213,14 @@ public class SqlQueryVisitor(
         if (operand.IsValueList)
         {
             return $"({string.Join(", ", operand.Values!.Select(BuildOperand))})";
+        }
+
+        // A subquery in a scalar position - a leaf of an expression (decision 107) - is the
+        // nested SELECT in parentheses, as it is beside a scalar operator.
+        if (operand.IsSubQuery)
+        {
+            var sub = renderSubQuery(operand.SubQuery!, ComparisonOperator.Equal);
+            return sub is null ? string.Empty : $"({sub})";
         }
 
         // T-SQL decorates a parameter with @ and has no positional form, so a positional one
@@ -220,13 +232,76 @@ public class SqlQueryVisitor(
         // more than in the projection above: `COUNT(o.*)` is not T-SQL.
         var text = operand.IsParameter
             ? $"@{QueryParameterNaming.IdentifierFor(operand.Parameter!)}"
-            : operand.IsColumn
-                ? (operand.Table is null || operand.Property == "*" ? operand.Property! : $"{operand.Table}.{operand.Property}")
-                : Literal(operand.Constant!);
+            : operand.IsExpression
+                ? Expression(operand.Expression!)
+                : operand.IsColumn
+                    ? (operand.Table is null || operand.Property == "*" ? operand.Property! : $"{operand.Table}.{operand.Property}")
+                    : Literal(operand.Constant!);
 
         return operand.Function is null
             ? text
             : $"{operand.Function}({(operand.Distinct ? "DISTINCT " : string.Empty)}{text})";
+    }
+
+    /* ---- expressions (decision 107) --------------------------------------------------- */
+
+    /// <summary>
+    /// An expression in T-SQL's spelling (decision 107): the operators as written, <c>+</c>
+    /// for a concatenation as for an addition, the functions of the vocabulary under their
+    /// T-SQL names, and a searched CASE.
+    /// </summary>
+    private string Expression(QueryExpression expression)
+    {
+        if (expression.IsBinary)
+        {
+            var symbol = expression.Operator!.Value switch
+            {
+                ExpressionOperator.Concat or ExpressionOperator.Add => "+",
+                ExpressionOperator.Subtract => "-",
+                ExpressionOperator.Multiply => "*",
+                ExpressionOperator.Divide => "/",
+                ExpressionOperator.Modulo => "%",
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Operator, null),
+            };
+
+            return $"{Side(expression.Left!, expression, rightSide: false)} {symbol} {Side(expression.Right!, expression, rightSide: true)}";
+        }
+
+        if (expression.IsCall)
+        {
+            var arguments = expression.Arguments!.Select(BuildOperand).ToList();
+            return expression.Function!.Value switch
+            {
+                QueryFunction.Upper => $"UPPER({arguments[0]})",
+                QueryFunction.Lower => $"LOWER({arguments[0]})",
+                QueryFunction.Trim => $"TRIM({arguments[0]})",
+                QueryFunction.Substring => $"SUBSTRING({arguments[0]}, {arguments[1]}, {arguments[2]})",
+                QueryFunction.Length => $"LEN({arguments[0]})",
+                QueryFunction.Coalesce => $"COALESCE({string.Join(", ", arguments)})",
+                QueryFunction.Abs => $"ABS({arguments[0]})",
+                QueryFunction.Year => $"YEAR({arguments[0]})",
+                QueryFunction.Month => $"MONTH({arguments[0]})",
+                QueryFunction.Day => $"DAY({arguments[0]})",
+                QueryFunction.CurrentTimestamp => "CURRENT_TIMESTAMP",
+                QueryFunction.EscapePattern => ExpressionSpelling.EscapePattern(arguments[0], patternEscape ?? "!", "REPLACE"),
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null),
+            };
+        }
+
+        var branches = string.Join(" ", expression.Branches!.Select(b => $"WHEN {b.When.Accept(this)} THEN {BuildOperand(b.Then)}"));
+        var otherwise = expression.Else is null ? string.Empty : $" ELSE {BuildOperand(expression.Else)}";
+        return $"CASE {branches}{otherwise} END";
+    }
+
+    /// <summary>
+    /// One side of a binary expression, parenthesized where the grammar would regroup it
+    /// otherwise: a nested operation of lower precedence, or one of the same precedence on
+    /// the right, where <c>a - (b - c)</c> is not <c>a - b - c</c>.
+    /// </summary>
+    private string Side(QueryOperand side, QueryExpression parent, bool rightSide)
+    {
+        var text = BuildOperand(side);
+        return ExpressionSpelling.NeedsParentheses(side, parent, rightSide) ? $"({text})" : text;
     }
 
     /// <summary>

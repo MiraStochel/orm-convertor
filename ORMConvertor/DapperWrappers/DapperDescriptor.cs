@@ -77,6 +77,10 @@ public static class DapperDescriptor
             [QueryFeature.Subquery] = FactSupport.Expressible,
             [QueryFeature.SetOperation] = FactSupport.Expressible,
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
+            [QueryFeature.Expression] = FactSupport.Expressible,
         },
+
+        // T-SQL spells every function of the expression vocabulary (decision 107).
+        Functions = QueryFunctionVocabulary.All,
     };
 }

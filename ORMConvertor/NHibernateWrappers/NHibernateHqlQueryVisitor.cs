@@ -1,4 +1,5 @@
 using Common.Naming;
+using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model.AbstractRepresentation;
@@ -14,16 +15,21 @@ namespace NHibernateWrappers;
 /// LINQ visitor this one needs no lexical scope — but it names entities and properties
 /// rather than tables and columns, so every reference goes through the mapping IR.
 /// </summary>
+/// <param name="typing">The typed view of the query's expressions the builder's gate filled (decision 107): which <c>+</c> stands over a string, because HQL spells a concatenation with a word of its own.</param>
 public sealed class NHibernateHqlQueryVisitor(
     Dictionary<string, EntityMap> entities,
     Action<ConversionRecordKind, string, QueryFeature?> report,
-    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery) : IQueryVisitor
+    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery,
+    ExpressionTyping typing) : IQueryVisitor
 {
+    /// <summary>The escape character of the like whose pattern is being written (decision 107); null outside a pattern.</summary>
+    private string? patternEscape;
+
     public string Visit(FromInstruction instr) => instr.Alias ?? instr.Table;
 
     public string Visit(ProjectInstruction instr)
     {
-        var value = Column(instr.Table, instr.Attribute, instr.Function, instr.Distinct);
+        var value = Operand(instr.Operand);
         return instr.Alias is null ? value : $"{value} as {instr.Alias}";
     }
 
@@ -34,7 +40,7 @@ public sealed class NHibernateHqlQueryVisitor(
     public string Visit(GroupByInstruction instr) => Column(instr.Table, instr.Attribute, null);
 
     public string Visit(OrderByInstruction instr)
-        => $"{Column(instr.Table, instr.Attribute, null)} {(instr.Asc ? "asc" : "desc")}";
+        => $"{Operand(instr.Operand)} {(instr.Asc ? "asc" : "desc")}";
 
     public string Visit(JoinInstruction instr)
     {
@@ -116,7 +122,11 @@ public sealed class NHibernateHqlQueryVisitor(
             return string.Empty;
         }
 
-        return $"{left} {Operator(cond.Operator)} {Operand(cond.Right)}{Escape(cond)}";
+        patternEscape = cond.Operator == ComparisonOperator.Like ? cond.Escape : null;
+        var right = Operand(cond.Right);
+        patternEscape = null;
+
+        return $"{left} {Operator(cond.Operator)} {right}{Escape(cond)}";
     }
 
     /// <summary>The escape clause of a like (decision 102); the template holds it to like and to one character.</summary>
@@ -188,15 +198,38 @@ public sealed class NHibernateHqlQueryVisitor(
     }
 
     private string Operand(QueryOperand operand)
-        => operand.IsValueList
-            // The values IN enumerates (decision 074), each spelled as a lone constant is,
-            // a parameter among them (decision 102) as a lone parameter is.
-            ? $"({string.Join(", ", operand.Values!.Select(Operand))})"
-            : operand.IsParameter
-                ? Parameter(operand.Parameter!, operand.Function)
-                : operand.IsConstant
-                    ? Wrap(Literal(operand.Constant!), operand.Function)
-                    : Column(operand.Table, operand.Property!, operand.Function, operand.Distinct);
+    {
+        // The values IN enumerates (decision 074), each spelled as a lone constant is,
+        // a parameter among them (decision 102) as a lone parameter is.
+        if (operand.IsValueList)
+        {
+            return $"({string.Join(", ", operand.Values!.Select(Operand))})";
+        }
+
+        if (operand.IsParameter)
+        {
+            return Parameter(operand.Parameter!, operand.Function);
+        }
+
+        if (operand.IsConstant)
+        {
+            return Wrap(Literal(operand.Constant!), operand.Function);
+        }
+
+        // A subquery in a scalar position - a leaf of an expression (decision 107).
+        if (operand.IsSubQuery)
+        {
+            var sub = renderSubQuery(operand.SubQuery!, ComparisonOperator.Equal);
+            return sub is null ? string.Empty : $"({sub})";
+        }
+
+        if (operand.IsExpression)
+        {
+            return Wrap(Expression(operand.Expression!), operand.Function, operand.Distinct);
+        }
+
+        return Column(operand.Table, operand.Property!, operand.Function, operand.Distinct);
+    }
 
     /// <summary>
     /// A parameter in HQL (decision 083): always the named form, because HQL's positional
@@ -239,6 +272,148 @@ public sealed class NHibernateHqlQueryVisitor(
         => entities.TryGetValue(alias, out var map) ? map.Entity.Name : null;
 
     private static string Bare(string table) => table.Split('.').LastOrDefault() ?? table;
+
+    /* ---- expressions (decision 107) --------------------------------------------------- */
+
+    /// <summary>
+    /// An expression in HQL's spelling (decision 107): <c>concat(a, b, …)</c> for a
+    /// concatenation - the nesting the model carries flattened, which is the target's
+    /// spelling and not the model -, the arithmetic operators as written and <c>mod(a, b)</c>
+    /// for the modulo, the functions of the vocabulary in lower case, <c>current_timestamp()</c>
+    /// with its parentheses, and a searched case.
+    /// </summary>
+    private string Expression(QueryExpression expression)
+    {
+        if (expression.IsBinary)
+        {
+            if (typing.IsConcatenation(expression))
+            {
+                return $"concat({string.Join(", ", Concatenated(expression).Select(Operand))})";
+            }
+
+            if (expression.Operator == ExpressionOperator.Modulo)
+            {
+                return $"mod({Operand(expression.Left!)}, {Operand(expression.Right!)})";
+            }
+
+            var symbol = expression.Operator!.Value switch
+            {
+                ExpressionOperator.Add => "+",
+                ExpressionOperator.Subtract => "-",
+                ExpressionOperator.Multiply => "*",
+                ExpressionOperator.Divide => "/",
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Operator, null),
+            };
+
+            var (left, right) = (expression.Left!, expression.Right!);
+            var text = $"{Side(left, expression, rightSide: false)} {symbol} {Side(right, expression, rightSide: true)}";
+
+            // NHibernate 5.7.0 does not type an arithmetic operation over a decimal and a
+            // whole number as a decimal: `Quantity * UnitPrice` comes back as an int with the
+            // fraction cut off, whichever side the decimal stands on - a different value, not
+            // a poorer one (decision 053). Found by the fourth level over the arithmetic row.
+            // The value is cast to the decimal the gate typed it as, which is the target's
+            // spelling of the type the other five targets give it anyway, and said in a record.
+            if (typing.ScalarOf(expression) == ScalarType.Decimal
+                && (IsWholeNumber(LeafScalar(left)) || IsWholeNumber(LeafScalar(right))))
+            {
+                report(
+                    ConversionRecordKind.Convention,
+                    $"HQL in NHibernate 5.7.0 does not type '{expression}' over a decimal and a whole number as a decimal, so the value was cast to decimal, which keeps its fraction.",
+                    QueryFeature.Expression);
+                return $"cast({text} as decimal)";
+            }
+
+            return text;
+        }
+
+        if (expression.IsCall)
+        {
+            var arguments = expression.Arguments!.Select(Operand).ToList();
+            return expression.Function!.Value switch
+            {
+                QueryFunction.Upper => $"upper({arguments[0]})",
+                QueryFunction.Lower => $"lower({arguments[0]})",
+                QueryFunction.Trim => $"trim({arguments[0]})",
+                QueryFunction.Substring => $"substring({arguments[0]}, {arguments[1]}, {arguments[2]})",
+                QueryFunction.Length => $"length({arguments[0]})",
+                QueryFunction.Coalesce => $"coalesce({string.Join(", ", arguments)})",
+                QueryFunction.Abs => $"abs({arguments[0]})",
+                QueryFunction.Year => $"year({arguments[0]})",
+                QueryFunction.Month => $"month({arguments[0]})",
+                QueryFunction.Day => $"day({arguments[0]})",
+                QueryFunction.CurrentTimestamp => "current_timestamp()",
+                QueryFunction.EscapePattern => ExpressionSpelling.EscapePattern(arguments[0], patternEscape ?? "!", "replace"),
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null),
+            };
+        }
+
+        var branches = string.Join(" ", expression.Branches!.Select(b => $"when {b.When.Accept(this)} then {Operand(b.Then)}"));
+        var otherwise = expression.Else is null ? string.Empty : $" else {Operand(expression.Else)}";
+        return $"case {branches}{otherwise} end";
+    }
+
+    /// <summary>The operands of a concatenation, its nested concatenations flattened into one argument list.</summary>
+    private IEnumerable<QueryOperand> Concatenated(QueryExpression concatenation)
+    {
+        foreach (var side in new[] { concatenation.Left!, concatenation.Right! })
+        {
+            if (side is { IsExpression: true, IsAggregate: false } && side.Expression!.IsBinary && typing.IsConcatenation(side.Expression))
+            {
+                foreach (var inner in Concatenated(side.Expression))
+                {
+                    yield return inner;
+                }
+            }
+            else
+            {
+                yield return side;
+            }
+        }
+    }
+
+    private string Side(QueryOperand side, QueryExpression parent, bool rightSide)
+    {
+        var text = Operand(side);
+        return ExpressionSpelling.NeedsParentheses(side, parent, rightSide) ? $"({text})" : text;
+    }
+
+    /// <summary>
+    /// The scalar of a leaf as this visitor can know it: a constant's own, a column's from the
+    /// mapping behind its alias, an expression's from the typed view (decision 107); null
+    /// for a parameter, a subquery or an aggregate, whose type NHibernate resolves itself.
+    /// </summary>
+    private ScalarType? LeafScalar(QueryOperand operand)
+    {
+        if (operand.IsAggregate)
+        {
+            return null;
+        }
+
+        if (operand.IsConstant)
+        {
+            return operand.Constant!.Type;
+        }
+
+        if (operand.IsExpression)
+        {
+            return typing.ScalarOf(operand.Expression!);
+        }
+
+        if (operand.IsColumn && operand.Table is not null && entities.TryGetValue(operand.Table, out var map))
+        {
+            return map.PropertyMaps
+                .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, operand.Property, StringComparison.OrdinalIgnoreCase))
+                ?.Property.Type is { Category: LangTypeCategory.Scalar } type
+                ? type.ScalarType
+                : null;
+        }
+
+        return null;
+    }
+
+    private static bool IsWholeNumber(ScalarType? scalar)
+        => scalar is ScalarType.Byte or ScalarType.Short or ScalarType.Int or ScalarType.Long;
 
     /// <summary>
     /// Writes a constant the way HQL wants it (decision 024). Strings and dates are quoted,

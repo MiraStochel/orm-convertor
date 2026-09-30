@@ -55,6 +55,7 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         "select", "distinct", "from", "as", "inner", "left", "right", "full", "outer",
         "join", "fetch", "with", "where", "group", "having", "order", "by", "asc", "desc",
         "and", "or", "not", "like", "in", "is", "null", "between", "exists", "escape",
+        "case", "when", "then", "else", "end",
 
         // Not part of the read subset - HQL in NHibernate 5.7.0 has no set operations - but
         // reserved so that "from Customer union ..." fails as a syntax error instead of
@@ -276,7 +277,7 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
-            if (i + 1 < source.Length && source.Substring(i, 2) is ("<>" or "<=" or ">=" or "!=") and var pair)
+            if (i + 1 < source.Length && source.Substring(i, 2) is ("<>" or "<=" or ">=" or "!=" or "||") and var pair)
             {
                 read.Add(new Token(TokenKind.Symbol, pair, startLine, startColumn));
                 i += 2;
@@ -284,7 +285,8 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
-            if (c is '(' or ')' or ',' or '.' or '*' or '=' or '<' or '>' or '-')
+            // The arithmetic operators and the concatenation entered with decision 107.
+            if (c is '(' or ')' or ',' or '.' or '*' or '=' or '<' or '>' or '-' or '+' or '/' or '%')
             {
                 read.Add(new Token(TokenKind.Symbol, c.ToString(), startLine, startColumn));
                 i++;
@@ -381,7 +383,11 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private void ParseQueryBody()
     {
-        var projections = new List<Projection>();
+        // The select clause is skipped on the first pass and read after the from clause and
+        // the joins have declared the aliases (decision 107): a projected expression
+        // resolves its columns through the aliases the same way a condition does, and the
+        // tokens are a list, so the reader comes back to the clause by position.
+        int? selectStart = null;
         if (TryConsumeKeyword("select"))
         {
             // DISTINCT is a property of the whole projection, carried per (sub)query scope
@@ -391,11 +397,8 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 queryBuilder.Distinct();
             }
 
-            do
-            {
-                projections.Add(ParseProjection());
-            }
-            while (TryConsumeSymbol(","));
+            selectStart = position;
+            SkipToFrom();
         }
 
         ConsumeKeyword("from");
@@ -420,7 +423,26 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             ParseJoin();
         }
 
-        EmitProjections(projections);
+        if (selectStart is { } selectAt)
+        {
+            var afterJoins = position;
+            position = selectAt;
+
+            var projections = new List<Projection>();
+            do
+            {
+                projections.Add(ParseProjection());
+            }
+            while (TryConsumeSymbol(","));
+
+            if (!AtKeyword("from"))
+            {
+                throw Error("expected 'from' after the select clause");
+            }
+
+            position = afterJoins;
+            EmitProjections(projections);
+        }
 
         if (TryConsumeKeyword("where"))
         {
@@ -440,13 +462,31 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             ConsumeKeyword("by");
             do
             {
-                if (ParsePath() is { } key)
+                var start = position;
+                var key = ParseOperand();
+                if (key is null && position == start)
                 {
-                    queryBuilder.GroupBy(key.Qualifier ?? sourceAlias, ColumnFor(key.Qualifier, key.Attribute));
+                    throw Error("expected a grouping key");
+                }
+
+                if (key is { IsColumn: true, IsAggregate: false } && key.Property != "*")
+                {
+                    queryBuilder.GroupBy(key.Table ?? sourceAlias, key.Property!);
+                }
+                else if (key is { IsExpression: true })
+                {
+                    // A grouping by an expression is the one position the expression does not
+                    // take (decision 107); refused by name.
+                    unread = null;
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"The grouping key '{key}' is an expression, which the query representation carries in every position but the grouping, and a query grouped differently would return different rows; no artifact was generated.",
+                        QueryFeature.Expression);
                 }
                 else
                 {
                     // Grouping decides which rows come back (decision 070).
+                    unread = null;
                     Report(
                         ConversionRecordKind.Failure,
                         "A grouping key that is not a property reference cannot be carried, and a query grouped differently would return different rows; no artifact was generated.",
@@ -474,7 +514,16 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             ConsumeKeyword("by");
             do
             {
-                var key = ParsePath();
+                // A property, an aggregate (order by count(*) desc), an expression or a
+                // projection alias (decision 107); a bare constant is no ordering key the
+                // representation carries and stays the loss it was.
+                var start = position;
+                var key = ParseOperand();
+                if (key is null && position == start)
+                {
+                    throw Error("expected an ordering key");
+                }
+
                 bool asc = true;
                 if (TryConsumeKeyword("desc"))
                 {
@@ -485,43 +534,60 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     TryConsumeKeyword("asc");
                 }
 
-                if (key is null)
+                if (key is null || key.IsConstant || key.IsParameter)
                 {
+                    var (what, category) = unread ?? ("a construct that is not a property reference", null);
+                    unread = null;
                     Report(
                         ConversionRecordKind.Loss,
-                        "An ordering key that is not a property reference was dropped.",
-                        QueryFeature.Ordering);
+                        $"An ordering key that is {what} was dropped.",
+                        category ?? QueryFeature.Ordering);
                 }
                 else
                 {
-                    queryBuilder.OrderBy(key.Qualifier, ColumnFor(key.Qualifier, key.Attribute), asc);
+                    queryBuilder.OrderBy(key, asc);
                 }
             }
             while (TryConsumeSymbol(","));
         }
     }
 
-    /// <param name="Distinct">Whether the aggregate ranges over the distinct values of its argument (decision 102).</param>
-    private sealed record Projection(string? Function, PathReference? Path, string? Alias, bool Distinct = false);
+    /// <summary>
+    /// Skips the select list up to the <c>from</c> that closes it, at the nesting depth the
+    /// clause opened at, so that a subquery in the list does not end the skip early.
+    /// </summary>
+    private void SkipToFrom()
+    {
+        var depth = 0;
+        while (Current.Kind != TokenKind.End)
+        {
+            if (AtSymbol("("))
+            {
+                depth++;
+            }
+            else if (AtSymbol(")"))
+            {
+                depth--;
+            }
+            else if (depth == 0 && AtKeyword("from"))
+            {
+                return;
+            }
+
+            Advance();
+        }
+    }
+
+    /// <summary>One projected value as read (decision 107): the operand, or null for a construct the representation does not carry, and the alias the source gave it.</summary>
+    private sealed record Projection(QueryOperand? Operand, string? Alias);
 
     private Projection ParseProjection()
     {
-        string? function = null;
-        bool distinct = false;
-        PathReference? path;
-
-        if (Current.Kind == TokenKind.Identifier && IsAggregate(Current.Text) && Next is { Kind: TokenKind.Symbol, Text: "(" })
+        var start = position;
+        var operand = ParseOperand();
+        if (operand is null && position == start)
         {
-            function = Current.Text.ToUpperInvariant();
-            Advance();
-            Advance();
-            distinct = TryConsumeKeyword("distinct");
-            path = TryConsumeSymbol("*") ? new PathReference(null, "*") : ParsePath();
-            ConsumeSymbol(")");
-        }
-        else
-        {
-            path = ParsePath();
+            throw Error("expected a projected value");
         }
 
         string? alias = null;
@@ -536,51 +602,56 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             Advance();
         }
 
-        return new Projection(function, path, alias, distinct);
+        return new Projection(operand, alias);
     }
 
     private void EmitProjections(List<Projection> projections)
     {
         foreach (var projection in projections)
         {
-            if (projection.Path is null)
+            var operand = projection.Operand;
+
+            if (operand is null || (operand.IsConstant && !operand.IsAggregate) || operand.IsParameter)
             {
+                var (what, category) = unread ?? ("a property reference, an aggregate or an expression", null);
+                unread = null;
                 Report(
                     ConversionRecordKind.Loss,
-                    "A projected expression that is not a property reference or an aggregate was dropped.",
-                    QueryFeature.Projection);
+                    $"A projected expression that is not {what} was dropped.",
+                    category ?? QueryFeature.Projection);
                 continue;
             }
 
-            var (qualifier, attribute) = (projection.Path.Qualifier, projection.Path.Attribute);
-
             // A bare declared alias projects the whole entity, which rule Q3 spells as the
             // absence of a projection — the same reading LINQ's Select(c => c) gets.
-            if (projection.Function is null && qualifier is null && aliases.ContainsKey(attribute))
+            if (operand is { IsColumn: true, IsAggregate: false, Property: "*" })
             {
                 if (projections.Count > 1)
                 {
                     Report(
                         ConversionRecordKind.Loss,
-                        $"The whole-entity projection '{attribute}' next to other columns is not carried by the query representation; it was dropped.",
+                        $"The whole-entity projection '{operand.Table}' next to other columns is not carried by the query representation; it was dropped.",
                         QueryFeature.Projection);
                 }
 
                 continue;
             }
 
-            if (attribute == "*")
+            if (operand is { IsColumn: true, Property: "*" })
             {
-                queryBuilder.Project(sourceAlias, "*", projection.Alias, projection.Function, projection.Distinct);
+                queryBuilder.Project(sourceAlias, "*", projection.Alias, operand.Function, operand.Distinct);
                 continue;
             }
 
-            queryBuilder.Project(
-                qualifier ?? sourceAlias,
-                ColumnFor(qualifier, attribute),
-                projection.Alias,
-                projection.Function,
-                projection.Distinct);
+            // The projection names its table; a column the text left unqualified belongs to
+            // the source.
+            if (operand is { IsColumn: true, Table: null })
+            {
+                queryBuilder.Project(sourceAlias, operand.Property!, projection.Alias, operand.Function, operand.Distinct);
+                continue;
+            }
+
+            queryBuilder.Project(operand, projection.Alias);
         }
     }
 
@@ -1232,7 +1303,77 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     /* ---- operands ------------------------------------------------------------------- */
 
+    /// <summary>
+    /// An operand, which since decision 107 is an expression over the primary operands:
+    /// the additive level - <c>+</c>, <c>-</c> and the concatenation <c>||</c> - over the
+    /// multiplicative one, over the primaries. A null anywhere sinks the whole operand
+    /// after every token of it has been consumed, so that the clause refuses by name.
+    /// </summary>
     private QueryOperand? ParseOperand()
+    {
+        var left = ParseMultiplicative();
+
+        while (Current.Kind == TokenKind.Symbol && Current.Text is "+" or "-" or "||")
+        {
+            var op = Current.Text switch
+            {
+                "+" => ExpressionOperator.Add,
+                "-" => ExpressionOperator.Subtract,
+                _ => ExpressionOperator.Concat,
+            };
+            Advance();
+
+            var right = ParseMultiplicative();
+            left = Combine(op, left, right);
+        }
+
+        return left;
+    }
+
+    private QueryOperand? ParseMultiplicative()
+    {
+        var left = ParsePrimaryOperand();
+
+        while (Current.Kind == TokenKind.Symbol && Current.Text is "*" or "/" or "%")
+        {
+            var op = Current.Text switch
+            {
+                "*" => ExpressionOperator.Multiply,
+                "/" => ExpressionOperator.Divide,
+                _ => ExpressionOperator.Modulo,
+            };
+            Advance();
+
+            var right = ParsePrimaryOperand();
+            left = Combine(op, left, right);
+        }
+
+        return left;
+    }
+
+    private QueryOperand? Combine(ExpressionOperator op, QueryOperand? left, QueryOperand? right)
+    {
+        if (left is null || right is null || !IsLeaf(left) || !IsLeaf(right))
+        {
+            return null;
+        }
+
+        return QueryOperand.Computed(QueryExpression.Binary(op, left, right));
+    }
+
+    /// <summary>A leaf of an expression: a collection parameter has no place in one (decision 107), and the factory would refuse it; refused here first, by name.</summary>
+    private bool IsLeaf(QueryOperand operand)
+    {
+        if (operand.IsValueList || operand.Parameter?.IsCollection == true)
+        {
+            unread ??= ($"the collection '{operand}' inside an expression, which no target computes with", QueryFeature.Expression);
+            return false;
+        }
+
+        return true;
+    }
+
+    private QueryOperand? ParsePrimaryOperand()
     {
         if (Current.Kind == TokenKind.String)
         {
@@ -1254,6 +1395,21 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             var text = "-" + Current.Text;
             Advance();
             return QueryOperand.Value(NumberConstant(text));
+        }
+
+        // A parenthesis opens a scalar subquery standing as a leaf of an expression, or a
+        // grouped expression (decision 107).
+        if (AtSymbol("("))
+        {
+            if (NextIsSubQuery())
+            {
+                return QueryOperand.Nested(ParseParenthesizedSubQuery());
+            }
+
+            Advance();
+            var grouped = ParseOperand();
+            ConsumeSymbol(")");
+            return grouped;
         }
 
         if (Current.Kind == TokenKind.Parameter)
@@ -1282,34 +1438,277 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return null;
         }
 
+        if (AtKeyword("case"))
+        {
+            return ParseCase();
+        }
+
         if (IsAggregate(Current.Text) && Next is { Kind: TokenKind.Symbol, Text: "(" })
         {
-            var function = Current.Text.ToUpperInvariant();
-            Advance();
-            Advance();
-            var distinct = TryConsumeKeyword("distinct");
+            return ParseAggregate();
+        }
 
-            QueryOperand? aggregated;
-            if (TryConsumeSymbol("*"))
-            {
-                aggregated = QueryOperand.Column(null, "*", function, distinct);
-            }
-            else
-            {
-                var path = ParsePath();
-                aggregated = path is null
-                    ? null
-                    : QueryOperand.Column(path.Qualifier, ColumnFor(path.Qualifier, path.Attribute), function, distinct);
-            }
-
-            ConsumeSymbol(")");
-            return aggregated;
+        if (Next is { Kind: TokenKind.Symbol, Text: "(" })
+        {
+            return ParseFunctionCall();
         }
 
         var reference = ParsePath();
-        return reference is null
-            ? null
-            : QueryOperand.Column(reference.Qualifier, ColumnFor(reference.Qualifier, reference.Attribute));
+        if (reference is null)
+        {
+            return null;
+        }
+
+        // A bare declared alias is the whole entity - the projection reads it as rule Q3's
+        // absence of a projection.
+        if (reference.Qualifier is null && aliases.ContainsKey(reference.Attribute))
+        {
+            return QueryOperand.Column(reference.Attribute, "*");
+        }
+
+        return QueryOperand.Column(reference.Qualifier, ColumnFor(reference.Qualifier, reference.Attribute));
+    }
+
+    /* ---- expressions (decision 107) --------------------------------------------------- */
+
+    /// <summary>
+    /// One of the five aggregates: over the whole row (<c>count(*)</c>, or the count of a
+    /// declared alias), over a property, or over an expression (decision 107), with
+    /// <c>distinct</c> inside the function as the modifier of the aggregate (decision 102).
+    /// </summary>
+    private QueryOperand? ParseAggregate()
+    {
+        var function = Current.Text.ToUpperInvariant();
+        Advance();
+        Advance();
+        var distinct = TryConsumeKeyword("distinct");
+
+        QueryOperand? aggregated;
+        if (TryConsumeSymbol("*"))
+        {
+            aggregated = QueryOperand.Column(null, "*", function, distinct);
+        }
+        else
+        {
+            var argument = ParseOperand();
+            if (argument is null || !IsLeaf(argument))
+            {
+                aggregated = null;
+            }
+            else if (argument is { IsColumn: true, IsAggregate: false, Property: "*" })
+            {
+                aggregated = QueryOperand.Column(null, "*", function, distinct);
+            }
+            else if (argument.IsColumn)
+            {
+                aggregated = QueryOperand.Column(argument.Table, argument.Property!, function, distinct);
+            }
+            else if (argument.IsConstant)
+            {
+                aggregated = QueryOperand.Value(argument.Constant!, function);
+            }
+            else if (argument.IsParameter)
+            {
+                aggregated = QueryOperand.Bound(argument.Parameter!, function);
+            }
+            else if (argument.IsExpression)
+            {
+                aggregated = QueryOperand.Computed(argument.Expression!, function, distinct);
+            }
+            else
+            {
+                unread ??= ($"an aggregate over '{argument}'", QueryFeature.Aggregation);
+                aggregated = null;
+            }
+        }
+
+        ConsumeSymbol(")");
+        return aggregated;
+    }
+
+    /// <summary>
+    /// A call of a function under its HQL name (decision 107): the vocabulary in lower case,
+    /// <c>concat</c> of any number of arguments nested, <c>mod</c> as the modulo,
+    /// <c>current_timestamp()</c> with its parentheses. A name outside the vocabulary is
+    /// consumed to its closing parenthesis and refused by name.
+    /// </summary>
+    private QueryOperand? ParseFunctionCall()
+    {
+        var name = Current.Text.ToLowerInvariant();
+        var line = Current.Line;
+        var column = Current.Column;
+        Advance();
+        ConsumeSymbol("(");
+
+        var arguments = new List<QueryOperand>();
+        var carried = true;
+        if (!AtSymbol(")"))
+        {
+            do
+            {
+                var start = position;
+                var argument = ParseOperand();
+                if (argument is null && position == start)
+                {
+                    throw new HqlParseError(line, column, $"expected an argument of {name}");
+                }
+
+                if (argument is null || !IsLeaf(argument))
+                {
+                    carried = false;
+                    continue;
+                }
+
+                arguments.Add(argument);
+            }
+            while (TryConsumeSymbol(","));
+        }
+
+        ConsumeSymbol(")");
+
+        if (!carried)
+        {
+            return null;
+        }
+
+        switch (name)
+        {
+            case "concat":
+                if (arguments.Count < 2)
+                {
+                    unread ??= ($"concat with {arguments.Count} argument(s), which takes at least two", QueryFeature.Expression);
+                    return null;
+                }
+
+                return arguments.Skip(1).Aggregate(arguments[0], (left, right) => QueryOperand.Computed(QueryExpression.Binary(ExpressionOperator.Concat, left, right)));
+
+            case "mod":
+                if (arguments.Count != 2)
+                {
+                    unread ??= ($"mod with {arguments.Count} argument(s), which takes two", QueryFeature.Expression);
+                    return null;
+                }
+
+                return QueryOperand.Computed(QueryExpression.Binary(ExpressionOperator.Modulo, arguments[0], arguments[1]));
+
+            case "substring":
+                // The two-argument form takes the rest of the text; the model carries three
+                // arguments and the length of the text selects the same characters.
+                if (arguments.Count == 2)
+                {
+                    arguments.Add(QueryOperand.Computed(QueryExpression.Call(QueryFunction.Length, [arguments[0]])));
+                }
+
+                return Call(QueryFunction.Substring, arguments, name);
+        }
+
+        QueryFunction? function = name switch
+        {
+            "upper" => QueryFunction.Upper,
+            "lower" => QueryFunction.Lower,
+            "trim" => QueryFunction.Trim,
+            "length" => QueryFunction.Length,
+            "coalesce" => QueryFunction.Coalesce,
+            "abs" => QueryFunction.Abs,
+            "year" => QueryFunction.Year,
+            "month" => QueryFunction.Month,
+            "day" => QueryFunction.Day,
+            "current_timestamp" => QueryFunction.CurrentTimestamp,
+            _ => null,
+        };
+
+        if (function is null)
+        {
+            unread ??= ($"the function {name}, which is outside the vocabulary of expressions the query representation carries", QueryFeature.Expression);
+            return null;
+        }
+
+        return Call(function.Value, arguments, name);
+    }
+
+    private QueryOperand? Call(QueryFunction function, List<QueryOperand> arguments, string name)
+    {
+        var (least, most) = QueryExpression.Arity(function);
+        if (arguments.Count < least || arguments.Count > most)
+        {
+            unread ??= ($"{name} with {arguments.Count} argument(s), a number the function of the vocabulary does not take", QueryFeature.Expression);
+            return null;
+        }
+
+        return QueryOperand.Computed(QueryExpression.Call(function, arguments));
+    }
+
+    /// <summary>
+    /// A searched <c>case when … then … [else …] end</c>, or a simple <c>case x when v then …</c>
+    /// read as the searched form with an equality per branch (decision 107).
+    /// </summary>
+    private QueryOperand? ParseCase()
+    {
+        ConsumeKeyword("case");
+        var carried = true;
+
+        QueryOperand? input = null;
+        if (!AtKeyword("when"))
+        {
+            input = ParseOperand();
+            carried &= input is not null && IsLeaf(input);
+        }
+
+        var branches = new List<CaseBranch>();
+        while (TryConsumeKeyword("when"))
+        {
+            ConditionNode? when;
+            if (input is null && !carried)
+            {
+                // The input was not carried; the branch is consumed for the syntax only.
+                ParseOperand();
+                when = null;
+            }
+            else if (input is not null)
+            {
+                var value = ParseOperand();
+                when = value is null || !IsLeaf(value) ? null : new ComparisonCondition(input, ComparisonOperator.Equal, value);
+            }
+            else
+            {
+                when = ParseCondition();
+            }
+
+            ConsumeKeyword("then");
+            var then = ParseOperand();
+
+            if (when is null || then is null || !IsLeaf(then))
+            {
+                carried = false;
+                continue;
+            }
+
+            branches.Add(new CaseBranch(when, then));
+        }
+
+        QueryOperand? otherwise = null;
+        if (TryConsumeKeyword("else"))
+        {
+            if (AtKeyword("null"))
+            {
+                Advance();
+            }
+            else
+            {
+                otherwise = ParseOperand();
+                carried &= otherwise is not null && IsLeaf(otherwise);
+            }
+        }
+
+        ConsumeKeyword("end");
+
+        if (!carried || branches.Count == 0)
+        {
+            unread ??= ("a case with a branch the query representation does not carry", QueryFeature.Expression);
+            return null;
+        }
+
+        return QueryOperand.Computed(QueryExpression.Case(branches, otherwise));
     }
 
     /// <summary>

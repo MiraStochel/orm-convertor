@@ -149,6 +149,11 @@ public static class NHibernateDescriptor
             [QueryFeature.Subquery] = FactSupport.Expressible,
             [QueryFeature.SetOperation] = FactSupport.NotExpressible,
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
+            [QueryFeature.Expression] = FactSupport.Expressible,
         },
+
+        // HQL in NHibernate 5.7.0 registers every function of the expression vocabulary over
+        // the SQL Server dialect (decision 107).
+        Functions = QueryFunctionVocabulary.All,
     };
 }

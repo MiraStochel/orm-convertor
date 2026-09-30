@@ -1,0 +1,1 @@
+from ShopProduct p where p.ProductName like concat(:prefix, '%')

@@ -47,4 +47,21 @@ public enum QueryFeature
     /// text rather than binding a value (decision 082).
     /// </summary>
     QueryParameter = 12,
+
+    /// <summary>
+    /// A value the query computes - arithmetic, concatenation, a scalar function, CASE
+    /// (decision 107). The model carries one as the sixth shape of an operand, wherever an
+    /// operand stands, and every descriptor marks the category expressible, because every
+    /// target writes every shape; what a target does not speak is a <em>function</em>, and
+    /// that is stated at a finer grain, in <see cref="TargetFrameworkDescriptor.Functions"/>.
+    ///
+    /// What is recorded under this category is therefore a limit of the model or of the
+    /// vocabulary, not an inability of the target: a function outside the vocabulary
+    /// (<c>CAST</c>, a windowed function, <c>DATEADD</c>, <c>ROUND</c>), a function the
+    /// target's descriptor leaves out, an expression whose scalar the gate cannot derive
+    /// where the spelling depends on it, an expression projected without an alias, an
+    /// aggregate over an aggregate, and a grouping by an expression, which is the one
+    /// position the expression does not take.
+    /// </summary>
+    Expression = 13,
 }

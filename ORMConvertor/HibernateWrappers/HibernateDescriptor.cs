@@ -29,6 +29,7 @@ public static class HibernateDescriptor
         EnforcedMembers = JakartaPersistenceDescriptor.EnforcedMembers,
         Support = JakartaPersistenceDescriptor.Support,
         QuerySupport = JakartaPersistenceDescriptor.QuerySupport,
+        Functions = JakartaPersistenceDescriptor.Functions,
     };
 
     /// <summary>

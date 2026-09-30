@@ -9,6 +9,8 @@ using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
 using ScriptDomLiteral = Microsoft.SqlServer.TransactSql.ScriptDom.Literal;
+using ModelExpression = Model.QueryInstructions.Conditions.QueryExpression;
+using QueryExpression = Microsoft.SqlServer.TransactSql.ScriptDom.QueryExpression;
 
 namespace TransactSql;
 
@@ -656,80 +658,50 @@ public class SqlQueryReader(
             }
 
             var alias = scalar.ColumnName?.Value;
-
-            switch (scalar.Expression)
-            {
-                case ColumnReferenceExpression column when ReadColumn(column) is { } reference:
-                    queryBuilder.Project(reference.Table ?? sourceAlias, reference.Column, alias);
-                    break;
-
-                case FunctionCall call:
-                    ReadAggregateProjection(call, alias);
-                    break;
-
-                default:
-                    Report(
-                        ConversionRecordKind.Loss,
-                        $"The projected expression '{Describe(scalar.Expression)}' is not a column or an aggregate and was dropped.",
-                        QueryFeature.Projection);
-                    break;
-            }
+            ReadProjection(scalar.Expression, alias);
         }
     }
 
-    private void ReadAggregateProjection(FunctionCall call, string? alias)
+    /// <summary>
+    /// One projected value (decision 107): a column, an aggregate over a column, the whole
+    /// row as <c>COUNT(*)</c>, or an expression - arithmetic, a function of the vocabulary,
+    /// a CASE -, each qualified by the source alias where the text left it unqualified. A
+    /// bare constant is not a shape any target names a column by and stays the loss it was;
+    /// a construct outside the vocabulary is dropped with a record that names it, under the
+    /// category of expressions.
+    /// </summary>
+    private void ReadProjection(ScalarExpression expression, string? alias)
     {
-        var function = call.FunctionName.Value.ToUpperInvariant();
-        var parameter = call.Parameters.FirstOrDefault();
+        var operand = ReadOperand(expression);
 
-        // DISTINCT inside the aggregate is a modifier of the function, not of the query, and
-        // travels as the flag of the projection (decision 102). It used to be dropped in
-        // silence, then the projection was dropped with a record (decision 073).
-        var distinct = call.UniqueRowFilter == UniqueRowFilter.Distinct;
+        if (operand is null)
+        {
+            var (what, category) = unread ?? ($"'{Describe(expression)}'", QueryFeature.Projection);
+            unread = null;
+            Report(
+                ConversionRecordKind.Loss,
+                $"The projected expression {what} is not a column, an aggregate or an expression the query representation carries, and was dropped.",
+                category ?? QueryFeature.Projection);
+            return;
+        }
 
-        // A windowed function computes its value over a frame of rows, which the projection
-        // vocabulary has no place for; carried as a plain aggregate it would lose the frame
-        // and hold something else (decision 070 applied to the projection, which stays a loss
-        // because the rows themselves do not change).
-        if (call.OverClause is not null)
+        if (operand.IsConstant && !operand.IsAggregate)
         {
             Report(
                 ConversionRecordKind.Loss,
-                $"{function} is computed over a window, which the query representation does not carry; the projection was dropped.",
+                $"The projected expression '{Describe(expression)}' is not a column or an aggregate and was dropped.",
                 QueryFeature.Projection);
             return;
         }
 
-        // COUNT(*) parses as a function whose single parameter is a star.
-        if (parameter is ColumnReferenceExpression { ColumnType: ColumnType.Wildcard })
-        {
-            queryBuilder.Project(sourceAlias, "*", alias, function, distinct);
-            return;
-        }
-
-        // A function with no argument at all is not that shape - GETDATE(), CURRENT_TIMESTAMP -
-        // and projecting it as a star used to make the target write `c.*`, which is not even
-        // valid C#: the artifact came out unusable rather than poorer.
-        if (parameter is null)
-        {
-            Report(
-                ConversionRecordKind.Loss,
-                $"{function} takes no argument, so it is neither a column nor an aggregate over one; the projection was dropped.",
-                QueryFeature.Projection);
-            return;
-        }
-
-        if (parameter is ColumnReferenceExpression column && ReadColumn(column) is { } reference)
-        {
-            queryBuilder.Project(reference.Table ?? sourceAlias, reference.Column, alias, function, distinct);
-            return;
-        }
-
-        Report(
-            ConversionRecordKind.Loss,
-            $"The argument of {function} is not a column reference; the projection was dropped.",
-            QueryFeature.Aggregation);
+        queryBuilder.Project(Qualified(operand), alias);
     }
+
+    /// <summary>A column operand the text left unqualified, qualified by the source alias - the projection and the grouping name their table.</summary>
+    private QueryOperand Qualified(QueryOperand operand)
+        => operand.IsColumn && operand.Table is null
+            ? QueryOperand.Column(sourceAlias, operand.Property!, operand.Function, operand.Distinct)
+            : operand;
 
     private void ReadWhere(QuerySpecification query)
     {
@@ -792,6 +764,20 @@ public class SqlQueryReader(
                 continue;
             }
 
+            // A grouping by an expression is the one position the expression does not take
+            // (decision 107): it would force the same expression into the projection and the
+            // HAVING, and into a key the LINQ target reads back from; refused by name.
+            if (specification is ExpressionGroupingSpecification { Expression: { } key } && ReadOperand(key) is { IsExpression: true })
+            {
+                unread = null;
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The grouping key '{Print(key)}' is an expression, which the query representation carries in every position but the grouping, and a query grouped differently would return different rows; no artifact was generated.",
+                    QueryFeature.Expression);
+                continue;
+            }
+
+            unread = null;
             Report(
                 ConversionRecordKind.Failure,
                 "A grouping key that is not a column reference cannot be carried, and a query grouped differently would return different rows; no artifact was generated.",
@@ -799,6 +785,12 @@ public class SqlQueryReader(
         }
     }
 
+    /// <summary>
+    /// The ordering keys (decision 107): a column, an aggregate - <c>ORDER BY COUNT(*) DESC</c>,
+    /// which used to be dropped -, an expression, or an alias of the projection, which the
+    /// grammar hands over as an unqualified column. A bare number is a position in T-SQL, not
+    /// a value, and stays the loss it was.
+    /// </summary>
     private void ReadOrderBy(QuerySpecification query)
     {
         if (query.OrderByClause is null)
@@ -808,16 +800,19 @@ public class SqlQueryReader(
 
         foreach (var element in query.OrderByClause.OrderByElements)
         {
-            if (element.Expression is ColumnReferenceExpression column && ReadColumn(column) is { } reference)
+            var key = ReadOperand(element.Expression);
+            if (key is not null && !key.IsConstant)
             {
-                queryBuilder.OrderBy(reference.Table, reference.Column, element.SortOrder != SortOrder.Descending);
+                queryBuilder.OrderBy(key, element.SortOrder != SortOrder.Descending);
                 continue;
             }
 
+            var (what, category) = unread ?? ($"'{Print(element.Expression)}'", QueryFeature.Ordering);
+            unread = null;
             Report(
                 ConversionRecordKind.Loss,
-                "An ordering key that is not a column reference was dropped.",
-                QueryFeature.Ordering);
+                $"The ordering key {what} is not a column, an aggregate or an expression the query representation carries, and was dropped.",
+                category ?? QueryFeature.Ordering);
         }
     }
 
@@ -973,10 +968,21 @@ public class SqlQueryReader(
         into.Add(node);
     }
 
+    /// <summary>
+    /// One operand of the six shapes (decisions 024, 061, 074, 083, 107): a column, a
+    /// literal, a subquery, a variable as the parameter of the query, and since decision 107
+    /// an expression - arithmetic and concatenation, a function of the closed vocabulary, a
+    /// CASE - with an aggregate over a column or over an expression as the aggregate shape.
+    /// Null for what the representation does not carry, with the construct named in
+    /// <see cref="unread"/> for the clause to refuse or the projection to drop by name.
+    /// </summary>
     private QueryOperand? ReadOperand(ScalarExpression? expression)
     {
         switch (expression)
         {
+            case ParenthesisExpression parenthesis:
+                return ReadOperand(parenthesis.Expression);
+
             case ColumnReferenceExpression column when ReadColumn(column) is { } reference:
                 return QueryOperand.Column(reference.Table, reference.Column);
 
@@ -992,15 +998,20 @@ public class SqlQueryReader(
                         : QueryConstant.Of("-" + constant.Text, constant.Type.Value));
                 }
 
-            // An aggregate over DISTINCT values carries the modifier as the flag of the
-            // operand (decision 102); it used to sink the condition, named.
-            case FunctionCall call when call.Parameters.FirstOrDefault() is ColumnReferenceExpression parameter
-                                        && ReadColumn(parameter) is { } aggregated:
-                return QueryOperand.Column(
-                    aggregated.Table,
-                    aggregated.Column,
-                    call.FunctionName.Value.ToUpperInvariant(),
-                    call.UniqueRowFilter == UniqueRowFilter.Distinct);
+            case BinaryExpression binary:
+                return ReadBinary(binary);
+
+            case FunctionCall call:
+                return ReadFunctionCall(call);
+
+            case CoalesceExpression coalesce:
+                return ReadCall(QueryFunction.Coalesce, coalesce.Expressions, Print(coalesce));
+
+            case SearchedCaseExpression searched:
+                return ReadSearchedCase(searched);
+
+            case SimpleCaseExpression simple:
+                return ReadSimpleCase(simple);
 
             case ScalarSubquery scalar:
                 return QueryOperand.Nested(ReadSubQueryOperand(scalar.QueryExpression));
@@ -1016,9 +1027,300 @@ public class SqlQueryReader(
                     return QueryOperand.Bound(QueryParameter.Named(name, ScalarStatedFor(name)));
                 }
 
+            case null:
+                return null;
+
             default:
+                // CAST and CONVERT, a NULLIF, an IIF, a subquery with more than one column
+                // and the rest of what T-SQL computes: outside the vocabulary, named.
+                unread ??= ($"'{Print(expression)}', which is a construct outside the vocabulary of expressions the query representation carries", QueryFeature.Expression);
                 return null;
         }
+    }
+
+    /* ---- expressions (decision 107) --------------------------------------------------- */
+
+    /// <summary>
+    /// The arithmetic operators, and <c>+</c> as a concatenation where a side is a string
+    /// literal or an expression whose scalar is a string by its own shape; a <c>+</c> over
+    /// two columns is carried as an addition and the builder's gate, which has the mapping,
+    /// says whether it concatenates. The bitwise operators have no counterpart in three of
+    /// the four targets and stay outside the vocabulary.
+    /// </summary>
+    private QueryOperand? ReadBinary(BinaryExpression binary)
+    {
+        ExpressionOperator? op = binary.BinaryExpressionType switch
+        {
+            BinaryExpressionType.Add => ExpressionOperator.Add,
+            BinaryExpressionType.Subtract => ExpressionOperator.Subtract,
+            BinaryExpressionType.Multiply => ExpressionOperator.Multiply,
+            BinaryExpressionType.Divide => ExpressionOperator.Divide,
+            BinaryExpressionType.Modulo => ExpressionOperator.Modulo,
+            _ => null,
+        };
+
+        if (op is null)
+        {
+            unread ??= ($"the operator {binary.BinaryExpressionType} in '{Print(binary)}', which is outside the vocabulary of expressions the query representation carries", QueryFeature.Expression);
+            return null;
+        }
+
+        var left = ReadOperand(binary.FirstExpression);
+        var right = ReadOperand(binary.SecondExpression);
+        if (left is null || right is null || !IsLeaf(left, binary.FirstExpression) || !IsLeaf(right, binary.SecondExpression))
+        {
+            return null;
+        }
+
+        if (op == ExpressionOperator.Add && (ReadsAsString(left) || ReadsAsString(right)))
+        {
+            op = ExpressionOperator.Concat;
+        }
+
+        return QueryOperand.Computed(ModelExpression.Binary(op.Value, left, right));
+    }
+
+    /// <summary>A value that is a string by the shape the reader saw: a string literal, or an expression that yields one.</summary>
+    private static bool ReadsAsString(QueryOperand operand)
+    {
+        if (operand.IsAggregate)
+        {
+            return false;
+        }
+
+        if (operand.IsConstant)
+        {
+            return operand.Constant!.Type is ScalarType.String or ScalarType.Char;
+        }
+
+        return operand.IsExpression
+               && (operand.Expression!.Operator == ExpressionOperator.Concat
+                   || operand.Expression.Function is QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim
+                       or QueryFunction.Substring or QueryFunction.EscapePattern);
+    }
+
+    /// <summary>
+    /// A leaf of an expression: a list of values and a collection parameter have no place in
+    /// one (decision 107), and the factory would refuse them; refused here first, by name.
+    /// </summary>
+    private bool IsLeaf(QueryOperand operand, ScalarExpression written)
+    {
+        if (operand.IsValueList || operand.Parameter?.IsCollection == true)
+        {
+            unread ??= ($"the collection '{Print(written)}' inside an expression, which no target computes with", QueryFeature.Expression);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// A function call: one of the five aggregates over a column, over the whole row or
+    /// over an expression; a function of the vocabulary under its T-SQL name - <c>ISNULL</c>
+    /// is a COALESCE of two, <c>CONCAT</c> of several arguments is nested, <c>GETDATE()</c>
+    /// and <c>CURRENT_TIMESTAMP</c> are the same moment; anything else - <c>DATEADD</c>,
+    /// <c>REPLACE</c>, <c>ROUND</c>, <c>SYSDATETIME()</c>, a windowed function - is outside
+    /// the vocabulary and named.
+    /// </summary>
+    private QueryOperand? ReadFunctionCall(FunctionCall call)
+    {
+        var name = call.FunctionName.Value.ToUpperInvariant();
+
+        // A windowed function computes its value over a frame of rows, which the vocabulary
+        // has no place for; carried as a plain aggregate it would hold something else.
+        if (call.OverClause is not null)
+        {
+            unread ??= ($"the windowed function '{Print(call)}', which the query representation does not carry", QueryFeature.Expression);
+            return null;
+        }
+
+        if (name is "COUNT" or "SUM" or "MIN" or "MAX" or "AVG")
+        {
+            return ReadAggregate(call, name);
+        }
+
+        switch (name)
+        {
+            case "UPPER": return ReadCall(QueryFunction.Upper, call.Parameters, Print(call));
+            case "LOWER": return ReadCall(QueryFunction.Lower, call.Parameters, Print(call));
+            case "TRIM": return ReadCall(QueryFunction.Trim, call.Parameters, Print(call));
+            case "SUBSTRING": return ReadCall(QueryFunction.Substring, call.Parameters, Print(call));
+            case "LEN": return ReadCall(QueryFunction.Length, call.Parameters, Print(call));
+            case "ISNULL": return ReadCall(QueryFunction.Coalesce, call.Parameters, Print(call));
+            case "COALESCE": return ReadCall(QueryFunction.Coalesce, call.Parameters, Print(call));
+            case "ABS": return ReadCall(QueryFunction.Abs, call.Parameters, Print(call));
+            case "YEAR": return ReadCall(QueryFunction.Year, call.Parameters, Print(call));
+            case "MONTH": return ReadCall(QueryFunction.Month, call.Parameters, Print(call));
+            case "DAY": return ReadCall(QueryFunction.Day, call.Parameters, Print(call));
+            case "GETDATE":
+            case "CURRENT_TIMESTAMP":
+                return ReadCall(QueryFunction.CurrentTimestamp, call.Parameters, Print(call));
+            case "CONCAT": return ReadConcat(call);
+            default:
+                unread ??= ($"the function {name} in '{Print(call)}', which is outside the vocabulary of expressions the query representation carries", QueryFeature.Expression);
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// One of the five aggregates: over the whole row (<c>COUNT(*)</c>, the star parsed as a
+    /// wildcard column), over a column, or over an expression (decision 107), with DISTINCT
+    /// inside the function as the modifier of the aggregate (decision 102).
+    /// </summary>
+    private QueryOperand? ReadAggregate(FunctionCall call, string function)
+    {
+        var distinct = call.UniqueRowFilter == UniqueRowFilter.Distinct;
+        var parameter = call.Parameters.FirstOrDefault();
+
+        if (parameter is ColumnReferenceExpression { ColumnType: ColumnType.Wildcard })
+        {
+            return QueryOperand.Column(sourceAlias, "*", function, distinct);
+        }
+
+        if (parameter is null || call.Parameters.Count != 1)
+        {
+            unread ??= ($"'{Print(call)}', an aggregate without exactly one argument", QueryFeature.Aggregation);
+            return null;
+        }
+
+        var argument = ReadOperand(parameter);
+        if (argument is null || !IsLeaf(argument, parameter))
+        {
+            return null;
+        }
+
+        if (argument.IsColumn)
+        {
+            return QueryOperand.Column(argument.Table, argument.Property!, function, distinct);
+        }
+
+        if (argument.IsConstant)
+        {
+            return QueryOperand.Value(argument.Constant!, function);
+        }
+
+        if (argument.IsParameter)
+        {
+            return QueryOperand.Bound(argument.Parameter!, function);
+        }
+
+        if (argument.IsExpression)
+        {
+            return QueryOperand.Computed(argument.Expression!, function, distinct);
+        }
+
+        unread ??= ($"'{Print(call)}', an aggregate over a subquery", QueryFeature.Aggregation);
+        return null;
+    }
+
+    /// <summary>A call of a function of the vocabulary; an arity the function does not take is named and refused, as the factory would refuse it.</summary>
+    private QueryOperand? ReadCall(QueryFunction function, IList<ScalarExpression> written, string text)
+    {
+        var (least, most) = ModelExpression.Arity(function);
+        if (written.Count < least || written.Count > most)
+        {
+            unread ??= ($"'{text}', whose number of arguments the function {function} of the vocabulary does not take", QueryFeature.Expression);
+            return null;
+        }
+
+        var arguments = new List<QueryOperand>(written.Count);
+        foreach (var expression in written)
+        {
+            var argument = ReadOperand(expression);
+            if (argument is null || !IsLeaf(argument, expression))
+            {
+                return null;
+            }
+
+            arguments.Add(argument);
+        }
+
+        return QueryOperand.Computed(ModelExpression.Call(function, arguments));
+    }
+
+    /// <summary>CONCAT of any number of arguments as a left-nested concatenation - the model is binary and a target with an n-ary spelling flattens it again.</summary>
+    private QueryOperand? ReadConcat(FunctionCall call)
+    {
+        if (call.Parameters.Count < 2)
+        {
+            unread ??= ($"'{Print(call)}', a CONCAT of fewer than two arguments", QueryFeature.Expression);
+            return null;
+        }
+
+        QueryOperand? result = null;
+        foreach (var expression in call.Parameters)
+        {
+            var argument = ReadOperand(expression);
+            if (argument is null || !IsLeaf(argument, expression))
+            {
+                return null;
+            }
+
+            result = result is null ? argument : QueryOperand.Computed(ModelExpression.Binary(ExpressionOperator.Concat, result, argument));
+        }
+
+        return result;
+    }
+
+    private QueryOperand? ReadSearchedCase(SearchedCaseExpression searched)
+    {
+        var branches = new List<CaseBranch>(searched.WhenClauses.Count);
+        foreach (var clause in searched.WhenClauses)
+        {
+            var when = ReadCondition(clause.WhenExpression);
+            var then = ReadOperand(clause.ThenExpression);
+            if (when is null || then is null || !IsLeaf(then, clause.ThenExpression))
+            {
+                unread ??= ($"'{Print(searched)}', a CASE with a branch the query representation does not carry", QueryFeature.Expression);
+                return null;
+            }
+
+            branches.Add(new CaseBranch(when, then));
+        }
+
+        return ReadCaseElse(searched.ElseExpression, branches, Print(searched));
+    }
+
+    /// <summary>A simple CASE read as the searched form with an equality per branch - an exact rewrite (decision 107).</summary>
+    private QueryOperand? ReadSimpleCase(SimpleCaseExpression simple)
+    {
+        var input = ReadOperand(simple.InputExpression);
+        if (input is null || !IsLeaf(input, simple.InputExpression))
+        {
+            return null;
+        }
+
+        var branches = new List<CaseBranch>(simple.WhenClauses.Count);
+        foreach (var clause in simple.WhenClauses)
+        {
+            var value = ReadOperand(clause.WhenExpression);
+            var then = ReadOperand(clause.ThenExpression);
+            if (value is null || then is null || !IsLeaf(value, clause.WhenExpression) || !IsLeaf(then, clause.ThenExpression))
+            {
+                unread ??= ($"'{Print(simple)}', a CASE with a branch the query representation does not carry", QueryFeature.Expression);
+                return null;
+            }
+
+            branches.Add(new CaseBranch(new ComparisonCondition(input, ComparisonOperator.Equal, value), then));
+        }
+
+        return ReadCaseElse(simple.ElseExpression, branches, Print(simple));
+    }
+
+    private QueryOperand? ReadCaseElse(ScalarExpression? written, List<CaseBranch> branches, string text)
+    {
+        QueryOperand? otherwise = null;
+        if (written is not null and not NullLiteral)
+        {
+            otherwise = ReadOperand(written);
+            if (otherwise is null || !IsLeaf(otherwise, written))
+            {
+                unread ??= ($"'{text}', a CASE whose ELSE the query representation does not carry", QueryFeature.Expression);
+                return null;
+            }
+        }
+
+        return QueryOperand.Computed(ModelExpression.Case(branches, otherwise));
     }
 
     /// <summary>

@@ -234,14 +234,25 @@ public abstract class AbstractQueryBuilder
     }
 
     /// <summary>
-    /// Records one projected column, optionally under an aggregate function, optionally
-    /// over the distinct values of the column (decision 102) - the modifier is meaningful
-    /// with a function only, and the gate refuses it over <c>*</c>.
+    /// Records one projected value with an optional alias (decision 107): a column, a
+    /// column under an aggregate, the whole entity as the column <c>*</c>, or an
+    /// expression. The parsers hand over the operand and do not build the instruction
+    /// themselves.
+    /// </summary>
+    public void Project(QueryOperand operand, string? alias = null)
+    {
+        ArgumentNullException.ThrowIfNull(operand);
+        instructions.Add(new ProjectInstruction(operand, alias));
+    }
+
+    /// <summary>
+    /// The column shape of <see cref="Project(QueryOperand, string?)"/>: one projected
+    /// column, optionally under an aggregate function, optionally over the distinct values
+    /// of the column (decision 102) - the modifier is meaningful with a function only, and
+    /// the gate refuses it over <c>*</c>.
     /// </summary>
     public void Project(string table, string attr, string? alias = null, string? function = null, bool distinct = false)
-    {
-        instructions.Add(new ProjectInstruction(table, attr, alias, function, distinct));
-    }
+        => Project(QueryOperand.Column(table, attr, function, distinct), alias);
 
     public void Where(ConditionNode condition)
     {
@@ -258,10 +269,20 @@ public abstract class AbstractQueryBuilder
         instructions.Add(new GroupByInstruction(table, attr));
     }
 
-    public void OrderBy(string? table, string attributeOrAlias, bool asc = true)
+    /// <summary>
+    /// Records one ordering key with its direction (decision 107): a column, a column under
+    /// an aggregate, an expression, or - as a column operand without a table - the alias of
+    /// a projection.
+    /// </summary>
+    public void OrderBy(QueryOperand key, bool asc = true)
     {
-        instructions.Add(new OrderByInstruction(table, attributeOrAlias, asc));
+        ArgumentNullException.ThrowIfNull(key);
+        instructions.Add(new OrderByInstruction(key, asc));
     }
+
+    /// <summary>The column shape of <see cref="OrderBy(QueryOperand, bool)"/>; a null table names a projection alias (decision 073).</summary>
+    public void OrderBy(string? table, string attributeOrAlias, bool asc = true)
+        => OrderBy(QueryOperand.Column(table, attributeOrAlias), asc);
 
     public void Having(ConditionNode condition)
     {
@@ -420,6 +441,15 @@ public abstract class AbstractQueryBuilder
             return [];
         }
 
+        // The expressions of the whole query, typed once from the mapping representation
+        // and held to the four rules of decision 107 - before the parameters, because a
+        // parameter inside an expression takes its scalar from the position it stands in,
+        // and before any scope is normalized, for the same reason the parameters are.
+        if (!GateExpressions(body))
+        {
+            return [];
+        }
+
         // The parameters of the whole query, resolved once and before anything is rendered
         // (decision 083): a scope that never gets normalized - a subquery operand of a
         // condition the gate below refuses - must not be able to leave a parameter out of
@@ -573,8 +603,8 @@ public abstract class AbstractQueryBuilder
         // Rule Q8: grouping is mandatory when aggregates sit next to plain columns. A query
         // that is nothing but aggregates needs no grouping, so that case is not reported.
         if (groupBys.Count == 0
-            && projections.Any(p => p.Function is not null)
-            && projections.Any(p => p.Function is null))
+            && projections.Any(p => p.Operand.IsAggregate)
+            && projections.Any(p => !p.Operand.IsAggregate))
         {
             Report(
                 ConversionRecordKind.Incompleteness,
@@ -585,7 +615,7 @@ public abstract class AbstractQueryBuilder
         // An aggregate over the distinct values of the whole row - JPQL's count(distinct c),
         // a count of distinct rows - has no form as a single aggregate in any SQL target
         // (decision 102). Refused here once, so that six targets answer alike.
-        if (projections.Any(p => p.Distinct && p.Attribute == "*"))
+        if (projections.Any(p => p.Operand is { Distinct: true, Property: "*" }))
         {
             Report(
                 ConversionRecordKind.Failure,
@@ -600,7 +630,7 @@ public abstract class AbstractQueryBuilder
         // the result is one row (decision 073). Left out with a record rather than carried,
         // so that no target has to write it into a shape where it means something else - a
         // LINQ Distinct().Count() counts distinct rows where SELECT DISTINCT COUNT(*) does not.
-        if (distinct && groupBys.Count == 0 && projections.Count > 0 && projections.All(p => p.Function is not null))
+        if (distinct && groupBys.Count == 0 && projections.Count > 0 && projections.All(p => p.Operand.IsAggregate))
         {
             Report(
                 ConversionRecordKind.Convention,
@@ -620,10 +650,24 @@ public abstract class AbstractQueryBuilder
             {
                 Report(
                     ConversionRecordKind.Failure,
-                    $"The ordering key '{unprojected.Attribute}' is not among the projected columns, which DISTINCT requires - T-SQL rejects the query and LINQ cannot name the key after Distinct(); no artifact was generated.",
+                    $"The ordering key '{unprojected.Operand}' is not among the projected columns, which DISTINCT requires - T-SQL rejects the query and LINQ cannot name the key after Distinct(); no artifact was generated.",
                     QueryFeature.Ordering);
                 return null;
             }
+        }
+
+        // An expression projected without an alias has no name (decision 107): a target that
+        // reads a column by name - Dapper, MyBatis's map, the anonymous type of a LINQ
+        // projection - has nothing to read it under, and a name invented by the tool is
+        // forbidden (decision 028). Refused here once, for every target alike.
+        var nameless = projections.FirstOrDefault(p => p.Operand.IsExpression && p.Alias is null);
+        if (nameless is not null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The projected expression '{nameless.Operand}' carries no alias, so no target could name the column it yields, and the tool does not invent one; no artifact was generated.",
+                QueryFeature.Expression);
+            return null;
         }
 
         return new QueryClauses
@@ -642,25 +686,34 @@ public abstract class AbstractQueryBuilder
     }
 
     /// <summary>
-    /// Whether the projection is the column the ordering names - by alias, or by the plain
-    /// column itself (decision 073). An aggregate projects its function's value, not the
-    /// column, so it matches only through its alias.
+    /// Whether the projection is the value the ordering names (decision 073): by alias - a
+    /// column key without a table whose property is the alias -, by the plain column itself,
+    /// or, since decision 107, by the same aggregate or expression written in both places.
+    /// A plain column matches no aggregate: the aggregate projects its function's value,
+    /// not the column.
     /// </summary>
     protected static bool Projects(ProjectInstruction projection, OrderByInstruction order)
     {
-        if (order.Table is null
-            && string.Equals(projection.Alias, order.Attribute, StringComparison.OrdinalIgnoreCase))
+        var key = order.Operand;
+        var projected = projection.Operand;
+
+        if (key is { IsColumn: true, Table: null, IsAggregate: false }
+            && string.Equals(projection.Alias, key.Property, StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
-        if (projection.Function is not null)
+        if (projected is { IsColumn: true, IsAggregate: false } && key is { IsColumn: true, IsAggregate: false })
         {
-            return false;
+            return (key.Table is null || string.Equals(projected.Table, key.Table, StringComparison.OrdinalIgnoreCase))
+                   && string.Equals(projected.Property, key.Property, StringComparison.OrdinalIgnoreCase);
         }
 
-        return (order.Table is null || string.Equals(projection.Table, order.Table, StringComparison.OrdinalIgnoreCase))
-               && string.Equals(projection.Attribute, order.Attribute, StringComparison.OrdinalIgnoreCase);
+        // An aggregate or an expression matches an aggregate or an expression written the
+        // same way - the text of the operand is its structure, undecorated.
+        return projected.IsAggregate == key.IsAggregate
+               && (projected.IsAggregate || projected.IsExpression || key.IsExpression)
+               && string.Equals(projected.ToString(), key.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -1205,6 +1258,14 @@ public abstract class AbstractQueryBuilder
         {
             switch (instruction)
             {
+                // A projection or an ordering key carries a parameter only inside an
+                // expression (decision 107), which types it from the columns beside it.
+                case ProjectInstruction projection:
+                    CollectParameters(projection.Operand, null, ComparisonOperator.Equal, aliases, found);
+                    break;
+                case OrderByInstruction order:
+                    CollectParameters(order.Operand, null, ComparisonOperator.Equal, aliases, found);
+                    break;
                 case SelectInstruction filter:
                     CollectParameters(filter.Condition, aliases, found);
                     break;
@@ -1311,6 +1372,121 @@ public abstract class AbstractQueryBuilder
                     found.Add(new ParameterOccurrence(value.Parameter!, ScalarOfOther(other, op, aliases)));
                 }
             }
+
+            return;
+        }
+
+        // A parameter inside an expression takes its scalar from the position it stands in
+        // (decision 107): the table of that decision, with the other side of the comparison
+        // the expression stands in as the context an Abs hands down.
+        if (operand.IsExpression)
+        {
+            CollectParameters(operand.Expression!, ScalarOfOther(other, op, aliases), aliases, found);
+        }
+    }
+
+    /// <summary>
+    /// The parameters inside one expression, each with the scalar its position implies
+    /// (decision 107): a string in a concatenation, the scalar of the other side in an
+    /// arithmetic operation, the scalar a function takes in its argument, the common scalar
+    /// of the typed siblings in a COALESCE or among the branches of a CASE, and for Abs the
+    /// scalar of the comparison the call stands in. Where the position implies nothing -
+    /// <c>@a + @b</c> - the occurrence carries none and the parameter gate refuses it with
+    /// the sentence it has for every parameter it cannot type.
+    /// </summary>
+    private void CollectParameters(
+        QueryExpression expression,
+        ScalarType? context,
+        Dictionary<string, EntityMap> aliases,
+        List<ParameterOccurrence> found)
+    {
+        void Leaf(QueryOperand leaf, ScalarType? implied)
+        {
+            if (leaf.IsParameter)
+            {
+                found.Add(new ParameterOccurrence(leaf.Parameter!, implied));
+            }
+            else if (leaf.IsExpression)
+            {
+                CollectParameters(leaf.Expression!, implied, aliases, found);
+            }
+            else if (leaf.IsSubQuery)
+            {
+                CollectParameters(Unwrap(leaf.SubQuery!.Instructions), aliases, found);
+            }
+        }
+
+        if (expression.IsBinary)
+        {
+            var (left, right) = (expression.Left!, expression.Right!);
+            if (IsConcatenation(expression, aliases))
+            {
+                Leaf(left, ScalarType.String);
+                Leaf(right, ScalarType.String);
+                return;
+            }
+
+            Leaf(left, ScalarOf(right, aliases));
+            Leaf(right, ScalarOf(left, aliases));
+            return;
+        }
+
+        if (expression.IsCall)
+        {
+            var arguments = expression.Arguments!;
+            switch (expression.Function!.Value)
+            {
+                case QueryFunction.Upper:
+                case QueryFunction.Lower:
+                case QueryFunction.Trim:
+                case QueryFunction.Length:
+                case QueryFunction.EscapePattern:
+                    Leaf(arguments[0], ScalarType.String);
+                    return;
+
+                case QueryFunction.Substring:
+                    Leaf(arguments[0], ScalarType.String);
+                    Leaf(arguments[1], ScalarType.Int);
+                    Leaf(arguments[2], ScalarType.Int);
+                    return;
+
+                case QueryFunction.Year:
+                case QueryFunction.Month:
+                case QueryFunction.Day:
+                    Leaf(arguments[0], ScalarType.DateTime);
+                    return;
+
+                case QueryFunction.Abs:
+                    Leaf(arguments[0], context);
+                    return;
+
+                case QueryFunction.Coalesce:
+                    for (var i = 0; i < arguments.Count; i++)
+                    {
+                        var siblings = arguments.Where((_, j) => j != i).Select(a => ScalarOf(a, aliases));
+                        Leaf(arguments[i], CommonScalar(siblings, out _));
+                    }
+
+                    return;
+
+                case QueryFunction.CurrentTimestamp:
+                    return;
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null);
+            }
+        }
+
+        var values = expression.Leaves().ToList();
+        foreach (var branch in expression.Branches!)
+        {
+            CollectParameters(branch.When, aliases, found);
+        }
+
+        for (var i = 0; i < values.Count; i++)
+        {
+            var siblings = values.Where((_, j) => j != i).Select(v => ScalarOf(v, aliases));
+            Leaf(values[i], CommonScalar(siblings, out _));
         }
     }
 
@@ -1363,6 +1539,12 @@ public abstract class AbstractQueryBuilder
         {
             switch (instruction)
             {
+                case ProjectInstruction projection:
+                    CollectDemands(projection.Operand, null, ComparisonOperator.Equal, aliases, unbound, found);
+                    break;
+                case OrderByInstruction order:
+                    CollectDemands(order.Operand, null, ComparisonOperator.Equal, aliases, unbound, found);
+                    break;
                 case SelectInstruction filter:
                     CollectDemands(filter.Condition, aliases, unbound, found);
                     break;
@@ -1456,6 +1638,16 @@ public abstract class AbstractQueryBuilder
             return;
         }
 
+        // An expression walks its own leaves (decision 107): a parameter inside it takes its
+        // scalar from the columns beside it, so those columns' tables are demanded where no
+        // stated mapping binds them - and the other side of the comparison as well, because
+        // the context an Abs hands down comes from there.
+        if (operand.IsExpression)
+        {
+            CollectDemands(operand.Expression!, other, op, aliases, unbound, found);
+            return;
+        }
+
         // A parameter, or a parameter among the values of an IN list (decision 102) - the
         // two shapes the gate types from the other side of the comparison.
         var binds = operand.IsParameter || (operand.IsValueList && operand.Values!.Any(value => value.IsParameter));
@@ -1466,13 +1658,90 @@ public abstract class AbstractQueryBuilder
 
         if (TableTheGateCannotResolve(other, op, aliases, unbound) is { } table)
         {
-            var demand = QueryTableDemand.Of(table);
-            if (!found.Any(demand.Names))
+            Demand(table, found);
+        }
+
+        // The other side is an expression: the parameter's scalar comes from it, and so from
+        // every column it stands over.
+        if (other?.IsExpression == true)
+        {
+            DemandColumnsOf(other.Expression!, aliases, unbound, found);
+        }
+    }
+
+    private void CollectDemands(
+        QueryExpression expression,
+        QueryOperand? other,
+        ComparisonOperator op,
+        Dictionary<string, EntityMap> aliases,
+        Dictionary<string, string> unbound,
+        List<QueryTableDemand> found)
+    {
+        if (ContainsParameter(expression))
+        {
+            DemandColumnsOf(expression, aliases, unbound, found);
+
+            if (op is not ComparisonOperator.Like && TableTheGateCannotResolve(other, op, aliases, unbound) is { } table)
             {
-                found.Add(demand);
+                Demand(table, found);
+            }
+        }
+
+        foreach (var leaf in expression.Leaves())
+        {
+            if (leaf.IsSubQuery)
+            {
+                CollectDemands(Unwrap(leaf.SubQuery!.Instructions), aliases, unbound, found);
+            }
+            else if (leaf.IsExpression)
+            {
+                CollectDemands(leaf.Expression!, other, op, aliases, unbound, found);
+            }
+        }
+
+        if (expression.Branches is { } branches)
+        {
+            foreach (var branch in branches)
+            {
+                CollectDemands(branch.When, aliases, unbound, found);
             }
         }
     }
+
+    /// <summary>The tables of every qualified column inside the expression that no stated mapping resolves, demanded once each.</summary>
+    private void DemandColumnsOf(
+        QueryExpression expression,
+        Dictionary<string, EntityMap> aliases,
+        Dictionary<string, string> unbound,
+        List<QueryTableDemand> found)
+    {
+        foreach (var leaf in expression.Leaves())
+        {
+            if (leaf.IsColumn && leaf.Table is not null && leaf.Property != "*"
+                && !aliases.ContainsKey(leaf.Table) && EntityFor(leaf.Table) is null
+                && unbound.GetValueOrDefault(leaf.Table) is { } table)
+            {
+                Demand(table, found);
+            }
+            else if (leaf.IsExpression)
+            {
+                DemandColumnsOf(leaf.Expression!, aliases, unbound, found);
+            }
+        }
+    }
+
+    private static void Demand(string table, List<QueryTableDemand> found)
+    {
+        var demand = QueryTableDemand.Of(table);
+        if (!found.Any(demand.Names))
+        {
+            found.Add(demand);
+        }
+    }
+
+    /// <summary>Whether the expression holds a parameter anywhere short of a subquery.</summary>
+    private static bool ContainsParameter(QueryExpression expression)
+        => expression.Leaves().Any(leaf => leaf.IsParameter || (leaf.IsExpression && ContainsParameter(leaf.Expression!)));
 
     /// <summary>
     /// The mirror of <see cref="ScalarOfOther"/> and <see cref="ScalarOfColumn"/>: the table
@@ -1519,9 +1788,20 @@ public abstract class AbstractQueryBuilder
             return ScalarType.String;
         }
 
-        if (other is null || !other.IsColumn)
+        if (other is null)
         {
-            return other?.Constant?.Type;
+            return null;
+        }
+
+        // An expression answers with the scalar the gate derives for it (decision 107).
+        if (other.IsExpression)
+        {
+            return ScalarOf(other, aliases);
+        }
+
+        if (!other.IsColumn)
+        {
+            return other.Constant?.Type;
         }
 
         // COUNT answers with a count, not in the type of what it counted; the other
@@ -1530,6 +1810,340 @@ public abstract class AbstractQueryBuilder
             ? ScalarType.Long
             : ScalarOfColumn(aliases, other.Table, other.Property!);
     }
+
+    /* ---- expressions (decision 107) --------------------------------------------------- */
+
+    /// <summary>
+    /// The typed view of the expressions of this query, filled by the gate below on every
+    /// Build and read by the visitors (decision 107): what the mapping representation says
+    /// an expression's scalar is, and which <c>+</c> stands over a string.
+    /// </summary>
+    protected ExpressionTyping Expressions { get; } = new();
+
+    /// <summary>
+    /// The scalar of an operand as the gate derives it (decision 107): a column's from the
+    /// mapping, a constant's as the parser read it, a parameter's as the source stated it, an
+    /// expression's from its leaves by the table of the decision; a subquery and a list say
+    /// nothing. An aggregate over any of them answers as an aggregate over a column does -
+    /// COUNT with a count, the others in the scalar of their argument.
+    /// </summary>
+    private ScalarType? ScalarOf(QueryOperand operand, Dictionary<string, EntityMap> aliases)
+    {
+        ScalarType? argument;
+        if (operand.IsExpression)
+        {
+            argument = ScalarOf(operand.Expression!, aliases);
+        }
+        else if (operand.IsColumn)
+        {
+            argument = operand.Property == "*" ? null : ScalarOfColumn(aliases, operand.Table, operand.Property!);
+        }
+        else if (operand.IsConstant)
+        {
+            argument = operand.Constant!.Type;
+        }
+        else if (operand.IsParameter)
+        {
+            argument = operand.Parameter!.Type;
+        }
+        else
+        {
+            argument = null;
+        }
+
+        return string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase) ? ScalarType.Long : argument;
+    }
+
+    private ScalarType? ScalarOf(QueryExpression expression, Dictionary<string, EntityMap> aliases)
+    {
+        if (expression.IsBinary)
+        {
+            if (IsConcatenation(expression, aliases))
+            {
+                return ScalarType.String;
+            }
+
+            return CommonScalar([ScalarOf(expression.Left!, aliases), ScalarOf(expression.Right!, aliases)], out _);
+        }
+
+        if (expression.IsCall)
+        {
+            var arguments = expression.Arguments!;
+            return expression.Function!.Value switch
+            {
+                QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim or QueryFunction.Substring
+                    or QueryFunction.EscapePattern => ScalarType.String,
+                QueryFunction.Length or QueryFunction.Year or QueryFunction.Month or QueryFunction.Day => ScalarType.Int,
+                QueryFunction.Abs => ScalarOf(arguments[0], aliases),
+                QueryFunction.Coalesce => CommonScalar(arguments.Select(a => ScalarOf(a, aliases)), out _),
+                QueryFunction.CurrentTimestamp => ScalarType.DateTime,
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null),
+            };
+        }
+
+        return CommonScalar(expression.Leaves().Select(v => ScalarOf(v, aliases)), out _);
+    }
+
+    /// <summary>
+    /// Whether a binary expression concatenates (decision 107): by its operator, or an
+    /// <c>Add</c> one of whose sides the mapping types as a string - the overloaded <c>+</c>
+    /// of T-SQL and C#, which the readers cannot decide without types and the gate can.
+    /// </summary>
+    private bool IsConcatenation(QueryExpression expression, Dictionary<string, EntityMap> aliases)
+    {
+        if (expression.Operator == ExpressionOperator.Concat)
+        {
+            return true;
+        }
+
+        if (expression.Operator != ExpressionOperator.Add)
+        {
+            return false;
+        }
+
+        return ScalarOf(expression.Left!, aliases) is ScalarType.String or ScalarType.Char
+               || ScalarOf(expression.Right!, aliases) is ScalarType.String or ScalarType.Char;
+    }
+
+    /// <summary>
+    /// The one scalar a set of scalars unifies to by the rule of decision 074 for the
+    /// values of an IN list: one scalar, or one numeric family - the exact one (integers
+    /// with Decimal, which is Decimal) or the floating one (integers with Float and Double,
+    /// which is Double). Scalars nobody derived take no part. <paramref name="unified"/> is
+    /// false where two typed scalars do not unify - Decimal with a floating-point number,
+    /// a string with a number -, and the result is then null.
+    /// </summary>
+    private static ScalarType? CommonScalar(IEnumerable<ScalarType?> scalars, out bool unified)
+    {
+        var typed = scalars.Where(s => s is not null).Select(s => s!.Value).Distinct().ToList();
+        unified = true;
+
+        if (typed.Count == 0)
+        {
+            return null;
+        }
+
+        if (typed.Count == 1)
+        {
+            return typed[0];
+        }
+
+        if (typed.All(s => IsWholeNumber(s) || s is ScalarType.Decimal))
+        {
+            return typed.Contains(ScalarType.Decimal) ? ScalarType.Decimal : WidestWholeNumber(typed);
+        }
+
+        if (typed.All(s => IsWholeNumber(s) || s is ScalarType.Float or ScalarType.Double))
+        {
+            return typed.Any(s => s is ScalarType.Float or ScalarType.Double) ? ScalarType.Double : WidestWholeNumber(typed);
+        }
+
+        unified = false;
+        return null;
+    }
+
+    private static ScalarType WidestWholeNumber(IEnumerable<ScalarType> scalars)
+        => scalars.Contains(ScalarType.Long) ? ScalarType.Long
+            : scalars.Contains(ScalarType.Int) ? ScalarType.Int
+            : scalars.Contains(ScalarType.Short) ? ScalarType.Short
+            : ScalarType.Byte;
+
+    /// <summary>
+    /// The gate over the expressions of the whole query (decision 107), one for every target
+    /// (decision 023). Walks every scope the way the parameter gate does and holds each
+    /// expression to four rules: it is typed from the mapping, and refused by name where the
+    /// spelling depends on a type nobody derived - a <c>+</c> with no typed side, a COALESCE
+    /// or a CASE over scalars that do not unify, Decimal with a floating-point number in
+    /// arithmetic; a function the target's descriptor does not speak is refused (rule Q14 at
+    /// the grain of a function); an aggregate over an aggregate is refused, as no target
+    /// writes it. The fourth rule, an expression projected without an alias, needs the
+    /// clauses of a scope and sits in <see cref="Normalize"/>. What the gate derives goes
+    /// into <see cref="Expressions"/> for the visitors. Returns false when the query cannot
+    /// be built, having reported why.
+    /// </summary>
+    private bool GateExpressions(IReadOnlyList<QueryInstruction> body)
+    {
+        Expressions.Clear();
+        return GateExpressions(body, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private bool GateExpressions(IReadOnlyList<QueryInstruction> body, Dictionary<string, EntityMap> enclosing)
+    {
+        // Resolved the way rendering resolves (AliasedEntities), through the naming
+        // convention of decision 050 as well: the typed view is what the visitors write from,
+        // and a column of a source that states no table renders as the property its class
+        // declares. The parameter gate keeps its own, narrower resolution.
+        var aliases = ScopeAliases(body, enclosing, table => EntityFor(table) ?? ByDerivedName(table));
+        var admitted = true;
+
+        foreach (var instruction in body)
+        {
+            switch (instruction)
+            {
+                case ProjectInstruction projection:
+                    admitted &= GateOperand(projection.Operand, aliases);
+                    break;
+                case OrderByInstruction order:
+                    admitted &= GateOperand(order.Operand, aliases);
+                    break;
+                case SelectInstruction filter:
+                    admitted &= GateExpressions(filter.Condition, aliases);
+                    break;
+                case HavingInstruction postFilter:
+                    admitted &= GateExpressions(postFilter.Condition, aliases);
+                    break;
+                case JoinInstruction join:
+                    admitted &= GateExpressions(join.OnCondition, aliases);
+                    break;
+                case SubQueryInstruction nested:
+                    admitted &= GateExpressions(Unwrap(nested.Instructions), aliases);
+                    break;
+                case SetOperationInstruction operation:
+                    admitted &= GateExpressions(Unwrap(operation.Left.Instructions), aliases);
+                    admitted &= GateExpressions(Unwrap(operation.Right.Instructions), aliases);
+                    break;
+            }
+        }
+
+        return admitted;
+    }
+
+    private bool GateExpressions(ConditionNode? node, Dictionary<string, EntityMap> aliases)
+    {
+        switch (node)
+        {
+            case ComparisonCondition comparison:
+                var left = GateOperand(comparison.Left, aliases);
+                var right = comparison.Right is null || GateOperand(comparison.Right, aliases);
+                return left && right;
+            case LogicalCondition logical:
+                return logical.Operands.Aggregate(true, (admitted, operand) => GateExpressions(operand, aliases) && admitted);
+            case NotCondition negation:
+                return GateExpressions(negation.Operand, aliases);
+            default:
+                return true;
+        }
+    }
+
+    private bool GateOperand(QueryOperand operand, Dictionary<string, EntityMap> aliases)
+    {
+        if (operand.IsSubQuery)
+        {
+            return GateExpressions(Unwrap(operand.SubQuery!.Instructions), aliases);
+        }
+
+        if (operand.IsValueList)
+        {
+            return operand.Values!.Aggregate(true, (admitted, value) => GateOperand(value, aliases) && admitted);
+        }
+
+        if (!operand.IsExpression)
+        {
+            return true;
+        }
+
+        var admitted = true;
+
+        // No target writes an aggregate over an aggregate; SUM(COUNT(*)) is not SQL.
+        if (operand.IsAggregate && ContainsAggregate(operand.Expression!))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The aggregate {operand.Function} stands over '{operand.Expression}', which carries an aggregate itself, and no target writes an aggregate over an aggregate; no artifact was generated.",
+                QueryFeature.Expression);
+            admitted = false;
+        }
+
+        return GateExpression(operand.Expression!, aliases) && admitted;
+    }
+
+    private bool GateExpression(QueryExpression expression, Dictionary<string, EntityMap> aliases)
+    {
+        var admitted = true;
+
+        foreach (var leaf in expression.Leaves())
+        {
+            admitted &= GateOperand(leaf, aliases);
+        }
+
+        if (expression.Branches is { } branches)
+        {
+            foreach (var branch in branches)
+            {
+                admitted &= GateExpressions(branch.When, aliases);
+            }
+        }
+
+        if (expression.IsCall && !Descriptor.Speaks(expression.Function!.Value))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The function {expression.Function} is not one the target {Descriptor.Framework} speaks, and the tool does not invent a spelling for it; no artifact was generated.",
+                QueryFeature.Expression);
+            admitted = false;
+        }
+
+        var concatenates = IsConcatenation(expression, aliases);
+        ScalarType? scalar;
+
+        if (expression.IsBinary && !concatenates)
+        {
+            var sides = new[] { ScalarOf(expression.Left!, aliases), ScalarOf(expression.Right!, aliases) };
+            scalar = CommonScalar(sides, out var unified);
+
+            if (expression.Operator == ExpressionOperator.Add && sides.All(s => s is null))
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The operator + stands between '{expression.Left}' and '{expression.Right}', neither of which the mapping types, so the gate cannot tell an addition from a concatenation and two targets would spell it differently; no artifact was generated.",
+                    QueryFeature.Expression);
+                admitted = false;
+            }
+            else if (!unified)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The arithmetic '{expression}' mixes the scalars {string.Join(" and ", sides.Where(s => s is not null).Distinct())}, which no target types as one value; no artifact was generated.",
+                    QueryFeature.Expression);
+                admitted = false;
+            }
+        }
+        else if (expression.IsCall && expression.Function == QueryFunction.Coalesce)
+        {
+            scalar = CommonScalar(expression.Arguments!.Select(a => ScalarOf(a, aliases)), out var unified);
+            if (!unified)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The arguments of '{expression}' have scalars that do not unify into one, so the value has no type any target could give it; no artifact was generated.",
+                    QueryFeature.Expression);
+                admitted = false;
+            }
+        }
+        else if (expression.IsCase)
+        {
+            scalar = CommonScalar(expression.Leaves().Select(v => ScalarOf(v, aliases)), out var unified);
+            if (!unified)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The branches of '{expression}' have scalars that do not unify into one, so the value has no type any target could give it; no artifact was generated.",
+                    QueryFeature.Expression);
+                admitted = false;
+            }
+        }
+        else
+        {
+            scalar = ScalarOf(expression, aliases);
+        }
+
+        Expressions.Record(expression, scalar, concatenates);
+        return admitted;
+    }
+
+    /// <summary>Whether the expression stands over an aggregate anywhere short of a subquery.</summary>
+    private static bool ContainsAggregate(QueryExpression expression)
+        => expression.Leaves().Any(leaf => leaf.IsAggregate || (leaf.IsExpression && ContainsAggregate(leaf.Expression!)));
 
     private ScalarType? ScalarOfColumn(Dictionary<string, EntityMap> aliases, string? table, string column)
     {
@@ -1913,13 +2527,30 @@ public abstract class AbstractQueryBuilder
             : count.Value!.Value.ToString(CultureInfo.InvariantCulture);
     }
 
-    /// <summary>Whether the condition tree holds a subquery operand anywhere (decision 061).</summary>
+    /// <summary>Whether the condition tree holds a subquery operand anywhere (decision 061), inside an expression included.</summary>
     protected static bool ContainsSubQuery(ConditionNode? node) => node switch
     {
         null => false,
-        ComparisonCondition comparison => comparison.Left.IsSubQuery || comparison.Right?.IsSubQuery == true,
+        ComparisonCondition comparison => ContainsSubQuery(comparison.Left) || ContainsSubQuery(comparison.Right),
         LogicalCondition logical => logical.Operands.Any(ContainsSubQuery),
         NotCondition negation => ContainsSubQuery(negation.Operand),
+        _ => false,
+    };
+
+    private static bool ContainsSubQuery(QueryOperand? operand)
+        => operand is not null
+           && (operand.IsSubQuery
+               || (operand.IsExpression
+                   && (operand.Expression!.Leaves().Any(ContainsSubQuery)
+                       || operand.Expression.Branches?.Any(b => ContainsSubQuery(b.When)) == true)));
+
+    /// <summary>Whether the condition tree holds an expression operand anywhere (decision 107).</summary>
+    protected static bool ContainsExpression(ConditionNode? node) => node switch
+    {
+        null => false,
+        ComparisonCondition comparison => comparison.Left.IsExpression || comparison.Right?.IsExpression == true,
+        LogicalCondition logical => logical.Operands.Any(ContainsExpression),
+        NotCondition negation => ContainsExpression(negation.Operand),
         _ => false,
     };
 
@@ -2002,6 +2633,13 @@ public abstract class AbstractQueryBuilder
         Check(QueryFeature.Ordering, clauses.OrderBys.Count > 0);
         Check(QueryFeature.Pagination, clauses.Offset is not null || clauses.Limit is not null);
         Check(QueryFeature.Subquery, ContainsSubQuery(clauses.Filter) || ContainsSubQuery(clauses.PostFilter));
+        Check(
+            QueryFeature.Expression,
+            clauses.Projections.Any(p => p.Operand.IsExpression)
+            || clauses.OrderBys.Any(o => o.Operand.IsExpression)
+            || ContainsExpression(clauses.Filter)
+            || ContainsExpression(clauses.PostFilter)
+            || clauses.Joins.Any(j => ContainsExpression(j.OnCondition)));
     }
 
     /// <summary>

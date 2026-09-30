@@ -197,26 +197,32 @@ public class LinqStringMethodTest
         Assert.DoesNotContain("ESCAPE", sql, StringComparison.Ordinal);
     }
 
-    // ---- refused ----------------------------------------------------------------------
+    // ---- a bound argument (decision 107) -----------------------------------------------
 
     /// <summary>
-    /// A value from the enclosing scope as the argument of a string method would make the
-    /// pattern that value joined with a wildcard, an expression no operand of the condition
-    /// tree carries; the bare parameter would match other rows.
+    /// A value from the enclosing scope as the argument of a string method is the pattern
+    /// that value joined with the wildcard (decision 107): LIKE over a concatenation, with
+    /// the value escaped as EF Core's provider escapes it at run time, so that a wildcard in
+    /// it stays literal in every target. Refused until 2026-09-30, because no operand carried
+    /// an expression.
     /// </summary>
     [Fact]
-    public void AParameterArgumentOfAStringMethodRefusesTheArtifact()
+    public void AParameterArgumentOfAStringMethodIsLikeOverAConcatenation()
     {
-        var record = AssertRefused("c.CustomerName.StartsWith(prefix)", QueryFeature.QueryParameter);
-        Assert.Contains("joined with a wildcard", record.Reason, StringComparison.Ordinal);
+        var sql = Sql("c.CustomerName.StartsWith(prefix)");
+
+        Assert.Contains("c.CustomerName LIKE REPLACE(REPLACE(REPLACE(REPLACE(@prefix, '!', '!!'), '%', '!%'), '_', '!_'), '[', '![') + '%' ESCAPE '!'", sql, StringComparison.Ordinal);
+        Assert.Contains("string prefix", Artifact(Parse(new DapperSqlQueryBuilder(), "c.CustomerName.StartsWith(prefix)"), ConversionContentType.CSharpQuery), StringComparison.Ordinal);
     }
 
+    /// <summary>A column as the argument is an operand like any other; the pattern is the column escaped and anchored.</summary>
     [Fact]
-    public void AnArgumentThatIsNotALiteralRefusesTheArtifact()
+    public void AColumnArgumentOfAStringMethodIsLikeOverAConcatenation()
     {
-        var record = AssertRefused("c.CustomerName.StartsWith(c.Code)", QueryFeature.Filtering);
-        Assert.Contains("not a string literal", record.Reason, StringComparison.Ordinal);
+        Assert.Contains("c.CustomerName LIKE REPLACE(REPLACE(REPLACE(REPLACE(c.Code, '!', '!!'), '%', '!%'), '_', '!_'), '[', '![') + '%' ESCAPE '!'", Sql("c.CustomerName.StartsWith(c.Code)"), StringComparison.Ordinal);
     }
+
+    // ---- refused ----------------------------------------------------------------------
 
     [Fact]
     public void AnOverloadTheProviderDoesNotTranslateRefusesTheArtifact()

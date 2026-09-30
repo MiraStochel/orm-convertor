@@ -49,7 +49,8 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
         visitor = new NHibernateHqlQueryVisitor(
             aliased,
             (kind, reason, feature) => Report(kind, reason, feature),
-            RenderSubQuery);
+            RenderSubQuery,
+            Expressions);
 
         var map = EntityFor(clauses.From.Table);
         var entity = map?.Entity.Name ?? SingularOf(clauses.From.Table);

@@ -1,5 +1,7 @@
+using System.Globalization;
 using Common.Convertors;
 using Common.Naming;
+using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model.AbstractRepresentation;
@@ -50,22 +52,33 @@ public sealed class LinqScope
 /// stateful: it reads <see cref="LinqScope"/> to know what the current lambda parameter
 /// stands for.
 /// </summary>
+/// <param name="typing">The typed view of the query's expressions the builder's gate filled (decision 107): the scalar of a CASE without an ELSE, which C# needs to spell its null.</param>
 public sealed class EFCoreLinqQueryVisitor(
     LinqScope scope,
     Action<ConversionRecordKind, string, QueryFeature?> report,
     Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery,
+    ExpressionTyping typing,
     EFCoreLinqQueryVisitor? outer = null)
     : IQueryVisitor
 {
     public LinqScope Scope { get; } = scope;
+
+    /// <summary>
+    /// True while the argument of an aggregate is being written: the lambda there ranges
+    /// over the elements of the group, so a column is a member of the element rather than
+    /// a key of the grouping.
+    /// </summary>
+    private bool insideAggregate;
+
+    /// <summary>The escape character of the LIKE whose pattern is being written (decision 107); null outside a pattern.</summary>
+    private string? patternEscape;
 
     /// <summary>Whether the alias belongs to this scope or one enclosing it (decision 061).</summary>
     public bool Knows(string alias) => Scope.Aliases.Contains(alias) || outer?.Knows(alias) == true;
 
     public string Visit(FromInstruction instr) => Scope.Param;
 
-    public string Visit(ProjectInstruction instr)
-        => Column(instr.Table, instr.Attribute, instr.Function, instr.Distinct);
+    public string Visit(ProjectInstruction instr) => Operand(instr.Operand);
 
     public string Visit(SelectInstruction instr) => instr.Condition.Accept(this);
 
@@ -73,7 +86,7 @@ public sealed class EFCoreLinqQueryVisitor(
 
     public string Visit(GroupByInstruction instr) => Column(instr.Table, instr.Attribute, null);
 
-    public string Visit(OrderByInstruction instr) => Column(instr.Table, instr.Attribute, null);
+    public string Visit(OrderByInstruction instr) => Operand(instr.Operand);
 
     public string Visit(JoinInstruction instr) => instr.OnCondition.Accept(this);
 
@@ -188,7 +201,7 @@ public sealed class EFCoreLinqQueryVisitor(
     /// </summary>
     private string? NullableElementType(QueryOperand operand)
     {
-        if (operand.IsParameter || operand.IsConstant || operand.IsValueList || operand.IsSubQuery || operand.Function is not null)
+        if (!operand.IsColumn || operand.Function is not null)
         {
             return null;
         }
@@ -280,6 +293,13 @@ public sealed class EFCoreLinqQueryVisitor(
     /// EF Core escapes the argument of a string method itself, so <c>'A!_%' ESCAPE '!'</c>
     /// is <c>StartsWith("A_")</c> - and where the split is not exact, the escape travels
     /// as the third argument of EF.Functions.Like.
+    ///
+    /// A pattern that is an expression (decision 107) is the same table over a value the
+    /// caller binds: a wildcard concatenated onto an <see cref="QueryFunction.EscapePattern"/>
+    /// of a value is the string method over that value - <c>StartsWith(prefix)</c>, exact,
+    /// because EF Core's provider escapes the argument -, and a concatenation without the
+    /// escaping is EF.Functions.Like over the concatenation, which is what the source
+    /// meant: a wildcard in the value stays a wildcard there.
     /// </summary>
     private string Like(string left, QueryOperand right, string? escape)
     {
@@ -292,15 +312,77 @@ public sealed class EFCoreLinqQueryVisitor(
                 : $"{left}.{method}({StringLiteral(core)})";
         }
 
+        if (right.IsExpression && right.Function is null && TryReadAnchoredValue(right.Expression!, out var anchoredMethod, out var value))
+        {
+            return $"{left}.{anchoredMethod}({Operand(value!)})";
+        }
+
         // A LIKE pattern is a string whatever scalar the parser managed to put on it, so a
         // constant goes out quoted rather than through the general literal rendering, which
         // would spell an untyped one bare and the result would not compile.
+        patternEscape = escape;
         var pattern = literalPattern is not null ? StringLiteral(literalPattern) : Operand(right);
+        patternEscape = null;
 
         return escape is null
             ? $"EF.Functions.Like({left}, {pattern})"
             : $"EF.Functions.Like({left}, {pattern}, {StringLiteral(escape)})";
     }
+
+    /// <summary>
+    /// The three anchored shapes over an escaped value (decision 107): <c>EscapePattern(x) + '%'</c>
+    /// is StartsWith, <c>'%' + EscapePattern(x)</c> EndsWith, <c>'%' + EscapePattern(x) + '%'</c>
+    /// Contains, the concatenations nested as the reader nests them.
+    /// </summary>
+    private static bool TryReadAnchoredValue(QueryExpression pattern, out string? method, out QueryOperand? value)
+    {
+        method = null;
+        value = null;
+
+        if (pattern.Operator is not (ExpressionOperator.Concat or ExpressionOperator.Add))
+        {
+            return false;
+        }
+
+        var (left, right) = (pattern.Left!, pattern.Right!);
+
+        if (IsWildcard(right))
+        {
+            if (Escaped(left) is { } startsWith)
+            {
+                (method, value) = ("StartsWith", startsWith);
+                return true;
+            }
+
+            if (left is { IsExpression: true, Function: null }
+                && left.Expression!.Operator is ExpressionOperator.Concat or ExpressionOperator.Add
+                && IsWildcard(left.Expression.Left!)
+                && Escaped(left.Expression.Right!) is { } contains)
+            {
+                (method, value) = ("Contains", contains);
+                return true;
+            }
+
+            return false;
+        }
+
+        if (IsWildcard(left) && Escaped(right) is { } endsWith)
+        {
+            (method, value) = ("EndsWith", endsWith);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsWildcard(QueryOperand operand)
+        => operand is { IsConstant: true, Function: null } && operand.Constant!.Text == "%";
+
+    private static QueryOperand? Escaped(QueryOperand operand)
+        => operand is { IsExpression: true, Function: null }
+           && operand.Expression!.Function == QueryFunction.EscapePattern
+            ? operand.Expression.Arguments![0]
+            : null;
 
     /// <summary>
     /// Splits a LIKE pattern into its anchors and its core, or refuses. The core has to be
@@ -395,21 +477,52 @@ public sealed class EFCoreLinqQueryVisitor(
         }
     }
 
+    /// <summary>
+    /// An operand in the current scope: a list, a parameter captured under its own name
+    /// (decision 083 - LINQ has no placeholder), a constant, a subquery in a scalar position,
+    /// an expression (decision 107), or a column; an aggregate over any of the last three is
+    /// the aggregate call over the group's elements.
+    /// </summary>
     public string Operand(QueryOperand operand)
-        => operand.IsValueList
-            ? ValueList(operand)
-            : operand.IsParameter
-                // LINQ has no placeholder: the parameter of the generated method is captured
-                // by the lambda and written under its own name (decision 083).
-                ? QueryParameterNaming.IdentifierFor(operand.Parameter!)
-                : operand.IsConstant
-                    ? Literal(operand.Constant!)
-                    : Column(operand.Table, operand.Property!, operand.Function, operand.Distinct);
+    {
+        if (operand.IsValueList)
+        {
+            return ValueList(operand);
+        }
+
+        if (operand.IsAggregate)
+        {
+            return Aggregate(operand);
+        }
+
+        if (operand.IsParameter)
+        {
+            return QueryParameterNaming.IdentifierFor(operand.Parameter!);
+        }
+
+        if (operand.IsConstant)
+        {
+            return Literal(operand.Constant!);
+        }
+
+        if (operand.IsSubQuery)
+        {
+            return renderSubQuery(operand.SubQuery!, ComparisonOperator.Equal) ?? string.Empty;
+        }
+
+        if (operand.IsExpression)
+        {
+            return Expression(operand.Expression!);
+        }
+
+        return Column(operand.Table, operand.Property!, null);
+    }
 
     /// <summary>
     /// Renders a column reference in the current scope: a plain member access, a group key,
-    /// or an aggregate over the group's elements - over their distinct values when
-    /// <paramref name="distinct"/> says so (decision 102).
+    /// an element of the group inside an aggregate's lambda, or an aggregate over the
+    /// group's elements - over their distinct values when <paramref name="distinct"/> says
+    /// so (decision 102).
     /// </summary>
     public string Column(string? alias, string attribute, string? function, bool distinct = false)
     {
@@ -423,7 +536,12 @@ public sealed class EFCoreLinqQueryVisitor(
 
         if (function is not null)
         {
-            return Aggregate(alias, attribute, function, distinct);
+            return Aggregate(QueryOperand.Column(alias, attribute, function, distinct));
+        }
+
+        if (Scope.Grouped && insideAggregate)
+        {
+            return $"{Scope.ElementRow(alias)}.{Property(alias, attribute)}";
         }
 
         if (Scope.Grouped)
@@ -444,8 +562,17 @@ public sealed class EFCoreLinqQueryVisitor(
         return $"{Scope.Row(alias)}.{Property(alias, attribute)}";
     }
 
-    private string Aggregate(string? alias, string attribute, string function, bool distinct)
+    /// <summary>
+    /// An aggregate over the group's elements (decisions 022 and 102): the parameterless
+    /// Count() for a count of rows, the aggregate method with a lambda over the element for
+    /// a column or an expression (decision 107), and a Select of the argument, collapsed,
+    /// then the parameterless aggregate for one over distinct values.
+    /// </summary>
+    private string Aggregate(QueryOperand operand)
     {
+        var function = operand.Function!;
+        var bare = operand.Bare();
+
         // An aggregate over an ungrouped scope has no place inside a LINQ projection: the
         // chain must end in the aggregate call, which is not the IQueryable this builder
         // emits. Writing the bare column instead answers with every row where the source
@@ -461,13 +588,13 @@ public sealed class EFCoreLinqQueryVisitor(
             return string.Empty;
         }
 
-        if (function == "COUNT" && !distinct)
+        if (function == "COUNT" && !operand.Distinct)
         {
-            if (attribute != "*")
+            if (bare.Property != "*")
             {
                 report(
                     ConversionRecordKind.Convention,
-                    $"COUNT({attribute}) was written as Count(), which counts rows rather than non-null values.",
+                    $"COUNT({bare}) was written as Count(), which counts rows rather than non-null values.",
                     QueryFeature.Aggregation);
             }
 
@@ -493,13 +620,16 @@ public sealed class EFCoreLinqQueryVisitor(
             return $"{Scope.Param}.Count()";
         }
 
-        var element = $"{Scope.ElementParam} => {Scope.ElementRow(alias)}.{Property(alias, attribute)}";
+        var wasInsideAggregate = insideAggregate;
+        insideAggregate = true;
+        var element = $"{Scope.ElementParam} => {Operand(bare)}";
+        insideAggregate = wasInsideAggregate;
 
-        // The aggregate over the distinct values of the column (decision 102): a Select of
-        // the column, collapsed, then the parameterless aggregate - the shape EF Core
+        // The aggregate over the distinct values of the argument (decision 102): a Select of
+        // the argument, collapsed, then the parameterless aggregate - the shape EF Core
         // translates to COUNT(DISTINCT ...). It counts distinct non-null values, exactly as
         // COUNT(DISTINCT x) does, so unlike Count() it needs no record.
-        if (distinct)
+        if (operand.Distinct)
         {
             return $"{Scope.Param}.Select({element}).Distinct().{method}()";
         }
@@ -541,6 +671,153 @@ public sealed class EFCoreLinqQueryVisitor(
                    .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase))
                    ?.Property.Name
                ?? column;
+    }
+
+    /* ---- expressions (decision 107) --------------------------------------------------- */
+
+    /// <summary>
+    /// An expression in C#'s spelling (decision 107): the operators as written, <c>+</c> for
+    /// a concatenation as for an addition, the string methods and members of System.String
+    /// and System.DateTime, <c>??</c> for COALESCE, <c>Math.Abs</c>, <c>DateTime.Now</c>, the
+    /// conditional operator for a searched CASE, and a chain of Replace for the escaping of
+    /// a pattern value. SUBSTRING's position is translated, not carried: the model counts
+    /// from one, C# from zero.
+    /// </summary>
+    private string Expression(QueryExpression expression)
+    {
+        if (expression.IsBinary)
+        {
+            var symbol = expression.Operator!.Value switch
+            {
+                ExpressionOperator.Concat or ExpressionOperator.Add => "+",
+                ExpressionOperator.Subtract => "-",
+                ExpressionOperator.Multiply => "*",
+                ExpressionOperator.Divide => "/",
+                ExpressionOperator.Modulo => "%",
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Operator, null),
+            };
+
+            return $"{Side(expression.Left!, expression, rightSide: false)} {symbol} {Side(expression.Right!, expression, rightSide: true)}";
+        }
+
+        if (expression.IsCall)
+        {
+            var arguments = expression.Arguments!;
+            return expression.Function!.Value switch
+            {
+                QueryFunction.Upper => $"{Receiver(arguments[0])}.ToUpper()",
+                QueryFunction.Lower => $"{Receiver(arguments[0])}.ToLower()",
+                QueryFunction.Trim => $"{Receiver(arguments[0])}.Trim()",
+                QueryFunction.Substring => $"{Receiver(arguments[0])}.Substring({ZeroBased(arguments[1])}, {Operand(arguments[2])})",
+                QueryFunction.Length => $"{Receiver(arguments[0])}.Length",
+                QueryFunction.Coalesce => $"({string.Join(" ?? ", arguments.Select(Operand))})",
+                QueryFunction.Abs => $"Math.Abs({Operand(arguments[0])})",
+                QueryFunction.Year => $"{Receiver(arguments[0])}.Year",
+                QueryFunction.Month => $"{Receiver(arguments[0])}.Month",
+                QueryFunction.Day => $"{Receiver(arguments[0])}.Day",
+                QueryFunction.CurrentTimestamp => "DateTime.Now",
+                QueryFunction.EscapePattern => EscapePattern(Receiver(arguments[0]), patternEscape ?? "!"),
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null),
+            };
+        }
+
+        return Case(expression);
+    }
+
+    /// <summary>
+    /// A searched CASE as nested conditional operators, parenthesized as a whole because the
+    /// conditional binds weaker than any comparison around it. Without an ELSE the value is
+    /// the null of the branches' scalar, which the gate derived (decision 107); a scalar
+    /// nobody derived leaves C# no type to spell the null in, and the CASE is refused rather
+    /// than emitted uncompilable.
+    /// </summary>
+    private string Case(QueryExpression expression)
+    {
+        string otherwise;
+        if (expression.Else is not null)
+        {
+            otherwise = Operand(expression.Else);
+        }
+        else if (typing.ScalarOf(expression) is { } scalar)
+        {
+            var type = CSharpTypeConvertor.ToString(LangType.Scalar(scalar));
+            otherwise = scalar is ScalarType.String or ScalarType.Object or ScalarType.ByteArray
+                ? $"({type})null"
+                : $"({type}?)null";
+        }
+        else
+        {
+            report(
+                ConversionRecordKind.Failure,
+                $"The CASE '{expression}' has no ELSE and the scalar of its branches does not follow from the mapping, so C# has no type to spell its null in; no artifact was generated.",
+                QueryFeature.Expression);
+            otherwise = "null";
+        }
+
+        var text = otherwise;
+        foreach (var branch in expression.Branches!.Reverse())
+        {
+            text = $"{branch.When.Accept(this)} ? {Operand(branch.Then)} : {text}";
+        }
+
+        return $"({text})";
+    }
+
+    /// <summary>
+    /// One side of a binary expression, parenthesized where C# would regroup it otherwise -
+    /// the same precedence the SQL visitor follows.
+    /// </summary>
+    private string Side(QueryOperand side, QueryExpression parent, bool rightSide)
+    {
+        var text = Operand(side);
+        return ExpressionSpelling.NeedsParentheses(side, parent, rightSide) ? $"({text})" : text;
+    }
+
+    /// <summary>The receiver of a member access: an operation is parenthesized, everything else binds tighter than the dot already.</summary>
+    private string Receiver(QueryOperand operand)
+    {
+        var text = Operand(operand);
+        return operand is { IsExpression: true, IsAggregate: false } && operand.Expression!.IsBinary ? $"({text})" : text;
+    }
+
+    /// <summary>
+    /// The start of a SUBSTRING as C# counts it (decision 107): the model carries the
+    /// position from one, so a number goes out one less, a position the LINQ reader wrote
+    /// as <c>x + 1</c> goes out as <c>x</c>, and anything else as <c>x - 1</c>.
+    /// </summary>
+    private string ZeroBased(QueryOperand position)
+    {
+        if (position is { IsConstant: true, Function: null }
+            && long.TryParse(position.Constant!.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
+        {
+            return (number - 1).ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (position is { IsExpression: true, Function: null }
+            && position.Expression!.Operator == ExpressionOperator.Add
+            && position.Expression.Right is { IsConstant: true, Function: null } one
+            && one.Constant!.Text == "1")
+        {
+            return Operand(position.Expression.Left!);
+        }
+
+        return $"{Receiver(position)} - 1";
+    }
+
+    /// <summary>
+    /// The value with every wildcard of SQL Server made literal (decision 107), as the chain
+    /// of Replace calls EF Core translates to REPLACE: the escape character first, then
+    /// <c>%</c>, <c>_</c> and <c>[</c>.
+    /// </summary>
+    private static string EscapePattern(string receiver, string escape)
+    {
+        var text = $"{receiver}.Replace({StringLiteral(escape)}, {StringLiteral(escape + escape)})";
+        foreach (var wildcard in new[] { "%", "_", "[" })
+        {
+            text += $".Replace({StringLiteral(wildcard)}, {StringLiteral(escape + wildcard)})";
+        }
+
+        return text;
     }
 
     /// <summary>

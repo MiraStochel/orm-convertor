@@ -111,6 +111,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [104](104-a-projection-into-a-sql-target-materializes-as-an-untyped-row.md) | Projekce do SQL cíle se materializuje jako netypovaný řádek | 2026-09-29 | platí | F7–F10, F11, F13, T2, T3 |
 | [105](105-a-query-formulates-its-own-demand-on-the-catalog.md) | Dotaz formuluje vlastní poptávku do katalogu: vazbu tabulky, ze které se typuje parametr | 2026-09-30 | platí | F5, F6, F7–F10, F11, F13, T2, S1, S2, S3 |
 | [106](106-a-bare-parameter-after-in-is-dappers-collection-parameter.md) | Holý parametr za `IN` je kolekční parametr Dapperu a wrapper ho odloupne před gramatikou | 2026-09-30 | platí | F10, F11, F13, T2, S1, S2 |
+| [107](107-an-expression-is-the-sixth-operand-shape-and-stands-wherever-an-operand-stands.md) | Výraz je šestý tvar operandu a stojí všude, kde stojí operand: uzavřený slovník funkcí, projekce i řazení nad operandem | 2026-09-30 | platí | F7–F10, F11, T1, T2, T3, S1, S2 |
 
 ## Formát
 
