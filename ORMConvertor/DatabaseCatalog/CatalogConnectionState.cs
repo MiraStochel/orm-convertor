@@ -24,8 +24,40 @@ public enum CatalogConnectionState
 }
 
 /// <summary>
-/// What the completion phase reports about itself: the state of the catalog connection and
+/// What a completion phase reports about itself: the state of the catalog connection and
 /// how long the read took - null when the connection was never tried, so the duration
 /// cannot claim a read that did not happen (S3).
 /// </summary>
-public sealed record CatalogPhaseResult(CatalogConnectionState ConnectionState, TimeSpan? ReadTime);
+public sealed record CatalogPhaseResult(CatalogConnectionState ConnectionState, TimeSpan? ReadTime)
+{
+    /// <summary>
+    /// This phase followed by a later one over the same connection - the target's demand
+    /// before the entities are built, the queries' demand before the queries are
+    /// (decision 105). One run reports one state and one time: the state is the strongest
+    /// thing that happened to the connection - a failed read outranks a successful one, a
+    /// read outranks a connection nothing asked - and the time is the sum of the reads,
+    /// null where neither phase tried the connection (S3).
+    /// </summary>
+    public CatalogPhaseResult Then(CatalogPhaseResult later)
+    {
+        ArgumentNullException.ThrowIfNull(later);
+
+        var state = (ConnectionState, later.ConnectionState) switch
+        {
+            (CatalogConnectionState.Unreachable, _) or (_, CatalogConnectionState.Unreachable) => CatalogConnectionState.Unreachable,
+            (CatalogConnectionState.Reached, _) or (_, CatalogConnectionState.Reached) => CatalogConnectionState.Reached,
+            (CatalogConnectionState.Unused, _) or (_, CatalogConnectionState.Unused) => CatalogConnectionState.Unused,
+            _ => CatalogConnectionState.NotConfigured,
+        };
+
+        TimeSpan? time = (ReadTime, later.ReadTime) switch
+        {
+            (null, null) => null,
+            (null, var only) => only,
+            (var only, null) => only,
+            (var first, var second) => first + second,
+        };
+
+        return new CatalogPhaseResult(state, time);
+    }
+}

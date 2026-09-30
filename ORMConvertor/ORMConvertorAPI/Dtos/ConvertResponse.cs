@@ -20,13 +20,14 @@ namespace ORMConvertorAPI.Dtos;
 /// own literal SQL (decision 088), or null where it declared nothing. The two are different
 /// facts - read as T-SQL because the source said so, read as T-SQL because nobody said
 /// anything - and the run record is where they are told apart (S6).</param>
-/// <param name="CatalogState">State of the catalog connection during the completion
-/// phase. The connection lives in server configuration and the interface only shows its
-/// state (decision 030), so this field is how a user learns whether the translation had
-/// the catalog at all.</param>
-/// <param name="CatalogReadMilliseconds">Duration of the catalog completion phase
-/// (decision 015), reported separately from translation time (S3); null when the phase
-/// had nothing to do.</param>
+/// <param name="CatalogState">State of the catalog connection during the run - the
+/// completion phase over the target's demand and the one over the queries' (decisions 015
+/// and 105), as one state. The connection lives in server configuration and the interface
+/// only shows its state (decision 030), so this field is how a user learns whether the
+/// translation had the catalog at all.</param>
+/// <param name="CatalogReadMilliseconds">Duration of the catalog reads - both phases
+/// together (decisions 015 and 105) - reported separately from translation time (S3); null
+/// when neither had anything to do.</param>
 /// <param name="MaxNestingDepth">How deep this instance let the parsers read, or 0 where
 /// the operator switched the cap off (decision 092). It stands beside the tool version for
 /// the same reason that one does: S2 promises determinism for the same version of the tool,

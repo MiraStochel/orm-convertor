@@ -16,13 +16,13 @@ namespace Tests.Combined;
 /// <param name="Sources">The query units per source framework - one, or for MyBatis the mapper and the interface that types its parameters. A source absent here cannot state the shape in its language.</param>
 /// <param name="Hallmarks">Substrings every query artifact of the target has to contain, joined over all query artifacts.</param>
 /// <param name="RefusedBy">Targets whose descriptor cannot express the shape, with the feature the refusal names.</param>
-/// <param name="RefusedFrom">Sources that can write the shape but whose reading the tool refuses by a stated rule, with the feature the refusal names - a Dapper parameter without a catalog to type it from (decision 083).</param>
+/// <param name="RefusedWithoutCatalog">Sources that can write the shape but whose reading the tool refuses by a stated rule in a run without a catalog, with the feature the refusal names - a Dapper parameter, whose scalar takes a mapping the source does not state (decision 083) and the catalog supplies on the query's own demand (decision 105). The matrices here convert dry, so for them it is a refusal; a run with a catalog holding the domain yields the artifact.</param>
 public sealed record QueryShape(
     string Name,
     IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>> Sources,
     IReadOnlyDictionary<ORMEnum, string[]> Hallmarks,
     IReadOnlyDictionary<ORMEnum, QueryFeature> RefusedBy,
-    IReadOnlyDictionary<ORMEnum, QueryFeature> RefusedFrom)
+    IReadOnlyDictionary<ORMEnum, QueryFeature> RefusedWithoutCatalog)
 {
     public override string ToString() => Name;
 }
@@ -37,7 +37,7 @@ public sealed record QueryShape(
 /// takes them as a test resource, and the Java targets are judged over the very same
 /// inputs at verification levels 2 and 3 (<c>shapes/QueryCategoryTest</c> and
 /// <c>shapes/DeeplyNestedQueryTest</c> there). Which sources state a category, which
-/// target refuses it and which source the tool refuses it from is stated once, in
+/// target refuses it and which source the tool refuses it from without a catalog is stated once, in
 /// <c>categories.txt</c> beside the files, and both suites read it there. What stays here
 /// is the .NET side's own assertion - the hallmarks the target's text has to carry - keyed
 /// by the manifest's section, and the two lists are checked against each other when the
@@ -163,7 +163,7 @@ public static class QueryShapeInputs
 
             var units = new Dictionary<ORMEnum, string[]>();
             var refusedBy = new Dictionary<ORMEnum, QueryFeature>();
-            var refusedFrom = new Dictionary<ORMEnum, QueryFeature>();
+            var refusedWithoutCatalog = new Dictionary<ORMEnum, QueryFeature>();
 
             foreach (var (key, value) in values)
             {
@@ -172,8 +172,8 @@ public static class QueryShapeInputs
                     case "refusedBy":
                         refusedBy = Refusals(id, value);
                         break;
-                    case "refusedFrom":
-                        refusedFrom = Refusals(id, value);
+                    case "refusedWithoutCatalog":
+                        refusedWithoutCatalog = Refusals(id, value);
                         break;
                     default:
                         if (!Enum.TryParse<ORMEnum>(key, ignoreCase: false, out var source) || !Enum.IsDefined(source))
@@ -186,7 +186,7 @@ public static class QueryShapeInputs
                 }
             }
 
-            shapes.Add(Shape(id, units, hallmarks, refusedBy, refusedFrom));
+            shapes.Add(Shape(id, units, hallmarks, refusedBy, refusedWithoutCatalog));
         }
 
         var unstated = CategoryHallmarks.Keys.Except(shapes.Select(shape => shape.Name)).ToList();
@@ -426,7 +426,7 @@ public static class QueryShapeInputs
                 "ol.Description is not null or",
             ]),
         refusedBy: [],
-        refusedFrom: []);
+        refusedWithoutCatalog: []);
 
     /// <summary>How many query scopes the bad query has: the outer one and eight subqueries.</summary>
     public const int DeeplyNestedScopes = 9;
@@ -443,7 +443,7 @@ public static class QueryShapeInputs
         Dictionary<ORMEnum, string[]> units,
         Dictionary<ORMEnum, string[]> hallmarks,
         Dictionary<ORMEnum, QueryFeature> refusedBy,
-        Dictionary<ORMEnum, QueryFeature> refusedFrom)
+        Dictionary<ORMEnum, QueryFeature> refusedWithoutCatalog)
     {
         var sources = new Dictionary<ORMEnum, IReadOnlyList<ConversionSource>>();
         foreach (var (source, paths) in units)
@@ -451,7 +451,7 @@ public static class QueryShapeInputs
             sources[source] = [.. paths.Select(Unit)];
         }
 
-        return new QueryShape(name, sources, hallmarks, refusedBy, refusedFrom);
+        return new QueryShape(name, sources, hallmarks, refusedBy, refusedWithoutCatalog);
     }
 
     /// <summary>Hallmarks per target language, spread over the targets that write it.</summary>

@@ -1314,6 +1314,196 @@ public abstract class AbstractQueryBuilder
         }
     }
 
+    /* ---- the query's demand on the catalog (decision 105) ---------------------------- */
+
+    /// <summary>
+    /// The tables this query needs bound to an entity before it can be built, as the query
+    /// names them (decision 105). The gate above types a parameter from the column on the
+    /// other side of its comparison and follows the column's qualifier to an entity through
+    /// a stated mapping only (<see cref="EntityFor"/>) - never through the naming convention
+    /// of decision 050, which <see cref="AliasedEntities"/> and the typing of a literal do
+    /// use. A qualifier the stated mappings do not resolve is the one case the gate cannot
+    /// answer without the catalog, and it is known exactly once the query is read: this
+    /// walks the scopes the way
+    /// <see cref="CollectParameters(IReadOnlyList{QueryInstruction}, Dictionary{string, EntityMap}, List{ParameterOccurrence})"/>
+    /// does and yields the table behind every such qualifier, once each, in order of first
+    /// occurrence. What it leaves out is exactly what the gate never asks the mapping for: a
+    /// LIKE pattern, a comparison with a constant or a subquery, a COUNT, a row count of the
+    /// pagination, and an unqualified column, which the gate looks up across every entity of
+    /// the conversion. Empty for a query without parameters, so a conversion whose queries
+    /// need nothing reads nothing.
+    ///
+    /// Data rather than a call (decision 015): the orchestration hands the demand to the
+    /// catalog component between reading and <see cref="Build"/>, and the builder never
+    /// touches a database. Every target inherits it and none implements it (S1).
+    /// </summary>
+    public IReadOnlyList<QueryTableDemand> CatalogDemand()
+    {
+        var demands = new List<QueryTableDemand>();
+
+        CollectDemands(
+            Unwrap(instructions),
+            new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            demands);
+
+        return demands;
+    }
+
+    private void CollectDemands(
+        IReadOnlyList<QueryInstruction> body,
+        Dictionary<string, EntityMap> enclosingAliases,
+        Dictionary<string, string> enclosingUnbound,
+        List<QueryTableDemand> found)
+    {
+        var aliases = ScopeAliases(body, enclosingAliases, EntityFor);
+        var unbound = UnboundTables(body, enclosingUnbound);
+
+        foreach (var instruction in body)
+        {
+            switch (instruction)
+            {
+                case SelectInstruction filter:
+                    CollectDemands(filter.Condition, aliases, unbound, found);
+                    break;
+                case HavingInstruction postFilter:
+                    CollectDemands(postFilter.Condition, aliases, unbound, found);
+                    break;
+                case JoinInstruction join:
+                    CollectDemands(join.OnCondition, aliases, unbound, found);
+                    break;
+                case SubQueryInstruction nested:
+                    CollectDemands(Unwrap(nested.Instructions), aliases, unbound, found);
+                    break;
+                case SetOperationInstruction operation:
+                    CollectDemands(Unwrap(operation.Left.Instructions), aliases, unbound, found);
+                    CollectDemands(Unwrap(operation.Right.Instructions), aliases, unbound, found);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The tables of one scope no stated mapping resolves, keyed by the name a column
+    /// qualifies with - the alias, or the table itself where the source wrote none - on top
+    /// of the enclosing scopes'. The counterpart of <see cref="ScopeAliases"/> for the
+    /// names it left out.
+    /// </summary>
+    private Dictionary<string, string> UnboundTables(IReadOnlyList<QueryInstruction> body, Dictionary<string, string> enclosing)
+    {
+        var unbound = new Dictionary<string, string>(enclosing, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var source in body.OfType<FromInstruction>())
+        {
+            if (EntityFor(source.Table) is null)
+            {
+                unbound[source.Alias ?? source.Table] = source.Table;
+            }
+        }
+
+        foreach (var join in body.OfType<JoinInstruction>())
+        {
+            if (EntityFor(join.RightTable) is null)
+            {
+                unbound[join.RightTableAlias ?? join.RightTable] = join.RightTable;
+            }
+        }
+
+        return unbound;
+    }
+
+    private void CollectDemands(
+        ConditionNode? node,
+        Dictionary<string, EntityMap> aliases,
+        Dictionary<string, string> unbound,
+        List<QueryTableDemand> found)
+    {
+        switch (node)
+        {
+            case ComparisonCondition comparison:
+                CollectDemands(comparison.Left, comparison.Right, comparison.Operator, aliases, unbound, found);
+                CollectDemands(comparison.Right, comparison.Left, comparison.Operator, aliases, unbound, found);
+                return;
+            case LogicalCondition logical:
+                foreach (var operand in logical.Operands)
+                {
+                    CollectDemands(operand, aliases, unbound, found);
+                }
+
+                return;
+            case NotCondition negation:
+                CollectDemands(negation.Operand, aliases, unbound, found);
+                return;
+        }
+    }
+
+    private void CollectDemands(
+        QueryOperand? operand,
+        QueryOperand? other,
+        ComparisonOperator op,
+        Dictionary<string, EntityMap> aliases,
+        Dictionary<string, string> unbound,
+        List<QueryTableDemand> found)
+    {
+        if (operand is null)
+        {
+            return;
+        }
+
+        if (operand.IsSubQuery)
+        {
+            CollectDemands(Unwrap(operand.SubQuery!.Instructions), aliases, unbound, found);
+            return;
+        }
+
+        // A parameter, or a parameter among the values of an IN list (decision 102) - the
+        // two shapes the gate types from the other side of the comparison.
+        var binds = operand.IsParameter || (operand.IsValueList && operand.Values!.Any(value => value.IsParameter));
+        if (!binds)
+        {
+            return;
+        }
+
+        if (TableTheGateCannotResolve(other, op, aliases, unbound) is { } table)
+        {
+            var demand = QueryTableDemand.Of(table);
+            if (!found.Any(demand.Names))
+            {
+                found.Add(demand);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The mirror of <see cref="ScalarOfOther"/> and <see cref="ScalarOfColumn"/>: the table
+    /// behind a qualified column the gate would look up and not find, or null where the gate
+    /// never asks the mapping (a LIKE pattern, a constant, a subquery, a COUNT, an unqualified
+    /// column) or would find the answer in a stated mapping.
+    /// </summary>
+    private string? TableTheGateCannotResolve(
+        QueryOperand? other,
+        ComparisonOperator op,
+        Dictionary<string, EntityMap> aliases,
+        Dictionary<string, string> unbound)
+    {
+        if (op is ComparisonOperator.Like || other is null || !other.IsColumn || other.Table is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(other.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (aliases.ContainsKey(other.Table) || EntityFor(other.Table) is not null)
+        {
+            return null;
+        }
+
+        return unbound.GetValueOrDefault(other.Table);
+    }
+
     /// <summary>
     /// The scalar a parameter takes from the other side of its comparison (decision 083).
     /// A subquery and a second parameter say nothing, and neither does a constant whose own

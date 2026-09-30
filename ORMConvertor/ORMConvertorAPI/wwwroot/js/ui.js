@@ -406,7 +406,7 @@ const CATALOG_STATE_VIEWS = Object.freeze({
     label: "catalog unused",
     className: "badge-catalog-unused",
     explanation:
-      "A connection is configured, but the completion phase had nothing to ask.",
+      "A connection is configured, but nothing had anything to ask of it - neither the target's demand nor a query's.",
   },
   [CatalogState.Reached]: {
     label: "catalog read",

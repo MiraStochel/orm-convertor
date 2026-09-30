@@ -21,9 +21,16 @@
 #   refusedBy       targets whose descriptor cannot express the category, as
 #                   Target:Feature - both suites expect a record naming the feature there
 #                   and no query artifact (decision 053).
-#   refusedFrom     sources that can write the category but whose reading the tool refuses
-#                   by a stated rule, as Source:Feature - a parameter of a Dapper source has
-#                   no mapping to take its scalar from without a catalog (decision 083).
+#   refusedWithoutCatalog
+#                   sources that can write the category but whose reading the tool refuses
+#                   by a stated rule in a run that has no catalog, as Source:Feature - a
+#                   parameter of a Dapper source has no mapping to take its scalar from
+#                   (decision 083), and the binding comes from the catalog, whichever the
+#                   target (decision 105). A suite that converts dry asserts the refusal; a
+#                   suite that converts through an instance with a catalog holding the
+#                   domain - the Java suite, the differential matrix - asserts the artifact.
+#                   The collection parameter is not among them, for the reason its section
+#                   gives: from Dapper it is not read at all, with or without a catalog.
 #
 # The domain has the shape of the shared fixture schema (TestSchema.sql): customers, orders
 # under a two-part key, order lines under a three-part key whose leading parts are a
@@ -147,8 +154,9 @@ MyBatis = mybatis/FindInOverAListOfValuesMapper.xml
 
 # The scalar of a parameter is derived from the column it is compared with, which takes a
 # mapping (decision 083): a Dapper source states neither table nor column, so without a
-# catalog it is refused by a stated rule, and the MyBatis row states the type where the
-# framework keeps it - in the signature of the mapper interface (decision 084).
+# catalog it is refused by a stated rule and with one the query asks the catalog for the
+# binding itself (decision 105); the MyBatis row states the type where the framework keeps
+# it - in the signature of the mapper interface (decision 084).
 [ScalarParameter]
 Dapper = dapper/FindScalarParameter.sql
 EFCore = efcore/FindScalarParameter.query.cs
@@ -156,17 +164,23 @@ NHibernate = nhibernate/FindScalarParameter.hql
 Hibernate = hibernate/FindScalarParameter.jpql
 EclipseLink = eclipselink/FindScalarParameter.jpql
 MyBatis = mybatis/FindScalarParameterMapper.query.java, mybatis/FindScalarParameterMapper.xml
-refusedFrom = Dapper:QueryParameter
+refusedWithoutCatalog = Dapper:QueryParameter
 
-# The MyBatis row binds the collection with the <foreach> the framework expands it by.
+# The MyBatis row binds the collection with the <foreach> the framework expands it by. No
+# Dapper row: T-SQL has no syntax for a collection parameter - to the grammar `IN (@ids)`
+# is a one-element list of values with a bound scalar among them (decision 102), which
+# is another query, and a bare Dapper unit states nothing about its parameters, because
+# the Dapper wrapper carries no facts off the C# call the way the MyBatis wrapper carries
+# them off the mapper interface (decision 084). The row stood here until 2026-09-30 and was
+# never read past the refusal of the parameter; the first run of its source variant at the
+# fourth level (decision 105) is what showed that it does not state the category. Whether
+# the wrapper should read the facts off the call is an open item.
 [CollectionParameter]
-Dapper = dapper/FindCollectionParameter.sql
 EFCore = efcore/FindCollectionParameter.query.cs
 NHibernate = nhibernate/FindCollectionParameter.hql
 Hibernate = hibernate/FindCollectionParameter.jpql
 EclipseLink = eclipselink/FindCollectionParameter.jpql
 MyBatis = mybatis/FindCollectionParameterMapper.query.java, mybatis/FindCollectionParameterMapper.xml
-refusedFrom = Dapper:QueryParameter
 
 # A moment is a constructor in LINQ and a JDBC escape in JPQL; T-SQL and HQL write it as
 # a string, which the readers carry as a string and the builder template types from the
@@ -211,7 +225,7 @@ EclipseLink = eclipselink/FindLikeWithAnEscapedWildcard.jpql
 MyBatis = mybatis/FindLikeWithAnEscapedWildcardMapper.xml
 
 # A bound value among the listed ones takes its scalar from the column, so the Dapper row
-# is refused without a catalog as the other parameter rows are.
+# is refused without a catalog, and typed with one, as the other parameter rows are.
 [InListWithABoundValue]
 Dapper = dapper/FindInListWithABoundValue.sql
 EFCore = efcore/FindInListWithABoundValue.query.cs
@@ -219,4 +233,4 @@ NHibernate = nhibernate/FindInListWithABoundValue.hql
 Hibernate = hibernate/FindInListWithABoundValue.jpql
 EclipseLink = eclipselink/FindInListWithABoundValue.jpql
 MyBatis = mybatis/FindInListWithABoundValueMapper.query.java, mybatis/FindInListWithABoundValueMapper.xml
-refusedFrom = Dapper:QueryParameter
+refusedWithoutCatalog = Dapper:QueryParameter

@@ -95,14 +95,12 @@ mutations = ordering, rowCount
 #   category        the section of categories.txt this query is. A target the manifest lists
 #                   under refusedBy is paired with no source of the category and is stated as
 #                   a refused direction instead, which a suite asserts (decision 053). A source
-#                   the manifest lists under refusedFrom is no source here either: the
-#                   refusal is of a Dapper parameter with nothing to type it from (decision
-#                   083), and the catalog of the fixture does not lift it for the source's own
-#                   run - that run is the identity direction, a Dapper target demands no
-#                   mapping fact, so the completion phase supplies no table to bind the
-#                   column to - and a query whose source variant cannot run is no query of
-#                   the matrix (decision 089). The three parameter categories therefore
-#                   have five sources, not six.
+#                   the manifest lists under refusedWithoutCatalog is a source here all the
+#                   same: the refusal is of a Dapper parameter with nothing to type it from
+#                   (decision 083), both suites run with the catalog of the fixture, and the
+#                   query asks that catalog for the binding itself, whichever the target
+#                   (decision 105) - so the source's own run, the identity direction, runs,
+#                   and every category has as many sources as state it (decision 089).
 #
 # Where none of the five mutations reaches a query, "mutations" is empty and the positive
 # half carries the category alone: a target that dropped the DISTINCT of a projection, or the

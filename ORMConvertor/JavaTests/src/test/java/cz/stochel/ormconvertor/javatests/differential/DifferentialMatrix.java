@@ -138,13 +138,15 @@ public final class DifferentialMatrix {
 
             QueryCategories.Category manifest = QueryCategories.byId(category);
 
-            // A source the manifest lists under refusedFrom is no source here either: its own
-            // run is the identity direction, where a Dapper target demands no mapping fact
-            // and the catalog supplies no table to type the parameter from (decision 083),
-            // and a query whose source variant cannot run is no query of the matrix (089).
+            // Every source the manifest lists, the ones it lists under refusedWithoutCatalog
+            // included: that refusal is of a Dapper parameter with nothing to type it from
+            // (decision 083), and this matrix runs through an instance with the catalog of
+            // the fixture, which the query asks for the binding itself, whichever the target
+            // (decision 105) - so the source's own run, the identity direction, runs, and
+            // the source is a source (decision 089).
             List<Integer> stating = new ArrayList<>();
             for (int orm : Orm.ALL) {
-                if (manifest.statedBy(orm) && manifest.refusalFrom(orm) == null) {
+                if (manifest.statedBy(orm)) {
                     stating.add(orm);
                 }
             }

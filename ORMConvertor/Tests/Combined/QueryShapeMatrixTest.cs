@@ -81,10 +81,14 @@ public class QueryShapeMatrixTest
         var result = Convert(shape, source, target);
         var queries = QueryArtifacts(result);
 
-        if (shape.RefusedFrom.TryGetValue(source, out var sourceFeature))
+        if (shape.RefusedWithoutCatalog.TryGetValue(source, out var sourceFeature))
         {
-            // A refusal the tool states as a rule of reading the source: no artifact in any
-            // direction, and a record naming the feature (decision 083).
+            // A refusal the tool states as a rule of reading the source in a run without a
+            // catalog, which this dry matrix is: no artifact in any direction, and a record
+            // naming the feature (decision 083). With a catalog holding the domain the same
+            // source yields the artifact into every target (decision 105), which
+            // Catalog/QueryDemandCompletionTest proves over a fake one and the differential
+            // matrix over the database.
             Assert.Empty(queries);
             Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == sourceFeature);
             return;
@@ -125,7 +129,7 @@ public class QueryShapeMatrixTest
     [MemberData(nameof(SqlTargetDirections))]
     public void TheSqlTargetsEmitAStatementThatParses(QueryShape shape, ORMEnum source, ORMEnum target)
     {
-        if (shape.RefusedBy.ContainsKey(target) || shape.RefusedFrom.ContainsKey(source))
+        if (shape.RefusedBy.ContainsKey(target) || shape.RefusedWithoutCatalog.ContainsKey(source))
         {
             return;
         }
@@ -203,7 +207,7 @@ public class QueryShapeMatrixTest
     [MemberData(nameof(DotNetTargetDirections))]
     public void TheDotNetQueryMethodCompiles(QueryShape shape, ORMEnum source, ORMEnum target)
     {
-        if (shape.RefusedBy.ContainsKey(target) || shape.RefusedFrom.ContainsKey(source))
+        if (shape.RefusedBy.ContainsKey(target) || shape.RefusedWithoutCatalog.ContainsKey(source))
         {
             return;
         }
@@ -263,7 +267,7 @@ public class QueryShapeMatrixTest
         var shape = QueryShapeInputs.Categories.Single(s => s.Name == name);
 
         var statements = shape.Sources.Keys
-            .Where(source => !shape.RefusedFrom.ContainsKey(source))
+            .Where(source => !shape.RefusedWithoutCatalog.ContainsKey(source))
             .Select(source => Normalized(Convert(shape, source, ORMEnum.Dapper)
                 .Sources.Single(s => s.ContentType == ConversionContentType.SqlQuery).Content))
             .Distinct()

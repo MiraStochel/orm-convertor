@@ -19,17 +19,43 @@ internal sealed class FakeCatalogReader(params TableImage[] images) : ICatalogRe
 
         foreach (var request in requests)
         {
-            var match = request.NameCandidates
-                .Select(candidate => images.FirstOrDefault(image =>
-                    string.Equals(image.Name, candidate, StringComparison.OrdinalIgnoreCase)
-                    && (request.Schema is null
-                        || string.Equals(image.Schema, request.Schema, StringComparison.OrdinalIgnoreCase))))
-                .FirstOrDefault(image => image is not null);
-
-            results[request.Key] = new TableLookup { Image = match };
+            results[request.Key] = Resolve(request);
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// The first candidate with a match wins. A name found in more than one schema when the
+    /// request states none answers the way the SQL Server reader answers: dbo if it is one
+    /// of them, otherwise the ambiguity is returned rather than guessed at.
+    /// </summary>
+    private TableLookup Resolve(TableRequest request)
+    {
+        foreach (var candidate in request.NameCandidates)
+        {
+            var matches = images
+                .Where(image => string.Equals(image.Name, candidate, StringComparison.OrdinalIgnoreCase)
+                    && (request.Schema is null
+                        || string.Equals(image.Schema, request.Schema, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            if (matches.Count == 1)
+            {
+                return new TableLookup { Image = matches[0] };
+            }
+
+            if (matches.Count > 1)
+            {
+                var preferred = matches.SingleOrDefault(image => string.Equals(image.Schema, "dbo", StringComparison.OrdinalIgnoreCase));
+
+                return preferred is not null
+                    ? new TableLookup { Image = preferred }
+                    : new TableLookup { AmbiguousMatches = [.. matches.Select(image => image.QualifiedName)] };
+            }
+        }
+
+        return new TableLookup();
     }
 
     public IReadOnlyList<TableImage> FindJunctionTables(IReadOnlyCollection<TableImage> referencedTables)

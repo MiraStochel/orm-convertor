@@ -112,7 +112,8 @@ public static class ConversionHandler
         // The completion phase of decision 015 sits between parsing and generation: the
         // target's descriptor formulates the demand, one component reads the catalog, and
         // the phase is timed on its own (S3). The reader is an optional input - a
-        // translation without one proceeds on conventions and says so in the records.
+        // translation without one proceeds on conventions and says so in the records. The
+        // queries formulate a demand of their own, served further down (decision 105).
         var catalogPhase = CatalogCompletion.Complete(entityBuilder, catalogReader, declaredSourceDialect);
 
         // Emit entities for target ORM
@@ -144,6 +145,13 @@ public static class ConversionHandler
             .ToList();
 
         var targetTakesQueries = QueryBuilderFactory.Supports(targetOrm);
+
+        // Reading and building are two passes rather than one loop, because the demand of
+        // decision 105 is served between them - and served once: every query is read first,
+        // the tables all of them together need bound to an entity go to the catalog in one
+        // batch, and only then is any of them built. One read however many queries the
+        // request carries, and none where none of them demands anything.
+        var readQueries = new List<(UnitOutcome Unit, IReadOnlyCollection<AbstractQueryBuilder> Builders)>();
 
         foreach (var unit in units)
         {
@@ -177,14 +185,30 @@ public static class ConversionHandler
             // passes together below (decision 081).
             unit.Yielded |= filled.Count > 0;
 
+            readQueries.Add((unit, filled));
+        }
+
+        // The queries' own demand on the catalog (decision 105): the tables a parameter has
+        // to be typed from and no stated mapping binds. Served after the entity artifacts
+        // are out, so that they stay exactly what the target's demand determined, and before
+        // any query is built, so that the gate of decision 083 finds the binding as a stated
+        // mapping. Its time adds to the entity phase's (S3).
+        var queryPhase = QueryDemandCompletion.Complete(
+            entityBuilder,
+            [.. readQueries.SelectMany(read => read.Builders)],
+            catalogReader,
+            declaredSourceDialect);
+
+        foreach (var (unit, filled) in readQueries)
+        {
             foreach (var queryBuilder in filled)
             {
                 results.AddRange(queryBuilder.Build());
 
                 // Each builder was made for one query of this one unit and dies with it, so
-                // every record it holds - the parser's and the build's alike - came from that
-                // query (decisions 066 and 081). The query's own name is what tells the
-                // records of two queries of one document apart.
+                // every record it holds - the parser's, the catalog's and the build's alike -
+                // came from that query (decisions 066 and 081). The query's own name is what
+                // tells the records of two queries of one document apart.
                 queryRecords.AddRange(queryBuilder.Records.Select(r => r with
                 {
                     Unit = unit.Reference,
@@ -192,6 +216,9 @@ public static class ConversionHandler
                 }));
             }
         }
+
+        // One state and one time for the run, whichever of the two phases met the catalog.
+        var catalog = catalogPhase.Then(queryPhase);
 
         // Two statements about one unit, both made across both passes (decision 081). A
         // non-blank unit written in a language nobody claimed would otherwise fall through
@@ -247,8 +274,8 @@ public static class ConversionHandler
             MaxNestingDepth = parseLimits.MaxNestingDepth,
             Sources = results,
             Records = [.. entityBuilder.Records, .. queryRecords, .. runRecords],
-            CatalogState = catalogPhase.ConnectionState,
-            CatalogReadTime = catalogPhase.ReadTime,
+            CatalogState = catalog.ConnectionState,
+            CatalogReadTime = catalog.ReadTime,
         };
     }
 

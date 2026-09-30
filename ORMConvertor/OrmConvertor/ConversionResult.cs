@@ -75,17 +75,20 @@ public sealed class ConversionResult
     public required List<ConversionRecord> Records { get; init; }
 
     /// <summary>
-    /// State of the catalog connection during the completion phase. The connection lives
-    /// in server configuration and the interface only shows its state (decision 030); the
-    /// records carry the same fact, but only as one entry among many, so the caller gets
-    /// it here as a field of its own.
+    /// State of the catalog connection during the run - the completion phase over the
+    /// target's demand and the one over the queries' (decisions 015 and 105), folded into
+    /// the strongest thing that happened to the connection. The connection lives in server
+    /// configuration and the interface only shows its state (decision 030); the records
+    /// carry the same fact, but only as one entry among many, so the caller gets it here as
+    /// a field of its own.
     /// </summary>
     public required CatalogConnectionState CatalogState { get; init; }
 
     /// <summary>
-    /// How long the catalog completion phase took (decision 015), reported separately
-    /// from translation time as S3 asks. Null when the phase had nothing to do - an
-    /// empty demand or no configured connection means zero queries.
+    /// How long the catalog reads took - the completion phase over the target's demand and
+    /// the one over the queries' together (decisions 015 and 105) - reported separately
+    /// from translation time as S3 asks. Null when neither had anything to do - empty
+    /// demands or no configured connection mean zero queries.
     /// </summary>
     public TimeSpan? CatalogReadTime { get; init; }
 }

@@ -174,13 +174,13 @@ internal static class DifferentialMatrix
             var manifest = QueryShapeInputs.Categories.SingleOrDefault(s => s.Name == category)
                 ?? throw new InvalidOperationException($"matrix.txt: [{id}] names the category {category}, which categories.txt does not state.");
 
-            // A source the manifest lists under refusedFrom is no source here either. The
-            // refusal is of a Dapper parameter with nothing to type it from (decision 083),
-            // and the catalog of the fixture does not lift it for the source's own run: that
-            // run is the identity direction, a Dapper target demands no mapping fact, so the
-            // completion phase supplies no table for the gate to bind the column to. A query
-            // whose source variant cannot run is no query of the matrix (decision 089).
-            sources = [.. manifest.Sources.Keys.Where(source => !manifest.RefusedFrom.ContainsKey(source))];
+            // Every source the manifest lists, the ones it lists under refusedWithoutCatalog
+            // included: that refusal is of a Dapper parameter with nothing to type it from
+            // (decision 083), and this matrix runs with the catalog of the fixture, which the
+            // query asks for the binding itself, whichever the target (decision 105) - so the
+            // source's own run, the identity direction, runs, and the source is a source
+            // (decision 089).
+            sources = [.. manifest.Sources.Keys];
             unitPaths = [];
             refusedBy = manifest.RefusedBy;
         }

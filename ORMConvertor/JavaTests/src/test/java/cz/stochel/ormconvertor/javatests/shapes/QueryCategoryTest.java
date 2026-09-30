@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cz.stochel.ormconvertor.javatests.TestDatabase;
 import cz.stochel.ormconvertor.javatests.TestSchema;
 import cz.stochel.ormconvertor.javatests.eclipselink.EclipseLinkBootstrap;
 import cz.stochel.ormconvertor.javatests.hibernate.HibernateBootstrap;
@@ -52,12 +53,16 @@ import org.junit.jupiter.params.provider.MethodSource;
  * shared ones first - the query unit must not change what the entities come out as.
  *
  * <p>Which sources state a category and what is refused where comes from the manifest,
- * not from a list of this class. A source the tool refuses by a stated rule - a Dapper
- * parameter without a catalog to type it from (decision 083) - has its refusal asserted,
- * a record naming the feature and no query artifact, and a target that refuses by its
- * descriptor the same (decision 053), so that a refusal which stops arriving is a failure
- * rather than a case that quietly passes. The two JPA targets take only the sources that
- * state a key, for the reason {@link DeeplyNestedQueryTest} gives; MyBatis takes all six.
+ * not from a list of this class. A target that refuses by its descriptor has its refusal
+ * asserted, a record naming the feature and no query artifact (decision 053), so that a
+ * refusal which stops arriving is a failure rather than a case that quietly passes. A
+ * source the manifest lists as refused <em>without a catalog</em> - a Dapper parameter,
+ * whose scalar takes a mapping the source does not state (decision 083) - is not refused
+ * here: this suite converts through an instance whose catalog holds the domain the schema
+ * of this class creates, and the query asks the catalog for the binding itself, whichever
+ * the target (decision 105), so the artifact is expected and judged like any other. The two
+ * JPA targets take only the sources that state a key, for the reason
+ * {@link DeeplyNestedQueryTest} gives; MyBatis takes all six.
  */
 class QueryCategoryTest {
 
@@ -208,23 +213,30 @@ class QueryCategoryTest {
     }
 
     /**
-     * Whether the manifest states a refusal for this case - by the source's stated rule or
-     * by the target's descriptor - and, when it does, that the tool refused as stated: no
-     * query artifact and a record naming the feature. When it states none, the answer may
-     * refuse nothing about the query; what it may refuse is an entity of a source that
-     * states no key (decision 063), which names an entity and a mapping category.
+     * Whether the manifest states a refusal of this case by the target's descriptor and,
+     * when it does, that the tool refused as stated: no query artifact and a record naming
+     * the feature. When it states none, the answer may refuse nothing about the query; what
+     * it may refuse is an entity of a source that states no key (decision 063), which names
+     * an entity and a mapping category. A refusal the manifest states for a run without a
+     * catalog is no refusal of this run (decision 105): the instance has the catalog and
+     * the catalog has the domain, so the answer is judged as any other - and a refusal that
+     * arrived all the same would say that the instance's catalog does not see the schema of
+     * this class, which is what the message names.
      */
     private static boolean endsInAStatedRefusal(Case row, int target, ConversionResponse response) {
-        Integer refusedFrom = row.category().refusalFrom(row.source());
         Integer refusedBy = row.category().refusalBy(target);
 
-        if (refusedFrom == null && refusedBy == null) {
+        if (refusedBy == null) {
             List<ConversionRecord> refusals = response.records().stream()
                     .filter(record -> record.kind() == RecordKind.FAILURE && record.entity() == null && record.category() == null)
                     .toList();
+            String why = row.category().refusalWithoutCatalog(row.source()) == null
+                    ? ""
+                    : " The manifest refuses this source without a catalog only; the instance the suite converts through"
+                    + " has to see the domain of the schema " + TestDatabase.schemaName() + " in its catalog (decision 105).";
             assertTrue(refusals.isEmpty(),
                     "The tool refused the " + row + " query for " + Orm.nameOf(target) + ":"
-                    + System.lineSeparator() + response.describeRecords());
+                    + System.lineSeparator() + response.describeRecords() + why);
             return false;
         }
 
@@ -233,16 +245,13 @@ class QueryCategoryTest {
                 "The manifest states a refusal for " + row + " into " + Orm.nameOf(target)
                 + ", but a query artifact came out:" + System.lineSeparator() + response.describeRecords());
 
-        // A refusal the tool states as a rule of reading the source is a Failure naming the
-        // feature (decision 083); one of the target's descriptor is a record naming it,
-        // worded by the builder (decision 053).
-        int feature = refusedFrom != null ? refusedFrom : refusedBy;
-        boolean asFailure = refusedFrom != null;
+        // A refusal of the target's descriptor is a record naming the feature, worded by
+        // the builder (decision 053).
+        int feature = refusedBy;
         assertTrue(response.records().stream().anyMatch(record ->
-                        record.feature() != null && record.feature() == feature
-                        && (!asFailure || record.kind() == RecordKind.FAILURE)),
+                        record.feature() != null && record.feature() == feature),
                 "The manifest states that " + row + " into " + Orm.nameOf(target) + " is refused by "
-                + QueryFeature.nameOf(feature) + ", and no record says so:"
+                + QueryFeature.nameOf(refusedBy) + ", and no record says so:"
                 + System.lineSeparator() + response.describeRecords());
         return true;
     }

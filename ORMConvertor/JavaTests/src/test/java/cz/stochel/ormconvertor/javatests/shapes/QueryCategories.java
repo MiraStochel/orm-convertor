@@ -16,7 +16,7 @@ import java.util.Map;
  * Reads {@code QueryShapes/categories.txt}, the manifest of the query categories of
  * requirement T2 that both suites read (decisions 076 and 089): which source frameworks
  * state a category and with which units, which target refuses it by its descriptor, and
- * from which source the tool refuses it by a stated rule. Its counterpart is the reading
+ * from which source the tool refuses it by a stated rule in a run without a catalog. Its counterpart is the reading
  * in {@code Tests/Combined/QueryShapeInputs.cs}, and the format is the one of
  * {@code matrix.txt}, poorer than JSON on purpose: two parsers in two languages have to
  * agree about it, and a line of "key = value" cannot be read two ways.
@@ -45,7 +45,7 @@ public final class QueryCategories {
             String id,
             Map<Integer, List<String>> units,
             Map<Integer, Integer> refusedBy,
-            Map<Integer, Integer> refusedFrom) {
+            Map<Integer, Integer> refusedWithoutCatalog) {
 
         /** Whether the source framework can state the category in its language. */
         public boolean statedBy(int source) {
@@ -57,9 +57,16 @@ public final class QueryCategories {
             return refusedBy.get(target);
         }
 
-        /** The feature the tool refuses the category from this source by, or null when it reads it. */
-        public Integer refusalFrom(int source) {
-            return refusedFrom.get(source);
+        /**
+         * The feature the tool refuses the category from this source by in a run without a
+         * catalog, or null when it reads it either way. This suite converts through an
+         * instance whose catalog holds the domain (decision 078), so for it the refusal never
+         * comes and the artifact does (decision 105); the .NET matrices convert dry and
+         * assert the refusal. Kept so that a case of this suite can say why it expects no
+         * refusal where the manifest states one.
+         */
+        public Integer refusalWithoutCatalog(int source) {
+            return refusedWithoutCatalog.get(source);
         }
 
         /** The query units of the source, read from the shared files in the manifest's order. */
@@ -175,17 +182,17 @@ public final class QueryCategories {
     private static Category build(String id, Map<String, String> values) {
         Map<Integer, List<String>> units = new LinkedHashMap<>();
         Map<Integer, Integer> refusedBy = Map.of();
-        Map<Integer, Integer> refusedFrom = Map.of();
+        Map<Integer, Integer> refusedWithoutCatalog = Map.of();
 
         for (Map.Entry<String, String> entry : values.entrySet()) {
             switch (entry.getKey()) {
                 case "refusedBy" -> refusedBy = refusals(id, entry.getValue());
-                case "refusedFrom" -> refusedFrom = refusals(id, entry.getValue());
+                case "refusedWithoutCatalog" -> refusedWithoutCatalog = refusals(id, entry.getValue());
                 default -> units.put(Orm.forName(entry.getKey()), list(entry.getValue()));
             }
         }
 
-        return new Category(id, Map.copyOf(units), refusedBy, refusedFrom);
+        return new Category(id, Map.copyOf(units), refusedBy, refusedWithoutCatalog);
     }
 
     /** A refusal list: {@code Framework:Feature} entries, both spelled as the tool's enums spell them. */
