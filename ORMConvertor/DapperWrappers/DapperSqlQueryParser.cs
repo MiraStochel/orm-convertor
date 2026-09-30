@@ -1,6 +1,7 @@
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Naming;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
@@ -24,19 +25,17 @@ namespace DapperWrappers;
 /// Between the two stages stands the one word Dapper adds to the language: a bare parameter
 /// after IN is its list parameter, which <see cref="DapperCollectionParameters"/> peels off
 /// the text before the grammar sees it (decision 106), on both routes in.
+///
+/// The two routes differ in one more fact, and it is Dapper's to state (decision 108). A
+/// bare SQL unit is a script, whose every SELECT is a query of its own with a builder of its
+/// own, numbered by its position when there are several; the literal of a Dapper call is one
+/// command, of which Query&lt;T&gt; maps the first result set alone, so a second SELECT in it
+/// is refused.
 /// </summary>
 public class DapperSqlQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
     SourceSqlDialect? declaredSourceDialect = null) : IQueryParser
 {
-    /// <summary>
-    /// The builder of the query being read. Assigned at the start of every Parse from the
-    /// factory the orchestration supplied: one query, one fresh builder (decision 081). The
-    /// parser may not make one itself - a builder belongs to the target framework and this
-    /// parser to the source (S1) - and it is never touched outside a Parse call.
-    /// </summary>
-    private AbstractQueryBuilder queryBuilder = default!;
-
     private static readonly string[] DapperMethods =
     [
         "Query", "QueryAsync",
@@ -63,29 +62,62 @@ public class DapperSqlQueryParser(
     /// </summary>
     public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
-        queryBuilder = queryBuilders();
+        // The unit's first builder, fresh from the factory the orchestration supplied
+        // (decision 081): the parser may not make one itself - a builder belongs to the target
+        // framework and this parser to the source (S1). It carries whatever refuses the text
+        // as a whole, and it leaves on every path, refused ones included: it holds the records
+        // of what went wrong, and only the parser can say that this unit yielded a query at all.
+        var first = queryBuilders();
+        var report = ChannelOf(first);
 
-        // The builder leaves on every path, refused ones included: it holds the records of
-        // what went wrong, and only the parser can say that this unit yielded a query at all
-        // (decision 081).
-        var sql = contentType == ConversionContentType.CSharpQuery ? ExtractSql(source) : source;
+        var sql = contentType == ConversionContentType.CSharpQuery ? ExtractSql(source, report) : source;
         if (sql is null)
         {
-            return [queryBuilder];
+            return [first];
         }
 
         // Dapper's own spelling of a list parameter, IN @ids, is not T-SQL; it is rewritten to
         // the form the grammar reads and the fact that the parameter binds a list travels
         // beside the text (decision 106), the way the MyBatis wrapper carries a <foreach>.
-        var text = DapperCollectionParameters.PeelOff(sql, Report, out var statedParameters);
+        var text = DapperCollectionParameters.PeelOff(sql, report, out var statedParameters);
         if (text is null)
         {
-            return [queryBuilder];
+            return [first];
         }
 
-        new SqlQueryReader(queryBuilder, Report, declaredSourceDialect, statedParameters, Limits).Read(text);
+        var selects = SqlText.Selects(
+            text,
+            report,
+            declaredSourceDialect,
+            Limits,
+            isScript: contentType == ConversionContentType.SqlQuery);
 
-        return [queryBuilder];
+        if (selects is null)
+        {
+            return [first];
+        }
+
+        // One query, one fresh builder and one reader (decision 081), so a SELECT the reading
+        // refuses refuses itself alone. The number is given before the reading, to every
+        // SELECT of the text, so that a refused query does not renumber its neighbours - and a
+        // later version that reads it does not either (decision 108). A single SELECT keeps
+        // the fixed name, as there is nothing to tell it from.
+        var builders = new List<AbstractQueryBuilder>(selects.Count);
+
+        for (var i = 0; i < selects.Count; i++)
+        {
+            var builder = i == 0 ? first : queryBuilders();
+
+            if (selects.Count > 1)
+            {
+                builder.QueryName = QueryMethodNaming.Positional(i + 1);
+            }
+
+            new SqlQueryReader(builder, ChannelOf(builder), declaredSourceDialect, statedParameters, Limits).Read(selects[i]);
+            builders.Add(builder);
+        }
+
+        return builders;
     }
 
     /// <summary>
@@ -93,7 +125,7 @@ public class DapperSqlQueryParser(
     /// verbatim strings, raw string literals and escapes have already been resolved by
     /// Roslyn rather than being unwound by hand.
     /// </summary>
-    private string? ExtractSql(string source)
+    private static string? ExtractSql(string source, Action<ConversionRecordKind, string, QueryFeature?> report)
     {
         var tree = CSharpSyntaxTree.ParseText("public class Snippet\n{\n" + source + "\n}\n");
         var root = tree.GetCompilationUnitRoot();
@@ -115,26 +147,27 @@ public class DapperSqlQueryParser(
                 }
             }
 
-            Report(
+            report(
                 ConversionRecordKind.Incompleteness,
-                "The Dapper call does not pass the SQL as a string literal, so the query could not be read.");
+                "The Dapper call does not pass the SQL as a string literal, so the query could not be read.",
+                null);
             return null;
         }
 
-        Report(ConversionRecordKind.Failure, "No Dapper query call was found in the source.");
+        report(ConversionRecordKind.Failure, "No Dapper query call was found in the source.", null);
         return null;
     }
 
     /// <summary>
-    /// The channel the shared reader reports over. The record names the language that was
-    /// read, not the unit that carried it, which is the shape every query parser of the
-    /// solution uses - HQL for an hbm.xml &lt;query&gt;, SQL here.
+    /// The channel the shared reading reports over into one builder. The record names the
+    /// language that was read, not the unit that carried it, which is the shape every query
+    /// parser of the solution uses - HQL for an hbm.xml &lt;query&gt;, SQL here.
     /// </summary>
-    private void Report(ConversionRecordKind kind, string reason, QueryFeature? feature = null)
-        => queryBuilder.Report(new ConversionRecord
+    private static Action<ConversionRecordKind, string, QueryFeature?> ChannelOf(AbstractQueryBuilder builder)
+        => (kind, reason, feature) => builder.Report(new ConversionRecord
         {
             Kind = kind,
-            Framework = queryBuilder.Descriptor.Framework,
+            Framework = builder.Descriptor.Framework,
             Artifact = ConversionContentType.SqlQuery,
             Feature = feature,
             Reason = reason,

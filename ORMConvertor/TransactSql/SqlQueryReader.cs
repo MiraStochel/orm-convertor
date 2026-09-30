@@ -1,7 +1,6 @@
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
-using Common.Sql;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Model;
 using Model.AbstractRepresentation.Enums;
@@ -34,6 +33,13 @@ namespace TransactSql;
 /// a document to the next. Beside them stand the facts the source stated about the text -
 /// the dialect it is written in (decision 088) and its parameters (decision 084) - neither
 /// of which the grammar reads, and therefore neither of which the grammar has to be taught.
+///
+/// What stands over the whole text - both guards, the grammar, the refusal of a statement
+/// that does not read - is <see cref="SqlText"/> (decision 108), because a bare SQL unit is a
+/// script and its SELECTs are queries with builders of their own. A wrapper whose text is
+/// one command of its host calls <see cref="Read(string)"/>, which takes both steps; the
+/// Dapper wrapper, whose bare unit is a script, takes the first itself and reads each
+/// SELECT with a reader of its own.
 /// </summary>
 /// <param name="declaredSourceDialect">
 /// The dialect the source declared for this text (decision 088). A declaration of a system
@@ -63,84 +69,36 @@ public class SqlQueryReader(
     private (string What, QueryFeature? Category)? unread;
 
     /// <summary>
-    /// Reads the SELECT the text states into the builder. A text that cannot be read leaves
-    /// its reason on the channel and the builder empty; the builder is the caller's either
-    /// way, because only the caller can say that the unit yielded a query at all
-    /// (decision 081).
+    /// Reads the one SELECT the text states into the builder: the text is the argument of
+    /// one construct of the host framework, so a second SELECT refuses it as much as a
+    /// statement that writes (decision 108). A text that cannot be read leaves its reason on
+    /// the channel and the builder empty; the builder is the caller's either way, because
+    /// only the caller can say that the unit yielded a query at all (decision 081).
     /// </summary>
     public void Read(string sql)
     {
-        ArgumentNullException.ThrowIfNull(sql);
-
-        // Before the grammar, because the grammar is not what decides this (decision 088).
-        // It filters syntax and not vocabulary: LIMIT 10 and || fail here as parse errors,
-        // whereas SUBSTR(name, 1, 3) is an ordinary function call to TSql160Parser and
-        // would come out of the target's visitor under a name T-SQL does not have. The
-        // refusal carries no category, being no property of the query (decision 048); the
-        // channel is the one a syntax error already leaves by, and only the reason is new.
-        if (ForeignDialect.StopsReading(declaredSourceDialect))
+        if (SqlText.Selects(sql, report, declaredSourceDialect, limits) is [var select])
         {
-            Report(ConversionRecordKind.Failure, ForeignDialect.QueryReason);
-            return;
+            Read(select);
         }
+    }
 
-        // Before the grammar for a second reason, and the graver one: of all five languages
-        // the tool reads, T-SQL gives out first - 1024 levels of parentheses read, 2048 kill
-        // the process (decision 092). The grammar has no guard of its own and no way to be
-        // given one, but its lexer is separate and is a loop, so the depth is measured on the
-        // token stream and the grammar never sees what would overflow it.
-        if (NestingDepthGuard.FirstBeyond(Tracked(sql), limits) is { } tooDeep)
-        {
-            Report(ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep, limits));
-            return;
-        }
+    /// <summary>
+    /// Reads one SELECT the whole-text step found (<see cref="SqlText.Selects"/>) into the
+    /// builder. A refusal here refuses this query alone: the neighbours in a script have
+    /// builders and readers of their own (decision 108).
+    /// </summary>
+    public void Read(SqlSelect select)
+    {
+        ArgumentNullException.ThrowIfNull(select);
 
-        var parser = new TSql160Parser(initialQuotedIdentifiers: true);
-        var fragment = parser.Parse(new StringReader(sql), out var errors);
-
-        if (errors.Count > 0)
-        {
-            foreach (var error in errors)
-            {
-                // A parse error carries a line and a column, which is what S7 asks the UI to
-                // show and what no other source of ours can give.
-                Report(
-                    ConversionRecordKind.Failure,
-                    $"The SQL could not be parsed at line {error.Line}, column {error.Column}: {error.Message}");
-            }
-
-            return;
-        }
-
-        var statements = Statements(fragment);
-
-        if (statements.OfType<SelectStatement>().FirstOrDefault() is not { } select)
-        {
-            Report(ConversionRecordKind.Failure, "The SQL contains no SELECT statement to translate.");
-            return;
-        }
-
-        // Everything the text says besides that one SELECT (decisions 048 and 070): a second
-        // query, a DECLARE, and above all a statement that writes - the text used to be read
-        // as if it held the SELECT alone, so `DELETE FROM T; SELECT …` came back as a
-        // read-only artifact with nothing to say that the DELETE had been dropped. A writing
-        // statement is outside what the tool translates for any framework, which is the
-        // refusal the MyBatis wrapper already makes by element name (decision 084).
-        var others = statements.Where(statement => !ReferenceEquals(statement, select)).ToList();
-        if (others.Count > 0)
-        {
-            Report(
-                ConversionRecordKind.Failure,
-                $"Besides the SELECT it would translate, the text states {string.Join(", ", others.Select(Describe))}; "
-                    + "translating the SELECT alone would hand over less than the source says, so no artifact was generated.");
-            return;
-        }
+        var statement = select.Statement;
 
         // A common table expression is the source of the SELECT that follows it, and the
         // representation carries one named table (rule Q2). Read without it, the query would
         // stand over a table nobody declared - the same case as a derived table in FROM, which
         // has been refused all along (decision 070).
-        if (select.WithCtesAndXmlNamespaces is not null)
+        if (statement.WithCtesAndXmlNamespaces is not null)
         {
             Report(
                 ConversionRecordKind.Failure,
@@ -148,40 +106,16 @@ public class SqlQueryReader(
             return;
         }
 
-        // SELECT ... INTO creates a table and fills it; dropping the INTO would turn a
-        // statement that writes into one that reads (decision 070).
-        if (select.Into is not null)
-        {
-            Report(
-                ConversionRecordKind.Failure,
-                "The SELECT writes its result into a table with an INTO clause, which is not a read-only query the tool translates; no artifact was generated.");
-            return;
-        }
-
         // A query hint steers the plan, not the rows, so it is a loss rather than a refusal
         // (decision 048) - but it is not nothing, which is what it used to be.
-        if (select.OptimizerHints.Count > 0)
+        if (statement.OptimizerHints.Count > 0)
         {
             Report(
                 ConversionRecordKind.Loss,
                 "The SELECT carries an OPTION clause, which the query representation does not carry; the query hints were dropped.");
         }
 
-        ReadQueryExpression(select.QueryExpression);
-    }
-
-    /// <summary>
-    /// The SQL as the shared nesting guard reads it (decision 092): ScriptDom's own lexer,
-    /// which is a loop, projected onto text and position. Lexical errors are dropped here on
-    /// purpose - the grammar reports them a moment later, with the position S7 asks the
-    /// interface to show.
-    /// </summary>
-    private static IEnumerable<SourceToken> Tracked(string sql)
-    {
-        using var reader = new StringReader(sql);
-        var read = new TSql160Parser(initialQuotedIdentifiers: true).GetTokenStream(reader, out _);
-
-        return read.Select(token => new SourceToken(token.Text, token.Line, token.Column));
+        ReadQueryExpression(statement.QueryExpression);
     }
 
     /// <summary>
@@ -477,30 +411,6 @@ public class SqlQueryReader(
 
         return RowCount.Bound(QueryParameter.Named(name, stated.Scalar, stated.IsCollection));
     }
-
-    private static List<TSqlStatement> Statements(TSqlFragment fragment)
-        // Navigated explicitly rather than with a visitor: a visitor descends into subqueries
-        // too, and their instructions would then be emitted into the outer scope.
-        => fragment is TSqlScript script
-            ? [.. script.Batches.SelectMany(b => b.Statements)]
-            : [];
-
-    /// <summary>
-    /// A statement by the keyword it opens with, which is how the refusal names what it found
-    /// without the caller having to read a type name out of the grammar.
-    /// </summary>
-    private static string Describe(TSqlStatement statement) => statement switch
-    {
-        SelectStatement => "SELECT",
-        InsertStatement => "INSERT",
-        UpdateStatement => "UPDATE",
-        DeleteStatement => "DELETE",
-        MergeStatement => "MERGE",
-        TruncateTableStatement => "TRUNCATE TABLE",
-        DeclareVariableStatement => "DECLARE",
-        SetVariableStatement => "SET",
-        _ => statement.GetType().Name,
-    };
 
     private void ReadFrom(QuerySpecification query)
     {

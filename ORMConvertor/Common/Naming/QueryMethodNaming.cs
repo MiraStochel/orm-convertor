@@ -8,14 +8,31 @@ namespace Common.Naming;
 /// <c>@NamedQuery(name = "Customer.findAll")</c>, <c>&lt;select id="find-by-id"&gt;</c> - and the
 /// target's language decides how that name is spelled: PascalCase for the .NET targets,
 /// camelCase for the Java ones. A query the source did not name keeps the fixed fallback,
-/// which can never collide with itself: a unit carrying more than one query is exactly the
-/// unit whose queries the source named.
+/// which can never collide with itself: a unit carrying more than one query is either the
+/// unit whose queries the source named, or a bare SQL unit whose queries are numbered by
+/// their position in the text (decision 108) - <see cref="Positional"/>, spelled by the
+/// target like any other name, Query01 and query01.
 ///
 /// Lives in Common for the same reason <see cref="EntityTableNaming"/> does: every builder
 /// needs it and none may reach into another's project (S1).
 /// </summary>
 public static class QueryMethodNaming
 {
+    /// <summary>
+    /// The name of an unnamed query that shares its unit with others (decision 108): the
+    /// fixed fallback with the query's 1-based position in the text, in two digits so that
+    /// ordering by name gives the order of the text up to ninety-nine queries. Beyond that
+    /// the number simply grows a digit - the name stays unique and only the ordering stops
+    /// matching. The position is a fact of the text the user wrote, so the name invents
+    /// nothing (decision 028).
+    /// </summary>
+    public static string Positional(int position)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(position, 1);
+
+        return $"Query{position:00}";
+    }
+
     /// <summary>The method name for a .NET target, where methods are PascalCase.</summary>
     public static string PascalCase(string? queryName, string fallback)
         => Spell(queryName, fallback, firstUpper: true);

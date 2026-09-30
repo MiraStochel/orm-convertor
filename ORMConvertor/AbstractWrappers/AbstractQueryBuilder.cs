@@ -156,8 +156,11 @@ public abstract class AbstractQueryBuilder
 
     /// <summary>
     /// The name the source gave this query, verbatim (decision 081): the name attribute of
-    /// an hbm.xml &lt;query&gt;, of a @NamedQuery, the id of a MyBatis &lt;select&gt;. Null for a bare
-    /// query unit, which carries exactly one query and needs no name to be told from a
+    /// an hbm.xml &lt;query&gt;, of a @NamedQuery, the id of a MyBatis &lt;select&gt;. A bare SQL
+    /// unit names nothing, and when it carries several SELECTs, each gets its position in
+    /// the text - Query01, Query02 (decision 108, <c>QueryMethodNaming.Positional</c>) -
+    /// because that is the only name under which the user finds it among the output. Null
+    /// for a query that shares its unit with no other, which needs no name to be told from a
     /// neighbour. Set by the parser that read the query; the orchestration copies it into
     /// the records of this builder, so three failed queries of one document stop being three
     /// records distinguishable only by their order.

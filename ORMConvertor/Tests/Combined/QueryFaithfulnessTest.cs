@@ -276,13 +276,15 @@ public class QueryFaithfulnessTest
 
     /// <summary>
     /// The rule reaches past the SELECT the reader translates: a statement beside it, a WITH
-    /// clause in front of it, an INTO after it, a FOR clause at its end or a TABLESAMPLE on
-    /// its table each decide what the text answers, and the reader used to translate the
-    /// SELECT as if none of them were there. <c>DELETE … ; SELECT …</c> came back as a
-    /// read-only artifact with nothing said about the DELETE, and a query over a common table
-    /// expression came back standing over a table nobody declared - SQL that does not even
-    /// parse. The refusal a MyBatis <c>&lt;insert&gt;</c> already met is the same one
-    /// (decisions 070 and 084).
+    /// clause in front of it, an INTO after it, an assignment to a variable in it, a FOR
+    /// clause at its end or a TABLESAMPLE on its table each decide what the text answers, and
+    /// the reader used to translate the SELECT as if none of them were there.
+    /// <c>DELETE … ; SELECT …</c> came back as a read-only artifact with nothing said about
+    /// the DELETE, a query over a common table expression came back standing over a table
+    /// nobody declared - SQL that does not even parse -, and an assignment came back as
+    /// SELECT * over the table. The refusal a MyBatis <c>&lt;insert&gt;</c> already met is
+    /// the same one (decisions 070 and 084). A second SELECT is no longer here: in a bare
+    /// unit it is a query of its own (decision 108, <c>Combined/SqlScriptTest</c>).
     /// </summary>
     [Theory]
     [InlineData("WITH x AS (SELECT c.Id FROM Customers c) SELECT x.Id FROM x", "common table expression")]
@@ -292,7 +294,7 @@ public class QueryFaithfulnessTest
     [InlineData("SELECT c.Id FROM Customers c TABLESAMPLE (10 PERCENT)", "TABLESAMPLE")]
     [InlineData("DELETE FROM Customers; SELECT c.Id FROM Customers c", "DELETE")]
     [InlineData("UPDATE Customers SET Name = 'x'; SELECT c.Id FROM Customers c", "UPDATE")]
-    [InlineData("SELECT c.Id FROM Customers c; SELECT c.Name FROM Customers c", "SELECT")]
+    [InlineData("SELECT @x = MAX(c.Id) FROM Customers c", "@x")]
     public void AStatementLevelConstructWhoseOmissionWouldChangeTheAnswerRefusesTheArtifact(string sql, string named)
     {
         var builder = new EFCoreLinqQueryBuilder();
