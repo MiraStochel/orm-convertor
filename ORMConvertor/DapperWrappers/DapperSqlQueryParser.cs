@@ -20,6 +20,10 @@ namespace DapperWrappers;
 /// own artifact, whereas reading the text is reading a language three frameworks share, so
 /// the grammar lives in <see cref="SqlQueryReader"/>. Depending on that reader is not
 /// depending on Dapper, which is what S1 forbids.
+///
+/// Between the two stages stands the one word Dapper adds to the language: a bare parameter
+/// after IN is its list parameter, which <see cref="DapperCollectionParameters"/> peels off
+/// the text before the grammar sees it (decision 106), on both routes in.
 /// </summary>
 public class DapperSqlQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
@@ -70,7 +74,16 @@ public class DapperSqlQueryParser(
             return [queryBuilder];
         }
 
-        new SqlQueryReader(queryBuilder, Report, declaredSourceDialect, statedParameters: null, Limits).Read(sql);
+        // Dapper's own spelling of a list parameter, IN @ids, is not T-SQL; it is rewritten to
+        // the form the grammar reads and the fact that the parameter binds a list travels
+        // beside the text (decision 106), the way the MyBatis wrapper carries a <foreach>.
+        var text = DapperCollectionParameters.PeelOff(sql, Report, out var statedParameters);
+        if (text is null)
+        {
+            return [queryBuilder];
+        }
+
+        new SqlQueryReader(queryBuilder, Report, declaredSourceDialect, statedParameters, Limits).Read(text);
 
         return [queryBuilder];
     }

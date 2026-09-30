@@ -29,8 +29,8 @@
 #                   target (decision 105). A suite that converts dry asserts the refusal; a
 #                   suite that converts through an instance with a catalog holding the
 #                   domain - the Java suite, the differential matrix - asserts the artifact.
-#                   The collection parameter is not among them, for the reason its section
-#                   gives: from Dapper it is not read at all, with or without a catalog.
+#                   The collection parameter is among them since 2026-09-30, when the
+#                   Dapper wrapper began to read Dapper's bare `IN @ids` (decision 106).
 #
 # The domain has the shape of the shared fixture schema (TestSchema.sql): customers, orders
 # under a two-part key, order lines under a three-part key whose leading parts are a
@@ -166,21 +166,22 @@ EclipseLink = eclipselink/FindScalarParameter.jpql
 MyBatis = mybatis/FindScalarParameterMapper.query.java, mybatis/FindScalarParameterMapper.xml
 refusedWithoutCatalog = Dapper:QueryParameter
 
-# The MyBatis row binds the collection with the <foreach> the framework expands it by. No
-# Dapper row: T-SQL has no syntax for a collection parameter - to the grammar `IN (@ids)`
-# is a one-element list of values with a bound scalar among them (decision 102), which
-# is another query, and a bare Dapper unit states nothing about its parameters, because
-# the Dapper wrapper carries no facts off the C# call the way the MyBatis wrapper carries
-# them off the mapper interface (decision 084). The row stood here until 2026-09-30 and was
-# never read past the refusal of the parameter; the first run of its source variant at the
-# fourth level (decision 105) is what showed that it does not state the category. Whether
-# the wrapper should read the facts off the call is an open item.
+# Each of the two SQL sources binds the collection with the word its framework expands it
+# by: the MyBatis row with the <foreach>, the Dapper row with a bare parameter after IN -
+# `IN @ids`, which Dapper documents and expands into a list and which the Dapper wrapper
+# reads as the collection parameter (decision 106); `IN (@ids)` would be one bound value
+# (decision 102). The scalar of the elements comes from the column, so the Dapper row is
+# refused without a catalog like the scalar parameter's. The row was absent from
+# 2026-09-30 until the same day: its first run at the fourth level showed that the wrapper
+# read `IN (@ids)` as one value, which is what it is, and the bare form not at all.
 [CollectionParameter]
+Dapper = dapper/FindCollectionParameter.sql
 EFCore = efcore/FindCollectionParameter.query.cs
 NHibernate = nhibernate/FindCollectionParameter.hql
 Hibernate = hibernate/FindCollectionParameter.jpql
 EclipseLink = eclipselink/FindCollectionParameter.jpql
 MyBatis = mybatis/FindCollectionParameterMapper.query.java, mybatis/FindCollectionParameterMapper.xml
+refusedWithoutCatalog = Dapper:QueryParameter
 
 # A moment is a constructor in LINQ and a JDBC escape in JPQL; T-SQL and HQL write it as
 # a string, which the readers carry as a string and the builder template types from the

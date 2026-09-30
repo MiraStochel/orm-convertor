@@ -3,6 +3,7 @@ using AbstractWrappers.Diagnostics;
 using DapperWrappers;
 using Model;
 using Model.AbstractRepresentation;
+using Model.AbstractRepresentation.Enums;
 using MyBatisWrappers;
 using NHibernateWrappers;
 
@@ -105,6 +106,65 @@ public class SharedSqlReadingTest
 
         Assert.NotNull(fromDapper);
         Assert.Equal(fromDapper, fromMyBatis);
+    }
+
+    /// <summary>
+    /// The same proof on the one construct each SQL source spells in its own word rather
+    /// than in T-SQL: the collection parameter, which Dapper writes as a bare parameter after
+    /// IN (decision 106) and MyBatis as a canonical &lt;foreach&gt; (decision 084). Each
+    /// wrapper peels its word off before the grammar, and what the grammar reads is the same
+    /// query - the sequence in the signature included. The &lt;sql-query&gt; of NHibernate
+    /// has no row here, because its collectionness is stated by a SetParameterList call the
+    /// unit does not carry.
+    /// </summary>
+    [Fact]
+    public void ACollectionParameterReadFromDapperAndFromMyBatisGivesTheSameQuery()
+    {
+        const string select = "SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CustomerID IN ";
+
+        var fromDapper = Typed(FromDapperUnit(select + "@ids"));
+        var fromMyBatis = Typed(FromMyBatisMapper(
+            select + "<foreach item=\"item\" collection=\"ids\" open=\"(\" separator=\",\" close=\")\">#{item}</foreach>"));
+
+        Assert.NotNull(BareSql(fromDapper));
+        Assert.Contains("IN @ids", BareSql(fromDapper));
+        Assert.Equal(BareSql(fromDapper), BareSql(fromMyBatis));
+        Assert.Equal(Method(fromDapper), Method(fromMyBatis));
+        Assert.Contains("IEnumerable<int> ids", Method(fromDapper));
+    }
+
+    /// <summary>
+    /// The scalar of a parameter is derived from the column it is compared with, which takes
+    /// a mapped property (decision 083); the mapping the other facts use states none.
+    /// </summary>
+    private static AbstractQueryBuilder Typed(AbstractQueryBuilder builder)
+    {
+        var id = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int) };
+        var name = new Property { Name = "CustomerName", Type = LangType.Scalar(ScalarType.String) };
+
+        builder.EntityMaps =
+        [
+            new EntityMap
+            {
+                Entity = new Entity { Name = "Customer", Properties = [id, name] },
+                Table = "Customers",
+                Schema = "Sales",
+                PropertyMaps =
+                [
+                    new PropertyMap { Property = id, ColumnName = "CustomerID" },
+                    new PropertyMap { Property = name, ColumnName = "CustomerName" },
+                ],
+            },
+        ];
+
+        return builder;
+    }
+
+    /// <summary>The generated method, which is named after the query for MyBatis and after the fallback for Dapper - so compared past its name.</summary>
+    private static string? Method(AbstractQueryBuilder builder)
+    {
+        var content = builder.Build().SingleOrDefault(s => s.ContentType == ConversionContentType.CSharpQuery)?.Content;
+        return content?[content.IndexOf('(')..];
     }
 
     /// <summary>
