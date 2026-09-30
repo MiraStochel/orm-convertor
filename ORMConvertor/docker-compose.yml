@@ -1,6 +1,6 @@
 # Container configuration of the environment (decision 039, requirement S5).
 #
-#   docker compose up --build                            the system: application + sample database
+#   docker compose up --build                            the system: application + sample databases
 #   docker compose --profile test run --rm tests         the .NET test suite, in a clean environment
 #   docker compose --profile test run --rm java_tests    the Java test suite, likewise
 #
@@ -21,17 +21,24 @@ services:
       # The Advisor benchmarks against the sample database, and the catalog completion
       # phase reads its metadata. Without the second key the containerized instance would
       # translate with the completion phase switched off - the very thing F4 and F6 claim.
+      # The catalog is WideWorldImporters unless ORMCONVERTOR_CATALOG_DATABASE names another
+      # database of the same server - LdbcSnb, to translate over the LDBC tables (decision 110).
       - ConnectionStrings__AdvisorDatabase=Server=mssql_db,1433;Database=WideWorldImporters;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
-      - ConnectionStrings__CatalogDatabase=Server=mssql_db,1433;Database=WideWorldImporters;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
+      - ConnectionStrings__CatalogDatabase=Server=mssql_db,1433;Database=${ORMCONVERTOR_CATALOG_DATABASE:-WideWorldImporters};User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
     restart: unless-stopped
     depends_on:
       mssql_db:
         condition: service_healthy
 
+  # Two databases: WideWorldImporters, and LdbcSnb with the LDBC SNB Interactive v1 data set
+  # (decision 110), loaded on the first start - about a minute at scale factor 1, while the
+  # server already answers. LDBC_SCALE_FACTOR picks another published scale factor, or none.
   mssql_db:
     build:
       context: .
       dockerfile: database.Dockerfile
+      args:
+        LDBC_SCALE_FACTOR: ${LDBC_SCALE_FACTOR:-1}
     ports:
       - "1444:1433"
     environment:

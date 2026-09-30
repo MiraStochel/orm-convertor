@@ -39,6 +39,12 @@ public static class Endpoints
             .WithName("Examples")
             .Produces<List<ExampleDefinition>>(StatusCodes.Status200OK);
 
+        // The LDBC query catalog for its page (decision 110): the entity units over the LDBC
+        // tables and the 41 read queries with how much of each the tool translates.
+        group.MapGet("/ldbc", () => Ldbc.GetCatalog)
+            .WithName("Ldbc")
+            .Produces<LdbcCatalogDefinition>(StatusCodes.Status200OK);
+
         group.MapPost("/advisor-test", AdvisorTestHandler)
             .WithName("AdvisorTest")
               .Produces<AdvisorSolveResponse>(StatusCodes.Status200OK)

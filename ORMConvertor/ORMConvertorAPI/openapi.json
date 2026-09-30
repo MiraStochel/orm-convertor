@@ -163,6 +163,26 @@
         }
       }
     },
+    "/ldbc": {
+      "get": {
+        "tags": [
+          "ORMConvertorAPI"
+        ],
+        "operationId": "Ldbc",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LdbcCatalogDefinition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/advisor-test": {
       "post": {
         "tags": [
@@ -844,6 +864,132 @@
             }
           }
         }
+      },
+      "LdbcCatalogDefinition": {
+        "required": [
+          "sourceOrm",
+          "entities",
+          "queries"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceOrm": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "entities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversionSource"
+            }
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LdbcQueryDefinition"
+            }
+          }
+        }
+      },
+      "LdbcParameterDefinition": {
+        "required": [
+          "name",
+          "sqlType",
+          "example",
+          "isList"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sqlType": {
+            "type": "string"
+          },
+          "example": {
+            "type": "string"
+          },
+          "isList": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LdbcQueryDefinition": {
+        "required": [
+          "key",
+          "workload",
+          "number",
+          "title",
+          "translation",
+          "note",
+          "sql",
+          "parameters",
+          "refusedBy"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/LdbcWorkload"
+          },
+          "number": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "title": {
+            "type": "string"
+          },
+          "translation": {
+            "$ref": "#/components/schemas/LdbcTranslation"
+          },
+          "note": {
+            "type": "string"
+          },
+          "sql": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LdbcParameterDefinition"
+            }
+          },
+          "refusedBy": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LdbcRefusalDefinition"
+            }
+          }
+        }
+      },
+      "LdbcRefusalDefinition": {
+        "required": [
+          "target",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "LdbcTranslation": {
+        "type": "integer"
+      },
+      "LdbcWorkload": {
+        "type": "integer"
       },
       "MappingFactCategory": {
         "type": "integer"

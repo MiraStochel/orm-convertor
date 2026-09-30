@@ -47,6 +47,12 @@ public static class TestDatabase
     /// <summary>Schema the fixture works in.</summary>
     public static string SchemaName { get; } = ResolveSchemaName();
 
+    /// <summary>
+    /// Schema of the LDBC tables (decision 110), beside the fixture's own and named after it,
+    /// so that the escape hatch for two runs sharing one instance covers both.
+    /// </summary>
+    public static string LdbcSchemaName => $"{SchemaName}_ldbc";
+
     /// <summary>Whether a connection string was found at all.</summary>
     public static bool IsConfigured => !string.IsNullOrWhiteSpace(ConnectionString);
 

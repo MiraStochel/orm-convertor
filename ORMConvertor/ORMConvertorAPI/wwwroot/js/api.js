@@ -145,6 +145,22 @@ export const QUERY_FEATURE_LABELS = Object.freeze({
   10: "subquery",
   11: "set operation",
   12: "query parameter",
+  13: "expression",
+});
+
+/*
+ * The LDBC query catalog (decision 110): the workload a query belongs to and how much of it
+ * the tool translates, numbered as SampleData numbers them. The catalog's claims are held by
+ * the suite (LdbcCatalogTest); the page only shows them.
+ */
+export const LdbcWorkload = Object.freeze({ InteractiveShort: 10, InteractiveComplex: 20, BusinessIntelligence: 30 });
+
+export const LdbcTranslation = Object.freeze({ AsSpecified: 10, Simplified: 20, NotTranslated: 30 });
+
+export const LDBC_TRANSLATION_LABELS = Object.freeze({
+  [LdbcTranslation.AsSpecified]: "Translated as specified",
+  [LdbcTranslation.Simplified]: "Translated, simplified",
+  [LdbcTranslation.NotTranslated]: "Not translated",
 });
 
 /*
@@ -208,6 +224,13 @@ export const getAdvisorSamples = () => getJson("samples-advisor");
  * /convert takes, so the page sends it unchanged.
  */
 export const getExamples = () => getJson("examples");
+
+/**
+ * GET /ldbc - the LDBC query catalog (decision 110): { sourceOrm, entities, queries }, the
+ * entities as /convert units and every query as { key, workload, number, title, translation,
+ * note, sql, parameters, refusedBy }. A query is run by sending the entities plus its text.
+ */
+export const getLdbc = () => getJson("ldbc");
 
 /**
  * POST /convert. Sources are { contentType, content } pairs; the response carries

@@ -8,14 +8,32 @@ USER root
 RUN --mount=type=cache,target=/var/lib/apt \
     --mount=type=cache,target=/var/cache/apt \
     apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
+    apt-get install -y --no-install-recommends curl zstd && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /var/opt/mssql/backup && \
     curl -L -o /var/opt/mssql/backup/WideWorldImporters-Full.bak \
     https://github.com/Microsoft/sql-server-samples/releases/download/wide-world-importers-v1.0/WideWorldImporters-Full.bak
 
+# The LDBC SNB Interactive v1 data set of the second database, LdbcSnb (decision 110). The
+# archive is fetched while the image is built, so the container starts without the network,
+# and it stays packed: load-ldbc.sh unpacks it once, on the first start, into a temporary
+# directory. It lives outside /var/opt/mssql because that path is the data volume, and an
+# existing volume would hide whatever the image put under it. A scale factor LDBC publishes
+# for Interactive v1 (0.1, 0.3, 1, 3, 10, ...) selects another archive; none leaves it out.
+ARG LDBC_SCALE_FACTOR=1
+RUN mkdir -p /opt/ldbc && \
+    if [ "${LDBC_SCALE_FACTOR}" != "none" ]; then \
+        curl -fL -o "/opt/ldbc/social_network-sf${LDBC_SCALE_FACTOR}-CsvMergeForeign-StringDateFormatter.tar.zst" \
+        "https://datasets.ldbcouncil.org/snb-interactive-v1/social_network-sf${LDBC_SCALE_FACTOR}-CsvMergeForeign-StringDateFormatter.tar.zst"; \
+    fi
+
+# The scripts are shared with the test suite, which checks out with CRLF on Windows; sqlcmd
+# and bash here want LF, so the line endings are normalized on the way in.
+COPY database/ldbc/schema.sql database/ldbc/load.sql database/ldbc/constraints.sql database/ldbc/load-ldbc.sh /opt/ldbc/
 COPY database/init-db.sh /usr/local/bin/init-db.sh
-RUN chmod +x /usr/local/bin/init-db.sh
+RUN sed -i 's/\r$//' /opt/ldbc/*.sql /opt/ldbc/load-ldbc.sh /usr/local/bin/init-db.sh && \
+    chmod +x /usr/local/bin/init-db.sh /opt/ldbc/load-ldbc.sh && \
+    chmod -R a+rX /opt/ldbc
 
 USER mssql
 

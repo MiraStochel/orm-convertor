@@ -29,6 +29,8 @@ public sealed class TestSchemaFixture : IAsyncLifetime
     private const string ScriptResourceName = "Tests.Database.TestSchema.sql";
     private const string DataResourceName = "Tests.Database.Differential.FixtureData.sql";
     private const string ShapesDataResourceName = "Tests.Database.QueryShapes.FixtureData.sql";
+    private const string LdbcSchemaResourceName = "Tests.Database.Ldbc.schema.sql";
+    private const string LdbcConstraintsResourceName = "Tests.Database.Ldbc.constraints.sql";
     private const string SchemaPlaceholder = "{{schema}}";
 
     /// <summary>
@@ -63,6 +65,14 @@ public sealed class TestSchemaFixture : IAsyncLifetime
 
     /// <summary>Schema the fixture owns.</summary>
     public string SchemaName => TestDatabase.SchemaName;
+
+    /// <summary>
+    /// The second schema the fixture owns: the LDBC tables of decision 110, empty, created
+    /// from the scripts the database image loads the data set with. The LDBC query catalog is
+    /// translated with them as its catalog; no table name of the two schemas is shared, so a
+    /// catalog lookup that states no schema still finds one table.
+    /// </summary>
+    public string LdbcSchemaName => TestDatabase.LdbcSchemaName;
 
     /// <summary>
     /// One caching reader for the whole collection. The schema is written once by the
@@ -102,7 +112,8 @@ public sealed class TestSchemaFixture : IAsyncLifetime
             await using var connection = new SqlConnection(TestDatabase.ConnectionString);
             await connection.OpenAsync();
 
-            await DropSchemaAsync(connection);
+            await DropSchemaAsync(connection, SchemaName);
+            await DropSchemaAsync(connection, LdbcSchemaName);
 
             foreach (var batch in ReadScriptBatches())
             {
@@ -139,7 +150,8 @@ public sealed class TestSchemaFixture : IAsyncLifetime
         {
             await using var connection = new SqlConnection(TestDatabase.ConnectionString);
             await connection.OpenAsync();
-            await DropSchemaAsync(connection);
+            await DropSchemaAsync(connection, SchemaName);
+            await DropSchemaAsync(connection, LdbcSchemaName);
         }
         catch (Exception)
         {
@@ -187,11 +199,11 @@ public sealed class TestSchemaFixture : IAsyncLifetime
         }
     }
 
-    private async Task DropSchemaAsync(SqlConnection connection)
+    private static async Task DropSchemaAsync(SqlConnection connection, string schema)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = DropSchemaSql;
-        command.Parameters.AddWithValue("@schema", SchemaName);
+        command.Parameters.AddWithValue("@schema", schema);
         await command.ExecuteNonQueryAsync();
     }
 
@@ -201,18 +213,28 @@ public sealed class TestSchemaFixture : IAsyncLifetime
     /// queries of the matrix, then the five tables of the domain the query categories of
     /// T2 are written over. The data belongs to the fixture and not to a test: it is written
     /// once, never changed, and both suites make it from these scripts, so the two halves
-    /// of a pair read rows made by the same statements.
+    /// of a pair read rows made by the same statements. Last come the LDBC tables in a schema
+    /// of their own, without data: the scripts leave CREATE SCHEMA to their caller, because in
+    /// the container they run in dbo.
     /// </summary>
     private IEnumerable<string> ReadScriptBatches()
-        => [.. Batches(ScriptResourceName), .. Batches(DataResourceName), .. Batches(ShapesDataResourceName)];
+        =>
+        [
+            .. Batches(ScriptResourceName, SchemaName),
+            .. Batches(DataResourceName, SchemaName),
+            .. Batches(ShapesDataResourceName, SchemaName),
+            $"CREATE SCHEMA [{LdbcSchemaName}];",
+            .. Batches(LdbcSchemaResourceName, LdbcSchemaName),
+            .. Batches(LdbcConstraintsResourceName, LdbcSchemaName),
+        ];
 
-    private IEnumerable<string> Batches(string resourceName)
+    private static IEnumerable<string> Batches(string resourceName, string schema)
     {
         using var stream = typeof(TestSchemaFixture).Assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException(
                 $"Embedded resource \"{resourceName}\" is missing from the test assembly.");
         using var reader = new StreamReader(stream);
-        var script = reader.ReadToEnd().Replace(SchemaPlaceholder, SchemaName, StringComparison.Ordinal);
+        var script = reader.ReadToEnd().Replace(SchemaPlaceholder, schema, StringComparison.Ordinal);
 
         // CREATE SCHEMA has to start its own batch, so the script is split on GO - which
         // is a client-side separator, not a T-SQL statement, and SqlCommand does not know it.

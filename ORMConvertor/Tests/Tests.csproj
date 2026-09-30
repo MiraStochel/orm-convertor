@@ -19,6 +19,11 @@
          with the Java suite the same way, so that the Java targets are judged over the very
          inputs the .NET matrices run. -->
     <EmbeddedResource Include="Database\QueryShapes\**\*" />
+    <!-- The LDBC tables (decision 110), from the very scripts the database image loads the
+         data set with: the LDBC query catalog is translated with these tables as its catalog,
+         so what the suite verifies is what the container's LdbcSnb database is. -->
+    <EmbeddedResource Include="..\database\ldbc\schema.sql" LogicalName="Tests.Database.Ldbc.schema.sql" />
+    <EmbeddedResource Include="..\database\ldbc\constraints.sql" LogicalName="Tests.Database.Ldbc.constraints.sql" />
     <!-- The matrix inputs are written in the languages of the source frameworks, C# among
          them, and they are input to the tool - not source of this project. Without this the
          SDK's default glob would hand them to the compiler. -->

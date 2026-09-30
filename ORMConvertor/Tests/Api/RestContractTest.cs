@@ -24,6 +24,7 @@ public class RestContractTest(ApiTestHost host)
         "/samples",
         "/samples-advisor",
         "/examples",
+        "/ldbc",
     ];
 
     [Theory]
@@ -137,6 +138,45 @@ public class RestContractTest(ApiTestHost host)
                 Assert.Equal((int)unit.ContentType, serialized.GetProperty("contentType").GetInt32());
                 Assert.Equal(unit.Content, serialized.GetProperty("content").GetString());
             }
+        }
+    }
+
+    /// <summary>
+    /// The LDBC catalog (decision 110) arrives whole: the source framework and the entity
+    /// units the page sends to /convert, and every query with its workload and translation as
+    /// numbers of their enums, its text, its example parameters and the targets that refuse it.
+    /// <c>Combined/LdbcCatalogTest</c> holds what the catalog claims; this asserts that the
+    /// client receives the catalog the claims are about.
+    /// </summary>
+    [Fact]
+    public async Task TheLdbcCatalogArrivesWithEveryQuery()
+    {
+        using var wire = await ReadAsync("/ldbc");
+
+        var expected = Ldbc.GetCatalog;
+        Assert.Equal((int)expected.SourceOrm, wire.RootElement.GetProperty("sourceOrm").GetInt32());
+
+        var entities = wire.RootElement.GetProperty("entities").EnumerateArray().ToList();
+        Assert.Equal(expected.Entities.Count, entities.Count);
+        foreach (var (unit, serialized) in expected.Entities.Zip(entities))
+        {
+            Assert.Equal(unit.Name, serialized.GetProperty("name").GetString());
+            Assert.Equal((int)unit.ContentType, serialized.GetProperty("contentType").GetInt32());
+            Assert.Equal(unit.Content, serialized.GetProperty("content").GetString());
+        }
+
+        var queries = wire.RootElement.GetProperty("queries").EnumerateArray().ToList();
+        Assert.Equal(expected.Queries.Count, queries.Count);
+        foreach (var (query, serialized) in expected.Queries.Zip(queries))
+        {
+            Assert.Equal(query.Key, serialized.GetProperty("key").GetString());
+            Assert.Equal((int)query.Workload, serialized.GetProperty("workload").GetInt32());
+            Assert.Equal((int)query.Translation, serialized.GetProperty("translation").GetInt32());
+            Assert.Equal(query.Sql, serialized.GetProperty("sql").GetString());
+            Assert.Equal(query.Parameters.Count, serialized.GetProperty("parameters").GetArrayLength());
+            Assert.Equal(
+                query.RefusedBy.Select(refusal => (int)refusal.Target),
+                serialized.GetProperty("refusedBy").EnumerateArray().Select(refusal => refusal.GetProperty("target").GetInt32()));
         }
     }
 

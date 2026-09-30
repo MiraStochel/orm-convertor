@@ -35,6 +35,7 @@ public class OpenApiDocumentTest(ApiTestHost host)
         "/samples",
         "/samples-advisor",
         "/examples",
+        "/ldbc",
         "/advisor-test",
         "/advisor/run",
         "/archive",

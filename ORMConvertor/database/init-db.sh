@@ -21,5 +21,12 @@ else
     echo "WideWorldImporters already present. Skipping restore."
 fi
 
+# The LDBC data set goes into a database of its own after the sample database is in place
+# (decision 110). A failed load leaves LdbcSnb missing and says so; it does not take down
+# the server that the application and WideWorldImporters depend on.
+if ! /opt/ldbc/load-ldbc.sh; then
+    echo "Loading the LDBC data set failed; LdbcSnb is not available."
+fi
+
 # Keep container running
 wait "${sql_pid}"
