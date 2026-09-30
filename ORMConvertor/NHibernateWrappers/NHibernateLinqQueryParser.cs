@@ -12,6 +12,14 @@ namespace NHibernateWrappers;
 /// </summary>
 public class NHibernateLinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) : LinqQueryParser(queryBuilders)
 {
+    /// <summary>
+    /// NHibernate's provider joins the argument of StartsWith, EndsWith and Contains with
+    /// the wildcard as written (its HQL generators concatenate, they do not escape), so
+    /// <c>StartsWith("A_")</c> matches any character after A there, and the argument is the
+    /// pattern's core verbatim. The opposite of EF Core, and a fact about the provider.
+    /// </summary>
+    protected override bool ProviderEscapesStringMethodArguments => false;
+
     protected override bool TryReadQueryRoot(ExpressionSyntax expression, out LinqQueryRoot? root)
     {
         root = null;

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
@@ -181,6 +182,35 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <c>session.Query&lt;T&gt;()</c> — and says what it names.
     /// </summary>
     protected abstract bool TryReadQueryRoot(ExpressionSyntax expression, out LinqQueryRoot? root);
+
+    /// <summary>
+    /// Whether the provider escapes the argument of a string method before it becomes a LIKE
+    /// pattern. EF Core does: <c>StartsWith("A_")</c> matches a literal underscore, so the
+    /// argument is read as a core whose wildcards are escaped (decision 102). NHibernate's
+    /// provider concatenates the argument with the wildcard as it is, so there the same
+    /// call matches any character and the argument is read as the pattern's core verbatim.
+    /// A fact about the provider, not about System.Linq, which is why the subclass states it.
+    /// </summary>
+    protected virtual bool ProviderEscapesStringMethodArguments => true;
+
+    /// <summary>
+    /// The provider's own pattern function, when it has one and the invocation is it: EF Core's
+    /// <c>EF.Functions.Like(column, pattern[, escape])</c>. Returns the column, the pattern
+    /// argument and the escape argument (null where the overload has none) so that the shared
+    /// reader can read them the way it reads the string methods; false where the invocation
+    /// is not the function. The default knows no such function.
+    /// </summary>
+    protected virtual bool TryReadProviderPatternFunction(
+        InvocationExpressionSyntax invocation,
+        out ExpressionSyntax? column,
+        out ExpressionSyntax? pattern,
+        out ExpressionSyntax? escape)
+    {
+        column = null;
+        pattern = null;
+        escape = null;
+        return false;
+    }
 
     /// <summary>
     /// The C# text as the shared nesting guard reads it (decision 092): Roslyn's own lexer,
@@ -1210,6 +1240,17 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         return false;
     }
 
+    /// <summary>
+    /// Whether the expression names a column of a row in scope: a member of the alias of
+    /// the scope's own row (<c>p.ProductName</c>) or a member reached through a joined row
+    /// (<c>x.o.PlacedAt</c>). A lambda parameter is never the context, so the two-identifier
+    /// shape the root recognizer accepts is a column here.
+    /// </summary>
+    private bool IsColumnOfScope(ExpressionSyntax expression)
+        => (expression is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax head }
+            && AliasesInScope().Contains(head.Identifier.Text))
+           || (TryResolveInScope(expression, out _, out var column) && column is not null);
+
     private IEnumerable<RowShape> ScopeRows()
     {
         yield return row;
@@ -1727,11 +1768,168 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return ParseComparison(comparison);
 
             case InvocationExpressionSyntax invocation:
-                return ReadSubQueryCondition(invocation);
+                // The subquery, list and collection-parameter shapes first: they decline a
+                // receiver that is none of theirs without a word, and only then is a string
+                // method over a column what remains to be read.
+                return ReadSubQueryCondition(invocation) ?? ReadPatternCondition(invocation);
 
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// The canonical escape character of a pattern this parser has to escape itself. A
+    /// LINQ string method states no escape - the provider chooses one when it translates -,
+    /// so the reader chooses this one, and escapes it with itself where the core carries it.
+    /// One character for every query, because the same call has to read to the same text
+    /// (S2), and one every SQL-shaped target accepts as a literal.
+    /// </summary>
+    private const char PatternEscape = '!';
+
+    /// <summary>
+    /// Reads a string method over a column as a LIKE comparison - the table of decision 051
+    /// inverted: <c>StartsWith("x")</c> is <c>x%</c>, <c>EndsWith("x")</c> is <c>%x</c>,
+    /// <c>Contains("x")</c> over a column is <c>%x%</c> -, and the provider's own pattern
+    /// function as LIKE with the pattern as written. Until these were read, the filter around
+    /// them stayed unread and decision 070 refused the whole artifact, so EF Core was a source
+    /// of no pattern and its own StartsWith did not survive the identity direction.
+    ///
+    /// The argument of a string method has to be a literal: a value from the enclosing scope
+    /// would make the pattern that value joined with a wildcard, which is an expression the
+    /// condition tree has no operand for (decision 083 carries a parameter, not a
+    /// concatenation) - reading it as the bare parameter would match other rows, so it stays
+    /// unread by name. Where the provider escapes the argument (decision 102 gave the escape
+    /// a place), a wildcard in the literal is a literal character and goes out escaped; a
+    /// character class opener goes with them, because the SQL Server dialect reads it as one.
+    /// The provider's pattern function takes a literal or a parameter as the pattern, and an
+    /// escape that is a literal - one that is not is refused, as the SQL and JPQL readers
+    /// refuse <c>ESCAPE @e</c>.
+    /// </summary>
+    private ConditionNode? ReadPatternCondition(InvocationExpressionSyntax invocation)
+    {
+        if (TryReadProviderPatternFunction(invocation, out var columnExpression, out var patternExpression, out var escapeExpression))
+        {
+            var column = ReadOperand(columnExpression!);
+            if (column is null || !column.IsColumn || column.Function is not null)
+            {
+                unread ??= ($"'{columnExpression}' as the first argument of the pattern function, which is not a column", null);
+                return null;
+            }
+
+            var pattern = ReadOperand(patternExpression!);
+            if (pattern is null || pattern.Function is not null || !(pattern.IsConstant || pattern.IsParameter))
+            {
+                unread ??= ($"'{patternExpression}' as the pattern of the pattern function, which is neither a literal nor a value from the enclosing scope", null);
+                return null;
+            }
+
+            if (pattern.IsConstant && pattern.Constant!.Type is not (ScalarType.String or ScalarType.Char))
+            {
+                unread ??= ($"'{patternExpression}' as the pattern of the pattern function, which is not a string", null);
+                return null;
+            }
+
+            string? escape = null;
+            if (escapeExpression is not null)
+            {
+                var escapeConstant = escapeExpression is LiteralExpressionSyntax escapeLiteral ? ReadConstant(escapeLiteral) : null;
+                if (escapeConstant?.Type is not (ScalarType.String or ScalarType.Char))
+                {
+                    unread ??= ($"'{escapeExpression}' as the escape of the pattern function, which is not a string literal - the escape is a fact about reading the pattern, not a value from the caller", null);
+                    return null;
+                }
+
+                escape = escapeConstant.Text;
+            }
+
+            return new ComparisonCondition(column, ComparisonOperator.Like, pattern, Escape: escape);
+        }
+
+        if (invocation.Expression is not MemberAccessExpressionSyntax member)
+        {
+            return null;
+        }
+
+        var (leading, trailing) = member.Name.Identifier.Text switch
+        {
+            "StartsWith" => (false, true),
+            "EndsWith" => (true, false),
+            "Contains" => (true, true),
+            _ => (false, false),
+        };
+
+        if (!leading && !trailing)
+        {
+            return null;
+        }
+
+        var receiver = ReadOperand(member.Expression);
+        if (receiver is null || !receiver.IsColumn || receiver.Function is not null)
+        {
+            return null;
+        }
+
+        var method = member.Name.Identifier.Text;
+        if (invocation.ArgumentList.Arguments.Count != 1)
+        {
+            unread ??= ($"{method}() with {invocation.ArgumentList.Arguments.Count} arguments, an overload the provider does not translate to a pattern", null);
+            return null;
+        }
+
+        var argument = invocation.ArgumentList.Arguments[0].Expression;
+        if (argument is IdentifierNameSyntax)
+        {
+            unread ??= ($"{method}() with a value from the enclosing scope, whose pattern would be that value joined with a wildcard - an expression the query representation has no operand for", QueryFeature.QueryParameter);
+            return null;
+        }
+
+        var core = argument is LiteralExpressionSyntax literal ? ReadConstant(literal) : null;
+        if (core?.Type is not (ScalarType.String or ScalarType.Char))
+        {
+            unread ??= ($"{method}() with '{argument}', which is not a string literal", null);
+            return null;
+        }
+
+        var (text, escape2) = ProviderEscapesStringMethodArguments
+            ? EscapeCore(core.Text)
+            : (core.Text, (string?)null);
+
+        var likePattern = (leading ? "%" : string.Empty) + text + (trailing ? "%" : string.Empty);
+
+        return new ComparisonCondition(
+            receiver,
+            ComparisonOperator.Like,
+            QueryOperand.Value(QueryConstant.Of(likePattern, ScalarType.String)),
+            Escape: escape2);
+    }
+
+    /// <summary>
+    /// The core of a pattern as the provider would escape it: every wildcard the SQL Server
+    /// dialect knows (<c>%</c>, <c>_</c>, <c>[</c>) behind the canonical escape, and the escape
+    /// behind itself, so that the LINQ target's split (decision 051) reads the same core back.
+    /// A core without a wildcard needs no escape and gets none - the text is what the source
+    /// wrote, and a stray escape character in it is a literal without a clause.
+    /// </summary>
+    private static (string Text, string? Escape) EscapeCore(string core)
+    {
+        if (core.IndexOfAny(['%', '_', '[']) < 0)
+        {
+            return (core, null);
+        }
+
+        var escaped = new StringBuilder(core.Length * 2);
+        foreach (var character in core)
+        {
+            if (character is '%' or '_' or '[' or PatternEscape)
+            {
+                escaped.Append(PatternEscape);
+            }
+
+            escaped.Append(character);
+        }
+
+        return (escaped.ToString(), PatternEscape.ToString());
     }
 
     /// <summary>
@@ -1757,6 +1955,15 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         {
             case "Contains":
                 {
+                    // A receiver that is a column of a row in scope - p.ProductName - is a
+                    // string and Contains over it is a pattern (ReadPatternCondition), not
+                    // the head of a chain, whatever the root recognizer would make of the
+                    // same two-identifier shape.
+                    if (IsColumnOfScope(member.Expression))
+                    {
+                        return null;
+                    }
+
                     QueryOperand? right;
                     if (TryDecompose(member.Expression, out var root, out var steps))
                     {

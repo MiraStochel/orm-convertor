@@ -194,10 +194,12 @@ Hibernate = hibernate/FindConstantOfAMoment.jpql
 EclipseLink = eclipselink/FindConstantOfAMoment.jpql
 MyBatis = mybatis/FindConstantOfAMomentMapper.xml
 
-# The shared LINQ parser reads no string method, so EF Core is no source of a pattern; as
-# a target it gets the translated form of decision 051.
+# The LINQ row states the pattern as the string method EF Core translates to it, which the
+# shared LINQ parser reads back as the table of decision 051 inverted; as a target EF Core
+# gets that translated form.
 [LikeWithAnAnchoredPattern]
 Dapper = dapper/FindLikeWithAnAnchoredPattern.sql
+EFCore = efcore/FindLikeWithAnAnchoredPattern.query.cs
 NHibernate = nhibernate/FindLikeWithAnAnchoredPattern.hql
 Hibernate = hibernate/FindLikeWithAnAnchoredPattern.jpql
 EclipseLink = eclipselink/FindLikeWithAnAnchoredPattern.jpql
@@ -215,10 +217,12 @@ EclipseLink = eclipselink/FindCountOverDistinctValues.jpql
 MyBatis = mybatis/FindCountOverDistinctValuesMapper.xml
 
 # An escaped wildcard: the LINQ target splits the pattern past the escape and the core
-# goes out without it, as EF Core escapes the argument itself. No LINQ source, for the
-# same reason as the anchored pattern.
+# goes out without it, as EF Core escapes the argument itself. The LINQ source states it
+# the other way round - a literal underscore in the argument of StartsWith, which the
+# shared LINQ parser escapes with the canonical escape character the other rows use.
 [LikeWithAnEscapedWildcard]
 Dapper = dapper/FindLikeWithAnEscapedWildcard.sql
+EFCore = efcore/FindLikeWithAnEscapedWildcard.query.cs
 NHibernate = nhibernate/FindLikeWithAnEscapedWildcard.hql
 Hibernate = hibernate/FindLikeWithAnEscapedWildcard.jpql
 EclipseLink = eclipselink/FindLikeWithAnEscapedWildcard.jpql

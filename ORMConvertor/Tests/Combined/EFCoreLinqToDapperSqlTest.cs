@@ -183,7 +183,9 @@ public class EFCoreLinqToDapperSqlTest
     /// <summary>
     /// An unreadable predicate used to drop the entire filter - first in silence, which F11
     /// forbids, then with a loss record; either way the query went out returning rows the
-    /// source excluded. Since decision 070 it refuses the artifact.
+    /// source excluded. Since decision 070 it refuses the artifact. The predicate used to be
+    /// StartsWith, which the parser reads as LIKE since 2026-09-30 (LinqStringMethodTest);
+    /// a method over the column that no target has a word for stands in for it.
     /// </summary>
     [Fact]
     public void AnUnreadablePredicateRefusesTheArtifact()
@@ -191,7 +193,7 @@ public class EFCoreLinqToDapperSqlTest
         const string linqSource = """
         public void Query()
         {
-            var q = ctx.Customers.Where(c => c.Name.StartsWith("A")).ToList();
+            var q = ctx.Customers.Where(c => c.Name.Trim() == "A").ToList();
         }
         """;
 
