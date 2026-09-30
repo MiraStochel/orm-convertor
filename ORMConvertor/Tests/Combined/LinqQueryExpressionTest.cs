@@ -330,8 +330,11 @@ public class LinqQueryExpressionTest
         var builder = Parse(new DapperSqlQueryBuilder(), Method(
             "from c in ctx.Customers from o in ctx.CustomerOrders where o.CustomerId == c.CustomerId select o"));
 
-        // The clause after it ranges over a row the refused step never composed, so it is
-        // refused too; the step itself is the reason that names what was written.
+        // A second `from` over a second source is a cross join, which stays refused after
+        // decision 101 (a second `from` over a collection of the row is the association
+        // path, LinqAssociationPathJoinTest). The clause after it ranges over a row the
+        // refused step never composed, so it is refused too; the step itself is the reason
+        // that names what was written.
         Assert.Empty(builder.Build());
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure
                                               && r.Feature == QueryFeature.Join

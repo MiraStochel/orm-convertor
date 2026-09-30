@@ -72,8 +72,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private abstract record RowShape;
 
-    /// <summary>The row of one table, under the alias its clause declared.</summary>
-    private sealed record EntityRow(string Alias) : RowShape;
+    /// <summary>
+    /// The row of one table, under the alias its clause declared, with the mapping behind
+    /// it when the conversion holds one - a navigation written from the row is matched to
+    /// a relation of that mapping (decision 101).
+    /// </summary>
+    private sealed record EntityRow(string Alias, EntityMap? Map = null) : RowShape;
 
     /// <summary>The row a result selector composed, member by member, under the names it gave them.</summary>
     private sealed record JoinedRow(IReadOnlyDictionary<string, RowShape> Members) : RowShape;
@@ -298,7 +302,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     {
         sourceAlias = elementParameter
             ?? (root.Name.Length > 0 ? root.Name[..1].ToLowerInvariant() : "t");
-        row = new EntityRow(sourceAlias);
+        row = new EntityRow(sourceAlias, MapFor(root.Name));
         queryBuilder.From(ResolveTable(root.Name), sourceAlias);
     }
 
@@ -337,7 +341,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 : null;
         }
 
-        if (first.Name is not ("Where" or "Select" or "OrderBy" or "OrderByDescending" or "GroupBy"))
+        // The collection selector of SelectMany ranges over the source too (decision 101).
+        if (first.Name is not ("Where" or "Select" or "OrderBy" or "OrderByDescending" or "GroupBy" or "SelectMany"))
         {
             return null;
         }
@@ -588,7 +593,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// change, and it stays the loss decision 070 made it.
     /// </summary>
     private static bool DoesNotCommuteWithDistinct(string method) => method is
-        "Select" or "GroupBy" or "Join" or "LeftJoin" or "RightJoin";
+        "Select" or "GroupBy" or "Join" or "LeftJoin" or "RightJoin" or "SelectMany";
 
     private static bool TryMapSetOperation(string method, out SetOperationType operation)
     {
@@ -652,6 +657,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             case "Join":
             case "LeftJoin":
             case "RightJoin":
+            case "SelectMany":
             case "GroupBy":
                 Report(
                     ConversionRecordKind.Failure,
@@ -705,6 +711,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 break;
             case "RightJoin":
                 HandleJoin(step.Node, JoinKind.Right);
+                break;
+
+            // A second `from` over a collection of the row: the join along an association
+            // path, derived from the relation (decision 101).
+            case "SelectMany":
+                HandleSelectMany(step.Node);
                 break;
 
             case "Select":
@@ -770,7 +782,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// fell through to the unknown step and left with a loss record while the artifact went
     /// out returning every row. The async forms EF Core adds are the same steps. First(),
     /// Single() and ElementAt() are not here: they are the slices the chain already carries,
-    /// and the chain is expanded to say so before it is read (decision 103). Null means the
+    /// and the chain is expanded to say so before it is read (decision 103). SelectMany() is
+    /// not here either: it is the join along an association path, read from the relation
+    /// (decision 101), and what it cannot be read as it refuses by itself. Null means the
     /// step is not one of them.
     /// </summary>
     private static QueryFeature? ChangesTheRowSet(string method) => WithoutAsync(method) switch
@@ -778,7 +792,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         "OfType" => QueryFeature.Filtering,
         "SkipWhile" or "TakeWhile" or "DefaultIfEmpty" => QueryFeature.Pagination,
         "Last" or "LastOrDefault" => QueryFeature.Pagination,
-        "GroupJoin" or "SelectMany" or "Zip" => QueryFeature.Join,
+        "GroupJoin" or "Zip" => QueryFeature.Join,
         "Count" or "LongCount" or "Sum" or "Average" or "Min" or "Max" or "Aggregate" => QueryFeature.Aggregation,
         "Any" or "All" or "Contains" => QueryFeature.Filtering,
         _ => null,
@@ -931,7 +945,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        string rightTable = ResolveTable(NameOfSource(args[0].Expression));
+        string rightName = NameOfSource(args[0].Expression);
+        string rightTable = ResolveTable(rightName);
         var selector = args.Count > 3 ? args[3].Expression as ParenthesizedLambdaExpressionSyntax : null;
         string rightAlias = JoinedAlias(selector, rightTable);
 
@@ -958,7 +973,178 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         queryBuilder.Join(kind, sourceAlias, rightTable, onCondition, rightAlias);
-        ReadResultSelector(selector, rightAlias);
+        ReadResultSelector(selector, new EntityRow(rightAlias, MapFor(rightName)), "join");
+    }
+
+    /// <summary>
+    /// <c>SelectMany(c =&gt; c.Orders, (c, o) =&gt; …)</c>, which is what a second <c>from</c>
+    /// over a collection of the row rewrites to (decision 103): the join along an
+    /// association path, in the shape LINQ writes it (decision 101, paper rule Q7). The
+    /// predicate is not in the query but in the mapping, so it is derived from the relation
+    /// the navigation names - FK(left) = PK(right) over its column pairs - and the join
+    /// reaches the builder in the very shape a Join with key selectors takes; the result
+    /// selector is read as a join's. What the maps of the conversion do not hold is refused
+    /// by name and never guessed (decision 067), because a query emitted without its join
+    /// would return different rows (decision 070). A SelectMany whose collection is not a
+    /// navigation from the row - a second source, so a cross join - stays refused as the
+    /// comma join is in T-SQL and HQL.
+    /// </summary>
+    private void HandleSelectMany(InvocationExpressionSyntax node)
+    {
+        var args = node.ArgumentList.Arguments;
+        const string consequence = "a query emitted without its join would return different rows; no artifact was generated.";
+
+        if (args.Count is < 1 or > 2
+            || args[0].Expression is not SimpleLambdaExpressionSyntax collection
+            || collection.Body is not ExpressionSyntax collectionBody)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"SelectMany() whose collection selector is not a lambda over the row cannot be read, and {consequence}",
+                QueryFeature.Join);
+            return;
+        }
+
+        var path = PathOf(collectionBody);
+        if (path is not { Count: >= 2 } || path[0] != collection.Parameter.Identifier.Text)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"SelectMany() over '{collectionBody}', which is not an association path from the row, is not a join the query representation carries - over a second source it is a cross join - and {consequence}",
+                QueryFeature.Join);
+            return;
+        }
+
+        var written = string.Join('.', path);
+        var association = ResolveAssociation(path, written, out var failure);
+        if (association is null)
+        {
+            Report(ConversionRecordKind.Failure, failure!, QueryFeature.Join);
+            return;
+        }
+
+        var (relation, owner, target) = association;
+        var rightTable = Qualify(target, target.Table ?? relation.TargetEntity);
+        var selector = args.Count > 1 ? args[1].Expression as ParenthesizedLambdaExpressionSyntax : null;
+        var rightAlias = JoinedAlias(selector, rightTable);
+        var joined = new EntityRow(rightAlias, target);
+
+        queryBuilder.Join(JoinKind.Inner, sourceAlias, rightTable, AssociationCondition(relation, owner.Alias, rightAlias), rightAlias);
+
+        // Without a result selector the rows are the collection's alone: one side of the
+        // join, which is the shape the representation does not carry (decision 048), so it
+        // is said and the whole joined row is materialized, as for a selector that names
+        // one side.
+        if (args.Count == 1)
+        {
+            var reach = AliasesOf(row);
+            reach.Add(rightAlias);
+            ReportRowsLeftOut(reach, AliasesOf(joined), "SelectMany() without a result selector", $"materializes the rows of '{written}' alone and leaves out");
+            row = joined;
+            return;
+        }
+
+        ReadResultSelector(selector, joined, "SelectMany()");
+    }
+
+    private sealed record AssociationJoin(Relation Relation, EntityRow Owner, EntityMap Target);
+
+    /// <summary>
+    /// The relation a navigation path names, or null with the sentence that says what the
+    /// maps of the conversion are missing (decision 101) - the same four sentences the HQL
+    /// and JPQL parsers say, because the maps are the same and so is what is missing. The
+    /// path starts at the lambda parameter, goes through the members of the joined row where
+    /// there is one, and ends with the one navigation; a longer one crosses an intermediate
+    /// association the model does not carry as a path. A many-to-many relation stands on its
+    /// junction entity (decision 005), so a path across it would be two joins and an invented
+    /// alias - a stated limit, refused by name.
+    /// </summary>
+    private AssociationJoin? ResolveAssociation(List<string> path, string written, out string? failure)
+    {
+        const string consequence = "a query emitted without its join would return different rows; no artifact was generated.";
+
+        // Through the joined row to the entity row the navigation is written from.
+        RowShape? shape = row;
+        var index = 1;
+        while (index < path.Count - 1 && shape is JoinedRow joinedRow && joinedRow.Members.TryGetValue(path[index], out var member))
+        {
+            shape = member;
+            index++;
+        }
+
+        if (shape is not EntityRow owner)
+        {
+            failure = $"The join along the association path '{written}' does not start from a row of an entity in scope, so no relation was there to derive the join condition from; {consequence}";
+            return null;
+        }
+
+        if (path.Count - index > 1)
+        {
+            failure = $"The join along the path '{written}' crosses more than one association, and exactly one association is read from a row; {consequence}";
+            return null;
+        }
+
+        var navigation = path[^1];
+        if (owner.Map is null)
+        {
+            failure = $"The join along the association path '{written}' needs the mapping of the entity behind '{owner.Alias}', which is not part of the conversion, so no relation was there to derive the join condition from; {consequence}";
+            return null;
+        }
+
+        var relation = owner.Map.Relations.FirstOrDefault(r =>
+            string.Equals(r.SourceNavigationProperty, navigation, StringComparison.OrdinalIgnoreCase));
+        if (relation is null)
+        {
+            failure = $"The join along the association path '{written}' names no association the mapping of '{owner.Map.Entity.Name}' declares, so no relation was there to derive the join condition from; {consequence}";
+            return null;
+        }
+
+        if (relation.Cardinality == Cardinality.ManyToMany)
+        {
+            failure = $"The join along the association path '{written}' crosses the many-to-many relation to '{relation.TargetEntity}', which would take two joins over its junction entity, and that is not derived; {consequence}";
+            return null;
+        }
+
+        var target = entityMaps?.FirstOrDefault(m =>
+            string.Equals(m.Entity?.Name, relation.TargetEntity, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            failure = $"The join along the association path '{written}' leads to the entity '{relation.TargetEntity}', which is not part of the conversion; {consequence}";
+            return null;
+        }
+
+        if (relation.ColumnPairs.Count == 0)
+        {
+            failure = $"The join along the association path '{written}' has no foreign key columns to derive its condition from: the relation to '{relation.TargetEntity}' states none and the database catalog supplied none; {consequence}";
+            return null;
+        }
+
+        failure = null;
+        return new AssociationJoin(relation, owner, target);
+    }
+
+    /// <summary>
+    /// FK(left) = PK(right) over the column pairs, in their order (decision 101). Which alias
+    /// holds the foreign key follows the role of the relation: the entity behind the path
+    /// for an owning one, the joined entity for an inverse one - and a collection navigation
+    /// is the inverse side, so the key sits on the joined entity. The same derivation the
+    /// JPQL parser makes; it is written here again because this layer reads C# and knows no
+    /// JPA (S1).
+    /// </summary>
+    private static ConditionNode AssociationCondition(Relation relation, string pathAlias, string joinAlias)
+    {
+        var (keyHolder, referenced) = relation.Role == RelationRole.Owning
+            ? (pathAlias, joinAlias)
+            : (joinAlias, pathAlias);
+
+        var conjuncts = relation.ColumnPairs
+            .Select(pair => (ConditionNode)new ComparisonCondition(
+                QueryOperand.Column(keyHolder, pair.Source.ColumnName ?? pair.Source.Property.Name),
+                ComparisonOperator.Equal,
+                QueryOperand.Column(referenced, pair.Target.ColumnName ?? pair.Target.Property.Name)))
+            .ToList();
+
+        return conjuncts.Count == 1 ? conjuncts[0] : new LogicalCondition(LogicalOperator.And, conjuncts);
     }
 
     /// <summary>
@@ -1002,17 +1188,15 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// the representation does not carry: the row set is the same, the columns are not, so
     /// it is a loss with the artifact (decision 070), and it is said (decision 048).
     /// </summary>
-    private void ReadResultSelector(ParenthesizedLambdaExpressionSyntax? selector, string rightAlias)
+    private void ReadResultSelector(ParenthesizedLambdaExpressionSyntax? selector, EntityRow joined, string what)
     {
-        var joined = new EntityRow(rightAlias);
-
         if (selector is null
             || selector.ParameterList.Parameters.Count != 2
             || selector.Body is not ExpressionSyntax body)
         {
             Report(
                 ConversionRecordKind.Loss,
-                "The result selector of the join is not a lambda over the two rows, so the shape it materializes was not read; the whole joined row is materialized instead.",
+                $"The result selector of the {what} is not a lambda over the two rows, so the shape it materializes was not read; the whole joined row is materialized instead.",
                 QueryFeature.Projection);
             row = new JoinedRow(new Dictionary<string, RowShape>(StringComparer.Ordinal));
             return;
@@ -1025,14 +1209,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         };
 
         var reach = AliasesOf(row);
-        reach.Add(rightAlias);
+        reach.Add(joined.Alias);
 
         row = ReadMaterializedShape(
             body,
             (ExpressionSyntax expression, out RowShape? endsOnRow, out (string Alias, string Column)? endsOnColumn)
                 => TryResolveBound(expression, bindings, out endsOnRow, out endsOnColumn),
             reach,
-            "result selector of the join");
+            $"result selector of the {what}");
     }
 
     /// <summary>
@@ -1148,7 +1332,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <summary>
     /// Follows a member path from a row shape: through the members of a joined row, down to
     /// the row it ends on or to the column of the entity row it ends in. A path that goes
-    /// on past an entity row is a navigation, which this parser does not read.
+    /// on past an entity row is a navigation, which is read in one place only - as the
+    /// collection of a SelectMany (decision 101) - and nowhere as an operand.
     /// </summary>
     private static bool TryWalk(
         RowShape shape,
@@ -2529,36 +2714,41 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// table, using the mapping IR built by the entity parsers (rule Q2).
     /// </summary>
     private string ResolveTable(string name)
+        => MapFor(name) is { } map ? Qualify(map, map.Table ?? name) : name;
+
+    /// <summary>
+    /// The mapping behind the name the source wrote - by table, by entity, or by the naming
+    /// convention between the two - or null when the conversion holds none. The row of a
+    /// source or of a joined table keeps it, so that a navigation written from that row
+    /// can be matched to a relation of the entity (decision 101).
+    /// </summary>
+    private EntityMap? MapFor(string name)
     {
-        if (entityMaps is { Count: > 0 })
+        if (entityMaps is not { Count: > 0 })
         {
-            var byTable = entityMaps.FirstOrDefault(m =>
-                string.Equals(m.Table, name, StringComparison.OrdinalIgnoreCase));
-            if (byTable is not null)
-            {
-                return Qualify(byTable, byTable.Table ?? name);
-            }
-
-            var byEntity = entityMaps.FirstOrDefault(m =>
-                string.Equals(m.Entity?.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (byEntity is not null)
-            {
-                return Qualify(byEntity, byEntity.Table ?? name);
-            }
-
-            // The other grammatical number comes from the one rule (decision 050); a glued
-            // "s" used to answer differently for an entity already ending in s.
-            var byConvention = entityMaps.FirstOrDefault(m =>
-                m.Entity?.Name is { Length: > 0 } entityName
-                && EntityTableNaming.TableCandidatesFor(entityName)
-                    .Any(candidate => string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase)));
-            if (byConvention is not null)
-            {
-                return Qualify(byConvention, byConvention.Table ?? name);
-            }
+            return null;
         }
 
-        return name;
+        var byTable = entityMaps.FirstOrDefault(m =>
+            string.Equals(m.Table, name, StringComparison.OrdinalIgnoreCase));
+        if (byTable is not null)
+        {
+            return byTable;
+        }
+
+        var byEntity = entityMaps.FirstOrDefault(m =>
+            string.Equals(m.Entity?.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (byEntity is not null)
+        {
+            return byEntity;
+        }
+
+        // The other grammatical number comes from the one rule (decision 050); a glued
+        // "s" used to answer differently for an entity already ending in s.
+        return entityMaps.FirstOrDefault(m =>
+            m.Entity?.Name is { Length: > 0 } entityName
+            && EntityTableNaming.TableCandidatesFor(entityName)
+                .Any(candidate => string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static string Qualify(EntityMap map, string table)

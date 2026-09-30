@@ -118,8 +118,10 @@ internal sealed class QueryExpressionRewriter : CSharpSyntaxRewriter
 
                 case FromClauseSyntax from:
                     {
-                        // A second `from` is SelectMany over the first row; the parser
-                        // refuses it as a join it cannot carry, by name.
+                        // A second `from` is SelectMany over the first row. Over a collection
+                        // of that row it is the join along an association path, which the
+                        // parser derives from the relation (decision 101); over a second
+                        // source it is a cross join, which the parser refuses by name.
                         var inner = from.Identifier.Text;
                         var collection = state.Lambda(from.Expression);
                         var selector = ComposeBoth(state.Parameter, inner);
