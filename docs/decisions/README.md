@@ -117,6 +117,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [110](110-ldbc-snb-as-a-second-reference-domain.md) | LDBC Social Network Benchmark jako druhá referenční doména: data v kontejnerové databázi a katalog jeho dotazů se stavem, který drží testy | 2026-09-30 | platí | T1, T2, T3, F4, F6, F11, S5, S7 |
 | [111](111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md) | Jednotka je celý zdrojový soubor: vstup deklaruje jen jazyk, role tříd rozdělí zdrojový framework a jméno zůstává nepovinným popiskem | 2026-10-01 | platí | F11, F14, S1, S2, S6, S7, T1 |
 | [112](112-a-query-as-a-row-source-is-a-named-intermediate-result.md) | Dotaz jako zdroj řádků je pojmenovaný mezivýsledek dotazu: odvozená tabulka i `WITH` se čtou do téže definice | 2026-10-01 | platí | F7–F11, F13, T1, T2, S1, S2 |
+| [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) | Co dotazový jazyk cíle nevysloví, napíše cíl celé nativním SQL svého dialektu; slovník nese rekurzi, seskupení podle výrazu, okenní funkce, agregaci do seznamu a funkce, které potřebuje katalog LDBC | 2026-10-01 | platí | F7–F11, F13, T1, T2, T3, S1, S2, S6 |
 
 ## Formát
 
