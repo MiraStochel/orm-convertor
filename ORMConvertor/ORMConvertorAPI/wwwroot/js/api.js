@@ -160,6 +160,7 @@ export const QUERY_FEATURE_LABELS = Object.freeze({
   12: "query parameter",
   13: "expression",
   14: "intermediate result",
+  15: "recursion",
 });
 
 /*

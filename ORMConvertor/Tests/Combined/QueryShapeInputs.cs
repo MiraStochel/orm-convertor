@@ -30,7 +30,7 @@ public sealed record QueryShape(
 }
 
 /// <summary>
-/// The inputs of the query-shape matrices: one domain of five entities in the languages of
+/// The inputs of the query-shape matrices: one domain of seven entities in the languages of
 /// all six frameworks, the query categories of requirement T2 written once per source
 /// language over it, and one deeply nested query per source that every target has to carry.
 ///
@@ -54,7 +54,7 @@ public sealed record QueryShape(
 /// <c>QueryShapes/FixtureData.sql</c>, in the fixture's schema beside the fixture's own
 /// tables: the shared files carry the <c>{{schema}}</c> placeholder for it and every
 /// reader substitutes <see cref="Schema"/>, so a dry text and a run against the database
-/// read the same input. The five entities carry the prefix <c>Shop</c> - <c>ShopOrder</c>,
+/// read the same input. The seven entities carry the prefix <c>Shop</c> - <c>ShopOrder</c>,
 /// <c>ShopOrderLine</c> and so on - and every source names their tables by the plural, which
 /// is what the singular-plural rule of decision 050 derives from the class for the two
 /// sources that state no table; the prefix is what keeps those tables apart from the
@@ -100,7 +100,7 @@ public static class QueryShapeInputs
     public static List<ConversionSource> Units(ORMEnum source, QueryShape shape) =>
         [.. MappingUnits(source), .. shape.Sources[source]];
 
-    /// <summary>What the framework reads the five entities from, as the shared files state them.</summary>
+    /// <summary>What the framework reads the seven entities from, as the shared files state them.</summary>
     public static List<ConversionSource> MappingUnits(ORMEnum framework) => framework switch
     {
         ORMEnum.Dapper => [Unit("entities/dapper/Shop.cs")],
@@ -115,7 +115,7 @@ public static class QueryShapeInputs
         _ => throw new ArgumentOutOfRangeException(nameof(framework), framework, $"{framework} has no inputs in {nameof(QueryShapeInputs)}; its wrapper brings them."),
     };
 
-    private static readonly string[] JpaEntities = ["ShopCustomer", "ShopOrder", "ShopOrderLine", "ShopOrderLineAllocation", "ShopProduct"];
+    private static readonly string[] JpaEntities = ["ShopCustomer", "ShopOrder", "ShopOrderLine", "ShopOrderLineAllocation", "ShopProduct", "ShopDepartment", "ShopProductLink"];
 
     /// <summary>
     /// Text of one shared file under <c>Tests/Database/QueryShapes</c>, embedded by
@@ -453,6 +453,19 @@ public static class QueryShapeInputs
             hql: ["p.ProductName as ProductName", "where p.UnitPrice > :", "order by p.UnitPrice desc, p.ProductId asc"],
             jpa: ["p.ProductName as ProductName", "where p.UnitPrice > ", "order by p.UnitPrice desc, p.ProductId asc"],
             myBatis: ["WHERE p.UnitPrice &gt; #{", "ORDER BY p.UnitPrice DESC, p.ProductId ASC"]),
+
+        // ---- the rows of decision 113, recursion ----
+        //
+        // The recursive member comes out named by position after the anchor, so the counter
+        // the source left without an alias carries the anchor's name in every target. EF Core,
+        // NHibernate and EclipseLink write both rows in native SQL, Hibernate the second, so
+        // they carry the SQL hallmarks; the limit of recursion closes the statement.
+        ["RecursiveDescentOfAHierarchy"] = Hallmarks(
+            sql: ["WITH DepartmentTree AS (", "0 AS Depth", "UNION ALL", "t.Depth + 1 AS Depth", "INNER JOIN DepartmentTree t ON c.ParentDepartmentId = t.DepartmentId", "WHERE t.Depth >= 2"],
+            jpa: ["with DepartmentTree as (", "0 as Depth", "union all", "t.Depth + 1 as Depth", "join DepartmentTree t on c.ParentDepartmentId = t.DepartmentId", "where t.Depth >= 2"]),
+
+        ["RecursiveWalkOfACyclicGraph"] = Hallmarks(
+            sql: ["WITH Walk AS (", "1 AS Steps", "UNION ALL", "w.Steps + 1 AS Steps", "WHERE w.Steps < 3", "SELECT DISTINCT w.ProductId AS ProductId", "OPTION (MAXRECURSION 10)"]),
     };
 
     // ---- the deliberately bad query ------------------------------------------------------

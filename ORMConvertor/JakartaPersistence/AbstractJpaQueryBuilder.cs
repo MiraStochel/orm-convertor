@@ -304,7 +304,10 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
                 return null;
             }
 
-            rendered.Add($"{definition.Name} as (\n    {body}\n)");
+            // A body that is a set operation - a recursive one is (decision 113) - spans lines,
+            // and every one of them is indented, not only the first.
+            var indented = string.Join("\n", body.Split('\n').Select(line => "    " + line));
+            rendered.Add($"{definition.Name} as (\n{indented}\n)");
         }
 
         return $"with {string.Join(",\n", rendered)}\n";

@@ -2280,11 +2280,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        // A column of the row, or an expression over it (decision 107). A bare constant is
-        // not a shape any target names a column by and stays the loss it was; a construct
-        // outside the vocabulary is dropped with a record that names it.
+        // A column of the row, or an expression over it (decision 107), or a constant under
+        // the name of its member (decision 113). A constant without a name is not a shape any
+        // target names a column by and stays the loss it was; a construct outside the
+        // vocabulary is dropped with a record that names it.
         var operand = ReadOperand(expression);
-        if (operand is null || (operand.IsConstant && !operand.IsAggregate) || operand.IsParameter || operand.IsValueList)
+        if (operand is null || (operand.IsConstant && !operand.IsAggregate && alias is null) || operand.IsParameter || operand.IsValueList)
         {
             var (what, category) = unread ?? ($"'{expression}'", QueryFeature.Projection);
             unread = null;

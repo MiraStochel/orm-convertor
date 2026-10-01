@@ -334,6 +334,43 @@ public abstract class AbstractQueryBuilder
     private static bool SameName(string left, string right) => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The limit of recursion the source stated for the query (decision 113): how many
+    /// levels a recursive definition may descend before the database stops the query with
+    /// an error - T-SQL's <c>OPTION (MAXRECURSION n)</c>, zero for none. Null where the source
+    /// stated none, which leaves the dialect's own default of a hundred. A fact of the query
+    /// rather than of one definition, because T-SQL states it once, at the end of the
+    /// statement; it decides whether the query finishes, so it is never dropped where it
+    /// bounds something.
+    /// </summary>
+    private int? recursionLimit;
+
+    /// <summary>Whether a definition of the query, as the gate admitted it, names itself (decision 113).</summary>
+    private bool recursive;
+
+    /// <summary>Records the limit of recursion the source stated for the query (decision 113).</summary>
+    public void LimitRecursion(int maximum)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximum);
+        recursionLimit = maximum;
+    }
+
+    /// <summary>
+    /// The limit of recursion a target writes (decision 113): the one the source stated, where
+    /// the query has a recursive definition for it to bound; null otherwise - a limit over a
+    /// query without recursion bounds nothing, and the gate leaves it out with a record.
+    /// Valid once the gates of <see cref="Build"/> have run.
+    /// </summary>
+    protected int? RecursionLimit => recursive ? recursionLimit : null;
+
+    /// <summary>
+    /// Whether the target's query language states a limit of recursion. T-SQL does; HQL has
+    /// recursion and no limit, so a query whose source stated one goes to native SQL there
+    /// (decision 113), because a limit dropped can turn a query that finishes into one the
+    /// database stops after a hundred levels, or the other way round.
+    /// </summary>
+    protected virtual bool WritesRecursionLimit => false;
+
+    /// <summary>
     /// Records one projected value with an optional alias (decision 107): a column, a
     /// column under an aggregate, the whole entity as the column <c>*</c>, or an
     /// expression. The parsers hand over the operand and do not build the instruction
@@ -615,6 +652,7 @@ public abstract class AbstractQueryBuilder
         fallback.QueryName = QueryName;
         fallback.instructions.AddRange(instructions);
         fallback.definitions.AddRange(definitions);
+        fallback.recursionLimit = recursionLimit;
 
         var artifacts = fallback.Build();
 
@@ -665,6 +703,13 @@ public abstract class AbstractQueryBuilder
         }
 
         DescribeDefinitions();
+
+        // A recursive member is typed through the row its anchor describes, so its columns
+        // are held to the anchor's once the rows exist (decision 113).
+        if (!GateRecursiveColumns())
+        {
+            return [];
+        }
 
         // A string literal compared with a temporal column is the moment the source wrote
         // - T-SQL and HQL have no other spelling - and takes the column's scalar here, over
@@ -851,10 +896,11 @@ public abstract class AbstractQueryBuilder
         var orderBys = body.OfType<OrderByInstruction>().ToList();
 
         // Rule Q8: grouping is mandatory when aggregates sit next to plain columns. A query
-        // that is nothing but aggregates needs no grouping, so that case is not reported.
+        // that is nothing but aggregates needs no grouping, so that case is not reported, and
+        // neither is a constant beside them, which is one value for the whole result.
         if (groupBys.Count == 0
             && projections.Any(p => p.Operand.IsAggregate)
-            && projections.Any(p => !p.Operand.IsAggregate))
+            && projections.Any(p => p.Operand is { IsAggregate: false, IsConstant: false }))
         {
             Report(
                 ConversionRecordKind.Incompleteness,
@@ -909,8 +955,10 @@ public abstract class AbstractQueryBuilder
         // An expression projected without an alias has no name (decision 107): a target that
         // reads a column by name - Dapper, MyBatis's map, the anonymous type of a LINQ
         // projection - has nothing to read it under, and a name invented by the tool is
-        // forbidden (decision 028). Refused here once, for every target alike.
-        var nameless = projections.FirstOrDefault(p => p.Operand.IsExpression && p.Alias is null);
+        // forbidden (decision 028). Refused here once, for every target alike. A constant is
+        // the same case: carried under its alias - the starting depth of a recursion, 0 AS
+        // Depth (decision 113) -, without one it names nothing, and the readers drop it.
+        var nameless = projections.FirstOrDefault(p => (p.Operand.IsExpression || p.Operand is { IsConstant: true, IsAggregate: false }) && p.Alias is null);
         if (nameless is not null)
         {
             Report(
@@ -1339,19 +1387,24 @@ public abstract class AbstractQueryBuilder
     }
 
     /// <summary>
-    /// Holds every definition of the query to the rules of decision 112, in one place for
-    /// every target (decision 023), and fills <see cref="Definitions"/> with what passed,
-    /// each body with its columns named. A target whose query language cannot express an
-    /// intermediate result falls back to native SQL (decision 113) - a definition left out
-    /// would leave its row source naming a table that does not exist (decision 053), so it
-    /// is never left out. Returns false when the query cannot be built, having reported why.
+    /// Holds every definition of the query to the rules of decision 112, and a recursive one
+    /// to the rules of the dialect besides (decision 113), in one place for every target
+    /// (decision 023), and fills <see cref="Definitions"/> with what passed, each body with
+    /// its columns named. A target whose query language cannot express an intermediate
+    /// result, or its recursion, or the limit the query sets on it, falls back to native SQL
+    /// (decision 113) - a definition left out would leave its row source naming a table that
+    /// does not exist (decision 053), so it is never left out. What breaks a rule is refused
+    /// whatever the target: SQL Server would not run it either. Returns false when the query
+    /// cannot be built, having reported why.
     /// </summary>
     private bool GateDefinitions()
     {
         gatedDefinitions = [];
+        recursive = false;
 
         if (definitions.Count == 0)
         {
+            ReportUnboundRecursionLimit();
             return true;
         }
 
@@ -1364,6 +1417,16 @@ public abstract class AbstractQueryBuilder
             ReportUnspoken(
                 $"The query reads {what} which the query language of {Descriptor.Framework} cannot express",
                 QueryFeature.IntermediateResult);
+
+            // The recursion is a construct of its own, and the record says so; whether the
+            // definition keeps the rules of recursion is the fallback's gate to judge.
+            if (definitions.Where(NamesItself).Select(d => $"'{d.Name}'").ToList() is { Count: > 0 } selfNamed)
+            {
+                ReportUnspoken(
+                    $"The query reads the recursive definition {string.Join(", ", selfNamed)}, which the query language of {Descriptor.Framework} cannot express",
+                    QueryFeature.Recursion);
+            }
+
             return true;
         }
 
@@ -1385,22 +1448,31 @@ public abstract class AbstractQueryBuilder
 
             var body = Unwrap(definition.Body.Instructions);
             var read = Scopes(body).SelectMany(RowSourcesOf).ToList();
+            var namesItself = read.Any(table => SameName(table, definition.Name));
 
-            if (read.Any(table => SameName(table, definition.Name)))
+            // A definition that names itself is recursive (decision 113), held to the rules
+            // of SQL Server's recursive common table expression, which every target points to.
+            if (namesItself && RecursionRuleBroken(definition.Name, body) is { } broken)
             {
                 Report(
                     ConversionRecordKind.Failure,
-                    $"The intermediate result '{definition.Name}' reads itself, which is a recursive common table expression the query representation does not carry yet; no artifact was generated.",
+                    $"The recursive definition '{definition.Name}' {broken}, which SQL Server does not accept in a recursive common table expression; no artifact was generated.",
                     QueryFeature.IntermediateResult);
                 admitted = false;
                 continue;
             }
 
+            // A definition read before it is defined - and two that read each other, which is
+            // the one shape of it T-SQL could even mean: mutual recursion, which SQL Server
+            // does not have (decision 113).
             if (definitions.Skip(i + 1).FirstOrDefault(later => read.Any(table => SameName(table, later.Name))) is { } forward)
             {
+                var mutual = Scopes(Unwrap(forward.Body.Instructions)).SelectMany(RowSourcesOf).Any(table => SameName(table, definition.Name));
                 Report(
                     ConversionRecordKind.Failure,
-                    $"The intermediate result '{definition.Name}' reads '{forward.Name}', which the query defines after it; no artifact was generated.",
+                    mutual
+                        ? $"The intermediate results '{definition.Name}' and '{forward.Name}' read each other, which is mutual recursion SQL Server does not have; no artifact was generated."
+                        : $"The intermediate result '{definition.Name}' reads '{forward.Name}', which the query defines after it; no artifact was generated.",
                     QueryFeature.IntermediateResult);
                 admitted = false;
                 continue;
@@ -1452,6 +1524,250 @@ public abstract class AbstractQueryBuilder
             }
 
             gatedDefinitions.Add(definition with { Body = Named(definition.Body) });
+            recursive |= namesItself;
+        }
+
+        if (!admitted)
+        {
+            return false;
+        }
+
+        // The recursion itself, and the limit the query sets on it, are constructs of their
+        // own: a target whose language writes a definition need not write one that names
+        // itself (EF Core), nor the limit (HQL) - both fall back (decision 113).
+        if (recursive && !writesNativeSql)
+        {
+            if (Descriptor.SupportOf(QueryFeature.Recursion) == FactSupport.NotExpressible)
+            {
+                var selfNamed = string.Join(", ", gatedDefinitions.Where(NamesItself).Select(d => $"'{d.Name}'"));
+                ReportUnspoken(
+                    $"The query reads the recursive definition {selfNamed}, which the query language of {Descriptor.Framework} cannot express",
+                    QueryFeature.Recursion);
+            }
+            else if (recursionLimit is { } limit && !WritesRecursionLimit)
+            {
+                ReportUnspoken(
+                    $"The query limits its recursion to {limit} levels (OPTION (MAXRECURSION {limit})), which the query language of {Descriptor.Framework} cannot state",
+                    QueryFeature.Recursion);
+            }
+        }
+
+        ReportUnboundRecursionLimit();
+        return true;
+    }
+
+    /// <summary>
+    /// A limit of recursion over a query that has no recursive definition bounds nothing - the
+    /// statement runs exactly as it would without it -, so it is left out with a record, the
+    /// way DISTINCT over a single row is (decision 073), rather than carried to targets that
+    /// could only write it as a hint over nothing.
+    /// </summary>
+    private void ReportUnboundRecursionLimit()
+    {
+        if (recursionLimit is { } limit && !recursive)
+        {
+            Report(
+                ConversionRecordKind.Convention,
+                $"The query limits its recursion to {limit} levels (OPTION (MAXRECURSION {limit})), but no intermediate result of it names itself, so the limit bounds nothing; it was left out.",
+                QueryFeature.Recursion);
+        }
+    }
+
+    /// <summary>Whether the body of a definition names the definition itself anywhere, which makes it recursive (decision 113).</summary>
+    private static bool NamesItself(WithInstruction definition)
+        => Names(Unwrap(definition.Body.Instructions), definition.Name);
+
+    /// <summary>Whether a scope, or any scope inside it, reads a row source of this name.</summary>
+    private static bool Names(IReadOnlyList<QueryInstruction> scope, string name)
+        => Scopes(scope).SelectMany(RowSourcesOf).Any(table => SameName(table, name));
+
+    /// <summary>
+    /// The members of a set operation in the order they were written: a chain leans left,
+    /// so the left side is walked down and each right side is one member, and between the
+    /// members stand the operators that join them. A right side that is itself a set
+    /// operation - written in parentheses - stays one member.
+    /// </summary>
+    private static void Members(
+        SetOperationInstruction operation,
+        List<IReadOnlyList<QueryInstruction>> members,
+        List<SetOperationType> operators)
+    {
+        var left = Unwrap(operation.Left.Instructions);
+        if (left.Count == 1 && left[0] is SetOperationInstruction chained)
+        {
+            Members(chained, members, operators);
+        }
+        else
+        {
+            members.Add(left);
+        }
+
+        operators.Add(operation.OperationType);
+        members.Add(Unwrap(operation.Right.Instructions));
+    }
+
+    /// <summary>
+    /// The first rule of SQL Server's recursive common table expression the body of a
+    /// definition that names itself breaks, as the rest of the sentence "The recursive
+    /// definition 'x' …", or null (decision 113). The body is a set operation whose members
+    /// are anchor members first - none of them naming the definition - and recursive members
+    /// after them, every recursive member joined by UNION ALL; a recursive member is one
+    /// SELECT that names the definition exactly once, in its FROM or an inner join, and
+    /// has no outer join, DISTINCT, grouping, aggregate, slice or subquery. The rules are the
+    /// dialect's, and every target points to it (decision 086), so they refuse whatever the
+    /// target - the database would refuse the query, in any language the target wrote it.
+    /// </summary>
+    private static string? RecursionRuleBroken(string name, IReadOnlyList<QueryInstruction> body)
+    {
+        if (body.Count == 0 || body[0] is not SetOperationInstruction operation)
+        {
+            return "names itself in a body that is no set operation, so it has no anchor member to start from";
+        }
+
+        if (body.Skip(1).OfType<DistinctInstruction>().Any())
+        {
+            return "collapses the duplicates of its whole body, which turns the UNION ALL before its recursive member into a UNION";
+        }
+
+        if (body.Count > 1)
+        {
+            return "orders or slices the result of its whole body, where the recursion has no place for either";
+        }
+
+        var members = new List<IReadOnlyList<QueryInstruction>>();
+        var operators = new List<SetOperationType>();
+        Members(operation, members, operators);
+
+        if (Names(members[0], name))
+        {
+            return "names itself in its first member, which is the anchor member the recursion starts from";
+        }
+
+        var first = members.FindIndex(member => Names(member, name));
+        for (var i = first; i < members.Count; i++)
+        {
+            if (!Names(members[i], name))
+            {
+                return "has an anchor member after a recursive one, where every anchor member comes first";
+            }
+
+            if (operators[i - 1] != SetOperationType.UnionAll)
+            {
+                return $"joins a recursive member by {operators[i - 1]}, where only UNION ALL stands before a recursive member";
+            }
+
+            if (RecursiveMemberRuleBroken(name, members[i]) is { } broken)
+            {
+                return broken;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The rules of decision 113 for one recursive member, as <see cref="RecursionRuleBroken"/> phrases them.</summary>
+    private static string? RecursiveMemberRuleBroken(string name, IReadOnlyList<QueryInstruction> member)
+    {
+        if (member.Count > 0 && member[0] is SetOperationInstruction)
+        {
+            return "has a recursive member that is a set operation of its own, where every recursive member is one SELECT";
+        }
+
+        if (Scopes(member).Skip(1).Any(scope => RowSourcesOf(scope).Any(table => SameName(table, name))))
+        {
+            return "names itself inside a subquery of its recursive member";
+        }
+
+        if (RowSourcesOf(member).Count(table => SameName(table, name)) > 1)
+        {
+            return "names itself more than once in its recursive member";
+        }
+
+        if (member.OfType<JoinInstruction>().FirstOrDefault(join => join.Kind != JoinKind.Inner) is { } outer)
+        {
+            return $"has a {outer.Kind.ToString().ToLowerInvariant()} outer join in its recursive member";
+        }
+
+        if (member.OfType<DistinctInstruction>().Any())
+        {
+            return "collapses duplicates (DISTINCT) in its recursive member";
+        }
+
+        if (member.OfType<GroupByInstruction>().Any() || member.OfType<HavingInstruction>().Any())
+        {
+            return "groups the rows of its recursive member";
+        }
+
+        if (member.OfType<PaginationInstruction>().Any())
+        {
+            return "slices its recursive member";
+        }
+
+        var operands = member.SelectMany(OperandsOf).ToList();
+
+        if (operands.Any(operand => operand.IsSubQuery))
+        {
+            return "has a subquery in its recursive member";
+        }
+
+        if (operands.Any(operand => operand.IsAggregate))
+        {
+            return "aggregates in its recursive member";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Holds the columns of every recursive member to the anchor's (decision 113): as many,
+    /// and of the same scalar each, which SQL Server demands down to the length of a string -
+    /// a rule the model can hold at the grain it types columns at, and the text of the query
+    /// at the finer one, by converting a string it composes in both members alike. A column
+    /// whose scalar the gate cannot derive on either side is left to the database. Runs once
+    /// the rows of the definitions are described, because a recursive member reads its
+    /// definition through the row its anchor describes. Returns false when the query cannot
+    /// be built, having reported why.
+    /// </summary>
+    private bool GateRecursiveColumns()
+    {
+        var admitted = true;
+
+        foreach (var definition in gatedDefinitions.Where(NamesItself))
+        {
+            var members = new List<IReadOnlyList<QueryInstruction>>();
+            Members((SetOperationInstruction)Unwrap(definition.Body.Instructions)[0], members, []);
+
+            var anchor = renderedRows[definition.Name].PropertyMaps;
+
+            foreach (var member in members.Where(member => Names(member, definition.Name)))
+            {
+                var projections = member.OfType<ProjectInstruction>().ToList();
+                if (projections.Count != anchor.Count)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"The recursive member of '{definition.Name}' projects {projections.Count} columns where its anchor member projects {anchor.Count}, which SQL Server does not accept; no artifact was generated.",
+                        QueryFeature.IntermediateResult);
+                    admitted = false;
+                    continue;
+                }
+
+                var aliases = ScopeAliases(member, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), RenderedEntityFor);
+
+                for (var i = 0; i < anchor.Count; i++)
+                {
+                    if (anchor[i].Property.Type?.ScalarType is { } expected
+                        && ScalarOf(projections[i].Operand, aliases) is { } actual
+                        && actual != expected)
+                    {
+                        Report(
+                            ConversionRecordKind.Failure,
+                            $"The column '{anchor[i].ColumnName}' of the recursive definition '{definition.Name}' is {actual} in its recursive member and {expected} in its anchor member, and SQL Server requires the same type in both; no artifact was generated.",
+                            QueryFeature.IntermediateResult);
+                        admitted = false;
+                    }
+                }
+            }
         }
 
         return admitted;
@@ -1461,7 +1777,11 @@ public abstract class AbstractQueryBuilder
     /// The body with every column of its naming SELECT carrying its name as an alias, so that
     /// a target which requires one there - HQL refuses a CTE column without it - gets it where
     /// the source left the column to name itself. The meaning does not change: the alias is
-    /// the name SQL gives the column anyway.
+    /// the name SQL gives the column anyway. A body that is a set operation names the columns
+    /// of every member after its leftmost, by position, because that is where SQL takes the
+    /// names of a set operation's columns from: a recursive member writes <c>t.Depth + 1</c>
+    /// without an alias, and a target that needs one - an expression without one is refused
+    /// everywhere else (decision 107) - gets the one SQL gives it (decision 113).
     /// </summary>
     private static SubQueryInstruction Named(SubQueryInstruction body)
     {
@@ -1469,12 +1789,42 @@ public abstract class AbstractQueryBuilder
 
         if (inner.Count > 0 && inner[0] is SetOperationInstruction operation)
         {
-            return new SubQueryInstruction([operation with { Left = Named(operation.Left) }, .. inner.Skip(1)]);
+            var names = LeftmostSelect(inner).OfType<ProjectInstruction>().Select(ColumnNameOf).ToList();
+            return new SubQueryInstruction([NamedAs(operation, names), .. inner.Skip(1)]);
         }
 
         return new SubQueryInstruction([.. inner.Select(instruction =>
             instruction is ProjectInstruction { Alias: null } projection
                 ? projection with { Alias = ColumnNameOf(projection) }
+                : instruction)]);
+    }
+
+    private static SetOperationInstruction NamedAs(SetOperationInstruction operation, IReadOnlyList<string?> names)
+        => operation with { Left = NamedAs(operation.Left, names), Right = NamedAs(operation.Right, names) };
+
+    /// <summary>
+    /// One member of a set operation with its columns named by position. A member that does
+    /// not project as many columns as the names stays as it is: that is a query SQL Server
+    /// refuses, and the gate that holds the count says so.
+    /// </summary>
+    private static SubQueryInstruction NamedAs(SubQueryInstruction member, IReadOnlyList<string?> names)
+    {
+        var inner = Unwrap(member.Instructions);
+
+        if (inner.Count > 0 && inner[0] is SetOperationInstruction nested)
+        {
+            return new SubQueryInstruction([NamedAs(nested, names), .. inner.Skip(1)]);
+        }
+
+        if (inner.OfType<ProjectInstruction>().Count() != names.Count)
+        {
+            return member;
+        }
+
+        var position = 0;
+        return new SubQueryInstruction([.. inner.Select(instruction =>
+            instruction is ProjectInstruction projection
+                ? projection with { Alias = names[position++] ?? projection.Alias }
                 : instruction)]);
     }
 

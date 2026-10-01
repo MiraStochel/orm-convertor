@@ -227,6 +227,15 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
     private static string Placeholder(RowCount count)
         => count.IsParameter ? $"@{Spelled(count)}" : Spelled(count);
 
+    /// <summary>T-SQL states the limit of recursion as OPTION (MAXRECURSION n) at the end of the statement (decision 113).</summary>
+    protected override bool WritesRecursionLimit => true;
+
+    /// <summary>The OPTION clause that closes a statement whose recursion the query limits; empty otherwise.</summary>
+    private string RecursionOption()
+        => RecursionLimit is { } limit
+            ? $"\nOPTION (MAXRECURSION {limit.ToString(System.Globalization.CultureInfo.InvariantCulture)})"
+            : string.Empty;
+
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
     {
         if (WithClause() is not { } with)
@@ -236,7 +245,7 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
 
         // Asked of the statement, not of a definition's body the WITH clause just wrote.
         OperandsMaterializeDifferentRows = false;
-        return Emit(with + RenderSelect(artifact), artifact.ResultEntity);
+        return Emit(with + RenderSelect(artifact) + RecursionOption(), artifact.ResultEntity);
     }
 
     /// <summary>
@@ -324,7 +333,7 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
 
         // Asked of the statement, not of a definition's body the WITH clause just wrote.
         OperandsMaterializeDifferentRows = differ;
-        return Emit(with + sql, resultEntity);
+        return Emit(with + sql + RecursionOption(), resultEntity);
     }
 
     /// <summary>

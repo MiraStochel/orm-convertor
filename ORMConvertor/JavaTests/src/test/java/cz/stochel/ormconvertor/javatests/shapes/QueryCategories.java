@@ -21,7 +21,7 @@ import java.util.Map;
  * {@code matrix.txt}, poorer than JSON on purpose: two parsers in two languages have to
  * agree about it, and a line of "key = value" cannot be read two ways.
  *
- * <p>The domain the categories are written over - five entities in the languages of all
+ * <p>The domain the categories are written over - seven entities in the languages of all
  * six frameworks under {@code QueryShapes/entities} - is the same for every category and
  * for the deliberately bad query, so it is stated here once for both classes of this
  * package rather than in the manifest.
@@ -120,7 +120,7 @@ public final class QueryCategories {
     }
 
     /**
-     * The shared files the framework reads the five entities from, as units of a
+     * The shared files the framework reads the seven entities from, as units of a
      * conversion; the mapping half of every input of this package.
      */
     public static List<InputUnit> domainUnits(int source) {
@@ -140,13 +140,17 @@ public final class QueryCategories {
                     "QueryShapes/entities/jpa/ShopOrder.java",
                     "QueryShapes/entities/jpa/ShopOrderLine.java",
                     "QueryShapes/entities/jpa/ShopOrderLineAllocation.java",
-                    "QueryShapes/entities/jpa/ShopProduct.java");
+                    "QueryShapes/entities/jpa/ShopProduct.java",
+                    "QueryShapes/entities/jpa/ShopDepartment.java",
+                    "QueryShapes/entities/jpa/ShopProductLink.java");
             case Orm.MYBATIS -> List.of(
                     "QueryShapes/entities/mybatis/ShopCustomer.java",
                     "QueryShapes/entities/mybatis/ShopOrder.java",
                     "QueryShapes/entities/mybatis/ShopOrderLine.java",
                     "QueryShapes/entities/mybatis/ShopOrderLineAllocation.java",
                     "QueryShapes/entities/mybatis/ShopProduct.java",
+                    "QueryShapes/entities/mybatis/ShopDepartment.java",
+                    "QueryShapes/entities/mybatis/ShopProductLink.java",
                     "QueryShapes/entities/mybatis/ShopMapper.xml");
             default -> throw new IllegalArgumentException(Orm.nameOf(source) + " has no domain under QueryShapes/entities.");
         };

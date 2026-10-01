@@ -1,0 +1,11 @@
+with DepartmentTree as (
+    select d.DepartmentId as DepartmentId, d.Name as Name, 0 as Depth
+    from ShopDepartment d
+    where d.ParentDepartmentId is null
+    union all
+    select c.DepartmentId as DepartmentId, c.Name as Name, t.Depth + 1 as Depth
+    from ShopDepartment c
+    join DepartmentTree t on c.ParentDepartmentId = t.DepartmentId)
+select t.DepartmentId as DepartmentId, t.Name as Name, t.Depth as Depth
+from DepartmentTree t
+where t.Depth >= 2

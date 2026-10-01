@@ -74,7 +74,7 @@ internal sealed record DifferentialQuery(
 
     /// <summary>
     /// The input units of a conversion from the source, in the order they are sent (decision
-    /// 017): for a category the shared domain of five entities and the category's query units
+    /// 017): for a category the shared domain of seven entities and the category's query units
     /// (<see cref="QueryShapeInputs"/>), for a query of the matrix's own the files the matrix
     /// lists under <c>inputs/</c>, each under the language its file name states.
     /// </summary>

@@ -250,19 +250,13 @@ public class IntermediateResultTest
 
         var text = OneLine(Sql(FromSql(new DapperSqlQueryBuilder(), sql)));
 
-        Assert.StartsWith("WITH Ids AS ( SELECT o.CustomerId AS Id FROM Orders AS o UNION SELECT c.CustomerId FROM Customers AS c )", text);
+        // The second member is named by position after the first, which is where SQL takes
+        // the names of a set operation's columns from (decision 113).
+        Assert.StartsWith("WITH Ids AS ( SELECT o.CustomerId AS Id FROM Orders AS o UNION SELECT c.CustomerId AS Id FROM Customers AS c )", text);
         Assert.Contains("SELECT i.Id FROM Ids AS i", text);
     }
 
     // ---- what a definition may not do -------------------------------------------------
-
-    [Fact]
-    public void ARecursiveCommonTableExpressionRefuses()
-        => AssertRefused(
-            FromSql(new DapperSqlQueryBuilder(),
-                "WITH t AS (SELECT c.CustomerId AS Id FROM Customers AS c UNION ALL SELECT t.Id FROM t) SELECT t.Id FROM t"),
-            QueryFeature.IntermediateResult,
-            "recursive WITH");
 
     /// <summary>A derived table correlated with the query around it is a lateral reference, which T-SQL's WITH cannot hold and HQL writes only with lateral.</summary>
     [Fact]

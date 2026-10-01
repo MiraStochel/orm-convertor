@@ -107,8 +107,8 @@ public static class JakartaPersistenceDescriptor
 
     /// <summary>
     /// JPQL 3.2 with the entity join both implementations add covers every category but the
-    /// intermediate result: the specification has neither WITH nor a subquery in the from
-    /// clause (decision 112). The pagination lives on the query object, outside the text,
+    /// intermediate result and its recursion: the specification has neither WITH nor a
+    /// subquery in the from clause (decisions 112 and 113). The pagination lives on the query object, outside the text,
     /// like NHibernate's. An implementation whose query language goes further - Hibernate's
     /// HQL - says so in a table of its own built over this one (<see cref="QuerySupportWith"/>).
     /// </summary>
@@ -129,6 +129,7 @@ public static class JakartaPersistenceDescriptor
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
             [QueryFeature.Expression] = FactSupport.Expressible,
             [QueryFeature.IntermediateResult] = FactSupport.NotExpressible,
+            [QueryFeature.Recursion] = FactSupport.NotExpressible,
         };
 
     /// <summary>

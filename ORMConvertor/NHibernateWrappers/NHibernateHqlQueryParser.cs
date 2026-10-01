@@ -611,9 +611,11 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         {
             var operand = projection.Operand;
 
-            if (operand is null || (operand.IsConstant && !operand.IsAggregate) || operand.IsParameter)
+            // A constant is carried under its alias, which names its column (decision 113);
+            // without one it names nothing.
+            if (operand is null || (operand.IsConstant && !operand.IsAggregate && projection.Alias is null) || operand.IsParameter)
             {
-                var (what, category) = unread ?? ("a property reference, an aggregate or an expression", null);
+                var (what, category) = unread ?? ("a property reference, an aggregate, an expression or a constant under an alias", null);
                 unread = null;
                 Report(
                     ConversionRecordKind.Loss,

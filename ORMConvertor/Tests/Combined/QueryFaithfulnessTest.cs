@@ -290,11 +290,11 @@ public class QueryFaithfulnessTest
     /// the same one (decisions 070 and 084). A second SELECT is no longer here: in a bare
     /// unit it is a query of its own (decision 108, <c>Combined/SqlScriptTest</c>). Neither is
     /// a plain common table expression, which the representation carries since decision 112
-    /// (<c>Combined/IntermediateResultTest</c>); what of WITH it does not carry - recursion and
-    /// XML namespaces - stays here.
+    /// (<c>Combined/IntermediateResultTest</c>), nor a recursive one, carried since decision
+    /// 113 (<c>Combined/RecursionTest</c>); what of WITH it does not carry - XML namespaces -
+    /// stays here.
     /// </summary>
     [Theory]
-    [InlineData("WITH x AS (SELECT c.Id FROM Customers c UNION ALL SELECT x.Id FROM x) SELECT x.Id FROM x", "recursive WITH")]
     [InlineData("WITH XMLNAMESPACES ('urn:a' AS a) SELECT c.Id FROM Customers c", "XML namespaces")]
     [InlineData("SELECT c.Id INTO CustomerCopy FROM Customers c", "INTO")]
     [InlineData("SELECT c.Id FROM Customers c FOR XML AUTO", "FOR clause")]

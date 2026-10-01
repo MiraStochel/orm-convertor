@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The mapping of the five classes in one document, as a real project keeps them. A
-  <composite-id> admits no generator, which is assigned semantics; the two one-part keys
+  The mapping of the seven classes in one document, as a real project keeps them. A
+  <composite-id> admits no generator, which is assigned semantics; the one-part keys
   state theirs. No assembly attribute: which assembly the classes end up in is the consumer
   project's fact (decision 028).
 -->
@@ -51,5 +51,19 @@
     <property name="Sku" column="Sku" type="AnsiString" not-null="true" />
     <property name="UnitPrice" column="UnitPrice" type="Decimal" not-null="true" />
     <property name="IsDiscontinued" column="IsDiscontinued" type="Boolean" not-null="true" />
+  </class>
+  <class name="ShopDepartment" table="ShopDepartments" schema="{{schema}}">
+    <id name="DepartmentId" column="DepartmentId" type="Int32">
+      <generator class="assigned" />
+    </id>
+    <property name="ParentDepartmentId" column="ParentDepartmentId" type="Int32" />
+    <property name="Name" column="Name" type="String" not-null="true" />
+  </class>
+  <class name="ShopProductLink" table="ShopProductLinks" schema="{{schema}}">
+    <id name="LinkId" column="LinkId" type="Int32">
+      <generator class="assigned" />
+    </id>
+    <property name="FromProductId" column="FromProductId" type="Int32" not-null="true" />
+    <property name="ToProductId" column="ToProductId" type="Int32" not-null="true" />
   </class>
 </hibernate-mapping>

@@ -44,7 +44,7 @@ class TestSchemaTest {
         }
 
         assertEquals(
-                // DifferentialProducts and the five Shop tables are not part of
+                // DifferentialProducts and the seven Shop tables are not part of
                 // TestSchema.sql: they come with the read-only data of the differential
                 // verification (decision 089), which brings its own tables rather than
                 // seeding ones that others write to - the one table of the first six queries
@@ -52,7 +52,8 @@ class TestSchemaTest {
                 new TreeSet<>(Set.of("Customers", "CustomerProfiles", "Orders", "OrderLines",
                         "OrderLineAllocations", "Products", "Suppliers", "ProductSuppliers",
                         "DifferentialProducts",
-                        "ShopCustomers", "ShopOrders", "ShopOrderLines", "ShopOrderLineAllocations", "ShopProducts")),
+                        "ShopCustomers", "ShopOrders", "ShopOrderLines", "ShopOrderLineAllocations", "ShopProducts",
+                        "ShopDepartments", "ShopProductLinks")),
                 tables);
     }
 
@@ -95,8 +96,8 @@ class TestSchemaTest {
     void theScriptSplitsIntoOneBatchPerStatementGroup() throws Exception {
         // CREATE SCHEMA, eight CREATE TABLE and one ALTER TABLE of the schema script, the
         // CREATE TABLE and the INSERT the differential data brings with it (decision 089),
-        // and the five CREATE TABLE and five INSERT of the domain of the query categories
+        // and the seven CREATE TABLE and seven INSERT of the domain of the query categories
         // (QueryShapes/FixtureData.sql) - one batch each.
-        assertEquals(22, TestSchema.batches().size());
+        assertEquals(26, TestSchema.batches().size());
     }
 }

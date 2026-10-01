@@ -1,0 +1,4 @@
+3	"Hammers"	2
+4	"Claw hammers"	3
+6	"Drills"	2
+9	"Fittings"	2

@@ -49,3 +49,17 @@ public class ShopProduct
     public virtual decimal UnitPrice { get; set; }
     public virtual bool IsDiscontinued { get; set; }
 }
+
+public class ShopDepartment
+{
+    public virtual int DepartmentId { get; set; }
+    public virtual int? ParentDepartmentId { get; set; }
+    public virtual string Name { get; set; }
+}
+
+public class ShopProductLink
+{
+    public virtual int LinkId { get; set; }
+    public virtual int FromProductId { get; set; }
+    public virtual int ToProductId { get; set; }
+}

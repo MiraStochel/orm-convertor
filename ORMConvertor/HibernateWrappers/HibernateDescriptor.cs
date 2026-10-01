@@ -30,8 +30,12 @@ public static class HibernateDescriptor
         Support = JakartaPersistenceDescriptor.Support,
 
         // HQL 7.4 adds WITH and a subquery in from and after join to JPQL (decision 112,
-        // verified against this release); EclipseLink keeps the specification's table.
-        QuerySupport = JakartaPersistenceDescriptor.QuerySupportWith(QueryFeature.IntermediateResult),
+        // verified against this release), and a WITH that names itself, which it writes as
+        // a recursive common table expression of SQL Server (decision 113, verified against
+        // 7.4.5 over SQL Server: the definition read from from and from join, a counter,
+        // a read from a subquery, a recursive definition over an earlier one). EclipseLink
+        // keeps the specification's table.
+        QuerySupport = JakartaPersistenceDescriptor.QuerySupportWith(QueryFeature.IntermediateResult, QueryFeature.Recursion),
         Functions = JakartaPersistenceDescriptor.Functions,
         NativeSqlApi = JakartaPersistenceDescriptor.NativeSqlApi,
     };

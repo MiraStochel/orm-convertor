@@ -363,6 +363,7 @@ public class QueryShapeMatrixTest
     [InlineData("Ordering")]
     [InlineData("GroupingOverAGroupedResult")]
     [InlineData("AggregateOverTheWholeResult")]
+    [InlineData("RecursiveDescentOfAHierarchy")]
     public void EverySourceLanguageReadsTheCategoryIntoTheSameSql(string name)
     {
         var shape = QueryShapeInputs.Categories.Single(s => s.Name == name);

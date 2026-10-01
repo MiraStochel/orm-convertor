@@ -160,7 +160,7 @@ public class DeeplyNestedQueryVerificationTest
         }
     }
 
-    /// <summary>The five entities as every source of the domain names their tables (see the inputs).</summary>
+    /// <summary>The five entities of the domain the bad query reads, as every source of the domain names their tables (see the inputs).</summary>
     private static List<EntityMap> Maps(ORMEnum source) =>
     [
         Map("ShopCustomer", "ShopCustomers", "CustomerId", "Name", "Notes"),

@@ -4,10 +4,13 @@
 -- two halves of a pair read rows made by the same statements; the {{schema}} placeholder
 -- is the same one every shared file carries.
 --
--- Five tables of its own, prefixed Shop. The domain has the shape of TestSchema.sql -
+-- Seven tables of its own, prefixed Shop. The domain has the shape of TestSchema.sql -
 -- customers, orders under a two-part key, lines under a three-part key, allocations under a
--- four-part key, products - and cannot reuse its tables: seeding tables that other
--- scenarios write to was refused when the first read-only fixture was written (decision
+-- four-part key, products - with two tables besides that the recursive categories walk
+-- (decision 113): departments, a hierarchy that names its parent, and the links between
+-- products, a graph with a cycle in it. It cannot reuse the tables of TestSchema.sql:
+-- seeding tables that other scenarios write to was refused when the first read-only
+-- fixture was written (decision
 -- 089, history), and a source that states no table - Dapper, MyBatis - reaches its table
 -- from the class name by the rule of decision 050, so the class has to carry the prefix
 -- too and ShopOrderLine has to find ShopOrderLines and nothing else in the database. (A
@@ -51,7 +54,15 @@
 --   LIKE 'W%'       three product names start with W; LIKE 'W!_%' ESCAPE '!' matches only
 --                   W_Bolt, and would match Whistle too if the escape were lost;
 --   pagination      ORDER BY LineNumber OFFSET 2 FETCH NEXT 3 is a proper slice of ten, and
---                   the unordered read comes back in key order, which is a different slice.
+--                   the unordered read comes back in key order, which is a different slice;
+--   hierarchy       the departments hang under two roots, three levels deep under Tools,
+--                   deeper than a fixed pair of joins reaches; Depth >= 2 keeps four of nine, flipped to
+--                   <= 2 it keeps eight, and a descent from every department instead of the
+--                   roots repeats the rows below them;
+--   cyclic graph    the links run 1 -> 2 -> 3 -> 1 and on from 3 to 4 and 5, so a walk
+--                   without its bound never ends and is stopped by the limit of recursion;
+--                   within three steps from product 1 it reaches 1, 2, 3 and 4, and with the
+--                   bound flipped only the first step, 2.
 --
 -- No column carries a default, so nothing unstated can reach a canonical result, and every
 -- DATETIME2 value states its fraction, so the renderer's three digits are the column's.
@@ -170,4 +181,51 @@ VALUES
     (1, 2,  1, 1, 20, NULL),
     (2, 1,  3, 1,  1, NULL),
     (2, 3, 10, 1,  2, N'heavy');
+GO
+
+CREATE TABLE [{{schema}}].[ShopDepartments] (
+    [DepartmentId]        INT             NOT NULL,
+    [ParentDepartmentId]  INT             NULL,
+    [Name]                NVARCHAR(100)   NOT NULL,
+    CONSTRAINT [PK_ShopDepartments] PRIMARY KEY ([DepartmentId]),
+    CONSTRAINT [FK_ShopDepartments_ShopDepartments] FOREIGN KEY ([ParentDepartmentId])
+        REFERENCES [{{schema}}].[ShopDepartments] ([DepartmentId])
+);
+GO
+
+CREATE TABLE [{{schema}}].[ShopProductLinks] (
+    [LinkId]          INT   NOT NULL,
+    [FromProductId]   INT   NOT NULL,
+    [ToProductId]     INT   NOT NULL,
+    CONSTRAINT [PK_ShopProductLinks] PRIMARY KEY ([LinkId]),
+    CONSTRAINT [FK_ShopProductLinks_From] FOREIGN KEY ([FromProductId])
+        REFERENCES [{{schema}}].[ShopProducts] ([ProductId]),
+    CONSTRAINT [FK_ShopProductLinks_To] FOREIGN KEY ([ToProductId])
+        REFERENCES [{{schema}}].[ShopProducts] ([ProductId])
+);
+GO
+
+-- Two roots; Tools descends three levels, through Hand tools and Hammers to Claw hammers.
+INSERT INTO [{{schema}}].[ShopDepartments] ([DepartmentId], [ParentDepartmentId], [Name])
+VALUES
+    (1, NULL, N'Tools'),
+    (2, 1,    N'Hand tools'),
+    (3, 2,    N'Hammers'),
+    (4, 3,    N'Claw hammers'),
+    (5, 1,    N'Power tools'),
+    (6, 5,    N'Drills'),
+    (7, NULL, N'Garden'),
+    (8, 7,    N'Hoses'),
+    (9, 8,    N'Fittings');
+GO
+
+-- The cycle 1 -> 2 -> 3 -> 1, and a way out of it from 3 through 4 to 5, which 6 also reaches.
+INSERT INTO [{{schema}}].[ShopProductLinks] ([LinkId], [FromProductId], [ToProductId])
+VALUES
+    (1, 1, 2),
+    (2, 2, 3),
+    (3, 3, 1),
+    (4, 3, 4),
+    (5, 4, 5),
+    (6, 6, 5);
 GO

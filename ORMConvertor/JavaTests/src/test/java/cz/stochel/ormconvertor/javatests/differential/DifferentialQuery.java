@@ -97,7 +97,7 @@ public record DifferentialQuery(
 
     /**
      * The input units of a conversion from the source, in the order they are sent (decision
-     * 017): for a category the shared domain of five entities and the category's query units,
+     * 017): for a category the shared domain of seven entities and the category's query units,
      * for a query of the matrix's own the files the matrix lists under {@code inputs/}.
      */
     public List<InputUnit> units(int source) {

@@ -122,27 +122,28 @@ public class TargetFrameworkDescriptorTest
     /// <summary>
     /// The two implementations of one specification declare the same members and the same
     /// mapping support, and differ in what stands beside the descriptor: the profile
-    /// (decisions 076 and 080). Their query support differs in exactly one category, the
-    /// intermediate result, which HQL adds over JPQL and EclipseLink's JPQL does not
-    /// (decision 112); any other difference would mean the shared layer stopped being
-    /// shared, and this test says so.
+    /// (decisions 076 and 080). Their query support differs in exactly two categories, the
+    /// intermediate result and its recursion, which HQL adds over JPQL and EclipseLink's
+    /// JPQL does not (decisions 112 and 113); any other difference would mean the shared
+    /// layer stopped being shared, and this test says so.
     /// </summary>
     [Fact]
     public void TheJpaImplementationsShareEverythingButTheirProfileAndVersion()
     {
         var hibernate = HibernateWrappers.HibernateDescriptor.Instance;
         var eclipseLink = EclipseLinkWrappers.EclipseLinkDescriptor.Instance;
+        QueryFeature[] hqlOnly = [QueryFeature.IntermediateResult, QueryFeature.Recursion];
 
         Assert.Same(hibernate.EnforcedMembers, eclipseLink.EnforcedMembers);
         Assert.Same(hibernate.Support, eclipseLink.Support);
         Assert.Same(JakartaPersistence.JakartaPersistenceDescriptor.QuerySupport, eclipseLink.QuerySupport);
-        foreach (var feature in Enum.GetValues<QueryFeature>().Where(f => f != QueryFeature.IntermediateResult))
+        foreach (var feature in Enum.GetValues<QueryFeature>().Except(hqlOnly))
         {
             Assert.Equal(eclipseLink.QuerySupport[feature], hibernate.QuerySupport[feature]);
         }
 
-        Assert.Equal(FactSupport.Expressible, hibernate.QuerySupport[QueryFeature.IntermediateResult]);
-        Assert.Equal(FactSupport.NotExpressible, eclipseLink.QuerySupport[QueryFeature.IntermediateResult]);
+        Assert.All(hqlOnly, feature => Assert.Equal(FactSupport.Expressible, hibernate.QuerySupport[feature]));
+        Assert.All(hqlOnly, feature => Assert.Equal(FactSupport.NotExpressible, eclipseLink.QuerySupport[feature]));
         Assert.NotEqual(hibernate.Version, eclipseLink.Version);
 
         var hibernateProfile = HibernateWrappers.HibernateDescriptor.Profile;

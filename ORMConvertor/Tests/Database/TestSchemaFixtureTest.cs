@@ -29,7 +29,7 @@ public class TestSchemaFixtureTest(TestSchemaFixture fixture)
     {
         fixture.SkipIfUnavailable();
 
-        // DifferentialProducts and the five Shop tables are not part of TestSchema.sql: they
+        // DifferentialProducts and the seven Shop tables are not part of TestSchema.sql: they
         // come with the read-only data of the differential verification (decision 089), which
         // brings its own tables rather than seeding ones that other scenarios write to - the
         // one table of the first six queries of the matrix, and the domain of the query
@@ -40,7 +40,7 @@ public class TestSchemaFixtureTest(TestSchemaFixture fixture)
         [
             "CustomerProfiles", "Customers", "DifferentialProducts", "OrderLineAllocations",
             "OrderLines", "Orders", "ProductSuppliers", "Products",
-            "ShopCustomers", "ShopOrderLineAllocations", "ShopOrderLines", "ShopOrders", "ShopProducts",
+            "ShopCustomers", "ShopDepartments", "ShopOrderLineAllocations", "ShopOrderLines", "ShopOrders", "ShopProductLinks", "ShopProducts",
             "Suppliers"
         ];
 

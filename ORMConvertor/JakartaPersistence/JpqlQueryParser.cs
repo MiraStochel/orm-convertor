@@ -948,9 +948,12 @@ public abstract class JpqlQueryParser(
     /// <summary>
     /// HQL's with clause, every common table expression of it into a definition of the
     /// query (decision 112). A hint whether to materialize steers the plan, not the rows,
-    /// and is a loss (decision 048); a column list HQL does not have, and the search and
-    /// cycle clauses belong to a recursive common table expression, which the representation
-    /// does not carry yet.
+    /// and is a loss (decision 048); a column list HQL does not have. A definition that names
+    /// itself is recursive (decision 113) and reads like any other - HQL has no keyword for
+    /// it, the name in its body reads as a row source of that name, and the builder template
+    /// holds the body to the rules of recursion. The search and cycle clauses of a recursive
+    /// one are refused: SQL Server has neither, so the vocabulary does not carry them, and a
+    /// cycle is guarded in the text of the query instead.
     /// </summary>
     private void ParseWithClause()
     {
@@ -1006,7 +1009,7 @@ public abstract class JpqlQueryParser(
 
             if (AtKeyword("search") || AtKeyword("cycle"))
             {
-                throw Error("a search or cycle clause, which belongs to a recursive common table expression the query representation does not carry yet");
+                throw Error("a search or cycle clause of a recursive common table expression, which SQL Server does not have and the query representation does not carry");
             }
 
             if (queryBuilder.Defines(name))
@@ -1367,9 +1370,11 @@ public abstract class JpqlQueryParser(
         {
             var operand = projection.Operand;
 
-            if (operand is null || (operand.IsConstant && !operand.IsAggregate) || operand.IsParameter)
+            // A constant is carried under its alias, which names its column - the starting
+            // depth of a recursion is one (decision 113); without one it names nothing.
+            if (operand is null || (operand.IsConstant && !operand.IsAggregate && projection.Alias is null) || operand.IsParameter)
             {
-                var (what, category) = unread ?? ("an attribute reference, an aggregate or an expression", null);
+                var (what, category) = unread ?? ("an attribute reference, an aggregate, an expression or a constant under an alias", null);
                 unread = null;
                 Report(ConversionRecordKind.Loss, $"A projected expression that is not {what} was dropped.", category ?? QueryFeature.Projection);
                 continue;

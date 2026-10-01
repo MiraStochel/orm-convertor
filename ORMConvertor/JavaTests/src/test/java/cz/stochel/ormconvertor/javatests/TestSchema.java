@@ -91,7 +91,7 @@ public final class TestSchema {
     /**
      * The batches of the DDL script followed by those of the read-only data the
      * differential verification reads (decision 089): the one table of the first six
-     * queries of the matrix, then the five tables of the domain the query categories of T2
+     * queries of the matrix, then the seven tables of the domain the query categories of T2
      * are written over. The data belongs to the fixture and not to a test: it is written
      * once, never changed, and both suites make it from these scripts, so the two halves of
      * a pair read rows made by the same statements.

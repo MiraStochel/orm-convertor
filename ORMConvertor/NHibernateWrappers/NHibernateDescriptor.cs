@@ -154,6 +154,7 @@ public static class NHibernateDescriptor
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
             [QueryFeature.Expression] = FactSupport.Expressible,
             [QueryFeature.IntermediateResult] = FactSupport.NotExpressible,
+            [QueryFeature.Recursion] = FactSupport.NotExpressible,
         },
 
         // HQL in NHibernate 5.7.0 registers every function of the expression vocabulary over

@@ -1,6 +1,6 @@
 # The query categories of requirement T2: one section per category, one line per source
 # framework that can state it, naming the query units of that source relative to this
-# directory. Entity units stand nowhere here - the domain of five entities under
+# directory. Entity units stand nowhere here - the domain of seven entities under
 # entities/ is the same for every category and each suite adds it itself. A source absent
 # from a section cannot state the category in its language; the absence is the statement,
 # and the comment above the section says why.
@@ -373,3 +373,28 @@ EFCore = efcore/FindNativeSqlInCode.query.cs
 NHibernate = nhibernate/FindNativeSqlInCode.query.cs
 Hibernate = hibernate/FindNativeSqlInCode.query.java
 EclipseLink = eclipselink/FindNativeSqlInCode.query.java
+
+# ---- the rows of decision 113, recursion ----
+#
+# A descent of the department hierarchy from its roots, with a counter of the depth that the
+# anchor starts at a constant and the recursive member raises by one, and a filter over the
+# counter. T-SQL and HQL 7.4 state the recursion; LINQ, HQL 5.7 and JPQL have none, so EF
+# Core, NHibernate and EclipseLink are no sources here and write the query in native SQL as
+# targets.
+[RecursiveDescentOfAHierarchy]
+Dapper = dapper/FindRecursiveDescentOfAHierarchy.sql
+Hibernate = hibernate/FindRecursiveDescentOfAHierarchy.jpql
+MyBatis = mybatis/FindRecursiveDescentOfAHierarchyMapper.xml
+fallbackBy = EFCore:Recursion, NHibernate:Recursion, EclipseLink:Recursion
+
+# A walk of the product links from one product, through a cycle, bounded by a count of its
+# steps and under a limit of recursion, OPTION (MAXRECURSION 10). The limit is T-SQL's
+# alone: HQL 7.4 has the recursion but no limit, so Hibernate is no source of this row and
+# writes it in native SQL as a target, beside the three targets without recursion. The
+# bound is the guard the vocabulary carries today - a condition over the counter; a guard
+# over the path of the walk needs a conversion of the key to text, which is the work on
+# functions of decision 113.
+[RecursiveWalkOfACyclicGraph]
+Dapper = dapper/FindRecursiveWalkOfACyclicGraph.sql
+MyBatis = mybatis/FindRecursiveWalkOfACyclicGraphMapper.xml
+fallbackBy = EFCore:Recursion, NHibernate:Recursion, Hibernate:Recursion, EclipseLink:Recursion

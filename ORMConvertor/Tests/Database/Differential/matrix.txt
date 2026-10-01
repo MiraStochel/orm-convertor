@@ -86,7 +86,7 @@ mutations = ordering, rowCount
 #
 # From here on every section is a category of the shared manifest QueryShapes/categories.txt,
 # named by the key below, and states neither a source nor units: the manifest says which
-# sources state the category and with which query units, the domain of five entities under
+# sources state the category and with which query units, the domain of seven entities under
 # QueryShapes/entities is the mapping half of every one of them, and the rows they run over
 # are QueryShapes/FixtureData.sql. Every source variant of a category runs and has to meet
 # the one canonical result of the section, as every translation of it does, so a source
@@ -365,3 +365,26 @@ ordered = true
 decimalScale = 4
 arguments = minPrice:decimal=100
 mutations = filter, operator, ordering
+
+# The descent of the department hierarchy (decision 113), written natively by Dapper,
+# MyBatis and Hibernate and in native SQL by the other three. Four of the nine departments
+# lie two levels or more below a root; flipped, the filter keeps eight, and dropped - with
+# the filter of the anchor, which T-SQL writes on a line of its own - the descent starts at
+# every department and repeats the rows below them.
+[RecursiveDescentOfAHierarchy]
+category = RecursiveDescentOfAHierarchy
+fields = DepartmentId, Name, Depth
+shape = projection
+ordered = false
+mutations = filter, operator
+
+# The walk of the product links through their cycle (decision 113), in native SQL wherever
+# the target's language is not T-SQL. Within three steps from product 1 it reaches 1, 2, 3
+# and 4; flipped, the bound stops it after the first step, and dropped, the walk circles
+# until the limit of recursion stops the query with an error.
+[RecursiveWalkOfACyclicGraph]
+category = RecursiveWalkOfACyclicGraph
+fields = ProductId
+shape = projection
+ordered = false
+mutations = filter, operator

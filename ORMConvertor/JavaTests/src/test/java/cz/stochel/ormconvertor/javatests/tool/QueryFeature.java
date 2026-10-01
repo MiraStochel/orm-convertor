@@ -25,10 +25,11 @@ public final class QueryFeature {
     public static final int SET_OPERATION = 11;
     public static final int QUERY_PARAMETER = 12;
     public static final int INTERMEDIATE_RESULT = 14;
+    public static final int RECURSION = 15;
 
     private static final int[] ALL = {
         PROJECTION, FILTERING, JOIN, JOIN_KIND, AGGREGATION, GROUPING, POST_AGGREGATION_FILTERING,
-        ORDERING, PAGINATION, SUBQUERY, SET_OPERATION, QUERY_PARAMETER, INTERMEDIATE_RESULT,
+        ORDERING, PAGINATION, SUBQUERY, SET_OPERATION, QUERY_PARAMETER, INTERMEDIATE_RESULT, RECURSION,
     };
 
     private QueryFeature() {
@@ -60,6 +61,7 @@ public final class QueryFeature {
             case SET_OPERATION -> "SetOperation";
             case QUERY_PARAMETER -> "QueryParameter";
             case INTERMEDIATE_RESULT -> "IntermediateResult";
+            case RECURSION -> "Recursion";
             default -> "feature " + feature;
         };
     }

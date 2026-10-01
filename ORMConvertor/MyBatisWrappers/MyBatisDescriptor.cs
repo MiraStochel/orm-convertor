@@ -104,6 +104,7 @@ public static class MyBatisDescriptor
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
             [QueryFeature.Expression] = FactSupport.Expressible,
             [QueryFeature.IntermediateResult] = FactSupport.Expressible,
+            [QueryFeature.Recursion] = FactSupport.Expressible,
         },
 
         // The same as Dapper's: the statement is T-SQL (decision 107).

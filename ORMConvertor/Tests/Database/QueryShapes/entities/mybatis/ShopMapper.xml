@@ -41,4 +41,14 @@
     <result column="UnitPrice"      property="UnitPrice"/>
     <result column="IsDiscontinued" property="IsDiscontinued"/>
   </resultMap>
+  <resultMap id="department" type="ShopDepartment">
+    <id     column="DepartmentId"       property="DepartmentId"/>
+    <result column="ParentDepartmentId" property="ParentDepartmentId"/>
+    <result column="Name"               property="Name"/>
+  </resultMap>
+  <resultMap id="productLink" type="ShopProductLink">
+    <id     column="LinkId"        property="LinkId"/>
+    <result column="FromProductId" property="FromProductId"/>
+    <result column="ToProductId"   property="ToProductId"/>
+  </resultMap>
 </mapper>

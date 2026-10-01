@@ -3,6 +3,8 @@
 // ShopOrders has a two-part key, ShopOrderLines a three-part one whose leading parts are the
 // foreign key to it, ShopOrderLineAllocations a four-part one - the shape the read-only
 // fixture of this domain has, so that the joins of the matrices run over two and three columns.
+// ShopDepartments is a hierarchy over a key of its own and ShopProductLinks a graph over the
+// products with a cycle in it, which the recursive rows walk (decision 113).
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -64,4 +66,22 @@ public class ShopProduct
     public string Sku { get; set; }
     public decimal UnitPrice { get; set; }
     public bool IsDiscontinued { get; set; }
+}
+
+[Table("ShopDepartments", Schema = "{{schema}}")]
+public class ShopDepartment
+{
+    [Key]
+    public int DepartmentId { get; set; }
+    public int? ParentDepartmentId { get; set; }
+    public string Name { get; set; }
+}
+
+[Table("ShopProductLinks", Schema = "{{schema}}")]
+public class ShopProductLink
+{
+    [Key]
+    public int LinkId { get; set; }
+    public int FromProductId { get; set; }
+    public int ToProductId { get; set; }
 }

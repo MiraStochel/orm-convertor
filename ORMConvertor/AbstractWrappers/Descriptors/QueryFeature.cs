@@ -78,9 +78,21 @@ public enum QueryFeature
     /// SQL with a Fallback record (decision 113) - a definition left out would leave the row
     /// source naming a table that does not exist, so leaving it out was never an answer.
     /// Besides that, what is recorded here is a limit of the model - a definition that reads
-    /// the query around it (a lateral reference), names itself (recursion), projects the
-    /// whole entity or a column without a name, or shares its name with another definition
-    /// or with a table the query reads.
+    /// the query around it (a lateral reference), projects the whole entity or a column
+    /// without a name, or shares its name with another definition or with a table the query
+    /// reads - or a recursive definition that breaks a rule of the dialect (decision 113).
     /// </summary>
     IntermediateResult = 14,
+
+    /// <summary>
+    /// A recursive definition (decision 113): an intermediate result whose body is a
+    /// UNION ALL of an anchor member and a recursive member that names the definition
+    /// itself, with the limit of recursion the query may carry. Separate from
+    /// <see cref="IntermediateResult"/> because the targets differ inside it: EF Core writes
+    /// a definition as a variable of its method and has no recursion, HQL 7.4 has both. A
+    /// target whose query language has no recursion writes the query in native SQL with a
+    /// Fallback record; the rules a recursive definition is held to are the dialect's and
+    /// refuse under <see cref="IntermediateResult"/>, whatever the target.
+    /// </summary>
+    Recursion = 15,
 }

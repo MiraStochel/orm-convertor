@@ -18,7 +18,9 @@ namespace SampleData;
 /// knows) and the persons two, three and four steps away. They are walks, not distances -
 /// a friend is also two steps away, over the start person and back - and the queries say
 /// "within n steps" as the union of the walks of length 1 to n, and "exactly n" by excluding
-/// the shorter ones. That is how a path of bounded length is stated without recursion.
+/// the shorter ones. That is how a path of bounded length is stated without recursion. A
+/// search whose length is not fixed in advance - a shortest path, a hierarchy of unknown
+/// depth - is a recursive definition since decision 113.
 /// </summary>
 public static class LdbcSnbSample
 {
@@ -312,6 +314,21 @@ public static class LdbcSnbSample
 
     private static readonly LdbcFallback EclipseLinkIntermediate = new(Model.ORMEnum.EclipseLink,
         "JPQL has neither WITH nor a subquery in FROM - EclipseLink's own subquery in FROM stands only as a cross join beside an entity -, so the query goes out as native SQL through createNativeQuery.");
+
+    /// <summary>
+    /// A recursive definition (decision 113) has no form in three of the six query languages:
+    /// LINQ writes a definition as a variable, which cannot name itself, and HQL of NHibernate
+    /// and JPQL have no definition at all. Those three targets write it in native SQL; HQL of
+    /// Hibernate 7.4 and T-SQL write it in their own language.
+    /// </summary>
+    private static readonly LdbcFallback EFCoreRecursion = new(Model.ORMEnum.EFCore,
+        "LINQ has no recursion - a definition is a variable of the method, and a variable cannot name itself -, so the query goes out as native SQL through SqlQuery.");
+
+    private static readonly LdbcFallback NHibernateRecursion = new(Model.ORMEnum.NHibernate,
+        "HQL of NHibernate 5.7 has no WITH, let alone one that names itself, so the query goes out as native SQL through CreateSQLQuery.");
+
+    private static readonly LdbcFallback EclipseLinkRecursion = new(Model.ORMEnum.EclipseLink,
+        "JPQL has no WITH, let alone one that names itself, so the query goes out as native SQL through createNativeQuery.");
 
     /// <summary>
     /// The one shape the native query of EclipseLink cannot take: a list parameter, which it
@@ -664,10 +681,19 @@ public static class LdbcSnbSample
             [PersonId, new("countryName", "NVARCHAR(256)", "China"), new("workFromYear", "INT", "2010")]),
 
         new("ic12", LdbcWorkload.InteractiveComplex, 12, "Expert search", LdbcTranslation.Simplified,
-            "Friends' direct replies to posts whose tag belongs to a tag class or any class below it. The class hierarchy "
-            + "is static in every data set and five levels deep, so the descendants are six outer joins up the chain "
-            + "instead of recursion. Left out: the names of the tags, which the specification returns as a set.",
+            "Friends' direct replies to posts whose tag belongs to a tag class or any class below it. The classes below "
+            + "are a recursive definition (decision 113) that descends the hierarchy from the named class - until "
+            + "then six outer joins up the chain, which return the same rows over every data set, whose hierarchy is "
+            + "five levels deep. Left out: the names of the tags, which the specification returns as a set.",
             """
+            WITH TagClassTree AS (
+                SELECT tc.Id AS TagClassId
+                FROM TagClass AS tc
+                WHERE tc.Name = @tagClassName
+                UNION ALL
+                SELECT sub.Id
+                FROM TagClass AS sub
+                JOIN TagClassTree AS tr ON sub.SubclassOfTagClassId = tr.TagClassId)
             SELECT TOP (20) f.Id AS PersonId, f.FirstName AS PersonFirstName, f.LastName AS PersonLastName,
                    COUNT(DISTINCT c.Id) AS ReplyCount
             FROM Person_knows_Person AS k
@@ -676,31 +702,45 @@ public static class LdbcSnbSample
             JOIN Message AS p ON p.Id = c.ParentMessageId
             JOIN Message_hasTag_Tag AS pt ON pt.MessageId = p.Id
             JOIN Tag AS t ON t.Id = pt.TagId
-            JOIN TagClass AS tc0 ON tc0.Id = t.TypeTagClassId
-            LEFT JOIN TagClass AS tc1 ON tc1.Id = tc0.SubclassOfTagClassId
-            LEFT JOIN TagClass AS tc2 ON tc2.Id = tc1.SubclassOfTagClassId
-            LEFT JOIN TagClass AS tc3 ON tc3.Id = tc2.SubclassOfTagClassId
-            LEFT JOIN TagClass AS tc4 ON tc4.Id = tc3.SubclassOfTagClassId
-            LEFT JOIN TagClass AS tc5 ON tc5.Id = tc4.SubclassOfTagClassId
+            JOIN TagClassTree AS tct ON tct.TagClassId = t.TypeTagClassId
             WHERE k.Person1Id = @personId
               AND p.ParentMessageId IS NULL
-              AND (tc0.Name = @tagClassName OR tc1.Name = @tagClassName OR tc2.Name = @tagClassName
-                   OR tc3.Name = @tagClassName OR tc4.Name = @tagClassName OR tc5.Name = @tagClassName)
             GROUP BY f.Id, f.FirstName, f.LastName
             ORDER BY ReplyCount DESC, f.Id ASC
             """,
-            [PersonId, new("tagClassName", "NVARCHAR(256)", "Person")]),
+            [PersonId, new("tagClassName", "NVARCHAR(256)", "Person")],
+            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
 
-        new("ic13", LdbcWorkload.InteractiveComplex, 13, "Single shortest path", LdbcTranslation.NotTranslated,
-            "The length of the shortest path along knows between two persons, of any length. That is a search over the "
-            + "graph - the reference implementations use a recursive common table expression or a stored procedure - "
-            + "and a query of the representation is one SELECT without recursion.",
-            null,
-            [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65")]),
+        new("ic13", LdbcWorkload.InteractiveComplex, 13, "Single shortest path", LdbcTranslation.Simplified,
+            "The length of the shortest path along knows between two persons: 0 for one person, -1 where there is no "
+            + "path. A recursive definition walks from the first person (decision 113), and the length is the shortest "
+            + "walk that reaches the second. The walk is bounded at three steps, so a pair further apart answers -1: "
+            + "the recursive member of SQL Server keeps no record of the persons it has already reached, so it counts "
+            + "walks rather than persons, and the walks multiply by the number of friends at every step - the example "
+            + "person has eighty. From the example person the bound reaches all but 26 of the 9,163 persons it is "
+            + "connected to.",
+            """
+            WITH Walk AS (
+                SELECT p.Id AS PersonId, 0 AS PathLength
+                FROM Person AS p
+                WHERE p.Id = @person1Id
+                UNION ALL
+                SELECT k.Person2Id, w.PathLength + 1
+                FROM Walk AS w
+                JOIN Person_knows_Person AS k ON k.Person1Id = w.PersonId
+                WHERE w.PathLength < 3 AND w.PersonId <> @person2Id)
+            SELECT COALESCE(MIN(w.PathLength), -1) AS ShortestPathLength
+            FROM Walk AS w
+            WHERE w.PersonId = @person2Id
+            """,
+            [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "96")],
+            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
 
         new("ic14", LdbcWorkload.InteractiveComplex, 14, "Trusted connection paths", LdbcTranslation.NotTranslated,
             "Every shortest path between two persons, weighted by the replies between neighbours, returned as a list of "
-            + "identifiers. A search over the graph and a list-valued result: neither has a place in the representation.",
+            + "identifiers. The search over the graph is a recursive definition since decision 113; what the vocabulary "
+            + "does not carry yet is the path itself - the identifiers joined into a text, which takes a conversion of a "
+            + "number to a string, and the weights rounded - which is the work on functions of the same decision.",
             null,
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65")]),
 
@@ -1058,7 +1098,9 @@ public static class LdbcSnbSample
 
         new("bi15", LdbcWorkload.BusinessIntelligence, 15, "Trusted connection paths through forums created in a given timeframe", LdbcTranslation.NotTranslated,
             "The cost of the weighted shortest path between two persons, the weight of an edge coming from the replies "
-            + "between its ends. A weighted search over the graph, which no single SELECT without recursion states.",
+            + "between its ends. The search is a recursive definition since decision 113, but the weight of an edge is "
+            + "a fraction, and a recursive member that adds fractions has to keep exactly the type its anchor starts "
+            + "the cost with, which the text states by a conversion - the work on functions of the same decision.",
             null,
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65"),
              new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-02-01")]),
@@ -1151,14 +1193,44 @@ public static class LdbcSnbSample
 
         new("bi19", LdbcWorkload.BusinessIntelligence, 19, "Interaction path between cities", LdbcTranslation.NotTranslated,
             "The cheapest paths between persons of two cities, an edge weighing max(round(40 - sqrt(interactions)), 1). "
-            + "A weighted search over the graph, and ROUND and SQRT are outside the vocabulary of expressions besides.",
+            + "The search is a recursive definition since decision 113; ROUND and SQRT are outside the vocabulary of "
+            + "expressions until the work on functions of the same decision.",
             null,
             [new("city1Id", "BIGINT", "1226"), new("city2Id", "BIGINT", "1353")]),
 
-        new("bi20", LdbcWorkload.BusinessIntelligence, 20, "Recruitment", LdbcTranslation.NotTranslated,
+        new("bi20", LdbcWorkload.BusinessIntelligence, 20, "Recruitment", LdbcTranslation.Simplified,
             "The cheapest path from employees of a company to a person, through friends who studied at the same "
-            + "university, an edge weighing the difference of their class years. A weighted search over the graph.",
-            null,
-            [new("company", "NVARCHAR(256)", "MDLR_Airlines"), new("person2Id", "BIGINT", "4398046513938")]),
+            + "university, an edge weighing the difference of their class years plus one. The edges and their weights are "
+            + "a definition that groups the shared universities of every pair, and the search a recursive definition "
+            + "over it that walks from the person (decision 113); the cheapest walk to each employee is its cost. The "
+            + "walk is bounded at three steps, as in IC 13, so an employee further away is left out. The person "
+            + "is not a candidate even where they work at the company.",
+            """
+            WITH Edge AS (
+                SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId,
+                       MIN(ABS(s1.ClassYear - s2.ClassYear) + 1) AS Weight
+                FROM Person_knows_Person AS k
+                JOIN Person_studyAt_University AS s1 ON s1.PersonId = k.Person1Id
+                JOIN Person_studyAt_University AS s2 ON s2.PersonId = k.Person2Id AND s2.UniversityId = s1.UniversityId
+                GROUP BY k.Person1Id, k.Person2Id),
+            Walk AS (
+                SELECT p.Id AS PersonId, 0 AS Cost, 0 AS Steps
+                FROM Person AS p
+                WHERE p.Id = @person2Id
+                UNION ALL
+                SELECT e.ToPersonId, w.Cost + e.Weight, w.Steps + 1
+                FROM Walk AS w
+                JOIN Edge AS e ON e.FromPersonId = w.PersonId
+                WHERE w.Steps < 3)
+            SELECT TOP (20) w.PersonId AS Person1Id, MIN(w.Cost) AS TotalWeight
+            FROM Walk AS w
+            JOIN Person_workAt_Company AS wa ON wa.PersonId = w.PersonId
+            JOIN Organisation AS o ON o.Id = wa.CompanyId
+            WHERE o.Name = @company AND w.PersonId <> @person2Id
+            GROUP BY w.PersonId
+            ORDER BY TotalWeight ASC, w.PersonId ASC
+            """,
+            [new("company", "NVARCHAR(256)", "China_Northwest_Airlines"), new("person2Id", "BIGINT", "4398046521830")],
+            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
     ];
 }

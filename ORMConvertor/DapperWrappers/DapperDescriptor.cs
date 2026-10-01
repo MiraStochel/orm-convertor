@@ -79,8 +79,10 @@ public static class DapperDescriptor
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
             [QueryFeature.Expression] = FactSupport.Expressible,
 
-            // WITH before the statement (decision 112).
+            // WITH before the statement (decision 112), recursive with OPTION (MAXRECURSION)
+            // at the end of it (decision 113).
             [QueryFeature.IntermediateResult] = FactSupport.Expressible,
+            [QueryFeature.Recursion] = FactSupport.Expressible,
         },
 
         // T-SQL spells every function of the expression vocabulary (decision 107).

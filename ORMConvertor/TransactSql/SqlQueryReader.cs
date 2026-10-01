@@ -78,38 +78,16 @@ public class SqlQueryReader(
         }
     }
 
-    /// <summary>Whether a fragment reads a table of this name without a schema - how a common table expression names itself.</summary>
-    private sealed class ReadsName(string name) : TSqlFragmentVisitor
-    {
-        public bool Found { get; private set; }
-
-        public override void Visit(NamedTableReference node)
-        {
-            Found |= node.SchemaObject.SchemaIdentifier is null
-                     && string.Equals(node.SchemaObject.BaseIdentifier.Value, name, StringComparison.OrdinalIgnoreCase);
-            base.Visit(node);
-        }
-    }
-
     /// <summary>
     /// One common table expression into a definition of the query (decision 112). A
-    /// definition that reads itself is recursive, which the representation does not carry
-    /// yet: refused by name, so that the reference to it is not read as a table either.
+    /// definition whose body reads its own name is recursive (decision 113): T-SQL has no
+    /// keyword for it, and the reference reads as a row source of that name like any other -
+    /// the builder template finds the definition behind it and holds the body to the rules
+    /// of recursion, the same for every source.
     /// </summary>
     private void ReadCommonTableExpression(CommonTableExpression expression)
     {
         var name = expression.ExpressionName.Value;
-
-        var recursion = new ReadsName(name);
-        expression.QueryExpression.Accept(recursion);
-        if (recursion.Found)
-        {
-            Report(
-                ConversionRecordKind.Failure,
-                $"The common table expression '{name}' reads itself, which is a recursive WITH the query representation does not carry yet; no artifact was generated.",
-                QueryFeature.IntermediateResult);
-            return;
-        }
 
         if (queryBuilder.Defines(name))
         {
@@ -264,16 +242,38 @@ public class SqlQueryReader(
             }
         }
 
-        // A query hint steers the plan, not the rows, so it is a loss rather than a refusal
-        // (decision 048) - but it is not nothing, which is what it used to be.
-        if (statement.OptimizerHints.Count > 0)
+        ReadOptimizerHints(statement.OptimizerHints);
+        ReadQueryExpression(statement.QueryExpression);
+    }
+
+    /// <summary>
+    /// The OPTION clause. MAXRECURSION is a fact of the query - it decides whether a recursive
+    /// query finishes or is stopped with an error - and the builder carries it (decision 113);
+    /// every other hint steers the plan, not the rows, so it is a loss rather than a refusal
+    /// (decision 048) - but it is not nothing, which is what it used to be.
+    /// </summary>
+    private void ReadOptimizerHints(IList<OptimizerHint> hints)
+    {
+        var dropped = new List<OptimizerHint>();
+
+        foreach (var hint in hints)
+        {
+            if (hint is LiteralOptimizerHint { HintKind: OptimizerHintKind.MaxRecursion, Value: IntegerLiteral literal }
+                && int.TryParse(literal.Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var maximum))
+            {
+                queryBuilder.LimitRecursion(maximum);
+                continue;
+            }
+
+            dropped.Add(hint);
+        }
+
+        if (dropped.Count > 0)
         {
             Report(
                 ConversionRecordKind.Loss,
                 "The SELECT carries an OPTION clause, which the query representation does not carry; the query hints were dropped.");
         }
-
-        ReadQueryExpression(statement.QueryExpression);
     }
 
     /// <summary>
@@ -775,11 +775,11 @@ public class SqlQueryReader(
 
     /// <summary>
     /// One projected value (decision 107): a column, an aggregate over a column, the whole
-    /// row as <c>COUNT(*)</c>, or an expression - arithmetic, a function of the vocabulary,
-    /// a CASE -, each qualified by the source alias where the text left it unqualified. A
-    /// bare constant is not a shape any target names a column by and stays the loss it was;
-    /// a construct outside the vocabulary is dropped with a record that names it, under the
-    /// category of expressions.
+    /// row as <c>COUNT(*)</c>, an expression - arithmetic, a function of the vocabulary,
+    /// a CASE -, or a constant under an alias (decision 113), each qualified by the source
+    /// alias where the text left it unqualified. A constant without an alias is not a shape
+    /// any target names a column by and stays the loss it was; a construct outside the
+    /// vocabulary is dropped with a record that names it, under the category of expressions.
     /// </summary>
     private void ReadProjection(ScalarExpression expression, string? alias)
     {
@@ -796,11 +796,14 @@ public class SqlQueryReader(
             return;
         }
 
-        if (operand.IsConstant && !operand.IsAggregate)
+        // A constant under an alias is a column of the result with a value every row shares -
+        // the starting depth of a recursion is one (decision 113); without an alias it names
+        // no column any target could read it by, and stays the loss it was.
+        if (operand.IsConstant && !operand.IsAggregate && alias is null)
         {
             Report(
                 ConversionRecordKind.Loss,
-                $"The projected expression '{Describe(expression)}' is not a column or an aggregate and was dropped.",
+                $"The projected expression '{Describe(expression)}' is a constant without an alias, which names no column, and was dropped.",
                 QueryFeature.Projection);
             return;
         }

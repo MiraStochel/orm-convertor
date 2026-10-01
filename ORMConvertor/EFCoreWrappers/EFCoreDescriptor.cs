@@ -93,6 +93,9 @@ public static class EFCoreDescriptor
             // A local variable holding the composed chain, which EF Core 10 turns into a
             // derived table wherever the query refers to it (decision 112, verified).
             [QueryFeature.IntermediateResult] = FactSupport.Expressible,
+
+            // LINQ has no recursion: a variable cannot name itself (decision 113).
+            [QueryFeature.Recursion] = FactSupport.NotExpressible,
         },
 
         // EF Core 10 translates every function of the expression vocabulary from the
