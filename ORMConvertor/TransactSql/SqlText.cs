@@ -217,11 +217,21 @@ public static class SqlText
 /// One SELECT of a text, as <see cref="SqlText.Selects"/> found it, for
 /// <see cref="SqlQueryReader.Read(SqlSelect)"/> to read. Opaque on purpose: the grammar's own
 /// types stay inside this project, and a wrapper handles the SELECT only as a position in the
-/// text.
+/// text - which is what a wrapper needs it for, when a fact it peeled off the text before
+/// the grammar belongs to one query of a script and not to the others.
 /// </summary>
 public sealed class SqlSelect
 {
     internal SqlSelect(SelectStatement statement) => Statement = statement;
 
     internal SelectStatement Statement { get; }
+
+    /// <summary>Where the SELECT begins, as an offset into the text it was found in.</summary>
+    public int Offset => Statement.StartOffset;
+
+    /// <summary>How many characters of that text the SELECT spans, its subqueries included.</summary>
+    public int Length => Statement.FragmentLength;
+
+    /// <summary>Whether the character at <paramref name="offset"/> of the text belongs to this SELECT.</summary>
+    public bool Spans(int offset) => offset >= Offset && offset < Offset + Length;
 }

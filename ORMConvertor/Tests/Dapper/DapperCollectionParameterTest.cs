@@ -47,6 +47,19 @@ public class DapperCollectionParameterTest
 
     private static AbstractQueryBuilder ParseSql(string sql) => Parse(ConversionContentType.SqlQuery, sql);
 
+    /// <summary>Every query of a unit, each with a builder of its own, in the order of the text.</summary>
+    private static List<AbstractQueryBuilder> ParseAll(ConversionContentType contentType, string source)
+        => [.. new DapperSqlQueryParser(() => new DapperSqlQueryBuilder { EntityMaps = [Customers()] }).Parse(contentType, source)];
+
+    /// <summary>Two queries of one unit: the first binds a list to ids, the second one value.</summary>
+    private static void AssertListThenValue(List<AbstractQueryBuilder> builders)
+    {
+        Assert.Equal(2, builders.Count);
+        Assert.Contains("Query01(IDbConnection connection, IEnumerable<int> ids)", CSharp(builders[0]));
+        Assert.Contains("Query02(IDbConnection connection, int ids)", CSharp(builders[1]));
+        Assert.All(builders, builder => Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure));
+    }
+
     private static string? Sql(AbstractQueryBuilder builder)
         => builder.Build().SingleOrDefault(s => s.ContentType == ConversionContentType.SqlQuery)?.Content;
 
@@ -172,6 +185,69 @@ public class DapperCollectionParameterTest
         var refusal = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
         Assert.Equal(QueryFeature.QueryParameter, refusal.Feature);
         Assert.Contains("one name for two bindings", refusal.Reason);
+    }
+
+    /// <summary>
+    /// The facts belong to one query, not to the text they were peeled off. A bare unit is a
+    /// script whose every SELECT is a query with a method and a parameter of its own
+    /// (decision 108), so the same name bare in one SELECT and in parentheses in the next is
+    /// two parameters of two methods. The step used to stand over the whole text and refused
+    /// the unit as one name for two bindings.
+    /// </summary>
+    [Fact]
+    public void TheFactsOfAScriptAreTheFactsOfEachQuery()
+    {
+        var builders = ParseAll(
+            ConversionContentType.SqlQuery,
+            """
+            SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CustomerID IN @ids;
+            SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CustomerID IN (@ids);
+            """);
+
+        AssertListThenValue(builders);
+    }
+
+    /// <summary>
+    /// The text of QueryMultiple is a script as much as a bare unit (decision 109), and its
+    /// SELECTs get the facts of their own span the same way.
+    /// </summary>
+    [Fact]
+    public void TheFactsOfQueryMultipleAreTheFactsOfEachQuery()
+    {
+        var builders = ParseAll(
+            ConversionContentType.CSharp,
+            """
+            public void Load(IDbConnection connection, IEnumerable<int> ids, int id)
+            {
+                using var grid = connection.QueryMultiple("SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CustomerID IN @ids; SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CustomerID IN (@ids)", new { ids });
+            }
+            """);
+
+        AssertListThenValue(builders);
+    }
+
+    /// <summary>
+    /// One name for two bindings is still refused within one query, and it refuses that query
+    /// alone: its neighbour in the script comes out with the list it states.
+    /// </summary>
+    [Fact]
+    public void OneNameForTwoBindingsRefusesItsOwnQueryAlone()
+    {
+        var builders = ParseAll(
+            ConversionContentType.SqlQuery,
+            """
+            SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CustomerID IN @ids AND c.CustomerID IN (@ids);
+            SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CustomerID IN @ids;
+            """);
+
+        Assert.Equal(2, builders.Count);
+
+        var refusal = Assert.Single(builders[0].Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.Contains("one name for two bindings", refusal.Reason);
+        Assert.Empty(builders[0].Build());
+
+        Assert.Contains("Query02(IDbConnection connection, IEnumerable<int> ids)", CSharp(builders[1]));
+        Assert.DoesNotContain(builders[1].Records, r => r.Kind == ConversionRecordKind.Failure);
     }
 
     /// <summary>

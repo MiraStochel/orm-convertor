@@ -60,11 +60,6 @@ Builder EF Core píše join jako `join … on new { … } equals new { … }`, t
 
 ### Práce
 
-#### Kolekční parametr Dapperu se ve skriptu posuzuje za celý text, ne za dotaz
-*Vyšlo najevo 2026-09-30 při implementaci rozhodnutí [108](./decisions/108-a-sql-unit-carries-a-query-per-select-numbered-by-position.md). Práce podle něj a podle rozhodnutí [106](./decisions/106-a-bare-parameter-after-in-is-dappers-collection-parameter.md). Na ničem nečeká a nic na ní nestojí; matice nemění, protože jejich jednotky nesou jediný `SELECT`. Požadavky F10, F11, S1.*
-
-`DapperCollectionParameters.PeelOff` hledá holý parametr za `IN` v proudu tokenů celého textu dřív, než gramatika text rozdělí na příkazy, a fakt o kolekčnosti vydává za jméno parametru. Dokud jednotka nesla jediný `SELECT`, bylo to totéž jako za dotaz; ve skriptu to totéž není. Nese-li jeden `SELECT` `IN @ids` a jiný `IN (@ids)`, odmítne se celá jednotka — od rozhodnutí [109](./decisions/109-a-code-unit-carries-every-query-it-hands-over.md) i celý text `QueryMultiple`, který je skriptem také — větou o jednom jméně pro dvě vazby, ačkoli podle rozhodnutí 108 jsou to dva nezávislé dotazy a každý má vlastní metodu s vlastním parametrem. Je to odmítnutí, ne jiný dotaz — ve výčtu hodnot i v porovnání bere čtečka z vyslovených faktů jen skalár a výřez s kolekčním parametrem odmítá brána šablony —, jen zbytečné. Oprava: `PeelOff` vrátí vedle přepsaného textu i pozice odloupnutých parametrů, `SqlText` dá každému `SqlSelect`u jeho rozsah v textu a Dapper wrapper předá čtečce každého dotazu jen fakta, jejichž výskyty v tom rozsahu leží; kontrola dvou vazeb jednoho jména se přesune tamtéž, takže platí za dotaz.
-
 #### `FromSql…` EF Core vyjde jako ztráta a artefakt nad celou tabulkou
 *Vyšlo najevo 2026-09-30 při implementaci rozhodnutí [109](./decisions/109-a-code-unit-carries-every-query-it-hands-over.md); ověřeno téhož dne dočasnou sondou přes `ConversionHandler.Convert` (do repozitáře nešla). Práce podle rozhodnutí [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) a [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md). Na ničem nečeká; jestli se SQL v kroku bude číst, rozhodne položka o předání v jiném jazyce výš, a oprava na ni nečeká. Požadavky F9, F11.*
 

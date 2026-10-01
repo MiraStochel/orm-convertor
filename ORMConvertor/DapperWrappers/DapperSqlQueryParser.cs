@@ -106,7 +106,7 @@ public class DapperSqlQueryParser(
         // builder belongs to the target framework and this parser to the source (S1). A
         // handover refused as a whole is one query holding the records of what went wrong,
         // and it leaves with the rest: only the parser can say that this unit yielded a query.
-        var queries = new List<(AbstractQueryBuilder Builder, SqlSelect? Select, IReadOnlyDictionary<string, SqlParameterFacts>? Facts)>();
+        var queries = new List<(AbstractQueryBuilder Builder, SqlSelect? Select, IReadOnlyList<DapperCollectionParameters.Occurrence>? Occurrences)>();
 
         foreach (var handover in handovers)
         {
@@ -121,12 +121,11 @@ public class DapperSqlQueryParser(
             }
 
             // Dapper's own spelling of a list parameter, IN @ids, is not T-SQL; it is rewritten
-            // to the form the grammar reads and the fact that the parameter binds a list travels
-            // beside the text (decision 106), the way the MyBatis wrapper carries a <foreach>.
-            var text = DapperCollectionParameters.PeelOff(handover.Sql!, report, out var statedParameters);
-            var selects = text is null
-                ? null
-                : SqlText.Selects(text, report, declaredSourceDialect, Limits, handover.IsScript);
+            // to the form the grammar reads, and where each such parameter stood is kept for the
+            // facts to be handed out per query below (decision 106), the way the MyBatis wrapper
+            // carries a <foreach>.
+            var text = DapperCollectionParameters.PeelOff(handover.Sql!, out var occurrences);
+            var selects = SqlText.Selects(text, report, declaredSourceDialect, Limits, handover.IsScript);
 
             if (selects is null)
             {
@@ -136,7 +135,7 @@ public class DapperSqlQueryParser(
 
             for (var i = 0; i < selects.Count; i++)
             {
-                queries.Add((i == 0 ? builder : queryBuilders(), selects[i], statedParameters));
+                queries.Add((i == 0 ? builder : queryBuilders(), selects[i], occurrences));
             }
         }
 
@@ -147,16 +146,24 @@ public class DapperSqlQueryParser(
         // the fixed name, as there is nothing to tell it from.
         for (var i = 0; i < queries.Count; i++)
         {
-            var (builder, select, facts) = queries[i];
+            var (builder, select, occurrences) = queries[i];
 
             if (queries.Count > 1)
             {
                 builder.QueryName = QueryMethodNaming.Positional(i + 1);
             }
 
-            if (select is not null)
+            if (select is null)
             {
-                new SqlQueryReader(builder, ChannelOf(builder), declaredSourceDialect, facts!, Limits).Read(select);
+                continue;
+            }
+
+            // The facts of this SELECT alone: in a script, a list parameter of one query says
+            // nothing about a parameter of the same name in another.
+            var report = ChannelOf(builder);
+            if (DapperCollectionParameters.FactsOf(select, occurrences!, report) is { } facts)
+            {
+                new SqlQueryReader(builder, report, declaredSourceDialect, facts, Limits).Read(select);
             }
         }
 
