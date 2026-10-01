@@ -23,8 +23,9 @@ namespace JakartaPersistence;
 ///
 /// Two languages are claimed (decision 025): bare JPQL, and a Java method wrapping the
 /// JPQL in a createQuery call, from which the string literal is taken - the two phases the
-/// Dapper parser has for SQL in C#. What an implementation's dialect adds over JPQL is
-/// the fourth hook of decision 076: <see cref="TryReadDialectClause"/>.
+/// Dapper parser has for SQL in C# - together with the slice the method sets on the query
+/// object, which is where JPQL keeps its pagination (decision 060). What an implementation's
+/// dialect adds over JPQL is the fourth hook of decision 076: <see cref="TryReadDialectClause"/>.
 /// </summary>
 public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : IQueryParser
 {
@@ -104,7 +105,7 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return [queryBuilder];
         }
 
-        var calls = ExtractQueryLiterals(source);
+        var javaTokens = Calls(source, out var calls);
         var builders = new List<AbstractQueryBuilder>(calls.Count);
 
         for (var i = 0; i < calls.Count; i++)
@@ -119,9 +120,9 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 queryBuilder.QueryName = QueryMethodNaming.Positional(i + 1);
             }
 
-            if (calls[i] is { } jpql)
+            if (LiteralOf(javaTokens, calls[i]) is { } jpql)
             {
-                ReadQuery(jpql);
+                ReadQuery(jpql, ReadSlice(javaTokens, calls[i]));
             }
             else
             {
@@ -135,11 +136,15 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         return builders;
     }
 
-    /// <summary>One query of JPQL into the builder of the moment, with the state of the previous one cleared.</summary>
-    private void ReadQuery(string jpql)
+    /// <summary>
+    /// One query of JPQL into the builder of the moment, with the state of the previous one
+    /// cleared, and the slice its Java unit set on the query object, if it came from one.
+    /// </summary>
+    private void ReadQuery(string jpql, QueryObjectSlice? slice = null)
     {
         aliases = new Dictionary<string, EntityMap?>(StringComparer.OrdinalIgnoreCase);
         unread = null;
+        var composed = false;
 
         queryBuilder.Push();
         try
@@ -161,6 +166,7 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
                 while (TryParseSetOperator() is { } operation)
                 {
+                    composed = true;
                     queryBuilder.Pop();
                     queryBuilder.SetOperation(operation);
                     queryBuilder.Push();
@@ -179,24 +185,272 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 $"The JPQL could not be parsed at line {error.Line}, column {error.Column}: {error.Message}.");
         }
 
+        // Before the scope closes, as every parser records its pagination (decision 085).
+        if (slice is not null)
+        {
+            ApplySlice(slice, composed);
+        }
+
         queryBuilder.Pop();
     }
 
     /// <summary>
-    /// The JPQL inside a Java unit: for every createQuery or createSelectionQuery call, in the
-    /// order of the text, the string literal it is handed, whether a plain literal or a text
-    /// block (decision 109). A query composed at run time - concatenation, a variable - is null
-    /// in the list: the same case the Dapper parser reports for SQL that is not a literal
-    /// (decision 026), an incompleteness of that query and nothing to read.
+    /// The slice of the query object into the scope of the query (decision 060), or the
+    /// reason it cannot go there. A query emitted without its slice returns other rows, so
+    /// what cannot be carried refuses the query (decision 070). Over a set operation the
+    /// slice applies to the composed result, which the representation has no place for -
+    /// the same refusal the SQL reader gives a trailing OFFSET - and the open scope here is
+    /// the last operand, which would be a slice of something else. A slice in the text as
+    /// well - HQL's limit, read by the dialect hook - makes two instructions in one scope,
+    /// which the template refuses.
     /// </summary>
-    private static List<string?> ExtractQueryLiterals(string source)
+    private void ApplySlice(QueryObjectSlice slice, bool composed)
     {
-        var javaTokens = Calls(source, out var calls);
+        foreach (var reason in slice.Unread)
+        {
+            Report(ConversionRecordKind.Failure, reason, QueryFeature.Pagination);
+        }
 
-        return [.. calls.Select(i => javaTokens[i + 2].Kind == JavaTokenKind.String
-            && !(javaTokens[i + 3] is { Kind: JavaTokenKind.Symbol, Text: "+" })
-                ? javaTokens[i + 2].Text
-                : null)];
+        if (slice.Unread.Count > 0 || (slice.Offset is null && slice.Limit is null))
+        {
+            return;
+        }
+
+        if (composed)
+        {
+            Report(ConversionRecordKind.Failure,
+                "The slice set on the query object (setFirstResult, setMaxResults) applies to the result of the set operation, which the query representation cannot carry, and dropping it would change which rows the query returns; no artifact was generated.",
+                QueryFeature.Pagination);
+            return;
+        }
+
+        queryBuilder.Paginate(slice.Offset, slice.Limit);
+    }
+
+    /// <summary>
+    /// The JPQL a createQuery or createSelectionQuery call of a Java unit is handed: the
+    /// string literal, whether a plain one or a text block (decision 109). A query composed
+    /// at run time - concatenation, a variable - is null: the same case the Dapper parser
+    /// reports for SQL that is not a literal (decision 026), an incompleteness of that query
+    /// and nothing to read.
+    /// </summary>
+    private static string? LiteralOf(List<JavaToken> javaTokens, int call)
+        => javaTokens[call + 2].Kind == JavaTokenKind.String
+            && !(javaTokens[call + 3] is { Kind: JavaTokenKind.Symbol, Text: "+" })
+                ? javaTokens[call + 2].Text
+                : null;
+
+    /// <summary>
+    /// The slice a Java unit sets on the query object of one call: the offset and the limit,
+    /// each a row count (decision 085), and the reasons a slice the code sets cannot be read.
+    /// </summary>
+    private sealed record QueryObjectSlice(RowCount? Offset, RowCount? Limit, List<string> Unread);
+
+    /// <summary>
+    /// The inverse of what the JPA builder writes (decision 060): setFirstResult and
+    /// setMaxResults chained onto the call, read in the offset-then-limit normal form whatever
+    /// order the code calls them in - they are setters of the query object, not steps of a
+    /// chain as Skip and Take are, so the last call of each is the one the query runs with.
+    /// The argument is a non-negative integer literal or a value from the enclosing scope,
+    /// the parameter of the same name, as the LINQ reader takes Skip and Take (decision 085);
+    /// anything else is a value computed at run time.
+    ///
+    /// The reading follows the expression and not the variable: a query object kept in one
+    /// and sliced in another statement may be sliced on a condition, so that slice is named
+    /// and refused rather than read. A query object handed to another method, or returned,
+    /// leaves the unit, and what is done with it there is not in the text.
+    /// </summary>
+    private static QueryObjectSlice ReadSlice(List<JavaToken> javaTokens, int call)
+    {
+        var chain = Chain(javaTokens, Closing(javaTokens, call + 1) + 1, out var end);
+        RowCount? offset = null, limit = null;
+        var unread = new List<string>();
+
+        foreach (var setter in (string[])["setFirstResult", "setMaxResults"])
+        {
+            var last = chain.FindLast(c => c.Method == setter);
+            if (last.Method is null)
+            {
+                continue;
+            }
+
+            if (RowCountOf(javaTokens, last.From, last.To) is not { } count)
+            {
+                unread.Add($"The argument of {setter}() on the query object is neither a non-negative integer literal nor a value from the enclosing scope, and a pagination the artifact does not carry would change which rows the query returns; no artifact was generated.");
+            }
+            else if (setter == "setFirstResult")
+            {
+                offset = count;
+            }
+            else
+            {
+                limit = count;
+            }
+        }
+
+        if (AssignedVariable(javaTokens, call) is { } variable && SlicedLater(javaTokens, end, variable) is { } setterLater)
+        {
+            unread.Add($"The query object kept in the variable '{variable}' gets {setterLater}() in another statement, which the reading does not follow - the call there may run on a condition -, and a pagination the artifact does not carry would change which rows the query returns; no artifact was generated.");
+        }
+
+        return new QueryObjectSlice(offset, limit, unread);
+    }
+
+    /// <summary>
+    /// The calls chained onto an expression from <paramref name="at"/> on: every
+    /// <c>.name(arguments)</c> in a row, with the token range of its arguments, up to the
+    /// first token that continues no chain; <paramref name="end"/> is that token.
+    /// </summary>
+    private static List<(string Method, int From, int To)> Chain(List<JavaToken> javaTokens, int at, out int end)
+    {
+        var chain = new List<(string Method, int From, int To)>();
+
+        end = Math.Min(at, javaTokens.Count - 1);
+        while (javaTokens[end] is { Kind: JavaTokenKind.Symbol, Text: "." }
+            && javaTokens[end + 1] is { Kind: JavaTokenKind.Identifier } method
+            && javaTokens[end + 2] is { Kind: JavaTokenKind.Symbol, Text: "(" })
+        {
+            var close = Closing(javaTokens, end + 2);
+            chain.Add((method.Text, end + 3, close));
+            end = Math.Min(close + 1, javaTokens.Count - 1);
+        }
+
+        return chain;
+    }
+
+    /// <summary>The parenthesis that closes the one at <paramref name="open"/>, or the end marker of an unbalanced text.</summary>
+    private static int Closing(List<JavaToken> javaTokens, int open)
+    {
+        var depth = 0;
+        for (var i = open; i < javaTokens.Count; i++)
+        {
+            if (javaTokens[i] is { Kind: JavaTokenKind.Symbol, Text: "(" })
+            {
+                depth++;
+            }
+            else if (javaTokens[i] is { Kind: JavaTokenKind.Symbol, Text: ")" } && --depth == 0)
+            {
+                return i;
+            }
+        }
+
+        return javaTokens.Count - 1;
+    }
+
+    /// <summary>
+    /// The argument between <paramref name="from"/> and <paramref name="to"/> as a row count:
+    /// a decimal literal - Java reads a leading zero as octal, and a count is not written
+    /// so - or a bare name, which is a value from the enclosing scope; null for anything else.
+    /// </summary>
+    private static RowCount? RowCountOf(List<JavaToken> javaTokens, int from, int to)
+    {
+        if (to - from != 1)
+        {
+            return null;
+        }
+
+        var argument = javaTokens[from];
+
+        if (argument.Kind == JavaTokenKind.Number
+            && (argument.Text == "0" || argument.Text[0] is >= '1' and <= '9')
+            && argument.Text.All(c => char.IsAsciiDigit(c) || c == '_')
+            && long.TryParse(argument.Text.Replace("_", string.Empty), out var value))
+        {
+            return RowCount.Literal(value);
+        }
+
+        if (argument.Kind == JavaTokenKind.Identifier && argument.Text is not ("this" or "super" or "null" or "true" or "false"))
+        {
+            return RowCount.Bound(QueryParameter.Named(argument.Text));
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The variable the statement around a call assigns its expression to, found by walking
+    /// back to the start of the statement at the depth of the call; null where the call is an
+    /// argument of another call, or the statement assigns nothing.
+    /// </summary>
+    private static string? AssignedVariable(List<JavaToken> javaTokens, int call)
+    {
+        var depth = 0;
+        for (var i = call - 1; i > 0; i--)
+        {
+            if (javaTokens[i].Kind != JavaTokenKind.Symbol)
+            {
+                continue;
+            }
+
+            switch (javaTokens[i].Text)
+            {
+                case ")" or "]":
+                    depth++;
+                    break;
+
+                case "(" or "[":
+                    if (depth == 0)
+                    {
+                        return null;
+                    }
+
+                    depth--;
+                    break;
+
+                case ";" or "{" or "}" or "->" when depth == 0:
+                    return null;
+
+                // The lexer spells == and the compound assignments as two symbols; an
+                // assignment is the = with neither half of such a pair beside it.
+                case "=" when depth == 0:
+                    return javaTokens[i + 1] is not { Kind: JavaTokenKind.Symbol, Text: "=" }
+                           && javaTokens[i - 1] is { Kind: JavaTokenKind.Identifier } assigned
+                        ? assigned.Text
+                        : null;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The setter of a slice the rest of the enclosing block calls on <paramref name="variable"/>,
+    /// or null. The search ends with the block, or where the variable is assigned again:
+    /// after that, the calls on it belong to another query object.
+    /// </summary>
+    private static string? SlicedLater(List<JavaToken> javaTokens, int from, string variable)
+    {
+        var depth = 0;
+        for (var i = from; i + 1 < javaTokens.Count; i++)
+        {
+            var token = javaTokens[i];
+
+            if (token is { Kind: JavaTokenKind.Symbol, Text: "{" })
+            {
+                depth++;
+            }
+            else if (token is { Kind: JavaTokenKind.Symbol, Text: "}" } && --depth < 0)
+            {
+                return null;
+            }
+            else if (token.Kind == JavaTokenKind.Identifier
+                && token.Text == variable
+                && javaTokens[i - 1] is not { Kind: JavaTokenKind.Symbol, Text: "." })
+            {
+                if (javaTokens[i + 1] is { Kind: JavaTokenKind.Symbol, Text: "=" }
+                    && javaTokens[i + 2] is not { Kind: JavaTokenKind.Symbol, Text: "=" })
+                {
+                    return null;
+                }
+
+                if (Chain(javaTokens, i + 1, out _).Find(c => c.Method is "setFirstResult" or "setMaxResults") is { Method: { } setter })
+                {
+                    return setter;
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
