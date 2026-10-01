@@ -86,8 +86,10 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
         // with no property and MyBatis ignores an unknown one, both in silence, so the rows
         // would come back as instances holding none of the projected values. Such a query
         // materializes as an untyped row instead, which is what a null result entity means to
-        // the wrapper (decision 104), and no type is derived or reported for it.
-        if (!clauses.ProjectsWholeEntity)
+        // the wrapper (decision 104), and no type is derived or reported for it. The whole row
+        // of an intermediate result goes the same way: a definition has no class to
+        // materialize into (decision 112).
+        if (!clauses.ProjectsWholeEntity || IsDefinition(clauses.From.Table))
         {
             return;
         }
@@ -226,7 +228,43 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
         => count.IsParameter ? $"@{Spelled(count)}" : Spelled(count);
 
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
-        => Emit(RenderSelect(artifact), artifact.ResultEntity);
+        => WithClause() is { } with ? Emit(with + RenderSelect(artifact), artifact.ResultEntity) : [];
+
+    /// <summary>
+    /// The definitions of the query as one WITH before the statement (decision 112), each
+    /// body composed through the eight steps; empty for a query that defines nothing, null
+    /// when a body could not be rendered and the reason is on the channel. T-SQL takes a
+    /// common table expression only before the statement, which is exactly where the model
+    /// keeps every definition, so a derived table of the source comes out as one too - the
+    /// rows are the same, and the model does not keep which of the two the source wrote.
+    /// TOP and OFFSET/FETCH stand inside a common table expression as they stand anywhere.
+    /// </summary>
+    private string? WithClause()
+    {
+        if (Definitions.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var rendered = new List<string>(Definitions.Count);
+        foreach (var definition in Definitions)
+        {
+            var clauses = NormalizeDefinition(definition, out var setOperation);
+            var body = setOperation is not null
+                ? RenderSetOperation(setOperation, out _)
+                : clauses is not null ? RenderSelect(Compose(clauses)) : null;
+
+            if (body is null)
+            {
+                return null;
+            }
+
+            var indented = string.Join("\n", body.Split('\n').Select(line => line.Length == 0 ? line : "    " + line));
+            rendered.Add($"{definition.Name} AS (\n{indented}\n)");
+        }
+
+        return $"WITH {string.Join(",\n", rendered)}\n";
+    }
 
     /// <summary>
     /// SQL clause order, which is the relational evaluation order with the projection moved
@@ -266,7 +304,7 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
     protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)
     {
         var sql = RenderSetOperation(instruction, out var resultEntity);
-        return sql is null ? [] : Emit(sql, resultEntity);
+        return sql is null || WithClause() is not { } with ? [] : Emit(with + sql, resultEntity);
     }
 
     private string? RenderSetOperation(SetOperationInstruction instruction, out string? resultEntity)

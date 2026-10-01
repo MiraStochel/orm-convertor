@@ -312,3 +312,26 @@ NHibernate = nhibernate/FindScalarSubqueryAgainstABoundValue.hql
 Hibernate = hibernate/FindScalarSubqueryAgainstABoundValue.jpql
 EclipseLink = eclipselink/FindScalarSubqueryAgainstABoundValue.jpql
 MyBatis = mybatis/FindScalarSubqueryAgainstABoundValueMapper.query.java, mybatis/FindScalarSubqueryAgainstABoundValueMapper.xml
+
+# The two rows of decision 112, a query as a source of rows. The first is a derived table -
+# lines per order, then orders per number of lines, a grouping over the result of a grouping
+# -, which the LINQ row states by composing past the grouped projection: the Where over its
+# rows reads it as an intermediate result named after the lambda's parameter, lc here as in
+# the other rows. The second is a common table expression read twice, once as the right side
+# of a join over two columns and once inside a scalar subquery; the LINQ row keeps it in a
+# variable it joins and aggregates. HQL 5.7 and JPQL have neither form, so NHibernate and
+# EclipseLink are no sources here and refuse both rows as targets; EclipseLink's own subquery
+# in FROM is a comma-separated declaration, a cross join the representation does not carry.
+[GroupingOverAGroupedResult]
+Dapper = dapper/FindGroupingOverAGroupedResult.sql
+EFCore = efcore/FindGroupingOverAGroupedResult.query.cs
+Hibernate = hibernate/FindGroupingOverAGroupedResult.jpql
+MyBatis = mybatis/FindGroupingOverAGroupedResultMapper.xml
+refusedBy = NHibernate:IntermediateResult, EclipseLink:IntermediateResult
+
+[IntermediateResultReadTwice]
+Dapper = dapper/FindIntermediateResultReadTwice.sql
+EFCore = efcore/FindIntermediateResultReadTwice.query.cs
+Hibernate = hibernate/FindIntermediateResultReadTwice.jpql
+MyBatis = mybatis/FindIntermediateResultReadTwiceMapper.xml
+refusedBy = NHibernate:IntermediateResult, EclipseLink:IntermediateResult

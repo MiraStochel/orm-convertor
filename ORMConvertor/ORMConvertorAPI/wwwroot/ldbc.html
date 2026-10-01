@@ -191,17 +191,18 @@
             along edge tables, paths of a fixed length written as <code>IN</code> subqueries
             over the walks of that length, negative edges as <code>NOT EXISTS</code>, grouped
             counts with <code>HAVING</code>, <code>CASE</code>, scalar subqueries and the
-            first <em>k</em> rows. Where the specification adds days to a date, the caller
-            passes the end of the window.
+            first <em>k</em> rows, and a query over the result of another, written as a
+            common table expression or a derived table (BI&nbsp;4, BI&nbsp;8, BI&nbsp;12,
+            BI&nbsp;13). Where the specification adds days to a date, the caller passes the
+            end of the window.
           </p>
         </article>
         <article>
           <h3><span class="ldbc-count" data-translation="20"></span> simplified</h3>
           <p>
             The text leaves out one part and says which: results that are lists (IC&nbsp;1,
-            IC&nbsp;12), arithmetic over dates (IC&nbsp;7, BI&nbsp;17), keeping the best row of
-            every group (BI&nbsp;14), a score summed over the result itself (BI&nbsp;8) and a
-            subquery inside an aggregate (BI&nbsp;13).
+            IC&nbsp;12), arithmetic over dates (IC&nbsp;7, BI&nbsp;17) and keeping the best row
+            of every group (BI&nbsp;14).
           </p>
         </article>
         <article>
@@ -209,9 +210,8 @@
           <p>
             Searches over the graph &mdash; shortest and cheapest paths of any length
             (IC&nbsp;13, IC&nbsp;14, BI&nbsp;15, BI&nbsp;19, BI&nbsp;20) &mdash; have no place in a
-            query without recursion. Grouping by an expression (BI&nbsp;1) and a query over
-            the result of another (BI&nbsp;4, BI&nbsp;12) are refused as well. BI&nbsp;16 is a gap
-            of the tool rather than of the representation.
+            query without recursion. Grouping by an expression (BI&nbsp;1) is refused as
+            well.
           </p>
         </article>
       </div>
@@ -219,7 +219,11 @@
         <strong>EF Core refuses <span class="ldbc-refusal-count"></span> of the translated
         queries</strong>: an outer join that also filters in its <code>ON</code> clause, which
         a LINQ join cannot say, and a count over the whole result, which ends a LINQ chain
-        instead of forming a query. The other five frameworks take them.
+        instead of forming a query.
+        <strong>NHibernate and EclipseLink refuse <span class="ldbc-intermediate-refusal-count"></span></strong>:
+        the queries over the result of another, because HQL of NHibernate 5.7 and JPQL have
+        neither <code>WITH</code> nor a subquery in <code>FROM</code>. Every other translated
+        query reaches all five targets.
       </p>
       <p class="muted-note">
         &ldquo;Translated&rdquo; is the first level of verification: the target artifact is

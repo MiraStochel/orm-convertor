@@ -297,6 +297,16 @@ public static class LdbcSnbSample
     private static readonly LdbcRefusal EFCoreCount = new(Model.ORMEnum.EFCore,
         "A count over the whole result is a call that ends a LINQ chain, not a query, and the tool emits queries.");
 
+    /// <summary>
+    /// A query over the result of another query - a common table expression, a derived table -
+    /// has no form in two of the six query languages (decision 112).
+    /// </summary>
+    private static readonly LdbcRefusal NHibernateIntermediate = new(Model.ORMEnum.NHibernate,
+        "HQL of NHibernate 5.7 has neither WITH nor a subquery in FROM, so a query over the result of another query has no form in it.");
+
+    private static readonly LdbcRefusal EclipseLinkIntermediate = new(Model.ORMEnum.EclipseLink,
+        "JPQL has neither WITH nor a subquery in FROM, and EclipseLink's own subquery in FROM stands only as a cross join beside an entity.");
+
     private static readonly LdbcParameter PersonId = new("personId", "BIGINT", "4398046513938");
     private static readonly LdbcParameter MessageId = new("messageId", "BIGINT", "1374390048303");
 
@@ -746,10 +756,13 @@ public static class LdbcSnbSample
             """,
             [new("tagClass", "NVARCHAR(256)", "MusicalArtist"), new("country", "NVARCHAR(256)", "China")]),
 
-        new("bi4", LdbcWorkload.BusinessIntelligence, 4, "Top message creators by country", LdbcTranslation.NotTranslated,
+        new("bi4", LdbcWorkload.BusinessIntelligence, 4, "Top message creators by country", LdbcTranslation.AsSpecified,
             "The 100 forums with the most members from one country, then the messages their members wrote in any of "
             + "them. The popularity of a forum is a maximum over counts - an aggregate of an aggregate - and the second "
-            + "step reads the result of the first, so the natural text is two common table expressions.",
+            + "step reads the result of the first, so the text is common table expressions (decision 112): the member "
+            + "counts, the top forums, and the messages written in a top forum, which the outer join of each member "
+            + "reads - the same rows as an outer join filtered by IN over the top forums, which would put a subquery "
+            + "into ON.",
             """
             WITH MemberCount AS (
                 SELECT f.Id AS ForumId, co.Id AS CountryId, COUNT(*) AS Members
@@ -764,17 +777,21 @@ public static class LdbcSnbSample
                 SELECT TOP (100) mc.ForumId, MAX(mc.Members) AS Popularity
                 FROM MemberCount AS mc
                 GROUP BY mc.ForumId
-                ORDER BY Popularity DESC, mc.ForumId ASC)
+                ORDER BY Popularity DESC, mc.ForumId ASC),
+            TopForumMessage AS (
+                SELECT m.Id AS MessageId, m.CreatorPersonId AS CreatorPersonId
+                FROM Message AS m
+                JOIN TopForum AS t2 ON t2.ForumId = m.ContainerForumId)
             SELECT TOP (100) p.Id AS PersonId, p.FirstName AS PersonFirstName, p.LastName AS PersonLastName,
-                   p.CreationDate AS PersonCreationDate, COUNT(DISTINCT m.Id) AS MessageCount
+                   p.CreationDate AS PersonCreationDate, COUNT(DISTINCT tm.MessageId) AS MessageCount
             FROM TopForum AS tf
             JOIN Forum_hasMember_Person AS fm ON fm.ForumId = tf.ForumId
             JOIN Person AS p ON p.Id = fm.PersonId
-            LEFT JOIN Message AS m ON m.CreatorPersonId = p.Id AND m.ContainerForumId IN (SELECT t2.ForumId FROM TopForum AS t2)
+            LEFT JOIN TopForumMessage AS tm ON tm.CreatorPersonId = p.Id
             GROUP BY p.Id, p.FirstName, p.LastName, p.CreationDate
             ORDER BY MessageCount DESC, p.Id ASC
             """,
-            [new("date", "DATE", "2010-02-01")]),
+            [new("date", "DATE", "2010-02-01")], [NHibernateIntermediate, EclipseLinkIntermediate]),
 
         new("bi5", LdbcWorkload.BusinessIntelligence, 5, "Most active posters of a given topic", LdbcTranslation.AsSpecified,
             "Per author of messages with a tag: the messages, the direct replies to them and the likes they received, "
@@ -844,23 +861,31 @@ public static class LdbcSnbSample
             """,
             [new("tag", "NVARCHAR(256)", "Genghis_Khan")]),
 
-        new("bi8", LdbcWorkload.BusinessIntelligence, 8, "Central person for a tag", LdbcTranslation.Simplified,
+        new("bi8", LdbcWorkload.BusinessIntelligence, 8, "Central person for a tag", LdbcTranslation.AsSpecified,
             "Persons interested in a tag or writing messages with it inside an open interval, scored 100 for the interest "
-            + "plus one per message. Left out: the friends' score, which sums the scores of each person's friends and so "
-            + "reads the result of the query itself; the result is ordered by the person's own score.",
+            + "plus one per message, and beside it the friends' score, the sum of the scores of each person's friends. "
+            + "The friends' score reads the scores themselves, so they are a common table expression the query reads "
+            + "twice (decision 112): once for the person and once, over knows, for the friends.",
             """
-            SELECT TOP (100) p.Id AS PersonId,
-                   CASE WHEN i.PersonId IS NULL THEN 0 ELSE 100 END + COUNT(DISTINCT mt.MessageId) AS Score
-            FROM Person AS p
-            JOIN Tag AS t ON t.Name = @tag
-            LEFT JOIN Person_hasInterest_Tag AS i ON i.PersonId = p.Id AND i.TagId = t.Id
-            LEFT JOIN Message AS m ON m.CreatorPersonId = p.Id AND m.CreationDate > @startDate AND m.CreationDate < @endDate
-            LEFT JOIN Message_hasTag_Tag AS mt ON mt.MessageId = m.Id AND mt.TagId = t.Id
-            WHERE i.PersonId IS NOT NULL OR mt.MessageId IS NOT NULL
-            GROUP BY p.Id, i.PersonId
-            ORDER BY Score DESC, p.Id ASC
+            WITH PersonScore AS (
+                SELECT p.Id AS PersonId,
+                       CASE WHEN i.PersonId IS NULL THEN 0 ELSE 100 END + COUNT(DISTINCT mt.MessageId) AS Score
+                FROM Person AS p
+                JOIN Tag AS t ON t.Name = @tag
+                LEFT JOIN Person_hasInterest_Tag AS i ON i.PersonId = p.Id AND i.TagId = t.Id
+                LEFT JOIN Message AS m ON m.CreatorPersonId = p.Id AND m.CreationDate > @startDate AND m.CreationDate < @endDate
+                LEFT JOIN Message_hasTag_Tag AS mt ON mt.MessageId = m.Id AND mt.TagId = t.Id
+                WHERE i.PersonId IS NOT NULL OR mt.MessageId IS NOT NULL
+                GROUP BY p.Id, i.PersonId)
+            SELECT TOP (100) ps.PersonId AS PersonId, ps.Score AS Score, COALESCE(SUM(fs.Score), 0) AS FriendsScore
+            FROM PersonScore AS ps
+            LEFT JOIN Person_knows_Person AS k ON k.Person1Id = ps.PersonId
+            LEFT JOIN PersonScore AS fs ON fs.PersonId = k.Person2Id
+            GROUP BY ps.PersonId, ps.Score
+            ORDER BY ps.Score + COALESCE(SUM(fs.Score), 0) DESC, ps.PersonId ASC
             """,
-            [new("tag", "NVARCHAR(256)", "Sammy_Sosa"), new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-06-01")], [EFCoreJoin]),
+            [new("tag", "NVARCHAR(256)", "Sammy_Sosa"), new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-06-01")],
+            [EFCoreJoin, NHibernateIntermediate, EclipseLinkIntermediate]),
 
         new("bi9", LdbcWorkload.BusinessIntelligence, 9, "Top thread initiators", LdbcTranslation.AsSpecified,
             "Per person, the threads started in an interval and all their messages in it, root included. The whole "
@@ -940,9 +965,10 @@ public static class LdbcSnbSample
             """,
             [new("country", "NVARCHAR(256)", "India"), new("startDate", "DATE", "2010-06-01"), new("endDate", "DATE", "2011-06-01")], [EFCoreCount]),
 
-        new("bi12", LdbcWorkload.BusinessIntelligence, 12, "How many persons have a given number of messages", LdbcTranslation.NotTranslated,
+        new("bi12", LdbcWorkload.BusinessIntelligence, 12, "How many persons have a given number of messages", LdbcTranslation.AsSpecified,
             "A histogram: messages per person, then persons per number of messages. The second grouping is over the "
-            + "result of the first - a derived table in FROM, which the representation does not carry.",
+            + "result of the first - a derived table in FROM, which the representation carries as an intermediate result "
+            + "of the query (decision 112).",
             """
             SELECT pc.MessageCount, COUNT(*) AS PersonCount
             FROM (SELECT p.Id AS PersonId, COUNT(m.Id) AS MessageCount
@@ -957,32 +983,39 @@ public static class LdbcSnbSample
             ORDER BY PersonCount DESC, pc.MessageCount DESC
             """,
             [new("startDate", "DATE", "2011-06-01"), new("lengthThreshold", "INT", "100"),
-             new("languages", "VARCHAR(40)", "ar,hu", IsList: true)]),
+             new("languages", "VARCHAR(40)", "ar,hu", IsList: true)], [EFCoreJoin, NHibernateIntermediate, EclipseLinkIntermediate]),
 
-        new("bi13", LdbcWorkload.BusinessIntelligence, 13, "Zombies in a country", LdbcTranslation.Simplified,
+        new("bi13", LdbcWorkload.BusinessIntelligence, 13, "Zombies in a country", LdbcTranslation.AsSpecified,
             "Zombies are persons of a country who wrote on average less than one message a month; the months are counted "
-            + "with YEAR and MONTH and compared in HAVING, inside an IN subquery. Left out: the likes from other zombies "
-            + "and the score built on them - telling a zombie liker needs the zombie subquery inside an aggregate, which "
-            + "SQL Server rejects. The zombies are ordered by the likes they received.",
+            + "with YEAR and MONTH and compared in HAVING. The likes a zombie received are counted twice - from every "
+            + "liker created before the end date and from the zombies among them - and their ratio is the score. Telling "
+            + "a zombie liker needs the zombies as rows to join, so they are a common table expression the query reads "
+            + "twice (decision 112), and the counts a second one, which the score divides.",
             """
-            SELECT TOP (100) z.Id AS ZombieId, COUNT(liker.Id) AS TotalLikeCount
-            FROM Person AS z
-            LEFT JOIN Message AS m ON m.CreatorPersonId = z.Id
-            LEFT JOIN Person_likes_Message AS l ON l.MessageId = m.Id
-            LEFT JOIN Person AS liker ON liker.Id = l.PersonId AND liker.CreationDate < @endDate
-            WHERE z.Id IN (
-                SELECT zp.Id
+            WITH Zombie AS (
+                SELECT zp.Id AS ZombieId
                 FROM Person AS zp
                 JOIN Place AS zci ON zci.Id = zp.LocationCityId
                 JOIN Place AS zco ON zco.Id = zci.PartOfPlaceId
                 LEFT JOIN Message AS zm ON zm.CreatorPersonId = zp.Id AND zm.CreationDate < @endDate
                 WHERE zco.Name = @country AND zp.CreationDate < @endDate
                 GROUP BY zp.Id, zp.CreationDate
-                HAVING COUNT(zm.Id) < (YEAR(@endDate) - YEAR(zp.CreationDate)) * 12 + MONTH(@endDate) - MONTH(zp.CreationDate) + 1)
-            GROUP BY z.Id
-            ORDER BY TotalLikeCount DESC, z.Id ASC
+                HAVING COUNT(zm.Id) < (YEAR(@endDate) - YEAR(zp.CreationDate)) * 12 + MONTH(@endDate) - MONTH(zp.CreationDate) + 1),
+            ZombieLikes AS (
+                SELECT z.ZombieId AS ZombieId, COUNT(liker.Id) AS TotalLikeCount, COUNT(lz.ZombieId) AS ZombieLikeCount
+                FROM Zombie AS z
+                LEFT JOIN Message AS m ON m.CreatorPersonId = z.ZombieId
+                LEFT JOIN Person_likes_Message AS l ON l.MessageId = m.Id
+                LEFT JOIN Person AS liker ON liker.Id = l.PersonId AND liker.CreationDate < @endDate
+                LEFT JOIN Zombie AS lz ON lz.ZombieId = liker.Id
+                GROUP BY z.ZombieId)
+            SELECT TOP (100) zl.ZombieId AS ZombieId, zl.ZombieLikeCount AS ZombieLikeCount, zl.TotalLikeCount AS TotalLikeCount,
+                   CASE WHEN zl.TotalLikeCount = 0 THEN 0.0 ELSE 1.0 * zl.ZombieLikeCount / zl.TotalLikeCount END AS ZombieScore
+            FROM ZombieLikes AS zl
+            ORDER BY ZombieScore DESC, zl.ZombieId ASC
             """,
-            [new("country", "NVARCHAR(256)", "India"), new("endDate", "DATE", "2012-09-01")], [EFCoreJoin]),
+            [new("country", "NVARCHAR(256)", "India"), new("endDate", "DATE", "2012-09-01")],
+            [EFCoreJoin, NHibernateIntermediate, EclipseLinkIntermediate]),
 
         new("bi14", LdbcWorkload.BusinessIntelligence, 14, "International dialog", LdbcTranslation.Simplified,
             "Pairs of friends from two countries scored by four kinds of interaction, each a CASE over EXISTS. Left out: "

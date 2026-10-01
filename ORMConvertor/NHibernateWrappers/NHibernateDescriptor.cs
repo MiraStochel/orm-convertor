@@ -132,9 +132,11 @@ public static class NHibernateDescriptor
             [MappingFactCategory.TransientProperty] = FactSupport.Expressible,
         },
 
-        // HQL covers every category except set operations: NHibernate 5.7.0 has no UNION,
-        // INTERSECT or EXCEPT in HQL. Pagination is expressible even though it is not part of
-        // the HQL text - it is SetMaxResults on the surrounding IQuery.
+        // HQL covers every category except set operations and intermediate results:
+        // NHibernate 5.7.0 has no UNION, INTERSECT or EXCEPT in HQL, and admits a subquery in
+        // the select and where clauses only - no WITH, no subquery in from (decision 112).
+        // Pagination is expressible even though it is not part of the HQL text - it is
+        // SetMaxResults on the surrounding IQuery.
         QuerySupport = new Dictionary<QueryFeature, FactSupport>
         {
             [QueryFeature.Projection] = FactSupport.Expressible,
@@ -150,6 +152,7 @@ public static class NHibernateDescriptor
             [QueryFeature.SetOperation] = FactSupport.NotExpressible,
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
             [QueryFeature.Expression] = FactSupport.Expressible,
+            [QueryFeature.IntermediateResult] = FactSupport.NotExpressible,
         },
 
         // HQL in NHibernate 5.7.0 registers every function of the expression vocabulary over

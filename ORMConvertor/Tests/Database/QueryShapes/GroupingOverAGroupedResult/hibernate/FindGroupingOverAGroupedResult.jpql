@@ -1,0 +1,6 @@
+select lc.Lines as Lines, count(*) as Orders
+from (select ol.CompanyId as CompanyId, ol.OrderId as OrderId, count(ol) as Lines
+      from ShopOrderLine ol
+      group by ol.CompanyId, ol.OrderId) lc
+where lc.CompanyId > 1
+group by lc.Lines

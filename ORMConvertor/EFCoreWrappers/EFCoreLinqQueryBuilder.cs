@@ -2,6 +2,7 @@ using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Naming;
+using Microsoft.CodeAnalysis.CSharp;
 using Model;
 using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
@@ -49,8 +50,11 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
     protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
     {
+        // An intermediate result is the local variable that holds its chain (decision 112);
+        // its element is an anonymous type, so it names no entity.
+        var definition = IsDefinition(clauses.From.Table);
         var map = EntityFor(clauses.From.Table);
-        var entity = map?.Entity.Name ?? SingularOf(clauses.From.Table);
+        var entity = definition ? null : map?.Entity.Name ?? SingularOf(clauses.From.Table);
 
         scope = new LinqScope
         {
@@ -68,13 +72,13 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             enclosingVisitor);
 
         tupleAliases.Clear();
-        tupleAliases.Add(clauses.From.Alias ?? entity);
+        tupleAliases.Add(clauses.From.Alias ?? entity ?? clauses.From.Table);
         orderingAfterProjection = string.Empty;
 
         artifact.ResultEntity = entity;
-        artifact.Source.Append($"ctx.Set<{entity}>()");
+        artifact.Source.Append(definition ? Variables[clauses.From.Table] : $"ctx.Set<{entity}>()");
 
-        if (map is null)
+        if (map is null && !definition)
         {
             Report(
                 ConversionRecordKind.Convention,
@@ -91,6 +95,10 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             var rightAlias = join.RightTableAlias ?? Bare(join.RightTable).ToLowerInvariant();
             var rightMap = EntityFor(join.RightTable);
             var rightEntity = rightMap?.Entity.Name ?? SingularOf(join.RightTable);
+
+            // The inner sequence: the entity's set, or the variable of an intermediate result
+            // (decision 112), which EF Core joins as a derived table.
+            var rightSequence = IsDefinition(join.RightTable) ? Variables[join.RightTable] : $"ctx.Set<{rightEntity}>()";
 
             if (!TryReadJoinKeys(join.OnCondition, rightAlias, out var pairs))
             {
@@ -114,7 +122,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
                 : $"{leftParam}, {rightAlias}";
 
             var arguments =
-                $"ctx.Set<{rightEntity}>(), " +
+                $"{rightSequence}, " +
                 $"{leftParam} => {leftKeys}, " +
                 $"{rightAlias} => {rightKeys}, " +
                 $"({leftParam}, {rightAlias}) => new {{ {members} }}";
@@ -179,7 +187,8 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         foreach (var candidate in new[] { "t", "row", "q", "z" })
         {
             if (!tupleAliases.Contains(candidate, StringComparer.OrdinalIgnoreCase)
-                && !enclosingParams.Contains(candidate))
+                && !enclosingParams.Contains(candidate)
+                && !Variables.ContainsValue(candidate))
             {
                 return candidate;
             }
@@ -188,16 +197,124 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         return "row" + tupleAliases.Count;
     }
 
-    /// <summary>A name not taken by any enclosing lambda parameter (decision 061).</summary>
+    /// <summary>
+    /// A name not taken by any enclosing lambda parameter (decision 061), nor by a variable
+    /// that holds an intermediate result (decision 112): C# forbids a lambda parameter that
+    /// shadows a local of the method, and the alias of a derived table is its name.
+    /// </summary>
     private string FreshName(string candidate)
     {
         var name = candidate;
-        for (int i = 1; enclosingParams.Contains(name); i++)
+        for (int i = 1; enclosingParams.Contains(name) || Variables.ContainsValue(name); i++)
         {
             name = candidate + i;
         }
 
         return name;
+    }
+
+    private IReadOnlyList<WithInstruction>? variablesOf;
+    private Dictionary<string, string> variables = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The local variable of the generated method that holds each intermediate result
+    /// (decision 112): the definition's own name, made a C# identifier where it is a
+    /// keyword, and numbered on where it would clash with the context or a parameter of the
+    /// method - the variable is a detail of the generated code, as a lambda parameter is,
+    /// and is renamed on collision the way a lambda parameter is. Derived once per Build,
+    /// before the first step names a lambda parameter.
+    /// </summary>
+    private Dictionary<string, string> Variables
+    {
+        get
+        {
+            if (ReferenceEquals(variablesOf, Definitions))
+            {
+                return variables;
+            }
+
+            variablesOf = Definitions;
+            variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            var taken = new HashSet<string>(StringComparer.Ordinal) { "ctx" };
+            foreach (var parameter in Parameters)
+            {
+                taken.Add(QueryParameterNaming.IdentifierFor(parameter));
+            }
+
+            foreach (var definition in Definitions)
+            {
+                var name = SyntaxFacts.GetKeywordKind(definition.Name) == SyntaxKind.None ? definition.Name : "@" + definition.Name;
+                var candidate = name;
+                for (var i = 1; taken.Contains(candidate); i++)
+                {
+                    candidate = name + i;
+                }
+
+                taken.Add(candidate);
+                variables[definition.Name] = candidate;
+            }
+
+            return variables;
+        }
+    }
+
+    /// <summary>
+    /// The declarations of the intermediate results, one statement each, in the order the
+    /// query defines them, so that a definition reading an earlier one finds its variable
+    /// declared (decision 112). Each body is a chain composed through the eight steps, from
+    /// its own root, exactly as an operand of a set operation is. Null when a body could not
+    /// be rendered and the reason is on the channel.
+    /// </summary>
+    private string? DefinitionStatements()
+    {
+        var statements = new System.Text.StringBuilder();
+
+        foreach (var definition in Definitions)
+        {
+            var clauses = NormalizeDefinition(definition, out var setOperation);
+            var chain = setOperation is not null
+                ? RenderSetOperation(setOperation, out _)
+                : clauses is not null ? ComposeChain(clauses) : null;
+
+            if (chain is null)
+            {
+                return null;
+            }
+
+            statements.Append($"var {Variables[definition.Name]} = {chain};\n    ");
+        }
+
+        return statements.ToString();
+    }
+
+    /// <summary>One set of clauses as a whole chain from its root, with the scope it leaves behind restored.</summary>
+    private string ComposeChain(QueryClauses clauses)
+    {
+        var savedScope = scope;
+        var savedVisitor = visitor;
+        var savedTuples = tupleAliases.ToList();
+        var savedOrderingAfter = orderingAfterProjection;
+
+        var artifact = Compose(clauses);
+        var chain = string.Concat(
+            artifact.Source,
+            artifact.Joins,
+            artifact.Filter,
+            artifact.Grouping,
+            artifact.PostFilter,
+            artifact.Ordering,
+            artifact.Projection,
+            orderingAfterProjection,
+            artifact.Pagination);
+
+        scope = savedScope;
+        visitor = savedVisitor;
+        tupleAliases.Clear();
+        tupleAliases.AddRange(savedTuples);
+        orderingAfterProjection = savedOrderingAfter;
+
+        return chain;
     }
 
     /// <summary>
@@ -326,6 +443,37 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
                               string.Equals(p.Alias, order.Operand.Property, StringComparison.OrdinalIgnoreCase));
 
             (byAlias ? after : before).Add(order);
+        }
+
+        // An OrderBy after the projection starts a new ordering, and EF Core discards the one
+        // before it (verified against EF Core 10: ORDER BY keeps the later keys alone). So
+        // where some keys need the projection and others stand before it, every key goes
+        // after it, named by the projected member that carries it - the order of the keys
+        // is the source's, and a key left in front would be lost. A key the projection does
+        // not carry cannot follow it: with a slice the lost key would select other rows, so
+        // the query is refused (decision 053); without one only the order of ties changes.
+        if (after.Count > 0 && before.Count > 0)
+        {
+            if (before.All(o => clauses.Projections.Any(p => Projects(p, o))))
+            {
+                orderingAfterProjection = Chain([.. clauses.OrderBys], "p", o => KeyAfterDistinct(clauses, o));
+                return;
+            }
+
+            var lost = before.First(o => !clauses.Projections.Any(p => Projects(p, o)));
+            if (clauses.Offset is not null || clauses.Limit is not null)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The ordering key '{lost.Operand}' is not projected and stands before a key that names the projection; a LINQ ordering after the projection discards the one before it, so the slice would select other rows; no artifact was generated.",
+                    QueryFeature.Ordering);
+                return;
+            }
+
+            Report(
+                ConversionRecordKind.Loss,
+                $"The ordering key '{lost.Operand}' is not projected and stands before a key that names the projection; a LINQ ordering after the projection discards the one before it, so the rows come back ordered by the keys after the projection alone.",
+                QueryFeature.Ordering);
         }
 
         artifact.Ordering.Append(Chain(before, scope.Param, o => visitor.Visit(o)));
@@ -619,11 +767,16 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         }
 
         var returnType = elementEntity is not null ? $"IQueryable<{elementEntity}>" : "IQueryable";
+        if (DefinitionStatements() is not { } statements)
+        {
+            return [];
+        }
+
         var method =
             $$"""
             public static {{returnType}} {{MethodName}}(DbContext ctx{{CSharpParameters()}})
             {
-                return {{chain}};
+                {{statements}}return {{chain}};
             }
             """;
 
@@ -718,10 +871,18 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             artifact.Pagination);
 
         // A projection into an anonymous type, a tuple produced by a join and a grouping all
-        // have element types the artifact cannot name, so the method is typed non-generically.
-        var returnType = clauses.ProjectsWholeEntity && !scope.Composite && !scope.Grouped
+        // have element types the artifact cannot name, so the method is typed non-generically;
+        // so has the row of an intermediate result (decision 112).
+        var returnType = clauses.ProjectsWholeEntity && !scope.Composite && !scope.Grouped && artifact.ResultEntity is not null
             ? $"IQueryable<{artifact.ResultEntity}>"
             : "IQueryable";
+
+        // The intermediate results as variables before the chain (decision 112), rendered
+        // after the chain is assembled, because composing them moves the scope the chain read.
+        if (DefinitionStatements() is not { } statements)
+        {
+            return [];
+        }
 
         // EF Core needs no binding call: the parameters of the method are captured by the
         // lambdas of the chain, which is how the source wrote them too (decision 083).
@@ -729,7 +890,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             $$"""
             public static {{returnType}} {{MethodName}}(DbContext ctx{{CSharpParameters()}})
             {
-                return {{chain}};
+                {{statements}}return {{chain}};
             }
             """;
 

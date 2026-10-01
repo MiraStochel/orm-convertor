@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindGroupingOverAGroupedResultMapper">
+  <select id="findGroupingOverAGroupedResult" resultType="ShopOrderLine">
+    SELECT lc.Lines AS Lines, COUNT(*) AS Orders
+    FROM (SELECT ol.CompanyId AS CompanyId, ol.OrderId AS OrderId, COUNT(*) AS Lines
+          FROM {{schema}}.ShopOrderLines AS ol
+          GROUP BY ol.CompanyId, ol.OrderId) AS lc
+    WHERE lc.CompanyId &gt; 1
+    GROUP BY lc.Lines
+  </select>
+</mapper>

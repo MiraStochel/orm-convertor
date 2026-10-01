@@ -74,21 +74,31 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
         currentAliases = aliased;
 
+        // An intermediate result is read under its own name, and always with an alias: HQL
+        // does not resolve a path over a common table expression read without one (decision
+        // 112, verified). It materializes into no class, so the query is the untyped one.
+        var definition = IsDefinition(clauses.From.Table);
         var map = EntityFor(clauses.From.Table);
-        var entity = map?.Entity.Name ?? EntityTableNaming.EntityNameFor(clauses.From.Table);
-        var alias = clauses.From.Alias ?? entity.ToLowerInvariant();
+        var entity = definition ? clauses.From.Table : map?.Entity.Name ?? EntityTableNaming.EntityNameFor(clauses.From.Table);
+        var alias = clauses.From.Alias ?? (definition ? entity : entity.ToLowerInvariant());
+
+        var intermediate = aliased
+            .Where(pair => pair.Value.Table is { } table && IsDefinition(table))
+            .Select(pair => pair.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         visitor = new JpqlQueryVisitor(
             aliased,
             alias,
             (kind, reason, feature) => Report(kind, reason, feature),
             RenderSubQuery,
-            Expressions);
+            Expressions,
+            intermediate);
 
-        artifact.ResultEntity = entity;
+        artifact.ResultEntity = definition ? null : entity;
         artifact.Source.Append($"from {entity} {alias}");
 
-        if (map is null)
+        if (map is null && !definition)
         {
             Report(
                 ConversionRecordKind.Convention,
@@ -151,6 +161,15 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     protected override void BuildProjection(QueryClauses clauses, QueryArtifact artifact)
     {
         var distinct = clauses.Distinct ? "select distinct " : "select ";
+
+        // The whole row of an intermediate result is its columns: HQL refuses `select d` over
+        // a derived root, which has no identity to select by (decision 112, verified).
+        if (clauses.ProjectsWholeEntity && IsDefinition(clauses.From.Table))
+        {
+            var row = clauses.From.Alias ?? clauses.From.Table;
+            artifact.Projection.Append(distinct).Append(string.Join(", ", ColumnsOf(clauses.From.Table).Select(column => $"{row}.{column}")));
+            return;
+        }
 
         if (clauses.ProjectsWholeEntity)
         {
@@ -252,7 +271,78 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)
     {
         var text = RenderSetOperation(instruction);
-        return text is null ? [] : FinalizeText(text, null, string.Empty);
+        return text is null || WithClause() is not { } with ? [] : FinalizeText(with + text, null, string.Empty);
+    }
+
+    /// <summary>
+    /// The parameters a slice inside an intermediate result names in the text (decision
+    /// 112): the slice of the query lives on the query object, but a definition's slice is
+    /// part of its body, so its parameter is bound by name like any other.
+    /// </summary>
+    private readonly HashSet<string> boundInText = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The definitions of the query as HQL's with clause before the statement (decision
+    /// 112): each body composed through the eight steps on one line, its slice written into
+    /// the text - offset and fetch first, which HQL takes inside a common table expression
+    /// where JPQL takes no slice at all. Empty for a query that defines nothing, null when a
+    /// body could not be rendered and the reason is on the channel. Only Hibernate reaches
+    /// here: EclipseLink's descriptor refuses the intermediate result before any step.
+    /// </summary>
+    private string? WithClause()
+    {
+        boundInText.Clear();
+
+        if (Definitions.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var rendered = new List<string>(Definitions.Count);
+        foreach (var definition in Definitions)
+        {
+            var clauses = NormalizeDefinition(definition, out var setOperation);
+            var body = setOperation is not null
+                ? RenderSetOperation(setOperation)
+                : clauses is not null ? OneLine(Compose(clauses), withOrdering: true) + SliceText(clauses) : null;
+
+            if (body is null)
+            {
+                return null;
+            }
+
+            rendered.Add($"{definition.Name} as (\n    {body}\n)");
+        }
+
+        return $"with {string.Join(",\n", rendered)}\n";
+    }
+
+    /// <summary>The slice of a definition's body as HQL text: a number, or the parameter by the name the method binds it under.</summary>
+    private string SliceText(QueryClauses clauses)
+    {
+        string Count(RowCount count)
+        {
+            if (count.Parameter is not { } parameter)
+            {
+                return count.Value!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            boundInText.Add(QueryParameterNaming.IdentifierFor(parameter));
+            return parameter.IsPositional ? $"?{parameter.Position}" : $":{parameter.Name}";
+        }
+
+        var text = string.Empty;
+        if (clauses.Offset is { } offset)
+        {
+            text += $" offset {Count(offset)} rows";
+        }
+
+        if (clauses.Limit is { } limit)
+        {
+            text += $" fetch first {Count(limit)} rows only";
+        }
+
+        return text;
     }
 
     private string? RenderSetOperation(SetOperationInstruction instruction)
@@ -339,7 +429,9 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         };
 
         var jpql = string.Join("\n", parts.Where(p => p.Length > 0).Select(p => p.ToString()));
-        return FinalizeText(jpql, clauses.ProjectsWholeEntity ? artifact.ResultEntity : null, artifact.Pagination.ToString());
+        return WithClause() is { } with
+            ? FinalizeText(with + jpql, clauses.ProjectsWholeEntity ? artifact.ResultEntity : null, artifact.Pagination.ToString())
+            : [];
     }
 
     /// <summary>
@@ -358,7 +450,8 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         // Only the parameters the JPQL names are bound: the slice lives on the query object,
         // so a row count is an argument of setMaxResults and binding it by name again would
         // name a parameter the query does not have, which JPA rejects (decision 085).
-        var binding = string.Concat(BoundParameters.Select(p =>
+        var bound = BoundParameters.ToList();
+        var binding = string.Concat(Parameters.Where(p => bound.Contains(p) || boundInText.Contains(QueryParameterNaming.IdentifierFor(p))).Select(p =>
         {
             var name = QueryParameterNaming.IdentifierFor(p);
             var key = p.IsPositional ? p.Position!.Value.ToString() : $"\"{p.Name}\"";

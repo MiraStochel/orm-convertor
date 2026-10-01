@@ -19,12 +19,14 @@ namespace JakartaPersistence;
 /// standard, which both implementations add (decision 077).
 /// </summary>
 /// <param name="typing">The typed view of the query's expressions the builder's gate filled (decision 107): which <c>+</c> stands over a string, because JPQL spells a concatenation with a word of its own.</param>
+/// <param name="intermediate">The aliases whose rows are an intermediate result of the query (decision 112), over which HQL counts with <c>count(*)</c>: a derived row has no identity for <c>count(d)</c> to count.</param>
 public sealed class JpqlQueryVisitor(
     Dictionary<string, EntityMap> entities,
     string sourceAlias,
     Action<ConversionRecordKind, string, QueryFeature?> report,
     Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery,
-    ExpressionTyping typing) : IQueryVisitor
+    ExpressionTyping typing,
+    IReadOnlySet<string>? intermediate = null) : IQueryVisitor
 {
     /// <summary>The escape character of the like whose pattern is being written (decision 107); null outside a pattern.</summary>
     private string? patternEscape;
@@ -214,10 +216,15 @@ public sealed class JpqlQueryVisitor(
     /// <param name="distinct">Whether the aggregate ranges over the distinct values of the column (decision 102).</param>
     private string Column(string? alias, string attribute, string? function, bool distinct = false)
     {
-        // count(*) is not JPQL; the standard counts the identification variable.
+        // count(*) is not JPQL; the standard counts the identification variable. A row of an
+        // intermediate result has no identity to count, so there HQL's count(*) stands - the
+        // one target that writes a definition is Hibernate (decision 112).
         if (function is not null && attribute == "*")
         {
-            return $"{function.ToLowerInvariant()}({alias ?? sourceAlias})";
+            var counted = alias ?? sourceAlias;
+            return intermediate?.Contains(counted) == true
+                ? $"{function.ToLowerInvariant()}(*)"
+                : $"{function.ToLowerInvariant()}({counted})";
         }
 
         var path = alias is null ? Property(null, attribute) : $"{alias}.{Property(alias, attribute)}";

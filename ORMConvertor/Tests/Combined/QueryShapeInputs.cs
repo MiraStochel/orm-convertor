@@ -411,6 +411,23 @@ public static class QueryShapeInputs
             hql: ["(select count(*)", ") >= :minLines", ".SetParameter(\"minLines\", minLines)"],
             jpa: ["(select count(ol)", ") >= :minLines", ".setParameter(\"minLines\", minLines)"],
             myBatis: ["(SELECT COUNT(*)", ") &gt;= #{minLines}", "@Param(\"minLines\") long minLines"]),
+
+        // ---- the rows of decision 112, a query as a source of rows ----
+        //
+        // Every target that writes the shape writes it as a named definition before the
+        // statement - WITH, HQL's with, a local variable of the LINQ method -, the derived
+        // table of the source included; NHibernate and EclipseLink refuse it.
+        ["GroupingOverAGroupedResult"] = Hallmarks(
+            sql: ["WITH lc AS (", "COUNT(*) AS Lines", "GROUP BY ol.CompanyId, ol.OrderId", "FROM lc AS lc", "WHERE lc.CompanyId > 1", "GROUP BY lc.Lines", "COUNT(*) AS Orders"],
+            linq: ["var lc = ", "Lines = g.Count()", "return lc", ".CompanyId > 1", "Orders = g.Count()"],
+            jpa: ["with lc as (", "count(ol) as Lines", "from lc lc", "where lc.CompanyId > 1", "group by lc.Lines", "count(*) as Orders"]),
+
+        // The definition is named LineCount by the SQL and HQL rows and lineCount by the LINQ
+        // variable, so the hallmarks leave the name out and name what every row shares.
+        ["IntermediateResultReadTwice"] = Hallmarks(
+            sql: ["WITH ", "COUNT(*) AS Lines", "GROUP BY ol.CompanyId, ol.OrderId", " lc ON ", "lc.Lines >= (SELECT MAX(m.Lines) FROM "],
+            linq: ["var ", "Lines = g.Count()", ".Join(", ".lc.Lines >= ", ".Max(m => m.Lines)"],
+            jpa: ["with ", "count(ol) as Lines", "join ", " lc on ", "lc.Lines >= (select max(m.Lines) from "]),
     };
 
     // ---- the deliberately bad query ------------------------------------------------------

@@ -66,7 +66,7 @@ public abstract class AbstractQueryBuilder
             // the alias resolves to that class, so that a column renders as the property
             // the class really declares and typed as it declares it. The scalar gate keeps
             // its own resolution, so what a parameter's scalar follows from is unchanged.
-            var map = EntityFor(table) ?? ByDerivedName(table);
+            var map = RenderedEntityFor(table);
             if (map is not null && alias is not null)
             {
                 byAlias[alias] = map;
@@ -84,10 +84,17 @@ public abstract class AbstractQueryBuilder
 
     /// <summary>
     /// The entity mapped to a table, matched on the qualified name first and on the bare
-    /// table name after it.
+    /// table name after it. A name the query defines as an intermediate result answers with
+    /// the row the template describes for it (decision 112), typed through stated mappings
+    /// only, as everything this method answers is.
     /// </summary>
     protected EntityMap? EntityFor(string table)
     {
+        if (statedRows.TryGetValue(table, out var row))
+        {
+            return row;
+        }
+
         var bare = table.Split('.').LastOrDefault() ?? table;
 
         return EntityMaps.FirstOrDefault(m =>
@@ -97,6 +104,15 @@ public abstract class AbstractQueryBuilder
                ?? EntityMaps.FirstOrDefault(m =>
                    string.Equals(m.Entity.Name, bare, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// The entity a table renders as: the row of an intermediate result of that name typed
+    /// the way rendering types (decision 112), the stated mapping, or the class the naming
+    /// convention of decision 050 derives. The resolution of every walk that types what the
+    /// visitors write; the parameter gate keeps <see cref="EntityFor"/>.
+    /// </summary>
+    private EntityMap? RenderedEntityFor(string table)
+        => renderedRows.TryGetValue(table, out var row) ? row : EntityFor(table) ?? ByDerivedName(table);
 
     /// <summary>The entity whose name the naming convention derives from the table (decision 050), where no mapping names the table.</summary>
     private EntityMap? ByDerivedName(string table)
@@ -236,6 +252,38 @@ public abstract class AbstractQueryBuilder
     {
         instructions.Add(new FromInstruction(table, alias));
     }
+
+    /// <summary>
+    /// The named intermediate results of the query in the order they were read (decision
+    /// 112). They stand beside the instructions rather than among them, because a definition
+    /// belongs to the whole query and a reader meets a derived table deep inside a scope it is
+    /// still filling; the order is the order of dependencies, because a reader defines a
+    /// derived table inside a body before it defines the body.
+    /// </summary>
+    private readonly List<WithInstruction> definitions = [];
+
+    /// <summary>
+    /// Records a named intermediate result of the query (decision 112): a WITH, a derived
+    /// table named by its alias, a composed LINQ chain named by the variable or lambda
+    /// parameter that holds its rows. The body is a scope the parser closed with
+    /// <see cref="PopOperand"/>; a row source refers to the definition by passing its name
+    /// to <see cref="From"/> or <see cref="Join"/> where a table would stand.
+    /// </summary>
+    public void Define(string name, SubQueryInstruction body)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(body);
+        definitions.Add(new WithInstruction(name, body));
+    }
+
+    /// <summary>
+    /// Whether the query already defines an intermediate result of this name - what a reader
+    /// asks before it reads a name as a table, and before it lifts a derived table whose
+    /// alias would mean two things (decision 112).
+    /// </summary>
+    public bool Defines(string name) => definitions.Any(d => SameName(d.Name, name));
+
+    private static bool SameName(string left, string right) => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Records one projected value with an optional alias (decision 107): a column, a
@@ -436,10 +484,34 @@ public abstract class AbstractQueryBuilder
 
         var body = Unwrap(instructions);
 
+        // The intermediate results first (decision 112): whether the target writes them at
+        // all, and the rules every definition is held to, before anything reads a column of
+        // one; then the row of each, which every walk below resolves a reference through.
+        if (!GateDefinitions())
+        {
+            return [];
+        }
+
+        DescribeDefinitions();
+
         // A string literal compared with a temporal column is the moment the source wrote
         // - T-SQL and HQL have no other spelling - and takes the column's scalar here, over
         // the whole query and before anything reads the comparisons (decision 024, the
-        // direction the readers cannot cover).
+        // direction the readers cannot cover). The bodies of the definitions are part of the
+        // query, so they are typed with it.
+        var typedDefinitions = new List<WithInstruction>(gatedDefinitions.Count);
+        foreach (var definition in gatedDefinitions)
+        {
+            if (TypeTemporalLiterals(definition.Body, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase)) is not { } typed)
+            {
+                return [];
+            }
+
+            typedDefinitions.Add(definition with { Body = typed });
+        }
+
+        gatedDefinitions = typedDefinitions;
+
         if (!TypeTemporalLiterals(body, [], out body))
         {
             return [];
@@ -942,6 +1014,539 @@ public abstract class AbstractQueryBuilder
     private static bool IsWholeNumber(ScalarType scalar)
         => scalar is ScalarType.Byte or ScalarType.Short or ScalarType.Int or ScalarType.Long;
 
+    /* ---- intermediate results (decision 112) ----------------------------------------- */
+
+    /// <summary>
+    /// The definitions a builder renders, in order: held to the rules of the gate below,
+    /// every column of a body named explicitly, and the bodies typed the way the rest of the
+    /// query is. Empty until <see cref="Build"/> has run them through, and empty for a query
+    /// that defines nothing.
+    /// </summary>
+    private List<WithInstruction> gatedDefinitions = [];
+
+    /// <inheritdoc cref="gatedDefinitions"/>
+    protected IReadOnlyList<WithInstruction> Definitions => gatedDefinitions;
+
+    /// <summary>
+    /// The row of each intermediate result as an entity that exists only inside this query
+    /// (decision 112): a property and a column of one name for every projection of the
+    /// body, typed by the gate from the body's scope. Two of them, because the template
+    /// resolves names two ways - the parameter gate through stated mappings only
+    /// (<see cref="EntityFor"/>), rendering through the naming convention as well
+    /// (<see cref="RenderedEntityFor"/>) - and a column of a definition is typed from the
+    /// columns its body reads in whichever way the walk asking resolves them.
+    /// </summary>
+    private readonly Dictionary<string, EntityMap> statedRows = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <inheritdoc cref="statedRows"/>
+    private readonly Dictionary<string, EntityMap> renderedRows = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Whether the name a row source carries is an intermediate result of the query rather than a table (decision 112).</summary>
+    protected bool IsDefinition(string table) => Defines(table);
+
+    /// <summary>
+    /// The names of the columns of an intermediate result in the order its body projects
+    /// them - what a target writes for a whole-row projection over one where the language has
+    /// no other spelling of it (HQL refuses <c>select d</c> over a derived root).
+    /// </summary>
+    protected IReadOnlyList<string> ColumnsOf(string definition)
+        => renderedRows.TryGetValue(definition, out var row)
+            ? [.. row.PropertyMaps.Select(p => p.ColumnName!)]
+            : [];
+
+    /// <summary>
+    /// Describes the row of every definition, in order, so that a definition reading an
+    /// earlier one finds its row already there. The maps hold what the template derives and
+    /// nothing else: no key, no relation, no table of the database - they never leave the
+    /// builder, and no entity artifact comes of them.
+    /// </summary>
+    private void DescribeDefinitions()
+    {
+        statedRows.Clear();
+        renderedRows.Clear();
+
+        foreach (var definition in definitions)
+        {
+            // A second definition of the name is the gate's to refuse; the first one stands.
+            if (statedRows.ContainsKey(definition.Name))
+            {
+                continue;
+            }
+
+            var select = LeftmostSelect(Unwrap(definition.Body.Instructions));
+            var stated = RowOf(definition.Name, select, ScopeAliases(select, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), EntityFor));
+            var rendered = RowOf(definition.Name, select, ScopeAliases(select, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), RenderedEntityFor));
+
+            statedRows[definition.Name] = stated;
+            renderedRows[definition.Name] = rendered;
+        }
+    }
+
+    private EntityMap RowOf(string name, IReadOnlyList<QueryInstruction> select, Dictionary<string, EntityMap> aliases)
+    {
+        var map = new EntityMap
+        {
+            Entity = new Entity { Name = name },
+            Table = name,
+        };
+
+        foreach (var projection in select.OfType<ProjectInstruction>())
+        {
+            // A column without a name, or a second one of a name, is the gate's to refuse.
+            if (ColumnNameOf(projection) is not { } column
+                || map.PropertyMaps.Any(p => SameName(p.ColumnName!, column)))
+            {
+                continue;
+            }
+
+            var property = new Property
+            {
+                Name = column,
+                Type = ScalarOf(projection.Operand, aliases) is { } scalar ? LangType.Scalar(scalar) : null,
+            };
+
+            map.Entity.Properties.Add(property);
+            map.PropertyMaps.Add(new PropertyMap { Property = property, ColumnName = column });
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    /// The name a column of an intermediate result goes by: the alias, or for a bare column
+    /// the column itself, which is how SQL names it. An aggregate or an expression without
+    /// an alias has none.
+    /// </summary>
+    private static string? ColumnNameOf(ProjectInstruction projection)
+        => projection.Alias
+           ?? (projection.Operand is { IsColumn: true, IsAggregate: false } column && column.Property != "*" ? column.Property : null);
+
+    /// <summary>
+    /// The SELECT whose projections name the columns of a body: the body itself, or for a
+    /// body that is a set operation its leftmost operand, which is where SQL takes the names
+    /// of a set operation's columns from.
+    /// </summary>
+    private static IReadOnlyList<QueryInstruction> LeftmostSelect(IReadOnlyList<QueryInstruction> body)
+    {
+        while (body.Count > 0 && body[0] is SetOperationInstruction operation)
+        {
+            body = Unwrap(operation.Left.Instructions);
+        }
+
+        return body;
+    }
+
+    /// <summary>
+    /// Holds every definition of the query to the rules of decision 112, in one place for
+    /// every target (decision 023), and fills <see cref="Definitions"/> with what passed,
+    /// each body with its columns named. A target that cannot express an intermediate
+    /// result refuses the query outright: a definition left out would leave its row source
+    /// naming a table that does not exist (decision 053). Returns false when the query
+    /// cannot be built, having reported why.
+    /// </summary>
+    private bool GateDefinitions()
+    {
+        gatedDefinitions = [];
+
+        if (definitions.Count == 0)
+        {
+            return true;
+        }
+
+        if (Descriptor.SupportOf(QueryFeature.IntermediateResult) == FactSupport.NotExpressible)
+        {
+            var named = string.Join(", ", definitions.Select(d => $"'{d.Name}'"));
+            var what = definitions.Count == 1
+                ? $"the intermediate result {named} as a source of rows - a common table expression or a derived table -"
+                : $"the intermediate results {named} as sources of rows - common table expressions or derived tables -";
+            Report(
+                ConversionRecordKind.Failure,
+                $"The query reads {what} which {Descriptor.Framework} cannot express, and a query emitted without {(definitions.Count == 1 ? "it" : "them")} would read a table that does not exist; no artifact was generated.",
+                QueryFeature.IntermediateResult);
+            return false;
+        }
+
+        var admitted = true;
+
+        for (var i = 0; i < definitions.Count; i++)
+        {
+            var definition = definitions[i];
+
+            if (definitions.Take(i).Any(d => SameName(d.Name, definition.Name)))
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"Two intermediate results of the query are named '{definition.Name}', and a row source finds a definition by its name; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+                admitted = false;
+                continue;
+            }
+
+            var body = Unwrap(definition.Body.Instructions);
+            var read = Scopes(body).SelectMany(RowSourcesOf).ToList();
+
+            if (read.Any(table => SameName(table, definition.Name)))
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The intermediate result '{definition.Name}' reads itself, which is a recursive common table expression the query representation does not carry yet; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+                admitted = false;
+                continue;
+            }
+
+            if (definitions.Skip(i + 1).FirstOrDefault(later => read.Any(table => SameName(table, later.Name))) is { } forward)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The intermediate result '{definition.Name}' reads '{forward.Name}', which the query defines after it; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+                admitted = false;
+                continue;
+            }
+
+            if (ReadsOutside(body, new HashSet<string>(StringComparer.OrdinalIgnoreCase)) is { } outer)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The intermediate result '{definition.Name}' reads '{outer}', which it does not declare itself - a lateral reference to the query around it, which the query representation does not carry; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+                admitted = false;
+                continue;
+            }
+
+            var projections = LeftmostSelect(body).OfType<ProjectInstruction>().ToList();
+
+            if (projections.Count == 0)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The intermediate result '{definition.Name}' projects the whole entity rather than naming its columns, and the columns of an intermediate result are its projections; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+                admitted = false;
+                continue;
+            }
+
+            if (projections.FirstOrDefault(p => ColumnNameOf(p) is null) is { } nameless)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The column '{nameless.Operand}' of the intermediate result '{definition.Name}' has no name, so the query around it could not name it either; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+                admitted = false;
+                continue;
+            }
+
+            var twice = projections
+                .GroupBy(p => ColumnNameOf(p)!, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault(g => g.Count() > 1);
+            if (twice is not null)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The intermediate result '{definition.Name}' has two columns named '{twice.Key}', and the query around it names a column by its name; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+                admitted = false;
+                continue;
+            }
+
+            gatedDefinitions.Add(definition with { Body = Named(definition.Body) });
+        }
+
+        return admitted;
+    }
+
+    /// <summary>
+    /// The body with every column of its naming SELECT carrying its name as an alias, so that
+    /// a target which requires one there - HQL refuses a CTE column without it - gets it where
+    /// the source left the column to name itself. The meaning does not change: the alias is
+    /// the name SQL gives the column anyway.
+    /// </summary>
+    private static SubQueryInstruction Named(SubQueryInstruction body)
+    {
+        var inner = Unwrap(body.Instructions);
+
+        if (inner.Count > 0 && inner[0] is SetOperationInstruction operation)
+        {
+            return new SubQueryInstruction([operation with { Left = Named(operation.Left) }, .. inner.Skip(1)]);
+        }
+
+        return new SubQueryInstruction([.. inner.Select(instruction =>
+            instruction is ProjectInstruction { Alias: null } projection
+                ? projection with { Alias = ColumnNameOf(projection) }
+                : instruction)]);
+    }
+
+    /// <summary>The names the row sources of one scope carry: its FROM and the right sides of its joins.</summary>
+    private static IEnumerable<string> RowSourcesOf(IReadOnlyList<QueryInstruction> scope)
+        => scope.OfType<FromInstruction>().Select(f => f.Table)
+            .Concat(scope.OfType<JoinInstruction>().Select(j => j.RightTable));
+
+    /// <summary>
+    /// Every scope of a body: the body, the operands of a set operation, and every subquery
+    /// standing as an operand - in a condition, a projection, an ordering key or inside an
+    /// expression -, each with the scopes inside it.
+    /// </summary>
+    private static IEnumerable<IReadOnlyList<QueryInstruction>> Scopes(IReadOnlyList<QueryInstruction> body)
+    {
+        yield return body;
+
+        foreach (var instruction in body)
+        {
+            IEnumerable<IReadOnlyList<QueryInstruction>> inner = instruction switch
+            {
+                SetOperationInstruction operation => Scopes(Unwrap(operation.Left.Instructions)).Concat(Scopes(Unwrap(operation.Right.Instructions))),
+                SubQueryInstruction nested => Scopes(Unwrap(nested.Instructions)),
+                _ => OperandsOf(instruction).Where(o => o.IsSubQuery).SelectMany(o => Scopes(Unwrap(o.SubQuery!.Instructions))),
+            };
+
+            foreach (var scope in inner)
+            {
+                yield return scope;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The first qualifier a body uses that none of its scopes declares around the use, or
+    /// null - a definition sees nothing of the query around it (decision 112). A qualifier
+    /// is declared by an alias of a row source, or by its name where the source wrote none.
+    /// </summary>
+    private static string? ReadsOutside(IReadOnlyList<QueryInstruction> body, HashSet<string> enclosing)
+    {
+        var declared = new HashSet<string>(enclosing, StringComparer.OrdinalIgnoreCase);
+
+        void Declare(string table, string? alias)
+        {
+            declared.Add(alias ?? table);
+            declared.Add(table);
+            declared.Add(table.Split('.').LastOrDefault() ?? table);
+        }
+
+        foreach (var source in body.OfType<FromInstruction>())
+        {
+            Declare(source.Table, source.Alias);
+        }
+
+        foreach (var join in body.OfType<JoinInstruction>())
+        {
+            Declare(join.RightTable, join.RightTableAlias);
+        }
+
+        foreach (var instruction in body)
+        {
+            switch (instruction)
+            {
+                case SetOperationInstruction operation:
+                    if ((ReadsOutside(Unwrap(operation.Left.Instructions), enclosing)
+                         ?? ReadsOutside(Unwrap(operation.Right.Instructions), enclosing)) is { } fromOperand)
+                    {
+                        return fromOperand;
+                    }
+
+                    continue;
+
+                case SubQueryInstruction nested:
+                    if (ReadsOutside(Unwrap(nested.Instructions), declared) is { } fromNested)
+                    {
+                        return fromNested;
+                    }
+
+                    continue;
+
+                case GroupByInstruction grouping when !declared.Contains(grouping.Table):
+                    return grouping.Table;
+            }
+
+            foreach (var operand in OperandsOf(instruction))
+            {
+                if (operand.IsSubQuery)
+                {
+                    if (ReadsOutside(Unwrap(operand.SubQuery!.Instructions), declared) is { } fromSubQuery)
+                    {
+                        return fromSubQuery;
+                    }
+                }
+                else if (operand is { IsColumn: true, Table: { } qualifier } && !declared.Contains(qualifier))
+                {
+                    return qualifier;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The operands one instruction stands over, without descending into a subquery: each
+    /// operand of its projection, ordering key or condition tree, with the leaves of every
+    /// expression and the operands of every condition inside a CASE. A subquery comes out as
+    /// the operand it is, for the caller to descend into or not.
+    /// </summary>
+    private static IEnumerable<QueryOperand> OperandsOf(QueryInstruction instruction) => instruction switch
+    {
+        ProjectInstruction projection => Flatten(projection.Operand),
+        OrderByInstruction order => Flatten(order.Operand),
+        SelectInstruction filter => OperandsOf(filter.Condition),
+        HavingInstruction postFilter => OperandsOf(postFilter.Condition),
+        JoinInstruction join => OperandsOf(join.OnCondition),
+        _ => [],
+    };
+
+    private static IEnumerable<QueryOperand> OperandsOf(ConditionNode? node) => node switch
+    {
+        ComparisonCondition comparison => Flatten(comparison.Left).Concat(comparison.Right is null ? [] : Flatten(comparison.Right)),
+        LogicalCondition logical => logical.Operands.SelectMany(OperandsOf),
+        NotCondition negation => OperandsOf(negation.Operand),
+        _ => [],
+    };
+
+    private static IEnumerable<QueryOperand> Flatten(QueryOperand operand)
+    {
+        yield return operand;
+
+        if (operand.Values is { } values)
+        {
+            foreach (var value in values)
+            {
+                yield return value;
+            }
+        }
+
+        if (operand.Expression is { } expression)
+        {
+            foreach (var leaf in expression.Leaves().SelectMany(Flatten))
+            {
+                yield return leaf;
+            }
+
+            foreach (var inner in expression.Branches?.SelectMany(b => OperandsOf(b.When)) ?? [])
+            {
+                yield return inner;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The clauses of a definition's body for a builder to compose (decision 112), or null.
+    /// A body that is a set operation comes back in <paramref name="setOperation"/> for the
+    /// builder to render as one, with a DISTINCT over it folded by the identity decision 073
+    /// gives. An ordering without a slice is dropped with a record: T-SQL does not allow it
+    /// in a common table expression or a derived table, and the order of an intermediate
+    /// result's rows does not change which rows the query over it returns - the sentence
+    /// decision 061 said of a subquery. Null without <paramref name="setOperation"/> means
+    /// the body cannot be rendered, and the reason is on the channel.
+    /// </summary>
+    protected QueryClauses? NormalizeDefinition(WithInstruction definition, out SetOperationInstruction? setOperation)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+
+        setOperation = null;
+        var body = Unwrap(definition.Body.Instructions);
+
+        if (body.Count > 0 && body[0] is SetOperationInstruction operation && body.Skip(1).All(i => i is DistinctInstruction))
+        {
+            setOperation = body.Count > 1 ? DistinctOver(operation) : operation;
+            return null;
+        }
+
+        var clauses = Normalize(body);
+        if (clauses is null)
+        {
+            return null;
+        }
+
+        if (clauses.OrderBys.Count > 0 && clauses.Offset is null && clauses.Limit is null)
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"The ordering inside the intermediate result '{definition.Name}' has no slice to decide, and the order of an intermediate result's rows does not change which rows the query over it returns; it was dropped.",
+                QueryFeature.Ordering);
+
+            clauses = WithoutOrdering(clauses);
+        }
+
+        return clauses;
+    }
+
+    /// <summary>The same clauses without their ordering keys.</summary>
+    protected static QueryClauses WithoutOrdering(QueryClauses clauses)
+    {
+        ArgumentNullException.ThrowIfNull(clauses);
+
+        return new QueryClauses
+        {
+            From = clauses.From,
+            Projections = clauses.Projections,
+            Joins = clauses.Joins,
+            Filter = clauses.Filter,
+            GroupBys = clauses.GroupBys,
+            PostFilter = clauses.PostFilter,
+            OrderBys = [],
+            Offset = clauses.Offset,
+            Limit = clauses.Limit,
+            Distinct = clauses.Distinct,
+        };
+    }
+
+    /// <summary>
+    /// The definition a column operand reads through its qualifier, or null for a column
+    /// of a table: the qualifier is an alias whose row the template described for an
+    /// intermediate result.
+    /// </summary>
+    private WithInstruction? DefinitionBehind(QueryOperand column, Dictionary<string, EntityMap> aliases)
+    {
+        if (column is not { IsColumn: true, Table: { } qualifier })
+        {
+            return null;
+        }
+
+        var row = aliases.GetValueOrDefault(qualifier) ?? (statedRows.TryGetValue(qualifier, out var named) ? named : null);
+        return row is null
+            ? null
+            : definitions.FirstOrDefault(d => statedRows.TryGetValue(d.Name, out var described) && ReferenceEquals(described, row));
+    }
+
+    /// <summary>
+    /// The demand behind one column of an intermediate result (decision 105 over decision
+    /// 112): the table behind the column of the definition's body that the column is, in the
+    /// body's own scope - a COUNT asks for nothing, an expression for the tables of its
+    /// columns, a column of an earlier definition for what stands behind that one.
+    /// </summary>
+    private void DemandDefinitionColumn(WithInstruction definition, string column, List<QueryTableDemand> found, HashSet<string>? visited = null)
+    {
+        visited ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!visited.Add(definition.Name))
+        {
+            return;
+        }
+
+        var select = LeftmostSelect(Unwrap(definition.Body.Instructions));
+        var projection = select.OfType<ProjectInstruction>()
+            .FirstOrDefault(p => ColumnNameOf(p) is { } name && SameName(name, column));
+        if (projection is null)
+        {
+            return;
+        }
+
+        var scopeAliases = ScopeAliases(select, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), EntityFor);
+        var scopeUnbound = UnboundTables(select, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+        if (TableTheGateCannotResolve(projection.Operand, ComparisonOperator.Equal, scopeAliases, scopeUnbound) is { } table)
+        {
+            Demand(table, found);
+        }
+        else if (projection.Operand.IsExpression)
+        {
+            DemandColumnsOf(projection.Operand.Expression!, scopeAliases, scopeUnbound, found);
+        }
+        else if (!string.Equals(projection.Operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase)
+                 && DefinitionBehind(projection.Operand, scopeAliases) is { } inner)
+        {
+            DemandDefinitionColumn(inner, projection.Operand.Property!, found, visited);
+        }
+    }
+
     /* ---- parameters (decision 083) -------------------------------------------------- */
 
     private readonly List<QueryParameter> parameters = [];
@@ -1009,7 +1614,15 @@ public abstract class AbstractQueryBuilder
         parameters.Clear();
         rowCountOnly.Clear();
 
+        // The definitions before the body, because that is where the text of every target
+        // that writes them puts them - WITH before the statement, the variables before the
+        // chain - and the order of the signature is the order of first occurrence (S2).
         var occurrences = new List<ParameterOccurrence>();
+        foreach (var definition in gatedDefinitions)
+        {
+            CollectParameters(Unwrap(definition.Body.Instructions), new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), occurrences);
+        }
+
         CollectParameters(body, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), occurrences);
 
         if (occurrences.Count == 0)
@@ -1522,6 +2135,19 @@ public abstract class AbstractQueryBuilder
     {
         var demands = new List<QueryTableDemand>();
 
+        // The rows of the intermediate results resolve a reference to one as a stated
+        // mapping, so that nobody asks the catalog for a table named after a definition, and
+        // their bodies are walked like any scope (decision 112).
+        DescribeDefinitions();
+        foreach (var definition in definitions)
+        {
+            CollectDemands(
+                Unwrap(definition.Body.Instructions),
+                new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase),
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                demands);
+        }
+
         CollectDemands(
             Unwrap(instructions),
             new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase),
@@ -1666,6 +2292,15 @@ public abstract class AbstractQueryBuilder
             Demand(table, found);
         }
 
+        // The other side is a column of an intermediate result: the scalar comes from the
+        // column of the definition's body it names (decision 112).
+        if (op is not ComparisonOperator.Like
+            && !string.Equals(other?.Function, "COUNT", StringComparison.OrdinalIgnoreCase)
+            && other is not null && DefinitionBehind(other, aliases) is { } definition)
+        {
+            DemandDefinitionColumn(definition, other.Property!, found);
+        }
+
         // The other side is an expression: the parameter's scalar comes from it, and so from
         // every column it stands over.
         if (other?.IsExpression == true)
@@ -1743,6 +2378,10 @@ public abstract class AbstractQueryBuilder
             {
                 Demand(table, found);
             }
+            else if (leaf.IsColumn && leaf.Property != "*" && !leaf.IsAggregate && DefinitionBehind(leaf, aliases) is { } definition)
+            {
+                DemandDefinitionColumn(definition, leaf.Property!, found);
+            }
             else if (leaf.IsExpression)
             {
                 DemandColumnsOf(leaf.Expression!, aliases, unbound, found);
@@ -1782,6 +2421,11 @@ public abstract class AbstractQueryBuilder
         else if (projection.IsExpression)
         {
             DemandColumnsOf(projection.Expression!, scopeAliases, scopeUnbound, found);
+        }
+        else if (!string.Equals(projection.Function, "COUNT", StringComparison.OrdinalIgnoreCase)
+                 && DefinitionBehind(projection, scopeAliases) is { } definition)
+        {
+            DemandDefinitionColumn(definition, projection.Property!, found);
         }
     }
 
@@ -2058,7 +2702,16 @@ public abstract class AbstractQueryBuilder
     private bool GateExpressions(IReadOnlyList<QueryInstruction> body)
     {
         Expressions.Clear();
-        return GateExpressions(body, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase));
+
+        // The bodies of the intermediate results are scopes of the query like any other
+        // (decision 112); each stands on its own, seeing nothing of the query around it.
+        var admitted = true;
+        foreach (var definition in gatedDefinitions)
+        {
+            admitted &= GateExpressions(Unwrap(definition.Body.Instructions), new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase));
+        }
+
+        return GateExpressions(body, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase)) && admitted;
     }
 
     private bool GateExpressions(IReadOnlyList<QueryInstruction> body, Dictionary<string, EntityMap> enclosing)
@@ -2067,7 +2720,7 @@ public abstract class AbstractQueryBuilder
         // convention of decision 050 as well: the typed view is what the visitors write from,
         // and a column of a source that states no table renders as the property its class
         // declares. The parameter gate keeps its own, narrower resolution.
-        var aliases = ScopeAliases(body, enclosing, table => EntityFor(table) ?? ByDerivedName(table));
+        var aliases = ScopeAliases(body, enclosing, RenderedEntityFor);
         var admitted = true;
 
         foreach (var instruction in body)
@@ -2337,7 +2990,7 @@ public abstract class AbstractQueryBuilder
         Dictionary<string, EntityMap> enclosing,
         out IReadOnlyList<QueryInstruction> typed)
     {
-        var aliases = ScopeAliases(body, enclosing, table => EntityFor(table) ?? ByDerivedName(table));
+        var aliases = ScopeAliases(body, enclosing, RenderedEntityFor);
         var result = new List<QueryInstruction>(body.Count);
         typed = result;
 
@@ -2496,7 +3149,7 @@ public abstract class AbstractQueryBuilder
         ScalarType? scalar;
         if (other.IsSubQuery)
         {
-            scalar = ScalarOf(other.SubQuery!, aliases, table => EntityFor(table) ?? ByDerivedName(table));
+            scalar = ScalarOf(other.SubQuery!, aliases, RenderedEntityFor);
         }
         else if (other.IsColumn && !string.Equals(other.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
         {

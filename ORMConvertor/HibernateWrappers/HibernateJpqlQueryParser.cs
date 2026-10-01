@@ -13,9 +13,15 @@ namespace HibernateWrappers;
 ///
 /// Both clauses take a number or a parameter, which is the shape paged HQL is written in,
 /// and the representation carries either (decision 085).
+///
+/// HQL also reads a query as a source of rows - the with clause and a subquery in from or
+/// after join -, which the representation carries as a named intermediate result
+/// (decision 112), so the profile turns the shared reading of it on.
 /// </summary>
 public sealed class HibernateJpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : JpqlQueryParser(queryBuilders)
 {
+    protected override bool ReadsIntermediateResults => true;
+
     protected override bool TryReadDialectClause()
     {
         RowCount? limit = null, offset = null;

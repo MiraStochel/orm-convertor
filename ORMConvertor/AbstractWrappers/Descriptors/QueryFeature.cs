@@ -64,4 +64,17 @@ public enum QueryFeature
     /// position the expression does not take.
     /// </summary>
     Expression = 13,
+
+    /// <summary>
+    /// A query as a source of rows - a common table expression, a derived table, a LINQ
+    /// chain composed over a grouped projection or a slice (decision 112). The model carries
+    /// one as a named intermediate result of the whole query, which a row source refers to
+    /// by name. Unlike the other categories, a target that cannot express it refuses the
+    /// query rather than reporting a loss: a definition left out would leave the row source
+    /// naming a table that does not exist. Besides that refusal, what is recorded here is a
+    /// limit of the model - a definition that reads the query around it (a lateral
+    /// reference), names itself (recursion), projects the whole entity or a column without a
+    /// name, or shares its name with another definition or with a table the query reads.
+    /// </summary>
+    IntermediateResult = 14,
 }

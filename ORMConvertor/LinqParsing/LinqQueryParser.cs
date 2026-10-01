@@ -451,9 +451,31 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// in for (decision 103): a Take(1) that was First(), a Where that was the predicate of
     /// FirstOrDefault(predicate), so that a record about the step names what was written.
     /// </summary>
-    private sealed record ChainStep(string Name, InvocationExpressionSyntax Node, string? RewrittenFrom = null)
+    private sealed record ChainStep(string Name, InvocationExpressionSyntax Node, string? RewrittenFrom = null, string? AfterVariable = null)
     {
         public string Written => RewrittenFrom ?? Name;
+    }
+
+    /// <summary>
+    /// The links of a chain, with where the chain crossed a variable that holds a query
+    /// (decision 112): <see cref="ChainStep.AfterVariable"/> on the first link written after
+    /// it, and <see cref="EndsWithVariable"/> where nothing in the expression continues the
+    /// variable - the chain is the variable's. Where a step past such a boundary has to read
+    /// the rows of the variable as an intermediate result, the variable is the name the
+    /// source gave them.
+    /// </summary>
+    private sealed class ChainSteps : List<ChainStep>
+    {
+        public ChainSteps()
+        {
+        }
+
+        public ChainSteps(IEnumerable<ChainStep> steps)
+            : base(steps)
+        {
+        }
+
+        public string? EndsWithVariable { get; set; }
     }
 
     private bool TryDecompose(
@@ -475,7 +497,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         out List<ChainStep> steps,
         out ExpressionSyntax? rootExpression)
     {
-        steps = [];
+        var chain = new ChainSteps();
+        steps = chain;
         var current = expression;
 
         while (true)
@@ -505,6 +528,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
             if (current is IdentifierNameSyntax head && variables.TryFollow(head, out var held))
             {
+                // The boundary of the variable, for a step that has to read its rows as an
+                // intermediate result named after it (decision 112). The steps are collected
+                // from the outermost in, so the last one so far is the first written after it.
+                var name = head.Identifier.Text;
+                if (chain.Count == 0)
+                {
+                    chain.EndsWithVariable ??= name;
+                }
+                else if (chain[^1].AfterVariable is null)
+                {
+                    chain[^1] = chain[^1] with { AfterVariable = name };
+                }
+
                 followed.Add(held!);
                 current = held!;
                 continue;
@@ -586,7 +622,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     {
         var enclosingGroupingKeys = groupingKeys;
         var enclosingRow = row;
+        var enclosingProjected = scopeProjected;
+        var enclosingProjections = scopeProjections;
         groupingKeys = [];
+        scopeProjected = false;
+        scopeProjections = [];
         enclosingRows.Add(enclosingRow);
 
         try
@@ -597,8 +637,87 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         {
             groupingKeys = enclosingGroupingKeys;
             row = enclosingRow;
+            scopeProjected = enclosingProjected;
+            scopeProjections = enclosingProjections;
             enclosingRows.RemoveAt(enclosingRows.Count - 1);
         }
+    }
+
+    /// <summary>
+    /// Whether the scope being read has projected columns - a Select or a result selector
+    /// that named them - after which the lambdas of the chain range over the projected rows,
+    /// which no clause of the scope can point at (decision 112). Saved and restored around a
+    /// nested chain like the grouping keys.
+    /// </summary>
+    private bool scopeProjected;
+
+    /// <summary>The names the projection of the scope gave its columns, which an ordering after it may name.</summary>
+    private List<string> scopeProjections = [];
+
+    /// <summary>
+    /// Whether the provider composes a query over the rows of a projection or a slice, which
+    /// the representation carries as an intermediate result (decision 112). EF Core does and
+    /// turns it into a derived table; NHibernate's provider translates into HQL, which has
+    /// neither a derived table nor WITH, and the default reads no such composition.
+    /// </summary>
+    protected virtual bool ReadsIntermediateResults => false;
+
+    /// <summary>
+    /// Whether a step cannot be read in the scope it follows, because what it ranges over
+    /// is the result of that scope (decision 112): a filter, a grouping, a join or another
+    /// projection over projected rows; an ordering by anything but a projected column;
+    /// after a slice, a step the slice does not commute with; after the collapse of
+    /// DISTINCT, a step that reads differently before it. Only a scope that projected
+    /// columns qualifies - over the whole entity those steps keep the reading they had.
+    /// </summary>
+    private bool SplitsTheScope(ChainStep step, bool sliced, bool distinct)
+    {
+        if (!scopeProjected)
+        {
+            return false;
+        }
+
+        switch (step.Name)
+        {
+            case "Where" or "GroupBy" or "Join" or "LeftJoin" or "RightJoin" or "SelectMany":
+                return true;
+
+            case "Select":
+                return !(TryReadLambdaBody(step.Node, out var body)
+                         && body is IdentifierNameSyntax identity
+                         && LambdaParameterOf(step) == identity.Identifier.Text);
+
+            case "OrderBy" or "OrderByDescending" or "ThenBy" or "ThenByDescending":
+                if (ProjectedColumnOrdered(step) is null)
+                {
+                    return true;
+                }
+
+                break;
+        }
+
+        return (sliced && step.Name is not ("Skip" or "Take") && !CommutesWithPagination(step.Name))
+               || (distinct && DoesNotCommuteWithDistinct(step.Name));
+    }
+
+    /// <summary>The projected column an ordering after the projection names - <c>p =&gt; p.Total</c> -, or null.</summary>
+    private string? ProjectedColumnOrdered(ChainStep step)
+        => TryReadLambdaBody(step.Node, out var body)
+           && body is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax parameter } member
+           && parameter.Identifier.Text == LambdaParameterOf(step)
+           && scopeProjections.Contains(member.Name.Identifier.Text, StringComparer.Ordinal)
+            ? member.Name.Identifier.Text
+            : null;
+
+    /// <summary>The parameter of the step's lambda that ranges over its rows: the outer key selector of a join, the first lambda of the rest.</summary>
+    private static string? LambdaParameterOf(ChainStep step)
+    {
+        var arguments = step.Node.ArgumentList.Arguments;
+        var lambda = step.Name is "Join" or "LeftJoin" or "RightJoin"
+            ? (arguments.Count > 1 ? arguments[1].Expression : null)
+            : arguments.FirstOrDefault()?.Expression;
+
+        return lambda is SimpleLambdaExpressionSyntax simple ? simple.Parameter.Identifier.Text : null;
     }
 
     private void EmitChainCore(
@@ -608,6 +727,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         string? elementParameter)
     {
         steps = ExpandSingleRowTerminals(steps);
+        var endsWithVariable = (steps as ChainSteps)?.EndsWithVariable;
 
         queryBuilder.Push();
         EmitSource(root, FirstElementLambdaParameter(steps) ?? elementParameter);
@@ -625,6 +745,59 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         {
             queryBuilder.Paginate(pendingOffset, pendingLimit);
             pendingOffset = pendingLimit = null;
+        }
+
+        // The scope read so far becomes an intermediate result of the query, and the chain
+        // goes on in a scope of its own over it (decision 112): the name is the variable
+        // that holds the rows where the chain crossed one, else the parameter the next step
+        // gives them, and the alias of the new scope is that parameter - the name the
+        // lambdas over the rows use. A variable read again - joined once and aggregated
+        // once - is one definition, read once; a parameter name met twice would name two.
+        bool SplitScope(string? name, bool fromVariable, string? alias)
+        {
+            if (!ReadsIntermediateResults)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    "The chain goes on past its projection or its slice with a step that ranges over their result, which this provider does not compose into a query; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+                scopeProjected = false;
+                return false;
+            }
+
+            if (name is null)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    "The chain goes on past its projection or its slice with a step that ranges over their result and names it nowhere - no variable holds the rows and no lambda gives them a name -, and the representation does not invent one; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+                scopeProjected = false;
+                return false;
+            }
+
+            FlushPagination();
+            var body = queryBuilder.PopOperand();
+
+            if (!queryBuilder.Defines(name))
+            {
+                queryBuilder.Define(name, body);
+            }
+            else if (!fromVariable)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The chain names the rows of two intermediate results '{name}', and the representation names each once per query; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+            }
+
+            queryBuilder.Push();
+            sourceAlias = alias ?? name;
+            row = new EntityRow(sourceAlias);
+            queryBuilder.From(name, sourceAlias);
+            groupingKeys = [];
+            scopeProjected = false;
+            scopeProjections = [];
+            return true;
         }
 
         bool HandleSkipOrTake(ChainStep step)
@@ -729,6 +902,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
+            // A step over the result of the scope so far reads it as an intermediate result
+            // (decision 112); the refusals below are what remains for a scope that cannot.
+            if (SplitsTheScope(step, pendingOffset is not null || pendingLimit is not null, distinct)
+                && SplitScope(step.AfterVariable ?? LambdaParameterOf(step), step.AfterVariable is not null, LambdaParameterOf(step)))
+            {
+                distinct = false;
+            }
+
             if (step.Name is "Skip" or "Take")
             {
                 if (!HandleSkipOrTake(step))
@@ -788,6 +969,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         if (!inSetOperation)
         {
+            // A terminal aggregate over projected rows - the maximum of counts - aggregates
+            // the result of the scope, so it stands over that result (decision 112).
+            if (beforeClose is not null && scopeProjected)
+            {
+                SplitScope(endsWithVariable ?? elementParameter, endsWithVariable is not null, elementParameter);
+            }
+
             beforeClose?.Invoke();
             FlushPagination();
             queryBuilder.Pop();
@@ -907,6 +1095,33 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     }
 
     private void EmitStep(ChainStep step, bool followsGrouping)
+    {
+        // Every step names the rows with a lambda parameter of its own, and only the first
+        // one became the alias of the source. A later step that calls the same rows by
+        // another name means the same alias, so its name stands for the alias while the step
+        // is read - the qualifier used to be the parameter itself, an alias no clause
+        // declared. A scope that grouped ranges over groups instead, and a joined row is
+        // resolved through its members, so neither is touched.
+        var parameter = groupingKeys.Count == 0 && row is EntityRow ? LambdaParameterOf(step) : null;
+        var renamed = parameter is not null
+                      && row is EntityRow { Alias: var alias }
+                      && parameter != alias
+                      && aliasSubstitutions.TryAdd(parameter, alias);
+
+        try
+        {
+            EmitStepCore(step, followsGrouping);
+        }
+        finally
+        {
+            if (renamed)
+            {
+                aliasSubstitutions.Remove(parameter!);
+            }
+        }
+    }
+
+    private void EmitStepCore(ChainStep step, bool followsGrouping)
     {
         switch (step.Name)
         {
@@ -1032,7 +1247,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private static List<ChainStep> ExpandSingleRowTerminals(List<ChainStep> steps)
     {
-        List<ChainStep>? expanded = null;
+        ChainSteps? expanded = null;
 
         for (int i = 0; i < steps.Count; i++)
         {
@@ -1045,12 +1260,17 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
-            expanded ??= steps.Take(i).ToList();
+            expanded ??= new ChainSteps(steps.Take(i)) { EndsWithVariable = (steps as ChainSteps)?.EndsWithVariable };
             var receiver = ((MemberAccessExpressionSyntax)step.Node.Expression).Expression;
+
+            // The boundary of a variable the terminal stood right after stays on the first
+            // step it expands into (decision 112).
+            var boundary = step.AfterVariable;
 
             if (terminal is "ElementAt" or "ElementAtOrDefault")
             {
-                expanded.Add(new ChainStep("Skip", Synthesized(receiver, "Skip", step.Node.ArgumentList), step.Name));
+                expanded.Add(new ChainStep("Skip", Synthesized(receiver, "Skip", step.Node.ArgumentList), step.Name, boundary));
+                boundary = null;
             }
             else if (step.Node.ArgumentList.Arguments.FirstOrDefault(a => a.Expression is LambdaExpressionSyntax) is { } predicate)
             {
@@ -1059,14 +1279,17 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 expanded.Add(new ChainStep(
                     "Where",
                     Synthesized(receiver, "Where", SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(predicate))),
-                    step.Name));
+                    step.Name,
+                    boundary));
+                boundary = null;
             }
 
             expanded.Add(new ChainStep(
                 "Take",
                 Synthesized(receiver, "Take", SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(
                     SyntaxFactory.Argument(SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(1)))))),
-                step.Name));
+                step.Name,
+                boundary));
         }
 
         return expanded ?? steps;
@@ -1165,6 +1388,32 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         string rightName = NameOfSource(args[0].Expression);
         string rightTable = ResolveTable(rightName);
+        var rightMap = MapFor(rightName);
+
+        // A variable that holds a query is the inner sequence of the join: the rows it holds,
+        // an intermediate result named after it (decision 112). A variable that holds the
+        // bare root is that table.
+        if (args[0].Expression is IdentifierNameSyntax variable
+            && variables.TryFollow(variable, out var held)
+            && TryDecompose(held!, out var heldRoot, out var heldSteps))
+        {
+            if (heldSteps.Count == 0)
+            {
+                rightName = heldRoot!.Name;
+                rightTable = ResolveTable(rightName);
+                rightMap = MapFor(rightName);
+            }
+            else if (DefineVariable(variable.Identifier.Text, held!, heldRoot!, heldSteps) is { } definition)
+            {
+                rightTable = definition;
+                rightMap = null;
+            }
+            else
+            {
+                return;
+            }
+        }
+
         var selector = args.Count > 3 ? args[3].Expression as ParenthesizedLambdaExpressionSyntax : null;
         string rightAlias = JoinedAlias(selector, rightTable);
 
@@ -1191,7 +1440,51 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         queryBuilder.Join(kind, sourceAlias, rightTable, onCondition, rightAlias);
-        ReadResultSelector(selector, new EntityRow(rightAlias, MapFor(rightName)), "join");
+        ReadResultSelector(selector, new EntityRow(rightAlias, rightMap), "join");
+    }
+
+    /// <summary>
+    /// The query a variable holds, read as an intermediate result named after the variable
+    /// (decision 112) - once per query, so that a variable joined here and aggregated in a
+    /// subquery elsewhere is one definition. The chain is read as a scope of its own that
+    /// sees no row of the query around it, as a definition does not. Null when the provider
+    /// does not compose a query over another, having reported why.
+    /// </summary>
+    private string? DefineVariable(string name, ExpressionSyntax held, LinqQueryRoot root, List<ChainStep> steps)
+    {
+        if (queryBuilder.Defines(name))
+        {
+            return name;
+        }
+
+        if (!ReadsIntermediateResults)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The join reads the query the variable '{name}' holds as its inner sequence, which this provider does not compose into a query; no artifact was generated.",
+                QueryFeature.IntermediateResult);
+            return null;
+        }
+
+        var outerRow = row;
+        var outerAlias = sourceAlias;
+        var outerRows = enclosingRows.ToList();
+        enclosingRows.Clear();
+        row = new JoinedRow(new Dictionary<string, RowShape>(StringComparer.Ordinal));
+
+        followed.Add(held);
+
+        queryBuilder.Push();
+        EmitChain(root, steps);
+        var body = queryBuilder.PopOperand();
+
+        row = outerRow;
+        sourceAlias = outerAlias;
+        enclosingRows.Clear();
+        enclosingRows.AddRange(outerRows);
+
+        queryBuilder.Define(name, body);
+        return name;
     }
 
     /// <summary>
@@ -1498,6 +1791,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             EmitProjection(expression, alias, resolve);
         }
 
+        // From here on the lambdas range over the projected rows (decision 112).
+        scopeProjected = true;
         return new JoinedRow(new Dictionary<string, RowShape>(StringComparer.Ordinal));
     }
 
@@ -1802,6 +2097,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private void EmitProjection(ExpressionSyntax expression, string? alias, Resolve? resolve = null)
     {
+        if (alias is not null)
+        {
+            scopeProjections.Add(alias);
+        }
+
         if (TryReadAggregate(expression, out var aggregate))
         {
             queryBuilder.Project(aggregate!, alias);
@@ -1868,6 +2168,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         if (!TryReadLambdaBody(node, out var body))
         {
             Report(ConversionRecordKind.Loss, "An ordering argument was not a lambda and was dropped.", QueryFeature.Ordering);
+            return;
+        }
+
+        // After the projection the lambda ranges over the projected rows, and a member of
+        // them is a column the projection named: an ordering by that alias (decision 073).
+        // Any other key over them reads the scope as an intermediate result before it comes
+        // here (decision 112).
+        if (scopeProjected
+            && body is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax } projected
+            && scopeProjections.Contains(projected.Name.Identifier.Text, StringComparer.Ordinal))
+        {
+            queryBuilder.OrderBy(null, projected.Name.Identifier.Text, asc);
             return;
         }
 
@@ -3294,6 +3606,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         column = selected;
         elementParameter = lambda.Parameter.Identifier.Text;
+
+        // The Select taken off was the first step after a variable: what is left is the
+        // variable's chain, and its rows keep the variable's name (decision 112).
+        if (steps[last].AfterVariable is { } variable && steps is ChainSteps chain)
+        {
+            chain.EndsWithVariable ??= variable;
+        }
+
         steps.RemoveRange(last, steps.Count - last);
         return true;
     }
@@ -3386,7 +3706,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         return expression switch
         {
             MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax identifier
-                => identifier.Identifier.Text,
+                => AliasFor(identifier.Identifier.Text),
             _ => sourceAlias,
         };
     }

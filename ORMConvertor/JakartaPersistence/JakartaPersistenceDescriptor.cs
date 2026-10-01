@@ -106,8 +106,11 @@ public static class JakartaPersistenceDescriptor
         };
 
     /// <summary>
-    /// JPQL 3.2 with the entity join both implementations add covers every category; the
-    /// pagination lives on the query object, outside the text, like NHibernate's.
+    /// JPQL 3.2 with the entity join both implementations add covers every category but the
+    /// intermediate result: the specification has neither WITH nor a subquery in the from
+    /// clause (decision 112). The pagination lives on the query object, outside the text,
+    /// like NHibernate's. An implementation whose query language goes further - Hibernate's
+    /// HQL - says so in a table of its own built over this one (<see cref="QuerySupportWith"/>).
     /// </summary>
     public static IReadOnlyDictionary<QueryFeature, FactSupport> QuerySupport { get; } =
         new Dictionary<QueryFeature, FactSupport>
@@ -125,7 +128,25 @@ public static class JakartaPersistenceDescriptor
             [QueryFeature.SetOperation] = FactSupport.Expressible,
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
             [QueryFeature.Expression] = FactSupport.Expressible,
+            [QueryFeature.IntermediateResult] = FactSupport.NotExpressible,
         };
+
+    /// <summary>
+    /// The table of the specification with the categories an implementation's query
+    /// language adds over it (decision 112): the one place where the two profiles of the
+    /// layer differ in what their queries express, rather than in the defaults behind the
+    /// same annotations.
+    /// </summary>
+    public static IReadOnlyDictionary<QueryFeature, FactSupport> QuerySupportWith(params QueryFeature[] added)
+    {
+        var table = new Dictionary<QueryFeature, FactSupport>(QuerySupport);
+        foreach (var feature in added)
+        {
+            table[feature] = FactSupport.Expressible;
+        }
+
+        return table;
+    }
 
     /// <summary>
     /// JPQL 3.2 spells every function of the expression vocabulary (decision 107): the

@@ -28,7 +28,10 @@ public static class HibernateDescriptor
         // Hibernate adds no enforced member of its own to the specification's (decision 077).
         EnforcedMembers = JakartaPersistenceDescriptor.EnforcedMembers,
         Support = JakartaPersistenceDescriptor.Support,
-        QuerySupport = JakartaPersistenceDescriptor.QuerySupport,
+
+        // HQL 7.4 adds WITH and a subquery in from and after join to JPQL (decision 112,
+        // verified against this release); EclipseLink keeps the specification's table.
+        QuerySupport = JakartaPersistenceDescriptor.QuerySupportWith(QueryFeature.IntermediateResult),
         Functions = JakartaPersistenceDescriptor.Functions,
     };
 

@@ -263,6 +263,7 @@ public class QueryShapeMatrixTest
     [InlineData("ScalarSubqueryAgainstABoundValue")]
     [InlineData("DistinctProjection")]
     [InlineData("Ordering")]
+    [InlineData("GroupingOverAGroupedResult")]
     public void EverySourceLanguageReadsTheCategoryIntoTheSameSql(string name)
     {
         var shape = QueryShapeInputs.Categories.Single(s => s.Name == name);

@@ -162,6 +162,7 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             else
             {
                 position = 0;
+                ParseWithClause();
                 ParseQueryBody();
 
                 while (TryParseSetOperator() is { } operation)
@@ -778,6 +779,170 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     }
 
     /// <summary>
+    /// Whether the dialect reads a query as a source of rows - a with clause before the
+    /// statement and a subquery in from or after join (decision 112). JPQL 3.2 has neither,
+    /// so the shared parser reads neither; HQL has both, and Hibernate's profile says so.
+    /// </summary>
+    protected virtual bool ReadsIntermediateResults => false;
+
+    /// <summary>
+    /// HQL's with clause, every common table expression of it into a definition of the
+    /// query (decision 112). A hint whether to materialize steers the plan, not the rows,
+    /// and is a loss (decision 048); a column list HQL does not have, and the search and
+    /// cycle clauses belong to a recursive common table expression, which the representation
+    /// does not carry yet.
+    /// </summary>
+    private void ParseWithClause()
+    {
+        if (!AtKeyword("with"))
+        {
+            return;
+        }
+
+        if (!ReadsIntermediateResults)
+        {
+            throw Error("a with clause, which JPQL does not have");
+        }
+
+        Advance();
+
+        do
+        {
+            if (Current.Kind != TokenKind.Identifier)
+            {
+                throw Error("expected the name of a common table expression");
+            }
+
+            var name = Current.Text;
+            Advance();
+
+            if (AtSymbol("("))
+            {
+                throw Error("a column list after the name of a common table expression, which HQL does not have");
+            }
+
+            ConsumeKeyword("as");
+
+            var hint = TryConsumeKeyword("not") ? "not materialized" : null;
+            if (hint is not null)
+            {
+                ConsumeKeyword("materialized");
+            }
+            else if (TryConsumeKeyword("materialized"))
+            {
+                hint = "materialized";
+            }
+
+            if (hint is not null)
+            {
+                Report(ConversionRecordKind.Loss,
+                    $"The common table expression '{name}' is declared {hint}, which steers how the database evaluates it and not which rows it holds; the hint was dropped.",
+                    QueryFeature.IntermediateResult);
+            }
+
+            ConsumeSymbol("(");
+            var body = ParseDefinitionBody();
+            ConsumeSymbol(")");
+
+            if (AtKeyword("search") || AtKeyword("cycle"))
+            {
+                throw Error("a search or cycle clause, which belongs to a recursive common table expression the query representation does not carry yet");
+            }
+
+            if (queryBuilder.Defines(name))
+            {
+                Report(ConversionRecordKind.Failure,
+                    $"The with clause defines '{name}' twice; no artifact was generated.",
+                    QueryFeature.IntermediateResult);
+            }
+            else
+            {
+                queryBuilder.Define(name, body);
+            }
+        }
+        while (TryConsumeSymbol(","));
+    }
+
+    /// <summary>
+    /// The body of a definition: a query or a set operation of queries, read as a scope of
+    /// its own that sees no alias of the query around it - a definition does not (decision
+    /// 112), and a column it qualifies by an outer alias stays unresolved for the template
+    /// to refuse as the lateral reference it is.
+    /// </summary>
+    private SubQueryInstruction ParseDefinitionBody()
+    {
+        var enclosingAlias = sourceAlias;
+        var enclosing = aliases;
+        aliases = new Dictionary<string, EntityMap?>(StringComparer.OrdinalIgnoreCase);
+
+        queryBuilder.Push();
+        queryBuilder.Push();
+        ParseQueryBody();
+
+        while (TryParseSetOperator() is { } operation)
+        {
+            queryBuilder.Pop();
+            queryBuilder.SetOperation(operation);
+            queryBuilder.Push();
+            ParseQueryBody();
+        }
+
+        queryBuilder.Pop();
+
+        sourceAlias = enclosingAlias;
+        aliases = enclosing;
+
+        return queryBuilder.PopOperand();
+    }
+
+    /// <summary>
+    /// A subquery in from or after join, read into a definition of the query named by its
+    /// alias (decision 112), which HQL requires. The alias may not name a definition the
+    /// query has already, nor an entity or a table of the conversion: a definition is found
+    /// by its name, and the name would mean two things.
+    /// </summary>
+    private (string Table, string Alias) ParseDerivedTable()
+    {
+        ConsumeSymbol("(");
+        var body = ParseDefinitionBody();
+        ConsumeSymbol(")");
+
+        var alias = ParseOptionalAlias() ?? throw Error("expected an alias after a subquery in the from clause");
+
+        if (queryBuilder.Defines(alias)
+            || maps?.Any(m => string.Equals(m.Entity.Name, alias, StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(m.Table, alias, StringComparison.OrdinalIgnoreCase)) == true)
+        {
+            Report(ConversionRecordKind.Failure,
+                $"The subquery in the from clause takes the alias '{alias}', which the query already gives a definition, an entity or a table, and the representation names each intermediate result once per query; no artifact was generated.",
+                QueryFeature.IntermediateResult);
+        }
+        else
+        {
+            queryBuilder.Define(alias, body);
+        }
+
+        aliases[alias] = null;
+        return (alias, alias);
+    }
+
+    /// <summary>Whether a subquery stands where a row source would: in from, or after join.</summary>
+    private bool AtDerivedTable()
+    {
+        if (!AtSymbol("(") || !NextIsSubQuery())
+        {
+            return false;
+        }
+
+        if (!ReadsIntermediateResults)
+        {
+            throw Error("a subquery as a source of rows, which JPQL does not have");
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// One (sub)query body in JPQL's clause order: the select clause first, emitted after
     /// the source and the joins because a whole-entity projection needs the declared
     /// aliases (decision 023). The select clause is optional on reading - HQL admits its
@@ -802,7 +967,7 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         ConsumeKeyword("from");
-        var (table, alias) = ParseEntityReference();
+        var (table, alias) = AtDerivedTable() ? ParseDerivedTable() : ParseEntityReference();
         sourceAlias = alias;
         queryBuilder.From(table, alias);
 
@@ -1127,6 +1292,36 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             Report(ConversionRecordKind.Loss,
                 "The fetch modifier of a join only changes what is loaded eagerly; the join was read without it.",
                 QueryFeature.Join);
+        }
+
+        if (AtKeyword("lateral"))
+        {
+            throw Error("a lateral join, which the query representation does not carry");
+        }
+
+        // A subquery after join is a definition of the query joined by its alias, under the
+        // condition the source wrote (decision 112).
+        if (AtDerivedTable())
+        {
+            var (definition, derivedAlias) = ParseDerivedTable();
+
+            if (!TryConsumeKeyword("on") && !TryConsumeKeyword("with"))
+            {
+                Report(ConversionRecordKind.Failure,
+                    "A join onto a subquery without an on condition has no join predicate the query representation can carry, and a query emitted without its join would return different rows; no artifact was generated.",
+                    QueryFeature.Join);
+                return;
+            }
+
+            var derivedCondition = ParseCondition();
+            if (derivedCondition is null)
+            {
+                Refuse("join's on condition", "a query emitted without its join would return different rows", QueryFeature.Join);
+                return;
+            }
+
+            queryBuilder.Join(kind, sourceAlias, definition, derivedCondition, derivedAlias);
+            return;
         }
 
         var parts = ParseDottedName("expected an entity name after 'join'");

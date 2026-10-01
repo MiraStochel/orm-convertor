@@ -16,6 +16,13 @@ namespace EFCoreWrappers;
 public class EFCoreLinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) : LinqQueryParser(queryBuilders)
 {
     /// <summary>
+    /// EF Core composes a query over the rows of a projection or a slice and over a query
+    /// held in a variable, translating it into a derived table (decision 112, verified
+    /// against EF Core 10), so the shared reading of it is on here.
+    /// </summary>
+    protected override bool ReadsIntermediateResults => true;
+
+    /// <summary>
     /// <c>EF.Functions.Like(column, pattern)</c> and the overload with the escape - the
     /// shape the EF Core builder writes where the split of decision 051 is not exact, so
     /// the one the identity direction has to read back. Recognized by the last two names of

@@ -197,11 +197,17 @@ function renderSummary(catalog) {
     count.textContent = String(catalog.queries.filter((query) => query.translation === translation).length);
   }
 
-  const refusedByEFCore = catalog.queries.filter((query) =>
-    query.refusedBy.some((refusal) => refusal.target === ORM.EFCore),
-  ).length;
+  const refusedBy = (target) =>
+    catalog.queries.filter((query) => query.refusedBy.some((refusal) => refusal.target === target)).length;
+
   for (const count of document.querySelectorAll(".ldbc-refusal-count")) {
-    count.textContent = String(refusedByEFCore);
+    count.textContent = String(refusedBy(ORM.EFCore));
+  }
+
+  // NHibernate and EclipseLink refuse the same queries, the ones over the result of another
+  // query (decision 112); the page counts one of them.
+  for (const count of document.querySelectorAll(".ldbc-intermediate-refusal-count")) {
+    count.textContent = String(refusedBy(ORM.NHibernate));
   }
 }
 

@@ -89,6 +89,10 @@ public static class EFCoreDescriptor
             [QueryFeature.SetOperation] = FactSupport.Expressible,
             [QueryFeature.QueryParameter] = FactSupport.Expressible,
             [QueryFeature.Expression] = FactSupport.Expressible,
+
+            // A local variable holding the composed chain, which EF Core 10 turns into a
+            // derived table wherever the query refers to it (decision 112, verified).
+            [QueryFeature.IntermediateResult] = FactSupport.Expressible,
         },
 
         // EF Core 10 translates every function of the expression vocabulary from the

@@ -321,3 +321,25 @@ shape = entity
 ordered = false
 arguments = minLines:long=2
 mutations = filter, operator
+
+# A grouping over the result of a grouping (decision 112): lines per order, then orders per
+# number of lines, among the orders of the second company. The filter stands on a column of
+# the intermediate result in the outer query, which is where every target writes it on a
+# line of its own; inside the definition HQL writes the body on one line, where no mutation
+# would reach it. Dropped, the filter counts both companies; flipped, it keeps nothing.
+[GroupingOverAGroupedResult]
+category = GroupingOverAGroupedResult
+fields = Lines, Orders
+shape = projection
+ordered = false
+mutations = filter, operator
+
+# An intermediate result read twice (decision 112): joined over two columns, and inside the
+# scalar subquery that finds the largest number of lines. Four of the six orders have the
+# largest number, two lines; the filter dropped or flipped keeps all six.
+[IntermediateResultReadTwice]
+category = IntermediateResultReadTwice
+fields = CompanyId, OrderId, Lines
+shape = projection
+ordered = false
+mutations = filter, operator

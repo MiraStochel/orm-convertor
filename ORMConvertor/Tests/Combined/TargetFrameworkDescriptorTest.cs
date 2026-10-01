@@ -121,9 +121,11 @@ public class TargetFrameworkDescriptorTest
 
     /// <summary>
     /// The two implementations of one specification declare the same members and the same
-    /// support, and differ only in what stands beside the descriptor: the profile
-    /// (decisions 076 and 080). If a difference ever appeared in the descriptor itself, the
-    /// shared layer would have stopped being shared and this test says so.
+    /// mapping support, and differ in what stands beside the descriptor: the profile
+    /// (decisions 076 and 080). Their query support differs in exactly one category, the
+    /// intermediate result, which HQL adds over JPQL and EclipseLink's JPQL does not
+    /// (decision 112); any other difference would mean the shared layer stopped being
+    /// shared, and this test says so.
     /// </summary>
     [Fact]
     public void TheJpaImplementationsShareEverythingButTheirProfileAndVersion()
@@ -133,7 +135,14 @@ public class TargetFrameworkDescriptorTest
 
         Assert.Same(hibernate.EnforcedMembers, eclipseLink.EnforcedMembers);
         Assert.Same(hibernate.Support, eclipseLink.Support);
-        Assert.Same(hibernate.QuerySupport, eclipseLink.QuerySupport);
+        Assert.Same(JakartaPersistence.JakartaPersistenceDescriptor.QuerySupport, eclipseLink.QuerySupport);
+        foreach (var feature in Enum.GetValues<QueryFeature>().Where(f => f != QueryFeature.IntermediateResult))
+        {
+            Assert.Equal(eclipseLink.QuerySupport[feature], hibernate.QuerySupport[feature]);
+        }
+
+        Assert.Equal(FactSupport.Expressible, hibernate.QuerySupport[QueryFeature.IntermediateResult]);
+        Assert.Equal(FactSupport.NotExpressible, eclipseLink.QuerySupport[QueryFeature.IntermediateResult]);
         Assert.NotEqual(hibernate.Version, eclipseLink.Version);
 
         var hibernateProfile = HibernateWrappers.HibernateDescriptor.Profile;

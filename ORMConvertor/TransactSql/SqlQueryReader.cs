@@ -61,6 +61,146 @@ public class SqlQueryReader(
     private string sourceAlias = "t";
 
     /// <summary>
+    /// The names the statement gives a table or a common table expression, which a derived
+    /// table lifted into a definition of the whole query may not take (decision 112).
+    /// </summary>
+    private HashSet<string> reservedNames = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The base name of every table reference of a statement, a reference to a common table expression included.</summary>
+    private sealed class StatementTableNames : TSqlFragmentVisitor
+    {
+        public HashSet<string> Names { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public override void Visit(NamedTableReference node)
+        {
+            Names.Add(node.SchemaObject.BaseIdentifier.Value);
+            base.Visit(node);
+        }
+    }
+
+    /// <summary>Whether a fragment reads a table of this name without a schema - how a common table expression names itself.</summary>
+    private sealed class ReadsName(string name) : TSqlFragmentVisitor
+    {
+        public bool Found { get; private set; }
+
+        public override void Visit(NamedTableReference node)
+        {
+            Found |= node.SchemaObject.SchemaIdentifier is null
+                     && string.Equals(node.SchemaObject.BaseIdentifier.Value, name, StringComparison.OrdinalIgnoreCase);
+            base.Visit(node);
+        }
+    }
+
+    /// <summary>
+    /// One common table expression into a definition of the query (decision 112). A
+    /// definition that reads itself is recursive, which the representation does not carry
+    /// yet: refused by name, so that the reference to it is not read as a table either.
+    /// </summary>
+    private void ReadCommonTableExpression(CommonTableExpression expression)
+    {
+        var name = expression.ExpressionName.Value;
+
+        var recursion = new ReadsName(name);
+        expression.QueryExpression.Accept(recursion);
+        if (recursion.Found)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The common table expression '{name}' reads itself, which is a recursive WITH the query representation does not carry yet; no artifact was generated.",
+                QueryFeature.IntermediateResult);
+            return;
+        }
+
+        if (queryBuilder.Defines(name))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The WITH clause defines '{name}' twice, which T-SQL does not accept; no artifact was generated.",
+                QueryFeature.IntermediateResult);
+            return;
+        }
+
+        queryBuilder.Define(name, ReadDefinitionBody(expression.QueryExpression, expression.Columns, name));
+    }
+
+    /// <summary>
+    /// A derived table into a definition of the query named by its alias (decision 112),
+    /// lifted out of the scope it stands in - exact, because the definition sees nothing of
+    /// the query around it, which the builder template holds. Null when the table cannot be
+    /// a definition: its alias would name two things in one query.
+    /// </summary>
+    private string? ReadDerivedTable(QueryDerivedTable derived)
+    {
+        var name = derived.Alias?.Value;
+        if (name is null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "A derived table without an alias has no name a definition of the query could take, and T-SQL does not accept it; no artifact was generated.",
+                QueryFeature.IntermediateResult);
+            return null;
+        }
+
+        if (queryBuilder.Defines(name) || reservedNames.Contains(name))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The derived table '{name}' takes a name the query already gives a table, a common table expression or another derived table, and the representation names each intermediate result once per query; no artifact was generated.",
+                QueryFeature.IntermediateResult);
+            return null;
+        }
+
+        queryBuilder.Define(name, ReadDefinitionBody(derived.QueryExpression, derived.Columns, name));
+        return name;
+    }
+
+    /// <summary>
+    /// The body of a definition, read as a scope of its own and closed without becoming an
+    /// instruction of the scope around it. A list of column names renames the columns of the
+    /// body's naming SELECT - an exact rewrite, which every target writes as aliases because
+    /// HQL has no column list.
+    /// </summary>
+    private SubQueryInstruction ReadDefinitionBody(QueryExpression expression, IList<Identifier> columns, string name)
+    {
+        var enclosingAlias = sourceAlias;
+
+        queryBuilder.Push();
+        ReadQueryExpression(expression);
+        sourceAlias = enclosingAlias;
+        var body = queryBuilder.PopOperand();
+
+        return columns.Count == 0 ? body : Renamed(body, [.. columns.Select(c => c.Value)], name);
+    }
+
+    private SubQueryInstruction Renamed(SubQueryInstruction body, IReadOnlyList<string> columns, string name)
+    {
+        var inner = body.Instructions;
+        while (inner.Count == 1 && inner[0] is SubQueryInstruction wrapped)
+        {
+            inner = wrapped.Instructions;
+        }
+
+        if (inner.Count > 0 && inner[0] is SetOperationInstruction operation)
+        {
+            return new SubQueryInstruction([operation with { Left = Renamed(operation.Left, columns, name) }, .. inner.Skip(1)]);
+        }
+
+        var projections = inner.OfType<ProjectInstruction>().ToList();
+        if (projections.Count != columns.Count)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The column list of '{name}' names {columns.Count} columns where its body projects {projections.Count}; no artifact was generated.",
+                QueryFeature.IntermediateResult);
+            return body;
+        }
+
+        var position = 0;
+        return new SubQueryInstruction([.. inner.Select(instruction =>
+            instruction is ProjectInstruction projection ? projection with { Alias = columns[position++] } : instruction)]);
+    }
+
+    /// <summary>
     /// The construct that sank the condition being read, when the parser can name it - a
     /// parameter, a NULL among the values of an IN list - so that the clause's refusal says
     /// what the caller would have to change (F11). The category overrides the clause's own
@@ -94,16 +234,34 @@ public class SqlQueryReader(
 
         var statement = select.Statement;
 
-        // A common table expression is the source of the SELECT that follows it, and the
-        // representation carries one named table (rule Q2). Read without it, the query would
-        // stand over a table nobody declared - the same case as a derived table in FROM, which
-        // has been refused all along (decision 070).
-        if (statement.WithCtesAndXmlNamespaces is not null)
+        // The names a derived table must not take, because a definition is found by its name
+        // and lifted to the whole query (decision 112): every table the statement reads, and
+        // every common table expression it defines, whichever comes first in the text.
+        var names = new StatementTableNames();
+        statement.Accept(names);
+        reservedNames = names.Names;
+
+        if (statement.WithCtesAndXmlNamespaces is { } with)
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "The SELECT stands over a common table expression, which the query representation does not carry, and a query emitted without its WITH clause would name a table that does not exist; no artifact was generated.");
-            return;
+            // XMLNAMESPACES declares prefixes for FOR XML and the XML methods, neither of
+            // which the representation carries; the query would mean nothing without them.
+            if (with.XmlNamespaces is not null)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    "The SELECT declares XML namespaces, which the query representation does not carry; no artifact was generated.");
+                return;
+            }
+
+            foreach (var expression in with.CommonTableExpressions)
+            {
+                reservedNames.Add(expression.ExpressionName.Value);
+            }
+
+            foreach (var expression in with.CommonTableExpressions)
+            {
+                ReadCommonTableExpression(expression);
+            }
         }
 
         // A query hint steers the plan, not the rows, so it is a loss rather than a refusal
@@ -445,6 +603,26 @@ public class SqlQueryReader(
 
         joins.Reverse();
 
+        // A derived table is the source of rows a definition of the query is, named by its
+        // alias (decision 112); the scope reads it by that name, as it reads a table.
+        if (current is QueryDerivedTable derived)
+        {
+            if (ReadDerivedTable(derived) is not { } definition)
+            {
+                return;
+            }
+
+            sourceAlias = definition;
+            queryBuilder.From(definition, definition);
+
+            foreach (var join in joins)
+            {
+                ReadJoin(join);
+            }
+
+            return;
+        }
+
         if (current is not NamedTableReference table)
         {
             Report(
@@ -471,12 +649,14 @@ public class SqlQueryReader(
     private void ReadJoin(QualifiedJoin join)
     {
         // A join both filters and multiplies, so a query emitted without one returns
-        // different rows (decisions 065 and 070): refused, never dropped.
-        if (join.SecondTableReference is not NamedTableReference right)
+        // different rows (decisions 065 and 070): refused, never dropped. A derived table is
+        // the one row source besides a table it may stand on (decision 112).
+        var derived = join.SecondTableReference as QueryDerivedTable;
+        if (join.SecondTableReference is not NamedTableReference && derived is null)
         {
             Report(
                 ConversionRecordKind.Failure,
-                "A join onto something other than a table is not carried by the query representation, and a query emitted without its join would return different rows; no artifact was generated.",
+                "A join onto something other than a table or a derived table is not carried by the query representation, and a query emitted without its join would return different rows; no artifact was generated.",
                 QueryFeature.Join);
             return;
         }
@@ -496,6 +676,17 @@ public class SqlQueryReader(
             return;
         }
 
+        if (derived is not null)
+        {
+            if (ReadDerivedTable(derived) is { } definition)
+            {
+                queryBuilder.Join(kind, sourceAlias, definition, condition, definition);
+            }
+
+            return;
+        }
+
+        var right = (NamedTableReference)join.SecondTableReference;
         if (!ReadTableModifiers(right))
         {
             return;

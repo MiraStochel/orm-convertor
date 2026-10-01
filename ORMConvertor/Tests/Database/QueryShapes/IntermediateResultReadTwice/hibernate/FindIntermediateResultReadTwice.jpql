@@ -1,0 +1,8 @@
+with LineCount as (
+    select ol.CompanyId as CompanyId, ol.OrderId as OrderId, count(ol) as Lines
+    from ShopOrderLine ol
+    group by ol.CompanyId, ol.OrderId)
+select o.CompanyId as CompanyId, o.OrderId as OrderId, lc.Lines as Lines
+from ShopOrder o
+join LineCount lc on lc.CompanyId = o.CompanyId and lc.OrderId = o.OrderId
+where lc.Lines >= (select max(m.Lines) from LineCount m)

@@ -9,7 +9,9 @@ namespace EclipseLinkWrappers;
 /// HQL, but what it adds is either already read by the shared parser - the join of
 /// unrelated entities with ON, which the builder emits for both implementations - or has
 /// no place in the model at all: FUNC, OPERATOR, SQL and COLUMN reach past the mapping
-/// into the database, and a subquery in FROM is a shape the representation does not carry.
+/// into the database, and a subquery in FROM stands only as a comma-separated declaration,
+/// a cross join the representation does not carry, although it carries the subquery itself
+/// as an intermediate result (decision 112).
 /// So nothing is overridden, and a construct outside JPQL meets the shared parser's rule
 /// instead: a Failure with its line and column, never a guess (decisions 062 and 070).
 ///

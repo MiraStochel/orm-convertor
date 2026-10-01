@@ -70,7 +70,7 @@ internal sealed class QueryVariables
         continued =
         [
             .. root.DescendantNodes().OfType<IdentifierNameSyntax>()
-                .Where(IsContinuation)
+                .Where(identifier => IsContinuation(identifier) || IsJoinedSequence(identifier))
                 .Select(identifier => identifier.Identifier.Text),
         ];
     }
@@ -171,7 +171,7 @@ internal sealed class QueryVariables
         }
 
         var variable = Describe(symbol);
-        var continuations = variable.Reads.Count(IsContinuation);
+        var continuations = variable.Reads.Count(read => IsContinuation(read) || IsJoinedSequence(read));
 
         if (continuations == 0)
         {
@@ -201,6 +201,18 @@ internal sealed class QueryVariables
            && member.Expression == identifier
            && member.Parent is InvocationExpressionSyntax invocation
            && invocation.Expression == member;
+
+    /// <summary>
+    /// The identifier is the inner sequence of a join: <c>q.Join(name, …)</c>. The query it
+    /// holds is read into the query that joins it, as an intermediate result named after the
+    /// variable (decision 112), so a variable read only so - or so and by continuation - holds
+    /// the beginning of that query, not a query of its own.
+    /// </summary>
+    private static bool IsJoinedSequence(IdentifierNameSyntax identifier)
+        => identifier.Parent is ArgumentSyntax argument
+           && argument.Parent is ArgumentListSyntax list
+           && list.Arguments.IndexOf(argument) == 0
+           && list.Parent is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Join" or "LeftJoin" or "RightJoin" } };
 
     private static string WithoutAsync(string method)
         => method.Length > 5 && method.EndsWith("Async", StringComparison.Ordinal) ? method[..^5] : method;
