@@ -31,8 +31,14 @@ public sealed class MyBatisMapperInterfaceParser(AbstractEntityBuilder entityBui
     protected override ConversionContentType Artifact => ConversionContentType.JavaQuery;
 
     public override bool CanParse(ConversionContentType contentType)
-        => contentType == ConversionContentType.JavaQuery;
+        => contentType == ConversionContentType.Java;
 
+    /// <summary>
+    /// The interfaces of a Java unit, which is a whole file or a fragment of one
+    /// (decision 111): a file holding the domain class alone has none, and yields nothing
+    /// here. A text the reader cannot read yields nothing either, and says nothing: the
+    /// domain-class parser, which reads the same text first, has reported it.
+    /// </summary>
     public override IReadOnlyCollection<EntityMap> Parse(string source)
     {
         JavaCompilationUnit unit;
@@ -40,16 +46,8 @@ public sealed class MyBatisMapperInterfaceParser(AbstractEntityBuilder entityBui
         {
             unit = JavaClassReader.Read(source, Limits);
         }
-        catch (JavaSyntaxError error)
+        catch (Exception exception) when (exception is JavaSyntaxError or JavaInputTooDeep)
         {
-            Report(ConversionRecordKind.Failure, null, null, null,
-                $"The Java source could not be read at line {error.Line}, column {error.Column}: {error.Message}.");
-            return [];
-        }
-        catch (JavaInputTooDeep tooDeep)
-        {
-            Report(ConversionRecordKind.Failure, null, null, null,
-                NestingDepthGuard.Reason(tooDeep.Token, Limits));
             return [];
         }
 

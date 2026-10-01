@@ -27,7 +27,7 @@ namespace DapperWrappers;
 ///
 /// Nothing is read off the C# call around the SQL: the facts about a Dapper parameter are
 /// facts of its SQL text, and both routes into the wrapper - a bare SqlQuery unit and the
-/// literal pulled out of a CSharpQuery unit - go through this same step.
+/// literal pulled out of a Dapper call in a C# unit - go through this same step.
 /// </summary>
 internal static class DapperCollectionParameters
 {

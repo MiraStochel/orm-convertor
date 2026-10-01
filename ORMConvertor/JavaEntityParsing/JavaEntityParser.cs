@@ -24,14 +24,18 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
     public ParseLimits Limits { get; set; } = ParseLimits.Default;
 
     public bool CanParse(ConversionContentType contentType)
-        => contentType == ConversionContentType.JavaEntity;
+        => contentType == ConversionContentType.Java;
 
     /// <summary>
-    /// Parses the Java classes of one source into entities. Every class declaration in the
-    /// text becomes an entity of its own, nested classes included - a nested static key
-    /// class is a class of the conversion like a separate one, and the dissolution phase
-    /// of decision 031 takes it out again once the key names it. A source the reader
-    /// cannot read is a failure record with a line and a column, and yields nothing.
+    /// Parses the Java classes of one source into entities. The unit is a whole Java file
+    /// with whatever it holds, or a fragment of one (decision 111), and every class
+    /// declaration in it becomes an entity of its own, nested classes included - a nested
+    /// static key class is a class of the conversion like a separate one, and the
+    /// dissolution phase of decision 031 takes it out again once the key names it. Every
+    /// class but one in whose own members the source hands a query to the framework, which is
+    /// the code around its queries and says so in a record. A source the reader cannot read
+    /// is a failure record with a line and a column, and yields nothing; every other parser
+    /// of the unit reads it after this one and keeps quiet about it - one fact, one record.
     /// </summary>
     public IReadOnlyCollection<EntityMap> Parse(string source)
     {
@@ -46,7 +50,7 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
             {
                 Kind = ConversionRecordKind.Failure,
                 Framework = entityBuilder.Descriptor.Framework,
-                Artifact = ConversionContentType.JavaEntity,
+                Artifact = ConversionContentType.Java,
                 Reason = $"The Java source could not be read at line {error.Line}, column {error.Column}: {error.Message}.",
             });
             return [];
@@ -59,16 +63,35 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
             {
                 Kind = ConversionRecordKind.Failure,
                 Framework = entityBuilder.Descriptor.Framework,
-                Artifact = ConversionContentType.JavaEntity,
+                Artifact = ConversionContentType.Java,
                 Reason = NestingDepthGuard.Reason(tooDeep.Token, Limits),
             });
             return [];
         }
 
+        var classes = Flatten(unit.Classes).ToList();
+
+        // Asked only where there is a class to ask about: a fragment holding a method alone
+        // has nothing the answer could take out.
+        var handovers = classes.Count == 0 ? new List<int>() : FindHandovers(source).ToList();
+
         var read = new List<EntityMap>();
 
-        foreach (var (cls, declaringType) in Flatten(unit.Classes))
+        foreach (var (cls, declaringType) in classes)
         {
+            if (HandsOver(cls, classes, handovers) is { } handover)
+            {
+                var where = handover.Name is null ? string.Empty : $" in its member '{handover.Name}'";
+                entityBuilder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Convention,
+                    Framework = entityBuilder.Descriptor.Framework,
+                    Artifact = ConversionContentType.Java,
+                    Reason = $"The class '{cls.Name}' hands a query over to the framework{where}, so it is read as the code around its queries and not as an entity.",
+                });
+                continue;
+            }
+
             // Find-or-create over the pair of package and name (decision 094): a mapping
             // descriptor read before the class - the orm.xml of decision 068 - or another
             // unit declaring the same class has founded the entity already, and this
@@ -100,6 +123,39 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
         }
 
         return read;
+    }
+
+    /// <summary>
+    /// The offsets in the source of the places where it hands a query to its framework
+    /// (decision 109), as the wrapper's own query reading finds them - the same search, so
+    /// that what the query pass reads as a query the entity pass does not read as an entity,
+    /// and the other way round (decision 111). The structure hands nothing over to anyone, so
+    /// the base finds none.
+    /// </summary>
+    protected virtual IEnumerable<int> FindHandovers(string source) => [];
+
+    /// <summary>
+    /// The member of the class in which the first handover in its own members stands - a
+    /// placeholder without a name where it stands in none the reader names -, or null where
+    /// none does. Own members: a place inside a nested class is that class's, because the
+    /// innermost class around a place is the one it belongs to.
+    /// </summary>
+    private static JavaMemberSpan? HandsOver(JavaClass cls, IReadOnlyList<(JavaClass Class, string? DeclaringType)> classes, IReadOnlyList<int> handovers)
+    {
+        foreach (var offset in handovers)
+        {
+            var innermost = classes
+                .Select(entry => entry.Class)
+                .Where(candidate => candidate.Contains(offset))
+                .MinBy(candidate => candidate.End - candidate.Start);
+
+            if (ReferenceEquals(innermost, cls))
+            {
+                return cls.MemberSpans.FirstOrDefault(span => span.Contains(offset)) ?? new JavaMemberSpan(null, offset, offset);
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -25,7 +25,7 @@ public class CrossEcosystemTest
     public void NHibernateMappingBecomesJpaAnnotations()
     {
         var result = Convert(ORMEnum.NHibernate, ORMEnum.Hibernate,
-            new() { Content = CustomerSampleNHibernate.Entity, ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = CustomerSampleNHibernate.Entity, ContentType = ConversionContentType.CSharp },
             new() { Content = CustomerSampleNHibernate.XmlMapping, ContentType = ConversionContentType.XML });
 
         var java = Entity(result, ConversionContentType.JavaEntity);
@@ -53,7 +53,7 @@ public class CrossEcosystemTest
         var result = Convert(ORMEnum.NHibernate, ORMEnum.Hibernate,
             new()
             {
-                ContentType = ConversionContentType.CSharpEntity,
+                ContentType = ConversionContentType.CSharp,
                 Content = """
                     public class Invoice
                     {
@@ -95,7 +95,7 @@ public class CrossEcosystemTest
         var result = Convert(ORMEnum.NHibernate, ORMEnum.Hibernate,
             new()
             {
-                ContentType = ConversionContentType.CSharpEntity,
+                ContentType = ConversionContentType.CSharp,
                 Content = """
                     public class OrderLine
                     {
@@ -141,7 +141,7 @@ public class CrossEcosystemTest
     public void AHibernateEntityBecomesAnEfCoreEntity()
     {
         var result = Convert(ORMEnum.Hibernate, ORMEnum.EFCore,
-            new ConversionSource { Content = CustomerSampleHibernate.Entity, ContentType = ConversionContentType.JavaEntity });
+            new ConversionSource { Content = CustomerSampleHibernate.Entity, ContentType = ConversionContentType.Java });
 
         var csharp = Entity(result, ConversionContentType.CSharpEntity);
 
@@ -166,7 +166,7 @@ public class CrossEcosystemTest
     public void AHibernateEntityBecomesAnNHibernateMapping()
     {
         var result = Convert(ORMEnum.Hibernate, ORMEnum.NHibernate,
-            new ConversionSource { Content = CustomerSampleHibernate.Entity, ContentType = ConversionContentType.JavaEntity });
+            new ConversionSource { Content = CustomerSampleHibernate.Entity, ContentType = ConversionContentType.Java });
 
         var csharp = Entity(result, ConversionContentType.CSharpEntity);
         var xml = Entity(result, ConversionContentType.XML);
@@ -187,7 +187,7 @@ public class CrossEcosystemTest
     public void AJpqlQueryBecomesEachDotNetLanguage(ORMEnum target, ConversionContentType language, string hallmark)
     {
         var result = Convert(ORMEnum.Hibernate, target,
-            new() { Content = CustomerSampleHibernate.Entity, ContentType = ConversionContentType.JavaEntity },
+            new() { Content = CustomerSampleHibernate.Entity, ContentType = ConversionContentType.Java },
             new() { Content = CustomerSampleHibernate.JpqlQuery, ContentType = ConversionContentType.JpqlQuery });
 
         var query = result.Sources.Single(s => s.ContentType == language).Content;
@@ -204,7 +204,7 @@ public class CrossEcosystemTest
         var result = Convert(ORMEnum.Hibernate, ORMEnum.EFCore,
             new ConversionSource
             {
-                ContentType = ConversionContentType.JavaEntity,
+                ContentType = ConversionContentType.Java,
                 Content = """
                     import jakarta.persistence.*;
                     import java.time.Instant;

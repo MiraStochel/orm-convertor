@@ -79,7 +79,7 @@
         <button type="button" id="add-unit" class="secondary">Add empty unit</button>
         <button type="button" id="load-samples" class="secondary">Load sample set</button>
         <button type="button" id="clear" class="secondary outline">Clear</button>
-        <input type="file" id="file-input" multiple accept=".cs,.xml,.sql,.hql,.txt" hidden>
+        <input type="file" id="file-input" multiple accept=".cs,.java,.xml,.sql,.hql,.jpql,.txt" hidden>
       </div>
       <p id="storage-note" class="muted-note" hidden>
         This browser is not storing the input, so a reload will lose it &mdash; private
@@ -133,10 +133,10 @@
     <article class="unit">
       <header class="unit-header">
         <input class="unit-name" type="text" aria-label="File name" placeholder="file name">
-        <select class="unit-type" aria-label="Content type"></select>
+        <select class="unit-type" aria-label="Language"></select>
         <button type="button" class="unit-remove secondary outline">Remove</button>
       </header>
-      <textarea class="unit-content" spellcheck="false" placeholder="Paste the source here, or add whole files above."></textarea>
+      <textarea class="unit-content" spellcheck="false" placeholder="Paste a whole source file here - entities and the code that queries them alike - or add files above."></textarea>
       <p class="unit-error" hidden></p>
     </article>
   </template>

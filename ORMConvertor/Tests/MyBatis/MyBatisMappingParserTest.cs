@@ -78,7 +78,7 @@ public class MyBatisMappingParserTest
     public void AResultMapGivesThePairsOfColumnAndProperty()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="customer" type="Customer">
                 <id     column="CustomerID"   property="CustomerId"/>
@@ -103,7 +103,7 @@ public class MyBatisMappingParserTest
     public void AnAliasResolvesByNameAndTheNamespaceComesFromTheClass()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="customer" type="Customer">
                 <result column="CustomerName" property="CustomerName"/>
@@ -122,7 +122,7 @@ public class MyBatisMappingParserTest
     public void NoTableAndNoSchemaAreRead()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="customer" type="Customer">
                 <result column="CustomerName" property="CustomerName"/>
@@ -138,7 +138,7 @@ public class MyBatisMappingParserTest
     public void JdbcTypeIsReadAsAFamilyWithItsUnicodeFacet()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="customer" type="Customer">
                 <result column="CustomerName" property="CustomerName" jdbcType="NVARCHAR"/>
@@ -168,7 +168,7 @@ public class MyBatisMappingParserTest
     public void AnIdElementFoundsNoPrimaryKeyAndIsReportedAsAnIncompleteness()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="customer" type="Customer">
                 <id     column="CustomerID"   property="CustomerId"/>
@@ -191,7 +191,7 @@ public class MyBatisMappingParserTest
     public void AMapperWithoutAnIdCarriesNoIdentityRecord()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="customer" type="Customer">
                 <result column="CustomerName" property="CustomerName"/>
@@ -214,7 +214,7 @@ public class MyBatisMappingParserTest
     public void ANestedCollectionFoundsTheSecondEntityAndARelationWithoutColumns()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass + """
+            (ConversionContentType.Java, DomainClass + """
 
 
                 package Shop;
@@ -257,7 +257,7 @@ public class MyBatisMappingParserTest
     public void AnAssociationIsAnOwningManyToOne()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, """
+            (ConversionContentType.Java, """
                 package Shop;
 
                 public class Order {
@@ -284,7 +284,7 @@ public class MyBatisMappingParserTest
     public void ANestedSelectMapsTheNavigationAndReportsTheSelect()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="customer" type="Customer">
                 <collection property="Orders" ofType="Order" select="findOrders" column="CustomerID"/>
@@ -310,7 +310,7 @@ public class MyBatisMappingParserTest
     public void TwoResultMapsOfOneClassKeepTheFirstValueAndReportTheDifference()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="plain" type="Customer">
                 <result column="Name" property="CustomerName"/>
@@ -332,7 +332,7 @@ public class MyBatisMappingParserTest
     public void ExtendsMergesTheParentsPairs()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="base" type="Customer">
                 <id column="CustomerID" property="CustomerId"/>
@@ -358,7 +358,7 @@ public class MyBatisMappingParserTest
     public void AClosedMappingMakesAnUnnamedPropertyTransient()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="customer" type="Customer" autoMapping="false">
                 <id     column="CustomerID"   property="CustomerId"/>
@@ -382,7 +382,7 @@ public class MyBatisMappingParserTest
     public void AnOpenMappingClaimsNothingAboutAnUnnamedProperty()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper("""
               <resultMap id="customer" type="Customer">
                 <result column="CustomerName" property="CustomerName"/>
@@ -400,7 +400,7 @@ public class MyBatisMappingParserTest
     public void AFactOutsideTheTableIsALossThatNamesIt(string element, string name)
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
+            (ConversionContentType.Java, DomainClass),
             (ConversionContentType.XML, Mapper($"""
               <resultMap id="customer" type="Customer">
                 {element}
@@ -421,8 +421,8 @@ public class MyBatisMappingParserTest
     public void ResultsOnAMapperMethodGiveTheSamePairs()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
-            (ConversionContentType.JavaQuery, """
+            (ConversionContentType.Java, DomainClass),
+            (ConversionContentType.Java, """
                 package Shop;
 
                 import java.util.List;
@@ -457,8 +457,8 @@ public class MyBatisMappingParserTest
     public void ManyTakesTheTargetEntityFromTheDeclaredProperty()
     {
         var builder = Read(
-            (ConversionContentType.JavaEntity, DomainClass),
-            (ConversionContentType.JavaQuery, """
+            (ConversionContentType.Java, DomainClass),
+            (ConversionContentType.Java, """
                 package Shop;
 
                 import java.util.List;

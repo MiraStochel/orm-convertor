@@ -29,13 +29,19 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
 
     public bool CanParse(ConversionContentType contentType)
     {
-        return contentType == ConversionContentType.CSharpEntity;
+        return contentType == ConversionContentType.CSharp;
     }
 
     /// <summary>
-    /// Parses the C# classes of one source into entities. Every class declaration in the
-    /// text becomes an entity of its own - multi-class input is a shipped form of F14 -
-    /// and a nested class becomes a peer entity beside its container, not a member of it.
+    /// Parses the C# classes of one source into entities. The unit is a whole C# file with
+    /// whatever it holds (decision 111), and every class declaration in it becomes an entity
+    /// of its own - multi-class input is a shipped form of F14 - with a nested class a peer
+    /// entity beside its container, not a member of it. Every class but three: one in whose
+    /// own members the source hands a query to the framework, which is the code around its
+    /// queries; one the source framework names as its own API; and a static class, which
+    /// cannot have an instance for any framework to materialize. Each of the three says so
+    /// in a record, since a class that yields nothing is exactly where a wrong split would
+    /// hide.
     /// </summary>
     /// <param name="source">C# source code with one or more classes, optionally wrapped in a namespace.</param>
     /// <returns>The entity maps the unit declared; empty when it held no class (decision 066).</returns>
@@ -44,14 +50,15 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
         // Before Roslyn, and not because Roslyn is careless: it is the only one of the five
         // grammars with a guard of its own, but that guard reports a diagnostic at 4096 levels
         // and the process still dies below 6000 (decision 092). Its lexer is a loop, so the
-        // scan below is safe at any depth; building the tree is what is not.
+        // scan below is safe at any depth; building the tree is what is not. The query pass
+        // reads the same text after this one and keeps quiet about it: one fact, one record.
         if (NestingDepthGuard.FirstBeyond(Tracked(source), Limits) is { } tooDeep)
         {
             entityBuilder.Report(new ConversionRecord
             {
                 Kind = ConversionRecordKind.Failure,
                 Framework = entityBuilder.Descriptor.Framework,
-                Artifact = ConversionContentType.CSharpEntity,
+                Artifact = ConversionContentType.CSharp,
                 Reason = NestingDepthGuard.Reason(tooDeep, Limits),
             });
 
@@ -64,10 +71,20 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
             .OfType<ClassDeclarationSyntax>()
             .ToList();
 
+        // Asked only where there is a class to ask about: a fragment holding a method alone
+        // has nothing the answer could take out.
+        var handovers = classes.Count == 0 ? new Dictionary<ClassKey, string?>() : HandoverMembers(source);
+
         var read = new List<EntityMap>();
 
         foreach (var cls in classes)
         {
+            if (NotAnEntity(cls, handovers) is { } record)
+            {
+                entityBuilder.Report(record);
+                continue;
+            }
+
             // Find-or-create over the pair of namespace and name (decision 094): a class
             // another unit of this conversion already declared - the other half of a partial
             // class, the same file pasted twice - is this entity, not a second one of its
@@ -90,6 +107,102 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
         }
 
         return read;
+    }
+
+    /// <summary>
+    /// The places where the source hands a query to its framework (decision 109), as the
+    /// wrapper's own query reading finds them - the same search, so that what the query pass
+    /// reads as a query the entity pass does not read as an entity, and the other way round
+    /// (decision 111). The nodes may come from a tree of their own; only the class around
+    /// each and the member it stands in are asked of them. The structure hands nothing over
+    /// to anyone, so the base finds none.
+    /// </summary>
+    protected virtual IEnumerable<SyntaxNode> FindHandovers(string source) => [];
+
+    /// <summary>
+    /// Why the class is the source framework's own API rather than an entity - the reason of
+    /// the record that says so -, or null where it is not (decision 111). A fact about the
+    /// framework, so the structure knows none; EF Core's context is the one case today.
+    /// </summary>
+    protected virtual string? FrameworkApi(ClassDeclarationSyntax classDeclaration) => null;
+
+    /// <summary>A class as the conversion identifies it: namespace, containers and name (decision 094).</summary>
+    private readonly record struct ClassKey(string? Namespace, string? DeclaringType, string Name);
+
+    private static ClassKey KeyOf(ClassDeclarationSyntax cls)
+        => new(GetNamespace(cls), GetDeclaringType(cls), cls.Identifier.Text);
+
+    /// <summary>
+    /// The classes in whose own members a query is handed over, each with the member of its
+    /// first handover. Own members: a handover inside a nested class belongs to that class.
+    /// </summary>
+    private Dictionary<ClassKey, string?> HandoverMembers(string source)
+    {
+        var members = new Dictionary<ClassKey, string?>();
+
+        foreach (var node in FindHandovers(source))
+        {
+            if (node.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().FirstOrDefault() is not ClassDeclarationSyntax cls)
+            {
+                continue;
+            }
+
+            members.TryAdd(KeyOf(cls), MemberOf(node, cls));
+        }
+
+        return members;
+    }
+
+    private static string? MemberOf(SyntaxNode node, ClassDeclarationSyntax cls)
+        => node.AncestorsAndSelf().OfType<MemberDeclarationSyntax>().FirstOrDefault(member => member.Parent == cls) switch
+        {
+            MethodDeclarationSyntax method => method.Identifier.Text,
+            PropertyDeclarationSyntax property => property.Identifier.Text,
+            ConstructorDeclarationSyntax => cls.Identifier.Text,
+            BaseFieldDeclarationSyntax field => field.Declaration.Variables.FirstOrDefault()?.Identifier.Text,
+            _ => null,
+        };
+
+    /// <summary>
+    /// The record of a class the unit does not read as an entity (decision 111), or null for
+    /// an entity. The source framework's own API first, because the record it gets says what
+    /// is lost by it; the code around queries next; a class without an instance last. Every
+    /// one of them is the unit's statement about a class, so the unit is what it points at,
+    /// and no entity is named - there is none.
+    /// </summary>
+    private ConversionRecord? NotAnEntity(ClassDeclarationSyntax cls, IReadOnlyDictionary<ClassKey, string?> handovers)
+    {
+        var name = cls.Identifier.Text;
+
+        if (FrameworkApi(cls) is { } api)
+        {
+            return Record(ConversionRecordKind.Loss, api);
+        }
+
+        if (handovers.TryGetValue(KeyOf(cls), out var member))
+        {
+            var where = member is null ? string.Empty : $" in its member '{member}'";
+            return Record(
+                ConversionRecordKind.Convention,
+                $"The class '{name}' hands a query over to the framework{where}, so it is read as the code around its queries and not as an entity.");
+        }
+
+        if (cls.Modifiers.Any(SyntaxKind.StaticKeyword))
+        {
+            return Record(
+                ConversionRecordKind.Convention,
+                $"The class '{name}' is static and cannot have an instance for a framework to materialize, so it is not read as an entity.");
+        }
+
+        return null;
+
+        ConversionRecord Record(ConversionRecordKind kind, string reason) => new()
+        {
+            Kind = kind,
+            Framework = entityBuilder.Descriptor.Framework,
+            Artifact = ConversionContentType.CSharp,
+            Reason = reason,
+        };
     }
 
     /// <summary>

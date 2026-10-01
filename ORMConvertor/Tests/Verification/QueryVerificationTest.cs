@@ -44,8 +44,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             target,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = SourceQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = SourceQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
     private static IEnumerable<string> Entities(ConversionResult result)
@@ -100,8 +100,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.EFCore,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = unionQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = unionQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var compiled = GeneratedQueryCompiler.CompileOrFail(
@@ -138,8 +138,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.EFCore,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var compiled = GeneratedQueryCompiler.CompileOrFail(
@@ -178,8 +178,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.EFCore,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var method = Query(result, ConversionContentType.CSharpQuery);
@@ -220,8 +220,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.EFCore,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = distinctQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = distinctQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var compiled = GeneratedQueryCompiler.CompileOrFail(
@@ -257,8 +257,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.EFCore,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = existsQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = existsQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var compiled = GeneratedQueryCompiler.CompileOrFail(
@@ -294,8 +294,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.EFCore,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = inQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = inQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var compiled = GeneratedQueryCompiler.CompileOrFail(
@@ -334,8 +334,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.EFCore,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = parameterized, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = parameterized, ContentType = ConversionContentType.CSharp },
             ]);
 
         var method = Query(result, ConversionContentType.CSharpQuery);
@@ -508,8 +508,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.NHibernate,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var method = Query(result, ConversionContentType.CSharpQuery);
@@ -548,8 +548,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.NHibernate,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var method = Query(result, ConversionContentType.CSharpQuery);
@@ -585,8 +585,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.NHibernate,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = distinctQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = distinctQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var hql = Query(result, ConversionContentType.HqlQuery);
@@ -654,8 +654,8 @@ public class QueryVerificationTest
         {
             var units = new List<ConversionSource>
             {
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = source, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = source, ContentType = ConversionContentType.CSharp },
             };
 
             var dapper = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.Dapper, units);
@@ -719,8 +719,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.Dapper,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = inQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = inQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var sql = Query(result, ConversionContentType.SqlQuery);
@@ -761,8 +761,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.Dapper,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = unionQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = unionQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var sql = Query(result, ConversionContentType.SqlQuery);
@@ -806,8 +806,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.Dapper,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = distinctQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = distinctQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var sql = Query(result, ConversionContentType.SqlQuery);
@@ -851,8 +851,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.Dapper,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var sql = Query(result, ConversionContentType.SqlQuery);
@@ -897,8 +897,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.Dapper,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = paginatedQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var sql = Query(result, ConversionContentType.SqlQuery);
@@ -941,8 +941,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.Dapper,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = containsQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = containsQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var sql = Query(result, ConversionContentType.SqlQuery);
@@ -984,8 +984,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.NHibernate,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = existsQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = existsQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var hql = Query(result, ConversionContentType.HqlQuery);
@@ -1021,8 +1021,8 @@ public class QueryVerificationTest
             ORMEnum.EFCore,
             ORMEnum.NHibernate,
             [
-                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharpEntity },
-                new() { Content = inQuery, ContentType = ConversionContentType.CSharpQuery },
+                new() { Content = SourceEntity, ContentType = ConversionContentType.CSharp },
+                new() { Content = inQuery, ContentType = ConversionContentType.CSharp },
             ]);
 
         var hql = Query(result, ConversionContentType.HqlQuery);

@@ -58,7 +58,7 @@ public class NHibernateDeferredModifierTest
     {
         var result = ConversionHandler.Convert(ORMEnum.NHibernate, ORMEnum.EFCore,
         [
-            new() { Content = Entity, ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = Entity, ContentType = ConversionContentType.CSharp },
             new() { Content = Mapping, ContentType = ConversionContentType.XML },
         ]);
 
@@ -74,7 +74,7 @@ public class NHibernateDeferredModifierTest
     {
         var result = ConversionHandler.Convert(ORMEnum.NHibernate, ORMEnum.NHibernate,
         [
-            new() { Content = Entity, ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = Entity, ContentType = ConversionContentType.CSharp },
             new() { Content = Mapping, ContentType = ConversionContentType.XML },
         ]);
 

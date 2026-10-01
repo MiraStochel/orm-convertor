@@ -80,6 +80,25 @@ public class EFCoreLinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) : L
                 root = new LinqQueryRoot(member.Name.Identifier.Text);
                 return true;
 
+            // Inside the context, its own DbSet is the root the same way ctx.Customers is from
+            // outside - by bare name, through this, or as Set<T>() (decision 111). Anywhere
+            // else a member of the class's own instance is a navigation over what the instance
+            // loaded, which no provider translates: Lines.Sum(…) in an entity is LINQ over
+            // objects in memory, not a query.
+            case IdentifierNameSyntax own when EFCoreContext.IsOwnDbSet(own, own.Identifier.Text):
+                root = new LinqQueryRoot(own.Identifier.Text);
+                return true;
+
+            case MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax } own
+                when EFCoreContext.IsOwnDbSet(own, own.Name.Identifier.Text):
+                root = new LinqQueryRoot(own.Name.Identifier.Text);
+                return true;
+
+            case InvocationExpressionSyntax { Expression: GenericNameSyntax { Identifier.Text: "Set" } set } bare
+                when EFCoreContext.Around(bare) is not null && TypeArgumentOf(set) is { } ownEntity:
+                root = new LinqQueryRoot(ownEntity);
+                return true;
+
             default:
                 return false;
         }

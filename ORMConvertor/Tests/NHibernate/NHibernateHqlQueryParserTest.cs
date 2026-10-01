@@ -567,7 +567,7 @@ public class NHibernateHqlRoundTripTest
     {
         List<ConversionSource> sources =
         [
-            new() { Content = Entity, ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = Entity, ContentType = ConversionContentType.CSharp },
             new() { Content = Mapping, ContentType = ConversionContentType.XML },
             new() { Content = Hql, ContentType = ConversionContentType.HqlQuery },
         ];
@@ -591,7 +591,7 @@ public class NHibernateHqlRoundTripTest
     {
         List<ConversionSource> sources =
         [
-            new() { Content = Entity, ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = Entity, ContentType = ConversionContentType.CSharp },
             new() { Content = Mapping, ContentType = ConversionContentType.XML },
             new() { Content = Hql, ContentType = ConversionContentType.HqlQuery },
         ];

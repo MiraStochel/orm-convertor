@@ -196,7 +196,7 @@ public class HibernateToHibernateTest
     {
         var result = ConversionHandler.Convert(ORMEnum.Hibernate, ORMEnum.Hibernate,
         [
-            new() { Content = CustomerSampleHibernate.Entity, ContentType = ConversionContentType.JavaEntity },
+            new() { Content = CustomerSampleHibernate.Entity, ContentType = ConversionContentType.Java },
             new() { Content = CustomerSampleHibernate.JpqlQuery, ContentType = ConversionContentType.JpqlQuery },
         ]);
 

@@ -27,8 +27,14 @@ public sealed class MyBatisAnnotationQueryParser(
     protected override ConversionContentType Artifact => ConversionContentType.JavaQuery;
 
     public override bool CanParse(ConversionContentType contentType)
-        => contentType == ConversionContentType.JavaQuery;
+        => contentType == ConversionContentType.Java;
 
+    /// <summary>
+    /// The statements of the interfaces of a Java unit, which is a whole file or a fragment
+    /// of one (decision 111): a file holding the domain class alone has none, and yields no
+    /// query. A text the reader cannot read yields nothing either, and says nothing: the
+    /// entity pass, which reads the same text first, has reported it.
+    /// </summary>
     public override IReadOnlyCollection<AbstractQueryBuilder> Parse(
         ConversionContentType contentType,
         string source,
@@ -39,18 +45,9 @@ public sealed class MyBatisAnnotationQueryParser(
         {
             unit = JavaClassReader.Read(source, Limits);
         }
-        catch (JavaSyntaxError error)
+        catch (Exception exception) when (exception is JavaSyntaxError or JavaInputTooDeep)
         {
-            var refused = Named(null);
-            Report(refused, ConversionRecordKind.Failure,
-                $"The Java source could not be read at line {error.Line}, column {error.Column}: {error.Message}.");
-            return [refused];
-        }
-        catch (JavaInputTooDeep tooDeep)
-        {
-            var refused = Named(null);
-            Report(refused, ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep.Token, Limits));
-            return [refused];
+            return [];
         }
 
         var filled = new List<AbstractQueryBuilder>();

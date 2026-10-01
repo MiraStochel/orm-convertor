@@ -63,6 +63,12 @@ public class CustomerSampleNHibernate
         }
         """;
 
+    /// <summary>
+    /// The entity and the class that queries it in one C# file - what a user has in hand, and
+    /// what one unit is since decision 111. The sample the translation screen loads.
+    /// </summary>
+    public static string Source => SampleFiles.CSharp(Entity, "public class CustomerQueries(ISession session)", Query);
+
     public const string HqlQuery = """
         from Customer c
         where c.CreditLimit > :minimumCreditLimit

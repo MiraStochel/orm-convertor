@@ -47,6 +47,12 @@ public static class CustomerSampleEFCore
         }
         """;
 
+    /// <summary>
+    /// The entity and the class that queries it in one C# file - what a user has in hand, and
+    /// what one unit is since decision 111. The sample the translation screen loads.
+    /// </summary>
+    public static string Source => SampleFiles.CSharp(Entity, "public class CustomerQueries(SalesContext ctx)", Query);
+
     public static EntityMap Map
     {
         get

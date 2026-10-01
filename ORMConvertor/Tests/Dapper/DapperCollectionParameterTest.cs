@@ -76,7 +76,7 @@ public class DapperCollectionParameterTest
     public void ABareParameterAfterInIsReadOutOfADapperCallToo()
     {
         var builder = Parse(
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             """
             public IEnumerable<Customer> Find(IDbConnection connection, IEnumerable<int> ids)
             {

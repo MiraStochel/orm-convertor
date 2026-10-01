@@ -88,9 +88,9 @@ internal static class DapperSourceEntities
             ORMEnum.Dapper,
             target,
             [
-                new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = CustomerSource },
-                new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = OrderSource },
-                new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = OrderLineSource },
+                new ConversionSource { ContentType = ConversionContentType.CSharp, Content = CustomerSource },
+                new ConversionSource { ContentType = ConversionContentType.CSharp, Content = OrderSource },
+                new ConversionSource { ContentType = ConversionContentType.CSharp, Content = OrderLineSource },
             ],
             catalogReader);
 }

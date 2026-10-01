@@ -108,6 +108,20 @@ public sealed record JavaInterface(
     IReadOnlyList<string> Extends,
     int Line);
 
+/// <summary>
+/// Where one member of a class stands in the source: the offsets of its first character and
+/// of the one after its last, and the name it declares - the method, the first field of a
+/// declaration, the class for a constructor; null for an initializer block. Read so that a
+/// place in the text can be told the class and the member it belongs to (decision 111).
+/// </summary>
+public sealed record JavaMemberSpan(string? Name, int Start, int End)
+{
+    public bool Contains(int offset) => offset >= Start && offset < End;
+}
+
+/// <param name="Start">The offset of the declaration's first character, its annotations included.</param>
+/// <param name="End">The offset after its closing brace.</param>
+/// <param name="MemberSpans">Where its own members stand; a nested class is a class of its own and not among them.</param>
 public sealed record JavaClass(
     string Name,
     IReadOnlyList<string> Modifiers,
@@ -117,8 +131,13 @@ public sealed record JavaClass(
     IReadOnlyList<JavaClass> NestedClasses,
     string? Extends,
     IReadOnlyList<string> Interfaces,
-    int Line)
+    int Line,
+    int Start,
+    int End,
+    IReadOnlyList<JavaMemberSpan> MemberSpans)
 {
+    public bool Contains(int offset) => offset >= Start && offset < End;
+
     public bool IsStatic => Modifiers.Contains("static", StringComparer.Ordinal);
 
     /// <summary>The getter of a field by the JavaBeans convention: getName, or isName for a boolean.</summary>

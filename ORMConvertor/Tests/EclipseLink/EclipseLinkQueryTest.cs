@@ -39,7 +39,7 @@ public class EclipseLinkQueryTest
             {
                 var q = ctx.Customers.Where(c => c.CreditLimit > 2000).OrderBy(c => c.CustomerName).ToList();
             }
-            """, ConversionContentType.CSharpQuery);
+            """, ConversionContentType.CSharp);
 
         Assert.Equal(
             "select c\nfrom Customer c\nwhere c.CreditLimit > 2000\norder by c.CustomerName asc",
@@ -63,7 +63,7 @@ public class EclipseLinkQueryTest
             {
                 var q = ctx.Customers.OrderBy(c => c.CustomerName).Skip(10).Take(5).ToList();
             }
-            """, ConversionContentType.CSharpQuery);
+            """, ConversionContentType.CSharp);
 
         var jpql = Jpql(result);
         Assert.DoesNotContain("limit", jpql);
@@ -86,7 +86,7 @@ public class EclipseLinkQueryTest
             {
                 var q = ctx.Customers.Where(c => c.CreditLimit > 2000).OrderBy(c => c.CustomerName).ToList();
             }
-            """, ConversionContentType.CSharpQuery));
+            """, ConversionContentType.CSharp));
 
         var second = Jpql(ConversionHandler.Convert(ORMEnum.EclipseLink, ORMEnum.EclipseLink,
         [

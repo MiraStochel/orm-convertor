@@ -5,6 +5,7 @@ using Common.Convertors;
 using Common.Sql;
 using CSharpEntityParsing;
 using EFCoreWrappers.Convertors;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
 using Model.AbstractRepresentation;
@@ -33,6 +34,29 @@ public class EFCoreEntityParser : CSharpEntityParser
     {
         this.declaredSourceDialect = declaredSourceDialect;
     }
+
+    /// <summary>
+    /// A class whose own members hand a LINQ query to the context is the code around queries,
+    /// not an entity (decision 111), answered by the same search the query pass reads the
+    /// queries by.
+    /// </summary>
+    protected override IEnumerable<SyntaxNode> FindHandovers(string source)
+        => new EFCoreLinqQueryParser(() => throw new InvalidOperationException("The search for handovers builds no query."))
+        {
+            Limits = Limits,
+        }.FindHandovers(source);
+
+    /// <summary>
+    /// The context is EF Core's own API and not an entity type (decision 111). Read as a
+    /// class, it used to come out as an entity with a collection relation to every DbSet it
+    /// declares. Left out, it takes along mapping facts in a form the tool does not read -
+    /// the names of its DbSet properties, from which EF Core takes the table name by
+    /// convention, and the fluent configuration of OnModelCreating -, so the record is a loss.
+    /// </summary>
+    protected override string? FrameworkApi(ClassDeclarationSyntax classDeclaration)
+        => EFCoreContext.IsContext(classDeclaration)
+            ? $"The class '{classDeclaration.Identifier.Text}' is the EF Core context, not an entity; the table names its DbSet properties give and the configuration in OnModelCreating are not read."
+            : null;
 
     /// <summary>
     /// Parses class attributes: the table and schema of [Table], the unique constraints of

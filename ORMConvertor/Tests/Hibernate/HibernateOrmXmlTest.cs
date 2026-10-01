@@ -232,7 +232,7 @@ public class HibernateOrmXmlTest
         var result = ConversionHandler.Convert(ORMEnum.Hibernate, ORMEnum.EFCore,
         [
             new() { Content = SampleData.CustomerSampleHibernate.OrmXml, ContentType = ConversionContentType.XML },
-            new() { Content = SampleData.CustomerSampleHibernate.Entity, ContentType = ConversionContentType.JavaEntity },
+            new() { Content = SampleData.CustomerSampleHibernate.Entity, ContentType = ConversionContentType.Java },
         ]);
 
         var entity = result.Sources.Single(s => s.ContentType == ConversionContentType.CSharpEntity).Content;

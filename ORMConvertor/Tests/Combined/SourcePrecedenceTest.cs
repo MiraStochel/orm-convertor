@@ -250,7 +250,7 @@ public class SourcePrecedenceTest
         {
             new()
             {
-                ContentType = ConversionContentType.CSharpEntity,
+                ContentType = ConversionContentType.CSharp,
                 Content = """
                     public class Customer
                     {
@@ -323,7 +323,7 @@ public class SourcePrecedenceTest
         {
             new()
             {
-                ContentType = ConversionContentType.CSharpEntity,
+                ContentType = ConversionContentType.CSharp,
                 Content = """
                     public class Customer
                     {

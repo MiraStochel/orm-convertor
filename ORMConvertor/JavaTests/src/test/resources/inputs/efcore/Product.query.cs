@@ -1,6 +1,7 @@
 // The same query as the JPQL unit, in the language EF Core reads: a LINQ chain over the
-// DbSet. The extension says CSharpQuery - the frontend has a picker to tell a query from
-// an entity, a file name has not, so the longer extension decides here.
+// DbSet. The unit is C# like any other .cs file - a unit declares its language only, and the
+// source framework finds the query in it - so the .query infix just tells a reader of the tree
+// what the file holds.
 public void Query()
 {
     var q = ctx.Products

@@ -37,8 +37,8 @@ public class UnitAttributionTest
     {
         var sources = new List<ConversionSource>
         {
-            new() { ContentType = ConversionContentType.CSharpEntity, Content = CustomerSampleEFCore.Entity },
-            new() { ContentType = ConversionContentType.CSharpEntity, Content = "this is not C#" },
+            new() { ContentType = ConversionContentType.CSharp, Content = CustomerSampleEFCore.Entity },
+            new() { ContentType = ConversionContentType.CSharp, Content = "this is not C#" },
         };
 
         var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, sources);
@@ -48,7 +48,7 @@ public class UnitAttributionTest
         Assert.NotEmpty(result.Sources);
         var record = Assert.Single(result.Records, r => r.Kind == ConversionRecordKind.Failure);
         Assert.Equal("unit 2", record.Unit);
-        Assert.Equal(ConversionContentType.CSharpEntity, record.Artifact);
+        Assert.Equal(ConversionContentType.CSharp, record.Artifact);
         Assert.Contains("came of it", record.Reason);
     }
 
@@ -57,8 +57,8 @@ public class UnitAttributionTest
     {
         var sources = new List<ConversionSource>
         {
-            new() { ContentType = ConversionContentType.CSharpEntity, Content = CustomerSampleEFCore.Entity },
-            new() { ContentType = ConversionContentType.CSharpEntity, Content = "this is not C#", Name = "Broken.cs" },
+            new() { ContentType = ConversionContentType.CSharp, Content = CustomerSampleEFCore.Entity },
+            new() { ContentType = ConversionContentType.CSharp, Content = "this is not C#", Name = "Broken.cs" },
         };
 
         var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, sources);
@@ -77,7 +77,7 @@ public class UnitAttributionTest
     {
         var sources = new List<ConversionSource>
         {
-            new() { ContentType = ConversionContentType.CSharpEntity, Content = CustomerEntity },
+            new() { ContentType = ConversionContentType.CSharp, Content = CustomerEntity },
             new() { ContentType = ConversionContentType.XML, Content = CustomerMapping },
         };
 
@@ -96,7 +96,7 @@ public class UnitAttributionTest
     {
         var sources = new List<ConversionSource>
         {
-            new() { ContentType = ConversionContentType.CSharpEntity, Content = CustomerEntity },
+            new() { ContentType = ConversionContentType.CSharp, Content = CustomerEntity },
             new() { ContentType = ConversionContentType.XML, Content = "<entity-mappings />", Name = "orm.xml" },
         };
 
@@ -118,7 +118,7 @@ public class UnitAttributionTest
     {
         var sources = new List<ConversionSource>
         {
-            new() { ContentType = ConversionContentType.CSharpEntity, Content = CustomerEntity, Name = "Customer.cs" },
+            new() { ContentType = ConversionContentType.CSharp, Content = CustomerEntity, Name = "Customer.cs" },
             new()
             {
                 ContentType = ConversionContentType.XML,
@@ -155,13 +155,18 @@ public class UnitAttributionTest
     {
         var sources = new List<ConversionSource>
         {
-            new() { ContentType = ConversionContentType.CSharpEntity, Content = CustomerSampleEFCore.Entity, Name = "Customer.cs" },
-            new() { ContentType = ConversionContentType.CSharpQuery, Content = "int x = 5;", Name = "Query.cs" },
+            new() { ContentType = ConversionContentType.CSharp, Content = CustomerSampleEFCore.Entity, Name = "Customer.cs" },
+            new()
+            {
+                ContentType = ConversionContentType.CSharp,
+                Content = "public List<Customer> Query() => ctx.Customers.Where(c => IsWorthy(c)).ToList();",
+                Name = "Query.cs",
+            },
         };
 
         var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, sources);
 
-        var record = Assert.Single(result.Records, r => r.Reason.Contains("No LINQ query chain"));
+        var record = Assert.Single(result.Records, r => r.Kind == ConversionRecordKind.Failure);
         Assert.Equal("Query.cs", record.Unit);
     }
 }

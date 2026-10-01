@@ -55,20 +55,20 @@ public static class CrossFrameworkInputs
     {
         ORMEnum.Dapper =>
         [
-            new() { Content = DapperEntity(withNamespace), ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = DapperEntity(withNamespace), ContentType = ConversionContentType.CSharp },
         ],
         ORMEnum.EFCore =>
         [
-            new() { Content = EFCoreEntity(withNamespace), ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = EFCoreEntity(withNamespace), ContentType = ConversionContentType.CSharp },
         ],
         ORMEnum.NHibernate =>
         [
-            new() { Content = NHibernateEntity(withNamespace), ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = NHibernateEntity(withNamespace), ContentType = ConversionContentType.CSharp },
             new() { Content = NHibernateMapping(withNamespace), ContentType = ConversionContentType.XML },
         ],
         ORMEnum.Hibernate =>
         [
-            new() { Content = JpaEntity(withNamespace), ContentType = ConversionContentType.JavaEntity },
+            new() { Content = JpaEntity(withNamespace), ContentType = ConversionContentType.Java },
         ],
 
         // The same text for the second implementation of the specification, and that is the
@@ -76,7 +76,7 @@ public static class CrossFrameworkInputs
         // defaults the two differ in, so one source really is both (decisions 076 and 080).
         ORMEnum.EclipseLink =>
         [
-            new() { Content = JpaEntity(withNamespace), ContentType = ConversionContentType.JavaEntity },
+            new() { Content = JpaEntity(withNamespace), ContentType = ConversionContentType.Java },
         ],
 
         // One unit, and the mapping is not in it: MyBatis keeps the mapping in the mapper
@@ -85,7 +85,7 @@ public static class CrossFrameworkInputs
         // entity, which is nothing at all.
         ORMEnum.MyBatis =>
         [
-            new() { Content = MyBatisEntity(withNamespace), ContentType = ConversionContentType.JavaEntity },
+            new() { Content = MyBatisEntity(withNamespace), ContentType = ConversionContentType.Java },
         ],
         _ => throw NoRow(framework),
     };
@@ -94,8 +94,8 @@ public static class CrossFrameworkInputs
     public static ConversionSource QueryUnit(ORMEnum framework) => framework switch
     {
         ORMEnum.Dapper => new() { Content = DapperQuery, ContentType = ConversionContentType.SqlQuery },
-        ORMEnum.EFCore => new() { Content = EFCoreQuery, ContentType = ConversionContentType.CSharpQuery },
-        ORMEnum.NHibernate => new() { Content = NHibernateQuery, ContentType = ConversionContentType.CSharpQuery },
+        ORMEnum.EFCore => new() { Content = EFCoreQuery, ContentType = ConversionContentType.CSharp },
+        ORMEnum.NHibernate => new() { Content = NHibernateQuery, ContentType = ConversionContentType.CSharp },
         ORMEnum.Hibernate => new() { Content = JpaQuery, ContentType = ConversionContentType.JpqlQuery },
         ORMEnum.EclipseLink => new() { Content = JpaQuery, ContentType = ConversionContentType.JpqlQuery },
 

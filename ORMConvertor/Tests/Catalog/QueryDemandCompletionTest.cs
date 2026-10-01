@@ -56,7 +56,7 @@ public class QueryDemandCompletionTest
     };
 
     private static ConversionSource Entity(string content = OrderLineSource, string name = "Shop.cs")
-        => new() { ContentType = ConversionContentType.CSharpEntity, Content = content, Name = name };
+        => new() { ContentType = ConversionContentType.CSharp, Content = content, Name = name };
 
     private static ConversionSource Query(string sql, string name = "query.sql")
         => new() { ContentType = ConversionContentType.SqlQuery, Content = sql, Name = name };
@@ -223,10 +223,10 @@ public class QueryDemandCompletionTest
             ORMEnum.EFCore,
             ORMEnum.Dapper,
             [
-                new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = efCoreEntity },
+                new ConversionSource { ContentType = ConversionContentType.CSharp, Content = efCoreEntity },
                 new ConversionSource
                 {
-                    ContentType = ConversionContentType.CSharpQuery,
+                    ContentType = ConversionContentType.CSharp,
                     Content = "public void Query() { var q = ctx.ShopOrderLines.Where(ol => ol.Quantity >= minQuantity).ToList(); }",
                 },
             ],

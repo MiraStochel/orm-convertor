@@ -117,7 +117,7 @@ public class QueryFaithfulnessTest
             [
                 new ConversionSource
                 {
-                    ContentType = ConversionContentType.CSharpEntity,
+                    ContentType = ConversionContentType.CSharp,
                     Content = "public class Customer { public int Id { get; set; } }",
                 },
                 new ConversionSource

@@ -253,8 +253,8 @@ The **Swagger UI** at `/orm/swagger` renders that same document, but only in the
 
 | Method | Path | What it does | Request → response |
 |---|---|---|---|
-| `GET` | `/required-content` | What the interface has to collect for each source framework: one unit per input, naming the language its content is written in (decision [025](../docs/decisions/025-query-language-as-content-type.md)). | → `List<RequiredContentDefinition>` |
-| `GET` | `/required-content-advisor` | The same list for the Advisor screen. | → `List<RequiredContentDefinition>` |
+| `GET` | `/required-content` | What the interface can collect for each source framework: the languages it reads, each once (decisions [025](../docs/decisions/025-query-language-as-content-type.md) and [111](../docs/decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)). A unit is one file in one language with whatever it holds — `CSharp` and `Java` for code; the role values `CSharpEntity`, `CSharpQuery`, `JavaEntity` and `JavaQuery` belong to artifacts and are not read on input. | → `List<RequiredContentDefinition>` |
+| `GET` | `/required-content-advisor` | The same for the Advisor screen, with the shared units and the templates of the weighted queries as two lists, since a C# unit no longer says by its content type which of the two it is. | → `List<AdvisorRequiredContentDefinition>` |
 | `GET` | `/samples` | One sample input per unit above, keyed by the same id. | → `Dictionary<int, string>` |
 | `GET` | `/samples-advisor` | The same for the Advisor screen. | → `Dictionary<int, string>` |
 | `GET` | `/examples` | The examples of the explanatory page as whole conversion inputs: a key, the source and target framework, and named units in the shape `/convert` takes (decision [099](../docs/decisions/099-examples-are-content-not-a-choice.md)). | → `List<ExampleDefinition>` |

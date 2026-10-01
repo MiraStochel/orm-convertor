@@ -6,7 +6,7 @@ namespace NHibernateWrappers;
 
 /// <summary>
 /// Reads an NHibernate LINQ query. LINQ is one of two query languages the framework is read
-/// from: a unit declaring CSharpQuery comes here, a bare HQL unit goes to
+/// from: a C# unit comes here - a whole file or a fragment of one (decision 111) -, a bare HQL unit goes to
 /// <see cref="NHibernateHqlQueryParser"/> (decisions 025 and 062) - one parser per language,
 /// told apart by the content type the unit declares, never by what its text looks like.
 /// </summary>

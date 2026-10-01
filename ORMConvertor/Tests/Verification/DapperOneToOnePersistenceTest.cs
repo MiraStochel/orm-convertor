@@ -56,8 +56,8 @@ public class DapperOneToOnePersistenceTest(TestSchemaFixture fixture)
             ORMEnum.Dapper,
             target,
             [
-                new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = CustomerSource },
-                new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = ProfileSource },
+                new ConversionSource { ContentType = ConversionContentType.CSharp, Content = CustomerSource },
+                new ConversionSource { ContentType = ConversionContentType.CSharp, Content = ProfileSource },
             ],
             fixture.CatalogReader);
 

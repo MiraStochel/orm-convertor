@@ -31,13 +31,13 @@ public class CatalogTranslationPerformanceTest(TestSchemaFixture fixture, ITestO
 
     private static ConversionSource SchemaEntity(string content) => new()
     {
-        ContentType = ConversionContentType.CSharpEntity,
+        ContentType = ConversionContentType.CSharp,
         Content = content,
     };
 
     private static ConversionSource SchemaQuery(string entity, string filter, string order, string projection) => new()
     {
-        ContentType = ConversionContentType.CSharpQuery,
+        ContentType = ConversionContentType.CSharp,
         Content = $$"""
             public void Query()
             {

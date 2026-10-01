@@ -102,7 +102,7 @@ public class QueryMatrixTest
         List<ConversionSource> sources =
         [
             .. CrossFrameworkInputs.MappingUnits(ORMEnum.EFCore),
-            new() { Content = "   ", ContentType = ConversionContentType.CSharpQuery },
+            new() { Content = "   ", ContentType = ConversionContentType.CSharp },
         ];
 
         var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.Dapper, sources);

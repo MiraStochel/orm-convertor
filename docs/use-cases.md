@@ -17,12 +17,12 @@ Dokument je živý: scénář přibude, když se objeví, a upraví se, když se
 
 ## Co je ve skutečnosti vstupem — a kde nástroj začíná a končí
 
-Ve skutečnosti má uživatel v ruce **projekt**: repozitář s entitami, mapovacími soubory, konfigurací a dotazy rozesetými po service třídách. Nástroj tuhle hierarchii **nevidí a nezkoumá**. Jednotkou převodu je *artefakt* — obsah jednoho souboru s entitou, jedno mapování, jeden dotaz —, převodem je **množina jednotek poslaná najednou**. Jednotka smí nést jméno a záznamy vzešlé z jejího čtení na ni tím jménem ukazují (rozhodnutí [066](./decisions/066-records-attributed-to-the-input-unit.md)); pořád je to ale popisek, který poslal klient — strukturu projektu server nezná a výstupní artefakty se jednotkám nepřipisují (`architecture.md` §9).
+Ve skutečnosti má uživatel v ruce **projekt**: repozitář s entitami, mapovacími soubory, konfigurací a dotazy rozesetými po service třídách. Nástroj tuhle hierarchii **nevidí a nezkoumá**. Jednotkou převodu je **obsah jednoho souboru v jednom jazyce** s čímkoli, co v něm je — entitní třídy i třída, která je dotazuje, mapovací dokument, skript SQL (rozhodnutí [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)) —, převodem je **množina jednotek poslaná najednou**. Jednotka deklaruje jen svůj jazyk; co je v ní entita a kde předává dotaz frameworku, přečte zdrojový framework. Jednotka smí nést jméno a záznamy vzešlé z jejího čtení na ni tím jménem ukazují (rozhodnutí [066](./decisions/066-records-attributed-to-the-input-unit.md)); pořád je to ale popisek, který poslal klient — strukturu projektu server nezná a výstupní artefakty se jednotkám nepřipisují (`architecture.md` §9).
 
 Z toho plyne dělba práce, kterou je lepší říct nahlas, než ji nechat každého objevit:
 
-- **Vyhledání artefaktů v projektu je práce uživatele.** Nástroj neprochází repozitář, nepozná dotaz uvnitř service třídy a nesestaví seznam entit sám.
-- **Překládá se mapovací a dotazový obsah, ne aplikační kód okolo.** Volající metoda, transakce, DI registrace a `DbContext` s připojením zůstávají uživateli; připojení navíc nevstupuje ani do mezireprezentace (rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md)).
+- **Vyhledání souborů v projektu je práce uživatele.** Nástroj neprochází repozitář a nesestaví seznam souborů sám. Ve vloženém nebo nahraném souboru ale dotaz pozná i uvnitř repozitáře či služby, pokud ho zdroj frameworku předává způsobem, který wrapper čte (rozhodnutí [109](./decisions/109-a-code-unit-carries-every-query-it-hands-over.md) a 111) — do 2026-10-01 to nástroj nedělal a soubor se musel rozřezat. Aplikační kód, který dotaz sám nepředává (služba volající repozitář, třída DTO projekce), se od entity nerozezná a přečte se jako entita; do okna proto patří entity, mapování a kód s dotazy, ne celá aplikace.
+- **Překládá se mapovací a dotazový obsah, ne aplikační kód okolo.** Z repozitáře vyjdou jeho dotazy, ne třída cílového frameworku; volající metoda, transakce, DI registrace a `DbContext` s připojením zůstávají uživateli — kontext v jednotce entitou není a jeho `DbSet` a `OnModelCreating` se nečtou, což převod hlásí; připojení navíc nevstupuje ani do mezireprezentace (rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md)).
 - **Doplnit chybějící fakty umí databáze, ne odhad.** Když zdroj mapovací informaci nenese — typicky u Dapperu — doplní ji katalog připojené databáze (rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md)). Bez připojení převod proběhne na konvencích a řekne to záznamem.
 - **Sestavení výsledného projektu je práce konzumenta.** Co k artefaktu chybí, vyjmenovává každý scénář níž zvlášť.
 
@@ -34,7 +34,7 @@ Z toho plyne dělba práce, kterou je lepší říct nahlas, než ji nechat kaž
 
 **Výchozí stav.** Projekt používá Dapper: entity jsou prosté C# třídy bez atributů, mapování neexistuje (jméno sloupce = jméno vlastnosti, klíč nikde), dotazy jsou řetězce SQL. Databáze běží a je dostupná.
 
-**Tok.** Uživatel vybere zdrojový framework Dapper a cílový EF Core, vloží entitní třídy a SQL dotazy jako jednotky jednoho převodu a spustí překlad. Server jednotky rozparsuje do mezireprezentace, **doplní z katalogu**, co zdroj neřekl (primární a cizí klíče, názvy tabulek a sloupců, typy, nullabilitu, unikátní omezení), a vygeneruje entity EF Core s anotacemi a dotazy jako LINQ.
+**Tok.** Uživatel vybere zdrojový framework Dapper a cílový EF Core, vloží nebo nahraje soubory s entitními třídami a s kódem, který posílá SQL Dapperu (nebo holé soubory `.sql`), jako jednotky jednoho převodu a spustí překlad. Server jednotky rozparsuje do mezireprezentace, **doplní z katalogu**, co zdroj neřekl (primární a cizí klíče, názvy tabulek a sloupců, typy, nullabilitu, unikátní omezení), a vygeneruje entity EF Core s anotacemi a dotazy jako LINQ.
 
 **Výsledek.** Artefakty po jednotkách, ke každé záznamy o převodu: co katalog doplnil, kterou konvenci cíl použil, co zdroj nesl a cíl to vyjádřit neumí. Odpověď navíc nese identifikátor běhu, verzi nástroje, verze obou frameworků a stav katalogu (S6).
 
@@ -74,7 +74,7 @@ Z toho plyne dělba práce, kterou je lepší říct nahlas, než ji nechat kaž
 
 **Výchozí stav.** Nikdo nic nemigruje. Otázka zní: jak by tenhle dotaz vypadal v jiném frameworku — před rozhodnutím, při učení, při psaní textu.
 
-**Tok.** Uživatel otevře stránku, vybere dvojici frameworků, vloží (nebo si nechá předvyplnit ukázkou) jednu entitu a jeden dotaz a spustí překlad. Bez databáze, bez projektu, bez konfigurace.
+**Tok.** Uživatel otevře stránku, vybere dvojici frameworků, vloží (nebo si nechá předvyplnit ukázkou) entitu a dotaz — klidně jako jeden soubor — a spustí překlad. Bez databáze, bez projektu, bez konfigurace.
 
 **Výsledek.** Přeložený dotaz v nativní syntaxi cíle — LINQ pro EF Core, HQL pro NHibernate, SQL pro Dapper (rozhodnutí [022](./decisions/022-native-query-syntax-in-builders.md)) — a záznamy o tom, co se cestou ztratilo.
 
@@ -126,4 +126,4 @@ Vymezení je součástí zadání scénářů — bez něj se první tři body �
 - **Nevydává spustitelný projekt.** Soubor projektu, konfiguraci ani registraci v kontejneru negeneruje, a je to volba, ne mezera (rozhodnutí [040](./decisions/040-boundary-of-the-handed-over-artifact.md)).
 - **Nepíše dotazy.** Překládá ty, které dostane; co mezireprezentace neunese, hlásí záznamem, ne náhradou.
 - **Nenahrazuje běhovou vrstvu.** Nic za běhu neproxuje ani nepřekládá; překlad je jednorázový úkon nad zdrojovým kódem.
-- **Nezkoumá repozitář.** Vstup vybírá uživatel; vyhledávání entit a dotazů v projektu není součástí rozsahu.
+- **Nezkoumá repozitář.** Vstup vybírá uživatel; vyhledávání souborů v projektu není součástí rozsahu. Co je v jednom vloženém souboru entita a co dotaz, nástroj rozliší (rozhodnutí [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)); které soubory projektu do převodu patří, ne.

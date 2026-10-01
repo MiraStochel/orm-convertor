@@ -128,6 +128,14 @@ public static class CustomerSampleHibernate
         }
         """";
 
+    /// <summary>
+    /// The entity and a class that queries it in one Java file - what a user has in hand, and
+    /// what one unit is since decision 111. The sample the translation screen loads.
+    /// </summary>
+    public static string Source => SampleFiles.Java(
+        Entity,
+        SampleFiles.JavaType(["jakarta.persistence.EntityManager", "jakarta.persistence.TypedQuery"], "class CustomerQueries", Query));
+
     public const string JpqlQuery = """
         select c
         from Customer c

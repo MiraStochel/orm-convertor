@@ -231,11 +231,19 @@ public static class ConversionHandler
         {
             if (!unit.Claimed)
             {
+                // A value that names a role is an artifact's, which no parser claims on input
+                // (decision 111); the record says which value the unit should have declared,
+                // because the client that sent it most likely took it from an artifact.
+                var language = unit.Source.ContentType.LanguageOf();
+                var hint = language == unit.Source.ContentType
+                    ? string.Empty
+                    : $" {unit.Source.ContentType} names an artifact the tool writes; an input unit declares its language, {language}.";
+
                 runRecords.Add(NotTranslated(
                     targetOrm,
                     unit.Source.ContentType,
                     unit.Reference,
-                    $"{sourceOrm} has no parser for a {unit.Source.ContentType} unit, so it was not read."));
+                    $"{sourceOrm} has no parser for a {unit.Source.ContentType} unit, so it was not read.{hint}"));
             }
             else if (!unit.Yielded)
             {

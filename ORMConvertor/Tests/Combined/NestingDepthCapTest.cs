@@ -52,7 +52,7 @@ public class NestingDepthCapTest
             // Counted by the Java reader itself and not by the shared guard: an angle bracket
             // is a comparison in an initializer and a type argument in a declaration, and only
             // the reader knows which of the two it is looking at.
-            "Java, generic types", ORMEnum.Hibernate, ORMEnum.EFCore, ConversionContentType.JavaEntity,
+            "Java, generic types", ORMEnum.Hibernate, ORMEnum.EFCore, ConversionContentType.Java,
             depth => "class Customer { java.util.List"
                 + string.Concat(Enumerable.Repeat("<java.util.List", depth - 1))
                 + "<String>"
@@ -60,14 +60,14 @@ public class NestingDepthCapTest
                 + " names; }"
         },
         {
-            "Java, nested classes", ORMEnum.Hibernate, ORMEnum.EFCore, ConversionContentType.JavaEntity,
+            "Java, nested classes", ORMEnum.Hibernate, ORMEnum.EFCore, ConversionContentType.Java,
             depth => string.Concat(Enumerable.Range(0, depth).Select(i => "class C" + i + " { "))
                 + string.Concat(Enumerable.Repeat("} ", depth))
         },
         {
             // The MyBatis mapper interface reads Java through the same reader but by its own
             // call, which is exactly how it was first left uncapped.
-            "Java, MyBatis mapper interface", ORMEnum.MyBatis, ORMEnum.EFCore, ConversionContentType.JavaQuery,
+            "Java, MyBatis mapper interface", ORMEnum.MyBatis, ORMEnum.EFCore, ConversionContentType.Java,
             depth => "interface CustomerMapper { java.util.List"
                 + string.Concat(Enumerable.Repeat("<java.util.List", depth - 1))
                 + "<String>"
@@ -80,12 +80,12 @@ public class NestingDepthCapTest
         },
         {
             // The class brace is the first level, so the parentheses supply the rest.
-            "C# entity, parentheses", ORMEnum.Dapper, ORMEnum.EFCore, ConversionContentType.CSharpEntity,
+            "C# entity, parentheses", ORMEnum.Dapper, ORMEnum.EFCore, ConversionContentType.CSharp,
             depth => Wrapped("public class Customer { public int CustomerID { get; set; } = ", "1", "; }", depth - 1)
         },
         {
             // The method brace and the Where call are the first two levels.
-            "LINQ, parentheses", ORMEnum.EFCore, ORMEnum.Dapper, ConversionContentType.CSharpQuery,
+            "LINQ, parentheses", ORMEnum.EFCore, ORMEnum.Dapper, ConversionContentType.CSharp,
             depth => Wrapped(
                 "public List<Customer> Query()\n{\n    return ctx.Customers.Where(c => ",
                 "c.CustomerID == 1",
@@ -185,7 +185,7 @@ public class NestingDepthCapTest
         [
             new()
             {
-                ContentType = ConversionContentType.CSharpEntity,
+                ContentType = ConversionContentType.CSharp,
                 Content = "public class Customer { public int Id { get; set; } }",
             },
         ];

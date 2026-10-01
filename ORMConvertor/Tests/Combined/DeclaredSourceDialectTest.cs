@@ -158,10 +158,10 @@ public class DeclaredSourceDialectTest
     /// (decisions 052 and 086).
     /// </summary>
     [Theory]
-    [InlineData(ORMEnum.EFCore, ConversionContentType.CSharpEntity)]
+    [InlineData(ORMEnum.EFCore, ConversionContentType.CSharp)]
     [InlineData(ORMEnum.NHibernate, ConversionContentType.XML)]
-    [InlineData(ORMEnum.Hibernate, ConversionContentType.JavaEntity)]
-    [InlineData(ORMEnum.EclipseLink, ConversionContentType.JavaEntity)]
+    [InlineData(ORMEnum.Hibernate, ConversionContentType.Java)]
+    [InlineData(ORMEnum.EclipseLink, ConversionContentType.Java)]
     public void ADeclaredlyForeignColumnTypeIsDroppedWithARecord(ORMEnum source, ConversionContentType unitType)
     {
         var units = UnitsWithForeignColumnType(source, unitType);
@@ -275,11 +275,11 @@ public class DeclaredSourceDialectTest
 
         var spelt = unitType switch
         {
-            ConversionContentType.CSharpEntity => unit.Content.Replace(
+            ConversionContentType.CSharp => unit.Content.Replace(
                 "    public string CustomerName { get; set; }",
                 "    [Column(\"CustomerName\", TypeName = \"VARCHAR2(50)\")]\n    public string CustomerName { get; set; }"),
 
-            ConversionContentType.JavaEntity => unit.Content.Replace(
+            ConversionContentType.Java => unit.Content.Replace(
                 "@Column(name = \"CustomerName\")",
                 "@Column(name = \"CustomerName\", columnDefinition = \"VARCHAR2(50)\")"),
 

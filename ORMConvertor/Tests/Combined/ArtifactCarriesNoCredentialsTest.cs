@@ -77,7 +77,7 @@ public class ArtifactCarriesNoCredentialsTest
         List<ConversionSource> sources =
         [
             .. CrossFrameworkInputs.MappingUnits(ORMEnum.EFCore),
-            new() { Content = contextWithConnection, ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = contextWithConnection, ContentType = ConversionContentType.CSharp },
             CrossFrameworkInputs.QueryUnit(ORMEnum.EFCore),
         ];
 

@@ -56,7 +56,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.Dapper,
             target,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             DapperCall("Rich", RichSql) + "\n" + DapperCall("Ordered", OrderedSql));
 
         var methods = Methods(result, artifact);
@@ -78,7 +78,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.Dapper,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             DapperCall("Rich", RichSql) + "\n"
                 + "public object Built(IDbConnection connection, string sql) => connection.Query<Customer>(sql).ToList();\n"
                 + DapperCall("Ordered", OrderedSql));
@@ -105,7 +105,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.Dapper,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             $$"""
             public void Load(IDbConnection connection)
             {
@@ -137,7 +137,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.Dapper,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             """
             public object Purge(IDbConnection connection)
             {
@@ -158,7 +158,7 @@ public class CodeQueryUnitTest
     [Fact]
     public void ASingleCallKeepsTheFixedName()
     {
-        var result = Convert(ORMEnum.Dapper, ORMEnum.Dapper, ConversionContentType.CSharpQuery, DapperCall("Rich", RichSql));
+        var result = Convert(ORMEnum.Dapper, ORMEnum.Dapper, ConversionContentType.CSharp, DapperCall("Rich", RichSql));
 
         var method = Assert.Single(Methods(result, ConversionContentType.CSharpQuery));
 
@@ -174,7 +174,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             source,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             $$"""
             public object Rich() => {{queryRoot}}.Where(c => c.CreditLimit > 2000).ToList();
 
@@ -196,7 +196,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.EFCore,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             "public object AboveAverage() => ctx.Customers.Where(c => c.CreditLimit > ctx.Customers.Average(x => x.CreditLimit)).ToList();");
 
         var method = Assert.Single(Methods(result, ConversionContentType.CSharpQuery));
@@ -219,7 +219,7 @@ public class CodeQueryUnitTest
         var continued = Convert(
             source,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             $$"""
             public object Names()
             {
@@ -231,7 +231,7 @@ public class CodeQueryUnitTest
         var written = Convert(
             source,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             $"public object Names() => {queryRoot}.Where(c => c.CreditLimit > 2000).OrderBy(c => c.CustomerName).Select(c => c.CustomerName).ToList();");
 
         var method = Assert.Single(Methods(continued, ConversionContentType.CSharpQuery));
@@ -251,7 +251,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.EFCore,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             """
             public object Load()
             {
@@ -282,7 +282,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.EFCore,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             """
             public object Names()
             {
@@ -294,7 +294,7 @@ public class CodeQueryUnitTest
         var loaded = Convert(
             ORMEnum.EFCore,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             "public object Names() => ctx.Customers.Where(c => c.CreditLimit > 2000).ToList();");
 
         Assert.Equal(
@@ -325,7 +325,7 @@ public class CodeQueryUnitTest
         """)]
     public void AQueryComposedAtRunTimeIsRefusedNamingTheVariable(string unit)
     {
-        var result = Convert(ORMEnum.EFCore, ORMEnum.Dapper, ConversionContentType.CSharpQuery, unit);
+        var result = Convert(ORMEnum.EFCore, ORMEnum.Dapper, ConversionContentType.CSharp, unit);
 
         Assert.Empty(Methods(result, ConversionContentType.CSharpQuery));
 
@@ -346,7 +346,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.EFCore,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             "public object Rich() => ctx.Customers.Where(c => c.CreditLimit > 2000).ToList();\n" + refused);
 
         var method = Assert.Single(Methods(result, ConversionContentType.CSharpQuery));
@@ -370,7 +370,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.EFCore,
             ORMEnum.Dapper,
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             $$"""
             public int Lines()
             {
@@ -393,7 +393,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.Hibernate,
             target,
-            ConversionContentType.JavaQuery,
+            ConversionContentType.Java,
             """
             public List<Customer> rich(EntityManager em) {
                 return em.createQuery("select c from Customer c where c.CreditLimit > 2000", Customer.class).getResultList();
@@ -419,7 +419,7 @@ public class CodeQueryUnitTest
         var result = Convert(
             ORMEnum.Hibernate,
             ORMEnum.EFCore,
-            ConversionContentType.JavaQuery,
+            ConversionContentType.Java,
             """
             public List<Customer> rich(EntityManager em) {
                 return em.createQuery("select c from Customer c where c.CreditLimit > 2000", Customer.class).getResultList();

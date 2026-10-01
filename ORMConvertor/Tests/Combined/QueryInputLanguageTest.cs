@@ -1,6 +1,7 @@
 using AbstractWrappers.Diagnostics;
 using DapperWrappers;
 using Model;
+using OrmConvertor;
 
 namespace Tests.Combined;
 
@@ -43,7 +44,7 @@ public class QueryInputLanguageTest
         // ExecuteScalar is a Dapper method the old heuristic did not recognize, so the whole
         // snippet went into the T-SQL parser and came back as unparsable SQL.
         var (outputs, records) = Translate(
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             """
             public int Count(IDbConnection db)
             {
@@ -55,15 +56,26 @@ public class QueryInputLanguageTest
         Assert.DoesNotContain(records, r => r.Kind == ConversionRecordKind.Failure);
     }
 
+    /// <summary>
+    /// A C# unit is a whole file (decision 111), and one that holds an entity alone carries no
+    /// Dapper call: that is no error of the query reading, which yields no query and says
+    /// nothing. Whether the unit yielded anything at all is the conversion's to say, across
+    /// both passes (decision 081) - and it says so for a text that holds neither.
+    /// </summary>
     [Fact]
-    public void CSharpWithNoDapperCallStillSaysSo()
+    public void CSharpWithNoDapperCallYieldsNoQueryAndTheConversionSpeaksAboutTheUnit()
     {
-        // The message stays the honest one for a unit that really is C#: nothing here claims
-        // the input was SQL.
-        var (outputs, records) = Translate(ConversionContentType.CSharpQuery, "var x = 1;");
+        var parsed = new DapperSqlQueryParser(() => new DapperSqlQueryBuilder()).Parse(ConversionContentType.CSharp, "var x = 1;");
 
-        Assert.Empty(outputs);
-        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Failure
-            && r.Reason.Contains("No Dapper query call", StringComparison.Ordinal));
+        Assert.Empty(parsed);
+
+        var result = ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.Dapper,
+        [
+            new() { ContentType = ConversionContentType.CSharp, Content = "var x = 1;" },
+        ]);
+
+        var record = Assert.Single(result.Records, r => r.Kind == ConversionRecordKind.Failure && r.Unit == "unit 1");
+        Assert.Contains("neither a mapping fact nor a query", record.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(result.Records, r => r.Reason.Contains("SQL", StringComparison.Ordinal));
     }
 }

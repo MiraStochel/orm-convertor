@@ -32,7 +32,7 @@ public class ConvertEndpointTest(ApiTestHost host)
         targetOrm = (int)ORMEnum.NHibernate,
         sources = new[]
         {
-            new { contentType = (int)ConversionContentType.CSharpEntity, content = CustomerSampleEFCore.Entity },
+            new { contentType = (int)ConversionContentType.CSharp, content = CustomerSampleEFCore.Entity },
         },
     };
 
@@ -126,7 +126,7 @@ public class ConvertEndpointTest(ApiTestHost host)
             ORMEnum.NHibernate,
             [new ConversionSource
             {
-                ContentType = ConversionContentType.CSharpEntity,
+                ContentType = ConversionContentType.CSharp,
                 Content = CustomerSampleEFCore.Entity,
             }],
             catalogConnectionString: null);
@@ -203,7 +203,7 @@ public class ConvertEndpointTest(ApiTestHost host)
             targetOrm = (int)ORMEnum.NHibernate,
             sources = new[]
             {
-                new { contentType = (int)ConversionContentType.CSharpEntity, content = "this is not C#" },
+                new { contentType = (int)ConversionContentType.CSharp, content = "this is not C#" },
             },
         });
 
@@ -236,7 +236,7 @@ public class ConvertEndpointTest(ApiTestHost host)
             targetOrm = (int)ORMEnum.EFCore,
             sources = new[]
             {
-                new { name = "Customer.cs", contentType = (int)ConversionContentType.CSharpEntity, content = CustomerSampleNHibernate.Entity },
+                new { name = "Customer.cs", contentType = (int)ConversionContentType.CSharp, content = CustomerSampleNHibernate.Entity },
                 new { name = "customer.hbm.xml", contentType = (int)ConversionContentType.XML, content = CustomerSampleNHibernate.XmlMapping },
                 new { name = "broken.hbm.xml", contentType = (int)ConversionContentType.XML, content = "<hibernate-mapping>\n  <class name=\"Customer\">\n</hibernate-mapping>" },
             },
@@ -292,8 +292,8 @@ public class ConvertEndpointTest(ApiTestHost host)
             targetOrm = (int)ORMEnum.NHibernate,
             sources = new object[]
             {
-                new { contentType = (int)ConversionContentType.CSharpEntity, content = CustomerSampleEFCore.Entity },
-                new { contentType = (int)ConversionContentType.CSharpEntity, content = "this is not C#", name = "Broken.cs" },
+                new { contentType = (int)ConversionContentType.CSharp, content = CustomerSampleEFCore.Entity },
+                new { contentType = (int)ConversionContentType.CSharp, content = "this is not C#", name = "Broken.cs" },
             },
         };
 

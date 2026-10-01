@@ -780,13 +780,19 @@ public class HibernateEntityParserTest
             && r.Category == MappingFactCategory.PrecisionAndScale);
     }
 
+    /// <summary>
+    /// Java, and nothing else of the parsers' languages - the orm.xml has its own parser. The
+    /// value of the entity artifact is the builder's, not a language a unit declares
+    /// (decision 111).
+    /// </summary>
     [Fact]
-    public void TheParserClaimsOnlyTheJavaEntityLanguage()
+    public void TheParserClaimsOnlyTheJavaLanguage()
     {
         var parser = new HibernateEntityParser(new DummyEntityBuilder(), new JpaReadingContext());
 
-        Assert.True(parser.CanParse(ConversionContentType.JavaEntity));
-        Assert.False(parser.CanParse(ConversionContentType.CSharpEntity));
+        Assert.True(parser.CanParse(ConversionContentType.Java));
+        Assert.False(parser.CanParse(ConversionContentType.JavaEntity));
+        Assert.False(parser.CanParse(ConversionContentType.CSharp));
         Assert.False(parser.CanParse(ConversionContentType.XML));
     }
 }

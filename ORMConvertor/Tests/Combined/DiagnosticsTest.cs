@@ -268,7 +268,7 @@ public class DiagnosticsTest
         {
             new()
             {
-                ContentType = ConversionContentType.CSharpEntity,
+                ContentType = ConversionContentType.CSharp,
                 Content = """
                     public class Customer
                     {
@@ -313,7 +313,7 @@ public class DiagnosticsTest
 public class EmptyConversionTest
 {
     private static List<ConversionSource> Entity(string content) =>
-        [new() { ContentType = ConversionContentType.CSharpEntity, Content = content }];
+        [new() { ContentType = ConversionContentType.CSharp, Content = content }];
 
     /// <summary>
     /// Roslyn parses almost anything, so text that is not a class comes back as a parse tree

@@ -115,6 +115,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [108](108-a-sql-unit-carries-a-query-per-select-numbered-by-position.md) | Holá jednotka SQL nese dotaz za každý `SELECT` a nepojmenované dotazy čísluje pořadím | 2026-09-30 | platí | F8, F11, F14, S1, S2, S7 |
 | [109](109-a-code-unit-carries-every-query-it-hands-over.md) | Dotazová jednotka v kódu nese každý dotaz, který předává frameworku, a dotaz složený přes proměnnou čte celý | 2026-09-30 | platí | F7, F8, F9, F10, F11, F14, S1, S2 |
 | [110](110-ldbc-snb-as-a-second-reference-domain.md) | LDBC Social Network Benchmark jako druhá referenční doména: data v kontejnerové databázi a katalog jeho dotazů se stavem, který drží testy | 2026-09-30 | platí | T1, T2, T3, F4, F6, F11, S5, S7 |
+| [111](111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md) | Jednotka je celý zdrojový soubor: vstup deklaruje jen jazyk, role tříd rozdělí zdrojový framework a jméno zůstává nepovinným popiskem | 2026-10-01 | platí | F11, F14, S1, S2, S6, S7, T1 |
 
 ## Formát
 

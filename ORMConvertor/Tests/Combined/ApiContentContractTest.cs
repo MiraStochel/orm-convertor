@@ -1,3 +1,4 @@
+using AbstractWrappers.Diagnostics;
 using Model;
 using ORMConvertorAPI.Data;
 
@@ -57,17 +58,42 @@ public class ApiContentContractTest
     }
 
     /// <summary>
-    /// And each row asks for both halves of a conversion. A framework that asked only for a
-    /// mapping would leave its query branch unreachable from the interface even where its
-    /// parser reads one.
+    /// Each row offers languages, each once (decision 111): a unit declares the language of
+    /// its file and the source framework reads the roles out of it, so a value that names a
+    /// role - an artifact's - is never asked for, and a language asked for twice would be a
+    /// role in disguise.
     /// </summary>
     [Fact]
-    public void EveryFrameworkAsksForAMappingUnitAndForAQueryUnit()
+    public void EveryFrameworkOffersEachOfItsLanguagesOnce()
     {
         foreach (var definition in RequiredContent.GetRequiredContent)
         {
-            Assert.Contains(definition.Required, u => !u.ContentType.IsQuery());
-            Assert.Contains(definition.Required, u => u.ContentType.IsQuery());
+            var offered = definition.Required.Select(u => u.ContentType).ToList();
+
+            Assert.All(offered, type => Assert.Equal(type, type.LanguageOf()));
+            Assert.Equal(offered.Count, offered.Distinct().Count());
+        }
+    }
+
+    /// <summary>
+    /// And each row reaches both halves of a conversion. A framework whose sample set yielded
+    /// only a mapping would leave its query branch unreachable from the interface even where
+    /// its parser reads one; since decision 111 the halves are found inside the units rather
+    /// than asked for one by one, so it is the output that has to carry both.
+    /// </summary>
+    [Fact]
+    public void EveryFrameworksSampleSetYieldsAMappingAndAQuery()
+    {
+        foreach (var definition in RequiredContent.GetRequiredContent)
+        {
+            var sources = definition.Required
+                .Select(c => new ConversionSource { Content = Samples.GetSamples[c.Id], ContentType = c.ContentType })
+                .ToList();
+
+            var result = OrmConvertor.ConversionHandler.Convert(definition.OrmType, ORMEnum.Dapper, sources);
+
+            Assert.Contains(result.Sources, s => !s.ContentType.IsQuery());
+            Assert.Contains(result.Sources, s => s.ContentType.IsQuery());
         }
     }
 
@@ -80,36 +106,26 @@ public class ApiContentContractTest
     }
 
     /// <summary>
-    /// A query unit the source framework has no parser for would be a box the user fills and
-    /// the tool then refuses - the interface must not ask for one.
+    /// A language the source framework has no parser for would be a box the user fills and
+    /// the tool then refuses - the interface must not ask for one; and a sample that yields
+    /// nothing would be a box the tool reads and throws away.
     ///
-    /// Each query unit is converted beside the framework's other units, because that is what
-    /// the interface asks for and what the user fills: a query whose filter carries a
-    /// parameter takes its scalar from the mapping IR (decision 083), so the query unit on
-    /// its own is not the question the interface poses.
+    /// The units are converted together, because that is what the interface asks for and
+    /// what the user fills: a query whose filter carries a parameter takes its scalar from the
+    /// mapping IR (decision 083), so a unit on its own is not the question the interface poses.
     /// </summary>
     [Fact]
-    public void EveryQueryUnitIsAskedInALanguageTheSourceCanRead()
+    public void EveryLanguageAskedForIsReadAndYields()
     {
         foreach (var definition in RequiredContent.GetRequiredContent)
         {
-            var mapping = definition.Required
-                .Where(c => !c.ContentType.IsQuery())
-                .Select(c => new ConversionSource { Content = Samples.GetSamples[c.Id], ContentType = c.ContentType })
+            var sources = definition.Required
+                .Select(c => new ConversionSource { Content = Samples.GetSamples[c.Id], ContentType = c.ContentType, Name = c.Description })
                 .ToList();
 
-            foreach (var unit in definition.Required.Where(c => c.ContentType.IsQuery()))
-            {
-                List<ConversionSource> sources =
-                [
-                    .. mapping,
-                    new() { Content = Samples.GetSamples[unit.Id], ContentType = unit.ContentType },
-                ];
+            var result = OrmConvertor.ConversionHandler.Convert(definition.OrmType, ORMEnum.Dapper, sources);
 
-                var result = OrmConvertor.ConversionHandler.Convert(definition.OrmType, ORMEnum.Dapper, sources);
-
-                Assert.Contains(result.Sources, s => s.ContentType.IsQuery());
-            }
+            Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure && r.Unit is not null);
         }
     }
 }

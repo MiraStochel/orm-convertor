@@ -20,7 +20,7 @@ public static class Endpoints
 
         group.MapGet("/required-content-advisor", () => RequiredContent.GetRequiredContentAdvisor)
             .WithName("RequiredContentAdvisor")
-            .Produces<List<RequiredContentDefinition>>(StatusCodes.Status200OK);
+            .Produces<List<AdvisorRequiredContentDefinition>>(StatusCodes.Status200OK);
 
         group.MapPost("/convert", ConvertHandler)
            .WithName("Convert")

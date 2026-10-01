@@ -15,7 +15,7 @@ internal static class PerformanceProject
     // pass unmeasured.
     public static ConversionSource SyntheticEntity(int i) => new()
     {
-        ContentType = ConversionContentType.CSharpEntity,
+        ContentType = ConversionContentType.CSharp,
         Content = $$"""
             using System.ComponentModel.DataAnnotations;
             using System.ComponentModel.DataAnnotations.Schema;
@@ -42,7 +42,7 @@ internal static class PerformanceProject
 
     public static ConversionSource SyntheticQuery(int i) => new()
     {
-        ContentType = ConversionContentType.CSharpQuery,
+        ContentType = ConversionContentType.CSharp,
         Content = $$"""
             public void Query()
             {

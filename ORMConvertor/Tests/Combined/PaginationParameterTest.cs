@@ -419,8 +419,8 @@ public class PaginationParameterTest
 
         return ConversionHandler.Convert(ORMEnum.MyBatis, ORMEnum.Dapper,
         [
-            new ConversionSource { Content = domain, ContentType = ConversionContentType.JavaEntity },
-            new ConversionSource { Content = mapperInterface, ContentType = ConversionContentType.JavaQuery },
+            new ConversionSource { Content = domain, ContentType = ConversionContentType.Java },
+            new ConversionSource { Content = mapperInterface, ContentType = ConversionContentType.Java },
             new ConversionSource { Content = mapper, ContentType = ConversionContentType.XML },
         ]);
     }

@@ -47,7 +47,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/RequiredContentDefinition"
+                    "$ref": "#/components/schemas/AdvisorRequiredContentDefinition"
                   }
                 }
               }
@@ -299,6 +299,31 @@
   },
   "components": {
     "schemas": {
+      "AdvisorRequiredContentDefinition": {
+        "required": [
+          "ormType",
+          "required",
+          "queries"
+        ],
+        "type": "object",
+        "properties": {
+          "ormType": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "required": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequiredContentUnit"
+            }
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequiredContentUnit"
+            }
+          }
+        }
+      },
       "AdvisorRunQuery": {
         "required": [
           "id",

@@ -74,7 +74,7 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     public ParseLimits Limits { get; set; } = ParseLimits.Default;
 
     public bool CanParse(ConversionContentType contentType)
-        => contentType is ConversionContentType.JpqlQuery or ConversionContentType.JavaQuery;
+        => contentType is ConversionContentType.JpqlQuery or ConversionContentType.Java;
 
     /// <summary>
     /// A bare JPQL unit is one query. A Java unit carries a query for every createQuery and
@@ -82,6 +82,13 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// makes a query object of its own and is read into a builder of its own, so a call whose
     /// query is composed at run time refuses itself alone. Queries of one unit are numbered by
     /// the position of their call in the text, since the calls name nothing.
+    ///
+    /// The Java unit is a whole file or a fragment of one (decision 111), and the entity pass
+    /// reads the same text for its classes. One without a call is therefore no error - a file
+    /// holding an entity alone is an ordinary input - and yields no query; whether the unit
+    /// yielded anything at all is asked of both passes together (decision 081). A text the
+    /// lexer cannot read yields nothing here either, and says nothing: the entity pass, which
+    /// read the same text first, has reported it.
     /// </summary>
     public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
@@ -90,22 +97,14 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         // Every builder leaves, refused ones included: it holds the records of what went
         // wrong, and only the parser can say that this unit yielded a query at all (decision
         // 081).
-        if (contentType != ConversionContentType.JavaQuery)
+        if (contentType != ConversionContentType.Java)
         {
             queryBuilder = queryBuilders();
             ReadQuery(source);
             return [queryBuilder];
         }
 
-        var calls = ExtractQueryLiterals(source, out var refusal);
-
-        if (refusal is { } unread)
-        {
-            queryBuilder = queryBuilders();
-            Report(unread.Kind, unread.Reason);
-            return [queryBuilder];
-        }
-
+        var calls = ExtractQueryLiterals(source);
         var builders = new List<AbstractQueryBuilder>(calls.Count);
 
         for (var i = 0; i < calls.Count; i++)
@@ -188,26 +187,49 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// order of the text, the string literal it is handed, whether a plain literal or a text
     /// block (decision 109). A query composed at run time - concatenation, a variable - is null
     /// in the list: the same case the Dapper parser reports for SQL that is not a literal
-    /// (decision 026), an incompleteness of that query and nothing to read. The refusal is
-    /// set, and the list empty, where the unit as a whole yields no query to read.
+    /// (decision 026), an incompleteness of that query and nothing to read.
     /// </summary>
-    private static List<string?> ExtractQueryLiterals(string source, out (ConversionRecordKind Kind, string Reason)? refusal)
+    private static List<string?> ExtractQueryLiterals(string source)
     {
-        refusal = null;
+        var javaTokens = Calls(source, out var calls);
+
+        return [.. calls.Select(i => javaTokens[i + 2].Kind == JavaTokenKind.String
+            && !(javaTokens[i + 3] is { Kind: JavaTokenKind.Symbol, Text: "+" })
+                ? javaTokens[i + 2].Text
+                : null)];
+    }
+
+    /// <summary>
+    /// The places where a Java unit hands a query over (decisions 109 and 111): the offset in
+    /// the source of every call <see cref="Parse"/> reads a query of, found by the same
+    /// search. The entity pass of the wrapper asks it which classes hold the code around
+    /// queries rather than an entity, and the answer has to be the one the query pass acts on.
+    /// A text the lexer cannot read has none.
+    /// </summary>
+    public static IReadOnlyList<int> FindHandovers(string source)
+    {
+        var javaTokens = Calls(source, out var calls);
+        return [.. calls.Select(i => javaTokens[i].Offset)];
+    }
+
+    /// <summary>
+    /// The tokens of the unit and the index of every createQuery or createSelectionQuery
+    /// called with an argument list, in the order of the text; none where the lexer cannot
+    /// read the text.
+    /// </summary>
+    private static List<JavaToken> Calls(string source, out List<int> calls)
+    {
+        calls = [];
 
         List<JavaToken> javaTokens;
         try
         {
             javaTokens = JavaLexer.Lex(source);
         }
-        catch (JavaSyntaxError error)
+        catch (JavaSyntaxError)
         {
-            refusal = (ConversionRecordKind.Failure,
-                $"The Java source could not be read at line {error.Line}, column {error.Column}: {error.Message}.");
             return [];
         }
-
-        var calls = new List<string?>();
 
         for (var i = 0; i + 2 < javaTokens.Count; i++)
         {
@@ -215,20 +237,11 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 && javaTokens[i].Text is "createQuery" or "createSelectionQuery"
                 && javaTokens[i + 1] is { Kind: JavaTokenKind.Symbol, Text: "(" })
             {
-                calls.Add(javaTokens[i + 2].Kind == JavaTokenKind.String
-                    && !(javaTokens[i + 3] is { Kind: JavaTokenKind.Symbol, Text: "+" })
-                        ? javaTokens[i + 2].Text
-                        : null);
+                calls.Add(i);
             }
         }
 
-        if (calls.Count == 0)
-        {
-            refusal = (ConversionRecordKind.Incompleteness,
-                "The Java source calls neither createQuery nor createSelectionQuery with a literal, so no JPQL was found to read.");
-        }
-
-        return calls;
+        return javaTokens;
     }
 
     /* ---- lexer ---------------------------------------------------------------------- */

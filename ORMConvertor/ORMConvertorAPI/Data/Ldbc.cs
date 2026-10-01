@@ -18,7 +18,7 @@ public static class Ldbc
             [.. LdbcSnbSample.Entities.Select(entity => new ConversionSource
             {
                 Name = entity.FileName,
-                ContentType = ConversionContentType.CSharpEntity,
+                ContentType = ConversionContentType.CSharp,
                 Content = entity.Content,
             })],
             [.. LdbcSnbSample.Queries.Select(query => new LdbcQueryDefinition(

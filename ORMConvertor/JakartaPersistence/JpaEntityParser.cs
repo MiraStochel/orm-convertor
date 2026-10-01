@@ -23,6 +23,12 @@ public abstract class JpaEntityParser(
 {
     private readonly JpaMappingWriter writer = new(entityBuilder, ConversionContentType.JavaEntity, context.DeclaredSourceDialect);
 
+    /// <summary>
+    /// A class whose own members call createQuery is the code around queries, not an entity
+    /// (decision 111), answered by the same search the query pass reads the queries by.
+    /// </summary>
+    protected override IEnumerable<int> FindHandovers(string source) => JpqlQueryParser.FindHandovers(source);
+
     protected override void ParseClassBody(JavaClass cls)
     {
         var access = AccessTypeOf(cls);

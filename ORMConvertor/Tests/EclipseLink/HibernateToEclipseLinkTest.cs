@@ -18,7 +18,7 @@ public class HibernateToEclipseLinkTest
     private static ConversionResult Convert(ORMEnum source, ORMEnum target, string entity, params ConversionSource[] extra)
         => ConversionHandler.Convert(source, target,
         [
-            new() { Content = entity, ContentType = ConversionContentType.JavaEntity },
+            new() { Content = entity, ContentType = ConversionContentType.Java },
             .. extra,
         ]);
 
@@ -209,7 +209,7 @@ public class HibernateToEclipseLinkTest
                         private Integer CustomerId;
                     }
                     """,
-                ContentType = ConversionContentType.JavaEntity,
+                ContentType = ConversionContentType.Java,
             },
             new()
             {
@@ -230,7 +230,7 @@ public class HibernateToEclipseLinkTest
                         private Customer Customer;
                     }
                     """,
-                ContentType = ConversionContentType.JavaEntity,
+                ContentType = ConversionContentType.Java,
             },
         ]);
 

@@ -156,7 +156,7 @@ public class SqlScriptTest
         var builder = new DapperSqlQueryBuilder();
 
         new DapperSqlQueryParser(() => builder).Parse(
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             $"public List<Customer> Get(IDbConnection connection) => connection.Query<Customer>(\"{Rich}; {Ordered}\").ToList();");
 
         AssertRefusedAsOneCommand(builder);
@@ -186,7 +186,7 @@ public class SqlScriptTest
 
         var fromCall = new DapperSqlQueryBuilder();
         new DapperSqlQueryParser(() => fromCall).Parse(
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             $"public decimal Get(IDbConnection connection) => connection.ExecuteScalar<decimal>(\"{assignment}\");");
 
         foreach (var builder in new[] { fromCall, FromNativeQuery(assignment) })

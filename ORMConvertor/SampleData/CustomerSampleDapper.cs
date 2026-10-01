@@ -34,6 +34,21 @@ public class CustomerSampleDapper
         ORDER BY c.AccountOpenedDate DESC
         """;
 
+    /// <summary>
+    /// The entity and the repository that hands the same T-SQL to Dapper, in one C# file -
+    /// what a user has in hand, and what one unit is since decision 111. The sample the
+    /// translation screen loads beside the bare SQL.
+    /// </summary>
+    public static string Source => SampleFiles.CSharp(
+        Entity,
+        "public class CustomerRepository(IDbConnection connection)",
+        "public IEnumerable<Customer> CreditworthyCustomers()\n"
+        + "{\n"
+        + "    return connection.Query<Customer>(@\"\n"
+        + SampleFiles.Indent(Query, 8) + "\n"
+        + "        \");\n"
+        + "}");
+
     public static EntityMap Map
     {
         get

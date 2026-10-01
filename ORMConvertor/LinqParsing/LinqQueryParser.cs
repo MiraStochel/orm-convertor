@@ -4,6 +4,7 @@ using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Naming;
+using Common.Reading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -126,10 +127,10 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     public ParseLimits Limits { get; set; } = ParseLimits.Default;
 
     public bool CanParse(ConversionContentType contentType)
-        => contentType == ConversionContentType.CSharpQuery;
+        => contentType == ConversionContentType.CSharp;
 
     /// <summary>
-    /// The content type is not consulted here: LINQ is the only language this parser claims
+    /// The content type is not consulted here: C# is the only language this parser claims
     /// (see CanParse), so there is nothing to branch on. It is in the signature because the
     /// unit declares its language and a parser reading two of them - the Dapper one, with
     /// SQL bare beside SQL wrapped in C# - has to be told which (decision 047).
@@ -138,50 +139,24 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// alone (decision 109), each read into a builder of its own, so a chain the reading
     /// refuses refuses itself alone. Queries of one unit are numbered by the position of their
     /// chain in the text, since a chain names nothing.
+    ///
+    /// The unit is a whole C# file or a fragment of one (decision 111), and the entity pass
+    /// reads the same text for its classes. A unit with no chain in it is therefore no error -
+    /// a file holding an entity alone is an ordinary input - and yields no query; whether the
+    /// unit yielded anything at all is asked of both passes together (decision 081). A text
+    /// nested beyond the cap yields nothing here either, and says nothing: the entity pass,
+    /// which read the same text first, has reported it.
     /// </summary>
     public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? maps = null)
     {
         entityMaps = maps;
 
-        // Before Roslyn, and over the source as the caller wrote it rather than the wrapped
-        // text, so the position in the record is a position in their input (decision 092).
-        // The two levels the wrapper adds are lost from the count and no one misses them: the
-        // cap sits an order of magnitude below where the stack gives out.
-        if (NestingDepthGuard.FirstBeyond(Tracked(source), Limits) is { } tooDeep)
+        if (!Prepare(source, out var root, out var rewriter))
         {
-            queryBuilder = queryBuilders();
-            queryBuilder.Push();
-            Report(ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep, Limits));
-            queryBuilder.Pop();
-
-            return [queryBuilder];
+            return [];
         }
 
-        var tree = CSharpSyntaxTree.ParseText(Wrap(source));
-        SyntaxNode root = tree.GetCompilationUnitRoot();
-
-        // A query expression is read as the method chain the language defines it as
-        // (decision 103), so from here on there is only the one shape to read.
-        var rewriter = new QueryExpressionRewriter(root);
-        root = rewriter.Visit(root)!;
-
-        variables = new QueryVariables(root, expression => TryDecompose(expression, out _, out _));
         var queries = FindQueries(root, rewriter);
-
-        // The builder leaves even when it was refused: it holds the records of what went
-        // wrong, and only the parser can say that this unit yielded a query (decision 081).
-        if (queries.Count == 0)
-        {
-            queryBuilder = queryBuilders();
-            queryBuilder.Push();
-            Report(
-                ConversionRecordKind.Failure,
-                "No LINQ query chain was found in the source; nothing was translated.");
-            queryBuilder.Pop();
-
-            return [queryBuilder];
-        }
-
         var builders = new List<AbstractQueryBuilder>(queries.Count);
 
         for (var i = 0; i < queries.Count; i++)
@@ -203,6 +178,54 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         return builders;
+    }
+
+    /// <summary>
+    /// The places where the unit hands a query to the provider (decisions 109 and 111): one
+    /// node for every query <see cref="Parse"/> would read, found by the same search. The
+    /// entity pass of the wrapper asks it which classes hold the code around queries rather
+    /// than an entity, and the answer has to be the one the query pass acts on - two searches
+    /// would sooner or later disagree, and a class would come out as both or as neither. The
+    /// nodes belong to the tree this parser reads, in which a class keeps its name, its
+    /// namespace and its members; a text nested beyond the cap has none.
+    /// </summary>
+    public IReadOnlyList<SyntaxNode> FindHandovers(string source)
+    {
+        if (!Prepare(source, out var root, out var rewriter))
+        {
+            return [];
+        }
+
+        return [.. FindQueries(root, rewriter).Select(query => query.Node)];
+    }
+
+    /// <summary>
+    /// The tree of the unit, ready to be searched: the nesting cap checked over the source as
+    /// written (decision 092), a file parsed as it stands and a fragment wrapped
+    /// (decision 111), the query expressions rewritten into the chains the language defines
+    /// them as (decision 103), and the variables of the unit that hold a query described
+    /// (decision 109). False for a text nested beyond the cap, which is not parsed at all.
+    /// </summary>
+    private bool Prepare(string source, out SyntaxNode root, out QueryExpressionRewriter rewriter)
+    {
+        root = default!;
+        rewriter = default!;
+
+        // Before Roslyn, because building the tree is what the cap protects (decision 092).
+        if (NestingDepthGuard.FirstBeyond(Tracked(source), Limits) is not null)
+        {
+            return false;
+        }
+
+        root = CSharpUnit.Parse(source, Wrap).GetCompilationUnitRoot();
+
+        // A query expression is read as the method chain the language defines it as
+        // (decision 103), so from here on there is only the one shape to read.
+        rewriter = new QueryExpressionRewriter(root);
+        root = rewriter.Visit(root)!;
+
+        variables = new QueryVariables(root, expression => TryDecompose(expression, out _, out _));
+        return true;
     }
 
     /// <summary>
@@ -270,9 +293,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <summary>
     /// One query of the unit (decision 109): a chain over a query root, a chain whose query
     /// the code composes at run time and which is refused naming the variable, or a query
-    /// expression the rewrite refused before it became a chain over a root.
+    /// expression the rewrite refused before it became a chain over a root. The node is the
+    /// place itself - the chain, or what the refused expression left behind.
     /// </summary>
-    private sealed record QueryPlace(int Position, InvocationExpressionSyntax? Chain, string? ComposedIn);
+    private sealed record QueryPlace(SyntaxNode Node, InvocationExpressionSyntax? Chain, string? ComposedIn)
+    {
+        public int Position => Node.SpanStart;
+    }
 
     /// <summary>
     /// The queries of the unit in the order of the text. Outer nodes come before inner ones in
@@ -314,7 +341,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             }
 
             queries.Add(new QueryPlace(
-                invocation.SpanStart,
+                invocation,
                 invocation,
                 kind == QueryVariables.StorageKind.RunTime ? variable : null));
         }
@@ -327,7 +354,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             {
                 if (!taken.Any(span => span.Contains(node.Span)))
                 {
-                    queries.Add(new QueryPlace(node.SpanStart, null, null));
+                    queries.Add(new QueryPlace(node, null, null));
                 }
             }
         }

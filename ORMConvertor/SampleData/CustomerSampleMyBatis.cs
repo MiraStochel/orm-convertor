@@ -99,6 +99,13 @@ public static class CustomerSampleMyBatis
         """;
 
     /// <summary>
+    /// The domain class and the mapper interface in one Java file - the interface package-
+    /// private, since a file declares one public type -, which is what one unit is since
+    /// decision 111. The sample the translation screen loads beside the XML mapper.
+    /// </summary>
+    public static string Source => SampleFiles.Java(Entity, MapperInterface);
+
+    /// <summary>
     /// The XML mapper, which is mapping and query in one document: a &lt;resultMap&gt; with
     /// the pairs of column and property, a reusable &lt;sql&gt; fragment, and two statements.
     /// The &lt;where&gt; and the &lt;include&gt; are the static markup the tool expands,

@@ -1,5 +1,6 @@
 using AbstractWrappers;
 using CSharpEntityParsing;
+using Microsoft.CodeAnalysis;
 
 namespace NHibernateWrappers;
 
@@ -11,8 +12,18 @@ namespace NHibernateWrappers;
 /// NHibernate's requirement, not a fact of the domain, and is deferred on reading
 /// (decision 076). The NHibernate builder adds it back to its own output; any other
 /// target neither needs nor understands it.
+///
+/// A class whose own members hand a LINQ query to the session is the code around queries,
+/// not an entity (decision 111), and which classes those are is answered by the same search
+/// the query pass reads the queries by.
 /// </summary>
 public class NHibernateEntityParser(AbstractEntityBuilder entityBuilder) : CSharpEntityParser(entityBuilder)
 {
     protected override IReadOnlyCollection<string> DeferredModifiers => ["virtual"];
+
+    protected override IEnumerable<SyntaxNode> FindHandovers(string source)
+        => new NHibernateLinqQueryParser(() => throw new InvalidOperationException("The search for handovers builds no query."))
+        {
+            Limits = Limits,
+        }.FindHandovers(source);
 }

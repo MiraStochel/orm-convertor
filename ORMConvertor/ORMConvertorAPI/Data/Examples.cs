@@ -22,12 +22,12 @@ public static class Examples
         // Inside .NET: the source states a lot, then the source states little.
         new("efcore-to-nhibernate", ORMEnum.EFCore, ORMEnum.NHibernate,
         [
-            Unit("Customer.cs", ConversionContentType.CSharpEntity, CustomerSampleEFCore.Entity),
-            Unit("CustomerQuery.cs", ConversionContentType.CSharpQuery, CustomerSampleEFCore.Query),
+            Unit("Customer.cs", ConversionContentType.CSharp, CustomerSampleEFCore.Entity),
+            Unit("CustomerQuery.cs", ConversionContentType.CSharp, CustomerSampleEFCore.Query),
         ]),
         new("dapper-to-efcore", ORMEnum.Dapper, ORMEnum.EFCore,
         [
-            Unit("Customer.cs", ConversionContentType.CSharpEntity, CustomerSampleDapper.Entity),
+            Unit("Customer.cs", ConversionContentType.CSharp, CustomerSampleDapper.Entity),
             Unit("CustomerQuery.sql", ConversionContentType.SqlQuery, CustomerSampleDapper.Query),
         ]),
 
@@ -40,30 +40,30 @@ public static class Examples
         // in each direction of F10.
         new("mybatis-to-dapper", ORMEnum.MyBatis, ORMEnum.Dapper,
         [
-            Unit("Customer.java", ConversionContentType.JavaEntity, CustomerSampleMyBatis.Entity),
-            Unit("CustomerMapper.java", ConversionContentType.JavaQuery, CustomerSampleMyBatis.MapperInterface),
+            Unit("Customer.java", ConversionContentType.Java, CustomerSampleMyBatis.Entity),
+            Unit("CustomerMapper.java", ConversionContentType.Java, CustomerSampleMyBatis.MapperInterface),
             Unit("CustomerMapper.xml", ConversionContentType.XML, CustomerSampleMyBatis.XmlMapper),
         ]),
         new("order-book", ORMEnum.EFCore, ORMEnum.Hibernate,
         [
-            Unit("Customer.cs", ConversionContentType.CSharpEntity, OrderBookSampleEFCore.Customer),
-            Unit("SalesOrder.cs", ConversionContentType.CSharpEntity, OrderBookSampleEFCore.SalesOrder),
-            Unit("OrderLine.cs", ConversionContentType.CSharpEntity, OrderBookSampleEFCore.OrderLine),
-            Unit("Product.cs", ConversionContentType.CSharpEntity, OrderBookSampleEFCore.Product),
-            Unit("OpenOrders.cs", ConversionContentType.CSharpQuery, OrderBookSampleEFCore.OpenOrdersQuery),
-            Unit("BestSellers.cs", ConversionContentType.CSharpQuery, OrderBookSampleEFCore.BestSellersQuery),
-            Unit("DormantCustomers.cs", ConversionContentType.CSharpQuery, OrderBookSampleEFCore.DormantCustomersQuery),
-            Unit("OrdersWithProducts.cs", ConversionContentType.CSharpQuery, OrderBookSampleEFCore.OrdersWithProductsQuery),
-            Unit("PricedAboveAverage.cs", ConversionContentType.CSharpQuery, OrderBookSampleEFCore.PricedAboveAverageQuery),
-            Unit("MailingList.cs", ConversionContentType.CSharpQuery, OrderBookSampleEFCore.MailingListQuery),
+            Unit("Customer.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.Customer),
+            Unit("SalesOrder.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.SalesOrder),
+            Unit("OrderLine.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.OrderLine),
+            Unit("Product.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.Product),
+            Unit("OpenOrders.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.OpenOrdersQuery),
+            Unit("BestSellers.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.BestSellersQuery),
+            Unit("DormantCustomers.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.DormantCustomersQuery),
+            Unit("OrdersWithProducts.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.OrdersWithProductsQuery),
+            Unit("PricedAboveAverage.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.PricedAboveAverageQuery),
+            Unit("MailingList.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.MailingListQuery),
         ]),
         new("lending-library", ORMEnum.Hibernate, ORMEnum.NHibernate,
         [
-            Unit("Book.java", ConversionContentType.JavaEntity, LendingLibrarySampleHibernate.Book),
-            Unit("Author.java", ConversionContentType.JavaEntity, LendingLibrarySampleHibernate.Author),
-            Unit("BookCopy.java", ConversionContentType.JavaEntity, LendingLibrarySampleHibernate.BookCopy),
-            Unit("Loan.java", ConversionContentType.JavaEntity, LendingLibrarySampleHibernate.Loan),
-            Unit("Member.java", ConversionContentType.JavaEntity, LendingLibrarySampleHibernate.Member),
+            Unit("Book.java", ConversionContentType.Java, LendingLibrarySampleHibernate.Book),
+            Unit("Author.java", ConversionContentType.Java, LendingLibrarySampleHibernate.Author),
+            Unit("BookCopy.java", ConversionContentType.Java, LendingLibrarySampleHibernate.BookCopy),
+            Unit("Loan.java", ConversionContentType.Java, LendingLibrarySampleHibernate.Loan),
+            Unit("Member.java", ConversionContentType.Java, LendingLibrarySampleHibernate.Member),
             Unit("OverdueLoans.jpql", ConversionContentType.JpqlQuery, LendingLibrarySampleHibernate.OverdueLoansQuery),
             Unit("ActiveMembers.jpql", ConversionContentType.JpqlQuery, LendingLibrarySampleHibernate.ActiveMembersQuery),
             Unit("NeverBorrowed.jpql", ConversionContentType.JpqlQuery, LendingLibrarySampleHibernate.NeverBorrowedQuery),
@@ -74,7 +74,7 @@ public static class Examples
 
     private static List<ConversionSource> HibernateVendorUnits() =>
     [
-        Unit("Customer.java", ConversionContentType.JavaEntity, CustomerVendorSampleHibernate.Entity),
+        Unit("Customer.java", ConversionContentType.Java, CustomerVendorSampleHibernate.Entity),
         Unit("CustomerPage.jpql", ConversionContentType.JpqlQuery, CustomerVendorSampleHibernate.PageQuery),
     ];
 

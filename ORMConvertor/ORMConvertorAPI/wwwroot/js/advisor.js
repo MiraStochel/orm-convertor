@@ -43,24 +43,22 @@ const state = {
 
 let queryCounter = 0;
 
-function requiredUnits() {
-  const definition = state.requiredContent.find((r) => r.ormType === state.sourceOrm);
-  return definition?.required ?? [];
+// The Advisor's form has two kinds of field, the shared units and the weighted queries, and
+// the server lists them apart: a C# unit declares its language only, so its content type no
+// longer says which of the two it is (decision 111).
+function advisorDefinition() {
+  return state.requiredContent.find((r) => r.ormType === state.sourceOrm);
 }
 
 function resetUnitsForSource() {
-  state.entityUnits = requiredUnits()
-    .filter((unit) => unit.contentType !== ContentType.CSharpQuery)
-    .map((unit) => ({
-      description: unit.description,
-      contentType: unit.contentType,
-      sampleId: unit.id,
-      content: "",
-    }));
+  state.entityUnits = (advisorDefinition()?.required ?? []).map((unit) => ({
+    description: unit.description,
+    contentType: unit.contentType,
+    sampleId: unit.id,
+    content: "",
+  }));
 
-  const queryTemplates = requiredUnits().filter(
-    (unit) => unit.contentType === ContentType.CSharpQuery,
-  );
+  const queryTemplates = advisorDefinition()?.queries ?? [];
   queryCounter = 0;
   state.queryUnits =
     queryTemplates.length > 0
@@ -72,7 +70,7 @@ function newQueryUnit(template) {
   return {
     id: ++queryCounter,
     description: template?.description ?? "Query",
-    contentType: template?.contentType ?? ContentType.CSharpQuery,
+    contentType: template?.contentType ?? ContentType.CSharp,
     sampleId: template?.id,
     content: "",
     weight: 1,

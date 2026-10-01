@@ -182,6 +182,17 @@ public sealed class JavaClassReader
                 continue;
             }
 
+            // A member outside any type: the method a query unit has been since decision 077,
+            // and the shape the query builders write. A unit is a whole file or a fragment of
+            // one (decision 111), so the fragment is read as code that declares no class -
+            // with the member reading, which still refuses what is no member, with a line and
+            // a column.
+            if (!AtTypeDeclaration())
+            {
+                ReadMember(string.Empty, [], [], [], []);
+                continue;
+            }
+
             var (declaredClass, declaredInterface) = ReadTypeDeclaration();
             if (declaredClass is not null)
             {
@@ -212,6 +223,26 @@ public sealed class JavaClassReader
     /* ---- type declarations ---------------------------------------------------------- */
 
     /// <summary>
+    /// Whether a type declaration starts here, past its annotations and modifiers. Looked
+    /// ahead and wound back, so the declaration is read from its first token either way.
+    /// </summary>
+    private bool AtTypeDeclaration()
+    {
+        var start = position;
+        ReadAnnotations();
+        ReadModifiers();
+
+        var atType = AtWord("class") || AtWord("interface") || AtWord("enum") || AtWord("record")
+                     || (AtSymbol("@") && Peek() is { Kind: JavaTokenKind.Identifier, Text: "interface" });
+
+        position = start;
+        return atType;
+    }
+
+    /// <summary>The offset after the token read last.</summary>
+    private int EndOfPrevious => position == 0 ? 0 : tokens[position - 1].Offset + tokens[position - 1].Length;
+
+    /// <summary>
     /// A class becomes a <see cref="JavaClass"/> and an interface a
     /// <see cref="JavaInterface"/> (decision 084); an enum, a record or an annotation type
     /// is skipped whole, because none of them can be an entity (an entity may not be a
@@ -221,6 +252,7 @@ public sealed class JavaClassReader
     private (JavaClass? Class, JavaInterface? Interface) ReadTypeDeclaration()
     {
         var line = Current.Line;
+        var start = Current.Offset;
         var annotations = ReadAnnotations();
         var modifiers = ReadModifiers();
 
@@ -239,7 +271,7 @@ public sealed class JavaClassReader
 
         if (TryConsumeWord("class"))
         {
-            return (ReadClassBody(annotations, modifiers, line), null);
+            return (ReadClassBody(annotations, modifiers, line, start), null);
         }
 
         if (TryConsumeWord("interface"))
@@ -372,7 +404,7 @@ public sealed class JavaClassReader
         ConsumeSymbol(";");
     }
 
-    private JavaClass ReadClassBody(IReadOnlyList<JavaAnnotation> annotations, IReadOnlyList<string> modifiers, int line)
+    private JavaClass ReadClassBody(IReadOnlyList<JavaAnnotation> annotations, IReadOnlyList<string> modifiers, int line, int start)
     {
         var name = ConsumeIdentifier("expected a class name");
 
@@ -412,6 +444,7 @@ public sealed class JavaClassReader
         var fields = new List<JavaField>();
         var methods = new List<JavaMethod>();
         var nested = new List<JavaClass>();
+        var spans = new List<JavaMemberSpan>();
 
         while (!AtSymbol("}"))
         {
@@ -420,26 +453,29 @@ public sealed class JavaClassReader
                 throw Error($"expected '}}' closing class {name}");
             }
 
-            ReadMember(name, fields, methods, nested);
+            ReadMember(name, fields, methods, nested, spans);
         }
 
         ConsumeSymbol("}");
 
-        return new JavaClass(name, modifiers, annotations, fields, methods, nested, extends, interfaces, line);
+        return new JavaClass(name, modifiers, annotations, fields, methods, nested, extends, interfaces, line, start, EndOfPrevious, spans);
     }
 
-    private void ReadMember(string className, List<JavaField> fields, List<JavaMethod> methods, List<JavaClass> nested)
+    private void ReadMember(string className, List<JavaField> fields, List<JavaMethod> methods, List<JavaClass> nested, List<JavaMemberSpan> spans)
     {
         if (TryConsumeSymbol(";"))
         {
             return;
         }
 
+        var start = Current.Offset;
+
         // An initializer block, static or not.
         if (AtSymbol("{") || (AtWord("static") && Peek() is { Kind: JavaTokenKind.Symbol, Text: "{" }))
         {
             TryConsumeWord("static");
             SkipBlock();
+            spans.Add(new JavaMemberSpan(null, start, EndOfPrevious));
             return;
         }
 
@@ -458,7 +494,7 @@ public sealed class JavaClassReader
 
         if (TryConsumeWord("class"))
         {
-            nested.Add(ReadClassBody(annotations, modifiers, line));
+            nested.Add(ReadClassBody(annotations, modifiers, line, start));
             return;
         }
 
@@ -477,12 +513,13 @@ public sealed class JavaClassReader
         }
 
         // A constructor: the class name followed by a parameter list.
-        if (AtWord(className) && Peek() is { Kind: JavaTokenKind.Symbol, Text: "(" })
+        if (className.Length > 0 && AtWord(className) && Peek() is { Kind: JavaTokenKind.Symbol, Text: "(" })
         {
             Advance();
             SkipParenthesized();
             SkipThrows();
             SkipBlock();
+            spans.Add(new JavaMemberSpan(className, start, EndOfPrevious));
             return;
         }
 
@@ -515,10 +552,12 @@ public sealed class JavaClassReader
             }
 
             methods.Add(new JavaMethod(memberName, type, modifiers, annotations, parameters, line));
+            spans.Add(new JavaMemberSpan(memberName, start, EndOfPrevious));
             return;
         }
 
         // One or more field declarators: int a = 1, b;
+        var firstField = memberName;
         while (true)
         {
             var fieldType = type;
@@ -543,6 +582,7 @@ public sealed class JavaClassReader
             }
 
             ConsumeSymbol(";");
+            spans.Add(new JavaMemberSpan(firstField, start, EndOfPrevious));
             return;
         }
     }

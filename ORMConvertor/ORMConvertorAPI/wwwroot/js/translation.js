@@ -31,12 +31,15 @@ import {
   saveBlob,
 } from "./ui.js";
 
+// One extension, one language (decision 111): a unit declares the language of its file and
+// nothing else, so .cs is C# whether the file holds an entity, the code that queries it, or
+// both - the source framework tells them apart on the server.
 const EXTENSION_TYPES = {
-  ".cs": ContentType.CSharpEntity,
+  ".cs": ContentType.CSharp,
   ".xml": ContentType.Xml,
   ".sql": ContentType.SqlQuery,
   ".hql": ContentType.HqlQuery,
-  ".java": ContentType.JavaEntity,
+  ".java": ContentType.Java,
   ".jpql": ContentType.JpqlQuery,
 };
 
@@ -66,10 +69,24 @@ function offeredTypes(sourceOrm) {
   return [...new Set(definition.required.map((u) => u.contentType))];
 }
 
+/*
+ * The language an extension names, or null where it names none: the client does not guess a
+ * language from the content any more than the server does (decisions 025 and 111), so the
+ * unit waits for the user to choose and the validation asks for it.
+ */
 function typeForExtension(fileName) {
   const dot = fileName.lastIndexOf(".");
   const extension = dot >= 0 ? fileName.slice(dot).toLowerCase() : "";
-  return EXTENSION_TYPES[extension] ?? ContentType.CSharpEntity;
+  return EXTENSION_TYPES[extension] ?? null;
+}
+
+/*
+ * What the records will call a unit: its name, or "unit N" with its position among the units
+ * sent - every unit on the screen is sent, a blank one too, and the server counts the same way
+ * (decision 066). A client counter would name the unit differently from the records about it.
+ */
+function unitLabel(unit) {
+  return unit.name.trim() || `unit ${state.units.indexOf(unit) + 1}`;
 }
 
 /* ---- remembering the input (decision 056) ------------------------------- */
@@ -132,9 +149,17 @@ function restoreState() {
   }
 
   if (!Array.isArray(stored.units)) return;
+  // A unit restored with a value the source no longer reads - a role value stored before
+  // decision 111 - keeps it: the screen marks it as not read and the validation asks for the
+  // language. A unit whose language was never chosen stays without one.
   const types = Object.values(ContentType);
   state.units = stored.units
-    .filter((unit) => unit && typeof unit.content === "string" && types.includes(unit.contentType))
+    .filter(
+      (unit) =>
+        unit &&
+        typeof unit.content === "string" &&
+        (unit.contentType === null || types.includes(unit.contentType)),
+    )
     .map((unit) => newUnit(String(unit.name ?? ""), unit.contentType, unit.content));
 }
 
@@ -203,17 +228,29 @@ function renderUnits() {
     const article = cloneTemplate("unit-template");
     article.dataset.unitId = String(unit.id);
 
+    // The name is optional (decisions 066 and 111); an empty field shows the label the records
+    // will use for the unit instead.
     const nameInput = article.querySelector(".unit-name");
     nameInput.value = unit.name;
+    nameInput.placeholder = `unit ${state.units.indexOf(unit) + 1} (file name optional)`;
     nameInput.addEventListener("input", () => {
       unit.name = nameInput.value;
       saveState();
     });
 
     const typeSelect = article.querySelector(".unit-type");
-    const options = offered.includes(unit.contentType)
-      ? offered
-      : [...offered, unit.contentType];
+    if (unit.contentType === null) {
+      const choose = document.createElement("option");
+      choose.value = "";
+      choose.textContent = "Choose the language";
+      choose.disabled = true;
+      choose.selected = true;
+      typeSelect.append(choose);
+    }
+    const options =
+      unit.contentType === null || offered.includes(unit.contentType)
+        ? offered
+        : [...offered, unit.contentType];
     for (const type of options) {
       const option = document.createElement("option");
       option.value = String(type);
@@ -360,10 +397,12 @@ function validate() {
 
   const offered = offeredTypes(state.sourceOrm);
   for (const unit of state.units) {
-    const label = unit.name || `unit ${unit.id}`;
+    const label = unitLabel(unit);
     let unitProblem = null;
     if (unit.content.trim() === "") {
       unitProblem = "the content is empty";
+    } else if (unit.contentType === null) {
+      unitProblem = "choose the language of the unit - its file extension names none";
     } else if (!offered.includes(unit.contentType)) {
       unitProblem =
         `${ORM_LABELS[state.sourceOrm]} does not read ` +

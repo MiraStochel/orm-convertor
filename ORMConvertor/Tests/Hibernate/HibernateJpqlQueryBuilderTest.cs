@@ -38,7 +38,7 @@ public class HibernateJpqlQueryBuilderTest
             {
                 var q = ctx.Customers.Where(c => c.CreditLimit > 2000).OrderBy(c => c.CustomerName).ToList();
             }
-            """, ConversionContentType.CSharpQuery);
+            """, ConversionContentType.CSharp);
 
         var jpql = Jpql(result);
         Assert.Equal("select c\nfrom Customer c\nwhere c.CreditLimit > 2000\norder by c.CustomerName asc", jpql.Replace("\r\n", "\n"));
@@ -74,7 +74,7 @@ public class HibernateJpqlQueryBuilderTest
             {
                 var q = ctx.Customers.OrderBy(c => c.CustomerName).Skip(20).Take(10).ToList();
             }
-            """, ConversionContentType.CSharpQuery);
+            """, ConversionContentType.CSharp);
 
         Assert.DoesNotContain("limit", Jpql(result));
         Assert.Contains(".setFirstResult(20)", Method(result));

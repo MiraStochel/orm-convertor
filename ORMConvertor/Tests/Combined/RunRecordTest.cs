@@ -18,7 +18,7 @@ public class RunRecordTest
     [
         new()
         {
-            ContentType = ConversionContentType.CSharpEntity,
+            ContentType = ConversionContentType.CSharp,
             Content = "public class Customer { public int Id { get; set; } }",
         },
     ];
@@ -74,12 +74,12 @@ public class RunRecordTest
     [
         new()
         {
-            ContentType = ConversionContentType.CSharpEntity,
+            ContentType = ConversionContentType.CSharp,
             Content = CustomerSampleEFCore.Entity,
         },
         new()
         {
-            ContentType = ConversionContentType.CSharpQuery,
+            ContentType = ConversionContentType.CSharp,
             Content = CustomerSampleEFCore.Query,
         },
     ];

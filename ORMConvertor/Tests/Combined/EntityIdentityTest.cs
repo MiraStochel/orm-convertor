@@ -48,7 +48,7 @@ public class EntityIdentityTest
     private static ConversionSource Unit(string content, string name) => new()
     {
         Name = name,
-        ContentType = ConversionContentType.CSharpEntity,
+        ContentType = ConversionContentType.CSharp,
         Content = content,
     };
 
@@ -251,7 +251,7 @@ public class EntityIdentityTest
     private static ConversionSource JavaUnit(string content, string name) => new()
     {
         Name = name,
-        ContentType = ConversionContentType.JavaEntity,
+        ContentType = ConversionContentType.Java,
         Content = content,
     };
 

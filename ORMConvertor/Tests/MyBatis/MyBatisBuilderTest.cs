@@ -267,7 +267,7 @@ public class MyBatisBuilderTest
                     public string CustomerName { get; set; }
                     public decimal CreditLimit { get; set; }
                 }
-                """, ContentType = ConversionContentType.CSharpEntity },
+                """, ContentType = ConversionContentType.CSharp },
             new() { Content = sql, ContentType = ConversionContentType.SqlQuery },
         ]);
 
@@ -356,7 +356,7 @@ public class MyBatisBuilderTest
                     private Integer CustomerId;
                     private String CustomerName;
                 }
-                """, ContentType = ConversionContentType.JavaEntity },
+                """, ContentType = ConversionContentType.Java },
             new() { Content = """
                 package Shop;
 
@@ -367,7 +367,7 @@ public class MyBatisBuilderTest
                 public interface CustomerMapper {
                     List<Customer> findIn(@Param("ids") Collection<Integer> ids);
                 }
-                """, ContentType = ConversionContentType.JavaQuery },
+                """, ContentType = ConversionContentType.Java },
             new() { Content = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"

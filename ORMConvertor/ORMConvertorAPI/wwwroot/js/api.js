@@ -40,6 +40,9 @@ export const SOURCE_DIALECT_LABELS = Object.freeze({
   [SourceDialect.AnotherSystem]: "another database system",
 });
 
+// An input unit declares its language only - CSharp and Java are whole files with whatever
+// they hold (decision 111). The four values that name a role besides the language belong to
+// the artifacts the tool writes, and no parser takes them on input.
 export const ContentType = Object.freeze({
   CSharpEntity: 10,
   CSharpQuery: 20,
@@ -49,6 +52,8 @@ export const ContentType = Object.freeze({
   JavaEntity: 60,
   JavaQuery: 70,
   JpqlQuery: 80,
+  CSharp: 90,
+  Java: 100,
 });
 
 // The XML value names a language and promises no role: the same value carries the hbm.xml,
@@ -64,6 +69,8 @@ export const CONTENT_TYPE_LABELS = Object.freeze({
   [ContentType.JavaEntity]: "Java entity",
   [ContentType.JavaQuery]: "Java query method",
   [ContentType.JpqlQuery]: "JPQL query",
+  [ContentType.CSharp]: "C# source",
+  [ContentType.Java]: "Java source",
 });
 
 // The XML value covers hbm.xml and orm.xml alike (decision 077); ui.js names an
@@ -77,6 +84,8 @@ export const CONTENT_TYPE_EXTENSIONS = Object.freeze({
   [ContentType.JavaEntity]: ".java",
   [ContentType.JavaQuery]: ".java",
   [ContentType.JpqlQuery]: ".jpql",
+  [ContentType.CSharp]: ".cs",
+  [ContentType.Java]: ".java",
 });
 
 // HQL and JPQL have no grammar of their own and are highlighted as SQL, Java as C# -
@@ -90,6 +99,8 @@ export const CONTENT_TYPE_HIGHLIGHT = Object.freeze({
   [ContentType.JavaEntity]: "csharp",
   [ContentType.JavaQuery]: "csharp",
   [ContentType.JpqlQuery]: "sql",
+  [ContentType.CSharp]: "csharp",
+  [ContentType.Java]: "csharp",
 });
 
 export const RecordKind = Object.freeze({

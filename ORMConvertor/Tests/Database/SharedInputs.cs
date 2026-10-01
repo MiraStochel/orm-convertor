@@ -14,14 +14,14 @@ internal static class SharedInputs
     /// The language a unit is written in, taken from its file name. The table is the Java
     /// suite's <c>ContentType.forFileName</c> and has to stay it: the two suites read the
     /// same files, so a unit that arrived under two different languages would be a finding
-    /// about the suites dressed as a finding about the tool.
+    /// about the suites dressed as a finding about the tool. One extension, one language
+    /// (decision 111): a unit declares no role, so a <c>.query.cs</c> is C# like any other
+    /// <c>.cs</c>, and the infix only tells a reader of the tree what the file holds.
     /// </summary>
     public static ConversionContentType ContentTypeOf(string path) => path switch
     {
-        _ when path.EndsWith(".query.cs", StringComparison.Ordinal) => ConversionContentType.CSharpQuery,
-        _ when path.EndsWith(".query.java", StringComparison.Ordinal) => ConversionContentType.JavaQuery,
-        _ when path.EndsWith(".cs", StringComparison.Ordinal) => ConversionContentType.CSharpEntity,
-        _ when path.EndsWith(".java", StringComparison.Ordinal) => ConversionContentType.JavaEntity,
+        _ when path.EndsWith(".cs", StringComparison.Ordinal) => ConversionContentType.CSharp,
+        _ when path.EndsWith(".java", StringComparison.Ordinal) => ConversionContentType.Java,
         _ when path.EndsWith(".xml", StringComparison.Ordinal) => ConversionContentType.XML,
         _ when path.EndsWith(".sql", StringComparison.Ordinal) => ConversionContentType.SqlQuery,
         _ when path.EndsWith(".hql", StringComparison.Ordinal) => ConversionContentType.HqlQuery,

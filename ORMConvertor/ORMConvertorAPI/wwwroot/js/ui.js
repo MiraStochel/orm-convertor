@@ -82,6 +82,12 @@ function artifactBaseName(artifact) {
     const match = artifact.content.match(/\bclass\s+([A-Za-z_]\w*)/);
     return match ? match[1] : null;
   }
+  // A whole source file of the input (decision 111) - the sample set is named this way - is
+  // named after its first class, as a file usually is; a fragment without one is a source.
+  if (artifact.contentType === ContentType.CSharp || artifact.contentType === ContentType.Java) {
+    const match = artifact.content.match(/\bclass\s+([A-Za-z_]\w*)/);
+    return match ? match[1] : "source";
+  }
   if (
     artifact.contentType === ContentType.CSharpQuery ||
     artifact.contentType === ContentType.JavaQuery

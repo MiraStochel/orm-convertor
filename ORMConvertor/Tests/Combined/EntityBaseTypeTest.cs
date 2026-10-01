@@ -52,7 +52,7 @@ public class EntityBaseTypeTest
     private static ConversionSource Source(string content, string name) => new()
     {
         Name = name,
-        ContentType = ConversionContentType.CSharpEntity,
+        ContentType = ConversionContentType.CSharp,
         Content = content,
     };
 
@@ -276,7 +276,7 @@ public class EntityBaseTypeTest
     private static ConversionSource JavaSource(string content, string name) => new()
     {
         Name = name,
-        ContentType = ConversionContentType.JavaEntity,
+        ContentType = ConversionContentType.Java,
         Content = content,
     };
 

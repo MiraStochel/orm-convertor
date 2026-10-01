@@ -207,7 +207,7 @@ public class HibernateJpqlQueryParserTest
     public void TheJavaMethodIsReadThroughItsLiteral()
     {
         var builder = new HibernateJpqlQueryBuilder { EntityMaps = [Customers()] };
-        new HibernateJpqlQueryParser(() => builder).Parse(ConversionContentType.JavaQuery, SampleData.CustomerSampleHibernate.Query, [Customers()]);
+        new HibernateJpqlQueryParser(() => builder).Parse(ConversionContentType.Java, SampleData.CustomerSampleHibernate.Query, [Customers()]);
         var artifacts = builder.Build();
 
         Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
@@ -404,7 +404,7 @@ public class HibernateJpqlQueryParserTest
     public void AQueryComposedAtRunTimeIsAnIncompleteness()
     {
         var builder = new HibernateJpqlQueryBuilder();
-        new HibernateJpqlQueryParser(() => builder).Parse(ConversionContentType.JavaQuery, """
+        new HibernateJpqlQueryParser(() => builder).Parse(ConversionContentType.Java, """
             public static Query query(EntityManager em, String where) {
                 return em.createQuery("select c from Customer c " + where);
             }
@@ -413,15 +413,21 @@ public class HibernateJpqlQueryParserTest
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Incompleteness && r.Reason.Contains("composed at run time"));
     }
 
+    /// <summary>
+    /// Bare JPQL, and Java - a whole file or a fragment of one, whatever it holds besides
+    /// (decision 111). The value of the query artifact is the builder's, not a language a
+    /// unit declares.
+    /// </summary>
     [Fact]
-    public void TheParserClaimsBothQueryLanguages()
+    public void TheParserClaimsJpqlAndJava()
     {
         var parser = new HibernateJpqlQueryParser(() => new HibernateJpqlQueryBuilder());
 
         Assert.True(parser.CanParse(ConversionContentType.JpqlQuery));
-        Assert.True(parser.CanParse(ConversionContentType.JavaQuery));
+        Assert.True(parser.CanParse(ConversionContentType.Java));
+        Assert.False(parser.CanParse(ConversionContentType.JavaQuery));
         Assert.False(parser.CanParse(ConversionContentType.HqlQuery));
-        Assert.False(parser.CanParse(ConversionContentType.CSharpQuery));
+        Assert.False(parser.CanParse(ConversionContentType.CSharp));
     }
 
     /// <summary>

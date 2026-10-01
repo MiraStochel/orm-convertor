@@ -186,7 +186,7 @@ public class LdbcCatalogTest(TestSchemaFixture fixture)
         .. LdbcSnbSample.Entities.Select(entity => new ConversionSource
         {
             Name = entity.FileName,
-            ContentType = ConversionContentType.CSharpEntity,
+            ContentType = ConversionContentType.CSharp,
             Content = entity.Content,
         }),
         new ConversionSource { Name = $"{query.Key}.sql", ContentType = ConversionContentType.SqlQuery, Content = query.Sql! },

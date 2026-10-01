@@ -6,12 +6,13 @@ package cz.stochel.ormconvertor.javatests.tool;
  * written in (decision 025), and an input unit of this suite takes that from the name of
  * the resource file it came from (decision 078).
  *
- * <p>The table is the frontend's ({@code js/api.js}, {@code js/translation.js}) wherever
- * the frontend's is unambiguous. Two extensions there stand for two languages each -
- * {@code .cs} for an entity and for a LINQ query, {@code .java} for an entity and for a
- * query method - because the frontend has a picker to tell them apart and a file name has
- * not. Here the longer, more specific extension decides, exactly as {@code .hbm.xml} does
- * for XML: {@code .query.cs} is the LINQ query, {@code .query.java} the query method.
+ * <p>The table is the frontend's ({@code js/api.js}, {@code js/translation.js}): one
+ * extension, one language (decision 111). A unit declares no role - a {@code .cs} or
+ * {@code .java} file is a whole file with whatever it holds, and the source framework finds
+ * the entities and the queries in it - so a {@code .query.cs} is C# like any other
+ * {@code .cs}, and the infix only tells a reader of the tree what the file holds. The four
+ * values that name a role besides the language are the artifacts': the tool writes them and
+ * this suite picks its artifacts out of a response by them.
  */
 public final class ContentType {
 
@@ -23,6 +24,8 @@ public final class ContentType {
     public static final int JAVA_ENTITY = 60;
     public static final int JAVA_QUERY = 70;
     public static final int JPQL_QUERY = 80;
+    public static final int CSHARP = 90;
+    public static final int JAVA = 100;
 
     private ContentType() {
     }
@@ -33,17 +36,11 @@ public final class ContentType {
      * suite dressed as a finding about the tool.
      */
     public static int forFileName(String fileName) {
-        if (fileName.endsWith(".query.cs")) {
-            return CSHARP_QUERY;
-        }
-        if (fileName.endsWith(".query.java")) {
-            return JAVA_QUERY;
-        }
         if (fileName.endsWith(".cs")) {
-            return CSHARP_ENTITY;
+            return CSHARP;
         }
         if (fileName.endsWith(".java")) {
-            return JAVA_ENTITY;
+            return JAVA;
         }
         if (fileName.endsWith(".xml")) {
             return XML;
@@ -72,6 +69,8 @@ public final class ContentType {
             case JAVA_ENTITY -> "JavaEntity";
             case JAVA_QUERY -> "JavaQuery";
             case JPQL_QUERY -> "JpqlQuery";
+            case CSHARP -> "CSharp";
+            case JAVA -> "Java";
             default -> "content type " + contentType;
         };
     }

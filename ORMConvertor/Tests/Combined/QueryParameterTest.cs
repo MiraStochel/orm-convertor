@@ -62,7 +62,7 @@ public class QueryParameterTest
     {
         builder.EntityMaps = [Customers()];
         new EFCoreLinqQueryParser(() => builder).Parse(
-            ConversionContentType.CSharpQuery,
+            ConversionContentType.CSharp,
             $$"""
             public void Query()
             {
@@ -490,11 +490,11 @@ public class QueryParameterTest
     /// states its table is what lets the scalar be derived without reaching the catalog.
     /// </summary>
     [Theory]
-    [InlineData(ConversionContentType.CSharpQuery, ORMEnum.Dapper, ConversionContentType.SqlQuery, "@minimumCreditLimit")]
-    [InlineData(ConversionContentType.CSharpQuery, ORMEnum.EFCore, ConversionContentType.CSharpQuery, "decimal minimumCreditLimit")]
-    [InlineData(ConversionContentType.CSharpQuery, ORMEnum.NHibernate, ConversionContentType.HqlQuery, ":minimumCreditLimit")]
-    [InlineData(ConversionContentType.CSharpQuery, ORMEnum.Hibernate, ConversionContentType.JpqlQuery, ":minimumCreditLimit")]
-    [InlineData(ConversionContentType.CSharpQuery, ORMEnum.EclipseLink, ConversionContentType.JavaQuery, "BigDecimal minimumCreditLimit")]
+    [InlineData(ConversionContentType.CSharp, ORMEnum.Dapper, ConversionContentType.SqlQuery, "@minimumCreditLimit")]
+    [InlineData(ConversionContentType.CSharp, ORMEnum.EFCore, ConversionContentType.CSharpQuery, "decimal minimumCreditLimit")]
+    [InlineData(ConversionContentType.CSharp, ORMEnum.NHibernate, ConversionContentType.HqlQuery, ":minimumCreditLimit")]
+    [InlineData(ConversionContentType.CSharp, ORMEnum.Hibernate, ConversionContentType.JpqlQuery, ":minimumCreditLimit")]
+    [InlineData(ConversionContentType.CSharp, ORMEnum.EclipseLink, ConversionContentType.JavaQuery, "BigDecimal minimumCreditLimit")]
     [InlineData(ConversionContentType.HqlQuery, ORMEnum.Dapper, ConversionContentType.SqlQuery, "@minimumCreditLimit")]
     [InlineData(ConversionContentType.HqlQuery, ORMEnum.EFCore, ConversionContentType.CSharpQuery, "decimal minimumCreditLimit")]
     [InlineData(ConversionContentType.HqlQuery, ORMEnum.NHibernate, ConversionContentType.CSharpQuery, "SetParameter(\"minimumCreditLimit\"")]
@@ -512,7 +512,7 @@ public class QueryParameterTest
 
         var result = ConversionHandler.Convert(ORMEnum.NHibernate, target,
         [
-            new() { Content = CustomerSampleNHibernate.Entity, ContentType = ConversionContentType.CSharpEntity },
+            new() { Content = CustomerSampleNHibernate.Entity, ContentType = ConversionContentType.CSharp },
             new() { Content = CustomerSampleNHibernate.XmlMapping, ContentType = ConversionContentType.XML },
             new() { Content = query, ContentType = language },
         ]);

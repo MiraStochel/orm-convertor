@@ -58,7 +58,7 @@ public class GroupedQueryTest
         var (query, type) = source switch
         {
             ORMEnum.Dapper => (GroupedSql, ConversionContentType.SqlQuery),
-            ORMEnum.EFCore => (GroupedLinq, ConversionContentType.CSharpQuery),
+            ORMEnum.EFCore => (GroupedLinq, ConversionContentType.CSharp),
             ORMEnum.NHibernate => (GroupedHql, ConversionContentType.HqlQuery),
             _ => throw new ArgumentOutOfRangeException(nameof(source), source, null),
         };
@@ -176,7 +176,7 @@ public class GroupedQueryTest
             ORMEnum.Dapper,
             [
                 .. CrossFrameworkInputs.MappingUnits(ORMEnum.EFCore),
-                new ConversionSource { Content = linq, ContentType = ConversionContentType.CSharpQuery },
+                new ConversionSource { Content = linq, ContentType = ConversionContentType.CSharp },
             ]);
 
         var sql = Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery).Content;
@@ -214,8 +214,8 @@ public class GroupedQueryTest
             ORMEnum.EFCore,
             ORMEnum.Dapper,
             [
-                new ConversionSource { Content = entity, ContentType = ConversionContentType.CSharpEntity },
-                new ConversionSource { Content = linq, ContentType = ConversionContentType.CSharpQuery },
+                new ConversionSource { Content = entity, ContentType = ConversionContentType.CSharp },
+                new ConversionSource { Content = linq, ContentType = ConversionContentType.CSharp },
             ]);
 
         var sql = Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery).Content;

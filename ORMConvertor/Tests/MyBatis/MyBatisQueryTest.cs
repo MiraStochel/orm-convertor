@@ -67,13 +67,13 @@ public class MyBatisQueryTest
     {
         List<ConversionSource> units =
         [
-            new() { Content = DomainClass, ContentType = ConversionContentType.JavaEntity },
+            new() { Content = DomainClass, ContentType = ConversionContentType.Java },
             new() { Content = mapper, ContentType = ConversionContentType.XML },
         ];
 
         if (mapperInterface is not null)
         {
-            units.Insert(1, new ConversionSource { Content = mapperInterface, ContentType = ConversionContentType.JavaQuery });
+            units.Insert(1, new ConversionSource { Content = mapperInterface, ContentType = ConversionContentType.Java });
         }
 
         return ConversionHandler.Convert(ORMEnum.MyBatis, target, units);
@@ -561,7 +561,7 @@ public class MyBatisQueryTest
         Assert.All(ConversionHandler
                 .Convert(ORMEnum.MyBatis, ORMEnum.EFCore,
                 [
-                    new() { Content = DomainClass, ContentType = ConversionContentType.JavaEntity },
+                    new() { Content = DomainClass, ContentType = ConversionContentType.Java },
                     new() { Content = Mapper("""
                       <select id="findWithOrders" resultType="Customer">
                         SELECT c.CustomerName FROM Sales.Customers AS c

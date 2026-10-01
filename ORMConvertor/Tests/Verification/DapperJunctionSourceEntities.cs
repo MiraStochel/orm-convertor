@@ -59,8 +59,8 @@ internal static class DapperJunctionSourceEntities
             ORMEnum.Dapper,
             target,
             [
-                new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = SupplierSource },
-                new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = ProductSource },
+                new ConversionSource { ContentType = ConversionContentType.CSharp, Content = SupplierSource },
+                new ConversionSource { ContentType = ConversionContentType.CSharp, Content = ProductSource },
             ],
             catalogReader);
 }

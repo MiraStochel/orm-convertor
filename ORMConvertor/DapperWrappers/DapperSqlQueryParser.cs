@@ -2,8 +2,11 @@ using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Naming;
+using Common.Reading;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 using Model;
 using Model.AbstractRepresentation;
 using TransactSql;
@@ -77,18 +80,25 @@ public class DapperSqlQueryParser(
     public ParseLimits Limits { get; set; } = ParseLimits.Default;
 
     public bool CanParse(ConversionContentType contentType) => contentType is
-        ConversionContentType.SqlQuery or ConversionContentType.CSharpQuery;
+        ConversionContentType.SqlQuery or ConversionContentType.CSharp;
 
     /// <summary>
     /// Which of the two stages the unit enters is decided by the language it declares, not
     /// by what its text looks like: a bare SELECT that happens to mention a table called
     /// QueryLog used to be taken for a C# snippet and refused for carrying no Dapper call
     /// (decisions 025 and 047).
+    ///
+    /// A C# unit is a whole file or a fragment of one (decision 111), and the entity pass
+    /// reads the same text for its classes. One without a Dapper call is therefore no error -
+    /// a file holding an entity alone is an ordinary input - and yields no query; whether the
+    /// unit yielded anything at all is asked of both passes together (decision 081). A text
+    /// nested beyond the cap yields nothing here either, and says nothing: the entity pass,
+    /// which read the same text first, has reported it.
     /// </summary>
     public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
-        var handovers = contentType == ConversionContentType.CSharpQuery
-            ? ExtractCalls(source)
+        var handovers = contentType == ConversionContentType.CSharp
+            ? ExtractCalls(source, Limits)
             : [new Handover(source, IsScript: true, Refusal: null)];
 
         // Every query of the unit, each with a builder fresh from the factory the
@@ -167,21 +177,19 @@ public class DapperSqlQueryParser(
     /// hand. A call with no argument at all is ADO.NET's own ExecuteReader or ExecuteScalar on
     /// a command, not Dapper's, which always takes the SQL.
     /// </summary>
-    private static List<Handover> ExtractCalls(string source)
+    private static List<Handover> ExtractCalls(string source, ParseLimits limits)
     {
-        var tree = CSharpSyntaxTree.ParseText("public class Snippet\n{\n" + source + "\n}\n");
-        var root = tree.GetCompilationUnitRoot();
         var handovers = new List<Handover>();
 
-        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        // Before Roslyn, because building the tree is what the cap protects (decision 092).
+        if (NestingDepthGuard.FirstBeyond(Tracked(source), limits) is not null)
         {
-            if (invocation.Expression is not MemberAccessExpressionSyntax member
-                || !DapperMethods.Contains(member.Name.Identifier.Text)
-                || invocation.ArgumentList.Arguments.Count == 0)
-            {
-                continue;
-            }
+            return handovers;
+        }
 
+        foreach (var invocation in Calls(source))
+        {
+            var member = (MemberAccessExpressionSyntax)invocation.Expression;
             var arguments = invocation.ArgumentList.Arguments;
             var sql = arguments.FirstOrDefault(argument => argument.NameColon?.Name.Identifier.Text == "sql")
                 ?? arguments.FirstOrDefault(argument => argument.NameColon is null);
@@ -194,12 +202,50 @@ public class DapperSqlQueryParser(
                         "The Dapper call does not pass the SQL as a string literal, so the query could not be read.")));
         }
 
-        if (handovers.Count == 0)
-        {
-            handovers.Add(new Handover(null, false, (ConversionRecordKind.Failure, "No Dapper query call was found in the source.")));
-        }
-
         return handovers;
+    }
+
+    /// <summary>
+    /// The places where the unit hands Dapper a text (decisions 109 and 111): one node for
+    /// every call <see cref="Parse"/> reads a query of, found by the same search. The entity
+    /// pass of the wrapper asks it which classes hold the code around queries rather than an
+    /// entity, and the answer has to be the one the query pass acts on. A text nested beyond
+    /// the cap has none, because it is not parsed.
+    /// </summary>
+    public static IReadOnlyList<SyntaxNode> FindHandovers(string source, ParseLimits? limits = null)
+        => NestingDepthGuard.FirstBeyond(Tracked(source), limits ?? ParseLimits.Default) is not null
+            ? []
+            : [.. Calls(source)];
+
+    /// <summary>
+    /// Every call of a SqlMapper method in the unit, in the order of the text: a member call
+    /// by one of the names Dapper sends SQL under, with an argument - ADO.NET's own
+    /// ExecuteReader or ExecuteScalar on a command takes none. A file is parsed as it stands
+    /// and a fragment inside a class, which is what a method needs to be one (decision 111).
+    /// </summary>
+    private static IEnumerable<InvocationExpressionSyntax> Calls(string source)
+        => CSharpUnit.Parse(source, fragment => "public class Snippet\n{\n" + fragment + "\n}\n")
+            .GetCompilationUnitRoot()
+            .DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(invocation => invocation.Expression is MemberAccessExpressionSyntax member
+                && DapperMethods.Contains(member.Name.Identifier.Text)
+                && invocation.ArgumentList.Arguments.Count > 0);
+
+    /// <summary>
+    /// The C# text as the shared nesting guard reads it (decision 092): Roslyn's own lexer,
+    /// which is a loop, projected onto text and position - the same projection the shared
+    /// entity and LINQ readings make of the same text.
+    /// </summary>
+    private static IEnumerable<SourceToken> Tracked(string source)
+    {
+        var text = SourceText.From(source);
+
+        foreach (var token in SyntaxFactory.ParseTokens(source))
+        {
+            var position = text.Lines.GetLinePosition(token.SpanStart);
+            yield return new SourceToken(token.Text, position.Line + 1, position.Character + 1);
+        }
     }
 
     /// <summary>

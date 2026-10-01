@@ -3,32 +3,28 @@ using SampleData;
 namespace ORMConvertorAPI.Data;
 
 /// <summary>
-/// One sample per unit declared in <see cref="RequiredContent"/>, keyed by the same id. Ids
-/// 6 and 7 used to point at the EF Core query as well, though only 5 had a unit to fill -
-/// two of the three were unreachable and the third was the only real one.
+/// One sample per unit declared in <see cref="RequiredContent"/>, keyed by the same id. The
+/// C# and Java samples are whole files holding the entity and the code that queries it,
+/// because that is what one unit is since decision 111; the ids of the role-bound units that
+/// went with it (5, 9, 13, 17, 20) are not used again.
 /// </summary>
 public static class Samples
 {
     public static Dictionary<int, string> GetSamples => new()
     {
-        { 1, CustomerSampleDapper.Entity },
-        { 2, CustomerSampleNHibernate.Entity },
+        { 1, CustomerSampleDapper.Source },
+        { 2, CustomerSampleNHibernate.Source },
         { 3, CustomerSampleNHibernate.XmlMapping },
-        { 4, CustomerSampleEFCore.Entity },
-        { 5, CustomerSampleEFCore.Query },
+        { 4, CustomerSampleEFCore.Source },
         { 8, CustomerSampleDapper.Query },
-        { 9, CustomerSampleNHibernate.Query },
         { 10, CustomerSampleNHibernate.HqlQuery },
-        { 11, CustomerSampleHibernate.Entity },
+        { 11, CustomerSampleHibernate.Source },
         { 12, CustomerSampleHibernate.OrmXml },
-        { 13, CustomerSampleHibernate.Query },
         { 14, CustomerSampleHibernate.JpqlQuery },
-        { 15, CustomerSampleEclipseLink.Entity },
+        { 15, CustomerSampleEclipseLink.Source },
         { 16, CustomerSampleEclipseLink.OrmXml },
-        { 17, CustomerSampleEclipseLink.Query },
         { 18, CustomerSampleEclipseLink.JpqlQuery },
-        { 19, CustomerSampleMyBatis.Entity },
-        { 20, CustomerSampleMyBatis.MapperInterface },
+        { 19, CustomerSampleMyBatis.Source },
         { 21, CustomerSampleMyBatis.XmlMapper },
     };
 }
