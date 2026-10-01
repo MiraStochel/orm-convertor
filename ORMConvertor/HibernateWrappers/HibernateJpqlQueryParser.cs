@@ -16,13 +16,17 @@ namespace HibernateWrappers;
 ///
 /// HQL also reads a query as a source of rows - the with clause and a subquery in from or
 /// after join -, which the representation carries as a named intermediate result
-/// (decision 112), so the profile turns the shared reading of it on.
+/// (decision 112), so the profile turns the shared reading of it on; and the functions HQL
+/// adds that the vocabulary carries since decision 113 - timestampadd and timestampdiff, the
+/// ranking functions over a window and listagg -, which it turns on the same way.
 /// </summary>
 public sealed class HibernateJpqlQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
     Model.SourceSqlDialect? declaredSourceDialect = null) : JpqlQueryParser(queryBuilders, declaredSourceDialect)
 {
     protected override bool ReadsIntermediateResults => true;
+
+    protected override bool ReadsHqlFunctions => true;
 
     protected override bool TryReadDialectClause()
     {

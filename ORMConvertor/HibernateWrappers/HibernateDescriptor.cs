@@ -33,10 +33,22 @@ public static class HibernateDescriptor
         // verified against this release), and a WITH that names itself, which it writes as
         // a recursive common table expression of SQL Server (decision 113, verified against
         // 7.4.5 over SQL Server: the definition read from from and from join, a counter,
-        // a read from a subquery, a recursive definition over an earlier one). EclipseLink
-        // keeps the specification's table.
-        QuerySupport = JakartaPersistenceDescriptor.QuerySupportWith(QueryFeature.IntermediateResult, QueryFeature.Recursion),
-        Functions = JakartaPersistenceDescriptor.Functions,
+        // a read from a subquery, a recursive definition over an earlier one). It groups by
+        // an expression, ranks over a window and joins a list with listagg, which it writes
+        // as STRING_AGG (decision 113, verified against 7.4.5 over SQL Server, a window
+        // inside a WITH filtered outside it and listagg in a correlated subquery included).
+        QuerySupport = JakartaPersistenceDescriptor.QuerySupportWith(
+            QueryFeature.IntermediateResult,
+            QueryFeature.Recursion,
+            QueryFeature.ComputedGrouping,
+            QueryFeature.WindowFunction,
+            QueryFeature.ListAggregation),
+
+        // The whole vocabulary: the specification's functions, and timestampadd and
+        // timestampdiff, which HQL 7.4 writes as DATEADD and as DATEDIFF_BIG over SQL Server -
+        // the number of boundaries, as T-SQL counts them (decision 113, verified against
+        // 7.4.5 with moments whose count of boundaries and length differ).
+        Functions = QueryFunctionVocabulary.All,
         NativeSqlApi = JakartaPersistenceDescriptor.NativeSqlApi,
     };
 

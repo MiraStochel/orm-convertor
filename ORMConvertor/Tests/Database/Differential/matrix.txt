@@ -379,12 +379,79 @@ ordered = false
 mutations = filter, operator
 
 # The walk of the product links through their cycle (decision 113), in native SQL wherever
-# the target's language is not T-SQL. Within three steps from product 1 it reaches 1, 2, 3
-# and 4; flipped, the bound stops it after the first step, and dropped, the walk circles
-# until the limit of recursion stops the query with an error.
+# the target's language is not T-SQL. Guarded over its path, it reaches 2, 3, 4 and 5 from
+# product 1 and does not step back into 1; dropped, the guard and the start go with their
+# lines, the walk circles until the limit of recursion stops the query with an error. The
+# walk has no comparison to flip since the guard over the path replaced the bound of its
+# steps.
 [RecursiveWalkOfACyclicGraph]
 category = RecursiveWalkOfACyclicGraph
 fields = ProductId
+shape = projection
+ordered = false
+mutations = filter
+
+# ---- the rows of decision 113, the vocabulary of expressions ----
+
+# The year of an order beside its company, over the orders of a known customer. Dropped, the
+# filter lets the two orders of the walk-in customer into the groups, one of them a group of
+# its own; flipped, it keeps none.
+[GroupingByAnExpression]
+category = GroupingByAnExpression
+fields = PlacedYear, CompanyId, OrderCount
+shape = projection
+ordered = false
+mutations = filter, operator
+
+# DATEADD and DATEDIFF over the orders placed before March 2025. The last order of 2024 lies
+# one hour boundary and no whole hour before the new year, and two more orders lie off the
+# hour, so a target that measured the length instead of counting the boundaries would answer
+# otherwise. Dropped, the filter adds the orders of March and June 2025; flipped, it keeps
+# the one of June alone.
+[DateArithmetic]
+category = DateArithmetic
+fields = CompanyId, OrderId, DueAt, HoursFromNewYear
+shape = projection
+ordered = false
+mutations = filter, operator, projection
+
+# ROUND and SQRT over the prices: 1250.5 ends in a half, which SQL Server rounds away from
+# zero to 1251, so a target that rounded on the client to the even neighbour would answer
+# 1250. Flipped, the filter keeps the two cheap products; dropped, all six.
+[RoundingAndSquareRoot]
+category = RoundingAndSquareRoot
+fields = ProductId, RoundedPrice, PriceRoot
+shape = projection
+ordered = false
+decimalScale = 4
+mutations = filter, operator
+
+# The key converted to text inside a label, and the price converted to a whole number in
+# the filter, which keeps the three products above a hundred; flipped, the other three.
+[CastInAConcatenation]
+category = CastInAConcatenation
+fields = ProductId, Label
+shape = projection
+ordered = false
+mutations = filter, operator
+
+# The line of the largest quantity of every product, by the row number over a window in an
+# intermediate result. Dropped, the filter returns every line. The swap of two projected
+# fields does not reach the query: it swaps the pair inside the definition and the same pair
+# outside it, and the two swaps cancel.
+[BestRowPerGroup]
+category = BestRowPerGroup
+fields = ProductId, LineNumber, Quantity
+shape = projection
+ordered = false
+mutations = filter
+
+# The descriptions of the lines of every product as one list. Dropped, the filter adds the
+# lines of a single piece, which joins a second description into the lists of two products;
+# flipped, it keeps no line.
+[ListAggregation]
+category = ListAggregation
+fields = ProductId, Descriptions
 shape = projection
 ordered = false
 mutations = filter, operator

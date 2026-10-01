@@ -28,7 +28,11 @@ public sealed class LinqScope
 
     public bool Grouped { get; set; }
 
-    public IReadOnlyList<GroupByInstruction> GroupKeys { get; set; } = [];
+    /// <summary>
+    /// The keys of the grouping, each with the member of the key object that names it - none
+    /// for a single key, which is <c>g.Key</c> itself (decision 113).
+    /// </summary>
+    public IReadOnlyList<LinqGroupKey> GroupKeys { get; set; } = [];
 
     /// <summary>Parameter used inside an aggregate lambda, which ranges over group elements.</summary>
     public string ElementParam { get; set; } = "e";
@@ -46,6 +50,13 @@ public sealed class LinqScope
 
     public string ElementRow(string? alias) => Composite && alias is not null ? $"{ElementParam}.{alias}" : ElementParam;
 }
+
+/// <summary>
+/// One key of a LINQ grouping (decision 113): the value grouped by, a column or an
+/// expression, and the member of the anonymous key object it goes by - null where the key is
+/// the only one and <c>g.Key</c> is the value itself.
+/// </summary>
+public sealed record LinqGroupKey(QueryOperand Key, string? Member);
 
 /// <summary>
 /// Writes query instructions as LINQ (decision 022). Unlike the SQL visitor this one is
@@ -84,7 +95,8 @@ public sealed class EFCoreLinqQueryVisitor(
 
     public string Visit(HavingInstruction instr) => instr.Condition.Accept(this);
 
-    public string Visit(GroupByInstruction instr) => Column(instr.Table, instr.Attribute, null);
+    /// <summary>The value a key selector of GroupBy returns (decision 113): a column, or an expression over the row.</summary>
+    public string Visit(GroupByInstruction instr) => Operand(instr.Key);
 
     public string Visit(OrderByInstruction instr) => Operand(instr.Operand);
 
@@ -212,7 +224,47 @@ public sealed class EFCoreLinqQueryVisitor(
             return null;
         }
 
+        // The EF Core entity declares a part of the key non-nullable whatever the language type
+        // says - a MyBatis source's Integer key comes out an int (decision 113, found by the
+        // fourth level over a key converted to text).
+        if (IsKeyPart(operand.Table, operand.Property!))
+        {
+            return null;
+        }
+
         return CSharpTypeConvertor.ToString(LangType.Scalar(scalar)) + "?";
+    }
+
+    /// <summary>Whether the column is a part of the primary key of its entity, in this scope or an enclosing one.</summary>
+    private bool IsKeyPart(string? alias, string column)
+    {
+        if (alias is not null && outer is not null && !Scope.Aliases.Contains(alias) && outer.Knows(alias))
+        {
+            return outer.IsKeyPart(alias, column);
+        }
+
+        var map = alias is not null && Scope.Entities.TryGetValue(alias, out var found) ? found : null;
+        return map?.PrimaryKey?.Parts.Any(part =>
+            string.Equals(part.PropertyMap.ColumnName ?? part.PropertyMap.Property.Name, column, StringComparison.OrdinalIgnoreCase)) == true;
+    }
+
+    /// <summary>
+    /// Whether the mapping says the column holds no NULL: its nullability as a column where a
+    /// source or the catalog states one - a Java String is a reference whatever the column
+    /// holds -, else the nullability of its language type (decision 113).
+    /// </summary>
+    private bool HoldsNoNull(string? alias, string column)
+    {
+        if (alias is not null && outer is not null && !Scope.Aliases.Contains(alias) && outer.Knows(alias))
+        {
+            return outer.HoldsNoNull(alias, column);
+        }
+
+        var map = alias is not null && Scope.Entities.TryGetValue(alias, out var found) ? found : null;
+        var mapped = map?.PropertyMaps
+            .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase));
+
+        return mapped is not null && (mapped.IsNullable ?? mapped.Property.Type?.IsNullable) == false;
     }
 
     /// <summary>The language type the mapping gives a column of the scope, or of an enclosing scope for a correlated reference; null where nothing maps it.</summary>
@@ -495,6 +547,14 @@ public sealed class EFCoreLinqQueryVisitor(
             return Aggregate(operand);
         }
 
+        // After GroupBy a value equal to a key is read off the key object - g.Key, or a member
+        // of it - whether it is a column or an expression (decision 113); the structural
+        // equality is the one the template's rule of grouping holds the projection to.
+        if (Scope.Grouped && !insideAggregate && KeyPath(operand) is { } key)
+        {
+            return key;
+        }
+
         if (operand.IsParameter)
         {
             return QueryParameterNaming.IdentifierFor(operand.Parameter!);
@@ -546,7 +606,7 @@ public sealed class EFCoreLinqQueryVisitor(
 
         if (Scope.Grouped)
         {
-            var key = GroupKeyPath(alias, attribute);
+            var key = KeyPath(QueryOperand.Column(alias, attribute));
             if (key is not null)
             {
                 return key;
@@ -640,30 +700,21 @@ public sealed class EFCoreLinqQueryVisitor(
     }
 
     /// <summary>
-    /// The path to a grouping key, or null when the column is not one. A single key is
-    /// reached through Key itself; a composite key through a member of it.
+    /// The path to the grouping key the operand is equal to, or null when it is none. A
+    /// single key is reached through Key itself; a key of several parts through the member
+    /// the builder named it by (decision 113).
     /// </summary>
-    private string? GroupKeyPath(string? alias, string attribute)
+    private string? KeyPath(QueryOperand operand)
     {
-        var index = -1;
-        for (int i = 0; i < Scope.GroupKeys.Count; i++)
+        foreach (var key in Scope.GroupKeys)
         {
-            if (string.Equals(Scope.GroupKeys[i].Attribute, attribute, StringComparison.OrdinalIgnoreCase)
-                && (alias is null || string.Equals(Scope.GroupKeys[i].Table, alias, StringComparison.OrdinalIgnoreCase)))
+            if (OperandStructure.Same(key.Key, operand))
             {
-                index = i;
-                break;
+                return key.Member is null ? $"{Scope.Param}.Key" : $"{Scope.Param}.Key.{key.Member}";
             }
         }
 
-        if (index < 0)
-        {
-            return null;
-        }
-
-        return Scope.GroupKeys.Count == 1
-            ? $"{Scope.Param}.Key"
-            : $"{Scope.Param}.Key.{Property(Scope.GroupKeys[index].Table, Scope.GroupKeys[index].Attribute)}";
+        return null;
     }
 
     public string Property(string? alias, string column)
@@ -687,6 +738,19 @@ public sealed class EFCoreLinqQueryVisitor(
     /// </summary>
     private string Expression(QueryExpression expression)
     {
+        // LINQ has no ranking function over a window; the descriptor says so and the template
+        // sends the query to native SQL before any step runs (decision 113).
+        if (expression.IsWindow)
+        {
+            report(ConversionRecordKind.Fallback, "LINQ has no ranking function over a window", QueryFeature.WindowFunction);
+            return string.Empty;
+        }
+
+        if (expression.IsListAggregate)
+        {
+            return ListAggregate(expression);
+        }
+
         if (expression.IsBinary)
         {
             var symbol = expression.Operator!.Value switch
@@ -719,11 +783,160 @@ public sealed class EFCoreLinqQueryVisitor(
                 QueryFunction.Day => $"{Receiver(arguments[0])}.Day",
                 QueryFunction.CurrentTimestamp => "DateTime.Now",
                 QueryFunction.EscapePattern => EscapePattern(Receiver(arguments[0]), patternEscape ?? "!"),
+                QueryFunction.DateAdd => DateAdd(expression),
+                QueryFunction.DateDiff => $"EF.Functions.DateDiff{expression.Unit}({Operand(arguments[0])}, {Operand(arguments[1])})",
+                QueryFunction.Round => Round(arguments[0], arguments[1]),
+                QueryFunction.Sqrt => $"Math.Sqrt({AsDouble(arguments[0])})",
+                QueryFunction.Cast => Cast(arguments[0], expression.CastTo!.Value),
                 _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null),
             };
         }
 
         return Case(expression);
+    }
+
+    /* ---- the functions of decision 113 ------------------------------------------------ */
+
+    /// <summary>
+    /// DATEADD as the Add method of the moment's type - AddYears through AddSeconds, which
+    /// EF Core 10 translates to DATEADD with that unit (verified). A date without a time of
+    /// day has no AddHours, AddMinutes or AddSeconds, and the query goes out in native SQL.
+    /// </summary>
+    private string DateAdd(QueryExpression expression)
+    {
+        var (count, moment) = (expression.Arguments![0], expression.Arguments[1]);
+        if (ScalarOf(moment) == ScalarType.Date && expression.Unit is DateUnit.Hour or DateUnit.Minute or DateUnit.Second)
+        {
+            report(ConversionRecordKind.Fallback, $"A date without a time of day has no Add{expression.Unit}s in .NET", QueryFeature.Expression);
+            return string.Empty;
+        }
+
+        return $"{Receiver(moment)}.Add{expression.Unit}s({Operand(count)})";
+    }
+
+    /// <summary>
+    /// ROUND as Math.Round(x, places), which EF Core translates to ROUND for the database to
+    /// compute. A whole number - or a value whose scalar the gate could not derive - has no
+    /// unambiguous Math.Round in C#: an int converts to decimal and to double alike, and the
+    /// call does not compile; the query goes out in native SQL.
+    /// </summary>
+    private string Round(QueryOperand value, QueryOperand places)
+    {
+        if (ScalarOf(value) is not (ScalarType.Decimal or ScalarType.Double or ScalarType.Float))
+        {
+            report(ConversionRecordKind.Fallback, $"Math.Round over '{value}' has no overload C# can choose without the value being a decimal or a floating-point number", QueryFeature.Expression);
+            return string.Empty;
+        }
+
+        return $"Math.Round({Unwrapped(value)}, {Operand(places)})";
+    }
+
+    /// <summary>The argument of Math.Sqrt, which takes a double: a decimal or a value of no known scalar is cast, which EF Core translates to the CAST AS float SQL Server makes of it anyway.</summary>
+    private string AsDouble(QueryOperand value)
+        => ScalarOf(value) is ScalarType.Double or ScalarType.Float or ScalarType.Int or ScalarType.Long or ScalarType.Short or ScalarType.Byte
+            ? Operand(value)
+            : $"(double)({Operand(value)})";
+
+    /// <summary>
+    /// A conversion: into text by ToString(), which EF Core translates to CONVERT - the same
+    /// text for a number or a moment -, into a number by a C# cast, nullable where the column
+    /// is, because SQL converts a NULL into NULL. A text converted into a number has no C#
+    /// cast, and the query goes out in native SQL.
+    /// </summary>
+    private string Cast(QueryOperand value, ScalarType into)
+    {
+        if (into == ScalarType.String)
+        {
+            return $"{Receiver(value)}.ToString()";
+        }
+
+        if (ScalarOf(value) is ScalarType.String or ScalarType.Char)
+        {
+            report(ConversionRecordKind.Fallback, $"The text '{value}' has no C# cast into {into}", QueryFeature.Expression);
+            return string.Empty;
+        }
+
+        var type = CSharpTypeConvertor.ToString(LangType.Scalar(into));
+        var nullable = NullableElementType(value) is not null;
+        return $"({type}{(nullable ? "?" : string.Empty)})({Operand(value)})";
+    }
+
+    /// <summary>
+    /// STRING_AGG as string.Join over the elements of the group, ordered by the steps before
+    /// its Select (decision 113). EF Core 10 translates it to STRING_AGG over values it first
+    /// turns from NULL into the empty string, and the whole from NULL into the empty string
+    /// too - verified -, which is STRING_AGG exactly over a column that holds no NULL, in a
+    /// group, which never is empty. Anywhere else - a column that may hold NULL, a value that
+    /// is not text, a subquery, where EF Core 10 joins the list on the client - the query goes
+    /// out in native SQL.
+    /// </summary>
+    private string ListAggregate(QueryExpression expression)
+    {
+        var value = expression.Listed!;
+
+        if (!Scope.Grouped || insideAggregate)
+        {
+            report(ConversionRecordKind.Fallback, "string.Join over anything but the elements of a group is not translated by EF Core 10, which joins the list on the client", QueryFeature.ListAggregation);
+            return string.Empty;
+        }
+
+        if (value is not { IsColumn: true, IsAggregate: false }
+            || PropertyType(value.Table, value.Property!) is not { ScalarType: ScalarType.String }
+            || !HoldsNoNull(value.Table, value.Property!))
+        {
+            report(ConversionRecordKind.Fallback, $"string.Join over '{value}', which is not a column of text known to hold no NULL, takes a NULL as the empty string in EF Core 10, where STRING_AGG leaves it out", QueryFeature.ListAggregation);
+            return string.Empty;
+        }
+
+        var wasInsideAggregate = insideAggregate;
+        insideAggregate = true;
+
+        var element = Scope.ElementParam;
+        var chain = Scope.Param;
+        for (var i = 0; i < expression.Ordering!.Count; i++)
+        {
+            var key = expression.Ordering[i];
+            var method = (i == 0, key.Ascending) switch
+            {
+                (true, true) => "OrderBy",
+                (true, false) => "OrderByDescending",
+                (false, true) => "ThenBy",
+                (false, false) => "ThenByDescending",
+            };
+
+            chain += $".{method}({element} => {Operand(key.Operand)})";
+        }
+
+        chain += $".Select({element} => {Operand(value)})";
+        insideAggregate = wasInsideAggregate;
+
+        return $"string.Join({StringLiteral(expression.Separator!)}, {chain})";
+    }
+
+    /// <summary>
+    /// The scalar of an operand as this visitor can know it: a constant's own, a column's from
+    /// the mapping, an expression's from the typed view, a COUNT's a count; null for the rest.
+    /// </summary>
+    private ScalarType? ScalarOf(QueryOperand operand)
+    {
+        if (string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            return ScalarType.Long;
+        }
+
+        if (operand.IsConstant)
+        {
+            return operand.Constant!.Type;
+        }
+
+        if (operand.IsExpression)
+        {
+            return typing.ScalarOf(operand.Expression!);
+        }
+
+        return operand.IsColumn && operand.Property != "*" && PropertyType(operand.Table, operand.Property!) is { Category: LangTypeCategory.Scalar } type
+            ? type.ScalarType
+            : null;
     }
 
     /// <summary>
@@ -775,12 +988,25 @@ public sealed class EFCoreLinqQueryVisitor(
         return ExpressionSpelling.NeedsParentheses(side, parent, rightSide) ? $"({text})" : text;
     }
 
-    /// <summary>The receiver of a member access: an operation is parenthesized, everything else binds tighter than the dot already.</summary>
+    /// <summary>
+    /// The receiver of a member access: an operation is parenthesized, everything else binds
+    /// tighter than the dot already. A column of a nullable value type is reached through its
+    /// Value - DateTime? has no Year and no AddDays -, which EF Core translates as the column
+    /// itself (decision 113; the shape a MyBatis source declares a moment in).
+    /// </summary>
     private string Receiver(QueryOperand operand)
     {
-        var text = Operand(operand);
-        return operand is { IsExpression: true, IsAggregate: false } && operand.Expression!.IsBinary ? $"({text})" : text;
+        if (operand is { IsExpression: true, IsAggregate: false } && operand.Expression!.IsBinary)
+        {
+            return $"({Operand(operand)})";
+        }
+
+        return Unwrapped(operand);
     }
+
+    /// <summary>The operand, through its Value where it is a column of a nullable value type.</summary>
+    private string Unwrapped(QueryOperand operand)
+        => NullableElementType(operand) is null ? Operand(operand) : $"{Operand(operand)}.Value";
 
     /// <summary>
     /// The start of a SUBSTRING as C# counts it (decision 107): the model carries the

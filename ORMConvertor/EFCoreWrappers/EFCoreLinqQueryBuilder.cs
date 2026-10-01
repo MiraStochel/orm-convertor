@@ -389,8 +389,44 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             return;
         }
 
-        var keys = clauses.GroupBys.Select(g => visitor.Visit(g)).ToList();
-        var selector = keys.Count == 1 ? keys[0] : $"new {{ {string.Join(", ", keys)} }}";
+        // One key is g.Key itself. Several go into an anonymous key object, each under a name:
+        // a column under its property, which C# infers from the member access, an expression
+        // under the alias of the projection that projects the same value. An expression no
+        // projection names has no name the tool may give it (decision 028), and LINQ cannot
+        // say the grouping without one, so the query goes out in native SQL (decision 113).
+        var keys = new List<LinqGroupKey>(clauses.GroupBys.Count);
+        var members = new List<string>(clauses.GroupBys.Count);
+        foreach (var grouping in clauses.GroupBys)
+        {
+            var key = grouping.Key;
+            if (clauses.GroupBys.Count == 1)
+            {
+                keys.Add(new LinqGroupKey(key, null));
+                members.Add(visitor.Visit(grouping));
+                continue;
+            }
+
+            if (key.IsColumn)
+            {
+                keys.Add(new LinqGroupKey(key, visitor.Property(key.Table, key.Property!)));
+                members.Add(visitor.Visit(grouping));
+                continue;
+            }
+
+            var name = clauses.Projections.FirstOrDefault(p => p.Alias is not null && OperandStructure.Same(p.Operand, key))?.Alias;
+            if (name is null)
+            {
+                ReportUnspoken(
+                    $"The grouping key '{key}' is an expression no projection names, and a LINQ key of several parts names every member of its key object",
+                    QueryFeature.ComputedGrouping);
+                return;
+            }
+
+            keys.Add(new LinqGroupKey(key, name));
+            members.Add($"{name} = {visitor.Visit(grouping)}");
+        }
+
+        var selector = members.Count == 1 ? members[0] : $"new {{ {string.Join(", ", members)} }}";
 
         artifact.Grouping.Append($"\n        .GroupBy({scope.Param} => {selector})");
 
@@ -398,7 +434,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         // step has to run after this one.
         scope.ElementParam = scope.Param;
         scope.Grouped = true;
-        scope.GroupKeys = clauses.GroupBys;
+        scope.GroupKeys = keys;
         scope.Param = "g";
     }
 
@@ -642,6 +678,17 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         }
 
         var scalar = op is not (ComparisonOperator.Exists or ComparisonOperator.In);
+
+        // A list joined over a subquery (decision 113): EF Core 10 does not translate
+        // string.Join over a chain from a query root, it fetches the rows and joins them on
+        // the client - verified -, so the query goes out in native SQL.
+        if (scalar && clauses.Projections[0].Operand is { IsExpression: true } listed && listed.Expression!.IsListAggregate)
+        {
+            ReportUnspoken(
+                "string.Join over a subquery is not translated by EF Core 10, which joins the list on the client",
+                QueryFeature.ListAggregation);
+            return null;
+        }
 
         if (scalar && (clauses.GroupBys.Count > 0 || !clauses.Projections[0].Operand.IsAggregate))
         {

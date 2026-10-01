@@ -61,12 +61,13 @@ public enum QueryFeature
     ///
     /// What is recorded under this category is therefore a limit of the model or of the
     /// vocabulary, not an inability of the target: a function outside the vocabulary
-    /// (<c>CAST</c>, a windowed function, <c>DATEADD</c>, <c>ROUND</c>), a function the
-    /// target's descriptor leaves out - which the target writes in native SQL since
-    /// decision 113, with a Fallback record -, an expression whose scalar the gate cannot derive
-    /// where the spelling depends on it, an expression projected without an alias, an
-    /// aggregate over an aggregate, and a grouping by an expression, which is the one
-    /// position the expression does not take.
+    /// (<c>REPLACE</c>, <c>CONVERT</c> with a style, a conversion with a length), a function
+    /// the target's descriptor leaves out - which the target writes in native SQL since
+    /// decision 113, with a Fallback record -, an expression whose scalar the gate cannot
+    /// derive where the spelling depends on it, an expression projected without an alias, and
+    /// an aggregate over an aggregate. A grouping by an expression was the one position the
+    /// expression did not take until decision 113, which gave it a category of its own,
+    /// <see cref="ComputedGrouping"/>.
     /// </summary>
     Expression = 13,
 
@@ -95,4 +96,28 @@ public enum QueryFeature
     /// refuse under <see cref="IntermediateResult"/>, whatever the target.
     /// </summary>
     Recursion = 15,
+
+    /// <summary>
+    /// A grouping by an expression - <c>GROUP BY YEAR(o.PlacedAt)</c> - rather than by a column
+    /// (decision 113). Separate from <see cref="Grouping"/> because the targets differ inside
+    /// it: standard JPQL groups by a path only, and LINQ names the members of a key of several
+    /// parts, which an expression no projection names has no name for (decision 028). What the
+    /// rule of grouping refuses - a projection, a HAVING or an ordering that names a column
+    /// outside every key and every aggregate - is recorded under <see cref="Grouping"/>.
+    /// </summary>
+    ComputedGrouping = 16,
+
+    /// <summary>
+    /// A ranking function over a window - <c>ROW_NUMBER() OVER (PARTITION BY … ORDER BY …)</c>,
+    /// <c>RANK</c>, <c>DENSE_RANK</c> (decision 113). T-SQL and HQL 7.4 have it, the other
+    /// query languages do not and write the query in native SQL. Recorded here besides: a
+    /// window anywhere but in a projection, which SQL does not allow.
+    /// </summary>
+    WindowFunction = 17,
+
+    /// <summary>
+    /// An aggregate that joins the values of a group into one text - <c>STRING_AGG</c>,
+    /// <c>listagg</c>, LINQ's <c>string.Join</c> over a group (decision 113).
+    /// </summary>
+    ListAggregation = 18,
 }

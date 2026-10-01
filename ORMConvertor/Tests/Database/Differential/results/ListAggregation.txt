@@ -1,0 +1,6 @@
+1	"Widget, loose; Widget, boxed"
+2	"W_Bolt, bag of ten; W_Bolt, single"
+3	"Whistle"
+4	"Anvil, heavy"
+5	"Bracket"
+6	"Zither"

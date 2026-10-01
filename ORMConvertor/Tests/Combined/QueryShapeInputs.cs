@@ -18,14 +18,32 @@ namespace Tests.Combined;
 /// <param name="RefusedBy">Targets that refuse the shape, with the feature the refusal names.</param>
 /// <param name="RefusedWithoutCatalog">Sources that can write the shape but whose reading the tool refuses by a stated rule in a run without a catalog, with the feature the refusal names - a Dapper parameter, whose scalar takes a mapping the source does not state (decision 083) and the catalog supplies on the query's own demand (decision 105). The matrices here convert dry, so for them it is a refusal; a run with a catalog holding the domain yields the artifact.</param>
 /// <param name="FallbackBy">Targets whose query language does not speak the shape and which write it in the native SQL of their dialect instead, with the feature the record of kind Fallback names (decision 113).</param>
+/// <param name="FallbackWithoutCatalog">Directions that write the shape in native SQL in a run without a catalog only, with the feature the record names - the target needs a fact of the mapping the source does not state and the catalog supplies, such as a column holding no NULL, which a MyBatis source leaves open and EF Core's list needs (decision 113). The matrices here convert dry, so for them it is a fallback; a run with a catalog holding the domain translates the direction.</param>
 public sealed record QueryShape(
     string Name,
     IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>> Sources,
     IReadOnlyDictionary<ORMEnum, string[]> Hallmarks,
     IReadOnlyDictionary<ORMEnum, QueryFeature> RefusedBy,
     IReadOnlyDictionary<ORMEnum, QueryFeature> RefusedWithoutCatalog,
-    IReadOnlyDictionary<ORMEnum, QueryFeature> FallbackBy)
+    IReadOnlyDictionary<ORMEnum, QueryFeature> FallbackBy,
+    IReadOnlyDictionary<(ORMEnum Source, ORMEnum Target), QueryFeature> FallbackWithoutCatalog)
 {
+    /// <summary>The feature a direction of a dry run writes in native SQL for, or null where it translates the shape.</summary>
+    public QueryFeature? FallsBack(ORMEnum source, ORMEnum target)
+        => FallbackBy.TryGetValue(target, out var feature) ? feature
+            : FallbackWithoutCatalog.TryGetValue((source, target), out var dry) ? dry
+            : null;
+
+    /// <summary>
+    /// What the direction's text has to carry: the target's hallmarks, or the SQL ones where
+    /// the direction falls back, because the escape path writes the text the Dapper target
+    /// writes (decision 113).
+    /// </summary>
+    public string[] HallmarksOf(ORMEnum source, ORMEnum target)
+        => FallbackWithoutCatalog.ContainsKey((source, target))
+            ? Hallmarks.GetValueOrDefault(ORMEnum.Dapper, [])
+            : Hallmarks.GetValueOrDefault(target, []);
+
     public override string ToString() => Name;
 }
 
@@ -167,6 +185,7 @@ public static class QueryShapeInputs
             var refusedBy = new Dictionary<ORMEnum, QueryFeature>();
             var refusedWithoutCatalog = new Dictionary<ORMEnum, QueryFeature>();
             var fallbackBy = new Dictionary<ORMEnum, QueryFeature>();
+            var fallbackWithoutCatalog = new Dictionary<(ORMEnum, ORMEnum), QueryFeature>();
 
             foreach (var (key, value) in values)
             {
@@ -181,6 +200,9 @@ public static class QueryShapeInputs
                     case "fallbackBy":
                         fallbackBy = Refusals(id, value);
                         break;
+                    case "fallbackWithoutCatalog":
+                        fallbackWithoutCatalog = Directions(id, value);
+                        break;
                     default:
                         if (!Enum.TryParse<ORMEnum>(key, ignoreCase: false, out var source) || !Enum.IsDefined(source))
                         {
@@ -192,7 +214,7 @@ public static class QueryShapeInputs
                 }
             }
 
-            shapes.Add(Shape(id, units, hallmarks, refusedBy, refusedWithoutCatalog, fallbackBy));
+            shapes.Add(Shape(id, units, hallmarks, refusedBy, refusedWithoutCatalog, fallbackBy, fallbackWithoutCatalog));
         }
 
         var unstated = CategoryHallmarks.Keys.Except(shapes.Select(shape => shape.Name)).ToList();
@@ -203,6 +225,29 @@ public static class QueryShapeInputs
         }
 
         return shapes;
+    }
+
+    /// <summary>A list of directions of the manifest: <c>Source&gt;Target:Feature</c> entries, all three spelled as the enums spell them.</summary>
+    private static Dictionary<(ORMEnum, ORMEnum), QueryFeature> Directions(string id, string value)
+    {
+        var directions = new Dictionary<(ORMEnum, ORMEnum), QueryFeature>();
+
+        foreach (var entry in SharedInputs.List(value))
+        {
+            var arrow = entry.IndexOf('>');
+            var colon = entry.IndexOf(':');
+            if (arrow < 0 || colon < arrow
+                || !Enum.TryParse<ORMEnum>(entry[..arrow], ignoreCase: false, out var source) || !Enum.IsDefined(source)
+                || !Enum.TryParse<ORMEnum>(entry[(arrow + 1)..colon], ignoreCase: false, out var target) || !Enum.IsDefined(target)
+                || !Enum.TryParse<QueryFeature>(entry[(colon + 1)..], ignoreCase: false, out var feature) || !Enum.IsDefined(feature))
+            {
+                throw new InvalidOperationException($"categories.txt: [{id}] states the direction \"{entry}\", which is not written as Source>Target:Feature.");
+            }
+
+            directions[(source, target)] = feature;
+        }
+
+        return directions;
     }
 
     /// <summary>A refusal or fallback list of the manifest: <c>Framework:Feature</c> entries, both spelled as the enums spell them.</summary>
@@ -464,8 +509,49 @@ public static class QueryShapeInputs
             sql: ["WITH DepartmentTree AS (", "0 AS Depth", "UNION ALL", "t.Depth + 1 AS Depth", "INNER JOIN DepartmentTree t ON c.ParentDepartmentId = t.DepartmentId", "WHERE t.Depth >= 2"],
             jpa: ["with DepartmentTree as (", "0 as Depth", "union all", "t.Depth + 1 as Depth", "join DepartmentTree t on c.ParentDepartmentId = t.DepartmentId", "where t.Depth >= 2"]),
 
+        // The walk guards its cycle over the path walked so far, the keys converted to text
+        // (decision 113); NOT LIKE is written as the negation of the LIKE it is.
         ["RecursiveWalkOfACyclicGraph"] = Hallmarks(
-            sql: ["WITH Walk AS (", "1 AS Steps", "UNION ALL", "w.Steps + 1 AS Steps", "WHERE w.Steps < 3", "SELECT DISTINCT w.ProductId AS ProductId", "OPTION (MAXRECURSION 10)"]),
+            sql: ["WITH Walk AS (", "',1,' + CAST(l.ToProductId AS NVARCHAR(MAX)) + ',' AS Path", "UNION ALL", "w.Path + CAST(n.ToProductId AS NVARCHAR(MAX)) + ',' AS Path", "NOT (w.Path LIKE '%,' + CAST(n.ToProductId AS NVARCHAR(MAX)) + ',%')", "SELECT DISTINCT w.ProductId AS ProductId", "OPTION (MAXRECURSION 10)"]),
+
+        // ---- the rows of decision 113, the vocabulary of expressions ----
+        //
+        // A target that falls back carries the SQL hallmarks. The LINQ target names the
+        // expression of a key of several parts after the projection that projects it; a
+        // MyBatis source declares its moments, numbers and keys as Java wrappers, which the
+        // LINQ target reaches through .Value and casts into a nullable type, so the LINQ
+        // hallmarks leave both open.
+        ["GroupingByAnExpression"] = Hallmarks(
+            sql: ["YEAR(o.PlacedAt) AS PlacedYear", "COUNT(*) AS OrderCount", "WHERE o.CustomerId > 0", "GROUP BY YEAR(o.PlacedAt), o.CompanyId"],
+            linq: [".GroupBy(o => new { PlacedYear = o.PlacedAt.", "Year, o.CompanyId })", "PlacedYear = g.Key.PlacedYear", "CompanyId = g.Key.CompanyId", "OrderCount = g.Count()"],
+            hql: ["year(o.PlacedAt) as PlacedYear", "where o.CustomerId > 0", "group by year(o.PlacedAt), o.CompanyId"],
+            jpa: ["extract(year from o.PlacedAt) as PlacedYear", "where o.CustomerId > 0", "group by extract(year from o.PlacedAt), o.CompanyId"]),
+
+        ["DateArithmetic"] = Hallmarks(
+            sql: ["DATEADD(day, 30, o.PlacedAt) AS DueAt", "DATEDIFF(hour, '2025-01-01 00:00:00', o.PlacedAt) AS HoursFromNewYear", "WHERE DATEDIFF(day, o.PlacedAt, '2025-03-01 00:00:00') > 0"],
+            linq: ["DueAt = o.PlacedAt.", "AddDays(30)", "HoursFromNewYear = EF.Functions.DateDiffHour(DateTime.Parse(\"2025-01-01 00:00:00\"), o.PlacedAt)", ".Where(o => EF.Functions.DateDiffDay(o.PlacedAt, DateTime.Parse(\"2025-03-01 00:00:00\")) > 0)"],
+            jpa: ["timestampadd(day, 30, o.PlacedAt) as DueAt", "timestampdiff(hour, {ts '2025-01-01 00:00:00'}, o.PlacedAt) as HoursFromNewYear", "where timestampdiff(day, o.PlacedAt, {ts '2025-03-01 00:00:00'}) > 0"]),
+
+        ["RoundingAndSquareRoot"] = Hallmarks(
+            sql: ["ROUND(p.UnitPrice, 0) AS RoundedPrice", "SQRT(", " AS PriceRoot", "WHERE ROUND(p.UnitPrice, 0) > 50"],
+            linq: ["RoundedPrice = Math.Round(p.UnitPrice", ", 0)", "PriceRoot = Math.Sqrt(", ".Where(p => Math.Round(p.UnitPrice", ", 0) > 50)"],
+            hql: ["round(p.UnitPrice, 0) as RoundedPrice", "sqrt(", " as PriceRoot", "where round(p.UnitPrice, 0) > 50"],
+            jpa: ["round(p.UnitPrice, 0) as RoundedPrice", "sqrt(", " as PriceRoot", "where round(p.UnitPrice, 0) > 50"]),
+
+        ["CastInAConcatenation"] = Hallmarks(
+            sql: ["'#' + CAST(p.ProductId AS NVARCHAR(MAX)) + ' ' + p.ProductName AS Label", "WHERE CAST(p.UnitPrice AS INT) > 100"],
+            linq: ["Label = \"#\" + p.ProductId.", "ToString() + \" \" + p.ProductName", ".Where(p => (int", "(p.UnitPrice) > 100)"],
+            hql: ["concat('#', cast(p.ProductId as string), ' ', p.ProductName) as Label", "where cast(p.UnitPrice as int) > 100"],
+            jpa: ["concat('#', cast(p.ProductId as String), ' ', p.ProductName) as Label", "where cast(p.UnitPrice as Integer) > 100"]),
+
+        ["BestRowPerGroup"] = Hallmarks(
+            sql: ["WITH Ranked AS (", "ROW_NUMBER() OVER (PARTITION BY ol.ProductId ORDER BY ol.Quantity DESC, ol.LineNumber ASC) AS RowNumber", "WHERE r.RowNumber = 1"],
+            jpa: ["with Ranked as (", "row_number() over (partition by ol.ProductId order by ol.Quantity desc, ol.LineNumber asc) as RowNumber", "where r.RowNumber = 1"]),
+
+        ["ListAggregation"] = Hallmarks(
+            sql: ["STRING_AGG(ol.Description, '; ') WITHIN GROUP (ORDER BY ol.LineNumber ASC) AS Descriptions", "WHERE ol.Quantity > 1", "GROUP BY ol.ProductId"],
+            linq: ["Descriptions = string.Join(\"; \", g.OrderBy(ol => ol.LineNumber).Select(ol => ol.Description))", ".Where(ol => ol.Quantity > 1)"],
+            jpa: ["listagg(ol.Description, '; ') within group (order by ol.LineNumber asc) as Descriptions", "where ol.Quantity > 1", "group by ol.ProductId"]),
     };
 
     // ---- the deliberately bad query ------------------------------------------------------
@@ -536,7 +622,8 @@ public static class QueryShapeInputs
             ]),
         refusedBy: [],
         refusedWithoutCatalog: [],
-        fallbackBy: []);
+        fallbackBy: [],
+        fallbackWithoutCatalog: []);
 
     /// <summary>How many query scopes the bad query has: the outer one and eight subqueries.</summary>
     public const int DeeplyNestedScopes = 9;
@@ -554,7 +641,8 @@ public static class QueryShapeInputs
         Dictionary<ORMEnum, string[]> hallmarks,
         Dictionary<ORMEnum, QueryFeature> refusedBy,
         Dictionary<ORMEnum, QueryFeature> refusedWithoutCatalog,
-        Dictionary<ORMEnum, QueryFeature> fallbackBy)
+        Dictionary<ORMEnum, QueryFeature> fallbackBy,
+        Dictionary<(ORMEnum, ORMEnum), QueryFeature> fallbackWithoutCatalog)
     {
         var sources = new Dictionary<ORMEnum, IReadOnlyList<ConversionSource>>();
         foreach (var (source, paths) in units)
@@ -570,7 +658,7 @@ public static class QueryShapeInputs
             marks[target] = hallmarks.GetValueOrDefault(ORMEnum.Dapper, []);
         }
 
-        return new QueryShape(name, sources, marks, refusedBy, refusedWithoutCatalog, fallbackBy);
+        return new QueryShape(name, sources, marks, refusedBy, refusedWithoutCatalog, fallbackBy, fallbackWithoutCatalog);
     }
 
     /// <summary>Hallmarks per target language, spread over the targets that write it.</summary>

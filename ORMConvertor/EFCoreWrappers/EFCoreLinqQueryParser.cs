@@ -4,6 +4,7 @@ using AbstractWrappers.Diagnostics;
 using LinqParsing;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
+using Model.QueryInstructions.Conditions;
 using TransactSql;
 
 namespace EFCoreWrappers;
@@ -176,6 +177,45 @@ public class EFCoreLinqQueryParser(
         pattern = arguments[1].Expression;
         escape = arguments.Count == 3 ? arguments[2].Expression : null;
         return true;
+    }
+
+    /// <summary>
+    /// <c>EF.Functions.DateDiffYear</c> through <c>DateDiffSecond</c> (decision 113): the
+    /// provider's own date difference, which SQL Server's provider maps onto DATEDIFF with the
+    /// unit the method names - verified against EF Core 10.0.10 -, so it counts boundaries as
+    /// the vocabulary's DateDiff does.
+    /// </summary>
+    protected override QueryOperand? TryReadProviderFunction(InvocationExpressionSyntax invocation, Func<ExpressionSyntax, QueryOperand?> readLeaf)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax
+            {
+                Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Functions" } functions,
+            } member
+            || LastIdentifier(functions.Expression) != "EF")
+        {
+            return null;
+        }
+
+        DateUnit? unit = member.Name.Identifier.Text switch
+        {
+            "DateDiffYear" => DateUnit.Year,
+            "DateDiffMonth" => DateUnit.Month,
+            "DateDiffDay" => DateUnit.Day,
+            "DateDiffHour" => DateUnit.Hour,
+            "DateDiffMinute" => DateUnit.Minute,
+            "DateDiffSecond" => DateUnit.Second,
+            _ => null,
+        };
+
+        var arguments = invocation.ArgumentList.Arguments;
+        if (unit is null || arguments.Count != 2)
+        {
+            return null;
+        }
+
+        var start = readLeaf(arguments[0].Expression);
+        var end = start is null ? null : readLeaf(arguments[1].Expression);
+        return end is null ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.DateDiff, [start!, end], unit));
     }
 
     /// <summary>

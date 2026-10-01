@@ -96,10 +96,21 @@ public static class EFCoreDescriptor
 
             // LINQ has no recursion: a variable cannot name itself (decision 113).
             [QueryFeature.Recursion] = FactSupport.NotExpressible,
+
+            // GroupBy over an expression and string.Join over a group, which EF Core 10
+            // translates to GROUP BY over a derived table and to STRING_AGG (decision 113,
+            // verified against 10.0.10); a key of several parts that no projection names, and
+            // a list over a column that may hold NULL or over a subquery, go to native SQL at
+            // the point of emission. No ranking function over a window.
+            [QueryFeature.ComputedGrouping] = FactSupport.Expressible,
+            [QueryFeature.WindowFunction] = FactSupport.NotExpressible,
+            [QueryFeature.ListAggregation] = FactSupport.Expressible,
         },
 
         // EF Core 10 translates every function of the expression vocabulary from the
-        // members of System.String and System.DateTime, Math.Abs and ?? (decision 107).
+        // members of System.String and System.DateTime, Math.Abs and ?? (decision 107), and
+        // since decision 113 the Add methods of DateTime, EF.Functions.DateDiff…, Math.Round,
+        // Math.Sqrt, ToString() and the numeric casts (verified against 10.0.10).
         Functions = QueryFunctionVocabulary.All,
 
         // What a LINQ chain cannot say - an aggregate over the whole result, a scalar

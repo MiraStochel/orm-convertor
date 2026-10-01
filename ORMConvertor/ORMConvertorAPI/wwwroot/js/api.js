@@ -161,6 +161,9 @@ export const QUERY_FEATURE_LABELS = Object.freeze({
   13: "expression",
   14: "intermediate result",
   15: "recursion",
+  16: "grouping by an expression",
+  17: "window function",
+  18: "list aggregation",
 });
 
 /*

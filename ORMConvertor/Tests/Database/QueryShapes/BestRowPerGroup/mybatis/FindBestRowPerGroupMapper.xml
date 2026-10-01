@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindBestRowPerGroupMapper">
+  <select id="findBestRowPerGroup" resultType="ShopOrderLine">
+    WITH Ranked AS (
+        SELECT ol.ProductId AS ProductId, ol.LineNumber AS LineNumber, ol.Quantity AS Quantity,
+               ROW_NUMBER() OVER (PARTITION BY ol.ProductId ORDER BY ol.Quantity DESC, ol.LineNumber ASC) AS RowNumber
+        FROM {{schema}}.ShopOrderLines AS ol)
+    SELECT r.ProductId AS ProductId, r.LineNumber AS LineNumber, r.Quantity AS Quantity
+    FROM Ranked AS r
+    WHERE r.RowNumber = 1
+  </select>
+</mapper>

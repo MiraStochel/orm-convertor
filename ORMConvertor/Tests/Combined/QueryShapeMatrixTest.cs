@@ -113,8 +113,9 @@ public class QueryShapeMatrixTest
         // The third value of a cell (decision 113): the target's language does not speak
         // the shape, so the query goes out in native SQL through the framework's API, with a
         // record naming the feature - and a target that speaks the shape never falls back,
-        // so a translation is never passed off as the other value.
-        if (shape.FallbackBy.TryGetValue(target, out var unspoken))
+        // so a translation is never passed off as the other value. A direction that needs a
+        // fact only the catalog supplies falls back in this dry run as well.
+        if (shape.FallsBack(source, target) is { } unspoken)
         {
             Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == unspoken);
             Assert.Contains(queries, artifact => artifact.ContentType == ConversionContentType.SqlQuery);
@@ -126,7 +127,7 @@ public class QueryShapeMatrixTest
         }
 
         var text = QueryText(result, target);
-        foreach (var mark in shape.Hallmarks.GetValueOrDefault(target, []))
+        foreach (var mark in shape.HallmarksOf(source, target))
         {
             Assert.True(
                 text.Contains(mark, StringComparison.Ordinal),
@@ -167,7 +168,9 @@ public class QueryShapeMatrixTest
         {
             foreach (var source in shape.Sources.Keys.Where(source => !shape.RefusedWithoutCatalog.ContainsKey(source)))
             {
-                foreach (var target in shape.FallbackBy.Keys.Where(target => only is null || target == only))
+                var targets = shape.FallbackBy.Keys
+                    .Concat(shape.FallbackWithoutCatalog.Keys.Where(direction => direction.Source == source).Select(direction => direction.Target));
+                foreach (var target in targets.Where(target => only is null || target == only))
                 {
                     data.Add(shape, source, target);
                 }
@@ -364,6 +367,11 @@ public class QueryShapeMatrixTest
     [InlineData("GroupingOverAGroupedResult")]
     [InlineData("AggregateOverTheWholeResult")]
     [InlineData("RecursiveDescentOfAHierarchy")]
+    [InlineData("GroupingByAnExpression")]
+    [InlineData("DateArithmetic")]
+    [InlineData("CastInAConcatenation")]
+    [InlineData("BestRowPerGroup")]
+    [InlineData("ListAggregation")]
     public void EverySourceLanguageReadsTheCategoryIntoTheSameSql(string name)
     {
         var shape = QueryShapeInputs.Categories.Single(s => s.Name == name);

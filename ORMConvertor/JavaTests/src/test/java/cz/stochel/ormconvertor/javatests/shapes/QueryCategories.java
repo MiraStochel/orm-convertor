@@ -204,6 +204,11 @@ public final class QueryCategories {
                 case "refusedBy" -> refusedBy = refusals(id, entry.getValue());
                 case "refusedWithoutCatalog" -> refusedWithoutCatalog = refusals(id, entry.getValue());
                 case "fallbackBy" -> fallbackBy = refusals(id, entry.getValue());
+                // A fallback only a run without a catalog makes (decision 113): this suite
+                // converts through an instance whose catalog holds the domain, where the
+                // direction translates, so it has nothing to expect of it.
+                case "fallbackWithoutCatalog" -> {
+                }
                 default -> units.put(Orm.forName(entry.getKey()), list(entry.getValue()));
             }
         }

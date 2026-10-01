@@ -83,9 +83,17 @@ public static class DapperDescriptor
             // at the end of it (decision 113).
             [QueryFeature.IntermediateResult] = FactSupport.Expressible,
             [QueryFeature.Recursion] = FactSupport.Expressible,
+
+            // GROUP BY over an expression, the ranking functions over a window and
+            // STRING_AGG (decision 113).
+            [QueryFeature.ComputedGrouping] = FactSupport.Expressible,
+            [QueryFeature.WindowFunction] = FactSupport.Expressible,
+            [QueryFeature.ListAggregation] = FactSupport.Expressible,
         },
 
-        // T-SQL spells every function of the expression vocabulary (decision 107).
+        // T-SQL spells every function of the expression vocabulary (decision 107); since
+        // decision 113 that is the measure of the vocabulary itself.
+
         Functions = QueryFunctionVocabulary.All,
 
         // The query language is the native SQL of the dialect, so there is nothing to fall

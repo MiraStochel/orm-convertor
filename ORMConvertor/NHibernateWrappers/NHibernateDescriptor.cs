@@ -1,5 +1,6 @@
 ﻿using AbstractWrappers.Descriptors;
 using Model;
+using Model.QueryInstructions.Conditions;
 
 namespace NHibernateWrappers;
 
@@ -155,11 +156,20 @@ public static class NHibernateDescriptor
             [QueryFeature.Expression] = FactSupport.Expressible,
             [QueryFeature.IntermediateResult] = FactSupport.NotExpressible,
             [QueryFeature.Recursion] = FactSupport.NotExpressible,
+
+            // Grouping by an expression - a function, a CASE - is HQL 5.7.0 (decision 113,
+            // verified against 5.7.0 over SQL Server); a window and an aggregate into a list
+            // are not.
+            [QueryFeature.ComputedGrouping] = FactSupport.Expressible,
+            [QueryFeature.WindowFunction] = FactSupport.NotExpressible,
+            [QueryFeature.ListAggregation] = FactSupport.NotExpressible,
         },
 
         // HQL in NHibernate 5.7.0 registers every function of the expression vocabulary over
-        // the SQL Server dialect (decision 107).
-        Functions = QueryFunctionVocabulary.All,
+        // the SQL Server dialect (decision 107), round, sqrt and cast among them (decision
+        // 113, verified), but neither datediff nor dateadd: the HQL parser finds no type for
+        // either and refuses the query.
+        Functions = QueryFunctionVocabulary.AllBut(QueryFunction.DateAdd, QueryFunction.DateDiff),
 
         // What HQL cannot say goes out as native SQL with a scalar or the entity declared
         // per column (decision 113).

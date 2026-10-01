@@ -870,32 +870,23 @@ public class SqlQueryReader(
 
         foreach (var specification in query.GroupByClause.GroupingSpecifications)
         {
-            if (specification is ExpressionGroupingSpecification expression
-                && expression.Expression is ColumnReferenceExpression column
-                && ReadColumn(column) is { } reference)
+            // A column, qualified by the source alias where the text left it bare, as the
+            // projection is; or since decision 113 an expression, which the builder template
+            // holds the projection, the HAVING and the ordering to.
+            if (specification is ExpressionGroupingSpecification { Expression: { } written }
+                && ReadOperand(written) is { } key
+                && (key is { IsColumn: true, IsAggregate: false } || key is { IsExpression: true, IsAggregate: false }))
             {
-                queryBuilder.GroupBy(reference.Table ?? sourceAlias, reference.Column);
+                queryBuilder.GroupBy(Qualified(key));
                 continue;
             }
 
-            // A grouping by an expression is the one position the expression does not take
-            // (decision 107): it would force the same expression into the projection and the
-            // HAVING, and into a key the LINQ target reads back from; refused by name.
-            if (specification is ExpressionGroupingSpecification { Expression: { } key } && ReadOperand(key) is { IsExpression: true })
-            {
-                unread = null;
-                Report(
-                    ConversionRecordKind.Failure,
-                    $"The grouping key '{Print(key)}' is an expression, which the query representation carries in every position but the grouping, and a query grouped differently would return different rows; no artifact was generated.",
-                    QueryFeature.Expression);
-                continue;
-            }
-
+            var (what, category) = unread ?? ("a grouping key that is neither a column nor an expression", QueryFeature.Grouping);
             unread = null;
             Report(
                 ConversionRecordKind.Failure,
-                "A grouping key that is not a column reference cannot be carried, and a query grouped differently would return different rows; no artifact was generated.",
-                QueryFeature.Grouping);
+                $"The grouping uses {what}, and a query grouped differently would return different rows; no artifact was generated.",
+                category ?? QueryFeature.Grouping);
         }
     }
 
@@ -1130,6 +1121,15 @@ public class SqlQueryReader(
             case ScalarSubquery scalar:
                 return QueryOperand.Nested(ReadSubQueryOperand(scalar.QueryExpression));
 
+            case CastCall cast:
+                return ReadCast(cast);
+
+            // CURRENT_TIMESTAMP without parentheses is the grammar's own call, not a function
+            // call by name - which is how the T-SQL writer spells the current moment, so that
+            // its own text reads back (decision 107).
+            case ParameterlessCall { ParameterlessCallType: ParameterlessCallType.CurrentTimestamp }:
+                return QueryOperand.Computed(ModelExpression.Call(QueryFunction.CurrentTimestamp, []));
+
             // A T-SQL variable in operand position is a parameter of the query: the value
             // the caller binds (decision 083). The @ is T-SQL's decoration and is stripped,
             // the way the quotes of a string literal are - the model carries the bare name.
@@ -1145,8 +1145,8 @@ public class SqlQueryReader(
                 return null;
 
             default:
-                // CAST and CONVERT, a NULLIF, an IIF, a subquery with more than one column
-                // and the rest of what T-SQL computes: outside the vocabulary, named.
+                // CONVERT, a NULLIF, an IIF, a subquery with more than one column and the
+                // rest of what T-SQL computes: outside the vocabulary, named.
                 unread ??= ($"'{Print(expression)}', which is a construct outside the vocabulary of expressions the query representation carries", QueryFeature.Expression);
                 return null;
         }
@@ -1210,7 +1210,9 @@ public class SqlQueryReader(
         return operand.IsExpression
                && (operand.Expression!.Operator == ExpressionOperator.Concat
                    || operand.Expression.Function is QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim
-                       or QueryFunction.Substring or QueryFunction.EscapePattern);
+                       or QueryFunction.Substring or QueryFunction.EscapePattern
+                   || operand.Expression.CastTo == ScalarType.String
+                   || operand.Expression.IsListAggregate);
     }
 
     /// <summary>
@@ -1232,20 +1234,18 @@ public class SqlQueryReader(
     /// A function call: one of the five aggregates over a column, over the whole row or
     /// over an expression; a function of the vocabulary under its T-SQL name - <c>ISNULL</c>
     /// is a COALESCE of two, <c>CONCAT</c> of several arguments is nested, <c>GETDATE()</c>
-    /// and <c>CURRENT_TIMESTAMP</c> are the same moment; anything else - <c>DATEADD</c>,
-    /// <c>REPLACE</c>, <c>ROUND</c>, <c>SYSDATETIME()</c>, a windowed function - is outside
-    /// the vocabulary and named.
+    /// and <c>CURRENT_TIMESTAMP</c> are the same moment, and since decision 113
+    /// <c>DATEADD</c>, <c>DATEDIFF</c>, <c>ROUND</c>, <c>SQRT</c>, <c>STRING_AGG</c> and the
+    /// three ranking functions over a window; anything else - <c>REPLACE</c>,
+    /// <c>SYSDATETIME()</c>, an aggregate over a window - is outside the vocabulary and named.
     /// </summary>
     private QueryOperand? ReadFunctionCall(FunctionCall call)
     {
         var name = call.FunctionName.Value.ToUpperInvariant();
 
-        // A windowed function computes its value over a frame of rows, which the vocabulary
-        // has no place for; carried as a plain aggregate it would hold something else.
         if (call.OverClause is not null)
         {
-            unread ??= ($"the windowed function '{Print(call)}', which the query representation does not carry", QueryFeature.Expression);
-            return null;
+            return ReadWindow(call, name);
         }
 
         if (name is "COUNT" or "SUM" or "MIN" or "MAX" or "AVG")
@@ -1255,6 +1255,14 @@ public class SqlQueryReader(
 
         switch (name)
         {
+            case "DATEADD": return ReadDateFunction(QueryFunction.DateAdd, call);
+            case "DATEDIFF": return ReadDateFunction(QueryFunction.DateDiff, call);
+            case "ROUND" when call.Parameters.Count == 2: return ReadCall(QueryFunction.Round, call.Parameters, Print(call));
+            case "ROUND":
+                unread ??= ($"'{Print(call)}', a ROUND whose third argument truncates instead of rounding, which the vocabulary of expressions does not carry", QueryFeature.Expression);
+                return null;
+            case "SQRT": return ReadCall(QueryFunction.Sqrt, call.Parameters, Print(call));
+            case "STRING_AGG": return ReadListAggregate(call);
             case "UPPER": return ReadCall(QueryFunction.Upper, call.Parameters, Print(call));
             case "LOWER": return ReadCall(QueryFunction.Lower, call.Parameters, Print(call));
             case "TRIM": return ReadCall(QueryFunction.Trim, call.Parameters, Print(call));
@@ -1274,6 +1282,164 @@ public class SqlQueryReader(
                 unread ??= ($"the function {name} in '{Print(call)}', which is outside the vocabulary of expressions the query representation carries", QueryFeature.Expression);
                 return null;
         }
+    }
+
+    /// <summary>
+    /// A ranking function over a window (decision 113): <c>ROW_NUMBER</c>, <c>RANK</c> or
+    /// <c>DENSE_RANK</c>, without an argument, with the partitions and the ordering of its
+    /// OVER clause. An aggregate over a window and a frame of rows compute something the
+    /// vocabulary has no place for - carried as a plain aggregate it would hold another value -
+    /// and are refused by name; where the window stands is the builder template's to judge.
+    /// </summary>
+    private QueryOperand? ReadWindow(FunctionCall call, string name)
+    {
+        RankingFunction? ranking = name switch
+        {
+            "ROW_NUMBER" => RankingFunction.RowNumber,
+            "RANK" => RankingFunction.Rank,
+            "DENSE_RANK" => RankingFunction.DenseRank,
+            _ => null,
+        };
+
+        var over = call.OverClause;
+        if (ranking is null || call.Parameters.Count > 0 || over.WindowFrameClause is not null || over.OrderByClause is null)
+        {
+            unread ??= ($"the windowed function '{Print(call)}' - an aggregate over a window, a frame of rows, or a ranking without an ordering - which the vocabulary of expressions does not carry", QueryFeature.WindowFunction);
+            return null;
+        }
+
+        var partitions = new List<QueryOperand>(over.Partitions.Count);
+        foreach (var written in over.Partitions)
+        {
+            if (ReadOperand(written) is not { } partition || !IsLeaf(partition, written))
+            {
+                return null;
+            }
+
+            partitions.Add(partition);
+        }
+
+        return ReadOrdering(over.OrderByClause.OrderByElements) is { } ordering
+            ? QueryOperand.Computed(ModelExpression.Window(ranking.Value, partitions, ordering))
+            : null;
+    }
+
+    /// <summary>The keys of an ordering inside a window or a list aggregate (decision 113); null when one of them is not carried.</summary>
+    private List<OrderingKey>? ReadOrdering(IList<ExpressionWithSortOrder> elements)
+    {
+        var ordering = new List<OrderingKey>(elements.Count);
+        foreach (var element in elements)
+        {
+            if (ReadOperand(element.Expression) is not { } key || !IsLeaf(key, element.Expression))
+            {
+                return null;
+            }
+
+            ordering.Add(new OrderingKey(key, element.SortOrder != SortOrder.Descending));
+        }
+
+        return ordering;
+    }
+
+    /// <summary>
+    /// <c>DATEADD</c> or <c>DATEDIFF</c> (decision 113): the datepart, a keyword T-SQL hands
+    /// over as an identifier, read into the unit of the vocabulary - its abbreviations too -,
+    /// and the two arguments after it. A datepart outside the six units - a week, a quarter, a
+    /// millisecond - is refused by name.
+    /// </summary>
+    private QueryOperand? ReadDateFunction(QueryFunction function, FunctionCall call)
+    {
+        if (call.Parameters.Count != 3 || call.Parameters[0] is not IdentifierLiteral datepart)
+        {
+            unread ??= ($"'{Print(call)}', which is not a datepart and two arguments", QueryFeature.Expression);
+            return null;
+        }
+
+        DateUnit? unit = datepart.Value.ToLowerInvariant() switch
+        {
+            "year" or "yy" or "yyyy" => DateUnit.Year,
+            "month" or "mm" or "m" => DateUnit.Month,
+            "day" or "dd" or "d" => DateUnit.Day,
+            "hour" or "hh" => DateUnit.Hour,
+            "minute" or "mi" or "n" => DateUnit.Minute,
+            "second" or "ss" or "s" => DateUnit.Second,
+            _ => null,
+        };
+
+        if (unit is null)
+        {
+            unread ??= ($"the datepart {datepart.Value} in '{Print(call)}', which is not one of the units the vocabulary of expressions carries", QueryFeature.Expression);
+            return null;
+        }
+
+        var arguments = new List<QueryOperand>(2);
+        foreach (var written in call.Parameters.Skip(1))
+        {
+            if (ReadOperand(written) is not { } argument || !IsLeaf(argument, written))
+            {
+                return null;
+            }
+
+            arguments.Add(argument);
+        }
+
+        return QueryOperand.Computed(ModelExpression.Call(function, arguments, unit));
+    }
+
+    /// <summary>
+    /// <c>STRING_AGG(value, separator) [WITHIN GROUP (ORDER BY …)]</c> (decision 113): the
+    /// separator is a string the query states, as the escape of a LIKE is; a separator the
+    /// caller would supply is a fact the representation does not carry.
+    /// </summary>
+    private QueryOperand? ReadListAggregate(FunctionCall call)
+    {
+        if (call.Parameters.Count != 2 || call.Parameters[1] is not StringLiteral separator || call.UniqueRowFilter == UniqueRowFilter.Distinct)
+        {
+            unread ??= ($"'{Print(call)}', a STRING_AGG whose separator is not a string literal", QueryFeature.ListAggregation);
+            return null;
+        }
+
+        if (ReadOperand(call.Parameters[0]) is not { } value || !IsLeaf(value, call.Parameters[0]))
+        {
+            return null;
+        }
+
+        var ordering = call.WithinGroupClause is { OrderByClause: { } order } ? ReadOrdering(order.OrderByElements) : [];
+        return ordering is null ? null : QueryOperand.Computed(ModelExpression.ListAggregate(value, separator.Value, ordering));
+    }
+
+    /// <summary>
+    /// <c>CAST(x AS type)</c> (decision 113), read only where the type is one the writer of
+    /// the escape path writes back for a scalar of the vocabulary: <c>INT</c>, <c>BIGINT</c>,
+    /// <c>REAL</c>, bare <c>FLOAT</c> and <c>NVARCHAR(MAX)</c>. A conversion with a length, a
+    /// precision or into text that is not unicode could cut or change the value, which the
+    /// model - carrying the scalar and not the type - would not carry, so it is refused by
+    /// name; so is a conversion into anything else.
+    /// </summary>
+    private QueryOperand? ReadCast(CastCall cast)
+    {
+        ScalarType? scalar = cast.DataType switch
+        {
+            SqlDataTypeReference { SqlDataTypeOption: SqlDataTypeOption.Int, Parameters.Count: 0 } => ScalarType.Int,
+            SqlDataTypeReference { SqlDataTypeOption: SqlDataTypeOption.BigInt, Parameters.Count: 0 } => ScalarType.Long,
+            SqlDataTypeReference { SqlDataTypeOption: SqlDataTypeOption.Real, Parameters.Count: 0 } => ScalarType.Float,
+            SqlDataTypeReference { SqlDataTypeOption: SqlDataTypeOption.Float, Parameters.Count: 0 } => ScalarType.Double,
+            SqlDataTypeReference { SqlDataTypeOption: SqlDataTypeOption.NVarChar, Parameters: [MaxLiteral] } => ScalarType.String,
+            _ => null,
+        };
+
+        if (scalar is null)
+        {
+            unread ??= ($"the conversion '{Print(cast)}', whose type is not one the vocabulary converts into without a length or a precision that could change the value", QueryFeature.Expression);
+            return null;
+        }
+
+        if (ReadOperand(cast.Parameter) is not { } value || !IsLeaf(value, cast.Parameter))
+        {
+            return null;
+        }
+
+        return QueryOperand.Computed(ModelExpression.Call(QueryFunction.Cast, [value], castTo: scalar));
     }
 
     /// <summary>

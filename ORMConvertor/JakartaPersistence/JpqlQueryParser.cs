@@ -1218,21 +1218,19 @@ public abstract class JpqlQueryParser(
                 {
                     queryBuilder.GroupBy(key.Table ?? sourceAlias, key.Property!);
                 }
-                else if (key is { IsExpression: true })
+                else if (key is { IsExpression: true, IsAggregate: false })
                 {
-                    // A grouping by an expression is the one position the expression does not
-                    // take (decision 107); refused by name.
-                    unread = null;
-                    Report(ConversionRecordKind.Failure,
-                        $"The grouping key '{key}' is an expression, which the query representation carries in every position but the grouping, and a query grouped differently would return different rows; no artifact was generated.",
-                        QueryFeature.Expression);
+                    // An expression is a grouping key since decision 113; what the rest of the
+                    // scope may name beside it is the template's rule.
+                    queryBuilder.GroupBy(key);
                 }
                 else
                 {
+                    var (what, category) = unread ?? ("a grouping key that is neither an attribute reference nor an expression", QueryFeature.Grouping);
                     unread = null;
                     Report(ConversionRecordKind.Failure,
-                        "A grouping key that is not an attribute reference cannot be carried, and a query grouped differently would return different rows; no artifact was generated.",
-                        QueryFeature.Grouping);
+                        $"The grouping uses {what}, and a query grouped differently would return different rows; no artifact was generated.",
+                        category ?? QueryFeature.Grouping);
                 }
             }
             while (TryConsumeSymbol(","));
@@ -2346,6 +2344,19 @@ public abstract class JpqlQueryParser(
         var name = Current.Text.ToLowerInvariant();
         var line = Current.Line;
         var column = Current.Column;
+
+        switch (name)
+        {
+            case "cast":
+                return ParseCast();
+            case "row_number" or "rank" or "dense_rank" when ReadsHqlFunctions:
+                return ParseWindow(name);
+            case "listagg" when ReadsHqlFunctions:
+                return ParseListAggregate();
+            case "timestampadd" or "timestampdiff" when ReadsHqlFunctions:
+                return ParseDateFunction(name == "timestampadd" ? QueryFunction.DateAdd : QueryFunction.DateDiff);
+        }
+
         Advance();
         ConsumeSymbol("(");
 
@@ -2420,6 +2431,8 @@ public abstract class JpqlQueryParser(
             "coalesce" => QueryFunction.Coalesce,
             "abs" => QueryFunction.Abs,
             "current_timestamp" => QueryFunction.CurrentTimestamp,
+            "round" => QueryFunction.Round,
+            "sqrt" => QueryFunction.Sqrt,
             _ => null,
         };
 
@@ -2430,6 +2443,224 @@ public abstract class JpqlQueryParser(
         }
 
         return Call(function.Value, arguments, name);
+    }
+
+    /// <summary>
+    /// Whether the dialect reads the functions HQL 7.4 adds over JPQL and the vocabulary
+    /// carries (decision 113): <c>timestampadd</c> and <c>timestampdiff</c>, the ranking
+    /// functions over a window, and <c>listagg</c>. Standard JPQL has none of them, so the
+    /// shared parser reads none; Hibernate's profile says it does - the same hook as
+    /// <see cref="ReadsIntermediateResults"/>.
+    /// </summary>
+    protected virtual bool ReadsHqlFunctions => false;
+
+    /// <summary>
+    /// <c>cast(x as type)</c> of Jakarta Persistence 3.2 (decision 113): the five types the
+    /// specification names - Integer, Long, Float, Double and String - in any case, which are
+    /// the five scalars the vocabulary converts into. Any other type is refused by name.
+    /// </summary>
+    private QueryOperand? ParseCast()
+    {
+        Advance();
+        ConsumeSymbol("(");
+        var value = ParseOperand();
+        ConsumeKeyword("as");
+
+        if (Current.Kind != TokenKind.Identifier)
+        {
+            throw Error("expected the name of a type after 'as'");
+        }
+
+        var type = Current.Text;
+        Advance();
+        ConsumeSymbol(")");
+
+        ScalarType? scalar = type.ToLowerInvariant() switch
+        {
+            "integer" => ScalarType.Int,
+            "long" => ScalarType.Long,
+            "float" => ScalarType.Float,
+            "double" => ScalarType.Double,
+            "string" => ScalarType.String,
+            _ => null,
+        };
+
+        if (scalar is null)
+        {
+            unread ??= ($"the conversion into {type}, which is not one of the five types Jakarta Persistence 3.2 converts into", QueryFeature.Expression);
+            return null;
+        }
+
+        return value is null || !IsLeaf(value) ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Cast, [value], castTo: scalar));
+    }
+
+    /// <summary>
+    /// HQL's <c>timestampadd(unit, n, moment)</c> and <c>timestampdiff(unit, start, end)</c>
+    /// (decision 113), the unit a word of HQL's temporal units; a unit outside the six the
+    /// vocabulary names is refused by name.
+    /// </summary>
+    private QueryOperand? ParseDateFunction(QueryFunction function)
+    {
+        Advance();
+        ConsumeSymbol("(");
+
+        if (Current.Kind != TokenKind.Identifier)
+        {
+            throw Error("expected a temporal unit");
+        }
+
+        var written = Current.Text;
+        Advance();
+        ConsumeSymbol(",");
+        var first = ParseOperand();
+        ConsumeSymbol(",");
+        var second = ParseOperand();
+        ConsumeSymbol(")");
+
+        DateUnit? unit = written.ToLowerInvariant() switch
+        {
+            "year" => DateUnit.Year,
+            "month" => DateUnit.Month,
+            "day" => DateUnit.Day,
+            "hour" => DateUnit.Hour,
+            "minute" => DateUnit.Minute,
+            "second" => DateUnit.Second,
+            _ => null,
+        };
+
+        if (unit is null)
+        {
+            unread ??= ($"the temporal unit {written}, which is not one of the units the vocabulary of expressions carries", QueryFeature.Expression);
+            return null;
+        }
+
+        return first is null || second is null || !IsLeaf(first) || !IsLeaf(second)
+            ? null
+            : QueryOperand.Computed(QueryExpression.Call(function, [first, second], unit));
+    }
+
+    /// <summary>
+    /// A ranking function over a window in HQL (decision 113): <c>row_number()</c>,
+    /// <c>rank()</c> or <c>dense_rank()</c> and its <c>over (partition by … order by …)</c>.
+    /// A frame or a missing ordering is refused by name; where the window stands is the
+    /// template's to judge.
+    /// </summary>
+    private QueryOperand? ParseWindow(string name)
+    {
+        Advance();
+        ConsumeSymbol("(");
+        ConsumeSymbol(")");
+        ConsumeKeyword("over");
+        ConsumeSymbol("(");
+
+        var carried = true;
+        var partitions = new List<QueryOperand>();
+        if (TryConsumeKeyword("partition"))
+        {
+            ConsumeKeyword("by");
+            do
+            {
+                var partition = ParseOperand();
+                carried &= partition is not null && IsLeaf(partition);
+                if (partition is not null)
+                {
+                    partitions.Add(partition);
+                }
+            }
+            while (TryConsumeSymbol(","));
+        }
+
+        List<OrderingKey>? ordering = null;
+        if (AtKeyword("order"))
+        {
+            ordering = ParseOrdering();
+        }
+
+        if (AtKeyword("rows") || AtKeyword("range") || AtKeyword("groups"))
+        {
+            throw Error("a frame of a window, which the vocabulary of expressions does not carry");
+        }
+
+        ConsumeSymbol(")");
+
+        if (ordering is null)
+        {
+            unread ??= ($"{name}() over a window without an ordering, which the vocabulary of expressions does not carry", QueryFeature.WindowFunction);
+            return null;
+        }
+
+        var function = name switch
+        {
+            "row_number" => RankingFunction.RowNumber,
+            "rank" => RankingFunction.Rank,
+            _ => RankingFunction.DenseRank,
+        };
+
+        return carried && ordering.Count > 0 ? QueryOperand.Computed(QueryExpression.Window(function, partitions, ordering)) : null;
+    }
+
+    /// <summary>
+    /// HQL's <c>listagg(value, separator) [within group (order by …)]</c> (decision 113): the
+    /// separator a string the query states.
+    /// </summary>
+    private QueryOperand? ParseListAggregate()
+    {
+        Advance();
+        ConsumeSymbol("(");
+        var value = ParseOperand();
+        ConsumeSymbol(",");
+
+        if (Current.Kind != TokenKind.String)
+        {
+            throw Error("expected the separator of listagg as a string");
+        }
+
+        var separator = Current.Text;
+        Advance();
+        ConsumeSymbol(")");
+
+        List<OrderingKey>? ordering = [];
+        if (TryConsumeKeyword("within"))
+        {
+            ConsumeKeyword("group");
+            ConsumeSymbol("(");
+            ordering = ParseOrdering();
+            ConsumeSymbol(")");
+        }
+
+        return value is null || !IsLeaf(value) || ordering is null
+            ? null
+            : QueryOperand.Computed(QueryExpression.ListAggregate(value, separator, ordering));
+    }
+
+    /// <summary>The <c>order by</c> of a window or of listagg (decision 113); null when a key is not carried, after every key has been consumed.</summary>
+    private List<OrderingKey>? ParseOrdering()
+    {
+        ConsumeKeyword("order");
+        ConsumeKeyword("by");
+
+        var carried = true;
+        var ordering = new List<OrderingKey>();
+        do
+        {
+            var key = ParseOperand();
+            var ascending = !TryConsumeKeyword("desc");
+            if (ascending)
+            {
+                TryConsumeKeyword("asc");
+            }
+
+            if (key is null || !IsLeaf(key))
+            {
+                carried = false;
+                continue;
+            }
+
+            ordering.Add(new OrderingKey(key, ascending));
+        }
+        while (TryConsumeSymbol(","));
+
+        return carried ? ordering : null;
     }
 
     private QueryOperand? Call(QueryFunction function, List<QueryOperand> arguments, string name)

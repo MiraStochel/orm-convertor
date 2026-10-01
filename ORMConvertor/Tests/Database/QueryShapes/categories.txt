@@ -41,6 +41,13 @@
 #                   domain - the Java suite, the differential matrix - asserts the artifact.
 #                   The collection parameter is among them since 2026-09-30, when the
 #                   Dapper wrapper began to read Dapper's bare `IN @ids` (decision 106).
+#   fallbackWithoutCatalog
+#                   directions that write the category in native SQL in a run without a
+#                   catalog only, as Source>Target:Feature - the target needs a fact of the
+#                   mapping the source leaves open and the catalog supplies, a column that
+#                   holds no NULL among them (decision 113). A suite that converts dry
+#                   asserts the fallback; a suite that converts through an instance with a
+#                   catalog holding the domain asserts the translation.
 #
 # The domain has the shape of the shared fixture schema (TestSchema.sql): customers, orders
 # under a two-part key, order lines under a three-part key whose leading parts are a
@@ -387,14 +394,88 @@ Hibernate = hibernate/FindRecursiveDescentOfAHierarchy.jpql
 MyBatis = mybatis/FindRecursiveDescentOfAHierarchyMapper.xml
 fallbackBy = EFCore:Recursion, NHibernate:Recursion, EclipseLink:Recursion
 
-# A walk of the product links from one product, through a cycle, bounded by a count of its
-# steps and under a limit of recursion, OPTION (MAXRECURSION 10). The limit is T-SQL's
-# alone: HQL 7.4 has the recursion but no limit, so Hibernate is no source of this row and
-# writes it in native SQL as a target, beside the three targets without recursion. The
-# bound is the guard the vocabulary carries today - a condition over the counter; a guard
-# over the path of the walk needs a conversion of the key to text, which is the work on
-# functions of decision 113.
+# A walk of the product links from one product, through a cycle, under a limit of recursion,
+# OPTION (MAXRECURSION 10). The limit is T-SQL's alone: HQL 7.4 has the recursion but no
+# limit, so Hibernate is no source of this row and writes it in native SQL as a target,
+# beside the three targets without recursion. The guard is the one the walk of a graph is
+# written with: the path walked so far, the keys converted to text and joined by commas,
+# and a step only to a product the path does not hold yet - the conversion of decision 113.
+# Until that conversion was in the vocabulary, the row bounded the walk by a count of its
+# steps instead.
 [RecursiveWalkOfACyclicGraph]
 Dapper = dapper/FindRecursiveWalkOfACyclicGraph.sql
 MyBatis = mybatis/FindRecursiveWalkOfACyclicGraphMapper.xml
 fallbackBy = EFCore:Recursion, NHibernate:Recursion, Hibernate:Recursion, EclipseLink:Recursion
+
+# ---- the rows of decision 113, the vocabulary of expressions ----
+#
+# A grouping by an expression and a column together. The LINQ row names the expression in
+# its key object after the projection that projects it, as the EF Core target writes it;
+# HQL 5.7 groups by year(), both JPQL rows by the standard extract.
+[GroupingByAnExpression]
+Dapper = dapper/FindGroupingByAnExpression.sql
+EFCore = efcore/FindGroupingByAnExpression.query.cs
+NHibernate = nhibernate/FindGroupingByAnExpression.hql
+Hibernate = hibernate/FindGroupingByAnExpression.jpql
+EclipseLink = eclipselink/FindGroupingByAnExpression.jpql
+MyBatis = mybatis/FindGroupingByAnExpressionMapper.xml
+
+# DATEADD and DATEDIFF over moments whose count of boundaries and length differ - the last
+# millisecond of 2024 is one hour boundary before the new year and no whole hour -, so a
+# target that measured the length would answer otherwise. T-SQL writes the moment as a
+# string, which takes the scalar of its position; LINQ calls the Add method and EF Core's
+# DateDiff, HQL 7.4 timestampadd and timestampdiff. HQL 5.7 and JPQL have no date
+# arithmetic: NHibernate and EclipseLink are no sources and write the query in native SQL.
+[DateArithmetic]
+Dapper = dapper/FindDateArithmetic.sql
+EFCore = efcore/FindDateArithmetic.query.cs
+Hibernate = hibernate/FindDateArithmetic.jpql
+MyBatis = mybatis/FindDateArithmeticMapper.xml
+fallbackBy = NHibernate:Expression, EclipseLink:Expression
+
+# ROUND and SQRT over a decimal. A price of 1250.5 ends in a half, which SQL Server rounds
+# away from zero and .NET's default rounding to the even neighbour, so a target that rounded
+# on the client would answer otherwise.
+[RoundingAndSquareRoot]
+Dapper = dapper/FindRoundingAndSquareRoot.sql
+EFCore = efcore/FindRoundingAndSquareRoot.query.cs
+NHibernate = nhibernate/FindRoundingAndSquareRoot.hql
+Hibernate = hibernate/FindRoundingAndSquareRoot.jpql
+EclipseLink = eclipselink/FindRoundingAndSquareRoot.jpql
+MyBatis = mybatis/FindRoundingAndSquareRootMapper.xml
+
+# A key converted to text inside a concatenation, and a decimal converted to a whole number
+# in the filter. EclipseLink 5.0 passes the name of the type of a cast through to SQL Server,
+# which knows no Integer or String, so EclipseLink is no source and writes the query in
+# native SQL.
+[CastInAConcatenation]
+Dapper = dapper/FindCastInAConcatenation.sql
+EFCore = efcore/FindCastInAConcatenation.query.cs
+NHibernate = nhibernate/FindCastInAConcatenation.hql
+Hibernate = hibernate/FindCastInAConcatenation.jpql
+MyBatis = mybatis/FindCastInAConcatenationMapper.xml
+fallbackBy = EclipseLink:Expression
+
+# The best line of every product: the row number over a window in an intermediate result,
+# and the filter over it outside - as anyone filters a window. T-SQL and HQL 7.4 state both;
+# LINQ has the intermediate result but no window, HQL 5.7 and JPQL neither, and each of the
+# three writes the query in native SQL under the first construct its language lacks.
+[BestRowPerGroup]
+Dapper = dapper/FindBestRowPerGroup.sql
+Hibernate = hibernate/FindBestRowPerGroup.jpql
+MyBatis = mybatis/FindBestRowPerGroupMapper.xml
+fallbackBy = EFCore:WindowFunction, NHibernate:IntermediateResult, EclipseLink:IntermediateResult
+
+# The descriptions of the lines of every product as one list, in the order of their line
+# numbers. LINQ joins the elements of the group with string.Join, which EF Core translates to
+# STRING_AGG over a column that holds no NULL; HQL 7.4 writes listagg. HQL 5.7 and JPQL have
+# no list, and NHibernate and EclipseLink write the query in native SQL. A MyBatis source
+# declares the description a String and says nothing of NULL, so without a catalog, which
+# says NOT NULL, EF Core writes the list in native SQL from it too.
+[ListAggregation]
+Dapper = dapper/FindListAggregation.sql
+EFCore = efcore/FindListAggregation.query.cs
+Hibernate = hibernate/FindListAggregation.jpql
+MyBatis = mybatis/FindListAggregationMapper.xml
+fallbackBy = NHibernate:ListAggregation, EclipseLink:ListAggregation
+fallbackWithoutCatalog = MyBatis>EFCore:ListAggregation

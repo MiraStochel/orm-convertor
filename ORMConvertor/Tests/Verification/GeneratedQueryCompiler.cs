@@ -31,6 +31,12 @@ internal static class GeneratedQueryCompiler
                 typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly,
                 typeof(Microsoft.EntityFrameworkCore.PrimaryKeyAttribute).Assembly,
                 typeof(Microsoft.EntityFrameworkCore.RelationalQueryableExtensions).Assembly,
+
+                // The provider of the dialect the artifact is written for (decision 086): a
+                // date difference is EF.Functions.DateDiff…, which SQL Server's provider
+                // defines (decision 113), and a consumer project over SQL Server references
+                // it - the Advisor's compilation does too.
+                typeof(Microsoft.EntityFrameworkCore.SqlServerDbFunctionsExtensions).Assembly,
                 typeof(Queryable).Assembly,
                 typeof(System.Linq.Expressions.Expression).Assembly,
             ],

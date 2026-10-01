@@ -49,9 +49,6 @@ public class LdbcCatalogTest(TestSchemaFixture fixture)
         return data;
     }
 
-    public static TheoryData<string> RefusedTexts()
-        => [.. LdbcSnbSample.Queries.Where(query => query.Translation == LdbcTranslation.NotTranslated && query.Sql is not null).Select(query => query.Key)];
-
     public static TheoryData<string> Texts()
         => [.. LdbcSnbSample.Queries.Where(query => query.Sql is not null).Select(query => query.Key)];
 
@@ -165,23 +162,26 @@ public class LdbcCatalogTest(TestSchemaFixture fixture)
     /// The claim of the page for a query it shows but does not translate: the natural text is
     /// refused with a Failure record in every direction, and no query artifact comes out.
     /// If this starts failing, the tool learned something and the page is wrong in the
-    /// modest direction - the catalog is to be updated, not the test loosened.
+    /// modest direction - the catalog is to be updated, not the test loosened. A fact over
+    /// every such query rather than a theory: since decision 113 the catalog has none, and a
+    /// theory without data is no claim at all.
     /// </summary>
-    [Theory]
-    [MemberData(nameof(RefusedTexts))]
-    public void EveryRefusedTextIsRefusedInEveryDirection(string key)
+    [Fact]
+    public void EveryRefusedTextIsRefusedInEveryDirection()
     {
         fixture.SkipIfUnavailable();
-        var query = Query(key);
 
-        foreach (var target in Targets)
+        foreach (var query in LdbcSnbSample.Queries.Where(query => query.Translation == LdbcTranslation.NotTranslated && query.Sql is not null))
         {
-            var result = ConversionHandler.Convert(ORMEnum.Dapper, target, Units(query), fixture.CatalogReader);
+            foreach (var target in Targets)
+            {
+                var result = ConversionHandler.Convert(ORMEnum.Dapper, target, Units(query), fixture.CatalogReader);
 
-            Assert.True(
-                result.Records.Any(record => record.Kind == ConversionRecordKind.Failure),
-                $"{key} into {target} was expected to be refused, but no Failure was recorded.");
-            Assert.DoesNotContain(result.Sources, source => source.ContentType.IsQuery());
+                Assert.True(
+                    result.Records.Any(record => record.Kind == ConversionRecordKind.Failure),
+                    $"{query.Key} into {target} was expected to be refused, but no Failure was recorded.");
+                Assert.DoesNotContain(result.Sources, source => source.ContentType.IsQuery());
+            }
         }
     }
 

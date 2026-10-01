@@ -2,6 +2,7 @@ using AbstractWrappers.Descriptors;
 using JakartaPersistence;
 using Model;
 using Model.AbstractRepresentation.Enums;
+using Model.QueryInstructions.Conditions;
 
 namespace EclipseLinkWrappers;
 
@@ -32,8 +33,17 @@ public static class EclipseLinkDescriptor
         // need the non-final class §2.1 demands anyway (decision 080).
         EnforcedMembers = JakartaPersistenceDescriptor.EnforcedMembers,
         Support = JakartaPersistenceDescriptor.Support,
-        QuerySupport = JakartaPersistenceDescriptor.QuerySupport,
-        Functions = JakartaPersistenceDescriptor.Functions,
+
+        // EclipseLink groups by an expression beyond the specification's path (decision 113,
+        // verified against 5.0.0 over SQL Server: group by extract(year from …)); a key with a
+        // literal in it the builder sends to native SQL, because EclipseLink binds the literal
+        // (the profile's BindsLiterals). No window, no list aggregate, no intermediate result.
+        QuerySupport = JakartaPersistenceDescriptor.QuerySupportWith(QueryFeature.ComputedGrouping),
+
+        // The specification's functions less cast: EclipseLink 5.0.0 passes the type name of
+        // cast(x as Integer) through to SQL Server, which knows no type Integer, Long or
+        // String and refuses the query (decision 113, measured).
+        Functions = QueryFunctionVocabulary.AllBut(QueryFunction.DateAdd, QueryFunction.DateDiff, QueryFunction.Cast),
         NativeSqlApi = JakartaPersistenceDescriptor.NativeSqlApi,
     };
 
@@ -61,5 +71,11 @@ public static class EclipseLinkDescriptor
         // bound to ?1 of a native query reaches the JDBC driver as one value, which the
         // SQL Server driver rejects - the native query does not expand it, so the escape
         // path refuses a collection parameter here.
-        NativeQueryExpandsCollection: false);
+        NativeQueryExpandsCollection: false,
+
+        // Measured against 5.0.0 when grouping by an expression was written (decision 113):
+        // group by case when o.quantity > 2 then 1 else 0 end reaches SQL Server with six
+        // bound parameters, three in the select list and three in GROUP BY, and SQL Server
+        // refuses the column inside as neither grouped nor aggregated (error 8120).
+        BindsLiterals: true);
 }

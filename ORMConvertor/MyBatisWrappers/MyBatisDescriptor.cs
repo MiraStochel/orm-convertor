@@ -105,6 +105,9 @@ public static class MyBatisDescriptor
             [QueryFeature.Expression] = FactSupport.Expressible,
             [QueryFeature.IntermediateResult] = FactSupport.Expressible,
             [QueryFeature.Recursion] = FactSupport.Expressible,
+            [QueryFeature.ComputedGrouping] = FactSupport.Expressible,
+            [QueryFeature.WindowFunction] = FactSupport.Expressible,
+            [QueryFeature.ListAggregation] = FactSupport.Expressible,
         },
 
         // The same as Dapper's: the statement is T-SQL (decision 107).

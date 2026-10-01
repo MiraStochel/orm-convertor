@@ -1,0 +1,4 @@
+select ol.ProductId as ProductId, listagg(ol.Description, '; ') within group (order by ol.LineNumber asc) as Descriptions
+from ShopOrderLine ol
+where ol.Quantity > 1
+group by ol.ProductId

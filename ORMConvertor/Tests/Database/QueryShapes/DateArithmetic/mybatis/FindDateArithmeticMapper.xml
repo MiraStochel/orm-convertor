@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindDateArithmeticMapper">
+  <select id="findDateArithmetic" resultType="ShopOrder">
+    SELECT o.CompanyId AS CompanyId, o.OrderId AS OrderId,
+           DATEADD(day, 30, o.PlacedAt) AS DueAt,
+           DATEDIFF(hour, '2025-01-01T00:00:00', o.PlacedAt) AS HoursFromNewYear
+    FROM {{schema}}.ShopOrders AS o
+    WHERE DATEDIFF(day, o.PlacedAt, '2025-03-01T00:00:00') &gt; 0
+  </select>
+</mapper>

@@ -108,7 +108,9 @@ public static class JakartaPersistenceDescriptor
     /// <summary>
     /// JPQL 3.2 with the entity join both implementations add covers every category but the
     /// intermediate result and its recursion: the specification has neither WITH nor a
-    /// subquery in the from clause (decisions 112 and 113). The pagination lives on the query object, outside the text,
+    /// subquery in the from clause (decisions 112 and 113) - and since decision 113 but the
+    /// grouping by an expression (the specification groups by a path), the window and the
+    /// list aggregate. The pagination lives on the query object, outside the text,
     /// like NHibernate's. An implementation whose query language goes further - Hibernate's
     /// HQL - says so in a table of its own built over this one (<see cref="QuerySupportWith"/>).
     /// </summary>
@@ -130,6 +132,9 @@ public static class JakartaPersistenceDescriptor
             [QueryFeature.Expression] = FactSupport.Expressible,
             [QueryFeature.IntermediateResult] = FactSupport.NotExpressible,
             [QueryFeature.Recursion] = FactSupport.NotExpressible,
+            [QueryFeature.ComputedGrouping] = FactSupport.NotExpressible,
+            [QueryFeature.WindowFunction] = FactSupport.NotExpressible,
+            [QueryFeature.ListAggregation] = FactSupport.NotExpressible,
         };
 
     /// <summary>
@@ -150,12 +155,14 @@ public static class JakartaPersistenceDescriptor
     }
 
     /// <summary>
-    /// JPQL 3.2 spells every function of the expression vocabulary (decision 107): the
+    /// JPQL 3.2 spells every function of the expression vocabulary of decision 107: the
     /// string functions, coalesce, abs, the parts of a date through extract,
     /// current_timestamp, and replace for the escaping of a pattern value - in the standard
-    /// form, so that both implementations read it.
+    /// form, so that both implementations read it. Of the functions of decision 113 it
+    /// spells round, sqrt and cast; date arithmetic it has none. An implementation states
+    /// what it adds or lacks in a set of its own.
     /// </summary>
-    public static IReadOnlySet<QueryFunction> Functions { get; } = QueryFunctionVocabulary.All;
+    public static IReadOnlySet<QueryFunction> Functions { get; } = QueryFunctionVocabulary.AllBut(QueryFunction.DateAdd, QueryFunction.DateDiff);
 
     /// <summary>
     /// The specification's API for a query in the SQL of the database, which both

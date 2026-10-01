@@ -320,8 +320,8 @@ public class ExpressionOperandTest
     [Fact]
     public void AFunctionOutsideTheVocabularyInAFilterRefusesTheArtifact()
     {
-        var record = AssertRefused(Sql(new DapperSqlQueryBuilder(), "SELECT * FROM Sales.Products p WHERE ROUND(p.UnitPrice, 0) = 100"), QueryFeature.Expression);
-        Assert.Contains("ROUND", record.Reason, StringComparison.Ordinal);
+        var record = AssertRefused(Sql(new DapperSqlQueryBuilder(), "SELECT * FROM Sales.Products p WHERE REPLACE(p.ProductName, 'a', 'b') = 'W'"), QueryFeature.Expression);
+        Assert.Contains("REPLACE", record.Reason, StringComparison.Ordinal);
 
         AssertRefused(Hql(new DapperSqlQueryBuilder(), "from Product p where str(p.Quantity) = '1'"), QueryFeature.Expression);
         AssertRefused(Jpql(new DapperSqlQueryBuilder(), "select p from Product p where year(p.IntroducedOn) = 2024"), QueryFeature.Expression);
@@ -364,29 +364,32 @@ public class ExpressionOperandTest
         AssertRefused(Sql(new DapperSqlQueryBuilder(), "SELECT SUM(COUNT(*) * 2) AS X FROM Sales.Products p GROUP BY p.Sku"), QueryFeature.Expression);
     }
 
-    [Fact]
-    public void GroupingByAnExpressionRefusesTheArtifact()
-    {
-        AssertRefused(Sql(new DapperSqlQueryBuilder(), "SELECT COUNT(*) AS N FROM Sales.Products p GROUP BY YEAR(p.IntroducedOn)"), QueryFeature.Expression);
-        AssertRefused(Linq(new DapperSqlQueryBuilder(), "GroupBy(p => p.IntroducedOn.Year).Select(g => new { N = g.Count() })"), QueryFeature.Expression);
-        AssertRefused(Hql(new DapperSqlQueryBuilder(), "select count(*) from Product p group by year(p.IntroducedOn)"), QueryFeature.Expression);
-    }
-
     /// <summary>A function outside the vocabulary in a projection is a loss, as it was, now named under the category of expressions.</summary>
     [Fact]
     public void AFunctionOutsideTheVocabularyInAProjectionIsALoss()
     {
-        var read = Sql(new DapperSqlQueryBuilder(), "SELECT p.ProductId AS Id, ROUND(p.UnitPrice, 0) AS Rounded FROM Sales.Products p");
+        var read = Sql(new DapperSqlQueryBuilder(), "SELECT p.ProductId AS Id, REPLACE(p.ProductName, 'a', 'b') AS Replaced FROM Sales.Products p");
         Assert.NotEmpty(read.Build());
-        Assert.Contains(read.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Expression && r.Reason.Contains("ROUND", StringComparison.Ordinal));
+        Assert.Contains(read.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Expression && r.Reason.Contains("REPLACE", StringComparison.Ordinal));
     }
 
-    /// <summary>Every descriptor speaks the whole vocabulary today - a fact about today, held here and not by the type (decision 107).</summary>
+    /// <summary>
+    /// Every descriptor speaks every function of decision 107 - a fact about today, held here
+    /// and not by the type. The functions of decision 113 are spoken by part of the targets
+    /// only, which the test of that decision holds (<c>ExpressionVocabularyTest</c>).
+    /// </summary>
     [Fact]
-    public void EveryDescriptorSpeaksTheWholeVocabulary()
+    public void EveryDescriptorSpeaksTheVocabularyOfDecision107()
     {
+        QueryFunction[] decision107 =
+        [
+            QueryFunction.Upper, QueryFunction.Lower, QueryFunction.Trim, QueryFunction.Substring, QueryFunction.Length,
+            QueryFunction.Coalesce, QueryFunction.Abs, QueryFunction.Year, QueryFunction.Month, QueryFunction.Day,
+            QueryFunction.CurrentTimestamp, QueryFunction.EscapePattern,
+        ];
+
         Assert.All(FrameworkDescriptors.All, descriptor =>
-            Assert.All(Enum.GetValues<QueryFunction>(), function => Assert.True(descriptor.Speaks(function), $"{descriptor.Framework} does not speak {function}.")));
+            Assert.All(decision107, function => Assert.True(descriptor.Speaks(function), $"{descriptor.Framework} does not speak {function}.")));
     }
 
     /// <summary>A target whose descriptor speaks no function of the vocabulary, for the gate's refusal.</summary>

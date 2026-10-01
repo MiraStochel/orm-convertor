@@ -67,11 +67,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     private List<GroupingKey> groupingKeys = [];
 
     /// <summary>
-    /// One column of the grouping of a scope, under the name the key object gives it: for
-    /// <c>GroupBy(c =&gt; new { N = c.CustomerName })</c> the column is CustomerName and the
-    /// name is N, which is what <c>g.Key.N</c> then says.
+    /// One key of the grouping of a scope, under the name the key object gives it: for
+    /// <c>GroupBy(c =&gt; new { N = c.CustomerName })</c> the key is the column CustomerName
+    /// and the name is N, which is what <c>g.Key.N</c> then says. Since decision 113 the key
+    /// may be an expression - <c>GroupBy(m =&gt; m.CreationDate.Year)</c> - and <c>g.Key</c>
+    /// reads back to that expression, so the model carries the value in the projection as a
+    /// T-SQL source carries it.
     /// </summary>
-    private readonly record struct GroupingKey(string Table, string Attribute, string Name);
+    private readonly record struct GroupingKey(QueryOperand Key, string Name);
 
     /// <summary>
     /// The shape of the row the lambdas of a scope range over. Before a join it is the one
@@ -2247,18 +2250,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        if (NamesTheGroupingKey(expression))
+        // g.Key, or a member of a key of several parts; a value computed over the key -
+        // g.Key.Year, g.Key + 1 - is read below, where the key reads back to its value.
+        if (NamesTheGroupingKey(expression) && ResolveGroupingKey(expression) is { } key)
         {
-            if (ResolveGroupingKey(expression) is { } key)
-            {
-                queryBuilder.Project(key.Table, key.Attribute, alias);
-                return;
-            }
-
-            Report(
-                ConversionRecordKind.Loss,
-                $"The projected expression '{expression}' names the grouping key, which this query does not group by in a shape the representation can point at; the column was dropped.",
-                QueryFeature.Projection);
+            queryBuilder.Project(key.Key, alias);
             return;
         }
 
@@ -2325,7 +2321,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         if (NamesTheGroupingKey(body!) && ResolveGroupingKey(body!) is { } groupingKey)
         {
-            queryBuilder.OrderBy(groupingKey.Table, groupingKey.Attribute, asc);
+            queryBuilder.OrderBy(groupingKey.Key, asc);
             return;
         }
 
@@ -2380,66 +2376,45 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         {
             foreach (var initializer in anon.Initializers)
             {
-                var key = MemberName(initializer.Expression);
-                if (key is null || IsExpression(initializer.Expression))
-                {
-                    RefuseGroupingKey(initializer.Expression);
-                    continue;
-                }
-
-                RecordGroupingKey(
-                    AliasOf(initializer.Expression),
-                    key,
-                    initializer.NameEquals?.Name.Identifier.Text ?? key);
+                // The name C# gives the member: the one written, or the last member of the
+                // path it was inferred from - new { o.PlacedAt.Year } names it Year.
+                var name = initializer.NameEquals?.Name.Identifier.Text ?? MemberName(initializer.Expression);
+                RecordGroupingKey(initializer.Expression, name ?? initializer.Expression.ToString());
             }
 
             return;
         }
 
-        var name = MemberName(body!);
-        if (name is null || IsExpression(body!))
-        {
-            RefuseGroupingKey(body!);
-            return;
-        }
-
-        RecordGroupingKey(AliasOf(body!), name, name);
-    }
-
-    private void RecordGroupingKey(string table, string attribute, string name)
-    {
-        queryBuilder.GroupBy(table, attribute);
-        groupingKeys.Add(new GroupingKey(table, attribute, name));
-    }
-
-    /// <summary>Whether the expression reads as a computed value rather than as a column - <c>c.Name.Length</c> has a member name and is no column.</summary>
-    private bool IsExpression(ExpressionSyntax expression)
-    {
-        var read = ReadOperand(expression);
-        unread = null;
-        return read is { IsExpression: true };
+        RecordGroupingKey(body!, MemberName(body!) ?? body!.ToString());
     }
 
     /// <summary>
-    /// A grouping key the representation does not carry (decision 070): a grouping by an
-    /// expression is the one position the expression does not take (decision 107), and is
-    /// refused under its own category.
+    /// One key of a GroupBy: a column of the row, or since decision 113 an expression over it
+    /// - <c>m.CreationDate.Year</c>, <c>o.Quantity &gt; 2 ? 1 : 0</c> -, under the name the key
+    /// object gives it. A key the representation does not carry is refused (decision 070): a
+    /// grouping read without it returns different rows.
     /// </summary>
-    private void RefuseGroupingKey(ExpressionSyntax key)
+    private void RecordGroupingKey(ExpressionSyntax written, string name)
     {
-        if (IsExpression(key))
+        var key = ReadOperand(written);
+        if (key is null || key.IsAggregate || !(key.IsColumn || key.IsExpression))
         {
+            var (what, category) = unread ?? ($"the grouping key '{written}', which is neither a column nor an expression the query representation carries", QueryFeature.Grouping);
+            unread = null;
             Report(
                 ConversionRecordKind.Failure,
-                $"The grouping key '{key}' is an expression, which the query representation carries in every position but the grouping, and a query grouped differently would return different rows; no artifact was generated.",
-                QueryFeature.Expression);
+                $"The grouping uses {what}, and a query grouped differently would return different rows; no artifact was generated.",
+                category ?? QueryFeature.Grouping);
             return;
         }
 
-        Report(
-            ConversionRecordKind.Failure,
-            $"The grouping key '{key}' is not a column reference, and a query grouped differently would return different rows; no artifact was generated.",
-            QueryFeature.Grouping);
+        if (key.IsColumn && key.Table is null)
+        {
+            key = QueryOperand.Column(AliasOf(written), key.Property!);
+        }
+
+        queryBuilder.GroupBy(key);
+        groupingKeys.Add(new GroupingKey(key, name));
     }
 
     /// <summary>
@@ -3126,6 +3101,24 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private QueryOperand? ReadOperand(ExpressionSyntax expression)
     {
+        // g.Key and g.Key.Part read back to the key they name (decision 113), wherever they
+        // stand - g.Key.Year over a single key of a moment is the year of that key, read by
+        // the member case below once g.Key has been read. The key object of a grouping by
+        // several keys is no value any clause points at.
+        if (NamesTheGroupingKey(expression))
+        {
+            if (ResolveGroupingKey(expression) is { } key)
+            {
+                return key.Key;
+            }
+
+            if (expression is MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Key" })
+            {
+                unread ??= ($"the key object '{expression}' of a grouping by several keys, which no clause of the representation points at", QueryFeature.Grouping);
+                return null;
+            }
+        }
+
         switch (expression)
         {
             case ParenthesizedExpressionSyntax parenthesized:
@@ -3203,6 +3196,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
             case IdentifierNameSyntax identifier:
                 return ValueFromScope(identifier);
+
+            // (long)x, (int)x, (float)x, (double)x: the conversions of decision 113 into the
+            // numbers the vocabulary converts into, which EF Core translates to CAST.
+            case CastExpressionSyntax cast:
+                return ReadNumericCast(cast);
 
             case InterpolatedStringExpressionSyntax:
                 unread ??= ($"the interpolated string '{expression}', which composes text in a way the vocabulary of expressions does not carry", QueryFeature.Expression);
@@ -3340,7 +3338,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         return operand.IsExpression
                && (operand.Expression!.Operator == ExpressionOperator.Concat
                    || operand.Expression.Function is QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim
-                       or QueryFunction.Substring or QueryFunction.EscapePattern);
+                       or QueryFunction.Substring or QueryFunction.EscapePattern
+                   || operand.Expression.CastTo == ScalarType.String
+                   || operand.Expression.IsListAggregate);
     }
 
     /// <summary>
@@ -3429,8 +3429,60 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return value is null ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Abs, [value]));
         }
 
+        // Math.Round(x[, places]) and Math.Sqrt(x) (decision 113). EF Core translates both
+        // for the database to compute, so ROUND rounds by SQL Server's rule, not by .NET's
+        // banker's rounding; Round without places is Round(x, 0), the one form T-SQL has.
+        if (WrittenName(member.Expression) is "Math" or "System.Math" && name is "Round" or "Sqrt")
+        {
+            return ReadMathFunction(invocation, name);
+        }
+
+        // string.Join(separator, g.OrderBy(…).Select(…)) over the elements of a group: the
+        // aggregate into a list of decision 113, which EF Core translates to STRING_AGG.
+        if (WrittenName(member.Expression) is "string" or "String" or "System.String" && name == "Join")
+        {
+            return ReadListAggregate(invocation);
+        }
+
+        // The provider's own functions of the vocabulary - EF Core's DateDiff of decision 113.
+        if (TryReadProviderFunction(invocation, ReadLeaf) is { } provided)
+        {
+            return provided;
+        }
+
         switch (name)
         {
+            // x.AddDays(n) and its kin (decision 113): DATEADD with the unit the method names.
+            case "AddYears" or "AddMonths" or "AddDays" or "AddHours" or "AddMinutes" or "AddSeconds" when arguments.Count == 1:
+                {
+                    var receiver = ReadLeaf(member.Expression);
+                    var count = receiver is null ? null : ReadLeaf(arguments[0].Expression);
+                    if (receiver is null || count is null)
+                    {
+                        return null;
+                    }
+
+                    var unit = name switch
+                    {
+                        "AddYears" => DateUnit.Year,
+                        "AddMonths" => DateUnit.Month,
+                        "AddDays" => DateUnit.Day,
+                        "AddHours" => DateUnit.Hour,
+                        "AddMinutes" => DateUnit.Minute,
+                        _ => DateUnit.Second,
+                    };
+
+                    return QueryOperand.Computed(QueryExpression.Call(QueryFunction.DateAdd, [count, receiver], unit));
+                }
+
+            // x.ToString() is the conversion into text (decision 113), which EF Core
+            // translates to CONVERT; with a format it is .NET's formatting, which is not.
+            case "ToString" when arguments.Count == 0:
+                {
+                    var receiver = ReadLeaf(member.Expression);
+                    return receiver is null ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Cast, [receiver], castTo: ScalarType.String));
+                }
+
             case "ToUpper" or "ToLower" or "Trim" when arguments.Count == 0:
                 {
                     var receiver = ReadLeaf(member.Expression);
@@ -3490,6 +3542,190 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return null;
         }
     }
+
+    /// <summary>
+    /// The provider's own function of the vocabulary, when the invocation is one (decision
+    /// 113): EF Core's <c>EF.Functions.DateDiffMinute(start, end)</c> and its kin. The reader
+    /// of a leaf comes from the shared parser, so that the arguments are read the way every
+    /// other argument is. Null where the invocation is no such function; the default knows
+    /// none - NHibernate's LINQ provider has no date difference to read.
+    /// </summary>
+    protected virtual QueryOperand? TryReadProviderFunction(InvocationExpressionSyntax invocation, Func<ExpressionSyntax, QueryOperand?> readLeaf) => null;
+
+    /// <summary>
+    /// <c>Math.Round(x)</c>, <c>Math.Round(x, places)</c> and <c>Math.Sqrt(x)</c> (decision
+    /// 113). A Round with a MidpointRounding chooses a rule the database does not have, and is
+    /// refused by name.
+    /// </summary>
+    private QueryOperand? ReadMathFunction(InvocationExpressionSyntax invocation, string name)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+
+        if (name == "Sqrt")
+        {
+            // Math.Sqrt takes a double, so C# casts a decimal into one; SQL Server's SQRT makes
+            // the same conversion of its argument itself, so the cast is the overload's and not
+            // the query's, and is read as the argument it converts - which is what the EF Core
+            // target writes it for.
+            var argument = arguments.Count == 1 ? arguments[0].Expression : null;
+            while (argument is ParenthesizedExpressionSyntax parenthesized)
+            {
+                argument = parenthesized.Expression;
+            }
+
+            if (argument is CastExpressionSyntax { Type: PredefinedTypeSyntax { Keyword.Text: "double" } } toDouble)
+            {
+                argument = toDouble.Expression;
+            }
+
+            var value = argument is null ? null : ReadLeaf(argument);
+            return value is null ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Sqrt, [value]));
+        }
+
+        if (arguments.Count is not (1 or 2))
+        {
+            unread ??= ($"'{invocation}', a Math.Round with a rule of its own for the midpoint, which the database does not have", QueryFeature.Expression);
+            return null;
+        }
+
+        var rounded = ReadLeaf(arguments[0].Expression);
+        var places = arguments.Count == 2
+            ? ReadLeaf(arguments[1].Expression)
+            : QueryOperand.Value(QueryConstant.Of("0", ScalarType.Int));
+
+        return rounded is null || places is null ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Round, [rounded, places]));
+    }
+
+    /// <summary>
+    /// A cast into one of the numbers the vocabulary converts into (decision 113): <c>(int)</c>,
+    /// <c>(long)</c>, <c>(float)</c> and <c>(double)</c>, or their nullable forms, which the
+    /// EF Core target writes over a column that may hold NULL - SQL converts a NULL into NULL
+    /// either way. A cast into anything else - a decimal, an object - is not a conversion the
+    /// vocabulary carries.
+    /// </summary>
+    private QueryOperand? ReadNumericCast(CastExpressionSyntax cast)
+    {
+        var target = cast.Type is NullableTypeSyntax nullable ? nullable.ElementType : cast.Type;
+        ScalarType? scalar = target is PredefinedTypeSyntax predefined
+            ? predefined.Keyword.Text switch
+            {
+                "int" => ScalarType.Int,
+                "long" => ScalarType.Long,
+                "float" => ScalarType.Float,
+                "double" => ScalarType.Double,
+                _ => null,
+            }
+            : null;
+
+        if (scalar is null)
+        {
+            unread ??= ($"the cast '{cast}', which is not one of the conversions the vocabulary of expressions carries", QueryFeature.Expression);
+            return null;
+        }
+
+        var value = ReadLeaf(cast.Expression);
+        return value is null ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Cast, [value], castTo: scalar));
+    }
+
+    /// <summary>
+    /// <c>string.Join(separator, g.OrderBy(…).ThenBy(…).Select(e =&gt; value))</c> over the
+    /// elements of a group (decision 113): the aggregate into a list, its separator a string
+    /// the query states, its ordering the OrderBy and ThenBy steps before the Select, whose
+    /// lambdas range over the elements - a row of the source, as in a group aggregate.
+    /// EF Core translates it to STRING_AGG over values it first turns from NULL into the empty
+    /// string, and the whole from NULL into the empty string too; over a column that may hold
+    /// NULL the representation, which carries STRING_AGG, does not carry the difference, and
+    /// the record says so. Over anything but the elements of a group - a chain over a query
+    /// root, which EF Core 10 does not translate at all - it is not read.
+    /// </summary>
+    private QueryOperand? ReadListAggregate(InvocationExpressionSyntax invocation)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        if (arguments.Count != 2
+            || arguments[0].Expression is not LiteralExpressionSyntax { Token.Value: string separator }
+            || arguments[1].Expression is not InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Select" } select } projection
+            || projection.ArgumentList.Arguments is not [{ Expression: SimpleLambdaExpressionSyntax selected }]
+            || selected.Body is not ExpressionSyntax selectedBody)
+        {
+            unread ??= ($"'{invocation}', a string.Join that is not a separator and a Select over the elements of a group", QueryFeature.ListAggregation);
+            return null;
+        }
+
+        // The steps between the group and the Select, innermost first: only orderings.
+        var steps = new List<(string Method, SimpleLambdaExpressionSyntax Lambda)>();
+        var receiver = select.Expression;
+        while (receiver is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax step } call
+               && step.Name.Identifier.Text is "OrderBy" or "OrderByDescending" or "ThenBy" or "ThenByDescending"
+               && call.ArgumentList.Arguments is [{ Expression: SimpleLambdaExpressionSyntax lambda }])
+        {
+            steps.Insert(0, (step.Name.Identifier.Text, lambda));
+            receiver = step.Expression;
+        }
+
+        if (receiver is not IdentifierNameSyntax group || groupingKeys.Count == 0 || aliasSubstitutions.ContainsKey(group.Identifier.Text))
+        {
+            unread ??= ($"'{invocation}', a string.Join over something other than the elements of a group", QueryFeature.ListAggregation);
+            return null;
+        }
+
+        var value = ReadElement(selected, selectedBody);
+        var ordering = new List<OrderingKey>(steps.Count);
+        foreach (var (method, lambda) in steps)
+        {
+            if (lambda.Body is not ExpressionSyntax body || ReadElement(lambda, body) is not { } key)
+            {
+                return null;
+            }
+
+            ordering.Add(new OrderingKey(key, !method.EndsWith("Descending", StringComparison.Ordinal)));
+        }
+
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value.IsColumn && !IsNonNullableColumn(value))
+        {
+            Report(
+                ConversionRecordKind.Loss,
+                $"string.Join over the column '{value}' takes a NULL as the empty string and a list of none as the empty string, where STRING_AGG leaves a NULL out and yields NULL for none; the query representation does not carry the difference, and the targets join as their language does.",
+                QueryFeature.ListAggregation);
+        }
+
+        return QueryOperand.Computed(QueryExpression.ListAggregate(value, separator, ordering));
+    }
+
+    /// <summary>A body of a lambda over the elements of a group, read with its parameter standing for the source alias, as an aggregate's lambda is.</summary>
+    private QueryOperand? ReadElement(SimpleLambdaExpressionSyntax lambda, ExpressionSyntax body)
+    {
+        var element = lambda.Parameter.Identifier.Text;
+        var shadowed = aliasSubstitutions.TryGetValue(element, out var previous);
+        aliasSubstitutions[element] = sourceAlias;
+        try
+        {
+            return ReadLeaf(body);
+        }
+        finally
+        {
+            if (shadowed)
+            {
+                aliasSubstitutions[element] = previous!;
+            }
+            else
+            {
+                aliasSubstitutions.Remove(element);
+            }
+        }
+    }
+
+    /// <summary>Whether the mapping of the scope's own row declares the column as one that holds no NULL.</summary>
+    private bool IsNonNullableColumn(QueryOperand column)
+        => row is EntityRow { Map: { } map } entity
+           && (column.Table is null || string.Equals(column.Table, entity.Alias, StringComparison.OrdinalIgnoreCase))
+           && map.PropertyMaps.FirstOrDefault(p => string.Equals(p.Property.Name, column.Property, StringComparison.OrdinalIgnoreCase)
+                                                    || string.Equals(p.ColumnName, column.Property, StringComparison.OrdinalIgnoreCase))
+               ?.Property.Type is { IsNullable: false };
 
     /// <summary>
     /// Reads <c>new DateTime(2025, 1, 1)</c> in operand position as a DateTime constant

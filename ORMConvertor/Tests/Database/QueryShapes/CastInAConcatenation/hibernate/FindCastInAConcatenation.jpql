@@ -1,0 +1,3 @@
+select p.ProductId as ProductId, concat('#', cast(p.ProductId as String), ' ', p.ProductName) as Label
+from ShopProduct p
+where cast(p.UnitPrice as Integer) > 100

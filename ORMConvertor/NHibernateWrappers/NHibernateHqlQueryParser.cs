@@ -473,24 +473,22 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 {
                     queryBuilder.GroupBy(key.Table ?? sourceAlias, key.Property!);
                 }
-                else if (key is { IsExpression: true })
+                else if (key is { IsExpression: true, IsAggregate: false })
                 {
-                    // A grouping by an expression is the one position the expression does not
-                    // take (decision 107); refused by name.
-                    unread = null;
-                    Report(
-                        ConversionRecordKind.Failure,
-                        $"The grouping key '{key}' is an expression, which the query representation carries in every position but the grouping, and a query grouped differently would return different rows; no artifact was generated.",
-                        QueryFeature.Expression);
+                    // An expression is a grouping key since decision 113, which HQL 5.7 groups
+                    // by as written; what the rest of the scope may name beside it is the
+                    // template's rule.
+                    queryBuilder.GroupBy(key);
                 }
                 else
                 {
                     // Grouping decides which rows come back (decision 070).
+                    var (what, category) = unread ?? ("a grouping key that is neither a property reference nor an expression", QueryFeature.Grouping);
                     unread = null;
                     Report(
                         ConversionRecordKind.Failure,
-                        "A grouping key that is not a property reference cannot be carried, and a query grouped differently would return different rows; no artifact was generated.",
-                        QueryFeature.Grouping);
+                        $"The grouping uses {what}, and a query grouped differently would return different rows; no artifact was generated.",
+                        category ?? QueryFeature.Grouping);
                 }
             }
             while (TryConsumeSymbol(","));
@@ -1539,6 +1537,12 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         var name = Current.Text.ToLowerInvariant();
         var line = Current.Line;
         var column = Current.Column;
+
+        if (name == "cast")
+        {
+            return ParseCast();
+        }
+
         Advance();
         ConsumeSymbol("(");
 
@@ -1616,6 +1620,8 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             "month" => QueryFunction.Month,
             "day" => QueryFunction.Day,
             "current_timestamp" => QueryFunction.CurrentTimestamp,
+            "round" => QueryFunction.Round,
+            "sqrt" => QueryFunction.Sqrt,
             _ => null,
         };
 
@@ -1626,6 +1632,49 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         return Call(function.Value, arguments, name);
+    }
+
+    /// <summary>
+    /// <c>cast(x as type)</c> under the name of an NHibernate type (decision 113), read into
+    /// the five scalars the vocabulary converts into: <c>int</c>/<c>Int32</c>,
+    /// <c>long</c>/<c>Int64</c>, <c>float</c>/<c>single</c>, <c>double</c> and <c>string</c>,
+    /// in any case. NHibernate writes the last as NVARCHAR(4000), which is the same text as
+    /// the model's NVARCHAR(MAX) wherever the value converted is no text longer than that.
+    /// Any other type is refused by name.
+    /// </summary>
+    private QueryOperand? ParseCast()
+    {
+        Advance();
+        ConsumeSymbol("(");
+        var value = ParseOperand();
+        ConsumeKeyword("as");
+
+        if (Current.Kind != TokenKind.Identifier)
+        {
+            throw Error("expected the name of a type after 'as'");
+        }
+
+        var type = Current.Text;
+        Advance();
+        ConsumeSymbol(")");
+
+        ScalarType? scalar = type.ToLowerInvariant() switch
+        {
+            "int" or "int32" or "integer" => ScalarType.Int,
+            "long" or "int64" => ScalarType.Long,
+            "float" or "single" => ScalarType.Float,
+            "double" => ScalarType.Double,
+            "string" => ScalarType.String,
+            _ => null,
+        };
+
+        if (scalar is null)
+        {
+            unread ??= ($"the conversion into {type}, which is not one of the scalars the vocabulary of expressions converts into", QueryFeature.Expression);
+            return null;
+        }
+
+        return value is null || !IsLeaf(value) ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Cast, [value], castTo: scalar));
     }
 
     private QueryOperand? Call(QueryFunction function, List<QueryOperand> arguments, string name)

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindCastInAConcatenationMapper">
+  <select id="findCastInAConcatenation" resultType="ShopProduct">
+    SELECT p.ProductId AS ProductId, '#' + CAST(p.ProductId AS NVARCHAR(MAX)) + ' ' + p.ProductName AS Label
+    FROM {{schema}}.ShopProducts AS p
+    WHERE CAST(p.UnitPrice AS INT) &gt; 100
+  </select>
+</mapper>

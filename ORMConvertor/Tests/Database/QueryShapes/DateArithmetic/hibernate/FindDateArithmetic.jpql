@@ -1,0 +1,5 @@
+select o.CompanyId as CompanyId, o.OrderId as OrderId,
+       timestampadd(day, 30, o.PlacedAt) as DueAt,
+       timestampdiff(hour, {ts '2025-01-01 00:00:00'}, o.PlacedAt) as HoursFromNewYear
+from ShopOrder o
+where timestampdiff(day, o.PlacedAt, {ts '2025-03-01 00:00:00'}) > 0

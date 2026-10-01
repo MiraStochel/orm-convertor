@@ -4,14 +4,14 @@
 <mapper namespace="Shop.FindRecursiveWalkOfACyclicGraphMapper">
   <select id="findRecursiveWalkOfACyclicGraph" resultType="ShopProductLink">
     WITH Walk AS (
-        SELECT l.ToProductId AS ProductId, 1 AS Steps
+        SELECT l.ToProductId AS ProductId, ',1,' + CAST(l.ToProductId AS NVARCHAR(MAX)) + ',' AS Path
         FROM {{schema}}.ShopProductLinks AS l
         WHERE l.FromProductId = 1
         UNION ALL
-        SELECT n.ToProductId, w.Steps + 1
+        SELECT n.ToProductId, w.Path + CAST(n.ToProductId AS NVARCHAR(MAX)) + ','
         FROM Walk AS w
         JOIN {{schema}}.ShopProductLinks AS n ON n.FromProductId = w.ProductId
-        WHERE w.Steps &lt; 3)
+        WHERE w.Path NOT LIKE '%,' + CAST(n.ToProductId AS NVARCHAR(MAX)) + ',%')
     SELECT DISTINCT w.ProductId AS ProductId
     FROM Walk AS w
     OPTION (MAXRECURSION 10)

@@ -1,0 +1,7 @@
+with Ranked as (
+    select ol.ProductId as ProductId, ol.LineNumber as LineNumber, ol.Quantity as Quantity,
+           row_number() over (partition by ol.ProductId order by ol.Quantity desc, ol.LineNumber asc) as RowNumber
+    from ShopOrderLine ol)
+select r.ProductId as ProductId, r.LineNumber as LineNumber, r.Quantity as Quantity
+from Ranked r
+where r.RowNumber = 1

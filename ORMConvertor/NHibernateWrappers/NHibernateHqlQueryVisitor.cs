@@ -37,7 +37,8 @@ public sealed class NHibernateHqlQueryVisitor(
 
     public string Visit(HavingInstruction instr) => instr.Condition.Accept(this);
 
-    public string Visit(GroupByInstruction instr) => Column(instr.Table, instr.Attribute, null);
+    /// <summary>A grouping key (decision 113): a property, or an expression, which HQL 5.7 groups by as written (verified against 5.7.0, a CASE included).</summary>
+    public string Visit(GroupByInstruction instr) => Operand(instr.Key);
 
     public string Visit(OrderByInstruction instr)
         => $"{Operand(instr.Operand)} {(instr.Asc ? "asc" : "desc")}";
@@ -285,6 +286,18 @@ public sealed class NHibernateHqlQueryVisitor(
     /// </summary>
     private string Expression(QueryExpression expression)
     {
+        // HQL 5.7 has neither a ranking function over a window nor an aggregate into a list;
+        // the descriptor says so and the template sends the query to native SQL before any
+        // step runs, so this is the point of emission saying the same (decision 113).
+        if (expression.IsWindow || expression.IsListAggregate)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"HQL in NHibernate 5.7.0 has no {(expression.IsWindow ? "ranking function over a window" : "aggregate into a list")}",
+                expression.IsWindow ? QueryFeature.WindowFunction : QueryFeature.ListAggregation);
+            return string.Empty;
+        }
+
         if (expression.IsBinary)
         {
             if (typing.IsConcatenation(expression))
@@ -345,6 +358,10 @@ public sealed class NHibernateHqlQueryVisitor(
                 QueryFunction.Day => $"day({arguments[0]})",
                 QueryFunction.CurrentTimestamp => "current_timestamp()",
                 QueryFunction.EscapePattern => ExpressionSpelling.EscapePattern(arguments[0], patternEscape ?? "!", "replace"),
+                QueryFunction.Round => $"round({arguments[0]}, {arguments[1]})",
+                QueryFunction.Sqrt => $"sqrt({arguments[0]})",
+                QueryFunction.Cast => Cast(expression, arguments[0]),
+                QueryFunction.DateAdd or QueryFunction.DateDiff => Unspoken(expression),
                 _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null),
             };
         }
@@ -352,6 +369,49 @@ public sealed class NHibernateHqlQueryVisitor(
         var branches = string.Join(" ", expression.Branches!.Select(b => $"when {b.When.Accept(this)} then {Operand(b.Then)}"));
         var otherwise = expression.Else is null ? string.Empty : $" else {Operand(expression.Else)}";
         return $"case {branches}{otherwise} end";
+    }
+
+    /// <summary>
+    /// A conversion in HQL (decision 113): <c>cast(x as type)</c> under the name of an
+    /// NHibernate type, which 5.7.0 writes into SQL Server as INT, BIGINT, REAL, FLOAT(53) and
+    /// NVARCHAR(4000) - verified. The last is narrower than the NVARCHAR(MAX) of the model:
+    /// the same text for a number or a moment converted, a cut one for a text longer than
+    /// 4000 characters. So a conversion into text is written over a value known not to be text,
+    /// and over any other - a text, or a value the typed view does not know - the query goes
+    /// out in native SQL.
+    /// </summary>
+    private string Cast(QueryExpression expression, string argument)
+    {
+        if (expression.CastTo == ScalarType.String && LeafScalar(expression.Arguments![0]) is null or ScalarType.String or ScalarType.Char)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"HQL in NHibernate 5.7.0 converts into NVARCHAR(4000), which would cut the text '{expression.Arguments[0]}' where the representation converts into NVARCHAR(MAX)",
+                QueryFeature.Expression);
+            return string.Empty;
+        }
+
+        var type = expression.CastTo switch
+        {
+            ScalarType.Int => "int",
+            ScalarType.Long => "long",
+            ScalarType.Float => "float",
+            ScalarType.Double => "double",
+            ScalarType.String => "string",
+            _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.CastTo, null),
+        };
+
+        return $"cast({argument} as {type})";
+    }
+
+    /// <summary>A date function, which HQL 5.7 does not have (verified: "No data type for node" for datediff and dateadd); the descriptor leaves both out, so this is unreachable in practice.</summary>
+    private string Unspoken(QueryExpression expression)
+    {
+        report(
+            ConversionRecordKind.Fallback,
+            $"HQL in NHibernate 5.7.0 has no {expression.Function}",
+            QueryFeature.Expression);
+        return string.Empty;
     }
 
     /// <summary>The operands of a concatenation, its nested concatenations flattened into one argument list.</summary>

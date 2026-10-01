@@ -43,7 +43,8 @@ public sealed class JpqlQueryVisitor(
 
     public string Visit(HavingInstruction instr) => instr.Condition.Accept(this);
 
-    public string Visit(GroupByInstruction instr) => Column(instr.Table, instr.Attribute, null);
+    /// <summary>A grouping key (decision 113): a path, or an expression, which Hibernate groups by as written and EclipseLink as well where its descriptor says so.</summary>
+    public string Visit(GroupByInstruction instr) => Operand(instr.Key);
 
     public string Visit(OrderByInstruction instr)
         => $"{Operand(instr.Operand)} {(instr.Asc ? "asc" : "desc")}";
@@ -255,6 +256,31 @@ public sealed class JpqlQueryVisitor(
     /// </summary>
     private string Expression(QueryExpression expression)
     {
+        // HQL 7.4's ranking functions and listagg (decision 113). Standard JPQL has neither,
+        // so EclipseLink's descriptor leaves both out and its query goes to native SQL before
+        // a step runs; only Hibernate reaches here.
+        if (expression.IsWindow)
+        {
+            var partitions = expression.Partitions!.Count == 0
+                ? string.Empty
+                : $"partition by {string.Join(", ", expression.Partitions.Select(Operand))} ";
+            var function = expression.Ranking switch
+            {
+                RankingFunction.RowNumber => "row_number",
+                RankingFunction.Rank => "rank",
+                RankingFunction.DenseRank => "dense_rank",
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Ranking, null),
+            };
+
+            return $"{function}() over ({partitions}order by {Ordered(expression.Ordering!)})";
+        }
+
+        if (expression.IsListAggregate)
+        {
+            var within = expression.Ordering!.Count == 0 ? string.Empty : $" within group (order by {Ordered(expression.Ordering)})";
+            return $"listagg({Operand(expression.Listed!)}, '{expression.Separator!.Replace("'", "''")}'){within}";
+        }
+
         if (expression.IsBinary)
         {
             if (typing.IsConcatenation(expression))
@@ -296,6 +322,11 @@ public sealed class JpqlQueryVisitor(
                 QueryFunction.Day => $"extract(day from {arguments[0]})",
                 QueryFunction.CurrentTimestamp => "current_timestamp",
                 QueryFunction.EscapePattern => ExpressionSpelling.EscapePattern(arguments[0], patternEscape ?? "!", "replace"),
+                QueryFunction.Round => $"round({arguments[0]}, {arguments[1]})",
+                QueryFunction.Sqrt => $"sqrt({arguments[0]})",
+                QueryFunction.Cast => Cast(expression, arguments[0]),
+                QueryFunction.DateAdd => $"timestampadd({Unit(expression.Unit!.Value)}, {arguments[0]}, {arguments[1]})",
+                QueryFunction.DateDiff => $"timestampdiff({Unit(expression.Unit!.Value)}, {arguments[0]}, {arguments[1]})",
                 _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null),
             };
         }
@@ -304,6 +335,94 @@ public sealed class JpqlQueryVisitor(
         var otherwise = expression.Else is null ? "null" : Operand(expression.Else);
         return $"case {branches} else {otherwise} end";
     }
+
+    /// <summary>
+    /// A conversion (decision 113): <c>cast(x as type)</c> under the type's name in Jakarta
+    /// Persistence 3.2. Hibernate 7.4.5 writes the conversion into String as
+    /// <c>varchar(max)</c> over SQL Server - verified -, which is the same text as the model's
+    /// <c>NVARCHAR(MAX)</c> for a number or a moment converted and a poorer one for a text
+    /// holding characters outside the code page; so a conversion into text is written over a
+    /// value known not to be text, and over any other the query goes out in native SQL.
+    /// EclipseLink's descriptor leaves cast out altogether.
+    /// </summary>
+    private string Cast(QueryExpression expression, string argument)
+    {
+        if (expression.CastTo == ScalarType.String && LeafScalar(expression.Arguments![0]) is null or ScalarType.String or ScalarType.Char)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"JPQL converts into String as varchar(max), which would lose the characters of the text '{expression.Arguments[0]}' that no code page holds",
+                QueryFeature.Expression);
+            return string.Empty;
+        }
+
+        return $"cast({argument} as {CastType(expression.CastTo!.Value)})";
+    }
+
+    /// <summary>
+    /// The scalar of a leaf as this visitor can know it: a constant's own, a column's from the
+    /// mapping behind its alias, an expression's from the typed view; null for a parameter, a
+    /// subquery or an aggregate.
+    /// </summary>
+    private ScalarType? LeafScalar(QueryOperand operand)
+    {
+        if (operand.IsAggregate)
+        {
+            return null;
+        }
+
+        if (operand.IsConstant)
+        {
+            return operand.Constant!.Type;
+        }
+
+        if (operand.IsExpression)
+        {
+            return typing.ScalarOf(operand.Expression!);
+        }
+
+        if (operand.IsColumn && operand.Table is not null && entities.TryGetValue(operand.Table, out var map))
+        {
+            return map.PropertyMaps
+                .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, operand.Property, StringComparison.OrdinalIgnoreCase))
+                ?.Property.Type is { Category: LangTypeCategory.Scalar } type
+                ? type.ScalarType
+                : null;
+        }
+
+        return null;
+    }
+
+    /// <summary>The keys of a window or of a list aggregate, each with its direction (decision 113).</summary>
+    private string Ordered(IReadOnlyList<OrderingKey> ordering)
+        => string.Join(", ", ordering.Select(key => $"{Operand(key.Operand)} {(key.Ascending ? "asc" : "desc")}"));
+
+    /// <summary>
+    /// The type a conversion names (decision 113): the five names of Jakarta Persistence 3.2,
+    /// <c>Integer</c>, <c>Long</c>, <c>Float</c>, <c>Double</c> and <c>String</c>, which both
+    /// implementations take.
+    /// </summary>
+    public static string CastType(ScalarType scalar) => scalar switch
+    {
+        ScalarType.Int => "Integer",
+        ScalarType.Long => "Long",
+        ScalarType.Float => "Float",
+        ScalarType.Double => "Double",
+        ScalarType.String => "String",
+        _ => throw new ArgumentOutOfRangeException(nameof(scalar), scalar, null),
+    };
+
+    /// <summary>The temporal unit of HQL's timestampadd and timestampdiff (decision 113).</summary>
+    public static string Unit(DateUnit unit) => unit switch
+    {
+        DateUnit.Year => "year",
+        DateUnit.Month => "month",
+        DateUnit.Day => "day",
+        DateUnit.Hour => "hour",
+        DateUnit.Minute => "minute",
+        DateUnit.Second => "second",
+        _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, null),
+    };
 
     /// <summary>The operands of a concatenation, its nested concatenations flattened into one argument list.</summary>
     private IEnumerable<QueryOperand> Concatenated(QueryExpression concatenation)

@@ -49,8 +49,8 @@ public sealed class QueryClauses
     /// </summary>
     public bool Distinct { get; init; }
 
-    /// <summary>True when any projection carries an aggregate function.</summary>
-    public bool HasAggregates => Projections.Any(p => p.Operand.IsAggregate);
+    /// <summary>True when any projection aggregates - by one of the five functions or, since decision 113, by a list aggregate -, at any depth of its expression.</summary>
+    public bool HasAggregates => Projections.Any(p => OperandStructure.ContainsAggregate(p.Operand));
 
     /// <summary>
     /// True when the query materializes whole entities because nobody named columns

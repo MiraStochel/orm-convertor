@@ -401,10 +401,20 @@ public abstract class AbstractQueryBuilder
         instructions.Add(new JoinInstruction(kind, left, right, rightTableAlias, onCondition));
     }
 
-    public void GroupBy(string table, string attr)
+    /// <summary>
+    /// Records one grouping key (decision 113): a column, or an expression such as
+    /// <c>YEAR(o.PlacedAt)</c>. What the rest of the scope may name beside the keys is the
+    /// template's rule to hold, not the parser's.
+    /// </summary>
+    public void GroupBy(QueryOperand key)
     {
-        instructions.Add(new GroupByInstruction(table, attr));
+        ArgumentNullException.ThrowIfNull(key);
+        instructions.Add(new GroupByInstruction(key));
     }
+
+    /// <summary>The column shape of <see cref="GroupBy(QueryOperand)"/>.</summary>
+    public void GroupBy(string table, string attr)
+        => GroupBy(QueryOperand.Column(table, attr));
 
     /// <summary>
     /// Records one ordering key with its direction (decision 107): a column, a column under
@@ -818,9 +828,10 @@ public abstract class AbstractQueryBuilder
     /// <summary>
     /// Sorts the recorded instructions into clauses and applies the rules that hold for
     /// every target. Returns null when the query cannot be built at all, having reported
-    /// why.
+    /// why. <paramref name="operand"/> says that the scope is a subquery standing as an
+    /// operand, whose one value no target reads by a name.
     /// </summary>
-    protected QueryClauses? Normalize(IReadOnlyList<QueryInstruction> body)
+    protected QueryClauses? Normalize(IReadOnlyList<QueryInstruction> body, bool operand = false)
     {
         ArgumentNullException.ThrowIfNull(body);
 
@@ -897,15 +908,25 @@ public abstract class AbstractQueryBuilder
 
         // Rule Q8: grouping is mandatory when aggregates sit next to plain columns. A query
         // that is nothing but aggregates needs no grouping, so that case is not reported, and
-        // neither is a constant beside them, which is one value for the whole result.
+        // neither is a constant beside them, which is one value for the whole result. A list
+        // aggregate is an aggregate here as anywhere (decision 113).
         if (groupBys.Count == 0
-            && projections.Any(p => p.Operand.IsAggregate)
-            && projections.Any(p => p.Operand is { IsAggregate: false, IsConstant: false }))
+            && projections.Any(p => OperandStructure.ContainsAggregate(p.Operand))
+            && projections.Any(p => !OperandStructure.ContainsAggregate(p.Operand) && !p.Operand.IsConstant))
         {
             Report(
                 ConversionRecordKind.Incompleteness,
                 "Aggregated and plain columns are projected together without a grouping (rule Q8).",
                 QueryFeature.Grouping);
+        }
+
+        // The rule of grouping itself (decision 113): beside its keys a grouped query names a
+        // column only under an aggregate or inside a value equal to a key - the rule of SQL,
+        // held here once for every target, now that a key may be an expression and the three
+        // places that have to agree with it cannot be checked by the name of a column alone.
+        if (groupBys.Count > 0 && !GroupingRuleHolds(groupBys, projections, body.OfType<HavingInstruction>().ToList(), orderBys))
+        {
+            return null;
         }
 
         // An aggregate over the distinct values of the whole row - JPQL's count(distinct c),
@@ -926,7 +947,7 @@ public abstract class AbstractQueryBuilder
         // the result is one row (decision 073). Left out with a record rather than carried,
         // so that no target has to write it into a shape where it means something else - a
         // LINQ Distinct().Count() counts distinct rows where SELECT DISTINCT COUNT(*) does not.
-        if (distinct && groupBys.Count == 0 && projections.Count > 0 && projections.All(p => p.Operand.IsAggregate))
+        if (distinct && groupBys.Count == 0 && projections.Count > 0 && projections.All(p => OperandStructure.Aggregates(p.Operand)))
         {
             Report(
                 ConversionRecordKind.Convention,
@@ -957,8 +978,13 @@ public abstract class AbstractQueryBuilder
         // projection - has nothing to read it under, and a name invented by the tool is
         // forbidden (decision 028). Refused here once, for every target alike. A constant is
         // the same case: carried under its alias - the starting depth of a recursion, 0 AS
-        // Depth (decision 113) -, without one it names nothing, and the readers drop it.
-        var nameless = projections.FirstOrDefault(p => (p.Operand.IsExpression || p.Operand is { IsConstant: true, IsAggregate: false }) && p.Alias is null);
+        // Depth (decision 113) -, without one it names nothing, and the readers drop it. A
+        // subquery standing as an operand is not such a scope: its one value is compared or
+        // projected in place, never read by a name - (SELECT STRING_AGG(…) FROM …) names
+        // nothing in T-SQL either (decision 113).
+        var nameless = operand
+            ? null
+            : projections.FirstOrDefault(p => (p.Operand.IsExpression || p.Operand is { IsConstant: true, IsAggregate: false }) && p.Alias is null);
         if (nameless is not null)
         {
             Report(
@@ -1013,6 +1039,118 @@ public abstract class AbstractQueryBuilder
                && (projected.IsAggregate || projected.IsExpression || key.IsExpression)
                && string.Equals(projected.ToString(), key.ToString(), StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// The rule of grouping (decision 113): a projection, an operand of HAVING and an ordering
+    /// key of a grouped scope name a column outside every aggregate only inside a value that
+    /// is structurally equal to one of the keys - <c>YEAR(o.PlacedAt)</c> beside
+    /// <c>GROUP BY YEAR(o.PlacedAt)</c>, or the column a key is. The rule of SQL, which every
+    /// target points to; and the structural equality it rests on is the very one the LINQ
+    /// target needs to write a projected value as <c>g.Key</c>. An ordering by the alias of a
+    /// projection names the projection, not a column. A subquery is not looked into: what
+    /// a correlated reference may name is the database's to judge. Returns false when a column
+    /// breaks the rule, having reported it.
+    /// </summary>
+    private bool GroupingRuleHolds(
+        IReadOnlyList<GroupByInstruction> keys,
+        IReadOnlyList<ProjectInstruction> projections,
+        IReadOnlyList<HavingInstruction> postFilters,
+        IReadOnlyList<OrderByInstruction> orders)
+    {
+        bool Holds(QueryOperand operand, string place)
+        {
+            if (Ungrouped(operand, keys) is not { } column)
+            {
+                return true;
+            }
+
+            Report(
+                ConversionRecordKind.Failure,
+                $"The {place} '{operand}' names the column '{column}', which is neither a grouping key nor inside one nor under an aggregate, so the grouped query has no single value of it to give; no artifact was generated.",
+                QueryFeature.Grouping);
+            return false;
+        }
+
+        foreach (var key in keys)
+        {
+            if (OperandStructure.ContainsAggregate(key.Key) || OperandStructure.ContainsWindow(key.Key))
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The grouping key '{key.Key}' aggregates or ranks, which is computed after the grouping and cannot decide it; no artifact was generated.",
+                    QueryFeature.Grouping);
+                return false;
+            }
+        }
+
+        foreach (var projection in projections)
+        {
+            if (!Holds(projection.Operand, "projection"))
+            {
+                return false;
+            }
+        }
+
+        foreach (var operand in postFilters.SelectMany(having => ComparedIn(having.Condition)))
+        {
+            if (!Holds(operand, "post-aggregation filter operand"))
+            {
+                return false;
+            }
+        }
+
+        foreach (var order in orders)
+        {
+            var byAlias = order.Operand is { IsColumn: true, Table: null, IsAggregate: false }
+                          && projections.Any(p => string.Equals(p.Alias, order.Operand.Property, StringComparison.OrdinalIgnoreCase));
+            if (!byAlias && !Holds(order.Operand, "ordering key"))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The first column the operand names outside every aggregate and outside every value
+    /// equal to a key, or null (decision 113). The whole row <c>*</c> stands only under COUNT,
+    /// which aggregates; a constant and a parameter are one value for every group.
+    /// </summary>
+    private static QueryOperand? Ungrouped(QueryOperand operand, IReadOnlyList<GroupByInstruction> keys)
+    {
+        if (keys.Any(key => OperandStructure.Same(key.Key, operand)) || OperandStructure.Aggregates(operand) || operand.IsSubQuery)
+        {
+            return null;
+        }
+
+        if (operand.IsColumn)
+        {
+            return operand.Property == "*" ? null : operand;
+        }
+
+        if (operand.IsExpression)
+        {
+            foreach (var inner in OperandStructure.Inside(operand.Expression!))
+            {
+                if (Ungrouped(inner, keys) is { } column)
+                {
+                    return column;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The operands the comparisons of a condition tree compare, at every depth of the tree but not inside a subquery.</summary>
+    private static IEnumerable<QueryOperand> ComparedIn(ConditionNode? node) => node switch
+    {
+        ComparisonCondition comparison => comparison.Right is null ? [comparison.Left] : [comparison.Left, comparison.Right],
+        LogicalCondition logical => logical.Operands.SelectMany(ComparedIn),
+        NotCondition negation => ComparedIn(negation.Operand),
+        _ => [],
+    };
 
     /// <summary>
     /// Whether a condition tree can be rendered at all (decision 053). Two shapes cannot:
@@ -1710,7 +1848,7 @@ public abstract class AbstractQueryBuilder
             return "has a subquery in its recursive member";
         }
 
-        if (operands.Any(operand => operand.IsAggregate))
+        if (operands.Any(OperandStructure.Aggregates))
         {
             return "aggregates in its recursive member";
         }
@@ -1904,9 +2042,6 @@ public abstract class AbstractQueryBuilder
                     }
 
                     continue;
-
-                case GroupByInstruction grouping when !declared.Contains(grouping.Table):
-                    return grouping.Table;
             }
 
             foreach (var operand in OperandsOf(instruction))
@@ -1930,14 +2065,15 @@ public abstract class AbstractQueryBuilder
 
     /// <summary>
     /// The operands one instruction stands over, without descending into a subquery: each
-    /// operand of its projection, ordering key or condition tree, with the leaves of every
-    /// expression and the operands of every condition inside a CASE. A subquery comes out as
-    /// the operand it is, for the caller to descend into or not.
+    /// operand of its projection, ordering key, grouping key or condition tree, with the leaves
+    /// of every expression and the operands of every condition inside a CASE. A subquery comes
+    /// out as the operand it is, for the caller to descend into or not.
     /// </summary>
     private static IEnumerable<QueryOperand> OperandsOf(QueryInstruction instruction) => instruction switch
     {
         ProjectInstruction projection => Flatten(projection.Operand),
         OrderByInstruction order => Flatten(order.Operand),
+        GroupByInstruction grouping => Flatten(grouping.Key),
         SelectInstruction filter => OperandsOf(filter.Condition),
         HavingInstruction postFilter => OperandsOf(postFilter.Condition),
         JoinInstruction join => OperandsOf(join.OnCondition),
@@ -2434,6 +2570,9 @@ public abstract class AbstractQueryBuilder
                 case OrderByInstruction order:
                     CollectParameters(order.Operand, null, ComparisonOperator.Equal, aliases, found);
                     break;
+                case GroupByInstruction grouping:
+                    CollectParameters(grouping.Key, null, ComparisonOperator.Equal, aliases, found);
+                    break;
                 case SelectInstruction filter:
                     CollectParameters(filter.Condition, aliases, found);
                     break;
@@ -2640,9 +2779,50 @@ public abstract class AbstractQueryBuilder
                 case QueryFunction.CurrentTimestamp:
                     return;
 
+                // The functions of decision 113: the count of DATEADD and the places of ROUND
+                // are whole numbers, a moment is a moment - the scalar of the moment beside it
+                // where DATEDIFF has one -, the argument of SQRT is a floating-point number,
+                // and ROUND hands its context down as ABS does. What a CAST converts implies
+                // no scalar, and a parameter there is refused as one the gate cannot type.
+                case QueryFunction.DateAdd:
+                    Leaf(arguments[0], ScalarType.Int);
+                    Leaf(arguments[1], ScalarType.DateTime);
+                    return;
+
+                case QueryFunction.DateDiff:
+                    Leaf(arguments[0], Moment(ScalarOf(arguments[1], aliases)));
+                    Leaf(arguments[1], Moment(ScalarOf(arguments[0], aliases)));
+                    return;
+
+                case QueryFunction.Round:
+                    Leaf(arguments[0], context);
+                    Leaf(arguments[1], ScalarType.Int);
+                    return;
+
+                case QueryFunction.Sqrt:
+                    Leaf(arguments[0], ScalarType.Double);
+                    return;
+
+                case QueryFunction.Cast:
+                    Leaf(arguments[0], null);
+                    return;
+
                 default:
                     throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null);
             }
+        }
+
+        // A window orders and partitions by what it names, which implies no scalar; a list
+        // aggregate joins text (decision 113).
+        if (!expression.IsCase)
+        {
+            var listed = expression.IsListAggregate ? expression.Listed : null;
+            foreach (var leaf in expression.Leaves())
+            {
+                Leaf(leaf, ReferenceEquals(leaf, listed) ? ScalarType.String : null);
+            }
+
+            return;
         }
 
         var values = expression.Leaves().ToList();
@@ -2657,6 +2837,12 @@ public abstract class AbstractQueryBuilder
             Leaf(values[i], CommonScalar(siblings, out _));
         }
     }
+
+    /// <summary>The scalar of a moment beside a DATEDIFF argument where it is temporal, a DateTime otherwise (decision 113).</summary>
+    private static ScalarType Moment(ScalarType? beside)
+        => beside is ScalarType.Date or ScalarType.DateTime or ScalarType.DateTimeOffset or ScalarType.TimeOfDay
+            ? beside.Value
+            : ScalarType.DateTime;
 
     /* ---- the query's demand on the catalog (decision 105) ---------------------------- */
 
@@ -3134,8 +3320,28 @@ public abstract class AbstractQueryBuilder
                 QueryFunction.Abs => ScalarOf(arguments[0], aliases),
                 QueryFunction.Coalesce => CommonScalar(arguments.Select(a => ScalarOf(a, aliases)), out _),
                 QueryFunction.CurrentTimestamp => ScalarType.DateTime,
+
+                // T-SQL's own answers (decision 113): DATEADD keeps the type of its moment,
+                // DATEDIFF counts in int, ROUND keeps the type of its value, SQRT answers in
+                // float, and a conversion answers in the scalar it converts into.
+                QueryFunction.DateAdd => Moment(ScalarOf(arguments[1], aliases)),
+                QueryFunction.DateDiff => ScalarType.Int,
+                QueryFunction.Round => ScalarOf(arguments[0], aliases),
+                QueryFunction.Sqrt => ScalarType.Double,
+                QueryFunction.Cast => expression.CastTo,
                 _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null),
             };
+        }
+
+        // ROW_NUMBER, RANK and DENSE_RANK count in bigint, and a list is text (decision 113).
+        if (expression.IsWindow)
+        {
+            return ScalarType.Long;
+        }
+
+        if (expression.IsListAggregate)
+        {
+            return ScalarType.String;
         }
 
         return CommonScalar(expression.Leaves().Select(v => ScalarOf(v, aliases)), out _);
@@ -3278,11 +3484,26 @@ public abstract class AbstractQueryBuilder
         {
             switch (instruction)
             {
+                // A ranking function over a window stands in a projection and nowhere else
+                // (decision 113); every other position is gated as the operand of a condition.
                 case ProjectInstruction projection:
-                    admitted &= GateOperand(projection.Operand, aliases);
+                    admitted &= GateOperand(projection.Operand, aliases, inProjection: true);
                     break;
                 case OrderByInstruction order:
                     admitted &= GateOperand(order.Operand, aliases);
+                    break;
+
+                // A key that is an expression is a grouping the target's language may not
+                // write (decision 113): standard JPQL groups by a path.
+                case GroupByInstruction grouping:
+                    admitted &= GateOperand(grouping.Key, aliases);
+                    if (grouping.Key.IsExpression && !writesNativeSql && Descriptor.SupportOf(QueryFeature.ComputedGrouping) == FactSupport.NotExpressible)
+                    {
+                        ReportUnspoken(
+                            $"The query groups by the expression '{grouping.Key}', which the query language of {Descriptor.Framework} cannot group by",
+                            QueryFeature.ComputedGrouping);
+                    }
+
                     break;
                 case SelectInstruction filter:
                     admitted &= GateExpressions(filter.Condition, aliases);
@@ -3323,7 +3544,7 @@ public abstract class AbstractQueryBuilder
         }
     }
 
-    private bool GateOperand(QueryOperand operand, Dictionary<string, EntityMap> aliases)
+    private bool GateOperand(QueryOperand operand, Dictionary<string, EntityMap> aliases, bool inProjection = false)
     {
         if (operand.IsSubQuery)
         {
@@ -3342,7 +3563,8 @@ public abstract class AbstractQueryBuilder
 
         var admitted = true;
 
-        // No target writes an aggregate over an aggregate; SUM(COUNT(*)) is not SQL.
+        // No target writes an aggregate over an aggregate; SUM(COUNT(*)) is not SQL, and a
+        // list aggregate is an aggregate (decision 113).
         if (operand.IsAggregate && ContainsAggregate(operand.Expression!))
         {
             Report(
@@ -3352,16 +3574,21 @@ public abstract class AbstractQueryBuilder
             admitted = false;
         }
 
-        return GateExpression(operand.Expression!, aliases) && admitted;
+        // Nor a window under an aggregate: SQL Server computes the aggregate first.
+        return GateExpression(operand.Expression!, aliases, inProjection && !operand.IsAggregate) && admitted;
     }
 
-    private bool GateExpression(QueryExpression expression, Dictionary<string, EntityMap> aliases)
+    private bool GateExpression(QueryExpression expression, Dictionary<string, EntityMap> aliases, bool inProjection = false)
     {
         var admitted = true;
 
+        // Inside a window or a list aggregate no further window stands, and the value a list
+        // aggregate joins aggregates over nothing itself (decision 113).
+        var leavesInProjection = inProjection && !expression.IsWindow && !expression.IsListAggregate;
+
         foreach (var leaf in expression.Leaves())
         {
-            admitted &= GateOperand(leaf, aliases);
+            admitted &= GateOperand(leaf, aliases, leavesInProjection);
         }
 
         if (expression.Branches is { } branches)
@@ -3379,6 +3606,45 @@ public abstract class AbstractQueryBuilder
             ReportUnspoken(
                 $"The function {expression.Function} is not one the query language of {Descriptor.Framework} speaks, and the tool does not invent a spelling for it",
                 QueryFeature.Expression);
+        }
+
+        // A ranking function over a window stands in a projection - the one place SQL computes
+        // it - and outside every aggregate and every other window (decision 113); a filter over
+        // it is a filter over an intermediate result that projects it, as anyone writes one.
+        if (expression.IsWindow)
+        {
+            if (!inProjection)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The ranking function '{expression}' stands outside a projection, or inside an aggregate or another window, where SQL does not compute it; no artifact was generated.",
+                    QueryFeature.WindowFunction);
+                admitted = false;
+            }
+            else if (!writesNativeSql && Descriptor.SupportOf(QueryFeature.WindowFunction) == FactSupport.NotExpressible)
+            {
+                ReportUnspoken(
+                    $"The query ranks rows over a window ('{expression}'), which the query language of {Descriptor.Framework} cannot express",
+                    QueryFeature.WindowFunction);
+            }
+        }
+
+        if (expression.IsListAggregate)
+        {
+            if (expression.Leaves().Any(OperandStructure.ContainsAggregate))
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The list aggregate '{expression}' joins or orders by a value that aggregates itself, and no target writes an aggregate over an aggregate; no artifact was generated.",
+                    QueryFeature.ListAggregation);
+                admitted = false;
+            }
+            else if (!writesNativeSql && Descriptor.SupportOf(QueryFeature.ListAggregation) == FactSupport.NotExpressible)
+            {
+                ReportUnspoken(
+                    $"The query joins values into a list ('{expression}'), which the query language of {Descriptor.Framework} cannot express",
+                    QueryFeature.ListAggregation);
+            }
         }
 
         var concatenates = IsConcatenation(expression, aliases);
@@ -3439,9 +3705,9 @@ public abstract class AbstractQueryBuilder
         return admitted;
     }
 
-    /// <summary>Whether the expression stands over an aggregate anywhere short of a subquery.</summary>
+    /// <summary>Whether the expression stands over an aggregate anywhere short of a subquery - a list aggregate included (decision 113).</summary>
     private static bool ContainsAggregate(QueryExpression expression)
-        => expression.Leaves().Any(leaf => leaf.IsAggregate || (leaf.IsExpression && ContainsAggregate(leaf.Expression!)));
+        => expression.IsListAggregate || expression.Leaves().Any(OperandStructure.ContainsAggregate);
 
     private ScalarType? ScalarOfColumn(Dictionary<string, EntityMap> aliases, string? table, string column)
     {
@@ -3549,6 +3815,14 @@ public abstract class AbstractQueryBuilder
         {
             QueryInstruction? replacement = instruction switch
             {
+                // A moment the source wrote as a string inside DATEADD or DATEDIFF is typed by
+                // its position, wherever the call stands (decision 113).
+                ProjectInstruction projection =>
+                    TypeDateArguments(projection.Operand, aliases) is { } operand ? projection with { Operand = operand } : null,
+                OrderByInstruction order =>
+                    TypeDateArguments(order.Operand, aliases) is { } operand ? order with { Operand = operand } : null,
+                GroupByInstruction grouping =>
+                    TypeDateArguments(grouping.Key, aliases) is { } operand ? grouping with { Key = operand } : null,
                 SelectInstruction filter =>
                     TypeTemporalLiterals(filter.Condition, aliases) is { } condition ? filter with { Condition = condition } : null,
                 HavingInstruction postFilter =>
@@ -3641,6 +3915,11 @@ public abstract class AbstractQueryBuilder
             return TypeTemporalLiterals(operand.SubQuery!, aliases) is { } typed ? QueryOperand.Nested(typed) : null;
         }
 
+        if (operand.IsExpression)
+        {
+            return TypeDateArguments(operand, aliases);
+        }
+
         if (TemporalScalarOf(other, op, aliases) is not { } scalar)
         {
             return operand;
@@ -3678,6 +3957,71 @@ public abstract class AbstractQueryBuilder
         }
 
         return operand;
+    }
+
+    /// <summary>
+    /// An operand with every string the source wrote as a moment of DATEADD or DATEDIFF typed
+    /// as the moment it is (decision 113) - the position decides it, as the column on the
+    /// other side of a comparison decides it there: T-SQL and HQL write
+    /// <c>DATEDIFF(hour, '2025-01-01', o.PlacedAt)</c> with a string, which LINQ could not pass
+    /// where a DateTime goes. Walks the whole expression, the conditions of a CASE and a
+    /// subquery standing as a leaf included. Null when a string there does not read as a
+    /// moment, having reported it; the database would refuse it at run time.
+    /// </summary>
+    private QueryOperand? TypeDateArguments(QueryOperand operand, Dictionary<string, EntityMap> aliases)
+    {
+        if (operand.IsSubQuery)
+        {
+            return TypeTemporalLiterals(operand.SubQuery!, aliases) is { } typed ? QueryOperand.Nested(typed) : null;
+        }
+
+        if (!operand.IsExpression)
+        {
+            return operand;
+        }
+
+        var expression = operand.Expression!.Rebuilt(
+            leaf => TypeDateArguments(leaf, aliases),
+            condition => TypeTemporalLiterals(condition, aliases));
+
+        if (expression is null)
+        {
+            return null;
+        }
+
+        if (expression.Function is QueryFunction.DateAdd or QueryFunction.DateDiff)
+        {
+            var arguments = expression.Arguments!.ToList();
+            var typed = false;
+            for (var i = expression.Function == QueryFunction.DateAdd ? 1 : 0; i < arguments.Count; i++)
+            {
+                if (arguments[i] is not { Constant: { Type: ScalarType.String } constant, IsAggregate: false })
+                {
+                    continue;
+                }
+
+                if (SpellMoment(constant.Text) is not { } spelled)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"The string '{constant.Text}' stands as a moment of {expression.Function} and does not read as a date or a date with a time of day in the ISO 8601 form; no artifact was generated.",
+                        QueryFeature.Expression);
+                    return null;
+                }
+
+                arguments[i] = QueryOperand.Value(QueryConstant.Of(spelled, ScalarType.DateTime));
+                typed = true;
+            }
+
+            if (typed)
+            {
+                expression = QueryExpression.Call(expression.Function.Value, arguments, expression.Unit);
+            }
+        }
+
+        return ReferenceEquals(expression, operand.Expression)
+            ? operand
+            : QueryOperand.Computed(expression, operand.Function, operand.Distinct);
     }
 
     /// <summary>
@@ -3897,7 +4241,7 @@ public abstract class AbstractQueryBuilder
             return null;
         }
 
-        var clauses = Normalize(body);
+        var clauses = Normalize(body, operand: true);
         if (clauses is null)
         {
             return null;

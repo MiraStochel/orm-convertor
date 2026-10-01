@@ -60,9 +60,21 @@
 --                   <= 2 it keeps eight, and a descent from every department instead of the
 --                   roots repeats the rows below them;
 --   cyclic graph    the links run 1 -> 2 -> 3 -> 1 and on from 3 to 4 and 5, so a walk
---                   without its bound never ends and is stopped by the limit of recursion;
---                   within three steps from product 1 it reaches 1, 2, 3 and 4, and with the
---                   bound flipped only the first step, 2.
+--                   without its guard never ends and is stopped by the limit of recursion;
+--                   guarded over its path from product 1 it reaches 2, 3, 4 and 5 and does
+--                   not step back into 1;
+--   key of a year   with a known customer, every year of a company holds one order; the
+--                   walk-in customer's orders add a second to 2025 of company 1 and a year,
+--                   2023, of their own;
+--   date functions  the last order of 2024 is placed at 23:59:59.999, one hour boundary
+--                   and no whole hour before the new year, and two more orders lie off the
+--                   hour, so a count of boundaries and a length in whole hours differ;
+--   rounding        a price of 1250.5 rounds away from zero to 1251 in SQL Server and to
+--                   the even 1250 in .NET;
+--   best line       every product's lines differ in quantity, so the row number of the
+--                   largest is one and only one;
+--   list            products 4 and 6 each have a line of a single piece beside another,
+--                   which the filter of the list keeps out.
 --
 -- No column carries a default, so nothing unstated can reach a canonical result, and every
 -- DATETIME2 value states its fraction, so the renderer's three digits are the column's.

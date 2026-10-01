@@ -200,10 +200,8 @@ public class SqlQueryVisitor(
         return $"{BuildOperand(instr.Operand)} {direction}";
     }
 
-    public string Visit(GroupByInstruction instr)
-    {
-        return $"{instr.Table}.{instr.Attribute}";
-    }
+    /// <summary>A grouping key (decision 113): a column, or an expression written as in the projection that repeats it.</summary>
+    public string Visit(GroupByInstruction instr) => BuildOperand(instr.Key);
 
     private string BuildOperand(QueryOperand operand)
     {
@@ -248,10 +246,34 @@ public class SqlQueryVisitor(
     /// <summary>
     /// An expression in T-SQL's spelling (decision 107): the operators as written, <c>+</c>
     /// for a concatenation as for an addition, the functions of the vocabulary under their
-    /// T-SQL names, and a searched CASE.
+    /// T-SQL names, and a searched CASE; since decision 113 the date functions with their unit
+    /// as the keyword T-SQL takes, a conversion into the type of the dialect, a ranking
+    /// function over its window and STRING_AGG with its ordering.
     /// </summary>
     private string Expression(QueryExpression expression)
     {
+        if (expression.IsWindow)
+        {
+            var partitions = expression.Partitions!.Count == 0
+                ? string.Empty
+                : $"PARTITION BY {string.Join(", ", expression.Partitions.Select(BuildOperand))} ";
+            var function = expression.Ranking switch
+            {
+                RankingFunction.RowNumber => "ROW_NUMBER",
+                RankingFunction.Rank => "RANK",
+                RankingFunction.DenseRank => "DENSE_RANK",
+                _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Ranking, null),
+            };
+
+            return $"{function}() OVER ({partitions}ORDER BY {Ordered(expression.Ordering!)})";
+        }
+
+        if (expression.IsListAggregate)
+        {
+            var within = expression.Ordering!.Count == 0 ? string.Empty : $" WITHIN GROUP (ORDER BY {Ordered(expression.Ordering)})";
+            return $"STRING_AGG({BuildOperand(expression.Listed!)}, '{expression.Separator!.Replace("'", "''")}'){within}";
+        }
+
         if (expression.IsBinary)
         {
             var symbol = expression.Operator!.Value switch
@@ -284,6 +306,11 @@ public class SqlQueryVisitor(
                 QueryFunction.Day => $"DAY({arguments[0]})",
                 QueryFunction.CurrentTimestamp => "CURRENT_TIMESTAMP",
                 QueryFunction.EscapePattern => ExpressionSpelling.EscapePattern(arguments[0], patternEscape ?? "!", "REPLACE"),
+                QueryFunction.DateAdd => $"DATEADD({DatePart(expression.Unit!.Value)}, {arguments[0]}, {arguments[1]})",
+                QueryFunction.DateDiff => $"DATEDIFF({DatePart(expression.Unit!.Value)}, {arguments[0]}, {arguments[1]})",
+                QueryFunction.Round => $"ROUND({arguments[0]}, {arguments[1]})",
+                QueryFunction.Sqrt => $"SQRT({arguments[0]})",
+                QueryFunction.Cast => $"CAST({arguments[0]} AS {CastType(expression.CastTo!.Value)})",
                 _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Function, null),
             };
         }
@@ -292,6 +319,38 @@ public class SqlQueryVisitor(
         var otherwise = expression.Else is null ? string.Empty : $" ELSE {BuildOperand(expression.Else)}";
         return $"CASE {branches}{otherwise} END";
     }
+
+    /// <summary>The keys of a window or of a list aggregate, each with its direction (decision 113).</summary>
+    private string Ordered(IReadOnlyList<OrderingKey> ordering)
+        => string.Join(", ", ordering.Select(key => $"{BuildOperand(key.Operand)} {(key.Ascending ? "ASC" : "DESC")}"));
+
+    /// <summary>The datepart keyword of T-SQL for a unit of the vocabulary (decision 113).</summary>
+    public static string DatePart(DateUnit unit) => unit switch
+    {
+        DateUnit.Year => "year",
+        DateUnit.Month => "month",
+        DateUnit.Day => "day",
+        DateUnit.Hour => "hour",
+        DateUnit.Minute => "minute",
+        DateUnit.Second => "second",
+        _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, null),
+    };
+
+    /// <summary>
+    /// The type of the dialect a conversion writes (decision 113): the names of decision 086
+    /// for the scalar, without a length or a precision that could change the value - text as
+    /// <c>NVARCHAR(MAX)</c>, the floating-point numbers as <c>REAL</c> and <c>FLOAT</c>. The
+    /// reader takes exactly these back.
+    /// </summary>
+    public static string CastType(ScalarType scalar) => scalar switch
+    {
+        ScalarType.Int => "INT",
+        ScalarType.Long => "BIGINT",
+        ScalarType.Float => "REAL",
+        ScalarType.Double => "FLOAT",
+        ScalarType.String => "NVARCHAR(MAX)",
+        _ => throw new ArgumentOutOfRangeException(nameof(scalar), scalar, null),
+    };
 
     /// <summary>
     /// One side of a binary expression, parenthesized where the grammar would regroup it

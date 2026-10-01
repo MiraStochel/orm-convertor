@@ -331,6 +331,55 @@ public static class LdbcSnbSample
         "JPQL has no WITH, let alone one that names itself, so the query goes out as native SQL through createNativeQuery.");
 
     /// <summary>
+    /// Date arithmetic - DATEADD and DATEDIFF - has no form in HQL of NHibernate 5.7 nor in
+    /// JPQL (decision 113, measured against NHibernate 5.7.0): those two targets write the query
+    /// in native SQL. LINQ calls the Add methods and EF.Functions.DateDiff…, HQL of Hibernate
+    /// timestampadd and timestampdiff.
+    /// </summary>
+    private static readonly LdbcFallback NHibernateDates = new(Model.ORMEnum.NHibernate,
+        "HQL of NHibernate 5.7 has no date arithmetic - neither dateadd nor datediff -, so the query goes out as native SQL through CreateSQLQuery.");
+
+    private static readonly LdbcFallback EclipseLinkDates = new(Model.ORMEnum.EclipseLink,
+        "JPQL has no date arithmetic, so the query goes out as native SQL through createNativeQuery.");
+
+    /// <summary>
+    /// A list joined from the values of a group - STRING_AGG - has no form in HQL of NHibernate
+    /// 5.7 nor in JPQL, and EF Core 10 joins a list over a subquery on the client (decision 113,
+    /// measured): those targets write the query in native SQL.
+    /// </summary>
+    private static readonly LdbcFallback NHibernateList = new(Model.ORMEnum.NHibernate,
+        "HQL of NHibernate 5.7 has no aggregate into a list, so the query goes out as native SQL through CreateSQLQuery.");
+
+    private static readonly LdbcFallback EclipseLinkList = new(Model.ORMEnum.EclipseLink,
+        "JPQL has no aggregate into a list, so the query goes out as native SQL through createNativeQuery.");
+
+    private static readonly LdbcFallback EFCoreCorrelatedList = new(Model.ORMEnum.EFCore,
+        "EF Core 10 does not translate string.Join over a subquery - it fetches the rows and joins them on the client -, so the query goes out as native SQL through SqlQuery.");
+
+    /// <summary>
+    /// A ranking function over a window has no form in LINQ (decision 113): EF Core writes the
+    /// query in native SQL.
+    /// </summary>
+    private static readonly LdbcFallback EFCoreWindow = new(Model.ORMEnum.EFCore,
+        "LINQ has no ranking function over a window, so the query goes out as native SQL through SqlQuery.");
+
+    /// <summary>
+    /// EclipseLink binds every literal of a query as a parameter (measured against 5.0.0), so
+    /// a grouping by an expression with a literal in it would reach SQL Server as another
+    /// expression than the same value in the select list (decision 113).
+    /// </summary>
+    private static readonly LdbcFallback EclipseLinkLiteralKey = new(Model.ORMEnum.EclipseLink,
+        "EclipseLink 5.0 binds the literals of a grouping key as parameters, which SQL Server then does not match with the select list, so the query goes out as native SQL through createNativeQuery.");
+
+    /// <summary>
+    /// HQL of Hibernate 7.4 converts into String as varchar(max), which would lose the
+    /// characters of a text no code page holds (decision 113, measured); a conversion of a text
+    /// therefore sends the query to native SQL.
+    /// </summary>
+    private static readonly LdbcFallback HibernateTextCast = new(Model.ORMEnum.Hibernate,
+        "HQL of Hibernate 7.4 converts a text into varchar(max), which would lose characters a tag name may hold, so the query goes out as native SQL through createNativeQuery.");
+
+    /// <summary>
     /// The one shape the native query of EclipseLink cannot take: a list parameter, which it
     /// hands the driver as one value instead of expanding it (decision 113, measured).
     /// </summary>
@@ -433,10 +482,11 @@ public static class LdbcSnbSample
 
         // Interactive complex reads (specification section 6.1).
 
-        new("ic1", LdbcWorkload.InteractiveComplex, 1, "Transitive friends with a certain name", LdbcTranslation.Simplified,
+        new("ic1", LdbcWorkload.InteractiveComplex, 1, "Transitive friends with a certain name", LdbcTranslation.AsSpecified,
             "Persons with a given first name within three steps, with the distance as a CASE over the walks of length one "
-            + "and two. Left out: the e-mails, languages, universities and companies of each person, which the "
-            + "specification returns as lists - one row per person has no place for them.",
+            + "and two, and the e-mails, languages, universities and companies of each person, which the specification "
+            + "returns as lists: each a STRING_AGG over a correlated subquery (decision 113), its elements separated by "
+            + "semicolons, a university or a company as its name, the year and the place separated by commas.",
             """
             SELECT TOP (20) p.Id AS FriendId, p.LastName AS FriendLastName,
                    CASE
@@ -447,7 +497,19 @@ public static class LdbcSnbSample
                        ELSE 3
                    END AS DistanceFromPerson,
                    p.Birthday AS FriendBirthday, p.CreationDate AS FriendCreationDate, p.Gender AS FriendGender,
-                   p.BrowserUsed AS FriendBrowserUsed, p.LocationIp AS FriendLocationIp, c.Name AS FriendCityName
+                   p.BrowserUsed AS FriendBrowserUsed, p.LocationIp AS FriendLocationIp, c.Name AS FriendCityName,
+                   (SELECT STRING_AGG(e.Email, ';') FROM Person_email_EmailAddress AS e WHERE e.PersonId = p.Id) AS FriendEmails,
+                   (SELECT STRING_AGG(sl.Language, ';') FROM Person_speaks_Language AS sl WHERE sl.PersonId = p.Id) AS FriendLanguages,
+                   (SELECT STRING_AGG(u.Name + ',' + CAST(su.ClassYear AS NVARCHAR(MAX)) + ',' + uc.Name, ';')
+                    FROM Person_studyAt_University AS su
+                    JOIN Organisation AS u ON u.Id = su.UniversityId
+                    JOIN Place AS uc ON uc.Id = u.LocationPlaceId
+                    WHERE su.PersonId = p.Id) AS FriendUniversities,
+                   (SELECT STRING_AGG(o.Name + ',' + CAST(wa.WorkFrom AS NVARCHAR(MAX)) + ',' + oc.Name, ';')
+                    FROM Person_workAt_Company AS wa
+                    JOIN Organisation AS o ON o.Id = wa.CompanyId
+                    JOIN Place AS oc ON oc.Id = o.LocationPlaceId
+                    WHERE wa.PersonId = p.Id) AS FriendCompanies
             FROM Person AS p
             JOIN Place AS c ON c.Id = p.LocationCityId
             WHERE p.FirstName = @firstName
@@ -462,7 +524,8 @@ public static class LdbcSnbSample
                                WHERE k1.Person1Id = @personId))
             ORDER BY DistanceFromPerson ASC, p.LastName ASC, p.Id ASC
             """,
-            [PersonId, new("firstName", "NVARCHAR(80)", "John")]),
+            [PersonId, new("firstName", "NVARCHAR(80)", "John")],
+            FallbackBy: [EFCoreCorrelatedList, NHibernateList, EclipseLinkList]),
 
         new("ic2", LdbcWorkload.InteractiveComplex, 2, "Recent messages by your friends", LdbcTranslation.AsSpecified,
             "One step along knows, then the messages of the friends before a date, newest first.",
@@ -577,13 +640,16 @@ public static class LdbcSnbSample
 
         new("ic7", LdbcWorkload.InteractiveComplex, 7, "Recent likers", LdbcTranslation.Simplified,
             "The most recent like of every person who liked the start person's messages - an arg-max per person, written "
-            + "as a NOT EXISTS of a later like - and whether the liker is a friend. Left out: the latency in minutes "
-            + "between the message and the like, which is date arithmetic the representation does not carry; the text "
-            + "returns the creation date of the message instead.",
+            + "as a NOT EXISTS of a later like - and whether the liker is a friend, with the latency in minutes between the "
+            + "message and the like as DATEDIFF in seconds divided by sixty (decision 113). The specification takes the whole "
+            + "seconds of the difference, which DATEDIFF, counting the boundaries of seconds crossed, exceeds by one where "
+            + "the milliseconds of the like are smaller than those of the message; a latency moves to the next minute by "
+            + "that only where its seconds stand at a whole minute.",
             """
             SELECT TOP (20) f.Id AS PersonId, f.FirstName AS PersonFirstName, f.LastName AS PersonLastName,
                    l.CreationDate AS LikeCreationDate, m.Id AS MessageId,
-                   COALESCE(m.Content, m.ImageFile) AS MessageContent, m.CreationDate AS MessageCreationDate,
+                   COALESCE(m.Content, m.ImageFile) AS MessageContent,
+                   DATEDIFF(second, m.CreationDate, l.CreationDate) / 60 AS MinutesLatency,
                    CASE WHEN k.Person1Id IS NULL THEN 1 ELSE 0 END AS IsNew
             FROM Message AS m
             JOIN Person_likes_Message AS l ON l.MessageId = m.Id
@@ -600,7 +666,8 @@ public static class LdbcSnbSample
                          OR (later.CreationDate = l.CreationDate AND later.MessageId < l.MessageId)))
             ORDER BY l.CreationDate DESC, f.Id ASC
             """,
-            [PersonId]),
+            [PersonId],
+            FallbackBy: [NHibernateDates, EclipseLinkDates]),
 
         new("ic8", LdbcWorkload.InteractiveComplex, 8, "Recent replies", LdbcTranslation.AsSpecified,
             "The newest direct replies to the start person's messages: a self-join of Message over ParentMessageId.",
@@ -680,11 +747,12 @@ public static class LdbcSnbSample
             """,
             [PersonId, new("countryName", "NVARCHAR(256)", "China"), new("workFromYear", "INT", "2010")]),
 
-        new("ic12", LdbcWorkload.InteractiveComplex, 12, "Expert search", LdbcTranslation.Simplified,
-            "Friends' direct replies to posts whose tag belongs to a tag class or any class below it. The classes below "
-            + "are a recursive definition (decision 113) that descends the hierarchy from the named class - until "
-            + "then six outer joins up the chain, which return the same rows over every data set, whose hierarchy is "
-            + "five levels deep. Left out: the names of the tags, which the specification returns as a set.",
+        new("ic12", LdbcWorkload.InteractiveComplex, 12, "Expert search", LdbcTranslation.AsSpecified,
+            "Friends' direct replies to posts whose tag belongs to a tag class or any class below it, with the names of "
+            + "those tags as a list. The classes below are a recursive definition (decision 113) that descends the "
+            + "hierarchy from the named class. The names are a set: T-SQL has no STRING_AGG over distinct values, so the "
+            + "distinct pairs of a friend and a tag are a definition of their own, joined into a list per friend; the name "
+            + "is converted to NVARCHAR(MAX), because STRING_AGG over a narrower text stops at 4,000 characters.",
             """
             WITH TagClassTree AS (
                 SELECT tc.Id AS TagClassId
@@ -693,23 +761,37 @@ public static class LdbcSnbSample
                 UNION ALL
                 SELECT sub.Id
                 FROM TagClass AS sub
-                JOIN TagClassTree AS tr ON sub.SubclassOfTagClassId = tr.TagClassId)
-            SELECT TOP (20) f.Id AS PersonId, f.FirstName AS PersonFirstName, f.LastName AS PersonLastName,
-                   COUNT(DISTINCT c.Id) AS ReplyCount
-            FROM Person_knows_Person AS k
-            JOIN Person AS f ON f.Id = k.Person2Id
-            JOIN Message AS c ON c.CreatorPersonId = f.Id
-            JOIN Message AS p ON p.Id = c.ParentMessageId
-            JOIN Message_hasTag_Tag AS pt ON pt.MessageId = p.Id
-            JOIN Tag AS t ON t.Id = pt.TagId
-            JOIN TagClassTree AS tct ON tct.TagClassId = t.TypeTagClassId
-            WHERE k.Person1Id = @personId
-              AND p.ParentMessageId IS NULL
-            GROUP BY f.Id, f.FirstName, f.LastName
-            ORDER BY ReplyCount DESC, f.Id ASC
+                JOIN TagClassTree AS tr ON sub.SubclassOfTagClassId = tr.TagClassId),
+            Reply AS (
+                SELECT f.Id AS PersonId, f.FirstName AS FirstName, f.LastName AS LastName, c.Id AS CommentId, t.Name AS TagName
+                FROM Person_knows_Person AS k
+                JOIN Person AS f ON f.Id = k.Person2Id
+                JOIN Message AS c ON c.CreatorPersonId = f.Id
+                JOIN Message AS p ON p.Id = c.ParentMessageId
+                JOIN Message_hasTag_Tag AS pt ON pt.MessageId = p.Id
+                JOIN Tag AS t ON t.Id = pt.TagId
+                JOIN TagClassTree AS tct ON tct.TagClassId = t.TypeTagClassId
+                WHERE k.Person1Id = @personId
+                  AND p.ParentMessageId IS NULL),
+            ReplyCount AS (
+                SELECT r.PersonId AS PersonId, r.FirstName AS FirstName, r.LastName AS LastName, COUNT(DISTINCT r.CommentId) AS ReplyCount
+                FROM Reply AS r
+                GROUP BY r.PersonId, r.FirstName, r.LastName),
+            PersonTag AS (
+                SELECT DISTINCT r.PersonId AS PersonId, r.TagName AS TagName
+                FROM Reply AS r),
+            TagNames AS (
+                SELECT pt.PersonId AS PersonId, STRING_AGG(CAST(pt.TagName AS NVARCHAR(MAX)), ';') WITHIN GROUP (ORDER BY pt.TagName ASC) AS TagNames
+                FROM PersonTag AS pt
+                GROUP BY pt.PersonId)
+            SELECT TOP (20) rc.PersonId AS PersonId, rc.FirstName AS PersonFirstName, rc.LastName AS PersonLastName,
+                   tn.TagNames AS TagNames, rc.ReplyCount AS ReplyCount
+            FROM ReplyCount AS rc
+            JOIN TagNames AS tn ON tn.PersonId = rc.PersonId
+            ORDER BY rc.ReplyCount DESC, rc.PersonId ASC
             """,
             [PersonId, new("tagClassName", "NVARCHAR(256)", "Person")],
-            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
+            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion, HibernateTextCast]),
 
         new("ic13", LdbcWorkload.InteractiveComplex, 13, "Single shortest path", LdbcTranslation.Simplified,
             "The length of the shortest path along knows between two persons: 0 for one person, -1 where there is no "
@@ -736,36 +818,73 @@ public static class LdbcSnbSample
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "96")],
             FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
 
-        new("ic14", LdbcWorkload.InteractiveComplex, 14, "Trusted connection paths", LdbcTranslation.NotTranslated,
-            "Every shortest path between two persons, weighted by the replies between neighbours, returned as a list of "
-            + "identifiers. The search over the graph is a recursive definition since decision 113; what the vocabulary "
-            + "does not carry yet is the path itself - the identifiers joined into a text, which takes a conversion of a "
-            + "number to a string, and the weights rounded - which is the work on functions of the same decision.",
-            null,
-            [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65")]),
+        new("ic14", LdbcWorkload.InteractiveComplex, 14, "Trusted connection paths", LdbcTranslation.Simplified,
+            "Every shortest path between two persons with its weight - one for every reply to a post and a half for every "
+            + "reply to a comment between the neighbours along it, both ways -, the path as the identifiers of its persons "
+            + "joined by commas. The weights of the edges are a definition over the replies; the search is a recursive "
+            + "definition (decision 113) that carries the path as text, converted from the identifiers, and does not step "
+            + "into a person the path already holds. The walk is bounded at three steps, as in IC 13, so two persons further "
+            + "apart have no path.",
+            """
+            WITH Interaction AS (
+                SELECT c.CreatorPersonId AS ReplierId, p.CreatorPersonId AS AuthorId,
+                       SUM(CASE WHEN p.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) AS Score
+                FROM Message AS c
+                JOIN Message AS p ON p.Id = c.ParentMessageId
+                GROUP BY c.CreatorPersonId, p.CreatorPersonId),
+            Edge AS (
+                SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId,
+                       CAST(COALESCE(i1.Score, 0.0) + COALESCE(i2.Score, 0.0) AS FLOAT) AS Score
+                FROM Person_knows_Person AS k
+                LEFT JOIN Interaction AS i1 ON i1.ReplierId = k.Person1Id AND i1.AuthorId = k.Person2Id
+                LEFT JOIN Interaction AS i2 ON i2.ReplierId = k.Person2Id AND i2.AuthorId = k.Person1Id),
+            Walk AS (
+                SELECT p.Id AS PersonId, CAST(p.Id AS NVARCHAR(MAX)) AS Path, 0 AS Steps, CAST(0 AS FLOAT) AS Score
+                FROM Person AS p
+                WHERE p.Id = @person1Id
+                UNION ALL
+                SELECT e.ToPersonId, w.Path + ',' + CAST(e.ToPersonId AS NVARCHAR(MAX)), w.Steps + 1, w.Score + e.Score
+                FROM Walk AS w
+                JOIN Edge AS e ON e.FromPersonId = w.PersonId
+                WHERE w.Steps < 3
+                  AND w.PersonId <> @person2Id
+                  AND ',' + w.Path + ',' NOT LIKE '%,' + CAST(e.ToPersonId AS NVARCHAR(MAX)) + ',%'),
+            Reached AS (
+                SELECT w.Path AS Path, w.Steps AS Steps, w.Score AS Score
+                FROM Walk AS w
+                WHERE w.PersonId = @person2Id)
+            SELECT r.Path AS PersonIdsInPath, r.Score AS PathWeight
+            FROM Reached AS r
+            WHERE r.Steps = (SELECT MIN(m.Steps) FROM Reached AS m)
+            ORDER BY r.Score DESC, r.Path ASC
+            """,
+            [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65")],
+            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
 
         // Business Intelligence reads (specification section 8.4).
 
-        new("bi1", LdbcWorkload.BusinessIntelligence, 1, "Posting summary", LdbcTranslation.NotTranslated,
-            "Messages grouped by the year of their creation, by whether they are comments and by a length category. All "
-            + "three grouping keys are expressions, and the representation groups by columns only; the share of all "
-            + "messages is a scalar subquery besides.",
+        new("bi1", LdbcWorkload.BusinessIntelligence, 1, "Posting summary", LdbcTranslation.AsSpecified,
+            "Messages with content grouped by three expressions - the year of their creation, whether they are comments "
+            + "and a length category (decision 113) -, with the share of all messages before the date as a scalar "
+            + "subquery, the length summed as a BIGINT, as the reference implementation of BI sums it.",
             """
             SELECT YEAR(m.CreationDate) AS MessageYear,
                    CASE WHEN m.ParentMessageId IS NULL THEN 0 ELSE 1 END AS IsComment,
                    CASE WHEN m.Length < 40 THEN 0 WHEN m.Length < 80 THEN 1 WHEN m.Length < 160 THEN 2 ELSE 3 END AS LengthCategory,
                    COUNT(*) AS MessageCount,
                    AVG(1.0 * m.Length) AS AverageMessageLength,
-                   SUM(m.Length) AS SumMessageLength,
-                   100.0 * COUNT(*) / (SELECT COUNT(*) FROM Message AS a WHERE a.CreationDate < @datetime) AS PercentageOfMessages
+                   SUM(CAST(m.Length AS BIGINT)) AS SumMessageLength,
+                   1.0 * COUNT(*) / (SELECT COUNT(*) FROM Message AS a WHERE a.CreationDate < @datetime) AS PercentageOfMessages
             FROM Message AS m
             WHERE m.CreationDate < @datetime
+              AND m.Content IS NOT NULL
             GROUP BY YEAR(m.CreationDate),
                      CASE WHEN m.ParentMessageId IS NULL THEN 0 ELSE 1 END,
                      CASE WHEN m.Length < 40 THEN 0 WHEN m.Length < 80 THEN 1 WHEN m.Length < 160 THEN 2 ELSE 3 END
             ORDER BY MessageYear DESC, IsComment ASC, LengthCategory ASC
             """,
-            [new("datetime", "DATETIME2(3)", "2012-06-01")]),
+            [new("datetime", "DATETIME2(3)", "2012-06-01")],
+            FallbackBy: [EclipseLinkLiteralKey]),
 
         new("bi2", LdbcWorkload.BusinessIntelligence, 2, "Tag evolution", LdbcTranslation.AsSpecified,
             "Messages per tag of a tag class in two consecutive 100-day windows and their absolute difference: outer "
@@ -1070,40 +1189,83 @@ public static class LdbcSnbSample
             [new("country", "NVARCHAR(256)", "India"), new("endDate", "DATE", "2012-09-01")],
             [EFCoreJoin], [NHibernateIntermediate, EclipseLinkIntermediate]),
 
-        new("bi14", LdbcWorkload.BusinessIntelligence, 14, "International dialog", LdbcTranslation.Simplified,
-            "Pairs of friends from two countries scored by four kinds of interaction, each a CASE over EXISTS. Left out: "
-            + "keeping only the best pair of every city, which ranks rows within a group - a window function the "
-            + "representation does not carry; the text returns the best pairs overall.",
+        new("bi14", LdbcWorkload.BusinessIntelligence, 14, "International dialog", LdbcTranslation.AsSpecified,
+            "Pairs of friends from two countries scored by four kinds of interaction, each a CASE over EXISTS, and the best "
+            + "pair of every city of the first country: the row number over a window partitioned by the city (decision 113) "
+            + "in a definition, and the filter over it outside, the ties broken by the persons as the specification breaks "
+            + "them.",
             """
-            SELECT TOP (100) p1.Id AS Person1Id, p2.Id AS Person2Id, ci1.Name AS City1Name,
-                   CASE WHEN EXISTS (SELECT c.Id FROM Message AS c JOIN Message AS pm ON pm.Id = c.ParentMessageId
-                                     WHERE c.CreatorPersonId = p1.Id AND pm.CreatorPersonId = p2.Id) THEN 4 ELSE 0 END
-                 + CASE WHEN EXISTS (SELECT c.Id FROM Message AS c JOIN Message AS pm ON pm.Id = c.ParentMessageId
-                                     WHERE c.CreatorPersonId = p2.Id AND pm.CreatorPersonId = p1.Id) THEN 1 ELSE 0 END
-                 + CASE WHEN EXISTS (SELECT l.MessageId FROM Person_likes_Message AS l JOIN Message AS lm ON lm.Id = l.MessageId
-                                     WHERE l.PersonId = p1.Id AND lm.CreatorPersonId = p2.Id) THEN 10 ELSE 0 END
-                 + CASE WHEN EXISTS (SELECT l.MessageId FROM Person_likes_Message AS l JOIN Message AS lm ON lm.Id = l.MessageId
-                                     WHERE l.PersonId = p2.Id AND lm.CreatorPersonId = p1.Id) THEN 1 ELSE 0 END AS Score
-            FROM Person AS p1
-            JOIN Place AS ci1 ON ci1.Id = p1.LocationCityId
-            JOIN Place AS co1 ON co1.Id = ci1.PartOfPlaceId
-            JOIN Person_knows_Person AS k ON k.Person1Id = p1.Id
-            JOIN Person AS p2 ON p2.Id = k.Person2Id
-            JOIN Place AS ci2 ON ci2.Id = p2.LocationCityId
-            JOIN Place AS co2 ON co2.Id = ci2.PartOfPlaceId
-            WHERE co1.Name = @country1 AND co2.Name = @country2
-            ORDER BY Score DESC, p1.Id ASC, p2.Id ASC
+            WITH PairScore AS (
+                SELECT p1.Id AS Person1Id, p2.Id AS Person2Id, ci1.Id AS City1Id, ci1.Name AS City1Name,
+                       CASE WHEN EXISTS (SELECT c.Id FROM Message AS c JOIN Message AS pm ON pm.Id = c.ParentMessageId
+                                         WHERE c.CreatorPersonId = p1.Id AND pm.CreatorPersonId = p2.Id) THEN 4 ELSE 0 END
+                     + CASE WHEN EXISTS (SELECT c.Id FROM Message AS c JOIN Message AS pm ON pm.Id = c.ParentMessageId
+                                         WHERE c.CreatorPersonId = p2.Id AND pm.CreatorPersonId = p1.Id) THEN 1 ELSE 0 END
+                     + CASE WHEN EXISTS (SELECT l.MessageId FROM Person_likes_Message AS l JOIN Message AS lm ON lm.Id = l.MessageId
+                                         WHERE l.PersonId = p1.Id AND lm.CreatorPersonId = p2.Id) THEN 10 ELSE 0 END
+                     + CASE WHEN EXISTS (SELECT l.MessageId FROM Person_likes_Message AS l JOIN Message AS lm ON lm.Id = l.MessageId
+                                         WHERE l.PersonId = p2.Id AND lm.CreatorPersonId = p1.Id) THEN 1 ELSE 0 END AS Score
+                FROM Person AS p1
+                JOIN Place AS ci1 ON ci1.Id = p1.LocationCityId
+                JOIN Place AS co1 ON co1.Id = ci1.PartOfPlaceId
+                JOIN Person_knows_Person AS k ON k.Person1Id = p1.Id
+                JOIN Person AS p2 ON p2.Id = k.Person2Id
+                JOIN Place AS ci2 ON ci2.Id = p2.LocationCityId
+                JOIN Place AS co2 ON co2.Id = ci2.PartOfPlaceId
+                WHERE co1.Name = @country1 AND co2.Name = @country2),
+            Ranked AS (
+                SELECT s.Person1Id AS Person1Id, s.Person2Id AS Person2Id, s.City1Name AS City1Name, s.Score AS Score,
+                       ROW_NUMBER() OVER (PARTITION BY s.City1Id ORDER BY s.Score DESC, s.Person1Id ASC, s.Person2Id ASC) AS CityRank
+                FROM PairScore AS s)
+            SELECT TOP (100) r.Person1Id AS Person1Id, r.Person2Id AS Person2Id, r.City1Name AS City1Name, r.Score AS Score
+            FROM Ranked AS r
+            WHERE r.CityRank = 1
+            ORDER BY r.Score DESC, r.Person1Id ASC, r.Person2Id ASC
             """,
-            [new("country1", "NVARCHAR(256)", "India"), new("country2", "NVARCHAR(256)", "China")]),
+            [new("country1", "NVARCHAR(256)", "India"), new("country2", "NVARCHAR(256)", "China")],
+            FallbackBy: [EFCoreWindow, NHibernateIntermediate, EclipseLinkIntermediate]),
 
-        new("bi15", LdbcWorkload.BusinessIntelligence, 15, "Trusted connection paths through forums created in a given timeframe", LdbcTranslation.NotTranslated,
-            "The cost of the weighted shortest path between two persons, the weight of an edge coming from the replies "
-            + "between its ends. The search is a recursive definition since decision 113, but the weight of an edge is "
-            + "a fraction, and a recursive member that adds fractions has to keep exactly the type its anchor starts "
-            + "the cost with, which the text states by a conversion - the work on functions of the same decision.",
-            null,
+        new("bi15", LdbcWorkload.BusinessIntelligence, 15, "Trusted connection paths through forums created in a given timeframe", LdbcTranslation.Simplified,
+            "The cost of the weighted shortest path between two persons: an edge along knows costs ten divided by ten plus "
+            + "the weight of the replies between its ends inside forums created in the timeframe - ten for a reply to a post, "
+            + "five for a reply to a comment, both ways -, -1 where there is no path. The costs are a definition over the "
+            + "replies; the search a recursive definition (decision 113) that sums the costs as a FLOAT, converted in its anchor "
+            + "and in the definition of the costs, because the recursive member has to keep exactly the type its anchor starts "
+            + "the sum with. The walk is bounded at three steps, as in IC 13, so a cheaper path of more steps is missed and a "
+            + "pair further apart answers -1.",
+            """
+            WITH Interaction AS (
+                SELECT m.CreatorPersonId AS AuthorId, r.CreatorPersonId AS ReplierId,
+                       SUM(CASE WHEN m.ParentMessageId IS NULL THEN 10 ELSE 5 END) AS Weight
+                FROM Message AS m
+                JOIN Message AS r ON r.ParentMessageId = m.Id
+                JOIN Forum AS mf ON mf.Id = m.ContainerForumId
+                JOIN Forum AS rf ON rf.Id = r.ContainerForumId
+                WHERE mf.CreationDate >= @startDate AND mf.CreationDate <= @endDate
+                  AND rf.CreationDate >= @startDate AND rf.CreationDate <= @endDate
+                GROUP BY m.CreatorPersonId, r.CreatorPersonId),
+            Edge AS (
+                SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId,
+                       CAST(10 AS FLOAT) / (COALESCE(i1.Weight, 0) + COALESCE(i2.Weight, 0) + 10) AS Cost
+                FROM Person_knows_Person AS k
+                LEFT JOIN Interaction AS i1 ON i1.AuthorId = k.Person1Id AND i1.ReplierId = k.Person2Id
+                LEFT JOIN Interaction AS i2 ON i2.AuthorId = k.Person2Id AND i2.ReplierId = k.Person1Id),
+            Walk AS (
+                SELECT p.Id AS PersonId, CAST(0 AS FLOAT) AS Cost, 0 AS Steps
+                FROM Person AS p
+                WHERE p.Id = @person1Id
+                UNION ALL
+                SELECT e.ToPersonId, w.Cost + e.Cost, w.Steps + 1
+                FROM Walk AS w
+                JOIN Edge AS e ON e.FromPersonId = w.PersonId
+                WHERE w.Steps < 3 AND w.PersonId <> @person2Id)
+            SELECT COALESCE(MIN(w.Cost), -1) AS TotalWeight
+            FROM Walk AS w
+            WHERE w.PersonId = @person2Id
+            """,
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65"),
-             new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-02-01")]),
+             new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-02-01")],
+            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
 
         new("bi16", LdbcWorkload.BusinessIntelligence, 16, "Fake news detection", LdbcTranslation.AsSpecified,
             "Persons who wrote about two tags on two given days, keeping those with few friends who did the same: the "
@@ -1143,11 +1305,10 @@ public static class LdbcSnbSample
              new("tagB", "NVARCHAR(256)", "Muammar_Gaddafi"), new("dateB", "DATE", "2011-10-16"), new("dateBEnd", "DATE", "2011-10-17"),
              new("maxKnowsLimit", "INT", "5")]),
 
-        new("bi17", LdbcWorkload.BusinessIntelligence, 17, "Information propagation analysis", LdbcTranslation.Simplified,
-            "A message with a tag in one forum, a later message with the tag by a member of that forum in another forum "
-            + "the first author is not a member of, and a tagged reply to it by a third member: a cyclic pattern of "
-            + "eight joins with a NOT EXISTS. Left out: the delay of $delta hours between the two messages, which is "
-            + "date arithmetic; the text only requires the second message to be later.",
+        new("bi17", LdbcWorkload.BusinessIntelligence, 17, "Information propagation analysis", LdbcTranslation.AsSpecified,
+            "A message with a tag in one forum, a message with the tag by a member of that forum in another forum the first "
+            + "author is not a member of, created more than $delta hours later - DATEADD (decision 113) -, and a tagged reply "
+            + "to it by a third member: a cyclic pattern of eight joins with a NOT EXISTS.",
             """
             SELECT TOP (10) m1.CreatorPersonId AS Person1Id, COUNT(DISTINCT m2.Id) AS MessageCount
             FROM Tag AS t
@@ -1162,14 +1323,15 @@ public static class LdbcSnbSample
             WHERE t.Name = @tag
               AND m2.CreatorPersonId <> c.CreatorPersonId
               AND m2.ContainerForumId <> m1.ContainerForumId
-              AND m2.CreationDate > m1.CreationDate
+              AND m2.CreationDate > DATEADD(hour, @delta, m1.CreationDate)
               AND NOT EXISTS (
                   SELECT fm1.PersonId FROM Forum_hasMember_Person AS fm1
                   WHERE fm1.ForumId = m2.ContainerForumId AND fm1.PersonId = m1.CreatorPersonId)
             GROUP BY m1.CreatorPersonId
             ORDER BY MessageCount DESC, m1.CreatorPersonId ASC
             """,
-            [new("tag", "NVARCHAR(256)", "A_Whiter_Shade_of_Pale")]),
+            [new("tag", "NVARCHAR(256)", "A_Whiter_Shade_of_Pale"), new("delta", "INT", "4")],
+            FallbackBy: [NHibernateDates, EclipseLinkDates]),
 
         new("bi18", LdbcWorkload.BusinessIntelligence, 18, "Friend recommendation", LdbcTranslation.AsSpecified,
             "Pairs of persons interested in a tag who are not friends yet, ranked by their mutual friends: two steps along "
@@ -1191,12 +1353,50 @@ public static class LdbcSnbSample
             """,
             [new("tag", "NVARCHAR(256)", "Augustine_of_Hippo")]),
 
-        new("bi19", LdbcWorkload.BusinessIntelligence, 19, "Interaction path between cities", LdbcTranslation.NotTranslated,
-            "The cheapest paths between persons of two cities, an edge weighing max(round(40 - sqrt(interactions)), 1). "
-            + "The search is a recursive definition since decision 113; ROUND and SQRT are outside the vocabulary of "
-            + "expressions until the work on functions of the same decision.",
-            null,
-            [new("city1Id", "BIGINT", "1226"), new("city2Id", "BIGINT", "1353")]),
+        new("bi19", LdbcWorkload.BusinessIntelligence, 19, "Interaction path between cities", LdbcTranslation.Simplified,
+            "The pairs of persons of two cities joined by the cheapest path among all such pairs: an edge along knows between "
+            + "persons who replied to each other weighs max(round(40 - sqrt(replies)), 1), the replies counted both ways - ROUND "
+            + "and SQRT (decision 113) -, and the weights are a definition over the replies; the search is a recursive "
+            + "definition from every person of the first city that sums the weights as a FLOAT. The walk is bounded at three "
+            + "steps, as in IC 13, so a cheaper path of more steps is missed.",
+            """
+            WITH Interaction AS (
+                SELECT c.CreatorPersonId AS ReplierId, p.CreatorPersonId AS AuthorId, COUNT(*) AS Replies
+                FROM Message AS c
+                JOIN Message AS p ON p.Id = c.ParentMessageId
+                WHERE c.CreatorPersonId <> p.CreatorPersonId
+                GROUP BY c.CreatorPersonId, p.CreatorPersonId),
+            Edge AS (
+                SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId,
+                       CASE WHEN ROUND(40 - SQRT(COALESCE(i1.Replies, 0) + COALESCE(i2.Replies, 0)), 0) > 1
+                            THEN ROUND(40 - SQRT(COALESCE(i1.Replies, 0) + COALESCE(i2.Replies, 0)), 0)
+                            ELSE 1 END AS Weight
+                FROM Person_knows_Person AS k
+                LEFT JOIN Interaction AS i1 ON i1.ReplierId = k.Person1Id AND i1.AuthorId = k.Person2Id
+                LEFT JOIN Interaction AS i2 ON i2.ReplierId = k.Person2Id AND i2.AuthorId = k.Person1Id
+                WHERE i1.Replies IS NOT NULL OR i2.Replies IS NOT NULL),
+            Walk AS (
+                SELECT p.Id AS SourceId, p.Id AS PersonId, CAST(0 AS FLOAT) AS Weight, 0 AS Steps
+                FROM Person AS p
+                WHERE p.LocationCityId = @city1Id
+                UNION ALL
+                SELECT w.SourceId, e.ToPersonId, w.Weight + e.Weight, w.Steps + 1
+                FROM Walk AS w
+                JOIN Edge AS e ON e.FromPersonId = w.PersonId
+                WHERE w.Steps < 3),
+            Cheapest AS (
+                SELECT w.SourceId AS Person1Id, w.PersonId AS Person2Id, MIN(w.Weight) AS TotalWeight
+                FROM Walk AS w
+                JOIN Person AS d ON d.Id = w.PersonId
+                WHERE d.LocationCityId = @city2Id
+                GROUP BY w.SourceId, w.PersonId)
+            SELECT c.Person1Id AS Person1Id, c.Person2Id AS Person2Id, c.TotalWeight AS TotalWeight
+            FROM Cheapest AS c
+            WHERE c.TotalWeight = (SELECT MIN(m.TotalWeight) FROM Cheapest AS m)
+            ORDER BY c.Person1Id ASC, c.Person2Id ASC
+            """,
+            [new("city1Id", "BIGINT", "1226"), new("city2Id", "BIGINT", "1353")],
+            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
 
         new("bi20", LdbcWorkload.BusinessIntelligence, 20, "Recruitment", LdbcTranslation.Simplified,
             "The cheapest path from employees of a company to a person, through friends who studied at the same "

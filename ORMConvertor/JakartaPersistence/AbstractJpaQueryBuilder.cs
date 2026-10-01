@@ -123,11 +123,29 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
     protected override void BuildGrouping(QueryClauses clauses, QueryArtifact artifact)
     {
-        if (clauses.GroupBys.Count > 0)
+        if (clauses.GroupBys.Count == 0)
         {
-            artifact.Grouping.Append("group by ").Append(string.Join(", ", clauses.GroupBys.Select(g => g.Accept(visitor))));
+            return;
         }
+
+        // An implementation that binds every literal as a parameter (EclipseLink 5.0.0,
+        // measured) writes a key with a literal in it as another expression than the same
+        // value in the select list, and SQL Server refuses the query; the native SQL writes
+        // both the same way (decision 113).
+        if (Profile.BindsLiterals && clauses.GroupBys.FirstOrDefault(g => g.Key.IsExpression && ContainsConstant(g.Key)) is { } bound)
+        {
+            ReportUnspoken(
+                $"{Profile.Implementation} binds the literal of the grouping key '{bound.Key}' as a parameter, so its GROUP BY would differ from the same value in the select list",
+                QueryFeature.ComputedGrouping);
+            return;
+        }
+
+        artifact.Grouping.Append("group by ").Append(string.Join(", ", clauses.GroupBys.Select(g => g.Accept(visitor))));
     }
+
+    /// <summary>Whether a constant stands anywhere in the operand short of a subquery, the conditions of a CASE included.</summary>
+    private static bool ContainsConstant(QueryOperand operand)
+        => operand.IsConstant || (operand.IsExpression && OperandStructure.Inside(operand.Expression!).Any(ContainsConstant));
 
     protected override void BuildPostFilter(QueryClauses clauses, QueryArtifact artifact)
     {

@@ -24,12 +24,17 @@ public final class QueryFeature {
     public static final int SUBQUERY = 10;
     public static final int SET_OPERATION = 11;
     public static final int QUERY_PARAMETER = 12;
+    public static final int EXPRESSION = 13;
     public static final int INTERMEDIATE_RESULT = 14;
     public static final int RECURSION = 15;
+    public static final int COMPUTED_GROUPING = 16;
+    public static final int WINDOW_FUNCTION = 17;
+    public static final int LIST_AGGREGATION = 18;
 
     private static final int[] ALL = {
         PROJECTION, FILTERING, JOIN, JOIN_KIND, AGGREGATION, GROUPING, POST_AGGREGATION_FILTERING,
-        ORDERING, PAGINATION, SUBQUERY, SET_OPERATION, QUERY_PARAMETER, INTERMEDIATE_RESULT, RECURSION,
+        ORDERING, PAGINATION, SUBQUERY, SET_OPERATION, QUERY_PARAMETER, EXPRESSION, INTERMEDIATE_RESULT,
+        RECURSION, COMPUTED_GROUPING, WINDOW_FUNCTION, LIST_AGGREGATION,
     };
 
     private QueryFeature() {
@@ -60,8 +65,12 @@ public final class QueryFeature {
             case SUBQUERY -> "Subquery";
             case SET_OPERATION -> "SetOperation";
             case QUERY_PARAMETER -> "QueryParameter";
+            case EXPRESSION -> "Expression";
             case INTERMEDIATE_RESULT -> "IntermediateResult";
             case RECURSION -> "Recursion";
+            case COMPUTED_GROUPING -> "ComputedGrouping";
+            case WINDOW_FUNCTION -> "WindowFunction";
+            case LIST_AGGREGATION -> "ListAggregation";
             default -> "feature " + feature;
         };
     }

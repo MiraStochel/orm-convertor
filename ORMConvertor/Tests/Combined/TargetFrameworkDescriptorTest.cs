@@ -6,6 +6,7 @@ using EFCoreWrappers;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
+using Model.QueryInstructions.Conditions;
 using NHibernateWrappers;
 
 namespace Tests.Combined;
@@ -122,28 +123,40 @@ public class TargetFrameworkDescriptorTest
     /// <summary>
     /// The two implementations of one specification declare the same members and the same
     /// mapping support, and differ in what stands beside the descriptor: the profile
-    /// (decisions 076 and 080). Their query support differs in exactly two categories, the
-    /// intermediate result and its recursion, which HQL adds over JPQL and EclipseLink's
-    /// JPQL does not (decisions 112 and 113); any other difference would mean the shared
-    /// layer stopped being shared, and this test says so.
+    /// (decisions 076 and 080). Their query support differs in exactly four categories, the
+    /// intermediate result and its recursion, the window and the list aggregate, which HQL
+    /// adds over JPQL and EclipseLink's JPQL does not (decisions 112 and 113); both group by
+    /// an expression beyond the specification's path. Their functions differ by what was
+    /// measured (decision 113): HQL's timestampadd and timestampdiff, and EclipseLink's cast,
+    /// which passes the type's name through to SQL Server. Any other difference would mean the
+    /// shared layer stopped being shared, and this test says so.
     /// </summary>
     [Fact]
     public void TheJpaImplementationsShareEverythingButTheirProfileAndVersion()
     {
         var hibernate = HibernateWrappers.HibernateDescriptor.Instance;
         var eclipseLink = EclipseLinkWrappers.EclipseLinkDescriptor.Instance;
-        QueryFeature[] hqlOnly = [QueryFeature.IntermediateResult, QueryFeature.Recursion];
+        var specification = JakartaPersistence.JakartaPersistenceDescriptor.QuerySupport;
+        QueryFeature[] hqlOnly = [QueryFeature.IntermediateResult, QueryFeature.Recursion, QueryFeature.WindowFunction, QueryFeature.ListAggregation];
+        QueryFeature[] beyondTheSpecification = [.. hqlOnly, QueryFeature.ComputedGrouping];
 
         Assert.Same(hibernate.EnforcedMembers, eclipseLink.EnforcedMembers);
         Assert.Same(hibernate.Support, eclipseLink.Support);
-        Assert.Same(JakartaPersistence.JakartaPersistenceDescriptor.QuerySupport, eclipseLink.QuerySupport);
-        foreach (var feature in Enum.GetValues<QueryFeature>().Except(hqlOnly))
+        foreach (var feature in Enum.GetValues<QueryFeature>().Except(beyondTheSpecification))
         {
-            Assert.Equal(eclipseLink.QuerySupport[feature], hibernate.QuerySupport[feature]);
+            Assert.Equal(specification[feature], eclipseLink.QuerySupport[feature]);
+            Assert.Equal(specification[feature], hibernate.QuerySupport[feature]);
         }
 
-        Assert.All(hqlOnly, feature => Assert.Equal(FactSupport.Expressible, hibernate.QuerySupport[feature]));
+        Assert.All(beyondTheSpecification, feature => Assert.Equal(FactSupport.NotExpressible, specification[feature]));
+        Assert.All(beyondTheSpecification, feature => Assert.Equal(FactSupport.Expressible, hibernate.QuerySupport[feature]));
         Assert.All(hqlOnly, feature => Assert.Equal(FactSupport.NotExpressible, eclipseLink.QuerySupport[feature]));
+        Assert.Equal(FactSupport.Expressible, eclipseLink.QuerySupport[QueryFeature.ComputedGrouping]);
+
+        Assert.Equal(QueryFunctionVocabulary.All, hibernate.Functions);
+        Assert.Equal(
+            QueryFunctionVocabulary.AllBut(QueryFunction.DateAdd, QueryFunction.DateDiff, QueryFunction.Cast).OrderBy(f => f),
+            eclipseLink.Functions.OrderBy(f => f));
         Assert.NotEqual(hibernate.Version, eclipseLink.Version);
 
         var hibernateProfile = HibernateWrappers.HibernateDescriptor.Profile;
@@ -155,6 +168,8 @@ public class TargetFrameworkDescriptorTest
         Assert.True(eclipseLinkProfile.UppercaseImplicitNames);
         Assert.False(hibernateProfile.LazyReferenceNeedsWeaving);
         Assert.True(eclipseLinkProfile.LazyReferenceNeedsWeaving);
+        Assert.False(hibernateProfile.BindsLiterals);
+        Assert.True(eclipseLinkProfile.BindsLiterals);
     }
 
     /// <summary>
