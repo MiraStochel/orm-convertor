@@ -1532,6 +1532,22 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         string rightTable = ResolveTable(rightName);
         var rightMap = MapFor(rightName);
 
+        // A filter on the joined sequence - ctx.Messages.Where(m => …), what the EF Core target
+        // writes for a part of the condition that names the joined row alone - is a part of
+        // the join's condition, read into it after the keys (decision 113).
+        List<SimpleLambdaExpressionSyntax> filters = [];
+        if (args[0].Expression is InvocationExpressionSyntax filtered)
+        {
+            if (!TryReadFilteredSequence(filtered, "joined sequence of the join", out var filteredRoot, out filters))
+            {
+                return;
+            }
+
+            rightName = filteredRoot!.Name;
+            rightTable = ResolveTable(rightName);
+            rightMap = MapFor(rightName);
+        }
+
         // A variable that holds a query is the inner sequence of the join: the rows it holds,
         // an intermediate result named after it (decision 112). A variable that holds the
         // bare root is that table.
@@ -1581,8 +1597,118 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
+        if (filters.Count > 0)
+        {
+            if (ReadFilters(filters, rightAlias, "joined sequence of the join") is not { } filter)
+            {
+                return;
+            }
+
+            var conjuncts = new List<ConditionNode>();
+            Flatten(onCondition, LogicalOperator.And, conjuncts);
+            Flatten(filter, LogicalOperator.And, conjuncts);
+            onCondition = new LogicalCondition(LogicalOperator.And, conjuncts);
+        }
+
         queryBuilder.Join(kind, sourceAlias, rightTable, onCondition, rightAlias);
         ReadResultSelector(selector, new EntityRow(rightAlias, rightMap), "join");
+    }
+
+    /// <summary>
+    /// The steps of a sequence a join reads its rows from (decision 113): a query root, or a
+    /// variable that holds one, filtered by any number of Where calls, which are what the
+    /// filters are. A step that does anything else - a projection, an ordering, a slice -
+    /// makes the sequence a query of its own, which the representation carries only when a
+    /// variable names it (decision 112), so it is refused by name; until then the call was
+    /// taken for the name of a table. False when refused, the reason on the channel.
+    /// </summary>
+    private bool TryReadFilteredSequence(
+        ExpressionSyntax sequence,
+        string what,
+        out LinqQueryRoot? root,
+        out List<SimpleLambdaExpressionSyntax> filters)
+    {
+        filters = [];
+
+        if (!TryDecompose(sequence, out root, out var steps))
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The {what}, '{sequence}', is not a chain over a query root, and a query emitted without its join would return different rows; no artifact was generated.",
+                QueryFeature.Join);
+            return false;
+        }
+
+        foreach (var step in steps)
+        {
+            if (step.Name is "AsNoTracking" or "AsNoTrackingWithIdentityResolution" or "AsQueryable")
+            {
+                continue;
+            }
+
+            if (step.Name == "Where"
+                && step.Node.ArgumentList.Arguments.Count == 1
+                && step.Node.ArgumentList.Arguments[0].Expression is SimpleLambdaExpressionSyntax { Body: ExpressionSyntax } lambda)
+            {
+                filters.Add(lambda);
+                continue;
+            }
+
+            Report(
+                ConversionRecordKind.Failure,
+                $"The {what} calls {step.Written}(), which makes it a query of its own rather than a filtered table; the representation carries such a query only under the name of a variable that holds it (decision 112), and a query emitted without it would return different rows; no artifact was generated.",
+                QueryFeature.IntermediateResult);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The filters of a joined sequence as one condition over the joined row: each lambda's
+    /// parameter stands for the row's alias while its body is read, and every other row is
+    /// reached as it is anywhere in the step - through the row of the chain, or as a
+    /// correlated reference (decision 061). Null when a filter cannot be read, refused by
+    /// name, because a join emitted without a part of its condition returns different rows
+    /// (decision 070).
+    /// </summary>
+    private ConditionNode? ReadFilters(List<SimpleLambdaExpressionSyntax> filters, string rightAlias, string what)
+    {
+        var conjuncts = new List<ConditionNode>();
+
+        foreach (var filter in filters)
+        {
+            var parameter = filter.Parameter.Identifier.Text;
+            var shadowed = aliasSubstitutions.TryGetValue(parameter, out var previous);
+            aliasSubstitutions[parameter] = rightAlias;
+
+            ConditionNode? condition;
+            try
+            {
+                condition = ParseCondition((ExpressionSyntax)filter.Body);
+            }
+            finally
+            {
+                if (shadowed)
+                {
+                    aliasSubstitutions[parameter] = previous!;
+                }
+                else
+                {
+                    aliasSubstitutions.Remove(parameter);
+                }
+            }
+
+            if (condition is null)
+            {
+                Refuse($"filter '{filter.Body}' of the {what}", "a query emitted without a part of its join condition would return different rows", QueryFeature.Join);
+                return null;
+            }
+
+            Flatten(condition, LogicalOperator.And, conjuncts);
+        }
+
+        return conjuncts.Count == 1 ? conjuncts[0] : new LogicalCondition(LogicalOperator.And, conjuncts);
     }
 
     /// <summary>
@@ -1658,6 +1784,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
+        // A chain over a query root filtered by a condition over the row - what the EF Core
+        // target writes for a join whose condition names both rows other than as keys - is
+        // that join (decision 113). A chain whose root is a member of the row is a navigation,
+        // and stays the association path's to read below.
+        if (collectionBody is InvocationExpressionSyntax chain
+            && TryDecompose(chain, out _, out _, out var rootExpression)
+            && !(PathOf(rootExpression!) is [var head, ..] && head == collection.Parameter.Identifier.Text))
+        {
+            HandleCorrelatedSelectMany(chain, args.Count > 1 ? args[1].Expression as ParenthesizedLambdaExpressionSyntax : null, args.Count);
+            return;
+        }
+
         var path = PathOf(collectionBody);
         if (path is not { Count: >= 2 } || path[0] != collection.Parameter.Identifier.Text)
         {
@@ -1693,6 +1831,66 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             var reach = AliasesOf(row);
             reach.Add(rightAlias);
             ReportRowsLeftOut(reach, AliasesOf(joined), "SelectMany() without a result selector", $"materializes the rows of '{written}' alone and leaves out");
+            row = joined;
+            return;
+        }
+
+        ReadResultSelector(selector, joined, "SelectMany()");
+    }
+
+    /// <summary>
+    /// <c>SelectMany(c =&gt; ctx.Messages.Where(m =&gt; …), (c, m) =&gt; …)</c>: the rows of a query
+    /// root for which a condition over both rows holds, which is a join with that condition
+    /// (decision 113) - an inner one, and a left one where <c>DefaultIfEmpty()</c> keeps the
+    /// row that found no match. The condition is the filters of the collection read as one,
+    /// the collection's parameter reaching the row of the chain as every lambda of a step
+    /// does, and the result selector is read as a join's. Without a filter the collection is
+    /// a second source, a cross join, which stays refused by name as the comma join is in
+    /// T-SQL and HQL; any other step makes it a query of its own.
+    /// </summary>
+    private void HandleCorrelatedSelectMany(InvocationExpressionSyntax chain, ParenthesizedLambdaExpressionSyntax? selector, int arguments)
+    {
+        var kind = JoinKind.Inner;
+        ExpressionSyntax collection = chain;
+        if (chain.Expression is MemberAccessExpressionSyntax { Name.Identifier.Text: "DefaultIfEmpty" } defaulted
+            && chain.ArgumentList.Arguments.Count == 0)
+        {
+            kind = JoinKind.Left;
+            collection = defaulted.Expression;
+        }
+
+        if (!TryReadFilteredSequence(collection, "collection of SelectMany()", out var root, out var filters))
+        {
+            return;
+        }
+
+        if (filters.Count == 0)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"SelectMany() over '{collection}', a second source with no condition over the row, is a cross join, which the query representation does not carry, and a query emitted without its join would return different rows; no artifact was generated.",
+                QueryFeature.Join);
+            return;
+        }
+
+        var rightTable = ResolveTable(root!.Name);
+        var rightAlias = JoinedAlias(selector, rightTable);
+
+        if (ReadFilters(filters, rightAlias, "collection of SelectMany()") is not { } condition)
+        {
+            return;
+        }
+
+        var joined = new EntityRow(rightAlias, MapFor(root.Name));
+        queryBuilder.Join(kind, sourceAlias, rightTable, condition, rightAlias);
+
+        // Without a result selector the rows are the collection's alone, as over an
+        // association path above.
+        if (arguments == 1)
+        {
+            var reach = AliasesOf(row);
+            reach.Add(rightAlias);
+            ReportRowsLeftOut(reach, AliasesOf(joined), "SelectMany() without a result selector", $"materializes the rows of '{root.Name}' alone and leaves out");
             row = joined;
             return;
         }
@@ -2084,11 +2282,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// Whether the expression names a column of a row in scope: a member of the alias of
     /// the scope's own row (<c>p.ProductName</c>) or a member reached through a joined row
     /// (<c>x.o.PlacedAt</c>). A lambda parameter is never the context, so the two-identifier
-    /// shape the root recognizer accepts is a column here.
+    /// shape the root recognizer accepts is a column here - over a parameter that stands for
+    /// a row under another name, such as the filter of a joined sequence (decision 113), too.
     /// </summary>
     private bool IsColumnOfScope(ExpressionSyntax expression)
         => (expression is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax head }
-            && AliasesInScope().Contains(head.Identifier.Text))
+            && (AliasesInScope().Contains(head.Identifier.Text) || aliasSubstitutions.ContainsKey(head.Identifier.Text)))
            || (TryResolveInScope(expression, out _, out var column) && column is not null);
 
     private IEnumerable<RowShape> ScopeRows()

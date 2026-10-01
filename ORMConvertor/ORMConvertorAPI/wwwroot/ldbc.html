@@ -51,9 +51,10 @@
       The LDBC Social Network Benchmark is the data set and the query workload that graph
       and relational database systems are compared on. Here it is a second domain for the
       translator, and one it did not choose: 41 read queries written by somebody else, over
-      a social network of seventeen tables. Some of them the tool translates into every
-      framework, some only after a simplification, some not at all &mdash; this page says
-      which, and why, and the test suite holds every one of those claims.
+      a social network of seventeen tables. Most of them the tool translates into every
+      framework as the specification defines them, some only after a simplification it
+      states &mdash; this page says which, and why, and the test suite holds every one of
+      those claims.
     </p>
 
     <p class="muted-note">
@@ -191,27 +192,32 @@
             along edge tables, paths of a fixed length written as <code>IN</code> subqueries
             over the walks of that length, negative edges as <code>NOT EXISTS</code>, grouped
             counts with <code>HAVING</code>, <code>CASE</code>, scalar subqueries and the
-            first <em>k</em> rows, and a query over the result of another, written as a
-            common table expression or a derived table (BI&nbsp;4, BI&nbsp;8, BI&nbsp;12,
-            BI&nbsp;13). Where the specification adds days to a date, the caller passes the
-            end of the window.
+            first <em>k</em> rows, a query over the result of another, written as a common
+            table expression or a derived table (BI&nbsp;4, BI&nbsp;8, BI&nbsp;12, BI&nbsp;13),
+            a hierarchy of any depth as a recursive one (IC&nbsp;12), results that are lists
+            (IC&nbsp;1, IC&nbsp;12), grouping by an expression (BI&nbsp;1), the best row of
+            every group by a row number over a window (BI&nbsp;14) and arithmetic over dates
+            (BI&nbsp;17). Where the specification adds days to a parameter, the caller passes
+            the end of the window.
           </p>
         </article>
         <article>
           <h3><span class="ldbc-count" data-translation="20"></span> simplified</h3>
           <p>
-            The text leaves out one part and says which: results that are lists (IC&nbsp;1,
-            IC&nbsp;12), arithmetic over dates (IC&nbsp;7, BI&nbsp;17) and keeping the best row
-            of every group (BI&nbsp;14).
+            The text leaves out one part and says which. The searches over the graph &mdash;
+            shortest and cheapest paths (IC&nbsp;13, IC&nbsp;14, BI&nbsp;15, BI&nbsp;19,
+            BI&nbsp;20) &mdash; are recursive, and the walk stops at three steps: the recursion
+            of SQL Server keeps no record of the persons it has reached, so an unbounded walk
+            multiplies at every step. IC&nbsp;7 counts the latency of a like by the seconds
+            whose boundaries it crosses, which puts a few latencies one minute later.
           </p>
         </article>
         <article>
           <h3><span class="ldbc-count" data-translation="30"></span> not translated</h3>
           <p>
-            Searches over the graph &mdash; shortest and cheapest paths of any length
-            (IC&nbsp;13, IC&nbsp;14, BI&nbsp;15, BI&nbsp;19, BI&nbsp;20) &mdash; have no place in a
-            query without recursion. Grouping by an expression (BI&nbsp;1) is refused as
-            well.
+            None, since recursion, grouping by an expression, arithmetic over dates, windows
+            and lists can be said. The status stays, so that a query the tool cannot say would
+            be shown as one rather than left out.
           </p>
         </article>
       </div>
@@ -223,15 +229,21 @@
         the target's own language.
       </p>
       <p>
-        <strong>EF Core refuses <span class="ldbc-refusal-count" data-target="30"></span> of the
-        translated queries</strong>: an outer join that also filters in its <code>ON</code>
-        clause, which the LINQ the tool writes cannot say yet. <strong>It writes
-        <span class="ldbc-fallback-count" data-target="30"></span> in native SQL</strong>: a
-        count over the whole result, which ends a LINQ chain instead of forming a query.
-        <strong>NHibernate writes <span class="ldbc-fallback-count" data-target="20"></span> and
-        EclipseLink <span class="ldbc-fallback-count" data-target="50"></span> in native
-        SQL</strong>: the queries over the result of another, because HQL of NHibernate 5.7 and
-        JPQL have neither <code>WITH</code> nor a subquery in <code>FROM</code>.
+        <strong>EF Core writes <span class="ldbc-fallback-count" data-target="30"></span> in
+        native SQL</strong>: recursion and a window, which LINQ does not have, a list over a
+        subquery, which EF Core joins on the client, a count over the whole result, which
+        ends a LINQ chain instead of forming a query, and an ordering by a count the query
+        projects and then by a key it does not, under <code>TOP</code> (IC&nbsp;5). An outer
+        join that also filters in its <code>ON</code> clause it writes in LINQ: the filter of
+        the joined table before the join, or the rows of that table that meet the whole
+        condition, row by row. <strong>NHibernate writes
+        <span class="ldbc-fallback-count" data-target="20"></span> and EclipseLink
+        <span class="ldbc-fallback-count" data-target="50"></span> in native SQL</strong>: the
+        queries over the result of another or over themselves, arithmetic over dates and
+        lists, which HQL of NHibernate 5.7 and JPQL do not have, and for EclipseLink a
+        grouping key with a literal in it, which it binds as a parameter.
+        <strong>Hibernate writes <span class="ldbc-fallback-count" data-target="40"></span></strong>:
+        a text converted into a text, which HQL 7.4 writes as <code>varchar(max)</code>.
         <strong>EclipseLink refuses <span class="ldbc-refusal-count" data-target="50"></span></strong>
         of them, because its native query does not expand a list parameter. Every other
         translated query reaches all five targets in their own query language.

@@ -20,9 +20,11 @@ import jakarta.persistence.EntityManagerFactory;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 
@@ -239,8 +241,19 @@ public final class JavaQueryRunner {
     private static List<List<Object>> rows(List<?> returned, DifferentialQuery query, boolean positional) {
         List<List<Object>> rows = new ArrayList<>();
 
+        // The columns the rows of a projection carry between them. MyBatis puts no entry for
+        // a column whose value is NULL into the map of a row - callSettersOnNulls is off by
+        // default, and the suite assumes nothing a configuration would state
+        // (MyBatisBootstrap) -, so a column one row lacks and another carries is a NULL there.
+        Set<Object> columns = new HashSet<>();
         for (Object item : returned) {
-            rows.add(positional ? positional(item, query) : byName(item, query));
+            if (item instanceof Map<?, ?> map) {
+                columns.addAll(map.keySet());
+            }
+        }
+
+        for (Object item : returned) {
+            rows.add(positional ? positional(item, query) : byName(item, query, columns));
         }
 
         return rows;
@@ -259,14 +272,16 @@ public final class JavaQueryRunner {
 
     /**
      * The fields of a row read by the names the matrix states: off the map MyBatis returns
-     * for a projection (decision 104), off the accessors of an entity otherwise.
+     * for a projection (decision 104), off the accessors of an entity otherwise. A field the
+     * map of this row lacks is a NULL where another row of the result carries it; a field no
+     * row carries is a column the projection does not have, which is what the check is for.
      */
-    private static List<Object> byName(Object item, DifferentialQuery query) {
+    private static List<Object> byName(Object item, DifferentialQuery query, Set<Object> columnsOfTheResult) {
         List<Object> values = new ArrayList<>();
 
         if (item instanceof Map<?, ?> columns) {
             for (String field : query.fields()) {
-                if (!columns.containsKey(field)) {
+                if (!columns.containsKey(field) && !columnsOfTheResult.contains(field)) {
                     throw new IllegalStateException(
                             query.id() + ": the row has no column \"" + field + "\"; it has " + columns.keySet()
                                     + " and the matrix states the fields as " + query.fields() + ".");

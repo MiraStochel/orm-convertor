@@ -185,20 +185,22 @@ public class QueryFaithfulnessTest
     }
 
     [Fact]
-    public void AJoinWithoutKeyEqualitiesRefusesTheArtifactForEFCore()
+    public void AJoinWithoutKeyEqualitiesIsTheCorrelatedSelectManyInEFCore()
     {
-        // A LINQ join takes two key selectors, so this condition has no shape to go into;
-        // the join used to be dropped with a Loss, and a query without its join returns
-        // different rows - it neither filters nor multiplies (decision 065).
+        // A LINQ join takes two key selectors, so this condition has no place among them; the
+        // join used to be dropped with a Loss, and a query without its join returns different
+        // rows - it neither filters nor multiplies (decision 065). Until decision 113 the
+        // query was refused, and now it is the SelectMany over the rows that meet the
+        // condition, which is the join itself.
         var builder = new EFCoreLinqQueryBuilder();
         new DapperSqlQueryParser(() => builder).Parse(
             ConversionContentType.SqlQuery,
             "SELECT c.CustomerName FROM Customers c INNER JOIN Orders o ON o.OrderValue > c.CreditLimit");
 
-        var outputs = builder.Build();
+        var method = builder.Build().Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
 
-        Assert.Empty(outputs);
-        Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join);
+        Assert.DoesNotContain(builder.Records, r => r.Kind is ConversionRecordKind.Failure or ConversionRecordKind.Fallback);
+        Assert.Contains(".SelectMany(c => ctx.Set<Order>().Where(o => o.OrderValue > c.CreditLimit), (c, o) => new { c, o })", method, StringComparison.Ordinal);
     }
 
     [Fact]

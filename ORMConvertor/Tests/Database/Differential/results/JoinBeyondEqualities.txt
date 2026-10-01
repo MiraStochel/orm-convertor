@@ -1,0 +1,6 @@
+"Anvil"	"Anvil, standard"
+"Bracket"	NULL
+"W_Bolt"	NULL
+"Whistle"	NULL
+"Widget"	"Widget, loose"
+"Zither"	NULL

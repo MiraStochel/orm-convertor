@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindJoinBeyondEqualitiesMapper">
+  <select id="findJoinBeyondEqualities" resultType="ShopProduct">
+    SELECT p.ProductName AS ProductName, ol.Description AS Description
+    FROM {{schema}}.ShopProducts AS p
+    LEFT JOIN {{schema}}.ShopOrderLines AS ol ON ol.ProductId = p.ProductId AND ol.UnitPrice &lt; p.UnitPrice
+  </select>
+</mapper>

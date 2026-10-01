@@ -1,0 +1,7 @@
+"Anvil"	NULL
+"Bracket"	NULL
+"W_Bolt"	"W_Bolt, bag of ten"
+"W_Bolt"	"W_Bolt, single"
+"Whistle"	"Whistle"
+"Widget"	"Widget, loose"
+"Zither"	"Zither"

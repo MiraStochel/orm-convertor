@@ -372,6 +372,7 @@ public class QueryShapeMatrixTest
     [InlineData("CastInAConcatenation")]
     [InlineData("BestRowPerGroup")]
     [InlineData("ListAggregation")]
+    [InlineData("JoinBeyondEqualities")]
     public void EverySourceLanguageReadsTheCategoryIntoTheSameSql(string name)
     {
         var shape = QueryShapeInputs.Categories.Single(s => s.Name == name);

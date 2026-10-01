@@ -74,7 +74,13 @@
 --   best line       every product's lines differ in quantity, so the row number of the
 --                   largest is one and only one;
 --   list            products 4 and 6 each have a line of a single piece beside another,
---                   which the filter of the list keeps out.
+--                   which the filter of the list keeps out;
+--   outer join      products 4 and 5 have no line of more than five pieces, so the left
+--                   join keeps a row of nulls for each, which the filter moved from the ON
+--                   into a WHERE would drop; flipped to < the join keeps other lines;
+--   beyond keys     two lines are priced below their product, 118 against 120 and 99
+--                   against 250, so four products keep a row of nulls; flipped to > two
+--                   other lines are the matches.
 --
 -- No column carries a default, so nothing unstated can reach a canonical result, and every
 -- DATETIME2 value states its fraction, so the renderer's three digits are the column's.

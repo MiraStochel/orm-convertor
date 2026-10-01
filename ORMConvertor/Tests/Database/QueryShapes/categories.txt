@@ -479,3 +479,29 @@ Hibernate = hibernate/FindListAggregation.jpql
 MyBatis = mybatis/FindListAggregationMapper.xml
 fallbackBy = NHibernate:ListAggregation, EclipseLink:ListAggregation
 fallbackWithoutCatalog = MyBatis>EFCore:ListAggregation
+
+# ---- the rows of decision 113, joins in LINQ ----
+#
+# Every product with its lines of more than five pieces, and a product with none keeps its
+# row of nulls: the filter stands in the ON of a left join, where moved into the WHERE it
+# would drop that row. LINQ filters the joined set before the join, which is the same rows
+# under a left join; HQL 5.7 writes the condition after with, JPQL after on.
+[OuterJoinWithAFilterInOn]
+Dapper = dapper/FindOuterJoinWithAFilterInOn.sql
+EFCore = efcore/FindOuterJoinWithAFilterInOn.query.cs
+NHibernate = nhibernate/FindOuterJoinWithAFilterInOn.hql
+Hibernate = hibernate/FindOuterJoinWithAFilterInOn.jpql
+EclipseLink = eclipselink/FindOuterJoinWithAFilterInOn.jpql
+MyBatis = mybatis/FindOuterJoinWithAFilterInOnMapper.xml
+
+# Every product with its lines priced below the product, a left join whose condition
+# compares a column of each row without an equality between them. A LINQ join has keys only,
+# so LINQ states it as the correlated SelectMany with DefaultIfEmpty(), which EF Core 10
+# translates to the left join it is.
+[JoinBeyondEqualities]
+Dapper = dapper/FindJoinBeyondEqualities.sql
+EFCore = efcore/FindJoinBeyondEqualities.query.cs
+NHibernate = nhibernate/FindJoinBeyondEqualities.hql
+Hibernate = hibernate/FindJoinBeyondEqualities.jpql
+EclipseLink = eclipselink/FindJoinBeyondEqualities.jpql
+MyBatis = mybatis/FindJoinBeyondEqualitiesMapper.xml

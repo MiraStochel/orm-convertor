@@ -552,6 +552,24 @@ public static class QueryShapeInputs
             sql: ["STRING_AGG(ol.Description, '; ') WITHIN GROUP (ORDER BY ol.LineNumber ASC) AS Descriptions", "WHERE ol.Quantity > 1", "GROUP BY ol.ProductId"],
             linq: ["Descriptions = string.Join(\"; \", g.OrderBy(ol => ol.LineNumber).Select(ol => ol.Description))", ".Where(ol => ol.Quantity > 1)"],
             jpa: ["listagg(ol.Description, '; ') within group (order by ol.LineNumber asc) as Descriptions", "where ol.Quantity > 1", "group by ol.ProductId"]),
+
+        // ---- the rows of decision 113, joins in LINQ ----
+        //
+        // A source that states the join by its keys reads the equality with the row of the
+        // chain first, so the SQL hallmarks leave the order of its sides open. LINQ filters
+        // the joined set by the conjunct over it alone and writes a condition over both rows
+        // as the correlated SelectMany, a left one over DefaultIfEmpty().
+        ["OuterJoinWithAFilterInOn"] = Hallmarks(
+            sql: [$"LEFT JOIN {Schema}.ShopOrderLines ol ON ", ".ProductId = ", " AND ol.Quantity > 5", "p.ProductName AS ProductName", "ol.Description AS Description"],
+            linq: [".LeftJoin(ctx.Set<ShopOrderLine>().Where(ol => ol.Quantity > 5), p => p.ProductId, ol => ol.ProductId, (p, ol) => new { p, ol })", "ProductName = t.p.ProductName", "Description = t.ol.Description"],
+            hql: ["left join ShopOrderLine ol with ", ".ProductId = ", " and ol.Quantity > 5", "p.ProductName as ProductName"],
+            jpa: ["left join ShopOrderLine ol on ", ".ProductId = ", " and ol.Quantity > 5", "p.ProductName as ProductName"]),
+
+        ["JoinBeyondEqualities"] = Hallmarks(
+            sql: [$"LEFT JOIN {Schema}.ShopOrderLines ol ON ol.ProductId = p.ProductId AND ol.UnitPrice < p.UnitPrice", "p.ProductName AS ProductName"],
+            linq: [".SelectMany(p => ctx.Set<ShopOrderLine>().Where(ol => ol.ProductId == p.ProductId && ol.UnitPrice < p.UnitPrice).DefaultIfEmpty(), (p, ol) => new { p, ol })", "ProductName = t.p.ProductName", "Description = t.ol.Description"],
+            hql: ["left join ShopOrderLine ol with ol.ProductId = p.ProductId and ol.UnitPrice < p.UnitPrice", "p.ProductName as ProductName"],
+            jpa: ["left join ShopOrderLine ol on (ol.ProductId = p.ProductId and ol.UnitPrice < p.UnitPrice)", "p.ProductName as ProductName"]),
     };
 
     // ---- the deliberately bad query ------------------------------------------------------

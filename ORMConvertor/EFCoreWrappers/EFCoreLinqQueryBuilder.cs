@@ -4,6 +4,7 @@ using AbstractWrappers.Diagnostics;
 using Common.Naming;
 using Microsoft.CodeAnalysis.CSharp;
 using Model;
+using Model.AbstractRepresentation;
 using Model.QueryInstructions;
 using Model.QueryInstructions.Conditions;
 using Model.QueryInstructions.Enums;
@@ -103,32 +104,92 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             // (decision 112), which EF Core joins as a derived table.
             var rightSequence = IsDefinition(join.RightTable) ? Variables[join.RightTable] : $"ctx.Set<{rightEntity}>()";
 
-            if (!TryReadJoinKeys(join.OnCondition, rightAlias, out var pairs))
+            var condition = SplitJoinCondition(join, rightAlias);
+            if (condition.Unplaced is { } unplaced)
             {
-                // A join dropped in the condition's place would return different rows -
-                // it filters and it multiplies (decision 065).
-                Report(
-                    ConversionRecordKind.Failure,
-                    $"The join onto '{join.RightTable}' is not a conjunction of column equalities, which is the only form a LINQ join takes; no artifact was generated.",
+                ReportUnspoken(
+                    $"The condition of the join onto '{join.RightTable}' names the column '{unplaced}' without its table, so a LINQ join cannot tell which of the two rows it belongs to",
                     QueryFeature.Join);
-                continue;
+                return;
+            }
+
+            // Beyond its keys, a LINQ join can filter only the sequence it joins, which narrows
+            // the rows of an inner or a left join exactly and removes rows a right or a full
+            // join keeps; a condition naming both rows has no place in it at all. Neither join
+            // has a correlated form either, so the query goes out in native SQL (decision 113).
+            var beyondKeys = condition.RightOnly.Count > 0 || condition.Rest.Count > 0;
+            if (beyondKeys && join.Kind is JoinKind.Right or JoinKind.Full)
+            {
+                ReportUnspoken(
+                    $"The {(join.Kind == JoinKind.Right ? "right" : "full")} join onto '{join.RightTable}' has a condition beyond equalities of columns of the two rows, which LINQ can put neither into the keys of the join nor into a filter of either sequence",
+                    QueryFeature.Join);
+                return;
             }
 
             var leftParam = scope.Param;
-            var leftKeys = KeySelector(pairs.Select(p => visitor.Operand(p.Left)).ToList());
-            var rightKeys = KeySelector(pairs
-                .Select(p => $"{rightAlias}.{PropertyFor(rightMap, p.Right.Property ?? p.Right.Constant?.Text ?? string.Empty)}")
-                .ToList());
+
+            // The lambda over the joined sequence's rows: the alias, unless a lambda around this
+            // one or a local of the method already holds the name, or - nested in a SelectMany -
+            // the row of the chain does.
+            var innerParam = rightAlias;
+            for (var i = 1; innerParam == leftParam || enclosingParams.Contains(innerParam) || Variables.ContainsValue(innerParam); i++)
+            {
+                innerParam = rightAlias + i;
+            }
 
             var members = scope.Composite
                 ? string.Join(", ", tupleAliases.Select(a => $"{leftParam}.{a}")) + $", {rightAlias}"
                 : $"{leftParam}, {rightAlias}";
+            var resultSelector = $"({leftParam}, {rightAlias}) => new {{ {members} }}";
+
+            // A condition that names both rows other than as keys, or no key at all, is the
+            // correlated SelectMany (decision 113): the joined sequence filtered by the whole
+            // condition for each row of the chain, which EF Core translates to a join with that
+            // condition - and to a left one over DefaultIfEmpty(), which keeps a row of the
+            // chain that found no match.
+            if (condition.Rest.Count > 0 || condition.Pairs.Count == 0)
+            {
+                if (InnerPredicate(join, rightAlias, innerParam, join.OnCondition, correlatedTo: leftParam) is not { } correlated)
+                {
+                    return;
+                }
+
+                var collection = $"{rightSequence}.Where({innerParam} => {correlated})"
+                                 + (join.Kind == JoinKind.Left ? ".DefaultIfEmpty()" : string.Empty);
+
+                artifact.Joins.Append($"\n        .SelectMany({leftParam} => {collection}, {resultSelector})");
+                AdvanceScope(join, rightAlias);
+                continue;
+            }
+
+            // Conjuncts that name the joined row alone filter the joined sequence before the
+            // join (decision 113): exact for an inner join, and for a left one too, where a row
+            // of the chain that finds no match keeps its row exactly as under the ON.
+            if (condition.RightOnly.Count > 0)
+            {
+                var filter = condition.RightOnly.Count == 1
+                    ? condition.RightOnly[0]
+                    : new LogicalCondition(LogicalOperator.And, condition.RightOnly);
+
+                if (InnerPredicate(join, rightAlias, innerParam, filter, correlatedTo: null) is not { } predicate)
+                {
+                    return;
+                }
+
+                rightSequence += $".Where({innerParam} => {predicate})";
+            }
+
+            var pairs = condition.Pairs;
+            var leftKeys = KeySelector(pairs.Select(p => visitor.Operand(p.Left)).ToList());
+            var rightKeys = KeySelector(pairs
+                .Select(p => $"{innerParam}.{PropertyFor(rightMap, p.Right.Property!)}")
+                .ToList());
 
             var arguments =
                 $"{rightSequence}, " +
                 $"{leftParam} => {leftKeys}, " +
-                $"{rightAlias} => {rightKeys}, " +
-                $"({leftParam}, {rightAlias}) => new {{ {members} }}";
+                $"{innerParam} => {rightKeys}, " +
+                resultSelector;
 
             if (join.Kind == JoinKind.Full)
             {
@@ -175,15 +236,77 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
                 artifact.Joins.Append($"\n        .{method}({arguments})");
             }
 
-            tupleAliases.Add(rightAlias);
-            scope.Aliases.Add(join.RightTableAlias ?? join.RightTable);
-            scope.Composite = true;
-            scope.Param = FreshParam();
+            AdvanceScope(join, rightAlias);
         }
+    }
+
+    /// <summary>From here on the lambdas of the chain range over the joined row, which carries the joined table under its alias.</summary>
+    private void AdvanceScope(JoinInstruction join, string rightAlias)
+    {
+        tupleAliases.Add(rightAlias);
+        scope.Aliases.Add(join.RightTableAlias ?? join.RightTable);
+        scope.Composite = true;
+        scope.Param = FreshParam();
     }
 
     private static string KeySelector(List<string> keys)
         => keys.Count == 1 ? keys[0] : $"new {{ {string.Join(", ", keys)} }}";
+
+    /// <summary>
+    /// A part of a join condition written as the body of a lambda over the joined row
+    /// (decision 113): the joined table is that lambda's parameter, every other alias is
+    /// reached through the scope of the chain the way a correlated subquery reaches the
+    /// query around it (decision 061). A subquery inside it correlates through the same
+    /// scope, which is why the builder's own scope is this one while it is written. Null
+    /// when a part could not be written, the reason being on the channel already.
+    /// </summary>
+    /// <param name="correlatedTo">The parameter of the lambda the predicate is nested in - the row of the chain in a SelectMany -, which no lambda inside it may shadow; null where the predicate stands outside any.</param>
+    private string? InnerPredicate(JoinInstruction join, string rightAlias, string innerParam, ConditionNode predicate, string? correlatedTo)
+    {
+        var declared = join.RightTableAlias ?? join.RightTable;
+        var inner = new LinqScope
+        {
+            Entities = new Dictionary<string, EntityMap>(scope.Entities, StringComparer.OrdinalIgnoreCase),
+            Param = innerParam,
+        };
+        inner.ElementParam = FreshName(innerParam == "e" ? "el" : "e");
+        inner.Aliases.Add(declared);
+        inner.Aliases.Add(rightAlias);
+        if (inner.Entities.TryGetValue(declared, out var map))
+        {
+            inner.Entities.TryAdd(rightAlias, map);
+        }
+
+        var innerVisitor = new EFCoreLinqQueryVisitor(
+            inner,
+            (kind, reason, feature) => Report(kind, reason, feature),
+            RenderSubQuery,
+            Expressions,
+            visitor);
+
+        var savedScope = scope;
+        var savedVisitor = visitor;
+        var savedEnclosingParams = enclosingParams;
+
+        scope = inner;
+        visitor = innerVisitor;
+        if (correlatedTo is not null)
+        {
+            enclosingParams = new HashSet<string>(enclosingParams, StringComparer.Ordinal) { correlatedTo };
+        }
+
+        try
+        {
+            var text = predicate.Accept(innerVisitor);
+            return text.Length == 0 ? null : text;
+        }
+        finally
+        {
+            scope = savedScope;
+            visitor = savedVisitor;
+            enclosingParams = savedEnclosingParams;
+        }
+    }
 
     private string FreshParam()
     {
@@ -321,55 +444,109 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
     }
 
     /// <summary>
-    /// Splits a join condition into left/right key pairs. LINQ takes two key selectors, so
-    /// anything that is not a conjunction of equalities has no shape to go into.
+    /// The conjuncts of a join condition sorted by where LINQ can put them (decision 113).
+    /// <paramref name="Pairs"/> are equalities of a column of the chain's row and a column of
+    /// the joined row, which go into the two key selectors; <paramref name="RightOnly"/> names
+    /// no row of the chain - the joined row, values, a row of a query around this one -, and
+    /// filters the joined sequence; <paramref name="Rest"/> names a row of the chain otherwise,
+    /// or holds a subquery, which may. <paramref name="Unplaced"/> is a column the condition
+    /// names without a table, which belongs to neither side for certain.
     /// </summary>
-    private static bool TryReadJoinKeys(
-        ConditionNode condition,
-        string rightAlias,
-        out List<(QueryOperand Left, QueryOperand Right)> pairs)
-    {
-        pairs = [];
-        return Collect(condition, rightAlias, pairs);
-    }
+    private sealed record JoinCondition(
+        List<(QueryOperand Left, QueryOperand Right)> Pairs,
+        List<ConditionNode> RightOnly,
+        List<ConditionNode> Rest,
+        QueryOperand? Unplaced);
 
-    private static bool Collect(
-        ConditionNode node,
-        string rightAlias,
-        List<(QueryOperand Left, QueryOperand Right)> pairs)
+    /// <summary>
+    /// Sorts the conjuncts of the join's condition (<see cref="JoinCondition"/>). The rows of
+    /// the chain are the aliases the scope has declared so far - the source and the joins
+    /// before this one -, the joined row is this join's alias, or its table where it has none.
+    /// </summary>
+    private JoinCondition SplitJoinCondition(JoinInstruction join, string rightAlias)
     {
-        switch (node)
+        var conjuncts = new List<ConditionNode>();
+        Conjuncts(join.OnCondition, conjuncts);
+
+        bool IsRight(string? table)
+            => table is not null
+               && (string.Equals(table, join.RightTableAlias ?? join.RightTable, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(table, rightAlias, StringComparison.OrdinalIgnoreCase));
+
+        bool IsLeft(string? table) => table is not null && !IsRight(table) && scope.Aliases.Contains(table);
+
+        var split = new JoinCondition([], [], [], null);
+
+        foreach (var conjunct in conjuncts)
         {
-            case LogicalCondition logical when logical.Operator == LogicalOperator.And:
-                return logical.Operands.All(operand => Collect(operand, rightAlias, pairs));
-
-            case ComparisonCondition comparison
-                when comparison.Operator == ComparisonOperator.Equal
-                     && comparison.Right is not null
-                     && comparison.Left.IsColumn
-                     && comparison.Right.IsColumn:
+            if (conjunct is ComparisonCondition { Operator: ComparisonOperator.Equal, Left: { IsColumn: true, IsAggregate: false } left, Right: { IsColumn: true, IsAggregate: false } right })
+            {
+                if (IsRight(right.Table) && IsLeft(left.Table))
                 {
-                    var rightIsTarget = string.Equals(comparison.Right.Table, rightAlias, StringComparison.OrdinalIgnoreCase);
-                    var leftIsTarget = string.Equals(comparison.Left.Table, rightAlias, StringComparison.OrdinalIgnoreCase);
-
-                    if (rightIsTarget)
-                    {
-                        pairs.Add((comparison.Left, comparison.Right));
-                        return true;
-                    }
-
-                    if (leftIsTarget)
-                    {
-                        pairs.Add((comparison.Right, comparison.Left));
-                        return true;
-                    }
-
-                    return false;
+                    split.Pairs.Add((left, right));
+                    continue;
                 }
 
-            default:
-                return false;
+                if (IsRight(left.Table) && IsLeft(right.Table))
+                {
+                    split.Pairs.Add((right, left));
+                    continue;
+                }
+            }
+
+            var leaves = LeavesOf(conjunct).ToList();
+            if (leaves.FirstOrDefault(leaf => leaf.IsColumn && leaf.Table is null) is { } unqualified)
+            {
+                return split with { Unplaced = unqualified };
+            }
+
+            var namesTheChain = leaves.Any(leaf => leaf.IsSubQuery || (leaf.IsColumn && IsLeft(leaf.Table)));
+            (namesTheChain ? split.Rest : split.RightOnly).Add(conjunct);
         }
+
+        return split;
+    }
+
+    /// <summary>The operands of a top-level conjunction, nested ones flattened; any other condition is a single conjunct.</summary>
+    private static void Conjuncts(ConditionNode node, List<ConditionNode> into)
+    {
+        if (node is LogicalCondition { Operator: LogicalOperator.And } conjunction)
+        {
+            foreach (var operand in conjunction.Operands)
+            {
+                Conjuncts(operand, into);
+            }
+
+            return;
+        }
+
+        into.Add(node);
+    }
+
+    /// <summary>The leaves of a condition short of a subquery: columns, values, parameters, and the subqueries themselves.</summary>
+    private static IEnumerable<QueryOperand> LeavesOf(ConditionNode node) => node switch
+    {
+        ComparisonCondition comparison => comparison.Right is null
+            ? LeavesOf(comparison.Left)
+            : LeavesOf(comparison.Left).Concat(LeavesOf(comparison.Right)),
+        LogicalCondition logical => logical.Operands.SelectMany(LeavesOf),
+        NotCondition negation => LeavesOf(negation.Operand),
+        _ => [],
+    };
+
+    private static IEnumerable<QueryOperand> LeavesOf(QueryOperand operand)
+    {
+        if (operand.IsExpression)
+        {
+            return OperandStructure.Inside(operand.Expression!).SelectMany(LeavesOf);
+        }
+
+        if (operand.IsValueList)
+        {
+            return operand.Values!.SelectMany(LeavesOf);
+        }
+
+        return [operand];
     }
 
     protected override void BuildFilter(QueryClauses clauses, QueryArtifact artifact)

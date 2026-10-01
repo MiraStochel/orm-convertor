@@ -455,3 +455,24 @@ fields = ProductId, Descriptions
 shape = projection
 ordered = false
 mutations = filter, operator
+
+# Every product with its lines of more than five pieces, the filter in the ON of a left join.
+# Two products have no such line and keep a row of nulls, which the filter in a WHERE would
+# drop; flipped, the filter keeps the lines of five pieces and fewer. There is no WHERE for
+# the filter mutation to drop: the line it would take is the join itself.
+[OuterJoinWithAFilterInOn]
+category = OuterJoinWithAFilterInOn
+fields = ProductName, Description
+shape = projection
+ordered = false
+mutations = operator, projection
+
+# Every product with its lines priced below it, a left join whose condition compares the two
+# rows beyond the equality of their keys. Four products keep a row of nulls; flipped, the
+# comparison matches two other lines.
+[JoinBeyondEqualities]
+category = JoinBeyondEqualities
+fields = ProductName, Description
+shape = projection
+ordered = false
+mutations = operator, projection

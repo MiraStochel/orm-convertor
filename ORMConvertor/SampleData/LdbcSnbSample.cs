@@ -287,22 +287,21 @@ public static class LdbcSnbSample
     ];
 
     /// <summary>
-    /// The EF Core builder renders a join as pairs of equal columns, the one form a LINQ join
-    /// takes, and refuses one whose ON clause says more (decision 053). Where the extra
-    /// condition belongs to an inner join, the texts put it into WHERE, which means the same;
-    /// an outer join keeps its rows by it, so there it stays and EF Core refuses.
-    /// </summary>
-    private static readonly LdbcRefusal EFCoreJoin = new(Model.ORMEnum.EFCore,
-        "A LINQ join matches pairs of equal columns and nothing else, and this query joins on other conditions too - "
-        + "filters that an outer join cannot move to WHERE without changing its rows.");
-
-    /// <summary>
     /// A count over the whole result, which LINQ says only by ending the chain in the call,
     /// and no other chain returns the same rows - so EF Core writes it in native SQL
     /// (decision 113).
     /// </summary>
     private static readonly LdbcFallback EFCoreCount = new(Model.ORMEnum.EFCore,
         "A count over the whole result is a call that ends a LINQ chain, not a query, so the query goes out as native SQL through SqlQuery.");
+
+    /// <summary>
+    /// An ordering by an aggregate the query projects and then by a key it does not, under a
+    /// slice: the LINQ target orders by a projected value after the projection, and an
+    /// ordering after the projection discards the one before it, so the slice would pick
+    /// other rows - EF Core writes the query in native SQL (decision 113).
+    /// </summary>
+    private static readonly LdbcFallback EFCoreOrdering = new(Model.ORMEnum.EFCore,
+        "The rows are ordered by a count the query projects and then by a key it does not, and a LINQ ordering after the projection discards the one before it; under TOP that would pick other rows, so the query goes out as native SQL through SqlQuery.");
 
     /// <summary>
     /// A query over the result of another query - a common table expression, a derived table -
@@ -613,7 +612,7 @@ public static class LdbcSnbSample
             GROUP BY f.Id, f.Title
             ORDER BY PostCount DESC, f.Id ASC
             """,
-            [PersonId, new("minDate", "DATE", "2012-06-01")], [EFCoreJoin]),
+            [PersonId, new("minDate", "DATE", "2012-06-01")], FallbackBy: [EFCoreOrdering]),
 
         new("ic6", LdbcWorkload.InteractiveComplex, 6, "Tag co-occurrence", LdbcTranslation.AsSpecified,
             "The tags that appear beside a given tag on posts of friends and friends of friends: two joins over the same "
@@ -724,7 +723,7 @@ public static class LdbcSnbSample
             GROUP BY f.Id, f.FirstName, f.LastName, f.Gender, city.Name
             ORDER BY CommonInterestScore DESC, f.Id ASC
             """,
-            [PersonId, new("month", "INT", "5"), new("nextMonth", "INT", "6")], [EFCoreJoin]),
+            [PersonId, new("month", "INT", "5"), new("nextMonth", "INT", "6")]),
 
         new("ic11", LdbcWorkload.InteractiveComplex, 11, "Job referral", LdbcTranslation.AsSpecified,
             "Friends and friends of friends who started at a company in a given country before a year; three sort keys "
@@ -905,7 +904,7 @@ public static class LdbcSnbSample
             ORDER BY Diff DESC, t.Name ASC
             """,
             [new("tagClass", "NVARCHAR(256)", "MusicalArtist"), new("window1Start", "DATE", "2011-01-01"),
-             new("window1End", "DATE", "2011-04-11"), new("window2End", "DATE", "2011-07-20")], [EFCoreJoin]),
+             new("window1End", "DATE", "2011-04-11"), new("window2End", "DATE", "2011-07-20")]),
 
         new("bi3", LdbcWorkload.BusinessIntelligence, 3, "Popular topics in a country", LdbcTranslation.AsSpecified,
             "Forums moderated by someone living in a country, counted by their messages with a tag of a tag class: eight "
@@ -1057,7 +1056,7 @@ public static class LdbcSnbSample
             ORDER BY ps.Score + COALESCE(SUM(fs.Score), 0) DESC, ps.PersonId ASC
             """,
             [new("tag", "NVARCHAR(256)", "Sammy_Sosa"), new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-06-01")],
-            [EFCoreJoin], [NHibernateIntermediate, EclipseLinkIntermediate]),
+            FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate]),
 
         new("bi9", LdbcWorkload.BusinessIntelligence, 9, "Top thread initiators", LdbcTranslation.AsSpecified,
             "Per person, the threads started in an interval and all their messages in it, root included. The whole "
@@ -1155,7 +1154,7 @@ public static class LdbcSnbSample
             ORDER BY PersonCount DESC, pc.MessageCount DESC
             """,
             [new("startDate", "DATE", "2011-06-01"), new("lengthThreshold", "INT", "100"),
-             new("languages", "VARCHAR(40)", "ar,hu", IsList: true)], [EFCoreJoin, EclipseLinkNativeList], [NHibernateIntermediate]),
+             new("languages", "VARCHAR(40)", "ar,hu", IsList: true)], [EclipseLinkNativeList], [NHibernateIntermediate]),
 
         new("bi13", LdbcWorkload.BusinessIntelligence, 13, "Zombies in a country", LdbcTranslation.AsSpecified,
             "Zombies are persons of a country who wrote on average less than one message a month; the months are counted "
@@ -1187,7 +1186,7 @@ public static class LdbcSnbSample
             ORDER BY ZombieScore DESC, zl.ZombieId ASC
             """,
             [new("country", "NVARCHAR(256)", "India"), new("endDate", "DATE", "2012-09-01")],
-            [EFCoreJoin], [NHibernateIntermediate, EclipseLinkIntermediate]),
+            FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate]),
 
         new("bi14", LdbcWorkload.BusinessIntelligence, 14, "International dialog", LdbcTranslation.AsSpecified,
             "Pairs of friends from two countries scored by four kinds of interaction, each a CASE over EXISTS, and the best "
