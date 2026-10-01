@@ -51,6 +51,7 @@ public record DifferentialQuery(
             return switch (typeName) {
                 case "decimal" -> new BigDecimal(value);
                 case "int" -> Integer.valueOf(value);
+                case "long" -> Long.valueOf(value);
                 case "string" -> value;
                 case "int[]" -> {
                     List<Integer> elements = new ArrayList<>();

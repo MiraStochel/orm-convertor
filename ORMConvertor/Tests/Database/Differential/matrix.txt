@@ -311,3 +311,13 @@ fields = ProductId, Lines
 shape = projection
 ordered = true
 mutations = ordering
+
+# The count is bound as a long, which is the scalar a COUNT answers with (decision 083) and
+# therefore the type of the generated method's parameter.
+[ScalarSubqueryAgainstABoundValue]
+category = ScalarSubqueryAgainstABoundValue
+fields = CompanyId, OrderId, CustomerId, PlacedAt, IsCancelled
+shape = entity
+ordered = false
+arguments = minLines:long=2
+mutations = filter, operator

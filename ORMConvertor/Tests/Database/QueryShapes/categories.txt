@@ -299,3 +299,16 @@ NHibernate = nhibernate/FindOrderingByAnAggregate.hql
 Hibernate = hibernate/FindOrderingByAnAggregate.jpql
 EclipseLink = eclipselink/FindOrderingByAnAggregate.jpql
 MyBatis = mybatis/FindOrderingByAnAggregateMapper.xml
+
+# A parameter compared with a correlated scalar subquery, the subquery on the left as LDBC
+# BI 16 writes it. The parameter takes its scalar from the one value the subquery projects,
+# and a COUNT answers with a count whatever it counts, so no source needs a mapping and the
+# Dapper row is not refused without a catalog. The row was added on 2026-10-01, when the
+# gate began to type a parameter from a subquery; ScalarSubquery compares one with a column.
+[ScalarSubqueryAgainstABoundValue]
+Dapper = dapper/FindScalarSubqueryAgainstABoundValue.sql
+EFCore = efcore/FindScalarSubqueryAgainstABoundValue.query.cs
+NHibernate = nhibernate/FindScalarSubqueryAgainstABoundValue.hql
+Hibernate = hibernate/FindScalarSubqueryAgainstABoundValue.jpql
+EclipseLink = eclipselink/FindScalarSubqueryAgainstABoundValue.jpql
+MyBatis = mybatis/FindScalarSubqueryAgainstABoundValueMapper.query.java, mybatis/FindScalarSubqueryAgainstABoundValueMapper.xml

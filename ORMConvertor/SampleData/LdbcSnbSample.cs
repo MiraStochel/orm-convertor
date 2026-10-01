@@ -1017,12 +1017,11 @@ public static class LdbcSnbSample
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65"),
              new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-02-01")]),
 
-        new("bi16", LdbcWorkload.BusinessIntelligence, 16, "Fake news detection", LdbcTranslation.NotTranslated,
+        new("bi16", LdbcWorkload.BusinessIntelligence, 16, "Fake news detection", LdbcTranslation.AsSpecified,
             "Persons who wrote about two tags on two given days, keeping those with few friends who did the same: the "
-            + "friend count is a correlated scalar subquery compared with @maxKnowsLimit, the two message counts are "
-            + "counts over a CASE, and the order is the sum of two aggregates. The representation carries all of it, "
-            + "but the tool refuses the query: the type of a parameter is taken from what it is compared with, and it "
-            + "does not take one from a count in a subquery. A gap of the tool, not of the representation.",
+            + "friend count is a correlated scalar subquery compared with @maxKnowsLimit, which takes its type from "
+            + "the count, the two message counts are counts over a CASE, and the order is the sum of two aggregates. "
+            + "The caller passes the day after $dateA and the day after $dateB as @dateAEnd and @dateBEnd.",
             """
             SELECT TOP (20) p.Id AS PersonId,
                    COUNT(DISTINCT CASE WHEN t.Name = @tagA AND m.CreationDate >= @dateA AND m.CreationDate < @dateAEnd THEN m.Id END) AS MessageCountA,

@@ -326,6 +326,29 @@ public class DateTimeConstantTest
     }
 
     /// <summary>
+    /// A subquery compares the one value it projects (decision 061), so a string against a
+    /// subquery over a moment column is a moment as much as one against the column itself -
+    /// until 2026-10-01 it stayed a string, and the LINQ target compared a date with it.
+    /// </summary>
+    [Theory]
+    [InlineData("Dapper")]
+    [InlineData("NHibernate")]
+    public void AStringComparedWithASubqueryOverAMomentColumnIsReadAsAMoment(string source)
+    {
+        AbstractQueryBuilder Parse(AbstractQueryBuilder builder) => source == "Dapper"
+            ? ParseSql(builder, "(SELECT MAX(o.PlacedAt) FROM Sales.Orders AS o WHERE o.CustomerID = c.CustomerID) > '2025-01-01'")
+            : ParseHql(builder, "(select max(o.PlacedAt) from Order o where o.CustomerID = c.CustomerID) > '2025-01-01'");
+
+        Assert.Contains(
+            ".Max(o => o.PlacedAt) > DateTime.Parse(\"2025-01-01 00:00:00\")",
+            Artifact(Parse(new EFCoreLinqQueryBuilder()), ConversionContentType.CSharpQuery));
+
+        Assert.Contains(
+            ") > {ts '2025-01-01 00:00:00'}",
+            Artifact(Parse(new HibernateJpqlQueryBuilder()), ConversionContentType.JpqlQuery));
+    }
+
+    /// <summary>
     /// Only the column decides: the same string against a string column is a string, and
     /// so is a LIKE pattern whichever column it matches (decision 051).
     /// </summary>
@@ -349,6 +372,7 @@ public class DateTimeConstantTest
     [InlineData("c.AccountOpenedDate > '20250101'")]
     [InlineData("c.Since > '2025-01-01 10:00'")]
     [InlineData("c.OpensAt > '2025-01-01'")]
+    [InlineData("(SELECT MAX(o.PlacedAt) FROM Sales.Orders AS o) > 'yesterday'")]
     public void AStringThatIsNoMomentRefusesTheArtifact(string predicate)
     {
         var builder = ParseSql(new EFCoreLinqQueryBuilder(), predicate);

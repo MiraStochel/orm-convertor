@@ -1507,11 +1507,12 @@ public abstract class AbstractQueryBuilder
     /// walks the scopes the way
     /// <see cref="CollectParameters(IReadOnlyList{QueryInstruction}, Dictionary{string, EntityMap}, List{ParameterOccurrence})"/>
     /// does and yields the table behind every such qualifier, once each, in order of first
-    /// occurrence. What it leaves out is exactly what the gate never asks the mapping for: a
-    /// LIKE pattern, a comparison with a constant or a subquery, a COUNT, a row count of the
-    /// pagination, and an unqualified column, which the gate looks up across every entity of
-    /// the conversion. Empty for a query without parameters, so a conversion whose queries
-    /// need nothing reads nothing.
+    /// occurrence. A comparison with a subquery asks for the table behind the one value the
+    /// subquery projects, in the subquery's own scope. What it leaves out is exactly what the
+    /// gate never asks the mapping for: a LIKE pattern, a comparison with a constant, a COUNT
+    /// - inside a subquery or not -, a row count of the pagination, and an unqualified
+    /// column, which the gate looks up across every entity of the conversion. Empty for a
+    /// query without parameters, so a conversion whose queries need nothing reads nothing.
     ///
     /// Data rather than a call (decision 015): the orchestration hands the demand to the
     /// catalog component between reading and <see cref="Build"/>, and the builder never
@@ -1671,6 +1672,12 @@ public abstract class AbstractQueryBuilder
         {
             DemandColumnsOf(other.Expression!, aliases, unbound, found);
         }
+
+        // The other side is a subquery: the scalar comes from the one value it projects.
+        if (other?.IsSubQuery == true && op is not ComparisonOperator.Like)
+        {
+            DemandProjectionOf(other.SubQuery!, aliases, unbound, found);
+        }
     }
 
     private void CollectDemands(
@@ -1688,6 +1695,11 @@ public abstract class AbstractQueryBuilder
             if (op is not ComparisonOperator.Like && TableTheGateCannotResolve(other, op, aliases, unbound) is { } table)
             {
                 Demand(table, found);
+            }
+
+            if (op is not ComparisonOperator.Like && other?.IsSubQuery == true)
+            {
+                DemandProjectionOf(other.SubQuery!, aliases, unbound, found);
             }
         }
 
@@ -1712,7 +1724,11 @@ public abstract class AbstractQueryBuilder
         }
     }
 
-    /// <summary>The tables of every qualified column inside the expression that no stated mapping resolves, demanded once each.</summary>
+    /// <summary>
+    /// The tables of every qualified column inside the expression that no stated mapping
+    /// resolves, demanded once each - a subquery among the leaves included, whose one
+    /// projection types it.
+    /// </summary>
     private void DemandColumnsOf(
         QueryExpression expression,
         Dictionary<string, EntityMap> aliases,
@@ -1731,6 +1747,41 @@ public abstract class AbstractQueryBuilder
             {
                 DemandColumnsOf(leaf.Expression!, aliases, unbound, found);
             }
+            else if (leaf.IsSubQuery)
+            {
+                DemandProjectionOf(leaf.SubQuery!, aliases, unbound, found);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The table behind the one value a subquery projects, where the gate types a parameter
+    /// from it and no stated mapping binds it: the mirror of
+    /// <see cref="ScalarOf(SubQueryInstruction, Dictionary{string, EntityMap})"/>, in the
+    /// subquery's own scope. A COUNT asks for nothing, as it does outside a subquery.
+    /// </summary>
+    private void DemandProjectionOf(
+        SubQueryInstruction subQuery,
+        Dictionary<string, EntityMap> aliases,
+        Dictionary<string, string> unbound,
+        List<QueryTableDemand> found)
+    {
+        var body = Unwrap(subQuery.Instructions);
+        if (SingleProjection(body) is not { } projection)
+        {
+            return;
+        }
+
+        var scopeAliases = ScopeAliases(body, aliases, EntityFor);
+        var scopeUnbound = UnboundTables(body, unbound);
+
+        if (TableTheGateCannotResolve(projection, ComparisonOperator.Equal, scopeAliases, scopeUnbound) is { } table)
+        {
+            Demand(table, found);
+        }
+        else if (projection.IsExpression)
+        {
+            DemandColumnsOf(projection.Expression!, scopeAliases, scopeUnbound, found);
         }
     }
 
@@ -1750,8 +1801,9 @@ public abstract class AbstractQueryBuilder
     /// <summary>
     /// The mirror of <see cref="ScalarOfOther"/> and <see cref="ScalarOfColumn"/>: the table
     /// behind a qualified column the gate would look up and not find, or null where the gate
-    /// never asks the mapping (a LIKE pattern, a constant, a subquery, a COUNT, an unqualified
-    /// column) or would find the answer in a stated mapping.
+    /// never asks the mapping (a LIKE pattern, a constant, a COUNT, an unqualified column),
+    /// where the other side is not a column (an expression or a subquery, which their callers
+    /// look into) or where it would find the answer in a stated mapping.
     /// </summary>
     private string? TableTheGateCannotResolve(
         QueryOperand? other,
@@ -1779,9 +1831,9 @@ public abstract class AbstractQueryBuilder
 
     /// <summary>
     /// The scalar a parameter takes from the other side of its comparison (decision 083).
-    /// A subquery and a second parameter say nothing, and neither does a constant whose own
-    /// scalar nobody recognized; each of those ends as a refusal above, because a parameter
-    /// of a method has to have a type.
+    /// A second parameter says nothing, and neither does a constant whose own scalar nobody
+    /// recognized; each of those ends as a refusal above, because a parameter of a method
+    /// has to have a type.
     /// </summary>
     private ScalarType? ScalarOfOther(QueryOperand? other, ComparisonOperator op, Dictionary<string, EntityMap> aliases)
     {
@@ -1797,8 +1849,9 @@ public abstract class AbstractQueryBuilder
             return null;
         }
 
-        // An expression answers with the scalar the gate derives for it (decision 107).
-        if (other.IsExpression)
+        // An expression answers with the scalar the gate derives for it (decision 107), and
+        // a subquery with the scalar of the one value it projects (decision 061).
+        if (other.IsExpression || other.IsSubQuery)
         {
             return ScalarOf(other, aliases);
         }
@@ -1827,9 +1880,10 @@ public abstract class AbstractQueryBuilder
     /// <summary>
     /// The scalar of an operand as the gate derives it (decision 107): a column's from the
     /// mapping, a constant's as the parser read it, a parameter's as the source stated it, an
-    /// expression's from its leaves by the table of the decision; a subquery and a list say
-    /// nothing. An aggregate over any of them answers as an aggregate over a column does -
-    /// COUNT with a count, the others in the scalar of their argument.
+    /// expression's from its leaves by the table of the decision, a subquery's from the one
+    /// value it projects; a list says nothing. An aggregate over any of them answers as an
+    /// aggregate over a column does - COUNT with a count, the others in the scalar of their
+    /// argument.
     /// </summary>
     private ScalarType? ScalarOf(QueryOperand operand, Dictionary<string, EntityMap> aliases)
     {
@@ -1837,6 +1891,10 @@ public abstract class AbstractQueryBuilder
         if (operand.IsExpression)
         {
             argument = ScalarOf(operand.Expression!, aliases);
+        }
+        else if (operand.IsSubQuery)
+        {
+            argument = ScalarOf(operand.SubQuery!, aliases);
         }
         else if (operand.IsColumn)
         {
@@ -1886,6 +1944,38 @@ public abstract class AbstractQueryBuilder
         }
 
         return CommonScalar(expression.Leaves().Select(v => ScalarOf(v, aliases)), out _);
+    }
+
+    /// <summary>
+    /// The scalar of a subquery standing as an operand: the scalar of the one value it
+    /// projects, which is what a scalar comparison compares and what IN ranges over (decision
+    /// 061) - COUNT with a count, SUM, MIN, MAX and AVG in the scalar of what they aggregate,
+    /// an expression by the table of decision 107. The projection is typed in the subquery's
+    /// own scope on top of the enclosing one, so that a correlated column still finds its
+    /// entity, and that scope is resolved through stated mappings only unless the caller says
+    /// otherwise, as the parameter gate resolves (decisions 083 and 105): the typed view of
+    /// the expressions, which resolves wider, may find a subquery over a table only the naming
+    /// convention binds untyped, which leaves a scalar out and never gives another; the typing
+    /// of a literal passes its own, wider resolution. A body without exactly one projection -
+    /// a set operation, the whole entity, several columns - answers nothing, and the operand
+    /// is refused for that by its own rule (<see cref="NormalizeSubQueryOperand"/>).
+    /// </summary>
+    private ScalarType? ScalarOf(
+        SubQueryInstruction subQuery,
+        Dictionary<string, EntityMap> aliases,
+        Func<string, EntityMap?>? resolve = null)
+    {
+        var body = Unwrap(subQuery.Instructions);
+        return SingleProjection(body) is { } projection
+            ? ScalarOf(projection, ScopeAliases(body, aliases, resolve ?? EntityFor))
+            : null;
+    }
+
+    /// <summary>The operand of the one projection of a scope, or null where it projects none or several.</summary>
+    private static QueryOperand? SingleProjection(IReadOnlyList<QueryInstruction> body)
+    {
+        var projections = body.OfType<ProjectInstruction>().Take(2).ToList();
+        return projections.Count == 1 ? projections[0].Operand : null;
     }
 
     /// <summary>
@@ -2180,7 +2270,10 @@ public abstract class AbstractQueryBuilder
     /// the aliases of the scopes around it, so that a column inside a subquery still finds
     /// the entity it belongs to. The resolution is the caller's, because the two walks over
     /// the query resolve differently: the scalar gate of decision 083 takes a stated mapping
-    /// only, the typing of a literal the same map the column renders from.
+    /// only, the typing of a literal the same map the column renders from. An alias the
+    /// scope declares hides the enclosing one of the same name even where the resolution
+    /// finds no entity for it, as it does in SQL: a column of the inner table would otherwise
+    /// be typed from the outer one.
     /// </summary>
     private static Dictionary<string, EntityMap> ScopeAliases(
         IReadOnlyList<QueryInstruction> body,
@@ -2189,20 +2282,26 @@ public abstract class AbstractQueryBuilder
     {
         var aliases = new Dictionary<string, EntityMap>(enclosing, StringComparer.OrdinalIgnoreCase);
 
+        void Declare(string alias, string table)
+        {
+            if (resolve(table) is { } entity)
+            {
+                aliases[alias] = entity;
+            }
+            else
+            {
+                aliases.Remove(alias);
+            }
+        }
+
         foreach (var source in body.OfType<FromInstruction>())
         {
-            if (resolve(source.Table) is { } entity)
-            {
-                aliases[source.Alias ?? source.Table] = entity;
-            }
+            Declare(source.Alias ?? source.Table, source.Table);
         }
 
         foreach (var join in body.OfType<JoinInstruction>())
         {
-            if (resolve(join.RightTable) is { } entity)
-            {
-                aliases[join.RightTableAlias ?? join.RightTable] = entity;
-            }
+            Declare(join.RightTableAlias ?? join.RightTable, join.RightTable);
         }
 
         return aliases;
@@ -2219,10 +2318,10 @@ public abstract class AbstractQueryBuilder
     /// a string, which does not compile. The scalar of the column is what the gate of
     /// decision 083 already derives for a parameter, from the mapping representation only
     /// the builder has, so the same derivation types the constant: a string compared with a
-    /// DateTime, Date or TimeOfDay column becomes that scalar in the ISO spelling every
-    /// visitor writes, and a string that does not read as one is refused - the database
-    /// would refuse it too, at run time and without a record. A string against a column of
-    /// any other scalar stays a string.
+    /// DateTime, Date or TimeOfDay column - or with a subquery projecting one - becomes that
+    /// scalar in the ISO spelling every visitor writes, and a string that does not read as
+    /// one is refused - the database would refuse it too, at run time and without a record.
+    /// A string against a column of any other scalar stays a string.
     ///
     /// Walks every scope the way <see cref="CollectParameters(IReadOnlyList{QueryInstruction}, Dictionary{string, EntityMap}, List{ParameterOccurrence})"/>
     /// does, and resolves a column the way rendering does (<see cref="AliasedEntities"/>):
@@ -2378,23 +2477,36 @@ public abstract class AbstractQueryBuilder
     }
 
     /// <summary>
-    /// The temporal scalar of the column on the other side of a comparison, or null when
-    /// there is no such column: the other side is not a column, is COUNT of one (which
-    /// answers with a count), or maps a property of another scalar or of none. LIKE is left
-    /// out as it is in <see cref="ScalarOfOther"/>: a pattern is a string whichever column
-    /// it matches (decision 051).
+    /// The temporal scalar of the column on the other side of a comparison, or of the one
+    /// value a subquery there projects (decision 061) - <c>(SELECT MAX(o.PlacedAt) …) &gt;
+    /// '2025-01-01'</c> compares a moment as much as the column does. Null when there is no
+    /// such value: the other side is neither, is COUNT (which answers with a count), or its
+    /// scalar is another one or none. The subquery's scope is resolved the way this walk
+    /// resolves, through the naming convention as well, because its column renders that way
+    /// too. LIKE is left out as it is in <see cref="ScalarOfOther"/>: a pattern is a string
+    /// whichever column it matches (decision 051).
     /// </summary>
     private ScalarType? TemporalScalarOf(QueryOperand? other, ComparisonOperator op, Dictionary<string, EntityMap> aliases)
     {
-        if (op is ComparisonOperator.Like
-            || other is null
-            || !other.IsColumn
-            || string.Equals(other.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        if (op is ComparisonOperator.Like || other is null)
         {
             return null;
         }
 
-        var scalar = ScalarOfColumn(aliases, other.Table, other.Property!);
+        ScalarType? scalar;
+        if (other.IsSubQuery)
+        {
+            scalar = ScalarOf(other.SubQuery!, aliases, table => EntityFor(table) ?? ByDerivedName(table));
+        }
+        else if (other.IsColumn && !string.Equals(other.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            scalar = ScalarOfColumn(aliases, other.Table, other.Property!);
+        }
+        else
+        {
+            return null;
+        }
+
         return scalar is ScalarType.DateTime or ScalarType.Date or ScalarType.TimeOfDay ? scalar : null;
     }
 
@@ -2406,9 +2518,9 @@ public abstract class AbstractQueryBuilder
     /// extended ISO 8601 forms T-SQL and HQL both read unambiguously - a date, a date with
     /// a time of day after a space or a T, a time of day, each with an optional fraction -
     /// and nothing else: the value would fail in the database at run time, and here it
-    /// fails with a record naming the column and the scalar.
+    /// fails with a record naming the column, or the subquery, and the scalar.
     /// </summary>
-    private QueryConstant? Retype(QueryConstant constant, ScalarType scalar, QueryOperand column)
+    private QueryConstant? Retype(QueryConstant constant, ScalarType scalar, QueryOperand other)
     {
         var spelled = scalar switch
         {
@@ -2428,7 +2540,7 @@ public abstract class AbstractQueryBuilder
 
             Report(
                 ConversionRecordKind.Failure,
-                $"The string '{constant.Text}' is compared with the column {column}, which is {scalar}, and does not read as {expected} in the ISO 8601 form; no artifact was generated.",
+                $"The string '{constant.Text}' is compared with {(other.IsSubQuery ? "the value a subquery projects" : $"the column {other}")}, which is {scalar}, and does not read as {expected} in the ISO 8601 form; no artifact was generated.",
                 QueryFeature.Filtering);
             return null;
         }

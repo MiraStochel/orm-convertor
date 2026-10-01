@@ -403,6 +403,14 @@ public static class QueryShapeInputs
             linq: [".OrderByDescending(g => g.Count())", ".ThenBy(g => g.Key)"],
             hql: ["order by count(*) desc, ol.ProductId asc"],
             jpa: ["order by count(ol) desc, ol.ProductId asc"]),
+
+        // The parameter is a long because the subquery projects a COUNT (decision 083).
+        ["ScalarSubqueryAgainstABoundValue"] = Hallmarks(
+            sql: ["(SELECT COUNT(*)", ") >= @minLines", "long minLines"],
+            linq: [".Count() >= minLines", "long minLines"],
+            hql: ["(select count(*)", ") >= :minLines", ".SetParameter(\"minLines\", minLines)"],
+            jpa: ["(select count(ol)", ") >= :minLines", ".setParameter(\"minLines\", minLines)"],
+            myBatis: ["(SELECT COUNT(*)", ") &gt;= #{minLines}", "@Param(\"minLines\") long minLines"]),
     };
 
     // ---- the deliberately bad query ------------------------------------------------------

@@ -17,6 +17,7 @@ internal sealed record DifferentialArgument(string Name, string TypeName, string
     {
         "decimal" => decimal.Parse(Value, System.Globalization.CultureInfo.InvariantCulture),
         "int" => int.Parse(Value, System.Globalization.CultureInfo.InvariantCulture),
+        "long" => long.Parse(Value, System.Globalization.CultureInfo.InvariantCulture),
         "string" => Value,
         "int[]" => Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(element => int.Parse(element, System.Globalization.CultureInfo.InvariantCulture))

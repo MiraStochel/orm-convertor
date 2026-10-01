@@ -241,6 +241,60 @@ public class QueryParameterTest
         Assert.Contains("(IDbConnection connection, decimal total)", CSharp(builder));
     }
 
+    /// <summary>
+    /// A subquery in a scalar comparison projects one value (decision 061), and the
+    /// parameter takes that value's scalar - here an aggregate over a column, which answers
+    /// in the column's own.
+    /// </summary>
+    [Fact]
+    public void TheScalarOfASubqueryIsTheScalarOfTheValueItProjects()
+    {
+        var builder = ParseSql(
+            new DapperSqlQueryBuilder(),
+            "SELECT * FROM Sales.Customers AS c WHERE @limit > (SELECT MAX(o.CreditLimit) FROM Sales.Customers AS o)");
+
+        Assert.Contains("@limit > (SELECT MAX(o.CreditLimit)", Sql(builder));
+        Assert.Contains("(IDbConnection connection, decimal limit)", CSharp(builder));
+    }
+
+    /// <summary>
+    /// The shape LDBC BI 16 writes: a correlated COUNT on the left, the parameter on the
+    /// right. A count answers with a count whatever it counts, so the parameter is a long,
+    /// from the T-SQL source and from the LINQ one alike.
+    /// </summary>
+    [Fact]
+    public void TheScalarOfACountInACorrelatedSubqueryIsLong()
+    {
+        var sql = ParseSql(
+            new DapperSqlQueryBuilder(),
+            """
+            SELECT * FROM Sales.Customers AS c
+            WHERE (SELECT COUNT(*) FROM Sales.Customers AS o WHERE o.CreditLimit > c.CreditLimit) <= @rank
+            """);
+
+        Assert.Contains(") <= @rank", Sql(sql));
+        Assert.Contains("(IDbConnection connection, long rank)", CSharp(sql));
+
+        var linq = ParseLinq(new DapperSqlQueryBuilder(), "ctx.Customers.Where(o => o.CreditLimit > c.CreditLimit).Count() <= rank");
+
+        Assert.Contains("(IDbConnection connection, long rank)", CSharp(linq));
+    }
+
+    /// <summary>
+    /// An alias a subquery declares hides the enclosing one of the same name, even where no
+    /// mapping binds the inner table: the column is the inner table's, and typing it from the
+    /// outer entity would give the parameter the scalar of another column.
+    /// </summary>
+    [Fact]
+    public void AnAliasOfTheSubqueryHidesTheEnclosingOneOfTheSameName()
+    {
+        var builder = ParseSql(
+            new DapperSqlQueryBuilder(),
+            "SELECT * FROM Sales.Customers AS c WHERE @limit > (SELECT MAX(c.CreditLimit) FROM Sales.Invoices AS c)");
+
+        AssertRefused(builder, QueryFeature.QueryParameter);
+    }
+
     /// <summary>A LIKE pattern is a string whatever the column it matches is typed as.</summary>
     [Fact]
     public void TheScalarOfALikePatternIsString()
@@ -423,14 +477,16 @@ public class QueryParameterTest
 
     // ---- What the gate refuses ------------------------------------------------------
 
+    /// <summary>A subquery gives the parameter only what its projection has: a column no mapping knows types nothing.</summary>
     [Fact]
-    public void AParameterComparedWithASubqueryRefusesTheArtifact()
+    public void AParameterComparedWithASubqueryOverAColumnNoMappingKnowsRefusesTheArtifact()
     {
         var builder = ParseSql(
             new DapperSqlQueryBuilder(),
-            "SELECT * FROM Sales.Customers AS c WHERE @limit > (SELECT MAX(o.CreditLimit) FROM Sales.Customers AS o)");
+            "SELECT * FROM Sales.Customers AS c WHERE @limit > (SELECT MAX(o.Unmapped) FROM Sales.Customers AS o)");
 
-        AssertRefused(builder, QueryFeature.QueryParameter);
+        var record = AssertRefused(builder, QueryFeature.QueryParameter);
+        Assert.Contains("does not follow from what it is compared against", record.Reason, StringComparison.Ordinal);
     }
 
     [Fact]

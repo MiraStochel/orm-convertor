@@ -39,6 +39,8 @@
 --                   exist for all six;
 --   scalar subquery the average product price above 1 is 288.0833; three lines are priced
 --                   above it, seven below;
+--   bound count     four orders have two lines and two have one, so a count of lines >= 2
+--                   keeps four orders and <= 2 keeps all six;
 --   EXISTS          five lines have an allocation, five have none;
 --   set operation   the description 'Zither' of a line with Quantity > 5 is also the name of
 --                   a product above 100, so UNION meets on it and UNION ALL would not;

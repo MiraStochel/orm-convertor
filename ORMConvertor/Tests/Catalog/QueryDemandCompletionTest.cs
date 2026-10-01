@@ -173,6 +173,10 @@ public class QueryDemandCompletionTest
         { "a comparison with a constant", "SELECT * FROM ShopOrderLines AS ol WHERE @minQuantity >= 5" },
         { "a LIKE pattern", "SELECT * FROM ShopOrderLines AS ol WHERE ol.Description LIKE @pattern" },
         { "a row count", "SELECT * FROM ShopOrderLines AS ol ORDER BY ol.LineNumber OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY" },
+        {
+            "a COUNT in a subquery",
+            "SELECT * FROM ShopOrderLines AS ol WHERE (SELECT COUNT(*) FROM ShopOrderLines AS x WHERE x.OrderId = ol.OrderId) >= @minLines"
+        },
     };
 
     /// <summary>
@@ -235,6 +239,34 @@ public class QueryDemandCompletionTest
         Assert.Empty(QueryFailures(result));
         Assert.Equal(0, reader.Reads);
         Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Supplied);
+    }
+
+    /// <summary>
+    /// A parameter compared with a subquery takes the scalar of the value the subquery
+    /// projects, so the table under that value is demanded - in the subquery's own scope,
+    /// where its alias is declared - and without a catalog the refusal names it.
+    /// </summary>
+    [Fact]
+    public void ASubqueryDemandsTheTableOfTheValueItProjects()
+    {
+        const string sql = """
+            SELECT * FROM ShopOrderLines AS ol
+            WHERE @minQuantity <= (SELECT MAX(x.Quantity) FROM ShopOrderLines AS x WHERE x.OrderId = ol.OrderId)
+            """;
+
+        var reader = new FakeCatalogReader(OrderLinesImage());
+        var result = Convert(ORMEnum.Dapper, reader, Entity(), Query(sql));
+
+        Assert.Empty(QueryFailures(result));
+        Assert.Equal(1, reader.Reads);
+        Assert.Contains("int minQuantity", Assert.Single(QueryArtifacts(result), s => s.ContentType == ConversionContentType.CSharpQuery).Content);
+        Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Supplied && r.Category == MappingFactCategory.TableName && r.Entity == "ShopOrderLine");
+
+        var without = Convert(ORMEnum.Dapper, reader: null, Entity(), Query(sql));
+
+        Assert.Empty(QueryArtifacts(without));
+        var reason = Assert.Single(without.Records, r => r.Kind == ConversionRecordKind.Incompleteness && r.Feature == QueryFeature.QueryParameter);
+        Assert.Contains("ShopOrderLines", reason.Reason);
     }
 
     /* ---- a table the catalog lacks, or has twice ------------------------------------ */

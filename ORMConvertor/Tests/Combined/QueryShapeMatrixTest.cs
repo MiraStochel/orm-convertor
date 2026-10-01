@@ -260,6 +260,7 @@ public class QueryShapeMatrixTest
     [InlineData("ScalarSubquery")]
     [InlineData("InOverAListOfValues")]
     [InlineData("ScalarParameter")]
+    [InlineData("ScalarSubqueryAgainstABoundValue")]
     [InlineData("DistinctProjection")]
     [InlineData("Ordering")]
     public void EverySourceLanguageReadsTheCategoryIntoTheSameSql(string name)
