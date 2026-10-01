@@ -61,13 +61,13 @@ public class DifferentialVerificationTest(TestSchemaFixture fixture)
         return data;
     }
 
-    /// <summary>The directions the matrix states as refused whose target this suite owns.</summary>
-    public static TheoryData<string, ORMEnum, ORMEnum, QueryFeature> RefusedDirections()
+    /// <summary>The pairs of the matrix whose target falls back to native SQL and which this suite owns (decision 113).</summary>
+    public static TheoryData<string, ORMEnum, ORMEnum, QueryFeature> FallbackDirections()
     {
         var data = new TheoryData<string, ORMEnum, ORMEnum, QueryFeature>();
-        foreach (var refused in DifferentialMatrix.RefusedDirections().Where(r => DotNetQueryRunner.Owns(r.Target)))
+        foreach (var fallback in DifferentialMatrix.FallbackDirections().Where(f => DotNetQueryRunner.Owns(f.Target)))
         {
-            data.Add(refused.Query.Id, refused.Source, refused.Target, refused.Feature);
+            data.Add(fallback.Query.Id, fallback.Source, fallback.Target, fallback.Feature);
         }
 
         return data;
@@ -110,21 +110,45 @@ public class DifferentialVerificationTest(TestSchemaFixture fixture)
 
     /// <summary>
     /// A direction the matrix states as refused is refused: no query artifact comes out and
-    /// a record names the feature the target's descriptor cannot express (decision 053). It
-    /// is the word decision 089 asks the matrix to say instead of a missing row - and a
-    /// target that started accepting the query would show up here rather than nowhere.
+    /// a record names the feature (decision 053). It is the word decision 089 asks the matrix
+    /// to say instead of a missing row - and a target that started accepting the query would
+    /// show up here rather than nowhere. Since decision 113 a target whose language merely
+    /// lacks a category falls back instead, and no category of the manifest is refused any
+    /// more; the check stays for the refusals that are not about a language, so a fact over
+    /// what the matrix states rather than a theory with no data.
     /// </summary>
-    [Theory]
-    [MemberData(nameof(RefusedDirections))]
-    public void ARefusedDirectionIsRefusedAsStated(string id, ORMEnum source, ORMEnum target, QueryFeature feature)
+    [Fact]
+    public void EveryRefusedDirectionIsRefusedAsStated()
     {
         fixture.SkipIfUnavailable();
 
-        var query = Query(id);
-        var conversion = OrmConvertor.ConversionHandler.Convert(source, target, query.Units(source), fixture.CatalogReader);
+        Assert.All(DifferentialMatrix.RefusedDirections().Where(r => DotNetQueryRunner.Owns(r.Target)), refused =>
+        {
+            var conversion = OrmConvertor.ConversionHandler.Convert(
+                refused.Source, refused.Target, refused.Query.Units(refused.Source), fixture.CatalogReader);
 
-        Assert.DoesNotContain(conversion.Sources, artifact => artifact.ContentType.IsQuery());
-        Assert.Contains(conversion.Records, record => record.Feature == feature);
+            Assert.DoesNotContain(conversion.Sources, artifact => artifact.ContentType.IsQuery());
+            Assert.Contains(conversion.Records, record => record.Feature == refused.Feature);
+        });
+    }
+
+    /// <summary>
+    /// A pair whose target falls back writes the query in native SQL, as the matrix states
+    /// (decision 113): a record of kind Fallback names the feature, and the bare SQL stands
+    /// beside the method. Its rows are judged by the theory above with every other pair - the
+    /// fourth level measures the escape path as it measures a translation -, and this one
+    /// keeps the two values of a cell from passing as each other.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(FallbackDirections))]
+    public void AFallbackDirectionFallsBackAsStated(string id, ORMEnum source, ORMEnum target, QueryFeature feature)
+    {
+        fixture.SkipIfUnavailable();
+
+        var conversion = DotNetQueryRunner.Translate(Query(id), source, target, fixture);
+
+        Assert.Contains(conversion.Records, record => record.Kind == ConversionRecordKind.Fallback && record.Feature == feature);
+        Assert.Contains(conversion.Sources, artifact => artifact.ContentType == ConversionContentType.SqlQuery);
     }
 
     internal static DifferentialQuery Query(string id)

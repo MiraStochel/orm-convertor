@@ -106,15 +106,30 @@ public class DifferentialMatrixTest
     /// <summary>
     /// The matrix says a refused direction in that word (decision 089): a target the
     /// manifest names as refusing a category is paired with none of its sources, and is
-    /// listed among the refused directions instead, where a suite asserts the refusal.
+    /// listed among the refused directions instead, where a suite asserts the refusal. No
+    /// category is refused since decision 113 turned the three refusals into fallbacks, so
+    /// this holds over an empty list today and keeps the rule for the next refusal.
     /// </summary>
     [Fact]
     public void ARefusedTargetIsNoPairAndIsStatedAsRefused()
     {
-        var refused = DifferentialMatrix.RefusedDirections().ToList();
+        Assert.All(DifferentialMatrix.RefusedDirections(), direction => Assert.DoesNotContain(
+            DifferentialMatrix.Pairs(),
+            pair => pair.Query.Id == direction.Query.Id && pair.Source == direction.Source && pair.Target == direction.Target));
+    }
 
-        Assert.NotEmpty(refused);
-        Assert.All(refused, direction => Assert.DoesNotContain(
+    /// <summary>
+    /// The escape path is measured at the fourth level (decision 113): a target the manifest
+    /// names as falling back is a pair of every source of the category, so its artifact runs
+    /// and is compared with the canonical result like any translation.
+    /// </summary>
+    [Fact]
+    public void AFallbackTargetIsAPairOfEverySource()
+    {
+        var fallbacks = DifferentialMatrix.FallbackDirections().ToList();
+
+        Assert.NotEmpty(fallbacks);
+        Assert.All(fallbacks, direction => Assert.Contains(
             DifferentialMatrix.Pairs(),
             pair => pair.Query.Id == direction.Query.Id && pair.Source == direction.Source && pair.Target == direction.Target));
     }

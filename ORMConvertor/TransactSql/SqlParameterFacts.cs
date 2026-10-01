@@ -30,4 +30,10 @@ namespace TransactSql;
 /// values under every other reader, and reading it as a collection there would bind
 /// something the query did not write.
 /// </param>
-public readonly record struct SqlParameterFacts(ScalarType? Scalar = null, bool IsCollection = false);
+/// <param name="Position">
+/// The position of a parameter the source binds by its order rather than by a name - JPA's
+/// <c>?1</c> in a native query, which the wrapper spells <c>@p1</c> for the grammar
+/// (decision 113) -, so that the model carries it as the positional parameter it is
+/// (decision 083); null for a named one.
+/// </param>
+public readonly record struct SqlParameterFacts(ScalarType? Scalar = null, bool IsCollection = false, int? Position = null);

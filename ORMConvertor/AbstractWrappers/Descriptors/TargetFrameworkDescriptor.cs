@@ -162,6 +162,19 @@ public sealed class TargetFrameworkDescriptor
     public bool Speaks(QueryFunction function) => Functions.Contains(function);
 
     /// <summary>
+    /// The framework's own API for a query written whole in the SQL of <see cref="Dialect"/>,
+    /// on which its query builder falls back where the query language does not speak a
+    /// construct of the query (decision 113) - named, so that the record of the fallback says
+    /// what the artifact calls. Null for a framework whose query language is that SQL itself
+    /// (Dapper, MyBatis): there is nothing to fall back from, and a construct its writer does
+    /// not take is a refusal. Declared beside <see cref="QuerySupport"/> and
+    /// <see cref="Functions"/> because it decides what their silence means: with an API here
+    /// a construct the declaration leaves out is written in native SQL, without one it is
+    /// refused.
+    /// </summary>
+    public string? NativeSqlApi { get; init; }
+
+    /// <summary>
     /// Enforced members applying to a given entity map.
     /// </summary>
     public IEnumerable<EnforcedMember> EnforcedMembersFor(EntityMap entityMap)

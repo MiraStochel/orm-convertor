@@ -403,10 +403,12 @@ public class SubQueryConditionTest
 
     /// <summary>
     /// A scalar subquery that is not a single ungrouped aggregate has no faithful LINQ
-    /// form: First() would silently pick one row where SQL refuses several.
+    /// form: First() would silently pick one row where SQL refuses several. The query goes
+    /// out in native SQL instead (decision 113) - the text the Dapper target writes, over the
+    /// whole entity through FromSql.
     /// </summary>
     [Fact]
-    public void EFCoreRefusesAScalarSubQueryThatIsNoAggregate()
+    public void EFCoreWritesAScalarSubQueryThatIsNoAggregateInNativeSql()
     {
         const string sql = """
         SELECT *
@@ -414,11 +416,15 @@ public class SubQueryConditionTest
         WHERE o.Total > (SELECT o2.Total FROM Sales.Orders AS o2 WHERE o2.OrderID = 1)
         """;
 
-        AssertRefused(
-            ParseSql(new EFCoreLinqQueryBuilder { EntityMaps = [Orders()] }, sql),
-            QueryFeature.Subquery);
+        var efCore = ParseSql(new EFCoreLinqQueryBuilder { EntityMaps = [Orders()] }, sql);
+        var method = Artifact(efCore, ConversionContentType.CSharpQuery);
 
-        // The same shape is native T-SQL and stays carried on the SQL side.
+        Assert.Contains(efCore.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.Subquery);
+        Assert.Contains("public static IQueryable<Order> Query(DbContext ctx)", method);
+        Assert.Contains("return ctx.Set<Order>().FromSql(", method);
+        Assert.Contains("WHERE o.Total > (SELECT o2.Total FROM Sales.Orders AS o2 WHERE o2.OrderID = 1)", method);
+
+        // The same shape is native T-SQL and is carried on the SQL side as it was.
         var dapper = ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Orders()] }, sql);
         Assert.Contains(
             "WHERE o.Total > (SELECT o2.Total FROM Sales.Orders AS o2 WHERE o2.OrderID = 1)",
@@ -427,10 +433,11 @@ public class SubQueryConditionTest
 
     /// <summary>
     /// HQL text has no place for a pagination, and SetFirstResult/SetMaxResults cannot reach
-    /// inside a subquery - the sentence decision 060 said for set-operation operands.
+    /// inside a subquery - the sentence decision 060 said for set-operation operands. The
+    /// query goes out in native SQL, where TOP stands inside the subquery (decision 113).
     /// </summary>
     [Fact]
-    public void NHibernateRefusesPaginationInsideASubQuery()
+    public void NHibernateWritesPaginationInsideASubQueryInNativeSql()
     {
         const string sql = """
         SELECT *
@@ -438,8 +445,12 @@ public class SubQueryConditionTest
         WHERE c.CustomerID IN (SELECT TOP (5) o.CustomerID FROM Sales.Orders AS o)
         """;
 
-        AssertRefused(
-            ParseSql(new NHibernateHqlQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql),
-            QueryFeature.Pagination);
+        var nhibernate = ParseSql(new NHibernateHqlQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql);
+        var method = Artifact(nhibernate, ConversionContentType.CSharpQuery);
+
+        Assert.Contains(nhibernate.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.Pagination);
+        Assert.Contains("return session.CreateSQLQuery(", method);
+        Assert.Contains("IN (SELECT TOP (5) o.CustomerID FROM Sales.Orders AS o)", method);
+        Assert.Contains(".AddEntity(typeof(Customer))", method);
     }
 }

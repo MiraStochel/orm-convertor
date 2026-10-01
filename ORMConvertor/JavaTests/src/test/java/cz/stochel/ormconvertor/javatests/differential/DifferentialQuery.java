@@ -24,7 +24,9 @@ import java.util.Map;
  * @param category the category of the manifest this query is, or null for a query of the matrix's own
  * @param sources  the frameworks that state the query, in the order the file lists them
  * @param unitPaths the input units of a query of the matrix's own, under {@code inputs/}; empty for a category
- * @param refusedBy targets that refuse the query by their descriptor, with the feature the refusal names (decision 053)
+ * @param refusedBy targets that refuse the query, with the feature the refusal names (decision 053)
+ * @param fallbackBy targets that write the query in native SQL because their query language does not speak it,
+ *                   with the feature the record of kind Fallback names (decision 113) - pairs like any other
  */
 public record DifferentialQuery(
         String id,
@@ -37,7 +39,8 @@ public record DifferentialQuery(
         ResultRow.Settings settings,
         List<Argument> arguments,
         List<String> mutations,
-        Map<Integer, Integer> refusedBy) {
+        Map<Integer, Integer> refusedBy,
+        Map<Integer, Integer> fallbackBy) {
 
     /** One parameter of a query and the value the matrix binds it to (decision 083). */
     public record Argument(String name, String typeName, String value) {
@@ -76,7 +79,8 @@ public record DifferentialQuery(
 
     /**
      * The frameworks a source of this query is paired against: every one but the source
-     * itself and but a target that refuses the query by its descriptor. The source's own run
+     * itself and but a target that refuses the query - a target that falls back to native
+     * SQL included (decision 113). The source's own run
      * is not a pair - it is what fixes the canonical result - but it happens all the same,
      * which is how both halves of every pair really run (decision 089).
      */

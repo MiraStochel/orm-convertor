@@ -176,8 +176,10 @@ public class SqlScriptTest
     /// The refusal of a statement that does not read holds in every route, the single
     /// statement too: the assignment used to come out of the shared reading as SELECT *. A
     /// MyBatis statement never gets that far - an identifier introduced by @ binds to
-    /// nothing in MyBatis and the wrapper refuses it by its own reason (decision 084) -, so
-    /// there the claim is the refusal alone.
+    /// nothing in MyBatis and the wrapper refuses it by its own reason (decision 084) -, and
+    /// since decision 113 neither does a native query of NHibernate, whose parameters are
+    /// <c>:name</c> and which binds an @ variable to nothing either; there the claim is the
+    /// refusal alone.
     /// </summary>
     [Fact]
     public void AnAssignmentToAVariableIsRefusedInEveryRoute()
@@ -189,13 +191,16 @@ public class SqlScriptTest
             ConversionContentType.CSharp,
             $"public decimal Get(IDbConnection connection) => connection.ExecuteScalar<decimal>(\"{assignment}\");");
 
-        foreach (var builder in new[] { fromCall, FromNativeQuery(assignment) })
-        {
-            Assert.Empty(builder.Build());
-            Assert.Contains(
-                builder.Records,
-                r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("SELECT @top = …", StringComparison.Ordinal));
-        }
+        Assert.Empty(fromCall.Build());
+        Assert.Contains(
+            fromCall.Records,
+            r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("SELECT @top = …", StringComparison.Ordinal));
+
+        var fromNative = FromNativeQuery(assignment);
+        Assert.Empty(fromNative.Build());
+        Assert.Contains(
+            fromNative.Records,
+            r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("@top, which the API binds to nothing", StringComparison.Ordinal));
 
         var fromMapper = FromMyBatisMapper(assignment);
         Assert.Empty(fromMapper.Build());

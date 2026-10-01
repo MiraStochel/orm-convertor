@@ -71,12 +71,37 @@ public final class DifferentialMatrix {
         return refused;
     }
 
+    /**
+     * Every pair whose target falls back to native SQL (decision 113): pairs of the matrix all
+     * the same, measured at the fourth level, and listed so that a suite asserts the record of
+     * the fallback - a target that began to speak the query, or one that began to fall back
+     * where it did not, shows up rather than passing as the other value of a cell.
+     */
+    public static List<FallbackDirection> fallbackDirections() {
+        List<FallbackDirection> fallbacks = new ArrayList<>();
+        for (DifferentialQuery query : queries()) {
+            for (int source : query.sources()) {
+                for (Map.Entry<Integer, Integer> fallback : query.fallbackBy().entrySet()) {
+                    if (fallback.getKey() != source) {
+                        fallbacks.add(new FallbackDirection(query.id(), source, fallback.getKey(), fallback.getValue()));
+                    }
+                }
+            }
+        }
+
+        return fallbacks;
+    }
+
     /** One pair of the criterion of F13: a source variant of a query against one translation of it. */
     public record Pair(String queryId, int source, int target) {
     }
 
-    /** A direction the matrix states as refused: the target's descriptor cannot express the query (decision 053). */
+    /** A direction the matrix states as refused (decision 053). */
     public record RefusedDirection(String queryId, int source, int target, int feature) {
+    }
+
+    /** A pair whose target writes the query in native SQL, with the feature its language does not speak (decision 113). */
+    public record FallbackDirection(String queryId, int source, int target, int feature) {
     }
 
     private static List<DifferentialQuery> parse() {
@@ -129,6 +154,7 @@ public final class DifferentialMatrix {
         List<Integer> sources;
         List<String> unitPaths;
         Map<Integer, Integer> refusedBy;
+        Map<Integer, Integer> fallbackBy;
 
         if (category != null) {
             if (values.containsKey("source") || values.containsKey("units")) {
@@ -154,10 +180,12 @@ public final class DifferentialMatrix {
             sources = List.copyOf(stating);
             unitPaths = List.of();
             refusedBy = manifest.refusedBy();
+            fallbackBy = manifest.fallbackBy();
         } else {
             sources = List.of(Orm.forName(required(id, values, "source")));
             unitPaths = list(required(id, values, "units"));
             refusedBy = Map.of();
+            fallbackBy = Map.of();
         }
 
         return new DifferentialQuery(
@@ -174,7 +202,8 @@ public final class DifferentialMatrix {
                         number(values, "fractionalSeconds", 3)),
                 values.containsKey("arguments") ? arguments(values.get("arguments")) : List.of(),
                 list(required(id, values, "mutations")),
-                refusedBy);
+                refusedBy,
+                fallbackBy);
     }
 
     private static String required(String id, Map<String, String> values, String key) {

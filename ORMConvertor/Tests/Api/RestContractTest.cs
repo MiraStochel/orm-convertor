@@ -177,6 +177,9 @@ public class RestContractTest(ApiTestHost host)
             Assert.Equal(
                 query.RefusedBy.Select(refusal => (int)refusal.Target),
                 serialized.GetProperty("refusedBy").EnumerateArray().Select(refusal => refusal.GetProperty("target").GetInt32()));
+            Assert.Equal(
+                query.FallbackBy.Select(fallback => (int)fallback.Target),
+                serialized.GetProperty("fallbackBy").EnumerateArray().Select(fallback => fallback.GetProperty("target").GetInt32()));
         }
     }
 

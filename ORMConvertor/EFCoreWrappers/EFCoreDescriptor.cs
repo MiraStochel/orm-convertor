@@ -98,5 +98,10 @@ public static class EFCoreDescriptor
         // EF Core 10 translates every function of the expression vocabulary from the
         // members of System.String and System.DateTime, Math.Abs and ?? (decision 107).
         Functions = QueryFunctionVocabulary.All,
+
+        // What a LINQ chain cannot say - an aggregate over the whole result, a scalar
+        // subquery that is not one aggregate - goes out as native SQL (decision 113):
+        // SqlQuery into a row class generated beside the method, FromSql for an entity.
+        NativeSqlApi = "DatabaseFacade.SqlQuery and DbSet.FromSql",
     };
 }

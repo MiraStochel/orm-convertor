@@ -108,5 +108,9 @@ public static class MyBatisDescriptor
 
         // The same as Dapper's: the statement is T-SQL (decision 107).
         Functions = QueryFunctionVocabulary.All,
+
+        // The same as Dapper's again: the statement is the native SQL of the dialect, so
+        // there is nothing to fall back from (decision 113).
+        NativeSqlApi = null,
     };
 }

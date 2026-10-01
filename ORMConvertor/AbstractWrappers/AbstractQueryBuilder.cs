@@ -137,6 +137,24 @@ public abstract class AbstractQueryBuilder
     private bool refused;
 
     /// <summary>
+    /// The constructs of the query the target's query language does not speak, as the
+    /// builder met them in this Build (decision 113): each one a record of kind
+    /// <see cref="ConversionRecordKind.Fallback"/> whose reason names the construct and the
+    /// language, and not yet a record of the conversion - what it becomes is decided once
+    /// the attempt is over, by <see cref="FallBack"/>.
+    /// </summary>
+    private readonly List<ConversionRecord> unspoken = [];
+
+    /// <summary>
+    /// Set on the builder the template falls back to (decision 113): it writes the native
+    /// SQL of the target's dialect, which speaks every construct of the vocabulary - that is
+    /// the measure decision 113 gives the vocabulary -, so the declaration of what the
+    /// target's query language speaks does not apply to it, while the descriptor still
+    /// names the framework the records belong to.
+    /// </summary>
+    private bool writesNativeSql;
+
+    /// <summary>
     /// Diagnostic records of this query's translation (decisions 010 and 022). A query
     /// builder is created per query, so the orchestration concatenates these with the
     /// entity builder's before returning them.
@@ -152,9 +170,21 @@ public abstract class AbstractQueryBuilder
     /// (decision 053). Held by the channel rather than by each builder remembering to
     /// return early, so a query that cannot be rendered faithfully cannot leave a
     /// half-rendered one behind.
+    ///
+    /// A <see cref="ConversionRecordKind.Fallback"/> is the other half of the channel
+    /// (decision 113): a step or a visitor met a shape its query language does not have,
+    /// and says so the way it would refuse - one channel for the declaration and the point
+    /// of emission alike. It is held back rather than recorded, because whether it becomes
+    /// the native SQL of the dialect or a refusal is the template's to decide.
     /// </summary>
     public void Report(ConversionRecord record)
     {
+        if (record.Kind == ConversionRecordKind.Fallback)
+        {
+            unspoken.Add(record);
+            return;
+        }
+
         records.Add(record);
 
         if (record.Kind == ConversionRecordKind.Failure)
@@ -207,6 +237,24 @@ public abstract class AbstractQueryBuilder
             Feature = feature,
             Reason = reason,
         });
+
+    /// <summary>
+    /// Says that the target's query language does not speak a construct of the query
+    /// (decision 113) - the report a step makes where it used to refuse because the shape is
+    /// not in its language, as opposed to a shape no target writes. The reason names the
+    /// construct and the language, without the consequence: the template adds that once it
+    /// knows whether the target falls back to native SQL or refuses.
+    /// </summary>
+    protected void ReportUnspoken(string reason, QueryFeature feature)
+        => Report(ConversionRecordKind.Fallback, reason, feature);
+
+    /// <summary>
+    /// A builder that writes this target's query whole in the native SQL of its dialect and
+    /// wraps it into the framework's API for native queries, which the descriptor names as
+    /// <see cref="TargetFrameworkDescriptor.NativeSqlApi"/> (decision 113). Null for a target
+    /// without one. A fresh builder each call; the template hands it the query.
+    /// </summary>
+    protected virtual AbstractQueryBuilder? NativeSqlBuilder() => null;
 
     public void Push()
     {
@@ -358,6 +406,42 @@ public abstract class AbstractQueryBuilder
     }
 
     /// <summary>
+    /// Records the slice a host sets on the query object of a query whose reader has already
+    /// closed its scope (decision 113) - SetFirstResult and SetMaxResults on what NHibernate's
+    /// CreateSQLQuery or CreateQuery returned, setFirstResult and setMaxResults on JPA's
+    /// createNativeQuery. The slice belongs to the query's own scope, where a slice in its text
+    /// would stand, so it goes there; a second one there is the template's to refuse, as two
+    /// slices of one scope are. Over a set operation the slice would cut the composed result,
+    /// which the representation has no place for, and dropping it would return other rows, so
+    /// it refuses (decision 070) - the sentence the JPQL reader says of setMaxResults over a
+    /// union. Nothing to do when both counts are null.
+    /// </summary>
+    public void PaginateReadQuery(RowCount? offset, RowCount? limit)
+    {
+        if (offset is null && limit is null)
+        {
+            return;
+        }
+
+        if (instructions.Count != 1 || instructions[0] is not SubQueryInstruction read)
+        {
+            return;
+        }
+
+        var body = Unwrap(read.Instructions);
+        if (body.Count > 0 && body[0] is SetOperationInstruction)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "The slice set on the query object applies to the result of the set operation, which the query representation cannot carry, and dropping it would change which rows the query returns; no artifact was generated.",
+                QueryFeature.Pagination);
+            return;
+        }
+
+        instructions[0] = new SubQueryInstruction([.. body, new PaginationInstruction(offset, limit)]);
+    }
+
+    /// <summary>
     /// Records that the current (sub)query scope collapses duplicate rows of its final
     /// projection (decision 073). Idempotent, so a second call in the same scope needs no
     /// rule against it.
@@ -457,6 +541,11 @@ public abstract class AbstractQueryBuilder
     /// A failure reported anywhere along the way - by the parser, by the gate below or by a
     /// visitor at the point of emission - discards the artifact even if the text has
     /// meanwhile been assembled (decision 053).
+    ///
+    /// A construct the target's query language does not speak - declared so by the
+    /// descriptor, or met at the point of emission - ends the attempt in the target's own
+    /// language, and the query is written whole in the native SQL of the target's dialect
+    /// instead (decision 113, <see cref="FallBack"/>).
     /// </summary>
     public List<ConversionSource> Build()
     {
@@ -469,9 +558,90 @@ public abstract class AbstractQueryBuilder
             return [];
         }
 
+        // What the parser reported stays whatever happens below; what this attempt reports
+        // describes the attempt's text, which the fallback discards with it.
+        var attempt = records.Count;
+        unspoken.Clear();
+
         var artifacts = BuildArtifacts();
 
-        return refused ? [] : artifacts;
+        if (refused)
+        {
+            return [];
+        }
+
+        return unspoken.Count == 0 ? artifacts : FallBack(attempt);
+    }
+
+    /// <summary>
+    /// The escape path of decision 113, filling the one decision 022 chose and nobody wrote.
+    /// The query the target's language does not speak is written whole - definitions, body,
+    /// parameters, never a piece of it - by the shared writer of the dialect's SQL over the
+    /// same instructions, and the wrapper's builder hands that text to the framework's API
+    /// for native queries; the signature of the method stays, so the levels of verification
+    /// and the Advisor see the shape a translation in the target's language has. A target
+    /// without such an API refuses, each construct named, as it did before the decision.
+    ///
+    /// The records of the abandoned attempt go with its text: a convention of the target's
+    /// language says nothing about the native SQL. The parser's records stay, the fallback's
+    /// own follow, and before them one record of kind Fallback per construct, naming the
+    /// dialect the artifact is bound to from now on. A refusal of the fallback - a shape the
+    /// API cannot take, a gate no target passes - refuses the query.
+    /// </summary>
+    private List<ConversionSource> FallBack(int attempt)
+    {
+        var gaps = unspoken.DistinctBy(gap => (gap.Feature, gap.Reason)).ToList();
+        unspoken.Clear();
+
+        var fallback = Descriptor.NativeSqlApi is null ? null : NativeSqlBuilder();
+        if (fallback is null)
+        {
+            foreach (var gap in gaps)
+            {
+                Report(gap with
+                {
+                    Kind = ConversionRecordKind.Failure,
+                    Reason = $"{gap.Reason}, and {Descriptor.Framework} has no API for a query in native SQL to fall back on; no artifact was generated.",
+                });
+            }
+
+            return [];
+        }
+
+        records.RemoveRange(attempt, records.Count - attempt);
+
+        fallback.writesNativeSql = true;
+        fallback.EntityMaps = EntityMaps;
+        fallback.QueryName = QueryName;
+        fallback.instructions.AddRange(instructions);
+        fallback.definitions.AddRange(definitions);
+
+        var artifacts = fallback.Build();
+
+        if (fallback.refused)
+        {
+            foreach (var record in fallback.Records)
+            {
+                Report(record);
+            }
+
+            return [];
+        }
+
+        foreach (var gap in gaps)
+        {
+            records.Add(gap with
+            {
+                Reason = $"{gap.Reason}, so the whole query was written in the native SQL of {Descriptor.Dialect} and handed to {Descriptor.NativeSqlApi}; the artifact is bound to that dialect.",
+            });
+        }
+
+        foreach (var record in fallback.Records)
+        {
+            Report(record);
+        }
+
+        return artifacts;
     }
 
     private List<ConversionSource> BuildArtifacts()
@@ -487,7 +657,9 @@ public abstract class AbstractQueryBuilder
         // The intermediate results first (decision 112): whether the target writes them at
         // all, and the rules every definition is held to, before anything reads a column of
         // one; then the row of each, which every walk below resolves a reference through.
-        if (!GateDefinitions())
+        // A target whose language has no intermediate result ends the attempt here and falls
+        // back (decision 113): nothing below could write the definitions in it.
+        if (!GateDefinitions() || unspoken.Count > 0)
         {
             return [];
         }
@@ -520,8 +692,10 @@ public abstract class AbstractQueryBuilder
         // The expressions of the whole query, typed once from the mapping representation
         // and held to the four rules of decision 107 - before the parameters, because a
         // parameter inside an expression takes its scalar from the position it stands in,
-        // and before any scope is normalized, for the same reason the parameters are.
-        if (!GateExpressions(body))
+        // and before any scope is normalized, for the same reason the parameters are. A
+        // function the target's language does not speak ends the attempt here (decision
+        // 113): its visitor has no spelling to write.
+        if (!GateExpressions(body) || unspoken.Count > 0)
         {
             return [];
         }
@@ -567,7 +741,7 @@ public abstract class AbstractQueryBuilder
     {
         ArgumentNullException.ThrowIfNull(clauses);
 
-        ReportCapabilityLosses(clauses);
+        ReportUnspokenFeatures(clauses);
 
         var artifact = new QueryArtifact();
 
@@ -1055,6 +1229,34 @@ public abstract class AbstractQueryBuilder
             : [];
 
     /// <summary>
+    /// The columns of the query's result in the order they come back (decision 113): the
+    /// name each goes by - the alias, or a bare column's own name, as SQL names it - and the
+    /// scalar the gate derives for it, with the operand it projects. What a target reads
+    /// where it has to declare the row of a query whose text states no type: the class EF
+    /// Core's SqlQuery materializes into, the scalars NHibernate's AddScalar reads. A set
+    /// operation answers with its leftmost operand, which is where SQL takes the names from;
+    /// the whole row of an intermediate result with the columns of its definition. Empty for
+    /// a query over the whole of an entity, whose row is the entity. Valid once the gates of
+    /// <see cref="Build"/> have run, which is when a step asks.
+    /// </summary>
+    protected IReadOnlyList<ResultColumn> ResultColumns()
+    {
+        var select = LeftmostSelect(Unwrap(instructions));
+        var projections = select.OfType<ProjectInstruction>().ToList();
+
+        if (projections.Count == 0)
+        {
+            var source = select.OfType<FromInstruction>().FirstOrDefault();
+            return source is not null && renderedRows.TryGetValue(source.Table, out var row)
+                ? [.. row.PropertyMaps.Select(p => new ResultColumn(p.ColumnName, p.Property.Type?.ScalarType, null))]
+                : [];
+        }
+
+        var aliases = ScopeAliases(select, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), RenderedEntityFor);
+        return [.. projections.Select(p => new ResultColumn(ColumnNameOf(p), ScalarOf(p.Operand, aliases), p.Operand))];
+    }
+
+    /// <summary>
     /// Describes the row of every definition, in order, so that a definition reading an
     /// earlier one finds its row already there. The maps hold what the template derives and
     /// nothing else: no key, no relation, no table of the database - they never leave the
@@ -1139,10 +1341,10 @@ public abstract class AbstractQueryBuilder
     /// <summary>
     /// Holds every definition of the query to the rules of decision 112, in one place for
     /// every target (decision 023), and fills <see cref="Definitions"/> with what passed,
-    /// each body with its columns named. A target that cannot express an intermediate
-    /// result refuses the query outright: a definition left out would leave its row source
-    /// naming a table that does not exist (decision 053). Returns false when the query
-    /// cannot be built, having reported why.
+    /// each body with its columns named. A target whose query language cannot express an
+    /// intermediate result falls back to native SQL (decision 113) - a definition left out
+    /// would leave its row source naming a table that does not exist (decision 053), so it
+    /// is never left out. Returns false when the query cannot be built, having reported why.
     /// </summary>
     private bool GateDefinitions()
     {
@@ -1153,17 +1355,16 @@ public abstract class AbstractQueryBuilder
             return true;
         }
 
-        if (Descriptor.SupportOf(QueryFeature.IntermediateResult) == FactSupport.NotExpressible)
+        if (!writesNativeSql && Descriptor.SupportOf(QueryFeature.IntermediateResult) == FactSupport.NotExpressible)
         {
             var named = string.Join(", ", definitions.Select(d => $"'{d.Name}'"));
             var what = definitions.Count == 1
                 ? $"the intermediate result {named} as a source of rows - a common table expression or a derived table -"
                 : $"the intermediate results {named} as sources of rows - common table expressions or derived tables -";
-            Report(
-                ConversionRecordKind.Failure,
-                $"The query reads {what} which {Descriptor.Framework} cannot express, and a query emitted without {(definitions.Count == 1 ? "it" : "them")} would read a table that does not exist; no artifact was generated.",
+            ReportUnspoken(
+                $"The query reads {what} which the query language of {Descriptor.Framework} cannot express",
                 QueryFeature.IntermediateResult);
-            return false;
+            return true;
         }
 
         var admitted = true;
@@ -2821,13 +3022,13 @@ public abstract class AbstractQueryBuilder
             }
         }
 
-        if (expression.IsCall && !Descriptor.Speaks(expression.Function!.Value))
+        // A function the descriptor leaves out is not invented a spelling for (decision 107);
+        // the target writes the query in native SQL instead, or refuses (decision 113).
+        if (expression.IsCall && !writesNativeSql && !Descriptor.Speaks(expression.Function!.Value))
         {
-            Report(
-                ConversionRecordKind.Failure,
-                $"The function {expression.Function} is not one the target {Descriptor.Framework} speaks, and the tool does not invent a spelling for it; no artifact was generated.",
+            ReportUnspoken(
+                $"The function {expression.Function} is not one the query language of {Descriptor.Framework} speaks, and the tool does not invent a spelling for it",
                 QueryFeature.Expression);
-            admitted = false;
         }
 
         var concatenates = IsConcatenation(expression, aliases);
@@ -3378,18 +3579,22 @@ public abstract class AbstractQueryBuilder
     /// <summary>
     /// Reports the query features the model carries and the descriptor marks inexpressible
     /// (rule Q14). Mechanical on purpose — a builder that had to remember to report would
-    /// eventually not (decision 009).
+    /// eventually not (decision 009). What it reports is no longer a loss: a query emitted
+    /// without the feature would return other rows (decision 053), so the target writes it
+    /// in native SQL, or refuses where it has no API for that (decision 113).
     /// </summary>
-    private void ReportCapabilityLosses(QueryClauses clauses)
+    private void ReportUnspokenFeatures(QueryClauses clauses)
     {
+        if (writesNativeSql)
+        {
+            return;
+        }
+
         void Check(QueryFeature feature, bool present)
         {
             if (present && Descriptor.SupportOf(feature) == FactSupport.NotExpressible)
             {
-                Report(
-                    ConversionRecordKind.Loss,
-                    $"The target cannot express {feature}; the artifact is generated without it.",
-                    feature);
+                ReportUnspoken($"The query language of {Descriptor.Framework} cannot express {feature}", feature);
             }
         }
 
@@ -3412,14 +3617,14 @@ public abstract class AbstractQueryBuilder
     }
 
     /// <summary>
-    /// Renders a set operation. The default refuses with a record, because a target whose
-    /// query language has no UNION cannot be given one; a target that has one overrides.
+    /// Renders a set operation. The default says that the target's query language has none,
+    /// which makes the target write the query in native SQL (decision 113); a target whose
+    /// language has one overrides.
     /// </summary>
     protected virtual List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)
     {
-        Report(
-            ConversionRecordKind.Loss,
-            "The target cannot express a set operation; no query artifact was generated.",
+        ReportUnspoken(
+            $"The query is a set operation ({instruction.OperationType}), and the query language of {Descriptor.Framework} has none",
             QueryFeature.SetOperation);
         return [];
     }

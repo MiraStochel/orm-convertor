@@ -48,6 +48,9 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
     public override TargetFrameworkDescriptor Descriptor => EFCoreDescriptor.Instance;
 
+    /// <summary>What LINQ does not speak goes out as native SQL through SqlQuery or FromSql (decision 113).</summary>
+    protected override AbstractQueryBuilder NativeSqlBuilder() => new EFCoreNativeSqlQueryBuilder();
+
     protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
     {
         // An intermediate result is the local variable that holds its chain (decision 112);
@@ -463,9 +466,8 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             var lost = before.First(o => !clauses.Projections.Any(p => Projects(p, o)));
             if (clauses.Offset is not null || clauses.Limit is not null)
             {
-                Report(
-                    ConversionRecordKind.Failure,
-                    $"The ordering key '{lost.Operand}' is not projected and stands before a key that names the projection; a LINQ ordering after the projection discards the one before it, so the slice would select other rows; no artifact was generated.",
+                ReportUnspoken(
+                    $"The ordering key '{lost.Operand}' is not projected and stands before a key that names the projection; a LINQ ordering after the projection discards the one before it, so the slice would select other rows",
                     QueryFeature.Ordering);
                 return;
             }
@@ -597,14 +599,14 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         }
 
         // T-SQL counts rows in bigint, Skip and Take in Int32; a value between the two has
-        // no faithful LINQ form and dropping it would change which rows come back. Only a
-        // stated number can be out of range: a bound count is typed Int by the template
+        // no faithful LINQ form and dropping it would change which rows come back, so the
+        // query goes out in native SQL, which counts in bigint (decision 113). Only a stated
+        // number can be out of range: a bound count is typed Int by the template
         // (decision 085) and has nothing left to overflow.
         if (clauses.Offset?.Value > int.MaxValue || clauses.Limit?.Value > int.MaxValue)
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "The pagination value exceeds Int32, which Skip and Take cannot carry; no artifact was generated.",
+            ReportUnspoken(
+                "The pagination value exceeds Int32, which Skip and Take cannot carry",
                 QueryFeature.Pagination);
             return;
         }
@@ -628,7 +630,8 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
     /// EXISTS, nothing for a scalar - and this renderer decides how the chain ends: bare for
     /// EXISTS, a one-column Select for IN, a terminal aggregate call for a scalar. A scalar
     /// subquery that is not a single ungrouped aggregate has no faithful LINQ form -
-    /// First() would silently pick one row where SQL refuses several - and refuses.
+    /// First() would silently pick one row where SQL refuses several - and the query goes
+    /// out in native SQL, which writes the subquery as the source did (decision 113).
     /// </summary>
     private string? RenderSubQuery(SubQueryInstruction subQuery, ComparisonOperator op)
     {
@@ -642,9 +645,8 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
         if (scalar && (clauses.GroupBys.Count > 0 || !clauses.Projections[0].Operand.IsAggregate))
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "A scalar subquery that is not a single ungrouped aggregate has no LINQ form - First() would silently pick one row where SQL refuses several; no artifact was generated.",
+            ReportUnspoken(
+                "A scalar subquery that is not a single ungrouped aggregate has no LINQ form - First() would silently pick one row where SQL refuses several",
                 QueryFeature.Subquery);
             return null;
         }
@@ -653,9 +655,8 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             && clauses.GroupBys.Count == 0
             && clauses.Projections[0].Operand.IsAggregate)
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "An aggregate projected without a grouping cannot stand inside a LINQ subquery's Select; no artifact was generated.",
+            ReportUnspoken(
+                "An aggregate projected without a grouping cannot stand inside a LINQ subquery's Select",
                 QueryFeature.Subquery);
             return null;
         }
@@ -798,12 +799,12 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         // operands of the same entity keep that type; two projections each build an anonymous
         // type and are left to the compilation level to judge. What cannot type-check at all
         // is a whole entity against anything else, and emitting it anyway would only move the
-        // error into the consumer's build (decision 053).
+        // error into the consumer's build (decision 053) - so the query goes out in native
+        // SQL, where a set operation composes rows rather than types (decision 113).
         if (!string.Equals(leftEntity, rightEntity, StringComparison.Ordinal))
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "The two sides of the set operation materialize different element types, which LINQ cannot compose; no artifact was generated.",
+            ReportUnspoken(
+                "The two sides of the set operation materialize different element types, which LINQ cannot compose",
                 QueryFeature.SetOperation);
             return null;
         }

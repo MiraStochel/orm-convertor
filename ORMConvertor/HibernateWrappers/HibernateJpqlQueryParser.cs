@@ -18,7 +18,9 @@ namespace HibernateWrappers;
 /// after join -, which the representation carries as a named intermediate result
 /// (decision 112), so the profile turns the shared reading of it on.
 /// </summary>
-public sealed class HibernateJpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : JpqlQueryParser(queryBuilders)
+public sealed class HibernateJpqlQueryParser(
+    Func<AbstractQueryBuilder> queryBuilders,
+    Model.SourceSqlDialect? declaredSourceDialect = null) : JpqlQueryParser(queryBuilders, declaredSourceDialect)
 {
     protected override bool ReadsIntermediateResults => true;
 

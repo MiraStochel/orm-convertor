@@ -157,6 +157,18 @@ function renderQuery(catalog, query) {
     refusals.hidden = false;
   }
 
+  // The third value of decision 113: the target writes the query in the native SQL of its
+  // dialect, because its query language does not speak it.
+  if (query.fallbackBy.length > 0) {
+    const fallbacks = article.querySelector(".query-fallbacks");
+    for (const fallback of query.fallbackBy) {
+      const strong = document.createElement("strong");
+      strong.textContent = `Native SQL in ${ORM_LABELS[fallback.target]}: `;
+      fallbacks.append(strong, fallback.reason, " ");
+    }
+    fallbacks.hidden = false;
+  }
+
   if (query.sql) {
     const text = article.querySelector(".query-text");
     renderParameters(article, query);
@@ -199,15 +211,17 @@ function renderSummary(catalog) {
 
   const refusedBy = (target) =>
     catalog.queries.filter((query) => query.refusedBy.some((refusal) => refusal.target === target)).length;
+  const fallbackBy = (target) =>
+    catalog.queries.filter((query) => query.fallbackBy.some((fallback) => fallback.target === target)).length;
 
+  // Every count names its target in data-target, so the page states which framework a
+  // number is about rather than the script knowing which paragraph means which.
   for (const count of document.querySelectorAll(".ldbc-refusal-count")) {
-    count.textContent = String(refusedBy(ORM.EFCore));
+    count.textContent = String(refusedBy(Number(count.dataset.target)));
   }
 
-  // NHibernate and EclipseLink refuse the same queries, the ones over the result of another
-  // query (decision 112); the page counts one of them.
-  for (const count of document.querySelectorAll(".ldbc-intermediate-refusal-count")) {
-    count.textContent = String(refusedBy(ORM.NHibernate));
+  for (const count of document.querySelectorAll(".ldbc-fallback-count")) {
+    count.textContent = String(fallbackBy(Number(count.dataset.target)));
   }
 }
 

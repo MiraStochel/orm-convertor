@@ -228,7 +228,16 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
         => count.IsParameter ? $"@{Spelled(count)}" : Spelled(count);
 
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
-        => WithClause() is { } with ? Emit(with + RenderSelect(artifact), artifact.ResultEntity) : [];
+    {
+        if (WithClause() is not { } with)
+        {
+            return [];
+        }
+
+        // Asked of the statement, not of a definition's body the WITH clause just wrote.
+        OperandsMaterializeDifferentRows = false;
+        return Emit(with + RenderSelect(artifact), artifact.ResultEntity);
+    }
 
     /// <summary>
     /// The definitions of the query as one WITH before the statement (decision 112), each
@@ -303,14 +312,57 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
 
     protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)
     {
+        OperandsMaterializeDifferentRows = false;
+
         var sql = RenderSetOperation(instruction, out var resultEntity);
-        return sql is null || WithClause() is not { } with ? [] : Emit(with + sql, resultEntity);
+        var differ = OperandsMaterializeDifferentRows;
+
+        if (sql is null || WithClause() is not { } with)
+        {
+            return [];
+        }
+
+        // Asked of the statement, not of a definition's body the WITH clause just wrote.
+        OperandsMaterializeDifferentRows = differ;
+        return Emit(with + sql, resultEntity);
+    }
+
+    /// <summary>
+    /// Whether the operands of the set operation being written materialize different rows -
+    /// the whole of two different entities, or the whole of one beside a projection. The
+    /// result type <see cref="Emit"/> is handed is the right operand's, which is one of the
+    /// two; a framework that materializes the rows of a native query into an entity (decision
+    /// 113) asks this before it does, because there the rows of the other operand would come
+    /// back as an entity they are not.
+    /// </summary>
+    protected bool OperandsMaterializeDifferentRows { get; private set; }
+
+    /// <summary>
+    /// Refuses, with a record, a set operation whose operands materialize different rows
+    /// where the framework would materialize the result into the one entity it was handed
+    /// (decision 113): the rows of the other operand would come back as that entity, which
+    /// they are not. True when it refused.
+    /// </summary>
+    protected bool RefusesAnEntityOverDifferentRows(string? resultEntity, string materializer)
+    {
+        if (resultEntity is null || !OperandsMaterializeDifferentRows)
+        {
+            return false;
+        }
+
+        Report(
+            ConversionRecordKind.Failure,
+            $"The operands of the set operation materialize different rows, and {materializer} would materialize all of them as {resultEntity}; no artifact was generated.",
+            QueryFeature.SetOperation);
+        return true;
     }
 
     private string? RenderSetOperation(SetOperationInstruction instruction, out string? resultEntity)
     {
-        var left = RenderOperand(instruction.Left, out _);
+        var left = RenderOperand(instruction.Left, out var leftEntity);
         var right = RenderOperand(instruction.Right, out resultEntity);
+
+        OperandsMaterializeDifferentRows |= !string.Equals(leftEntity, resultEntity, StringComparison.Ordinal);
 
         if (left is null || right is null)
         {

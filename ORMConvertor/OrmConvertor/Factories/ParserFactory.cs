@@ -84,12 +84,12 @@ internal class ParserFactory
             case ORMEnum.NHibernate:
                 return qb is null
                     ? [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb, declaredSourceDialect)]
-                    : [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb, declaredSourceDialect), new NHibernateLinqQueryParser(qb), new NHibernateHqlQueryParser(qb), new NHibernateXmlQueryParser(qb, declaredSourceDialect)];
+                    : [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb, declaredSourceDialect), new NHibernateLinqQueryParser(qb, declaredSourceDialect), new NHibernateHqlQueryParser(qb), new NHibernateXmlQueryParser(qb, declaredSourceDialect)];
 
             case ORMEnum.EFCore:
                 return qb is null
                     ? [new EFCoreEntityParser(eb, declaredSourceDialect)]
-                    : [new EFCoreEntityParser(eb, declaredSourceDialect), new EFCoreLinqQueryParser(qb)];
+                    : [new EFCoreEntityParser(eb, declaredSourceDialect), new EFCoreLinqQueryParser(qb, declaredSourceDialect)];
 
             // orm.xml before the class: the specification's precedence (Jakarta Persistence
             // 3.2 §12.1 - XML metadata overrides annotations, and metadata-complete switches
@@ -99,7 +99,7 @@ internal class ParserFactory
                 var context = new JpaReadingContext(declaredSourceDialect);
                 return qb is null
                     ? [new JpaOrmXmlParser(eb, context), new HibernateEntityParser(eb, context)]
-                    : [new JpaOrmXmlParser(eb, context), new HibernateEntityParser(eb, context), new HibernateJpqlQueryParser(qb)];
+                    : [new JpaOrmXmlParser(eb, context), new HibernateEntityParser(eb, context), new HibernateJpqlQueryParser(qb, declaredSourceDialect)];
             }
 
             // The same list and the same order for the second implementation of the same
@@ -110,7 +110,7 @@ internal class ParserFactory
                 var context = new JpaReadingContext(declaredSourceDialect);
                 return qb is null
                     ? [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context)]
-                    : [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context), new EclipseLinkJpqlQueryParser(qb)];
+                    : [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context), new EclipseLinkJpqlQueryParser(qb, declaredSourceDialect)];
             }
 
             // MyBatis documents no precedence between its two mapping forms - it refuses the

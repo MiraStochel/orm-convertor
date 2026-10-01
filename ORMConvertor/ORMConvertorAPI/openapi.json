@@ -948,7 +948,8 @@
           "note",
           "sql",
           "parameters",
-          "refusedBy"
+          "refusedBy",
+          "fallbackBy"
         ],
         "type": "object",
         "properties": {
@@ -988,6 +989,12 @@
             }
           },
           "refusedBy": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LdbcRefusalDefinition"
+            }
+          },
+          "fallbackBy": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/LdbcRefusalDefinition"

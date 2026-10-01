@@ -155,4 +155,11 @@ public static class JakartaPersistenceDescriptor
     /// form, so that both implementations read it.
     /// </summary>
     public static IReadOnlySet<QueryFunction> Functions { get; } = QueryFunctionVocabulary.All;
+
+    /// <summary>
+    /// The specification's API for a query in the SQL of the database, which both
+    /// implementations take (decision 113): what their query language does not speak goes out
+    /// through it, with the entity class where the query materializes the whole entity.
+    /// </summary>
+    public const string NativeSqlApi = "EntityManager.createNativeQuery";
 }

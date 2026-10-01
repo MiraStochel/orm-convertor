@@ -16,6 +16,9 @@ public final class RecordKind {
     public static final int SUPPLIED = 5;
     public static final int CONFLICT = 6;
 
+    /** The query went out in the native SQL of the target's dialect, its query language not speaking it (decision 113). */
+    public static final int FALLBACK = 7;
+
     private RecordKind() {
     }
 
@@ -27,6 +30,7 @@ public final class RecordKind {
             case INCOMPLETENESS -> "Incompleteness";
             case SUPPLIED -> "Supplied";
             case CONFLICT -> "Conflict";
+            case FALLBACK -> "Fallback";
             default -> "kind " + kind;
         };
     }

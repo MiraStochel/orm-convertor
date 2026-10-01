@@ -41,6 +41,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private IReadOnlyList<EntityMap>? entityMaps;
 
+    /// <summary>The mapping of the conversion the unit being read belongs to, for a reader a subclass composes (decision 113).</summary>
+    protected IReadOnlyList<EntityMap>? EntityMaps => entityMaps;
+
     /// <summary>
     /// The variables of the unit being read that hold a query (decision 109). Assigned at the
     /// start of every Parse; empty until then, so a chain decomposed outside a Parse follows
@@ -302,13 +305,129 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     /// <summary>
     /// One query of the unit (decision 109): a chain over a query root, a chain whose query
-    /// the code composes at run time and which is refused naming the variable, or a query
-    /// expression the rewrite refused before it became a chain over a root. The node is the
-    /// place itself - the chain, or what the refused expression left behind.
+    /// the code composes at run time and which is refused naming the variable, a query
+    /// expression the rewrite refused before it became a chain over a root, or a hand-over in
+    /// another language than LINQ (decision 113). The node is the place itself - the chain,
+    /// the call, or what the refused expression left behind.
     /// </summary>
-    private sealed record QueryPlace(SyntaxNode Node, InvocationExpressionSyntax? Chain, string? ComposedIn)
+    private sealed record QueryPlace(SyntaxNode Node, InvocationExpressionSyntax? Chain, string? ComposedIn, ForeignQuery? Foreign = null)
     {
         public int Position => Node.SpanStart;
+    }
+
+    /// <summary>
+    /// A place where the unit hands its provider a query in another language than LINQ
+    /// (decision 113) - SQL through the framework's API for native queries, NHibernate's HQL
+    /// through CreateQuery, a query defined elsewhere and handed over by its name, a query the
+    /// API composes at run time -, as the wrapper recognizes it in its framework's API (S1),
+    /// the way the Dapper wrapper names Dapper's methods (decision 109). <see cref="Read"/>
+    /// puts what the place states into the builder of the query: the query, or the record that
+    /// says why there is none. A place of its own, so that it is numbered among the queries of
+    /// the unit and the entity pass sees the class around it as code rather than as an entity
+    /// (decision 111).
+    /// </summary>
+    protected sealed record ForeignQuery(Action<AbstractQueryBuilder> Read);
+
+    /// <summary>
+    /// The hand-over in another language than LINQ that an expression ending in this call is,
+    /// asked of the outermost call of every expression before it is read as a chain
+    /// (decision 113); null where it is none. The default knows none: which calls of the API
+    /// hand a query over is the wrapper's statement about its framework.
+    /// </summary>
+    protected virtual ForeignQuery? TryReadForeignQuery(InvocationExpressionSyntax outermost) => null;
+
+    /// <summary>
+    /// The calls of a fluent chain from its head out: the call whose receiver is not itself a
+    /// call first, the outermost last - <c>session.CreateSQLQuery(…)</c>, then the
+    /// <c>.SetParameter(…)</c> on what it returned, and so on.
+    /// </summary>
+    protected static IReadOnlyList<InvocationExpressionSyntax> CallChain(InvocationExpressionSyntax outermost)
+    {
+        var calls = new List<InvocationExpressionSyntax> { outermost };
+        var current = outermost;
+
+        while (current.Expression is MemberAccessExpressionSyntax { Expression: InvocationExpressionSyntax inner })
+        {
+            calls.Add(inner);
+            current = inner;
+        }
+
+        calls.Reverse();
+        return calls;
+    }
+
+    /// <summary>
+    /// The channel a hand-over in another language reports over into the builder of its
+    /// query: the record names the language that was handed over, the shape every query
+    /// parser of the solution uses - SQL for a native query, HQL for NHibernate's own.
+    /// </summary>
+    protected static Action<ConversionRecordKind, string, QueryFeature?> ChannelOf(AbstractQueryBuilder builder, ConversionContentType language)
+        => (kind, reason, feature) => builder.Report(new ConversionRecord
+        {
+            Kind = kind,
+            Framework = builder.Descriptor.Framework,
+            Artifact = language,
+            Feature = feature,
+            Reason = reason,
+        });
+
+    /// <summary>The name of the method a call invokes, its type arguments left out.</summary>
+    protected static string? MethodNameOf(InvocationExpressionSyntax call) => call.Expression switch
+    {
+        MemberAccessExpressionSyntax member => member.Name.Identifier.Text,
+        SimpleNameSyntax name => name.Identifier.Text,
+        _ => null,
+    };
+
+    /// <summary>
+    /// The text a string argument states: a regular, verbatim or raw literal through the value
+    /// of its token, so that escapes and the indentation of a raw literal have been resolved
+    /// by Roslyn rather than unwound by hand - the way the Dapper wrapper takes its SQL. Null
+    /// for anything else, which is a text the code composes at run time.
+    /// </summary>
+    protected static string? LiteralText(ExpressionSyntax? expression)
+        => expression is LiteralExpressionSyntax literal && literal.RawKind == (int)SyntaxKind.StringLiteralExpression
+            ? literal.Token.ValueText
+            : null;
+
+    /// <summary>
+    /// The argument of a slice the code sets on a query object as a row count (decision 085):
+    /// a non-negative integer literal, or a value from the enclosing scope, which is the
+    /// parameter of that name - the reading Skip and Take get. Null for anything else.
+    /// </summary>
+    protected static RowCount? RowCountOf(ExpressionSyntax? expression) => expression switch
+    {
+        LiteralExpressionSyntax { Token.Value: int value } when value >= 0 => RowCount.Literal(value),
+        LiteralExpressionSyntax { Token.Value: long value } when value >= 0 => RowCount.Literal(value),
+        IdentifierNameSyntax identifier => RowCount.Bound(QueryParameter.Named(identifier.Identifier.Text)),
+        _ => null,
+    };
+
+    /// <summary>
+    /// The variable the statement around a call keeps its result in, where the code goes on to
+    /// call a method on that variable in a later statement of the block other than the ones
+    /// named harmless (decision 113): a query object a host goes on to slice or bind a list on
+    /// out of the reading's sight. Null where the result is not kept, or is kept and only
+    /// harmlessly used.
+    /// </summary>
+    protected static string? ContinuedElsewhere(InvocationExpressionSyntax outermost, IReadOnlySet<string> harmless)
+    {
+        if (outermost.Parent is not EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax declarator }
+            || declarator.FirstAncestorOrSelf<BlockSyntax>() is not { } block)
+        {
+            return null;
+        }
+
+        var name = declarator.Identifier.Text;
+
+        var continued = block.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(call => call.SpanStart > declarator.Span.End)
+            .Any(call => call.Expression is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax receiver } member
+                         && receiver.Identifier.Text == name
+                         && !harmless.Contains(member.Name.Identifier.Text));
+
+        return continued ? name : null;
     }
 
     /// <summary>
@@ -335,8 +454,22 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
-            if (taken.Any(span => span.Contains(invocation.Span))
-                || !TryDecompose(invocation, out _, out _, out var rootExpression)
+            if (taken.Any(span => span.Contains(invocation.Span)))
+            {
+                continue;
+            }
+
+            // A hand-over in another language is asked for before the chain, because a FromSql
+            // over a root decomposes as a chain too, and as a whole query it is the other one
+            // (decision 113).
+            if (TryReadForeignQuery(invocation) is { } foreign)
+            {
+                taken.Add(invocation.Span);
+                queries.Add(new QueryPlace(invocation, null, null, foreign));
+                continue;
+            }
+
+            if (!TryDecompose(invocation, out _, out _, out var rootExpression)
                 || IsElementNavigation(rootExpression!))
             {
                 continue;
@@ -379,6 +512,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private void ReadQuery(SyntaxNode root, QueryPlace query, QueryExpressionRewriter rewriter)
     {
+        if (query.Foreign is { } foreign)
+        {
+            foreign.Read(queryBuilder);
+            return;
+        }
+
         if (query.Chain is null)
         {
             queryBuilder.Push();

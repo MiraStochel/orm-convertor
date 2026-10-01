@@ -33,6 +33,7 @@ public static class HibernateDescriptor
         // verified against this release); EclipseLink keeps the specification's table.
         QuerySupport = JakartaPersistenceDescriptor.QuerySupportWith(QueryFeature.IntermediateResult),
         Functions = JakartaPersistenceDescriptor.Functions,
+        NativeSqlApi = JakartaPersistenceDescriptor.NativeSqlApi,
     };
 
     /// <summary>
@@ -59,5 +60,10 @@ public static class HibernateDescriptor
         // measured what Hibernate 7.4.5 creates for it; what the tutorial measured was AUTO,
         // and AUTO is a sequence here. An unmeasured default is not ours to write down
         // (decision 080), so a TABLE generator without parameters keeps the target's own.
-        DefaultCounterTable: null);
+        DefaultCounterTable: null,
+
+        // Measured against 7.4.5.Final when the escape path was written (decision 113): a
+        // List bound to ?1 of a native query is expanded into the list IN (?1) ranges over,
+        // and a position named twice binds one value twice.
+        NativeQueryExpandsCollection: true);
 }

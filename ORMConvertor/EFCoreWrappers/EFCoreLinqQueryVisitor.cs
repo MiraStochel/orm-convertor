@@ -105,8 +105,8 @@ public sealed class EFCoreLinqQueryVisitor(
             case SetOperationType.Except: return "Except";
             default:
                 report(
-                    ConversionRecordKind.Failure,
-                    $"The set operation {instr.OperationType} has no LINQ form; the query was not generated.",
+                    ConversionRecordKind.Fallback,
+                    $"The set operation {instr.OperationType} has no LINQ form",
                     QueryFeature.SetOperation);
                 return string.Empty;
         }
@@ -577,13 +577,15 @@ public sealed class EFCoreLinqQueryVisitor(
         // chain must end in the aggregate call, which is not the IQueryable this builder
         // emits. Writing the bare column instead answers with every row where the source
         // answered with one number - a different result, not a poorer one (decision 053) -
-        // and over COUNT(*) it wrote `c.*`, which is not even valid C#. The same shape inside
-        // a subquery operand is refused by RenderSubQuery for the same reason.
+        // and over COUNT(*) it wrote `c.*`, which is not even valid C#; a grouping by a
+        // constant returns no row over an empty table where SQL returns one with a zero. So
+        // the query goes out in native SQL (decision 113). The same shape inside a subquery
+        // operand goes the same way from RenderSubQuery.
         if (!Scope.Grouped)
         {
             report(
-                ConversionRecordKind.Failure,
-                $"{function} is projected without a grouping, which a LINQ chain can only express by ending in the aggregate call rather than by a query; no artifact was generated.",
+                ConversionRecordKind.Fallback,
+                $"{function} is projected without a grouping, which a LINQ chain can only express by ending in the aggregate call rather than by a query",
                 QueryFeature.Aggregation);
             return string.Empty;
         }

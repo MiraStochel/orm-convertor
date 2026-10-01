@@ -85,5 +85,9 @@ public static class DapperDescriptor
 
         // T-SQL spells every function of the expression vocabulary (decision 107).
         Functions = QueryFunctionVocabulary.All,
+
+        // The query language is the native SQL of the dialect, so there is nothing to fall
+        // back from (decision 113): a construct the writer does not take is a refusal.
+        NativeSqlApi = null,
     };
 }

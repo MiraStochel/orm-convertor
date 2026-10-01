@@ -294,18 +294,31 @@ public static class LdbcSnbSample
         "A LINQ join matches pairs of equal columns and nothing else, and this query joins on other conditions too - "
         + "filters that an outer join cannot move to WHERE without changing its rows.");
 
-    private static readonly LdbcRefusal EFCoreCount = new(Model.ORMEnum.EFCore,
-        "A count over the whole result is a call that ends a LINQ chain, not a query, and the tool emits queries.");
+    /// <summary>
+    /// A count over the whole result, which LINQ says only by ending the chain in the call,
+    /// and no other chain returns the same rows - so EF Core writes it in native SQL
+    /// (decision 113).
+    /// </summary>
+    private static readonly LdbcFallback EFCoreCount = new(Model.ORMEnum.EFCore,
+        "A count over the whole result is a call that ends a LINQ chain, not a query, so the query goes out as native SQL through SqlQuery.");
 
     /// <summary>
     /// A query over the result of another query - a common table expression, a derived table -
-    /// has no form in two of the six query languages (decision 112).
+    /// has no form in two of the six query languages (decision 112), and those two targets
+    /// write it in native SQL (decision 113).
     /// </summary>
-    private static readonly LdbcRefusal NHibernateIntermediate = new(Model.ORMEnum.NHibernate,
-        "HQL of NHibernate 5.7 has neither WITH nor a subquery in FROM, so a query over the result of another query has no form in it.");
+    private static readonly LdbcFallback NHibernateIntermediate = new(Model.ORMEnum.NHibernate,
+        "HQL of NHibernate 5.7 has neither WITH nor a subquery in FROM, so the query goes out as native SQL through CreateSQLQuery.");
 
-    private static readonly LdbcRefusal EclipseLinkIntermediate = new(Model.ORMEnum.EclipseLink,
-        "JPQL has neither WITH nor a subquery in FROM, and EclipseLink's own subquery in FROM stands only as a cross join beside an entity.");
+    private static readonly LdbcFallback EclipseLinkIntermediate = new(Model.ORMEnum.EclipseLink,
+        "JPQL has neither WITH nor a subquery in FROM - EclipseLink's own subquery in FROM stands only as a cross join beside an entity -, so the query goes out as native SQL through createNativeQuery.");
+
+    /// <summary>
+    /// The one shape the native query of EclipseLink cannot take: a list parameter, which it
+    /// hands the driver as one value instead of expanding it (decision 113, measured).
+    /// </summary>
+    private static readonly LdbcRefusal EclipseLinkNativeList = new(Model.ORMEnum.EclipseLink,
+        "The query needs native SQL here, and a native query of EclipseLink 5.0 does not expand a list parameter into the values IN ranges over.");
 
     private static readonly LdbcParameter PersonId = new("personId", "BIGINT", "4398046513938");
     private static readonly LdbcParameter MessageId = new("messageId", "BIGINT", "1374390048303");
@@ -791,7 +804,7 @@ public static class LdbcSnbSample
             GROUP BY p.Id, p.FirstName, p.LastName, p.CreationDate
             ORDER BY MessageCount DESC, p.Id ASC
             """,
-            [new("date", "DATE", "2010-02-01")], [NHibernateIntermediate, EclipseLinkIntermediate]),
+            [new("date", "DATE", "2010-02-01")], FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate]),
 
         new("bi5", LdbcWorkload.BusinessIntelligence, 5, "Most active posters of a given topic", LdbcTranslation.AsSpecified,
             "Per author of messages with a tag: the messages, the direct replies to them and the likes they received, "
@@ -885,7 +898,7 @@ public static class LdbcSnbSample
             ORDER BY ps.Score + COALESCE(SUM(fs.Score), 0) DESC, ps.PersonId ASC
             """,
             [new("tag", "NVARCHAR(256)", "Sammy_Sosa"), new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-06-01")],
-            [EFCoreJoin, NHibernateIntermediate, EclipseLinkIntermediate]),
+            [EFCoreJoin], [NHibernateIntermediate, EclipseLinkIntermediate]),
 
         new("bi9", LdbcWorkload.BusinessIntelligence, 9, "Top thread initiators", LdbcTranslation.AsSpecified,
             "Per person, the threads started in an interval and all their messages in it, root included. The whole "
@@ -963,7 +976,7 @@ public static class LdbcSnbSample
               AND kbc.CreationDate >= @startDate AND kbc.CreationDate <= @endDate
               AND kca.CreationDate >= @startDate AND kca.CreationDate <= @endDate
             """,
-            [new("country", "NVARCHAR(256)", "India"), new("startDate", "DATE", "2010-06-01"), new("endDate", "DATE", "2011-06-01")], [EFCoreCount]),
+            [new("country", "NVARCHAR(256)", "India"), new("startDate", "DATE", "2010-06-01"), new("endDate", "DATE", "2011-06-01")], FallbackBy: [EFCoreCount]),
 
         new("bi12", LdbcWorkload.BusinessIntelligence, 12, "How many persons have a given number of messages", LdbcTranslation.AsSpecified,
             "A histogram: messages per person, then persons per number of messages. The second grouping is over the "
@@ -983,7 +996,7 @@ public static class LdbcSnbSample
             ORDER BY PersonCount DESC, pc.MessageCount DESC
             """,
             [new("startDate", "DATE", "2011-06-01"), new("lengthThreshold", "INT", "100"),
-             new("languages", "VARCHAR(40)", "ar,hu", IsList: true)], [EFCoreJoin, NHibernateIntermediate, EclipseLinkIntermediate]),
+             new("languages", "VARCHAR(40)", "ar,hu", IsList: true)], [EFCoreJoin, EclipseLinkNativeList], [NHibernateIntermediate]),
 
         new("bi13", LdbcWorkload.BusinessIntelligence, 13, "Zombies in a country", LdbcTranslation.AsSpecified,
             "Zombies are persons of a country who wrote on average less than one message a month; the months are counted "
@@ -1015,7 +1028,7 @@ public static class LdbcSnbSample
             ORDER BY ZombieScore DESC, zl.ZombieId ASC
             """,
             [new("country", "NVARCHAR(256)", "India"), new("endDate", "DATE", "2012-09-01")],
-            [EFCoreJoin, NHibernateIntermediate, EclipseLinkIntermediate]),
+            [EFCoreJoin], [NHibernateIntermediate, EclipseLinkIntermediate]),
 
         new("bi14", LdbcWorkload.BusinessIntelligence, 14, "International dialog", LdbcTranslation.Simplified,
             "Pairs of friends from two countries scored by four kinds of interaction, each a CASE over EXISTS. Left out: "

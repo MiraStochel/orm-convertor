@@ -229,11 +229,14 @@ public class GroupedQueryTest
     /// <summary>
     /// An aggregate with no grouping behind it is a query that answers with one number. A
     /// LINQ chain says that by ending in the aggregate call, which is not the IQueryable the
-    /// builder emits, so it refuses (decision 053) - it used to write the bare column back,
-    /// and over COUNT(*) that was the unusable <c>c.*</c>.
+    /// builder emits, and no other chain returns the same rows - a grouping by a constant
+    /// answers an empty table with no row instead of a zero. It used to write the bare column
+    /// back, and over COUNT(*) that was the unusable <c>c.*</c>; then it refused (decision
+    /// 053); since decision 113 it goes out in native SQL, into a row whose COUNT is the int
+    /// SQL Server answers with.
     /// </summary>
     [Fact]
-    public void AnUngroupedAggregateIsRefusedByTheLinqTargetAndCarriedByTheOthers()
+    public void AnUngroupedAggregateGoesOutInNativeSqlFromTheLinqTargetAndIsCarriedByTheOthers()
     {
         const string sql = "SELECT COUNT(*) AS N FROM Sales.Customers AS c";
 
@@ -244,10 +247,13 @@ public class GroupedQueryTest
         ];
 
         var efCore = ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.EFCore, Units());
-        Assert.DoesNotContain(efCore.Sources, s => s.ContentType.IsQuery());
+        var method = efCore.Sources.Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
         Assert.Contains(
             efCore.Records,
-            r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Aggregation);
+            r => r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.Aggregation);
+        Assert.Contains("return ctx.Database.SqlQuery<QueryRow>(", method);
+        Assert.Contains("SELECT COUNT(*) AS N", method);
+        Assert.Contains("public int? N { get; set; }", method);
 
         foreach (var target in new[] { ORMEnum.Dapper, ORMEnum.NHibernate, ORMEnum.Hibernate, ORMEnum.EclipseLink, ORMEnum.MyBatis })
         {

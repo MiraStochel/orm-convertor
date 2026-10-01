@@ -343,3 +343,25 @@ fields = CompanyId, OrderId, Lines
 shape = projection
 ordered = false
 mutations = filter, operator
+
+# A count and a sum without a grouping (decision 113), one row, which EF Core writes in
+# native SQL. Five lines have a quantity above five and sum to 55; flipped, the other five
+# sum to 11; dropped, all ten sum to 66.
+[AggregateOverTheWholeResult]
+category = AggregateOverTheWholeResult
+fields = Lines, Quantity
+shape = projection
+ordered = false
+mutations = filter, operator
+
+# Native SQL handed over in code (decision 113), read from four sources and written by every
+# target in its own language. Three products are priced above 100, three below; the ordering
+# by price is a total one, and not the order of the key.
+[NativeSqlInCode]
+category = NativeSqlInCode
+fields = ProductId, ProductName
+shape = projection
+ordered = true
+decimalScale = 4
+arguments = minPrice:decimal=100
+mutations = filter, operator, ordering

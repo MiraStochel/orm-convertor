@@ -110,7 +110,10 @@ public class LdbcCatalogTest(TestSchemaFixture fixture)
     /// Losses, conventions and completions from the catalog are what the records are for; a
     /// Failure would contradict the claim. A target the query names as refusing it is held to
     /// the opposite: a Failure and no query artifact, so that a refusal the tool outgrows turns
-    /// up here instead of staying on the page.
+    /// up here instead of staying on the page. A target the query names as falling back is
+    /// held to the third value of decision 113 - the artifact in native SQL, with the record
+    /// that says so -, and every other target to the first, so that neither value passes for
+    /// the other.
     /// </summary>
     [Theory]
     [MemberData(nameof(TranslatedQueries))]
@@ -134,6 +137,28 @@ public class LdbcCatalogTest(TestSchemaFixture fixture)
             $"{key} into {target} fails:{Environment.NewLine}"
                 + string.Join(Environment.NewLine, failures.Select(failure => $"  {failure.Entity} {failure.Feature}: {failure.Reason}")));
         Assert.Contains(result.Sources, source => source.ContentType.IsQuery());
+
+        var fellBack = result.Records.Any(record => record.Kind == ConversionRecordKind.Fallback);
+        if (query.Fallbacks.Any(fallback => fallback.Target == target))
+        {
+            Assert.True(fellBack, $"{key} was expected to go out in native SQL from {target}, but no Fallback was recorded.");
+            Assert.Contains(result.Sources, source => source.ContentType == ConversionContentType.SqlQuery);
+        }
+        else
+        {
+            Assert.False(
+                fellBack,
+                $"{key} went out in native SQL from {target}, which the catalog does not say:{Environment.NewLine}"
+                    + string.Join(Environment.NewLine, result.Records.Where(record => record.Kind == ConversionRecordKind.Fallback).Select(record => $"  {record.Feature}: {record.Reason}")));
+        }
+    }
+
+    /// <summary>A target refuses a query or falls back from it or translates it - never two of the three.</summary>
+    [Fact]
+    public void NoTargetBothRefusesAndFallsBack()
+    {
+        Assert.All(LdbcSnbSample.Queries, query => Assert.Empty(
+            query.Refusals.Select(refusal => refusal.Target).Intersect(query.Fallbacks.Select(fallback => fallback.Target))));
     }
 
     /// <summary>

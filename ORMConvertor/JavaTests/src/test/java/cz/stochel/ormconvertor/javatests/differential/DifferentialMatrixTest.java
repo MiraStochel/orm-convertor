@@ -93,18 +93,35 @@ class DifferentialMatrixTest {
      * The matrix says a refused direction in that word (decision 089): a target the manifest
      * names as refusing a category is paired with none of its sources and is listed among the
      * refused directions instead, where the suite that owns the target asserts the refusal.
+     * No category is refused since decision 113 turned the three refusals into fallbacks, so
+     * this holds over an empty list today and keeps the rule for the next refusal.
      */
     @Test
     void aRefusedTargetIsNoPairAndIsStatedAsRefused() {
-        List<DifferentialMatrix.RefusedDirection> refused = DifferentialMatrix.refusedDirections();
-
-        assertFalse(refused.isEmpty(), "the matrix states no refused direction, and the set operation into NHibernate is one");
-
-        for (DifferentialMatrix.RefusedDirection direction : refused) {
+        for (DifferentialMatrix.RefusedDirection direction : DifferentialMatrix.refusedDirections()) {
             assertFalse(DifferentialMatrix.pairs().contains(
                             new DifferentialMatrix.Pair(direction.queryId(), direction.source(), direction.target())),
                     direction.queryId() + ": " + Orm.nameOf(direction.source()) + " -> " + Orm.nameOf(direction.target())
                             + " is stated as refused and is a pair all the same.");
+        }
+    }
+
+    /**
+     * The escape path is measured at the fourth level (decision 113): a target the manifest
+     * names as falling back is a pair of every source of the category, so its artifact runs
+     * and is compared with the canonical result like any translation.
+     */
+    @Test
+    void aFallbackTargetIsAPairOfEverySource() {
+        List<DifferentialMatrix.FallbackDirection> fallbacks = DifferentialMatrix.fallbackDirections();
+
+        assertFalse(fallbacks.isEmpty(), "the matrix states no fallback, and the set operation into NHibernate is one");
+
+        for (DifferentialMatrix.FallbackDirection direction : fallbacks) {
+            assertTrue(DifferentialMatrix.pairs().contains(
+                            new DifferentialMatrix.Pair(direction.queryId(), direction.source(), direction.target())),
+                    direction.queryId() + ": " + Orm.nameOf(direction.source()) + " -> " + Orm.nameOf(direction.target())
+                            + " falls back and is no pair, so its native SQL never runs.");
         }
     }
 }

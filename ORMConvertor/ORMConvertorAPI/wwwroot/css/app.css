@@ -254,6 +254,7 @@ article.artifact {
 .badge-incompleteness { background: #5f6368; }
 .badge-supplied       { background: #1b7f4d; }
 .badge-conflict       { background: #8f3f97; }
+.badge-fallback       { background: #00676b; }
 
 .badge-catalog-notconfigured { background: #5f6368; }
 .badge-catalog-unused        { background: #5f6368; }
@@ -828,7 +829,8 @@ article.ldbc-query > header > * {
   min-width: 0;
 }
 
-article.ldbc-query .query-refusals {
+article.ldbc-query .query-refusals,
+article.ldbc-query .query-fallbacks {
   font-size: 0.9rem;
 }
 

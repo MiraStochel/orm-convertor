@@ -38,23 +38,33 @@ public final class QueryCategories {
 
     /**
      * One category: its id (the section of the manifest, and the directory of its files),
-     * the query units of every source that states it, and the two kinds of stated refusal
-     * by framework and feature.
+     * the query units of every source that states it, the two kinds of stated refusal by
+     * framework and feature, and the targets that write it in native SQL (decision 113).
      */
     public record Category(
             String id,
             Map<Integer, List<String>> units,
             Map<Integer, Integer> refusedBy,
-            Map<Integer, Integer> refusedWithoutCatalog) {
+            Map<Integer, Integer> refusedWithoutCatalog,
+            Map<Integer, Integer> fallbackBy) {
 
         /** Whether the source framework can state the category in its language. */
         public boolean statedBy(int source) {
             return units.containsKey(source);
         }
 
-        /** The feature a target's descriptor refuses the category by, or null when it expresses it. */
+        /** The feature a target refuses the category by, or null when it does not refuse it. */
         public Integer refusalBy(int target) {
             return refusedBy.get(target);
+        }
+
+        /**
+         * The feature a target's query language does not speak, for which it writes the
+         * category in the native SQL of its dialect (decision 113), or null when it writes it
+         * in its own language.
+         */
+        public Integer fallbackBy(int target) {
+            return fallbackBy.get(target);
         }
 
         /**
@@ -183,19 +193,21 @@ public final class QueryCategories {
         Map<Integer, List<String>> units = new LinkedHashMap<>();
         Map<Integer, Integer> refusedBy = Map.of();
         Map<Integer, Integer> refusedWithoutCatalog = Map.of();
+        Map<Integer, Integer> fallbackBy = Map.of();
 
         for (Map.Entry<String, String> entry : values.entrySet()) {
             switch (entry.getKey()) {
                 case "refusedBy" -> refusedBy = refusals(id, entry.getValue());
                 case "refusedWithoutCatalog" -> refusedWithoutCatalog = refusals(id, entry.getValue());
+                case "fallbackBy" -> fallbackBy = refusals(id, entry.getValue());
                 default -> units.put(Orm.forName(entry.getKey()), list(entry.getValue()));
             }
         }
 
-        return new Category(id, Map.copyOf(units), refusedBy, refusedWithoutCatalog);
+        return new Category(id, Map.copyOf(units), refusedBy, refusedWithoutCatalog, fallbackBy);
     }
 
-    /** A refusal list: {@code Framework:Feature} entries, both spelled as the tool's enums spell them. */
+    /** A refusal or fallback list: {@code Framework:Feature} entries, both spelled as the tool's enums spell them. */
     private static Map<Integer, Integer> refusals(String id, String value) {
         Map<Integer, Integer> refusals = new LinkedHashMap<>();
 

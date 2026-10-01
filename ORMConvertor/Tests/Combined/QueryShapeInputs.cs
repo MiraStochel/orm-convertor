@@ -15,14 +15,16 @@ namespace Tests.Combined;
 /// <param name="Name">The category, as the shared manifest names it (the section of <c>categories.txt</c>) and as the theory data names it.</param>
 /// <param name="Sources">The query units per source framework - one, or for MyBatis the mapper and the interface that types its parameters. A source absent here cannot state the shape in its language.</param>
 /// <param name="Hallmarks">Substrings every query artifact of the target has to contain, joined over all query artifacts.</param>
-/// <param name="RefusedBy">Targets whose descriptor cannot express the shape, with the feature the refusal names.</param>
+/// <param name="RefusedBy">Targets that refuse the shape, with the feature the refusal names.</param>
 /// <param name="RefusedWithoutCatalog">Sources that can write the shape but whose reading the tool refuses by a stated rule in a run without a catalog, with the feature the refusal names - a Dapper parameter, whose scalar takes a mapping the source does not state (decision 083) and the catalog supplies on the query's own demand (decision 105). The matrices here convert dry, so for them it is a refusal; a run with a catalog holding the domain yields the artifact.</param>
+/// <param name="FallbackBy">Targets whose query language does not speak the shape and which write it in the native SQL of their dialect instead, with the feature the record of kind Fallback names (decision 113).</param>
 public sealed record QueryShape(
     string Name,
     IReadOnlyDictionary<ORMEnum, IReadOnlyList<ConversionSource>> Sources,
     IReadOnlyDictionary<ORMEnum, string[]> Hallmarks,
     IReadOnlyDictionary<ORMEnum, QueryFeature> RefusedBy,
-    IReadOnlyDictionary<ORMEnum, QueryFeature> RefusedWithoutCatalog)
+    IReadOnlyDictionary<ORMEnum, QueryFeature> RefusedWithoutCatalog,
+    IReadOnlyDictionary<ORMEnum, QueryFeature> FallbackBy)
 {
     public override string ToString() => Name;
 }
@@ -164,6 +166,7 @@ public static class QueryShapeInputs
             var units = new Dictionary<ORMEnum, string[]>();
             var refusedBy = new Dictionary<ORMEnum, QueryFeature>();
             var refusedWithoutCatalog = new Dictionary<ORMEnum, QueryFeature>();
+            var fallbackBy = new Dictionary<ORMEnum, QueryFeature>();
 
             foreach (var (key, value) in values)
             {
@@ -174,6 +177,9 @@ public static class QueryShapeInputs
                         break;
                     case "refusedWithoutCatalog":
                         refusedWithoutCatalog = Refusals(id, value);
+                        break;
+                    case "fallbackBy":
+                        fallbackBy = Refusals(id, value);
                         break;
                     default:
                         if (!Enum.TryParse<ORMEnum>(key, ignoreCase: false, out var source) || !Enum.IsDefined(source))
@@ -186,7 +192,7 @@ public static class QueryShapeInputs
                 }
             }
 
-            shapes.Add(Shape(id, units, hallmarks, refusedBy, refusedWithoutCatalog));
+            shapes.Add(Shape(id, units, hallmarks, refusedBy, refusedWithoutCatalog, fallbackBy));
         }
 
         var unstated = CategoryHallmarks.Keys.Except(shapes.Select(shape => shape.Name)).ToList();
@@ -199,7 +205,7 @@ public static class QueryShapeInputs
         return shapes;
     }
 
-    /// <summary>A refusal list of the manifest: <c>Framework:Feature</c> entries, both spelled as the enums spell them.</summary>
+    /// <summary>A refusal or fallback list of the manifest: <c>Framework:Feature</c> entries, both spelled as the enums spell them.</summary>
     private static Dictionary<ORMEnum, QueryFeature> Refusals(string id, string value)
     {
         var refusals = new Dictionary<ORMEnum, QueryFeature>();
@@ -416,7 +422,8 @@ public static class QueryShapeInputs
         //
         // Every target that writes the shape writes it as a named definition before the
         // statement - WITH, HQL's with, a local variable of the LINQ method -, the derived
-        // table of the source included; NHibernate and EclipseLink refuse it.
+        // table of the source included; NHibernate and EclipseLink write it in native SQL,
+        // and so carry the SQL hallmarks (decision 113).
         ["GroupingOverAGroupedResult"] = Hallmarks(
             sql: ["WITH lc AS (", "COUNT(*) AS Lines", "GROUP BY ol.CompanyId, ol.OrderId", "FROM lc AS lc", "WHERE lc.CompanyId > 1", "GROUP BY lc.Lines", "COUNT(*) AS Orders"],
             linq: ["var lc = ", "Lines = g.Count()", "return lc", ".CompanyId > 1", "Orders = g.Count()"],
@@ -428,6 +435,24 @@ public static class QueryShapeInputs
             sql: ["WITH ", "COUNT(*) AS Lines", "GROUP BY ol.CompanyId, ol.OrderId", " lc ON ", "lc.Lines >= (SELECT MAX(m.Lines) FROM "],
             linq: ["var ", "Lines = g.Count()", ".Join(", ".lc.Lines >= ", ".Max(m => m.Lines)"],
             jpa: ["with ", "count(ol) as Lines", "join ", " lc on ", "lc.Lines >= (select max(m.Lines) from "]),
+
+        // ---- the rows of decision 113, native SQL ----
+        //
+        // EF Core writes the first in native SQL and so carries the SQL hallmarks; the second
+        // is written by every target in its own language, and its parameter is named by the
+        // source - minPrice, or p1 from a JPA source, which binds by position - so the
+        // hallmarks leave the name out.
+        ["AggregateOverTheWholeResult"] = Hallmarks(
+            sql: ["COUNT(*) AS Lines", "SUM(ol.Quantity) AS Quantity", "WHERE ol.Quantity > 5"],
+            hql: ["count(*) as Lines", "sum(ol.Quantity) as Quantity", "where ol.Quantity > 5"],
+            jpa: ["count(ol) as Lines", "sum(ol.Quantity) as Quantity", "where ol.Quantity > 5"]),
+
+        ["NativeSqlInCode"] = Hallmarks(
+            sql: ["p.ProductName AS ProductName", "WHERE p.UnitPrice > @", "ORDER BY p.UnitPrice DESC, p.ProductId ASC"],
+            linq: ["ctx.Set<ShopProduct>()", ".Where(p => p.UnitPrice > ", ".OrderByDescending(p => p.UnitPrice)", ".ThenBy(p => p.ProductId)"],
+            hql: ["p.ProductName as ProductName", "where p.UnitPrice > :", "order by p.UnitPrice desc, p.ProductId asc"],
+            jpa: ["p.ProductName as ProductName", "where p.UnitPrice > ", "order by p.UnitPrice desc, p.ProductId asc"],
+            myBatis: ["WHERE p.UnitPrice &gt; #{", "ORDER BY p.UnitPrice DESC, p.ProductId ASC"]),
     };
 
     // ---- the deliberately bad query ------------------------------------------------------
@@ -497,7 +522,8 @@ public static class QueryShapeInputs
                 "ol.Description is not null or",
             ]),
         refusedBy: [],
-        refusedWithoutCatalog: []);
+        refusedWithoutCatalog: [],
+        fallbackBy: []);
 
     /// <summary>How many query scopes the bad query has: the outer one and eight subqueries.</summary>
     public const int DeeplyNestedScopes = 9;
@@ -514,7 +540,8 @@ public static class QueryShapeInputs
         Dictionary<ORMEnum, string[]> units,
         Dictionary<ORMEnum, string[]> hallmarks,
         Dictionary<ORMEnum, QueryFeature> refusedBy,
-        Dictionary<ORMEnum, QueryFeature> refusedWithoutCatalog)
+        Dictionary<ORMEnum, QueryFeature> refusedWithoutCatalog,
+        Dictionary<ORMEnum, QueryFeature> fallbackBy)
     {
         var sources = new Dictionary<ORMEnum, IReadOnlyList<ConversionSource>>();
         foreach (var (source, paths) in units)
@@ -522,7 +549,15 @@ public static class QueryShapeInputs
             sources[source] = [.. paths.Select(Unit)];
         }
 
-        return new QueryShape(name, sources, hallmarks, refusedBy, refusedWithoutCatalog);
+        // A target that falls back writes the text the Dapper target writes (decision 113),
+        // so its hallmarks are the SQL ones; where the source states none, it has none.
+        var marks = new Dictionary<ORMEnum, string[]>(hallmarks);
+        foreach (var target in fallbackBy.Keys)
+        {
+            marks[target] = hallmarks.GetValueOrDefault(ORMEnum.Dapper, []);
+        }
+
+        return new QueryShape(name, sources, marks, refusedBy, refusedWithoutCatalog, fallbackBy);
     }
 
     /// <summary>Hallmarks per target language, spread over the targets that write it.</summary>

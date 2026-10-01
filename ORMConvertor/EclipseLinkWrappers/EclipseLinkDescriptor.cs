@@ -34,6 +34,7 @@ public static class EclipseLinkDescriptor
         Support = JakartaPersistenceDescriptor.Support,
         QuerySupport = JakartaPersistenceDescriptor.QuerySupport,
         Functions = JakartaPersistenceDescriptor.Functions,
+        NativeSqlApi = JakartaPersistenceDescriptor.NativeSqlApi,
     };
 
     /// <summary>
@@ -54,5 +55,11 @@ public static class EclipseLinkDescriptor
         UppercaseImplicitNames: true,
         VendorAnnotationPackage: "org.eclipse.persistence.annotations",
         LazyReferenceNeedsWeaving: true,
-        DefaultCounterTable: new JpaCounterTable("SEQUENCE", "SEQ_NAME", "SEQ_COUNT", "SEQ_GEN"));
+        DefaultCounterTable: new JpaCounterTable("SEQUENCE", "SEQ_NAME", "SEQ_COUNT", "SEQ_GEN"),
+
+        // Measured against 5.0.0 when the escape path was written (decision 113): a List
+        // bound to ?1 of a native query reaches the JDBC driver as one value, which the
+        // SQL Server driver rejects - the native query does not expand it, so the escape
+        // path refuses a collection parameter here.
+        NativeQueryExpandsCollection: false);
 }

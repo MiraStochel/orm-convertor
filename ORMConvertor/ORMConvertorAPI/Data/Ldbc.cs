@@ -31,5 +31,6 @@ public static class Ldbc
                 query.Sql,
                 [.. query.Parameters.Select(parameter => new LdbcParameterDefinition(
                     parameter.Name, parameter.SqlType, parameter.Example, parameter.IsList))],
-                [.. query.Refusals.Select(refusal => new LdbcRefusalDefinition(refusal.Target, refusal.Reason))]))]);
+                [.. query.Refusals.Select(refusal => new LdbcRefusalDefinition(refusal.Target, refusal.Reason))],
+                [.. query.Fallbacks.Select(fallback => new LdbcRefusalDefinition(fallback.Target, fallback.Reason))]))]);
 }

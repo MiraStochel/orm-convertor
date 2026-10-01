@@ -1,6 +1,7 @@
 package cz.stochel.ormconvertor.javatests.shapes;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -135,6 +136,10 @@ class QueryCategoryTest {
         }
 
         Domain domain = domain(row, Orm.HIBERNATE, response);
+        if (endsInAStatedFallback(row, Orm.HIBERNATE, response, domain)) {
+            return;
+        }
+
         try (JavaProject queries = domain.compileQuery(response)) {
             String jpql = response.artifactOf(ContentType.JPQL_QUERY).content();
 
@@ -156,6 +161,10 @@ class QueryCategoryTest {
         }
 
         Domain domain = domain(row, Orm.ECLIPSELINK, response);
+        if (endsInAStatedFallback(row, Orm.ECLIPSELINK, response, domain)) {
+            return;
+        }
+
         try (JavaProject queries = domain.compileQuery(response)) {
             String jpql = response.artifactOf(ContentType.JPQL_QUERY).content();
 
@@ -180,6 +189,10 @@ class QueryCategoryTest {
         }
 
         Domain domain = domain(row, Orm.MYBATIS, response);
+
+        // MyBatis's statement is the dialect's SQL already, so it has nothing to fall back
+        // from (decision 113); the call asserts that no record says otherwise.
+        endsInAStatedFallback(row, Orm.MYBATIS, response, domain);
         try (JavaProject project = JavaProject.create("category-mybatis", domain.project())) {
             String document = MyBatisAnswer.queryMapper(response);
             project.add(JavaSources.wrapMapperInterface(
@@ -253,6 +266,46 @@ class QueryCategoryTest {
                 "The manifest states that " + row + " into " + Orm.nameOf(target) + " is refused by "
                 + QueryFeature.nameOf(refusedBy) + ", and no record says so:"
                 + System.lineSeparator() + response.describeRecords());
+        return true;
+    }
+
+    /**
+     * Whether the manifest states that the target writes this case in native SQL (decision
+     * 113) and, when it does, that the tool did: a record of kind Fallback naming the
+     * feature, the bare SQL beside the method and no JPQL, and the method - createNativeQuery
+     * over the EntityManager - compiling over the compiled entities, which is the second
+     * level. A framework does not judge native SQL before running it, so the third level of
+     * such an artifact is the .NET suite's T-SQL parse of the bare SQL, and the fourth the
+     * differential matrix. When the manifest states none, no record may say that the target
+     * fell back: a translation in the target's own language is never the other value.
+     */
+    private static boolean endsInAStatedFallback(Case row, int target, ConversionResponse response, Domain domain) {
+        Integer fallbackBy = row.category().fallbackBy(target);
+        List<ConversionRecord> fallbacks = response.recordsOf(RecordKind.FALLBACK);
+
+        if (fallbackBy == null) {
+            assertTrue(fallbacks.isEmpty(),
+                    "The tool wrote the " + row + " query for " + Orm.nameOf(target)
+                    + " in native SQL, which the manifest does not state:"
+                    + System.lineSeparator() + response.describeRecords());
+            return false;
+        }
+
+        int feature = fallbackBy;
+        assertTrue(fallbacks.stream().anyMatch(record -> record.feature() != null && record.feature() == feature),
+                "The manifest states that " + row + " into " + Orm.nameOf(target) + " falls back for "
+                + QueryFeature.nameOf(feature) + ", and no Fallback record says so:"
+                + System.lineSeparator() + response.describeRecords());
+        assertFalse(response.artifactsOf(ContentType.SQL_QUERY).isEmpty(),
+                "No native SQL came out beside the method of " + row + " into " + Orm.nameOf(target) + ".");
+        assertTrue(response.artifactsOf(ContentType.JPQL_QUERY).isEmpty(),
+                "JPQL came out for " + row + " into " + Orm.nameOf(target) + ", which the manifest states as falling back.");
+
+        try (JavaProject queries = domain.compileQuery(response)) {
+            assertTrue(response.artifactOf(ContentType.JAVA_QUERY).content().contains("em.createNativeQuery("),
+                    "The method of " + row + " into " + Orm.nameOf(target) + " does not call createNativeQuery.");
+        }
+
         return true;
     }
 

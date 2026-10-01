@@ -56,10 +56,11 @@ public sealed class NHibernateHqlQueryVisitor(
         {
             // An inner join in its place would return fewer rows than the source's full
             // outer join, and HQL 5.7.0 has no set operation to compose a faithful one
-            // from the way the EF Core builder does (decision 065).
+            // from the way the EF Core builder does (decision 065) - so the query goes out
+            // in native SQL, which has the join (decision 113).
             report(
-                ConversionRecordKind.Failure,
-                "HQL in NHibernate 5.7.0 has no full outer join and no set operation to compose one from; no artifact was generated.",
+                ConversionRecordKind.Fallback,
+                "HQL in NHibernate 5.7.0 has no full outer join and no set operation to compose one from",
                 QueryFeature.JoinKind);
             return string.Empty;
         }
@@ -79,8 +80,8 @@ public sealed class NHibernateHqlQueryVisitor(
     public string Visit(SetOperationInstruction instr)
     {
         report(
-            ConversionRecordKind.Loss,
-            "HQL in NHibernate 5.7.0 has no set operations; the query was not generated.",
+            ConversionRecordKind.Fallback,
+            "HQL in NHibernate 5.7.0 has no set operations",
             QueryFeature.SetOperation);
         return string.Empty;
     }

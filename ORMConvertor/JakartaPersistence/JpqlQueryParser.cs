@@ -26,8 +26,16 @@ namespace JakartaPersistence;
 /// Dapper parser has for SQL in C# - together with the slice the method sets on the query
 /// object, which is where JPQL keeps its pagination (decision 060). What an implementation's
 /// dialect adds over JPQL is the fourth hook of decision 076: <see cref="TryReadDialectClause"/>.
+///
+/// A Java unit hands a query over in two more ways, and since decision 113 both are read:
+/// <c>createNativeQuery</c> with native SQL, by the shared T-SQL reader in the dialect the
+/// source declared (decision 088) - which is what the escape path writes, so that it reads
+/// back -, and <c>createNamedQuery</c> with the name of a query an annotation or orm.xml
+/// defines, which yields no query of its own and says so.
 /// </summary>
-public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : IQueryParser
+public abstract class JpqlQueryParser(
+    Func<AbstractQueryBuilder> queryBuilders,
+    SourceSqlDialect? declaredSourceDialect = null) : IQueryParser
 {
     protected enum TokenKind { Identifier, Number, String, Symbol, Parameter, End }
 
@@ -120,14 +128,25 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 queryBuilder.QueryName = QueryMethodNaming.Positional(i + 1);
             }
 
-            if (LiteralOf(javaTokens, calls[i]) is { } jpql)
+            var method = javaTokens[calls[i]].Text;
+
+            if (method == "createNamedQuery")
             {
-                ReadQuery(jpql, ReadSlice(javaTokens, calls[i]));
+                Report(ConversionRecordKind.Incompleteness,
+                    $"The code hands over the named query {(javaTokens[calls[i] + 2].Kind == JavaTokenKind.String ? $"'{javaTokens[calls[i] + 2].Text}'" : "named at run time")} through createNamedQuery; a named query is read where its annotation or orm.xml defines it, so the reference yields no query of its own.");
+            }
+            else if (LiteralOf(javaTokens, calls[i]) is not { } text)
+            {
+                Report(ConversionRecordKind.Incompleteness,
+                    $"The query handed to {method} is not a string literal - it is composed at run time - so the parser has nothing to read.");
+            }
+            else if (method == "createNativeQuery")
+            {
+                ReadNative(text, javaTokens, calls[i]);
             }
             else
             {
-                Report(ConversionRecordKind.Incompleteness,
-                    "The query handed to createQuery is not a string literal - it is composed at run time - so the parser has nothing to read.");
+                ReadQuery(text, ReadSlice(javaTokens, calls[i]));
             }
 
             builders.Add(queryBuilder);
@@ -193,6 +212,146 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         queryBuilder.Pop();
+    }
+
+    /// <summary>
+    /// The native SQL a Java unit hands createNativeQuery (decision 113), read by the shared
+    /// T-SQL reader once the parameters are spelled as it takes them: <c>?1</c> as <c>@p1</c>,
+    /// carried as the positional parameter it is, <c>:name</c> as <c>@name</c>. A parameter is
+    /// a list where setParameter binds it to a variable the method declares as a collection
+    /// or an array - the one place a Java unit says so, since the text writes <c>IN (?1)</c>
+    /// for a single value as much as for a list. The slice set on the query object goes into
+    /// the query as the JPQL reading puts it there; a result set mapping named in the second
+    /// argument says how rows are materialized, which the representation does not carry, and
+    /// is a loss, as the children of an hbm.xml &lt;sql-query&gt; are.
+    /// </summary>
+    private void ReadNative(string sql, List<JavaToken> javaTokens, int call)
+    {
+        var channel = (Action<ConversionRecordKind, string, QueryFeature?>)((kind, reason, feature) => queryBuilder.Report(new ConversionRecord
+        {
+            Kind = kind,
+            Framework = queryBuilder.Descriptor.Framework,
+            Artifact = ConversionContentType.SqlQuery,
+            Feature = feature,
+            Reason = reason,
+        }));
+
+        var close = Closing(javaTokens, call + 1);
+        var mapping = javaTokens.Skip(call + 3).Take(Math.Max(0, close - call - 3))
+            .FirstOrDefault(token => token.Kind == JavaTokenKind.String);
+        if (mapping.Kind == JavaTokenKind.String)
+        {
+            channel(ConversionRecordKind.Loss,
+                $"The native query names the result set mapping '{mapping.Text}', which states how its rows are materialized and which the query representation does not carry; it was dropped and every target derives the row again.",
+                QueryFeature.Projection);
+        }
+
+        if (TransactSql.SqlPlaceholders.FromHost(sql, out var facts, out var unread) is not { } text)
+        {
+            channel(ConversionRecordKind.Failure,
+                $"The native query writes {unread}, so it could not be read; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return;
+        }
+
+        foreach (var (parameter, variable) in BoundParameters(javaTokens, close + 1))
+        {
+            if (IsCollectionVariable(javaTokens, call, variable))
+            {
+                facts[parameter] = facts.GetValueOrDefault(parameter) with { IsCollection = true };
+            }
+        }
+
+        new TransactSql.SqlQueryReader(queryBuilder, channel, declaredSourceDialect, facts, Limits).Read(text);
+
+        var slice = ReadSlice(javaTokens, call);
+        foreach (var reason in slice.Unread)
+        {
+            Report(ConversionRecordKind.Failure, reason, QueryFeature.Pagination);
+        }
+
+        if (slice.Unread.Count == 0)
+        {
+            queryBuilder.PaginateReadQuery(slice.Offset, slice.Limit);
+        }
+    }
+
+    /// <summary>
+    /// The parameters setParameter binds on the query object of one call, each with the
+    /// variable it binds: the parameter as the respelled text names it - <c>p1</c> for the
+    /// position 1, the name for a named one - and the variable a bare name passed as the value.
+    /// </summary>
+    private static IEnumerable<(string Parameter, string Variable)> BoundParameters(List<JavaToken> javaTokens, int from)
+    {
+        foreach (var (method, start, end) in Chain(javaTokens, from, out _))
+        {
+            if (method != "setParameter" || end - start != 3
+                || javaTokens[start + 1] is not { Kind: JavaTokenKind.Symbol, Text: "," }
+                || javaTokens[start + 2] is not { Kind: JavaTokenKind.Identifier } value)
+            {
+                continue;
+            }
+
+            var key = javaTokens[start];
+            if (key.Kind == JavaTokenKind.Number)
+            {
+                yield return ($"p{key.Text}", value.Text);
+            }
+            else if (key.Kind == JavaTokenKind.String)
+            {
+                yield return (key.Text, value.Text);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether the variable is declared, before the call, as a collection or an array: a
+    /// generic type of the collection interfaces and classes, or a type with brackets. The
+    /// nearest declaration of the name decides, which is the parameter of the method around
+    /// the call or a local of it.
+    /// </summary>
+    private static bool IsCollectionVariable(List<JavaToken> javaTokens, int call, string variable)
+    {
+        string[] collections = ["Collection", "List", "Set", "Iterable", "ArrayList", "LinkedList", "HashSet", "LinkedHashSet", "TreeSet", "SortedSet"];
+
+        for (var i = call - 1; i > 0; i--)
+        {
+            if (javaTokens[i] is not { Kind: JavaTokenKind.Identifier } name || name.Text != variable)
+            {
+                continue;
+            }
+
+            var before = javaTokens[i - 1];
+            if (before is { Kind: JavaTokenKind.Symbol, Text: "]" })
+            {
+                return true;
+            }
+
+            if (before is { Kind: JavaTokenKind.Symbol, Text: ">" })
+            {
+                var depth = 0;
+                for (var j = i - 1; j > 0; j--)
+                {
+                    if (javaTokens[j] is { Kind: JavaTokenKind.Symbol, Text: ">" })
+                    {
+                        depth++;
+                    }
+                    else if (javaTokens[j] is { Kind: JavaTokenKind.Symbol, Text: "<" } && --depth == 0)
+                    {
+                        return javaTokens[j - 1] is { Kind: JavaTokenKind.Identifier } type && collections.Contains(type.Text);
+                    }
+                }
+
+                return false;
+            }
+
+            if (before.Kind == JavaTokenKind.Identifier && before.Text is not ("return" or "new"))
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -469,8 +628,9 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     /// <summary>
     /// The tokens of the unit and the index of every createQuery or createSelectionQuery
-    /// called with an argument list, in the order of the text; none where the lexer cannot
-    /// read the text.
+    /// called with an argument list, in the order of the text - and since decision 113 every
+    /// createNativeQuery and createNamedQuery, the two other ways the specification hands a
+    /// query over -; none where the lexer cannot read the text.
     /// </summary>
     private static List<JavaToken> Calls(string source, out List<int> calls)
     {
@@ -489,7 +649,7 @@ public abstract class JpqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         for (var i = 0; i + 2 < javaTokens.Count; i++)
         {
             if (javaTokens[i].Kind == JavaTokenKind.Identifier
-                && javaTokens[i].Text is "createQuery" or "createSelectionQuery"
+                && javaTokens[i].Text is "createQuery" or "createSelectionQuery" or "createNativeQuery" or "createNamedQuery"
                 && javaTokens[i + 1] is { Kind: JavaTokenKind.Symbol, Text: "(" })
             {
                 calls.Add(i);

@@ -18,9 +18,19 @@
 #                   interface before the document, because the interface is where MyBatis
 #                   keeps the type of a parameter (decision 084). The language of a unit
 #                   follows its extension, with the table matrix.txt uses.
-#   refusedBy       targets whose descriptor cannot express the category, as
-#                   Target:Feature - both suites expect a record naming the feature there
-#                   and no query artifact (decision 053).
+#   refusedBy       targets that refuse the category, as Target:Feature - both suites
+#                   expect a record naming the feature there and no query artifact
+#                   (decision 053). Since decision 113 a target whose query language merely
+#                   lacks the category falls back instead, so this is left for a refusal
+#                   that is not about the language: none of the categories here has one.
+#   fallbackBy      targets whose query language does not speak the category and which
+#                   write it in the native SQL of their dialect instead, as Target:Feature
+#                   (decision 113) - the third value of a cell, besides translated and
+#                   refused. Both suites expect a record of kind Fallback naming the
+#                   feature and the artifact of the escape path - the method over the
+#                   framework's API for native SQL and the bare SQL beside it, the text the
+#                   Dapper target writes -, judge it as any other, and the differential
+#                   matrix runs it at the fourth level like any translation.
 #   refusedWithoutCatalog
 #                   sources that can write the category but whose reading the tool refuses
 #                   by a stated rule in a run that has no catalog, as Source:Feature - a
@@ -127,14 +137,15 @@ EclipseLink = eclipselink/FindScalarSubquery.jpql
 MyBatis = mybatis/FindScalarSubqueryMapper.xml
 
 # HQL 5.7 has no set operation to read, so NHibernate is no source here - and as a target
-# it refuses the shape by its descriptor, which is the one expected refusal of the matrix.
+# it writes the shape in native SQL, which was the one refusal of the matrix until
+# decision 113 made it a fallback.
 [SetOperation]
 Dapper = dapper/FindSetOperation.sql
 EFCore = efcore/FindSetOperation.query.cs
 Hibernate = hibernate/FindSetOperation.jpql
 EclipseLink = eclipselink/FindSetOperation.jpql
 MyBatis = mybatis/FindSetOperationMapper.xml
-refusedBy = NHibernate:SetOperation
+fallbackBy = NHibernate:SetOperation
 
 [DistinctProjection]
 Dapper = dapper/FindDistinctProjection.sql
@@ -320,18 +331,45 @@ MyBatis = mybatis/FindScalarSubqueryAgainstABoundValueMapper.query.java, mybatis
 # the other rows. The second is a common table expression read twice, once as the right side
 # of a join over two columns and once inside a scalar subquery; the LINQ row keeps it in a
 # variable it joins and aggregates. HQL 5.7 and JPQL have neither form, so NHibernate and
-# EclipseLink are no sources here and refuse both rows as targets; EclipseLink's own subquery
-# in FROM is a comma-separated declaration, a cross join the representation does not carry.
+# EclipseLink are no sources here and write both rows in native SQL as targets (decision
+# 113); EclipseLink's own subquery in FROM is a comma-separated declaration, a cross join
+# the representation does not carry.
 [GroupingOverAGroupedResult]
 Dapper = dapper/FindGroupingOverAGroupedResult.sql
 EFCore = efcore/FindGroupingOverAGroupedResult.query.cs
 Hibernate = hibernate/FindGroupingOverAGroupedResult.jpql
 MyBatis = mybatis/FindGroupingOverAGroupedResultMapper.xml
-refusedBy = NHibernate:IntermediateResult, EclipseLink:IntermediateResult
+fallbackBy = NHibernate:IntermediateResult, EclipseLink:IntermediateResult
 
 [IntermediateResultReadTwice]
 Dapper = dapper/FindIntermediateResultReadTwice.sql
 EFCore = efcore/FindIntermediateResultReadTwice.query.cs
 Hibernate = hibernate/FindIntermediateResultReadTwice.jpql
 MyBatis = mybatis/FindIntermediateResultReadTwiceMapper.xml
-refusedBy = NHibernate:IntermediateResult, EclipseLink:IntermediateResult
+fallbackBy = NHibernate:IntermediateResult, EclipseLink:IntermediateResult
+
+# ---- the rows of decision 113, native SQL ----
+#
+# A count and a sum over every row the filter keeps, without a grouping: one row. A LINQ
+# chain says it only by ending in the aggregate call, which runs the query instead of being
+# one, and no other chain returns the same rows - a grouping by a constant answers an empty
+# table with no row where SQL answers with a zero -, so EF Core is no source here and writes
+# the shape in native SQL as a target.
+[AggregateOverTheWholeResult]
+Dapper = dapper/FindAggregateOverTheWholeResult.sql
+NHibernate = nhibernate/FindAggregateOverTheWholeResult.hql
+Hibernate = hibernate/FindAggregateOverTheWholeResult.jpql
+EclipseLink = eclipselink/FindAggregateOverTheWholeResult.jpql
+MyBatis = mybatis/FindAggregateOverTheWholeResultMapper.xml
+fallbackBy = EFCore:Aggregation
+
+# Native SQL handed over in code: SqlQuery in EF Core, CreateSQLQuery in NHibernate,
+# createNativeQuery in both JPA implementations, each with the parameter in the form its API
+# binds - a hole of the interpolated text, :minPrice, ?1. Dapper and MyBatis are no sources:
+# their query language is the dialect's SQL already, and their rows state it everywhere
+# else. The query itself is one every target speaks; what the row measures is the reading.
+[NativeSqlInCode]
+EFCore = efcore/FindNativeSqlInCode.query.cs
+NHibernate = nhibernate/FindNativeSqlInCode.query.cs
+Hibernate = hibernate/FindNativeSqlInCode.query.java
+EclipseLink = eclipselink/FindNativeSqlInCode.query.java

@@ -34,6 +34,9 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
 
     public override TargetFrameworkDescriptor Descriptor => NHibernateDescriptor.Instance;
 
+    /// <summary>What HQL does not speak goes out as native SQL through CreateSQLQuery (decision 113).</summary>
+    protected override AbstractQueryBuilder NativeSqlBuilder() => new NHibernateNativeSqlQueryBuilder();
+
     protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
     {
         var aliased = AliasedEntities(clauses);
@@ -172,12 +175,12 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
         }
 
         // Only a stated number can be out of range; a bound count is typed Int by the
-        // template (decision 085).
+        // template (decision 085). T-SQL counts in bigint, so the native SQL carries it
+        // (decision 113).
         if (clauses.Offset?.Value > int.MaxValue || clauses.Limit?.Value > int.MaxValue)
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "The pagination value exceeds Int32, which SetFirstResult and SetMaxResults cannot carry; no artifact was generated.",
+            ReportUnspoken(
+                "The pagination value exceeds Int32, which SetFirstResult and SetMaxResults cannot carry",
                 QueryFeature.Pagination);
             return;
         }
@@ -201,7 +204,8 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
     /// a pagination: the ordering is dropped with a record - reordering the rows of an IN,
     /// EXISTS or scalar operand does not change which rows the outer query returns - while a
     /// pagination lives only on the IQuery API, which cannot reach inside the HQL text, so
-    /// it refuses (the sentence decision 060 said for set-operation operands).
+    /// the query goes out in native SQL, which writes the slice inside the subquery
+    /// (decisions 060 and 113).
     /// </summary>
     private string? RenderSubQuery(SubQueryInstruction subQuery, ComparisonOperator op)
     {
@@ -213,9 +217,8 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
 
         if (clauses.Offset is not null || clauses.Limit is not null)
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "A pagination inside a subquery cannot be carried in HQL text - SetFirstResult and SetMaxResults live on the IQuery, outside the query; no artifact was generated.",
+            ReportUnspoken(
+                "A pagination inside a subquery cannot be carried in HQL text - SetFirstResult and SetMaxResults live on the IQuery, outside the query",
                 QueryFeature.Pagination);
             return null;
         }

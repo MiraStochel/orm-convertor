@@ -96,9 +96,8 @@ public class QueryShapeMatrixTest
 
         if (shape.RefusedBy.TryGetValue(target, out var feature))
         {
-            // The one expected refusal of a target: the descriptor cannot express the
-            // feature, so no artifact and a record that names it (decision 053; the HQL
-            // builder words it as the query not generated).
+            // An expected refusal of a target: no artifact and a record that names the
+            // feature (decision 053).
             Assert.Empty(queries);
             Assert.Contains(result.Records, r => r.Feature == feature);
             return;
@@ -110,6 +109,21 @@ public class QueryShapeMatrixTest
             + string.Join("\n", result.Records.Where(IsQueryFailure).Select(r => r.Reason)));
         Assert.NotEmpty(queries);
         Assert.All(queries, artifact => Assert.False(string.IsNullOrWhiteSpace(artifact.Content)));
+
+        // The third value of a cell (decision 113): the target's language does not speak
+        // the shape, so the query goes out in native SQL through the framework's API, with a
+        // record naming the feature - and a target that speaks the shape never falls back,
+        // so a translation is never passed off as the other value.
+        if (shape.FallbackBy.TryGetValue(target, out var unspoken))
+        {
+            Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == unspoken);
+            Assert.Contains(queries, artifact => artifact.ContentType == ConversionContentType.SqlQuery);
+            Assert.Contains(NativeSqlCall(target), QueryText(result, target), StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        }
 
         var text = QueryText(result, target);
         foreach (var mark in shape.Hallmarks.GetValueOrDefault(target, []))
@@ -142,10 +156,94 @@ public class QueryShapeMatrixTest
         }
     }
 
+    /// <summary>Every direction the manifest states as falling back, the identity directions never among them.</summary>
+    public static TheoryData<QueryShape, ORMEnum, ORMEnum> FallbackDirections() => FallbackDirectionsInto(null);
+
+    /// <summary>The directions of <see cref="FallbackDirections"/> into one target.</summary>
+    public static TheoryData<QueryShape, ORMEnum, ORMEnum> FallbackDirectionsInto(ORMEnum? only)
+    {
+        var data = new TheoryData<QueryShape, ORMEnum, ORMEnum>();
+        foreach (var shape in QueryShapeInputs.Categories)
+        {
+            foreach (var source in shape.Sources.Keys.Where(source => !shape.RefusedWithoutCatalog.ContainsKey(source)))
+            {
+                foreach (var target in shape.FallbackBy.Keys.Where(target => only is null || target == only))
+                {
+                    data.Add(shape, source, target);
+                }
+            }
+        }
+
+        return data;
+    }
+
+    /// <summary>
+    /// The third level of an artifact of the escape path (decision 113): its framework does
+    /// not judge native SQL before running it - CreateSQLQuery and createNativeQuery store
+    /// the text, ToQueryString prints it -, so the level is the one the Dapper target has, the
+    /// bare SQL beside the method parsed as T-SQL. It is the same statement the Dapper target
+    /// writes from the same source, which is what makes the escape path a new wrapping rather
+    /// than a new writer.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(FallbackDirections))]
+    public void AFallbackEmitsTheStatementTheDapperTargetWrites(QueryShape shape, ORMEnum source, ORMEnum target)
+    {
+        var fallback = Convert(shape, source, target);
+        var dapper = Convert(shape, source, ORMEnum.Dapper);
+
+        var statements = EmittedSql(fallback, ORMEnum.Dapper).ToList();
+        foreach (var sql in statements)
+        {
+            TSqlAcceptance.ParseOrFail(sql);
+        }
+
+        Assert.Equal(EmittedSql(dapper, ORMEnum.Dapper), statements);
+    }
+
+    /// <summary>
+    /// Level 2 for the escape path of the .NET target the category matrix sends there
+    /// (decision 113): NHibernate's CreateSQLQuery method compiles beside the generated
+    /// entities, in the consumer's frame. EF Core's is compiled by the theory below, with
+    /// every other EF Core method; the Java targets' by the Java suite.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(FallbackDirectionsInto), ORMEnum.NHibernate)]
+    public void AFallbackMethodOfNHibernateCompiles(QueryShape shape, ORMEnum source, ORMEnum target)
+    {
+        var result = Convert(shape, source, target);
+        var entities = result.Sources.Where(s => s.ContentType == ConversionContentType.CSharpEntity).Select(s => s.Content).ToList();
+
+        // The namespace the generated entities declare, which a source stating none derives.
+        var usings = entities
+            .Select(entity => Regex.Match(entity, @"^\s*namespace\s+([\w.]+)\s*;", RegexOptions.Multiline))
+            .Where(match => match.Success)
+            .Select(match => $"using {match.Groups[1].Value};")
+            .Distinct()
+            .Prepend("using NHibernate;");
+
+        GeneratedQueryCompiler.CompileOrFail(
+            $"QueryShapeFallback_{target}_{source}_{Regex.Replace(shape.Name, @"\W", string.Empty)}",
+            result.Sources.Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content,
+            entities,
+            GeneratedQueryCompiler.NHibernateConsumerReferences,
+            string.Join("\n", usings));
+    }
+
+    /// <summary>The call of the framework's API for native SQL the method of the escape path makes (decision 113).</summary>
+    public static string NativeSqlCall(ORMEnum target) => target switch
+    {
+        ORMEnum.NHibernate => "session.CreateSQLQuery(",
+        ORMEnum.EFCore => "ctx.",
+        ORMEnum.Hibernate or ORMEnum.EclipseLink => "em.createNativeQuery(",
+        _ => throw new ArgumentOutOfRangeException(nameof(target), target, $"{target} has no escape path; its query language is the dialect's SQL."),
+    };
+
     /// <summary>
     /// The statements a SQL target emitted: Dapper's bare SqlQuery artifacts, or the body of
     /// every &lt;select&gt; in the MyBatis mapper documents. A &lt;foreach&gt; stands for a
-    /// collection parameter and is read as the parenthesized variable T-SQL would carry.
+    /// collection parameter and is read as the parenthesized variable T-SQL would carry. The
+    /// bare SQL of an escape path is read as Dapper's (decision 113).
     /// </summary>
     public static IEnumerable<string> EmittedSql(ConversionResult result, ORMEnum target)
     {
@@ -264,6 +362,7 @@ public class QueryShapeMatrixTest
     [InlineData("DistinctProjection")]
     [InlineData("Ordering")]
     [InlineData("GroupingOverAGroupedResult")]
+    [InlineData("AggregateOverTheWholeResult")]
     public void EverySourceLanguageReadsTheCategoryIntoTheSameSql(string name)
     {
         var shape = QueryShapeInputs.Categories.Single(s => s.Name == name);

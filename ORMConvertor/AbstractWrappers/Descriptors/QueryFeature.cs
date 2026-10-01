@@ -8,6 +8,10 @@ namespace AbstractWrappers.Descriptors;
 ///
 /// The vocabulary follows the categories requirement T2 uses to divide the translation
 /// matrix, so that a report can be read against the same axis the evaluation is written on.
+///
+/// What a descriptor marks inexpressible is not dropped: since decision 113 the target
+/// writes such a query whole in the native SQL of its dialect, with a record of kind
+/// Fallback naming the feature, and only a target without an API for native SQL refuses it.
 /// </summary>
 public enum QueryFeature
 {
@@ -58,7 +62,8 @@ public enum QueryFeature
     /// What is recorded under this category is therefore a limit of the model or of the
     /// vocabulary, not an inability of the target: a function outside the vocabulary
     /// (<c>CAST</c>, a windowed function, <c>DATEADD</c>, <c>ROUND</c>), a function the
-    /// target's descriptor leaves out, an expression whose scalar the gate cannot derive
+    /// target's descriptor leaves out - which the target writes in native SQL since
+    /// decision 113, with a Fallback record -, an expression whose scalar the gate cannot derive
     /// where the spelling depends on it, an expression projected without an alias, an
     /// aggregate over an aggregate, and a grouping by an expression, which is the one
     /// position the expression does not take.
@@ -69,12 +74,13 @@ public enum QueryFeature
     /// A query as a source of rows - a common table expression, a derived table, a LINQ
     /// chain composed over a grouped projection or a slice (decision 112). The model carries
     /// one as a named intermediate result of the whole query, which a row source refers to
-    /// by name. Unlike the other categories, a target that cannot express it refuses the
-    /// query rather than reporting a loss: a definition left out would leave the row source
-    /// naming a table that does not exist. Besides that refusal, what is recorded here is a
-    /// limit of the model - a definition that reads the query around it (a lateral
-    /// reference), names itself (recursion), projects the whole entity or a column without a
-    /// name, or shares its name with another definition or with a table the query reads.
+    /// by name. A target whose query language cannot express it writes the query in native
+    /// SQL with a Fallback record (decision 113) - a definition left out would leave the row
+    /// source naming a table that does not exist, so leaving it out was never an answer.
+    /// Besides that, what is recorded here is a limit of the model - a definition that reads
+    /// the query around it (a lateral reference), names itself (recursion), projects the
+    /// whole entity or a column without a name, or shares its name with another definition
+    /// or with a table the query reads.
     /// </summary>
     IntermediateResult = 14,
 }

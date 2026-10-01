@@ -20,6 +20,7 @@ namespace JakartaPersistence;
 /// <param name="VendorAnnotationPackage">The package of the implementation's own annotations.</param>
 /// <param name="LazyReferenceNeedsWeaving">Whether fetch = LAZY on a reference is inert without bytecode weaving (EclipseLink).</param>
 /// <param name="DefaultCounterTable">The counter table a TABLE generator uses when the source names none, where a run measured it.</param>
+/// <param name="NativeQueryExpandsCollection">Whether a collection bound to a positional parameter of a native query is expanded into the list IN ranges over, where a run measured that it is (decision 113); otherwise the escape path refuses a collection parameter rather than hand the driver a list. Hibernate 7.4.5 expands it, EclipseLink 5.0.0 does not.</param>
 public sealed record JpaImplementationProfile(
     ORMEnum Implementation,
     string SpecificationLevel,
@@ -30,7 +31,8 @@ public sealed record JpaImplementationProfile(
     bool UppercaseImplicitNames,
     string VendorAnnotationPackage,
     bool LazyReferenceNeedsWeaving = false,
-    JpaCounterTable? DefaultCounterTable = null);
+    JpaCounterTable? DefaultCounterTable = null,
+    bool NativeQueryExpandsCollection = false);
 
 /// <summary>
 /// The table behind a TABLE generator, as the implementation would create it from its own

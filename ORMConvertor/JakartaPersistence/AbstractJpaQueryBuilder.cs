@@ -44,22 +44,14 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     /// </summary>
     protected override bool WritesRowCountsIntoQueryText => false;
 
-    /// <summary>
-    /// The parameters as Java declarations, appended after the EntityManager (decision 083).
-    /// A scalar goes in as the primitive, because a comparison never tests NULL - that is its
-    /// own operator (decision 002) - and a collection as Collection of the wrapper, which is
-    /// what setParameter binds and the only element form a Java generic takes.
-    /// </summary>
-    private string JavaParameters()
-        => string.Concat(Parameters.Select(p =>
-        {
-            var element = LangType.Scalar(p.Type!.Value);
-            var type = p.IsCollection
-                ? $"Collection<{JavaTypeConvertor.ToString(element, forceWrapper: true)}>"
-                : JavaTypeConvertor.ToString(element);
+    /// <summary>The profile of the implementation whose query this is (decision 076).</summary>
+    protected abstract JpaImplementationProfile Profile { get; }
 
-            return $", {type} {QueryParameterNaming.IdentifierFor(p)}";
-        }));
+    /// <summary>
+    /// What JPQL does not speak goes out as native SQL through createNativeQuery, written by
+    /// the shared T-SQL writer under this builder's descriptor (decision 113).
+    /// </summary>
+    protected override AbstractQueryBuilder NativeSqlBuilder() => new JpaNativeSqlQueryBuilder(Descriptor, Profile);
 
     protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
     {
@@ -195,12 +187,12 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         }
 
         // Only a stated number can be out of range; a bound count is typed Int by the
-        // template (decision 085).
+        // template (decision 085). T-SQL counts in bigint, so the native SQL carries it
+        // (decision 113).
         if (clauses.Offset?.Value > int.MaxValue || clauses.Limit?.Value > int.MaxValue)
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "The pagination value exceeds Integer, which setFirstResult and setMaxResults cannot carry; no artifact was generated.",
+            ReportUnspoken(
+                "The pagination value exceeds Integer, which setFirstResult and setMaxResults cannot carry",
                 QueryFeature.Pagination);
             return;
         }
@@ -221,7 +213,8 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     /// <summary>
     /// A subquery operand as a bare JPQL select (decision 061). JPQL admits subqueries in
     /// the where and having clauses and takes neither an ordering nor a slice inside one:
-    /// the ordering is dropped with a record, the slice refuses, as for HQL.
+    /// the ordering is dropped with a record, the slice sends the query to native SQL, as
+    /// for HQL (decision 113).
     /// </summary>
     private string? RenderSubQuery(SubQueryInstruction subQuery, ComparisonOperator op)
     {
@@ -233,9 +226,8 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
         if (clauses.Offset is not null || clauses.Limit is not null)
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "A pagination inside a subquery cannot be carried in JPQL text - setFirstResult and setMaxResults live on the query object; no artifact was generated.",
+            ReportUnspoken(
+                "A pagination inside a subquery cannot be carried in JPQL text - setFirstResult and setMaxResults live on the query object",
                 QueryFeature.Pagination);
             return null;
         }
@@ -287,7 +279,8 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     /// the text - offset and fetch first, which HQL takes inside a common table expression
     /// where JPQL takes no slice at all. Empty for a query that defines nothing, null when a
     /// body could not be rendered and the reason is on the channel. Only Hibernate reaches
-    /// here: EclipseLink's descriptor refuses the intermediate result before any step.
+    /// here: EclipseLink's descriptor sends a query with an intermediate result to native SQL
+    /// before any step (decision 113).
     /// </summary>
     private string? WithClause()
     {
@@ -366,7 +359,7 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
         if (keyword is null)
         {
-            Report(ConversionRecordKind.Failure, $"The set operation {instruction.OperationType} has no JPQL form; no artifact was generated.", QueryFeature.SetOperation);
+            ReportUnspoken($"The set operation {instruction.OperationType} has no JPQL form", QueryFeature.SetOperation);
             return null;
         }
 
@@ -391,8 +384,8 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
         if (clauses.Offset is not null || clauses.Limit is not null)
         {
-            Report(ConversionRecordKind.Failure,
-                "A pagination inside a set operation operand cannot be carried in JPQL text; no artifact was generated.",
+            ReportUnspoken(
+                "A pagination inside a set operation operand cannot be carried in JPQL text",
                 QueryFeature.Pagination);
             return null;
         }
@@ -440,7 +433,7 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     /// </summary>
     private List<ConversionSource> FinalizeText(string jpql, string? resultEntity, string pagination)
     {
-        var indented = string.Join("\n", jpql.Split('\n').Select(line => "        " + line));
+        var indented = JpaQueryMethod.TextBlock(jpql);
         var typed = resultEntity is not null;
         var returnType = typed ? $"TypedQuery<{resultEntity}>" : "Query";
         var resultClass = typed ? $", {resultEntity}.class" : string.Empty;
@@ -460,7 +453,7 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
         var method =
             $$""""
-            public static {{returnType}} {{MethodName}}(EntityManager em{{JavaParameters()}}) {
+            public static {{returnType}} {{MethodName}}(EntityManager em{{JpaQueryMethod.Parameters(Parameters)}}) {
                 return em.createQuery("""
             {{indented}}
                     """{{resultClass}}){{binding}}{{pagination}};

@@ -120,57 +120,15 @@ public class MyBatisSqlQueryBuilder : TransactSql.AbstractSqlQueryBuilder
     /// target trims its connectives.
     ///
     /// Substituted with the string literals of the SQL skipped, so that a value holding an @
-    /// is not read as a name; run after the escaping, so that the markup written here is the
-    /// only markup in the element.
+    /// is not read as a name (<see cref="TransactSql.SqlPlaceholders"/>); run after the
+    /// escaping, so that the markup written here is the only markup in the element.
     /// </summary>
     private string Placeholders(string sql)
-    {
-        var substituted = new StringBuilder(sql.Length);
-        var insideLiteral = false;
-
-        for (var i = 0; i < sql.Length; i++)
+        => TransactSql.SqlPlaceholders.Respell(sql, Parameters, parameter =>
         {
-            var character = sql[i];
-
-            if (character == '\'')
-            {
-                insideLiteral = !insideLiteral;
-                substituted.Append(character);
-                continue;
-            }
-
-            if (insideLiteral || character != '@' || i + 1 >= sql.Length || !IsNameStart(sql[i + 1]))
-            {
-                substituted.Append(character);
-                continue;
-            }
-
-            var end = i + 1;
-            while (end < sql.Length && IsNameCharacter(sql[end]))
-            {
-                end++;
-            }
-
-            var name = sql[(i + 1)..end];
-            var parameter = Parameters.FirstOrDefault(p => QueryParameterNaming.IdentifierFor(p) == name);
-
-            if (parameter is null)
-            {
-                substituted.Append(character);
-                continue;
-            }
-
-            substituted.Append(parameter.IsCollection
+            var name = QueryParameterNaming.IdentifierFor(parameter);
+            return parameter.IsCollection
                 ? $"<foreach item=\"item\" collection=\"{name}\" open=\"(\" separator=\",\" close=\")\">#{{item}}</foreach>"
-                : $"#{{{name}}}");
-
-            i = end - 1;
-        }
-
-        return substituted.ToString();
-    }
-
-    private static bool IsNameStart(char character) => char.IsLetter(character) || character == '_';
-
-    private static bool IsNameCharacter(char character) => char.IsLetterOrDigit(character) || character == '_';
+                : $"#{{{name}}}";
+        });
 }

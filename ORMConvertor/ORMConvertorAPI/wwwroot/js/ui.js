@@ -211,12 +211,13 @@ const RECORD_KIND_CLASSES = Object.freeze({
   [RecordKind.Incompleteness]: "badge-incompleteness",
   [RecordKind.Supplied]: "badge-supplied",
   [RecordKind.Conflict]: "badge-conflict",
+  [RecordKind.Fallback]: "badge-fallback",
 });
 
 /*
  * One sentence per kind, from decision 010 and architecture.md 5.1. They sit on every
  * badge as a title and, for the kinds a result actually contains, in the legend above the
- * table: six bare words do not tell a first-time reader what separates Loss from
+ * table: seven bare words do not tell a first-time reader what separates Loss from
  * Incompleteness, and the records are the part of the output most worth reading.
  */
 const RECORD_KIND_EXPLANATIONS = Object.freeze({
@@ -232,6 +233,8 @@ const RECORD_KIND_EXPLANATIONS = Object.freeze({
     "The source did not state it and the database catalog did. The record is the fact's origin.",
   [RecordKind.Conflict]:
     "Two sources disagree. The translation continued with the earlier one; the record says what the later one claimed.",
+  [RecordKind.Fallback]:
+    "The target's query language cannot say this query, so it was written in the native SQL of the target's database and handed to the framework's API for native queries. Nothing was left out; the artifact is bound to that database.",
 });
 
 /** A badge for one record kind, always carrying its explanation. */

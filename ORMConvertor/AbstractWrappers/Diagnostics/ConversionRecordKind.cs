@@ -9,7 +9,9 @@ namespace AbstractWrappers.Diagnostics;
 /// could still supply (decision 015). Supplied and Conflict belong to the catalog
 /// completion phase: the origin of a fact lives in the record, not in the model
 /// (decision 010), and a disagreement between source and catalog is reported, never
-/// resolved silently (decision 015).
+/// resolved silently (decision 015). Fallback is the escape path of decision 113: a
+/// query its target's query language does not speak, written in the native SQL of the
+/// target's dialect instead.
 /// </summary>
 public enum ConversionRecordKind
 {
@@ -59,4 +61,14 @@ public enum ConversionRecordKind
     /// catalog (decision 091).
     /// </summary>
     Conflict = 6,
+
+    /// <summary>
+    /// The target's query language does not speak a construct of the query, so the target
+    /// wrote the whole query in the native SQL of its declared dialect and handed it to its
+    /// framework's API for native queries (decision 113). Neither a loss - nothing of the
+    /// source was left out and the rows are the same - nor a convention, since nothing was
+    /// filled in: the record names the construct, and the dialect the artifact is bound to
+    /// from now on.
+    /// </summary>
+    Fallback = 7,
 }

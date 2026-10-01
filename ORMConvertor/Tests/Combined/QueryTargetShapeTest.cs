@@ -166,10 +166,11 @@ public class QueryTargetShapeTest
 
     /// <summary>
     /// NHibernate 5.7.0 has no set operations in HQL, and the descriptor says so, so the
-    /// mechanical capability check refuses rather than emitting something invalid.
+    /// query goes out in native SQL rather than as something invalid (decision 113): two
+    /// operands over the one entity materialize into it.
     /// </summary>
     [Fact]
-    public void NHibernateRefusesASetOperationWithARecord()
+    public void NHibernateWritesASetOperationInNativeSqlWithARecord()
     {
         var builder = new NHibernateHqlQueryBuilder { EntityMaps = [CustomerMap()] };
 
@@ -181,10 +182,15 @@ public class QueryTargetShapeTest
         builder.From("Sales.Customers", alias: "c");
         builder.Pop();
 
-        Assert.Empty(builder.Build());
+        var method = builder.Build().Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
+
         Assert.Contains(
             builder.Records,
-            r => r.Feature == AbstractWrappers.Descriptors.QueryFeature.SetOperation);
+            r => r.Kind == AbstractWrappers.Diagnostics.ConversionRecordKind.Fallback
+                 && r.Feature == AbstractWrappers.Descriptors.QueryFeature.SetOperation);
+        Assert.Contains("return session.CreateSQLQuery(", method);
+        Assert.Contains("UNION", method);
+        Assert.Contains(".AddEntity(typeof(Customer))", method);
     }
 }
 

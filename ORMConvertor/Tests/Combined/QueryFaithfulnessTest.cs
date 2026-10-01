@@ -156,10 +156,12 @@ public class QueryFaithfulnessTest
     }
 
     [Fact]
-    public void AFullOuterJoinRefusesTheArtifactForNHibernate()
+    public void AFullOuterJoinGoesOutInNativeSqlForNHibernate()
     {
         // HQL 5.7.0 has neither a full outer join nor set operations to compose one from,
-        // and the inner join that used to go out in its place returned fewer rows.
+        // and the inner join that used to go out in its place returned fewer rows; until
+        // decision 113 the query was refused, and now it goes out in native SQL, which has
+        // the join.
         var builder = new NHibernateHqlQueryBuilder();
         builder.From("Customers", "c");
         builder.Join(
@@ -173,11 +175,13 @@ public class QueryFaithfulnessTest
             "o");
         builder.Project("c", "CustomerName");
 
-        var outputs = builder.Build();
+        var method = builder.Build().Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
 
-        Assert.Empty(outputs);
-        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Fallback);
         Assert.Equal(QueryFeature.JoinKind, record.Feature);
+        Assert.Contains("FULL JOIN Orders o ON o.CustomerId = c.CustomerId", method, StringComparison.Ordinal);
+        Assert.Contains("return session.CreateSQLQuery(", method, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -366,11 +370,13 @@ public class QueryFaithfulnessTest
     /// System.Linq does not name: FromSql(), FromSqlRaw() and FromSqlInterpolated() replace
     /// the source of the chain with SQL, the temporal steps of the SQL Server provider with
     /// the table's history. They used to fall through to the unknown step, and the artifact
-    /// went out over the current rows of the whole table with a loss record.
+    /// went out over the current rows of the whole table with a loss record. A FromSql…
+    /// with nothing composed over it is the whole query and is read as native SQL since
+    /// decision 113 (<c>NativeSqlTest</c>); composed over, it stays refused here.
     /// </summary>
     [Theory]
-    [InlineData("FromSqlRaw", "FromSqlRaw(\"SELECT * FROM Customers WHERE CreditLimit > 2000\")")]
-    [InlineData("FromSqlInterpolated", "FromSqlInterpolated($\"SELECT * FROM Customers WHERE CreditLimit > {limit}\")")]
+    [InlineData("FromSqlRaw", "FromSqlRaw(\"SELECT * FROM Customers WHERE CreditLimit > 2000\").OrderBy(c => c.Id)")]
+    [InlineData("FromSqlInterpolated", "FromSqlInterpolated($\"SELECT * FROM Customers WHERE CreditLimit > {limit}\").Take(5)")]
     [InlineData("FromSql", "FromSql($\"SELECT * FROM Customers WHERE CreditLimit > {limit}\").Where(c => c.Id > 1)")]
     [InlineData("TemporalAll", "TemporalAll()")]
     [InlineData("TemporalAsOf", "TemporalAsOf(from).Where(c => c.Id > 1)")]

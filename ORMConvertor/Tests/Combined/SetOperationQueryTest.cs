@@ -185,7 +185,9 @@ public class SetOperationQueryTest
     /// <summary>
     /// LINQ set operations compose one element type; a whole entity against a different one
     /// cannot type-check, and emitting it anyway would only move the error into the
-    /// consumer's build (decision 053).
+    /// consumer's build (decision 053). The native SQL of the escape path (decision 113) does
+    /// not help either: FromSql would materialize the rows of both tables as the one entity
+    /// it is given, so the escape path refuses the query in turn.
     /// </summary>
     [Fact]
     public void EFCoreRefusesAUnionOfTwoDifferentEntities()
@@ -199,24 +201,33 @@ public class SetOperationQueryTest
         Assert.Empty(builder.Build());
         Assert.Contains(
             builder.Records,
-            r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.SetOperation);
+            r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.SetOperation && r.Reason.Contains("FromSql", StringComparison.Ordinal));
     }
 
     /// <summary>
-    /// The descriptor says HQL cannot express a set operation, and now that parsers produce
-    /// them the refusal has to hold for a real parsed input, not only for the builder API.
+    /// The descriptor says HQL cannot express a set operation, so a parsed one goes out in
+    /// native SQL (decision 113) - the text the Dapper target writes, through CreateSQLQuery.
+    /// The columns here are typed by no mapping, so no AddScalar declares the row and the
+    /// record says so.
     /// </summary>
     [Fact]
-    public void NHibernateRefusesAParsedSetOperationWithARecord()
+    public void NHibernateWritesAParsedSetOperationInNativeSql()
     {
-        var builder = ParseSql(new NHibernateHqlQueryBuilder { EntityMaps = [Customers()] }, """
+        const string sql = """
             SELECT c.CustomerName FROM Sales.Customers AS c
             UNION
             SELECT p.ContactName FROM Sales.Prospects AS p
-            """);
+            """;
 
-        Assert.Empty(builder.Build());
-        Assert.Contains(builder.Records, r => r.Feature == QueryFeature.SetOperation);
+        var builder = ParseSql(new NHibernateHqlQueryBuilder { EntityMaps = [Customers()] }, sql);
+        var built = builder.Build();
+
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.SetOperation);
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Incompleteness && r.Reason.Contains("CustomerName", StringComparison.Ordinal));
+        Assert.Contains("return session.CreateSQLQuery(", built.Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content);
+        Assert.Equal(
+            Sql(ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers()] }, sql)),
+            built.Single(s => s.ContentType == ConversionContentType.SqlQuery).Content);
     }
 
     /// <summary>

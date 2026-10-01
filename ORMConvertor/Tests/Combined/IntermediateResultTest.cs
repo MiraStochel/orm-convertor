@@ -17,8 +17,9 @@ namespace Tests.Combined;
 /// are both read into a named intermediate result of the whole query, a row source refers to
 /// it by name, its columns are its projections, typed by the template from the body. Dapper,
 /// MyBatis, Hibernate and EF Core write it - WITH before the statement, HQL's with, a local
-/// variable of the LINQ method -, NHibernate and EclipseLink refuse it, and the rules every
-/// definition is held to refuse in one place for every target. The categories of T2 over the
+/// variable of the LINQ method -, NHibernate and EclipseLink write the query in native SQL
+/// (decision 113), and the rules every definition is held to refuse in one place for every
+/// target. The categories of T2 over the
 /// shared files carry the shape through every direction and the fourth level
 /// (<c>QueryShapeMatrixTest</c>, the differential matrix); this class names the rules.
 /// </summary>
@@ -87,6 +88,26 @@ public class IntermediateResultTest
         Assert.Contains(
             builder.Records,
             r => r.Kind == ConversionRecordKind.Failure && r.Feature == feature && r.Reason.Contains(named, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The escape path of decision 113: the query comes out, through the framework's API for
+    /// native SQL, with a record of kind Fallback naming the feature and the bare SQL beside
+    /// the method - the text the Dapper target writes from the same query.
+    /// </summary>
+    private static string AssertFellBack(AbstractQueryBuilder builder, QueryFeature feature, string named, string sql)
+    {
+        var built = builder.Build();
+
+        Assert.True(
+            built.Count > 0,
+            "No artifact:\n" + string.Join("\n", builder.Records.Select(r => $"[{r.Kind}/{r.Feature}] {r.Reason}")));
+        Assert.Contains(
+            builder.Records,
+            r => r.Kind == ConversionRecordKind.Fallback && r.Feature == feature && r.Reason.Contains(named, StringComparison.Ordinal));
+        Assert.Equal(Sql(FromSql(new DapperSqlQueryBuilder(), sql)), built.Single(s => s.ContentType == ConversionContentType.SqlQuery).Content);
+
+        return built.Single(s => s.ContentType is ConversionContentType.CSharpQuery or ConversionContentType.JavaQuery).Content;
     }
 
     private static string OneLine(string text) => string.Join(" ", text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim()));
@@ -285,13 +306,19 @@ public class IntermediateResultTest
 
     // ---- the targets ------------------------------------------------------------------
 
+    /// <summary>HQL 5.7 and EclipseLink's JPQL have no intermediate result, so both targets write the query in native SQL (decision 113).</summary>
     [Theory]
     [InlineData(Histogram)]
     [InlineData(ReadTwice)]
-    public void NHibernateAndEclipseLinkRefuseTheShape(string sql)
+    public void NHibernateAndEclipseLinkWriteTheShapeInNativeSql(string sql)
     {
-        AssertRefused(FromSql(new NHibernateHqlQueryBuilder(), sql), QueryFeature.IntermediateResult, "cannot express");
-        AssertRefused(FromSql(new EclipseLinkJpqlQueryBuilder(), sql), QueryFeature.IntermediateResult, "cannot express");
+        var nhibernate = AssertFellBack(FromSql(new NHibernateHqlQueryBuilder(), sql), QueryFeature.IntermediateResult, "cannot express", sql);
+        var eclipseLink = AssertFellBack(FromSql(new EclipseLinkJpqlQueryBuilder(), sql), QueryFeature.IntermediateResult, "cannot express", sql);
+
+        Assert.Contains("return session.CreateSQLQuery(", nhibernate);
+        Assert.Contains(".AddScalar(\"Orders\", NHibernateUtil.Int64)", nhibernate);
+        Assert.Contains("return em.createNativeQuery(\"\"\"", eclipseLink);
+        Assert.Contains("WITH ", eclipseLink);
     }
 
     [Fact]
@@ -538,15 +565,28 @@ public class IntermediateResultTest
         Assert.DoesNotContain(".OrderBy(g =>", method);
     }
 
+    /// <summary>
+    /// A LINQ ordering after the projection discards the one before it, so with a slice the
+    /// chain would select other rows; the query goes out in native SQL, which keeps both keys
+    /// (decision 113), into a row class whose COUNT is the int SQL Server answers with.
+    /// </summary>
     [Fact]
-    public void EFCoreRefusesASlicedOrderingWhoseKeyIsNotProjected()
-        => AssertRefused(
-            FromSql(new EFCoreLinqQueryBuilder(), """
-                SELECT TOP (10) o.CustomerId AS CustomerId, COUNT(*) AS Orders
-                FROM Orders AS o
-                GROUP BY o.CustomerId, o.Total
-                ORDER BY Orders DESC, o.Total ASC
-                """),
-            QueryFeature.Ordering,
-            "discards the one before it");
+    public void EFCoreWritesASlicedOrderingWhoseKeyIsNotProjectedInNativeSql()
+    {
+        const string sql = """
+            SELECT TOP (10) o.CustomerId AS CustomerId, COUNT(*) AS Orders
+            FROM Orders AS o
+            GROUP BY o.CustomerId, o.Total
+            ORDER BY Orders DESC, o.Total ASC
+            """;
+
+        var method = AssertFellBack(FromSql(new EFCoreLinqQueryBuilder(), sql), QueryFeature.Ordering, "discards the one before it", sql);
+
+        Assert.Contains("public static IQueryable<QueryRow> Query(DbContext ctx)", method);
+        Assert.Contains("return ctx.Database.SqlQuery<QueryRow>(", method);
+        Assert.Contains("ORDER BY Orders DESC, o.Total ASC", method);
+        Assert.Contains("public sealed class QueryRow", method);
+        Assert.Contains("public int? CustomerId { get; set; }", method);
+        Assert.Contains("public int? Orders { get; set; }", method);
+    }
 }

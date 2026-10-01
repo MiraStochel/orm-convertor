@@ -1,6 +1,7 @@
 package cz.stochel.ormconvertor.javatests.differential;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -9,6 +10,7 @@ import cz.stochel.ormconvertor.javatests.tool.ContentType;
 import cz.stochel.ormconvertor.javatests.tool.ConversionResponse;
 import cz.stochel.ormconvertor.javatests.tool.Orm;
 import cz.stochel.ormconvertor.javatests.tool.QueryFeature;
+import cz.stochel.ormconvertor.javatests.tool.RecordKind;
 import cz.stochel.ormconvertor.javatests.tool.ToolApi;
 import cz.stochel.ormconvertor.javatests.tool.ToolResponse;
 import java.io.IOException;
@@ -115,11 +117,37 @@ class DifferentialVerificationTest {
     }
 
     /**
+     * A pair whose target falls back writes the query in native SQL, as the matrix states
+     * (decision 113): a record of kind Fallback names the feature, and the bare SQL stands
+     * beside the method. Its rows are judged by the pairs above with every other pair - the
+     * fourth level measures the escape path as it measures a translation -, and this keeps
+     * the two values of a cell from passing as each other.
+     */
+    @Test
+    void aFallbackDirectionFallsBackAsStated() {
+        for (DifferentialMatrix.FallbackDirection fallback : DifferentialMatrix.fallbackDirections()) {
+            if (!JavaQueryRunner.owns(fallback.target())) {
+                continue;
+            }
+
+            DifferentialQuery query = DifferentialMatrix.query(fallback.queryId());
+            ConversionResponse response = JavaQueryRunner.translate(query, fallback.source(), fallback.target());
+            String direction = fallback.queryId() + ": " + Orm.nameOf(fallback.source()) + " -> " + Orm.nameOf(fallback.target());
+
+            assertTrue(response.records().stream().anyMatch(record ->
+                            record.kind() == RecordKind.FALLBACK && record.feature() != null && record.feature() == fallback.feature()),
+                    direction + " is stated as falling back and no Fallback record names " + QueryFeature.nameOf(fallback.feature())
+                            + ":" + System.lineSeparator() + response.describeRecords());
+            assertFalse(response.artifactsOf(ContentType.SQL_QUERY).isEmpty(),
+                    direction + " is stated as falling back and no native SQL came out beside the method.");
+        }
+    }
+
+    /**
      * A direction the matrix states as refused is refused: no query artifact comes out and a
-     * record names the feature the target's descriptor cannot express (decision 053). No
-     * Java target refuses a category today - the one refused direction is the set operation
-     * into NHibernate, which the .NET suite asserts - so this loop is empty until one does,
-     * and then it is not.
+     * record names the feature (decision 053). No category is refused since decision 113
+     * turned the three refusals into fallbacks, so this loop is empty until one is, and then
+     * it is not.
      */
     @Test
     void aRefusedDirectionIsRefusedAsStated() {

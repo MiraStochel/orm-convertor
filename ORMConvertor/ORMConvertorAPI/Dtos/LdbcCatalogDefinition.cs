@@ -18,8 +18,10 @@ public record LdbcCatalogDefinition(
 /// <summary>
 /// One read query of the specification: its workload and number, the title the specification
 /// gives it, how much of it the tool translates and the note saying what that means, the T-SQL
-/// text when there is one, the parameters with example values over scale factor 1, and the
-/// targets that refuse it although the others translate it.
+/// text when there is one, the parameters with example values over scale factor 1, the
+/// targets that refuse it although the others translate it, and the targets that write it in
+/// the native SQL of their dialect because their query language does not speak it
+/// (decision 113).
 /// </summary>
 public record LdbcQueryDefinition(
     string Key,
@@ -30,11 +32,12 @@ public record LdbcQueryDefinition(
     string Note,
     string? Sql,
     List<LdbcParameterDefinition> Parameters,
-    List<LdbcRefusalDefinition> RefusedBy
+    List<LdbcRefusalDefinition> RefusedBy,
+    List<LdbcRefusalDefinition> FallbackBy
 );
 
 /// <summary>A parameter: name without the @, SQL Server type, example value; a list's values are comma-separated.</summary>
 public record LdbcParameterDefinition(string Name, string SqlType, string Example, bool IsList);
 
-/// <summary>A target that refuses the query, and why, in the page's words.</summary>
+/// <summary>A target that refuses the query or falls back from it, and why, in the page's words.</summary>
 public record LdbcRefusalDefinition(ORMEnum Target, string Reason);

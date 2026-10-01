@@ -567,8 +567,18 @@ public class SqlQueryReader(
         var name = variable.Name.TrimStart('@');
         var stated = StatedFor(name);
 
-        return RowCount.Bound(QueryParameter.Named(name, stated.Scalar, stated.IsCollection));
+        return RowCount.Bound(Parameter(name, stated, stated.IsCollection));
     }
+
+    /// <summary>
+    /// The parameter a variable of the text stands for: the named one of that name, or - where
+    /// the wrapper stated that the source binds it by its order (decision 113) - the positional
+    /// one at that position.
+    /// </summary>
+    private static QueryParameter Parameter(string name, SqlParameterFacts stated, bool isCollection)
+        => stated.Position is { } position
+            ? QueryParameter.Positional(position, stated.Scalar, isCollection)
+            : QueryParameter.Named(name, stated.Scalar, isCollection);
 
     private void ReadFrom(QuerySpecification query)
     {
@@ -1125,7 +1135,7 @@ public class SqlQueryReader(
             case VariableReference variable:
                 {
                     var name = variable.Name.TrimStart('@');
-                    return QueryOperand.Bound(QueryParameter.Named(name, ScalarStatedFor(name)));
+                    return QueryOperand.Bound(Parameter(name, StatedFor(name), isCollection: false));
                 }
 
             case null:
@@ -1444,11 +1454,9 @@ public class SqlQueryReader(
         var stated = StatedFor(name);
 
         return stated.IsCollection
-            ? QueryOperand.Bound(QueryParameter.Named(name, stated.Scalar, isCollection: true))
+            ? QueryOperand.Bound(Parameter(name, stated, isCollection: true))
             : null;
     }
-
-    private ScalarType? ScalarStatedFor(string name) => StatedFor(name).Scalar;
 
     /// <summary>What the wrapper peeled off the source about one parameter, or nothing.</summary>
     private SqlParameterFacts StatedFor(string name)

@@ -51,11 +51,20 @@ public sealed record LdbcParameter(string Name, string SqlType, string Example, 
 public sealed record LdbcRefusal(Model.ORMEnum Target, string Reason);
 
 /// <summary>
+/// A target framework whose query language does not speak a query the others translate in
+/// theirs, and which writes it in the native SQL of its dialect instead (decision 113), and
+/// why - in the words of the page, as a refusal is.
+/// </summary>
+public sealed record LdbcFallback(Model.ORMEnum Target, string Reason);
+
+/// <summary>
 /// One read query of the LDBC Social Network Benchmark, as the page of decision 110 shows
 /// it: the number and title the specification gives it, how much of it the tool translates,
 /// a note saying what the text exercises, simplifies or cannot state, and the T-SQL text
 /// over the tables of <c>database/ldbc/schema.sql</c>, written for Dapper. A translated query
-/// reaches every target except those it names as refusing it.
+/// reaches every target except those it names as refusing it, and those it names as falling
+/// back reach it in native SQL - the three values of decision 113, the second never passed
+/// off as the first.
 /// </summary>
 public sealed record LdbcQuery(
     string Key,
@@ -66,8 +75,12 @@ public sealed record LdbcQuery(
     string Note,
     string? Sql,
     IReadOnlyList<LdbcParameter> Parameters,
-    IReadOnlyList<LdbcRefusal>? RefusedBy = null)
+    IReadOnlyList<LdbcRefusal>? RefusedBy = null,
+    IReadOnlyList<LdbcFallback>? FallbackBy = null)
 {
     /// <summary>The targets that refuse the query although it is translated into the others.</summary>
     public IReadOnlyList<LdbcRefusal> Refusals => RefusedBy ?? [];
+
+    /// <summary>The targets that write the query in native SQL because their query language does not speak it.</summary>
+    public IReadOnlyList<LdbcFallback> Fallbacks => FallbackBy ?? [];
 }

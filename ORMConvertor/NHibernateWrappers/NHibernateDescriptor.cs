@@ -135,8 +135,9 @@ public static class NHibernateDescriptor
         // HQL covers every category except set operations and intermediate results:
         // NHibernate 5.7.0 has no UNION, INTERSECT or EXCEPT in HQL, and admits a subquery in
         // the select and where clauses only - no WITH, no subquery in from (decision 112).
-        // Pagination is expressible even though it is not part of the HQL text - it is
-        // SetMaxResults on the surrounding IQuery.
+        // A query with either goes out as native SQL (decision 113). Pagination is
+        // expressible even though it is not part of the HQL text - it is SetMaxResults on
+        // the surrounding IQuery.
         QuerySupport = new Dictionary<QueryFeature, FactSupport>
         {
             [QueryFeature.Projection] = FactSupport.Expressible,
@@ -158,5 +159,9 @@ public static class NHibernateDescriptor
         // HQL in NHibernate 5.7.0 registers every function of the expression vocabulary over
         // the SQL Server dialect (decision 107).
         Functions = QueryFunctionVocabulary.All,
+
+        // What HQL cannot say goes out as native SQL with a scalar or the entity declared
+        // per column (decision 113).
+        NativeSqlApi = "ISession.CreateSQLQuery",
     };
 }

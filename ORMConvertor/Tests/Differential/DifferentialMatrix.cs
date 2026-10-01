@@ -43,7 +43,8 @@ internal sealed record DifferentialArgument(string Name, string TypeName, string
 /// <param name="Category">The category of the manifest this query is, or null for a query of the matrix's own.</param>
 /// <param name="Sources">The frameworks that state the query, in the order the file lists them.</param>
 /// <param name="UnitPaths">The input units of a query of the matrix's own, under <c>inputs/</c>; empty for a category.</param>
-/// <param name="RefusedBy">Targets that refuse the query by their descriptor, with the feature the refusal names (decision 053).</param>
+/// <param name="RefusedBy">Targets that refuse the query, with the feature the refusal names (decision 053).</param>
+/// <param name="FallbackBy">Targets that write the query in native SQL because their query language does not speak it, with the feature the record of kind Fallback names (decision 113). They are pairs like any other: the escape path is measured at the fourth level as a translation is.</param>
 internal sealed record DifferentialQuery(
     string Id,
     string? Category,
@@ -55,14 +56,16 @@ internal sealed record DifferentialQuery(
     ResultRow.RenderSettings Settings,
     IReadOnlyList<DifferentialArgument> Arguments,
     IReadOnlyList<string> Mutations,
-    IReadOnlyDictionary<ORMEnum, QueryFeature> RefusedBy)
+    IReadOnlyDictionary<ORMEnum, QueryFeature> RefusedBy,
+    IReadOnlyDictionary<ORMEnum, QueryFeature> FallbackBy)
 {
     /// <summary>The canonical result of this query, as the file beside the matrix states it.</summary>
     public List<string> CanonicalResult() => DifferentialData.ReadLines($"results/{Id}.txt");
 
     /// <summary>
     /// The frameworks a source of this query is paired against: every one but the source
-    /// itself and but a target that refuses the query by its descriptor. The source's own
+    /// itself and but a target that refuses the query - a target that falls back to native
+    /// SQL included (decision 113). The source's own
     /// run is not a pair - it is what fixes the canonical result - but it happens all the
     /// same, which is how both halves of every pair really run (decision 089).
     /// </summary>
@@ -102,8 +105,11 @@ internal sealed record DifferentialQuery(
 /// <summary>One pair of the criterion of F13: a source variant of a query against one translation of it.</summary>
 internal sealed record DifferentialPair(DifferentialQuery Query, ORMEnum Source, ORMEnum Target);
 
-/// <summary>A direction the matrix states as refused: the target's descriptor cannot express the query (decision 053).</summary>
+/// <summary>A direction the matrix states as refused (decision 053).</summary>
 internal sealed record RefusedDirection(DifferentialQuery Query, ORMEnum Source, ORMEnum Target, QueryFeature Feature);
+
+/// <summary>A pair whose target writes the query in native SQL, with the feature its language does not speak (decision 113).</summary>
+internal sealed record FallbackDirection(DifferentialQuery Query, ORMEnum Source, ORMEnum Target, QueryFeature Feature);
 
 /// <summary>
 /// Reads <c>matrix.txt</c>. Its counterpart is <c>DifferentialMatrix.java</c>, and the
@@ -135,6 +141,18 @@ internal static class DifferentialMatrix
                 .Where(refusal => refusal.Key != source)
                 .Select(refusal => new RefusedDirection(query, source, refusal.Key, refusal.Value))));
 
+    /// <summary>
+    /// Every pair whose target falls back to native SQL (decision 113): pairs of the matrix
+    /// all the same, measured at the fourth level, and listed so that a suite asserts the
+    /// record of the fallback - a target that began to speak the query, or one that began to
+    /// fall back where it did not, shows up rather than passing as the other value of a cell.
+    /// </summary>
+    public static IEnumerable<FallbackDirection> FallbackDirections()
+        => Queries.SelectMany(query => query.Sources.SelectMany(source =>
+            query.FallbackBy
+                .Where(fallback => fallback.Key != source)
+                .Select(fallback => new FallbackDirection(query, source, fallback.Key, fallback.Value))));
+
     private static IReadOnlyList<DifferentialQuery> Parse()
         => [.. SharedInputs.Sections("matrix.txt", DifferentialData.ReadLines("matrix.txt"))
             .Select(section => Build(section.Id, section.Values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)))];
@@ -163,6 +181,7 @@ internal static class DifferentialMatrix
         IReadOnlyList<ORMEnum> sources;
         IReadOnlyList<string> unitPaths;
         IReadOnlyDictionary<ORMEnum, QueryFeature> refusedBy;
+        IReadOnlyDictionary<ORMEnum, QueryFeature> fallbackBy;
 
         if (category is not null)
         {
@@ -184,12 +203,14 @@ internal static class DifferentialMatrix
             sources = [.. manifest.Sources.Keys];
             unitPaths = [];
             refusedBy = manifest.RefusedBy;
+            fallbackBy = manifest.FallbackBy;
         }
         else
         {
             sources = [Enum.Parse<ORMEnum>(Required("source"))];
             unitPaths = SharedInputs.List(Required("units"));
             refusedBy = new Dictionary<ORMEnum, QueryFeature>();
+            fallbackBy = new Dictionary<ORMEnum, QueryFeature>();
         }
 
         return new DifferentialQuery(
@@ -206,7 +227,8 @@ internal static class DifferentialMatrix
                 Number("fractionalSeconds", 3)),
             values.TryGetValue("arguments", out var arguments) ? Arguments(arguments) : [],
             SharedInputs.List(Required("mutations")),
-            refusedBy);
+            refusedBy,
+            fallbackBy);
     }
 
     private static List<DifferentialArgument> Arguments(string value)

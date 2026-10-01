@@ -110,6 +110,7 @@ export const RecordKind = Object.freeze({
   Incompleteness: 4,
   Supplied: 5,
   Conflict: 6,
+  Fallback: 7,
 });
 
 export const RECORD_KIND_LABELS = Object.freeze({
@@ -119,6 +120,7 @@ export const RECORD_KIND_LABELS = Object.freeze({
   [RecordKind.Incompleteness]: "Incompleteness",
   [RecordKind.Supplied]: "Supplied",
   [RecordKind.Conflict]: "Conflict",
+  [RecordKind.Fallback]: "Fallback",
 });
 
 export const CatalogState = Object.freeze({

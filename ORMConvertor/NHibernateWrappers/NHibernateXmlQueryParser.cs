@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
@@ -32,16 +31,6 @@ public class NHibernateXmlQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
     SourceSqlDialect? declaredSourceDialect = null) : IQueryParser
 {
-    /// <summary>
-    /// The placeholders NHibernate substitutes into a native query before handing it to the
-    /// database: {alias}, {alias.property} and {alias.*}. They are not T-SQL and the grammar
-    /// must not be taught them (decision 082), so a query that carries one is refused by
-    /// name instead of failing as a syntax error at some column.
-    /// </summary>
-    private static readonly Regex Placeholder = new(
-        @"\{[A-Za-z_][A-Za-z0-9_]*(\.([A-Za-z_][A-Za-z0-9_]*|\*))?\}",
-        RegexOptions.CultureInvariant);
-
     /// <summary>
     /// The limits this parser reads its input under (decision 092). The orchestration sets
     /// them on every parser it creates; one constructed by hand - in a test - runs under the
@@ -118,8 +107,9 @@ public class NHibernateXmlQueryParser(
     /// Reads the other form of a named query, whose language is native SQL (decision 082).
     /// The wrapper's own part is getting hold of plain T-SQL: the element's text without its
     /// children, refused outright where it carries a placeholder only NHibernate could
-    /// resolve. The grammar itself is the shared reader's, because SQL here is the same
-    /// language it is in a Dapper unit.
+    /// resolve, with NHibernate's <c>:name</c> respelled for the grammar (decision 113,
+    /// <see cref="NHibernateNativeSql"/>). The grammar itself is the shared reader's, because
+    /// SQL here is the same language it is in a Dapper unit.
     /// </summary>
     private IReadOnlyCollection<AbstractQueryBuilder> ReadNative(XElement element)
     {
@@ -147,27 +137,17 @@ public class NHibernateXmlQueryParser(
                     + "is derived from the table.");
         }
 
-        var sql = Text(element);
-
-        if (Placeholder.Match(sql) is { Success: true } placeholder)
-        {
-            Report(
-                builder,
-                ConversionRecordKind.Failure,
-                ConversionContentType.SqlQuery,
-                $"The native query '{name}' contains the NHibernate placeholder '{placeholder.Value}', which is not T-SQL "
-                    + "and which only NHibernate itself could resolve; no artifact was generated.");
-
-            return [builder];
-        }
-
-        new SqlQueryReader(
+        // The text is NHibernate's native SQL, the same language CreateSQLQuery takes in C#,
+        // so it is read the same way: its :name respelled for the grammar (decision 113). A
+        // list is bound in code, never in the document, so none is stated here.
+        NHibernateNativeSql.Read(
             builder,
-            (kind, reason, feature) => Report(builder, kind, ConversionContentType.SqlQuery, reason, feature),
+            Text(element),
+            $"The native query '{name}'",
+            new HashSet<string>(),
             declaredSourceDialect,
-            statedParameters: null,
-            Limits)
-            .Read(sql);
+            Limits,
+            (kind, reason, feature) => Report(builder, kind, ConversionContentType.SqlQuery, reason, feature));
 
         return [builder];
     }
