@@ -264,6 +264,16 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     }
 
     /// <summary>
+    /// A step of the provider's own API that decides what the query returns, with the category
+    /// it is refused under - the provider's half of <see cref="ChangesTheRowSet"/>, which names
+    /// System.Linq only (decision 070). EF Core's <c>FromSqlRaw()</c> replaces the source of
+    /// the chain with SQL; read as an unknown step, it left with a loss record while the
+    /// artifact went out over the whole table. Null where the step is not one; the default
+    /// knows none.
+    /// </summary>
+    protected virtual QueryFeature? ProviderStepChangesTheRowSet(string method) => null;
+
+    /// <summary>
     /// The C# text as the shared nesting guard reads it (decision 092): Roslyn's own lexer,
     /// which is a loop, projected onto text and position. Each reading layer writes this for
     /// its own lexer rather than sharing one - a token type is exactly what the five languages
@@ -882,7 +892,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 // The same enumeration as on the ordinary chain: a step that decides what
                 // comes back is refused wherever it stands, and a set operation behind it
                 // changes nothing about that.
-                if (ChangesTheRowSet(step.Name) is { } feature)
+                if ((ChangesTheRowSet(step.Name) ?? ProviderStepChangesTheRowSet(step.Name)) is { } feature)
                 {
                     Report(
                         ConversionRecordKind.Failure,
@@ -967,7 +977,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     break;
                 }
 
-                if (ChangesTheRowSet(step.Name) is { } feature)
+                if ((ChangesTheRowSet(step.Name) ?? ProviderStepChangesTheRowSet(step.Name)) is { } feature)
                 {
                     Report(
                         ConversionRecordKind.Failure,

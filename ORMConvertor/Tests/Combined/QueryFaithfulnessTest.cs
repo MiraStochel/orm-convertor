@@ -357,6 +357,36 @@ public class QueryFaithfulnessTest
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
     }
 
+    /// <summary>
+    /// The same rule over a step of EF Core's own API, which the shared enumeration of
+    /// System.Linq does not name: FromSql(), FromSqlRaw() and FromSqlInterpolated() replace
+    /// the source of the chain with SQL, the temporal steps of the SQL Server provider with
+    /// the table's history. They used to fall through to the unknown step, and the artifact
+    /// went out over the current rows of the whole table with a loss record.
+    /// </summary>
+    [Theory]
+    [InlineData("FromSqlRaw", "FromSqlRaw(\"SELECT * FROM Customers WHERE CreditLimit > 2000\")")]
+    [InlineData("FromSqlInterpolated", "FromSqlInterpolated($\"SELECT * FROM Customers WHERE CreditLimit > {limit}\")")]
+    [InlineData("FromSql", "FromSql($\"SELECT * FROM Customers WHERE CreditLimit > {limit}\").Where(c => c.Id > 1)")]
+    [InlineData("TemporalAll", "TemporalAll()")]
+    [InlineData("TemporalAsOf", "TemporalAsOf(from).Where(c => c.Id > 1)")]
+    [InlineData("TemporalFromTo", "TemporalFromTo(from, to)")]
+    [InlineData("TemporalBetween", "TemporalBetween(from, to)")]
+    [InlineData("TemporalContainedIn", "TemporalContainedIn(from, to)")]
+    public void AnEFCoreStepThatReplacesTheSourceRefusesTheArtifact(string method, string step)
+    {
+        var builder = new DapperSqlQueryBuilder();
+        new EFCoreLinqQueryParser(() => builder).Parse(
+            ConversionContentType.CSharpQuery,
+            $"public void Query(decimal limit, DateTime from, DateTime to) {{ var q = ctx.Customers.{step}.ToList(); }}");
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(
+            builder.Records,
+            r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Filtering && r.Reason.Contains($"{method}()", StringComparison.Ordinal));
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
+    }
+
     [Fact]
     public void ALinqStepThatChangesNoRowsIsStillALoss()
     {

@@ -1,4 +1,5 @@
 using AbstractWrappers;
+using AbstractWrappers.Descriptors;
 using LinqParsing;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -7,9 +8,10 @@ namespace EFCoreWrappers;
 /// <summary>
 /// Reads an EF Core LINQ query. Everything about walking the chain lives in
 /// <see cref="LinqQueryParser"/>, because it is System.Linq rather than EF Core
-/// (decision 026); what is genuinely EF Core is how a query starts and, for a pattern,
-/// its own <c>EF.Functions.Like</c> - the string methods are System.String and the shared
-/// reader reads them, under the provider's default of escaping their argument.
+/// (decision 026); what is genuinely EF Core is how a query starts, the steps of its own
+/// API that decide which rows come back, and, for a pattern, its own <c>EF.Functions.Like</c>
+/// - the string methods are System.String and the shared reader reads them, under the
+/// provider's default of escaping their argument.
 /// </summary>
 public class EFCoreLinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) : LinqQueryParser(queryBuilders)
 {
@@ -50,6 +52,22 @@ public class EFCoreLinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) : L
         escape = arguments.Count == 3 ? arguments[2].Expression : null;
         return true;
     }
+
+    /// <summary>
+    /// The steps that replace the source of the chain, so they decide which rows come back as a
+    /// filter does, and the representation does not carry them (decision 070).
+    /// <c>FromSql()</c>, <c>FromSqlRaw()</c> and <c>FromSqlInterpolated()</c> replace it with
+    /// SQL; whether that SQL is read is the question of a query handed over in another
+    /// language, and the refusal does not wait for it. The temporal steps of the SQL Server
+    /// provider replace it with the table's history - every version of a row, or the versions
+    /// valid at a point or within a period -, where the artifact would read the current rows.
+    /// </summary>
+    protected override QueryFeature? ProviderStepChangesTheRowSet(string method) => method switch
+    {
+        "FromSql" or "FromSqlRaw" or "FromSqlInterpolated" => QueryFeature.Filtering,
+        "TemporalAll" or "TemporalAsOf" or "TemporalFromTo" or "TemporalBetween" or "TemporalContainedIn" => QueryFeature.Filtering,
+        _ => null,
+    };
 
     private static string? LastIdentifier(ExpressionSyntax expression) => expression switch
     {
