@@ -152,16 +152,54 @@ internal sealed class QueryVariables
     }
 
     /// <summary>
+    /// What the unit states about the entity a name holds (decision 115), for the explicit load
+    /// of one of its navigations: the name of the type the unit gives the name, and, for a local
+    /// holding what a run query returned, the run query itself, whose root says which entity
+    /// was loaded whatever type the unit gives the local. Both null for a name the unit does
+    /// not declare.
+    /// </summary>
+    public (string? TypeName, ExpressionSyntax? LoadedBy) EntityStatementAbout(IdentifierNameSyntax name)
+    {
+        if (!declared.Contains(name.Identifier.Text))
+        {
+            return (null, null);
+        }
+
+        var info = Model.GetSymbolInfo(name);
+        var symbol = info.Symbol ?? (info.CandidateSymbols.Length == 1 ? info.CandidateSymbols[0] : null);
+
+        var loadedBy = symbol is ILocalSymbol ? LoadingQueryOf(symbol) : null;
+
+        var type = symbol switch
+        {
+            ILocalSymbol local => local.Type,
+            IParameterSymbol parameter => parameter.Type,
+            IFieldSymbol field => field.Type,
+            IPropertySymbol property => property.Type,
+            _ => null,
+        };
+
+        var typeName = type?.Name is { Length: > 0 } candidate && SyntaxFacts.IsValidIdentifier(candidate) ? candidate : null;
+        return (typeName, loadedBy);
+    }
+
+    /// <summary>
     /// A local assigned once whose value ends in a step that runs a query, awaited or not: it
     /// holds what the query returned, objects in memory, whatever the query ran over.
     /// </summary>
-    private bool HoldsLoadedObjects(ISymbol symbol)
+    private bool HoldsLoadedObjects(ISymbol symbol) => LoadingQueryOf(symbol) is not null;
+
+    /// <summary>
+    /// The run query a local assigned once holds the result of, with the await and its
+    /// configuration left behind; null where the local holds anything else.
+    /// </summary>
+    private ExpressionSyntax? LoadingQueryOf(ISymbol symbol)
     {
         var variable = Describe(symbol);
 
         if (variable.Writes.Count != 1 || variable.Writes[0] is not { } written)
         {
-            return false;
+            return null;
         }
 
         var value = Stripped(written);
@@ -177,7 +215,9 @@ internal sealed class QueryVariables
         }
 
         return value is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax member }
-               && Executing.Contains(WithoutAsync(member.Name.Identifier.Text));
+               && Executing.Contains(WithoutAsync(member.Name.Identifier.Text))
+            ? value
+            : null;
     }
 
     /// <summary>

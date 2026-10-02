@@ -825,10 +825,242 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private void EmitSource(LinqQueryRoot root, string? elementParameter)
     {
+        if (root.Load is { } load)
+        {
+            EmitExplicitLoad(load, elementParameter);
+            return;
+        }
+
         sourceAlias = elementParameter
             ?? (root.Name.Length > 0 ? root.Name[..1].ToLowerInvariant() : "t");
         row = new EntityRow(sourceAlias, MapFor(root.Name));
         queryBuilder.From(ResolveTable(root.Name), sourceAlias);
+    }
+
+    /// <summary>
+    /// The query the provider composes out of an explicit load (decision 115): the table of
+    /// the navigation's target entity, filtered on the foreign key by the key of the entity in
+    /// memory, which is a parameter - a value the query names and the call supplies (decision
+    /// 083). The relation comes from the mapping as it does for a join along an association
+    /// path (decision 101), and which side holds the key follows its role. What the mapping
+    /// lacks refuses the place by name: a query emitted without the filter would return the
+    /// whole table (decisions 053 and 070). The name of the parameter is the one thing made
+    /// here - the property of the loaded entity whose value the provider binds -, and it is
+    /// recorded as the convention it is.
+    /// </summary>
+    private void EmitExplicitLoad(ExplicitLoad load, string? elementParameter)
+    {
+        var resolved = ResolveExplicitLoad(load, out var failure);
+        var target = resolved?.Target;
+
+        sourceAlias = elementParameter
+            ?? ((target?.Entity.Name ?? load.Navigation) is { Length: > 0 } name ? name[..1].ToLowerInvariant() : "t");
+        row = new EntityRow(sourceAlias, target);
+
+        if (resolved is null)
+        {
+            // The reading goes on over a placeholder, so that every other reason reaches the
+            // caller at once; the failure keeps the artifact in.
+            queryBuilder.From(load.Navigation ?? load.Api, sourceAlias);
+            Report(ConversionRecordKind.Failure, failure!, QueryFeature.Filtering);
+            return;
+        }
+
+        var (relation, owner, loaded, pairs) = resolved.Value;
+        queryBuilder.From(Qualify(loaded, loaded.Table ?? loaded.Entity.Name), sourceAlias);
+        queryBuilder.Where(ExplicitLoadCondition(relation, pairs, sourceAlias));
+
+        var bound = pairs.Select(pair => relation.Role == RelationRole.Owning ? pair.Source.Property.Name : pair.Target.Property.Name);
+        Report(
+            ConversionRecordKind.Convention,
+            $"The explicit load of '{load.Written}' is read as the query the provider composes: the rows of '{loaded.Entity.Name}' whose foreign key equals the key of the '{owner.Entity.Name}' in memory, bound as the parameter {Listed(bound)}, which the source does not name.",
+            QueryFeature.QueryParameter);
+    }
+
+    /// <summary>
+    /// The relation and the two entities an explicit load stands on, or null with the sentence
+    /// that says what is missing (decision 115). The entity in memory is the one the unit
+    /// states for the owner - the type argument of <c>Entry&lt;T&gt;</c>, the declared type of
+    /// the name, the root of the run query a local holds the result of -, and where the unit
+    /// states none, the one entity of the conversion that declares a navigation of the name.
+    /// The mapping decides the translation of the place, never whether it is one.
+    /// </summary>
+    private (Relation Relation, EntityMap Owner, EntityMap Target, IReadOnlyList<ColumnPair> Pairs)? ResolveExplicitLoad(ExplicitLoad load, out string? failure)
+    {
+        const string consequence = "a query emitted without its filter would return the whole table; no artifact was generated.";
+
+        if (load.Navigation is null)
+        {
+            failure = $"The explicit load '{load.Written}' names its navigation by an argument that is neither a lambda over the entity nor a string literal, so the text does not say which navigation is loaded; {consequence}";
+            return null;
+        }
+
+        var owner = OwnerOfExplicitLoad(load, out var statedType);
+        if (owner is null)
+        {
+            if (statedType is not null)
+            {
+                failure = $"The explicit load of '{load.Written}' needs the mapping of the entity '{statedType}' the unit states for '{load.Owner}', which is not part of the conversion, so no relation was there to derive the filter from; {consequence}";
+                return null;
+            }
+
+            var declaring = (entityMaps ?? [])
+                .Where(map => map.Relations.Any(relation => string.Equals(relation.SourceNavigationProperty, load.Navigation, StringComparison.OrdinalIgnoreCase)))
+                .Select(map => map.Entity.Name)
+                .ToList();
+
+            failure = declaring.Count == 0
+                ? $"The explicit load of '{load.Written}' starts from '{load.Owner}', whose type the unit does not state, and no entity of the conversion declares a navigation '{load.Navigation}', so no relation was there to derive the filter from; {consequence}"
+                : $"The explicit load of '{load.Written}' starts from '{load.Owner}', whose type the unit does not state, and the navigation '{load.Navigation}' is declared by more than one entity of the conversion ({Listed(declaring)}), so the relation to derive the filter from is ambiguous; {consequence}";
+            return null;
+        }
+
+        var relation = owner.Relations.FirstOrDefault(r =>
+            string.Equals(r.SourceNavigationProperty, load.Navigation, StringComparison.OrdinalIgnoreCase));
+        if (relation is null)
+        {
+            failure = $"The explicit load of '{load.Written}' names no association the mapping of '{owner.Entity.Name}' declares, so no relation was there to derive the filter from; {consequence}";
+            return null;
+        }
+
+        if (relation.Cardinality == Cardinality.ManyToMany)
+        {
+            failure = $"The explicit load of '{load.Written}' crosses the many-to-many relation to '{relation.TargetEntity}', which would take a join over its junction entity, and that is not derived; {consequence}";
+            return null;
+        }
+
+        var target = entityMaps?.FirstOrDefault(m =>
+            string.Equals(m.Entity?.Name, relation.TargetEntity, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            failure = $"The explicit load of '{load.Written}' leads to the entity '{relation.TargetEntity}', which is not part of the conversion; {consequence}";
+            return null;
+        }
+
+        var pairs = ColumnPairsOf(relation, owner, target);
+        if (pairs.Count == 0)
+        {
+            failure = $"The explicit load of '{load.Written}' has no foreign key columns to derive its filter from: the relation to '{relation.TargetEntity}' states none and the database catalog supplied none; {consequence}";
+            return null;
+        }
+
+        failure = null;
+        return (relation, owner, target, pairs);
+    }
+
+    /// <summary>
+    /// The column pairs a relation stands on: its own, or those of its counterpart on the far
+    /// side where it states none - a collection read by EF Core's convention carries no columns
+    /// of its own, the reference that points back holds the foreign key and the pairs with it,
+    /// and both sides of one relation share the same pairs (decision 012). The counterpart is
+    /// the relation of the target with the opposite role that points back at the entity, pinned
+    /// by the inverse navigation where either side names it; more than one candidate names
+    /// nothing. Empty where neither side states columns.
+    /// </summary>
+    private static IReadOnlyList<ColumnPair> ColumnPairsOf(Relation relation, EntityMap owner, EntityMap target)
+    {
+        if (relation.ColumnPairs.Count > 0)
+        {
+            return relation.ColumnPairs;
+        }
+
+        var candidates = target.Relations
+            .Where(r => r.Role != relation.Role
+                        && r.Cardinality != Cardinality.ManyToMany
+                        && r.ColumnPairs.Count > 0
+                        && string.Equals(r.TargetEntity, owner.Entity.Name, StringComparison.OrdinalIgnoreCase)
+                        && (relation.InverseRelationName is null || string.Equals(r.SourceNavigationProperty, relation.InverseRelationName, StringComparison.OrdinalIgnoreCase))
+                        && (r.InverseRelationName is null || string.Equals(r.InverseRelationName, relation.SourceNavigationProperty, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        return candidates.Count == 1 ? candidates[0].ColumnPairs : [];
+    }
+
+    /// <summary>
+    /// The mapping of the entity in memory an explicit load starts from (decision 115), in the
+    /// order of the answers: the type argument of <c>Entry&lt;T&gt;</c>; what the unit states
+    /// about the name - its declared type, or the root of the run query a local holds the
+    /// result of; else the one entity of the conversion that declares the navigation. Null with
+    /// the stated type where the unit states a type the conversion does not map, null without
+    /// one where nothing decided.
+    /// </summary>
+    private EntityMap? OwnerOfExplicitLoad(ExplicitLoad load, out string? statedType)
+    {
+        statedType = load.StatedType;
+
+        // order!, (order): the mark and the parentheses are no part of the name.
+        var owner = load.Owner;
+        while (true)
+        {
+            if (owner is PostfixUnaryExpressionSyntax { RawKind: (int)SyntaxKind.SuppressNullableWarningExpression } suppressed)
+            {
+                owner = suppressed.Operand;
+                continue;
+            }
+
+            if (owner is ParenthesizedExpressionSyntax parenthesized)
+            {
+                owner = parenthesized.Expression;
+                continue;
+            }
+
+            break;
+        }
+
+        var name = owner switch
+        {
+            IdentifierNameSyntax identifier => identifier,
+            MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax own } => own,
+            _ => null,
+        };
+
+        if (statedType is null && name is not null)
+        {
+            var (typeName, loadedBy) = variables.EntityStatementAbout(name);
+
+            if (loadedBy is not null && TryDecompose(loadedBy, out var loadingRoot, out _) && loadingRoot!.Load is null && MapFor(loadingRoot.Name) is { } loaded)
+            {
+                return loaded;
+            }
+
+            statedType = typeName;
+        }
+
+        if (statedType is { } stated)
+        {
+            return entityMaps?.FirstOrDefault(m => string.Equals(m.Entity?.Name, stated, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var declaring = (entityMaps ?? [])
+            .Where(map => map.Relations.Any(relation => string.Equals(relation.SourceNavigationProperty, load.Navigation, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        return declaring.Count == 1 ? declaring[0] : null;
+    }
+
+    /// <summary>
+    /// The filter of an explicit load over the alias of the target (decision 115): for an
+    /// inverse relation - a collection, an inverse reference - the foreign key sits on the
+    /// target and equals the key of the entity in memory; for an owning one the entity in
+    /// memory holds the foreign key and the target's key equals it. The parameter is named
+    /// after the property of the entity in memory whose value is bound, and typed by the
+    /// column it is compared with, as every parameter is (decision 083).
+    /// </summary>
+    private static ConditionNode ExplicitLoadCondition(Relation relation, IReadOnlyList<ColumnPair> pairs, string targetAlias)
+    {
+        var conjuncts = pairs
+            .Select(pair => relation.Role == RelationRole.Owning
+                ? (ConditionNode)new ComparisonCondition(
+                    QueryOperand.Column(targetAlias, pair.Target.ColumnName ?? pair.Target.Property.Name),
+                    ComparisonOperator.Equal,
+                    QueryOperand.Bound(QueryParameter.Named(pair.Source.Property.Name)))
+                : new ComparisonCondition(
+                    QueryOperand.Column(targetAlias, pair.Source.ColumnName ?? pair.Source.Property.Name),
+                    ComparisonOperator.Equal,
+                    QueryOperand.Bound(QueryParameter.Named(pair.Target.Property.Name))))
+            .ToList();
+
+        return conjuncts.Count == 1 ? conjuncts[0] : new LogicalCondition(LogicalOperator.And, conjuncts);
     }
 
     /// <summary>
@@ -1943,13 +2175,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        var (relation, owner, target) = association;
+        var (relation, owner, target, pairs) = association;
         var rightTable = Qualify(target, target.Table ?? relation.TargetEntity);
         var selector = args.Count > 1 ? args[1].Expression as ParenthesizedLambdaExpressionSyntax : null;
         var rightAlias = JoinedAlias(selector, rightTable);
         var joined = new EntityRow(rightAlias, target);
 
-        queryBuilder.Join(JoinKind.Inner, sourceAlias, rightTable, AssociationCondition(relation, owner.Alias, rightAlias), rightAlias);
+        queryBuilder.Join(JoinKind.Inner, sourceAlias, rightTable, AssociationCondition(relation, pairs, owner.Alias, rightAlias), rightAlias);
 
         // Without a result selector the rows are the collection's alone: one side of the
         // join, which is the shape the representation does not carry (decision 048), so it
@@ -2027,7 +2259,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         ReadResultSelector(selector, joined, "SelectMany()");
     }
 
-    private sealed record AssociationJoin(Relation Relation, EntityRow Owner, EntityMap Target);
+    private sealed record AssociationJoin(Relation Relation, EntityRow Owner, EntityMap Target, IReadOnlyList<ColumnPair> Pairs);
 
     /// <summary>
     /// The relation a navigation path names, or null with the sentence that says what the
@@ -2093,14 +2325,15 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return null;
         }
 
-        if (relation.ColumnPairs.Count == 0)
+        var pairs = ColumnPairsOf(relation, owner.Map, target);
+        if (pairs.Count == 0)
         {
             failure = $"The join along the association path '{written}' has no foreign key columns to derive its condition from: the relation to '{relation.TargetEntity}' states none and the database catalog supplied none; {consequence}";
             return null;
         }
 
         failure = null;
-        return new AssociationJoin(relation, owner, target);
+        return new AssociationJoin(relation, owner, target, pairs);
     }
 
     /// <summary>
@@ -2111,13 +2344,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// JPQL parser makes; it is written here again because this layer reads C# and knows no
     /// JPA (S1).
     /// </summary>
-    private static ConditionNode AssociationCondition(Relation relation, string pathAlias, string joinAlias)
+    private static ConditionNode AssociationCondition(Relation relation, IReadOnlyList<ColumnPair> pairs, string pathAlias, string joinAlias)
     {
         var (keyHolder, referenced) = relation.Role == RelationRole.Owning
             ? (pathAlias, joinAlias)
             : (joinAlias, pathAlias);
 
-        var conjuncts = relation.ColumnPairs
+        var conjuncts = pairs
             .Select(pair => (ConditionNode)new ComparisonCondition(
                 QueryOperand.Column(keyHolder, pair.Source.ColumnName ?? pair.Source.Property.Name),
                 ComparisonOperator.Equal,

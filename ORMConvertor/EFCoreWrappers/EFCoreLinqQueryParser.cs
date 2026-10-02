@@ -2,6 +2,7 @@ using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using LinqParsing;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
 using Model.QueryInstructions.Conditions;
@@ -18,7 +19,9 @@ namespace EFCoreWrappers;
 /// provider's default of escaping their argument. Since decision 113 also the native SQL
 /// EF Core is handed - <c>Database.SqlQuery</c>, <c>SqlQueryRaw</c> and a <c>FromSql…</c>
 /// that is the whole query -, read by the shared T-SQL reader in the dialect the source
-/// declared (decision 088).
+/// declared (decision 088), and since decision 115 the explicit loading of a navigation -
+/// <c>Entry(…).Collection(…).Query()</c> or <c>.Load()</c> -, recognized here as a root and
+/// read by the shared parser as the query the provider composes out of it.
 /// </summary>
 public class EFCoreLinqQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
@@ -243,6 +246,63 @@ public class EFCoreLinqQueryParser(
     /// </summary>
     protected override bool IsProviderQuerySource(TypeSyntax declaredType) => EFCoreContext.IsDbSet(declaredType);
 
+    /// <summary>
+    /// The navigation entry of EF Core's explicit loading (decision 115): <c>X.Entry(e)</c>, or
+    /// a bare <c>Entry(e)</c> inside the context, with one argument, and on it <c>Collection</c>,
+    /// <c>Reference</c> or <c>Navigation</c> with one argument that names the navigation - a
+    /// lambda over the entity, <c>o =&gt; o.Lines</c>, or a string literal. The type argument of
+    /// <c>Entry&lt;T&gt;</c> states the entity outright where it is written. An argument of any
+    /// other shape leaves the navigation unread, and the shared reading refuses the place by
+    /// name.
+    /// </summary>
+    private static bool TryReadNavigationEntry(InvocationExpressionSyntax navigation, out ExplicitLoad? load)
+    {
+        load = null;
+
+        if (navigation.Expression is not MemberAccessExpressionSyntax { Name: var api, Expression: InvocationExpressionSyntax entry }
+            || api.Identifier.Text is not ("Collection" or "Reference" or "Navigation")
+            || navigation.ArgumentList.Arguments.Count != 1
+            || entry.ArgumentList.Arguments.Count != 1)
+        {
+            return false;
+        }
+
+        SimpleNameSyntax? entryName = entry.Expression switch
+        {
+            MemberAccessExpressionSyntax member => member.Name,
+            SimpleNameSyntax bare => bare,
+            _ => null,
+        };
+
+        if (entryName?.Identifier.Text != "Entry")
+        {
+            return false;
+        }
+
+        var argument = navigation.ArgumentList.Arguments[0].Expression;
+        var named = argument switch
+        {
+            SimpleLambdaExpressionSyntax { Body: ExpressionSyntax body } lambda => NavigationOf(body, lambda.Parameter.Identifier.Text),
+            _ => LiteralText(argument),
+        };
+
+        load = new ExplicitLoad(entry.ArgumentList.Arguments[0].Expression, TypeArgumentOf(entryName), named, api.Identifier.Text);
+        return true;
+    }
+
+    /// <summary>The member a lambda body names on its parameter, a null-forgiving mark left behind; null for any other body.</summary>
+    private static string? NavigationOf(ExpressionSyntax body, string parameter)
+    {
+        while (body is PostfixUnaryExpressionSyntax { RawKind: (int)SyntaxKind.SuppressNullableWarningExpression } suppressed)
+        {
+            body = suppressed.Operand;
+        }
+
+        return body is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax head } member && head.Identifier.Text == parameter
+            ? member.Name.Identifier.Text
+            : null;
+    }
+
     private static string? LastIdentifier(ExpressionSyntax expression) => expression switch
     {
         IdentifierNameSyntax identifier => identifier.Identifier.Text,
@@ -263,6 +323,19 @@ public class EFCoreLinqQueryParser(
                      && setAccess.Name.Identifier.Text == "Set"
                      && TypeArgumentOf(setAccess.Name) is { } entity:
                 root = new LinqQueryRoot(entity);
+                return true;
+
+            // ctx.Entry(order).Collection(o => o.Lines).Query(), or .Load() - the explicit load
+            // of a navigation (decision 115), out of which the provider composes a query over
+            // the navigation's rows. A root that is a call, whatever Entry is called on, like
+            // Set<T>(); what the query is comes from the mapping, in the shared reading.
+            case InvocationExpressionSyntax
+            {
+                Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Query" or "Load" or "LoadAsync", Expression: InvocationExpressionSyntax entry },
+            } loading
+                when (MethodNameOf(loading) != "Query" || loading.ArgumentList.Arguments.Count == 0)
+                     && TryReadNavigationEntry(entry, out var load):
+                root = new LinqQueryRoot(load!.Navigation ?? load.Api, load);
                 return true;
 
             // ctx.Customers - a DbSet property on the context. The context is recognized by

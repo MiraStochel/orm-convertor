@@ -119,6 +119,7 @@ Každé rozhodnutí je samostatný soubor. **Změna volby se nepřepisuje.** Vzn
 | [112](112-a-query-as-a-row-source-is-a-named-intermediate-result.md) | Dotaz jako zdroj řádků je pojmenovaný mezivýsledek dotazu: odvozená tabulka i `WITH` se čtou do téže definice | 2026-10-01 | platí | F7–F11, F13, T1, T2, S1, S2 |
 | [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) | Co dotazový jazyk cíle nevysloví, napíše cíl celé nativním SQL svého dialektu; slovník nese rekurzi, seskupení podle výrazu, okenní funkce, agregaci do seznamu a funkce, které potřebuje katalog LDBC | 2026-10-01 | platí | F7–F11, F13, T1, T2, T3, S1, S2, S6 |
 | [114](114-what-the-unit-states-about-a-name-decides-an-ef-core-root.md) | Člen jména je kořenem dotazu EF Core, jen když jednotka neuvádí opak: navigace načteného řádku dotazem není a mapování převodu smí místo jen odmítnout | 2026-10-02 | platí | F7–F10, F11, F14, S1, S2 |
+| [115](115-explicit-loading-is-the-query-the-provider-composes.md) | Explicitní načtení navigace EF Core je dotaz, který poskytovatel skládá: řádky navigace omezené cizím klíčem na klíč načtené entity, nesený jako parametr | 2026-10-02 | platí | F7–F10, F11, F14, S1, S2 |
 
 ## Formát
 
