@@ -59,7 +59,10 @@ public static class EFCoreDescriptor
             [MappingFactCategory.PrimaryKeyStrategy] = FactSupport.Expressible,
 
             [MappingFactCategory.ForeignKeyColumns] = FactSupport.Expressible, // [ForeignKey]
-            [MappingFactCategory.VersionColumn] = FactSupport.Expressible,  // [Timestamp]
+            // [Timestamp] for a version the database produces, [ConcurrencyCheck] for one the
+            // framework increments. The annotations have no way to state the increment itself,
+            // so that narrowing falls to diagnostics, like the key strategies above.
+            [MappingFactCategory.VersionColumn] = FactSupport.Expressible,
 
             // [Index(nameof(A), IsUnique = true)] is a class-level annotation, which is
             // exactly the surface this builder emits - no fluent configuration is needed

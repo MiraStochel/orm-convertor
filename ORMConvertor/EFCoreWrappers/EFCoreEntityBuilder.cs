@@ -151,6 +151,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             var propertyMap = part.PropertyMap;
 
             ReportNullableKeyPartLoss(entityMap, propertyMap.Property, ConversionContentType.CSharpEntity);
+            ReportVersionIncrementLoss(entityMap, propertyMap);
 
             // For a simple key [Key] goes on the property; for a composite key the class-level
             // [PrimaryKey(...)] attribute (see BuildTableSchema) defines it and [Key] is not emitted.
@@ -187,6 +188,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             }
 
             ReportNullableColumnLoss(entityMap, propertyMap);
+            ReportVersionIncrementLoss(entityMap, propertyMap);
 
             artifact.Code.Append(BuildPropertyAttributes(propertyMap));
             artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
@@ -212,6 +214,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             bool nullable = propertyMap.IsNullable ?? true;
 
             ReportNullableColumnLoss(entityMap, propertyMap);
+            ReportVersionIncrementLoss(entityMap, propertyMap);
 
             // The key properties come first: [ForeignKey] on the navigation names them, so a reader
             // meets them before the annotation that refers to them (decision 012).
@@ -393,6 +396,49 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
+    /// The version a framework increments itself, which EF Core's annotations can compare but
+    /// not increment. [Timestamp] would be the wrong carrier: EF Core reads it as a value the
+    /// database produces on insert and update, so the column would be neither written nor
+    /// changed, and optimistic concurrency would stop protecting anything. [ConcurrencyCheck]
+    /// keeps the comparison on write and leaves the increment to the application - a
+    /// narrowing of what the source stated, so it is recorded (decision 004).
+    /// </summary>
+    private void ReportVersionIncrementLoss(EntityMap entityMap, PropertyMap propertyMap)
+    {
+        if (!propertyMap.IsVersion || IsStoreGeneratedVersion(propertyMap))
+        {
+            return;
+        }
+
+        Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = Descriptor.Framework,
+            Artifact = ConversionContentType.CSharpEntity,
+            Entity = entityMap.Entity.Name,
+            Property = propertyMap.Property.Name,
+            Category = MappingFactCategory.VersionColumn,
+            Reason = "The source states a version its framework increments itself; EF Core's annotations "
+                + "cannot state the increment, so [ConcurrencyCheck] compares the value on write and the "
+                + "application has to increment it ([Timestamp] would claim the database produces it).",
+        });
+    }
+
+    /// <summary>
+    /// Whether the version's value is produced by the database rather than by the framework
+    /// that maps it. A binary version is the shape of a SQL Server rowversion column, which
+    /// the store fills on every write, and where no type family arrived a byte array is the
+    /// only language type such a column has; a numeric or date-time version is one the
+    /// source's framework increments itself - JPA's @Version int, NHibernate's version
+    /// element over Int32. The NHibernate builder reads the family the same way when it
+    /// decides on generated="always".
+    /// </summary>
+    private static bool IsStoreGeneratedVersion(PropertyMap propMap)
+        => propMap.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob
+           || (propMap.Type is null
+               && propMap.Property.Type is { Category: LangTypeCategory.Scalar, ScalarType: ScalarType.ByteArray });
+
+    /// <summary>
     /// Builds the property attributes for EF Core.
     /// </summary>
     private static string BuildPropertyAttributes(PropertyMap propMap, bool isPrimaryKey = false)
@@ -414,9 +460,11 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             attributes.AppendLine("    [Required]");
         }
 
+        // A store-generated version is EF Core's rowversion; any other version is a
+        // concurrency token the application keeps - see ReportVersionIncrementLoss.
         if (propMap.IsVersion)
         {
-            attributes.AppendLine("    [Timestamp]");
+            attributes.AppendLine(IsStoreGeneratedVersion(propMap) ? "    [Timestamp]" : "    [ConcurrencyCheck]");
         }
 
         // [Timestamp] states the type and the length of a rowversion column itself, so

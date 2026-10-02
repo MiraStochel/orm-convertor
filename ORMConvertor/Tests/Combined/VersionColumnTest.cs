@@ -2,19 +2,84 @@ using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using DapperWrappers;
 using EFCoreWrappers;
+using Model;
 using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers;
+using OrmConvertor;
 
 namespace Tests.Combined;
 
 /// <summary>
 /// The version column as a mapping fact of its own (decision 030): a flag in the model
-/// rather than a database type, expressed as [Timestamp] by EF Core and as the version
-/// element by NHibernate, and inexpressible in Dapper, where the mechanical loss record
-/// states a property of Dapper rather than of the tool.
+/// rather than a database type, expressed by EF Core as [Timestamp] where the database
+/// produces the value and as [ConcurrencyCheck] with a loss record where the source's
+/// framework increments it, as the version element by NHibernate, and inexpressible in
+/// Dapper, where the mechanical loss record states a property of Dapper rather than of
+/// the tool.
 /// </summary>
 public class VersionColumnTest
 {
+    private const string NHibernateDocument = """
+        namespace Library;
+
+        public class Document
+        {
+            public virtual int DocumentID { get; set; }
+
+            public virtual int Revision { get; set; }
+
+            public virtual string? Title { get; set; }
+        }
+        """;
+
+    private const string NHibernateDocumentMapping = """
+        <?xml version="1.0" encoding="utf-8" ?>
+        <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="Library">
+            <class name="Document" table="Documents">
+                <id name="DocumentID" type="Int32">
+                    <generator class="assigned" />
+                </id>
+                <version name="Revision" type="Int32" />
+                <property name="Title" />
+            </class>
+        </hibernate-mapping>
+        """;
+
+    private const string JpaDocument = """
+        package Library;
+
+        import jakarta.persistence.*;
+
+        @Entity
+        @Table(name = "Documents")
+        public class Document {
+            @Id
+            private Integer DocumentID;
+
+            @Version
+            private int Revision;
+
+            private String Title;
+        }
+        """;
+
+    /// <summary>
+    /// The two sources whose framework increments a numeric version itself: NHibernate's
+    /// version element over Int32, with the family stated, and JPA's @Version int, without.
+    /// </summary>
+    public static TheoryData<ORMEnum> FrameworkIncrementedSources() => new(ORMEnum.NHibernate, ORMEnum.Hibernate);
+
+    public static ConversionResult ConvertNumericVersion(ORMEnum source, ORMEnum target)
+        => ConversionHandler.Convert(source, target, source == ORMEnum.NHibernate
+            ?
+            [
+                new ConversionSource { Content = NHibernateDocument, ContentType = ConversionContentType.CSharp },
+                new ConversionSource { Content = NHibernateDocumentMapping, ContentType = ConversionContentType.XML },
+            ]
+            : [new ConversionSource { Content = JpaDocument, ContentType = ConversionContentType.Java }]);
+
+    private static string EntityCode(ConversionResult result)
+        => Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.CSharpEntity).Content;
     private const string VersionedSource = """
         public class Document
         {
@@ -49,6 +114,11 @@ public class VersionColumnTest
         var code = builder.Build().Single().Content;
         Assert.Contains("[Timestamp]", code);
 
+        // A byte array is the language type of a rowversion even where no family arrived,
+        // so the store-generated reading stands and nothing is narrowed.
+        Assert.DoesNotContain("[ConcurrencyCheck]", code);
+        Assert.DoesNotContain(builder.Records, r => r.Category == MappingFactCategory.VersionColumn);
+
         var reparsed = new EFCoreEntityBuilder();
         new EFCoreEntityParser(reparsed).Parse(code);
         Assert.True(reparsed.EntityMaps.Single().PropertyMaps
@@ -72,6 +142,63 @@ public class VersionColumnTest
         Assert.Contains("[Timestamp]", code);
         Assert.DoesNotContain("TypeName", code);
         Assert.DoesNotContain("MaxLength", code);
+        Assert.DoesNotContain(builder.Records, r => r.Category == MappingFactCategory.VersionColumn);
+    }
+
+    [Theory]
+    [MemberData(nameof(FrameworkIncrementedSources))]
+    public void EFCoreComparesANumericVersionAndReportsTheIncrementAsLost(ORMEnum source)
+    {
+        var result = ConvertNumericVersion(source, ORMEnum.EFCore);
+        var code = EntityCode(result);
+
+        // [Timestamp] would make EF Core expect the database to produce an int; the
+        // comparison on write is what the annotations can keep.
+        Assert.Contains("[ConcurrencyCheck]", code);
+        Assert.DoesNotContain("[Timestamp]", code);
+
+        var loss = Assert.Single(result.Records, r =>
+            r.Kind == ConversionRecordKind.Loss && r.Category == MappingFactCategory.VersionColumn);
+        Assert.Equal("Revision", loss.Property);
+        Assert.Equal(ORMEnum.EFCore, loss.Framework);
+    }
+
+    [Fact]
+    public void EFCoreComparesADateTimeVersionAndReportsTheIncrementAsLost()
+    {
+        var builder = new EFCoreEntityBuilder();
+        new NHibernateEntityParser(builder).Parse("""
+            namespace Library;
+
+            public class Document
+            {
+                public virtual int DocumentID { get; set; }
+
+                public virtual DateTime Modified { get; set; }
+            }
+            """);
+        new NHibernateXMLMappingParser(builder).Parse("""
+            <?xml version="1.0" encoding="utf-8" ?>
+            <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="Library">
+                <class name="Document" table="Documents">
+                    <id name="DocumentID" type="Int32">
+                        <generator class="assigned" />
+                    </id>
+                    <timestamp name="Modified" />
+                </class>
+            </hibernate-mapping>
+            """);
+
+        var code = builder.Build().Single().Content;
+
+        // NHibernate stamps the time itself on every write; EF Core would neither stamp it
+        // nor send it under [Timestamp], so this is the same narrowing as the numeric one.
+        Assert.Contains("[ConcurrencyCheck]", code);
+        Assert.DoesNotContain("[Timestamp]", code);
+
+        var loss = Assert.Single(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Loss && r.Category == MappingFactCategory.VersionColumn);
+        Assert.Equal("Modified", loss.Property);
     }
 
     [Fact]

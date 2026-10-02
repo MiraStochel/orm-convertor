@@ -141,7 +141,7 @@ Entita mezireprezentace ([§4.1](./architecture.md#41-entity-a-mapování)) je t
 | primární klíč | | `<id>` | `[Key]`, `[PrimaryKey]` | **vyžaduje**: `<id>`, `<composite-id>` | **vyžaduje**: `@Id`, `@IdClass` |
 | strategie klíče | | | `[DatabaseGenerated]` | `<generator>` | `@GeneratedValue` |
 | sloupce cizího klíče | | | `[ForeignKey]` | `column` vztahu | `@JoinColumn` |
-| sloupec verze | | | `[Timestamp]` | `<version>` | `@Version` |
+| sloupec verze | | | `[Timestamp]`; číselná a datočasová `[ConcurrencyCheck]` | `<version>` | `@Version` |
 | unikátní omezení | | | `[Index(IsUnique = true)]` | `unique`, `unique-key` | `@UniqueConstraint`, `unique` |
 | transientní vlastnost | | vynechání (`autoMapping="false"`) | `[NotMapped]` | vynechání | `@Transient` |
 
@@ -194,6 +194,7 @@ Rozhodnutí 055 `CHECK` a výchozí hodnoty za vyňatou oblast nepovažovalo; §
 | neunikátní index (`index`, `[Index]` bez `IsUnique`) | výkonnostní artefakt, ne mapovací fakt | `Loss`, čtení (JPA `@Table(indexes)` mlčí, viz 2.13) | 055; [§4.1](./architecture.md#41-entity-a-mapování) |
 | unikátní omezení nad vlastností, která v cíli není sloupcem (část klíče, navigace, verze v NHibernatu; transientní vlastnost) | `unique` na `<many-to-one>` znamená vztah 1:1; transientní vlastnost sloupec nemá | `Loss`, zápis; nad nedeklarovanou vlastností `Incompleteness`; vícesloupcové bez jména dostane jméno se záznamem `Convention` | 055, [072](./decisions/072-a-transient-property-is-a-carried-mapping-fact.md); `UniqueConstraintTest` |
 | druhý sloupec verze, verze na části klíče, navigaci nebo transientní vlastnosti (NHibernate) | `<version>` je jeden a nad obyčejnou vlastností | `Loss`, zápis | 030; `VersionColumnTest` |
+| číselná a datočasová verze, kterou zvyšuje framework (JPA `@Version int`, NHibernate `<version>` nad `Int32`, `<timestamp>`), cíl EF Core | anotace EF Core inkrementaci nevyjádří a `[Timestamp]` tvrdí hodnotu, kterou generuje databáze | `[ConcurrencyCheck]` a `Loss`, zápis; zvyšovat musí aplikace. Týmž tvarem se vrací EF Core `[Timestamp]` nad `ulong`, jehož typ je mimo slovník | [004](./decisions/004-unexpressible-facts-as-warnings.md), 030, 075; [§5](./architecture.md#5-parsery-a-buildery--jak-fungují-dnes); `VersionColumnTest`, `VersionColumnVerificationTest` |
 | druhý a další `<column>` jedné vlastnosti | vlastnost by potřebovala kompozitní uživatelský typ | `Loss` u každého, čtení | 030; `NHibernateColumnElementTest` |
 | hodnota `property-ref` | builder ji odvozuje ze vztahu znovu | `Loss`, čtení; inverzní 1:1 bez vlastnické protistrany `Incompleteness` | [012](./decisions/012-foreign-key-rendering.md); [§5](./architecture.md#5-parsery-a-buildery--jak-fungují-dnes) |
 | N:M bez jména spojovací tabulky nebo sloupců, N:M entity na sebe samu, implicitní spojovací tabulka EF Core | spojovací entitu nemá z čeho postavit a nástroj ji nevymýšlí | vztah zůstane N:M a fáze rozresolvování vydá `Incompleteness`; s katalogem se spojovací entita syntetizuje | [005](./decisions/005-many-to-many-as-explicit-junction-entity.md), 015, 067; [§4.3](./architecture.md#43-vztahy); `JunctionEntitySynthesisTest` |
@@ -209,7 +210,7 @@ Rozhodnutí 055 `CHECK` a výchozí hodnoty za vyňatou oblast nepovažovalo; §
 | fluent konfigurace EF Core (`OnModelCreating`) | není nárokovaná jednotka; otevřená otázka v *Zbytcích* | nečte se; kontext je z entit vyloučený s `Loss`, který to jmenuje | 111 |
 | Dapper.Contrib (`[Table]`, `[Key]`, `[ExplicitKey]`) a alias v SQL jako zdroj mapování Dapperu | v rozsahu, nebo mimo něj, není rozhodnuté (*Zbytky*) | nečte se; atributy mlčky, alias se nepáruje a katalog páruje podle jména | 015, 067 |
 
-Jedno místo mapování je **vadou**, ne mezí, a vede ho kategorie *Vady* v [`open-items.md`](./open-items.md): číselná verze se v EF Core vypíše jako `[Timestamp]`. Druhá vada, jednosloupcový `<key>` inverzní kolekce nad složeným cizím klíčem v NHibernatu, je od 2026-10-02 opravená ([§5](./architecture.md#5-parsery-a-buildery--jak-fungují-dnes)).
+Žádnou **vadu** mapování — výstup, který by uvnitř nároku odporoval tomu, co §9 slibuje — dnes neznáme; kategorie *Vady* v [`open-items.md`](./open-items.md) je prázdná. Obě vady, které vynesla stavba příkladů výkladové stránky — jednosloupcový `<key>` inverzní kolekce nad složeným cizím klíčem v NHibernatu a číselná verze, kterou EF Core builder vypisoval jako `[Timestamp]` —, jsou od 2026-10-02 opravené ([§5](./architecture.md#5-parsery-a-buildery--jak-fungují-dnes)); druhá z nich zanechala ve výčtu nahoře vyslovenou mez, ztrátu inkrementace verze.
 
 ### 2.3 Jednotka a předání dotazu
 
