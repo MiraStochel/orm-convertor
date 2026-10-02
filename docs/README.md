@@ -5,6 +5,7 @@ Autoritativní a živě udržovaný popis projektu. **Členěný podle žánru, 
 | Dokument | Odpovídá na otázku | Životní cyklus |
 |---|---|---|
 | [`architecture.md`](architecture.md) | Jak nástroj funguje **dnes**. | živé; aktualizuje se s každou změnou chování |
+| [`subset.md`](subset.md) | **Co nástroj přeloží a co ne**, konstrukce po konstrukci — společná podmnožina, kterou vymezuje specifikace, a případy bez úplného nebo jednoznačného překladu, které slibuje záměr. Týž žánr jako `architecture.md`, samostatně kvůli délce. | živé; mění se se změnou, která posune hranici podmnožiny |
 | [`../ORMConvertor/README.md`](../ORMConvertor/README.md) | Jak se nástroj **spouští, nasazuje, konfiguruje a testuje** a co je na které cestě ověřené — provozní polovina nasazovacího pohledu (rozhodnutí [058](decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)). Jediný živý dokument sady mimo `docs/`, a proto anglicky. | živé; aktualizuje se se změnou běhové cesty |
 | [`open-items.md`](open-items.md) | Co **zbývá** — otevřená rozhodnutí i rozhodnutá, ale nenapsaná práce. Značka `Na řadě` říká, kde se pokračuje. | živé; položka mizí, jakmile je hotová |
 | [`decisions/`](decisions/README.md) | **Proč** je nástroj takový, jaký je. Jedno rozhodnutí = jeden soubor. | neměnné; mění se jen pole `Stav` |
@@ -25,7 +26,7 @@ Dvě věci, které z toho členění plynou a pletou se nejčastěji. **Nálezy 
 
 - **Volba se nejdřív zapíše, pak naprogramuje.** Změna, která *volí* mezi možnostmi, začíná novým souborem v `decisions/` a řádkem v jeho rejstříku. Ne každá změna je volba: provedení už rozhodnutého, oprava chyby, doplnění testu k existujícímu chování ani přijetí licence rozhodnutí nejsou. Zkouška je otázka, jestli se čtenář později zeptá *proč tohle a ne něco jiného*.
 - **Rozhodnutí se nepřepisují.** Změněná volba znamená nový soubor a starému stav `nahrazeno NNN`; opravit na místě se smí jen doplnění případu, na který se nemyslelo (stav `revidováno`), a jen dokud podle rozhodnutí nevznikl kód. Podrobněji [`decisions/README.md`](decisions/README.md).
-- **Každá změna chování končí v `architecture.md`** — a jde-li o spuštění, nasazení, konfiguraci nebo testy, v [`../ORMConvertor/README.md`](../ORMConvertor/README.md) (rozhodnutí [058](decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)) — a odbavená položka mizí z `open-items.md`. Bez toho je dokumentace nesprávná, ne jen neúplná.
+- **Každá změna chování končí v `architecture.md`** — a jde-li o spuštění, nasazení, konfiguraci nebo testy, v [`../ORMConvertor/README.md`](../ORMConvertor/README.md) (rozhodnutí [058](decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)), a posune-li hranici toho, co se překládá, v [`subset.md`](subset.md) — a odbavená položka mizí z `open-items.md`. Bez toho je dokumentace nesprávná, ne jen neúplná.
 - **Zmražené dokumenty se nepřepisují vůbec** — `requirements.md`, `baseline.md` a hotové audity jsou snímky ke dni svého vzniku.
 - **Žánr se nemíchá.** Do `architecture.md` nepatří odůvodnění volby, do `decisions/` popis současného stavu a do `audits/` seznam zbývající práce.
 

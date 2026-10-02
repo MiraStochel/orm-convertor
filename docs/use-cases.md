@@ -76,7 +76,9 @@ Z toho plyne dělba práce, kterou je lepší říct nahlas, než ji nechat kaž
 
 **Tok.** Uživatel otevře stránku, vybere dvojici frameworků, vloží (nebo si nechá předvyplnit ukázkou) entitu a dotaz — klidně jako jeden soubor — a spustí překlad. Bez databáze, bez projektu, bez konfigurace.
 
-**Výsledek.** Přeložený dotaz v nativní syntaxi cíle — LINQ pro EF Core, HQL pro NHibernate, SQL pro Dapper (rozhodnutí [022](./decisions/022-native-query-syntax-in-builders.md)) — a záznamy o tom, co se cestou ztratilo.
+**Výsledek.** Přeložený dotaz v nativní syntaxi cíle — LINQ pro EF Core, HQL pro NHibernate, JPQL pro Hibernate a EclipseLink, SQL pro Dapper a MyBatis (rozhodnutí [022](./decisions/022-native-query-syntax-in-builders.md)) — a záznamy o tom, co se cestou ztratilo.
+
+**Kde je hranice.** Jestli se konstrukce dotazu přeloží, a když ne, co s ní nástroj udělá — odmítne ji, vypustí ji, nebo cíl napíše celý dotaz nativním SQL —, říká po převodu záznam a předem katalog podmnožiny [`subset.md`](./subset.md): tabulka 1.2 pro to, jak kterou konstrukci píše který cíl, část 2 pro to, co se nepřeloží a proč.
 
 **Proč je tenhle scénář v seznamu.** Je to referenční měřítko pro S7: „nahrát vstup → zvolit cíl → přeložit → zobrazit chyby" musí jít na nejvýš pět kroků, a tenhle scénář je ta pětikroková cesta. Zároveň je to jediný scénář, který nepotřebuje nic než prohlížeč.
 
@@ -104,7 +106,7 @@ Z toho plyne dělba práce, kterou je lepší říct nahlas, než ji nechat kaž
 
 **Výsledek.** Artefakty cílového frameworku a záznamy o všem, co hranici nepřešlo beze změny — včetně těch faktů, které jeden ekosystém unese a druhý ne.
 
-**Kde je dnes hranice.** Javové frameworky jsou nárokované **samy za sebe, ne jako ekosystém**: Hibernate, EclipseLink a MyBatis ano, jiný javový ORM ne. Dědičnost, komponenty a spojené tabulky hranici nepřecházejí na žádné straně, protože je nečte už ta zdrojová (`architecture.md` §9, oblast 2). U MyBatisu navíc nepřejde **dynamický příkaz**: `<select>` se značkou `<if>` je rodina příkazů a mezireprezentace rodinu nenese, takže se odmítne se záznamem, který značku jmenuje. A u EclipseLinku nástroj **netvrdí líné načtení reference**, protože bez weavingu je tiše eager.
+**Kde je dnes hranice.** Javové frameworky jsou nárokované **samy za sebe, ne jako ekosystém**: Hibernate, EclipseLink a MyBatis ano, jiný javový ORM ne. Dědičnost, komponenty a spojené tabulky hranici nepřecházejí na žádné straně, protože je nečte už ta zdrojová (`architecture.md` §9, oblast 2). U MyBatisu navíc nepřejde **dynamický příkaz**: `<select>` se značkou `<if>` je rodina příkazů a mezireprezentace rodinu nenese, takže se odmítne se záznamem, který značku jmenuje. A u EclipseLinku nástroj **netvrdí líné načtení reference**, protože bez weavingu je tiše eager. Celou hranici, konstrukci po konstrukci a pro oba ekosystémy, vede katalog podmnožiny [`subset.md`](./subset.md) — co který framework přečte a vydá (část 1.6), který mapovací fakt cíl nevyjádří (tabulka 1.5) a co se nepřeloží a proč (část 2).
 
 ## UC7 — Doklad, že přeložený kód opravdu běží a vrací totéž
 

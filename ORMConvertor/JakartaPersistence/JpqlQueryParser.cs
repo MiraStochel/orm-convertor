@@ -31,7 +31,8 @@ namespace JakartaPersistence;
 /// <c>createNativeQuery</c> with native SQL, by the shared T-SQL reader in the dialect the
 /// source declared (decision 088) - which is what the escape path writes, so that it reads
 /// back -, and <c>createNamedQuery</c> with the name of a query an annotation or orm.xml
-/// defines, which yields no query of its own and says so.
+/// defines, which yields no query and says so: the definition itself is a loss where it
+/// stands, so a named query of JPA is read nowhere.
 /// </summary>
 public abstract class JpqlQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
@@ -133,7 +134,7 @@ public abstract class JpqlQueryParser(
             if (method == "createNamedQuery")
             {
                 Report(ConversionRecordKind.Incompleteness,
-                    $"The code hands over the named query {(javaTokens[calls[i] + 2].Kind == JavaTokenKind.String ? $"'{javaTokens[calls[i] + 2].Text}'" : "named at run time")} through createNamedQuery; a named query is read where its annotation or orm.xml defines it, so the reference yields no query of its own.");
+                    $"The code hands over the named query {(javaTokens[calls[i] + 2].Kind == JavaTokenKind.String ? $"'{javaTokens[calls[i] + 2].Text}'" : "named at run time")} through createNamedQuery; a named query of JPA is not read anywhere - an @NamedQuery or a <named-query> is reported as a loss where it is defined -, so the reference yields no query.");
             }
             else if (LiteralOf(javaTokens, calls[i]) is not { } text)
             {
