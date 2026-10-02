@@ -274,9 +274,11 @@ public class HibernateJpqlQueryParserTest
     /// <summary>
     /// Orders and customers linked by one relation seen from both sides, sharing the
     /// column pairs the way the resolution phase leaves them; without pairs it is what a
-    /// source without @JoinColumn yields when no catalog was there.
+    /// source whose columns nobody stated - not the source, not its framework's default,
+    /// not the catalog - yields. A collection under mappedBy states no pairs of its own:
+    /// the resolution phase leaves them on the owning side alone.
     /// </summary>
-    private static (EntityMap Orders, EntityMap Customers) Linked(bool withPairs = true)
+    private static (EntityMap Orders, EntityMap Customers) Linked(bool withPairs = true, bool inverseStatesPairs = true)
     {
         var customerKey = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int) };
         var name = new Property { Name = "CustomerName", Type = LangType.Scalar(ScalarType.String) };
@@ -321,7 +323,7 @@ public class HibernateJpqlQueryParserTest
             SourceEntity = "Customer",
             TargetEntity = "Order",
             SourceNavigationProperty = "orders",
-            ColumnPairs = pairs,
+            ColumnPairs = inverseStatesPairs ? pairs : [],
         });
 
         return (orders, customers);
@@ -354,6 +356,42 @@ public class HibernateJpqlQueryParserTest
         Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
         var jpql = artifacts.Single(s => s.ContentType == ConversionContentType.JpqlQuery).Content;
         Assert.Contains("join Order o on o.CustomerID = c.CustomerID", jpql);
+    }
+
+    [Fact]
+    public void AnInversePathUnderMappedByTakesThePairsOfItsOwningSide()
+    {
+        var (orders, customers) = Linked(inverseStatesPairs: false);
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select c from Customer c join c.orders o where o.Total > 100", orders, customers);
+
+        // mappedBy names the reference that holds the foreign key; both sides of one
+        // relation share its pairs (decision 012), so the collection reads them from there.
+        var artifacts = builder.Build();
+
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        var jpql = artifacts.Single(s => s.ContentType == ConversionContentType.JpqlQuery).Content;
+        Assert.Contains("join Order o on o.CustomerID = c.CustomerID", jpql);
+    }
+
+    [Fact]
+    public void AnInversePathBetweenTwoOwningSidesRefusesRatherThanPicksOne()
+    {
+        var (orders, customers) = Linked(inverseStatesPairs: false);
+        var billTo = new PropertyMap { Property = new Property { Name = "BillToID", Type = LangType.Scalar(ScalarType.Int) }, ColumnName = "BillToID" };
+        orders.Relations.Add(new Relation
+        {
+            Cardinality = Cardinality.ManyToOne,
+            Role = RelationRole.Owning,
+            SourceEntity = "Order",
+            TargetEntity = "Customer",
+            SourceNavigationProperty = "billTo",
+            ColumnPairs = [new ColumnPair { Source = billTo, Target = customers.PropertyMaps[0] }],
+        });
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select c from Customer c join c.orders o", orders, customers);
+
+        // Which of two foreign keys the collection follows is a claim nobody made here.
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("no foreign key columns"));
     }
 
     [Fact]

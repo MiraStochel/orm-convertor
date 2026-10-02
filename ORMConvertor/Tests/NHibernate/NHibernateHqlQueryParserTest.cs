@@ -187,9 +187,11 @@ public class NHibernateHqlQueryParserTest
     /// Orders and customers linked by one relation seen from both sides: the owning
     /// many-to-one from the order and the inverse one-to-many from the customer share the
     /// column pairs, the way the resolution phase leaves them. Without pairs the relation
-    /// is what a source that stated no columns yields when no catalog was there.
+    /// is what a source that stated no columns yields when no catalog was there. An inverse
+    /// side may state no pairs of its own - an inverse one-to-one under property-ref admits
+    /// no column - and the resolution phase leaves them on the owning side alone then.
     /// </summary>
-    private static (EntityMap Orders, EntityMap Customers) Linked(bool withPairs = true, bool composite = false)
+    private static (EntityMap Orders, EntityMap Customers) Linked(bool withPairs = true, bool composite = false, bool inverseStatesPairs = true)
     {
         var customerKey = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int) };
         var customerCompany = new Property { Name = "CompanyID", Type = LangType.Scalar(ScalarType.Int) };
@@ -247,7 +249,7 @@ public class NHibernateHqlQueryParserTest
             SourceEntity = "Customer",
             TargetEntity = "Order",
             SourceNavigationProperty = "Orders",
-            ColumnPairs = pairs,
+            ColumnPairs = inverseStatesPairs ? pairs : [],
         });
 
         return (orders, customers);
@@ -285,6 +287,19 @@ public class NHibernateHqlQueryParserTest
         var hql = Hql(builder);
 
         Assert.Contains("left join Order o with o.CustomerID = c.CustomerID", hql);
+    }
+
+    [Fact]
+    public void AnInversePathWithoutPairsOfItsOwnTakesThoseOfItsOwningSide()
+    {
+        var (orders, customers) = Linked(inverseStatesPairs: false);
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Customer c join c.Orders o", orders, customers);
+
+        // Both sides of one relation share its pairs (decision 012); the JPQL and LINQ
+        // parsers read them from the owning side the same way.
+        var hql = Hql(builder);
+
+        Assert.Contains("inner join Order o with o.CustomerID = c.CustomerID", hql);
     }
 
     [Fact]

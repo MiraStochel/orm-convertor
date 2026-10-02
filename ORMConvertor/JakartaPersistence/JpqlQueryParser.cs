@@ -1805,11 +1805,11 @@ public abstract class JpqlQueryParser(
             return;
         }
 
-        var condition = AssociationCondition(association.Relation, parts[0], alias, written);
+        var condition = AssociationCondition(association.Relation, association.Pairs, parts[0], alias, written);
         queryBuilder.Join(kind, sourceAlias, TableFor(association.Target, association.Relation.TargetEntity), condition, alias);
     }
 
-    private sealed record AssociationJoin(Relation Relation, EntityMap Target);
+    private sealed record AssociationJoin(Relation Relation, EntityMap Target, IReadOnlyList<ColumnPair> Pairs);
 
     /// <summary>
     /// The relation a path names, or null with the sentence that says what the maps of the
@@ -1857,14 +1857,44 @@ public abstract class JpqlQueryParser(
             return null;
         }
 
-        if (relation.ColumnPairs.Count == 0)
+        var pairs = ColumnPairsOf(relation, owner, target);
+        if (pairs.Count == 0)
         {
             failure = $"The join along the association path '{path}' has no foreign key columns to derive its condition from: the relation to '{relation.TargetEntity}' states none and the database catalog supplied none; {consequence}";
             return null;
         }
 
         failure = null;
-        return new AssociationJoin(relation, target);
+        return new AssociationJoin(relation, target, pairs);
+    }
+
+    /// <summary>
+    /// The column pairs a relation stands on: its own, or those of its counterpart on the far
+    /// side where it states none - a collection under mappedBy carries no columns of its own,
+    /// the reference that owns the relation holds the foreign key and the pairs with it, and
+    /// both sides of one relation share the same pairs (decision 012). The counterpart is the
+    /// relation of the target with the opposite role that points back at the entity, pinned
+    /// by the inverse navigation where either side names it; more than one candidate names
+    /// nothing. Empty where neither side states columns. The same reading the shared LINQ
+    /// parser takes; it is written here again because the two layers share no query code (S1).
+    /// </summary>
+    private static IReadOnlyList<ColumnPair> ColumnPairsOf(Relation relation, EntityMap owner, EntityMap target)
+    {
+        if (relation.ColumnPairs.Count > 0)
+        {
+            return relation.ColumnPairs;
+        }
+
+        var candidates = target.Relations
+            .Where(r => r.Role != relation.Role
+                        && r.Cardinality != Cardinality.ManyToMany
+                        && r.ColumnPairs.Count > 0
+                        && string.Equals(r.TargetEntity, owner.Entity.Name, StringComparison.OrdinalIgnoreCase)
+                        && (relation.InverseRelationName is null || string.Equals(r.SourceNavigationProperty, relation.InverseRelationName, StringComparison.OrdinalIgnoreCase))
+                        && (r.InverseRelationName is null || string.Equals(r.InverseRelationName, relation.SourceNavigationProperty, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        return candidates.Count == 1 ? candidates[0].ColumnPairs : [];
     }
 
     /// <summary>
@@ -1873,13 +1903,13 @@ public abstract class JpqlQueryParser(
     /// for an owning one, the joined entity for an inverse one. A condition the source
     /// wrote after the path narrows the join further and joins the conjunction.
     /// </summary>
-    private static ConditionNode AssociationCondition(Relation relation, string pathAlias, string joinAlias, ConditionNode? written)
+    private static ConditionNode AssociationCondition(Relation relation, IReadOnlyList<ColumnPair> pairs, string pathAlias, string joinAlias, ConditionNode? written)
     {
         var (keyHolder, referenced) = relation.Role == RelationRole.Owning
             ? (pathAlias, joinAlias)
             : (joinAlias, pathAlias);
 
-        var conjuncts = relation.ColumnPairs
+        var conjuncts = pairs
             .Select(pair => (ConditionNode)new ComparisonCondition(
                 QueryOperand.Column(keyHolder, pair.Source.ColumnName ?? pair.Source.Property.Name),
                 ComparisonOperator.Equal,

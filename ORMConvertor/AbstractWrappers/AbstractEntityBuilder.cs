@@ -700,6 +700,13 @@ public abstract class AbstractEntityBuilder
     /// end of this relation, where the source names it - EF Core's [InverseProperty], JPA's
     /// mappedBy. The convention pairs the two sides on its own wherever only one pair runs
     /// between two entities; the name is what settles it where several do.</param>
+    /// <param name="conventionalColumns">Where the source states the relation but leaves its
+    /// columns to its framework: derives them by that framework's documented convention once
+    /// the target entity and its key are known - JPA's attribute_referencedColumn. What it
+    /// returns is materialized as a statement of the source (decision 067), exactly as if
+    /// the source had written it; returning null leaves the fact empty for whoever speaks
+    /// later. Resolved with the convention navigations, and a column any source states
+    /// outranks it.</param>
     public void AddForeignKey(
         Cardinality cardinality,
         string propertyName,
@@ -707,7 +714,8 @@ public abstract class AbstractEntityBuilder
         RelationRole? role = null,
         IReadOnlyList<string>? foreignKeyColumns = null,
         JunctionFacts? junction = null,
-        string? inverseNavigation = null)
+        string? inverseNavigation = null,
+        Func<EntityMap, EntityMap, IReadOnlyList<string>?>? conventionalColumns = null)
     {
         var propertyMap = GetOrCreatePropertyMap(propertyName); // the navigation property must exist in the model
 
@@ -738,6 +746,11 @@ public abstract class AbstractEntityBuilder
         if (foreignKeyColumns is { Count: > 0 } && !pendingForeignKeyColumns.ContainsKey(standing))
         {
             pendingForeignKeyColumns[standing] = foreignKeyColumns;
+        }
+
+        if (conventionalColumns is not null && !conventionalForeignKeys.Any(c => ReferenceEquals(c.Relation, standing)))
+        {
+            conventionalForeignKeys.Add(new ConventionalForeignKey(EntityMap, standing, conventionalColumns));
         }
 
         if (cardinality == Cardinality.ManyToMany && junction is not null && !pendingJunctionFacts.ContainsKey(standing))
@@ -903,6 +916,11 @@ public abstract class AbstractEntityBuilder
     /// record, exactly like any other unknown type name - unless it came with a shape
     /// callback, which is asked about that case as well; a property that meanwhile carries
     /// a relation (an annotation, an earlier call) or sits in the primary key is skipped.
+    ///
+    /// The conventional columns of relations the source stated (the last parameter of
+    /// <see cref="AddForeignKey"/>) wait for the same moment and for the same reason - the
+    /// column they derive names the key of an entity that may lie in another unit - so they
+    /// are materialized here as well, after the navigations, before the catalog compares.
     /// </summary>
     public void ResolveConventionNavigations()
     {
@@ -938,7 +956,55 @@ public abstract class AbstractEntityBuilder
                 target is null ? null : candidate.ForeignKeyColumns?.Invoke(candidate.Entity, target),
                 inverseNavigation: candidate.InverseNavigation);
         }
+
+        ResolveConventionalForeignKeys();
     }
+
+    /// <summary>
+    /// Turns every pending conventional derivation into the columns the source states, the
+    /// same pending columns a written join column ends in: the resolution phase pairs them
+    /// with the target's key and the catalog compares them rather than supplying its own
+    /// (decisions 015 and 067). A relation that meanwhile has columns - a later source wrote
+    /// them, or its pairs are set already - keeps them, because a stated column outranks a
+    /// derived one; a target outside the conversion has no key to derive from, so the fact
+    /// stays empty for the catalog, without a record, like every other gap it may fill.
+    /// </summary>
+    private void ResolveConventionalForeignKeys()
+    {
+        var pending = conventionalForeignKeys.ToList();
+        conventionalForeignKeys.Clear();
+
+        foreach (var claim in pending)
+        {
+            if (claim.Relation.ColumnPairs.Count > 0 || pendingForeignKeyColumns.ContainsKey(claim.Relation))
+            {
+                continue;
+            }
+
+            var target = FindEntityMap(claim.Relation.TargetEntity);
+
+            if (target is not null && claim.Derive(claim.Entity, target) is { Count: > 0 } columns)
+            {
+                pendingForeignKeyColumns[claim.Relation] = columns;
+            }
+        }
+    }
+
+    /// <summary>
+    /// One pending conventional derivation of a stated relation's columns; see the last
+    /// parameter of <see cref="AddForeignKey"/>.
+    /// </summary>
+    private sealed record ConventionalForeignKey(
+        EntityMap Entity,
+        Relation Relation,
+        Func<EntityMap, EntityMap, IReadOnlyList<string>?> Derive);
+
+    /// <summary>
+    /// Conventional derivations waiting for the entities of the conversion to be known.
+    /// Emptied by <see cref="ResolveConventionalForeignKeys"/>, so the second run of the
+    /// phase on the catalog path finds nothing left to derive.
+    /// </summary>
+    private readonly List<ConventionalForeignKey> conventionalForeignKeys = [];
 
     /// <summary>
     /// A base type the source states on the header of an entity class. Whether it names an

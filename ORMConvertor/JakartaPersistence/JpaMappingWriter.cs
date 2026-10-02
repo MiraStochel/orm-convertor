@@ -382,7 +382,8 @@ public sealed class JpaMappingWriter(
         {
             case JpaAttributeKind.ManyToOne:
                 entityBuilder.AddForeignKey(Cardinality.ManyToOne, attribute.Name, target, RelationRole.Owning,
-                    joinColumns.Count > 0 ? joinColumns : null);
+                    joinColumns.Count > 0 ? joinColumns : null,
+                    conventionalColumns: DefaultJoinColumn(attribute, joinColumns));
                 break;
 
             case JpaAttributeKind.OneToOne:
@@ -398,7 +399,8 @@ public sealed class JpaMappingWriter(
 
                 entityBuilder.AddForeignKey(Cardinality.OneToOne, attribute.Name, target,
                     inverse ? RelationRole.Inverse : RelationRole.Owning,
-                    joinColumns.Count > 0 ? joinColumns : null);
+                    joinColumns.Count > 0 ? joinColumns : null,
+                    conventionalColumns: inverse ? null : DefaultJoinColumn(attribute, joinColumns));
                 break;
 
             case JpaAttributeKind.OneToMany:
@@ -446,6 +448,55 @@ public sealed class JpaMappingWriter(
         {
             entityBuilder.SetPropertyDatabaseMapping(attribute.Name, new Dictionary<string, string> { ["nullable"] = "false" });
         }
+    }
+
+    /// <summary>
+    /// The join column Jakarta Persistence 3.2 derives for an owning reference that names
+    /// none - the default of @JoinColumn's name: the attribute, an underscore and the
+    /// referenced primary key column. It passes both tests of decision 067 - the inputs are
+    /// the attribute the artifact declares and the key of the entity it references, and the
+    /// gap travels elsewhere:
+    /// NHibernate would name the column after the property, EF Core after the navigation
+    /// and the key property, and the catalog would supply the schema's column without the
+    /// source ever having said it. So the reading states it, as if @JoinColumn had.
+    ///
+    /// The key is the target's and may lie in another unit, so the derivation waits for the
+    /// phase after reading (the convention navigations' one). It answers nothing where the
+    /// specification gives no default - a composite key, where "the default only applies if
+    /// a single join column is used" and the implementations part ways (a run of the pinned
+    /// releases measured Hibernate writing attribute_column per part and EclipseLink the
+    /// referenced column names bare) - nor over a join table, nor where the source's own
+    /// referencedColumnName points at another column than the key, which is a relation the
+    /// model pairs with the key regardless. EclipseLink writes the attribute part in upper
+    /// case (CUSTOMER_CustomerID where Hibernate writes customer_CustomerID); the name is
+    /// read in the specification's spelling, the same identifier under the case-insensitive
+    /// matching every implicit EclipseLink name already relies on (decision 080).
+    /// </summary>
+    private static Func<EntityMap, EntityMap, IReadOnlyList<string>?>? DefaultJoinColumn(
+        JpaAttributeFacts attribute, IReadOnlyList<string> statedColumns)
+    {
+        if (statedColumns.Count > 0 || attribute.MapsId || attribute.JoinTable is not null)
+        {
+            return null;
+        }
+
+        var referenced = attribute.JoinColumns
+            .Select(c => c.ReferencedColumnName)
+            .FirstOrDefault(c => !string.IsNullOrWhiteSpace(c));
+
+        return (_, target) =>
+        {
+            if (target.PrimaryKey is not { Parts.Count: 1 } key)
+            {
+                return null;
+            }
+
+            var keyColumn = key.Parts[0].PropertyMap.ColumnName ?? key.Parts[0].PropertyMap.Property.Name;
+
+            return referenced is null || string.Equals(referenced, keyColumn, StringComparison.OrdinalIgnoreCase)
+                ? [$"{attribute.Name}_{keyColumn}"]
+                : null;
+        };
     }
 
     /// <summary>The entity a navigation's type names: the element of a collection, or the type itself.</summary>
