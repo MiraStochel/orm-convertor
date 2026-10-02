@@ -536,6 +536,153 @@ public class MyBatisQueryTest
             r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("<insert>") && r.Query == "insertCustomer");
     }
 
+    /// <summary>
+    /// The annotated form of the same statements, which the interface hands over as much as
+    /// it hands over a select (decision 109). It used to be skipped without a word while the
+    /// XML form was refused.
+    /// </summary>
+    [Theory]
+    [InlineData("Insert")]
+    [InlineData("Update")]
+    [InlineData("Delete")]
+    public void AWritingAnnotationIsNamedAndRefused(string annotation)
+    {
+        var result = Convert(ORMEnum.Dapper,
+            Interface($$"""
+                    @{{annotation}}("DELETE FROM Sales.Customers WHERE CustomerId = #{id}")
+                    int write(@Param("id") Integer id);
+                """),
+            ResultMapOnly);
+
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Failure && r.Reason.Contains($"@{annotation}") && r.Query == "write");
+        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery);
+    }
+
+    /* ---- the options of a statement -------------------------------------------------- */
+
+    [Fact]
+    public void TheOptionsOfASelectAreEachALoss()
+    {
+        var result = Convert(ORMEnum.Dapper, null, Mapper("""
+          <select id="findAll" resultType="Customer" timeout="5" fetchSize="100" useCache="false">
+            SELECT c.CustomerName FROM Sales.Customers AS c
+          </select>
+        """));
+
+        Assert.Equal("SELECT c.CustomerName\nFROM Sales.Customers AS c", Sql(result));
+
+        var losses = result.Records.Where(r => r.Kind == ConversionRecordKind.Loss && r.Query == "findAll").ToList();
+        Assert.Contains(losses, r => r.Reason.Contains("timeout=\"5\""));
+        Assert.Contains(losses, r => r.Reason.Contains("fetchSize=\"100\""));
+        Assert.Contains(losses, r => r.Reason.Contains("useCache=\"false\""));
+    }
+
+    /// <summary>An option stated with the value it has when nobody states it says nothing, and is no loss.</summary>
+    [Fact]
+    public void AnOptionSpelledAsItsDefaultStatesNothing()
+    {
+        var result = Convert(ORMEnum.Dapper, null, Mapper("""
+          <select id="findAll" statementType="PREPARED" useCache="true" flushCache="false" lang="raw">
+            SELECT c.CustomerName FROM Sales.Customers AS c
+          </select>
+        """));
+
+        Sql(result);
+        Assert.DoesNotContain(result.Records, r => r.Query == "findAll");
+    }
+
+    /// <summary>
+    /// What a CALLABLE statement turns out to be is decided by its text, measured over the
+    /// shared reading: a query is translated and the statement type is the loss, JDBC's call
+    /// escape is refused by name instead of failing at its first character, and EXEC is
+    /// refused by the reading as a statement that is not a query.
+    /// </summary>
+    [Fact]
+    public void ACallableStatementIsWhatItsTextStates()
+    {
+        var result = Convert(ORMEnum.Dapper, null, Mapper("""
+          <select id="findAll" statementType="CALLABLE">
+            SELECT c.CustomerName FROM Sales.Customers AS c
+          </select>
+          <select id="byEscape" statementType="CALLABLE">
+            {call dbo.FindCustomers(#{id})}
+          </select>
+          <select id="byExec" statementType="CALLABLE">
+            EXEC dbo.FindCustomers #{id}
+          </select>
+        """));
+
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Loss && r.Query == "findAll" && r.Reason.Contains("CALLABLE"));
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure && r.Query == "findAll");
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Failure && r.Query == "byEscape" && r.Reason.Contains("call escape"));
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Failure && r.Query == "byExec" && r.Reason.Contains("EXECUTE"));
+    }
+
+    /// <summary>
+    /// A language driver of its own reads the text in its own language - a template whose
+    /// directives may sit in what T-SQL takes for a comment -, so the text read as XML could
+    /// be another statement than the one MyBatis runs.
+    /// </summary>
+    [Fact]
+    public void ALanguageDriverOfItsOwnRefusesTheStatement()
+    {
+        var result = Convert(ORMEnum.Dapper, null, Mapper("""
+          <select id="findAll" lang="velocity">
+            SELECT c.CustomerName FROM Sales.Customers AS c
+          </select>
+        """));
+
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Failure && r.Query == "findAll" && r.Reason.Contains("lang=\"velocity\""));
+        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery);
+    }
+
+    /// <summary>
+    /// The annotated form states the same options in @Options and @Lang, and one rule answers
+    /// both forms: the enum constant and the class literal are read as the attribute would
+    /// write them, a default says nothing, and @MapKey is a result mapping like @ResultType.
+    /// </summary>
+    [Fact]
+    public void TheAnnotatedOptionsAreAnsweredAsTheAttributesAre()
+    {
+        var result = Convert(ORMEnum.Dapper,
+            Interface("""
+                    @Select("SELECT c.CustomerName FROM Sales.Customers AS c")
+                    @Options(timeout = 5, useCache = true, statementType = StatementType.CALLABLE)
+                    @Lang(RawLanguageDriver.class)
+                    @MapKey("CustomerName")
+                    Map<String, Customer> findAll();
+                """),
+            ResultMapOnly);
+
+        Sql(result);
+
+        var losses = result.Records.Where(r => r.Kind == ConversionRecordKind.Loss && r.Query == "findAll").ToList();
+        Assert.Contains(losses, r => r.Reason.Contains("@Options(timeout = 5)"));
+        Assert.Contains(losses, r => r.Reason.Contains("CALLABLE"));
+        Assert.Contains(losses, r => r.Reason.Contains("@MapKey"));
+        Assert.DoesNotContain(losses, r => r.Reason.Contains("useCache") || r.Reason.Contains("@Lang"));
+    }
+
+    [Fact]
+    public void AnAnnotatedLanguageDriverOfItsOwnRefusesTheStatement()
+    {
+        var result = Convert(ORMEnum.Dapper,
+            Interface("""
+                    @Select("SELECT c.CustomerName FROM Sales.Customers AS c")
+                    @Lang(VelocityLanguageDriver.class)
+                    List<Customer> findAll();
+                """),
+            ResultMapOnly);
+
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Failure && r.Query == "findAll" && r.Reason.Contains("VelocityLanguageDriver"));
+    }
+
     /* ---- more than one table --------------------------------------------------------- */
 
     /// <summary>

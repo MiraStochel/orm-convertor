@@ -16,7 +16,10 @@ namespace MyBatisWrappers;
 ///
 /// @SelectProvider and its siblings are refused by name. SQL assembled by Java code is a
 /// program rather than an artifact, and running it to find out what it says is on the far
-/// side of the line decision 040 draws.
+/// side of the line decision 040 draws. @Insert, @Update and @Delete are refused by name as
+/// well, as their elements are in the XML form: the interface hands them over as much as it
+/// hands over a select (decision 109). @Options and @Lang on a select are its options,
+/// answered by the rule the XML form's attributes share.
 /// </summary>
 public sealed class MyBatisAnnotationQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
@@ -64,6 +67,12 @@ public sealed class MyBatisAnnotationQueryParser(
                     continue;
                 }
 
+                if (method.Annotations.FirstOrDefault(a => a.SimpleName is "Insert" or "Update" or "Delete") is { } writing)
+                {
+                    filled.Add(RefuseWritingStatement(method.Name, $"@{writing.SimpleName}"));
+                    continue;
+                }
+
                 if (method.Annotations.FirstOrDefault(a => a.SimpleName == "Select") is { } select)
                 {
                     filled.Add(ReadSelect(mapper, method, select, namespaceName, entityMaps));
@@ -88,11 +97,16 @@ public sealed class MyBatisAnnotationQueryParser(
             return builder;
         }
 
-        foreach (var dropped in method.Annotations.Where(a => a.SimpleName is "ResultMap" or "ResultType"))
+        foreach (var dropped in method.Annotations.Where(a => a.SimpleName is "ResultMap" or "ResultType" or "MapKey"))
         {
             Report(builder, ConversionRecordKind.Loss,
                 $"The method carries @{dropped.SimpleName}, which says how the result is mapped; the query representation does not "
                 + "carry it, so it was dropped and the result type is derived from the table.");
+        }
+
+        if (!ReadOptions(builder, Options(method)))
+        {
+            return builder;
         }
 
         // @Select takes one string or an array of them, which MyBatis joins with a space.
@@ -131,6 +145,37 @@ public sealed class MyBatisAnnotationQueryParser(
 
         return builder;
     }
+
+    /// <summary>
+    /// The options a method states for its select: every element of @Options, and the
+    /// driver @Lang names. A value is normalized to what the XML form would write -
+    /// StatementType.CALLABLE to CALLABLE, RawLanguageDriver.class to RawLanguageDriver -,
+    /// so that one rule answers both forms.
+    /// </summary>
+    private static IEnumerable<StatementOption> Options(JavaMethod method)
+    {
+        foreach (var annotation in method.Annotations)
+        {
+            if (annotation.SimpleName == "Options")
+            {
+                foreach (var argument in annotation.Arguments)
+                {
+                    var name = argument.Name ?? "value";
+                    yield return new StatementOption(name, Normalized(argument.Value), $"@Options({name} = {argument.Value.Text})");
+                }
+            }
+            else if (annotation.SimpleName == "Lang" && annotation["value"] is { } driver)
+            {
+                yield return new StatementOption("lang", Normalized(driver), $"@Lang({driver.Text}.class)");
+            }
+        }
+    }
+
+    private static string Normalized(JavaAnnotationValue value) => value.Kind switch
+    {
+        JavaAnnotationValueKind.Name or JavaAnnotationValueKind.ClassLiteral => value.SimpleName,
+        _ => value.Text,
+    };
 
     private AbstractQueryBuilder RefuseProvider(JavaMethod method, JavaAnnotation provider)
     {

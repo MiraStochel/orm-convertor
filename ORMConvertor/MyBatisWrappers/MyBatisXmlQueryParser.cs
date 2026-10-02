@@ -18,7 +18,10 @@ namespace MyBatisWrappers;
 /// Only &lt;select&gt; becomes a query. The other three statements change rows rather than
 /// return them, which is outside what the tool translates for any framework - the same
 /// refusal a Dapper unit carrying an INSERT meets in the shared reader - so each is named
-/// and refused rather than dropped in silence (decision 048).
+/// and refused rather than dropped in silence (decision 048). Of the attributes of a
+/// &lt;select&gt;, four are read - id, parameterType, resultType and resultMap -, and the
+/// rest are options of the statement, answered by the rule the annotated form shares
+/// (<see cref="MyBatisQueryParser.ReadOptions"/>).
 /// </summary>
 public sealed class MyBatisXmlQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
@@ -50,7 +53,7 @@ public sealed class MyBatisXmlQueryParser(
         {
             filled.Add(element.Name.LocalName == "select"
                 ? ReadSelect(element, namespaceName, entityMaps)
-                : RefuseWritingStatement(element));
+                : RefuseWritingStatement(element.Attribute("id")?.Value, $"<{element.Name.LocalName}>"));
         }
 
         return filled;
@@ -88,6 +91,17 @@ public sealed class MyBatisXmlQueryParser(
             }
         }
 
+        // Every other attribute is an option of the statement, answered by the rule both
+        // forms share; a language driver of its own refuses the statement.
+        var options = select.Attributes()
+            .Where(a => !a.IsNamespaceDeclaration && a.Name.LocalName is not ("id" or "parameterType" or "resultType" or "resultMap"))
+            .Select(a => new StatementOption(a.Name.LocalName, a.Value.Trim(), $"{a.Name.LocalName}=\"{a.Value}\""));
+
+        if (!ReadOptions(builder, options))
+        {
+            return builder;
+        }
+
         var text = new MyBatisStatementText(context, namespaceName, (kind, reason, feature) => Report(builder, kind, reason, feature));
 
         foreach (var (name, facts) in StatedParameters(namespaceName, id, select.Attribute("parameterType")?.Value, entityMaps))
@@ -107,17 +121,6 @@ public sealed class MyBatisXmlQueryParser(
             text.Parameters,
             Limits)
             .Read(sql);
-
-        return builder;
-    }
-
-    private AbstractQueryBuilder RefuseWritingStatement(XElement statement)
-    {
-        var builder = Named(statement.Attribute("id")?.Value);
-
-        Report(builder, ConversionRecordKind.Failure,
-            $"The mapper declares <{statement.Name.LocalName}>, a statement that changes rows rather than returning them; the tool "
-            + "translates entities, mappings and queries, so no artifact was generated for it.");
 
         return builder;
     }

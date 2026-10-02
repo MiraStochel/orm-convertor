@@ -24,8 +24,16 @@ namespace NHibernateWrappers;
 ///
 /// HQL names entities and properties where the IR holds tables and columns, so every name
 /// goes through the mapping IR — the exact inverse of the builder's visitor.
+///
+/// HQL itself states no parameter's type. Where the text comes from an hbm.xml
+/// &lt;query&gt;, its &lt;query-param&gt; elements may, and the caller hands those scalars over
+/// as <c>statedScalars</c>, keyed by the undecorated name: they travel on the
+/// parameter as stated, and the builder template keeps them over what it would derive
+/// (decision 083).
 /// </summary>
-public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) : IQueryParser
+public class NHibernateHqlQueryParser(
+    Func<AbstractQueryBuilder> queryBuilders,
+    IReadOnlyDictionary<string, ScalarType>? statedScalars = null) : IQueryParser
 {
     /// <summary>
     /// The builder of the query being read. Assigned at the start of every Parse from the
@@ -1767,16 +1775,23 @@ public class NHibernateHqlQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// id, the colon being HQL's decoration and stripped like the quotes of a string, and a
     /// bare <c>?</c> is positional with the order of its occurrence in the text, counted
     /// from one. The order is counted here because nothing else in the text states it - HQL
-    /// says "the next one" and the model needs the number.
+    /// says "the next one" and the model needs the number. A named one carries the scalar a
+    /// &lt;query-param&gt; declared for it, if any; a positional one has no name to declare by.
     /// </summary>
     private QueryParameter ReadParameter(bool isCollection = false)
     {
         var text = Current.Text;
         Advance();
 
-        return text == "?"
-            ? QueryParameter.Positional(++positionalParameters, isCollection: isCollection)
-            : QueryParameter.Named(text[1..], isCollection: isCollection);
+        if (text == "?")
+        {
+            return QueryParameter.Positional(++positionalParameters, isCollection: isCollection);
+        }
+
+        var name = text[1..];
+        ScalarType? stated = statedScalars is not null && statedScalars.TryGetValue(name, out var scalar) ? scalar : null;
+
+        return QueryParameter.Named(name, stated, isCollection);
     }
 
     private int positionalParameters;

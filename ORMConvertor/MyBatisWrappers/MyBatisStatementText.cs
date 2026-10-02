@@ -351,6 +351,18 @@ internal sealed partial class MyBatisStatementText(
 
     private string? Substitute(string text)
     {
+        // JDBC's escape for a procedure call, the form a CALLABLE statement is written in. It
+        // is not T-SQL and the grammar must not be taught it (decision 082), so it is refused
+        // by name rather than failing as a syntax error at its first character - the same
+        // courtesy NHibernate's {alias} placeholders get.
+        if (JdbcCall().Match(text) is { Success: true } call)
+        {
+            Refuse(
+                $"The statement is written in JDBC's call escape '{call.Value.Trim()} …}}', a call of a stored procedure rather "
+                + "than a query that reads; the tool translates queries that read, so no artifact was generated.");
+            return null;
+        }
+
         if (text.Contains("${", StringComparison.Ordinal))
         {
             Refuse(
@@ -496,4 +508,7 @@ internal sealed partial class MyBatisStatementText(
 
     [GeneratedRegex(@"<\s*script\b[^>]*>", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex ScriptTag();
+
+    [GeneratedRegex(@"^\s*\{\s*(\?\s*=\s*)?call\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex JdbcCall();
 }

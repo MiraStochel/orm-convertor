@@ -3,6 +3,7 @@ using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model;
+using Model.AbstractRepresentation.Enums;
 using TransactSql;
 
 namespace NHibernateWrappers;
@@ -29,8 +30,10 @@ internal static class NHibernateNativeSql
     /// <summary>
     /// Reads one native query into the builder: the parameters the source binds as lists
     /// (<c>SetParameterList</c>) stated as such, because <c>IN (:ids)</c> is a one-element list
-    /// to the grammar otherwise (decision 106). <paramref name="what"/> names the query in the
-    /// records - the name of an hbm.xml query, or the call that handed it over.
+    /// to the grammar otherwise (decision 106), and the scalars an hbm.xml &lt;query-param&gt;
+    /// declared for them, which the text cannot state (decision 083). <paramref name="what"/>
+    /// names the query in the records - the name of an hbm.xml query, or the call that handed
+    /// it over.
     /// </summary>
     public static void Read(
         AbstractQueryBuilder builder,
@@ -39,7 +42,8 @@ internal static class NHibernateNativeSql
         IReadOnlySet<string> lists,
         SourceSqlDialect? declaredSourceDialect,
         ParseLimits limits,
-        Action<ConversionRecordKind, string, QueryFeature?> report)
+        Action<ConversionRecordKind, string, QueryFeature?> report,
+        IReadOnlyDictionary<string, ScalarType>? scalars = null)
     {
         if (Placeholder.Match(sql) is { Success: true } placeholder)
         {
@@ -62,6 +66,11 @@ internal static class NHibernateNativeSql
         foreach (var list in lists)
         {
             facts[list] = facts.GetValueOrDefault(list) with { IsCollection = true };
+        }
+
+        foreach (var (name, scalar) in scalars ?? new Dictionary<string, ScalarType>())
+        {
+            facts[name] = facts.GetValueOrDefault(name) with { Scalar = scalar };
         }
 
         new SqlQueryReader(builder, report, declaredSourceDialect, facts, limits).Read(text);

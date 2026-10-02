@@ -77,6 +77,129 @@ public abstract class MyBatisQueryParser(Func<AbstractQueryBuilder> queryBuilder
     }
 
     /// <summary>
+    /// A statement that changes rows - &lt;insert&gt;, &lt;update&gt; and &lt;delete&gt; in the
+    /// document, @Insert, @Update and @Delete on the interface. It is outside what the tool
+    /// translates for any framework, the same refusal a Dapper unit carrying an INSERT meets in
+    /// the shared reader, but the unit hands it over all the same, so it is named and refused
+    /// rather than dropped in silence (decisions 048 and 109). <paramref name="spelled"/> is
+    /// the statement as the source wrote it.
+    /// </summary>
+    protected AbstractQueryBuilder RefuseWritingStatement(string? id, string spelled)
+    {
+        var builder = Named(id);
+
+        Report(builder, ConversionRecordKind.Failure,
+            $"The mapper declares {spelled}, a statement that changes rows rather than returning them; the tool translates "
+            + "entities, mappings and queries, so no artifact was generated for it.");
+
+        return builder;
+    }
+
+    /// <summary>One option a statement states about itself, as the source spelled it and with its value normalized.</summary>
+    protected readonly record struct StatementOption(string Name, string Value, string Spelled);
+
+    /// <summary>
+    /// The value an option takes when nobody states it, for a select. An option stated with
+    /// it states nothing the absent one would not, so it is no loss; the annotated form
+    /// spells some of them its own way (FlushCachePolicy.DEFAULT, -1).
+    /// </summary>
+    private static readonly Dictionary<string, string[]> Defaults = new(StringComparer.Ordinal)
+    {
+        ["statementType"] = ["PREPARED"],
+        ["useCache"] = ["true"],
+        ["flushCache"] = ["false", "DEFAULT"],
+        ["resultSetType"] = ["DEFAULT"],
+        ["resultOrdered"] = ["false"],
+        ["affectData"] = ["false"],
+        ["fetchSize"] = ["-1"],
+        ["timeout"] = ["-1"],
+        ["useGeneratedKeys"] = ["false"],
+        ["keyProperty"] = [""],
+        ["keyColumn"] = [""],
+        ["resultSets"] = [""],
+        ["databaseId"] = [""],
+    };
+
+    /// <summary>
+    /// The language drivers that read a statement the way the tool does: XML, MyBatis's
+    /// default, and raw, which is XML without the dynamic tags. Named by alias or by class.
+    /// </summary>
+    private static readonly HashSet<string> XmlLanguageDrivers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "xml", "raw", "XMLLanguageDriver", "RawLanguageDriver",
+    };
+
+    /// <summary>
+    /// The options a select states beside the four attributes the reading takes - the other
+    /// attributes of &lt;select&gt;, and @Options and @Lang on a mapper method. Most say how
+    /// MyBatis executes the statement rather than which rows it reads (fetchSize, timeout,
+    /// useCache, flushCache, resultSetType, resultOrdered, resultSets, affectData,
+    /// parameterMap, statementType STATEMENT): the representation has no place for them and
+    /// each is a loss (decision 048), the answer the reading of a JPA or NHibernate query
+    /// object gives its setters.
+    ///
+    /// Three get an answer of their own. statementType CALLABLE has MyBatis call the
+    /// statement as a stored procedure: the text is read for what it states, and a call
+    /// written in it - EXEC, or JDBC's {call …} - is refused by the reading as no query, so
+    /// what is lost is the statement type alone. databaseId has MyBatis load the statement
+    /// only under the database the configuration names so, which the tool cannot know
+    /// (decision 040); the text is read as SQL of the declared dialect whatever the name. And
+    /// a language driver other than XML reads the text in a language of its own - a
+    /// template whose directives may sit in what T-SQL takes for a comment -, so the text
+    /// the tool would read could be another statement than the one MyBatis runs: that is a
+    /// refusal (decision 053), and the method returns false.
+    /// </summary>
+    protected bool ReadOptions(AbstractQueryBuilder builder, IEnumerable<StatementOption> options)
+    {
+        var read = true;
+
+        foreach (var option in options)
+        {
+            if (Defaults.TryGetValue(option.Name, out var defaults)
+                && defaults.Contains(option.Value, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            switch (option.Name)
+            {
+                case "lang" when XmlLanguageDrivers.Contains(option.Value):
+                    break;
+
+                case "lang":
+                    Report(builder, ConversionRecordKind.Failure,
+                        $"The statement states {option.Spelled}, a language driver that reads its text in a language of its own "
+                        + "rather than in MyBatis's XML, which is the one the tool reads; read as XML, the text could be another "
+                        + "statement than the one MyBatis runs, so no artifact was generated.");
+                    read = false;
+                    break;
+
+                case "statementType" when option.Value.Equals("CALLABLE", StringComparison.OrdinalIgnoreCase):
+                    Report(builder, ConversionRecordKind.Loss,
+                        $"The statement states {option.Spelled}, which has MyBatis call it as a stored procedure; the text is read "
+                        + "as the query it states - a call itself, EXEC or JDBC's {call …}, is refused by the reading - and the "
+                        + "statement type was dropped.");
+                    break;
+
+                case "databaseId":
+                    Report(builder, ConversionRecordKind.Loss,
+                        $"The statement states {option.Spelled}, which has MyBatis load it only under the database the "
+                        + "configuration names so; the tool reads it as SQL of the declared dialect whatever the name, and the "
+                        + "condition was dropped.");
+                    break;
+
+                default:
+                    Report(builder, ConversionRecordKind.Loss,
+                        $"The statement states {option.Spelled}, which says how MyBatis executes it rather than which rows it "
+                        + "reads; the query representation has no place for it and it was dropped.");
+                    break;
+            }
+        }
+
+        return read;
+    }
+
+    /// <summary>
     /// The scalars the source stated about the statement's parameters, in the order
     /// decision 084 gives them: the signature of the mapper method first, because that is
     /// where a MyBatis parameter's type lives at all, and a parameterType naming an entity of
