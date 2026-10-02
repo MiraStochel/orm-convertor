@@ -42,6 +42,15 @@ namespace DapperWrappers;
 /// text states a write is refused by name, the way the same statement in a bare unit is.
 /// Queries of one unit that the source did not name are numbered by their position in the
 /// text, the calls and the SELECTs of a script alike.
+///
+/// The call says more than its text, and none of it passes in silence (decisions 048 and
+/// 109). Each argument is told by its name, or by its position in the overload Dapper
+/// declares, and answered by what it states: the parameter object and the transaction are
+/// values of the caller, not facts of the query; buffered and commandTimeout say how Dapper
+/// runs the command and are each a loss; the map and splitOn of a multi-mapping say how a
+/// row becomes objects, which every target derives again, and are a loss too. One argument
+/// changes what the text is: with commandType StoredProcedure Dapper sends it as the name of
+/// a procedure, so the query is refused by name rather than read as the query it is not.
 /// </summary>
 public class DapperSqlQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
@@ -73,6 +82,21 @@ public class DapperSqlQueryParser(
     };
 
     /// <summary>
+    /// The parameters of the SqlMapper overloads that take the SQL as a string, in their order
+    /// after the connection the call is made on (Dapper 2.1.79): every method has these, the
+    /// synchronous Query adds buffered, and an overload whose first argument is a Type has it
+    /// ahead of the SQL.
+    /// </summary>
+    private static readonly string[] PlainParameters = ["sql", "param", "transaction", "commandTimeout", "commandType"];
+
+    private static readonly string[] BufferedParameters = ["sql", "param", "transaction", "buffered", "commandTimeout", "commandType"];
+
+    /// <summary>The multi-mapping overloads of Query and QueryAsync: the map ahead of the parameter object, and in one of them the types ahead of the map.</summary>
+    private static readonly string[] MultiMappingParameters = ["sql", "map", "param", "transaction", "buffered", "splitOn", "commandTimeout", "commandType"];
+
+    private static readonly string[] MultiMappingByTypesParameters = ["sql", "types", "map", "param", "transaction", "buffered", "splitOn", "commandTimeout", "commandType"];
+
+    /// <summary>
     /// The limits this parser reads its input under (decision 092). The orchestration sets
     /// them on every parser it creates; one constructed by hand - in a test - runs under the
     /// default, which is the cap the application uses unless its operator moved it.
@@ -99,7 +123,7 @@ public class DapperSqlQueryParser(
     {
         var handovers = contentType == ConversionContentType.CSharp
             ? ExtractCalls(source, Limits)
-            : [new Handover(source, IsScript: true, Refusal: null)];
+            : [new Handover(source, IsScript: true, Refusal: null, Losses: [])];
 
         // Every query of the unit, each with a builder fresh from the factory the
         // orchestration supplied (decision 081): the parser may not make one itself - a
@@ -133,9 +157,17 @@ public class DapperSqlQueryParser(
                 continue;
             }
 
+            // What the call states beside its text, it states of every query it hands over.
             for (var i = 0; i < selects.Count; i++)
             {
-                queries.Add((i == 0 ? builder : queryBuilders(), selects[i], occurrences));
+                var query = i == 0 ? builder : queryBuilders();
+
+                foreach (var (reason, feature) in handover.Losses)
+                {
+                    ChannelOf(query)(ConversionRecordKind.Loss, reason, feature);
+                }
+
+                queries.Add((query, selects[i], occurrences));
             }
         }
 
@@ -172,17 +204,22 @@ public class DapperSqlQueryParser(
 
     /// <summary>
     /// A place where the source hands Dapper a text: the SQL with whether it is a script, or
-    /// the reason it could not be taken, for the query it is to report on.
+    /// the reason it could not be taken, for the query it is to report on, and the losses of
+    /// what the call states beside the text.
     /// </summary>
-    private sealed record Handover(string? Sql, bool IsScript, (ConversionRecordKind Kind, string Reason)? Refusal);
+    private sealed record Handover(
+        string? Sql,
+        bool IsScript,
+        (ConversionRecordKind Kind, string Reason)? Refusal,
+        IReadOnlyList<(string Reason, QueryFeature? Feature)> Losses);
 
     /// <summary>
     /// Every Dapper call of the unit, in the order of the text (decision 109). The SQL is the
-    /// argument named sql, or else the first positional one - the place every SqlMapper method
-    /// takes it -, and it is read through the token's value, so verbatim strings, raw string
-    /// literals and escapes have already been resolved by Roslyn rather than being unwound by
-    /// hand. A call with no argument at all is ADO.NET's own ExecuteReader or ExecuteScalar on
-    /// a command, not Dapper's, which always takes the SQL.
+    /// argument in the place of sql - by name, or by position in the overload (see
+    /// <see cref="ParametersOf"/>) -, and it is read through the token's value, so verbatim
+    /// strings, raw string literals and escapes have already been resolved by Roslyn rather
+    /// than being unwound by hand. A call with no argument at all is ADO.NET's own
+    /// ExecuteReader or ExecuteScalar on a command, not Dapper's, which always takes the SQL.
     /// </summary>
     private static List<Handover> ExtractCalls(string source, ParseLimits limits)
     {
@@ -198,18 +235,157 @@ public class DapperSqlQueryParser(
         {
             var member = (MemberAccessExpressionSyntax)invocation.Expression;
             var arguments = invocation.ArgumentList.Arguments;
-            var sql = arguments.FirstOrDefault(argument => argument.NameColon?.Name.Identifier.Text == "sql")
-                ?? arguments.FirstOrDefault(argument => argument.NameColon is null);
+            var parameters = ParametersOf(member, arguments);
 
-            handovers.Add(sql?.Expression is LiteralExpressionSyntax literal
-                && literal.RawKind == (int)SyntaxKind.StringLiteralExpression
-                    ? new Handover(literal.Token.ValueText, ScriptMethods.Contains(member.Name.Identifier.Text), null)
-                    : new Handover(null, false, (
-                        ConversionRecordKind.Incompleteness,
-                        "The Dapper call does not pass the SQL as a string literal, so the query could not be read.")));
+            ExpressionSyntax? sql = null;
+            (ConversionRecordKind Kind, string Reason)? refusal = null;
+            var losses = new List<(string Reason, QueryFeature? Feature)>();
+            var mapping = new List<string>();
+
+            for (var i = 0; i < arguments.Count; i++)
+            {
+                var role = arguments[i].NameColon?.Name.Identifier.Text ?? (i < parameters.Length ? parameters[i] : null);
+                var value = arguments[i].Expression;
+
+                switch (role)
+                {
+                    case "sql":
+                        sql = value;
+                        break;
+
+                    // The result type, the values of the parameters and the transaction the
+                    // command joins are the caller's, not facts of the query.
+                    case "type" or "param" or "transaction":
+                        break;
+
+                    case "buffered" when value.IsKind(SyntaxKind.TrueLiteralExpression):
+                    case "commandTimeout" when value.IsKind(SyntaxKind.NullLiteralExpression):
+                        break;
+
+                    case "buffered":
+                        losses.Add((
+                            $"The Dapper call passes buffered: {value}, which says whether Dapper reads every row before handing the "
+                                + "result over - how the result is materialized, not which rows the query reads; the query "
+                                + "representation has no place for it and it was dropped.",
+                            null));
+                        break;
+
+                    case "commandTimeout":
+                        losses.Add((
+                            $"The Dapper call passes commandTimeout: {value}, which says how long the command may run - how the "
+                                + "query is executed, not which rows it reads; the query representation has no place for it and "
+                                + "it was dropped.",
+                            null));
+                        break;
+
+                    case "commandType":
+                        refusal ??= CommandTypeRefusal(value);
+                        break;
+
+                    case "map" or "splitOn" or "types":
+                        mapping.Add(role);
+                        break;
+
+                    default:
+                        losses.Add((
+                            $"The Dapper call passes {(role is null ? "the argument" : $"{role}:")} {value}, which the reading does "
+                                + "not know; it was dropped, which changes nothing the SQL text says about its rows.",
+                            null));
+                        break;
+                }
+            }
+
+            if (mapping.Count > 0)
+            {
+                losses.Add((
+                    $"The Dapper call maps each row onto several objects ({string.Join(", ", mapping)}), which states how its rows "
+                        + "are materialized and which the query representation does not carry; it was dropped and every target "
+                        + "derives the row again.",
+                    QueryFeature.Projection));
+            }
+
+            if (refusal is null && !(sql is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.StringLiteralExpression)))
+            {
+                refusal = (
+                    ConversionRecordKind.Incompleteness,
+                    "The Dapper call does not pass the SQL as a string literal, so the query could not be read.");
+            }
+
+            handovers.Add(refusal is null
+                ? new Handover(((LiteralExpressionSyntax)sql!).Token.ValueText, ScriptMethods.Contains(member.Name.Identifier.Text), null, losses)
+                : new Handover(null, false, refusal, []));
         }
 
         return handovers;
+    }
+
+    /// <summary>
+    /// The parameters of the overload a call is made to, as far as its syntax tells them
+    /// apart (<see cref="PlainParameters"/>): a Type as the first argument puts the type ahead
+    /// of the SQL; a Query with three type arguments or more, a lambda or a list of types after
+    /// the SQL, or an argument named map, splitOn or types is a multi-mapping. An argument the
+    /// overload has no place for at its position is one the reading does not know.
+    /// </summary>
+    private static string[] ParametersOf(MemberAccessExpressionSyntax member, SeparatedSyntaxList<ArgumentSyntax> arguments)
+    {
+        var name = member.Name.Identifier.Text;
+        var typed = arguments[0] is { NameColon: null, Expression: TypeOfExpressionSyntax };
+        var afterSql = arguments.ElementAtOrDefault(typed ? 2 : 1) is { NameColon: null } argument ? argument.Expression : null;
+
+        var parameters =
+            name is "Query" or "QueryAsync"
+            && (member.Name is GenericNameSyntax { TypeArgumentList.Arguments.Count: >= 3 }
+                || afterSql is AnonymousFunctionExpressionSyntax
+                || IsTypeList(afterSql)
+                || arguments.Any(a => a.NameColon?.Name.Identifier.Text is "map" or "splitOn" or "types"))
+                ? IsTypeList(afterSql) || arguments.Any(a => a.NameColon?.Name.Identifier.Text == "types")
+                    ? MultiMappingByTypesParameters
+                    : MultiMappingParameters
+                : name == "Query" ? BufferedParameters : PlainParameters;
+
+        return typed ? ["type", .. parameters] : parameters;
+    }
+
+    /// <summary>An array or a collection expression of types, the types argument of a multi-mapping.</summary>
+    private static bool IsTypeList(ExpressionSyntax? expression) => expression switch
+    {
+        ArrayCreationExpressionSyntax array => array.Initializer?.Expressions.FirstOrDefault() is TypeOfExpressionSyntax,
+        ImplicitArrayCreationExpressionSyntax array => array.Initializer.Expressions.FirstOrDefault() is TypeOfExpressionSyntax,
+        CollectionExpressionSyntax collection => collection.Elements.FirstOrDefault() is ExpressionElementSyntax { Expression: TypeOfExpressionSyntax },
+        _ => false,
+    };
+
+    /// <summary>
+    /// The command type of a call, which decides what Dapper sends the text as. Text, stated
+    /// or left null, is the query the text states. StoredProcedure has Dapper send the text as
+    /// the name of a procedure to call, and TableDirect as the name of a table, so neither is
+    /// a query, and the call is refused by name rather than read as one: a SELECT sent so is
+    /// refused by the server, so translating it would make a working query out of a failing
+    /// call. A value the code computes decides that at run time, which leaves nothing to read
+    /// either. Null where the command type leaves the text a query.
+    /// </summary>
+    private static (ConversionRecordKind Kind, string Reason)? CommandTypeRefusal(ExpressionSyntax value)
+    {
+        var member = value is MemberAccessExpressionSyntax access
+            && access.Expression is IdentifierNameSyntax { Identifier.Text: "CommandType" } or MemberAccessExpressionSyntax { Name.Identifier.Text: "CommandType" }
+                ? access.Name.Identifier.Text
+                : null;
+
+        var reason = member switch
+        {
+            _ when value.IsKind(SyntaxKind.NullLiteralExpression) => null,
+            "Text" => null,
+            "StoredProcedure" => $"The Dapper call passes commandType: {value}, so Dapper sends its text as the name of a stored "
+                + "procedure to call rather than as a query; a call of a procedure is no query the tool translates, so no artifact "
+                + "was generated.",
+            "TableDirect" => $"The Dapper call passes commandType: {value}, so its text is sent as the name of a table to read "
+                + "rather than as a query; no artifact was generated.",
+            _ => $"The Dapper call passes commandType: {value}, a value computed at run time, which decides whether Dapper sends "
+                + "the text as a query or as the name of a stored procedure; what the text is cannot be read off the unit, so no "
+                + "artifact was generated.",
+        };
+
+        return reason is null ? null : (ConversionRecordKind.Failure, reason);
     }
 
     /// <summary>

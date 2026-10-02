@@ -33,6 +33,15 @@ namespace JakartaPersistence;
 /// back -, and <c>createNamedQuery</c> with the name of a query an annotation or orm.xml
 /// defines, which yields no query and says so: the definition itself is a loss where it
 /// stands, so a named query of JPA is read nowhere.
+///
+/// What the code calls on the query object beside the slice passes in silence nowhere
+/// either (decisions 048 and 109), the answer the reading of a CreateQuery in NHibernate
+/// gives: a call that binds a value or runs the query says nothing the artifact would lose,
+/// one that locks the rows or says how they are materialized is a loss with a reason of its
+/// own, one that changes which rows the query returns refuses it (decision 070), and any
+/// other call is a loss. Which calls and hints change the rows, beyond the specification,
+/// is the implementation's to say: <see cref="ImplementationCalls"/> and
+/// <see cref="ImplementationHints"/>.
 /// </summary>
 public abstract class JpqlQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
@@ -144,10 +153,12 @@ public abstract class JpqlQueryParser(
             else if (method == "createNativeQuery")
             {
                 ReadNative(text, javaTokens, calls[i]);
+                ReadQueryObject(javaTokens, calls[i], method);
             }
             else
             {
                 ReadQuery(text, ReadSlice(javaTokens, calls[i]));
+                ReadQueryObject(javaTokens, calls[i], method);
             }
 
             builders.Add(queryBuilder);
@@ -220,8 +231,10 @@ public abstract class JpqlQueryParser(
     /// T-SQL reader once the parameters are spelled as it takes them: <c>?1</c> as <c>@p1</c>,
     /// carried as the positional parameter it is, <c>:name</c> as <c>@name</c>. A parameter is
     /// a list where setParameter binds it to a variable the method declares as a collection
-    /// or an array - the one place a Java unit says so, since the text writes <c>IN (?1)</c>
-    /// for a single value as much as for a list. The slice set on the query object goes into
+    /// or an array, or where Hibernate's setParameterList binds it - the one place a Java unit
+    /// says so, since the text writes <c>IN (?1)</c> for a single value as much as for a list -,
+    /// on the call itself or on the variable that keeps the query object, as a binding in a
+    /// later statement makes the parameter a list all the same. The slice set on the query object goes into
     /// the query as the JPQL reading puts it there; a result set mapping named in the second
     /// argument says how rows are materialized, which the representation does not carry, and
     /// is a loss, as the children of an hbm.xml &lt;sql-query&gt; are.
@@ -255,9 +268,9 @@ public abstract class JpqlQueryParser(
             return;
         }
 
-        foreach (var (parameter, variable) in BoundParameters(javaTokens, close + 1))
+        foreach (var (parameter, variable, isList) in BoundParameters(javaTokens, QueryObjectChains(javaTokens, call)))
         {
-            if (IsCollectionVariable(javaTokens, call, variable))
+            if (isList || (variable is not null && IsCollectionVariable(javaTokens, call, variable)))
             {
                 facts[parameter] = facts.GetValueOrDefault(parameter) with { IsCollection = true };
             }
@@ -278,29 +291,35 @@ public abstract class JpqlQueryParser(
     }
 
     /// <summary>
-    /// The parameters setParameter binds on the query object of one call, each with the
-    /// variable it binds: the parameter as the respelled text names it - <c>p1</c> for the
-    /// position 1, the name for a named one - and the variable a bare name passed as the value.
+    /// The parameters setParameter and setParameterList bind on the query object of one call,
+    /// each with the variable it binds and whether the call binds a list: the parameter as the
+    /// respelled text names it - <c>p1</c> for the position 1, the name for a named one - and
+    /// the variable a bare name passed as the value, null for any other value.
     /// </summary>
-    private static IEnumerable<(string Parameter, string Variable)> BoundParameters(List<JavaToken> javaTokens, int from)
+    private static IEnumerable<(string Parameter, string? Variable, bool IsList)> BoundParameters(
+        List<JavaToken> javaTokens,
+        IEnumerable<List<(string Method, int From, int To)>> chains)
     {
-        foreach (var (method, start, end) in Chain(javaTokens, from, out _))
+        foreach (var (method, start, end) in chains.SelectMany(chain => chain))
         {
-            if (method != "setParameter" || end - start != 3
-                || javaTokens[start + 1] is not { Kind: JavaTokenKind.Symbol, Text: "," }
-                || javaTokens[start + 2] is not { Kind: JavaTokenKind.Identifier } value)
+            if (method is not ("setParameter" or "setParameterList") || end - start < 3
+                || javaTokens[start + 1] is not { Kind: JavaTokenKind.Symbol, Text: "," })
             {
                 continue;
             }
 
             var key = javaTokens[start];
-            if (key.Kind == JavaTokenKind.Number)
+            var parameter = key.Kind switch
             {
-                yield return ($"p{key.Text}", value.Text);
-            }
-            else if (key.Kind == JavaTokenKind.String)
+                JavaTokenKind.Number => $"p{key.Text}",
+                JavaTokenKind.String => key.Text,
+                _ => null,
+            };
+
+            if (parameter is not null)
             {
-                yield return (key.Text, value.Text);
+                var variable = end - start == 3 && javaTokens[start + 2] is { Kind: JavaTokenKind.Identifier } value ? value.Text : null;
+                yield return (parameter, variable, method == "setParameterList");
             }
         }
     }
@@ -574,14 +593,23 @@ public abstract class JpqlQueryParser(
         return null;
     }
 
-    /// <summary>
-    /// The setter of a slice the rest of the enclosing block calls on <paramref name="variable"/>,
-    /// or null. The search ends with the block, or where the variable is assigned again:
-    /// after that, the calls on it belong to another query object.
-    /// </summary>
+    /// <summary>The setter of a slice the rest of the enclosing block calls on <paramref name="variable"/>, or null.</summary>
     private static string? SlicedLater(List<JavaToken> javaTokens, int from, string variable)
+        => CallsLater(javaTokens, from, variable)
+            .SelectMany(chain => chain)
+            .Select(call => call.Method)
+            .FirstOrDefault(method => method is "setFirstResult" or "setMaxResults");
+
+    /// <summary>
+    /// The calls the rest of the enclosing block chains onto <paramref name="variable"/>, one
+    /// chain for every place the variable stands. The search ends with the block, or where the
+    /// variable is assigned again: after that, the calls on it belong to another query object.
+    /// </summary>
+    private static List<List<(string Method, int From, int To)>> CallsLater(List<JavaToken> javaTokens, int from, string variable)
     {
+        var later = new List<List<(string Method, int From, int To)>>();
         var depth = 0;
+
         for (var i = from; i + 1 < javaTokens.Count; i++)
         {
             var token = javaTokens[i];
@@ -592,7 +620,7 @@ public abstract class JpqlQueryParser(
             }
             else if (token is { Kind: JavaTokenKind.Symbol, Text: "}" } && --depth < 0)
             {
-                return null;
+                break;
             }
             else if (token.Kind == JavaTokenKind.Identifier
                 && token.Text == variable
@@ -601,17 +629,234 @@ public abstract class JpqlQueryParser(
                 if (javaTokens[i + 1] is { Kind: JavaTokenKind.Symbol, Text: "=" }
                     && javaTokens[i + 2] is not { Kind: JavaTokenKind.Symbol, Text: "=" })
                 {
-                    return null;
+                    break;
                 }
 
-                if (Chain(javaTokens, i + 1, out _).Find(c => c.Method is "setFirstResult" or "setMaxResults") is { Method: { } setter })
+                if (Chain(javaTokens, i + 1, out _) is { Count: > 0 } chain)
                 {
-                    return setter;
+                    later.Add(chain);
                 }
             }
         }
 
-        return null;
+        return later;
+    }
+
+    /// <summary>What a call on the query object states, which decides what the reading makes of it.</summary>
+    protected enum QueryObjectCallKind
+    {
+        /// <summary>Binds the value of a parameter, or hands over the same query object as another type: nothing the artifact would lose.</summary>
+        Binds,
+
+        /// <summary>Sets the slice, which <see cref="ReadSlice"/> reads.</summary>
+        Slices,
+
+        /// <summary>Runs the query as it stands; what follows it is a call on the result.</summary>
+        Runs,
+
+        /// <summary>Passes a hint, answered by its key.</summary>
+        Hints,
+
+        /// <summary>Locks the rows the query reads: a loss with a reason of its own.</summary>
+        Locks,
+
+        /// <summary>Says how the rows are materialized, which every target derives again: a loss.</summary>
+        MapsResult,
+
+        /// <summary>Changes which rows the query returns, which the representation does not carry: a refusal (decision 070).</summary>
+        ChangesRows,
+    }
+
+    /// <summary>
+    /// What one call on the query object, or one hint, states: its kind; for a call that
+    /// changes the rows, what it does to them, spelled to follow the call's name, and the
+    /// feature it touches; and whether the call hands back something other than the query
+    /// object, so that the calls after it are calls on that.
+    /// </summary>
+    protected readonly record struct QueryObjectCall(QueryObjectCallKind Kind, string? Effect = null, QueryFeature? Feature = null, bool Leaves = false);
+
+    private static readonly IReadOnlyDictionary<string, QueryObjectCall> NoCalls = new Dictionary<string, QueryObjectCall>();
+
+    /// <summary>
+    /// The calls the specification gives the query object (Jakarta Persistence 3.2, Query
+    /// and TypedQuery), other than its getters: a getter reads a value off the object and
+    /// says nothing, and what follows it is a call on that value. Every other setter - the
+    /// flush mode, the timeout, the cache modes - says how the query runs and falls to the
+    /// loss every call the reading does not know is.
+    /// </summary>
+    private static readonly Dictionary<string, QueryObjectCall> SpecificationCalls = new(StringComparer.Ordinal)
+    {
+        ["setParameter"] = new(QueryObjectCallKind.Binds),
+        ["unwrap"] = new(QueryObjectCallKind.Binds),
+        ["setFirstResult"] = new(QueryObjectCallKind.Slices),
+        ["setMaxResults"] = new(QueryObjectCallKind.Slices),
+        ["setHint"] = new(QueryObjectCallKind.Hints),
+        ["setLockMode"] = new(QueryObjectCallKind.Locks),
+        ["getResultList"] = new(QueryObjectCallKind.Runs, Leaves: true),
+        ["getResultStream"] = new(QueryObjectCallKind.Runs, Leaves: true),
+        ["getSingleResult"] = new(QueryObjectCallKind.Runs, Leaves: true),
+        ["getSingleResultOrNull"] = new(QueryObjectCallKind.Runs, Leaves: true),
+        ["executeUpdate"] = new(QueryObjectCallKind.Runs, Leaves: true),
+    };
+
+    /// <summary>
+    /// The calls the implementation adds to the query object, by name - what its API adds to
+    /// the object, as <see cref="TryReadDialectClause"/> is what its dialect adds to the text.
+    /// None for the specification alone; a call named here wins over the specification's.
+    /// </summary>
+    protected virtual IReadOnlyDictionary<string, QueryObjectCall> ImplementationCalls => NoCalls;
+
+    /// <summary>
+    /// The hints the implementation reads that do more than tune how the query runs, by key
+    /// and by the name of the constant that spells the key. A hint not named here is a loss:
+    /// the implementation either runs the query differently under it or ignores it.
+    /// </summary>
+    protected virtual IReadOnlyDictionary<string, QueryObjectCall> ImplementationHints => NoCalls;
+
+    /// <summary>
+    /// What the code calls on the query object of one call (decisions 048 and 109), on the
+    /// call itself and on the variable that keeps the object, beside the slice
+    /// <see cref="ReadSlice"/> reads and the bindings the native reading takes: each call is
+    /// answered by what it states (<see cref="QueryObjectCallKind"/>), and none passes in
+    /// silence. A call that runs the query - or a terminal such as getSingleResult, which
+    /// runs it as it stands and leaves the rest to the caller, whom the generated method
+    /// hands the query object - says nothing the artifact would lose. A call made in a later
+    /// statement may run only on a condition, which changes nothing here: a loss is a loss
+    /// either way, and a call that changes the rows is refused either way, as the slice is.
+    /// </summary>
+    private void ReadQueryObject(List<JavaToken> javaTokens, int call, string method)
+    {
+        var mapped = new List<string>();
+
+        foreach (var (name, from, to) in QueryObjectChains(javaTokens, call).SelectMany(chain => chain))
+        {
+            var spelled = $"{name}()";
+            var known = KnownCall(name);
+
+            if (known is { Kind: QueryObjectCallKind.Hints })
+            {
+                var key = HintKey(javaTokens, from, to);
+                spelled = $"setHint({key.Spelled})";
+                known = ImplementationHints.TryGetValue(key.Text, out var hint) || ImplementationHints.TryGetValue(key.Constant, out hint)
+                    ? hint
+                    : null;
+
+                if (known is null)
+                {
+                    Report(ConversionRecordKind.Loss,
+                        $"{spelled} on the query object of {method} is a hint the reading does not take; it was dropped, which changes nothing the query text says about its rows.");
+                    continue;
+                }
+            }
+
+            switch (known?.Kind)
+            {
+                case QueryObjectCallKind.Binds or QueryObjectCallKind.Slices or QueryObjectCallKind.Runs:
+                    break;
+
+                case QueryObjectCallKind.Locks:
+                    Report(ConversionRecordKind.Loss,
+                        $"{spelled} on the query object of {method} has the query lock the rows it reads, which changes what the query does with its rows rather than which rows they are; the query representation has no place for a lock, so it was dropped and every target reads the rows without one.");
+                    break;
+
+                case QueryObjectCallKind.MapsResult:
+                    mapped.Add(spelled);
+                    break;
+
+                case QueryObjectCallKind.ChangesRows:
+                    Report(ConversionRecordKind.Failure,
+                        $"{spelled} on the query object of {method} {known.Value.Effect}, which the query representation does not carry, and dropping it would change which rows the query returns; no artifact was generated.",
+                        known.Value.Feature);
+                    break;
+
+                default:
+                    Report(ConversionRecordKind.Loss,
+                        $"{spelled} on the query object of {method} is a call the reading does not know; it was dropped, which changes nothing the query text says about its rows.");
+                    break;
+            }
+        }
+
+        if (mapped.Count > 0)
+        {
+            Report(ConversionRecordKind.Loss,
+                $"The code declares how the rows of the {method} query are materialized ({string.Join(", ", mapped)}), which the query representation does not carry; it was dropped and every target derives the row again.",
+                QueryFeature.Projection);
+        }
+    }
+
+    /// <summary>A call by its name: the implementation's first, then the specification's; null for one neither names.</summary>
+    private QueryObjectCall? KnownCall(string name)
+        => ImplementationCalls.TryGetValue(name, out var call) || SpecificationCalls.TryGetValue(name, out call) ? call : null;
+
+    /// <summary>
+    /// The calls made on the query object of one call: those chained onto the call, and -
+    /// where the statement keeps the object in a variable - those chained onto the variable
+    /// in the rest of the block (<see cref="CallsLater"/>). A chain is cut where a call hands
+    /// back something else: after a call that runs the query, the calls are on its result,
+    /// and after a getter on the value it read, which the reading follows no further than the
+    /// rows. A statement whose chain is cut so keeps the result in its variable, not the
+    /// query object, and the variable is not followed.
+    /// </summary>
+    private List<List<(string Method, int From, int To)>> QueryObjectChains(List<JavaToken> javaTokens, int call)
+    {
+        var chains = new List<List<(string Method, int From, int To)>>
+        {
+            OnQueryObject(Chain(javaTokens, Closing(javaTokens, call + 1) + 1, out var end), out var leaves),
+        };
+
+        if (!leaves && AssignedVariable(javaTokens, call) is { } variable)
+        {
+            chains.AddRange(CallsLater(javaTokens, end, variable).Select(chain => OnQueryObject(chain, out _)));
+        }
+
+        return chains;
+    }
+
+    /// <summary>The calls of a chain up to the one that hands back something other than the query object, that one included unless it is a getter the reading does not know.</summary>
+    private List<(string Method, int From, int To)> OnQueryObject(List<(string Method, int From, int To)> chain, out bool leaves)
+    {
+        for (var i = 0; i < chain.Count; i++)
+        {
+            var known = KnownCall(chain[i].Method);
+
+            if (known is { Leaves: true } || (known is null && IsGetter(chain[i].Method)))
+            {
+                leaves = true;
+                return chain[..(known is null ? i : i + 1)];
+            }
+        }
+
+        leaves = false;
+        return chain;
+    }
+
+    /// <summary>A JavaBeans getter, getX or isX: it reads a value off the object.</summary>
+    private static bool IsGetter(string name)
+        => (name.Length > 3 && name.StartsWith("get", StringComparison.Ordinal) && char.IsUpper(name[3]))
+            || (name.Length > 2 && name.StartsWith("is", StringComparison.Ordinal) && char.IsUpper(name[2]));
+
+    /// <summary>
+    /// The key of a setHint call between <paramref name="from"/> and <paramref name="to"/>:
+    /// the text of a string literal, or the name of the constant that spells it - the last
+    /// name of <c>QueryHints.JDBC_MAX_ROWS</c> -, with the key as the code wrote it.
+    /// </summary>
+    private static (string Text, string Constant, string Spelled) HintKey(List<JavaToken> javaTokens, int from, int to)
+    {
+        var end = from;
+        while (end < to && javaTokens[end] is not { Kind: JavaTokenKind.Symbol, Text: "," })
+        {
+            end++;
+        }
+
+        var key = javaTokens[from..end];
+        var spelled = string.Concat(key.Select(token => token.Kind == JavaTokenKind.String ? $"\"{token.Text}\"" : token.Text));
+
+        return key switch
+        {
+            [{ Kind: JavaTokenKind.String } literal] => (literal.Text, string.Empty, spelled),
+            [.., { Kind: JavaTokenKind.Identifier } last] => (string.Empty, last.Text, spelled),
+            _ => (string.Empty, string.Empty, spelled),
+        };
     }
 
     /// <summary>
