@@ -209,7 +209,7 @@ Rozhodnutí 055 `CHECK` a výchozí hodnoty za vyňatou oblast nepovažovalo; §
 | fluent konfigurace EF Core (`OnModelCreating`) | není nárokovaná jednotka; otevřená otázka v *Zbytcích* | nečte se; kontext je z entit vyloučený s `Loss`, který to jmenuje | 111 |
 | Dapper.Contrib (`[Table]`, `[Key]`, `[ExplicitKey]`) a alias v SQL jako zdroj mapování Dapperu | v rozsahu, nebo mimo něj, není rozhodnuté (*Zbytky*) | nečte se; atributy mlčky, alias se nepáruje a katalog páruje podle jména | 015, 067 |
 
-Dvě místa mapování jsou **vadami**, ne mezemi, a vede je kategorie *Vady* v [`open-items.md`](./open-items.md): inverzní kolekce nad složeným cizím klíčem dostane v NHibernatu jednosloupcový `<key>` a číselná verze se v EF Core vypíše jako `[Timestamp]`.
+Jedno místo mapování je **vadou**, ne mezí, a vede ho kategorie *Vady* v [`open-items.md`](./open-items.md): číselná verze se v EF Core vypíše jako `[Timestamp]`. Druhá vada, jednosloupcový `<key>` inverzní kolekce nad složeným cizím klíčem v NHibernatu, je od 2026-10-02 opravená ([§5](./architecture.md#5-parsery-a-buildery--jak-fungují-dnes)).
 
 ### 2.3 Jednotka a předání dotazu
 

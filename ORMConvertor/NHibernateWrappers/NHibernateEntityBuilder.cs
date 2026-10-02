@@ -684,19 +684,66 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// junction rows is a claim nobody made.
     /// </summary>
     private bool CollectionIsInverse(EntityMap entityMap, Relation relation)
+        => OwningCounterparts(entityMap, relation).Count > 0;
+
+    /// <summary>
+    /// The owning many-to-one relations of the target entity that point back here and may
+    /// hold the foreign key of this collection - empty unless the collection is an inverse
+    /// one-to-many and its target takes part in the conversion.
+    /// </summary>
+    private List<Relation> OwningCounterparts(EntityMap entityMap, Relation relation)
     {
         if (relation.Cardinality != Cardinality.OneToMany || relation.Role != RelationRole.Inverse)
         {
-            return false;
+            return [];
         }
 
         var target = FindEntityMap(relation.TargetEntity);
 
-        return target is not null && target.Relations.Any(r =>
-            r is { Role: RelationRole.Owning, Cardinality: Cardinality.ManyToOne }
-            && FindEntityMap(r.TargetEntity) == entityMap
-            && DescribesTheSameForeignKey(r, relation));
+        if (target is null)
+        {
+            return [];
+        }
+
+        return target.Relations
+            .Where(r => r is { Role: RelationRole.Owning, Cardinality: Cardinality.ManyToOne }
+                && FindEntityMap(r.TargetEntity) == entityMap
+                && DescribesTheSameForeignKey(r, relation))
+            .ToList();
     }
+
+    /// <summary>
+    /// The one owning many-to-one whose foreign key this collection is the inverse side of:
+    /// the one either side names as the other's far end, where the source names it
+    /// (InverseRelationName - EF Core's [InverseProperty]), otherwise the only candidate.
+    /// Two candidates and no name leave the pairing open - which of two foreign keys between
+    /// the same entities the collection follows is a claim nobody made - and null is the
+    /// answer then.
+    /// </summary>
+    private Relation? KeyCounterpart(EntityMap entityMap, Relation relation)
+    {
+        var candidates = OwningCounterparts(entityMap, relation);
+
+        var named = candidates
+            .Where(r => string.Equals(relation.InverseRelationName, r.SourceNavigationProperty, StringComparison.Ordinal)
+                || string.Equals(r.InverseRelationName, relation.SourceNavigationProperty, StringComparison.Ordinal))
+            .ToList();
+
+        if (named.Count == 1)
+        {
+            return named[0];
+        }
+
+        return candidates.Count == 1 ? candidates[0] : null;
+    }
+
+    /// <summary>
+    /// The columns of a relation's foreign key as the mapping writes them, in the order of
+    /// the pairs: the source side of every pair is the column of the entity holding the key
+    /// (decision 012).
+    /// </summary>
+    private static List<string> PairColumns(Relation relation)
+        => relation.ColumnPairs.Select(pair => pair.Source.ColumnName ?? pair.Source.Property.Name).ToList();
 
     /// <summary>
     /// Both relations describe the same foreign key when both know their columns - the
@@ -1326,7 +1373,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             return;
         }
 
-        var columns = relation.ColumnPairs.Select(pair => pair.Source.ColumnName ?? pair.Source.Property.Name).ToList();
+        var columns = PairColumns(relation);
 
         var unique = relation.Cardinality == Cardinality.OneToOne
             ? new XmlAttribute?(new XmlAttribute("unique", "true"))
@@ -1458,29 +1505,46 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// Writes the key of a collection. Those columns belong to the child table, so they pair up
     /// only where both entities take part in the same conversion; where the pairs never resolved -
     /// a target outside the conversion, or a many-to-many whose columns belong to the junction
-    /// table (decision 005) - the columns the source stated go back out verbatim. Only when the
-    /// source stated none is the key column of the owner written, as before: leaving the attribute
-    /// out is not silence here, because NHibernate then names the column id rather than anything
-    /// derived from the owner (Collection.DefaultKeyColumnName in 5.7.0), which would change the
-    /// mapping instead of declining to state it (decision 012).
+    /// table (decision 005) - the columns the source stated go back out verbatim. A collection the
+    /// source stated as the inverse side without columns of its own - JPA's mappedBy, an EF Core
+    /// collection paired by convention or [InverseProperty] - has them on the owning many-to-one
+    /// of the far side, the same counterpart inverse="true" is derived from, and restates that
+    /// one's columns in the order of its pairs. Only when nobody stated any is the key of the
+    /// owner written, every part of it in the key's order: leaving the attribute out is not
+    /// silence here, because NHibernate then names the column id rather than anything derived
+    /// from the owner (Collection.DefaultKeyColumnName in 5.7.0), which would change the mapping
+    /// instead of declining to state it, and a single column over a composite key is a foreign
+    /// key NHibernate refuses as narrower than the key it references (decision 012).
     /// </summary>
     private void AppendKey(StringBuilder mapping, EntityMap entityMap, Relation relation)
     {
-        var columns = relation.ColumnPairs.Select(pair => pair.Source.ColumnName ?? pair.Source.Property.Name).ToList();
+        var columns = PairColumns(relation);
 
         if (columns.Count == 0)
         {
             columns = StatedForeignKeyColumns(relation)?.ToList() ?? [];
         }
 
+        if (columns.Count == 0 && KeyCounterpart(entityMap, relation) is { } counterpart)
+        {
+            columns = PairColumns(counterpart);
+        }
+
         if (columns.Count == 0)
         {
-            var ownerKey = entityMap.PrimaryKey?.Parts.FirstOrDefault()?.PropertyMap;
-            var ownerColumn = ownerKey?.ColumnName ?? ownerKey?.Property.Name ?? "Id";
+            columns = entityMap.PrimaryKey?.Parts
+                .Select(part => part.PropertyMap.ColumnName ?? part.PropertyMap.Property.Name)
+                .ToList() ?? [];
+
+            if (columns.Count == 0)
+            {
+                columns = ["Id"];
+            }
 
             // A third-degree convention of the tool, not silence: leaving the attribute out
             // would make NHibernate name the column id, which changes the mapping instead of
             // declining to state it (decision 012). Reported as such.
+            var written = string.Join(", ", columns.Select(column => $"'{column}'"));
             Report(new ConversionRecord
             {
                 Kind = ConversionRecordKind.Convention,
@@ -1489,10 +1553,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 Entity = entityMap.Entity.Name,
                 Property = relation.SourceNavigationProperty,
                 Category = MappingFactCategory.ForeignKeyColumns,
-                Reason = $"No key columns are known for the collection towards '{relation.TargetEntity}'; the owner's key column '{ownerColumn}' is written, which is the tool's fallback, not a fact of the source (decision 012).",
+                Reason = columns.Count == 1
+                    ? $"No key columns are known for the collection towards '{relation.TargetEntity}'; the owner's key column {written} is written, which is the tool's fallback, not a fact of the source (decision 012)."
+                    : $"No key columns are known for the collection towards '{relation.TargetEntity}'; the owner's key columns {written} are written, which is the tool's fallback, not a fact of the source (decision 012).",
             });
-            XmlEmitter.Empty(mapping, 3, "key", [new XmlAttribute("column", ownerColumn)]);
-            return;
         }
 
         if (columns.Count == 1)
