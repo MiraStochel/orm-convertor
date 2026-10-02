@@ -36,7 +36,8 @@ internal static class EFCoreContext
         => Around(node) is { } context
            && DbSetProperties(context).Any(property => property.Identifier.Text == name);
 
-    private static bool IsDbSet(TypeSyntax type) => (type is NullableTypeSyntax nullable ? nullable.ElementType : type) switch
+    /// <summary>Whether a declared type is DbSet&lt;T&gt;, qualified or not, nullable or not.</summary>
+    public static bool IsDbSet(TypeSyntax type) => (type is NullableTypeSyntax nullable ? nullable.ElementType : type) switch
     {
         GenericNameSyntax generic => generic.Identifier.Text == "DbSet",
         QualifiedNameSyntax { Right: GenericNameSyntax generic } => generic.Identifier.Text == "DbSet",

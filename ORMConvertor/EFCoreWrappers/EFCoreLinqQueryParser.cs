@@ -236,6 +236,13 @@ public class EFCoreLinqQueryParser(
         _ => null,
     };
 
+    /// <summary>
+    /// A member the unit declares as a DbSet is EF Core's query root (decision 114): where the
+    /// unit declares the type of the name a root is written as a member of, a DbSet member keeps
+    /// the root the position reads, and a member of any other type is not one.
+    /// </summary>
+    protected override bool IsProviderQuerySource(TypeSyntax declaredType) => EFCoreContext.IsDbSet(declaredType);
+
     private static string? LastIdentifier(ExpressionSyntax expression) => expression switch
     {
         IdentifierNameSyntax identifier => identifier.Identifier.Text,
@@ -262,6 +269,13 @@ public class EFCoreLinqQueryParser(
             // its position at the head of the chain, not by being called "ctx": a hard-coded
             // identifier made every other name silently unreadable.
             case MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax:
+                root = new LinqQueryRoot(member.Name.Identifier.Text);
+                return true;
+
+            // this._ctx.Customers - the same name as _ctx.Customers, written through this
+            // (decision 114). Read by the bare name alone, it was no root, and the query
+            // vanished without a word.
+            case MemberAccessExpressionSyntax { Expression: MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax } } member:
                 root = new LinqQueryRoot(member.Name.Identifier.Text);
                 return true;
 

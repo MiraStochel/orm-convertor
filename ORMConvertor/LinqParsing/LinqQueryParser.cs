@@ -241,6 +241,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     protected abstract bool TryReadQueryRoot(ExpressionSyntax expression, out LinqQueryRoot? root);
 
     /// <summary>
+    /// Whether the type a member is declared with is the provider's own query root - EF Core's
+    /// DbSet (decision 114). Asked only of a member the unit declares on the type of the name a
+    /// root is written as a member of; a query root that is a call never gets here. The default
+    /// knows none: which type the provider's queries start from is a fact about the provider.
+    /// </summary>
+    protected virtual bool IsProviderQuerySource(TypeSyntax declaredType) => false;
+
+    /// <summary>
     /// Whether the provider escapes the argument of a string method before it becomes a LIKE
     /// pattern. EF Core does: <c>StartsWith("A_")</c> matches a literal underscore, so the
     /// argument is read as a core whose wildcards are escaped (decision 102). NHibernate's
@@ -313,10 +321,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// another language than LINQ (decision 113). The node is the place itself - the chain,
     /// the call, or what the refused expression left behind.
     /// </summary>
-    private sealed record QueryPlace(SyntaxNode Node, InvocationExpressionSyntax? Chain, string? ComposedIn, ForeignQuery? Foreign = null)
+    private sealed record QueryPlace(SyntaxNode Node, InvocationExpressionSyntax? Chain, string? ComposedIn, ForeignQuery? Foreign = null, RootReceiver? Receiver = null)
     {
         public int Position => Node.SpanStart;
     }
+
+    /// <summary>
+    /// The name a chain's root is written as a member of, as far as the reading of the place
+    /// has to check it (decision 114): the root as written; the type the unit gives the name,
+    /// which the conversion's mapping may know as an entity; and the type of the member, where
+    /// the unit declares it as a query of its own rather than a DbSet.
+    /// </summary>
+    private sealed record RootReceiver(string Written, string? StatedType, string? QueryableMember);
 
     /// <summary>
     /// A place where the unit hands its provider a query in another language than LINQ
@@ -444,11 +460,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// Reading every chain rather than the first makes one more line necessary. The root of
     /// EF Core is recognized by its position - <c>x.Customers</c> is a DbSet on whatever x is
     /// (decision 026) - and while the first chain alone was read, the first chain was the
-    /// query. Code around it may walk the rows it loaded, though, and <c>o.Lines.Sum(…)</c> on
-    /// an element is the same shape: so a root that is a member of an element - of a lambda
-    /// parameter or a foreach variable - is a navigation over objects in memory, not a query.
-    /// A root that is a call, <c>Set&lt;T&gt;()</c> or <c>Query&lt;T&gt;()</c>, names the
-    /// query API whatever it is called on and stays a root.
+    /// query. Code around it may walk the objects it loaded, though, and <c>o.Lines.Sum(…)</c>
+    /// is the same shape: so a root written as a member of a name is a query only where the
+    /// unit does not state otherwise (<see cref="IsNavigation"/>). A root that is a call,
+    /// <c>Set&lt;T&gt;()</c> or <c>Query&lt;T&gt;()</c>, names the query API whatever it is
+    /// called on and stays a root.
     /// </summary>
     private List<QueryPlace> FindQueries(SyntaxNode root, QueryExpressionRewriter rewriter)
     {
@@ -473,7 +489,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             }
 
             if (!TryDecompose(invocation, out _, out _, out var rootExpression)
-                || IsElementNavigation(rootExpression!))
+                || IsNavigation(rootExpression!, out var receiver))
             {
                 continue;
             }
@@ -489,7 +505,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             queries.Add(new QueryPlace(
                 invocation,
                 invocation,
-                kind == QueryVariables.StorageKind.RunTime ? variable : null));
+                kind == QueryVariables.StorageKind.RunTime ? variable : null,
+                Receiver: receiver));
         }
 
         // A query expression refused before it became a chain over a root - a let right after
@@ -529,6 +546,15 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
+        if (query.Receiver is { } receiver && RefusalOf(receiver) is { } refusal)
+        {
+            queryBuilder.Push();
+            Report(ConversionRecordKind.Failure, refusal);
+            ReportRefusedClauses(root, rewriter, node => query.Chain.Span.Contains(node.Span));
+            queryBuilder.Pop();
+            return;
+        }
+
         if (query.ComposedIn is { } variable)
         {
             queryBuilder.Push();
@@ -559,10 +585,113 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     }
 
     /// <summary>
+    /// Whether a root written as a member of a name - <c>x.M</c>, the name bare or through
+    /// <c>this</c> - is a navigation over objects in memory rather than a query root
+    /// (decision 114). EF Core recognizes its root by position (decision 026), and the position
+    /// says nothing about what stands behind the name; what decides in C# is the static type of
+    /// <c>x.M</c> - an IQueryable binds Queryable.Where and builds a tree for the provider,
+    /// anything else binds Enumerable.Where over objects in memory. The reading has no
+    /// references, but it has what the unit states, and the first of these answers decides:
+    /// x is an element variable (decision 109); x is a local holding what a run query returned;
+    /// the unit declares the type of x and the member on it, and the member's declared type
+    /// decides - the provider's root (a DbSet) is a root, an IQueryable is a query composed
+    /// through the member, refused when it is read, anything else a navigation. Where the unit
+    /// states none of it, the position holds.
+    ///
+    /// The answer is the unit's alone, so the entity pass, which asks the same search, gets the
+    /// same one (decision 111). What the conversion's mapping knows about the type of x is asked
+    /// only when the place is read (<see cref="RefusalOf"/>): the mapping may refuse a place,
+    /// never make or unmake one. A root that is not a member of a name - a call, a member of
+    /// the own instance - is no navigation here; the subclass decided it already.
+    /// </summary>
+    private bool IsNavigation(ExpressionSyntax rootExpression, out RootReceiver? receiver)
+    {
+        receiver = null;
+
+        var (name, member) = rootExpression switch
+        {
+            MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax head } access => (head, access.Name.Identifier.Text),
+            MemberAccessExpressionSyntax { Expression: MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax head } } access
+                => (head, access.Name.Identifier.Text),
+            _ => ((IdentifierNameSyntax?)null, (string?)null),
+        };
+
+        if (name is null || member is null)
+        {
+            return false;
+        }
+
+        if (IsElementNavigation(rootExpression))
+        {
+            return true;
+        }
+
+        var statement = variables.StatementAbout(name, member);
+
+        if (statement.HoldsLoadedObjects)
+        {
+            return true;
+        }
+
+        if (statement.MemberType is { } memberType)
+        {
+            if (IsProviderQuerySource(memberType))
+            {
+                return false;
+            }
+
+            if (GenericNameOf(memberType) is "IQueryable" or "IOrderedQueryable")
+            {
+                receiver = new RootReceiver(rootExpression.ToString(), statement.TypeName, memberType.ToString());
+                return false;
+            }
+
+            return true;
+        }
+
+        receiver = new RootReceiver(rootExpression.ToString(), statement.TypeName, null);
+        return false;
+    }
+
+    /// <summary>
+    /// Why a place whose root is a member of a name is refused when it is read (decision 114),
+    /// or null where it is read. A member the unit declares as an IQueryable is a query composed
+    /// through the member: the provider gets a tree that starts with what the member returns,
+    /// which the reading does not follow. A name whose type the unit states without declaring
+    /// the member, and which the conversion maps as an entity, holds an entity, and a member of
+    /// an entity is a navigation - an entity has no DbSet, the mark only the context bears
+    /// (decision 111). Either way an artifact would be a query over a table named after the
+    /// member, which the source does not pose.
+    /// </summary>
+    private string? RefusalOf(RootReceiver receiver)
+    {
+        if (receiver.QueryableMember is { } declared)
+        {
+            return $"The chain starts at '{receiver.Written}', a member the unit declares as {declared}: the query that reaches the provider begins with what the member returns, which the reading does not follow; no artifact was generated.";
+        }
+
+        if (receiver.StatedType is { } type
+            && entityMaps?.Any(map => string.Equals(map.Entity?.Name, type, StringComparison.Ordinal)) == true)
+        {
+            return $"The chain starts at '{receiver.Written}', a member of a value the unit declares as '{type}', which this conversion maps as an entity: a member of an entity is a navigation over objects the code has loaded, which the provider does not translate, so the chain hands no query over; no artifact was generated.";
+        }
+
+        return null;
+    }
+
+    /// <summary>The name of a generic type as written, without its arguments, its qualifier or a nullable mark.</summary>
+    private static string? GenericNameOf(TypeSyntax type) => (type is NullableTypeSyntax nullable ? nullable.ElementType : type) switch
+    {
+        GenericNameSyntax generic => generic.Identifier.Text,
+        QualifiedNameSyntax { Right: GenericNameSyntax generic } => generic.Identifier.Text,
+        AliasQualifiedNameSyntax { Name: GenericNameSyntax generic } => generic.Identifier.Text,
+        _ => null,
+    };
+
+    /// <summary>
     /// Whether the root of a chain is a member of an element variable - a lambda parameter or a
     /// foreach variable - rather than of the context: <c>o.Lines</c> on an order the code
-    /// loaded. Only a root written as a member access can be one; a root that is a call names
-    /// the query API.
+    /// loaded (decision 109).
     /// </summary>
     private static bool IsElementNavigation(ExpressionSyntax rootExpression)
     {

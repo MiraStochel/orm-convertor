@@ -20,20 +20,25 @@ namespace LinqParsing;
 /// (S1), and it comes out the same on every run (S2). The model is built only when a chain
 /// leans on a name the unit itself assigns a value to, which a query that uses no variable of
 /// the unit never does.
+///
+/// The same model says what the unit states about a name a root is written as a member of
+/// (decision 114): whether it holds what a run query returned, and what type the unit gives
+/// it and the member. It is built for that only where the unit declares the name.
 /// </summary>
 internal sealed class QueryVariables
 {
     /// <summary>
     /// The steps that run a query rather than add to it: materialization, a single row, an
-    /// aggregate, a bulk operation. After one of them the variable holds rows or a value, and
-    /// what the code does with it is C# over objects in memory, not a query.
+    /// aggregate, a bulk operation, and EF Core's Find, which loads one entity by its key
+    /// (decision 114). After one of them the variable holds rows or a value, and what the code
+    /// does with it is C# over objects in memory, not a query.
     /// </summary>
     private static readonly HashSet<string> Executing = new(StringComparer.Ordinal)
     {
         "ToList", "ToArray", "ToDictionary", "ToHashSet", "ToLookup", "AsEnumerable", "AsAsyncEnumerable",
         "First", "FirstOrDefault", "Single", "SingleOrDefault", "Last", "LastOrDefault", "ElementAt", "ElementAtOrDefault",
         "Count", "LongCount", "Sum", "Average", "Min", "Max", "MinBy", "MaxBy", "Aggregate", "Any", "All", "Contains",
-        "Load", "ForEach", "ExecuteDelete", "ExecuteUpdate",
+        "Load", "ForEach", "ExecuteDelete", "ExecuteUpdate", "Find",
     };
 
     private readonly SyntaxNode root;
@@ -41,6 +46,13 @@ internal sealed class QueryVariables
 
     /// <summary>Names the unit declares with a value or assigns to; nothing else can hold a query.</summary>
     private readonly HashSet<string> assigned;
+
+    /// <summary>
+    /// Names the unit declares at all - a parameter, a local, a field, a property, a pattern
+    /// variable. A name it does not declare, the <c>ctx</c> of a fragment, is one it states
+    /// nothing about, and the model is not built for it (decision 114).
+    /// </summary>
+    private readonly HashSet<string> declared;
 
     /// <summary>Names that stand at the head of a call, <c>name.Step(…)</c>; nothing else continues a query.</summary>
     private readonly HashSet<string> continued;
@@ -73,6 +85,129 @@ internal sealed class QueryVariables
                 .Where(identifier => IsContinuation(identifier) || IsJoinedSequence(identifier))
                 .Select(identifier => identifier.Identifier.Text),
         ];
+
+        declared =
+        [
+            .. root.DescendantNodes().Select(node => node switch
+            {
+                ParameterSyntax parameter => parameter.Identifier.Text,
+                VariableDeclaratorSyntax declarator => declarator.Identifier.Text,
+                PropertyDeclarationSyntax property => property.Identifier.Text,
+                SingleVariableDesignationSyntax designation => designation.Identifier.Text,
+                _ => null,
+            }).OfType<string>(),
+        ];
+    }
+
+    /// <summary>
+    /// What the unit states about the name a root is written as a member of (decision 114):
+    /// that it is a local holding what a run query returned, which is objects in memory; the
+    /// declared type of the member, where the unit declares both the name's type and the member
+    /// on it; and the name of the type the unit gives the name, for the conversion's mapping to
+    /// be asked about. Nothing for a name the unit does not declare.
+    /// </summary>
+    public sealed record NameStatement(bool HoldsLoadedObjects, TypeSyntax? MemberType, string? TypeName)
+    {
+        public static readonly NameStatement Nothing = new(false, null, null);
+    }
+
+    /// <summary>
+    /// What the unit states about <paramref name="name"/> and its member
+    /// <paramref name="member"/>, bound through the model over the unit alone (decision 114).
+    /// A type the unit does not declare comes out of the model as an error type under the name
+    /// the declaration gives it, which is all the reading needs of it; a type it declares comes
+    /// out with its members, and those of its base classes the unit declares too.
+    /// </summary>
+    public NameStatement StatementAbout(IdentifierNameSyntax name, string member)
+    {
+        // Before the model is built: the ctx of a fragment is bound to nothing.
+        if (!declared.Contains(name.Identifier.Text))
+        {
+            return NameStatement.Nothing;
+        }
+
+        var info = Model.GetSymbolInfo(name);
+        var symbol = info.Symbol ?? (info.CandidateSymbols.Length == 1 ? info.CandidateSymbols[0] : null);
+
+        if (symbol is ILocalSymbol && HoldsLoadedObjects(symbol))
+        {
+            return new NameStatement(true, null, null);
+        }
+
+        var type = symbol switch
+        {
+            ILocalSymbol local => local.Type,
+            IParameterSymbol parameter => parameter.Type,
+            IFieldSymbol field => field.Type,
+            IPropertySymbol property => property.Type,
+            _ => null,
+        };
+
+        return type is null
+            ? NameStatement.Nothing
+            : new NameStatement(
+                false,
+                DeclaredMemberType(type, member),
+                type.Name is { Length: > 0 } typeName && SyntaxFacts.IsValidIdentifier(typeName) ? typeName : null);
+    }
+
+    /// <summary>
+    /// A local assigned once whose value ends in a step that runs a query, awaited or not: it
+    /// holds what the query returned, objects in memory, whatever the query ran over.
+    /// </summary>
+    private bool HoldsLoadedObjects(ISymbol symbol)
+    {
+        var variable = Describe(symbol);
+
+        if (variable.Writes.Count != 1 || variable.Writes[0] is not { } written)
+        {
+            return false;
+        }
+
+        var value = Stripped(written);
+        if (value is AwaitExpressionSyntax awaited)
+        {
+            value = Stripped(awaited.Expression);
+        }
+
+        // await ctx.Orders.FirstAsync().ConfigureAwait(false) - the configuration of the await is no step of the query.
+        if (value is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "ConfigureAwait", Expression: var configured } })
+        {
+            value = Stripped(configured);
+        }
+
+        return value is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax member }
+               && Executing.Contains(WithoutAsync(member.Name.Identifier.Text));
+    }
+
+    /// <summary>
+    /// The type the unit declares the member with, looked up in the type and in its base
+    /// classes as far as the unit declares them; null where the unit does not declare the type
+    /// or the member - an error type has no members, and one inherited from a base outside the
+    /// unit is not stated.
+    /// </summary>
+    private static TypeSyntax? DeclaredMemberType(ITypeSymbol type, string member)
+    {
+        for (var current = type as INamedTypeSymbol; current is { DeclaringSyntaxReferences.Length: > 0 }; current = current.BaseType)
+        {
+            foreach (var candidate in current.GetMembers(member))
+            {
+                foreach (var reference in candidate.DeclaringSyntaxReferences)
+                {
+                    switch (reference.GetSyntax())
+                    {
+                        case PropertyDeclarationSyntax property:
+                            return property.Type;
+                        case VariableDeclaratorSyntax { Parent: VariableDeclarationSyntax declaration }:
+                            return declaration.Type;
+                        case ParameterSyntax { Type: { } parameterType }:
+                            return parameterType;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>How a chain's value is kept, as far as it decides whether the chain is a query of its own.</summary>
