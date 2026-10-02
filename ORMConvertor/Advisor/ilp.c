@@ -121,6 +121,9 @@ int** solve_problem(glp_prob *lp, int Q, int F, int *objective, int *selected) {
 
     if (result != 0) {
         printf("No feasible solution found.\n");
+        // Inside a container stdout is a pipe and fully buffered, so without the flush the
+        // line reached the log only with the output of the next call.
+        fflush(stdout);
         return NULL;
     }
 

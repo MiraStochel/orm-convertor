@@ -1,33 +1,42 @@
 # Dokumentace
 
-Autoritativní a živě udržovaný popis projektu. **Členěný podle žánru, ne podle času** (rozhodnutí [007](decisions/007-documentation-structure.md)): každý dokument odpovídá na jednu otázku a jinou zodpovídat nemá. Changelog tu proto není — „co se změnilo kdy" umí git historie mechanicky a zadarmo.
+Autoritativní popis projektu, **členěný podle žánru, ne podle času** (rozh. [007](decisions/007-documentation-structure.md)); changelog nahrazuje git historie.
 
-| Dokument | Odpovídá na otázku | Životní cyklus |
+| Dokument | Odpovídá na otázku | Cyklus |
 |---|---|---|
-| [`architecture.md`](architecture.md) | Jak nástroj funguje **dnes**. | živé; aktualizuje se s každou změnou chování |
-| [`subset.md`](subset.md) | **Co nástroj přeloží a co ne**, konstrukce po konstrukci — společná podmnožina, kterou vymezuje specifikace, a případy bez úplného nebo jednoznačného překladu, které slibuje záměr. Týž žánr jako `architecture.md`, samostatně kvůli délce. | živé; mění se se změnou, která posune hranici podmnožiny |
-| [`../ORMConvertor/README.md`](../ORMConvertor/README.md) | Jak se nástroj **spouští, nasazuje, konfiguruje a testuje** a co je na které cestě ověřené — provozní polovina nasazovacího pohledu (rozhodnutí [058](decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)). Jediný živý dokument sady mimo `docs/`, a proto anglicky. | živé; aktualizuje se se změnou běhové cesty |
-| [`open-items.md`](open-items.md) | Co **zbývá** — otevřená rozhodnutí i rozhodnutá, ale nenapsaná práce. Značka `Na řadě` říká, kde se pokračuje. | živé; položka mizí, jakmile je hotová |
-| [`decisions/`](decisions/README.md) | **Proč** je nástroj takový, jaký je. Jedno rozhodnutí = jeden soubor. | neměnné; mění se jen pole `Stav` |
-| [`audits/`](audits/README.md) | Co jsme **kdy věděli**. Datované revize stavu k jednomu dni. | neměnné |
-| [`analysis/`](analysis/README.md) | Jak se chovají **frameworky samotné**. Podklad pro rozhodnutí a materiál pro analytickou část práce. | přibývá podle potřeby |
-| [`threat-model.md`](threat-model.md) | Čemu je nástroj **vystavený** — vstupní body, co po nich přichází a co ho chrání. | živé |
-| [`use-cases.md`](use-cases.md) | **Kdo** nástroj používá, v jaké situaci a co tím řeší. Vrstva nad požadavky. | živé |
-| [`requirements.md`](requirements.md) | Co **zadal vedoucí** — požadavky číslované F1–F15, S1–S7, T1–T7. | zmražené |
-| [`traceability.md`](traceability.md) | **Kde** je který požadavek splněný a co to dokazuje. | živé; řádek se mění s chováním |
-| [`quality-model.md`](quality-model.md) | Jak S1–S7 sedí na **model kvality** ISO/IEC 25010:2023 a co v něm nemá požadavek. | živé; mění se zřídka |
-| [`baseline.md`](baseline.md) | V jakém stavu byl projekt **při převzetí**. | zmražené |
+| [`architecture.md`](architecture.md) | Jak nástroj funguje **dnes**. | živé |
+| [`subset.md`](subset.md) | **Co se přeloží a co ne**, konstrukce po konstrukci (žánr `architecture.md`). | živé |
+| [`../ORMConvertor/README.md`](../ORMConvertor/README.md) | Jak se nástroj **spouští, nasazuje a testuje** (rozh. [058](decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)); jediný živý dokument mimo `docs/`, proto anglicky. | živé |
+| [`open-items.md`](open-items.md) | Co **zbývá**; `Na řadě` říká, kde se pokračuje. | živé; hotové mizí |
+| [`decisions/`](decisions/README.md) | **Proč** je nástroj takový; jedno rozhodnutí = jeden soubor. | neměnné kromě `Stav` |
+| [`audits/`](audits/README.md) | Co jsme **kdy věděli**. | neměnné |
+| [`analysis/`](analysis/README.md) | Jak se chovají **frameworky samotné**. | přibývá |
+| [`threat-model.md`](threat-model.md) | Čemu je nástroj **vystavený**. | živé |
+| [`use-cases.md`](use-cases.md) | **Kdo** nástroj používá a proč. | živé |
+| [`requirements.md`](requirements.md) | Co **zadal vedoucí** (F1–F15, S1–S7, T1–T7). | zmražené |
+| [`traceability.md`](traceability.md) | **Kde** je požadavek splněný a čím je to doložené. | živé |
+| [`quality-model.md`](quality-model.md) | Jak S1–S7 sedí na **ISO/IEC 25010:2023**. | živé |
+| [`baseline.md`](baseline.md) | Stav **při převzetí**. | zmražené |
+| [`zamer.tex`](zamer.tex) ([PDF](zamer.pdf)) | Schválený **záměr projektu**: úkoly řešitele, očekávané výsledky, harmonogram. | zmražené |
+| [`specifikace.tex`](specifikace.tex) ([PDF](specifikace.pdf)) | Schválená **specifikace**: požadavky, milníky 1–5, harmonogram. | zmražené |
 
-Čtyři dokumenty uprostřed tabulky drží dohromady jednu vrstvu: scénář → požadavek → důkaz, a vedle nich model kvality jako pohled z normy. Nárok verze stojí ve dvou patrech: když se `traceability.md` rozejde s `architecture.md` §9, platí §9, a když se §9 rozejde s anglickou sekcí *Guarantees* v kořenovém [`README.md`](../README.md), platí README — kanonické znění nároku je tam, protože jeho adresátem je konzument nástroje, kdežto §9 nese totéž česky i s odůvodněním.
+Scénář → požadavek → důkaz drží `use-cases.md`, `requirements.md` a `traceability.md`, vedle nich model kvality jako pohled z normy. Nárok verze má dvě patra a při rozporu platí vyšší: `traceability.md` ustoupí §9 a §9 ustoupí sekci *Guarantees* kořenového [`README.md`](../README.md).
 
-Dvě věci, které z toho členění plynou a pletou se nejčastěji. **Nálezy auditu nejsou seznamem toho, co zbývá** — ten je jen v `open-items.md`, a audit se cituje jen tam, kde nese plnější odůvodnění, než se do položky vejde. A **mezera v kódu není automaticky chyba**: obvykle za ní stojí zdůvodněný blokátor, který popisuje položka v `open-items.md` a rozhodnutí, na které odkazuje.
+```mermaid
+flowchart LR
+  U["use-cases.md<br/>scénář"] --> R["requirements.md<br/>požadavek"]
+  Q["quality-model.md<br/>pohled z normy"] -.-> R
+  R --> T["traceability.md<br/>důkaz"]
+  T -->|při rozporu platí| S9["architecture.md §9<br/>nárok česky"]
+  S9 -->|při rozporu platí| G["README.md – Guarantees<br/>kanonický nárok"]
+```
 
-## Pravidla, podle kterých tahle sada vzniká
+## Pravidla
 
-- **Volba se nejdřív zapíše, pak naprogramuje.** Změna, která *volí* mezi možnostmi, začíná novým souborem v `decisions/` a řádkem v jeho rejstříku. Ne každá změna je volba: provedení už rozhodnutého, oprava chyby, doplnění testu k existujícímu chování ani přijetí licence rozhodnutí nejsou. Zkouška je otázka, jestli se čtenář později zeptá *proč tohle a ne něco jiného*.
-- **Rozhodnutí se nepřepisují.** Změněná volba znamená nový soubor a starému stav `nahrazeno NNN`; opravit na místě se smí jen doplnění případu, na který se nemyslelo (stav `revidováno`), a jen dokud podle rozhodnutí nevznikl kód. Podrobněji [`decisions/README.md`](decisions/README.md).
-- **Každá změna chování končí v `architecture.md`** — a jde-li o spuštění, nasazení, konfiguraci nebo testy, v [`../ORMConvertor/README.md`](../ORMConvertor/README.md) (rozhodnutí [058](decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)), a posune-li hranici toho, co se překládá, v [`subset.md`](subset.md) — a odbavená položka mizí z `open-items.md`. Bez toho je dokumentace nesprávná, ne jen neúplná.
-- **Zmražené dokumenty se nepřepisují vůbec** — `requirements.md`, `baseline.md` a hotové audity jsou snímky ke dni svého vzniku.
-- **Žánr se nemíchá.** Do `architecture.md` nepatří odůvodnění volby, do `decisions/` popis současného stavu a do `audits/` seznam zbývající práce.
-
-Obsah tohoto adresáře je česky; zbytek repozitáře — kód, komentáře, README — anglicky. Zafixované verze frameworků jsou kanonicky v tabulce v [`architecture.md`](architecture.md), části „Zafixované verze"; audity i analýzy je uvádějí jen jako snímek ke dni svého vzniku.
+- **Volba se nejdřív zapíše** do `decisions/` (a rejstříku), pak se programuje. Provedení rozhodnutého, oprava ani test volbou nejsou — zkouška: zeptá se čtenář *proč tohle a ne jiné*?
+- **Rozhodnutí se nepřepisují:** změna = nový soubor a `nahrazeno NNN`; `revidováno` jen pro nepředvídaný případ před implementací ([`decisions/README.md`](decisions/README.md)).
+- **Změna chování končí v `architecture.md`**; běh a testy v `ORMConvertor/README.md`, posun hranice v `subset.md`, změna nároku či důkazu v `traceability.md`; hotová položka mizí z `open-items.md`.
+- **Zmražené se nepřepisuje:** `requirements.md`, `baseline.md`, audity, schválený záměr a specifikace.
+- **Živé dokumenty popisují jen současnost, stručně:** žádná historie („od data", „do té doby", jak se co našlo — to nese git a anotace značek), žádné odůvodnění (odkaz na rozhodnutí), každý fakt na jednom místě; tabulky a schémata (`mermaid`) mají přednost před odstavci.
+- **Žánr se nemíchá:** odůvodnění jen v `decisions/`, stav v `architecture.md` a `subset.md`, zbývající práce jen v `open-items.md` (nálezy auditu tím seznamem nejsou). Mezera v kódu není automaticky chyba.
+- **`docs/` je česky**, zbytek repozitáře anglicky; zafixované verze kanonicky v `architecture.md`, „Zafixované verze".

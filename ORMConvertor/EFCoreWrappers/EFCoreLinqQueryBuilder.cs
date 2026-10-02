@@ -1,6 +1,7 @@
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Convertors;
 using Common.Naming;
 using Microsoft.CodeAnalysis.CSharp;
 using Model;
@@ -179,11 +180,11 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
                 rightSequence += $".Where({innerParam} => {predicate})";
             }
 
-            var pairs = condition.Pairs;
-            var leftKeys = KeySelector(pairs.Select(p => visitor.Operand(p.Left)).ToList());
-            var rightKeys = KeySelector(pairs
-                .Select(p => $"{innerParam}.{PropertyFor(rightMap, p.Right.Property!)}")
-                .ToList());
+            // The joined row's entity as the scope resolves its alias - through the naming
+            // convention too, where the source states no table (decision 050) -, so that the
+            // key selectors type its members as the class declares them.
+            var keyMap = scope.Entities.GetValueOrDefault(join.RightTableAlias ?? join.RightTable) ?? rightMap;
+            var (leftKeys, rightKeys) = KeySelectors(condition.Pairs, keyMap, innerParam);
 
             var arguments =
                 $"{rightSequence}, " +
@@ -243,14 +244,90 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
     /// <summary>From here on the lambdas of the chain range over the joined row, which carries the joined table under its alias.</summary>
     private void AdvanceScope(JoinInstruction join, string rightAlias)
     {
+        var declared = join.RightTableAlias ?? join.RightTable;
+
+        // An outer join leaves the rows of one side or both missing where it finds no match,
+        // and a COUNT over a column of such a row counts the match, not the row (decision 053).
+        if (join.Kind is JoinKind.Right or JoinKind.Full)
+        {
+            scope.OptionalAliases.UnionWith(scope.Aliases);
+        }
+
+        if (join.Kind is JoinKind.Left or JoinKind.Full)
+        {
+            scope.OptionalAliases.Add(declared);
+        }
+
         tupleAliases.Add(rightAlias);
-        scope.Aliases.Add(join.RightTableAlias ?? join.RightTable);
+        scope.Aliases.Add(declared);
         scope.Composite = true;
         scope.Param = FreshParam();
     }
 
-    private static string KeySelector(List<string> keys)
-        => keys.Count == 1 ? keys[0] : $"new {{ {string.Join(", ", keys)} }}";
+    /// <summary>
+    /// The two key selectors of a LINQ join over the column pairs of its condition. A single
+    /// key is the member itself: C# infers the key type even where one side is nullable and
+    /// the other not. A composite key is an anonymous type on each side, and the two are one
+    /// type only where their members agree in name and in type, so a member whose nullability
+    /// differs from its counterpart's is cast to the nullable form - a foreign key the entity
+    /// declares nullable beside the key it points at -, and where the members would be named
+    /// differently, or a cast leaves one without an inferred name, both sides name them after
+    /// the joined side's members.
+    /// </summary>
+    private (string Left, string Right) KeySelectors(
+        IReadOnlyList<(QueryOperand Left, QueryOperand Right)> pairs, EntityMap? rightMap, string innerParam)
+    {
+        var left = pairs.Select(p => visitor.Operand(p.Left)).ToList();
+        var right = pairs
+            .Select(p => $"{innerParam}.{EFCoreColumnMember.PathOf(rightMap, p.Right.Property!) ?? p.Right.Property}")
+            .ToList();
+
+        if (pairs.Count == 1)
+        {
+            return (left[0], right[0]);
+        }
+
+        var names = right.Select(InferredMember).ToList();
+        var named = left.Select(InferredMember).Where((name, i) => name != names[i]).Any()
+                    || names.Distinct(StringComparer.Ordinal).Count() != names.Count;
+
+        for (var i = 0; i < pairs.Count; i++)
+        {
+            var leftMap = pairs[i].Left.Table is { } table ? scope.Entities.GetValueOrDefault(table) : null;
+            var leftValue = EFCoreColumnMember.DeclaredValue(leftMap, pairs[i].Left.Property!);
+            var rightValue = EFCoreColumnMember.DeclaredValue(rightMap, pairs[i].Right.Property!);
+
+            if (leftValue is not { } l || rightValue is not { } r || l.Scalar != r.Scalar || l.Nullable == r.Nullable)
+            {
+                continue;
+            }
+
+            var nullable = $"({CSharpTypeConvertor.ToString(LangType.Scalar(l.Scalar))}?)";
+            if (l.Nullable)
+            {
+                right[i] = nullable + right[i];
+            }
+            else
+            {
+                left[i] = nullable + left[i];
+            }
+
+            named = true;
+        }
+
+        if (named)
+        {
+            if (names.Distinct(StringComparer.Ordinal).Count() != names.Count)
+            {
+                names = [.. names.Select((_, i) => $"Key{i + 1}")];
+            }
+
+            left = [.. left.Select((key, i) => $"{names[i]} = {key}")];
+            right = [.. right.Select((key, i) => $"{names[i]} = {key}")];
+        }
+
+        return ($"new {{ {string.Join(", ", left)} }}", $"new {{ {string.Join(", ", right)} }}");
+    }
 
     /// <summary>
     /// A part of a join condition written as the body of a lambda over the joined row
@@ -585,7 +662,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
             if (key.IsColumn)
             {
-                keys.Add(new LinqGroupKey(key, visitor.Property(key.Table, key.Property!)));
+                keys.Add(new LinqGroupKey(key, InferredMember(visitor.Property(key.Table, key.Property!))));
                 members.Add(visitor.Visit(grouping));
                 continue;
             }
@@ -723,7 +800,14 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
     /// gate refuses it (decision 107).
     /// </summary>
     private string MemberName(QueryOperand operand)
-        => operand.IsColumn ? visitor.Property(operand.Table, operand.Property!) : operand.ToString();
+        => operand.IsColumn ? InferredMember(visitor.Property(operand.Table, operand.Property!)) : operand.ToString();
+
+    /// <summary>
+    /// The member C# infers for an anonymous type from a member access: the last name of the
+    /// path - <c>id</c> for a foreign key column written through its navigation as
+    /// <c>customer.id</c> (<see cref="ColumnMember"/>), the property itself otherwise.
+    /// </summary>
+    private static string InferredMember(string path) => path[(path.LastIndexOf('.') + 1)..];
 
     private static string Chain(
         List<OrderByInstruction> orders,

@@ -1116,8 +1116,22 @@ public static class CatalogCompletion
             }
         }
 
-        var open = candidates.FirstOrDefault(r =>
-            r.ColumnPairs.Count == 0 && builder.StatedForeignKeyColumns(r) is null);
+        var unstated = candidates
+            .Where(r => r.ColumnPairs.Count == 0 && builder.StatedForeignKeyColumns(r) is null)
+            .ToList();
+
+        // A collection whose owning counterpart carries the columns - stated, or paired - is
+        // not open: it never holds columns of its own, the builders and the path joins take
+        // its key from that counterpart (decision 012), and the owning pass has compared the
+        // counterpart with this foreign key already, a disagreement included. Supplying the
+        // catalog's columns here would give one foreign key two columns where the source
+        // disagrees with the schema, and claim to have supplied what the source stated.
+        var open = unstated.FirstOrDefault(r => !CounterpartCarriesColumns(builder, parent, child, r));
+
+        if (open is null && unstated.Count > 0)
+        {
+            return;
+        }
 
         if (open is not null)
         {
@@ -1150,6 +1164,35 @@ public static class CatalogCompletion
         ReportConflict(builder, parent, candidates[0].SourceNavigationProperty, MappingFactCategory.ForeignKeyColumns,
             $"The source states key columns for the collection towards '{child.Entity.Name}' that do not match "
             + $"the catalog's {fk.Name} ({string.Join(", ", orderedColumns)}).");
+    }
+
+    /// <summary>
+    /// Whether the owning reference of the child whose foreign key the collection is the
+    /// inverse side of carries columns - stated, or paired. The counterpart is found the way
+    /// the builders find it: among the child's owning many-to-one and one-to-one navigations
+    /// towards the parent, the one either side names as the other's far end, where the source
+    /// names it (InverseRelationName), otherwise the only candidate; two candidates and no
+    /// name leave it open, and the collection is completed as before, so that a builder can
+    /// still tell the two apart by the columns the catalog supplies.
+    /// </summary>
+    private static bool CounterpartCarriesColumns(AbstractEntityBuilder builder, EntityMap parent, EntityMap child, Relation collection)
+    {
+        var candidates = child.Relations
+            .Where(r => r is { Role: RelationRole.Owning, Cardinality: Cardinality.ManyToOne or Cardinality.OneToOne, SourceNavigationProperty: not null }
+                && SimpleEntityName(r.TargetEntity) == parent.Entity.Name)
+            .ToList();
+
+        var named = candidates
+            .Where(r => (collection.InverseRelationName is not null
+                    && string.Equals(collection.InverseRelationName, r.SourceNavigationProperty, StringComparison.Ordinal))
+                || (r.InverseRelationName is not null
+                    && string.Equals(r.InverseRelationName, collection.SourceNavigationProperty, StringComparison.Ordinal)))
+            .ToList();
+
+        var counterpart = named.Count == 1 ? named[0] : candidates.Count == 1 ? candidates[0] : null;
+
+        return counterpart is not null
+            && (counterpart.ColumnPairs.Count > 0 || builder.StatedForeignKeyColumns(counterpart) is not null);
     }
 
     private static void SynthesizeInverseRelation(

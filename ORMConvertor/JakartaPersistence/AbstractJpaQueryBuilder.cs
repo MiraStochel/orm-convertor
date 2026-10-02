@@ -85,10 +85,19 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             (kind, reason, feature) => Report(kind, reason, feature),
             RenderSubQuery,
             Expressions,
-            intermediate);
+            intermediate,
+            Profile);
 
         artifact.ResultEntity = definition ? null : entity;
-        artifact.Source.Append($"from {entity} {alias}");
+        artifact.Source.Append($"from {entity} {JpqlNames.Alias(alias)}");
+
+        // JPQL has no other spelling of an entity name than the name itself (JpqlNames).
+        if (!definition && Profile.EntityNamesRefused?.Contains(entity) == true)
+        {
+            ReportUnspoken(
+                $"JPQL in {Profile.Implementation} does not read '{entity}', which is spelled like a word of its grammar, as the name of an entity",
+                QueryFeature.Projection);
+        }
 
         if (map is null && !definition)
         {
@@ -176,14 +185,14 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         // a derived root, which has no identity to select by (decision 112, verified).
         if (clauses.ProjectsWholeEntity && IsDefinition(clauses.From.Table))
         {
-            var row = clauses.From.Alias ?? clauses.From.Table;
-            artifact.Projection.Append(distinct).Append(string.Join(", ", ColumnsOf(clauses.From.Table).Select(column => $"{row}.{column}")));
+            var row = JpqlNames.Alias(clauses.From.Alias ?? clauses.From.Table);
+            artifact.Projection.Append(distinct).Append(string.Join(", ", ColumnsOf(clauses.From.Table).Select(column => $"{row}.{JpqlNames.Alias(column)}")));
             return;
         }
 
         if (clauses.ProjectsWholeEntity)
         {
-            var alias = clauses.From.Alias ?? artifact.ResultEntity!.ToLowerInvariant();
+            var alias = JpqlNames.Alias(clauses.From.Alias ?? artifact.ResultEntity!.ToLowerInvariant());
             artifact.Projection.Append(distinct).Append(alias);
             return;
         }

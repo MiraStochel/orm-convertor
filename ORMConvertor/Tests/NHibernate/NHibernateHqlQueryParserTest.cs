@@ -2,6 +2,7 @@ using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using DapperWrappers;
+using EFCoreWrappers;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
@@ -201,7 +202,7 @@ public class NHibernateHqlQueryParserTest
 
         var customers = new EntityMap
         {
-            Entity = new Entity { Name = "Customer", Properties = [customerCompany, customerKey, name] },
+            Entity = new Entity { Name = "Customer", Namespace = "Shop", Properties = [customerCompany, customerKey, name] },
             Table = "Customers",
             Schema = "Sales",
             PropertyMaps = [customerCompanyMap, customerKeyMap, new PropertyMap { Property = name, ColumnName = "CustomerName" }],
@@ -215,7 +216,7 @@ public class NHibernateHqlQueryParserTest
 
         var orders = new EntityMap
         {
-            Entity = new Entity { Name = "Order", Properties = [orderCompany, orderCustomer, total] },
+            Entity = new Entity { Name = "Order", Namespace = "Shop", Properties = [orderCompany, orderCustomer, total] },
             Table = "Orders",
             Schema = "Sales",
             PropertyMaps = [orderCompanyMap, orderCustomerMap, new PropertyMap { Property = total, ColumnName = "Total" }],
@@ -286,7 +287,9 @@ public class NHibernateHqlQueryParserTest
 
         var hql = Hql(builder);
 
-        Assert.Contains("left join Order o with o.CustomerID = c.CustomerID", hql);
+        // Order is a keyword of HQL, which NHibernate reads as the target of an entity join
+        // only qualified with its namespace (HqlNames).
+        Assert.Contains("left join Shop.Order o with o.CustomerID = c.CustomerID", hql);
     }
 
     [Fact]
@@ -299,7 +302,7 @@ public class NHibernateHqlQueryParserTest
         // parsers read them from the owning side the same way.
         var hql = Hql(builder);
 
-        Assert.Contains("inner join Order o with o.CustomerID = c.CustomerID", hql);
+        Assert.Contains("inner join Shop.Order o with o.CustomerID = c.CustomerID", hql);
     }
 
     [Fact]
@@ -311,6 +314,96 @@ public class NHibernateHqlQueryParserTest
         var hql = Hql(builder);
 
         Assert.Matches(@"o\.CompanyID = c\.CompanyID and o\.CustomerID = c\.CustomerID", hql);
+    }
+
+    /* ---- an entity tested for null ------------------------------------------------- */
+
+    /// <summary>
+    /// <c>o.Customer is null</c> tests the reference, not a column: read as one, it came out as
+    /// <c>o.Customer IS NULL</c>, a column no table has. An owning reference is the nullness of
+    /// its foreign key columns, every one of them over a composite key (decision 101).
+    /// </summary>
+    [Theory]
+    [InlineData("from Order o where o.Customer is null", false, "WHERE o.CustomerID IS NULL")]
+    [InlineData("from Order o where o.Customer is not null", false, "WHERE o.CustomerID IS NOT NULL")]
+    [InlineData("from Order o where o.Customer is null", true, "WHERE o.CompanyID IS NULL AND o.CustomerID IS NULL")]
+    public void AReferenceTestedForNullIsItsForeignKeyTestedForNull(string hql, bool composite, string expected)
+    {
+        var (orders, customers) = Linked(composite: composite);
+        var builder = Parse(new DapperSqlQueryBuilder(), hql, orders, customers);
+
+        var sql = builder.Build().Single(s => s.ContentType == ConversionContentType.SqlQuery).Content;
+
+        Assert.Contains(expected, sql);
+        Assert.DoesNotContain("Customer IS", sql);
+    }
+
+    /// <summary>A collection, a declared alias alone and a reference whose columns nobody states have no column to test; each is refused by name.</summary>
+    [Theory]
+    [InlineData("from Customer c where c.Orders is null", true, "collection")]
+    [InlineData("from Order o where o is not null", true, "whole row")]
+    [InlineData("from Order o where o.Customer is null", false, "neither the relation states")]
+    public void AnyOtherEntityTestedForNullIsRefused(string hql, bool withPairs, string reason)
+    {
+        var (orders, customers) = Linked(withPairs: withPairs);
+        var builder = Parse(new DapperSqlQueryBuilder(), hql, orders, customers);
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains(reason, StringComparison.Ordinal));
+    }
+
+    /* ---- a reference compared with the row it points at ------------------------------ */
+
+    /// <summary>
+    /// <c>o.Customer = c</c> says the reference points at the row, the same as the join along
+    /// the association, and is read as the equality of the foreign key columns with the key,
+    /// derived from the relation (decision 101); <c>&lt;&gt;</c> is its negation. Read as a
+    /// column compared with the entity, it came out as <c>c.*</c> in every target.
+    /// </summary>
+    [Theory]
+    [InlineData("from Order o join Customer c with o.Customer = c", false, ORMEnum.Dapper, "ON o.CustomerID = c.CustomerID")]
+    [InlineData("from Order o join Customer c with c = o.Customer", false, ORMEnum.Dapper, "ON o.CustomerID = c.CustomerID")]
+    [InlineData("from Order o join o.Customer c where o.Customer <> c", false, ORMEnum.Dapper, "WHERE NOT (o.CustomerID = c.CustomerID)")]
+    [InlineData("from Order o join Customer c with o.Customer = c", true, ORMEnum.Dapper, "ON o.CompanyID = c.CompanyID AND o.CustomerID = c.CustomerID")]
+    [InlineData("from Order o join Customer c with o.Customer = c", false, ORMEnum.NHibernate, "inner join Customer c with o.CustomerID = c.CustomerID")]
+    [InlineData("from Order o join Customer c with o.Customer = c", false, ORMEnum.EFCore, "o => o.CustomerID, c => c.CustomerID")]
+    public void AReferenceComparedWithTheRowIsTheEqualityOfItsKey(string hql, bool composite, ORMEnum target, string expected)
+    {
+        var (orders, customers) = Linked(composite: composite);
+        AbstractQueryBuilder builder = target switch
+        {
+            ORMEnum.Dapper => new DapperSqlQueryBuilder(),
+            ORMEnum.NHibernate => new NHibernateHqlQueryBuilder(),
+            _ => new EFCoreLinqQueryBuilder(),
+        };
+        builder = Parse(builder, hql, orders, customers);
+
+        var artifacts = builder.Build();
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        var written = string.Join("\n", artifacts.Select(a => a.Content));
+
+        Assert.Contains(expected, written);
+        Assert.DoesNotContain(".*", written);
+    }
+
+    /// <summary>
+    /// An entity compared with anything else - a parameter, a value, another declared alias,
+    /// a collection, or a reference whose columns nobody states - has no operand in the
+    /// representation, and the condition is refused by name, not written as a column.
+    /// </summary>
+    [Theory]
+    [InlineData("from Order o where o.Customer = :customer", true)]
+    [InlineData("from Order o where o.Customer = 1", true)]
+    [InlineData("from Order o join Customer c with o = c", true)]
+    [InlineData("from Customer c join Order o with c.Orders = o", true)]
+    [InlineData("from Order o join Customer c with o.Customer = c", false)]
+    public void AnyOtherComparisonOfAnEntityIsRefused(string hql, bool withPairs)
+    {
+        var (orders, customers) = Linked(withPairs: withPairs);
+        var builder = Parse(new DapperSqlQueryBuilder(), hql, orders, customers);
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("whole entity", StringComparison.Ordinal));
     }
 
     [Fact]

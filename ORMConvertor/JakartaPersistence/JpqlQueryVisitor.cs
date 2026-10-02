@@ -20,23 +20,33 @@ namespace JakartaPersistence;
 /// </summary>
 /// <param name="typing">The typed view of the query's expressions the builder's gate filled (decision 107): which <c>+</c> stands over a string, because JPQL spells a concatenation with a word of its own.</param>
 /// <param name="intermediate">The aliases whose rows are an intermediate result of the query (decision 112), over which HQL counts with <c>count(*)</c>: a derived row has no identity for <c>count(d)</c> to count.</param>
+/// <param name="profile">The implementation the JPQL is written for, where its spelling of a construct is measured to differ (<see cref="JpaImplementationProfile.KeyThroughReferenceJoins"/>).</param>
 public sealed class JpqlQueryVisitor(
     Dictionary<string, EntityMap> entities,
     string sourceAlias,
     Action<ConversionRecordKind, string, QueryFeature?> report,
     Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery,
     ExpressionTyping typing,
-    IReadOnlySet<string>? intermediate = null) : IQueryVisitor
+    IReadOnlySet<string>? intermediate = null,
+    JpaImplementationProfile? profile = null) : IQueryVisitor
 {
     /// <summary>The escape character of the like whose pattern is being written (decision 107); null outside a pattern.</summary>
     private string? patternEscape;
 
     public string Visit(FromInstruction instr) => instr.Alias ?? instr.Table;
 
+    /// <summary>
+    /// A projected value under its result variable. EclipseLink 5.0.0 refuses a reserved
+    /// identifier there as well (<c>select count(o) as count</c>, <c>… as value</c>, verified),
+    /// so the result variable is respelled like an identification variable
+    /// (<see cref="JpqlNames"/>), and so is every name that refers to it - an ordering by it,
+    /// a column of the intermediate result it names. The result is read by position, so the
+    /// respelling changes no shape the caller sees (decision 104).
+    /// </summary>
     public string Visit(ProjectInstruction instr)
     {
         var value = Operand(instr.Operand);
-        return instr.Alias is null ? value : $"{value} as {instr.Alias}";
+        return instr.Alias is null ? value : $"{value} as {JpqlNames.Alias(instr.Alias)}";
     }
 
     public string Visit(SelectInstruction instr) => instr.Condition.Accept(this);
@@ -63,18 +73,63 @@ public sealed class JpqlQueryVisitor(
         // A table no entity maps to takes the name the one naming convention derives
         // (decision 050), as the source step does for the from clause.
         var entity = EntityName(instr.RightTableAlias ?? instr.RightTable) ?? EntityTableNaming.EntityNameFor(instr.RightTable);
-        var alias = instr.RightTableAlias ?? entity.ToLowerInvariant();
+        var alias = JpqlNames.Alias(instr.RightTableAlias ?? entity.ToLowerInvariant());
+
+        // JPQL has no other spelling of an entity name than the name itself, so a name the
+        // implementation's parser refuses as a join target leaves the query to native SQL,
+        // which names the table (decision 113, measured).
+        if (profile is not null
+            && (profile.EntityNamesRefused?.Contains(entity) == true || profile.EntityNamesRefusedAsJoinTarget?.Contains(entity) == true))
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"JPQL in {profile.Implementation} does not read '{entity}', which is spelled like a word of its grammar, as the entity of a join",
+                QueryFeature.Join);
+        }
 
         // A condition of several conjuncts goes in parentheses: EclipseLink 5.0 reads an
         // unparenthesized `on a = b and c = d join …` on to the next clause instead of
         // stopping at the next join and refuses it as "the right expression is not a valid
         // expression", whereas the parenthesized form is the same JPQL expression and
         // Hibernate reads it as well. Found by the Java suite over the deeply nested query.
-        var condition = instr.OnCondition is LogicalCondition
-            ? $"({instr.OnCondition.Accept(this)})"
-            : instr.OnCondition.Accept(this);
+        var condition = JoinCondition(instr.OnCondition);
 
         return $"{keyword} {entity} {alias} on {condition}";
+    }
+
+    /// <summary>
+    /// The condition of an entity join, in parentheses where it has several conjuncts. The
+    /// equalities that say an owning reference points at the other row are written as the
+    /// reference compared with the row (<see cref="ColumnMember.ReferenceComparisons"/>):
+    /// both implementations read <c>p.customer = c</c> off the foreign key columns, a
+    /// composite key included, where EclipseLink 5.0.0 reaches <c>p.customer.id</c> with a
+    /// join it cannot write inside the on of an outer join (verified).
+    /// </summary>
+    private string JoinCondition(ConditionNode condition)
+    {
+        var references = ColumnMember.ReferenceComparisons(condition, entities);
+        if (references.Count == 0)
+        {
+            return condition is LogicalCondition ? $"({condition.Accept(this)})" : condition.Accept(this);
+        }
+
+        var parts = new List<string>();
+        foreach (var conjunct in ColumnMember.Conjuncts(condition))
+        {
+            if (references.FirstOrDefault(r => r.StandsFor(conjunct)) is { } reference)
+            {
+                if (ReferenceEquals(reference.Conjuncts[0], conjunct))
+                {
+                    parts.Add($"{JpqlNames.Alias(reference.Alias)}.{reference.Navigation} = {JpqlNames.Alias(reference.Target)}");
+                }
+
+                continue;
+            }
+
+            parts.Add(conjunct is LogicalCondition ? $"({conjunct.Accept(this)})" : conjunct.Accept(this));
+        }
+
+        return parts.Count == 1 ? parts[0] : $"({string.Join(" and ", parts)})";
     }
 
     public string Visit(SetOperationInstruction instr) => string.Empty; // composed by the builder
@@ -225,20 +280,45 @@ public sealed class JpqlQueryVisitor(
             var counted = alias ?? sourceAlias;
             return intermediate?.Contains(counted) == true
                 ? $"{function.ToLowerInvariant()}(*)"
-                : $"{function.ToLowerInvariant()}({counted})";
+                : $"{function.ToLowerInvariant()}({JpqlNames.Alias(counted)})";
         }
 
-        var path = alias is null ? Property(null, attribute) : $"{alias}.{Property(alias, attribute)}";
+        // An unqualified name in JPQL is a result variable, and a column of an intermediate
+        // result is the result variable of its definition: both are written as declared.
+        var path = alias is null
+            ? JpqlNames.Alias(Property(null, attribute))
+            : intermediate?.Contains(alias) == true
+                ? $"{JpqlNames.Alias(alias)}.{JpqlNames.Alias(Property(alias, attribute))}"
+                : $"{JpqlNames.Alias(alias)}.{Property(alias, attribute)}";
         return Wrap(path, function, distinct);
     }
 
+    /// <summary>
+    /// The attribute a column is written as: its persistent attribute, or the referenced
+    /// identifier through the reference that holds a foreign key column no attribute maps
+    /// (<see cref="ColumnMember"/>) - the usual shape in Jakarta Persistence, where the join
+    /// column belongs to the reference alone.
+    /// </summary>
     public string Property(string? alias, string column)
     {
         var map = alias is not null && entities.TryGetValue(alias, out var found) ? found : null;
-        return map?.PropertyMaps
-                   .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase))
-                   ?.Property.Name
-               ?? column;
+
+        // An implementation that reaches the key through the reference with an inner join of
+        // the referenced table drops the rows whose foreign key is NULL, and inside the on of
+        // an outer join EclipseLink 5.0.0 writes SQL the database refuses (verified); the
+        // native SQL names the column itself (decision 113).
+        if (profile?.KeyThroughReferenceJoins == true
+            && map is not null
+            && ColumnMember.ScalarOf(map, column) is null
+            && ColumnMember.HeldBy(map, column) is { } held)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"JPQL in {profile.Implementation} reaches the key '{held.Pair.Target.Property.Name}' the reference '{held.Reference.SourceNavigationProperty}' holds as '{column}' only through an inner join of the referenced table, which drops the rows whose foreign key is NULL",
+                QueryFeature.Join);
+        }
+
+        return ColumnMember.PathOf(map, column) ?? column;
     }
 
     public string? EntityName(string alias)
@@ -383,9 +463,7 @@ public sealed class JpqlQueryVisitor(
 
         if (operand.IsColumn && operand.Table is not null && entities.TryGetValue(operand.Table, out var map))
         {
-            return map.PropertyMaps
-                .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, operand.Property, StringComparison.OrdinalIgnoreCase))
-                ?.Property.Type is { Category: LangTypeCategory.Scalar } type
+            return ColumnMember.TypedBy(map, operand.Property!)?.Property.Type is { Category: LangTypeCategory.Scalar } type
                 ? type.ScalarType
                 : null;
         }

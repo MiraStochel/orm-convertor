@@ -1,131 +1,95 @@
 # Případy užití
 
-**Účel:** vrstva *nad* požadavky — kdo nástroj používá, v jaké situaci ho otevře a co tím řeší. `requirements.md` odpovídá na otázku „co musí systém umět", tenhle dokument na otázku „proč to má umět a pro koho". Požadavky F1–F15 jsou odvozené: každý z nich vznikl z některého scénáře níž, a když se scénář nenajde, je to samo o sobě zjištění.
-
-Dokument je živý: scénář přibude, když se objeví, a upraví se, když se ukáže, že jsme si ho představovali jinak. Popis současného chování je v [`architecture.md`](./architecture.md), plnění požadavků v [`traceability.md`](./traceability.md), hranice záruk v `architecture.md` §9.
-
----
+Vrstva *nad* požadavky: kdo nástroj používá a proč. F1–F15 jsou ze scénářů odvozené; požadavek bez scénáře je zjištění. Chování: [`architecture.md`](./architecture.md); plnění: [`traceability.md`](./traceability.md); hranice záruk: §9 a *Guarantees* v [`README.md`](../README.md).
 
 ## Aktéři
 
-| Aktér | Co s nástrojem řeší | Co potřebuje především |
+| Aktér | Situace | Potřebuje |
 |---|---|---|
-| **Migrující vývojář** | Má běžící projekt nad jedním frameworkem a potřebuje ho převést na jiný — kvůli výkonu, kvůli konci podpory, kvůli sjednocení s jiným týmem. | Věrnost překladu a **jmenovitý seznam toho, co překlad neunesl**; potichu vynechaný fakt je horší než neúspěšný převod. |
-| **Architekt před volbou** | Ještě nemá napsáno a rozhoduje se, který framework unese jeho dotazovou zátěž. | Srovnání postavené na měření, ne na dojmu; a možnost říct omezení (kolik frameworků, kolik paměti, jak často se který dotaz volá). |
-| **Autor experimentu** | Diplomová práce a články: matice překladů, metriky korektnosti, srovnání s LLM. | Dávkové zpracování přes API, opakovatelnost do posledního bajtu a strojově čitelný záznam každého běhu. |
-| **Konzumentský projekt** | Není uživatel, je příjemce: projekt, do kterého vygenerovaný artefakt vstoupí a který ho přeloží a spustí. | Aby artefakt nic netvrdil o něm samotném — název sestavení, připojení, závislosti si dodá sám (rozhodnutí [040](./decisions/040-boundary-of-the-handed-over-artifact.md)). |
+| **Migrující vývojář** | převádí běžící projekt na jiný framework | věrný překlad a **jmenovitý seznam toho, co neprošlo** |
+| **Architekt před volbou** | vybírá framework pro svou zátěž | srovnání z měření s vlastními omezeními |
+| **Autor experimentu** | matice překladů, metriky, srovnání s LLM | dávku přes API, opakovatelnost, záznam běhu |
+| **Konzumentský projekt** | příjemce artefaktu | aby artefakt netvrdil nic o něm (rozh. [040](./decisions/040-boundary-of-the-handed-over-artifact.md)) |
 
-## Co je ve skutečnosti vstupem — a kde nástroj začíná a končí
+```mermaid
+flowchart LR
+  M["Migrující vývojář"] --> UC1 & UC2 & UC6 & UC7
+  A["Architekt"] --> UC3
+  E["Autor experimentu"] --> UC5 & UC7
+  M & A & E --> UC4
+  UC1 & UC2 & UC6 -. artefakt .-> K["Konzumentský projekt"]
+```
 
-Ve skutečnosti má uživatel v ruce **projekt**: repozitář s entitami, mapovacími soubory, konfigurací a dotazy rozesetými po service třídách. Nástroj tuhle hierarchii **nevidí a nezkoumá**. Jednotkou převodu je **obsah jednoho souboru v jednom jazyce** s čímkoli, co v něm je — entitní třídy i třída, která je dotazuje, mapovací dokument, skript SQL (rozhodnutí [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)) —, převodem je **množina jednotek poslaná najednou**. Jednotka deklaruje jen svůj jazyk; co je v ní entita a kde předává dotaz frameworku, přečte zdrojový framework. Jednotka smí nést jméno a záznamy vzešlé z jejího čtení na ni tím jménem ukazují (rozhodnutí [066](./decisions/066-records-attributed-to-the-input-unit.md)); pořád je to ale popisek, který poslal klient — strukturu projektu server nezná a výstupní artefakty se jednotkám nepřipisují (`architecture.md` §9).
+## Co je ve skutečnosti vstupem
 
-Z toho plyne dělba práce, kterou je lepší říct nahlas, než ji nechat každého objevit:
+Uživatel má projekt, nástroj ho nevidí. Jednotka = **obsah jednoho souboru v jednom jazyce** (entity, třída s dotazy, mapování, skript SQL); převod = množina jednotek najednou (rozh. [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)). Jednotka deklaruje jen jazyk; entitu a předání dotazu rozpozná zdrojový framework. Nepovinné jméno jednotky nesou záznamy ze čtení (rozh. [066](./decisions/066-records-attributed-to-the-input-unit.md)); záznamy doplnění a generování se vážou k entitě a vlastnosti a artefakty se jednotkám nepřipisují (§9).
 
-- **Vyhledání souborů v projektu je práce uživatele.** Nástroj neprochází repozitář a nesestaví seznam souborů sám. Ve vloženém nebo nahraném souboru ale dotaz pozná i uvnitř repozitáře či služby, pokud ho zdroj frameworku předává způsobem, který wrapper čte (rozhodnutí [109](./decisions/109-a-code-unit-carries-every-query-it-hands-over.md) a 111) — do 2026-10-01 to nástroj nedělal a soubor se musel rozřezat. Aplikační kód, který dotaz sám nepředává (služba volající repozitář, třída DTO projekce), se od entity nerozezná a přečte se jako entita; do okna proto patří entity, mapování a kód s dotazy, ne celá aplikace.
-- **Překládá se mapovací a dotazový obsah, ne aplikační kód okolo.** Z repozitáře vyjdou jeho dotazy, ne třída cílového frameworku; volající metoda, transakce, DI registrace a `DbContext` s připojením zůstávají uživateli — kontext v jednotce entitou není a jeho `DbSet` a `OnModelCreating` se nečtou, což převod hlásí; připojení navíc nevstupuje ani do mezireprezentace (rozhodnutí [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md)).
-- **Doplnit chybějící fakty umí databáze, ne odhad.** Když zdroj mapovací informaci nenese — typicky u Dapperu — doplní ji katalog připojené databáze (rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md)). Bez připojení převod proběhne na konvencích a řekne to záznamem.
-- **Sestavení výsledného projektu je práce konzumenta.** Co k artefaktu chybí, vyjmenovává každý scénář níž zvlášť.
+- **Uživatel** vybírá soubory; dotaz se najde i v repozitáři či službě, pokud ho zdroj předává způsobem, který wrapper čte (rozh. [109](./decisions/109-a-code-unit-carries-every-query-it-hands-over.md)); kód, který dotaz sám nepředává (služba volající repozitář, DTO projekce), se přečte jako entita.
+- **Uživateli zůstává** aplikační kód: volající metoda, transakce, DI, `DbContext` (jeho `DbSet` a `OnModelCreating` se nečtou, převod to hlásí); připojení do mezireprezentace nevstupuje (rozh. [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md)).
+- **Katalog** doplní chybějící mapovací fakta (rozh. [015](./decisions/015-mapping-fact-completion-from-the-catalog.md)); bez něj konvence a záznam. **Konzument** sestaví projekt.
 
----
+## Přehled scénářů
+
+| UC | Situace | Vstup | Výstup | Požadavky |
+|---|---|---|---|---|
+| UC1 | Dapper → EF Core | entity bez atributů, SQL; databáze | entity s anotacemi, LINQ | F4, F5, F6, F11, F14, S7 |
+| UC2 | NHibernate + EF Core → jeden | entity a `.hbm.xml` | entity cíle, složené klíče | F1, F2, F3, F5, F11, F14, S2 |
+| UC3 | výběr podle výkonu | entity, dotazy, kandidáti, omezení | přiřazení dotazů frameworkům | F15, T7 |
+| UC4 | sonda jednoho dotazu | entita a dotaz | dotaz v syntaxi cíle | F11, S7, S3 |
+| UC5 | dávka pro experiment | skript nad `/convert` | tabulka měření | F14, S2, S6, T1, T2, T3 |
+| UC6 | přes hranici ekosystémů | entity, mapování, dotazy | artefakty druhého ekosystému | F7, F8, F9, F10, F11, F14 |
+| UC7 | kód běží a vrací totéž | artefakty z běžící instance | citovatelné číslo, vady | F12, F13, F11, S5 |
+
+Každý výstup nese záznamy o převodu, identifikátor běhu a verze (S6).
 
 ## UC1 — Migrace projektu z Dapperu na EF Core
 
-*Aktér: migrující vývojář. Požadavky: F4, F5, F6, F11, F14, S7. Nejvíc namáhaný scénář celého nástroje.*
-
-**Výchozí stav.** Projekt používá Dapper: entity jsou prosté C# třídy bez atributů, mapování neexistuje (jméno sloupce = jméno vlastnosti, klíč nikde), dotazy jsou řetězce SQL. Databáze běží a je dostupná.
-
-**Tok.** Uživatel vybere zdrojový framework Dapper a cílový EF Core, vloží nebo nahraje soubory s entitními třídami a s kódem, který posílá SQL Dapperu (nebo holé soubory `.sql`), jako jednotky jednoho převodu a spustí překlad. Server jednotky rozparsuje do mezireprezentace, **doplní z katalogu**, co zdroj neřekl (primární a cizí klíče, názvy tabulek a sloupců, typy, nullabilitu, unikátní omezení), a vygeneruje entity EF Core s anotacemi a dotazy jako LINQ.
-
-**Výsledek.** Artefakty po jednotkách, ke každé záznamy o převodu: co katalog doplnil, kterou konvenci cíl použil, co zdroj nesl a cíl to vyjádřit neumí. Odpověď navíc nese identifikátor běhu, verzi nástroje, verze obou frameworků a stav katalogu (S6).
-
-**Co doplní konzument.** Soubor projektu se závislostmi, `DbContext` a jeho registraci, připojovací řetězec.
-
-**Kde je dnes hranice.** Bez připojeného katalogu tenhle scénář nedoběhne do konce: entita bez klíče u cíle, který klíč vyžaduje, se odmítne u kontroly úplnosti a řekne to záznamem (rozhodnutí [010](./decisions/010-diagnostics-as-returned-data.md)) — a to je správně, protože klíč není co uhodnout. Záznamy vzešlé ze čtení jednotky ukazují na jednotku (rozhodnutí [066](./decisions/066-records-attributed-to-the-input-unit.md)); záznamy doplnění a generování se vážou k entitě a vlastnosti.
+*Migrující vývojář; nejvíc namáhaný scénář.*
+- Katalog doplní klíče, názvy tabulek a sloupců, typy, nullabilitu a unikátní omezení. Konzument doplní soubor projektu, `DbContext` s registrací a připojovací řetězec.
+- Bez katalogu nedoběhne: entita bez klíče se u cíle, který klíč vyžaduje, odmítne záznamem (rozh. [010](./decisions/010-diagnostics-as-returned-data.md)).
 
 ## UC2 — Sjednocení dvou frameworků v jednom řešení
 
-*Aktér: migrující vývojář. Požadavky: F1, F2, F3, F5, F11, F14, S2.*
-
-**Výchozí stav.** Historicky vzniklé řešení má část perzistence v NHibernate (entity + `.hbm.xml`) a část v EF Core. Cílem je jeden framework, ne dva.
-
-**Tok.** Uživatel pošle entity i mapování NHibernate v jednom převodu a zvolí EF Core. Mapovací fakta se slučují podle vysloveného pořadí zdrojů (rozhodnutí [017](./decisions/017-source-precedence-for-mapping-facts.md)): co říká vstupní text frameworku, pak pomocné mapovací artefakty, pak katalog, pak konvence cíle — konflikty se hlásí, nezametají.
-
-**Výsledek.** Entity cílového frameworku včetně složených klíčů a vícesloupcových cizích klíčů; vztahy N:M vyjde jako explicitní spojovací entita (rozhodnutí [005](./decisions/005-many-to-many-as-explicit-junction-entity.md)). Opakované spuštění nad týmž vstupem dá bajtově shodný výsledek (S2).
-
-**Co doplní konzument.** U opačného směru (do NHibernate) název sestavení v mapování a `hibernate.cfg.xml`; obojí je fakt jeho projektu, ne převodu (rozhodnutí [028](./decisions/028-assembly-name-is-not-ours-to-invent.md) a [040](./decisions/040-boundary-of-the-handed-over-artifact.md)).
-
-**Kde je dnes hranice.** Dědičnost, komponenty a `<join>` v NHibernate mapování se nečtou a hlásí se záznamem o ztrátě (`architecture.md` §9). Dotaz poslaný jako LINQ se vrací přeložený do HQL, protože HQL je nativní cílový tvar (rozhodnutí [022](./decisions/022-native-query-syntax-in-builders.md)); dotaz poslaný jako holé HQL se vrací jako týž text (rozhodnutí [062](./decisions/062-hql-read-by-a-hand-written-parser.md)).
+*Migrující vývojář.*
+- Pořadí zdrojů: text frameworku → pomocné artefakty → katalog → konvence cíle; konflikty se hlásí (rozh. [017](./decisions/017-source-precedence-for-mapping-facts.md)). Výstup nese složené klíče i vícesloupcové cizí klíče, N:M → spojovací entita (rozh. [005](./decisions/005-many-to-many-as-explicit-junction-entity.md)); opakovaný běh nad týmž vstupem je bajtově shodný (S2).
+- Do NHibernate doplní konzument název sestavení a `hibernate.cfg.xml` (rozh. [028](./decisions/028-assembly-name-is-not-ours-to-invent.md)).
+- Dědičnost, komponenty a `<join>` se nečtou, hlásí se ztrátou (§9). LINQ vyjde jako HQL (rozh. [022](./decisions/022-native-query-syntax-in-builders.md)), holé HQL jako týž text (rozh. [062](./decisions/062-hql-read-by-a-hand-written-parser.md)).
 
 ## UC3 — Výběr cílového frameworku podle naměřeného výkonu
 
-*Aktér: architekt před volbou. Požadavky: F15, T7. **Celá tahle cesta je vyňatá ze záruk** (`architecture.md` §9, oblast 1).*
-
-**Výchozí stav.** Zátěž je známá — sada dotazů a přibližná četnost každého z nich —, framework zvolený není. K dispozici je databáze s reálnými daty.
-
-**Tok.** Uživatel vloží entity a dotazy, vybere kandidátské frameworky a zadá omezení: kolik frameworků smí výsledek použít, paměťový strop, váhy dotazů. Nástroj dotazy přeloží do každého kandidáta, vygenerovaný kód **zkompiluje a spustí** proti databázi, změří čas a paměť a nad naměřenou maticí vyřeší ILP model.
-
-**Výsledek.** Doporučené přiřazení dotazů frameworkům a hodnota účelové funkce.
-
-**Kde je dnes hranice.** Advisor pracuje jen s Dapperem a EF Core, nemá jediný test, potřebuje `libadvisor.so` (staví se jen v Dockeru) a **cizí kód spouští bez izolace a bez limitů** — první věta S4 se nenárokuje, viz [`threat-model.md`](./threat-model.md).
+*Architekt. **Celá cesta je vyňatá ze záruk** (§9, oblast 1).*
+- Dotazy se přeloží do každého kandidáta, **zkompilují, spustí** a změří proti reálným datům; ILP vybere přiřazení podle omezení (počet frameworků, paměť, váhy).
+- Jen Dapper a EF Core, bez testu, `libadvisor.so` jen v Dockeru, cizí kód bez izolace a limitů ([`threat-model.md`](./threat-model.md), hrozba 1).
 
 ## UC4 — Překlad jediného dotazu jako sonda
 
-*Aktér: kdokoli z prvních tří. Požadavky: F11, S7, S3.*
-
-**Výchozí stav.** Nikdo nic nemigruje. Otázka zní: jak by tenhle dotaz vypadal v jiném frameworku — před rozhodnutím, při učení, při psaní textu.
-
-**Tok.** Uživatel otevře stránku, vybere dvojici frameworků, vloží (nebo si nechá předvyplnit ukázkou) entitu a dotaz — klidně jako jeden soubor — a spustí překlad. Bez databáze, bez projektu, bez konfigurace.
-
-**Výsledek.** Přeložený dotaz v nativní syntaxi cíle — LINQ pro EF Core, HQL pro NHibernate, JPQL pro Hibernate a EclipseLink, SQL pro Dapper a MyBatis (rozhodnutí [022](./decisions/022-native-query-syntax-in-builders.md)) — a záznamy o tom, co se cestou ztratilo.
-
-**Kde je hranice.** Jestli se konstrukce dotazu přeloží, a když ne, co s ní nástroj udělá — odmítne ji, vypustí ji, nebo cíl napíše celý dotaz nativním SQL —, říká po převodu záznam a předem katalog podmnožiny [`subset.md`](./subset.md): tabulka 1.2 pro to, jak kterou konstrukci píše který cíl, část 2 pro to, co se nepřeloží a proč.
-
-**Proč je tenhle scénář v seznamu.** Je to referenční měřítko pro S7: „nahrát vstup → zvolit cíl → přeložit → zobrazit chyby" musí jít na nejvýš pět kroků, a tenhle scénář je ta pětikroková cesta. Zároveň je to jediný scénář, který nepotřebuje nic než prohlížeč.
+*Kdokoli; stačí prohlížeč, bez databáze a projektu.*
+- Výstup: LINQ (EF Core), HQL (NHibernate), JPQL (Hibernate, EclipseLink), SQL (Dapper, MyBatis) (rozh. 022). Co se nepřeloží, říká záznam a předem [`subset.md`](./subset.md) (tab. 1.2, část 2).
+- **Měřítko S7:** „nahrát vstup → zvolit cíl → přeložit → zobrazit chyby" na nejvýš pět kroků; UC4 je ta cesta.
 
 ## UC5 — Dávka pro experiment
 
-*Aktér: autor experimentu. Požadavky: F14, S2, S6, T1, T2, T3.*
-
-**Výchozí stav.** Případová studie nad reálnou open-source aplikací (T1) nebo matice překladů podle kategorií dotazů (T2).
-
-**Tok.** Skript volá `/convert` v cyklu přes všechny dvojice frameworků a všechny kategorie dotazů, sbírá artefakty i záznamy a počítá podíly parsovatelných, kompilovatelných a spustitelných výstupů (T3).
-
-**Výsledek.** Tabulka měření, ke každému běhu jeho identifikátor a verze nástroje i frameworků — bez toho by se výsledek nedal zopakovat ani citovat.
-
-**Kde je dnes hranice.** Rozhraní je na dávku připravené (vícesouborový vstup, výstup po souborech, `/archive`), ale experimenty samotné běží mimo repozitář a T1–T7 verze nenárokuje.
-
----
+*Autor experimentu; případová studie (T1), matice kategorií (T2).*
+- Skript volá `/convert` přes všechny dvojice a kategorie dotazů a počítá podíly parsovatelných, kompilovatelných a spustitelných výstupů (T3).
+- Rozhraní je připravené (víc souborů, výstup po souborech, `/archive`); pipeline, která by dávku spouštěla, v repozitáři není (zúžení S5, §9), T1–T7 se nenárokují.
 
 ## UC6 — Migrace přes hranici ekosystémů
 
-*Aktér: migrující vývojář. Požadavky: F7, F8, F9, F10, F11, F14. Scénář, kvůli kterému vznikl javový ekosystém (rozhodnutí [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)).*
-
-**Výchozí stav.** Tým má perzistenci v jednom ekosystému a druhý ekosystém je cílem: .NET řešení, které se má přestěhovat na JVM, nebo javová aplikace, jejíž datová vrstva se má přepsat do .NETu. Rozdíl proti UC1 a UC2 není v množství práce, nýbrž v tom, že se mění **jazyk**: entita je `class` s vlastnostmi na jedné straně a `class` s poli a přístupovými metodami na druhé, mapování je atribut proti anotaci nebo `orm.xml`, dotaz je LINQ, HQL nebo SQL proti JPQL nebo mapperu MyBatisu.
-
-**Tok.** Uživatel pošle entity, mapování a dotazy jednoho frameworku a zvolí framework z druhého ekosystému. Nástroj čte a píše obě strany ve vlastním překladovém procesu — **žádná JVM v cestě překladu není** (rozhodnutí 076) —, takže z entity EF Core vyjde javová třída s anotacemi `jakarta.persistence`, z hbm.xml NHibernate táž třída s mapovacími fakty přenesenými do anotací, a z holého SQL Dapperu doménová třída, dokument mapperu MyBatisu a rozhraní s hlavičkou metody. Jazykové fakty, které druhý ekosystém nevysloví stejně, se překládají podle jeho vlastního profilu: nullabilita má v Javě jedinou osu, `AUTO` je pro Hibernate sekvence a pro EclipseLink tabulka čítače, nationalizace se u jednoho vyslovuje anotací a u druhého doslovným typem sloupce.
-
-**Výsledek.** Artefakty cílového frameworku a záznamy o všem, co hranici nepřešlo beze změny — včetně těch faktů, které jeden ekosystém unese a druhý ne.
-
-**Kde je dnes hranice.** Javové frameworky jsou nárokované **samy za sebe, ne jako ekosystém**: Hibernate, EclipseLink a MyBatis ano, jiný javový ORM ne. Dědičnost, komponenty a spojené tabulky hranici nepřecházejí na žádné straně, protože je nečte už ta zdrojová (`architecture.md` §9, oblast 2). U MyBatisu navíc nepřejde **dynamický příkaz**: `<select>` se značkou `<if>` je rodina příkazů a mezireprezentace rodinu nenese, takže se odmítne se záznamem, který značku jmenuje. A u EclipseLinku nástroj **netvrdí líné načtení reference**, protože bez weavingu je tiše eager. Celou hranici, konstrukci po konstrukci a pro oba ekosystémy, vede katalog podmnožiny [`subset.md`](./subset.md) — co který framework přečte a vydá (část 1.6), který mapovací fakt cíl nevyjádří (tabulka 1.5) a co se nepřeloží a proč (část 2).
+*Migrující vývojář; důvod javového ekosystému (rozh. [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)).*
+- Mění se jazyk; obě strany čte i píše překladový proces, **bez JVM**. SQL Dapperu vyjde jako doménová třída, mapper MyBatisu a rozhraní metody.
+- Profil cíle: nullabilita v Javě jednou osou; `AUTO` = sekvence (Hibernate) / tabulka čítače (EclipseLink); nationalizace = anotace / doslovný typ sloupce.
+- Nárokované jsou Hibernate, EclipseLink a MyBatis **samy za sebe**; hranici (dědičnost, dynamický příkaz MyBatisu, líné načtení v EclipseLinku…) vede `subset.md` 1.5, 1.6 a část 2.
 
 ## UC7 — Doklad, že přeložený kód opravdu běží a vrací totéž
 
-*Aktér: autor experimentu a migrující vývojář zároveň — první ho potřebuje do textu, druhý před nasazením. Požadavky: F12, F13, F11, S5. Význam obou pojmů vyslovila rozhodnutí [087](./decisions/087-an-integration-test-is-a-run-against-the-database.md) a [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md).*
-
-**Výchozí stav.** Překlad proběhl a vypadá správně. To ale není totéž jako „je správný": artefakt může být syntakticky bezvadný, framework ho může přijmout — a dotaz přesto vrátí jiné řádky. Mezi „vypadá správně" a „vrací totéž" je celá kapitola, kterou nelze přečíst, jen spustit.
-
-**Tok.** Sada si vezme generované artefakty **z běžící instance nástroje** přes HTTP (rozhodnutí [078](./decisions/078-java-suite-as-a-client-of-a-running-instance.md)), přeloží je `javac`em, předloží je Hibernate, EclipseLinku a MyBatisu a spustí proti SQL Serveru nad společným schématem. U dotazu jde ještě o krok dál: **obě varianty přeložené dvojice se spustí a jejich normalizované výsledky se porovnají proti jedinému kanonickému výsledku zapsanému v repozitáři**; pořadí se zohlední jen tam, kde ho dotaz sám určuje. Negativní polovina je stejně podstatná — záměrně zmutovaný artefakt (vypuštěný filtr, obrácený operátor, vypuštěné řazení, změněný počet řádků, prohozená projekce) **musí** skončit rozdílem.
-
-**Výsledek.** Číslo, které se dá citovat, a vada, kterou žádná aserce nad tvarem najít neumí. Tenhle scénář jich vynesl několik a všechny se týkaly něčeho jiného než tvaru textu: metoda vázala počet řádků jménem, ačkoli výřez žije na dotazovém objektu; vstupní jednotka popisovala tabulku neúplně, takže generovanou entitou nešlo nic zapsat; a testovací obraz neobsahoval soubory, které si sada z checkoutu brala.
-
-**Kde je dnes hranice.** Sada běží jediným příkazem tam, kde není nic než Docker, a **sama si tvrdí, jak je velká** — označuje, které testy sahají do databáze, a odmítne se sestavit, když jich je málo (rozhodnutí 087), takže velikost nemůže tiše zastarat v dokumentu. Měřítkem diferenčního ověření je zapsaný kanonický výsledek: měřítko desetinných čísel volí matice u každého dotazu, kdežto null je vždy holé `NULL` — to konfigurovatelné není (`architecture.md` §9).
+*Autor experimentu i vývojář; rozh. [087](./decisions/087-an-integration-test-is-a-run-against-the-database.md), [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md).*
+- Javová sada vezme artefakty z běžící instance (rozh. [078](./decisions/078-java-suite-as-a-client-of-a-running-instance.md)), přeloží `javac`em, předloží Hibernate, EclipseLinku a MyBatisu a spustí proti SQL Serveru; výsledky obou variant dotazu porovná s kanonickým výsledkem v repozitáři. Zmutovaný artefakt **musí** skončit rozdílem.
+- Pořadí se porovnává jen tam, kde ho dotaz určuje; měřítko desetinných čísel volí matice u dotazu, null je vždy holé `NULL` (§9). Sada běží jedním příkazem nad Dockerem a sama tvrdí svou velikost (087).
 
 ## Co nástroj nedělá
 
-Vymezení je součástí zadání scénářů — bez něj se první tři body čtou jako sliby:
-
-- **Nepřevádí schéma databáze.** Ani ho nemění, ani negeneruje migrace; katalog jen čte (rozhodnutí [015](./decisions/015-mapping-fact-completion-from-the-catalog.md)).
-- **Nevydává spustitelný projekt.** Soubor projektu, konfiguraci ani registraci v kontejneru negeneruje, a je to volba, ne mezera (rozhodnutí [040](./decisions/040-boundary-of-the-handed-over-artifact.md)).
-- **Nepíše dotazy.** Překládá ty, které dostane; co mezireprezentace neunese, hlásí záznamem, ne náhradou.
-- **Nenahrazuje běhovou vrstvu.** Nic za běhu neproxuje ani nepřekládá; překlad je jednorázový úkon nad zdrojovým kódem.
-- **Nezkoumá repozitář.** Vstup vybírá uživatel; vyhledávání souborů v projektu není součástí rozsahu. Co je v jednom vloženém souboru entita a co dotaz, nástroj rozliší (rozhodnutí [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)); které soubory projektu do převodu patří, ne.
+- **Nepřevádí schéma** ani negeneruje migrace; katalog jen čte.
+- **Nevydává spustitelný projekt** — volba, ne mezera (rozh. 040).
+- **Nepíše dotazy** — co mezireprezentace neunese, hlásí, nenahrazuje.
+- **Nenahrazuje běhovou vrstvu** — překlad je jednorázový.
+- **Nezkoumá repozitář** — soubory vybírá uživatel.

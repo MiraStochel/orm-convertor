@@ -3138,6 +3138,21 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return false;
         }
 
+        // g.Count(x => x.Col != null) counts the non-null values of the column, which is
+        // COUNT(Col) - the shape the EF Core target writes it in - and is read back as such.
+        if (name == "COUNT" && selector is null
+            && body is BinaryExpressionSyntax notNull && notNull.IsKind(SyntaxKind.NotEqualsExpression))
+        {
+            if (notNull.Right.IsKind(SyntaxKind.NullLiteralExpression))
+            {
+                body = notNull.Left;
+            }
+            else if (notNull.Left.IsKind(SyntaxKind.NullLiteralExpression))
+            {
+                body = notNull.Right;
+            }
+        }
+
         // The lambda's parameter is the element, a row of the source: while the body is
         // read, its name stands for the source alias.
         var element = lambda.Parameter.Identifier.Text;
@@ -3699,12 +3714,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return QueryOperand.Computed(QueryExpression.Call(QueryFunction.CurrentTimestamp, []));
 
             case MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax identifier:
-                return QueryOperand.Column(AliasFor(identifier.Identifier.Text), member.Name.Identifier.Text);
+                return ColumnUnlessNavigation(AliasFor(identifier.Identifier.Text), member.Name.Identifier.Text, member);
 
             // x.o.PlacedAt after a join: the middle member is a row of the joined result, in
             // this scope or an enclosing one, and names the table.
             case MemberAccessExpressionSyntax nested when TryResolveInScope(nested, out _, out var resolved) && resolved is { } column:
-                return QueryOperand.Column(column.Alias, column.Column);
+                return ColumnUnlessNavigation(column.Alias, column.Column, nested);
 
             // The members of the vocabulary over an operand: c.Name.Length, o.PlacedAt.Year.
             case MemberAccessExpressionSyntax { Name.Identifier.Text: "Length" or "Year" or "Month" or "Day" } part:
@@ -3785,6 +3800,38 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private string AliasFor(string identifier)
         => aliasSubstitutions.GetValueOrDefault(identifier, identifier);
+
+    /// <summary>
+    /// The column a member of a row names - unless the mapping behind the row declares the
+    /// member a navigation of one of its relations: <c>o.Customer</c> is a reference to
+    /// another row, not a column, and read as one it became a column no table has
+    /// (<c>o.Customer IS NOT NULL</c>, <c>COUNT(o.Customer)</c>). The model has no operand
+    /// for a reference, so the member is not read, and the clause around it answers as it
+    /// does for any operand it cannot read (decision 070).
+    /// </summary>
+    private QueryOperand? ColumnUnlessNavigation(string alias, string member, ExpressionSyntax written)
+    {
+        if (MapOfAlias(alias)?.Relations.Any(r => string.Equals(r.SourceNavigationProperty, member, StringComparison.Ordinal)) == true)
+        {
+            unread ??= ($"'{written}', a navigation of the entity rather than a column, which no operand of the query representation stands for", null);
+            return null;
+        }
+
+        return QueryOperand.Column(alias, member);
+    }
+
+    /// <summary>The mapping of the row the alias names, in the scope being read or one around it; null where no mapping stands behind it.</summary>
+    private EntityMap? MapOfAlias(string alias)
+    {
+        EntityMap? Find(RowShape shape) => shape switch
+        {
+            EntityRow entity when string.Equals(entity.Alias, alias, StringComparison.OrdinalIgnoreCase) => entity.Map,
+            JoinedRow joined => joined.Members.Values.Select(Find).FirstOrDefault(map => map is not null),
+            _ => null,
+        };
+
+        return Find(row) ?? enclosingRows.Select(Find).LastOrDefault(map => map is not null);
+    }
 
     /// <summary>An operand that may be a leaf of an expression: the lists and collections the factory refuses are refused here first, by name.</summary>
     private QueryOperand? ReadLeaf(ExpressionSyntax expression)

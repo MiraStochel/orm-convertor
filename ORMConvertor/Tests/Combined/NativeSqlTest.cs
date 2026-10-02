@@ -450,14 +450,16 @@ public class NativeSqlTest
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Incompleteness && r.Reason.Contains("\"RichCustomers\"", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void NHibernateAQueryComposedAtRunTimeIsRefused()
+    [Theory]
+    [InlineData("QueryOver", "session.QueryOver<Customer>().Where(c => c.CreditLimit > 100).List()")]
+    [InlineData("CreateCriteria", "session.CreateCriteria<Customer>().Add(Restrictions.Gt(\"CreditLimit\", 100)).List<Customer>()")]
+    public void NHibernateAQueryComposedAtRunTimeIsRefused(string api, string call)
     {
-        var builder = FromNHibernate("""
-            public IList<Customer> Rich(ISession session) => session.QueryOver<Customer>().Where(c => c.CreditLimit > 100).List();
+        var builder = FromNHibernate($$"""
+            public IList<Customer> Rich(ISession session) => {{call}};
             """);
 
-        AssertRefused(builder, QueryFeature.Projection, "QueryOver");
+        AssertRefused(builder, QueryFeature.Projection, api);
     }
 
     /// <summary>A query object kept in a variable and sliced in another statement may be sliced on a condition, so the slice is named and the query refused, as the JPA reading does.</summary>

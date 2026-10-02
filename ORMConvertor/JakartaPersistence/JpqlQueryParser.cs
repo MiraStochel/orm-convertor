@@ -2077,7 +2077,14 @@ public abstract class JpqlQueryParser(
         {
             bool negated = TryConsumeKeyword("not");
             ConsumeKeyword("null");
-            return left is null ? null : new ComparisonCondition(left, negated ? ComparisonOperator.IsNotNull : ComparisonOperator.IsNull);
+            if (left is null)
+            {
+                return null;
+            }
+
+            return IsEntity(left)
+                ? EntityNullness(left, negated)
+                : new ComparisonCondition(left, negated ? ComparisonOperator.IsNotNull : ComparisonOperator.IsNull);
         }
 
         bool notPrefixed = TryConsumeKeyword("not");
@@ -2205,7 +2212,132 @@ public abstract class JpqlQueryParser(
             throw Error("expected a value, an attribute or a subquery");
         }
 
-        return left is null || right is null ? null : new ComparisonCondition(left, op.Value, right);
+        if (left is null || right is null)
+        {
+            return null;
+        }
+
+        return TryReadEntityComparison(left, op.Value, right, out var entityComparison)
+            ? entityComparison
+            : new ComparisonCondition(left, op.Value, right);
+    }
+
+    /// <summary>
+    /// A comparison that names a whole entity rather than a value - an identification
+    /// variable, or a single-valued association reached from one. <c>p.customer = c</c> says
+    /// the reference points at the row, which is the equality of the reference's foreign key
+    /// columns with the key they reference, and is read as that, derived from the relation the
+    /// way a join along the association is (decision 101); <c>&lt;&gt;</c> is its negation. Any
+    /// other comparison of an entity - with a value, a parameter, another kind of row, or
+    /// over a relation whose columns nobody states - is not read: the representation has no
+    /// operand for an entity, and read as a column it came out as <c>c.*</c>, which no target
+    /// parses. False where neither side names an entity.
+    /// </summary>
+    private bool TryReadEntityComparison(QueryOperand left, ComparisonOperator op, QueryOperand right, out ConditionNode? condition)
+    {
+        condition = null;
+        if (!IsEntity(left) && !IsEntity(right))
+        {
+            return false;
+        }
+
+        if (op is ComparisonOperator.Equal or ComparisonOperator.NotEqual
+            && (ReferenceEquality(left, right) ?? ReferenceEquality(right, left)) is { } equalities)
+        {
+            condition = op == ComparisonOperator.Equal ? equalities : new NotCondition(equalities);
+            return true;
+        }
+
+        unread ??= ($"a comparison of '{Spelling(left)}' with '{Spelling(right)}' that names a whole entity rather than a value, which the query representation carries only as a single-valued association compared with the row it points at", null);
+        return true;
+
+        static string Spelling(QueryOperand operand)
+            => operand is { IsColumn: true, Property: "*" } ? operand.Table! : operand.ToString();
+    }
+
+    /// <summary>An identification variable standing alone, or an association of the entity behind one - a whole entity either way.</summary>
+    private bool IsEntity(QueryOperand operand)
+        => operand is { IsColumn: true, IsAggregate: false, Table: { } alias }
+           && aliases.TryGetValue(alias, out var map)
+           && (operand.Property == "*"
+               || map?.Relations.Any(r => string.Equals(r.SourceNavigationProperty, operand.Property, StringComparison.OrdinalIgnoreCase)) == true);
+
+    /// <summary>
+    /// The equalities a single-valued association compared with a row stands for, or null
+    /// where the path is not such an association, the row is not the entity it leads to, or
+    /// no columns are stated on either side of the relation.
+    /// </summary>
+    private ConditionNode? ReferenceEquality(QueryOperand path, QueryOperand row)
+    {
+        if (path is not { IsColumn: true, IsAggregate: false, Table: { } holder } || path.Property == "*"
+            || row is not { IsColumn: true, IsAggregate: false, Property: "*", Table: { } rowAlias }
+            || !aliases.TryGetValue(holder, out var owner) || owner is null
+            || !aliases.TryGetValue(rowAlias, out var target) || target is null)
+        {
+            return null;
+        }
+
+        var relation = owner.Relations.FirstOrDefault(r =>
+            r.Cardinality is Cardinality.ManyToOne or Cardinality.OneToOne
+            && string.Equals(r.SourceNavigationProperty, path.Property, StringComparison.OrdinalIgnoreCase));
+        if (relation is null || !ReferenceEquals(MapFor(relation.TargetEntity), target))
+        {
+            return null;
+        }
+
+        var pairs = ColumnPairsOf(relation, owner, target);
+        return pairs.Count == 0 ? null : AssociationCondition(relation, pairs, holder, rowAlias, written: null);
+    }
+
+    /// <summary>
+    /// <c>is null</c> or <c>is not null</c> over a whole entity. Over a single-valued
+    /// association that owns its foreign key - <c>p.customer is null</c> - it is the nullness
+    /// of the key's columns, which the relation states the way a join along the association
+    /// takes them (decision 101): every column null, or every column not null, a conjunction
+    /// over a composite key. Read as a column, the association came out under its own name,
+    /// a column no table has. Nothing else is read: the reference of an inverse side is the
+    /// absence of a row on the side holding the key, a collection is never null, the whole
+    /// row of an identification variable has no column of its own, and a relation whose
+    /// columns nobody states leaves nothing to test - each refused by name, never guessed.
+    /// </summary>
+    private ConditionNode? EntityNullness(QueryOperand path, bool negated)
+    {
+        var test = negated ? "is not null" : "is null";
+        if (path.Property == "*")
+        {
+            unread ??= ($"the test '{path.Table} {test}' of the whole row of an identification variable, which the query representation carries only as a test of a column of that row", null);
+            return null;
+        }
+
+        var spelling = $"{path.Table}.{path.Property}";
+        var relation = aliases[path.Table!]!.Relations.First(r =>
+            string.Equals(r.SourceNavigationProperty, path.Property, StringComparison.OrdinalIgnoreCase));
+
+        var why = relation switch
+        {
+            { Cardinality: Cardinality.OneToMany or Cardinality.ManyToMany } =>
+                "a collection, which is never null and whose emptiness the query representation does not test",
+            { Role: RelationRole.Inverse } =>
+                "a reference whose foreign key the other side holds, so its nullness is the absence of a row there, which is not derived",
+            { ColumnPairs.Count: 0 } =>
+                "a reference whose foreign key columns neither the relation states nor the database catalog supplied, so no column was there to test",
+            _ => null,
+        };
+
+        if (why is not null)
+        {
+            unread ??= ($"the test '{spelling} {test}' of {why}", null);
+            return null;
+        }
+
+        var op = negated ? ComparisonOperator.IsNotNull : ComparisonOperator.IsNull;
+        var conjuncts = relation.ColumnPairs
+            .Select(pair => (ConditionNode)new ComparisonCondition(
+                QueryOperand.Column(path.Table, pair.Source.ColumnName ?? pair.Source.Property.Name),
+                op))
+            .ToList();
+
+        return conjuncts.Count == 1 ? conjuncts[0] : new LogicalCondition(LogicalOperator.And, conjuncts);
     }
 
     private QueryOperand? ParseRequiredOperand()

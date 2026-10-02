@@ -107,8 +107,26 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
             }
 
             // A property the source states is not persisted is written by being left out of
-            // a closed mapping - which is a statement only because autoMapping is off.
-            if (!propertyMap.IsTransient)
+            // a closed mapping - which is a statement only because autoMapping is off. A
+            // collection with no relation behind it cannot become a <result> either: MyBatis
+            // 3.5 has no type handler for a List and refuses the whole mapper while it parses
+            // it ("No typehandler found for property", verified). The class keeps the member
+            // and the closed mapping leaves it out - the NHibernate builder's answer to the
+            // same gap.
+            if (!propertyMap.IsTransient && propertyMap.Property.Type is { Category: LangTypeCategory.Collection })
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.XML,
+                    Entity = entityMap.Entity.Name,
+                    Property = propertyMap.Property.Name,
+                    Reason = "The collection has no relation behind it, so there is nothing to build its mapping from; "
+                        + "the property stays on the class and the mapping leaves it unmapped.",
+                });
+            }
+            else if (!propertyMap.IsTransient)
             {
                 AppendMapping(entityMap, propertyMap, "result", artifact);
             }

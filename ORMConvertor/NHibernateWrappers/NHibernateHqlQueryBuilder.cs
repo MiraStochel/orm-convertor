@@ -57,13 +57,23 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
 
         var map = EntityFor(clauses.From.Table);
         var entity = map?.Entity.Name ?? SingularOf(clauses.From.Table);
-        var alias = clauses.From.Alias ?? entity.ToLowerInvariant();
+        var alias = HqlNames.Alias(clauses.From.Alias ?? entity.ToLowerInvariant());
 
         artifact.ResultEntity = entity;
 
+        // A few keywords the parser refuses as an entity name even here; qualified with its
+        // namespace the name is read (HqlNames), without one only native SQL names it.
+        var written = HqlNames.Entity(entity, map?.Entity.Namespace, joined: false);
+        if (written is null)
+        {
+            ReportUnspoken(
+                $"HQL in NHibernate 5.7.0 reads the entity '{entity}', which is spelled like a keyword of its grammar, at the head of a from clause only qualified with its namespace, and the entity has none",
+                QueryFeature.Projection);
+        }
+
         // HQL names the entity, not the table: the source's own qualified table name never
         // appears in the output, which is the clearest single sign that this is not SQL.
-        artifact.Source.Append($"from {entity} {alias}");
+        artifact.Source.Append($"from {written ?? entity} {alias}");
 
         if (map is null)
         {
@@ -142,7 +152,7 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
         {
             if (clauses.Distinct)
             {
-                var alias = clauses.From.Alias ?? artifact.ResultEntity!.ToLowerInvariant();
+                var alias = HqlNames.Alias(clauses.From.Alias ?? artifact.ResultEntity!.ToLowerInvariant());
                 artifact.Projection.Append($"select distinct {alias}");
             }
 

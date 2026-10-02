@@ -122,16 +122,6 @@ public abstract class AbstractQueryBuilder
         return EntityMaps.FirstOrDefault(m => string.Equals(m.Entity.Name, derived, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// The property a column belongs to. Falls back to the column name itself, which is the
-    /// right answer whenever the framework's own convention would have produced it anyway.
-    /// </summary>
-    protected static string PropertyFor(EntityMap? map, string column)
-        => map?.PropertyMaps.FirstOrDefault(p =>
-               string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase))
-               ?.Property.Name
-           ?? column;
-
     private readonly List<ConversionRecord> records = [];
 
     private bool refused;
@@ -3724,14 +3714,13 @@ public abstract class AbstractQueryBuilder
     }
 
     /// <summary>
-    /// The scalar of the property a column maps, matched the way <see cref="PropertyFor"/>
-    /// matches it. A property whose language type nobody stated, or whose type is not a
+    /// The scalar of the property a column maps, matched the way the visitors match it
+    /// (<see cref="ColumnMember"/>) - a foreign key column held by a reference has the scalar
+    /// of the key it points at. A property whose language type nobody stated, or whose type is not a
     /// scalar, answers nothing: that is the gap decision 075 reports, not a type to guess at.
     /// </summary>
     private static ScalarType? ScalarIn(EntityMap map, string column)
-        => map.PropertyMaps
-            .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase))
-            ?.Property.Type is { Category: LangTypeCategory.Scalar } type
+        => ColumnMember.TypedBy(map, column)?.Property.Type is { Category: LangTypeCategory.Scalar } type
             ? type.ScalarType
             : null;
 

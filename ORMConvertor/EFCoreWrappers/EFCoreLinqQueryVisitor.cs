@@ -46,6 +46,13 @@ public sealed class LinqScope
     /// </summary>
     public HashSet<string> Aliases { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Aliases on the side of an outer join that may find no match - the joined row of a left
+    /// join, the rows before a right one, both of a full one. A column of such a row is null
+    /// wherever the join found no match, whatever type its entity declares.
+    /// </summary>
+    public HashSet<string> OptionalAliases { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public string Row(string? alias) => Composite && alias is not null ? $"{Param}.{alias}" : Param;
 
     public string ElementRow(string? alias) => Composite && alias is not null ? $"{ElementParam}.{alias}" : ElementParam;
@@ -276,9 +283,7 @@ public sealed class EFCoreLinqQueryVisitor(
         }
 
         var map = alias is not null && Scope.Entities.TryGetValue(alias, out var found) ? found : null;
-        return map?.PropertyMaps
-            .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase))
-            ?.Property.Type;
+        return EFCoreColumnMember.TypeOf(map, column);
     }
 
     /// <summary>
@@ -650,17 +655,37 @@ public sealed class EFCoreLinqQueryVisitor(
             return string.Empty;
         }
 
+        // COUNT(column) counts the non-null values of the column, not the rows - over a
+        // nullable column Count() answered with another number, the kind of difference
+        // decision 004 forbids. A member the entity declares as a value type that cannot be
+        // null holds no null to skip, so Count() is exact there, a key part included - unless
+        // the row stands on the side of an outer join that may find no match, where the
+        // column is null exactly when the row is missing, so the row itself is what is
+        // tested; and a constant is counted once per row, as COUNT(*) is.
+        // Any other is counted through a test for null, which EF Core 10.0.10 translates to
+        // the COUNT of the column's non-null values (measured with ToQueryString).
         if (function == "COUNT" && !operand.Distinct)
         {
-            if (bare.Property != "*")
+            // The representation carries no NULL literal, so every constant is a value.
+            if (bare.Property == "*" || bare.IsConstant)
             {
-                report(
-                    ConversionRecordKind.Convention,
-                    $"COUNT({bare}) was written as Count(), which counts rows rather than non-null values.",
-                    QueryFeature.Aggregation);
+                return $"{Scope.Param}.Count()";
             }
 
-            return $"{Scope.Param}.Count()";
+            var map = bare.Table is not null && Scope.Entities.TryGetValue(bare.Table, out var found) ? found : null;
+            if (bare.IsColumn && EFCoreColumnMember.DeclaredValue(map, bare.Property!) is { Nullable: false })
+            {
+                return bare.Table is not null && Scope.OptionalAliases.Contains(bare.Table)
+                    ? $"{Scope.Param}.Count({Scope.ElementParam} => {Scope.ElementRow(bare.Table)} != null)"
+                    : $"{Scope.Param}.Count()";
+            }
+
+            var wasCounting = insideAggregate;
+            insideAggregate = true;
+            var counted = Operand(bare);
+            insideAggregate = wasCounting;
+
+            return $"{Scope.Param}.Count({Scope.ElementParam} => {counted} != null)";
         }
 
         var method = function switch
@@ -717,13 +742,15 @@ public sealed class EFCoreLinqQueryVisitor(
         return null;
     }
 
+    /// <summary>
+    /// The member a column is written as: its property, or for a foreign key column no
+    /// property of the source maps, the property the entity builder declares for it
+    /// (<see cref="EFCoreColumnMember"/>).
+    /// </summary>
     public string Property(string? alias, string column)
     {
         var map = alias is not null && Scope.Entities.TryGetValue(alias, out var found) ? found : null;
-        return map?.PropertyMaps
-                   .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase))
-                   ?.Property.Name
-               ?? column;
+        return EFCoreColumnMember.PathOf(map, column) ?? column;
     }
 
     /* ---- expressions (decision 107) --------------------------------------------------- */

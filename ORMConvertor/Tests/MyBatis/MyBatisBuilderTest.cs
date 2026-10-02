@@ -126,6 +126,29 @@ public class MyBatisBuilderTest
     }
 
     /// <summary>
+    /// A collection with no relation behind it has no &lt;result&gt;: MyBatis 3.5 finds no
+    /// type handler for a List and refuses the whole mapper while it parses it ("No
+    /// typehandler found for property", measured). The member stays on the class, the closed
+    /// mapping leaves it out and says so - the NHibernate builder's answer to the same gap.
+    /// </summary>
+    [Fact]
+    public void ACollectionWithoutARelationIsLeftOutOfTheMappingAndReported()
+    {
+        var builder = new MyBatisEntityBuilder();
+        Customer(builder);
+        builder.AddProperty("List<string>", "Tags", "public", hasGetter: true, hasSetter: true);
+
+        var artifacts = builder.Build();
+        var mapper = artifacts.Single(a => a.ContentType == ConversionContentType.XML).Content;
+        var java = artifacts.Single(a => a.ContentType == ConversionContentType.JavaEntity).Content;
+
+        Assert.DoesNotContain("property=\"Tags\"", mapper);
+        Assert.Contains("List<String> Tags", java);
+        Assert.Contains(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Incompleteness && r.Property == "Tags" && r.Reason.Contains("no relation behind it"));
+    }
+
+    /// <summary>
     /// What a mapper has nowhere to put is a loss the descriptor produces mechanically
     /// (decision 010), so the list cannot be forgotten: the table and its schema, the length,
     /// the precision, the nullability, the key mechanism and the version column.

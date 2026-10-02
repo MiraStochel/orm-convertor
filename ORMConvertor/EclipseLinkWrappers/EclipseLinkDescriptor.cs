@@ -77,5 +77,30 @@ public static class EclipseLinkDescriptor
         // group by case when o.quantity > 2 then 1 else 0 end reaches SQL Server with six
         // bound parameters, three in the select list and three in GROUP BY, and SQL Server
         // refuses the column inside as neither grouped nor aggregated (error 8120).
-        BindsLiterals: true);
+        BindsLiterals: true,
+
+        // Measured against 5.0.0 when a foreign key column without an attribute began to be
+        // written through its reference: p.customer.id joins Customers - in the select list
+        // it drops the purchase whose customer_CustomerID is NULL, and inside the on of a
+        // left join the joined table stands after the outer join and SQL Server refuses
+        // "t2.CustomerID could not be bound" (error 4104).
+        KeyThroughReferenceJoins: true,
+
+        // Measured against 5.0.0 with every identifier of its JPQL grammar as an entity name
+        // - at the head of a from clause, as the target of an inner and a left entity join
+        // and in a subquery: these it refuses as a syntax error wherever an entity is named
+        // (in a subquery's from clause it does take "in"), and on "set" its parser does not
+        // return at all but runs out of memory; Order and Group it reads.
+        EntityNamesRefused: new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "as", "except", "from", "having", "in", "inner", "intersect", "join", "left", "outer", "set", "table", "union", "where",
+        },
+
+        // ... and these only as the target of an entity join.
+        EntityNamesRefusedAsJoinTarget: new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "and", "between", "case", "current_date", "current_time", "current_timestamp", "date", "datetime", "delete",
+            "false", "is", "like", "local", "member", "new", "not", "null", "on", "or", "regexp", "select", "time", "true",
+            "update", "when",
+        });
 }

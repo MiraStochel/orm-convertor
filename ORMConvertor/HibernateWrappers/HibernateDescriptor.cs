@@ -81,5 +81,11 @@ public static class HibernateDescriptor
         // Measured against 7.4.5.Final when the escape path was written (decision 113): a
         // List bound to ?1 of a native query is expanded into the list IN (?1) ranges over,
         // and a position named twice binds one value twice.
-        NativeQueryExpandsCollection: true);
+        NativeQueryExpandsCollection: true,
+
+        // Measured against 7.4.5.Final with every identifier of the JPQL grammar and the
+        // keywords of HQL as an entity name - at the head of a from clause, as the target of
+        // an inner and a left entity join and in a subquery: the parser takes every one of
+        // them for a name but the three literals, which it refuses wherever they stand.
+        EntityNamesRefused: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "true", "false", "null" });
 }

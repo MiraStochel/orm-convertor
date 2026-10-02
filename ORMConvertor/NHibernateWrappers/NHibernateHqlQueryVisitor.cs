@@ -70,12 +70,59 @@ public sealed class NHibernateHqlQueryVisitor(
         // (decision 050), as the source step does for the from clause and as the JPQL
         // visitor does here; the bare table name used to stand in its place, which named an
         // entity no mapping declares.
-        var entity = EntityName(instr.RightTableAlias ?? instr.RightTable) ?? EntityTableNaming.EntityNameFor(instr.RightTable);
-        var alias = instr.RightTableAlias ?? Bare(instr.RightTable).ToLowerInvariant();
+        var key = instr.RightTableAlias ?? instr.RightTable;
+        var name = EntityName(key) ?? EntityTableNaming.EntityNameFor(instr.RightTable);
+        var alias = HqlNames.Alias(instr.RightTableAlias ?? Bare(instr.RightTable).ToLowerInvariant());
+
+        // The target of an entity join named like a keyword is read only qualified with its
+        // namespace (HqlNames); without one HQL has no way to name it, and native SQL has.
+        var entity = HqlNames.Entity(name, entities.TryGetValue(key, out var map) ? map.Entity.Namespace : null, joined: true);
+        if (entity is null)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"HQL in NHibernate 5.7.0 reads the entity '{name}', which is spelled like a keyword of its grammar, as the target of a join only qualified with its namespace, and the entity has none",
+                QueryFeature.Join);
+            return string.Empty;
+        }
 
         // NHibernate 5 supports entity joins, where the predicate is given with `with`
         // rather than being implied by an association.
-        return $"{keyword} {entity} {alias} with {instr.OnCondition.Accept(this)}";
+        return $"{keyword} {entity} {alias} with {JoinCondition(instr.OnCondition)}";
+    }
+
+    /// <summary>
+    /// The condition of an entity join, where the equalities that say an owning reference
+    /// points at the other row are written as the reference compared with the row
+    /// (<see cref="ColumnMember.ReferenceComparisons"/>): NHibernate 5.7.0 reads
+    /// <c>l.Head = h</c> off the foreign key columns, a composite key included, whereas a
+    /// part of a composite key reached through the reference costs a join (verified).
+    /// </summary>
+    private string JoinCondition(ConditionNode condition)
+    {
+        var references = ColumnMember.ReferenceComparisons(condition, entities);
+        if (references.Count == 0)
+        {
+            return condition.Accept(this);
+        }
+
+        var parts = new List<string>();
+        foreach (var conjunct in ColumnMember.Conjuncts(condition))
+        {
+            if (references.FirstOrDefault(r => r.StandsFor(conjunct)) is { } reference)
+            {
+                if (ReferenceEquals(reference.Conjuncts[0], conjunct))
+                {
+                    parts.Add($"{HqlNames.Alias(reference.Alias)}.{reference.Navigation} = {HqlNames.Alias(reference.Target)}");
+                }
+
+                continue;
+            }
+
+            parts.Add(conjunct is LogicalCondition ? $"({conjunct.Accept(this)})" : conjunct.Accept(this));
+        }
+
+        return string.Join(" and ", parts);
     }
 
     public string Visit(SetOperationInstruction instr)
@@ -257,17 +304,34 @@ public sealed class NHibernateHqlQueryVisitor(
             return $"{function.ToLowerInvariant()}(*)";
         }
 
-        var path = alias is null ? Property(null, attribute) : $"{alias}.{Property(alias, attribute)}";
+        var path = alias is null ? Property(null, attribute) : $"{HqlNames.Alias(alias)}.{Property(alias, attribute)}";
         return Wrap(path, function, distinct);
     }
 
+    /// <summary>
+    /// The member a column is written as: its property, or the referenced key through the
+    /// reference that holds a foreign key column no property maps (<see cref="ColumnMember"/>).
+    /// NHibernate 5.7.0 reads <c>o.customer.id</c> off the foreign key column without a join
+    /// where the key is the identifier property; a part of a composite key it reaches with an
+    /// inner join of the referenced table, which drops the rows whose foreign key is NULL -
+    /// in a filter, a projection or an ordering a different query (decision 053), so there
+    /// the query goes out in native SQL (decision 113, verified).
+    /// </summary>
     public string Property(string? alias, string column)
     {
         var map = alias is not null && entities.TryGetValue(alias, out var found) ? found : null;
-        return map?.PropertyMaps
-                   .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase))
-                   ?.Property.Name
-               ?? column;
+
+        if (map is not null
+            && ColumnMember.ScalarOf(map, column) is null
+            && ColumnMember.HeldBy(map, column) is { Reference.ColumnPairs.Count: > 1 } held)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"HQL in NHibernate 5.7.0 reaches the part '{held.Pair.Target.Property.Name}' of the composite key the reference '{held.Reference.SourceNavigationProperty}' holds as '{column}' only through an inner join of the referenced table, which drops the rows whose foreign key is NULL",
+                QueryFeature.Join);
+        }
+
+        return ColumnMember.PathOf(map, column) ?? column;
     }
 
     public string? EntityName(string alias)
@@ -463,9 +527,7 @@ public sealed class NHibernateHqlQueryVisitor(
 
         if (operand.IsColumn && operand.Table is not null && entities.TryGetValue(operand.Table, out var map))
         {
-            return map.PropertyMaps
-                .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, operand.Property, StringComparison.OrdinalIgnoreCase))
-                ?.Property.Type is { Category: LangTypeCategory.Scalar } type
+            return ColumnMember.TypedBy(map, operand.Property!)?.Property.Type is { Category: LangTypeCategory.Scalar } type
                 ? type.ScalarType
                 : null;
         }

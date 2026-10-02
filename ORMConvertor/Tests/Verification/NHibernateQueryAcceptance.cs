@@ -1,8 +1,11 @@
 using System.Reflection;
 using System.Xml.Linq;
+using NHibernate;
 using NHibernate.Cfg;
 using NHibernate.Dialect;
 using NHibernate.Driver;
+using NHibernate.Engine;
+using NHibernate.Hql;
 
 namespace Tests.Verification;
 
@@ -23,6 +26,15 @@ internal static class NHibernateQueryAcceptance
     /// <c>QuerySyntaxException</c>.
     /// </summary>
     public static void CompileQuery(byte[] compiledEntities, IEnumerable<string> mappingXmls, string hql)
+        => Sql(compiledEntities, mappingXmls, hql);
+
+    /// <summary>
+    /// Compiles the HQL as <see cref="CompileQuery"/> does and returns the SQL NHibernate
+    /// writes for it - still without a connection: the plan of a compiled query holds its
+    /// SQL. What the target makes of a path is visible only there, a join a path costs
+    /// included.
+    /// </summary>
+    public static string Sql(byte[] compiledEntities, IEnumerable<string> mappingXmls, string hql)
     {
         var entities = Assembly.Load(compiledEntities);
         var assemblyName = entities.GetName().Name!;
@@ -51,6 +63,10 @@ internal static class NHibernateQueryAcceptance
 
             // Creating the query is what compiles it; nothing is executed.
             session.CreateQuery(hql);
+
+            var plan = ((ISessionFactoryImplementor)sessionFactory).QueryPlanCache
+                .GetHQLQueryPlan(new StringQueryExpression(hql), false, new Dictionary<string, IFilter>());
+            return string.Join(System.Environment.NewLine, plan.Translators.Select(translator => translator.SQLString));
         }
         finally
         {

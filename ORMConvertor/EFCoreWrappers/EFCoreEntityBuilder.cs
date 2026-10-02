@@ -295,7 +295,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 return [];
             }
 
-            var name = navigationProperty + pair.Target.Property.Name;
+            var name = EFCoreColumnMember.NameFor(navigationProperty, pair.Target);
             missing.Add((name, pair.Target.Property.Type, pair.Source.ColumnName ?? pair.Source.Property.Name));
             names.Add(name);
         }
