@@ -17,7 +17,7 @@ Schválená [specifikace](./specifikace.tex) (kap. *Milníky* a *Harmonogram*) a
 |---|---|---|---|
 | 1 — .NET část | klíče, vztahy, katalog, diagnostika, dotazová matice, čtyři stupně ověření | červenec–srpen | hotovo, `1.2.0` |
 | 2 — specifikace a analýza | specifikace, rozhodnutí o javové straně, analýza běhového prostředí pro Javu | září | hotovo |
-| 3 — Java a cross-language | Hibernate, MyBatis, EclipseLink, překlad .NET ↔ Java | září–říjen | hotovo, `2.0.0`; dotazy dokončené pro `2.1.0` |
+| 3 — Java a cross-language | Hibernate, MyBatis, EclipseLink, překlad .NET ↔ Java | září–říjen | hotovo, `2.0.0`; dotazy dokončené v `2.1.0` |
 | 4 — testy a experimenty | javová sada s diferenčním ověřením (F12–F13) | říjen–listopad | hotovo |
 | | zobrazení mezireprezentace (F14) | | **chybí** |
 | | cross-language matice T2 s metrikami T3 | | **chybí** pipeline a metriky; matice existuje v testech |
@@ -33,7 +33,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 
 | Položka | Kategorie | Druh | Pož. |
 |---|---|---|---|
-| [Vydání 2.1.0](#vydání-210) | Vydání | práce | S2, S6 |
 | [Co zavírá třetí cíl](#co-zavírá-třetí-cíl-schválený-záměr-advisor-nejmenuje) | Třetí cíl | rozhodnutí | F15, T1–T7 |
 | [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Třetí cíl | rozhodnutí | S5, T1–T3 |
 | [Referenční databáze experimentů a případová studie T1](#referenční-databáze-experimentů-a-případová-studie-t1) | Třetí cíl | rozhodnutí | T1, T2, T7, F4 |
@@ -74,21 +73,6 @@ flowchart LR
 ```
 
 ---
-
-## Vydání
-
-#### Vydání 2.1.0
-*Na řadě. Pravidlo vydání: rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md). Požadavky S2, S6.*
-
-Od `2.0.0` (2026-09-22) přibyly schopnosti — rozhodnutí [099](./decisions/099-examples-are-content-not-a-choice.md) až [115](./decisions/115-explicit-loading-is-the-query-the-provider-composes.md) — a překlad dotazů je dokončený, žádný cíl zadání se ale neuzavřel, takže vydání je **MINOR**. Zmrazí hotové dotazy i s nárokem, který už stojí v *Guarantees* (*Query translation is complete within its catalog*), v §9 a v [`traceability.md`](./traceability.md) a musí jít v commitu s číslem nebo před ním.
-
-| Krok | Co | Kde |
-|---|---|---|
-| 1 | Číslo `2.1.0` | `<Version>` v `ORMConvertor/Directory.Build.props`; `version` a `date-released` v `CITATION.cff`; přegenerovaný snímek `ORMConvertor/ORMConvertorAPI/openapi.json` (nese číslo sestavení) |
-| 2 | Doklady po posledním commitu vydání | zelené CI; obě sady v profilu `test` compose, vždy s krokem `build` ([README](../ORMConvertor/README.md#tests)); `docker compose up --build` nad svazkem bez databáze `LdbcSnb` — první vydání, které ji nahrává (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)) |
-| 3 | Anotovaná značka `2.1.0` na commitu s číslem (`git show 2.1.0:ORMConvertor/Directory.Build.props` číslo obsahuje) | anotace: co se změnilo na tvaru artefaktu, co přibylo, co se pohnulo na hranici záruk; látka v `git log 2.0.0..` a §9 |
-
-Anotace má jako **varování** vyslovit pohyb REST kontraktu: požadavek deklaruje jen jazyk a čtyři dřívější hodnoty typu obsahu se nečtou (rozh. [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)), odpověď nese nový druh záznamu `Fallback` (rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md)). Mezi opravami vyjmenuje jednosloupcový `<key>` inverzní kolekce nad složeným cizím klíčem v NHibernatu; číselnou verzi, kterou EF Core psal jako `[Timestamp]`; sloupec cizího klíče bez skalární vlastnosti, který HQL, JPQL a LINQ psaly jako vlastnost; klíč inverzní kolekce, který katalog dodával, ač ho nesla vlastnící protistrana; kolekci bez vztahu, kvůli které MyBatis odmítl celý mapper; jméno entity, alias a výsledkovou proměnnou, které jsou klíčovým slovem HQL či JPQL; `COUNT(sloupec)`, který EF Core psal jako `Count()` počítající i řádky s `NULL` a řádek bez shody vnějšího joinu; srovnání asociace s řádkem v JPQL a HQL, které cíle psaly jako `c.*` nebo jako sloupec, a test asociace na `NULL`, čtený jako sloupec jménem asociace; navigaci, kterou čtení LINQ bralo jako sloupec; složený klíč joinu EF Core, který se nepřeložil, když se entita našla jen konvencí; a hlášku neřešitelného ILP modelu, která do logu docházela až s dalším voláním (`ilp.c` ověřit v kontejneru); mezi posuny hranice novou vyslovenou mez — inkrementaci číselné a datočasové verze EF Core nevyjádří a převod ji hlásí jako `Loss` ([`subset.md`](./subset.md), 2.2). Kategorie [Vady](#vady) podmínkou vydání není: nárok, který vyvrací vada v ní ještě otevřená, platí do její opravy jen s výhradou podle úvodu kategorie, a zůstane-li vada otevřená při vydání, anotace ji jmenuje.
 
 ## Vady
 
