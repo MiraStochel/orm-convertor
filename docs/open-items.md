@@ -49,7 +49,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
 | [Směr překladu a vstup vedle výstupu](#směr-překladu-jako-jedna-věc-a-vstup-vedle-výstupu) | Rozhraní | rozhodnutí | F14, S7 |
 | [Čísla řádků v editoru jednotky](#editor-jednotky-nemá-čísla-řádků-na-která-se-odvolává-chybová-hláška) | Rozhraní | práce | S7 |
-| [`[ConcurrencyCheck]` ve zdroji EF Core](#concurrencycheck-ve-zdroji-ef-core-se-nečte-jako-sloupec-verze) | Užitečné | rozhodnutí | F5, F10, F11 |
 | [Mapovací fakta mimo `hbm.xml`, která se zahodí beze slova](#mapovací-fakta-mimo-hbmxml-která-čtení-zahodí-beze-slova) | Užitečné | práce | F5, F11 |
 | [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
 | [4. stupeň nad LDBC](#čtvrtý-stupeň-ověření-nad-ldbc-validační-sady-interactive-v1) | Užitečné | rozhodnutí | F13, T3 |
@@ -191,11 +190,6 @@ S7 doslova žádá zvýraznění chyb na úrovni souboru a řádku; chyba přiř
 Prospělo by to, ale žádná věta záruk na tom nestojí a nic tím není blokované. Značky pořadí položky nedostávají.
 
 ### Rozhodnutí
-
-#### `[ConcurrencyCheck]` ve zdroji EF Core se nečte jako sloupec verze
-*Souvisí s rozh. [030](./decisions/030-scope-of-version-1-0.md) (sloupec verze jako mapovací fakt), [004](./decisions/004-unexpressible-facts-as-warnings.md) a [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md). Převod o anotaci nemlčí. Požadavky F5, F10, F11.*
-
-EF Core builder píše verzi, kterou zdrojový framework zvyšuje sám (JPA `@Version`, NHibernate `<version>` a `<timestamp>`), jako `[ConcurrencyCheck]` se záznamem `Loss`. EF Core parser ale `[ConcurrencyCheck]` jako sloupec verze nečte (hlásí ho jako neznámou anotaci, `Loss`), takže převod ze zdroje EF Core — i z našeho vlastního výstupu — verzi do každého cíle ztratí. Důvod: `[ConcurrencyCheck]` je token souběžnosti (smí ho nést víc vlastností a EF Core ho nezvyšuje), kdežto `@Version` a `<version>` je na entitě jeden a framework ho zvyšuje. Rozhodnout mezi: (a) číst ho jako verzi, stojí-li na jediné číselné či datočasové vlastnosti, a vyslovit, že cíl inkrementaci přidá; (b) dát modelu fakt tokenu souběžnosti bez inkrementace; (c) ponechat ztrátu a zapsat ji do [`subset.md`](./subset.md) jako vyslovenou mez.
 
 #### Čtvrtý stupeň ověření nad LDBC: validační sady Interactive v1
 *Plyne z rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md), které katalog LDBC drží na 1. stupni. Souvisí s [016](./decisions/016-generated-artifact-verification-levels.md) a [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md). Požadavky F13, T3.*

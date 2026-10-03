@@ -2311,6 +2311,20 @@ public abstract class AbstractEntityBuilder
                     }
 
                     break;
+                case "applicationmanagedversion" or "isapplicationmanagedversion":
+                    // The qualifier of the version flag (decision 116), positive-only like
+                    // the flag itself: who produces the value is otherwise derived from the
+                    // type family by the builders.
+                    if (bool.TryParse(kvp.Value, out var applicationManaged) && applicationManaged)
+                    {
+                        propertyMap.IsApplicationManagedVersion = true;
+                    }
+                    else if (!bool.TryParse(kvp.Value, out _))
+                    {
+                        ReportUnreadableFact(propertyName, MappingFactCategory.VersionColumn, "application-managed version", kvp.Value);
+                    }
+
+                    break;
                 default:
                     ReportUnknownFact(propertyName, kvp.Key, kvp.Value);
                     break;

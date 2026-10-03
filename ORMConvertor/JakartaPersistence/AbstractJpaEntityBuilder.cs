@@ -224,6 +224,27 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             {
                 Import($"{Jakarta}.Version");
                 code.AppendLine("    @Version");
+
+                if (propertyMap.IsApplicationManagedVersion)
+                {
+                    // The source left the next value to the application; the JPA provider
+                    // increments @Version itself and the specification forbids the
+                    // application to set it, so the output states an increment the source
+                    // never did - a convention of the target (decisions 004 and 116).
+                    Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Convention,
+                        Framework = Descriptor.Framework,
+                        Artifact = ConversionContentType.JavaEntity,
+                        Entity = entityMap.Entity.Name,
+                        Property = propertyMap.Property.Name,
+                        Category = MappingFactCategory.VersionColumn,
+                        Reason = "The source states a version the application keeps - compared on write, never produced "
+                            + "by the framework; the JPA provider increments @Version itself on every update and the "
+                            + "application must not set it, so the increment moves from the application to the framework "
+                            + "(decision 116).",
+                    });
+                }
             }
 
             // A scalar over a column a relation of the entity also maps is read-only here,

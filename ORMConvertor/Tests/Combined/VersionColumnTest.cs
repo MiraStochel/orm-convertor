@@ -15,7 +15,9 @@ namespace Tests.Combined;
 /// produces the value and as [ConcurrencyCheck] with a loss record where the source's
 /// framework increments it, as the version element by NHibernate, and inexpressible in
 /// Dapper, where the mechanical loss record states a property of Dapper rather than of
-/// the tool.
+/// the tool. The second half, decision 116: [ConcurrencyCheck] read back as the version
+/// the application keeps, exact in EF Core and a convention record where NHibernate or a
+/// JPA provider takes the increment over.
 /// </summary>
 public class VersionColumnTest
 {
@@ -291,5 +293,240 @@ public class VersionColumnTest
         var loss = Assert.Single(builder.Records, r =>
             r.Kind == ConversionRecordKind.Loss && r.Category == MappingFactCategory.VersionColumn);
         Assert.Equal("RowVersion", loss.Property);
+    }
+
+    // --- The version the application keeps: EF Core's [ConcurrencyCheck] (decision 116) ---
+
+    /// <summary>
+    /// EF Core's own rendering of a numeric version: a concurrency token EF Core compares on
+    /// write and nobody but the application produces.
+    /// </summary>
+    public const string ApplicationVersionedSource = """
+        public class Document
+        {
+            [Key]
+            public int DocumentID { get; set; }
+
+            [ConcurrencyCheck]
+            public int Revision { get; set; }
+
+            public string? Title { get; set; }
+        }
+        """;
+
+    [Fact]
+    public void ConcurrencyCheckOnTheOneIntegralPropertyIsTheVersionTheApplicationKeeps()
+    {
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse(ApplicationVersionedSource);
+
+        var map = builder.EntityMaps.Single().PropertyMaps.Single(pm => pm.Property.Name == "Revision");
+        Assert.True(map.IsVersion);
+        Assert.True(map.IsApplicationManagedVersion);
+
+        // The reading is exact - the model carries what the source said - so neither the
+        // unread-annotation record nor any other record is due.
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
+        Assert.DoesNotContain(builder.Records, r => r.Category == MappingFactCategory.VersionColumn);
+    }
+
+    [Fact]
+    public void EFCoreRoundTripKeepsConcurrencyCheckWithoutARecord()
+    {
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse(ApplicationVersionedSource);
+
+        var code = builder.Build().Single().Content;
+
+        // Nothing is narrowed: the application kept the version before and keeps it after.
+        Assert.Contains("[ConcurrencyCheck]", code);
+        Assert.DoesNotContain("[Timestamp]", code);
+        Assert.DoesNotContain(builder.Records, r => r.Category == MappingFactCategory.VersionColumn);
+
+        var reparsed = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(reparsed).Parse(code);
+        var map = reparsed.EntityMaps.Single().PropertyMaps.Single(pm => pm.Property.Name == "Revision");
+        Assert.True(map.IsVersion);
+        Assert.True(map.IsApplicationManagedVersion);
+    }
+
+    [Theory]
+    [InlineData("int?")]
+    [InlineData("long")]
+    [InlineData("short")]
+    [InlineData("DateTime")]
+    public void EveryTypeTheTargetsLeadAVersionOverIsRead(string type)
+    {
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse($$"""
+            public class Document
+            {
+                [Key]
+                public int DocumentID { get; set; }
+
+                [ConcurrencyCheck]
+                public {{type}} Revision { get; set; }
+            }
+            """);
+
+        var map = builder.EntityMaps.Single().PropertyMaps.Single(pm => pm.Property.Name == "Revision");
+        Assert.True(map.IsVersion);
+        Assert.True(map.IsApplicationManagedVersion);
+        Assert.DoesNotContain(builder.Records, r => r.Category == MappingFactCategory.VersionColumn);
+    }
+
+    [Theory]
+    [InlineData("string")]
+    [InlineData("Guid")]
+    [InlineData("decimal")]
+    [InlineData("byte[]")]
+    public void ConcurrencyCheckOnAnotherTypeProtectsTheColumnAndIsNotAVersion(string type)
+    {
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse($$"""
+            public class Document
+            {
+                [Key]
+                public int DocumentID { get; set; }
+
+                [ConcurrencyCheck]
+                public {{type}} Token { get; set; }
+            }
+            """);
+
+        // No target leads a version over such a type; the token stays what EF Core makes
+        // of it - a guarded column - and the record names the condition that failed
+        // rather than claiming the model has no place for the annotation.
+        var map = builder.EntityMaps.Single().PropertyMaps.Single(pm => pm.Property.Name == "Token");
+        Assert.False(map.IsVersion);
+        Assert.False(map.IsApplicationManagedVersion);
+
+        var loss = Assert.Single(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Loss && r.Category == MappingFactCategory.VersionColumn);
+        Assert.Equal("Token", loss.Property);
+        Assert.Contains(type, loss.Reason);
+    }
+
+    [Fact]
+    public void TwoConcurrencyTokensAreNeitherOfThemTheVersion()
+    {
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse("""
+            public class Document
+            {
+                [Key]
+                public int DocumentID { get; set; }
+
+                [ConcurrencyCheck]
+                public int Revision { get; set; }
+
+                [ConcurrencyCheck]
+                public int Generation { get; set; }
+            }
+            """);
+
+        // Two tokens guard two columns; a version is one per entity.
+        Assert.DoesNotContain(builder.EntityMaps.Single().PropertyMaps, pm => pm.IsVersion);
+
+        var losses = builder.Records
+            .Where(r => r.Kind == ConversionRecordKind.Loss && r.Category == MappingFactCategory.VersionColumn)
+            .Select(r => r.Property)
+            .ToList();
+        Assert.Equal(["Revision", "Generation"], losses);
+    }
+
+    [Fact]
+    public void ConcurrencyCheckBesideATimestampIsNotASecondVersion()
+    {
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse("""
+            public class Document
+            {
+                [Key]
+                public int DocumentID { get; set; }
+
+                [Timestamp]
+                public byte[] RowVersion { get; set; }
+
+                [ConcurrencyCheck]
+                public int Revision { get; set; }
+            }
+            """);
+
+        var maps = builder.EntityMaps.Single().PropertyMaps;
+        Assert.True(maps.Single(pm => pm.Property.Name == "RowVersion").IsVersion);
+        Assert.False(maps.Single(pm => pm.Property.Name == "Revision").IsVersion);
+
+        var loss = Assert.Single(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Loss && r.Category == MappingFactCategory.VersionColumn);
+        Assert.Equal("Revision", loss.Property);
+    }
+
+    [Fact]
+    public void ConcurrencyCheckOnTheTimestampPropertyStatesNothingNew()
+    {
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse("""
+            public class Document
+            {
+                [Key]
+                public int DocumentID { get; set; }
+
+                [Timestamp]
+                [ConcurrencyCheck]
+                public byte[] RowVersion { get; set; }
+            }
+            """);
+
+        var map = builder.EntityMaps.Single().PropertyMaps.Single(pm => pm.Property.Name == "RowVersion");
+        Assert.True(map.IsVersion);
+        Assert.False(map.IsApplicationManagedVersion);
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
+    }
+
+    [Fact]
+    public void NHibernateTakesOverTheIncrementOfAnApplicationVersionWithARecord()
+    {
+        var builder = new NHibernateEntityBuilder();
+        new EFCoreEntityParser(builder).Parse(ApplicationVersionedSource);
+
+        var mapping = builder.Build().Single(o => o.ContentType == ConversionContentType.XML).Content;
+
+        // The version element is NHibernate's; it increments it itself, which the source
+        // left to the application - a convention of the target, not a loss.
+        Assert.Contains("<version name=\"Revision\"", mapping);
+        Assert.DoesNotContain("generated=", mapping);
+
+        var record = Assert.Single(builder.Records, r => r.Category == MappingFactCategory.VersionColumn);
+        Assert.Equal(ConversionRecordKind.Convention, record.Kind);
+        Assert.Equal("Revision", record.Property);
+    }
+
+    [Theory]
+    [InlineData(ORMEnum.Hibernate)]
+    [InlineData(ORMEnum.EclipseLink)]
+    public void JpaTakesOverTheIncrementOfAnApplicationVersionWithARecord(ORMEnum target)
+    {
+        var result = ConversionHandler.Convert(ORMEnum.EFCore, target,
+            [new ConversionSource { Content = ApplicationVersionedSource, ContentType = ConversionContentType.CSharp }]);
+
+        var code = Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.JavaEntity).Content;
+        Assert.Contains("@Version", code);
+
+        var record = Assert.Single(result.Records, r => r.Category == MappingFactCategory.VersionColumn);
+        Assert.Equal(ConversionRecordKind.Convention, record.Kind);
+        Assert.Equal(target, record.Framework);
+        Assert.Equal("Revision", record.Property);
+    }
+
+    [Fact]
+    public void AFrameworkIncrementedVersionIsStillNarrowedIntoEFCore()
+    {
+        // The other half of decision 116: NHibernate's version over Int32 is not the
+        // application's, so EF Core still records the increment it cannot state.
+        var result = ConvertNumericVersion(ORMEnum.NHibernate, ORMEnum.EFCore);
+
+        var loss = Assert.Single(result.Records, r => r.Category == MappingFactCategory.VersionColumn);
+        Assert.Equal(ConversionRecordKind.Loss, loss.Kind);
     }
 }

@@ -514,7 +514,25 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         var attrs = new List<XmlAttribute> { new("name", version.Property.Name) };
 
-        if (version.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob)
+        if (version.IsApplicationManagedVersion)
+        {
+            // The source left the next value to the application; NHibernate increments the
+            // version element itself on every update, so the output states an increment the
+            // source never did - a convention of the target (decisions 004 and 116).
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.XML,
+                Entity = entityMap.Entity.Name,
+                Property = version.Property.Name,
+                Category = MappingFactCategory.VersionColumn,
+                Reason = "The source states a version the application keeps - compared on write, never produced by "
+                    + "the framework; NHibernate increments <version> itself on every update, so the increment moves "
+                    + "from the application to the framework and application code that kept it has to stop (decision 116).",
+            });
+        }
+        else if (version.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob)
         {
             attrs.Add(new("generated", "always"));
         }

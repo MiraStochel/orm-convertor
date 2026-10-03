@@ -44,6 +44,17 @@ public class PropertyMap
     public bool IsVersion { get; set; }
 
     /// <summary>
+    /// Whether the application, rather than the database or the framework, produces each new
+    /// value of the version (decision 116): EF Core's [ConcurrencyCheck] on the one integral
+    /// or DateTime property of the class. A qualifier of <see cref="IsVersion"/>, not a fact
+    /// of its own - builders ask for it only on a version. Positive-only like the flag it
+    /// qualifies: false means nobody stated it, and without it the builders derive the
+    /// producer from the type family - a binary version is the store's, any other the
+    /// framework's.
+    /// </summary>
+    public bool IsApplicationManagedVersion { get; set; }
+
+    /// <summary>
     /// Whether the source states that the property is not persisted at all (decision 072):
     /// [NotMapped] in EF Core, a class property the hbm.xml does not name in NHibernate,
     /// @Transient in JPA. The property stays a member of the class with all its language

@@ -401,11 +401,13 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// database produces on insert and update, so the column would be neither written nor
     /// changed, and optimistic concurrency would stop protecting anything. [ConcurrencyCheck]
     /// keeps the comparison on write and leaves the increment to the application - a
-    /// narrowing of what the source stated, so it is recorded (decision 004).
+    /// narrowing of what the source stated, so it is recorded (decision 004). A version the
+    /// application keeps already (decision 116) is [ConcurrencyCheck] by definition, so
+    /// nothing is narrowed and nothing is recorded.
     /// </summary>
     private void ReportVersionIncrementLoss(EntityMap entityMap, PropertyMap propertyMap)
     {
-        if (!propertyMap.IsVersion || IsStoreGeneratedVersion(propertyMap))
+        if (!propertyMap.IsVersion || propertyMap.IsApplicationManagedVersion || IsStoreGeneratedVersion(propertyMap))
         {
             return;
         }
@@ -439,6 +441,13 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                && propMap.Property.Type is { Category: LangTypeCategory.Scalar, ScalarType: ScalarType.ByteArray });
 
     /// <summary>
+    /// Whether the property is written as [Timestamp]: a version the store produces, which a
+    /// stated application-managed version never is (decision 116).
+    /// </summary>
+    private static bool WritesTimestamp(PropertyMap propMap)
+        => propMap.IsVersion && !propMap.IsApplicationManagedVersion && IsStoreGeneratedVersion(propMap);
+
+    /// <summary>
     /// Builds the property attributes for EF Core.
     /// </summary>
     private static string BuildPropertyAttributes(PropertyMap propMap, bool isPrimaryKey = false)
@@ -461,16 +470,17 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         }
 
         // A store-generated version is EF Core's rowversion; any other version is a
-        // concurrency token the application keeps - see ReportVersionIncrementLoss.
+        // concurrency token the application keeps - see ReportVersionIncrementLoss. A
+        // version the source already left to the application (decision 116) is that token
+        // whatever its type.
         if (propMap.IsVersion)
         {
-            attributes.AppendLine(IsStoreGeneratedVersion(propMap) ? "    [Timestamp]" : "    [ConcurrencyCheck]");
+            attributes.AppendLine(WritesTimestamp(propMap) ? "    [Timestamp]" : "    [ConcurrencyCheck]");
         }
 
         // [Timestamp] states the type and the length of a rowversion column itself, so
         // neither travels beside it - see TypeNameFor.
-        var typeCarriedByTimestamp = propMap.IsVersion
-            && propMap.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob;
+        var typeCarriedByTimestamp = WritesTimestamp(propMap) && propMap.Type is not null;
 
         var typeText = TypeNameFor(propMap);
 
@@ -530,7 +540,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// </summary>
     private static string? TypeNameFor(PropertyMap propMap)
     {
-        if (propMap.IsVersion && propMap.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob)
+        if (WritesTimestamp(propMap) && propMap.Type is not null)
         {
             return null;
         }

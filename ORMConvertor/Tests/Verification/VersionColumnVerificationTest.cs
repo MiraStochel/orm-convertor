@@ -121,4 +121,20 @@ public class VersionColumnVerificationTest
         Assert.Equal(ValueGenerated.Never, revision.ValueGenerated);
         Assert.Equal("int", revision.GetColumnType());
     }
+
+    [Fact]
+    public void EFCoreKeepsAnApplicationManagedVersionAsAConcurrencyToken()
+    {
+        // EF Core's own [ConcurrencyCheck] read back (decision 116): the round trip has to
+        // give EF Core the same model it had - a token compared on write, never generated.
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse(VersionColumnTest.ApplicationVersionedSource);
+        var model = BuildEFCoreModel("ApplicationVersion_EFCore", builder.Build());
+
+        var revision = Assert.Single(model.GetEntityTypes()).FindProperty("Revision");
+        Assert.NotNull(revision);
+        Assert.True(revision.IsConcurrencyToken);
+        Assert.Equal(ValueGenerated.Never, revision.ValueGenerated);
+        Assert.Equal("int", revision.GetColumnType());
+    }
 }

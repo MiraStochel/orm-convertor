@@ -227,6 +227,34 @@ public class EFCoreEntityParser : CSharpEntityParser
         _ => GetString(expression),
     };
 
+    private static bool HasAttribute(PropertyDeclarationSyntax prop, string name)
+        => prop.AttributeLists.SelectMany(l => l.Attributes)
+            .Any(a => TrimAttribute(a.Name.ToString()).Equals(name, StringComparison.Ordinal));
+
+    /// <summary>
+    /// The three conditions of decision 116 under which [ConcurrencyCheck] is the version
+    /// column the application keeps, as the reason the failing one gives, or null when all
+    /// hold: one token in the class, no [Timestamp] beside it, and a type the target
+    /// frameworks lead a version over - integral or DateTime, nullable or not.
+    /// </summary>
+    private static string? ConcurrencyTokenIsNotTheVersion(PropertyReading reading, int tokensInClass, bool classHasTimestamp)
+    {
+        if (tokensInClass > 1)
+        {
+            return $"the class carries {tokensInClass} tokens";
+        }
+
+        if (classHasTimestamp)
+        {
+            return "[Timestamp] already names the version of the class";
+        }
+
+        return CSharpTypeConvertor.FromString(reading.Type) is
+            { Category: LangTypeCategory.Scalar, ScalarType: ScalarType.Short or ScalarType.Int or ScalarType.Long or ScalarType.DateTime }
+            ? null
+            : $"the property is a '{reading.Type}'";
+    }
+
     /// <summary>
     /// Reads the EF Core 7+ class-level [PrimaryKey(nameof(A), nameof(B))] attribute.
     /// Argument order defines the key part order.
@@ -271,7 +299,14 @@ public class EFCoreEntityParser : CSharpEntityParser
         var propertyTypes = new Dictionary<string, string>();
         var generatedOptions = new Dictionary<string, string>();
 
-        foreach (var prop in classDeclaration.Members.OfType<PropertyDeclarationSyntax>())
+        // [ConcurrencyCheck] is read per class, not per property (decision 116): it is the
+        // version the application keeps only where it is the one token of the class and no
+        // [Timestamp] already names the version.
+        var properties = classDeclaration.Members.OfType<PropertyDeclarationSyntax>().ToList();
+        var concurrencyTokens = properties.Count(p => HasAttribute(p, "ConcurrencyCheck"));
+        var classHasTimestamp = properties.Any(p => HasAttribute(p, "Timestamp"));
+
+        foreach (var prop in properties)
         {
             var reading = ReadProperty(prop);
             var name = reading.Name;
@@ -350,6 +385,38 @@ public class EFCoreEntityParser : CSharpEntityParser
                         // the one flag is the claim. The store type it maps to is the
                         // provider's business, so no type is invented here.
                         dbProps["IsVersion"] = "true";
+                        break;
+                    case "ConcurrencyCheck":
+                        // A concurrency token the application keeps: EF Core compares the
+                        // value on write and never produces a new one. It is the version
+                        // column only on the one integral or DateTime property of a class
+                        // without [Timestamp] (decision 116); anywhere else it protects a
+                        // column and is not a version, which the record says. Beside
+                        // [Timestamp] on the same property it states nothing new.
+                        if (HasAttribute(prop, "Timestamp"))
+                        {
+                            break;
+                        }
+
+                        if (ConcurrencyTokenIsNotTheVersion(reading, concurrencyTokens, classHasTimestamp) is { } why)
+                        {
+                            entityBuilder.Report(new ConversionRecord
+                            {
+                                Kind = ConversionRecordKind.Loss,
+                                Framework = ORMEnum.EFCore,
+                                Artifact = ConversionContentType.CSharpEntity,
+                                Entity = classDeclaration.Identifier.Text,
+                                Property = name,
+                                Category = MappingFactCategory.VersionColumn,
+                                Reason = "[ConcurrencyCheck] is read as the version column the application keeps only on the "
+                                    + $"one short, int, long or DateTime property of a class without [Timestamp]; {why}, "
+                                    + "so the token protects this column and is dropped (decision 116).",
+                            });
+                            break;
+                        }
+
+                        dbProps["IsVersion"] = "true";
+                        dbProps["ApplicationManagedVersion"] = "true";
                         break;
                     case "NotMapped":
                         // The property stays on the class and leaves EF Core's model

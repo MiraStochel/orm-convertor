@@ -74,7 +74,8 @@ public class InventedFactsTest
     /// on this list - nor is [StringLength], which the model holds as a length. What is
     /// left here is what the representation really has no place for: the record is the
     /// answer to a fact with nowhere to go, not to an annotation nobody got round to
-    /// (decision 048).
+    /// (decision 048). [ConcurrencyCheck] is on the list over a string: there it protects
+    /// a column and is not the version the application keeps (decision 116).
     /// </summary>
     [Theory]
     [InlineData("ConcurrencyCheck")]

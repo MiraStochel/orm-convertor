@@ -20,8 +20,9 @@ public enum MappingFactCategory
 
     /// <summary>
     /// The column carries the row version for optimistic concurrency (decision 030) -
-    /// [Timestamp] in EF Core, the version element in NHibernate; Dapper has nowhere
-    /// to put it.
+    /// [Timestamp] in EF Core, or [ConcurrencyCheck] where the application keeps the value
+    /// (decision 116), the version element in NHibernate, @Version in JPA; Dapper and
+    /// MyBatis have nowhere to put it.
     /// </summary>
     VersionColumn = 11,
 
