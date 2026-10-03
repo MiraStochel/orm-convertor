@@ -143,4 +143,101 @@ public class EFCoreConventionNavigationTest
         Assert.Contains("<many-to-one name=\"Customer\" class=\"Customer\" column=\"CustomerID\" />", orderXml.Content);
         Assert.DoesNotContain("<property name=\"Customer\"", orderXml.Content);
     }
+
+    private const string PostSource = """
+        public class Post
+        {
+            [Key]
+            public int PostId { get; set; }
+
+            public List<string> Tags { get; set; } = [];
+
+            public ICollection<int?> Ratings { get; set; }
+
+            public List<uint> Counts { get; set; }
+        }
+        """;
+
+    [Fact]
+    public void ACollectionOfScalarsIsAPrimitiveCollectionAndNotANavigation()
+    {
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse(PostSource);
+
+        var code = builder.Build().Single().Content;
+        var post = builder.EntityMaps.Single();
+
+        // EF Core maps each of the three to one JSON column. They used to be read as
+        // one-to-many navigations towards entities named 'string', 'int?' and 'uint'.
+        Assert.Empty(post.Relations);
+        var tags = post.Entity.Properties.Single(p => p.Name == "Tags").Type!;
+        Assert.Equal(LangTypeCategory.Collection, tags.Category);
+        Assert.Equal(ScalarType.String, tags.ElementType!.ScalarType);
+        var ratings = post.Entity.Properties.Single(p => p.Name == "Ratings").Type!;
+        Assert.Equal(ScalarType.Int, ratings.ElementType!.ScalarType);
+        Assert.True(ratings.ElementType.IsNullable);
+
+        // The storage in one column has no place in the model: one loss per property, with
+        // no category (decision 048), and no claim of a missing target entity.
+        foreach (var property in new[] { "Tags", "Ratings", "Counts" })
+        {
+            var loss = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Property == property);
+            Assert.Null(loss.Category);
+            Assert.Equal("Post", loss.Entity);
+        }
+
+        Assert.DoesNotContain(builder.Records, r => r.Reason.Contains("Target entity"));
+
+        // uint is a keyword outside the vocabulary: the collection is primitive all the same,
+        // and its element type gets the record of decision 075 as any unknown type does.
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Incompleteness
+            && r.Property == "Counts" && r.Reason.Contains("'uint'"));
+
+        Assert.Contains("public List<string> Tags { get; set; } = [];", code);
+    }
+
+    [Fact]
+    public void APrimitiveCollectionBecomesNoAssociationInTheTargets()
+    {
+        var nhibernate = new NHibernateEntityBuilder();
+        new EFCoreEntityParser(nhibernate).Parse(PostSource);
+        var mapping = nhibernate.Build().Single(o => o.ContentType == Model.ConversionContentType.XML).Content;
+
+        Assert.DoesNotContain("one-to-many", mapping);
+        Assert.DoesNotContain("name=\"Tags\"", mapping);
+
+        var hibernate = new HibernateWrappers.HibernateEntityBuilder();
+        new EFCoreEntityParser(hibernate).Parse(PostSource);
+        var java = hibernate.Build().Single().Content;
+
+        Assert.DoesNotContain("@OneToMany", java);
+        Assert.Contains("List<String> Tags", java);
+    }
+
+    [Fact]
+    public void ARelationshipAnnotationOnAPrimitiveCollectionIsDropped()
+    {
+        var builder = new EFCoreEntityBuilder();
+        new EFCoreEntityParser(builder).Parse("""
+            public class Post
+            {
+                [Key]
+                public int PostId { get; set; }
+
+                [InverseProperty("Posts")]
+                public List<string> Tags { get; set; }
+
+                [ForeignKey("BlogId")]
+                public List<int> BlogIds { get; set; }
+            }
+            """);
+
+        builder.Build();
+
+        Assert.Empty(builder.EntityMaps.Single().Relations);
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss
+            && r.Property == "Tags" && r.Reason.Contains("[InverseProperty(\"Posts\")]"));
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss
+            && r.Property == "BlogIds" && r.Reason.Contains("[ForeignKey(\"BlogId\")]"));
+    }
 }

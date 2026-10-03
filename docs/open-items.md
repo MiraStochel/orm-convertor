@@ -50,7 +50,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [Směr překladu a vstup vedle výstupu](#směr-překladu-jako-jedna-věc-a-vstup-vedle-výstupu) | Rozhraní | rozhodnutí | F14, S7 |
 | [Čísla řádků v editoru jednotky](#editor-jednotky-nemá-čísla-řádků-na-která-se-odvolává-chybová-hláška) | Rozhraní | práce | S7 |
 | [`[ConcurrencyCheck]` ve zdroji EF Core](#concurrencycheck-ve-zdroji-ef-core-se-nečte-jako-sloupec-verze) | Užitečné | rozhodnutí | F5, F10, F11 |
-| [Kolekce skalárů ve zdroji EF Core čtená jako vztah](#kolekce-skalárů-ve-zdroji-ef-core-se-čte-jako-vztah) | Užitečné | práce | F1, F11 |
 | [Mapovací fakta mimo `hbm.xml`, která se zahodí beze slova](#mapovací-fakta-mimo-hbmxml-která-čtení-zahodí-beze-slova) | Užitečné | práce | F5, F11 |
 | [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
 | [4. stupeň nad LDBC](#čtvrtý-stupeň-ověření-nad-ldbc-validační-sady-interactive-v1) | Užitečné | rozhodnutí | F13, T3 |
@@ -224,11 +223,6 @@ Invariant „nový framework je nový wrapper" platí: jméno frameworku neprosa
 Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele) a zda tím je nástroj „publikovaný" ve smyslu předpokladu rozh. 098; pak se 098 nahrazuje.
 
 ### Práce
-
-#### Kolekce skalárů ve zdroji EF Core se čte jako vztah
-*Vyšlo najevo při opravě sloupce cizího klíče bez vlastnosti. Práce podle rozh. [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [075](./decisions/075-unknown-language-type-is-a-reported-incompleteness.md). Požadavky F1, F11.*
-
-Vlastnost `List<string>` či `List<int>` — EF Core ji mapuje jako primitivní kolekci do jednoho sloupce JSON — čte parser EF Core jako kolekční navigaci, tedy vztah k entitě jménem `string` či `int`, kterou žádný převod nedeklaruje. Model primitivní kolekci nenese, takže odpovědí podle rozh. 048 je `Loss` se jménem vlastnosti, ne vztah. Ověřit, co z dnešního čtení vydají cíle a jaký záznam nesou, zda totéž platí pro zdroje Dapper a NHibernate (čtení C# sdílejí), a čtení opravit.
 
 #### Mapovací fakta mimo `hbm.xml`, která čtení zahodí beze slova
 *Zdroj: [`subset.md`](./subset.md), 2.13. Práce podle rozh. [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [004](./decisions/004-unexpressible-facts-as-warnings.md). Požadavky F5, F11.*

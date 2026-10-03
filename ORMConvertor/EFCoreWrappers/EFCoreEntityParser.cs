@@ -6,6 +6,7 @@ using Common.Sql;
 using CSharpEntityParsing;
 using EFCoreWrappers.Convertors;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
 using Model.AbstractRepresentation;
@@ -435,7 +436,43 @@ public class EFCoreEntityParser : CSharpEntityParser
                 keyPropertyNames.Add(name);
             }
 
-            if (IsCollection(prop.Type, out var target))
+            var isCollection = IsCollection(prop.Type, out var target);
+
+            if (isCollection && IsPrimitiveElement(target))
+            {
+                // A collection of primitive values is not a navigation: EF Core maps it as a
+                // primitive collection, one column holding the values as JSON. Unlike an
+                // unknown element, a scalar of the vocabulary or a C# keyword type can never
+                // name an entity, so the answer does not wait for the entity set. The language
+                // fact travels - a collection of the scalar, with no relation behind it - and
+                // the storage in one column, which the model has no place for, is a loss
+                // (decision 048).
+                entityBuilder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = ORMEnum.EFCore,
+                    Artifact = ConversionContentType.CSharpEntity,
+                    Entity = classDeclaration.Identifier.Text,
+                    Property = name,
+                    Reason = $"The collection of '{target}' is EF Core's primitive collection - one column holding the "
+                        + "values as JSON - and not a navigation; the intermediate representation has no place for a "
+                        + "collection stored in a column, so the property travels as a collection with no relation "
+                        + "behind it and how it is stored is dropped.",
+                });
+
+                if (foreignKeyNames is not null)
+                {
+                    entityBuilder.Report(RelationshipAnnotationDropped(
+                        classDeclaration.Identifier.Text, name, $"[ForeignKey(\"{string.Join(",", foreignKeyNames)}\")]"));
+                }
+
+                if (inverseNavigation is not null)
+                {
+                    entityBuilder.Report(RelationshipAnnotationDropped(
+                        classDeclaration.Identifier.Text, name, $"[InverseProperty(\"{inverseNavigation}\")]"));
+                }
+            }
+            else if (isCollection)
             {
                 if (foreignKeyNames is not null)
                 {
@@ -491,18 +528,9 @@ public class EFCoreEntityParser : CSharpEntityParser
                 }
                 else if (inverseNavigation is not null)
                 {
-                    // [InverseProperty] pairs two navigations, and a scalar is neither: the
-                    // claim has no relation to sit on and therefore no place in the model.
-                    entityBuilder.Report(new ConversionRecord
-                    {
-                        Kind = ConversionRecordKind.Loss,
-                        Framework = ORMEnum.EFCore,
-                        Artifact = ConversionContentType.CSharpEntity,
-                        Entity = classDeclaration.Identifier.Text,
-                        Property = name,
-                        Reason = $"The annotation [InverseProperty(\"{inverseNavigation}\")] names the far end of a "
-                            + "relationship and the property it sits on is not a navigation; the claim was dropped.",
-                    });
+                    // [InverseProperty] pairs two navigations, and a scalar is neither.
+                    entityBuilder.Report(RelationshipAnnotationDropped(
+                        classDeclaration.Identifier.Text, name, $"[InverseProperty(\"{inverseNavigation}\")]"));
                 }
 
                 // Candidates for the key EF Core derives by convention. Only a scalar can
@@ -627,6 +655,37 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// </summary>
     private static bool IsScalarTypeName(string typeText)
         => CSharpTypeConvertor.FromString(typeText).Category == LangTypeCategory.Scalar;
+
+    /// <summary>
+    /// Whether the written element type of a collection makes it EF Core's primitive
+    /// collection rather than a navigation: a scalar of the language type model, or a C#
+    /// keyword type outside it (uint, ulong, decision 071) - a keyword can never name an
+    /// entity. Any other name may be an entity in another unit and stays a navigation
+    /// candidate, an enum among them, since the parser cannot tell the two apart.
+    /// </summary>
+    private static bool IsPrimitiveElement(string elementText)
+    {
+        var bare = elementText.TrimEnd('?').Trim();
+
+        return IsScalarTypeName(bare)
+            || SyntaxFacts.IsPredefinedType(SyntaxFacts.GetKeywordKind(bare));
+    }
+
+    /// <summary>
+    /// The record of an annotation that belongs to a relationship, found on a property that
+    /// founds none - a scalar or a collection of scalars. The claim has no relation to sit on
+    /// and therefore no place in the model.
+    /// </summary>
+    private static ConversionRecord RelationshipAnnotationDropped(string entity, string property, string annotation) => new()
+    {
+        Kind = ConversionRecordKind.Loss,
+        Framework = ORMEnum.EFCore,
+        Artifact = ConversionContentType.CSharpEntity,
+        Entity = entity,
+        Property = property,
+        Reason = $"The annotation {annotation} belongs to a relationship and the property it sits on is not a "
+            + "navigation; the claim was dropped.",
+    };
 
     /// <summary>
     /// What EF Core's convention makes of a collection navigation once the far entity is

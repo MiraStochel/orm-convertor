@@ -143,7 +143,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 
 | Konstrukce | Proč | Co nástroj udělá | Druh | Rozh. |
 |---|---|---|---|---|
-| dědičnost, komponenty, spojené tabulky: NHibernate `<subclass>`, `<joined-subclass>`, `<union-subclass>`, `<component>`, `<dynamic-component>`, `<join>`, `<natural-id>`, `<idbag>`, `<array>`, `<primitive-array>`, `<any>`, kolekce hodnot či komponent; bázový typ C# třídy, který jmenuje jinou entitu převodu (EF Core = table per hierarchy); JPA `@Inheritance`, `extends` mezi dvěma `@Entity`, `@MappedSuperclass`, `@Embedded`, `@ElementCollection`, `@SecondaryTable`; EF Core `[Owned]`, `[ComplexType]` | model nese jen plochou třídu | `Loss` u každého prvku (č); hierarchie = nesouvisející entity; `@MappedSuperclass` s vlastním záznamem = samostatná entita, jejíž atributy dědící entity nedostanou | VO 2 | [030], [048] |
+| dědičnost, komponenty, spojené tabulky: NHibernate `<subclass>`, `<joined-subclass>`, `<union-subclass>`, `<component>`, `<dynamic-component>`, `<join>`, `<natural-id>`, `<idbag>`, `<array>`, `<primitive-array>`, `<any>`, kolekce hodnot či komponent; bázový typ C# třídy, který jmenuje jinou entitu převodu (EF Core = table per hierarchy); JPA `@Inheritance`, `extends` mezi dvěma `@Entity`, `@MappedSuperclass`, `@Embedded`, `@ElementCollection`, `@SecondaryTable`; EF Core `[Owned]`, `[ComplexType]`, primitivní kolekce (`List<string>`: prvek skalár či klíčové slovo C#, jeden sloupec JSON) | model nese jen plochou třídu | `Loss` u každého prvku (č); hierarchie = nesouvisející entity; `@MappedSuperclass` s vlastním záznamem = samostatná entita, jejíž atributy dědící entity nedostanou | VO 2 | [030], [048] |
 | dialekt: jediný je SQL Server 2022 z deskriptoru; zdroj s jiným deklarovaným dialektem; katalog u něj; `CHECK` a výchozí hodnota sloupce jako doslovný SQL výraz | verze nese jeden dialekt | cizí dialekt zastaví čtení doslovného SQL (`Failure`) i doslovného typu sloupce (`Loss`, `DatabaseType`); katalog fakta dodá s jediným `Conflict`; `CHECK`, `default` `Loss`; artefakt únikové cesty vázaný na dialekt | VO 5 | [086], [088], [091], [055] |
 
 `CHECK` a výchozí hodnotu řadí do VO 5 §9; rozhodnutí 055 je za vyňatou oblast nemělo. Platí §9.
@@ -365,7 +365,8 @@ Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhod
 | JPA `referencedColumnName` v `@JoinColumn` | *Užitečné, ne nutné* |
 | MyBatis `<cache>`, `<cache-ref>`, `<parameterMap>`, `typeHandler` na `<result>` | *Užitečné, ne nutné* |
 | bázový typ C# či Java třídy, který jmenuje třídu mimo převod | *Užitečné, ne nutné* |
-| cíl JPA: kolekční vlastnost bez vztahu jako `@Column` — sloupec, který zdroj netvrdil (Hibernate ho přijme jako `xml`, EclipseLink jako serializovaný `IMAGE`) | *Užitečné, ne nutné* || zbylé atributy ostatních prvků NHibernate mapování | *Užitečné, ne nutné* (vlastní položka) |
+| cíl JPA: kolekční vlastnost bez vztahu jako `@Column` — sloupec, který zdroj netvrdil (Hibernate ho přijme jako `xml`, EclipseLink jako serializovaný `IMAGE`) | *Užitečné, ne nutné* |
+| zbylé atributy ostatních prvků NHibernate mapování | *Užitečné, ne nutné* (vlastní položka) |
 
 ---
 
