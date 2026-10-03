@@ -818,6 +818,35 @@ ul.page-index li {
   margin-bottom: 0.5rem;
 }
 
+/* Where a query lands in a target (decision 113). Its own language is plain text; native SQL
+   and a refusal are badges in the colours of the Fallback and Failure records they come with. */
+table.ldbc-matrix .ldbc-language {
+  color: var(--pico-muted-color);
+}
+
+table.ldbc-matrix {
+  font-size: 0.85rem;
+}
+
+table.ldbc-matrix th[scope="row"] a {
+  white-space: nowrap;
+}
+
+table.ldbc-matrix th[scope="row"] small {
+  color: var(--pico-muted-color);
+}
+
+table.ldbc-matrix tr.ldbc-matrix-group th {
+  padding-top: 1rem;
+  font-weight: 600;
+}
+
+table.ldbc-matrix tfoot td,
+table.ldbc-matrix tfoot th {
+  vertical-align: top;
+  white-space: nowrap;
+}
+
 article.ldbc-query > header {
   display: flex;
   flex-wrap: wrap;

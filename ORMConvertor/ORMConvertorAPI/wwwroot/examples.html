@@ -116,9 +116,11 @@
 
     <h2>The examples</h2>
     <p>
-      Seven examples, grouped by the boundary the translation crosses: two stay
-      inside .NET, two inside Java, and three cross between the ecosystems &mdash;
-      the last two over a whole domain rather than a single class. Below each one,
+      Ten examples. The first seven are grouped by the boundary the translation
+      crosses: two stay inside .NET, two inside Java, and three cross between the
+      ecosystems &mdash; the last two over a whole domain rather than a single class.
+      The other three are about queries: what a target does with a construct its
+      query language lacks, and how the queries are found in code. Below each one,
       the records list every place where the output could not carry a fact of the
       input, or states something the input did not. That is where a translation
       explains itself.
@@ -150,6 +152,14 @@
         <ul>
           <li><a href="#order-book">Order book: EF Core &rarr; Hibernate</a> &mdash; four entities, six LINQ queries</li>
           <li><a href="#lending-library">Lending library: Hibernate &rarr; NHibernate</a> &mdash; five entities, five JPQL queries</li>
+        </ul>
+      </article>
+      <article>
+        <h3>Queries</h3>
+        <ul>
+          <li><a href="#lending-reports-efcore">Reports: Hibernate &rarr; EF Core</a> &mdash; three in LINQ, two in native SQL</li>
+          <li><a href="#lending-reports-nhibernate">Reports: Hibernate &rarr; NHibernate</a> &mdash; the same five, all in native SQL</li>
+          <li><a href="#order-repository">Order repository: EF Core &rarr; EclipseLink</a> &mdash; five ways code hands a query over</li>
         </ul>
       </article>
     </div>
@@ -235,8 +245,9 @@
         Hibernate's own annotation and EclipseLink has none; <code>limit</code> and
         <code>offset</code> exist only in HQL. The artifact therefore writes each of
         them out &mdash; the counter table in full, the national column as a literal
-        <code>nvarchar(200)</code>, the page of results on the query object &mdash;
-        and the two conventions in the records name exactly those places.
+        <code>nvarchar(200)</code>, the page of results on the query object. The two
+        conventions in the records name the first two places; the page needs no
+        record, because on the query object it selects the same rows as in the text.
       </p>
       <div class="toolbar">
         <button type="button" class="example-run secondary">Run again</button>
@@ -396,6 +407,137 @@
         becomes two comparisons, and the page given by <code>limit</code> and
         <code>offset</code> moves to <code>SetFirstResult</code> and
         <code>SetMaxResults</code>, because HQL has no clause for it.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <h2>Queries</h2>
+    <p>
+      A query in the intermediate representation can say more than the part all six
+      query languages share: a result that another query reads (a common table
+      expression or a derived table), recursion, a ranking over a window, a list joined
+      from the values of a group, arithmetic over dates. A target whose query language
+      has the construct writes it there. A target whose language lacks it writes the
+      whole query in the native SQL of its database, through its framework's own API,
+      and a <strong>Fallback</strong> record names the construct that sent it there
+      &mdash; a native query is never passed off as a translation. A query a target can
+      say neither in its language nor in native SQL is refused there with a Failure
+      record; the <a href="ldbc.html">LDBC page</a> shows the one such case among its
+      41 queries.
+    </p>
+    <p>
+      The input of these three examples is what a project has: a class that hands its
+      queries to the framework. Such a class is read as the code around the queries,
+      not as an entity, and every place where it hands a query over is one query of the
+      conversion, named by its position in the text &mdash; <code>Query01</code>,
+      <code>Query02</code>, &hellip; (<code>query01</code> in Java). The query methods
+      close the output, after the entities.
+    </p>
+
+    <section id="lending-reports-efcore" data-example="lending-reports-efcore">
+      <h3>Reports: Hibernate &rarr; EF Core</h3>
+      <p>
+        Five reports over the lending library, each a method of one Java class that
+        hands a query of HQL&nbsp;7.4 to the framework; the last one walks a sixth
+        entity, a hierarchy of genres. Three of them EF Core says in LINQ. The common
+        table expression becomes a variable of the method, which the query reads twice
+        &mdash; in the join and in the subquery that averages it. The list of titles
+        becomes <code>string.Join</code> over the ordered titles of each group, and the
+        days a book was out become <code>EF.Functions.DateDiffDay</code>. The other two
+        LINQ cannot say: it has no ranking over a window, and a variable cannot name
+        itself, so it has no recursion. Those two go out as native SQL through
+        <code>Database.SqlQuery</code>, with a row class written from the projection and
+        the parameter as an interpolated hole, which EF Core binds as a parameter rather
+        than as text; a Fallback record stands beside each. Most of the other records
+        are the entities': the annotations of EF Core state neither an identity nor a
+        sequence, nor a version the framework increments.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="lending-reports-nhibernate" data-example="lending-reports-nhibernate">
+      <h3>Reports: Hibernate &rarr; NHibernate</h3>
+      <p>
+        The same input towards NHibernate, so whatever differs from the example above is
+        the difference between the two query languages. HQL of NHibernate&nbsp;5.7 has
+        none of the five constructs &mdash; no <code>with</code>, no window, no list
+        aggregate, no date arithmetic &mdash; so all five reports go out as native SQL
+        through <code>CreateSQLQuery</code>, the parameters as <code>:name</code> and an
+        <code>AddScalar</code> for every column, so that the rows come back typed. Five
+        queries carry six Fallback records: the report over the genres names both of its
+        reasons, the common table expression and its recursion. The entities and their
+        mappings are those of the lending library above, and the genre joins them with
+        an <code>assigned</code> key, because the source states no generation, and its
+        parent as a <code>many-to-one</code> beside the column it shares.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="order-repository" data-example="order-repository">
+      <h3>Order repository: EF Core &rarr; EclipseLink</h3>
+      <p>
+        A repository over the order book: one C# file, five methods, each handing a query
+        to EF Core in another way. A chain stored in a variable that the code assigns once
+        and then extends is read as the one tree the provider receives.
+        <code>FirstOrDefault</code> is read as a page of one row, and a Convention record
+        says what the artifact leaves out: the caller receives a single value, the
+        generated method a query of at most one row. A query expression with a second
+        <code>from</code> over a navigation becomes a join whose condition comes from the
+        mapping. An explicit load &mdash;
+        <code>Entry(order).Collection(o =&gt; o.Lines).Query()</code> &mdash; is read as
+        the query the provider composes: the lines whose foreign key equals the key of the
+        order in memory, bound as the parameter <code>SalesOrderId</code>. And native SQL
+        handed to <code>Database.SqlQuery</code> is read as a query like any other, so
+        EclipseLink receives it as JPQL, with the column <code>ShipToCity</code> back as
+        the attribute <code>City</code>. JPQL says all five, so nothing falls back.
       </p>
       <div class="toolbar">
         <button type="button" class="example-run secondary">Run again</button>

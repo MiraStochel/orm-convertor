@@ -10,6 +10,9 @@ namespace SampleData;
 /// and several query units in one conversion, each record naming the file it came from
 /// (decision 066).
 ///
+/// The same domain carries one repository class for the page's query examples: the queries
+/// as a project keeps them, five in one file, each handed to EF Core in another way.
+///
 /// The tables live in a schema of their own, Ordering, which the sample database of the
 /// container does not have: on an instance with a catalog the records then say the table was
 /// not found, instead of mixing in the facts of another domain that happens to share a name.
@@ -259,4 +262,67 @@ public static class OrderBookSampleEFCore
                 .ToList();
         }
         """;
+
+    /// <summary>
+    /// A repository as a project keeps it: one file, five methods, each handing a query to EF
+    /// Core in another way - a chain composed over a variable assigned once (decision 109), a
+    /// single-row terminal (decision 103), a query expression joining along a navigation
+    /// (decision 101), an explicit load of a collection (decision 115) and native SQL through
+    /// Database.SqlQuery, which is read as a query like any other (decision 113).
+    /// </summary>
+    public const string Repository = """"
+        using Microsoft.EntityFrameworkCore;
+
+        namespace OrderBook;
+
+        public class OrderRepository(OrderBookContext ctx)
+        {
+            public List<SalesOrder> RecentOrdersOf(int customerId, DateTime since)
+            {
+                var recent = ctx.SalesOrders.Where(o => o.OrderedAt >= since);
+                return recent
+                    .Where(o => o.CustomerId == customerId)
+                    .OrderByDescending(o => o.OrderedAt)
+                    .ToList();
+            }
+
+            public SalesOrder? LatestOrderOf(int customerId)
+            {
+                return ctx.SalesOrders
+                    .Where(o => o.CustomerId == customerId)
+                    .OrderByDescending(o => o.OrderedAt)
+                    .FirstOrDefault();
+            }
+
+            public void OrdersWithCustomers(DateTime since)
+            {
+                var rows = (from c in ctx.Customers
+                            from o in c.Orders
+                            where o.OrderedAt >= since
+                            orderby o.OrderedAt descending
+                            select new { Customer = c.Name, o.OrderNumber, o.Status })
+                           .ToList();
+            }
+
+            public List<OrderLine> LargeLinesOf(SalesOrder order)
+            {
+                return ctx.Entry(order)
+                    .Collection(o => o.Lines)
+                    .Query()
+                    .Where(l => l.Quantity >= 10)
+                    .ToList();
+            }
+
+            public List<CityRevenue> RevenueByCity(DateTime since)
+            {
+                return ctx.Database.SqlQuery<CityRevenue>($"""
+                    SELECT o.ShipToCity AS City, SUM(l.Quantity * l.UnitPrice) AS Revenue
+                    FROM Ordering.SalesOrders AS o
+                    JOIN Ordering.OrderLines AS l ON l.SalesOrderId = o.SalesOrderId
+                    WHERE o.OrderedAt >= {since}
+                    GROUP BY o.ShipToCity
+                    """).ToList();
+            }
+        }
+        """";
 }

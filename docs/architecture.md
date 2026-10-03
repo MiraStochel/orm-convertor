@@ -969,8 +969,8 @@ Statické soubory ve `wwwroot` bez frameworku, npm a buildu (rozh. [032](./decis
 | `index.html` | rozcestník | 100 |
 | `translation.html` | překlad: dialekt zdrojového SQL (nevysloveno se neposílá); jednotka = soubor v jednom jazyce z `/required-content`, jazyk podle přípony, jinak ho žádá validace; pás záznamů s větou ke každému druhu, sloupci *Unit*, *Query* a *Artifact* | [088](./decisions/088-a-declared-foreign-source-dialect-is-not-read.md), [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md), [066](./decisions/066-records-attributed-to-the-input-unit.md), [081](./decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md) |
 | `advisor.html` | všichni změření kandidáti (`measurements`) s poměrem k nejrychlejšímu; panely z `translations` — přesně změřený kód, bez katalogu | [059](./decisions/059-advisor-response-carries-the-measured-translations.md) |
-| `examples.html` | živé příklady z `/examples`, dnes sedm; spodní hranici drží `ExampleCatalogTest` | [099](./decisions/099-examples-are-content-not-a-choice.md) |
-| `ldbc.html` | katalog z `/ldbc` se stavy a převodem dotazu; výčty dotazů v kartách jsou ruční text | 110 |
+| `examples.html` | živé příklady z `/examples`, dnes deset: sedm podle hranice, kterou překlad přechází, tři o dotazech (tytéž reporty do EF Core a NHibernatu, repozitář EF Core do EclipseLinku); spodní hranici drží `ExampleCatalogTest` | [099](./decisions/099-examples-are-content-not-a-choice.md) |
+| `ldbc.html` | katalog z `/ldbc` se stavy, tabulkou dotaz × cíl (jazyk cíle, nativní SQL, odmítnutí; z katalogu, ne ručně) a převodem dotazu; výčty dotazů v kartách jsou ruční text | 110 |
 | `comparison.html` | maketa: zmrazené artefakty (`js/comparison-run.js`), **ručně psané** spoje (`js/comparison-links.js`) — nástroj původ slov nehlásí; nevolá nic | 100 |
 
 - **Servírování** — `UseDefaultFiles` před `UseRouting`, `MapStaticAssets` s `.br`/`.gz` z manifestu sestavení: **nový soubor se servíruje až po sestavení**. Adresy jsou relativní, `/orm` nenese žádný soubor.

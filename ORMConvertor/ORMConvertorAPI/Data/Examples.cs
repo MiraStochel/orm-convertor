@@ -7,8 +7,10 @@ namespace ORMConvertorAPI.Data;
 /// <summary>
 /// The examples of the explanatory page (decision 099), in the order the page shows them:
 /// two inside .NET, two inside Java, and three across the ecosystems, the last two of them
-/// over a whole domain rather than a single class. The small examples are built from the
-/// samples the translation screen offers; the larger ones have classes of their own.
+/// over a whole domain rather than a single class; then three about queries, over the same
+/// two domains, each with its queries in one class as a project keeps them. The small
+/// examples are built from the samples the translation screen offers; the larger ones have
+/// classes of their own.
 ///
 /// The list is the page's content, not a decision: an example is added, replaced or changed
 /// here, beside its section in examples.html, and needs no decision file as long as the floor
@@ -70,6 +72,31 @@ public static class Examples
             Unit("CopiesAcquired.jpql", ConversionContentType.JpqlQuery, LendingLibrarySampleHibernate.CopiesAcquiredQuery),
             Unit("AuthorsFromRegion.jpql", ConversionContentType.JpqlQuery, LendingLibrarySampleHibernate.AuthorsFromRegionQuery),
         ]),
+
+        // Queries: one set of reports towards two targets, so the difference between the
+        // outputs is what each query language can say (decision 113), then a repository whose
+        // queries reach EF Core in five different ways.
+        new("lending-reports-efcore", ORMEnum.Hibernate, ORMEnum.EFCore, LendingReportUnits()),
+        new("lending-reports-nhibernate", ORMEnum.Hibernate, ORMEnum.NHibernate, LendingReportUnits()),
+        new("order-repository", ORMEnum.EFCore, ORMEnum.EclipseLink,
+        [
+            Unit("Customer.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.Customer),
+            Unit("SalesOrder.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.SalesOrder),
+            Unit("OrderLine.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.OrderLine),
+            Unit("Product.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.Product),
+            Unit("OrderRepository.cs", ConversionContentType.CSharp, OrderBookSampleEFCore.Repository),
+        ]),
+    ];
+
+    private static List<ConversionSource> LendingReportUnits() =>
+    [
+        Unit("Book.java", ConversionContentType.Java, LendingLibrarySampleHibernate.Book),
+        Unit("Author.java", ConversionContentType.Java, LendingLibrarySampleHibernate.Author),
+        Unit("BookCopy.java", ConversionContentType.Java, LendingLibrarySampleHibernate.BookCopy),
+        Unit("Loan.java", ConversionContentType.Java, LendingLibrarySampleHibernate.Loan),
+        Unit("Member.java", ConversionContentType.Java, LendingLibrarySampleHibernate.Member),
+        Unit("Genre.java", ConversionContentType.Java, LendingLibrarySampleHibernate.Genre),
+        Unit("LoanReports.java", ConversionContentType.Java, LendingLibrarySampleHibernate.LoanReports),
     ];
 
     private static List<ConversionSource> HibernateVendorUnits() =>

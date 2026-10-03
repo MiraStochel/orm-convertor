@@ -71,6 +71,7 @@
         <li><a href="#data-set">The data set</a></li>
         <li><a href="#using-it">Using it</a></li>
         <li><a href="#what-translates">What translates and what does not</a></li>
+        <li><a href="#by-target">Every query in every target</a></li>
         <li><a href="#queries">The queries</a></li>
       </ul>
     </nav>
@@ -248,6 +249,22 @@
         of them, because its native query does not expand a list parameter. Every other
         translated query reaches all five targets in their own query language.
       </p>
+
+      <h3 id="by-target">Every query in every target</h3>
+      <p>
+        One row per query and one column per target: the target's own query language, its
+        native SQL, or a refusal. Point at a cell for the reason a query did not stay in the
+        target's language. The table is drawn from the same catalog as the list below, so the
+        two cannot disagree.
+      </p>
+      <div class="table-scroll">
+        <table class="ldbc-matrix">
+          <thead><tr><th scope="col">Query</th><th scope="col">Status</th></tr></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+
       <p class="muted-note">
         &ldquo;Translated&rdquo; is the first level of verification: the target artifact is
         generated without a Failure record. Whether it returns the rows the source returns is

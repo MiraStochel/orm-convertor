@@ -9,6 +9,10 @@ namespace SampleData;
 /// whose column pairs keep their order (decision 012), a sequence with its parameters
 /// (decision 020), a version column and national columns.
 ///
+/// The same domain carries the reports of the page's query examples: a sixth entity with a
+/// hierarchy of its own, and a class that hands five queries of HQL 7.4 to the framework -
+/// the constructs a target's query language may lack (decisions 112 and 113).
+///
 /// The tables live in a schema of their own, Lending, which the sample database of the
 /// container does not have - the same reason the order book has Ordering.
 /// </summary>
@@ -402,4 +406,146 @@ public static class LendingLibrarySampleHibernate
         where a.Country in ('CZ', 'SK', 'PL')
         order by a.FullName asc
         """;
+
+    /// <summary>
+    /// A hierarchy: every genre but the top ones names the genre it belongs to. Only the
+    /// reports read it, so the five entities of the larger example stay as they are.
+    /// </summary>
+    public const string Genre = """
+        package Library;
+
+        import jakarta.persistence.Column;
+        import jakarta.persistence.Entity;
+        import jakarta.persistence.Id;
+        import jakarta.persistence.JoinColumn;
+        import jakarta.persistence.ManyToOne;
+        import jakarta.persistence.Table;
+
+        @Entity
+        @Table(name = "Genres", schema = "Lending")
+        public class Genre {
+
+            @Id
+            @Column(name = "GenreId")
+            private Integer GenreId;
+
+            @Column(name = "Name", length = 100, nullable = false)
+            private String Name;
+
+            @Column(name = "ParentGenreId")
+            private Integer ParentGenreId;
+
+            @ManyToOne
+            @JoinColumn(name = "ParentGenreId", insertable = false, updatable = false)
+            private Genre Parent;
+
+            public Integer getGenreId() { return GenreId; }
+            public void setGenreId(Integer value) { this.GenreId = value; }
+            public String getName() { return Name; }
+            public void setName(String value) { this.Name = value; }
+            public Integer getParentGenreId() { return ParentGenreId; }
+            public void setParentGenreId(Integer value) { this.ParentGenreId = value; }
+            public Genre getParent() { return Parent; }
+            public void setParent(Genre value) { this.Parent = value; }
+        }
+        """;
+
+    /// <summary>
+    /// Five reports in one class, as a project keeps them: each method hands a query of HQL
+    /// 7.4 to the framework, so the class is read as the code around them and every query is
+    /// one of the conversion, numbered in the order of the text (decisions 109 and 111). Each
+    /// report rests on one construct not every query language has - a common table expression
+    /// read twice, a ranking over a window, a list joined from a group, date arithmetic and a
+    /// recursive common table expression (decisions 112 and 113).
+    /// </summary>
+    public const string LoanReports = """"
+        package Library;
+
+        import jakarta.persistence.EntityManager;
+        import jakarta.persistence.Tuple;
+        import java.time.LocalDateTime;
+        import java.util.List;
+
+        public class LoanReports {
+
+            private final EntityManager em;
+
+            public LoanReports(EntityManager em) {
+                this.em = em;
+            }
+
+            public List<Tuple> busiestMembers(LocalDateTime since) {
+                return em.createQuery("""
+                        with MemberLoans as (
+                            select l.MemberId as MemberId, count(l) as Loans
+                            from Loan l
+                            where l.LoanedAt >= :since
+                            group by l.MemberId)
+                        select m.Surname as Surname, ml.Loans as Loans
+                        from Member m
+                        join MemberLoans ml on ml.MemberId = m.MemberId
+                        where ml.Loans > (select avg(a.Loans) from MemberLoans a)
+                        order by ml.Loans desc, m.Surname asc
+                        """, Tuple.class)
+                    .setParameter("since", since)
+                    .getResultList();
+            }
+
+            public List<Tuple> latestLoanOfEachMember() {
+                return em.createQuery("""
+                        with Ranked as (
+                            select l.MemberId as MemberId, l.BookId as BookId, l.LoanedAt as LoanedAt,
+                                   row_number() over (partition by l.MemberId order by l.LoanedAt desc, l.LoanId desc) as Position
+                            from Loan l)
+                        select r.MemberId as MemberId, r.BookId as BookId, r.LoanedAt as LoanedAt
+                        from Ranked r
+                        where r.Position = 1
+                        order by r.MemberId asc
+                        """, Tuple.class)
+                    .getResultList();
+            }
+
+            public List<Tuple> titlesBorrowedByEachMember() {
+                return em.createQuery("""
+                        select l.MemberId as MemberId, listagg(b.Title, '; ') within group (order by b.Title asc) as Titles
+                        from Loan l
+                        join Book b on b.BookId = l.BookId
+                        group by l.MemberId
+                        order by l.MemberId asc
+                        """, Tuple.class)
+                    .getResultList();
+            }
+
+            public List<Tuple> longLoans(int days) {
+                return em.createQuery("""
+                        select l.LoanId as LoanId, l.MemberId as MemberId,
+                               timestampdiff(day, l.LoanedAt, l.ReturnedAt) as DaysOut
+                        from Loan l
+                        where l.ReturnedAt is not null
+                          and timestampdiff(day, l.LoanedAt, l.ReturnedAt) > :days
+                        order by DaysOut desc, l.LoanId asc
+                        """, Tuple.class)
+                    .setParameter("days", days)
+                    .getResultList();
+            }
+
+            public List<Tuple> genresBelow(int genreId) {
+                return em.createQuery("""
+                        with GenreTree as (
+                            select g.GenreId as GenreId, g.Name as Name, 0 as Depth
+                            from Genre g
+                            where g.GenreId = :genreId
+                            union all
+                            select c.GenreId as GenreId, c.Name as Name, t.Depth + 1 as Depth
+                            from Genre c
+                            join GenreTree t on c.ParentGenreId = t.GenreId)
+                        select t.GenreId as GenreId, t.Name as Name, t.Depth as Depth
+                        from GenreTree t
+                        order by t.Depth asc, t.Name asc
+                        """, Tuple.class)
+                    .setParameter("genreId", genreId)
+                    .getResultList();
+            }
+        }
+        """";
 }

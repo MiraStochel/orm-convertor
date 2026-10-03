@@ -39,7 +39,51 @@ const TRANSLATION_CLASSES = Object.freeze({
 
 const WORKLOAD_PREFIXES = Object.freeze({ 10: "IS", 20: "IC", 30: "BI" });
 
+const WORKLOAD_TITLES = Object.freeze({
+  10: "Interactive short reads",
+  20: "Interactive complex reads",
+  30: "Business Intelligence reads",
+});
+
 const TARGETS = [ORM.EFCore, ORM.NHibernate, ORM.Hibernate, ORM.EclipseLink, ORM.MyBatis];
+
+// The language a target writes a query in when it does not fall back to native SQL.
+const TARGET_LANGUAGES = Object.freeze({
+  [ORM.EFCore]: "LINQ",
+  [ORM.NHibernate]: "HQL",
+  [ORM.Hibernate]: "HQL",
+  [ORM.EclipseLink]: "JPQL",
+  [ORM.MyBatis]: "SQL",
+});
+
+const SHORT_TRANSLATION_LABELS = Object.freeze({
+  [LdbcTranslation.AsSpecified]: "as specified",
+  [LdbcTranslation.Simplified]: "simplified",
+  [LdbcTranslation.NotTranslated]: "not translated",
+});
+
+/*
+ * Where a query lands in one target - the three values of decision 113, plus a query the
+ * tool does not translate at all. A refusal outranks a fallback: a target that refuses a
+ * query refuses it in native SQL too.
+ */
+function outcomeOf(query, target) {
+  if (query.translation === LdbcTranslation.NotTranslated) {
+    return { label: "—", countLabel: "not translated", className: "badge-ldbc-not-translated", reason: query.note };
+  }
+
+  const refusal = query.refusedBy.find((candidate) => candidate.target === target);
+  if (refusal) {
+    return { label: "refused", className: "badge-failure", reason: refusal.reason };
+  }
+
+  const fallback = query.fallbackBy.find((candidate) => candidate.target === target);
+  if (fallback) {
+    return { label: "native SQL", className: "badge-fallback", reason: fallback.reason };
+  }
+
+  return { label: TARGET_LANGUAGES[target], className: null, reason: null };
+}
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -225,6 +269,100 @@ function renderSummary(catalog) {
   }
 }
 
+// Without a class the label is plain text: the query stayed in the target's own language,
+// and only what left it - native SQL, a refusal - stands out as a badge.
+const badge = (label, className, reason) => {
+  const span = document.createElement("span");
+  span.className = className ? `badge ${className}` : "ldbc-language";
+  span.textContent = label;
+  if (reason) {
+    span.title = reason;
+  }
+  return span;
+};
+
+const cell = (tag, ...children) => {
+  const element = document.createElement(tag);
+  element.append(...children);
+  return element;
+};
+
+/*
+ * The overview: a row per query, a column per target, each cell the outcome of that pair.
+ * The rows follow the catalog and link to the query's own article; the footer counts each
+ * outcome per target, so the numbers in the prose above can be checked against the rows.
+ */
+function renderMatrix(catalog) {
+  const table = document.querySelector(".ldbc-matrix");
+  const head = table.querySelector("thead tr");
+  for (const target of TARGETS) {
+    const th = cell("th", ORM_LABELS[target]);
+    th.scope = "col";
+    head.append(th);
+  }
+
+  const body = table.querySelector("tbody");
+  for (const workload of Object.keys(WORKLOAD_TITLES).map(Number)) {
+    const queries = catalog.queries.filter((query) => query.workload === workload);
+    if (queries.length === 0) continue;
+
+    const group = cell("th", WORKLOAD_TITLES[workload]);
+    group.colSpan = 2 + TARGETS.length;
+    group.scope = "colgroup";
+    const groupRow = cell("tr", group);
+    groupRow.className = "ldbc-matrix-group";
+    body.append(groupRow);
+
+    for (const query of queries) {
+      const link = document.createElement("a");
+      link.href = `#${query.key}`;
+      link.textContent = `${WORKLOAD_PREFIXES[query.workload] ?? ""} ${query.number}`;
+      const title = cell("small", query.title);
+      const name = cell("th", link, " ", title);
+      name.scope = "row";
+
+      // As the target columns do, the status column marks only what departs: a simplified
+      // or untranslated query is a badge, one translated as specified is plain text.
+      const status = cell("td", badge(
+        SHORT_TRANSLATION_LABELS[query.translation] ?? "",
+        query.translation === LdbcTranslation.AsSpecified
+          ? null
+          : TRANSLATION_CLASSES[query.translation] ?? "badge-incompleteness",
+        null,
+      ));
+
+      const row = cell("tr", name, status);
+      for (const target of TARGETS) {
+        const outcome = outcomeOf(query, target);
+        row.append(cell("td", badge(outcome.label, outcome.className, outcome.reason)));
+      }
+      body.append(row);
+    }
+  }
+
+  const totals = cell("th", `${catalog.queries.length} queries`);
+  totals.scope = "row";
+  const translated = (translation) => catalog.queries.filter((query) => query.translation === translation).length;
+  const summary = cell(
+    "td",
+    ...Object.values(LdbcTranslation)
+      .filter((translation) => translated(translation) > 0)
+      .map((translation) => cell("div", `${translated(translation)} ${SHORT_TRANSLATION_LABELS[translation]}`)),
+  );
+  const footer = cell("tr", totals, summary);
+  for (const target of TARGETS) {
+    const counts = new Map();
+    for (const query of catalog.queries) {
+      const outcome = outcomeOf(query, target);
+      const label = outcome.countLabel ?? outcome.label;
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    const lines = [...counts].map(([label, count]) => cell("div", `${count} ${label}`));
+    footer.append(cell("td", ...lines));
+  }
+  table.querySelector("tfoot").append(footer);
+}
+
 async function init() {
   const status = document.querySelector(".ldbc-load-status");
 
@@ -240,6 +378,7 @@ async function init() {
   }
 
   renderSummary(catalog);
+  renderMatrix(catalog);
 
   renderArtifacts(document.querySelector(".ldbc-entities"), catalog.entities, { idPrefix: "ldbc-entity" });
   document.querySelector(".ldbc-entity-count").textContent = plural(catalog.entities.length, "file");
