@@ -77,6 +77,23 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     private readonly record struct GroupingKey(QueryOperand Key, string Name);
 
     /// <summary>
+    /// What the elements of the scope's groups are, when the GroupBy has an element selector
+    /// (decision 103: <c>group c by p.Id</c> after a join rewrites to
+    /// <c>GroupBy(x =&gt; x.p.Id, x =&gt; x.c)</c>); null when they are the rows the scope ranges
+    /// over. Saved and restored with the grouping keys.
+    /// </summary>
+    private GroupElement? groupElement;
+
+    /// <summary>
+    /// The elements of a group under an element selector: one side of a joined row, under its
+    /// alias - carried exactly, a lambda over the elements then ranges over that side -; a
+    /// value of the row - what an aggregate without an argument ranges over -; or neither,
+    /// when the selector is no shape the representation carries. Written is the selector as
+    /// the source has it, for the record that refuses a step over such elements.
+    /// </summary>
+    private sealed record GroupElement(string Written, string? Alias = null, QueryOperand? Value = null);
+
+    /// <summary>
     /// The shape of the row the lambdas of a scope range over. Before a join it is the one
     /// entity row of the source. The result selector of a join says what the joined row
     /// carries from there on - <c>(ol, o) =&gt; new { ol, o }</c> makes a row whose members
@@ -1124,10 +1141,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         string? elementParameter = null)
     {
         var enclosingGroupingKeys = groupingKeys;
+        var enclosingGroupElement = groupElement;
         var enclosingRow = row;
         var enclosingProjected = scopeProjected;
         var enclosingProjections = scopeProjections;
         groupingKeys = [];
+        groupElement = null;
         scopeProjected = false;
         scopeProjections = [];
         enclosingRows.Add(enclosingRow);
@@ -1139,6 +1158,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         finally
         {
             groupingKeys = enclosingGroupingKeys;
+            groupElement = enclosingGroupElement;
             row = enclosingRow;
             scopeProjected = enclosingProjected;
             scopeProjections = enclosingProjections;
@@ -1298,6 +1318,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             row = new EntityRow(sourceAlias);
             queryBuilder.From(name, sourceAlias);
             groupingKeys = [];
+            groupElement = null;
             scopeProjected = false;
             scopeProjections = [];
             return true;
@@ -1948,27 +1969,38 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        var onCondition = BuildJoinCondition(outerBody, innerBody, sourceAlias, rightAlias);
-        if (onCondition is null)
+        // The joined table's columns are named by its mapping before the result selector puts
+        // its row into the scope.
+        ConditionNode? onCondition;
+        joiningRow = new EntityRow(rightAlias, rightMap);
+        try
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "A join whose key selectors do not pair up column for column has no shape the query representation carries, and a query emitted without its join would return different rows; no artifact was generated.",
-                QueryFeature.Join);
-            return;
-        }
-
-        if (filters.Count > 0)
-        {
-            if (ReadFilters(filters, rightAlias, "joined sequence of the join") is not { } filter)
+            onCondition = BuildJoinCondition(outerBody, innerBody, sourceAlias, rightAlias);
+            if (onCondition is null)
             {
+                Report(
+                    ConversionRecordKind.Failure,
+                    "A join whose key selectors do not pair up column for column has no shape the query representation carries, and a query emitted without its join would return different rows; no artifact was generated.",
+                    QueryFeature.Join);
                 return;
             }
 
-            var conjuncts = new List<ConditionNode>();
-            Flatten(onCondition, LogicalOperator.And, conjuncts);
-            Flatten(filter, LogicalOperator.And, conjuncts);
-            onCondition = new LogicalCondition(LogicalOperator.And, conjuncts);
+            if (filters.Count > 0)
+            {
+                if (ReadFilters(filters, rightAlias, "joined sequence of the join") is not { } filter)
+                {
+                    return;
+                }
+
+                var conjuncts = new List<ConditionNode>();
+                Flatten(onCondition, LogicalOperator.And, conjuncts);
+                Flatten(filter, LogicalOperator.And, conjuncts);
+                onCondition = new LogicalCondition(LogicalOperator.And, conjuncts);
+            }
+        }
+        finally
+        {
+            joiningRow = null;
         }
 
         queryBuilder.Join(kind, sourceAlias, rightTable, onCondition, rightAlias);
@@ -2731,10 +2763,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     return null;
                 }
 
+                var outerAlias = OuterKeyAlias(outerKey, leftAlias);
                 equalities.Add(new ComparisonCondition(
-                    QueryOperand.Column(OuterKeyAlias(outerKey, leftAlias), left),
+                    QueryOperand.Column(outerAlias, ColumnOf(outerAlias, left)),
                     ComparisonOperator.Equal,
-                    QueryOperand.Column(rightAlias, right)));
+                    QueryOperand.Column(rightAlias, ColumnOf(rightAlias, right))));
             }
 
             return equalities.Count == 1
@@ -2749,10 +2782,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return null;
         }
 
+        var outerKeyAlias = OuterKeyAlias(outerBody, leftAlias);
         return new ComparisonCondition(
-            QueryOperand.Column(OuterKeyAlias(outerBody, leftAlias), outerName),
+            QueryOperand.Column(outerKeyAlias, ColumnOf(outerKeyAlias, outerName)),
             ComparisonOperator.Equal,
-            QueryOperand.Column(rightAlias, innerName));
+            QueryOperand.Column(rightAlias, ColumnOf(rightAlias, innerName)));
     }
 
     private string OuterKeyAlias(ExpressionSyntax outerKey, string leftAlias)
@@ -2826,7 +2860,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         {
             if (resolved is { } column)
             {
-                queryBuilder.Project(column.Alias, column.Column, alias);
+                queryBuilder.Project(column.Alias, ColumnOf(column.Alias, column.Column), alias);
                 return;
             }
 
@@ -2920,16 +2954,35 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        // GroupBy(key, element) and GroupBy(key, (key, group) => …) group the same rows;
-        // what the second lambda changes is what the steps after the grouping range over,
-        // which the representation has no place for. The groups are the same, so it is a
-        // loss with the artifact (decision 070), said rather than skipped (decision 048). The
-        // first shape is what `group c.Name by c.City` rewrites to (decision 103).
-        if (node.ArgumentList.Arguments.Count > 1)
+        // GroupBy(key, element) groups the same rows as GroupBy(key); what the element selector
+        // changes is what the steps after the grouping range over. It is what `group c by p.Id`
+        // and `group c.Name by c.City` rewrite to (decision 103), and it is read: as one side of
+        // the joined row, which a lambda over the elements then ranges over, or as a value,
+        // which an aggregate without an argument does. A selector of another shape is a loss
+        // with the artifact while nothing reads the elements - the groups are the same - and
+        // refuses the step that does (decision 070); read over the whole rows such a step
+        // would compute another value. GroupBy(key, (key, group) => …) shapes the result
+        // instead, which the representation has no place for (decision 048).
+        groupElement = null;
+        var arguments = node.ArgumentList.Arguments;
+        if (arguments.Count > 1
+            && arguments[1].Expression is SimpleLambdaExpressionSyntax { Body: ExpressionSyntax elementBody } elementSelector)
+        {
+            groupElement = ReadGroupElement(elementSelector, elementBody);
+            if (groupElement is { Alias: null, Value: null })
+            {
+                Report(
+                    ConversionRecordKind.Loss,
+                    $"The element selector '{elementSelector}' of GroupBy() is not a shape the query representation carries; the groups are the same, and a step that reads their elements is refused.",
+                    QueryFeature.Grouping);
+            }
+        }
+
+        if (arguments.Count > 1 && arguments[^1].Expression is ParenthesizedLambdaExpressionSyntax resultSelector)
         {
             Report(
                 ConversionRecordKind.Loss,
-                "Only the key selector of GroupBy() was read; its further argument - an element or a result selector - has no place in the query representation, and the steps after the grouping range over the whole rows of each group.",
+                $"The result selector '{resultSelector}' of GroupBy() has no place in the query representation; the steps after the grouping range over the whole rows of each group.",
                 QueryFeature.Grouping);
         }
 
@@ -2976,6 +3029,60 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         queryBuilder.GroupBy(key);
         groupingKeys.Add(new GroupingKey(key, name));
+    }
+
+    /// <summary>
+    /// The elements an element selector of a GroupBy makes (decision 103): the rows themselves
+    /// for the selector's own parameter (null), one side of the joined row for a member of it
+    /// that is a whole row (<c>x =&gt; x.c</c>), a value for a column or an expression of the row,
+    /// and neither for anything else.
+    /// </summary>
+    private GroupElement? ReadGroupElement(SimpleLambdaExpressionSyntax selector, ExpressionSyntax body)
+    {
+        if (body is IdentifierNameSyntax same && same.Identifier.Text == selector.Parameter.Identifier.Text)
+        {
+            return null;
+        }
+
+        var written = body.ToString();
+        if (TryResolveInScope(body, out var endsOnRow, out _) && endsOnRow is EntityRow side)
+        {
+            return new GroupElement(written, Alias: side.Alias);
+        }
+
+        var value = ReadElement(selector, body);
+        unread = null;
+        return value is { IsAggregate: false } && (value.IsColumn || value.IsExpression)
+            ? new GroupElement(written, Value: value)
+            : new GroupElement(written);
+    }
+
+    /// <summary>
+    /// The alias a lambda over the elements of a group reads its parameter as: the scope's own
+    /// row, or the side of the joined row the element selector named. Null, with the refusal
+    /// on the channel, when the elements are a value or a shape the representation does not
+    /// carry - read as the rows, the lambda would compute another value (decision 070).
+    /// </summary>
+    private string? ElementAlias(string what)
+    {
+        if (groupElement is null)
+        {
+            return sourceAlias;
+        }
+
+        if (groupElement.Alias is { } alias)
+        {
+            return alias;
+        }
+
+        var carried = groupElement.Value is null
+            ? "the query representation does not carry such elements"
+            : "the query representation carries a value as the elements only under an aggregate without an argument";
+        Report(
+            ConversionRecordKind.Failure,
+            $"{what} ranges over the elements of the group, which the element selector of GroupBy() made '{groupElement.Written}'; {carried}, and read as the rows the step would compute another value; no artifact was generated.",
+            QueryFeature.Grouping);
+        return null;
     }
 
     /// <summary>
@@ -3127,7 +3234,24 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         var argument = invocation.ArgumentList.Arguments.FirstOrDefault();
         if (argument is null && selector is null)
         {
-            // g.Count() counts rows, not a column.
+            // g.Count() counts the elements, as many as the rows whatever an element selector
+            // made of them. Sum(), Max() and their kin without an argument range over the
+            // elements themselves, which only a value element selector gives them (decision 103).
+            if (name != "COUNT" && groupElement is { Alias: null } elements)
+            {
+                if (elements.Value is { } value)
+                {
+                    aggregate = value.IsColumn
+                        ? QueryOperand.Column(value.Table, value.Property!, name)
+                        : QueryOperand.Computed(value.Expression!, name);
+                    return true;
+                }
+
+                ElementAlias($"The aggregate '{invocation}'");
+                aggregate = QueryOperand.Column(sourceAlias, "*", "COUNT");
+                return true;
+            }
+
             aggregate = QueryOperand.Column(sourceAlias, "*", name);
             return true;
         }
@@ -3153,11 +3277,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             }
         }
 
-        // The lambda's parameter is the element, a row of the source: while the body is
-        // read, its name stands for the source alias.
+        // The lambda's parameter is the element - a row of the source, or the side of the
+        // joined row the element selector named: while the body is read, its name stands for
+        // that alias. Elements of another shape refuse the aggregate, and a placeholder keeps
+        // the clause around it reading, as no artifact comes out of it.
+        if (ElementAlias($"The aggregate '{invocation}'") is not { } elementAlias)
+        {
+            aggregate = QueryOperand.Column(sourceAlias, "*", "COUNT");
+            return true;
+        }
+
         var element = lambda.Parameter.Identifier.Text;
         var shadowed = aliasSubstitutions.TryGetValue(element, out var previous);
-        aliasSubstitutions[element] = sourceAlias;
+        aliasSubstitutions[element] = elementAlias;
         QueryOperand? ranged;
         try
         {
@@ -3182,7 +3314,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         if (ranged.IsColumn)
         {
-            aggregate = QueryOperand.Column(ranged.Table ?? sourceAlias, ranged.Property!, name, distinct);
+            aggregate = QueryOperand.Column(ranged.Table ?? elementAlias, ranged.Property!, name, distinct);
             return true;
         }
 
@@ -3817,10 +3949,31 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return null;
         }
 
-        return QueryOperand.Column(alias, member);
+        return QueryOperand.Column(alias, ColumnOf(alias, member));
     }
 
-    /// <summary>The mapping of the row the alias names, in the scope being read or one around it; null where no mapping stands behind it.</summary>
+    /// <summary>
+    /// The column a member of a row stands for: the column the mapping behind the row states
+    /// for the property, or the member itself where no mapping stands behind the row or the
+    /// mapping names no other column. LINQ names properties and the representation carries
+    /// columns - the T-SQL reader reads them, the JPQL reader resolves an attribute to its
+    /// column the same way, and every visitor over entities writes a column back as its
+    /// property (<see cref="ColumnMember"/>). Carried as the member, a property over a
+    /// renamed column (<c>[Column("ShipToCity")] City</c>) became a column no table has in the
+    /// SQL targets, and a parameter compared with it found no scalar to take (decision 083).
+    /// </summary>
+    private string ColumnOf(string alias, string member)
+        => MapOfAlias(alias)?.PropertyMaps
+               .FirstOrDefault(p => string.Equals(p.Property.Name, member, StringComparison.Ordinal))
+               ?.ColumnName
+           ?? member;
+
+    /// <summary>
+    /// The mapping of the row the alias names, in the scope being read or one around it - or
+    /// the row a join is bringing in, while its key selectors and the filters of its joined
+    /// sequence are read, before the result selector makes it part of the scope's row; null
+    /// where no mapping stands behind it.
+    /// </summary>
     private EntityMap? MapOfAlias(string alias)
     {
         EntityMap? Find(RowShape shape) => shape switch
@@ -3830,8 +3983,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             _ => null,
         };
 
-        return Find(row) ?? enclosingRows.Select(Find).LastOrDefault(map => map is not null);
+        return Find(row)
+               ?? (joiningRow is { } joining ? Find(joining) : null)
+               ?? enclosingRows.Select(Find).LastOrDefault(map => map is not null);
     }
+
+    /// <summary>The row a join brings in, while its condition is read; null otherwise.</summary>
+    private EntityRow? joiningRow;
 
     /// <summary>An operand that may be a leaf of an expression: the lists and collections the factory refuses are refused here first, by name.</summary>
     private QueryOperand? ReadLeaf(ExpressionSyntax expression)
@@ -4304,12 +4462,17 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         return QueryOperand.Computed(QueryExpression.ListAggregate(value, separator, ordering));
     }
 
-    /// <summary>A body of a lambda over the elements of a group, read with its parameter standing for the source alias, as an aggregate's lambda is.</summary>
+    /// <summary>A body of a lambda over the elements of a group, read with its parameter standing for the alias the elements are rows of, as an aggregate's lambda is.</summary>
     private QueryOperand? ReadElement(SimpleLambdaExpressionSyntax lambda, ExpressionSyntax body)
     {
+        if (ElementAlias($"'{lambda}'") is not { } alias)
+        {
+            return null;
+        }
+
         var element = lambda.Parameter.Identifier.Text;
         var shadowed = aliasSubstitutions.TryGetValue(element, out var previous);
-        aliasSubstitutions[element] = sourceAlias;
+        aliasSubstitutions[element] = alias;
         try
         {
             return ReadLeaf(body);
@@ -4549,7 +4712,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         var sub = ReadSubQueryOperand(
             root!,
             steps,
-            () => queryBuilder.Project(sourceAlias, attribute, null, function, distinct),
+            () => queryBuilder.Project(sourceAlias, attribute == "*" ? attribute : ColumnOf(sourceAlias, attribute), null, function, distinct),
             elementParameter);
 
         return QueryOperand.Nested(sub);

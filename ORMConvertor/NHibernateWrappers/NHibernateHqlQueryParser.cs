@@ -1672,6 +1672,17 @@ public class NHibernateHqlQueryParser(
             {
                 aggregated = null;
             }
+            else if (argument.IsAggregate)
+            {
+                // max(sum(x)): the operand holds one aggregate, so rebuilt under the outer
+                // function it would lose the inner one and compute another value. No target
+                // writes an aggregate over an aggregate (decision 107); refused here, in the
+                // words of the template's gate, which sees only one inside an expression.
+                Report(ConversionRecordKind.Failure,
+                    $"The aggregate {function} stands over '{argument}', which is an aggregate itself, and no target writes an aggregate over an aggregate; no artifact was generated.",
+                    QueryFeature.Expression);
+                aggregated = argument;
+            }
             else if (argument is { IsColumn: true, IsAggregate: false, Property: "*" })
             {
                 aggregated = QueryOperand.Column(null, "*", function, distinct);

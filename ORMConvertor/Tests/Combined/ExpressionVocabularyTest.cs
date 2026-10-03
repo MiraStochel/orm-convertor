@@ -282,6 +282,46 @@ public class ExpressionVocabularyTest
         Assert.Equal(OneLine(sql), FellBack(Sql(ORMEnum.EclipseLink, sql), QueryFeature.Expression));
     }
 
+    /// <summary>
+    /// EF.Functions.DateDiff… takes two values of one type, so a date against a moment has no
+    /// overload C# can choose and the call does not compile (measured against EF Core
+    /// 10.0.10): EF Core writes such a query in native SQL, and two values of one type stay
+    /// in LINQ.
+    /// </summary>
+    [Fact]
+    public void EFCoreWritesADateDifferenceOverTwoTypesInNativeSql()
+    {
+        static EntityMap Loans()
+        {
+            var id = new Property { Name = "LoanId", Type = LangType.Scalar(ScalarType.Int) };
+            var due = new Property { Name = "DueOn", Type = LangType.Scalar(ScalarType.Date) };
+            var loaned = new Property { Name = "LoanedAt", Type = LangType.Scalar(ScalarType.DateTime) };
+            var returned = new Property { Name = "ReturnedAt", Type = LangType.Scalar(ScalarType.DateTime, isNullable: true) };
+
+            return new EntityMap
+            {
+                Entity = new Entity { Name = "Loan", Properties = [id, due, loaned, returned] },
+                Table = "Loans",
+                PropertyMaps = [.. new[] { id, due, loaned, returned }.Select(p => new PropertyMap { Property = p, ColumnName = p.Name })],
+            };
+        }
+
+        static AbstractQueryBuilder Read(string sql)
+        {
+            var builder = new EFCoreLinqQueryBuilder { EntityMaps = [Loans()] };
+            new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery, sql, [Loans()]);
+            return builder;
+        }
+
+        const string mixed = "SELECT l.LoanId AS LoanId, DATEDIFF(day, l.DueOn, l.ReturnedAt) AS DaysLate FROM Loans AS l";
+        Assert.Equal(mixed, FellBack(Read(mixed), QueryFeature.Expression));
+
+        Assert.Contains(
+            "DaysOut = EF.Functions.DateDiffDay(l.LoanedAt, l.ReturnedAt)",
+            Text(Read("SELECT l.LoanId AS LoanId, DATEDIFF(day, l.LoanedAt, l.ReturnedAt) AS DaysOut FROM Loans AS l")),
+            StringComparison.Ordinal);
+    }
+
     /// <summary>What LINQ and HQL 7.4 write reads back as the same call.</summary>
     [Fact]
     public void TheDateFunctionsReadBack()

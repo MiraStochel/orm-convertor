@@ -811,7 +811,7 @@ public sealed class EFCoreLinqQueryVisitor(
                 QueryFunction.CurrentTimestamp => "DateTime.Now",
                 QueryFunction.EscapePattern => EscapePattern(Receiver(arguments[0]), patternEscape ?? "!"),
                 QueryFunction.DateAdd => DateAdd(expression),
-                QueryFunction.DateDiff => $"EF.Functions.DateDiff{expression.Unit}({Operand(arguments[0])}, {Operand(arguments[1])})",
+                QueryFunction.DateDiff => DateDiff(expression),
                 QueryFunction.Round => Round(arguments[0], arguments[1]),
                 QueryFunction.Sqrt => $"Math.Sqrt({AsDouble(arguments[0])})",
                 QueryFunction.Cast => Cast(arguments[0], expression.CastTo!.Value),
@@ -839,6 +839,27 @@ public sealed class EFCoreLinqQueryVisitor(
         }
 
         return $"{Receiver(moment)}.Add{expression.Unit}s({Operand(count)})";
+    }
+
+    /// <summary>
+    /// DATEDIFF as EF.Functions.DateDiffYear through DateDiffSecond, which EF Core 10
+    /// translates to DATEDIFF with that unit. Each overload takes two values of one type - a
+    /// moment, a moment with an offset, a date, each also nullable - so a date against a moment
+    /// has no overload C# can choose and the call does not compile (measured against
+    /// Microsoft.EntityFrameworkCore.SqlServer 10.0.10); the query goes out in native SQL. A
+    /// side whose scalar this visitor cannot know - a parameter, typed by the gate from the
+    /// other side - is no mismatch.
+    /// </summary>
+    private string DateDiff(QueryExpression expression)
+    {
+        var (start, end) = (expression.Arguments![0], expression.Arguments[1]);
+        if (ScalarOf(start) is { } from && ScalarOf(end) is { } to && from != to)
+        {
+            report(ConversionRecordKind.Fallback, $"EF.Functions.DateDiff{expression.Unit} has no overload over a {from} and a {to}", QueryFeature.Expression);
+            return string.Empty;
+        }
+
+        return $"EF.Functions.DateDiff{expression.Unit}({Operand(start)}, {Operand(end)})";
     }
 
     /// <summary>

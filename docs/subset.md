@@ -280,12 +280,12 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | převod do jiného typu než `INT`, `BIGINT`, `REAL`, `FLOAT`, `NVARCHAR(MAX)`, s délkou či do neunicode textu; `DATEADD`, `DATEDIFF` s týdnem, čtvrtletím či milisekundou; `ROUND` se třetím argumentem | mohly by změnit hodnotu; třetí argument mění zaokrouhlení na ořez | nečte se | VM | [113] |
 | `+`, jehož ani jedna strana není typovaná | cíle ho hláskují různě (konkatenace, nebo sčítání) | `Failure` (`Expression`) (b) | VM | [107] |
 | aritmetika, `COALESCE`, `CASE` nad skaláry, které se nesjednotí (`Decimal` s `Float`) | C# nepřeloží, T-SQL porovná jinou hodnotu | `Failure` (b) | VM | [107] |
-| agregát nad agregátem (`SUM(COUNT(*))`), i do seznamu | žádný cíl ho nezapíše | `Failure` (b); přes odvozenou tabulku se nese | VM | [107], [112] |
+| agregát nad agregátem (`SUM(COUNT(*))`), i do seznamu | žádný cíl ho nezapíše | `Failure`: přímo vnořený (`MAX(SUM(x))`) při čtení (č), uvnitř výrazu bránou (b); přes odvozenou tabulku se nese | VM | [107], [112] |
 | výraz v projekci bez aliasu | sloupec bez jména nečte žádný cíl, jméno se nevymýšlí | `Failure` (b); konstanta bez aliasu `Loss` (č) | VM | [107], [028] |
 | výraz jako prvek výčtu či počet řádků | ty mají vlastní uzavřené tvary | `Failure` (č) | VM | [074], [085], [107] |
 | konkatenace nad sloupcem ve zdroji LINQ | C# bere `null` jako prázdný řetězec, SQL, HQL i JPQL vracejí `NULL` | `Loss` (č); artefakt má sémantiku SQL | VM | [107] |
 | funkce, kterou deskriptor cíle neuvádí: `DateAdd`, `DateDiff` u NHibernatu, k nim `Cast` u EclipseLinku | sonda proti připnuté verzi zápis nepotvrdila | `Fallback` (b) | VM | [113] |
-| převod textu na text do NHibernatu (`NVARCHAR(4000)`) a Hibernatu (`varchar(max)`); do EF Core `Math.Round` nad celým číslem, hodina a menší jednotka k datu bez času, převod textu na číslo | jazyk cíle tvar má, ale s jinou hodnotou | `Fallback` (z) | VM | [113] |
+| převod textu na text do NHibernatu (`NVARCHAR(4000)`) a Hibernatu (`varchar(max)`); do EF Core `Math.Round` nad celým číslem, hodina a menší jednotka k datu bez času, převod textu na číslo, rozdíl dat nad datem a okamžikem | jazyk cíle tvar má, ale s jinou hodnotou, nebo bez přetížení pro dva typy | `Fallback` (z) | VM | [113] |
 | `CASE` bez `ELSE` do LINQ, kde brána skalár větví neodvodí | C# nemá čím otypovat `null` | `Failure` (z) | VM | [107] |
 | konstruktor `DateTime` s počítaným argumentem či neexistujícím datem; řetězec okamžiku mimo ISO 8601 proti časovému sloupci | vyhodnotit ho = spustit program; databáze by ho odmítla až za běhu | konstruktor nečte se; řetězec `Failure` (`Filtering`) (b) | VM | [024], [070] |
 | alias projekce, který je klíčovým slovem HQL (`ascending`, `descending`); jméno mezivýsledku (`WITH`, odvozená tabulka) psané jako klíčové slovo | alias a jméno jsou slova zdroje, nepřepisují se (alias řádku, který je klíčovým slovem HQL, a v JPQL každá proměnná řádku i výsledková proměnná, která je vyhrazeným identifikátorem — např. EclipseLink `size` —, se naopak píše s podtržítkem na konci, §5) | nehlásí se; odmítne ho až framework | VM | [028] |
@@ -297,7 +297,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | projekce, `HAVING` či řazení seskupeného dotazu se sloupcem mimo klíč a agregát; klíč seskupení, který agreguje či je okenní funkcí | pravidlo seskupení SQL | `Failure` (`Grouping`) (b) | VM | [113] |
 | agregát vedle prostých sloupců bez seskupení | neplatný už zdroj | `Incompleteness`; artefakt vznikne a odmítne ho databáze | VM | [§7] |
 | `GROUP BY ROLLUP`, `CUBE`, `GROUPING SETS` | model je nenese | `Failure` (č) | VM | [070] |
-| LINQ `GroupBy` s druhým argumentem (selektor prvků, result selector) | čte se jen klíč | `Loss` (`Grouping`) (č) | VM | [103] |
+| LINQ selektor prvků `GroupBy` jiného tvaru než strana spojeného řádku či hodnota (anonymní objekt …); result selector | model je nenese | `Loss` (`Grouping`) (č); krok, který prvky takového selektoru čte (lambda nad nimi, agregát bez argumentu), `Failure` (č) | VM | [103] |
 | cíl EF Core: klíč-výraz, který žádná projekce nepojmenuje; agregát přes celý výsledek bez seskupení | anonymní klíč by chtěl vymyšlené jméno; LINQ agregát přes vše vysloví jen vykonávacím voláním | `Fallback` (z) | VM | [028], [113] |
 | cíl EclipseLink: klíč seskupení s literálem | literál naváže jako parametr, seskupení se liší od projekce | `Fallback` (z) | VM | [113] |
 | okenní agregát (`SUM(…) OVER`), rámec okna, okno bez řazení, jiná okenní funkce než tři řadicí | slovník nese jen řazení nad oknem s povinným řazením | nečte se (`WindowFunction`) | VM | [113] |

@@ -1469,6 +1469,20 @@ public class SqlQueryReader(
             return null;
         }
 
+        // An aggregate over an aggregate - MAX(SUM(x)), MAX(COUNT(*)) - has no form in any
+        // target, and the operand holds one aggregate: rebuilt under the outer function it
+        // would lose the inner one and compute another value. The template's gate refuses the
+        // aggregate it finds inside an expression (decision 107); this one is refused here, in
+        // the gate's words, and reading goes on over the inner aggregate.
+        if (argument.IsAggregate)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The aggregate {function} stands over '{argument}', which is an aggregate itself, and no target writes an aggregate over an aggregate; no artifact was generated.",
+                QueryFeature.Expression);
+            return argument;
+        }
+
         if (argument.IsColumn)
         {
             return QueryOperand.Column(argument.Table, argument.Property!, function, distinct);

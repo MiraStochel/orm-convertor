@@ -253,19 +253,70 @@ public class LinqQueryExpressionTest
     }
 
     /// <summary>
-    /// <c>group o.OrderId by o.CustomerId</c> is GroupBy(key, element): the groups are the
-    /// same rows, what the element selector changes has no place in the representation,
-    /// and it is said (decision 048) rather than skipped.
+    /// <c>group o.OrderId by o.CustomerId</c> is GroupBy(key, element) with a value as the
+    /// element: the groups are the same rows, and an aggregate without an argument ranges over
+    /// the value, while Count() counts the elements, as many as the rows.
     /// </summary>
     [Fact]
-    public void AGroupedElementOtherThanTheRangeVariableIsALoss()
+    public void AGroupedValueIsWhatAnAggregateWithoutAnArgumentRangesOver()
     {
-        var builder = Parse(new DapperSqlQueryBuilder(), Method("from o in ctx.CustomerOrders group o.OrderId by o.CustomerId into g select g.Key"));
+        var builder = Parse(new DapperSqlQueryBuilder(), Method(
+            "from o in ctx.CustomerOrders group o.OrderId by o.CustomerId into g select new { Customer = g.Key, Highest = g.Max(), Orders = g.Count() }"));
 
-        Assert.Contains("GROUP BY o.CustomerId", Sql(builder));
+        AssertSql(
+            """
+            SELECT o.CustomerId AS Customer, MAX(o.OrderId) AS Highest, COUNT(*) AS Orders
+            FROM Sales.CustomerOrders AS o
+            GROUP BY o.CustomerId
+            """,
+            Sql(builder));
+        AssertClean(builder);
+    }
+
+    /// <summary>
+    /// <c>group l by o.CustomerId</c> after a join is GroupBy(x =&gt; x.o.CustomerId, x =&gt; x.l):
+    /// the elements are the rows of l, and a lambda over them reads the columns of l - the
+    /// same SQL the chain over the whole joined row gives. Read over the first row of the
+    /// join, the sum used to come out as SUM(o.Quantity): a column of the other table, or
+    /// another value wherever both tables have a column of that name.
+    /// </summary>
+    [Fact]
+    public void AGroupedSideOfAJoinIsWhatTheAggregatesRangeOver()
+    {
+        const string query =
+            "from o in ctx.CustomerOrders join l in ctx.OrderLines on new { o.CompanyId, o.OrderId } equals new { l.CompanyId, l.OrderId } "
+            + "group l by o.CustomerId into g select new { Customer = g.Key, Quantity = g.Sum(x => x.Quantity), Lines = g.Count() }";
+
+        AssertSameAsChain(
+            query,
+            "ctx.CustomerOrders.Join(ctx.OrderLines, o => new { o.CompanyId, o.OrderId }, l => new { l.CompanyId, l.OrderId }, (o, l) => new { o, l })"
+            + ".GroupBy(t => t.o.CustomerId).Select(g => new { Customer = g.Key, Quantity = g.Sum(t => t.l.Quantity), Lines = g.Count() })");
+        Assert.Contains("SUM(l.Quantity) AS Quantity", SqlOf(query), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A lambda over grouped values has no place in the representation, and read over the
+    /// rows it would compute another value, so it refuses the artifact (decision 070).
+    /// </summary>
+    [Fact]
+    public void ALambdaOverGroupedValuesRefusesTheArtifact()
+    {
+        var builder = Parse(new DapperSqlQueryBuilder(), Method(
+            "from o in ctx.CustomerOrders group o.OrderId by o.CustomerId into g select new { Customer = g.Key, Highest = g.Max(x => x * 2) }"));
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Grouping);
+    }
+
+    /// <summary>A result selector shapes the result, which the representation has no place for: a loss, said (decision 048) rather than skipped.</summary>
+    [Fact]
+    public void AResultSelectorOfGroupByIsALoss()
+    {
+        var builder = Parse(new DapperSqlQueryBuilder(), Method("ctx.CustomerOrders.GroupBy(o => o.CustomerId, (k, g) => new { k, n = g.Count() })"));
+
         var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
         Assert.Equal(QueryFeature.Grouping, record.Feature);
-        Assert.Contains("Only the key selector of GroupBy() was read", record.Reason);
+        Assert.Contains("result selector", record.Reason, StringComparison.Ordinal);
     }
 
     [Fact]

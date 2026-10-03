@@ -364,6 +364,33 @@ public class ExpressionOperandTest
         AssertRefused(Sql(new DapperSqlQueryBuilder(), "SELECT SUM(COUNT(*) * 2) AS X FROM Sales.Products p GROUP BY p.Sku"), QueryFeature.Expression);
     }
 
+    /// <summary>
+    /// An aggregate directly over another is refused by each reader that reads it. The operand
+    /// holds one aggregate, and rebuilt under the outer function it used to lose the inner one:
+    /// MAX(SUM(x)) came out as MAX(x) - a valid query with another value - and MAX(COUNT(*))
+    /// as MAX(*), both without a record.
+    /// </summary>
+    [Theory]
+    [InlineData("sql", "SELECT MAX(SUM(p.Quantity)) AS X FROM Sales.Products p GROUP BY p.Sku")]
+    [InlineData("sql", "SELECT MAX(COUNT(*)) AS X FROM Sales.Products p GROUP BY p.Sku")]
+    [InlineData("sql", "SELECT p.Sku AS Sku FROM Sales.Products p GROUP BY p.Sku HAVING AVG(SUM(p.UnitPrice)) > 1")]
+    [InlineData("jpql", "select max(sum(p.Quantity)) as X from Product p group by p.Sku")]
+    [InlineData("jpql", "select max(count(p)) as X from Product p group by p.Sku")]
+    [InlineData("hql", "select max(sum(p.Quantity)) as X from Product p group by p.Sku")]
+    [InlineData("hql", "select max(count(*)) as X from Product p group by p.Sku")]
+    public void AnAggregateDirectlyOverAnAggregateRefusesTheArtifact(string language, string query)
+    {
+        var read = language switch
+        {
+            "sql" => Sql(new DapperSqlQueryBuilder(), query),
+            "jpql" => Jpql(new DapperSqlQueryBuilder(), query),
+            _ => Hql(new DapperSqlQueryBuilder(), query),
+        };
+
+        var record = AssertRefused(read, QueryFeature.Expression);
+        Assert.Contains("is an aggregate itself", record.Reason, StringComparison.Ordinal);
+    }
+
     /// <summary>A function outside the vocabulary in a projection is a loss, as it was, now named under the category of expressions.</summary>
     [Fact]
     public void AFunctionOutsideTheVocabularyInAProjectionIsALoss()
