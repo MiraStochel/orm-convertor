@@ -379,6 +379,21 @@ public static class LdbcSnbSample
         "HQL of Hibernate 7.4 converts a text into varchar(max), which would lose characters a tag name may hold, so the query goes out as native SQL through createNativeQuery.");
 
     /// <summary>
+    /// A join inside a subquery, which EclipseLink 5.0 leaves out of the SQL it writes, with
+    /// its condition (measured when the validation set judged the catalog, decision 117): the
+    /// subquery would answer other rows without an error, so the query goes to native SQL.
+    /// </summary>
+    private static readonly LdbcFallback EclipseLinkSubqueryJoin = new(Model.ORMEnum.EclipseLink,
+        "EclipseLink 5.0 leaves a join inside a subquery out of the SQL it writes, so the subquery would answer other rows; the query goes out as native SQL through createNativeQuery.");
+
+    /// <summary>
+    /// An outer join whose condition names an inner join: EclipseLink 5.0 writes the inner joins
+    /// after every outer one, and SQL Server refuses the condition (measured the same way).
+    /// </summary>
+    private static readonly LdbcFallback EclipseLinkOuterJoinOrder = new(Model.ORMEnum.EclipseLink,
+        "EclipseLink 5.0 writes the inner joins after the outer ones, so the condition of the outer join would name a table SQL Server has not met yet; the query goes out as native SQL through createNativeQuery.");
+
+    /// <summary>
     /// The one shape the native query of EclipseLink cannot take: a list parameter, which it
     /// hands the driver as one value instead of expanding it (decision 113, measured).
     /// </summary>
@@ -387,6 +402,23 @@ public static class LdbcSnbSample
 
     private static readonly LdbcParameter PersonId = new("personId", "BIGINT", "4398046513938");
     private static readonly LdbcParameter MessageId = new("messageId", "BIGINT", "1374390048303");
+
+    // The binding of an Interactive query to its judge, the validation set (decision 117): which
+    // field of the driver's operation feeds which parameter of the text, and which field of the
+    // driver's result answers which column of the text.
+
+    private static LdbcArgument Bind(string parameter, string field) => new(parameter, field);
+
+    private static LdbcResultField Column(string column, string field, LdbcValueKind kind = LdbcValueKind.Value) => new(column, field, kind);
+
+    private static LdbcResultField Moment(string column, string field) => new(column, field, LdbcValueKind.Moment);
+
+    /// <summary>The e-mails, languages and tag names the text joins with semicolons.</summary>
+    private static LdbcResultField Names(string column, string field) => new(column, field, LdbcValueKind.Set, ";");
+
+    /// <summary>A university or a company of IC 1: its name, the year and the place, joined by commas, the list by semicolons.</summary>
+    private static LdbcResultField Organisations(string column, string field)
+        => new(column, field, LdbcValueKind.Set, ";", ["organizationName", "year", "placeName"], ",");
 
     /// <summary>The 41 read queries, in the order of the specification.</summary>
     public static IReadOnlyList<LdbcQuery> Queries { get; } =
@@ -401,7 +433,14 @@ public static class LdbcSnbSample
             FROM Person AS p
             WHERE p.Id = @personId
             """,
-            [PersonId]),
+            [PersonId],
+            Validation: new("IS1", [Bind("personId", "personIdSQ1")],
+            [
+                Column("FirstName", "firstName"), Column("LastName", "lastName"),
+                Column("Birthday", "birthday", LdbcValueKind.Date), Column("LocationIp", "locationIp"),
+                Column("BrowserUsed", "browserUsed"), Column("CityId", "cityId"), Column("Gender", "gender"),
+                Moment("CreationDate", "creationDate"),
+            ])),
 
         new("is2", LdbcWorkload.InteractiveShort, 2, "Recent messages of a person", LdbcTranslation.AsSpecified,
             "The last ten messages with the post that started each thread and its author. Walking replyOf up to the root "
@@ -418,7 +457,15 @@ public static class LdbcSnbSample
             WHERE m.CreatorPersonId = @personId
             ORDER BY m.CreationDate DESC, m.Id DESC
             """,
-            [PersonId]),
+            [PersonId],
+            Validation: new("IS2", [Bind("personId", "personIdSQ2")],
+            [
+                Column("MessageId", "messageId"), Column("MessageContent", "messageContent"),
+                Moment("MessageCreationDate", "messageCreationDate"), Column("OriginalPostId", "originalPostId"),
+                Column("OriginalPostAuthorId", "originalPostAuthorId"),
+                Column("OriginalPostAuthorFirstName", "originalPostAuthorFirstName"),
+                Column("OriginalPostAuthorLastName", "originalPostAuthorLastName"),
+            ])),
 
         new("is3", LdbcWorkload.InteractiveShort, 3, "Friends of a person", LdbcTranslation.AsSpecified,
             "One step along knows, ordered by an attribute of the edge itself.",
@@ -429,7 +476,12 @@ public static class LdbcSnbSample
             WHERE k.Person1Id = @personId
             ORDER BY k.CreationDate DESC, f.Id ASC
             """,
-            [PersonId]),
+            [PersonId],
+            Validation: new("IS3", [Bind("personId", "personIdSQ3")],
+            [
+                Column("PersonId", "personId"), Column("FirstName", "firstName"), Column("LastName", "lastName"),
+                Moment("FriendshipCreationDate", "friendshipCreationDate"),
+            ])),
 
         new("is4", LdbcWorkload.InteractiveShort, 4, "Content of a message", LdbcTranslation.AsSpecified,
             "A lookup by key. A post carries either content or an image file, so the text is the first of the two that is set.",
@@ -438,7 +490,9 @@ public static class LdbcSnbSample
             FROM Message AS m
             WHERE m.Id = @messageId
             """,
-            [MessageId]),
+            [MessageId],
+            Validation: new("IS4", [Bind("messageId", "messageIdContent")],
+                [Moment("MessageCreationDate", "messageCreationDate"), Column("MessageContent", "messageContent")])),
 
         new("is5", LdbcWorkload.InteractiveShort, 5, "Creator of a message", LdbcTranslation.AsSpecified,
             "A lookup by key and one join along a foreign key.",
@@ -448,7 +502,9 @@ public static class LdbcSnbSample
             JOIN Person AS p ON p.Id = m.CreatorPersonId
             WHERE m.Id = @messageId
             """,
-            [MessageId]),
+            [MessageId],
+            Validation: new("IS5", [Bind("messageId", "messageIdCreator")],
+                [Column("PersonId", "personId"), Column("FirstName", "firstName"), Column("LastName", "lastName")])),
 
         new("is6", LdbcWorkload.InteractiveShort, 6, "Forum of a message", LdbcTranslation.AsSpecified,
             "The forum that contains the thread of a message and its moderator. A comment reaches its forum through the "
@@ -461,7 +517,12 @@ public static class LdbcSnbSample
             JOIN Person AS mo ON mo.Id = f.ModeratorPersonId
             WHERE m.Id = @messageId
             """,
-            [MessageId]),
+            [MessageId],
+            Validation: new("IS6", [Bind("messageId", "messageForumId")],
+            [
+                Column("ForumId", "forumId"), Column("ForumTitle", "forumTitle"), Column("ModeratorId", "moderatorId"),
+                Column("ModeratorFirstName", "moderatorFirstName"), Column("ModeratorLastName", "moderatorLastName"),
+            ])),
 
         new("is7", LdbcWorkload.InteractiveShort, 7, "Replies of a message", LdbcTranslation.AsSpecified,
             "Direct replies with their authors and whether the author of the reply knows the author of the message: an "
@@ -477,7 +538,15 @@ public static class LdbcSnbSample
             WHERE m.Id = @messageId
             ORDER BY c.CreationDate DESC, ra.Id ASC
             """,
-            [MessageId]),
+            [MessageId],
+            FallbackBy: [EclipseLinkOuterJoinOrder],
+            Validation: new("IS7", [Bind("messageId", "messageRepliesId")],
+            [
+                Column("CommentId", "commentId"), Column("CommentContent", "commentContent"),
+                Moment("CommentCreationDate", "commentCreationDate"), Column("ReplyAuthorId", "replyAuthorId"),
+                Column("ReplyAuthorFirstName", "replyAuthorFirstName"), Column("ReplyAuthorLastName", "replyAuthorLastName"),
+                Column("ReplyAuthorKnowsOriginalMessageAuthor", "isReplyAuthorKnowsOriginalMessageAuthor", LdbcValueKind.Flag),
+            ])),
 
         // Interactive complex reads (specification section 6.1).
 
@@ -524,7 +593,17 @@ public static class LdbcSnbSample
             ORDER BY DistanceFromPerson ASC, p.LastName ASC, p.Id ASC
             """,
             [PersonId, new("firstName", "NVARCHAR(80)", "John")],
-            FallbackBy: [EFCoreCorrelatedList, NHibernateList, EclipseLinkList]),
+            FallbackBy: [EFCoreCorrelatedList, NHibernateList, EclipseLinkList],
+            Validation: new("IC1", [Bind("personId", "personIdQ1"), Bind("firstName", "firstName")],
+            [
+                Column("FriendId", "friendId"), Column("FriendLastName", "friendLastName"),
+                Column("DistanceFromPerson", "distanceFromPerson"), Column("FriendBirthday", "friendBirthday", LdbcValueKind.Date),
+                Moment("FriendCreationDate", "friendCreationDate"), Column("FriendGender", "friendGender"),
+                Column("FriendBrowserUsed", "friendBrowserUsed"), Column("FriendLocationIp", "friendLocationIp"),
+                Column("FriendCityName", "friendCityName"), Names("FriendEmails", "friendEmails"),
+                Names("FriendLanguages", "friendLanguages"), Organisations("FriendUniversities", "friendUniversities"),
+                Organisations("FriendCompanies", "friendCompanies"),
+            ])),
 
         new("ic2", LdbcWorkload.InteractiveComplex, 2, "Recent messages by your friends", LdbcTranslation.AsSpecified,
             "One step along knows, then the messages of the friends before a date, newest first.",
@@ -538,7 +617,13 @@ public static class LdbcSnbSample
             WHERE k.Person1Id = @personId AND m.CreationDate < @maxDate
             ORDER BY m.CreationDate DESC, m.Id ASC
             """,
-            [PersonId, new("maxDate", "DATE", "2012-01-01")]),
+            [PersonId, new("maxDate", "DATE", "2012-01-01")],
+            Validation: new("IC2", [Bind("personId", "personIdQ2"), Bind("maxDate", "maxDate")],
+            [
+                Column("PersonId", "personId"), Column("PersonFirstName", "personFirstName"),
+                Column("PersonLastName", "personLastName"), Column("MessageId", "messageId"),
+                Column("MessageContent", "messageContent"), Moment("MessageCreationDate", "messageCreationDate"),
+            ])),
 
         new("ic3", LdbcWorkload.InteractiveComplex, 3, "Friends and friends of friends that have been to given countries", LdbcTranslation.AsSpecified,
             "Friends and friends of friends living outside two countries who wrote messages in both: two counts over "
@@ -567,7 +652,18 @@ public static class LdbcSnbSample
             ORDER BY MessageCount DESC, p.Id ASC
             """,
             [PersonId, new("countryXName", "NVARCHAR(256)", "India"), new("countryYName", "NVARCHAR(256)", "China"),
-             new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-07-01")]),
+             new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-07-01")],
+            FallbackBy: [EclipseLinkSubqueryJoin],
+            Validation: new("IC3",
+            [
+                Bind("personId", "personIdQ3"), Bind("countryXName", "countryXName"), Bind("countryYName", "countryYName"),
+                Bind("startDate", "startDate"), new("endDate", "startDate", LdbcDerivation.PlusDays, "durationDays"),
+            ],
+            [
+                Column("OtherPersonId", "personId"), Column("OtherPersonFirstName", "personFirstName"),
+                Column("OtherPersonLastName", "personLastName"), Column("XCount", "xCount"), Column("YCount", "yCount"),
+                Column("MessageCount", "count"),
+            ])),
 
         new("ic4", LdbcWorkload.InteractiveComplex, 4, "New topics", LdbcTranslation.AsSpecified,
             "Tags on the friends' posts inside a window that no friend's post carried before it: a correlated NOT EXISTS "
@@ -593,7 +689,11 @@ public static class LdbcSnbSample
             GROUP BY t.Name
             ORDER BY PostCount DESC, t.Name ASC
             """,
-            [PersonId, new("startDate", "DATE", "2011-06-01"), new("endDate", "DATE", "2011-07-01")]),
+            [PersonId, new("startDate", "DATE", "2011-06-01"), new("endDate", "DATE", "2011-07-01")],
+            FallbackBy: [EclipseLinkSubqueryJoin],
+            Validation: new("IC4",
+                [Bind("personId", "personIdQ4"), Bind("startDate", "startDate"), new("endDate", "startDate", LdbcDerivation.PlusDays, "durationDays")],
+                [Column("TagName", "tagName"), Column("PostCount", "postCount")])),
 
         new("ic5", LdbcWorkload.InteractiveComplex, 5, "New groups", LdbcTranslation.AsSpecified,
             "Forums that friends and friends of friends joined after a date, with the posts they wrote there; an outer "
@@ -612,7 +712,9 @@ public static class LdbcSnbSample
             GROUP BY f.Id, f.Title
             ORDER BY PostCount DESC, f.Id ASC
             """,
-            [PersonId, new("minDate", "DATE", "2012-06-01")], FallbackBy: [EFCoreOrdering]),
+            [PersonId, new("minDate", "DATE", "2012-06-01")], FallbackBy: [EFCoreOrdering, EclipseLinkSubqueryJoin, EclipseLinkOuterJoinOrder],
+            Validation: new("IC5", [Bind("personId", "personIdQ5"), Bind("minDate", "minDate")],
+                [Column("ForumTitle", "forumTitle"), Column("PostCount", "postCount")])),
 
         new("ic6", LdbcWorkload.InteractiveComplex, 6, "Tag co-occurrence", LdbcTranslation.AsSpecified,
             "The tags that appear beside a given tag on posts of friends and friends of friends: two joins over the same "
@@ -635,7 +737,10 @@ public static class LdbcSnbSample
             GROUP BY ot.Name
             ORDER BY PostCount DESC, ot.Name ASC
             """,
-            [PersonId, new("tagName", "NVARCHAR(256)", "Augustine_of_Hippo")]),
+            [PersonId, new("tagName", "NVARCHAR(256)", "Augustine_of_Hippo")],
+            FallbackBy: [EclipseLinkSubqueryJoin],
+            Validation: new("IC6", [Bind("personId", "personIdQ6"), Bind("tagName", "tagName")],
+                [Column("OtherTagName", "tagName"), Column("PostCount", "postCount")])),
 
         new("ic7", LdbcWorkload.InteractiveComplex, 7, "Recent likers", LdbcTranslation.Simplified,
             "The most recent like of every person who liked the start person's messages - an arg-max per person, written "
@@ -666,7 +771,14 @@ public static class LdbcSnbSample
             ORDER BY l.CreationDate DESC, f.Id ASC
             """,
             [PersonId],
-            FallbackBy: [NHibernateDates, EclipseLinkDates]),
+            FallbackBy: [NHibernateDates, EclipseLinkDates],
+            Validation: new("IC7", [Bind("personId", "personIdQ7")],
+            [
+                Column("PersonId", "personId"), Column("PersonFirstName", "personFirstName"),
+                Column("PersonLastName", "personLastName"), Moment("LikeCreationDate", "likeCreationDate"),
+                Column("MessageId", "messageId"), Column("MessageContent", "messageContent"),
+                Column("MinutesLatency", "minutesLatency"), Column("IsNew", "isNew", LdbcValueKind.Flag),
+            ])),
 
         new("ic8", LdbcWorkload.InteractiveComplex, 8, "Recent replies", LdbcTranslation.AsSpecified,
             "The newest direct replies to the start person's messages: a self-join of Message over ParentMessageId.",
@@ -680,7 +792,13 @@ public static class LdbcSnbSample
             WHERE m.CreatorPersonId = @personId
             ORDER BY c.CreationDate DESC, c.Id ASC
             """,
-            [PersonId]),
+            [PersonId],
+            Validation: new("IC8", [Bind("personId", "personIdQ8")],
+            [
+                Column("CommentAuthorId", "personId"), Column("CommentAuthorFirstName", "personFirstName"),
+                Column("CommentAuthorLastName", "personLastName"), Moment("CommentCreationDate", "commentCreationDate"),
+                Column("CommentId", "commentId"), Column("CommentContent", "commentContent"),
+            ])),
 
         new("ic9", LdbcWorkload.InteractiveComplex, 9, "Recent messages by friends or friends of friends", LdbcTranslation.AsSpecified,
             "The newest messages of persons one or two steps away, before a date.",
@@ -698,7 +816,14 @@ public static class LdbcSnbSample
                                WHERE k1.Person1Id = @personId))
             ORDER BY m.CreationDate DESC, m.Id ASC
             """,
-            [PersonId, new("maxDate", "DATE", "2011-01-01")]),
+            [PersonId, new("maxDate", "DATE", "2011-01-01")],
+            FallbackBy: [EclipseLinkSubqueryJoin],
+            Validation: new("IC9", [Bind("personId", "personIdQ9"), Bind("maxDate", "maxDate")],
+            [
+                Column("OtherPersonId", "personId"), Column("OtherPersonFirstName", "personFirstName"),
+                Column("OtherPersonLastName", "personLastName"), Column("MessageId", "messageId"),
+                Column("MessageContent", "messageContent"), Moment("MessageCreationDate", "messageCreationDate"),
+            ])),
 
         new("ic10", LdbcWorkload.InteractiveComplex, 10, "Friend recommendation", LdbcTranslation.AsSpecified,
             "Friends of friends who are not friends, born around a given month, ranked by the posts that do and do not carry "
@@ -723,7 +848,15 @@ public static class LdbcSnbSample
             GROUP BY f.Id, f.FirstName, f.LastName, f.Gender, city.Name
             ORDER BY CommonInterestScore DESC, f.Id ASC
             """,
-            [PersonId, new("month", "INT", "5"), new("nextMonth", "INT", "6")]),
+            [PersonId, new("month", "INT", "5"), new("nextMonth", "INT", "6")],
+            FallbackBy: [EclipseLinkSubqueryJoin],
+            Validation: new("IC10",
+                [Bind("personId", "personIdQ10"), Bind("month", "month"), new("nextMonth", "month", LdbcDerivation.NextMonth)],
+            [
+                Column("PersonId", "personId"), Column("PersonFirstName", "personFirstName"),
+                Column("PersonLastName", "personLastName"), Column("CommonInterestScore", "commonInterestScore"),
+                Column("PersonGender", "personGender"), Column("PersonCityName", "personCityName"),
+            ])),
 
         new("ic11", LdbcWorkload.InteractiveComplex, 11, "Job referral", LdbcTranslation.AsSpecified,
             "Friends and friends of friends who started at a company in a given country before a year; three sort keys "
@@ -744,7 +877,15 @@ public static class LdbcSnbSample
                                WHERE k1.Person1Id = @personId))
             ORDER BY w.WorkFrom ASC, p.Id ASC, o.Name DESC
             """,
-            [PersonId, new("countryName", "NVARCHAR(256)", "China"), new("workFromYear", "INT", "2010")]),
+            [PersonId, new("countryName", "NVARCHAR(256)", "China"), new("workFromYear", "INT", "2010")],
+            FallbackBy: [EclipseLinkSubqueryJoin],
+            Validation: new("IC11",
+                [Bind("personId", "personIdQ11"), Bind("countryName", "countryName"), Bind("workFromYear", "workFromYear")],
+            [
+                Column("OtherPersonId", "personId"), Column("OtherPersonFirstName", "personFirstName"),
+                Column("OtherPersonLastName", "personLastName"), Column("CompanyName", "organizationName"),
+                Column("WorkFrom", "organizationWorkFromYear"),
+            ])),
 
         new("ic12", LdbcWorkload.InteractiveComplex, 12, "Expert search", LdbcTranslation.AsSpecified,
             "Friends' direct replies to posts whose tag belongs to a tag class or any class below it, with the names of "
@@ -790,7 +931,12 @@ public static class LdbcSnbSample
             ORDER BY rc.ReplyCount DESC, rc.PersonId ASC
             """,
             [PersonId, new("tagClassName", "NVARCHAR(256)", "Person")],
-            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion, HibernateTextCast]),
+            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion, HibernateTextCast],
+            Validation: new("IC12", [Bind("personId", "personIdQ12"), Bind("tagClassName", "tagClassName")],
+            [
+                Column("PersonId", "personId"), Column("PersonFirstName", "personFirstName"),
+                Column("PersonLastName", "personLastName"), Names("TagNames", "tagNames"), Column("ReplyCount", "replyCount"),
+            ])),
 
         new("ic13", LdbcWorkload.InteractiveComplex, 13, "Single shortest path", LdbcTranslation.Simplified,
             "The length of the shortest path along knows between two persons: 0 for one person, -1 where there is no "
@@ -815,50 +961,86 @@ public static class LdbcSnbSample
             WHERE w.PersonId = @person2Id
             """,
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "96")],
-            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
+            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion],
+            Validation: new("IC13", [Bind("person1Id", "person1IdQ13StartNode"), Bind("person2Id", "person2IdQ13EndNode")],
+                [Column("ShortestPathLength", "shortestPathLength")])),
 
         new("ic14", LdbcWorkload.InteractiveComplex, 14, "Trusted connection paths", LdbcTranslation.Simplified,
             "Every shortest path between two persons with its weight - one for every reply to a post and a half for every "
             + "reply to a comment between the neighbours along it, both ways -, the path as the identifiers of its persons "
-            + "joined by commas. The weights of the edges are a definition over the replies; the search is a recursive "
-            + "definition (decision 113) that carries the path as text, converted from the identifiers, and does not step "
-            + "into a person the path already holds. The walk is bounded at three steps, as in IC 13, so two persons further "
-            + "apart have no path.",
+            + "joined by commas. The search is a recursive definition (decision 113) that walks along knows from the first "
+            + "person and carries the persons of its first two steps; its last step goes only to the second person, since "
+            + "no longer walk is kept, and a walk that returns to a person it passed is never among the shortest, so none "
+            + "is excluded. The shortest walks are then split into their steps and each step is weighed over the replies "
+            + "between its two persons: weights joined inside the recursion would be computed again for every step of "
+            + "every walk. The identifiers of the path are converted from columns, because a parameter converted into "
+            + "text is one HQL cannot show to fit a code page. The walk is bounded at three steps, as in IC 13, so two "
+            + "persons further apart have no path.",
             """
-            WITH Interaction AS (
-                SELECT c.CreatorPersonId AS ReplierId, p.CreatorPersonId AS AuthorId,
-                       SUM(CASE WHEN p.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) AS Score
-                FROM Message AS c
-                JOIN Message AS p ON p.Id = c.ParentMessageId
-                GROUP BY c.CreatorPersonId, p.CreatorPersonId),
-            Edge AS (
-                SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId,
-                       CAST(COALESCE(i1.Score, 0.0) + COALESCE(i2.Score, 0.0) AS FLOAT) AS Score
-                FROM Person_knows_Person AS k
-                LEFT JOIN Interaction AS i1 ON i1.ReplierId = k.Person1Id AND i1.AuthorId = k.Person2Id
-                LEFT JOIN Interaction AS i2 ON i2.ReplierId = k.Person2Id AND i2.AuthorId = k.Person1Id),
-            Walk AS (
-                SELECT p.Id AS PersonId, CAST(p.Id AS NVARCHAR(MAX)) AS Path, 0 AS Steps, CAST(0 AS FLOAT) AS Score
+            WITH Walk AS (
+                SELECT p.Id AS PersonId, 0 AS Steps, CAST(NULL AS BIGINT) AS Step1Id, CAST(NULL AS BIGINT) AS Step2Id
                 FROM Person AS p
                 WHERE p.Id = @person1Id
                 UNION ALL
-                SELECT e.ToPersonId, w.Path + ',' + CAST(e.ToPersonId AS NVARCHAR(MAX)), w.Steps + 1, w.Score + e.Score
+                SELECT k.Person2Id, w.Steps + 1,
+                       CASE WHEN w.Steps = 0 THEN k.Person2Id ELSE w.Step1Id END,
+                       CASE WHEN w.Steps = 1 THEN k.Person2Id ELSE w.Step2Id END
                 FROM Walk AS w
-                JOIN Edge AS e ON e.FromPersonId = w.PersonId
+                JOIN Person_knows_Person AS k ON k.Person1Id = w.PersonId
                 WHERE w.Steps < 3
                   AND w.PersonId <> @person2Id
-                  AND ',' + w.Path + ',' NOT LIKE '%,' + CAST(e.ToPersonId AS NVARCHAR(MAX)) + ',%'),
+                  AND (w.Steps < 2 OR k.Person2Id = @person2Id)),
             Reached AS (
-                SELECT w.Path AS Path, w.Steps AS Steps, w.Score AS Score
+                SELECT w.PersonId AS PersonId, w.Steps AS Steps, w.Step1Id AS Step1Id, w.Step2Id AS Step2Id
                 FROM Walk AS w
-                WHERE w.PersonId = @person2Id)
-            SELECT r.Path AS PersonIdsInPath, r.Score AS PathWeight
-            FROM Reached AS r
-            WHERE r.Steps = (SELECT MIN(m.Steps) FROM Reached AS m)
-            ORDER BY r.Score DESC, r.Path ASC
+                WHERE w.PersonId = @person2Id),
+            Shortest AS (
+                SELECT r.Steps AS Steps, r.Step1Id AS Step1Id, r.Step2Id AS Step2Id,
+                       CAST(f.Id AS NVARCHAR(MAX)) + COALESCE(',' + CAST(r.Step1Id AS NVARCHAR(MAX)), '')
+                           + COALESCE(',' + CAST(r.Step2Id AS NVARCHAR(MAX)), '')
+                           + CASE WHEN r.Steps = 3 THEN ',' + CAST(r.PersonId AS NVARCHAR(MAX)) ELSE '' END AS Path
+                FROM Reached AS r
+                JOIN Person AS f ON f.Id = @person1Id
+                WHERE r.Steps = (SELECT MIN(m.Steps) FROM Reached AS m)),
+            Hop AS (
+                SELECT s.Path AS Path, CAST(NULL AS BIGINT) AS FromPersonId, CAST(NULL AS BIGINT) AS ToPersonId
+                FROM Shortest AS s
+                WHERE s.Steps = 0
+                UNION ALL
+                SELECT s.Path, @person1Id, s.Step1Id
+                FROM Shortest AS s
+                WHERE s.Steps >= 1
+                UNION ALL
+                SELECT s.Path, s.Step1Id, s.Step2Id
+                FROM Shortest AS s
+                WHERE s.Steps >= 2
+                UNION ALL
+                SELECT s.Path, s.Step2Id, @person2Id
+                FROM Shortest AS s
+                WHERE s.Steps = 3),
+            Weight AS (
+                SELECT h.Path AS Path,
+                       (SELECT COALESCE(SUM(CASE WHEN p.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END), 0.0)
+                        FROM Message AS c
+                        JOIN Message AS p ON p.Id = c.ParentMessageId
+                        WHERE c.CreatorPersonId = h.FromPersonId AND p.CreatorPersonId = h.ToPersonId)
+                       + (SELECT COALESCE(SUM(CASE WHEN p.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END), 0.0)
+                          FROM Message AS c
+                          JOIN Message AS p ON p.Id = c.ParentMessageId
+                          WHERE c.CreatorPersonId = h.ToPersonId AND p.CreatorPersonId = h.FromPersonId) AS Score
+                FROM Hop AS h)
+            SELECT wt.Path AS PersonIdsInPath, CAST(SUM(wt.Score) AS FLOAT) AS PathWeight
+            FROM Weight AS wt
+            GROUP BY wt.Path
+            ORDER BY PathWeight DESC, wt.Path ASC
             """,
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65")],
-            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
+            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion],
+            // The specification orders the paths by their weight alone, so two paths of one
+            // weight come in either order: the rows are compared as a set.
+            Validation: new("IC14", [Bind("person1Id", "person1IdQ14StartNode"), Bind("person2Id", "person2IdQ14EndNode")],
+                [new("PersonIdsInPath", "personIdsInPath", LdbcValueKind.Sequence, ","), Column("PathWeight", "pathWeight")],
+                Ordered: false)),
 
         // Business Intelligence reads (specification section 8.4).
 
@@ -904,7 +1086,8 @@ public static class LdbcSnbSample
             ORDER BY Diff DESC, t.Name ASC
             """,
             [new("tagClass", "NVARCHAR(256)", "MusicalArtist"), new("window1Start", "DATE", "2011-01-01"),
-             new("window1End", "DATE", "2011-04-11"), new("window2End", "DATE", "2011-07-20")]),
+             new("window1End", "DATE", "2011-04-11"), new("window2End", "DATE", "2011-07-20")],
+            FallbackBy: [EclipseLinkOuterJoinOrder]),
 
         new("bi3", LdbcWorkload.BusinessIntelligence, 3, "Popular topics in a country", LdbcTranslation.AsSpecified,
             "Forums moderated by someone living in a country, counted by their messages with a tag of a tag class: eight "
@@ -989,7 +1172,8 @@ public static class LdbcSnbSample
             GROUP BY m.CreatorPersonId, t.Id
             ORDER BY Score DESC, m.CreatorPersonId ASC
             """,
-            [new("tag", "NVARCHAR(256)", "Hamid_Karzai")]),
+            [new("tag", "NVARCHAR(256)", "Hamid_Karzai")],
+            FallbackBy: [EclipseLinkSubqueryJoin, EclipseLinkOuterJoinOrder]),
 
         new("bi6", LdbcWorkload.BusinessIntelligence, 6, "Most authoritative users on a given topic", LdbcTranslation.AsSpecified,
             "The authority of an author of messages with a tag is the sum of the popularity of everyone who liked those "
@@ -1011,7 +1195,8 @@ public static class LdbcSnbSample
             GROUP BY m.CreatorPersonId, t.Id
             ORDER BY AuthorityScore DESC, m.CreatorPersonId ASC
             """,
-            [new("tag", "NVARCHAR(256)", "Peter_Hain")]),
+            [new("tag", "NVARCHAR(256)", "Peter_Hain")],
+            FallbackBy: [EclipseLinkSubqueryJoin]),
 
         new("bi7", LdbcWorkload.BusinessIntelligence, 7, "Related topics", LdbcTranslation.AsSpecified,
             "The tags of direct replies to messages with a tag, among the replies that do not carry that tag themselves: "
@@ -1110,7 +1295,8 @@ public static class LdbcSnbSample
             GROUP BY e.Id, t.Name
             ORDER BY MessageCount DESC, t.Name ASC, e.Id ASC
             """,
-            [PersonId, new("country", "NVARCHAR(256)", "China"), new("tagClass", "NVARCHAR(256)", "MusicalArtist")]),
+            [PersonId, new("country", "NVARCHAR(256)", "China"), new("tagClass", "NVARCHAR(256)", "MusicalArtist")],
+            FallbackBy: [EclipseLinkSubqueryJoin]),
 
         new("bi11", LdbcWorkload.BusinessIntelligence, 11, "Friend triangles", LdbcTranslation.AsSpecified,
             "Triangles of friendships created in an interval among persons of one country: a cyclic self-join of the edge "
@@ -1302,7 +1488,8 @@ public static class LdbcSnbSample
             """,
             [new("tagA", "NVARCHAR(256)", "Imelda_Marcos"), new("dateA", "DATE", "2012-05-08"), new("dateAEnd", "DATE", "2012-05-09"),
              new("tagB", "NVARCHAR(256)", "Muammar_Gaddafi"), new("dateB", "DATE", "2011-10-16"), new("dateBEnd", "DATE", "2011-10-17"),
-             new("maxKnowsLimit", "INT", "5")]),
+             new("maxKnowsLimit", "INT", "5")],
+            FallbackBy: [EclipseLinkSubqueryJoin]),
 
         new("bi17", LdbcWorkload.BusinessIntelligence, 17, "Information propagation analysis", LdbcTranslation.AsSpecified,
             "A message with a tag in one forum, a message with the tag by a member of that forum in another forum the first "

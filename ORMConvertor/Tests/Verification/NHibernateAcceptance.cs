@@ -52,46 +52,75 @@ internal static class NHibernateAcceptance
         Action<global::NHibernate.ISessionFactory, Assembly> use)
     {
         var entities = Assembly.Load(compiledEntities);
-        var assemblyName = entities.GetName().Name!;
-
-        // NHibernate resolves class names through Assembly.Load, which cannot see an
-        // assembly loaded from a byte image; the handler hands it ours and nothing else.
-        // The event is process-global and matched by name alone, so two handlers live at
-        // once could answer each other's resolutions with the wrong assembly - the gate
-        // below, not a naming convention, is what keeps only one of them installed.
-        ResolveEventHandler resolveGeneratedEntities = (_, args) =>
-            new AssemblyName(args.Name).Name == assemblyName ? entities : null;
 
         using var gate = AssemblyResolveGate.EnterScope();
+        using var resolve = new GeneratedEntitiesResolver(entities);
+        using var sessionFactory = Configure(mappingXmls, entities).BuildSessionFactory();
 
-        AppDomain.CurrentDomain.AssemblyResolve += resolveGeneratedEntities;
-        try
+        use(sessionFactory, entities);
+    }
+
+    /// <summary>
+    /// Builds the session factory the same way and hands it out for as long as the caller
+    /// keeps it, for a run that executes one generated query many times over (decision 117).
+    /// The resolve handler and the gate are held only while the factory is built: that is
+    /// when NHibernate resolves the classes the mapping names, and a built factory resolves
+    /// nothing new at runtime - it holds the types themselves. The caller disposes the factory.
+    /// </summary>
+    public static (global::NHibernate.ISessionFactory Factory, Assembly Entities) OpenSessionFactory(
+        byte[] compiledEntities,
+        IEnumerable<string> mappingXmls)
+    {
+        var entities = Assembly.Load(compiledEntities);
+
+        using var gate = AssemblyResolveGate.EnterScope();
+        using var resolve = new GeneratedEntitiesResolver(entities);
+
+        return (Configure(mappingXmls, entities).BuildSessionFactory(), entities);
+    }
+
+    private static Configuration Configure(IEnumerable<string> mappingXmls, Assembly entities)
+    {
+        var configuration = new Configuration();
+        configuration.SetProperty(global::NHibernate.Cfg.Environment.Dialect, typeof(MsSql2012Dialect).AssemblyQualifiedName);
+
+        // The dialect's default driver reflects over System.Data.SqlClient, which this
+        // solution deliberately does not carry; the driver of Microsoft.Data.SqlClient
+        // is stated instead. No connection is configured - none is attempted.
+        configuration.SetProperty(global::NHibernate.Cfg.Environment.ConnectionDriver, typeof(MicrosoftDataSqlClientDriver).AssemblyQualifiedName);
+
+        // By default the factory build would open a connection just to read the
+        // dialect's reserved words; that is the only step of it needing a database,
+        // so it is switched off rather than supplied with one.
+        configuration.SetProperty(global::NHibernate.Cfg.Environment.Hbm2ddlKeyWords, "none");
+
+        foreach (var mappingXml in mappingXmls)
         {
-            var configuration = new Configuration();
-            configuration.SetProperty(global::NHibernate.Cfg.Environment.Dialect, typeof(MsSql2012Dialect).AssemblyQualifiedName);
-
-            // The dialect's default driver reflects over System.Data.SqlClient, which this
-            // solution deliberately does not carry; the driver of Microsoft.Data.SqlClient
-            // is stated instead. No connection is configured - none is attempted.
-            configuration.SetProperty(global::NHibernate.Cfg.Environment.ConnectionDriver, typeof(MicrosoftDataSqlClientDriver).AssemblyQualifiedName);
-
-            // By default the factory build would open a connection just to read the
-            // dialect's reserved words; that is the only step of it needing a database,
-            // so it is switched off rather than supplied with one.
-            configuration.SetProperty(global::NHibernate.Cfg.Environment.Hbm2ddlKeyWords, "none");
-
-            foreach (var mappingXml in mappingXmls)
-            {
-                configuration.AddXmlString(QualifyAssembly(mappingXml, assemblyName));
-            }
-
-            using var sessionFactory = configuration.BuildSessionFactory();
-            use(sessionFactory, entities);
+            configuration.AddXmlString(QualifyAssembly(mappingXml, entities.GetName().Name!));
         }
-        finally
+
+        return configuration;
+    }
+
+    /// <summary>
+    /// NHibernate resolves class names through Assembly.Load, which cannot see an assembly
+    /// loaded from a byte image; the handler hands it ours and nothing else. The event is
+    /// process-global and matched by name alone, so two handlers live at once could answer
+    /// each other's resolutions with the wrong assembly - the gate, held by every caller
+    /// around this, not a naming convention, is what keeps only one of them installed.
+    /// </summary>
+    private sealed class GeneratedEntitiesResolver : IDisposable
+    {
+        private readonly ResolveEventHandler handler;
+
+        public GeneratedEntitiesResolver(Assembly entities)
         {
-            AppDomain.CurrentDomain.AssemblyResolve -= resolveGeneratedEntities;
+            var assemblyName = entities.GetName().Name!;
+            handler = (_, args) => new AssemblyName(args.Name).Name == assemblyName ? entities : null;
+            AppDomain.CurrentDomain.AssemblyResolve += handler;
         }
+
+        public void Dispose() => AppDomain.CurrentDomain.AssemblyResolve -= handler;
     }
 
     /// <summary>

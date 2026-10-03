@@ -32,5 +32,18 @@ public static class Ldbc
                 [.. query.Parameters.Select(parameter => new LdbcParameterDefinition(
                     parameter.Name, parameter.SqlType, parameter.Example, parameter.IsList))],
                 [.. query.Refusals.Select(refusal => new LdbcRefusalDefinition(refusal.Target, refusal.Reason))],
-                [.. query.Fallbacks.Select(fallback => new LdbcRefusalDefinition(fallback.Target, fallback.Reason))]))]);
+                [.. query.Fallbacks.Select(fallback => new LdbcRefusalDefinition(fallback.Target, fallback.Reason))],
+                Validation(query.Validation)))]);
+
+    private static LdbcValidationDefinition? Validation(LdbcValidation? validation)
+        => validation is null
+            ? null
+            : new(
+                validation.Operation,
+                [.. validation.Arguments.Select(argument => new LdbcArgumentDefinition(
+                    argument.Parameter, argument.Field, argument.Derivation, argument.Operand))],
+                [.. validation.Fields.Select(field => new LdbcResultFieldDefinition(
+                    field.Column, field.Field, field.Kind, field.Separator,
+                    field.Elements is null ? null : [.. field.Elements], field.ElementSeparator))],
+                validation.Ordered);
 }

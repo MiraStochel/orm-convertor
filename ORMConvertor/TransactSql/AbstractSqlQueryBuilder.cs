@@ -116,9 +116,12 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
     {
         foreach (var join in clauses.Joins)
         {
+            // A line feed, as every other line of the statement: AppendLine would write the
+            // platform's line end, and on Windows the subquery flattened by its line feeds
+            // kept a bare carriage return, which ends a line of the raw string in C#.
             if (artifact.Joins.Length > 0)
             {
-                artifact.Joins.AppendLine();
+                artifact.Joins.Append('\n');
             }
 
             artifact.Joins.Append(join.Accept(visitor));

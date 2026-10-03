@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Data;
 using System.Reflection;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -40,7 +39,12 @@ internal static class DotNetQueryRunner
         string? mutated = null)
     {
         var conversion = Translate(query, source, target, fixture);
-        var rows = Execute(query, source, target, conversion, fixture, mutated);
+
+        using var prepared = PreparedQuery.Prepare(
+            AssemblyName(query, source, target), target, conversion, TestDatabase.ConnectionString!, mutated);
+
+        // The matrix states the arguments in the order of the method's parameters.
+        var rows = prepared.Run(query.Id, [.. query.Arguments.Select(argument => argument.Materialize())], query.Fields, query.Projection);
         var rendered = rows.Select(row => ResultRow.Render(row, query.Settings));
 
         return query.Ordered ? [.. rendered] : ResultRow.Sorted(rendered);
@@ -76,6 +80,162 @@ internal static class DotNetQueryRunner
             .Single(source => source.ContentType == ConversionContentType.CSharpQuery)
             .Content;
 
+    /// <summary>
+    /// A name of its own per query, source and target. Assemblies are loaded into the test
+    /// process and never unloaded, so two runs sharing a name would be two different images
+    /// under one name - and NHibernate resolves persistent classes by assembly name.
+    /// </summary>
+    private static string AssemblyName(DifferentialQuery query, ORMEnum source, ORMEnum target)
+        => $"Differential_{query.Id.Replace('-', '_')}_{source}_{target}";
+}
+
+/// <summary>
+/// A generated query compiled once and run as often as its caller needs: the differential
+/// matrix runs each artifact once, the replay of the LDBC validation set (decision 117) runs
+/// one artifact for every read of its operation, thousands of times, so the compilation, the
+/// EF Core model and the NHibernate factory are built here once and only the run repeats.
+/// A run takes a connection of its own from the pool - EF Core opens and closes the
+/// connection of its context around every query -, so nothing a run does stays open after it.
+/// </summary>
+internal sealed class PreparedQuery : IDisposable
+{
+    private readonly ORMEnum target;
+    private readonly string connectionString;
+    private readonly MethodInfo method;
+    private readonly SqlConnection? contextConnection;
+    private readonly DbContext? context;
+    private readonly ISessionFactory? sessionFactory;
+
+    private PreparedQuery(
+        ORMEnum target,
+        string connectionString,
+        MethodInfo method,
+        SqlConnection? contextConnection = null,
+        DbContext? context = null,
+        ISessionFactory? sessionFactory = null)
+    {
+        this.target = target;
+        this.connectionString = connectionString;
+        this.method = method;
+        this.contextConnection = contextConnection;
+        this.context = context;
+        this.sessionFactory = sessionFactory;
+    }
+
+    /// <summary>The parameters of the query, after the framework's handle (decision 083).</summary>
+    public IReadOnlyList<ParameterInfo> Parameters => method.GetParameters()[1..];
+
+    /// <summary>
+    /// Compiles the generated query - or the mutation of it a negative case supplies - with
+    /// the entities of the conversion, under an assembly name of its own: assemblies are loaded
+    /// into the test process and never unloaded, so two compilations sharing a name would be
+    /// two different images under one name, and NHibernate resolves persistent classes by
+    /// assembly name. The run is the framework's own, over the given database.
+    /// </summary>
+    public static PreparedQuery Prepare(
+        string assemblyName, ORMEnum target, ConversionResult conversion, string connectionString, string? mutated = null)
+    {
+        var entities = EntitySources(conversion).ToList();
+        var queryMethod = DotNetQueryRunner.QueryMethod(conversion, mutated);
+
+        switch (target)
+        {
+            case ORMEnum.Dapper:
+            {
+                var compiled = GeneratedQueryCompiler.CompileOrFail(
+                    assemblyName,
+                    queryMethod,
+                    entities,
+                    GeneratedQueryCompiler.DapperConsumerReferences,
+                    Usings(conversion, "using Dapper;" + Environment.NewLine + "using System.Data;"));
+
+                return new PreparedQuery(target, connectionString, GeneratedMethod(Assembly.Load(compiled)));
+            }
+
+            case ORMEnum.EFCore:
+            {
+                var compiled = GeneratedQueryCompiler.CompileOrFail(
+                    assemblyName,
+                    queryMethod,
+                    entities,
+                    GeneratedQueryCompiler.EFCoreConsumerReferences,
+                    Usings(conversion, "using Microsoft.EntityFrameworkCore;"));
+
+                var assembly = Assembly.Load(compiled);
+                var connection = new SqlConnection(connectionString);
+
+                return new PreparedQuery(
+                    target, connectionString, GeneratedMethod(assembly), connection, EFCoreAcceptance.OpenContext(assembly, connection));
+            }
+
+            case ORMEnum.NHibernate:
+            {
+                var mappings = conversion.Sources
+                    .Where(source => source.ContentType == ConversionContentType.XML)
+                    .Select(source => source.Content)
+                    .ToList();
+
+                var compiled = GeneratedQueryCompiler.CompileOrFail(
+                    assemblyName,
+                    queryMethod,
+                    entities,
+                    GeneratedQueryCompiler.NHibernateConsumerReferences,
+                    Usings(conversion, "using NHibernate;"));
+
+                var (factory, assembly) = NHibernateAcceptance.OpenSessionFactory(compiled, mappings);
+
+                return new PreparedQuery(target, connectionString, GeneratedMethod(assembly), sessionFactory: factory);
+            }
+
+            default:
+                throw new NotSupportedException(
+                    $"{target} is not a framework this suite runs; its half of the matrix is the Java suite's.");
+        }
+    }
+
+    /// <summary>
+    /// Runs the query with the arguments in the order of its parameters and returns the rows,
+    /// each with the fields read in the order given. Dapper materializes a whole-entity query
+    /// into the generated entity type and a projection into its own untyped row, a dictionary
+    /// keyed by the columns the projection named (decision 104); EF Core projects into an
+    /// anonymous type whose members carry the projected names; both are read by name. HQL hands
+    /// a projection back as an object array per row and an entity as the instance itself, so
+    /// for NHibernate the shape of the query decides how a row is read.
+    /// </summary>
+    public List<object?[]> Run(string id, IReadOnlyList<object?> arguments, IReadOnlyList<string> fields, bool projection)
+    {
+        switch (target)
+        {
+            case ORMEnum.Dapper:
+            {
+                using var connection = new SqlConnection(connectionString);
+                connection.Open();
+
+                return Rows(Invoke(id, connection, arguments), id, fields, positional: false);
+            }
+
+            case ORMEnum.EFCore:
+                return Rows(Invoke(id, context!, arguments), id, fields, positional: false);
+
+            default:
+            {
+                using var connection = new SqlConnection(connectionString);
+                connection.Open();
+                using var session = sessionFactory!.WithOptions().Connection(connection).OpenSession();
+
+                var list = ((IQuery)Invoke(id, session, arguments)!).List();
+                return Rows(list, id, fields, positional: projection);
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        context?.Dispose();
+        contextConnection?.Dispose();
+        sessionFactory?.Dispose();
+    }
+
     private static IEnumerable<string> EntitySources(ConversionResult conversion)
         => conversion.Sources
             .Where(source => source.ContentType == ConversionContentType.CSharpEntity)
@@ -98,149 +258,59 @@ internal static class DotNetQueryRunner
         return string.Join(Environment.NewLine, declarations.Prepend(frameworkUsings));
     }
 
-    private static List<object?[]> Execute(
-        DifferentialQuery query,
-        ORMEnum source,
-        ORMEnum target,
-        ConversionResult conversion,
-        TestSchemaFixture fixture,
-        string? mutated)
-        => target switch
-        {
-            ORMEnum.Dapper => RunDapper(query, source, conversion, fixture, mutated),
-            ORMEnum.EFCore => RunEFCore(query, source, conversion, fixture, mutated),
-            ORMEnum.NHibernate => RunNHibernate(query, source, conversion, fixture, mutated),
-            _ => throw new NotSupportedException(
-                $"{target} is not a framework this suite runs; its half of the matrix is the Java suite's."),
-        };
-
-    private static List<object?[]> RunDapper(
-        DifferentialQuery query, ORMEnum source, ConversionResult conversion, TestSchemaFixture fixture, string? mutated)
-    {
-        var compiled = GeneratedQueryCompiler.CompileOrFail(
-            AssemblyName(query, source, ORMEnum.Dapper),
-            QueryMethod(conversion, mutated),
-            EntitySources(conversion),
-            GeneratedQueryCompiler.DapperConsumerReferences,
-            Usings(conversion, "using Dapper;" + Environment.NewLine + "using System.Data;"));
-
-        var assembly = Assembly.Load(compiled);
-
-        using var connection = fixture.OpenConnection();
-        var returned = Invoke(assembly, query, connection);
-
-        // Dapper materializes a whole-entity query into the generated entity type and a
-        // projection into its own untyped row, a dictionary keyed by the columns the
-        // projection named (decision 104); both are therefore read by name.
-        return Rows(returned, query, positional: false);
-    }
-
-    private static List<object?[]> RunEFCore(
-        DifferentialQuery query, ORMEnum source, ConversionResult conversion, TestSchemaFixture fixture, string? mutated)
-    {
-        var compiled = GeneratedQueryCompiler.CompileOrFail(
-            AssemblyName(query, source, ORMEnum.EFCore),
-            QueryMethod(conversion, mutated),
-            EntitySources(conversion),
-            GeneratedQueryCompiler.EFCoreConsumerReferences,
-            Usings(conversion, "using Microsoft.EntityFrameworkCore;"));
-
-        var assembly = Assembly.Load(compiled);
-
-        using var connection = fixture.OpenConnection();
-        using var context = EFCoreAcceptance.OpenContext(assembly, connection);
-
-        var returned = Invoke(assembly, query, context);
-
-        // A projection is an anonymous type whose members carry the projected names, so
-        // this side reads by name whichever shape the query has.
-        return Rows(returned, query, positional: false);
-    }
-
-    private static List<object?[]> RunNHibernate(
-        DifferentialQuery query, ORMEnum source, ConversionResult conversion, TestSchemaFixture fixture, string? mutated)
-    {
-        var mappings = conversion.Sources
-            .Where(s => s.ContentType == ConversionContentType.XML)
-            .Select(s => s.Content)
-            .ToList();
-
-        var compiled = GeneratedQueryCompiler.CompileOrFail(
-            AssemblyName(query, source, ORMEnum.NHibernate),
-            QueryMethod(conversion, mutated),
-            EntitySources(conversion),
-            GeneratedQueryCompiler.NHibernateConsumerReferences,
-            Usings(conversion, "using NHibernate;"));
-
-        List<object?[]> rows = [];
-
-        NHibernateAcceptance.UseSessionFactory(compiled, mappings, (factory, assembly) =>
-        {
-            using var connection = fixture.OpenConnection();
-            using var session = factory.WithOptions().Connection(connection).OpenSession();
-
-            var returned = Invoke(assembly, query, session);
-            var list = ((IQuery)returned!).List();
-
-            // HQL hands a projection back as an object array per row and an entity as the
-            // instance itself, so the shape of the query decides how a row is read.
-            rows = Rows(list, query, positional: query.Projection);
-        });
-
-        return rows;
-    }
-
-    /// <summary>
-    /// Calls the one generated method. Its first parameter is the framework's handle - a
-    /// connection, a context, a session - and the parameters of the query follow it
-    /// (decision 083); the matrix states their values.
-    /// </summary>
-    private static object? Invoke(Assembly assembly, DifferentialQuery query, object handle)
-    {
-        var method = assembly.GetTypes()
+    /// <summary>The one generated method. Its first parameter is the framework's handle - a connection, a context, a session.</summary>
+    private static MethodInfo GeneratedMethod(Assembly assembly)
+        => assembly.GetTypes()
             .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static))
             .Single(candidate => candidate.DeclaringType?.Name == "GeneratedQueries");
 
+    /// <summary>Calls the generated method with the handle in front of the parameters of the query (decision 083).</summary>
+    private object? Invoke(string id, object handle, IReadOnlyList<object?> arguments)
+    {
         var parameters = method.GetParameters();
 
         Assert.True(
-            parameters.Length == query.Arguments.Count + 1,
-            $"{query.Id}: the generated method takes {parameters.Length} parameters, and the matrix "
-            + $"binds {query.Arguments.Count} beside the framework's handle.");
+            parameters.Length == arguments.Count + 1,
+            $"{id}: the generated method takes {parameters.Length} parameters, and the caller "
+            + $"binds {arguments.Count} beside the framework's handle.");
 
-        object?[] arguments =
+        object?[] values =
         [
             handle,
-            .. query.Arguments.Select((argument, index) => Argument(argument.Materialize(), parameters[index + 1].ParameterType)),
+            .. arguments.Select((argument, index) => Argument(argument, parameters[index + 1].ParameterType)),
         ];
 
-        return method.Invoke(null, arguments);
+        return method.Invoke(null, values);
     }
 
     /// <summary>
-    /// The materialized value as the parameter wants it: as it is where it already fits -
-    /// an array where the method takes an IEnumerable of the element -, converted where the
-    /// scalar is spelled with another width.
+    /// The value as the parameter wants it: as it is where it already fits - an array where
+    /// the method takes an IEnumerable of the element -, converted where the scalar is spelled
+    /// with another width, and a moment at midnight as the date a DateOnly parameter is.
     /// </summary>
-    private static object Argument(object value, Type parameterType)
+    private static object? Argument(object? value, Type parameterType)
     {
-        if (parameterType.IsInstanceOfType(value))
+        if (value is null || parameterType.IsInstanceOfType(value))
         {
             return value;
         }
 
-        return Convert.ChangeType(
-            value,
-            Nullable.GetUnderlyingType(parameterType) ?? parameterType,
-            System.Globalization.CultureInfo.InvariantCulture);
+        var type = Nullable.GetUnderlyingType(parameterType) ?? parameterType;
+
+        if (type == typeof(DateOnly) && value is DateTime moment && moment.TimeOfDay == TimeSpan.Zero)
+        {
+            return DateOnly.FromDateTime(moment);
+        }
+
+        return Convert.ChangeType(value, type, System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    private static List<object?[]> Rows(object? returned, DifferentialQuery query, bool positional)
+    private static List<object?[]> Rows(object? returned, string id, IReadOnlyList<string> fields, bool positional)
     {
         if (returned is not IEnumerable sequence)
         {
             throw new InvalidOperationException(
-                $"{query.Id}: the generated method returned {returned?.GetType().Name ?? "null"}, "
+                $"{id}: the generated method returned {returned?.GetType().Name ?? "null"}, "
                 + "which is not a sequence of rows.");
         }
 
@@ -248,57 +318,49 @@ internal static class DotNetQueryRunner
 
         foreach (var item in sequence)
         {
-            rows.Add(positional ? Positional(item, query) : ByName(item, query));
+            rows.Add(positional ? Positional(item, id, fields) : ByName(item, id, fields));
         }
 
         return rows;
     }
 
-    private static object?[] Positional(object? item, DifferentialQuery query)
+    private static object?[] Positional(object? item, string id, IReadOnlyList<string> fields)
     {
         // A single projected field comes back bare rather than as a one-element array.
         var values = item as object?[] ?? [item];
 
         Assert.True(
-            values.Length == query.Fields.Count,
-            $"{query.Id}: a row came back with {values.Length} fields and the matrix states {query.Fields.Count}.");
+            values.Length == fields.Count,
+            $"{id}: a row came back with {values.Length} fields and the caller states {fields.Count}.");
 
         return values;
     }
 
     /// <summary>
-    /// The fields of a row read by the names the matrix states: off a dictionary for
+    /// The fields of a row read by the names the caller states: off a dictionary for
     /// Dapper's untyped row of a projection (decision 104), off the properties for an entity
     /// or an anonymous type.
     /// </summary>
-    private static object?[] ByName(object? item, DifferentialQuery query)
+    private static object?[] ByName(object? item, string id, IReadOnlyList<string> fields)
     {
         if (item is IDictionary<string, object?> columns)
         {
-            return [.. query.Fields.Select(field =>
+            return [.. fields.Select(field =>
                 columns.TryGetValue(field, out var value)
                     ? value
                     : throw new InvalidOperationException(
-                        $"{query.Id}: the row has no column \"{field}\"; it has {string.Join(", ", columns.Keys)} "
-                        + $"and the matrix states the fields as {string.Join(", ", query.Fields)}."))];
+                        $"{id}: the row has no column \"{field}\"; it has {string.Join(", ", columns.Keys)} "
+                        + $"and the caller states the fields as {string.Join(", ", fields)}."))];
         }
 
         var type = item?.GetType()
-            ?? throw new InvalidOperationException($"{query.Id}: a row of the result is null.");
+            ?? throw new InvalidOperationException($"{id}: a row of the result is null.");
 
-        return [.. query.Fields.Select(field =>
+        return [.. fields.Select(field =>
             (type.GetProperty(field)
                 ?? throw new InvalidOperationException(
-                    $"{query.Id}: the row type {type.Name} has no member \"{field}\"; the matrix states "
-                    + $"the fields as {string.Join(", ", query.Fields)}."))
+                    $"{id}: the row type {type.Name} has no member \"{field}\"; the caller states "
+                    + $"the fields as {string.Join(", ", fields)}."))
             .GetValue(item))];
     }
-
-    /// <summary>
-    /// A name of its own per query, source and target. Assemblies are loaded into the test
-    /// process and never unloaded, so two runs sharing a name would be two different images
-    /// under one name - and NHibernate resolves persistent classes by assembly name.
-    /// </summary>
-    private static string AssemblyName(DifferentialQuery query, ORMEnum source, ORMEnum target)
-        => $"Differential_{query.Id.Replace('-', '_')}_{source}_{target}";
 }

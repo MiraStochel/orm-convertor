@@ -180,6 +180,33 @@ public class RestContractTest(ApiTestHost host)
             Assert.Equal(
                 query.FallbackBy.Select(fallback => (int)fallback.Target),
                 serialized.GetProperty("fallbackBy").EnumerateArray().Select(fallback => fallback.GetProperty("target").GetInt32()));
+
+            // The binding to the judge (decision 117) is what the Java suite replays the
+            // validation set by, so it arrives whole: kinds and derivations as numbers.
+            var validation = serialized.GetProperty("validation");
+            if (query.Validation is null)
+            {
+                Assert.Equal(JsonValueKind.Null, validation.ValueKind);
+                continue;
+            }
+
+            Assert.Equal(query.Validation.Operation, validation.GetProperty("operation").GetString());
+            Assert.Equal(query.Validation.Ordered, validation.GetProperty("ordered").GetBoolean());
+            Assert.Equal(
+                query.Validation.Arguments.Select(argument => (argument.Parameter, argument.Field, (int)argument.Derivation, argument.Operand)),
+                validation.GetProperty("arguments").EnumerateArray().Select(argument => (
+                    argument.GetProperty("parameter").GetString()!,
+                    argument.GetProperty("field").GetString()!,
+                    argument.GetProperty("derivation").GetInt32(),
+                    argument.GetProperty("operand").GetString())));
+            Assert.Equal(
+                query.Validation.Fields.Select(field => (field.Column, field.Field, (int)field.Kind, field.Separator, field.ElementSeparator)),
+                validation.GetProperty("fields").EnumerateArray().Select(field => (
+                    field.GetProperty("column").GetString()!,
+                    field.GetProperty("field").GetString()!,
+                    field.GetProperty("kind").GetInt32(),
+                    field.GetProperty("separator").GetString(),
+                    field.GetProperty("elementSeparator").GetString())));
         }
     }
 

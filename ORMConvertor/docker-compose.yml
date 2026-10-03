@@ -7,7 +7,10 @@
 # The test commands need nothing on the host but Docker: each builds its suite, starts a
 # SQL Server of its own, waits for it, creates the database and runs the whole suite. The
 # Java suite additionally gets an instance of the application, because that is where it
-# takes the generated artifacts from (decision 078).
+# takes the generated artifacts from (decision 078). The SQL Server of the profile also holds
+# LdbcSnb with the validation set of LDBC Interactive v1, the judge of the LDBC catalog
+# (decision 117), at scale factor 0.1 and replayed to a prefix of its lines unless the
+# environment says otherwise - ORMCONVERTOR_LDBC_VALIDATION_ROWS set to empty replays it whole.
 services:
   ormconvertor:
     build:
@@ -52,10 +55,17 @@ services:
   # Profile "test" - the containerized reproduction of the test suite. Nothing below
   # starts with a plain `docker compose up`. The test database is deliberately not the
   # WideWorldImporters one: the test schema is the expected answer F4 measures against,
-  # and the tests create it themselves (decision 016).
+  # and the tests create it themselves (decision 016). The server is the image of mssql_db,
+  # because the judge of the LDBC catalog needs LdbcSnb with its validation set (decision
+  # 117) - at scale factor 0.1 here, loaded in seconds; LDBC_TEST_SCALE_FACTOR picks another
+  # one LDBC publishes a validation set for (0.1 to 10).
   test_db:
     profiles: ["test"]
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    build:
+      context: .
+      dockerfile: database.Dockerfile
+      args:
+        LDBC_SCALE_FACTOR: ${LDBC_TEST_SCALE_FACTOR:-0.1}
     environment:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=Testingorms123
@@ -69,7 +79,9 @@ services:
 
   # The fixture creates a schema, not a database, so the database is the configuration's
   # job. Ordering by the health check is also what keeps the suite from skipping merely
-  # because the server was still starting.
+  # because the server was still starting. The server answers before LdbcSnb is loaded, so
+  # this also waits for the extended property the loader writes last, ldbc.validation - and
+  # gives up after half an hour, which is a failed load and not a slow one.
   test_db_init:
     profiles: ["test"]
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -77,16 +89,19 @@ services:
       test_db:
         condition: service_healthy
     entrypoint:
-      - /opt/mssql-tools18/bin/sqlcmd
-      - -S
-      - test_db,1433
-      - -U
-      - sa
-      - -P
-      - Testingorms123
-      - -C
-      - -Q
-      - IF DB_ID('ORMConvertorTests') IS NULL CREATE DATABASE ORMConvertorTests;
+      - /bin/bash
+      - -c
+      - |
+        set -e
+        sqlcmd="/opt/mssql-tools18/bin/sqlcmd -S test_db,1433 -U sa -P Testingorms123 -C -b"
+        $$sqlcmd -Q "IF DB_ID('ORMConvertorTests') IS NULL CREATE DATABASE ORMConvertorTests;"
+        for attempt in $$(seq 1 360); do
+          loaded=$$($$sqlcmd -h -1 -W -Q "SET NOCOUNT ON; IF DB_ID('LdbcSnb') IS NOT NULL EXEC (N'SELECT CAST(value AS NVARCHAR(200)) FROM LdbcSnb.sys.extended_properties WHERE class = 0 AND name = N''ldbc.validation''');")
+          if [ -n "$$loaded" ]; then echo "LdbcSnb holds $$loaded."; exit 0; fi
+          sleep 5
+        done
+        echo "LdbcSnb has no validation set after 30 minutes; see the log of test_db."
+        exit 1
 
   tests:
     profiles: ["test"]
@@ -99,6 +114,12 @@ services:
       # Here the configuration promises a database, so its absence is a failure rather
       # than a skip - a green run in which everything skipped would prove nothing.
       - ORMCONVERTOR_REQUIRE_TEST_DATABASE=1
+      # The judge of the LDBC catalog (decision 117), promised the same way. The whole set
+      # takes hours even at scale factor 0.1, so the profile replays a prefix of it - a
+      # smaller judge of its own, a check and not the verdict.
+      - ConnectionStrings__LdbcDatabase=Server=test_db,1433;Database=LdbcSnb;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
+      - ORMCONVERTOR_REQUIRE_LDBC_DATABASE=1
+      - ORMCONVERTOR_LDBC_VALIDATION_ROWS=${ORMCONVERTOR_LDBC_VALIDATION_ROWS-1000}
     depends_on:
       test_db_init:
         condition: service_completed_successfully
@@ -130,6 +151,27 @@ services:
       test_db_init:
         condition: service_completed_successfully
 
+  # The second instance the Java suite translates against: the same image with LdbcSnb as the
+  # catalog, for the judge of the LDBC catalog (decision 117) - an artifact completed over the
+  # empty schema of the fixture would not find the tables of LdbcSnb in dbo. The alias exists
+  # for the reason test_app's does.
+  test_app_ldbc:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: ORMConvertorAPI/Dockerfile
+      target: runtime
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__CatalogDatabase=Server=test_db,1433;Database=LdbcSnb;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
+    networks:
+      default:
+        aliases:
+          - testappldbc
+    depends_on:
+      test_db_init:
+        condition: service_completed_successfully
+
   # The Java suite (decisions 076 and 078): the java-tests stage of the same Dockerfile,
   # against the same SQL Server, in a schema of its own so that both suites may run at
   # once, and against the instance above for the generated artifacts. The JDBC URL carries
@@ -147,10 +189,17 @@ services:
     environment:
       - ORMCONVERTOR_TEST_JDBC_URL=jdbc:sqlserver://test_db:1433;databaseName=ORMConvertorTests;user=sa;password=Testingorms123;encrypt=true;trustServerCertificate=true
       - ORMCONVERTOR_API_URL=http://testapp:5072/orm
+      # The judge of the LDBC catalog (decision 117), as for the .NET suite.
+      - ORMCONVERTOR_TEST_LDBC_JDBC_URL=jdbc:sqlserver://test_db:1433;databaseName=LdbcSnb;user=sa;password=Testingorms123;encrypt=true;trustServerCertificate=true
+      - ORMCONVERTOR_LDBC_API_URL=http://testappldbc:5072/orm
+      - ORMCONVERTOR_REQUIRE_LDBC_DATABASE=1
+      - ORMCONVERTOR_LDBC_VALIDATION_ROWS=${ORMCONVERTOR_LDBC_VALIDATION_ROWS-1000}
     depends_on:
       test_db_init:
         condition: service_completed_successfully
       test_app:
+        condition: service_started
+      test_app_ldbc:
         condition: service_started
 
 volumes:

@@ -19,3 +19,9 @@ false
 2026-01-02T03:04:05.678
 2024-06-10
 1	"Zither"	1250.500000	NULL	true
+2012-03-07T23:03:52.355	1988-03-27	507	"Jun"
+1	"a@x.org;b@x.org"	"Alpha,2001,Brno;Zeta,2005,Prague"	"3,1,2"	17
+0	NULL	NULL	NULL	18.5
+"a"
+"b"
+1988-03-27	1	"a;b;c"

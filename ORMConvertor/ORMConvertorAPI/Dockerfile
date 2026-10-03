@@ -87,6 +87,9 @@ COPY JavaTests/src ./src
 # that list - when decision 089 added Differential/ to the pom, this line still named only
 # the schema, and the suite failed in the container while it was green on a checkout.
 COPY Tests/Database/ /src/Tests/Database/
+# The scripts of the LDBC inserts and their compensation (decision 117), likewise to the
+# place the pom reads them from.
+COPY database/ldbc/updates/ /src/database/ldbc/updates/
 RUN mvn -B -o test-compile
 ENTRYPOINT ["mvn", "-B", "-o", "test"]
 

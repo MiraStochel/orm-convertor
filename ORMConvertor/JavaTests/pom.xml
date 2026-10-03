@@ -115,6 +115,13 @@
                     <include>QueryShapes/**</include>
                 </includes>
             </testResource>
+            <!-- The inserts INS 1-8 of the LDBC validation set and their compensation (decision
+                 117), read from where the database image and the .NET suite read them; the
+                 Docker stage copies the directory beside this project the same way. -->
+            <testResource>
+                <directory>${project.basedir}/../database/ldbc/updates</directory>
+                <targetPath>ldbc/updates</targetPath>
+            </testResource>
         </testResources>
 
         <pluginManagement>

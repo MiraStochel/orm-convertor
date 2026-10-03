@@ -23,6 +23,8 @@ namespace JakartaPersistence;
 /// <param name="NativeQueryExpandsCollection">Whether a collection bound to a positional parameter of a native query is expanded into the list IN ranges over, where a run measured that it is (decision 113); otherwise the escape path refuses a collection parameter rather than hand the driver a list. Hibernate 7.4.5 expands it, EclipseLink 5.0.0 does not.</param>
 /// <param name="BindsLiterals">Whether the implementation binds every literal of a JPQL query as a parameter of the SQL it writes, where a run measured that it does (decision 113): a grouping key with a literal in it then reaches SQL Server as another expression than the same value in the select list - each literal a parameter of its own -, which the database refuses, so the builder writes such a grouping in native SQL. EclipseLink 5.0.0 binds them, Hibernate 7.4.5 writes them inline.</param>
 /// <param name="KeyThroughReferenceJoins">Whether the implementation reaches the key of a referenced entity through the reference - <c>p.customer.id</c>, the way a foreign key column no attribute maps is written - with an inner join of the referenced table, where a run measured that it does: the path then drops the rows whose foreign key is NULL, and inside the on of an outer join the implementation writes SQL the database refuses, so the builder writes such a query in native SQL (decision 113). EclipseLink 5.0.0 joins, Hibernate 7.4.5 reads the foreign key column.</param>
+/// <param name="DropsJoinsInSubqueries">Whether the implementation leaves a join inside a subquery out of the SQL it writes, where a run measured that it does: the joined entity and its condition disappear and a column of the joined entity is read from the subquery's own entity, so the subquery answers other rows without an error, and the builder writes such a query in native SQL (decision 113). EclipseLink 5.0.0 drops them, Hibernate 7.4.5 writes them.</param>
+/// <param name="InnerJoinsFollowOuterJoins">Whether the implementation writes every inner entity join into the list of tables after the outer joins, where a run measured that it does: the condition of an outer join that names the alias of an inner join then names a table SQL Server has not met yet, which it refuses, so the builder writes such a query in native SQL (decision 113). EclipseLink 5.0.0 moves them, Hibernate 7.4.5 keeps the order of the query.</param>
 /// <param name="EntityNamesRefused">The entity names the implementation's JPQL parser refuses wherever an entity is named - the words of its grammar it does not take for a name there, compared without regard to case -, where a run measured them. JPQL has no qualified or quoted spelling of an entity name, so the builder writes such a query in native SQL (decision 113).</param>
 /// <param name="EntityNamesRefusedAsJoinTarget">The entity names the parser refuses as the target of an entity join only, measured the same way.</param>
 public sealed record JpaImplementationProfile(
@@ -39,6 +41,8 @@ public sealed record JpaImplementationProfile(
     bool NativeQueryExpandsCollection = false,
     bool BindsLiterals = false,
     bool KeyThroughReferenceJoins = false,
+    bool DropsJoinsInSubqueries = false,
+    bool InnerJoinsFollowOuterJoins = false,
     IReadOnlySet<string>? EntityNamesRefused = null,
     IReadOnlySet<string>? EntityNamesRefusedAsJoinTarget = null);
 

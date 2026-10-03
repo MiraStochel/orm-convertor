@@ -65,7 +65,12 @@ public final class TestDatabase {
      * equals sign - a password often does - so only the first one separates.
      */
     private static String property(String name) {
-        for (String part : jdbcUrl().split(";")) {
+        return property(jdbcUrl(), name);
+    }
+
+    /** One {@code ;key=value} property of any JDBC URL - the LDBC database's as well (decision 117). */
+    public static String property(String jdbcUrl, String name) {
+        for (String part : jdbcUrl.split(";")) {
             int equals = part.indexOf('=');
             if (equals > 0 && part.substring(0, equals).trim().equalsIgnoreCase(name)) {
                 return part.substring(equals + 1);

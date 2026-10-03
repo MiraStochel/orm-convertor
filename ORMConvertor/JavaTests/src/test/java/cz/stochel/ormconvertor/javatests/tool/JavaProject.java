@@ -114,10 +114,14 @@ public final class JavaProject implements AutoCloseable {
 
         try (StandardJavaFileManager fileManager =
                      compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8)) {
+            // -parameters keeps the names of method parameters in the class file, so that a
+            // caller can bind arguments by the names the generated method gives them - the
+            // judge of the LDBC catalog does, from the fields of the driver (decision 117).
             List<String> options = List.of(
                     "-classpath", classpath(),
                     "-d", classes.toString(),
-                    "-encoding", "UTF-8");
+                    "-encoding", "UTF-8",
+                    "-parameters");
 
             success = compiler.getTask(
                     null, fileManager, diagnostics, options, null,

@@ -119,6 +119,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 114 | [Člen jména je kořenem dotazu EF Core, jen když jednotka neuvádí opak: navigace načteného řádku dotazem není a mapování převodu smí místo jen odmítnout](114-what-the-unit-states-about-a-name-decides-an-ef-core-root.md) | platí | F7–F10, F11, F14, S1, S2 |
 | 115 | [Explicitní načtení navigace EF Core je dotaz, který poskytovatel skládá: řádky navigace omezené cizím klíčem na klíč načtené entity, nesený jako parametr](115-explicit-loading-is-the-query-the-provider-composes.md) | platí | F7–F10, F11, F14, S1, S2 |
 | 116 | [`[ConcurrencyCheck]` nad jedinou celočíselnou či datočasovou vlastností je sloupec verze, jehož hodnotu udržuje aplikace: mezireprezentace nese, kdo verzi zvyšuje, a cíl, který ji zvyšuje sám, převzetí ohlásí](116-concurrency-check-is-the-version-the-application-keeps.md) | platí | F5, F10, F11, S1, T3 |
+| 117 | [Validační sada LDBC Interactive v1 je soudcem čtvrtého stupně nad katalogem LDBC: přehrává se v pořadí, vkládání nese loader, čtení generovaný artefakt a databáze se vrací kompenzací](117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md) | revidováno | F13, T2, T3, S2, S5 |
 
 ## Formát
 

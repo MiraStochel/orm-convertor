@@ -92,18 +92,22 @@ public final class EclipseLinkBootstrap {
 
     private static Map<String, Object> properties(String schemaAction, ClassLoader loader, Map<String, Object> extra) {
         Map<String, Object> properties = common(loader);
-        properties.put("jakarta.persistence.jdbc.url", TestDatabase.jdbcUrl());
         properties.put("jakarta.persistence.schema-generation.database.action", schemaAction);
 
         // Measured on the first run (2026-09-18): EclipseLink does not hand the URL to the
         // driver as it stands the way Hibernate does - it builds its own connection
         // properties and sends an empty user, which SQL Server refuses with 18456. The
         // credentials the URL carries therefore have to be given as properties as well.
-        if (TestDatabase.jdbcUser() != null) {
-            properties.put("jakarta.persistence.jdbc.user", TestDatabase.jdbcUser());
-        }
-        if (TestDatabase.jdbcPassword() != null) {
-            properties.put("jakarta.persistence.jdbc.password", TestDatabase.jdbcPassword());
+        // A caller that names a database of its own - LdbcSnb for the judge of decision
+        // 117 - gives all three in the extra properties, and the test database is not read.
+        if (!extra.containsKey("jakarta.persistence.jdbc.url")) {
+            properties.put("jakarta.persistence.jdbc.url", TestDatabase.jdbcUrl());
+            if (TestDatabase.jdbcUser() != null) {
+                properties.put("jakarta.persistence.jdbc.user", TestDatabase.jdbcUser());
+            }
+            if (TestDatabase.jdbcPassword() != null) {
+                properties.put("jakarta.persistence.jdbc.password", TestDatabase.jdbcPassword());
+            }
         }
 
         properties.putAll(extra);

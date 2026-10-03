@@ -24,6 +24,10 @@
          so what the suite verifies is what the container's LdbcSnb database is. -->
     <EmbeddedResource Include="..\database\ldbc\schema.sql" LogicalName="Tests.Database.Ldbc.schema.sql" />
     <EmbeddedResource Include="..\database\ldbc\constraints.sql" LogicalName="Tests.Database.Ldbc.constraints.sql" />
+    <!-- The inserts INS 1-8 of the LDBC validation set and their compensation (decision 117):
+         the replay runs them over LdbcSnb from where the repository keeps them, as the Java
+         suite does. -->
+    <EmbeddedResource Include="..\database\ldbc\updates\*.sql" LogicalName="Tests.Database.Ldbc.updates.%(Filename)%(Extension)" />
     <!-- The matrix inputs are written in the languages of the source frameworks, C# among
          them, and they are input to the tool - not source of this project. Without this the
          SDK's default glob would hand them to the compiler. -->

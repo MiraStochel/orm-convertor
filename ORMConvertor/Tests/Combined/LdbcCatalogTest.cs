@@ -18,12 +18,13 @@ namespace Tests.Combined;
 /// LDBC tables as the catalog, which is how the page means it: those tables are created by
 /// the fixture from the very scripts the container's LdbcSnb database is loaded with.
 ///
-/// The claims are about the first verification level only - the target artifact is produced
-/// without a Failure record, or it is refused with one. Whether a translated query returns
-/// what the source returns is the fourth level, and it is not claimed here: the catalog runs
-/// over the scale factor 1 data set, which no suite loads. What the suite does run is every
-/// text, against the empty tables, so that a text the page shows is T-SQL over those tables
-/// and not a sketch of it.
+/// The claims are about the first verification level - the target artifact is produced
+/// without a Failure record, or it is refused with one. Whether a query of the Interactive
+/// workload returns what the specification defines is the fourth level, held by LDBC's own
+/// validation set in <c>Ldbc/LdbcValidationTest</c> over a loaded LdbcSnb (decision 117); here
+/// it is only claimed that every such query is bound to its judge. What this class does run is
+/// every text, against the empty tables, so that a text the page shows is T-SQL over those
+/// tables and not a sketch of it.
 /// </summary>
 [Collection(TestSchemaCollection.Name)]
 public class LdbcCatalogTest(TestSchemaFixture fixture)
@@ -147,6 +148,60 @@ public class LdbcCatalogTest(TestSchemaFixture fixture)
                 fellBack,
                 $"{key} went out in native SQL from {target}, which the catalog does not say:{Environment.NewLine}"
                     + string.Join(Environment.NewLine, result.Records.Where(record => record.Kind == ConversionRecordKind.Fallback).Select(record => $"  {record.Feature}: {record.Reason}")));
+        }
+    }
+
+    /// <summary>
+    /// Every query of the Interactive workload is bound to the operation of the driver that
+    /// judges it (decision 117), and no query of BI is - LDBC publishes no expected results for
+    /// that workload over the Interactive data. A query of Interactive without a binding would be
+    /// a query out of the judge's reach, which is what this rules out.
+    /// </summary>
+    [Fact]
+    public void EveryInteractiveQueryIsBoundToItsJudge()
+    {
+        foreach (var query in LdbcSnbSample.Queries)
+        {
+            var operation = query.Workload switch
+            {
+                LdbcWorkload.InteractiveShort => $"IS{query.Number}",
+                LdbcWorkload.InteractiveComplex => $"IC{query.Number}",
+                _ => null,
+            };
+
+            Assert.True(operation == query.Validation?.Operation, $"{query.Key} is bound to {query.Validation?.Operation ?? "nothing"}, not to {operation ?? "nothing"}.");
+        }
+    }
+
+    /// <summary>
+    /// A binding states every parameter of the text once, from a field of the operation, with
+    /// an operand exactly where the derivation takes one; and every column it compares is a
+    /// column the text projects, a list with its separator and an element of fields only in a list.
+    /// </summary>
+    [Fact]
+    public void EveryBindingStatesTheTextItJudges()
+    {
+        foreach (var query in LdbcSnbSample.Queries.Where(query => query.Validation is not null))
+        {
+            var binding = query.Validation!;
+
+            Assert.Equal(
+                query.Parameters.Select(parameter => parameter.Name).Order(StringComparer.Ordinal),
+                binding.Arguments.Select(argument => argument.Parameter).Order(StringComparer.Ordinal));
+            Assert.All(binding.Arguments, argument =>
+                Assert.True((argument.Derivation == LdbcDerivation.PlusDays) == (argument.Operand is not null), $"{query.Key}: {argument}"));
+
+            Assert.Equal(binding.Fields.Count, binding.Fields.Select(field => field.Column).Distinct().Count());
+            Assert.All(binding.Fields, field =>
+            {
+                // Under its alias, or as the bare column it is (SELECT p.FirstName).
+                Assert.Matches($@"\bAS\s+{field.Column}\b|\w\.{field.Column}\b", query.Sql!);
+
+                var list = field.Kind is LdbcValueKind.Set or LdbcValueKind.Sequence;
+                Assert.True(list == (field.Separator is not null), $"{query.Key}: {field}");
+                Assert.True((field.Elements is not null) == (field.ElementSeparator is not null), $"{query.Key}: {field}");
+                Assert.True(field.Elements is null || list, $"{query.Key}: {field}");
+            });
         }
     }
 

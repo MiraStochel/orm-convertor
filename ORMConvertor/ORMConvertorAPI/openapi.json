@@ -890,6 +890,32 @@
           }
         }
       },
+      "LdbcArgumentDefinition": {
+        "required": [
+          "parameter",
+          "field",
+          "derivation",
+          "operand"
+        ],
+        "type": "object",
+        "properties": {
+          "parameter": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "derivation": {
+            "$ref": "#/components/schemas/LdbcDerivation"
+          },
+          "operand": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "LdbcCatalogDefinition": {
         "required": [
           "sourceOrm",
@@ -914,6 +940,9 @@
             }
           }
         }
+      },
+      "LdbcDerivation": {
+        "type": "integer"
       },
       "LdbcParameterDefinition": {
         "required": [
@@ -949,7 +978,8 @@
           "sql",
           "parameters",
           "refusedBy",
-          "fallbackBy"
+          "fallbackBy",
+          "validation"
         ],
         "type": "object",
         "properties": {
@@ -999,6 +1029,16 @@
             "items": {
               "$ref": "#/components/schemas/LdbcRefusalDefinition"
             }
+          },
+          "validation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LdbcValidationDefinition"
+              }
+            ]
           }
         }
       },
@@ -1017,7 +1057,82 @@
           }
         }
       },
+      "LdbcResultFieldDefinition": {
+        "required": [
+          "column",
+          "field",
+          "kind",
+          "separator",
+          "elements",
+          "elementSeparator"
+        ],
+        "type": "object",
+        "properties": {
+          "column": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LdbcValueKind"
+          },
+          "separator": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "elements": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "elementSeparator": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "LdbcTranslation": {
+        "type": "integer"
+      },
+      "LdbcValidationDefinition": {
+        "required": [
+          "operation",
+          "arguments",
+          "fields",
+          "ordered"
+        ],
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LdbcArgumentDefinition"
+            }
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LdbcResultFieldDefinition"
+            }
+          },
+          "ordered": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LdbcValueKind": {
         "type": "integer"
       },
       "LdbcWorkload": {

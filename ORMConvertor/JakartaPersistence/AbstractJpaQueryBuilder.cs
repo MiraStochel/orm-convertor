@@ -111,8 +111,29 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
     protected override void BuildJoins(QueryClauses clauses, QueryArtifact artifact)
     {
+        var innerAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var join in clauses.Joins)
         {
+            // An implementation that writes the inner joins after every outer join (EclipseLink
+            // 5.0.0, measured) leaves the condition of an outer join that names an inner join's
+            // alias naming a table SQL Server has not met yet; the native SQL keeps the order
+            // of the query (decision 113).
+            if (Profile.InnerJoinsFollowOuterJoins
+                && join.Kind != JoinKind.Inner
+                && AliasesNamedIn(join.OnCondition).FirstOrDefault(innerAliases.Contains) is { } inner)
+            {
+                ReportUnspoken(
+                    $"{Profile.Implementation} writes the inner joins after the outer ones, so the condition of the outer join onto '{join.RightTable}' would name '{inner}' before SQL Server has met it",
+                    QueryFeature.Join);
+                return;
+            }
+
+            if (join.Kind == JoinKind.Inner)
+            {
+                innerAliases.Add(join.RightTableAlias ?? join.RightTable);
+            }
+
             if (artifact.Joins.Length > 0)
             {
                 artifact.Joins.AppendLine();
@@ -121,6 +142,20 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             artifact.Joins.Append("    ").Append(join.Accept(visitor));
         }
     }
+
+    /// <summary>The aliases the columns of a join condition name, the columns inside its expressions included.</summary>
+    private static IEnumerable<string> AliasesNamedIn(ConditionNode? node) => node switch
+    {
+        ComparisonCondition comparison => AliasesNamedIn(comparison.Left).Concat(comparison.Right is null ? [] : AliasesNamedIn(comparison.Right)),
+        LogicalCondition logical => logical.Operands.SelectMany(AliasesNamedIn),
+        NotCondition negation => AliasesNamedIn(negation.Operand),
+        _ => [],
+    };
+
+    private static IEnumerable<string> AliasesNamedIn(QueryOperand operand)
+        => operand.IsExpression
+            ? OperandStructure.Inside(operand.Expression!).SelectMany(AliasesNamedIn)
+            : operand.IsColumn && operand.Table is { } table ? [table] : [];
 
     protected override void BuildFilter(QueryClauses clauses, QueryArtifact artifact)
     {
@@ -256,6 +291,18 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             ReportUnspoken(
                 "A pagination inside a subquery cannot be carried in JPQL text - setFirstResult and setMaxResults live on the query object",
                 QueryFeature.Pagination);
+            return null;
+        }
+
+        // An implementation that leaves a join of a subquery out of its SQL (EclipseLink
+        // 5.0.0, measured) would answer other rows without an error: the joined entity and its
+        // condition disappear and its column is read from the subquery's own entity. The native
+        // SQL writes the join (decision 113).
+        if (Profile.DropsJoinsInSubqueries && clauses.Joins.Count > 0)
+        {
+            ReportUnspoken(
+                $"{Profile.Implementation} leaves the join onto '{clauses.Joins[0].RightTable}' inside a subquery out of the SQL it writes, so the subquery would answer other rows",
+                QueryFeature.Subquery);
             return null;
         }
 

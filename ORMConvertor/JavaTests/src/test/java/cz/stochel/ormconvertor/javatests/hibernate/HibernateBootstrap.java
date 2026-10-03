@@ -35,14 +35,23 @@ public final class HibernateBootstrap {
      * mapping is looked up where those classes live.
      */
     public static SessionFactory build(String schemaAction, ClassLoader loader, List<Class<?>> entities) {
+        return build(schemaAction, loader, entities, TestDatabase.jdbcUrl(), TestDatabase.schemaName());
+    }
+
+    /**
+     * The same over another database: LdbcSnb, whose tables the judge of the LDBC catalog
+     * reads in dbo (decision 117).
+     */
+    public static SessionFactory build(
+            String schemaAction, ClassLoader loader, List<Class<?>> entities, String jdbcUrl, String defaultSchema) {
         BootstrapServiceRegistryBuilder bootstrap = new BootstrapServiceRegistryBuilder();
         if (loader != null) {
             bootstrap.applyClassLoader(loader);
         }
 
         StandardServiceRegistry registry = new StandardServiceRegistryBuilder(bootstrap.build())
-                .applySetting("jakarta.persistence.jdbc.url", TestDatabase.jdbcUrl())
-                .applySetting("hibernate.default_schema", TestDatabase.schemaName())
+                .applySetting("jakarta.persistence.jdbc.url", jdbcUrl)
+                .applySetting("hibernate.default_schema", defaultSchema)
                 .applySetting("jakarta.persistence.schema-generation.database.action", schemaAction)
                 .build();
         try {

@@ -30,6 +30,7 @@ class RendererConformanceTest {
         for (List<Object> row : RendererConformance.rows()) {
             actual.add(ResultRow.render(row, RendererConformance.settings()));
         }
+        actual.addAll(RendererConformance.ldbcRows());
 
         assertEquals(expected.size(), actual.size(), "the conformance text and the rendered rows differ in count");
         assertEquals(expected, actual);

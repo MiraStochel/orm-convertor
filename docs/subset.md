@@ -50,7 +50,8 @@ Jak cíl konstrukci píše (*jazyk* = svým dotazovým jazykem, *SQL* = `Fallbac
 | Konstrukce | Dapper | MyBatis | EF Core | NHibernate | Hibernate | EclipseLink |
 |---|---|---|---|---|---|---|
 | projekce, filtr, join, agregace, seskupení, `HAVING`, řazení, stránkování, poddotaz, parametr, výraz | jazyk | jazyk | jazyk | jazyk | jazyk | jazyk |
-| druh joinu (vnitřní, levý, pravý, plný) | jazyk | jazyk | jazyk; plný složením `LeftJoin`, `Concat`, `RightJoin` ([065]) | jazyk; plný SQL | jazyk | jazyk |
+| druh joinu (vnitřní, levý, pravý, plný) | jazyk | jazyk | jazyk; plný složením `LeftJoin`, `Concat`, `RightJoin` ([065]) | jazyk; plný SQL | jazyk | jazyk; vnější s podmínkou na alias vnitřního joinu SQL |
+| join uvnitř poddotazu | jazyk | jazyk | jazyk | jazyk | jazyk | SQL |
 | množinová operace | jazyk | jazyk | jazyk | SQL | jazyk | jazyk |
 | mezivýsledek (`WITH`, odvozená tabulka) | jazyk | jazyk | jazyk (proměnná metody) | SQL | jazyk | SQL |
 | rekurze | jazyk | jazyk | SQL | SQL | jazyk; s limitem SQL | SQL |
@@ -84,7 +85,7 @@ Strojově: deskriptory (`QuerySupport`, `Functions`, `NativeSqlApi`), `Combined/
 ¹ `refusedWithoutCatalog`, jediné odmítnutí manifestu: bez katalogu nemá parametr zdroje Dapper skalár (2.4); s katalogem, který tabulku má, se typuje do všech cílů ([105], [106]).
 ² `fallbackWithoutCatalog`: zdroj MyBatis neříká, že sloupec nesmí mít `NULL`.
 
-**Mimo kategorie.** *Záměrně špatný dotaz* (osm poddotazů do čtyř úrovní, joiny přes dva a tři sloupce, seskupení s `HAVING`, řazení, výřez) jde ze všech šesti zdrojů do všech šesti cílů (`Combined/DeeplyNestedQueryTest`, javově `shapes/DeeplyNestedQueryTest`). *Katalog LDBC* — 41 čtecích dotazů LDBC SNB ([110]) — měří úplnost: přeloženo všech 41, šest se zjednodušením, které katalog u dotazu vyslovuje; odmítá jen EclipseLink BI 12 (seznamový parametr v nativním SQL). `SampleData/LdbcSnbSample`, koncový bod `/ldbc`, `Combined/LdbcCatalogTest`.
+**Mimo kategorie.** *Záměrně špatný dotaz* (osm poddotazů do čtyř úrovní, joiny přes dva a tři sloupce, seskupení s `HAVING`, řazení, výřez) jde ze všech šesti zdrojů do všech šesti cílů (`Combined/DeeplyNestedQueryTest`, javově `shapes/DeeplyNestedQueryTest`). *Katalog LDBC* — 41 čtecích dotazů LDBC SNB ([110]) — měří úplnost: přeloženo všech 41, šest se zjednodušením, které katalog u dotazu vyslovuje; odmítá jen EclipseLink BI 12 (seznamový parametr v nativním SQL). `SampleData/LdbcSnbSample`, koncový bod `/ldbc`, `Combined/LdbcCatalogTest`. Stav „podle specifikace" drží u 18 dotazů Interactive validační sada LDBC na 4. stupni ([117], `LdbcJudge/LdbcValidationTest`, javové `ldbc/`); u 17 dotazů BI je tvrzením autora — validační sadu pro BI nad daty Interactive LDBC nevydává.
 
 ### 1.4 Proč u kategorie chybí zdroj
 
@@ -332,6 +333,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 |---|---|---|---|---|
 | jméno entity, které parser JPQL cíle jako jméno nebere (EclipseLink 5.0.0: `from`, `where`, `table`, `union`, `left`, `set` …, jako cíl joinu i `select`, `member`, `case` …; Hibernate 7.4.5: `true`, `false`, `null`) | JPQL nemá kvalifikované ani uvozené jméno entity | `Fallback` (b/z) | VM | [113] |
 | jméno entity, které je klíčovým slovem HQL, bez jmenného prostoru v pozici, kde ho NHibernate 5.7.0 nebere | HQL ho přečte jen kvalifikované | `Fallback` (z) | VM | [113] |
+| join uvnitř poddotazu; vnější join, jehož podmínka jmenuje alias vnitřního joinu — cíl EclipseLink | EclipseLink 5.0.0 join poddotazu z SQL vypustí i s podmínkou (dotaz by vrátil jiné řádky bez chyby) a vnitřní joiny píše za vnější (SQL Server podmínku odmítne); změřeno soudcem LDBC | `Fallback` (`Subquery`, `Join`) (z) | VM | [113], [117] |
 | každý artefakt únikové cesty | je v SQL deklarovaného dialektu | vždy `Fallback` se jménem konstrukce a dialektu; platí jen pro SQL Server 2022; 3. stupeň = přijetí T-SQL, rozhoduje 4. | VO 5 | [086], [113] |
 | kolekční parametr v nativním SQL EF Core a EclipseLinku | EF Core 10 naváže interpolovanou kolekci jako jednu hodnotu, nativní dotaz EclipseLinku 5.0 seznam nerozvine | `Failure` (`QueryParameter`) (z); Hibernate ho rozvine | VM | [113] |
 | množinová operace nad dvěma entitami, kde API materializuje jednu (`FromSql`, `AddEntity`, `createNativeQuery` s třídou) | řádky jedné strany by se vrátily jako cizí entita | `Failure` (z) | VM | [113] |
@@ -457,6 +459,7 @@ Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhod
 [114]: ./decisions/114-what-the-unit-states-about-a-name-decides-an-ef-core-root.md
 [115]: ./decisions/115-explicit-loading-is-the-query-the-provider-composes.md
 [116]: ./decisions/116-concurrency-check-is-the-version-the-application-keeps.md
+[117]: ./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md
 [§1v]: ./architecture.md#zafixované-verze
 [§4.1]: ./architecture.md#41-entity-a-mapování
 [§4.2]: ./architecture.md#42-primární-klíč

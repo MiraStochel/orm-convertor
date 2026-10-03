@@ -1,5 +1,6 @@
 package cz.stochel.ormconvertor.javatests.differential;
 
+import cz.stochel.ormconvertor.javatests.ldbc.LdbcConformance;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -58,6 +59,15 @@ public final class RendererConformance {
                 row(LocalDate.of(2024, 6, 10)),
 
                 Arrays.asList(1, "Zither", new BigDecimal("1250.5"), null, Boolean.TRUE));
+    }
+
+    /**
+     * The conversions of decision 117, which both suites make before they render: the JSON of
+     * LDBC's validation set and the rows of an artifact. They follow the rows above in the
+     * conformance text, so the converters are held to one text the way the renderers are.
+     */
+    public static List<String> ldbcRows() {
+        return LdbcConformance.rows();
     }
 
     private static List<Object> row(Object value) {

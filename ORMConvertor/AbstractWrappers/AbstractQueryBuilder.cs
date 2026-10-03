@@ -1391,6 +1391,14 @@ public abstract class AbstractQueryBuilder
     /// <inheritdoc cref="statedRows"/>
     private readonly Dictionary<string, EntityMap> renderedRows = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// The columns of the intermediate results that are row counts - a COUNT, or a column of
+    /// an earlier intermediate result that is one -, as "definition/column". The row of a
+    /// definition types a count as the language targets do; what reads the result of the
+    /// database itself needs to know it is SQL Server's int (<see cref="ResultColumn"/>).
+    /// </summary>
+    private readonly HashSet<string> countingColumns = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Whether the name a row source carries is an intermediate result of the query rather than a table (decision 112).</summary>
     protected bool IsDefinition(string table) => Defines(table);
 
@@ -1424,13 +1432,44 @@ public abstract class AbstractQueryBuilder
         {
             var source = select.OfType<FromInstruction>().FirstOrDefault();
             return source is not null && renderedRows.TryGetValue(source.Table, out var row)
-                ? [.. row.PropertyMaps.Select(p => new ResultColumn(p.ColumnName, p.Property.Type?.ScalarType, null))]
+                ? [.. row.PropertyMaps.Select(p => new ResultColumn(
+                    p.ColumnName, p.Property.Type?.ScalarType, null, countingColumns.Contains(CountingKey(source.Table, p.ColumnName!))))]
                 : [];
         }
 
         var aliases = ScopeAliases(select, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), RenderedEntityFor);
-        return [.. projections.Select(p => new ResultColumn(ColumnNameOf(p), ScalarOf(p.Operand, aliases), p.Operand))];
+        return [.. projections.Select(p => new ResultColumn(ColumnNameOf(p), ScalarOf(p.Operand, aliases), p.Operand, CountsRows(p.Operand, aliases)))];
     }
+
+    /// <summary>
+    /// Whether an operand is a row count: a COUNT, or a column of an intermediate result
+    /// whose definition projects one under that name.
+    /// </summary>
+    private bool CountsRows(QueryOperand? operand, Dictionary<string, EntityMap> aliases)
+    {
+        if (operand is null)
+        {
+            return false;
+        }
+
+        if (string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!operand.IsColumn || operand.Function is not null || operand.Property is null)
+        {
+            return false;
+        }
+
+        IEnumerable<EntityMap> rows = operand.Table is not null
+            ? aliases.GetValueOrDefault(operand.Table) is { } map ? [map] : []
+            : aliases.Values;
+
+        return rows.Any(row => countingColumns.Contains(CountingKey(row.Table!, operand.Property)));
+    }
+
+    private static string CountingKey(string definition, string column) => definition + "/" + column;
 
     /// <summary>
     /// Describes the row of every definition, in order, so that a definition reading an
@@ -1442,6 +1481,7 @@ public abstract class AbstractQueryBuilder
     {
         statedRows.Clear();
         renderedRows.Clear();
+        countingColumns.Clear();
 
         foreach (var definition in definitions)
         {
@@ -1457,6 +1497,15 @@ public abstract class AbstractQueryBuilder
 
             statedRows[definition.Name] = stated;
             renderedRows[definition.Name] = rendered;
+
+            var aliases = ScopeAliases(select, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase), RenderedEntityFor);
+            foreach (var projection in select.OfType<ProjectInstruction>())
+            {
+                if (ColumnNameOf(projection) is { } column && CountsRows(projection.Operand, aliases))
+                {
+                    countingColumns.Add(CountingKey(definition.Name, column));
+                }
+            }
         }
     }
 

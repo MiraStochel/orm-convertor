@@ -135,7 +135,7 @@ public final class JavaQueryRunner {
 
                 // JPQL hands a projection back as an object array per row and an entity as
                 // the instance itself, so the shape of the query decides how a row is read.
-                return rows(rows, query, query.projection());
+                return rows(rows, query.id(), query.fields(), query.projection());
             }
         }
     }
@@ -173,7 +173,7 @@ public final class JavaQueryRunner {
                 // MyBatis materializes a whole-entity query into the domain class and a
                 // projection into a Map per row keyed by the projected columns (decision
                 // 104); both are therefore read by name.
-                return rows((List<?>) returned, query, false);
+                return rows((List<?>) returned, query.id(), query.fields(), false);
             }
         }
     }
@@ -238,7 +238,12 @@ public final class JavaQueryRunner {
         return arguments;
     }
 
-    private static List<List<Object>> rows(List<?> returned, DifferentialQuery query, boolean positional) {
+    /**
+     * The rows a generated method returned, each with the named fields in the order given -
+     * by position for a JPA projection, by name otherwise. Public because the judge of the
+     * LDBC catalog reads the rows of its artifacts the same way (decision 117).
+     */
+    public static List<List<Object>> rows(List<?> returned, String id, List<String> fields, boolean positional) {
         List<List<Object>> rows = new ArrayList<>();
 
         // The columns the rows of a projection carry between them. MyBatis puts no entry for
@@ -253,19 +258,19 @@ public final class JavaQueryRunner {
         }
 
         for (Object item : returned) {
-            rows.add(positional ? positional(item, query) : byName(item, query, columns));
+            rows.add(positional ? positional(item, id, fields) : byName(item, id, fields, columns));
         }
 
         return rows;
     }
 
-    private static List<Object> positional(Object item, DifferentialQuery query) {
+    private static List<Object> positional(Object item, String id, List<String> fields) {
         // A single projected field comes back bare rather than as a one-element array.
         List<Object> values = item instanceof Object[] array ? Arrays.asList(array) : List.of(item);
 
-        assertEquals(query.fields().size(), values.size(),
-                query.id() + ": a row came back with " + values.size() + " fields and the matrix states "
-                        + query.fields().size() + ".");
+        assertEquals(fields.size(), values.size(),
+                id + ": a row came back with " + values.size() + " fields and the caller states "
+                        + fields.size() + ".");
 
         return values;
     }
@@ -276,15 +281,15 @@ public final class JavaQueryRunner {
      * map of this row lacks is a NULL where another row of the result carries it; a field no
      * row carries is a column the projection does not have, which is what the check is for.
      */
-    private static List<Object> byName(Object item, DifferentialQuery query, Set<Object> columnsOfTheResult) {
+    private static List<Object> byName(Object item, String id, List<String> fields, Set<Object> columnsOfTheResult) {
         List<Object> values = new ArrayList<>();
 
         if (item instanceof Map<?, ?> columns) {
-            for (String field : query.fields()) {
+            for (String field : fields) {
                 if (!columns.containsKey(field) && !columnsOfTheResult.contains(field)) {
                     throw new IllegalStateException(
-                            query.id() + ": the row has no column \"" + field + "\"; it has " + columns.keySet()
-                                    + " and the matrix states the fields as " + query.fields() + ".");
+                            id + ": the row has no column \"" + field + "\"; it has " + columns.keySet()
+                                    + " and the caller states the fields as " + fields + ".");
                 }
                 values.add(columns.get(field));
             }
@@ -292,8 +297,8 @@ public final class JavaQueryRunner {
             return values;
         }
 
-        for (String field : query.fields()) {
-            values.add(read(item, field, query));
+        for (String field : fields) {
+            values.add(read(item, field, id, fields));
         }
 
         return values;
@@ -303,20 +308,20 @@ public final class JavaQueryRunner {
      * One field off a row. A generated class spells the getter of a boolean {@code isX} and
      * of everything else {@code getX}, so both are tried before the field is given up on.
      */
-    private static Object read(Object item, String field, DifferentialQuery query) {
+    private static Object read(Object item, String field, String id, List<String> fields) {
         for (String getter : List.of("get" + field, "is" + field)) {
             try {
                 return item.getClass().getMethod(getter).invoke(item);
             } catch (NoSuchMethodException ignored) {
                 // The other spelling, then.
             } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException(query.id() + ": reading " + field + " failed.", e);
+                throw new IllegalStateException(id + ": reading " + field + " failed.", e);
             }
         }
 
         throw new IllegalStateException(
-                query.id() + ": the row type " + item.getClass().getName() + " has neither get" + field
-                        + " nor is" + field + "; the matrix states the fields as " + query.fields() + ".");
+                id + ": the row type " + item.getClass().getName() + " has neither get" + field
+                        + " nor is" + field + "; the caller states the fields as " + fields + ".");
     }
 
     /**

@@ -146,12 +146,10 @@ public sealed class EFCoreNativeSqlQueryBuilder : AbstractSqlQueryBuilder
                 return null;
             }
 
-            // SQL Server answers COUNT with an int whatever the language targets make of it,
-            // and EF Core reads a column with the getter of the property's type, which does
-            // not widen.
-            var scalar = string.Equals(column.Operand?.Function, "COUNT", StringComparison.OrdinalIgnoreCase)
-                ? ScalarType.Int
-                : column.Scalar;
+            // SQL Server answers COUNT with an int whatever the language targets make of it -
+            // through an intermediate result as well -, and EF Core reads a column with the
+            // getter of the property's type, which does not widen.
+            var scalar = column.CountsRows ? ScalarType.Int : column.Scalar;
 
             if (scalar is null or ScalarType.Object)
             {

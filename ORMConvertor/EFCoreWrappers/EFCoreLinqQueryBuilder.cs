@@ -26,6 +26,14 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
     private LinqScope scope = new();
     private EFCoreLinqQueryVisitor visitor = null!;
     private readonly List<string> tupleAliases = [];
+
+    /// <summary>
+    /// The alias of every join of the chain being written, the ones still to come included:
+    /// the row of a chain past its first join is a lambda parameter that sits beside the
+    /// joined alias in the result selector of each later join, so it must not take a name a
+    /// later join declares - (t, t) => ... does not compile.
+    /// </summary>
+    private List<string> joinAliases = [];
     private string orderingAfterProjection = string.Empty;
 
     /// <summary>
@@ -95,6 +103,8 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
     protected override void BuildJoins(QueryClauses clauses, QueryArtifact artifact)
     {
+        joinAliases = [.. clauses.Joins.Select(join => join.RightTableAlias ?? Bare(join.RightTable).ToLowerInvariant())];
+
         foreach (var join in clauses.Joins)
         {
             var rightAlias = join.RightTableAlias ?? Bare(join.RightTable).ToLowerInvariant();
@@ -390,6 +400,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         foreach (var candidate in new[] { "t", "row", "q", "z" })
         {
             if (!tupleAliases.Contains(candidate, StringComparer.OrdinalIgnoreCase)
+                && !joinAliases.Contains(candidate, StringComparer.OrdinalIgnoreCase)
                 && !enclosingParams.Contains(candidate)
                 && !Variables.ContainsValue(candidate))
             {
@@ -497,6 +508,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         var savedScope = scope;
         var savedVisitor = visitor;
         var savedTuples = tupleAliases.ToList();
+        var savedJoinAliases = joinAliases;
         var savedOrderingAfter = orderingAfterProjection;
 
         var artifact = Compose(clauses);
@@ -515,6 +527,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         visitor = savedVisitor;
         tupleAliases.Clear();
         tupleAliases.AddRange(savedTuples);
+        joinAliases = savedJoinAliases;
         orderingAfterProjection = savedOrderingAfter;
 
         return chain;
@@ -972,6 +985,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         var savedScope = scope;
         var savedVisitor = visitor;
         var savedTuples = tupleAliases.ToList();
+        var savedJoinAliases = joinAliases;
         var savedOrderingAfter = orderingAfterProjection;
         var savedContext = operandContext;
         var savedEnclosingVisitor = enclosingVisitor;
@@ -1007,6 +1021,7 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
         visitor = savedVisitor;
         tupleAliases.Clear();
         tupleAliases.AddRange(savedTuples);
+        joinAliases = savedJoinAliases;
         orderingAfterProjection = savedOrderingAfter;
         operandContext = savedContext;
         enclosingVisitor = savedEnclosingVisitor;

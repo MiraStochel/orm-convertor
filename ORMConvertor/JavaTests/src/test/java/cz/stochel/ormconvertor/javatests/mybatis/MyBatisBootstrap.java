@@ -49,11 +49,16 @@ public final class MyBatisBootstrap {
      * the scenario that set it.
      */
     public static SqlSessionFactory build(ClassLoader loader, List<String> mapperDocuments) {
+        return build(loader, mapperDocuments, TestDatabase.jdbcUrl());
+    }
+
+    /** The same over another database: LdbcSnb, for the judge of the LDBC catalog (decision 117). */
+    public static SqlSessionFactory build(ClassLoader loader, List<String> mapperDocuments, String jdbcUrl) {
         ClassLoader previous = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(loader);
 
         try {
-            Configuration configuration = new Configuration(environment());
+            Configuration configuration = new Configuration(environment(jdbcUrl));
             configuration.setMapUnderscoreToCamelCase(false);
 
             for (String document : mapperDocuments) {
@@ -103,12 +108,12 @@ public final class MyBatisBootstrap {
      * MyBatis's own unpooled data source wants the driver class by name - a property of its
      * built-in source rather than of the framework, which the tutorial's sixth step noted.
      */
-    private static Environment environment() {
+    private static Environment environment(String jdbcUrl) {
         DataSource dataSource = new UnpooledDataSource(
                 "com.microsoft.sqlserver.jdbc.SQLServerDriver",
-                TestDatabase.jdbcUrl(),
-                TestDatabase.jdbcUser(),
-                TestDatabase.jdbcPassword());
+                jdbcUrl,
+                TestDatabase.property(jdbcUrl, "user"),
+                TestDatabase.property(jdbcUrl, "password"));
 
         return new Environment("ormconvertor-generated", new JdbcTransactionFactory(), dataSource);
     }

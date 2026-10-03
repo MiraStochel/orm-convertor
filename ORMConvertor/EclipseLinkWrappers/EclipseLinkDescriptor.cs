@@ -86,6 +86,20 @@ public static class EclipseLinkDescriptor
         // "t2.CustomerID could not be bound" (error 4104).
         KeyThroughReferenceJoins: true,
 
+        // Measured against 5.0.0 when the validation set of LDBC Interactive v1 judged the LDBC
+        // catalog (decision 117) and EclipseLink alone answered other rows: a join inside a
+        // subquery - in, exists, a scalar subquery, of another entity or of the same one - is
+        // left out of the SQL with its condition, and a column of the joined entity is read
+        // from the subquery's own entity ("select m.CreatorPersonId from Person_knows_Person k1
+        // join Message m on ..." became SELECT t1.CreatorPersonId FROM Person_knows_Person t1).
+        DropsJoinsInSubqueries: true,
+
+        // Measured the same way: the inner entity joins stand in the list of tables after every
+        // outer join ("FROM Message t2 LEFT OUTER JOIN Person_knows_Person t3 ON (... t0 ...),
+        // Person t1, Message t0"), so the on of an outer join naming an inner join's alias is
+        // refused by SQL Server (error 4104).
+        InnerJoinsFollowOuterJoins: true,
+
         // Measured against 5.0.0 with every identifier of its JPQL grammar as an entity name
         // - at the head of a from clause, as the target of an inner and a left entity join
         // and in a subquery: these it refuses as a syntax error wherever an entity is named

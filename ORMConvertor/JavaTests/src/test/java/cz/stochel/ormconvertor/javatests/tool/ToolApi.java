@@ -61,7 +61,15 @@ public final class ToolApi {
      * express on its own.
      */
     public static void awaitReady() {
-        String url = baseUrl() + "/required-content";
+        awaitReady(baseUrl());
+    }
+
+    /**
+     * The same, for an instance at another address - the one whose catalog is LdbcSnb, which
+     * the judge of the LDBC catalog translates against (decision 117).
+     */
+    public static void awaitReady(String base) {
+        String url = base + "/required-content";
         long deadline = System.nanoTime() + READY_TIMEOUT.toNanos();
         String lastFailure = "no attempt was made";
 
@@ -100,6 +108,11 @@ public final class ToolApi {
      * than as an exception, so the scenario can assert the code and print the reason.
      */
     public static ToolResponse convert(int sourceOrm, int targetOrm, List<InputUnit> units) {
+        return convert(baseUrl(), sourceOrm, targetOrm, units);
+    }
+
+    /** The same, against the instance at the given address. */
+    public static ToolResponse convert(String base, int sourceOrm, int targetOrm, List<InputUnit> units) {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("sourceOrm", sourceOrm);
         request.put("targetOrm", targetOrm);
@@ -107,7 +120,7 @@ public final class ToolApi {
 
         try {
             HttpResponse<String> response = CLIENT.send(
-                    HttpRequest.newBuilder(URI.create(baseUrl() + "/convert"))
+                    HttpRequest.newBuilder(URI.create(base + "/convert"))
                             .header("Content-Type", "application/json")
                             .timeout(REQUEST_TIMEOUT)
                             .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(request)))
@@ -120,10 +133,34 @@ public final class ToolApi {
 
             return new ToolResponse(response.statusCode(), response.body(), conversion);
         } catch (IOException e) {
-            throw new IllegalStateException("The conversion request to " + baseUrl() + "/convert failed.", e);
+            throw new IllegalStateException("The conversion request to " + base + "/convert failed.", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted during the conversion request.", e);
+        }
+    }
+
+    /**
+     * A reading endpoint of the instance at the given address, as its JSON body - the LDBC
+     * catalog of decision 110, whose binding to the judge this suite replays the validation
+     * set by (decision 117). A status other than 200 is a failure that carries the body.
+     */
+    public static <T> T get(String base, String path, Class<T> type) {
+        try {
+            HttpResponse<String> response = CLIENT.send(
+                    HttpRequest.newBuilder(URI.create(base + path)).GET().timeout(REQUEST_TIMEOUT).build(),
+                    HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                throw new IllegalStateException("GET " + base + path + " answered " + response.statusCode() + ": " + response.body());
+            }
+
+            return MAPPER.readValue(response.body(), type);
+        } catch (IOException e) {
+            throw new IllegalStateException("GET " + base + path + " failed.", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted during GET " + base + path + ".", e);
         }
     }
 }

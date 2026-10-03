@@ -51,7 +51,7 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [Čísla řádků v editoru jednotky](#editor-jednotky-nemá-čísla-řádků-na-která-se-odvolává-chybová-hláška) | Rozhraní | práce | S7 |
 | [Mapovací fakta mimo `hbm.xml`, která se zahodí beze slova](#mapovací-fakta-mimo-hbmxml-která-čtení-zahodí-beze-slova) | Užitečné | práce | F5, F11 |
 | [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
-| [4. stupeň nad LDBC](#čtvrtý-stupeň-ověření-nad-ldbc-validační-sady-interactive-v1) | Užitečné | rozhodnutí | F13, T3 |
+| [Verdikt soudce LDBC nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) | Užitečné | práce | F13, T2, T3 |
 | [Druhý databázový dialekt](#druhý-databázový-dialekt) | Užitečné | rozhodnutí | F5, F7–F10, S2 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
 | [Sdílená entitní báze](#sdílená-entitní-báze-roste-a-rozšiřovací-plocha-ne) | Užitečné | rozhodnutí | S1 |
@@ -102,7 +102,7 @@ Ověřovací polovina pátého úkolu záměru hotová je: obě sady staví, spo
 #### Referenční databáze experimentů a případová studie T1
 *Ke kontrole proti záměru: rozh. [016](./decisions/016-generated-artifact-verification-levels.md) (testy nad vlastním schématem, WideWorldImporters zamítnutá). Kandidát: `LdbcSnb`, rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md). Požadavky T1, T2, T7, F4.*
 
-Záměr i specifikace jmenují jedinou referenční databázi, SQL Server s WideWorldImporters. Ta slouží compose stacku, Advisoru a ukázkám `/samples`; obě sady, 4. stupeň i diferenční matice běží nad vlastním schématem (`Tests/Database/TestSchema.sql`, `Differential/FixtureData.sql`), což rozh. 016 odůvodňuje pro *ověřování*. Pro *experimenty* odpověď chybí: T2 běží nad fixture, T7 nad WideWorldImporters a T1 nad ničím. Specifikace čte T1 jako „alespoň jednu reprezentativní případovou studii **nebo testovací sadu** s netriviálními entitami, vztahy a read-only dotazy"; katalog LDBC SNB (41 čtecích dotazů nad SF 1) tomu odpovídá, rozh. 110 ho ale zavedlo jen pro překlad a 1. stupeň ověření. Zmražené zadání ([`requirements.md`](./requirements.md), T1) přitom žádá open-source aplikaci a [`traceability.md`](./traceability.md) u T1 říká, že LDBC aplikací není. Rozhodnout, které čtení T1 platí, nad čím který experiment běží, zda je LDBC případovou studií T1, a kde se to vysloví.
+Záměr i specifikace jmenují jedinou referenční databázi, SQL Server s WideWorldImporters. Ta slouží compose stacku, Advisoru a ukázkám `/samples`; obě sady, 4. stupeň i diferenční matice běží nad vlastním schématem (`Tests/Database/TestSchema.sql`, `Differential/FixtureData.sql`), což rozh. 016 odůvodňuje pro *ověřování*. Pro *experimenty* odpověď chybí: T2 běží nad fixture, T7 nad WideWorldImporters a T1 nad ničím. Specifikace čte T1 jako „alespoň jednu reprezentativní případovou studii **nebo testovací sadu** s netriviálními entitami, vztahy a read-only dotazy"; katalog LDBC SNB (41 čtecích dotazů nad SF 1) tomu odpovídá, rozh. 110 ho ale zavedlo pro překlad a 1. stupeň ověření a rozh. 117 soudí na 4. stupni jen jeho dotazy Interactive, proti validační sadě LDBC. Zmražené zadání ([`requirements.md`](./requirements.md), T1) přitom žádá open-source aplikaci a [`traceability.md`](./traceability.md) u T1 říká, že LDBC aplikací není. Rozhodnout, které čtení T1 platí, nad čím který experiment běží, zda je LDBC případovou studií T1, a kde se to vysloví.
 
 #### Mezireprezentace se nezobrazuje, ačkoli F14 ji jmenuje
 *Milník 4 specifikace. Zúžení F14 v §9. Souvisí s rozh. [010](./decisions/010-diagnostics-as-returned-data.md), [033](./decisions/033-shape-of-the-static-frontend-screens.md) a [098](./decisions/098-the-number-is-decided-once-per-release.md). Požadavky F11, F14.*
@@ -191,11 +191,6 @@ Prospělo by to, ale žádná věta záruk na tom nestojí a nic tím není blok
 
 ### Rozhodnutí
 
-#### Čtvrtý stupeň ověření nad LDBC: validační sady Interactive v1
-*Plyne z rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md), které katalog LDBC drží na 1. stupni. Souvisí s [016](./decisions/016-generated-artifact-verification-levels.md) a [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md). Požadavky F13, T3.*
-
-LDBC publikuje pro Interactive v1 validační sady (205 MB; pro SF 1 přes 138 tisíc řádků parametrů a očekávaných výsledků v JSON) — soudce, kterého diferenční ověření nemá. Nejsou ale nad daty, která `LdbcSnb` nese: čtení v nich je proložené vkládáním z proudu aktualizací, kdežto databáze drží jen hromadně načtených 90 %. Rozhodnout: přehrát proud aktualizací (INS 1–8 jsou DML, tedy práce loaderu, ne překladu), nebo vzít jen řádky čtení před první aktualizací, které se jich týká; na kterém stroji a profilu to poběží (načtená SF 1 v CI není); jak se převedou tvary výsledků.
-
 #### Druhý databázový dialekt
 *Plyne z rozh. [086](./decisions/086-target-database-dialect-declared-by-the-descriptor.md); jednu ze tří otázek odbavilo [088](./decisions/088-a-declared-foreign-source-dialect-is-not-read.md). Souvisí s [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md) a [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md). Vyňatá oblast 5 (§9). Požadavky F5, F7–F10, S2.*
 
@@ -217,6 +212,11 @@ Invariant „nový framework je nový wrapper" platí: jméno frameworku neprosa
 Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele) a zda tím je nástroj „publikovaný" ve smyslu předpokladu rozh. 098; pak se 098 nahrazuje.
 
 ### Práce
+
+#### Verdikt soudce LDBC nad celou sadou SF 1
+*Práce podle rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md); stojí na [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md) a [095](./decisions/095-a-dated-run-record-names-its-commit.md). Požadavky F13, T2, T3.*
+
+Soudce běží, ale jen nad prefixem: compose profil `test` přehrává 1000 řádků sady SF 0,1. Verdikt, který rozhodnutí bere za doklad stavu „podle specifikace", je celá sada nad SF 1 v obou sadách na MIS3 (`docker compose up --build` dá `mssql_db` se sadou SF 1; `ORMCONVERTOR_LDBC_VALIDATION_ROWS` prázdná) — přes 130 tisíc čtení, při desítkách až stovkách milisekund na čtení hodiny na sadu, proto zatím neproběhl. Výsledek se zapíše do záznamu běhů v [`ORMConvertor/README.md`](../ORMConvertor/README.md) a do [`traceability.md`](./traceability.md) (F13); podíl shodných čtení IC 7, IC 13 a IC 14 do metrik T3. IC 13 a IC 14 souhlasily nad prefixem 800 řádků SF 0,1 ve všech šesti frameworcích ze 100 % — potvrdí-li to celá sada, jsou kandidáty na změnu stavu podle rozh. 110.
 
 #### Mapovací fakta mimo `hbm.xml`, která čtení zahodí beze slova
 *Zdroj: [`subset.md`](./subset.md), 2.13. Práce podle rozh. [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [004](./decisions/004-unexpressible-facts-as-warnings.md). Požadavky F5, F11.*

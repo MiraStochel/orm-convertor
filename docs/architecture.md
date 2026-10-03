@@ -532,7 +532,7 @@ flowchart TD
 
 | Cíl | Builder | Volání | Parametry | Řádek výsledku |
 |---|---|---|---|---|
-| EF Core | `EFCoreNativeSqlQueryBuilder` | `ctx.Database.SqlQuery<TRow>($"""…""")`, celá entita `ctx.Set<T>().FromSql($"""…""")`; vrací `IQueryable` | díry interpolace (o `$` víc, než je nejdelší běh `{`); kolekce `Failure` — EF Core 10.0.10 ji naváže jako jednu hodnotu JSON | třída `{Metoda}Row`: vlastnost na sloupec, typ z brány, vždy nullovatelná, `COUNT` jako `int`; sloupec bez jména či skaláru, dvě stejná jména (bez ohledu na velikost písmen) a jméno mimo identifikátor C# `Failure` (`Projection`) |
+| EF Core | `EFCoreNativeSqlQueryBuilder` | `ctx.Database.SqlQuery<TRow>($"""…""")`, celá entita `ctx.Set<T>().FromSql($"""…""")`; vrací `IQueryable` | díry interpolace (o `$` víc, než je nejdelší běh `{`); kolekce `Failure` — EF Core 10.0.10 ji naváže jako jednu hodnotu JSON | třída `{Metoda}Row`: vlastnost na sloupec, typ z brány, vždy nullovatelná, `COUNT` jako `int`, i sloupec mezivýsledku, který je `COUNT` (`ResultColumn.CountsRows`); sloupec bez jména či skaláru, dvě stejná jména (bez ohledu na velikost písmen) a jméno mimo identifikátor C# `Failure` (`Projection`) |
 | NHibernate | `NHibernateNativeSqlQueryBuilder` | `session.CreateSQLQuery("""…""")`; vrací `IQuery` | `:name`, kolekce `IN (:ids)` a `SetParameterList` | `AddEntity(typeof(T))`, jinak `AddScalar` s typem `NHibernateUtil`; sloupec bez jména či typu bez `AddScalar`, `Incompleteness` |
 | Hibernate, EclipseLink | `JpaNativeSqlQueryBuilder` (deskriptor a profil od builderu JPQL) | `em.createNativeQuery("""…"""[, T.class])`; vrací vždy `Query` (Jakarta Persistence 3.2.0) | `?n` v pořadí signatury a `setParameter(n, …)`; kolekce jen s `JpaImplementationProfile.NativeQueryExpandsCollection` (Hibernate 7.4.5 ano, EclipseLink 5.0.0 ne) | s `T.class` jedna entita |
 
@@ -635,6 +635,8 @@ HQL, JPQL i LINQ jmenují entity a vlastnosti, takže buildery mapují sloupce z
 | podmínka joinu, jejíž rovnosti pokrývají všechny páry vlastnící reference (i nad složeným klíčem) | reference porovnaná s řádkem: `p.customer = c` (HQL `with`, JPQL `on`) | vlastnost cizího klíče, kterou deklaruje entitní builder (navigace + jméno klíče, `EFCoreColumnMember`) |
 | jinde | cesta přes referenci ke klíči: `p.customer.CustomerID` | totéž |
 | kde by cesta stála join — EclipseLink vždy (profil `KeyThroughReferenceJoins`; jeho `p.customer.id` je vnitřní join, který ztratí řádky s `NULL`), NHibernate u části složeného klíče | nativní SQL se záznamem `Fallback` (rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md)) | — |
+
+**Joiny, které EclipseLink 5.0.0 nenapíše** (změřeno, když katalog LDBC soudila validační sada, rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md)): join uvnitř poddotazu vypustí z SQL i s podmínkou a sloupec připojené entity čte z kořene poddotazu (profil `DropsJoinsInSubqueries`, `RenderSubQuery`); vnitřní entitní joiny píše za všechny vnější, takže podmínka vnějšího joinu s aliasem vnitřního jmenuje tabulku, kterou SQL Server ještě nezná, a ten ji odmítne (`InnerJoinsFollowOuterJoins`, `BuildJoins`). Obojí jde nativním SQL s `Fallback` (`Subquery`, `Join`; rozh. 113), Hibernate 7.4.5 obojí píše. Drží `Combined/LdbcCatalogTest` (13 dotazů katalogu) a soudce; matice kategorií takový tvar nemá.
 
 Složený klíč joinu píše EF Core jako anonymní typ se jmenovanými členy; člen, jehož nullabilita se liší od protějšku, přetypuje na nullable, a typy členů bere z entity, kterou rozsah přiřadil aliasu (i konvencí pojmenování, rozh. [050](./decisions/050-one-home-for-the-singular-plural-heuristic.md)). Drží to `Combined/ForeignKeyColumnWithoutPropertyTest` a javové `hibernate/ReferenceKeyClaimsTest`, `eclipselink/ReferenceKeyClaimsTest`.
 
@@ -843,14 +845,14 @@ Nasazovací pohled (spouštění, konfigurace, testy, testovací databáze, veli
 
 ### 6.2 Ověření generovaných artefaktů
 
-Čtyři stupně rozh. [016](./decisions/016-generated-artifact-verification-levels.md), všechny implementované; dotazy podle rozh. [027](./decisions/027-query-artifact-verification.md), čtvrtý stupeň nad dotazem je diferenční ověření (rozh. [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md)). Každý stupeň má negativní polovinu.
+Čtyři stupně rozh. [016](./decisions/016-generated-artifact-verification-levels.md), všechny implementované; dotazy podle rozh. [027](./decisions/027-query-artifact-verification.md), čtvrtý stupeň nad dotazem je diferenční ověření (rozh. [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md)) a nad dotazy Interactive katalogu LDBC validační sada LDBC (rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md)). Každý stupeň má negativní polovinu.
 
 | Stupeň | Co se ověřuje | .NET cíle (EF Core, NHibernate, Dapper) | Java cíle (Hibernate, EclipseLink, MyBatis) | Kde |
 |---|---|---|---|---|
 | 1. tvar | jak je artefakt zapsán (S2) | řetězcové aserce | totéž | testy parserů a builderů |
 | 2. překlad | přeloží se / rozparsuje | `CSharpSourceCompiler`; `hbm.xml` proti XSD z balíku NHibernate; SQL Dapperu parserem | `javac` nad classpath sady | `Tests/Verification/`, `GeneratedArtifactTest` |
 | 3. přijetí | framework přijme bez provedení | `BuildSessionFactory`, `CreateQuery`; model EF Core, `ToQueryString()`; Dapper splývá s 2. | továrna Hibernate / EclipseLink / MyBatis, JPQL `createSelectionQuery` / `createQuery` | totéž |
-| 4. běh | entita se uloží a načte s touž identitou; dotaz vrátí kanonické řádky | `Dapper*PersistenceTest`, `DifferentialVerificationTest` | `*/GeneratedArtifactTest`, `differential/` | kolekce `TestDatabaseSchema`; `@Tag("integration")` |
+| 4. běh | entita se uloží a načte s touž identitou; dotaz vrátí kanonické řádky; dotaz Interactive katalogu LDBC řádky validační sady | `Dapper*PersistenceTest`, `DifferentialVerificationTest`, `LdbcJudge/LdbcValidationTest` | `*/GeneratedArtifactTest`, `differential/`, `ldbc/` | kolekce `TestDatabaseSchema`; `@Tag("integration")`; soudce nad `LdbcSnb` |
 
 #### Entitní větev .NET
 
@@ -952,14 +954,41 @@ Kategorie bez mutace (`DISTINCT`, `COUNT(DISTINCT …)`) nese kladná polovina �
 
 **Cross-ecosystem** (rozh. [090](./decisions/090-the-cross-ecosystem-matrix-counts-itself.md), `Combined/CrossEcosystemMatrixTest`): překlad = celý převod scénáře přes hranici, jednou za (scénář, zdroj, cíl); end-to-end = na 4. stupni. 15 celých převodů `CrossFrameworkInputs` (18 směrů) + dvojice diferenční matice přes hranici; test tvrdí součet **≥ 30** a scénář v každé ze čtyř dvojic ekosystémů (F10). Dapper → Hibernate / EclipseLink a MyBatis → NHibernate předají nasucho jen dotaz (zdroj nevysloví klíč, F6); test tvrdí celý převod, nebo důvod.
 
-**LDBC SNB** (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)) — `SampleData/LdbcSnbSample.cs`: 41 čtecích dotazů (`LdbcQuery`), 35 `AsSpecified`, 6 `Simplified` (IC 7 přes `DATEDIFF`; IC 13, IC 14, BI 15, BI 19, BI 20 s rekurzí do tří kroků), žádný `NotTranslated`. Odmítá jen EclipseLink BI 12; nativní SQL (`FallbackBy`): EF Core 10 dotazů, NHibernate 14, EclipseLink 14, Hibernate IC 12. `Combined/LdbcCatalogTest` převádí z Dapperu do pěti cílů nad prázdným schématem `<schéma>_ldbc` (`database/ldbc/schema.sql`, `constraints.sql`), tvrdí `Failure` / `Fallback` podle katalogu a každý text spustí; 4. stupeň neběží (data SF 1 sady nenačítají). Texty jsou ověřené proti referenčním implementacím LDBC.
+**LDBC SNB** (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)) — `SampleData/LdbcSnbSample.cs`: 41 čtecích dotazů (`LdbcQuery`), 35 `AsSpecified`, 6 `Simplified` (IC 7 přes `DATEDIFF`; IC 13, IC 14, BI 15, BI 19, BI 20 s rekurzí do tří kroků), žádný `NotTranslated`. Odmítá jen EclipseLink BI 12; nativní SQL (`FallbackBy`): EF Core 10 dotazů, NHibernate 14, EclipseLink 27, Hibernate IC 12. `Combined/LdbcCatalogTest` převádí z Dapperu do pěti cílů nad prázdným schématem `<schéma>_ldbc` (`database/ldbc/schema.sql`, `constraints.sql`), tvrdí `Failure` / `Fallback` podle katalogu, každý text spustí a hlídá, že každý dotaz Interactive má vazbu na soudce a žádný BI ji nemá. Texty jsou ověřené proti referenčním implementacím LDBC; dotazy Interactive navíc soudcem níže, BI ne — jejich stav je tvrzením autora.
+
+#### Soudce LDBC Interactive v1
+
+Validační sada LDBC Interactive v1 je 4. stupněm nad 21 dotazy Interactive katalogu (rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md)). Řádek sady je dvojice objektů JSON *parametry\|výsledek*; čtení platí ve stavu po všech vkládáních nad ním, proto se sada přehrává v pořadí.
+
+```mermaid
+flowchart LR
+  V[("ValidationOperation<br/>v LdbcSnb")] --> P["přehrávání<br/>v pořadí řádků"]
+  P -- "INS 1–8" --> I["updates/ins1–8.sql"] --> DB[("LdbcSnb")]
+  P -- "IS, IC" --> A["artefakt každého frameworku"] --> DB
+  A --> C{"kanonický řádek<br/>089 + 117"}
+  V -- "očekávaný výsledek" --> C
+```
+
+| Část | Kde | Co dělá |
+|---|---|---|
+| sada | `database/ldbc/validation.sql`, `load-ldbc.sh` | soubor `validation_params-sf<N>.csv` téhož scale factoru jako data do `ValidationOperation` (`Position`, `Operation` `IS1`…`INS8`, `Parameters`, `Result`); operaci pozná podle pole, které má jen ona; hlídá pořadí (data vkládání neklesají) a že žádný klíč vkládání v datech není; rozšířená vlastnost `ldbc.validation` |
+| vkládání | `database/ldbc/updates/ins1.sql`–`ins8.sql` | parametry jmény polí operace (číslo `BIGINT`, text `NVARCHAR`, seznam a objekt jako JSON pro `OPENJSON`); kořen vlákna, fórum a jazyk komentáře z rodiče jako `load.sql`; přátelství obousměrně |
+| kompenzace | `updates/undo.sql` | smaže řádky všech vkládání sady po klíčích, které jmenují; idempotentní, běží před přehráváním i po něm |
+| vazba | `LdbcQuery.Validation`, i na `/ldbc` | operace; parametry textu z polí (`PlusDays` pro konec okna, `NextMonth`); sloupce projekce v jejím pořadí s polem výsledku a druhem (`Moment`, `Date`, `Flag`, `Set`, `Sequence`); `Ordered` (ne u IC 14, kterou specifikace řadí jen podle váhy) |
+| převod | `LdbcJudge/LdbcCanonicalForm`, javový `ldbc/LdbcCanonicalForm` | očekávaný JSON i řádek artefaktu do kanonického řádku 089: milisekundy na okamžik či datum, příznak na 1/0, seznam jako množina seřazených prvků, prázdný seznam `NULL`, objekt jako jeden řádek; shodu obou drží `renderer-conformance.txt` |
+| přehrávání | `LdbcJudge/LdbcReplay`, `ldbc/LdbcReplay` | aplikační zámek `ldbc.validation` na spojení; artefakt z Dapperu s `LdbcSnb` jako katalogem, přeložený a zkompilovaný jednou (`PreparedQuery`, `PreparedJavaQuery`) a spuštěný pro každé čtení; .NET Dapper (text katalogu), EF Core, NHibernate; Java Hibernate, EclipseLink, MyBatis s katalogem a artefakty z instance `ORMCONVERTOR_LDBC_API_URL` |
+
+- **Verdikt** — dotaz `AsSpecified` musí souhlasit na každém čtení v každém frameworku; neshoda Dapperu (textu katalogu) je chyba textu, neshoda jen cíle chyba překladu. **Míra** — `Simplified` (IC 7, IC 13, IC 14) zapíše podíl shodných čtení do výstupu; artefakt musí běžet.
+- **Negativní polovina** — pět mutací 089 nad artefaktem IC 2 v každém frameworku musí skončit neshodou nebo selháním.
+- **Konfigurace** — `ConnectionStrings:LdbcDatabase` (.NET), `ORMCONVERTOR_TEST_LDBC_JDBC_URL` a `ORMCONVERTOR_LDBC_API_URL` (Java); bez nich se soudce přeskočí s důvodem, s `ORMCONVERTOR_REQUIRE_LDBC_DATABASE=1` selže. `ORMCONVERTOR_LDBC_VALIDATION_ROWS` přehraje jen prefix sady; profil `test` přehrává 1000 řádků SF 0,1 ([README](../ORMConvertor/README.md#the-ldbc-judge)).
+- **Doba** — čtení stojí nad SF 0,1 desítky až stovky milisekund, celá sada (přes 130 tisíc čtení) tedy hodiny; 800 řádků trvá .NET sadě 3,4 min, javové 4–8 min.
 
 **Nárok** F7–F10, F12 a F13 stojí na stupních 2–4 javové sady a na maticích (§9, [`traceability.md`](./traceability.md)). Záznamy běhů s commitem nese [README](../ORMConvertor/README.md#how-large-the-suite-is-and-what-it-covers) (rozh. [095](./decisions/095-a-dated-run-record-names-its-commit.md)); poslední běhy předcházely commitu:
 
 | Sada | Datum | Prostředí | Výsledek |
 |---|---|---|---|
-| javová | 2026-10-01 | compose `test` (Temurin 25, SQL Server 2022) | 1943, zelená |
-| .NET | 2026-10-01 | LocalDB na hostiteli | 7196, zelená (kontejner 2026-09-30: 4273) |
+| javová | 2026-10-03 | compose `test` (Temurin 25, SQL Server 2022, soudce LDBC nad 1000 řádky SF 0,1) | 2163, zelená |
+| .NET | 2026-10-03 | compose `test` (SQL Server 2022, soudce LDBC nad 1000 řádky SF 0,1) | 7878, zelená (LocalDB na hostiteli bez `LdbcSnb`: 7799 a 79 přeskočených testů soudce) |
 
 ### 6.3 Frontend
 

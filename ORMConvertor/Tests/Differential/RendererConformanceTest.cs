@@ -20,6 +20,7 @@ public class RendererConformanceTest
 
         var actual = RendererConformance.Rows
             .Select(row => ResultRow.Render(row, RendererConformance.Settings))
+            .Concat(RendererConformance.LdbcRows())
             .ToList();
 
         Assert.Equal(expected.Count, actual.Count);
