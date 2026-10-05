@@ -91,6 +91,9 @@ public sealed class EFCoreLinqQueryVisitor(
     /// <summary>The escape character of the LIKE whose pattern is being written (decision 107); null outside a pattern.</summary>
     private string? patternEscape;
 
+    /// <summary>The C# type the element of the next aggregate is lifted into, for the left side of a <c>??</c> (<see cref="Lifted"/>); null otherwise.</summary>
+    private string? liftedElement;
+
     /// <summary>Whether the alias belongs to this scope or one enclosing it (decision 061).</summary>
     public bool Knows(string alias) => Scope.Aliases.Contains(alias) || outer?.Knows(alias) == true;
 
@@ -707,9 +710,12 @@ public sealed class EFCoreLinqQueryVisitor(
             return $"{Scope.Param}.Count()";
         }
 
+        var lift = liftedElement is null ? string.Empty : $"({liftedElement}?)";
+        liftedElement = null;
+
         var wasInsideAggregate = insideAggregate;
         insideAggregate = true;
-        var element = $"{Scope.ElementParam} => {Operand(bare)}";
+        var element = $"{Scope.ElementParam} => {lift}{Operand(bare)}";
         insideAggregate = wasInsideAggregate;
 
         // The aggregate over the distinct values of the argument (decision 102): a Select of
@@ -803,7 +809,7 @@ public sealed class EFCoreLinqQueryVisitor(
                 QueryFunction.Trim => $"{Receiver(arguments[0])}.Trim()",
                 QueryFunction.Substring => $"{Receiver(arguments[0])}.Substring({ZeroBased(arguments[1])}, {Operand(arguments[2])})",
                 QueryFunction.Length => $"{Receiver(arguments[0])}.Length",
-                QueryFunction.Coalesce => $"({string.Join(" ?? ", arguments.Select(Operand))})",
+                QueryFunction.Coalesce => $"({string.Join(" ?? ", arguments.Select((argument, i) => i < arguments.Count - 1 ? Lifted(argument) : Operand(argument)))})",
                 QueryFunction.Abs => $"Math.Abs({Operand(arguments[0])})",
                 QueryFunction.Year => $"{Receiver(arguments[0])}.Year",
                 QueryFunction.Month => $"{Receiver(arguments[0])}.Month",
@@ -820,6 +826,43 @@ public sealed class EFCoreLinqQueryVisitor(
         }
 
         return Case(expression);
+    }
+
+    /// <summary>
+    /// A side of COALESCE before the last, as the left side of C#'s <c>??</c>, which has to be
+    /// able to hold null. A value C# types as a non-nullable value - a member declared so, on
+    /// the optional side of an outer join too, an aggregate over such a member, a count - does
+    /// not compile there (CS0019), so it is lifted: an aggregate through its element,
+    /// <c>g.Sum(t =&gt; (int?)t.fs.Score)</c>, which EF Core translates to the bare SUM that is
+    /// NULL over no values, as SQL's is; a count, whose Count() is an int, and a member by a
+    /// cast of the whole. A value that is nullable already, or whose type nothing states, stays
+    /// as it is.
+    /// </summary>
+    private string Lifted(QueryOperand operand)
+    {
+        if (string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"(int?){Operand(operand)}";
+        }
+
+        if (!operand.IsColumn
+            || operand.Property is null or "*"
+            || !Scope.Entities.TryGetValue(operand.Table ?? string.Empty, out var map)
+            || EFCoreColumnMember.DeclaredValue(map, operand.Property) is not { Nullable: false } value)
+        {
+            return Operand(operand);
+        }
+
+        var type = CSharpTypeConvertor.ToString(LangType.Scalar(value.Scalar));
+        if (operand.Function is not null && Scope.Grouped)
+        {
+            liftedElement = type;
+            var aggregate = Operand(operand);
+            liftedElement = null;
+            return aggregate;
+        }
+
+        return $"({type}?){Operand(operand)}";
     }
 
     /* ---- the functions of decision 113 ------------------------------------------------ */

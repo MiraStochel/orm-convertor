@@ -658,13 +658,20 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
 
         // One key is g.Key itself. Several go into an anonymous key object, each under a name:
         // a column under its property, which C# infers from the member access, an expression
-        // under the alias of the projection that projects the same value. An expression no
-        // projection names has no name the tool may give it (decision 028), and LINQ cannot
-        // say the grouping without one, so the query goes out in native SQL (decision 113).
+        // under the alias of the projection that projects the same value. Two columns whose
+        // properties share a name - the Id of two tables - would infer one member twice, which
+        // C# refuses, so each of them goes under the alias of the projection that projects it.
+        // An expression, or such a column, that no projection names has no name the tool may
+        // give it (decision 028), and LINQ cannot say the grouping without one, so the query
+        // goes out in native SQL (decision 113).
+        var inferred = clauses.GroupBys
+            .Select(g => g.Key.IsColumn ? InferredMember(visitor.Property(g.Key.Table, g.Key.Property!)) : null)
+            .ToList();
         var keys = new List<LinqGroupKey>(clauses.GroupBys.Count);
         var members = new List<string>(clauses.GroupBys.Count);
-        foreach (var grouping in clauses.GroupBys)
+        for (var i = 0; i < clauses.GroupBys.Count; i++)
         {
+            var grouping = clauses.GroupBys[i];
             var key = grouping.Key;
             if (clauses.GroupBys.Count == 1)
             {
@@ -673,9 +680,10 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
                 continue;
             }
 
-            if (key.IsColumn)
+            var own = inferred[i];
+            if (own is not null && !inferred.Where((other, j) => j != i && other == own).Any())
             {
-                keys.Add(new LinqGroupKey(key, InferredMember(visitor.Property(key.Table, key.Property!))));
+                keys.Add(new LinqGroupKey(key, own));
                 members.Add(visitor.Visit(grouping));
                 continue;
             }
@@ -684,13 +692,24 @@ public class EFCoreLinqQueryBuilder : AbstractQueryBuilder
             if (name is null)
             {
                 ReportUnspoken(
-                    $"The grouping key '{key}' is an expression no projection names, and a LINQ key of several parts names every member of its key object",
-                    QueryFeature.ComputedGrouping);
+                    own is null
+                        ? $"The grouping key '{key}' is an expression no projection names, and a LINQ key of several parts names every member of its key object"
+                        : $"The grouping key '{key}' is a column whose property '{own}' another key shares, no projection names it, and a LINQ key of several parts names each member of its key object once",
+                    own is null ? QueryFeature.ComputedGrouping : QueryFeature.Grouping);
                 return;
             }
 
             keys.Add(new LinqGroupKey(key, name));
             members.Add($"{name} = {visitor.Visit(grouping)}");
+        }
+
+        // An alias may still meet the property another key infers; C# takes no name twice.
+        if (keys.Count > 1 && keys.Select(k => k.Member).Distinct(StringComparer.Ordinal).Count() != keys.Count)
+        {
+            ReportUnspoken(
+                $"Two parts of the grouping key would be one member '{keys.GroupBy(k => k.Member, StringComparer.Ordinal).First(g => g.Count() > 1).Key}' of the LINQ key object, which names each member once",
+                QueryFeature.Grouping);
+            return;
         }
 
         var selector = members.Count == 1 ? members[0] : $"new {{ {string.Join(", ", members)} }}";

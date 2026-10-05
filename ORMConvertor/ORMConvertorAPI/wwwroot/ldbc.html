@@ -266,10 +266,14 @@
       </div>
 
       <p class="muted-note">
-        &ldquo;Translated&rdquo; is the first level of verification: the target artifact is
-        generated without a Failure record. Whether it returns the rows the source returns is
-        the differential verification, which does not run over this data set yet. Every text
-        below does run, against the LDBC tables, in the test suite.
+        &ldquo;Translated&rdquo; holds for every query at the first level of verification: the
+        target artifact is generated without a Failure record, and the EF&nbsp;Core and
+        NHibernate artifacts compile. Whether it returns the right rows is judged for the 21
+        Interactive queries by LDBC's own validation set, replayed against the generated
+        artifact of every framework: a query translated as specified has to agree with it on
+        every read, a simplified one reports how many reads agree. LDBC publishes no such set
+        for the Business Intelligence queries over this data, so their status is the
+        author's claim. Every text below does run, against the LDBC tables, in the test suite.
       </p>
     </section>
 

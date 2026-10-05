@@ -583,4 +583,26 @@ public class IntermediateResultTest
         Assert.Contains("public int? CustomerId { get; set; }", method);
         Assert.Contains("public int? Orders { get; set; }", method);
     }
+
+    /// <summary>
+    /// MAX, MIN, SUM and AVG over a column of a definition that counts rows answer in SQL
+    /// Server with the int of the count, and EF Core reads a column with the getter of the
+    /// property's type, which does not widen: a long would fail on the first row.
+    /// </summary>
+    [Fact]
+    public void EFCoreTypesAnAggregateOverACountedColumnAsTheIntSqlServerAnswers()
+    {
+        const string sql = """
+            WITH oc AS (SELECT o.CustomerId AS CustomerId, COUNT(*) AS Orders FROM Orders AS o GROUP BY o.CustomerId)
+            SELECT MAX(oc.Orders) AS MostOrders, MIN(oc.Orders) AS FewestOrders, SUM(oc.Orders) AS AllOrders, AVG(oc.Orders) AS AverageOrders
+            FROM oc AS oc
+            """;
+
+        var method = AssertFellBack(FromSql(new EFCoreLinqQueryBuilder(), sql), QueryFeature.Aggregation, "without a grouping", sql);
+
+        Assert.Contains("public int? MostOrders { get; set; }", method);
+        Assert.Contains("public int? FewestOrders { get; set; }", method);
+        Assert.Contains("public int? AllOrders { get; set; }", method);
+        Assert.Contains("public int? AverageOrders { get; set; }", method);
+    }
 }

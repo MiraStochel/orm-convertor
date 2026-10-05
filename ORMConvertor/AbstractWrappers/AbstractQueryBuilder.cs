@@ -1442,8 +1442,9 @@ public abstract class AbstractQueryBuilder
     }
 
     /// <summary>
-    /// Whether an operand is a row count: a COUNT, or a column of an intermediate result
-    /// whose definition projects one under that name.
+    /// Whether an operand is a row count: a COUNT, a column of an intermediate result whose
+    /// definition projects one under that name, or MAX, MIN, SUM or AVG over such a column -
+    /// SQL Server answers each of the four over an int with an int.
     /// </summary>
     private bool CountsRows(QueryOperand? operand, Dictionary<string, EntityMap> aliases)
     {
@@ -1457,7 +1458,12 @@ public abstract class AbstractQueryBuilder
             return true;
         }
 
-        if (!operand.IsColumn || operand.Function is not null || operand.Property is null)
+        if (!operand.IsColumn || operand.Property is null)
+        {
+            return false;
+        }
+
+        if (operand.Function is not null && !KeepsTheIntOfACount.Contains(operand.Function))
         {
             return false;
         }
@@ -1468,6 +1474,8 @@ public abstract class AbstractQueryBuilder
 
         return rows.Any(row => countingColumns.Contains(CountingKey(row.Table!, operand.Property)));
     }
+
+    private static readonly HashSet<string> KeepsTheIntOfACount = new(["MAX", "MIN", "SUM", "AVG"], StringComparer.OrdinalIgnoreCase);
 
     private static string CountingKey(string definition, string column) => definition + "/" + column;
 

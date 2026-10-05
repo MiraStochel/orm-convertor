@@ -7,6 +7,8 @@ using Model;
 using OrmConvertor;
 using SampleData;
 using Tests.Database;
+using Tests.Differential;
+using Tests.Verification;
 
 namespace Tests.Combined;
 
@@ -19,7 +21,8 @@ namespace Tests.Combined;
 /// the fixture from the very scripts the container's LdbcSnb database is loaded with.
 ///
 /// The claims are about the first verification level - the target artifact is produced
-/// without a Failure record, or it is refused with one. Whether a query of the Interactive
+/// without a Failure record, or it is refused with one - and, for EF Core and NHibernate, the
+/// second: the artifact compiles with the entities of its conversion. Whether a query of the Interactive
 /// workload returns what the specification defines is the fourth level, held by LDBC's own
 /// validation set in <c>Ldbc/LdbcValidationTest</c> over a loaded LdbcSnb (decision 117); here
 /// it is only claimed that every such query is bound to its judge. What this class does run is
@@ -149,6 +152,52 @@ public class LdbcCatalogTest(TestSchemaFixture fixture)
                 $"{key} went out in native SQL from {target}, which the catalog does not say:{Environment.NewLine}"
                     + string.Join(Environment.NewLine, result.Records.Where(record => record.Kind == ConversionRecordKind.Fallback).Select(record => $"  {record.Feature}: {record.Reason}")));
         }
+    }
+
+    /// <summary>
+    /// The second verification level for the .NET targets (decision 027): the query artifact
+    /// EF Core or NHibernate receives - in its own language or in native SQL - compiles with the
+    /// entities of the same conversion. The judge of decision 117 compiles the Interactive
+    /// queries anyway; this holds the BI queries too, which no judge runs, so that a method the
+    /// consumer's compiler would refuse does not pass for a translation on the first level alone.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(DotNetArtifacts))]
+    public void EveryDotNetArtifactCompiles(string key, ORMEnum target)
+    {
+        fixture.SkipIfUnavailable();
+        var query = Query(key);
+
+        var result = ConversionHandler.Convert(ORMEnum.Dapper, target, Units(query), fixture.CatalogReader);
+        var (references, usings) = target == ORMEnum.EFCore
+            ? (GeneratedQueryCompiler.EFCoreConsumerReferences, "using Microsoft.EntityFrameworkCore;")
+            : (GeneratedQueryCompiler.NHibernateConsumerReferences, "using NHibernate;");
+
+        var compiled = GeneratedQueryCompiler.Compile(
+            $"LdbcCatalog_{key}_{target}",
+            DotNetQueryRunner.QueryMethod(result),
+            PreparedQuery.EntitySources(result),
+            references,
+            PreparedQuery.Usings(result, usings));
+
+        Assert.True(
+            compiled.Success,
+            $"{key} into {target} does not compile:{Environment.NewLine}"
+                + string.Join(Environment.NewLine, compiled.Errors.Select(error => "  " + error)));
+    }
+
+    public static TheoryData<string, ORMEnum> DotNetArtifacts()
+    {
+        var data = new TheoryData<string, ORMEnum>();
+        foreach (var query in LdbcSnbSample.Queries.Where(query => query.Translation != LdbcTranslation.NotTranslated))
+        {
+            foreach (var target in new[] { ORMEnum.EFCore, ORMEnum.NHibernate }.Where(target => query.Refusals.All(refusal => refusal.Target != target)))
+            {
+                data.Add(query.Key, target);
+            }
+        }
+
+        return data;
     }
 
     /// <summary>

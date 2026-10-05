@@ -236,7 +236,7 @@ internal sealed class PreparedQuery : IDisposable
         sessionFactory?.Dispose();
     }
 
-    private static IEnumerable<string> EntitySources(ConversionResult conversion)
+    internal static IEnumerable<string> EntitySources(ConversionResult conversion)
         => conversion.Sources
             .Where(source => source.ContentType == ConversionContentType.CSharpEntity)
             .Select(source => source.Content);
@@ -247,7 +247,7 @@ internal sealed class PreparedQuery : IDisposable
     /// unqualified - it is written for a project that has it in scope - so without this the
     /// compilation fails on the type the query is about.
     /// </summary>
-    private static string Usings(ConversionResult conversion, string frameworkUsings)
+    internal static string Usings(ConversionResult conversion, string frameworkUsings)
     {
         var declarations = EntitySources(conversion)
             .Select(source => System.Text.RegularExpressions.Regex.Match(source, @"^\s*namespace\s+([\w.]+)\s*;", System.Text.RegularExpressions.RegexOptions.Multiline))

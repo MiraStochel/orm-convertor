@@ -192,6 +192,54 @@ public class ExpressionVocabularyTest
         Assert.Contains("GROUP BY YEAR(s.SoldAt), s.CustomerId", sql, StringComparison.Ordinal);
     }
 
+    private const string PairsOfSales =
+        "SELECT s.SaleId AS FirstSale, o.SaleId AS SecondSale, COUNT(*) AS Pairs FROM Sales AS s INNER JOIN Sales AS o ON o.CustomerId = s.CustomerId GROUP BY s.SaleId, o.SaleId";
+
+    /// <summary>
+    /// Two key columns whose properties share a name - the key of two tables, here one table
+    /// twice - would infer one member of the key object twice, which C# refuses (CS0833); each
+    /// goes under the alias of the projection that projects it, and the projection reads it there.
+    /// </summary>
+    [Fact]
+    public void TwoKeyColumnsOfOneNameGoUnderTheirProjections()
+    {
+        var linq = Text(Sql(ORMEnum.EFCore, PairsOfSales));
+
+        Assert.Contains(".GroupBy(t => new { FirstSale = t.s.SaleId, SecondSale = t.o.SaleId })", linq, StringComparison.Ordinal);
+        Assert.Contains("FirstSale = g.Key.FirstSale, SecondSale = g.Key.SecondSale, Pairs = g.Count()", linq, StringComparison.Ordinal);
+    }
+
+    /// <summary>Two such columns that no projection names have no names LINQ could give them (decision 028), so EF Core writes the query in native SQL.</summary>
+    [Fact]
+    public void TwoUnnamedKeyColumnsOfOneNameFallBackInEFCore()
+    {
+        var sql = FellBack(
+            Sql(ORMEnum.EFCore, "SELECT COUNT(*) AS Pairs FROM Sales AS s INNER JOIN Sales AS o ON o.CustomerId = s.CustomerId GROUP BY s.SaleId, o.SaleId"),
+            QueryFeature.Grouping);
+
+        Assert.Contains("GROUP BY s.SaleId, o.SaleId", sql, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// COALESCE over a value C# types as non-nullable - SUM over an int, a member on the optional
+    /// side of an outer join - is lifted to the nullable type C#'s ?? takes on its left (CS0019
+    /// otherwise): an aggregate through its element, which EF Core translates to the bare SUM;
+    /// a value that may be null already - a nullable text - stays as it is.
+    /// </summary>
+    [Fact]
+    public void CoalesceLiftsANonNullableLeftSideInLinq()
+    {
+        var grouped = Text(Sql(
+            ORMEnum.EFCore,
+            "SELECT s.CustomerId AS CustomerId, COALESCE(SUM(o.Quantity), 0) AS Later, COALESCE(MAX(o.Notes), '') AS Note FROM Sales AS s LEFT JOIN Sales AS o ON o.CustomerId = s.CustomerId GROUP BY s.CustomerId"));
+
+        Assert.Contains("Later = (g.Sum(t => (int?)t.o.Quantity) ?? 0)", grouped, StringComparison.Ordinal);
+        Assert.Contains("Note = (g.Max(t => t.o.Notes) ?? \"\")", grouped, StringComparison.Ordinal);
+
+        var rows = Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId, COALESCE(o.Quantity, 0) AS Quantity FROM Sales AS s LEFT JOIN Sales AS o ON o.SaleId = s.SaleId"));
+        Assert.Contains("Quantity = ((int?)t.o.Quantity ?? 0)", rows, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// EclipseLink binds every literal as a parameter (measured): a key with a literal in it
     /// would reach SQL Server as another expression than the projection, so EclipseLink writes
