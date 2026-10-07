@@ -184,6 +184,23 @@ public class LdbcCatalogTest(TestSchemaFixture fixture)
             compiled.Success,
             $"{key} into {target} does not compile:{Environment.NewLine}"
                 + string.Join(Environment.NewLine, compiled.Errors.Select(error => "  " + error)));
+
+        // The LINQ form NHibernate writes beside its HQL (decision 118) compiles with the same
+        // entities, where the provider speaks the query at all.
+        if (DotNetQueryRunner.Carries(result, ConversionContentType.CSharpLinqQuery))
+        {
+            var linq = GeneratedQueryCompiler.Compile(
+                $"LdbcCatalog_{key}_{target}_Linq",
+                DotNetQueryRunner.QueryMethod(result, form: ConversionContentType.CSharpLinqQuery),
+                PreparedQuery.EntitySources(result),
+                GeneratedQueryCompiler.NHibernateConsumerReferences,
+                PreparedQuery.Usings(result, "using NHibernate;" + Environment.NewLine + "using NHibernate.Linq;"));
+
+            Assert.True(
+                linq.Success,
+                $"The LINQ form of {key} into {target} does not compile:{Environment.NewLine}"
+                    + string.Join(Environment.NewLine, linq.Errors.Select(error => "  " + error)));
+        }
     }
 
     public static TheoryData<string, ORMEnum> DotNetArtifacts()

@@ -10,16 +10,25 @@ using Model.QueryInstructions.Conditions;
 namespace NHibernateWrappers;
 
 /// <summary>
-/// Emits HQL, NHibernate's own query language (decision 022). HQL rather than NHibernate
-/// LINQ, because a LINQ target would make this builder a near-copy of the EF Core one and
-/// would cost the translation matrix its only non-LINQ .NET target.
+/// Emits HQL, NHibernate's own query language (decision 022) and the binding form of its
+/// query: the one the levels of verification judge and the Advisor measures. HQL rather than
+/// LINQ as the binding form, because HQL covers the whole of the representation and keeps the
+/// translation matrix its only non-LINQ .NET target; the LINQ form the framework has too is
+/// written beside it, by <see cref="NHibernateLinqQueryBuilder"/> over the shared LINQ
+/// writer, as the second form of decision 118.
 ///
 /// Two artifacts leave here: the runnable C# method and the bare HQL, so that verification
 /// and any other consumer can take the query itself without digging it out of the code
-/// (decision 025).
+/// (decision 025); the template appends the LINQ form as a third where the provider speaks
+/// the query.
 /// </summary>
 public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
 {
+    protected override string FormName => "HQL";
+
+    /// <summary>The same query as LINQ over <c>session.Query&lt;T&gt;()</c>, beside the HQL (decision 118).</summary>
+    protected override AbstractQueryBuilder? SecondFormBuilder() => new NHibernateLinqQueryBuilder();
+
     private NHibernateHqlQueryVisitor visitor = null!;
 
     /// <summary>

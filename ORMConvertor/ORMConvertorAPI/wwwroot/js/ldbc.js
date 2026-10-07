@@ -19,6 +19,7 @@ import { cloneTemplate, renderCode, renderArtifacts, renderRecords, renderCatalo
 
 const QUERY_CONTENT_TYPES = new Set([
   ContentType.CSharpQuery,
+  ContentType.CSharpLinqQuery,
   ContentType.SqlQuery,
   ContentType.HqlQuery,
   ContentType.JavaQuery,

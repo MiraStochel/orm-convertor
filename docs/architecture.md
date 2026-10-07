@@ -75,11 +75,11 @@ Kanonické místo verzí, proti kterým platí tvrzení o frameworcích zde i v 
 
 ## 2. Struktura řešení (.NET solution)
 
-`ORMConvertor.sln` (.NET 10) má jednadvacet projektů:
+`ORMConvertor.sln` (.NET 10) má dvaadvacet projektů:
 
 - **`ORMConvertorAPI`** — spouštěcí ASP.NET projekt: REST API a statický frontend z `wwwroot` bez buildu (rozh. [032](./decisions/032-frontend-as-static-pages-without-a-build.md), obrazovky [099](./decisions/099-examples-are-content-not-a-choice.md); §6.3); OpenAPI a Swagger UI v §6.5.
 - **`Tests`** (xUnit v3) — složka na wrapper (javové jen 1. stupeň), `Combined/` (matice `ORMEnum` × `ORMEnum`: 36 směrů, 18 napříč ekosystémy, vstupy z `CrossFrameworkInputs.cs`; řádky na framework rukou jen `EnforcedMembersTest`, rozh. [037](./decisions/037-enforced-member-binding-held-by-the-test.md)), `Catalog/`, `Verification/` (2.–3. stupeň), `Differential/` (4. stupeň), `Database/`, `Api/`.
-- **devatenáct knihoven**, jen jako reference (níž).
+- **dvacet knihoven**, jen jako reference (níž).
 
 Mimo `.sln` je **`JavaTests/`** (Maven, JUnit), v adresáři řešení kvůli triggeru CI; staví ji stupeň `java-tests` obrazu a job `java-test` (rozh. 076), obsah §6.2.
 
@@ -107,13 +107,14 @@ flowchart TD
 flowchart TD
     DAP["DapperWrappers"] & EF["EFCoreWrappers"] & NH["NHibernateWrappers"] --> CS["CSharpEntityParsing"]
     EF & NH --> LQ["LinqParsing"]
+    EF & NH --> LB["LinqBuilding"]
     DAP & EF & NH --> TS["TransactSql"]
     HIB["HibernateWrappers"] & ECL["EclipseLinkWrappers"] --> JPA["JakartaPersistence"]
     JPA --> JE["JavaEntityParsing"]
     JPA --> TS
     MB["MyBatisWrappers"] --> JE
     MB --> TS
-    CS & LQ & JE & TS --> AW["AbstractWrappers"]
+    CS & LQ & LB & JE & TS --> AW["AbstractWrappers"]
 ```
 
 | Projekt | Zodpovědnost | Závisí na |
@@ -121,8 +122,9 @@ flowchart TD
 | `Model` | mezireprezentace (§4); typ výjimky nenese — ten žije, kde se háže i chytá (`JavaSyntaxError`, `JavaInputTooDeep`, `JpqlParseError`, `HqlParseError`; rozh. [097](./decisions/097-an-exception-type-lives-where-it-is-thrown.md)), očekávaný stav je záznam (rozh. [010](./decisions/010-diagnostics-as-returned-data.md)) | — |
 | `Common` | `AccessModifierConvertor`, `CSharpTypeConvertor`; `Common.Compilation` (jediná kompilace Roslynem: `CSharpSourceCompiler`, `MetadataReferenceProvider`), `Common.Xml` (rozh. [046](./decisions/046-xml-mapping-written-through-an-element-writer.md)), `Common.Naming` (entita ↔ tabulka, rozh. [050](./decisions/050-one-home-for-the-singular-plural-heuristic.md)), `Common.Sql` (hláskování typové rodiny dialektem: `SqlTypeReading`, `SqlTypeSpelling` s `Read`, `Name`, `Literal`; rozh. 086). Tabulka jazykový ↔ databázový typ je ve wrapperech (rozh. [014](./decisions/014-language-type-model.md)) | `Model` |
 | `AbstractWrappers` | `IParser`, `IEntityParser`, `IQueryParser`, abstraktní buildery (§7), deskriptor, `Diagnostics/ConversionRecord` (§5.1), `ParseLimits`, `NestingDepthGuard` (rozh. [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md)) | `Common` |
-| `DapperWrappers`, `EFCoreWrappers`, `NHibernateWrappers` | .NET parsery a buildery, každý framework zvlášť; `TransactSql` je projekt jazyka, ne cizí wrapper (rozh. [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md)); Dapper čte Roslynem literál z každého volání `SqlMapper` | `CSharpEntityParsing`, `TransactSql`; EF Core a NHibernate i `LinqParsing` |
+| `DapperWrappers`, `EFCoreWrappers`, `NHibernateWrappers` | .NET parsery a buildery, každý framework zvlášť; `TransactSql` je projekt jazyka, ne cizí wrapper (rozh. [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md)); Dapper čte Roslynem literál z každého volání `SqlMapper`; NHibernate píše dotaz dvěma tvary, HQL a LINQ (rozh. [118](./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md)) | `CSharpEntityParsing`, `TransactSql`; EF Core a NHibernate i `LinqParsing` a `LinqBuilding` |
 | `LinqParsing` | sdílené čtení LINQ, dědí EF Core a NHibernate (rozh. [026](./decisions/026-home-of-shared-query-reading.md)) | `AbstractWrappers` |
+| `LinqBuilding` | sdílený zápis LINQ (rozh. 118): `AbstractLinqQueryBuilder` (osm kroků nad standardními operátory), `LinqQueryVisitor`, `LinqScope`, `ILinqMembers` (člen sloupce: `EntityPathMembers` cesta přes referenci), `LinqJoinCall`; potomci `EFCoreLinqQueryBuilder` a `NHibernateLinqQueryBuilder` dodávají kořen, rukojeť, členy, operátory joinu a visitor provideru | `AbstractWrappers` |
 | `CSharpEntityParsing` | sdílené čtení entitní třídy v C#, dědí všechny tři .NET wrappery (EF Core a NHibernate přes zásuvné body) | `AbstractWrappers` |
 | `JavaEntityParsing` | `JavaLexer`, `JavaClassReader` (podmnožina: třídy a rozhraní, pole, hlavičky metod; těla přeskakuje), `JavaTypeConvertor`, `JavaEntityParser`; bez JVM a ANTLR, neznámý tvar je `Failure` s řádkem a sloupcem | `AbstractWrappers` |
 | `JakartaPersistence` | JPA vrstva: `JpaAnnotationReader` a `JpaOrmXmlParser` → `JpaEntityFacts` → `JpaMappingWriter`; `JpaEntityParser`, `AbstractJpaEntityBuilder`, `AbstractJpaQueryBuilder`, `JpqlQueryParser`, `JpaColumnPrecision` (rozh. [079](./decisions/079-fractional-second-precision-as-second-precision.md)), `JpaSqlTypeWriting` (doslovný typ čte `Common.Sql.SqlTypeSpelling.Read`), `JpaImplementationProfile` s `JpaCounterTable`, `JakartaPersistenceDescriptor`; „JPA" jako cíl nevzniká | `JavaEntityParsing`, `TransactSql` |
@@ -468,8 +470,10 @@ flowchart LR
   SR & LP & HP & JP --> IR["Instrukce dotazu<br/>AbstractQueryBuilder"]
   IR --> V["Visitor cíle<br/>SQL · LINQ · HQL · JPQL"]
   IR -.->|"Fallback (113)"| NS["NativeSqlBuilder()<br/>T-SQL SQL Serveru 2022"]
+  IR -.->|"druhý tvar (118)<br/>jen po HQL"| SF["SecondFormBuilder()<br/>LINQ NHibernatu"]
   V --> A["Artefakt<br/>metoda + holý dotaz"]
   NS --> A
+  SF --> A
 ```
 
 | Co se drží | Test | Rozsah |
@@ -499,11 +503,13 @@ flowchart LR
 |---|---|---|---|
 | Dapper | `DapperSqlQueryBuilder` nad `AbstractSqlQueryBuilder` (`TransactSql`), `SqlQueryVisitor` | T-SQL v `connection.Query…` | C# metoda + `SqlQuery` |
 | MyBatis | `MyBatisSqlQueryBuilder` nad týmž základem | T-SQL s `#{}` v `<select>` | metoda rozhraní + mapper `XML` |
-| EF Core | `EFCoreLinqQueryBuilder`, `EFCoreLinqQueryVisitor` | LINQ nad `ctx.Set<T>()`; metoda bere `DbContext` a vrací `IQueryable` (ověřitelné bez databáze, §6.2) | C# metoda |
-| NHibernate | `NHibernateHqlQueryBuilder`, `NHibernateHqlQueryVisitor` | HQL v `session.CreateQuery(…)` | C# metoda + `HqlQuery` |
+| EF Core | `EFCoreLinqQueryBuilder`, `EFCoreLinqQueryVisitor` nad `AbstractLinqQueryBuilder` a `LinqQueryVisitor` (`LinqBuilding`, rozh. [118](./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md)) | LINQ nad `ctx.Set<T>()`; metoda bere `DbContext` a vrací `IQueryable` (ověřitelné bez databáze, §6.2) | C# metoda |
+| NHibernate | `NHibernateHqlQueryBuilder`, `NHibernateHqlQueryVisitor`; druhý tvar `NHibernateLinqQueryBuilder`, `NHibernateLinqQueryVisitor` nad `LinqBuilding` | závazně HQL v `session.CreateQuery(…)`; vedle něj LINQ nad `session.Query<T>()`, metoda bere `ISession` a vrací `IQueryable` (rozh. 118) | C# metoda + `HqlQuery` + C# metoda `CSharpLinqQuery` |
 | Hibernate, EclipseLink | `HibernateJpqlQueryBuilder`, `EclipseLinkJpqlQueryBuilder` nad `AbstractJpaQueryBuilder`, `JpqlQueryVisitor` | JPQL (Hibernate s rozšířeními HQL) v `em.createQuery(…)` | Java metoda + `JpqlQuery` |
 
 Cíl píše nativní syntaxí (rozh. [022](./decisions/022-native-query-syntax-in-builders.md)) a holý dotaz vydává vedle metody (rozh. 025).
+
+- **Druhý tvar NHibernatu** (rozh. [118](./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md)): šablona ho staví `SecondFormBuilder()` jen poté, co HQL vyšlo ve vlastním jazyce (po únikové cestě ne), nad týmiž instrukcemi, definicemi a mapami. Co provider 5.7.0 nevysloví, je záznam `Omitted` s artefaktem `CSharpLinqQuery` a druhý tvar nevznikne: pravý a plný vnější join, agregát nad distinktními hodnotami mimo `COUNT`, konkatenace v projekci nad textem, který smí být `NULL` (provider ji vyhodnotí na klientovi), a obecné meze LINQ (agregát bez seskupení, skalární poddotaz, který není jediným agregátem, výřez nad `Int32`, klíč-výraz bez aliasu). Levý join píše jako `GroupJoin` s `DefaultIfEmpty()`, řazení pod `DISTINCT` před projekci, `COUNT` nad sloupcem s `NULL` jako `Sum(e => x != null ? 1 : 0)`, `LIKE` s escapovaným jádrem přes `Like` z `NHibernate.Linq`; fakta provideru drží `NHibernate/NHibernateLinqProviderTest`. Záznam, který by oba tvary vydaly o téže události, zůstává jednou (rozh. [066](./decisions/066-records-attributed-to-the-input-unit.md)).
 
 - **Projekce do SQL cíle je netypovaný řádek** (rozh. [104](./decisions/104-a-projection-into-a-sql-target-materializes-as-an-untyped-row.md)): Dapper `connection.Query(…)` a `List<dynamic>`, MyBatis `resultType="map"` a `List<Map<String, Object>>`; ostatní cíle anonymní typ, `object[]`, `Object[]`. Typ z tabulky `FROM` (entita převodu, jinak jméno tabulky v jednotném čísle se `Convention`) dostává jen dotaz bez projekce (Q3).
 - **Jméno metody** (rozh. 081): `QueryName` nese jméno ze zdroje, `MethodName` ho vysloví přes `Common.Naming.QueryMethodNaming` — PascalCase pro .NET, camelCase pro JPA (`AbstractJpaQueryBuilder`), slova dělená na znacích mimo identifikátor (`rich-customers` → `RichCustomers`). Jediný nepojmenovaný dotaz je `Query`/`query`, víc jich čísluje parser pořadím v textu (`Query01`, …, `QueryMethodNaming.Positional`; nad 99 tři číslice) jako fakt textu (rozh. [028](./decisions/028-assembly-name-is-not-ours-to-invent.md)). Kolize s vyhrazeným slovem cíle se neřeší.
@@ -748,6 +754,7 @@ Záznam `ConversionRecord` (`AbstractWrappers.Diagnostics`) nese podle F11 `Kind
 | `Supplied` | fakt dodal katalog (jediný nosič původu) | s faktem | 015 |
 | `Conflict` | zdroj × katalog nebo dva vstupy; dvě entity se stejným prostým jménem; `[Key]` vedle `[Keyless]` | vítězí zdroj, resp. dříve přečtené | [017](./decisions/017-source-precedence-for-mapping-facts.md), [094](./decisions/094-entity-identity-inside-a-conversion.md) |
 | `Fallback` | cíl napsal celý dotaz nativním SQL přes API svého frameworku | vázaný na dialekt | [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) |
+| `Omitted` | druhý tvar dotazu (LINQ NHibernatu) konstrukci nevysloví; závazný tvar (HQL) stojí sám | druhý tvar nevznikne, závazný ano | [118](./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md) |
 
 **Vyžadovaný primární klíč** mají NHibernate a obě implementace JPA; EF Core píše bezklíčovou entitu jako `[Keyless]`, Dapper a MyBatis jako prostou třídu. Důvod rozliší chybějící klíč od popřeného (`HasNoKey`); vazbu drží `TargetFrameworkDescriptorTest`.
 
@@ -879,10 +886,11 @@ Nasucho v `QueryVerificationTest`; záměrně špatný dotaz v `DeeplyNestedQuer
 |---|---|---|
 | EF Core | `GeneratedQueryCompiler` | `ToQueryString()` (`EFCoreQueryAcceptance`) |
 | NHibernate | kompilace C# | `CreateQuery(hql)` (`NHibernateQueryAcceptance`) — odmítne i nenamapované, tedy Q13 frameworkem |
+| NHibernate, druhý tvar LINQ (rozh. [118](./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md)) | kompilace C# s `NHibernate.Linq` | provider přeloží řetěz plánem dotazu bez spojení (`NHibernateLinqAcceptance`: `NhLinqExpression` → `QueryPlanCache`); 4. stupeň: diferenční matice spustí i druhý tvar (`TheLinqFormOfNHibernateReturnsTheCanonicalRows`), katalog LDBC ho zkompiluje, soudce přehrává závazný HQL |
 | Dapper | kompilace a parsování SQL | splývá; tabulky a sloupce v mezireprezentaci (`TSqlAcceptance`) |
 | úniková cesta (rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md)) | metoda nad API nativního SQL (`NativeSqlTest`, Java `shapes/QueryCategoryTest`) | SQL týž jako u cíle Dapper (`AFallbackEmitsTheStatementTheDapperTargetWrites`); framework ho neposuzuje |
 
-Artefakt EF Core je veřejná statická metoda s **prvním** parametrem `DbContext`, vracející `IQueryable` z `ctx.Set<T>()`; harness váže parametry (rozh. [083](./decisions/083-parameter-as-the-fifth-operand-shape.md)) kolekcí o jednom prvku a číslem 1, protože `Take(0)` dá `WHERE 0 = 1` (rozh. [085](./decisions/085-a-row-count-is-a-number-or-a-parameter.md)). `AdvisorBenchmarking` parametrizovaný dotaz nenajde ([`open-items.md`](./open-items.md)). Negativní: nepřeložitelný LINQ, HQL a SQL se syntaktickou chybou či neznámým členem.
+Artefakt EF Core je veřejná statická metoda s **prvním** parametrem `DbContext`, vracející `IQueryable` z `ctx.Set<T>()`, druhý tvar NHibernatu totéž s `ISession` a `session.Query<T>()`; harness váže parametry (rozh. [083](./decisions/083-parameter-as-the-fifth-operand-shape.md)) kolekcí o jednom prvku a číslem 1, protože `Take(0)` dá `WHERE 0 = 1` (rozh. [085](./decisions/085-a-row-count-is-a-number-or-a-parameter.md)). `AdvisorBenchmarking` parametrizovaný dotaz nenajde ([`open-items.md`](./open-items.md)). Negativní: nepřeložitelný LINQ, HQL a SQL se syntaktickou chybou či neznámým členem.
 
 #### Javová sada `JavaTests/`
 
@@ -1097,6 +1105,7 @@ flowchart TD
   D -.->|nevysloveno| U
   X -.->|nevysloveno| U
   U -->|ano| FB["FallBack:<br/>NativeSqlBuilder() / Failure"]
+  U -->|ne| SF["SecondForm:<br/>SecondFormBuilder() → artefakt navíc,<br/>nebo Omitted"]
 ```
 
 | Krok | Drží | Záznam |
@@ -1115,6 +1124,8 @@ flowchart TD
 **Kroky** běží v pořadí relačního vyhodnocení: `BuildSource → BuildJoins → BuildFilter → BuildGrouping → BuildPostFilter → BuildOrdering → BuildProjection → BuildPagination`. Každý píše do přihrádky `QueryArtifact` a `FinalizeQuery` je skládá v pořadí cíle; přihrádka stránkování může nést volání API (NHibernate `SetFirstResult`/`SetMaxResults`). `DISTINCT` píše `BuildProjection`. Výchozí `BuildSetOperation` hlásí nevyslovenou konstrukci; cíle s množinovými operacemi ho přepisují.
 
 **Úniková cesta** (rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md)): `ReportUnspoken(reason, feature)` podrží záznam `Fallback`. `FallBack` bez `Descriptor.NativeSqlApi` vydá `Failure`; jinak zahodí záznamy pokusu a postaví `NativeSqlBuilder()` (přepisují `EFCoreLinqQueryBuilder`, `NHibernateHqlQueryBuilder`, `AbstractJpaQueryBuilder`), potomka `AbstractSqlQueryBuilder`, a předá mu instrukce, definice, mapy a jméno dotazu pod `writesNativeSql`. Samostatné `BuildSQL()` neexistuje (rozh. [022](./decisions/022-native-query-syntax-in-builders.md)).
+
+**Druhý tvar** (rozh. [118](./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md)): po úspěšném pokusu ve vlastním jazyce postaví `Build()` `SecondFormBuilder()` (přepisuje `NHibernateHqlQueryBuilder` → `NHibernateLinqQueryBuilder`), předá mu týž stav pod `writesSecondForm` a projde ho `BuildArtifacts()`: artefakty přidá k závazným a jeho záznamy připojí bez těch, které opakují záznam závazného tvaru; podržené `Fallback` a `Failure` druhého tvaru přepíše na `Omitted` („… so the query has no LINQ form and the HQL form stands alone") a artefakt nevydá. `FormName` („HQL", „LINQ") jmenuje tvary v záznamu. Druhý tvar sám neustupuje do nativního SQL ani nemá druhý tvar.
 
 `IQueryVisitor` nemá `Visit(SubQueryInstruction)`: poddotaz vykresluje builder přes delegáta.
 
@@ -1214,7 +1225,7 @@ Vyňaté oblasti jsou čtyři a vyjímají se vcelku (rozh. 030). Vyňato neznam
 | 1 | **Benchmarking a Advisor** | bez testu; `HarnessGenerationUtilities` stojí na tvaru generovaného textu, nativní knihovna se staví jen v Dockeru (§8). Nenárokuje se F15, T7 ani 1. věta S4 — jediné místo, kde nástroj kompiluje a spouští cizí kód. Bez `libadvisor.so` vrací `AdvisorRunHandler` hlášku, ne pětistovku | [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md) |
 | 2 | **Dědičnost, komponenty, spojené tabulky** | NHibernate `<subclass>`, `<joined-subclass>`, `<union-subclass>`, `<component>`, `<join>` a další prvky mimo plochou třídu (`<natural-id>`, `<idbag>`, `<array>`) → `Loss` u každého; týž záznam dostane C# třída odvozená od jiné entity převodu (EF Core: table per hierarchy), JPA `@Inheritance` i holé `extends` mezi dvěma `@Entity`; `@MappedSuperclass` má záznam vlastní (třída není entita, dědící entity její pole nedostanou). Co dědičnost znamená pro IR, zodpovězené není | 030, [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) |
 | 3 | *vystoupila:* poddotazy | poddotaz v podmínce se překládá, tvar, který cíl věrně nevyjádří, odmítá `Failure`; množinové operace a stránkování vystoupily dřív | [061](./decisions/061-subquery-as-a-condition-operand.md), [060](./decisions/060-pagination-as-a-query-instruction.md) |
-| 4 | *vystoupila:* round-trip NHibernate → NHibernate | holé HQL čte vlastní parser, převod vrací týž text | [062](./decisions/062-hql-read-by-a-hand-written-parser.md) |
+| 4 | *vystoupila:* round-trip NHibernate → NHibernate | holé HQL čte vlastní parser, převod vrací týž text; zdroj v LINQ dostane vedle HQL i LINQ (rozh. [118](./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md)) | [062](./decisions/062-hql-read-by-a-hand-written-parser.md) |
 | 5 | **Databázový dialekt** | jediný je SQL Server 2022, **deklarovaný** deskriptorem cíle a vydaný záznamem běhu; kde typový slovník NHibernatu tvrzení neunese, píše doslovný typ dialektu (`sql-type`). Souměrně: deklarace jiného systému ve zdroji zastaví čtení doslovného SQL (dotaz se nevydá, typ sloupce se nepřečte, obojí se záznamem) a záznam běhu nese i dialekt zdroje; fakta z katalogu takový zdroj dostane s jediným záznamem o rozporu (§5.2). Patří sem `CHECK` a výchozí hodnota sloupce (`Loss`, jako neunikátní index), ne unikátní omezení, které IR nese a oba anotační cíle píšou. Druhý dialekt je otevřená položka | [086](./decisions/086-target-database-dialect-declared-by-the-descriptor.md), [088](./decisions/088-a-declared-foreign-source-dialect-is-not-read.md), [091](./decisions/091-the-catalog-completes-a-foreign-source-and-says-so.md), [055](./decisions/055-unique-constraint-as-a-carried-mapping-fact.md) |
 | 6 | **Experimentální část zadání** | T1–T7 se netvrdí, experimentální pipeline neexistuje. Javový ekosystém (F7–F10, F12, F13) z oblasti vyšel celý | 078, 080, 084, 087, 089, 090 |
 
@@ -1232,6 +1243,7 @@ Vyňaté oblasti jsou čtyři a vyjímají se vcelku (rozh. 030). Vyňato neznam
 | Seskupení, okna, seznamy | seskupení podle výrazu, `ROW_NUMBER`, `RANK`, `DENSE_RANK` v projekci, `STRING_AGG`, `DateAdd`, `DateDiff`, `Round`, `Sqrt`, `Cast` (113); zápis cíle až po sondě proti připnuté verzi | okenní agregát, rámec okna a okno bez řazení se nečtou, okenní funkce mimo projekci se odmítá; převod s délkou či mimo pět typů, jednotka data mimo rok až sekundu, `ROUND` se třemi argumenty a nedoslovný oddělovač se nečtou, `string.Join` jen nad prvky skupiny; co cíl vysloví jen jinak, jde nativním SQL (2.8–2.9) |
 | Join nad rámec rovností | EF Core filtrem spojované posloupnosti nebo korelovaným `SelectMany`, čte se zpět do `ON` | pravý a plný → nativní SQL, `GroupJoin` se nečte (2.6) |
 | Úniková cesta | EF Core, NHibernate, Hibernate a EclipseLink píšou, co jejich jazyk nevysloví, celým dotazem v nativním SQL deklarovaného dialektu, vždy se záznamem `Fallback`, a měří se na 4. stupni; Dapper a MyBatis ji nemají. Nativní SQL předané v kódu se čte zpět jako týž dotaz | odmítá se kolekční parametr (EF Core, EclipseLink), množinová operace nad dvěma entitami, kde API materializuje jednu, LINQ nad nativním SQL a dotaz skládaný za běhu (1.2, 2.3, 2.11) |
+| Druhý tvar NHibernatu | ke každému dotazu v HQL i LINQ nad `session.Query<T>()` (118), sdíleným zápisem LINQ s EF Core; 2. a 3. stupeň plánem provideru, 4. diferenční maticí | co provider 5.7.0 nevysloví, je `Omitted` a HQL stojí samo (2.6, 2.9); závazným tvarem zůstává HQL — stupně nad katalogem LDBC, soudce i Advisor berou ten |
 | Katalog | `ColumnPairs` mezi entitami i z katalogu (015, §5.2); bez připojení konvence se záznamem; dotaz poptává vazbu tabulky jednou dávkou za převod (105) | — |
 | Typy | `LangType` (014), rodiny `DatabaseType` s facetami (019) | — |
 | Advisor | jen Dapper a EF Core | oblast 1 |

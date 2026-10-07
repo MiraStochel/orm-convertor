@@ -246,6 +246,29 @@ public abstract class AbstractQueryBuilder
     /// </summary>
     protected virtual AbstractQueryBuilder? NativeSqlBuilder() => null;
 
+    /// <summary>
+    /// A builder that writes this target's query a second time, in another query language
+    /// of the same framework, beside the binding form this builder writes (decision 118):
+    /// NHibernate's LINQ over <c>session.Query&lt;T&gt;()</c> beside its HQL. Null for a target
+    /// with one form. A fresh builder each call; the template hands it the query once the
+    /// binding form came out in its own language, appends its artifacts to the binding form's
+    /// and, where the second form does not speak the query, says so with a record of kind
+    /// <see cref="ConversionRecordKind.Omitted"/> instead of an artifact.
+    /// </summary>
+    protected virtual AbstractQueryBuilder? SecondFormBuilder() => null;
+
+    /// <summary>
+    /// The name of the form this builder writes, as the records of decision 118 name it -
+    /// "HQL", "LINQ". The language of the method's artifact by default.
+    /// </summary>
+    protected virtual string FormName => MethodArtifact.ToString();
+
+    /// <summary>
+    /// Set on the builder of a second form (decision 118): it never falls back to native SQL -
+    /// the binding form has the query already - and never writes a second form of its own.
+    /// </summary>
+    private bool writesSecondForm;
+
     public void Push()
     {
         marks.Push(instructions.Count);
@@ -607,7 +630,78 @@ public abstract class AbstractQueryBuilder
             return [];
         }
 
-        return unspoken.Count == 0 ? artifacts : FallBack(attempt);
+        if (unspoken.Count > 0)
+        {
+            return FallBack(attempt);
+        }
+
+        // The second form of decision 118 follows the binding form, and only a binding form
+        // written in its own language: what that language does not speak, the second form
+        // does not speak either, and the native SQL of the escape path already is the query.
+        return [.. artifacts, .. SecondForm(attempt)];
+    }
+
+    /// <summary>
+    /// The query written a second time by <see cref="SecondFormBuilder"/> (decision 118),
+    /// over the same instructions, definitions, maps and name. The second form's own
+    /// records about its text join this builder's, except those that repeat a record the
+    /// binding form made about the same event - one event, one record (decision 066). A
+    /// construct the second form does not speak, or a shape it refuses, is not a failure of
+    /// the conversion - the binding form carries the query - and not the escape path - the
+    /// binding form is in the target's own language -, so it comes out as one record of kind
+    /// <see cref="ConversionRecordKind.Omitted"/> per construct, and no artifact of that form.
+    /// </summary>
+    private List<ConversionSource> SecondForm(int attempt)
+    {
+        if (writesSecondForm || SecondFormBuilder() is not { } second)
+        {
+            return [];
+        }
+
+        second.writesSecondForm = true;
+        second.EntityMaps = EntityMaps;
+        second.QueryName = QueryName;
+        second.instructions.AddRange(instructions);
+        second.definitions.AddRange(definitions);
+        second.recursionLimit = recursionLimit;
+
+        var artifacts = second.BuildArtifacts();
+
+        if (second.refused || second.unspoken.Count > 0)
+        {
+            var standing = $"so the query has no {second.FormName} form and the {FormName} form stands alone";
+
+            foreach (var gap in second.unspoken.DistinctBy(gap => (gap.Feature, gap.Reason)))
+            {
+                records.Add(gap with { Kind = ConversionRecordKind.Omitted, Reason = $"{gap.Reason}, {standing}." });
+            }
+
+            foreach (var refusal in second.records.Where(record => record.Kind == ConversionRecordKind.Failure))
+            {
+                records.Add(refusal with
+                {
+                    Kind = ConversionRecordKind.Omitted,
+                    Reason = $"The {second.FormName} form was not written and the {FormName} form stands alone: {refusal.Reason}",
+                });
+            }
+
+            return [];
+        }
+
+        var binding = records.Skip(attempt).ToList();
+        foreach (var record in second.records)
+        {
+            if (!binding.Any(made => made.Kind == record.Kind
+                                     && made.Feature == record.Feature
+                                     && made.Entity == record.Entity
+                                     && made.Property == record.Property
+                                     && string.Equals(made.Reason, record.Reason, StringComparison.Ordinal)))
+            {
+                records.Add(record);
+            }
+        }
+
+        return artifacts;
     }
 
     /// <summary>

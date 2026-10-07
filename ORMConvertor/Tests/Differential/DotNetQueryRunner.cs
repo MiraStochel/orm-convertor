@@ -31,17 +31,24 @@ internal static class DotNetQueryRunner
     /// rendered rows in the order the comparison wants them: as they came for a query that
     /// carries an ordering, sorted by the rendered line for one that does not.
     /// </summary>
+    /// <param name="form">The artifact run: the binding method of the query, or the LINQ form NHibernate writes beside its HQL (decision 118).</param>
     public static List<string> Run(
         DifferentialQuery query,
         ORMEnum source,
         ORMEnum target,
         TestSchemaFixture fixture,
-        string? mutated = null)
+        string? mutated = null,
+        ConversionContentType form = ConversionContentType.CSharpQuery)
     {
         var conversion = Translate(query, source, target, fixture);
 
         using var prepared = PreparedQuery.Prepare(
-            AssemblyName(query, source, target), target, conversion, TestDatabase.ConnectionString!, mutated);
+            AssemblyName(query, source, target) + (form == ConversionContentType.CSharpQuery ? string.Empty : "_" + form),
+            target,
+            conversion,
+            TestDatabase.ConnectionString!,
+            mutated,
+            form);
 
         // The matrix states the arguments in the order of the method's parameters.
         var rows = prepared.Run(query.Id, [.. query.Arguments.Select(argument => argument.Materialize())], query.Fields, query.Projection);
@@ -74,11 +81,15 @@ internal static class DotNetQueryRunner
         return conversion;
     }
 
-    /// <summary>The generated query artifact, or the mutation of it a negative case supplies.</summary>
-    public static string QueryMethod(ConversionResult conversion, string? mutated = null)
+    /// <summary>The generated query artifact - the binding method, or the form asked for (decision 118) -, or the mutation of it a negative case supplies.</summary>
+    public static string QueryMethod(ConversionResult conversion, string? mutated = null, ConversionContentType form = ConversionContentType.CSharpQuery)
         => mutated ?? conversion.Sources
-            .Single(source => source.ContentType == ConversionContentType.CSharpQuery)
+            .Single(source => source.ContentType == form)
             .Content;
+
+    /// <summary>Whether the conversion carries the form - a second form is written only where its language speaks the query (decision 118).</summary>
+    public static bool Carries(ConversionResult conversion, ConversionContentType form)
+        => conversion.Sources.Any(source => source.ContentType == form);
 
     /// <summary>
     /// A name of its own per query, source and target. Assemblies are loaded into the test
@@ -105,6 +116,7 @@ internal sealed class PreparedQuery : IDisposable
     private readonly SqlConnection? contextConnection;
     private readonly DbContext? context;
     private readonly ISessionFactory? sessionFactory;
+    private readonly ConversionContentType form;
 
     private PreparedQuery(
         ORMEnum target,
@@ -112,7 +124,8 @@ internal sealed class PreparedQuery : IDisposable
         MethodInfo method,
         SqlConnection? contextConnection = null,
         DbContext? context = null,
-        ISessionFactory? sessionFactory = null)
+        ISessionFactory? sessionFactory = null,
+        ConversionContentType form = ConversionContentType.CSharpQuery)
     {
         this.target = target;
         this.connectionString = connectionString;
@@ -120,6 +133,7 @@ internal sealed class PreparedQuery : IDisposable
         this.contextConnection = contextConnection;
         this.context = context;
         this.sessionFactory = sessionFactory;
+        this.form = form;
     }
 
     /// <summary>The parameters of the query, after the framework's handle (decision 083).</summary>
@@ -132,11 +146,17 @@ internal sealed class PreparedQuery : IDisposable
     /// two different images under one name, and NHibernate resolves persistent classes by
     /// assembly name. The run is the framework's own, over the given database.
     /// </summary>
+    /// <param name="form">The artifact compiled: the binding method, or the LINQ form NHibernate writes beside its HQL (decision 118), which a consumer project imports <c>NHibernate.Linq</c> for.</param>
     public static PreparedQuery Prepare(
-        string assemblyName, ORMEnum target, ConversionResult conversion, string connectionString, string? mutated = null)
+        string assemblyName,
+        ORMEnum target,
+        ConversionResult conversion,
+        string connectionString,
+        string? mutated = null,
+        ConversionContentType form = ConversionContentType.CSharpQuery)
     {
         var entities = EntitySources(conversion).ToList();
-        var queryMethod = DotNetQueryRunner.QueryMethod(conversion, mutated);
+        var queryMethod = DotNetQueryRunner.QueryMethod(conversion, mutated, form);
 
         switch (target)
         {
@@ -180,11 +200,21 @@ internal sealed class PreparedQuery : IDisposable
                     queryMethod,
                     entities,
                     GeneratedQueryCompiler.NHibernateConsumerReferences,
-                    Usings(conversion, "using NHibernate;"));
+                    Usings(conversion, form == ConversionContentType.CSharpLinqQuery
+                        ? "using NHibernate;" + Environment.NewLine + "using NHibernate.Linq;"
+                        : "using NHibernate;"));
 
                 var (factory, assembly) = NHibernateAcceptance.OpenSessionFactory(compiled, mappings);
 
-                return new PreparedQuery(target, connectionString, GeneratedMethod(assembly), sessionFactory: factory);
+                // The provider of the LINQ form registers the entity types it meets once per
+                // process, by name (NHibernateTypeRegistry); the names recur across the
+                // assemblies this suite compiles.
+                if (form == ConversionContentType.CSharpLinqQuery)
+                {
+                    NHibernateTypeRegistry.Forget(assembly);
+                }
+
+                return new PreparedQuery(target, connectionString, GeneratedMethod(assembly), sessionFactory: factory, form: form);
             }
 
             default:
@@ -200,7 +230,8 @@ internal sealed class PreparedQuery : IDisposable
     /// keyed by the columns the projection named (decision 104); EF Core projects into an
     /// anonymous type whose members carry the projected names; both are read by name. HQL hands
     /// a projection back as an object array per row and an entity as the instance itself, so
-    /// for NHibernate the shape of the query decides how a row is read.
+    /// for NHibernate the shape of the query decides how a row is read; its LINQ form (decision
+    /// 118) returns a queryable of anonymous instances or entities, read by name as EF Core's.
     /// </summary>
     public List<object?[]> Run(string id, IReadOnlyList<object?> arguments, IReadOnlyList<string> fields, bool projection)
     {
@@ -223,8 +254,11 @@ internal sealed class PreparedQuery : IDisposable
                 connection.Open();
                 using var session = sessionFactory!.WithOptions().Connection(connection).OpenSession();
 
-                var list = ((IQuery)Invoke(id, session, arguments)!).List();
-                return Rows(list, id, fields, positional: projection);
+                // The HQL method returns the IQuery to list; the LINQ form the queryable itself,
+                // which runs as it is enumerated, inside the session (decision 118).
+                var returned = Invoke(id, session, arguments);
+                var rows = returned is IQuery query ? query.List() : returned;
+                return Rows(rows, id, fields, positional: projection && form == ConversionContentType.CSharpQuery);
             }
         }
     }

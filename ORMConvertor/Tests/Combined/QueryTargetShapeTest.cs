@@ -111,6 +111,35 @@ public class QueryTargetShapeTest
     }
 
     /// <summary>
+    /// The second form of decision 118: the same query as LINQ over session.Query, beside the
+    /// HQL - the shape of the EF Core chain with NHibernate's root and handle, typed by its own
+    /// content type so that the binding method stays the one CSharpQuery of the query.
+    /// </summary>
+    [Fact]
+    public void NHibernateWritesALinqChainBesideTheHql()
+    {
+        var builder = new NHibernateHqlQueryBuilder { EntityMaps = [CustomerMap()] };
+        Record(builder);
+        var artifacts = builder.Build();
+
+        Assert.Single(artifacts, s => s.ContentType == ConversionContentType.CSharpQuery);
+        Assert.Single(artifacts, s => s.ContentType == ConversionContentType.HqlQuery);
+
+        string expected = """
+        public static IQueryable Query(ISession session)
+        {
+            return session.Query<Customer>()
+                .Where(c => c.CreditLimit > 2000m)
+                .OrderByDescending(c => c.CustomerName)
+                .Select(c => new { Name = c.CustomerName });
+        }
+        """;
+
+        Assert.Equal(expected, artifacts.Single(s => s.ContentType == ConversionContentType.CSharpLinqQuery).Content, ignoreLineEndingDifferences: true);
+        Assert.DoesNotContain(builder.Records, r => r.Kind == AbstractWrappers.Diagnostics.ConversionRecordKind.Omitted);
+    }
+
+    /// <summary>
     /// The same constant is written three ways, which is the point of the typed operand
     /// (decision 024): SQL and HQL take a bare number, C# takes the decimal suffix back.
     /// </summary>

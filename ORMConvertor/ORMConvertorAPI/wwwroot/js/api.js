@@ -41,8 +41,9 @@ export const SOURCE_DIALECT_LABELS = Object.freeze({
 });
 
 // An input unit declares its language only - CSharp and Java are whole files with whatever
-// they hold (decision 111). The four values that name a role besides the language belong to
-// the artifacts the tool writes, and no parser takes them on input.
+// they hold (decision 111). The five values that name a role besides the language belong to
+// the artifacts the tool writes, and no parser takes them on input; CSharpLinqQuery is the
+// LINQ form NHibernate writes beside its HQL method (decision 118).
 export const ContentType = Object.freeze({
   CSharpEntity: 10,
   CSharpQuery: 20,
@@ -54,6 +55,7 @@ export const ContentType = Object.freeze({
   JpqlQuery: 80,
   CSharp: 90,
   Java: 100,
+  CSharpLinqQuery: 110,
 });
 
 // The XML value names a language and promises no role: the same value carries the hbm.xml,
@@ -62,7 +64,7 @@ export const ContentType = Object.freeze({
 // is said per framework, by the required-content list the server sends.
 export const CONTENT_TYPE_LABELS = Object.freeze({
   [ContentType.CSharpEntity]: "C# entity",
-  [ContentType.CSharpQuery]: "C# query (LINQ)",
+  [ContentType.CSharpQuery]: "C# query method",
   [ContentType.Xml]: "XML document",
   [ContentType.SqlQuery]: "SQL query",
   [ContentType.HqlQuery]: "HQL query",
@@ -71,10 +73,13 @@ export const CONTENT_TYPE_LABELS = Object.freeze({
   [ContentType.JpqlQuery]: "JPQL query",
   [ContentType.CSharp]: "C# source",
   [ContentType.Java]: "Java source",
+  [ContentType.CSharpLinqQuery]: "C# query (LINQ)",
 });
 
 // The XML value covers hbm.xml and orm.xml alike (decision 077); ui.js names an
-// orm.xml artifact by its root element, this default is the NHibernate spelling.
+// orm.xml artifact by its root element, this default is the NHibernate spelling. The LINQ
+// form of an NHibernate query takes an infix, so that it stands beside the HQL method's
+// file under a name of its own.
 export const CONTENT_TYPE_EXTENSIONS = Object.freeze({
   [ContentType.CSharpEntity]: ".cs",
   [ContentType.CSharpQuery]: ".cs",
@@ -86,6 +91,7 @@ export const CONTENT_TYPE_EXTENSIONS = Object.freeze({
   [ContentType.JpqlQuery]: ".jpql",
   [ContentType.CSharp]: ".cs",
   [ContentType.Java]: ".java",
+  [ContentType.CSharpLinqQuery]: ".linq.cs",
 });
 
 // HQL and JPQL have no grammar of their own and are highlighted as SQL, Java as C# -
@@ -101,6 +107,7 @@ export const CONTENT_TYPE_HIGHLIGHT = Object.freeze({
   [ContentType.JpqlQuery]: "sql",
   [ContentType.CSharp]: "csharp",
   [ContentType.Java]: "csharp",
+  [ContentType.CSharpLinqQuery]: "csharp",
 });
 
 export const RecordKind = Object.freeze({
@@ -111,6 +118,7 @@ export const RecordKind = Object.freeze({
   Supplied: 5,
   Conflict: 6,
   Fallback: 7,
+  Omitted: 8,
 });
 
 export const RECORD_KIND_LABELS = Object.freeze({
@@ -121,6 +129,7 @@ export const RECORD_KIND_LABELS = Object.freeze({
   [RecordKind.Supplied]: "Supplied",
   [RecordKind.Conflict]: "Conflict",
   [RecordKind.Fallback]: "Fallback",
+  [RecordKind.Omitted]: "Omitted",
 });
 
 export const CatalogState = Object.freeze({

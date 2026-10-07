@@ -11,7 +11,8 @@ namespace AbstractWrappers.Diagnostics;
 /// (decision 010), and a disagreement between source and catalog is reported, never
 /// resolved silently (decision 015). Fallback is the escape path of decision 113: a
 /// query its target's query language does not speak, written in the native SQL of the
-/// target's dialect instead.
+/// target's dialect instead. Omitted is the second form of decision 118 that a target
+/// writes beside its binding one and could not write for this query.
 /// </summary>
 public enum ConversionRecordKind
 {
@@ -71,4 +72,13 @@ public enum ConversionRecordKind
     /// from now on.
     /// </summary>
     Fallback = 7,
+
+    /// <summary>
+    /// The target writes its query in two forms, and the second one does not speak a
+    /// construct of this query, so that form was left out and the binding form stands alone
+    /// (decision 118): NHibernate's LINQ beside its HQL. Not a loss - the query is translated
+    /// whole, in the binding form, and the rows are the same - and not a failure, since an
+    /// artifact came out; the record names the construct and the form that has no word for it.
+    /// </summary>
+    Omitted = 8,
 }

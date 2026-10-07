@@ -10,9 +10,9 @@ namespace Model;
 /// and <see cref="Java"/> are whole files with whatever they hold, and which of their classes
 /// are entities and where they hand a query over is said by the source framework, class by
 /// class. A value that names a role besides the language - <see cref="CSharpEntity"/>,
-/// <see cref="CSharpQuery"/>, <see cref="JavaEntity"/>, <see cref="JavaQuery"/> - is carried
-/// only by an artifact, because the target builder wrote each artifact in one role and says
-/// so; no parser claims one of them on input.
+/// <see cref="CSharpQuery"/>, <see cref="CSharpLinqQuery"/>, <see cref="JavaEntity"/>,
+/// <see cref="JavaQuery"/> - is carried only by an artifact, because the target builder wrote
+/// each artifact in one role and says so; no parser claims one of them on input.
 /// </summary>
 public enum ConversionContentType
 {
@@ -67,6 +67,14 @@ public enum ConversionContentType
     /// interfaces, the code that hands a query over (decision 111).
     /// </summary>
     Java = 100,
+
+    /// <summary>
+    /// Artifact only: the second form of a query whose binding form is another C# method - a
+    /// LINQ chain over <c>session.Query&lt;T&gt;()</c> beside NHibernate's HQL (decision 118).
+    /// A value of its own so that a consumer taking the one <see cref="CSharpQuery"/> method
+    /// of a query still finds exactly one; on input it is C# like any other.
+    /// </summary>
+    CSharpLinqQuery = 110,
 }
 
 public static class ConversionContentTypes
@@ -79,6 +87,7 @@ public static class ConversionContentTypes
     /// </summary>
     public static bool IsQuery(this ConversionContentType contentType) => contentType is
         ConversionContentType.CSharpQuery or
+        ConversionContentType.CSharpLinqQuery or
         ConversionContentType.SqlQuery or
         ConversionContentType.HqlQuery or
         ConversionContentType.JavaQuery or
@@ -92,7 +101,7 @@ public static class ConversionContentTypes
     /// </summary>
     public static ConversionContentType LanguageOf(this ConversionContentType contentType) => contentType switch
     {
-        ConversionContentType.CSharpEntity or ConversionContentType.CSharpQuery => ConversionContentType.CSharp,
+        ConversionContentType.CSharpEntity or ConversionContentType.CSharpQuery or ConversionContentType.CSharpLinqQuery => ConversionContentType.CSharp,
         ConversionContentType.JavaEntity or ConversionContentType.JavaQuery => ConversionContentType.Java,
         _ => contentType,
     };

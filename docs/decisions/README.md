@@ -120,6 +120,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 115 | [Explicitní načtení navigace EF Core je dotaz, který poskytovatel skládá: řádky navigace omezené cizím klíčem na klíč načtené entity, nesený jako parametr](115-explicit-loading-is-the-query-the-provider-composes.md) | platí | F7–F10, F11, F14, S1, S2 |
 | 116 | [`[ConcurrencyCheck]` nad jedinou celočíselnou či datočasovou vlastností je sloupec verze, jehož hodnotu udržuje aplikace: mezireprezentace nese, kdo verzi zvyšuje, a cíl, který ji zvyšuje sám, převzetí ohlásí](116-concurrency-check-is-the-version-the-application-keeps.md) | platí | F5, F10, F11, S1, T3 |
 | 117 | [Validační sada LDBC Interactive v1 je soudcem čtvrtého stupně nad katalogem LDBC: přehrává se v pořadí, vkládání nese loader, čtení generovaný artefakt a databáze se vrací kompenzací](117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md) | revidováno | F13, T2, T3, S2, S5 |
+| 118 | [NHibernate vydává dotaz dvěma tvary: závazným HQL a vedle něj LINQ nad `session.Query<T>()`; druhý tvar píše sdílená vrstva zápisu LINQ, nese vlastní typ obsahu a jeho vynechání je záznam `Omitted`](118-nhibernate-writes-a-linq-form-beside-its-hql.md) | platí | F7–F10, F11, F13, T2, T3, S1, S2, S6, S7 |
 
 ## Formát
 

@@ -30,6 +30,7 @@ COPY EclipseLinkWrappers/EclipseLinkWrappers.csproj EclipseLinkWrappers/
 COPY HibernateWrappers/HibernateWrappers.csproj HibernateWrappers/
 COPY JakartaPersistence/JakartaPersistence.csproj JakartaPersistence/
 COPY JavaEntityParsing/JavaEntityParsing.csproj JavaEntityParsing/
+COPY LinqBuilding/LinqBuilding.csproj LinqBuilding/
 COPY LinqParsing/LinqParsing.csproj LinqParsing/
 COPY Model/Model.csproj Model/
 COPY MyBatisWrappers/MyBatisWrappers.csproj MyBatisWrappers/

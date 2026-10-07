@@ -90,6 +90,7 @@ function artifactBaseName(artifact) {
   }
   if (
     artifact.contentType === ContentType.CSharpQuery ||
+    artifact.contentType === ContentType.CSharpLinqQuery ||
     artifact.contentType === ContentType.JavaQuery
   ) {
     // Query artifacts are bare methods (decision 027), so a class name is rare.
@@ -212,12 +213,13 @@ const RECORD_KIND_CLASSES = Object.freeze({
   [RecordKind.Supplied]: "badge-supplied",
   [RecordKind.Conflict]: "badge-conflict",
   [RecordKind.Fallback]: "badge-fallback",
+  [RecordKind.Omitted]: "badge-omitted",
 });
 
 /*
  * One sentence per kind, from decision 010 and architecture.md 5.1. They sit on every
  * badge as a title and, for the kinds a result actually contains, in the legend above the
- * table: seven bare words do not tell a first-time reader what separates Loss from
+ * table: eight bare words do not tell a first-time reader what separates Loss from
  * Incompleteness, and the records are the part of the output most worth reading.
  */
 const RECORD_KIND_EXPLANATIONS = Object.freeze({
@@ -235,6 +237,8 @@ const RECORD_KIND_EXPLANATIONS = Object.freeze({
     "Two sources disagree. The translation continued with the earlier one; the record says what the later one claimed.",
   [RecordKind.Fallback]:
     "The target's query language cannot say this query, so it was written in the native SQL of the target's database and handed to the framework's API for native queries. Nothing was left out; the artifact is bound to that database.",
+  [RecordKind.Omitted]:
+    "The target writes its query in two forms, and the second one cannot say this query, so only the binding form was written. Nothing was lost: the query is translated whole in that form.",
 });
 
 /** A badge for one record kind, always carrying its explanation. */

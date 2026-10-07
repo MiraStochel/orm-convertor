@@ -6,11 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AbstractWrappers\AbstractWrappers.csproj" />
-    <ProjectReference Include="..\CSharpEntityParsing\CSharpEntityParsing.csproj" />
-    <ProjectReference Include="..\LinqBuilding\LinqBuilding.csproj" />
-    <ProjectReference Include="..\LinqParsing\LinqParsing.csproj" />
     <ProjectReference Include="..\Model\Model.csproj" />
-    <ProjectReference Include="..\TransactSql\TransactSql.csproj" />
   </ItemGroup>
 
 </Project>

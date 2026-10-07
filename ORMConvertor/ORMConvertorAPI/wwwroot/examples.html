@@ -173,9 +173,12 @@
         (table, column types, keys) and a LINQ query. Watch how the attributes
         become an NHibernate XML mapping, how the entity class loses its
         attributes but gains what NHibernate enforces (<code>virtual</code>
-        members), and how the LINQ chain becomes HQL. The records tell you every
-        place where the target could not carry a fact, or where a gap was filled
-        by a convention.
+        members), and how the LINQ chain becomes HQL &mdash; and comes back a
+        second time as LINQ over <code>session.Query&lt;T&gt;()</code>, the form
+        an NHibernate user would write in C#; the HQL stays the form the tool
+        verifies, the LINQ stands beside it. The records tell you every place
+        where the target could not carry a fact, or where a gap was filled by a
+        convention.
       </p>
       <div class="toolbar">
         <button type="button" class="example-run secondary">Run again</button>
@@ -497,7 +500,9 @@
         through <code>CreateSQLQuery</code>, the parameters as <code>:name</code> and an
         <code>AddScalar</code> for every column, so that the rows come back typed. Five
         queries carry six Fallback records: the report over the genres names both of its
-        reasons, the common table expression and its recursion. The entities and their
+        reasons, the common table expression and its recursion. None of them gets the
+        LINQ form NHibernate writes beside its HQL: what HQL does not say, the LINQ
+        provider, which translates into HQL, does not say either. The entities and their
         mappings are those of the lending library above, and the genre joins them with
         an <code>assigned</code> key, because the source states no generation, and its
         parent as a <code>many-to-one</code> beside the column it shares.

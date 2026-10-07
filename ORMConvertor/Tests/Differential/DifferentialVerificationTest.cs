@@ -61,6 +61,18 @@ public class DifferentialVerificationTest(TestSchemaFixture fixture)
         return data;
     }
 
+    /// <summary>The pairs of the matrix whose target is NHibernate, which writes a LINQ form beside its HQL (decision 118).</summary>
+    public static TheoryData<string, ORMEnum> NHibernatePairs()
+    {
+        var data = new TheoryData<string, ORMEnum>();
+        foreach (var pair in DifferentialMatrix.Pairs().Where(p => p.Target == ORMEnum.NHibernate))
+        {
+            data.Add(pair.Query.Id, pair.Source);
+        }
+
+        return data;
+    }
+
     /// <summary>The pairs of the matrix whose target falls back to native SQL and which this suite owns (decision 113).</summary>
     public static TheoryData<string, ORMEnum, ORMEnum, QueryFeature> FallbackDirections()
     {
@@ -104,6 +116,40 @@ public class DifferentialVerificationTest(TestSchemaFixture fixture)
 
         var query = Query(id);
         var rows = DotNetQueryRunner.Run(query, source, target, fixture);
+
+        Assert.Equal(query.CanonicalResult(), rows);
+    }
+
+    /// <summary>
+    /// The fourth level over the second form of an NHibernate query (decision 118): the LINQ
+    /// chain over <c>session.Query&lt;T&gt;()</c> runs beside the HQL the pair above judges, and
+    /// its rows meet the same canonical result. A pair whose query the LINQ form does not
+    /// speak carries no such artifact and an Omitted record instead - the HQL form stands
+    /// alone there, and the theory says so rather than failing on a form that was never
+    /// promised.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(NHibernatePairs))]
+    public void TheLinqFormOfNHibernateReturnsTheCanonicalRows(string id, ORMEnum source)
+    {
+        fixture.SkipIfUnavailable();
+
+        if (Recording() is not null)
+        {
+            Assert.Skip("A recording run fixes the canonical results; comparing against them is the next run.");
+        }
+
+        var query = Query(id);
+        var conversion = DotNetQueryRunner.Translate(query, source, ORMEnum.NHibernate, fixture);
+
+        if (!DotNetQueryRunner.Carries(conversion, ConversionContentType.CSharpLinqQuery))
+        {
+            // No second form after the escape path either: the native SQL already is the query.
+            Assert.Contains(conversion.Records, record => record.Kind is ConversionRecordKind.Omitted or ConversionRecordKind.Fallback);
+            Assert.Skip($"{id}: the LINQ form of NHibernate does not speak the query, and the binding form stands alone.");
+        }
+
+        var rows = DotNetQueryRunner.Run(query, source, ORMEnum.NHibernate, fixture, form: ConversionContentType.CSharpLinqQuery);
 
         Assert.Equal(query.CanonicalResult(), rows);
     }

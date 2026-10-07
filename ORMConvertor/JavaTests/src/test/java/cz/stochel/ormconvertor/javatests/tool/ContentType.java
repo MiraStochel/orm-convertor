@@ -27,6 +27,9 @@ public final class ContentType {
     public static final int CSHARP = 90;
     public static final int JAVA = 100;
 
+    /** The LINQ form NHibernate writes beside its HQL method (decision 118); an artifact's value, never a unit's. */
+    public static final int CSHARP_LINQ_QUERY = 110;
+
     private ContentType() {
     }
 
@@ -71,6 +74,7 @@ public final class ContentType {
             case JPQL_QUERY -> "JpqlQuery";
             case CSHARP -> "CSharp";
             case JAVA -> "Java";
+            case CSHARP_LINQ_QUERY -> "CSharpLinqQuery";
             default -> "content type " + contentType;
         };
     }

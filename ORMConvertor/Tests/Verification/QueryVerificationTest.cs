@@ -449,6 +449,65 @@ public class QueryVerificationTest
             Query(result, ConversionContentType.HqlQuery));
     }
 
+    /// <summary>
+    /// Levels 2 and 3 for the second form of decision 118: the LINQ chain over
+    /// session.Query compiles beside the entities with the NHibernate package, and the
+    /// provider of 5.7.0 translates it into a query plan against the mapped model - the same
+    /// plan the HQL above compiles to, so the same resolution of every member (rule Q13).
+    /// </summary>
+    [Fact]
+    public void NHibernateTranslatesTheGeneratedLinqForm()
+    {
+        var result = Translate(ORMEnum.NHibernate);
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_NHibernate_Linq",
+            Query(result, ConversionContentType.CSharpLinqQuery),
+            Entities(result),
+            GeneratedQueryCompiler.NHibernateConsumerReferences,
+            "using NHibernate;" + Environment.NewLine + "using NHibernate.Linq;");
+
+        var mappings = result.Sources.Where(s => s.ContentType == ConversionContentType.XML).Select(s => s.Content);
+
+        var sql = NHibernateLinqAcceptance.Sql(compiled, mappings);
+
+        Assert.Contains("Sales.Customers", sql);
+        Assert.Contains("order by", sql);
+        Assert.Contains("CustomerName", sql);
+    }
+
+    /// <summary>
+    /// The negative half of the third level over the LINQ form: a chain the provider does not
+    /// translate - an ordering after Distinct(), which NHibernate 5.7.0 refuses - is refused
+    /// by the plan, which is what makes the level worth having (decision 118).
+    /// </summary>
+    [Fact]
+    public void NHibernateRefusesALinqChainItsProviderDoesNotTranslate()
+    {
+        var result = Translate(ORMEnum.NHibernate);
+
+        const string orderedAfterDistinct = """
+            public static IQueryable Query(ISession session)
+            {
+                return session.Query<Customer>()
+                    .Select(c => new { c.CustomerName })
+                    .Distinct()
+                    .OrderBy(p => p.CustomerName);
+            }
+            """;
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "QueryVerification_NHibernate_Linq_Refused",
+            orderedAfterDistinct,
+            Entities(result),
+            GeneratedQueryCompiler.NHibernateConsumerReferences,
+            "using NHibernate;" + Environment.NewLine + "using NHibernate.Linq;");
+
+        var mappings = result.Sources.Where(s => s.ContentType == ConversionContentType.XML).Select(s => s.Content).ToList();
+
+        Assert.Throws<NotSupportedException>(() => NHibernateLinqAcceptance.Sql(compiled, mappings));
+    }
+
     [Fact]
     public void NHibernateRefusesHqlNamingAPropertyTheEntityLacks()
     {

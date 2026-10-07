@@ -65,8 +65,11 @@ internal static class GeneratedQueryCompiler
                 typeof(object).Assembly,
                 typeof(global::NHibernate.ISession).Assembly,
                 typeof(Queryable).Assembly,
+                // The LINQ form of decision 118 returns IQueryable, which the runtime defines in
+                // System.Linq.Expressions; every consumer project references it implicitly.
+                typeof(System.Linq.Expressions.Expression).Assembly,
             ],
-            ["netstandard.dll", "System.Runtime.dll", "System.Collections.dll", "System.Linq.dll"]);
+            ["netstandard.dll", "System.Runtime.dll", "System.Collections.dll", "System.Linq.dll", "System.Linq.Expressions.dll"]);
 
     /// <summary>
     /// Wraps the query method in the class and usings a consumer project would give it, then

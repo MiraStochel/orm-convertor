@@ -19,6 +19,9 @@ public final class RecordKind {
     /** The query went out in the native SQL of the target's dialect, its query language not speaking it (decision 113). */
     public static final int FALLBACK = 7;
 
+    /** The second form a target writes beside its binding one - NHibernate's LINQ beside its HQL - could not say the query and was left out (decision 118). */
+    public static final int OMITTED = 8;
+
     private RecordKind() {
     }
 
@@ -31,6 +34,7 @@ public final class RecordKind {
             case SUPPLIED -> "Supplied";
             case CONFLICT -> "Conflict";
             case FALLBACK -> "Fallback";
+            case OMITTED -> "Omitted";
             default -> "kind " + kind;
         };
     }
