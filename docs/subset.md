@@ -335,7 +335,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | rekurzivní člen, který přičítá `COUNT` ke kotvě začínající konstantou | model typuje `COUNT` jako `Long`, T-SQL jako `int` | `Failure` (b), ač by ho SQL Server přijal (vědomě bezpečnější strana) | VM | [113] |
 | délka řetězce a přesnost desetinného čísla mezi kotvou a rekurzivním členem | model je nenese | brána nehlídá; dotaz musí text srovnat převodem, jinak ho odmítne SQL Server | VM | [113] |
 | limit rekurze bez rekurzivní definice | nic neohraničuje | vypustí se s `Convention` | VM | [§7] |
-| mez hloubky, sledy místo vrcholů | rekurzivní člen SQL Serveru řádky neslučuje | obsah dotazu, ne mez nástroje; katalog LDBC ji u IC 13, IC 14, BI 15, BI 19, BI 20 vyslovuje jako zjednodušení | — | [110], [113] |
+| mez hloubky, sledy místo vrcholů | rekurzivní člen SQL Serveru řádky neslučuje | obsah dotazu, ne mez nástroje; katalog LDBC ji u IC 13, IC 14, BI 15, BI 19, BI 20 vyslovuje jako zjednodušení — IC 13, BI 15, BI 19 a BI 20 hledají z obou konců (dvě procházky po dvou krocích, sloučené mimo rekurzi, setkání jako join: do čtyř kroků), IC 14 nese celé cesty a jde z jednoho konce do tří | — | [110], [113] |
 
 ### 2.11 Úniková cesta a nativní SQL
 

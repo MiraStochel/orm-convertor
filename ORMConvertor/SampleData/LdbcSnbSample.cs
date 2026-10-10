@@ -917,25 +917,45 @@ public static class LdbcSnbSample
 
         new("ic13", LdbcWorkload.InteractiveComplex, 13, "Single shortest path", LdbcTranslation.Simplified,
             "The length of the shortest path along knows between two persons: 0 for one person, -1 where there is no "
-            + "path. A recursive definition walks from the first person (decision 113), and the length is the shortest "
-            + "walk that reaches the second. The walk is bounded at three steps, so a pair further apart answers -1: "
-            + "the recursive member of SQL Server keeps no record of the persons it has already reached, so it counts "
-            + "walks rather than persons, and the walks multiply by the number of friends at every step - the example "
-            + "person has eighty. From the example person the bound reaches all but 26 of the 9,163 persons it is "
-            + "connected to.",
+            + "path. The search runs from both ends (decision 113): one recursive definition walks along knows from the "
+            + "first person and another from the second - knows is stored in both directions -, each is merged outside "
+            + "the recursion to the persons it reached and the fewest steps to each, and the length is the smallest sum "
+            + "of both halves over the persons where they meet. Each walk is bounded at two steps, so the search reaches "
+            + "four and a pair further apart answers -1: the recursive member of SQL Server keeps no record of the "
+            + "persons it has already reached, so it counts walks rather than persons, and the walks multiply by the "
+            + "number of friends at every step - the example person has eighty -, which is why two walks of two steps "
+            + "cost a fraction of one walk of three. From the example person the bound reaches every one of the 9,163 "
+            + "persons it is connected to; the farthest 26 of them are four steps away.",
             """
-            WITH Walk AS (
-                SELECT p.Id AS PersonId, 0 AS PathLength
+            WITH WalkFromFirst AS (
+                SELECT p.Id AS PersonId, 0 AS Steps
                 FROM Person AS p
                 WHERE p.Id = @person1Id
                 UNION ALL
-                SELECT k.Person2Id, w.PathLength + 1
-                FROM Walk AS w
+                SELECT k.Person2Id, w.Steps + 1
+                FROM WalkFromFirst AS w
                 JOIN Person_knows_Person AS k ON k.Person1Id = w.PersonId
-                WHERE w.PathLength < 3 AND w.PersonId <> @person2Id)
-            SELECT COALESCE(MIN(w.PathLength), -1) AS ShortestPathLength
-            FROM Walk AS w
-            WHERE w.PersonId = @person2Id
+                WHERE w.Steps < 2 AND w.PersonId <> @person2Id),
+            WalkFromSecond AS (
+                SELECT p.Id AS PersonId, 0 AS Steps
+                FROM Person AS p
+                WHERE p.Id = @person2Id
+                UNION ALL
+                SELECT k.Person2Id, w.Steps + 1
+                FROM WalkFromSecond AS w
+                JOIN Person_knows_Person AS k ON k.Person1Id = w.PersonId
+                WHERE w.Steps < 2 AND w.PersonId <> @person1Id),
+            NearestToFirst AS (
+                SELECT w.PersonId AS PersonId, MIN(w.Steps) AS Steps
+                FROM WalkFromFirst AS w
+                GROUP BY w.PersonId),
+            NearestToSecond AS (
+                SELECT w.PersonId AS PersonId, MIN(w.Steps) AS Steps
+                FROM WalkFromSecond AS w
+                GROUP BY w.PersonId)
+            SELECT COALESCE(MIN(f.Steps + s.Steps), -1) AS ShortestPathLength
+            FROM NearestToFirst AS f
+            JOIN NearestToSecond AS s ON s.PersonId = f.PersonId
             """,
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "96")],
             FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion],
@@ -951,8 +971,9 @@ public static class LdbcSnbSample
             + "is excluded. The shortest walks are then split into their steps and each step is weighed over the replies "
             + "between its two persons: weights joined inside the recursion would be computed again for every step of "
             + "every walk. The identifiers of the path are converted from columns, because a parameter converted into "
-            + "text is one HQL cannot show to fit a code page. The walk is bounded at three steps, as in IC 13, so two "
-            + "persons further apart have no path.",
+            + "text is one HQL cannot show to fit a code page. The walk is bounded at three steps, so two persons "
+            + "further apart have no path; it walks from one end only, unlike IC 13, because it carries whole paths, "
+            + "and the validation set has shown no pair the bound misses.",
             """
             WITH Walk AS (
                 SELECT p.Id AS PersonId, 0 AS Steps, CAST(NULL AS BIGINT) AS Step1Id, CAST(NULL AS BIGINT) AS Step2Id
@@ -1391,10 +1412,12 @@ public static class LdbcSnbSample
             "The cost of the weighted shortest path between two persons: an edge along knows costs ten divided by ten plus "
             + "the weight of the replies between its ends inside forums created in the timeframe - ten for a reply to a post, "
             + "five for a reply to a comment, both ways -, -1 where there is no path. The costs are a definition over the "
-            + "replies; the search a recursive definition (decision 113) that sums the costs as a FLOAT, converted in its anchor "
-            + "and in the definition of the costs, because the recursive member has to keep exactly the type its anchor starts "
-            + "the sum with. The walk is bounded at three steps, as in IC 13, so a cheaper path of more steps is missed and a "
-            + "pair further apart answers -1.",
+            + "replies; the search runs from both ends, as in IC 13 (decision 113): a recursive definition from each person "
+            + "that sums the costs as a FLOAT, converted in its anchor and in the definition of the costs, because the "
+            + "recursive member has to keep exactly the type its anchor starts the sum with, each merged outside the "
+            + "recursion to the cheapest walk to every person it reached, and the cost is the cheapest sum of both halves "
+            + "where they meet - the cost of an edge is the same both ways. Each walk is bounded at two steps, so the "
+            + "search reaches four, a cheaper path of more steps is missed and a pair further apart answers -1.",
             """
             WITH Interaction AS (
                 SELECT m.CreatorPersonId AS AuthorId, r.CreatorPersonId AS ReplierId,
@@ -1412,18 +1435,35 @@ public static class LdbcSnbSample
                 FROM Person_knows_Person AS k
                 LEFT JOIN Interaction AS i1 ON i1.AuthorId = k.Person1Id AND i1.ReplierId = k.Person2Id
                 LEFT JOIN Interaction AS i2 ON i2.AuthorId = k.Person2Id AND i2.ReplierId = k.Person1Id),
-            Walk AS (
+            WalkFromFirst AS (
                 SELECT p.Id AS PersonId, CAST(0 AS FLOAT) AS Cost, 0 AS Steps
                 FROM Person AS p
                 WHERE p.Id = @person1Id
                 UNION ALL
                 SELECT e.ToPersonId, w.Cost + e.Cost, w.Steps + 1
-                FROM Walk AS w
+                FROM WalkFromFirst AS w
                 JOIN Edge AS e ON e.FromPersonId = w.PersonId
-                WHERE w.Steps < 3 AND w.PersonId <> @person2Id)
-            SELECT COALESCE(MIN(w.Cost), -1) AS TotalWeight
-            FROM Walk AS w
-            WHERE w.PersonId = @person2Id
+                WHERE w.Steps < 2 AND w.PersonId <> @person2Id),
+            WalkFromSecond AS (
+                SELECT p.Id AS PersonId, CAST(0 AS FLOAT) AS Cost, 0 AS Steps
+                FROM Person AS p
+                WHERE p.Id = @person2Id
+                UNION ALL
+                SELECT e.ToPersonId, w.Cost + e.Cost, w.Steps + 1
+                FROM WalkFromSecond AS w
+                JOIN Edge AS e ON e.FromPersonId = w.PersonId
+                WHERE w.Steps < 2 AND w.PersonId <> @person1Id),
+            CheapestFromFirst AS (
+                SELECT w.PersonId AS PersonId, MIN(w.Cost) AS Cost
+                FROM WalkFromFirst AS w
+                GROUP BY w.PersonId),
+            CheapestFromSecond AS (
+                SELECT w.PersonId AS PersonId, MIN(w.Cost) AS Cost
+                FROM WalkFromSecond AS w
+                GROUP BY w.PersonId)
+            SELECT COALESCE(MIN(f.Cost + s.Cost), -1) AS TotalWeight
+            FROM CheapestFromFirst AS f
+            JOIN CheapestFromSecond AS s ON s.PersonId = f.PersonId
             """,
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65"),
              new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-02-01")],
@@ -1518,9 +1558,12 @@ public static class LdbcSnbSample
         new("bi19", LdbcWorkload.BusinessIntelligence, 19, "Interaction path between cities", LdbcTranslation.Simplified,
             "The pairs of persons of two cities joined by the cheapest path among all such pairs: an edge along knows between "
             + "persons who replied to each other weighs max(round(40 - sqrt(replies)), 1), the replies counted both ways - ROUND "
-            + "and SQRT (decision 113) -, and the weights are a definition over the replies; the search is a recursive "
-            + "definition from every person of the first city that sums the weights as a FLOAT. The walk is bounded at three "
-            + "steps, as in IC 13, so a cheaper path of more steps is missed.",
+            + "and SQRT (decision 113) -, and the weights are a definition over the replies; the search runs from both ends, "
+            + "as in IC 13: a recursive definition from every person of the first city and another from every person of "
+            + "the second, each summing the weights as a FLOAT and each merged outside the recursion to the cheapest walk "
+            + "from each of its persons to every person it reached, and a pair's cost is the cheapest sum of both halves "
+            + "where they meet - the weight of an edge is the same both ways. Each walk is bounded at two steps, so the "
+            + "search reaches four and a cheaper path of more steps is missed.",
             """
             WITH Interaction AS (
                 SELECT c.CreatorPersonId AS ReplierId, p.CreatorPersonId AS AuthorId, COUNT(*) AS Replies
@@ -1537,21 +1580,37 @@ public static class LdbcSnbSample
                 LEFT JOIN Interaction AS i1 ON i1.ReplierId = k.Person1Id AND i1.AuthorId = k.Person2Id
                 LEFT JOIN Interaction AS i2 ON i2.ReplierId = k.Person2Id AND i2.AuthorId = k.Person1Id
                 WHERE i1.Replies IS NOT NULL OR i2.Replies IS NOT NULL),
-            Walk AS (
+            WalkFromCity1 AS (
                 SELECT p.Id AS SourceId, p.Id AS PersonId, CAST(0 AS FLOAT) AS Weight, 0 AS Steps
                 FROM Person AS p
                 WHERE p.LocationCityId = @city1Id
                 UNION ALL
                 SELECT w.SourceId, e.ToPersonId, w.Weight + e.Weight, w.Steps + 1
-                FROM Walk AS w
+                FROM WalkFromCity1 AS w
                 JOIN Edge AS e ON e.FromPersonId = w.PersonId
-                WHERE w.Steps < 3),
+                WHERE w.Steps < 2),
+            WalkFromCity2 AS (
+                SELECT p.Id AS SourceId, p.Id AS PersonId, CAST(0 AS FLOAT) AS Weight, 0 AS Steps
+                FROM Person AS p
+                WHERE p.LocationCityId = @city2Id
+                UNION ALL
+                SELECT w.SourceId, e.ToPersonId, w.Weight + e.Weight, w.Steps + 1
+                FROM WalkFromCity2 AS w
+                JOIN Edge AS e ON e.FromPersonId = w.PersonId
+                WHERE w.Steps < 2),
+            CheapestFromCity1 AS (
+                SELECT w.SourceId AS SourceId, w.PersonId AS PersonId, MIN(w.Weight) AS Weight
+                FROM WalkFromCity1 AS w
+                GROUP BY w.SourceId, w.PersonId),
+            CheapestFromCity2 AS (
+                SELECT w.SourceId AS SourceId, w.PersonId AS PersonId, MIN(w.Weight) AS Weight
+                FROM WalkFromCity2 AS w
+                GROUP BY w.SourceId, w.PersonId),
             Cheapest AS (
-                SELECT w.SourceId AS Person1Id, w.PersonId AS Person2Id, MIN(w.Weight) AS TotalWeight
-                FROM Walk AS w
-                JOIN Person AS d ON d.Id = w.PersonId
-                WHERE d.LocationCityId = @city2Id
-                GROUP BY w.SourceId, w.PersonId)
+                SELECT c1.SourceId AS Person1Id, c2.SourceId AS Person2Id, MIN(c1.Weight + c2.Weight) AS TotalWeight
+                FROM CheapestFromCity1 AS c1
+                JOIN CheapestFromCity2 AS c2 ON c2.PersonId = c1.PersonId
+                GROUP BY c1.SourceId, c2.SourceId)
             SELECT c.Person1Id AS Person1Id, c.Person2Id AS Person2Id, c.TotalWeight AS TotalWeight
             FROM Cheapest AS c
             WHERE c.TotalWeight = (SELECT MIN(m.TotalWeight) FROM Cheapest AS m)
@@ -1563,10 +1622,12 @@ public static class LdbcSnbSample
         new("bi20", LdbcWorkload.BusinessIntelligence, 20, "Recruitment", LdbcTranslation.Simplified,
             "The cheapest path from employees of a company to a person, through friends who studied at the same "
             + "university, an edge weighing the difference of their class years plus one. The edges and their weights are "
-            + "a definition that groups the shared universities of every pair, and the search a recursive definition "
-            + "over it that walks from the person (decision 113); the cheapest walk to each employee is its cost. The "
-            + "walk is bounded at three steps, as in IC 13, so an employee further away is left out. The person "
-            + "is not a candidate even where they work at the company.",
+            + "a definition that groups the shared universities of every pair, and the search runs from both ends, as in "
+            + "IC 13 (decision 113): a recursive definition over the edges from the person and another from every "
+            + "employee of the company, each merged outside the recursion to the cheapest walk to every person it "
+            + "reached, and an employee's cost is the cheapest sum of both halves where they meet - the weight of an "
+            + "edge is the same both ways. Each walk is bounded at two steps, so the search reaches four and an "
+            + "employee further away is left out. The person is not a candidate even where they work at the company.",
             """
             WITH Edge AS (
                 SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId,
@@ -1575,22 +1636,39 @@ public static class LdbcSnbSample
                 JOIN Person_studyAt_University AS s1 ON s1.PersonId = k.Person1Id
                 JOIN Person_studyAt_University AS s2 ON s2.PersonId = k.Person2Id AND s2.UniversityId = s1.UniversityId
                 GROUP BY k.Person1Id, k.Person2Id),
-            Walk AS (
+            WalkFromPerson AS (
                 SELECT p.Id AS PersonId, 0 AS Cost, 0 AS Steps
                 FROM Person AS p
                 WHERE p.Id = @person2Id
                 UNION ALL
                 SELECT e.ToPersonId, w.Cost + e.Weight, w.Steps + 1
-                FROM Walk AS w
+                FROM WalkFromPerson AS w
                 JOIN Edge AS e ON e.FromPersonId = w.PersonId
-                WHERE w.Steps < 3)
-            SELECT TOP (20) w.PersonId AS Person1Id, MIN(w.Cost) AS TotalWeight
-            FROM Walk AS w
-            JOIN Person_workAt_Company AS wa ON wa.PersonId = w.PersonId
-            JOIN Organisation AS o ON o.Id = wa.CompanyId
-            WHERE o.Name = @company AND w.PersonId <> @person2Id
-            GROUP BY w.PersonId
-            ORDER BY TotalWeight ASC, w.PersonId ASC
+                WHERE w.Steps < 2),
+            WalkFromEmployee AS (
+                SELECT wa.PersonId AS EmployeeId, wa.PersonId AS PersonId, 0 AS Cost, 0 AS Steps
+                FROM Person_workAt_Company AS wa
+                JOIN Organisation AS o ON o.Id = wa.CompanyId
+                WHERE o.Name = @company
+                UNION ALL
+                SELECT w.EmployeeId, e.ToPersonId, w.Cost + e.Weight, w.Steps + 1
+                FROM WalkFromEmployee AS w
+                JOIN Edge AS e ON e.FromPersonId = w.PersonId
+                WHERE w.Steps < 2),
+            CheapestFromPerson AS (
+                SELECT w.PersonId AS PersonId, MIN(w.Cost) AS Cost
+                FROM WalkFromPerson AS w
+                GROUP BY w.PersonId),
+            CheapestFromEmployee AS (
+                SELECT w.EmployeeId AS EmployeeId, w.PersonId AS PersonId, MIN(w.Cost) AS Cost
+                FROM WalkFromEmployee AS w
+                GROUP BY w.EmployeeId, w.PersonId)
+            SELECT TOP (20) e.EmployeeId AS Person1Id, MIN(p.Cost + e.Cost) AS TotalWeight
+            FROM CheapestFromPerson AS p
+            JOIN CheapestFromEmployee AS e ON e.PersonId = p.PersonId
+            WHERE e.EmployeeId <> @person2Id
+            GROUP BY e.EmployeeId
+            ORDER BY TotalWeight ASC, e.EmployeeId ASC
             """,
             [new("company", "NVARCHAR(256)", "China_Northwest_Airlines"), new("person2Id", "BIGINT", "4398046521830")],
             FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),

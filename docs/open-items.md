@@ -33,10 +33,10 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 
 | Položka | Kategorie | Druh | Pož. |
 |---|---|---|---|
-| [Hledání cest z obou konců](#hledání-cest-z-obou-konců) | Dotazy | práce | F13, T2, T3 |
 | [Verdikt soudce LDBC nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) | Dotazy | práce | F13, T2, T3 |
 | [Seznamový parametr v nativním dotazu EclipseLinku](#seznamový-parametr-v-nativním-dotazu-eclipselinku) | Dotazy | rozhodnutí | F9, T2 |
 | [Přepis textu katalogu kvůli vadě jednoho cíle](#přepis-textu-katalogu-kvůli-vadě-jednoho-cíle) | Dotazy | rozhodnutí | T2 |
+| [Definice hran uvnitř rekurze nad SF 1](#definice-hran-uvnitř-rekurze-bi-15-a-bi-19-nad-sf-1) | Dotazy | rozhodnutí | T2, T3 |
 | [Co zavírá třetí cíl](#co-zavírá-třetí-cíl-schválený-záměr-advisor-nejmenuje) | Třetí cíl | rozhodnutí | F15, T1–T7 |
 | [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Třetí cíl | rozhodnutí | S5, T1–T3 |
 | [Referenční databáze experimentů a případová studie T1](#referenční-databáze-experimentů-a-případová-studie-t1) | Třetí cíl | rozhodnutí | T1, T2, T7, F4 |
@@ -68,8 +68,6 @@ Co na čem stojí (vazby, které položky samy vyslovují):
 
 ```mermaid
 flowchart LR
-    W["Hledání cest<br/>z obou konců"] --> V["Verdikt soudce<br/>nad SF 1"]
-    V -.->|"IC 14 jen při neshodě"| W
     G["Co zavírá třetí cíl"] -.->|"do rozhodnutí bez značek"| A["Advisor (T7)"]
     DB["Referenční databáze a T1"] -->|vstup| P["Pipeline T2 × T3"]
     X["Cizí artefakt<br/>ve stupních ověření"] --> L["Metodika<br/>srovnání s LLM"]
@@ -96,21 +94,16 @@ Co položky níž změní (dotazy katalogu, které cíl dnes píše nativním SQ
 | Hibernate 7.4 | 1 | — | — | 1: převod textu na text (IC 12) | `cast` do textu píše 7.4.5 jako `varchar(max)`, a stejně s typem `nstring` i pod `hibernate.use_nationalized_character_data` — změřeno (javová `hibernate/HibernateClaimsTest`); zbývá jen úniková cesta (113) |
 | EclipseLink 5.0 | 18 | — | — | 18: rekurze (6), mezivýsledek (4), datumová aritmetika (2), seznam (1), převod typu (BI 1), pořadí joinů (IS 7, IC 5, BI 2, BI 5) | JPQL je nemá; `cast` pošle EclipseLink 5.0 SQL Serveru s javovým jménem typu (113); pořadí joinů píše EclipseLink sám — zbývá jen [přepis textu](#přepis-textu-katalogu-kvůli-vadě-jednoho-cíle) |
 | odmítnutí | EclipseLink BI 12 | BI 12 | seznamový parametr v nativním dotazu ([rozhodnutí](#seznamový-parametr-v-nativním-dotazu-eclipselinku)) | 0 | — |
-| `Simplified` | 5 | — | — | 5: cesty s mezí hloubky | rekurzivní člen SQL Serveru řádky neslučuje (113); [mez se zdvojí](#hledání-cest-z-obou-konců) |
+| `Simplified` | 5 | — | — | 5: cesty s mezí hloubky (IC 13, BI 15, BI 19, BI 20 do čtyř kroků z obou konců; IC 14 do tří) | rekurzivní člen SQL Serveru řádky neslučuje (113); IC 14 z obou konců jen ukáže-li [verdikt](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) čtení, které mez mine |
 
 Úniková cesta po kouscích (`FUNCTION('DATEDIFF', …)`, `SQL(…)` EclipseLinku) a rekurze rozepsaná do pevného počtu joinů zůstávají zamítnuté — varianta 3 rozh. 113 a jeho odstavec o rekurzi; co by je otevřelo, je nové rozhodnutí, ne položka tady.
 
 ### Práce
 
-#### Hledání cest z obou konců
-*Obsah katalogu (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)); rekurze a její pravidla rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md); [`subset.md`](./subset.md) 2.10 (*mez hloubky, sledy místo vrcholů*). Požadavky F13, T2, T3.*
-
-IC 13, IC 14, BI 15, BI 19 a BI 20 jsou `Simplified` kvůli mezi tří kroků: rekurzivní člen SQL Serveru řádky neslučuje, sledy se množí počtem přátel na každém kroku (u příkladové osoby osmdesát) a čtvrtý krok je nedostupný. Z jedné osoby ale k druhé vede hledání z obou konců: procházka z první osoby a procházka z druhé, každá do *n* kroků, každá sloučená mimo rekurzi na dvojici osoba × nejmenší počet kroků (resp. nejmenší cena), a setkání jako join obou — nejkratší cesta do 2*n* kroků za dvojnásobek dnešní ceny, nebo do 4 kroků za zlomek (n = 2). Práce: IC 13, BI 15 a BI 20 (cena cesty je součet obou polovin, hrana `knows` je souměrná), BI 19 (z osob prvního města a z osob druhého, n = 2 vyjde levněji než dnešní tři kroky z jedné strany); IC 14 nese celé cesty a skládá je z obou polovin s `DISTINCT` nad cestou — jde do práce jen tehdy, ukáže-li [verdikt](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) čtení, které mez tří kroků mine. Stav zůstává `Simplified` s novou mezí v poznámce; `architecture.md` §6.2, `subset.md` 2.10 a 1.3.
-
 #### Verdikt soudce LDBC nad celou sadou SF 1
-*Práce podle rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md); stojí na [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md) a [095](./decisions/095-a-dated-run-record-names-its-commit.md). Měří [cesty z obou konců](#hledání-cest-z-obou-konců). Požadavky F13, T2, T3.*
+*Práce podle rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md); stojí na [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md) a [095](./decisions/095-a-dated-run-record-names-its-commit.md). Požadavky F13, T2, T3.*
 
-Soudce běží, ale jen nad prefixem: compose profil `test` přehrává 1000 řádků sady SF 0,1. Verdikt, který rozhodnutí bere za doklad stavu „podle specifikace", je celá sada nad SF 1 v obou sadách na MIS3 (`docker compose up --build` dá `mssql_db` se sadou SF 1; `ORMCONVERTOR_LDBC_VALIDATION_ROWS` prázdná) — přes 130 tisíc čtení, při desítkách až stovkách milisekund na čtení hodiny na sadu, proto zatím neproběhl. Výsledek se zapíše do záznamu běhů v [`ORMConvertor/README.md`](../ORMConvertor/README.md) a do [`traceability.md`](./traceability.md) (F13); podíl shodných čtení IC 13 a IC 14 do metrik T3 a do poznámek katalogu. IC 13 a IC 14 souhlasily nad prefixem 800 řádků SF 0,1 ve všech šesti frameworcích ze 100 % — potvrdí-li to celá sada, mez hloubky žádné čtení nemine a zdvojení meze u IC 14 odpadá.
+Soudce běží, ale jen nad prefixem: compose profil `test` přehrává 1000 řádků sady SF 0,1. Verdikt, který rozhodnutí bere za doklad stavu „podle specifikace", je celá sada nad SF 1 v obou sadách na MIS3 (`docker compose up --build` dá `mssql_db` se sadou SF 1; `ORMCONVERTOR_LDBC_VALIDATION_ROWS` prázdná) — přes 130 tisíc čtení, při desítkách až stovkách milisekund na čtení hodiny na sadu, proto zatím neproběhl. Výsledek se zapíše do záznamu běhů v [`ORMConvertor/README.md`](../ORMConvertor/README.md) a do [`traceability.md`](./traceability.md) (F13); podíl shodných čtení IC 13 a IC 14 do metrik T3 a do poznámek katalogu. IC 13 a IC 14 souhlasily nad prefixem 800 řádků SF 0,1 ve všech šesti frameworcích ze 100 %, obě tehdy s mezí tří kroků; IC 13 dnes hledá z obou konců do čtyř. Potvrdí-li to celá sada, mez tří kroků IC 14 žádné čtení nemine; ukáže-li čtení, které ji mine, skládá se IC 14 z obou polovin — dvě procházky po dvou krocích, setkání jako join, `DISTINCT` nad cestou — jako IC 13.
 
 ### Rozhodnutí
 
@@ -123,6 +116,11 @@ Nativní dotaz EclipseLinku 5.0.0 předá `List` vázaný na `?1` ovladači jako
 *Rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md) (text vedle referenční implementace LDBC), [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) (odstavec *Proč obecně, a ne jen nejlepší řádek přes `NOT EXISTS`*); profil `InnerJoinsFollowOuterJoins`, `EclipseLinkOuterJoinOrder` u IS 7, IC 5, BI 2 a BI 5. Požadavek T2.*
 
 Čtyři dotazy jdou do EclipseLinku nativním SQL kvůli vnějšímu joinu, jehož podmínka jmenuje alias vnitřního joinu: EclipseLink 5.0.0 píše vnitřní joiny za vnější a SQL Server podmínku odmítne. Nástroj to neobejde — pořadí píše EclipseLink a proměnná rozsahu nepomůže, protože `ON` přes čárku v SQL Serveru nesahá. Obejde to jen text: příznak IS 7 jako `CASE WHEN EXISTS (…)`, počet příspěvků IC 5 jako korelovaný skalární poddotaz, u BI 2 a BI 5 podobně. Rozhodnout, zda text katalogu smí dostat tvar diktovaný vadou jednoho cíle — proti tomu stojí 110 (text je přirozené T-SQL, které jde položit vedle referenční implementace) a to, že matice by pak měřila dotaz, který by takto nikdo nenapsal; pro to mluví čtyři dotazy méně v nativním SQL. Padne-li *ne*, položka zaniká a čtyři únikové cesty zůstávají vyslovené v §6.2.
+
+#### Definice hran uvnitř rekurze: BI 15 a BI 19 nad SF 1
+*Obsah katalogu (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)); rekurze rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md); změřeno 2026-10-10 nad `mssql_db` (SF 1) na MIS3. Požadavky T2, T3.*
+
+BI 15 a BI 19 procházejí v rekurzivním členu definici hran postavenou nad seskupením odpovědí (969 tisíc dvojic autorů ze 3 milionů zpráv). SQL Server definici nematerializuje: plán ji přepočítává pro každý klíč procházky (vnořené cykly a seek do `Message` podle autora), takže BI 19 nedoběhne do 500 s ani z obou konců, ani z jednoho — a stejně dopadl tvar s hranami jako vnějším joinem až za rekurzí, se seskupením podle neuspořádané dvojice i s odpověďmi počítanými korelovaným poddotazem na krok. BI 15 z obou konců doběhne za 49 s, z jednoho konce nedoběhne do 500 s. Nad hranami uloženými do dočasných tabulek dá BI 19 z obou konců týž výsledek za 6 s a z jednoho konce za 101 s. Rozhodnout, zda text katalogu smí dostat tvar, kterým plánovač SQL Serveru spočítá hrany jednou (proti stojí 110 jako u [přepisu textu](#přepis-textu-katalogu-kvůli-vadě-jednoho-cíle)), nebo zda katalog u obou dotazů vysloví, že nad SF 1 je neměří; soudce BI dotazy nesoudí a nárok T2/T3 je o překladu, ne o běhu.
 
 ## Třetí cíl: experimenty
 

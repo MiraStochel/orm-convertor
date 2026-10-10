@@ -207,9 +207,11 @@
           <p>
             The text leaves out one part and says which. The searches over the graph &mdash;
             shortest and cheapest paths (IC&nbsp;13, IC&nbsp;14, BI&nbsp;15, BI&nbsp;19,
-            BI&nbsp;20) &mdash; are recursive, and the walk stops at three steps: the recursion
-            of SQL Server keeps no record of the persons it has reached, so an unbounded walk
-            multiplies at every step. IC&nbsp;7 counts the latency of a like by the seconds
+            BI&nbsp;20) &mdash; are recursive and bounded: the recursion of SQL Server keeps
+            no record of the persons it has reached, so an unbounded walk multiplies at every
+            step. IC&nbsp;13, BI&nbsp;15, BI&nbsp;19 and BI&nbsp;20 walk two steps from each
+            end and meet in the middle, so they reach four steps; IC&nbsp;14 carries whole
+            paths and walks three steps from one end. IC&nbsp;7 counts the latency of a like by the seconds
             whose boundaries it crosses, which puts a few latencies one minute later.
           </p>
         </article>
