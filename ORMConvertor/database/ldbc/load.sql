@@ -1,5 +1,5 @@
 -- Loads one LDBC SNB Interactive v1 data set (decision 110) into the tables of schema.sql.
--- Run by sqlcmd between schema.sql and constraints.sql, with one variable, DataPath: the
+-- Run by sqlcmd between schema.sql and constraints.sql (then indexes.sql), with one variable, DataPath: the
 -- directory the archive social_network-sf<N>-CsvMergeForeign-StringDateFormatter.tar.zst
 -- unpacks to - the one holding static/ and dynamic/ - as a path the database server itself
 -- can read, since BULK INSERT runs there.

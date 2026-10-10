@@ -123,6 +123,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 118 | [NHibernate vydává dotaz dvěma tvary: závazným HQL a vedle něj LINQ nad `session.Query<T>()`; druhý tvar píše sdílená vrstva zápisu LINQ, nese vlastní typ obsahu a jeho vynechání je záznam `Omitted`](118-nhibernate-writes-a-linq-form-beside-its-hql.md) | platí | F7–F10, F11, F13, T2, T3, S1, S2, S6, S7 |
 | 119 | [Kvantifikované porovnání (`ALL`, `ANY`, `SOME`) je porovnání s kvantifikátorem nad poddotazem: `= ANY` je `IN`, `<> ALL` je `NOT IN`, LINQ ho píše jako `All()`/`Any()` nad projekcí a negaci převrací De Morganem](119-quantified-comparison-as-a-comparison-with-a-quantifier.md) | platí | F7–F10, F11, F13, T2, T3, S1, S2 |
 | 120 | [Tělo poddotazového operandu smí být množinová operace: `IN (A UNION B)` a `EXISTS (A UNION B)` se nesou, cíl bez množinové operace jde únikovou cestou a skalární porovnání s takovým tělem do LINQ také](120-a-set-operation-as-the-body-of-a-subquery-operand.md) | platí | F7–F10, F11, F13, T2, T3, S1, S2 |
+| 121 | [Text dotazu katalogu LDBC smí mít tvar, který plánovač SQL Serveru potřebuje, zůstane-li T-SQL, jaké by stálo vedle referenční implementace (IC 5: okruh osob jako jedna množina poddotazem v poddotazu); fyzický návrh `LdbcSnb` nese v `indexes.sql` dva indexy rozšířené pro čtení katalogu a loader je obnoví při změně skriptu](121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md) | platí | T2, T3, F13, S5 |
 
 ## Formát
 

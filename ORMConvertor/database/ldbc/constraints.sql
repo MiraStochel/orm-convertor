@@ -1,9 +1,8 @@
--- Foreign keys and indexes of the LDBC tables (decision 110), run after schema.sql and,
--- in the container, after the data is loaded. The foreign keys are declared WITH CHECK, so
--- the load itself is verified once, at the end, and the constraints are trusted by the
--- optimizer and by the catalog completion phase alike: the catalog reads relations from
--- exactly these declarations (decision 015). The indexes serve the joins the query catalog
--- makes - every foreign key column that is not the first column of a primary key.
+-- Foreign keys of the LDBC tables (decision 110), run after schema.sql and, in the container,
+-- after the data is loaded. The foreign keys are declared WITH CHECK, so the load itself is
+-- verified once, at the end, and the constraints are trusted by the optimizer and by the
+-- catalog completion phase alike: the catalog reads relations from exactly these declarations
+-- (decision 015). The indexes are in indexes.sql, which runs after this script.
 --
 -- The {{schema}} placeholder and the GO separators work as in schema.sql.
 
@@ -87,26 +86,3 @@ ALTER TABLE [{{schema}}].[Person_workAt_Company] WITH CHECK ADD
     CONSTRAINT [FK_Person_workAt_Company_Company] FOREIGN KEY ([CompanyId]) REFERENCES [{{schema}}].[Organisation] ([Id]);
 GO
 
-CREATE INDEX [IX_Place_PartOfPlaceId] ON [{{schema}}].[Place] ([PartOfPlaceId]);
-CREATE INDEX [IX_Organisation_LocationPlaceId] ON [{{schema}}].[Organisation] ([LocationPlaceId]);
-CREATE INDEX [IX_Tag_TypeTagClassId] ON [{{schema}}].[Tag] ([TypeTagClassId]);
-CREATE INDEX [IX_Tag_Name] ON [{{schema}}].[Tag] ([Name]);
-CREATE INDEX [IX_TagClass_SubclassOfTagClassId] ON [{{schema}}].[TagClass] ([SubclassOfTagClassId]);
-CREATE INDEX [IX_Person_LocationCityId] ON [{{schema}}].[Person] ([LocationCityId]);
-CREATE INDEX [IX_Person_FirstName] ON [{{schema}}].[Person] ([FirstName]);
-CREATE INDEX [IX_Forum_ModeratorPersonId] ON [{{schema}}].[Forum] ([ModeratorPersonId]);
-CREATE INDEX [IX_Message_CreatorPersonId] ON [{{schema}}].[Message] ([CreatorPersonId], [CreationDate]);
-CREATE INDEX [IX_Message_ParentMessageId] ON [{{schema}}].[Message] ([ParentMessageId]);
-CREATE INDEX [IX_Message_RootPostId] ON [{{schema}}].[Message] ([RootPostId]);
-CREATE INDEX [IX_Message_ContainerForumId] ON [{{schema}}].[Message] ([ContainerForumId]);
-CREATE INDEX [IX_Message_LocationCountryId] ON [{{schema}}].[Message] ([LocationCountryId]);
-CREATE INDEX [IX_Message_CreationDate] ON [{{schema}}].[Message] ([CreationDate]);
-CREATE INDEX [IX_Person_knows_Person_Person2Id] ON [{{schema}}].[Person_knows_Person] ([Person2Id]);
-CREATE INDEX [IX_Person_likes_Message_MessageId] ON [{{schema}}].[Person_likes_Message] ([MessageId]);
-CREATE INDEX [IX_Message_hasTag_Tag_TagId] ON [{{schema}}].[Message_hasTag_Tag] ([TagId]);
-CREATE INDEX [IX_Forum_hasMember_Person_PersonId] ON [{{schema}}].[Forum_hasMember_Person] ([PersonId]);
-CREATE INDEX [IX_Forum_hasTag_Tag_TagId] ON [{{schema}}].[Forum_hasTag_Tag] ([TagId]);
-CREATE INDEX [IX_Person_hasInterest_Tag_TagId] ON [{{schema}}].[Person_hasInterest_Tag] ([TagId]);
-CREATE INDEX [IX_Person_studyAt_University_UniversityId] ON [{{schema}}].[Person_studyAt_University] ([UniversityId]);
-CREATE INDEX [IX_Person_workAt_Company_CompanyId] ON [{{schema}}].[Person_workAt_Company] ([CompanyId]);
-GO

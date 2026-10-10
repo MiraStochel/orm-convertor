@@ -40,7 +40,7 @@ RUN case "${LDBC_SCALE_FACTOR}" in \
 
 # The scripts are shared with the test suite, which checks out with CRLF on Windows; sqlcmd
 # and bash here want LF, so the line endings are normalized on the way in.
-COPY database/ldbc/schema.sql database/ldbc/load.sql database/ldbc/constraints.sql database/ldbc/validation.sql database/ldbc/load-ldbc.sh /opt/ldbc/
+COPY database/ldbc/schema.sql database/ldbc/load.sql database/ldbc/constraints.sql database/ldbc/indexes.sql database/ldbc/validation.sql database/ldbc/load-ldbc.sh /opt/ldbc/
 COPY database/init-db.sh /usr/local/bin/init-db.sh
 RUN sed -i 's/\r$//' /opt/ldbc/*.sql /opt/ldbc/load-ldbc.sh /usr/local/bin/init-db.sh && \
     chmod +x /usr/local/bin/init-db.sh /opt/ldbc/load-ldbc.sh && \

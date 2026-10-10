@@ -675,7 +675,11 @@ public static class LdbcSnbSample
 
         new("ic5", LdbcWorkload.InteractiveComplex, 5, "New groups", LdbcTranslation.AsSpecified,
             "Forums that friends and friends of friends joined after a date, with the posts they wrote there; an outer "
-            + "join keeps the forums where they wrote none.",
+            + "join keeps the forums where they wrote none. The friends and friends of friends are one set, as the "
+            + "reference implementation of LDBC writes them: the persons known by the person or by one of the person's "
+            + "friends, a subquery inside the subquery. Written as two IN subqueries joined by OR, SQL Server scans every "
+            + "membership on every read - 1.6 million rows at scale factor 1, over five seconds - because an OR over two "
+            + "subqueries is nothing its planner drives a seek from (decision 121); the one set it reads in half a second.",
             """
             SELECT TOP (20) f.Title AS ForumTitle, COUNT(DISTINCT m.Id) AS PostCount
             FROM Forum_hasMember_Person AS fm
@@ -683,10 +687,9 @@ public static class LdbcSnbSample
             LEFT JOIN Message AS m ON m.ContainerForumId = f.Id AND m.CreatorPersonId = fm.PersonId AND m.ParentMessageId IS NULL
             WHERE fm.JoinDate > @minDate
               AND fm.PersonId <> @personId
-              AND (fm.PersonId IN (SELECT k1.Person2Id FROM Person_knows_Person AS k1 WHERE k1.Person1Id = @personId)
-                   OR fm.PersonId IN (SELECT k2.Person2Id FROM Person_knows_Person AS k1
-                                      JOIN Person_knows_Person AS k2 ON k2.Person1Id = k1.Person2Id
-                                      WHERE k1.Person1Id = @personId))
+              AND fm.PersonId IN (SELECT k2.Person2Id FROM Person_knows_Person AS k2
+                                  WHERE k2.Person1Id = @personId
+                                     OR k2.Person1Id IN (SELECT k1.Person2Id FROM Person_knows_Person AS k1 WHERE k1.Person1Id = @personId))
             GROUP BY f.Id, f.Title
             ORDER BY PostCount DESC, f.Id ASC
             """,

@@ -24,6 +24,7 @@
          so what the suite verifies is what the container's LdbcSnb database is. -->
     <EmbeddedResource Include="..\database\ldbc\schema.sql" LogicalName="Tests.Database.Ldbc.schema.sql" />
     <EmbeddedResource Include="..\database\ldbc\constraints.sql" LogicalName="Tests.Database.Ldbc.constraints.sql" />
+    <EmbeddedResource Include="..\database\ldbc\indexes.sql" LogicalName="Tests.Database.Ldbc.indexes.sql" />
     <!-- The inserts INS 1-8 of the LDBC validation set and their compensation (decision 117):
          the replay runs them over LdbcSnb from where the repository keeps them, as the Java
          suite does. -->

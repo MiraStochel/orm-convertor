@@ -31,6 +31,7 @@ public sealed class TestSchemaFixture : IAsyncLifetime
     private const string ShapesDataResourceName = "Tests.Database.QueryShapes.FixtureData.sql";
     private const string LdbcSchemaResourceName = "Tests.Database.Ldbc.schema.sql";
     private const string LdbcConstraintsResourceName = "Tests.Database.Ldbc.constraints.sql";
+    private const string LdbcIndexesResourceName = "Tests.Database.Ldbc.indexes.sql";
     private const string SchemaPlaceholder = "{{schema}}";
 
     /// <summary>
@@ -226,6 +227,7 @@ public sealed class TestSchemaFixture : IAsyncLifetime
             $"CREATE SCHEMA [{LdbcSchemaName}];",
             .. Batches(LdbcSchemaResourceName, LdbcSchemaName),
             .. Batches(LdbcConstraintsResourceName, LdbcSchemaName),
+            .. Batches(LdbcIndexesResourceName, LdbcSchemaName),
         ];
 
     private static IEnumerable<string> Batches(string resourceName, string schema)
