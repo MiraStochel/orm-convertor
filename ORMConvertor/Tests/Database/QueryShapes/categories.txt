@@ -545,6 +545,22 @@ MyBatis = mybatis/FindListAggregationMapper.xml
 fallbackBy = NHibernate:ListAggregation, EclipseLink:ListAggregation
 fallbackWithoutCatalog = MyBatis>EFCore:ListAggregation
 
+# The products above a price, each with the descriptions of its lines of more than two
+# pieces as one list - a correlated scalar subquery with STRING_AGG, which is how the LDBC
+# catalog returns a list beside the row (IC 1). EF Core 10 joins string.Join over a chain
+# from a query root on the client, so LINQ writes the subquery as the chain grouped by a
+# constant, the list over that one group and FirstOrDefault(); over no lines there is no
+# group and the subquery yields NULL, as STRING_AGG over nothing does. HQL 7.4 writes listagg
+# inside the subquery; HQL 5.7 and JPQL have no list. Without a catalog a MyBatis source says
+# nothing of NULL, as above.
+[ListAggregationOverACorrelatedSubquery]
+Dapper = dapper/FindListAggregationOverACorrelatedSubquery.sql
+EFCore = efcore/FindListAggregationOverACorrelatedSubquery.query.cs
+Hibernate = hibernate/FindListAggregationOverACorrelatedSubquery.jpql
+MyBatis = mybatis/FindListAggregationOverACorrelatedSubqueryMapper.xml
+fallbackBy = NHibernate:ListAggregation, EclipseLink:ListAggregation
+fallbackWithoutCatalog = MyBatis>EFCore:ListAggregation
+
 # ---- the rows of decision 113, joins in LINQ ----
 #
 # Every product with its lines of more than five pieces, and a product with none keeps its

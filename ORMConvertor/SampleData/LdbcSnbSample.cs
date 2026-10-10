@@ -334,17 +334,14 @@ public static class LdbcSnbSample
 
     /// <summary>
     /// A list joined from the values of a group - STRING_AGG - has no form in HQL of NHibernate
-    /// 5.7 nor in JPQL, and EF Core 10 joins a list over a subquery on the client (decision 113,
-    /// measured): those targets write the query in native SQL.
+    /// 5.7 nor in JPQL (decision 113, measured): those targets write the query in native SQL.
+    /// EF Core writes a list over a correlated subquery as the chain grouped by a constant.
     /// </summary>
     private static readonly LdbcFallback NHibernateList = new(Model.ORMEnum.NHibernate,
         "HQL of NHibernate 5.7 has no aggregate into a list, so the query goes out as native SQL through CreateSQLQuery.");
 
     private static readonly LdbcFallback EclipseLinkList = new(Model.ORMEnum.EclipseLink,
         "JPQL has no aggregate into a list, so the query goes out as native SQL through createNativeQuery.");
-
-    private static readonly LdbcFallback EFCoreCorrelatedList = new(Model.ORMEnum.EFCore,
-        "EF Core 10 does not translate string.Join over a subquery - it fetches the rows and joins them on the client -, so the query goes out as native SQL through SqlQuery.");
 
     /// <summary>
     /// A ranking function over a window has no form in LINQ (decision 113): EF Core writes the
@@ -576,7 +573,7 @@ public static class LdbcSnbSample
             ORDER BY DistanceFromPerson ASC, p.LastName ASC, p.Id ASC
             """,
             [PersonId, new("firstName", "NVARCHAR(80)", "John")],
-            FallbackBy: [EFCoreCorrelatedList, NHibernateList, EclipseLinkList],
+            FallbackBy: [NHibernateList, EclipseLinkList],
             Validation: new("IC1", [Bind("personId", "personIdQ1"), Bind("firstName", "firstName")],
             [
                 Column("FriendId", "friendId"), Column("FriendLastName", "friendLastName"),

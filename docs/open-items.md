@@ -33,7 +33,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 
 | Položka | Kategorie | Druh | Pož. |
 |---|---|---|---|
-| [EF Core: seznam nad korelovaným poddotazem](#ef-core-seznam-nad-korelovaným-poddotazem-jako-seskupený-poddotaz) | Dotazy | práce | T2 |
 | [Hibernate: převod textu v IC 12](#hibernate-převod-textu-bez-ztráty-znaků) | Dotazy | práce | F9 |
 | [Hledání cest z obou konců](#hledání-cest-z-obou-konců) | Dotazy | práce | F13, T2, T3 |
 | [Verdikt soudce LDBC nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) | Dotazy | práce | F13, T2, T3 |
@@ -93,7 +92,7 @@ Co položky níž změní (dotazy katalogu, které cíl dnes píše nativním SQ
 
 | Cíl | Dnes | Zruší | Čím | Zůstane | Proč zůstane |
 |---|---|---|---|---|---|
-| EF Core 10 | 9 | IC 1 | seskupený poddotaz | 8: rekurze (6), okenní funkce (BI 14), agregát bez seskupení (BI 11) | LINQ je nemá; seskupení podle konstanty by nad prázdným vstupem vrátilo nula řádků místo jednoho (113) |
+| EF Core 10 | 8 | — | — | 8: rekurze (6), okenní funkce (BI 14), agregát bez seskupení (BI 11) | LINQ je nemá; seskupení podle konstanty by nad prázdným vstupem vrátilo nula řádků místo jednoho (113) |
 | NHibernate 5.7 | 14 | — | — | 14: mezivýsledek (5), rekurze (6), datumová aritmetika (2), seznam (1) | HQL 5.7 je nemá, změřeno (113, deskriptor) |
 | Hibernate 7.4 | 1 | IC 12 | převod textu bez ztráty znaků, obstojí-li sonda | 0 | — |
 | EclipseLink 5.0 | 18 | — | — | 18: rekurze (6), mezivýsledek (4), datumová aritmetika (2), seznam (1), převod typu (BI 1), pořadí joinů (IS 7, IC 5, BI 2, BI 5) | JPQL je nemá; `cast` pošle EclipseLink 5.0 SQL Serveru s javovým jménem typu (113); pořadí joinů píše EclipseLink sám — zbývá jen [přepis textu](#přepis-textu-katalogu-kvůli-vadě-jednoho-cíle) |
@@ -103,11 +102,6 @@ Co položky níž změní (dotazy katalogu, které cíl dnes píše nativním SQ
 Úniková cesta po kouscích (`FUNCTION('DATEDIFF', …)`, `SQL(…)` EclipseLinku) a rekurze rozepsaná do pevného počtu joinů zůstávají zamítnuté — varianta 3 rozh. 113 a jeho odstavec o rekurzi; co by je otevřelo, je nové rozhodnutí, ne položka tady.
 
 ### Práce
-
-#### EF Core: seznam nad korelovaným poddotazem jako seskupený poddotaz
-*`AbstractLinqQueryBuilder.RenderSubQuery`; rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) (změřeno: `string.Join` nad řetězem z kořene spojí EF Core 10 na klientovi); [`subset.md`](./subset.md) 2.9. Požadavek T2.*
-
-EF Core 10 překládá `string.Join` nad prvky *skupiny* na `STRING_AGG`, ne nad řetězem z kořene dotazu, a proto IC 1 (e-maily, jazyky, školy, firmy jako korelované skalární poddotazy) jde nativním SQL. Skalární poddotaz se seznamem jde napsat jako řetěz s jedinou skupinou: `ctx.Set<E>().Where(e => e.PersonId == p.Id).GroupBy(e => 1).Select(g => string.Join(";", g.Select(e => e.Email))).FirstOrDefault()` — u skalárního poddotazu je žádný řádek totéž co jeden řádek s `NULL`, takže tvar vrací tutéž hodnotu i nad prázdnou množinou (na rozdíl od agregátu přes celý výsledek, kde 113 seskupení podle konstanty právě proto zamítlo). Sonda proti 10.0.10: seskupení podle konstanty uvnitř skalárního poddotazu a `string.Join` nad ním na `STRING_AGG` (`ToQueryString()`); pravidlo `HoldsNoNull` platí dál. Obstojí-li, IC 1 bez `EFCoreCorrelatedList` a soudce zelený; jinak položka zaniká.
 
 #### Hibernate: převod textu bez ztráty znaků
 *Deskriptor Hibernatu (`Cast`, rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md), změřeno proti 7.4.5); `HibernateTextCast` v katalogu (IC 12); [`subset.md`](./subset.md) 2.8. Požadavek F9.*

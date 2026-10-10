@@ -631,26 +631,74 @@ public class ExpressionVocabularyTest
     }
 
     /// <summary>
-    /// EF Core 10 turns every NULL into the empty string before STRING_AGG and joins a list
-    /// over a subquery on the client (both verified), so over a column that may hold NULL and
-    /// over a subquery EF Core writes the query in native SQL; read from LINQ over such a
-    /// column, the difference is said in a record. HQL 5.7 and JPQL have no list at all.
+    /// EF Core 10 turns every NULL into the empty string before STRING_AGG (verified), so over
+    /// a value that may be NULL - a column, or an expression with such a column in it - EF Core
+    /// writes the query in native SQL; read from LINQ over such a column, the difference is
+    /// said in a record. HQL 5.7 and JPQL have no list at all.
     /// </summary>
     [Fact]
     public void AListFallsBackWhereTheTargetJoinsOtherwise()
     {
         const string nullable = "SELECT s.CustomerId AS CustomerId, STRING_AGG(s.Notes, ', ') AS Notes FROM Sales AS s GROUP BY s.CustomerId";
-        const string correlated = "SELECT s.SaleId AS SaleId, (SELECT STRING_AGG(o.Code, ', ') FROM Sales AS o WHERE o.CustomerId = s.CustomerId) AS Codes FROM Sales AS s";
+        const string nullableInside = "SELECT s.CustomerId AS CustomerId, STRING_AGG(s.Code + ':' + s.Notes, ', ') AS Codes FROM Sales AS s GROUP BY s.CustomerId";
 
         Assert.Equal(nullable, FellBack(Sql(ORMEnum.EFCore, nullable), QueryFeature.ListAggregation));
-        Assert.Contains("(SELECT STRING_AGG(o.Code, ', ') FROM Sales AS o WHERE o.CustomerId = s.CustomerId) AS Codes", FellBack(Sql(ORMEnum.EFCore, correlated), QueryFeature.ListAggregation), StringComparison.Ordinal);
-        Assert.Contains("(select listagg(o.Code, ', ') from Sale o where o.CustomerId = s.CustomerId) as Codes", Text(Sql(ORMEnum.Hibernate, correlated)), StringComparison.Ordinal);
+        Assert.Equal(nullableInside, FellBack(Sql(ORMEnum.EFCore, nullableInside), QueryFeature.ListAggregation));
         Assert.Equal(Listed, FellBack(Sql(ORMEnum.NHibernate, Listed), QueryFeature.ListAggregation));
         Assert.Equal(Listed, FellBack(Sql(ORMEnum.EclipseLink, Listed), QueryFeature.ListAggregation));
 
         var read = Linq(ORMEnum.Dapper, "GroupBy(s => s.CustomerId).Select(g => new { CustomerId = g.Key, Notes = string.Join(\", \", g.Select(x => x.Notes)) })");
         Assert.Equal(nullable, Text(read));
         Assert.Contains(read.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.ListAggregation);
+    }
+
+    /// <summary>
+    /// A list over an expression joins the same in both languages when no column in it may be
+    /// NULL - a concatenation of texts that hold no NULL and a number converted into text is
+    /// never NULL -, so EF Core writes it as string.Join over the expression, where a list over
+    /// a nullable column inside the expression went to native SQL above.
+    /// </summary>
+    [Fact]
+    public void AListOverAnExpressionOfValuesThatHoldNoNullIsWritten()
+    {
+        const string composed = "SELECT s.CustomerId AS CustomerId, STRING_AGG(s.Code + ':' + CAST(s.Quantity AS NVARCHAR(MAX)), ', ') AS Codes FROM Sales AS s GROUP BY s.CustomerId";
+
+        Assert.Contains(
+            "Codes = string.Join(\", \", g.Select(s => s.Code + \":\" + s.Quantity.ToString()))",
+            Text(Sql(ORMEnum.EFCore, composed)),
+            StringComparison.Ordinal);
+        Assert.Contains("listagg(concat(s.Code, ':', cast(s.Quantity as String)), ', ')", Text(Sql(ORMEnum.Hibernate, composed)), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A list over a correlated subquery: EF Core 10 does not translate string.Join over a
+    /// chain from a query root - it fetches the rows and joins them on the client -, but it
+    /// does over the elements of a group, so LINQ writes the subquery as the chain grouped by a
+    /// constant, the list over that one group and FirstOrDefault(); over no rows there is no
+    /// group and the subquery yields NULL, as STRING_AGG over nothing does (verified against
+    /// 10.0.10, run at the fourth level by the category ListAggregationOverACorrelatedSubquery).
+    /// HQL 7.4 writes listagg inside the subquery, and the LINQ form reads back as the
+    /// subquery it stands for: a grouping that is the form's, not the query's.
+    /// </summary>
+    [Fact]
+    public void AListOverACorrelatedSubqueryIsOneGroupInLinq()
+    {
+        const string correlated = "SELECT s.SaleId AS SaleId, (SELECT STRING_AGG(o.Code, ', ') FROM Sales AS o WHERE o.CustomerId = s.CustomerId) AS Codes FROM Sales AS s";
+        const string linq = "Codes = ctx.Set<Sale>().Where(o => o.CustomerId == s.CustomerId).GroupBy(o => 1).Select(g => string.Join(\", \", g.Select(o => o.Code))).FirstOrDefault()";
+
+        var written = Sql(ORMEnum.EFCore, correlated);
+        Assert.Contains(linq, Text(written), StringComparison.Ordinal);
+        Assert.DoesNotContain(written.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        Assert.Contains("(select listagg(o.Code, ', ') from Sale o where o.CustomerId = s.CustomerId) as Codes", Text(Sql(ORMEnum.Hibernate, correlated)), StringComparison.Ordinal);
+
+        var read = Linq(ORMEnum.Dapper, $"Select(s => new {{ SaleId = s.SaleId, {linq} }})");
+        Assert.Equal(correlated, Text(read));
+        Assert.DoesNotContain(read.Records, r => r.Kind is ConversionRecordKind.Failure or ConversionRecordKind.Loss);
+
+        // A list the subquery may not join on the server - over a column that may hold NULL -
+        // sends the query to native SQL from inside the one group as from any group.
+        const string nullable = "SELECT s.SaleId AS SaleId, (SELECT STRING_AGG(o.Notes, ', ') FROM Sales AS o WHERE o.CustomerId = s.CustomerId) AS Notes FROM Sales AS s";
+        Assert.Contains("(SELECT STRING_AGG(o.Notes, ', ') FROM Sales AS o WHERE o.CustomerId = s.CustomerId) AS Notes", FellBack(Sql(ORMEnum.EFCore, nullable), QueryFeature.ListAggregation), StringComparison.Ordinal);
     }
 
     /// <summary>A list is an aggregate: nothing aggregates over it, it aggregates over nothing that aggregates, and a recursive member does not hold it.</summary>

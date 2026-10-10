@@ -4023,6 +4023,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return ReadConditional(conditional);
 
             case InvocationExpressionSyntax invocation:
+                if (ReadListSubQuery(invocation) is { } listSubQuery)
+                {
+                    return listSubQuery;
+                }
+
                 if (ReadScalarSubQuery(invocation) is { } scalarSubQuery)
                 {
                     return scalarSubQuery;
@@ -4535,7 +4540,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// string, and the whole from NULL into the empty string too; over a column that may hold
     /// NULL the representation, which carries STRING_AGG, does not carry the difference, and
     /// the record says so. Over anything but the elements of a group - a chain over a query
-    /// root, which EF Core 10 does not translate at all - it is not read.
+    /// root, which EF Core 10 does not translate at all - it is not read; the one group of a
+    /// correlated subquery grouped by a constant is a group (<see cref="ReadListSubQuery"/>).
     /// </summary>
     private QueryOperand? ReadListAggregate(InvocationExpressionSyntax invocation)
     {
@@ -4561,7 +4567,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             receiver = step.Expression;
         }
 
-        if (receiver is not IdentifierNameSyntax group || groupingKeys.Count == 0 || aliasSubstitutions.ContainsKey(group.Identifier.Text))
+        // The group is the scope's own, or the one group of a list over a correlated subquery
+        // (ReadListSubQuery), whose grouping by a constant records no key.
+        if (receiver is not IdentifierNameSyntax group
+            || (groupingKeys.Count == 0 && !string.Equals(group.Identifier.Text, listGroup, StringComparison.Ordinal))
+            || aliasSubstitutions.ContainsKey(group.Identifier.Text))
         {
             unread ??= ($"'{invocation}', a string.Join over something other than the elements of a group", QueryFeature.ListAggregation);
             return null;
@@ -4747,6 +4757,69 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// x.ListPrice)</c> ranges over x, and the table initial would shadow an outer alias
     /// that happens to be the same letter.
     /// </summary>
+    /// <summary>
+    /// Reads a list over a correlated subquery back from the form the LINQ builder writes it
+    /// in (decision 113): <c>root.Where(…).GroupBy(x =&gt; 1).Select(g =&gt; string.Join(…,
+    /// g.OrderBy(…).Select(x =&gt; value))).FirstOrDefault()</c>, the chain grouped by a
+    /// constant so that the list ranges over the one group, and the one row taken. The
+    /// grouping is the form's, not the query's: the subquery is the list over the rows the
+    /// chain selects, STRING_AGG without a GROUP BY, and that is what is recorded. A chain
+    /// of another tail, or a FirstOrDefault() with a predicate, is not this shape.
+    /// </summary>
+    private QueryOperand? ReadListSubQuery(InvocationExpressionSyntax invocation)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax { Name.Identifier.Text: "FirstOrDefault" } member
+            || invocation.ArgumentList.Arguments.Count != 0
+            || (member.Expression is IdentifierNameSyntax head && aliasSubstitutions.ContainsKey(head.Identifier.Text))
+            || !TryDecompose(member.Expression, out var root, out var steps)
+            || steps.Count < 2
+            || steps[^1] is not { Name: "Select" } select
+            || steps[^2] is not { Name: "GroupBy" } groupBy
+            || groupBy.Node.ArgumentList.Arguments is not [{ Expression: SimpleLambdaExpressionSyntax { Body: LiteralExpressionSyntax } groupLambda }]
+            || select.Node.ArgumentList.Arguments is not [{ Expression: SimpleLambdaExpressionSyntax { Body: InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Join" } joinMember } joined } selectLambda }]
+            || WrittenName(joinMember.Expression) is not ("string" or "String" or "System.String"))
+        {
+            return null;
+        }
+
+        steps.RemoveRange(steps.Count - 2, 2);
+
+        var enclosingListGroup = listGroup;
+        QueryOperand? list = null;
+        var sub = ReadSubQueryOperand(
+            root!,
+            steps,
+            () =>
+            {
+                listGroup = selectLambda.Parameter.Identifier.Text;
+                try
+                {
+                    list = ReadListAggregate(joined);
+                }
+                finally
+                {
+                    listGroup = enclosingListGroup;
+                }
+
+                if (list is not null)
+                {
+                    queryBuilder.Project(list);
+                }
+            },
+            groupLambda.Parameter.Identifier.Text);
+
+        // What the list could not be read as is in <see cref="unread"/>; the caller reports it
+        // as it reports any operand outside the vocabulary.
+        return list is null ? null : QueryOperand.Nested(sub);
+    }
+
+    /// <summary>
+    /// The parameter standing for the one group of a list over a correlated subquery while its
+    /// string.Join is read (<see cref="ReadListSubQuery"/>): the nested scope groups by the
+    /// form's constant, which is no key, so the list's receiver is admitted by this name.
+    /// </summary>
+    private string? listGroup;
+
     private QueryOperand? ReadScalarSubQuery(InvocationExpressionSyntax invocation)
     {
         if (invocation.Expression is not MemberAccessExpressionSyntax member)

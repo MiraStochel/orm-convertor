@@ -1,0 +1,4 @@
+1	"Widget"	"Widget, loose; Widget, boxed"
+4	"Anvil"	NULL
+5	"Bracket"	"Bracket"
+6	"Zither"	"Zither"

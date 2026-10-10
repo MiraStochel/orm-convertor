@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindListAggregationOverACorrelatedSubqueryMapper">
+  <select id="findListAggregationOverACorrelatedSubquery" resultType="ShopProduct">
+    SELECT p.ProductId AS ProductId, p.ProductName AS ProductName, (SELECT STRING_AGG(ol.Description, '; ') WITHIN GROUP (ORDER BY ol.LineNumber ASC) FROM {{schema}}.ShopOrderLines AS ol WHERE ol.ProductId = p.ProductId AND ol.Quantity &gt; 2) AS Descriptions
+    FROM {{schema}}.ShopProducts AS p
+    WHERE p.UnitPrice &gt; 20
+  </select>
+</mapper>

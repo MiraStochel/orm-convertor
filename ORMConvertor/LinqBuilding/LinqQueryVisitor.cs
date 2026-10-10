@@ -1147,11 +1147,15 @@ public abstract class LinqQueryVisitor(
     /// STRING_AGG as string.Join over the elements of the group, ordered by the steps before
     /// its Select (decision 113). EF Core 10 translates it to STRING_AGG over values it first
     /// turns from NULL into the empty string, and the whole from NULL into the empty string
-    /// too - verified -, which is STRING_AGG exactly over a column that holds no NULL, in a
-    /// group, which never is empty. Anywhere else - a column that may hold NULL, a value that
-    /// is not text, a subquery, where EF Core 10 joins the list on the client - the query goes
-    /// out in native SQL. A provider without the translation declares the category
-    /// inexpressible and never reaches here.
+    /// too - verified -, which is STRING_AGG exactly over a value of text that is never NULL,
+    /// in a group, which never is empty: a column that holds no NULL, or an expression - a
+    /// concatenation, a conversion into text - over such columns alone, which SQL turns into
+    /// NULL only through a NULL in one of them. Anywhere else - a value that may be NULL, a
+    /// value that is not text, a chain from a query root, where EF Core 10 joins the list on
+    /// the client - the query goes out in native SQL; a list over a correlated subquery
+    /// reaches here as the one group of the chain the builder grouped by a constant. A
+    /// provider without the translation declares the category inexpressible and never reaches
+    /// here.
     /// </summary>
     private string ListAggregate(QueryExpression expression)
     {
@@ -1163,11 +1167,9 @@ public abstract class LinqQueryVisitor(
             return string.Empty;
         }
 
-        if (value is not { IsColumn: true, IsAggregate: false }
-            || PropertyType(value.Table, value.Property!) is not { ScalarType: ScalarType.String }
-            || !HoldsNoNull(value.Table, value.Property!))
+        if (!IsTextThatHoldsNoNull(value))
         {
-            report(ConversionRecordKind.Fallback, $"string.Join over '{value}', which is not a column of text known to hold no NULL, takes a NULL as the empty string in {Provider}, where STRING_AGG leaves it out", QueryFeature.ListAggregation);
+            report(ConversionRecordKind.Fallback, $"string.Join over '{value}', which is not a value of text known to hold no NULL, takes a NULL as the empty string in {Provider}, where STRING_AGG leaves it out", QueryFeature.ListAggregation);
             return string.Empty;
         }
 
@@ -1194,6 +1196,45 @@ public abstract class LinqQueryVisitor(
         insideAggregate = wasInsideAggregate;
 
         return $"string.Join({StringLiteral(expression.Separator!)}, {chain})";
+    }
+
+    /// <summary>
+    /// Whether a value string.Join and STRING_AGG join alike (decision 113): a column of text
+    /// the mapping says holds no NULL, or an expression of text whose leaves are such columns
+    /// and literals alone - a value SQL makes NULL only through a NULL in a column, so one
+    /// that is never NULL. A parameter, a subquery or a column that may hold NULL inside it
+    /// leaves the difference open, and the value is not admitted.
+    /// </summary>
+    private bool IsTextThatHoldsNoNull(QueryOperand value)
+    {
+        if (value.IsColumn)
+        {
+            return !value.IsAggregate
+                && PropertyType(value.Table, value.Property!) is { ScalarType: ScalarType.String }
+                && HoldsNoNull(value.Table, value.Property!);
+        }
+
+        return value.IsExpression && ScalarOf(value) == ScalarType.String && IsNeverNull(value);
+    }
+
+    /// <summary>A literal, a column that holds no NULL, or an expression - no list, no window, no CASE without an ELSE - over such values alone.</summary>
+    private bool IsNeverNull(QueryOperand operand)
+    {
+        if (operand.IsConstant)
+        {
+            return true;
+        }
+
+        if (operand.IsColumn)
+        {
+            return !operand.IsAggregate && operand.Property is not null and not "*" && HoldsNoNull(operand.Table, operand.Property);
+        }
+
+        return operand.IsExpression
+            && !operand.Expression!.IsListAggregate
+            && !operand.Expression.IsWindow
+            && (!operand.Expression.IsCase || operand.Expression.Else is not null)
+            && OperandStructure.Inside(operand.Expression).All(IsNeverNull);
     }
 
     /// <summary>

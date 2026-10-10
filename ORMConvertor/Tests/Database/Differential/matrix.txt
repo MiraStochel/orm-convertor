@@ -514,6 +514,19 @@ shape = projection
 ordered = false
 mutations = filter, operator
 
+# The four products above twenty, each with the descriptions of its lines of more than two
+# pieces as one list from a correlated subquery, in the order of their line numbers; the
+# anvil has no such line and its list is NULL - the case that tells STRING_AGG over nothing
+# from a list of none. Flipped, the two cheap products come back and neither has a line of
+# fewer than two pieces; dropped, all six products come back, and the LINQ form loses the
+# subquery with the line that carries its Where.
+[ListAggregationOverACorrelatedSubquery]
+category = ListAggregationOverACorrelatedSubquery
+fields = ProductId, ProductName, Descriptions
+shape = projection
+ordered = false
+mutations = filter, operator
+
 # Every product with its lines of more than five pieces, the filter in the ON of a left join.
 # Two products have no such line and keep a row of nulls, which the filter in a WHERE would
 # drop; flipped, the filter keeps the lines of five pieces and fewer. There is no WHERE for

@@ -1,0 +1,3 @@
+select p.ProductId as ProductId, p.ProductName as ProductName, (select listagg(ol.Description, '; ') within group (order by ol.LineNumber asc) from ShopOrderLine ol where ol.ProductId = p.ProductId and ol.Quantity > 2) as Descriptions
+from ShopProduct p
+where p.UnitPrice > 20

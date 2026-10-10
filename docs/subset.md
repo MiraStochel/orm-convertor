@@ -57,7 +57,7 @@ Jak cíl konstrukci píše (*jazyk* = svým dotazovým jazykem, *SQL* = `Fallbac
 | rekurze | jazyk | jazyk | SQL | SQL | jazyk; s limitem SQL | SQL |
 | seskupení podle výrazu | jazyk | jazyk | jazyk | jazyk | jazyk | jazyk; klíč s literálem s hintem `eclipselink.jdbc.bind-parameters` = `false` na objektu dotazu |
 | okenní funkce řazení | jazyk | jazyk | SQL | SQL | jazyk | SQL |
-| agregace do seznamu | jazyk | jazyk | jazyk nad prvky skupiny a sloupcem bez `NULL`, jinak SQL | SQL | jazyk | SQL |
+| agregace do seznamu | jazyk | jazyk | jazyk nad prvky skupiny i nad korelovaným poddotazem (řetěz seskupený konstantou), nad hodnotou textu bez `NULL`, jinak SQL | SQL | jazyk | SQL |
 | funkce slovníku | všech 17 | všech 17 | všech 17 | bez `DateAdd`, `DateDiff` | všech 17 | bez `DateAdd`, `DateDiff`, `Cast` |
 
 **Funkce** (`QueryFunction`): `Upper`, `Lower`, `Trim`, `Substring`, `Length`, `Coalesce`, `Abs`, `Year`, `Month`, `Day`, `CurrentTimestamp`, `EscapePattern` ([107]); `DateAdd`, `DateDiff` (jednotky rok … sekunda), `Round`, `Sqrt`, `Cast` do `Int`, `Long`, `Float`, `Double`, `String` ([113]). Funkci mimo deskriptor cíle píše cíl SQL. **Okenní funkce řazení:** `ROW_NUMBER`, `RANK`, `DENSE_RANK` nad oknem s povinným řazením, jen v projekci.
@@ -66,7 +66,7 @@ Strojově: deskriptory (`QuerySupport`, `Functions`, `NativeSqlApi`), `Combined/
 
 ### 1.3 Kategorie, na kterých je podmnožina změřená
 
-46 kategorií T2, každá dotazem nad sdílenou doménou sedmi entit v každém zdrojovém jazyce, který ji vysloví; manifest `Tests/Database/QueryShapes/categories.txt` čtou obě sady ([§6.2]). Každá jde každým směrem: 1. stupeň `Combined/QueryShapeMatrixTest`, 2. nad SQL a .NET cíli, 2. a 3. nad javovými (`shapes/QueryCategoryTest`), 4. diferenčně proti kanonickému výsledku (`Tests/Database/Differential/matrix.txt`, [089]). Cíle mimo sloupec *Fallback* píšou kategorii jazykem; odmítnutý směr (`refusedBy`) není žádný.
+47 kategorií T2, každá dotazem nad sdílenou doménou sedmi entit v každém zdrojovém jazyce, který ji vysloví; manifest `Tests/Database/QueryShapes/categories.txt` čtou obě sady ([§6.2]). Každá jde každým směrem: 1. stupeň `Combined/QueryShapeMatrixTest`, 2. nad SQL a .NET cíli, 2. a 3. nad javovými (`shapes/QueryCategoryTest`), 4. diferenčně proti kanonickému výsledku (`Tests/Database/Differential/matrix.txt`, [089]). Cíle mimo sloupec *Fallback* píšou kategorii jazykem; odmítnutý směr (`refusedBy`) není žádný.
 
 | Kategorie | Zdroje, které ji vysloví | `Fallback` (`fallbackBy`) |
 |---|---|---|
@@ -77,6 +77,7 @@ Strojově: deskriptory (`QuerySupport`, `Functions`, `NativeSqlApi`), `Combined/
 | `InOverASetOperation` | bez NHibernatu | NHibernate, EclipseLink (parser 5.0.0 `union` v poddotazu odmítne) |
 | `GroupingOverAGroupedResult`, `IntermediateResultReadTwice`, `DateArithmetic` | bez NHibernatu a EclipseLinku | NHibernate, EclipseLink |
 | `ListAggregation` | bez NHibernatu a EclipseLinku | NHibernate, EclipseLink; ze zdroje MyBatis bez katalogu i EF Core² |
+| `ListAggregationOverACorrelatedSubquery` | bez NHibernatu a EclipseLinku | NHibernate, EclipseLink; ze zdroje MyBatis bez katalogu i EF Core² |
 | `AggregateOverTheWholeResult` | bez EF Core | EF Core |
 | `CastInAConcatenation` | bez EclipseLinku | EclipseLink |
 | `NativeSqlInCode` | EF Core, NHibernate, Hibernate, EclipseLink | — |
@@ -317,7 +318,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | LINQ `GroupBy(…).Select(g => g.OrderBy(…).First())` | jiný tvar než okenní funkce | jako okenní funkce se nečte | VM | [113] |
 | `STRING_AGG` s oddělovačem, který není literál; LINQ `string.Join` mimo prvky skupiny | — | nečte se | VM | [113] |
 | LINQ `string.Join` nad sloupcem, který smí mít `NULL` | C# bere `NULL` jako prázdný řetězec, `STRING_AGG` ho vynechá | `Loss` (č) | VM | [113] |
-| cíl EF Core: seznam mimo prvky skupiny, nad korelovaným poddotazem či nad sloupcem, který smí mít `NULL` | EF Core 10 spojí na klientovi nebo vloží prázdné řetězce | `Fallback` (z) | VM | [113] |
+| cíl EF Core: seznam mimo prvky skupiny a mimo korelovaný poddotaz (řetěz z kořene dotazu), či nad hodnotou, která smí mít `NULL` (sloupec, výraz s takovým sloupcem, parametrem či poddotazem, `CASE` bez `ELSE`) | EF Core 10 spojí na klientovi nebo vloží prázdné řetězce; korelovaný poddotaz jde jako řetěz seskupený konstantou ([§6.2]) | `Fallback` (z) | VM | [113] |
 
 ### 2.10 Mezivýsledek a rekurze
 

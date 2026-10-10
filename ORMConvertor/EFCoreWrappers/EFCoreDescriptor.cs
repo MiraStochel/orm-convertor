@@ -102,9 +102,10 @@ public static class EFCoreDescriptor
 
             // GroupBy over an expression and string.Join over a group, which EF Core 10
             // translates to GROUP BY over a derived table and to STRING_AGG (decision 113,
-            // verified against 10.0.10); a key of several parts that no projection names, and
-            // a list over a column that may hold NULL or over a subquery, go to native SQL at
-            // the point of emission. No ranking function over a window.
+            // verified against 10.0.10); a list over a correlated subquery is the chain
+            // grouped by a constant. A key of several parts that no projection names, and a
+            // list over a value that may hold NULL, go to native SQL at the point of
+            // emission. No ranking function over a window.
             [QueryFeature.ComputedGrouping] = FactSupport.Expressible,
             [QueryFeature.WindowFunction] = FactSupport.NotExpressible,
             [QueryFeature.ListAggregation] = FactSupport.Expressible,
