@@ -109,8 +109,29 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         }
     }
 
+    /// <summary>
+    /// Whether the joins of the clauses being composed are written in JPQL's original
+    /// spelling of an inner join - further range variables of the from clause, their
+    /// conditions conjoined into the where clause - instead of as entity joins.
+    /// <see cref="RenderSubQuery"/> sets it for a subquery under an implementation that
+    /// leaves an entity join of a subquery out of its SQL
+    /// (<see cref="JpaImplementationProfile.DropsJoinsInSubqueries"/>); the top of a query
+    /// and a set operation's operands keep the entity join.
+    /// </summary>
+    private bool joinsAsRangeVariables;
+
     protected override void BuildJoins(QueryClauses clauses, QueryArtifact artifact)
     {
+        if (joinsAsRangeVariables)
+        {
+            foreach (var join in clauses.Joins)
+            {
+                artifact.Source.Append(", ").Append(visitor.RangeVariable(join));
+            }
+
+            return;
+        }
+
         var innerAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var join in clauses.Joins)
@@ -159,9 +180,24 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
     protected override void BuildFilter(QueryClauses clauses, QueryArtifact artifact)
     {
+        // The conditions of the joins written as range variables come first, each one
+        // parenthesized where it has several conjuncts; a filter whose top is a disjunction
+        // is parenthesized beside them, so that the conjunction keeps its meaning.
+        var conjuncts = new List<string>();
+        if (joinsAsRangeVariables)
+        {
+            conjuncts.AddRange(clauses.Joins.Select(visitor.RangeVariableCondition));
+        }
+
         if (clauses.Filter is not null)
         {
-            artifact.Filter.Append("where ").Append(clauses.Filter.Accept(visitor));
+            var filter = clauses.Filter.Accept(visitor);
+            conjuncts.Add(conjuncts.Count > 0 && clauses.Filter is LogicalCondition { Operator: LogicalOperator.Or } ? $"({filter})" : filter);
+        }
+
+        if (conjuncts.Count > 0)
+        {
+            artifact.Filter.Append("where ").Append(string.Join(" and ", conjuncts));
         }
     }
 
@@ -301,13 +337,16 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             var enclosingVisitorOfSet = visitor;
             var enclosingOfSet = enclosingAliases;
             var currentOfSet = currentAliases;
+            var enclosingRangeVariablesOfSet = joinsAsRangeVariables;
 
             enclosingAliases = currentAliases;
+            joinsAsRangeVariables = false;
             var composed = RenderSetOperation(setOperation);
 
             visitor = enclosingVisitorOfSet;
             enclosingAliases = enclosingOfSet;
             currentAliases = currentOfSet;
+            joinsAsRangeVariables = enclosingRangeVariablesOfSet;
             return composed?.Replace("\n", " ");
         }
 
@@ -324,14 +363,18 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             return null;
         }
 
-        // An implementation that leaves a join of a subquery out of its SQL (EclipseLink
+        // An implementation that leaves an entity join of a subquery out of its SQL (EclipseLink
         // 5.0.0, measured) would answer other rows without an error: the joined entity and its
-        // condition disappear and its column is read from the subquery's own entity. The native
-        // SQL writes the join (decision 113).
-        if (Profile.DropsJoinsInSubqueries && clauses.Joins.Count > 0)
+        // condition disappear and its column is read from the subquery's own entity. An inner
+        // join has JPQL's original spelling as well - a further range variable of the from
+        // clause with the condition in where -, which the implementation writes as a cross join
+        // with the condition in WHERE, the same rows; an outer join has no such spelling, so the
+        // native SQL writes it (decision 113).
+        var rangeVariables = Profile.DropsJoinsInSubqueries && clauses.Joins.Count > 0;
+        if (rangeVariables && clauses.Joins.FirstOrDefault(join => join.Kind != JoinKind.Inner) is { } outer)
         {
             ReportUnspoken(
-                $"{Profile.Implementation} leaves the join onto '{clauses.Joins[0].RightTable}' inside a subquery out of the SQL it writes, so the subquery would answer other rows",
+                $"{Profile.Implementation} leaves the outer join onto '{outer.RightTable}' inside a subquery out of the SQL it writes, and only an inner join can stand as a range variable instead, so the subquery would answer other rows",
                 QueryFeature.Subquery);
             return null;
         }
@@ -347,10 +390,13 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         var enclosingVisitor = visitor;
         var enclosing = enclosingAliases;
         var current = currentAliases;
+        var enclosingRangeVariables = joinsAsRangeVariables;
 
         enclosingAliases = currentAliases;
+        joinsAsRangeVariables = rangeVariables;
         var artifact = Compose(clauses);
 
+        joinsAsRangeVariables = enclosingRangeVariables;
         visitor = enclosingVisitor;
         enclosingAliases = enclosing;
         currentAliases = current;

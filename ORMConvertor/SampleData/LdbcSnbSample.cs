@@ -379,14 +379,6 @@ public static class LdbcSnbSample
         "HQL of Hibernate 7.4 converts a text into varchar(max), which would lose characters a tag name may hold, so the query goes out as native SQL through createNativeQuery.");
 
     /// <summary>
-    /// A join inside a subquery, which EclipseLink 5.0 leaves out of the SQL it writes, with
-    /// its condition (measured when the validation set judged the catalog, decision 117): the
-    /// subquery would answer other rows without an error, so the query goes to native SQL.
-    /// </summary>
-    private static readonly LdbcFallback EclipseLinkSubqueryJoin = new(Model.ORMEnum.EclipseLink,
-        "EclipseLink 5.0 leaves a join inside a subquery out of the SQL it writes, so the subquery would answer other rows; the query goes out as native SQL through createNativeQuery.");
-
-    /// <summary>
     /// An outer join whose condition names an inner join: EclipseLink 5.0 writes the inner joins
     /// after every outer one, and SQL Server refuses the condition (measured the same way).
     /// </summary>
@@ -653,7 +645,6 @@ public static class LdbcSnbSample
             """,
             [PersonId, new("countryXName", "NVARCHAR(256)", "India"), new("countryYName", "NVARCHAR(256)", "China"),
              new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-07-01")],
-            FallbackBy: [EclipseLinkSubqueryJoin],
             Validation: new("IC3",
             [
                 Bind("personId", "personIdQ3"), Bind("countryXName", "countryXName"), Bind("countryYName", "countryYName"),
@@ -690,7 +681,6 @@ public static class LdbcSnbSample
             ORDER BY PostCount DESC, t.Name ASC
             """,
             [PersonId, new("startDate", "DATE", "2011-06-01"), new("endDate", "DATE", "2011-07-01")],
-            FallbackBy: [EclipseLinkSubqueryJoin],
             Validation: new("IC4",
                 [Bind("personId", "personIdQ4"), Bind("startDate", "startDate"), new("endDate", "startDate", LdbcDerivation.PlusDays, "durationDays")],
                 [Column("TagName", "tagName"), Column("PostCount", "postCount")])),
@@ -712,7 +702,7 @@ public static class LdbcSnbSample
             GROUP BY f.Id, f.Title
             ORDER BY PostCount DESC, f.Id ASC
             """,
-            [PersonId, new("minDate", "DATE", "2012-06-01")], FallbackBy: [EFCoreOrdering, EclipseLinkSubqueryJoin, EclipseLinkOuterJoinOrder],
+            [PersonId, new("minDate", "DATE", "2012-06-01")], FallbackBy: [EFCoreOrdering, EclipseLinkOuterJoinOrder],
             Validation: new("IC5", [Bind("personId", "personIdQ5"), Bind("minDate", "minDate")],
                 [Column("ForumTitle", "forumTitle"), Column("PostCount", "postCount")])),
 
@@ -738,7 +728,6 @@ public static class LdbcSnbSample
             ORDER BY PostCount DESC, ot.Name ASC
             """,
             [PersonId, new("tagName", "NVARCHAR(256)", "Augustine_of_Hippo")],
-            FallbackBy: [EclipseLinkSubqueryJoin],
             Validation: new("IC6", [Bind("personId", "personIdQ6"), Bind("tagName", "tagName")],
                 [Column("OtherTagName", "tagName"), Column("PostCount", "postCount")])),
 
@@ -820,7 +809,6 @@ public static class LdbcSnbSample
             ORDER BY m.CreationDate DESC, m.Id ASC
             """,
             [PersonId, new("maxDate", "DATE", "2011-01-01")],
-            FallbackBy: [EclipseLinkSubqueryJoin],
             Validation: new("IC9", [Bind("personId", "personIdQ9"), Bind("maxDate", "maxDate")],
             [
                 Column("OtherPersonId", "personId"), Column("OtherPersonFirstName", "personFirstName"),
@@ -852,7 +840,6 @@ public static class LdbcSnbSample
             ORDER BY CommonInterestScore DESC, f.Id ASC
             """,
             [PersonId, new("month", "INT", "5"), new("nextMonth", "INT", "6")],
-            FallbackBy: [EclipseLinkSubqueryJoin],
             Validation: new("IC10",
                 [Bind("personId", "personIdQ10"), Bind("month", "month"), new("nextMonth", "month", LdbcDerivation.NextMonth)],
             [
@@ -881,7 +868,6 @@ public static class LdbcSnbSample
             ORDER BY w.WorkFrom ASC, p.Id ASC, o.Name DESC
             """,
             [PersonId, new("countryName", "NVARCHAR(256)", "China"), new("workFromYear", "INT", "2010")],
-            FallbackBy: [EclipseLinkSubqueryJoin],
             Validation: new("IC11",
                 [Bind("personId", "personIdQ11"), Bind("countryName", "countryName"), Bind("workFromYear", "workFromYear")],
             [
@@ -1176,7 +1162,7 @@ public static class LdbcSnbSample
             ORDER BY Score DESC, m.CreatorPersonId ASC
             """,
             [new("tag", "NVARCHAR(256)", "Hamid_Karzai")],
-            FallbackBy: [EclipseLinkSubqueryJoin, EclipseLinkOuterJoinOrder]),
+            FallbackBy: [EclipseLinkOuterJoinOrder]),
 
         new("bi6", LdbcWorkload.BusinessIntelligence, 6, "Most authoritative users on a given topic", LdbcTranslation.AsSpecified,
             "The authority of an author of messages with a tag is the sum of the popularity of everyone who liked those "
@@ -1198,8 +1184,7 @@ public static class LdbcSnbSample
             GROUP BY m.CreatorPersonId, t.Id
             ORDER BY AuthorityScore DESC, m.CreatorPersonId ASC
             """,
-            [new("tag", "NVARCHAR(256)", "Peter_Hain")],
-            FallbackBy: [EclipseLinkSubqueryJoin]),
+            [new("tag", "NVARCHAR(256)", "Peter_Hain")]),
 
         new("bi7", LdbcWorkload.BusinessIntelligence, 7, "Related topics", LdbcTranslation.AsSpecified,
             "The tags of direct replies to messages with a tag, among the replies that do not carry that tag themselves: "
@@ -1298,8 +1283,7 @@ public static class LdbcSnbSample
             GROUP BY e.Id, t.Name
             ORDER BY MessageCount DESC, t.Name ASC, e.Id ASC
             """,
-            [PersonId, new("country", "NVARCHAR(256)", "China"), new("tagClass", "NVARCHAR(256)", "MusicalArtist")],
-            FallbackBy: [EclipseLinkSubqueryJoin]),
+            [PersonId, new("country", "NVARCHAR(256)", "China"), new("tagClass", "NVARCHAR(256)", "MusicalArtist")]),
 
         new("bi11", LdbcWorkload.BusinessIntelligence, 11, "Friend triangles", LdbcTranslation.AsSpecified,
             "Triangles of friendships created in an interval among persons of one country: a cyclic self-join of the edge "
@@ -1491,8 +1475,7 @@ public static class LdbcSnbSample
             """,
             [new("tagA", "NVARCHAR(256)", "Imelda_Marcos"), new("dateA", "DATE", "2012-05-08"), new("dateAEnd", "DATE", "2012-05-09"),
              new("tagB", "NVARCHAR(256)", "Muammar_Gaddafi"), new("dateB", "DATE", "2011-10-16"), new("dateBEnd", "DATE", "2011-10-17"),
-             new("maxKnowsLimit", "INT", "5")],
-            FallbackBy: [EclipseLinkSubqueryJoin]),
+             new("maxKnowsLimit", "INT", "5")]),
 
         new("bi17", LdbcWorkload.BusinessIntelligence, 17, "Information propagation analysis", LdbcTranslation.AsSpecified,
             "A message with a tag in one forum, a message with the tag by a member of that forum in another forum the first "

@@ -70,10 +70,7 @@ public sealed class JpqlQueryVisitor(
             _ => throw new ArgumentOutOfRangeException(nameof(instr), instr.Kind, null),
         };
 
-        // A table no entity maps to takes the name the one naming convention derives
-        // (decision 050), as the source step does for the from clause.
-        var entity = EntityName(instr.RightTableAlias ?? instr.RightTable) ?? EntityTableNaming.EntityNameFor(instr.RightTable);
-        var alias = JpqlNames.Alias(instr.RightTableAlias ?? entity.ToLowerInvariant());
+        var (entity, alias) = JoinTarget(instr);
 
         // JPQL has no other spelling of an entity name than the name itself, so a name the
         // implementation's parser refuses as a join target leaves the query to native SQL,
@@ -95,6 +92,47 @@ public sealed class JpqlQueryVisitor(
         var condition = JoinCondition(instr.OnCondition);
 
         return $"{keyword} {entity} {alias} on {condition}";
+    }
+
+    /// <summary>
+    /// An inner join in JPQL's original spelling: a further range variable of the from
+    /// clause, whose condition <see cref="RangeVariableCondition"/> writes into the where
+    /// clause. The JPA builder reaches for it inside a subquery under an implementation that
+    /// leaves an entity join of a subquery out of its SQL
+    /// (<see cref="JpaImplementationProfile.DropsJoinsInSubqueries"/>): the implementation
+    /// writes the range variables as a cross join with the condition in WHERE, which answers
+    /// the rows the entity join answers.
+    /// </summary>
+    public string RangeVariable(JoinInstruction instr)
+    {
+        var (entity, alias) = JoinTarget(instr);
+
+        // In a from clause the name has to pass as the name of an entity, wherever the
+        // parser refuses it (decision 113, measured).
+        if (profile?.EntityNamesRefused?.Contains(entity) == true)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"JPQL in {profile.Implementation} does not read '{entity}', which is spelled like a word of its grammar, as the name of an entity",
+                QueryFeature.Join);
+        }
+
+        return $"{entity} {alias}";
+    }
+
+    /// <summary>The condition of a join written as a range variable, as a conjunct of the where clause - parenthesized where it has several conjuncts.</summary>
+    public string RangeVariableCondition(JoinInstruction instr) => JoinCondition(instr.OnCondition);
+
+    /// <summary>
+    /// The entity a join reaches and the alias it stands under. A table no entity maps to
+    /// takes the name the one naming convention derives (decision 050), as the source step
+    /// does for the from clause.
+    /// </summary>
+    private (string Entity, string Alias) JoinTarget(JoinInstruction instr)
+    {
+        var entity = EntityName(instr.RightTableAlias ?? instr.RightTable) ?? EntityTableNaming.EntityNameFor(instr.RightTable);
+        var alias = JpqlNames.Alias(instr.RightTableAlias ?? entity.ToLowerInvariant());
+        return (entity, alias);
     }
 
     /// <summary>

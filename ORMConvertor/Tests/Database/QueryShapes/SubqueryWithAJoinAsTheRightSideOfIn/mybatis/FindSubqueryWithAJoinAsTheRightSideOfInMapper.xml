@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindSubqueryWithAJoinAsTheRightSideOfInMapper">
+  <select id="findSubqueryWithAJoinAsTheRightSideOfIn" resultType="ShopOrderLine">
+    SELECT * FROM {{schema}}.ShopOrderLines AS ol
+    WHERE ol.ProductId IN (SELECT ol2.ProductId FROM {{schema}}.ShopOrderLines AS ol2
+                           INNER JOIN {{schema}}.ShopOrders AS o ON o.CompanyId = ol2.CompanyId AND o.OrderId = ol2.OrderId
+                           WHERE o.CustomerId &gt; 1)
+  </select>
+</mapper>

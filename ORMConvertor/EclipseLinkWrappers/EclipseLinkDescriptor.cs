@@ -92,6 +92,9 @@ public static class EclipseLinkDescriptor
         // left out of the SQL with its condition, and a column of the joined entity is read
         // from the subquery's own entity ("select m.CreatorPersonId from Person_knows_Person k1
         // join Message m on ..." became SELECT t1.CreatorPersonId FROM Person_knows_Person t1).
+        // The range variables of "from Person_knows_Person k1, Message m where ..." it writes
+        // as a cross join with the condition in WHERE, so an inner join goes out that way and
+        // only an outer join in a subquery goes out in native SQL.
         DropsJoinsInSubqueries: true,
 
         // Measured by the Java suite over the category InOverASetOperation (decision 120): the

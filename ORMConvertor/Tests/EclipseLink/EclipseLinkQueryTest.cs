@@ -135,4 +135,58 @@ public class EclipseLinkQueryTest
         Assert.Contains("select c.CustomerName, count(c) as n", Jpql(result));
         Assert.Contains("public static Query query(EntityManager em) {", Method(result));
     }
+
+    /// <summary>
+    /// EclipseLink 5.0.0 writes an entity join inside a subquery into no SQL at all (profile
+    /// DropsJoinsInSubqueries, measured by the LDBC judge), so an inner join of a subquery
+    /// goes out in JPQL's original spelling: a further range variable of the subquery's from
+    /// clause, its condition the first conjunct of the where clause, a disjunction of the
+    /// filter parenthesized beside it. The query stays JPQL, with no record of a fallback.
+    /// </summary>
+    [Fact]
+    public void AnInnerJoinInsideASubqueryIsARangeVariableWithItsConditionInWhere()
+    {
+        var result = ConvertShop($"""
+            SELECT * FROM {QueryShapeInputs.Schema}.ShopOrderLines AS ol
+            WHERE ol.ProductId IN (SELECT ol2.ProductId FROM {QueryShapeInputs.Schema}.ShopOrderLines AS ol2
+                                   INNER JOIN {QueryShapeInputs.Schema}.ShopOrders AS o ON o.CompanyId = ol2.CompanyId AND o.OrderId = ol2.OrderId
+                                   WHERE o.CustomerId > 1 OR o.OrderId > 2)
+            """);
+
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Fallback);
+
+        var jpql = Jpql(result);
+        Assert.Contains(
+            "where ol.ProductId in (select ol2.ProductId from ShopOrderLine ol2, ShopOrder o where (o.CompanyId = ol2.CompanyId and o.OrderId = ol2.OrderId) and (o.CustomerId > 1 or o.OrderId > 2))",
+            jpql);
+        Assert.DoesNotContain(" on ", jpql);
+    }
+
+    /// <summary>
+    /// An outer join has no spelling as a range variable, so a subquery with one still sends
+    /// the query to native SQL with the record that says so (decision 113).
+    /// </summary>
+    [Fact]
+    public void AnOuterJoinInsideASubquerySendsTheQueryToNativeSql()
+    {
+        var result = ConvertShop($"""
+            SELECT * FROM {QueryShapeInputs.Schema}.ShopOrderLines AS ol
+            WHERE EXISTS (SELECT a.AllocationId FROM {QueryShapeInputs.Schema}.ShopOrderLineAllocations AS a
+                          LEFT JOIN {QueryShapeInputs.Schema}.ShopOrders AS o ON o.CompanyId = a.CompanyId AND o.OrderId = a.OrderId
+                          WHERE a.CompanyId = ol.CompanyId AND a.OrderId = ol.OrderId AND a.LineNumber = ol.LineNumber AND o.CustomerId IS NULL)
+            """);
+
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.Subquery && r.Reason.Contains("outer join", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.JpqlQuery);
+        Assert.Contains("em.createNativeQuery(", Method(result));
+    }
+
+    /// <summary>A Dapper query over the shop domain of the matrices, into EclipseLink.</summary>
+    private static ConversionResult ConvertShop(string sql)
+        => ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.EclipseLink,
+        [
+            .. QueryShapeInputs.MappingUnits(ORMEnum.Dapper),
+            new() { Content = sql, ContentType = ConversionContentType.SqlQuery },
+        ]);
 }

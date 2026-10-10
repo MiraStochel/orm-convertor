@@ -170,6 +170,27 @@ ordered = false
 decimalScale = 4
 mutations = filter
 
+# The two shapes with an inner join inside the subquery. The orders of a customer beyond
+# the first are two, and their lines name products 1, 2, 4 and 6: eight lines carry one of
+# those, the operator flipped keeps the five lines of the walk-in orders' products instead.
+# Two allocated lines lie in those two orders; flipped, the one allocated line of a walk-in
+# order.
+[SubqueryWithAJoinAsTheRightSideOfIn]
+category = SubqueryWithAJoinAsTheRightSideOfIn
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter, operator
+
+[CorrelatedExistsWithAJoin]
+category = CorrelatedExistsWithAJoin
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter, operator
+
 # The quantified comparison (decision 119). ALL over a subquery that returns a NULL for
 # department 6 and no row at all for department 9: SQL leaves 6 unknown and keeps 9, so the
 # canonical result is the one row, and a translation that kept C#'s two-valued All() would

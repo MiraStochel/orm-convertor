@@ -333,6 +333,25 @@ public static class QueryShapeInputs
             hql: ["exists (", "a.LineNumber = ol.LineNumber"],
             jpa: ["exists (", "a.LineNumber = ol.LineNumber"]),
 
+        // The inner join inside the subquery (decision 113): every target keeps it a join
+        // except EclipseLink, whose 5.0.0 writes an entity join of a subquery into no SQL
+        // (JpaImplementationProfile.DropsJoinsInSubqueries) and therefore gets JPQL's
+        // original spelling - a further range variable, the join condition first in the
+        // where clause. The condition names no order, as the join category explains.
+        ["SubqueryWithAJoinAsTheRightSideOfIn"] = Hallmarks(
+            sql: ["IN (SELECT ol2.ProductId", $"INNER JOIN {Schema}.ShopOrders o ON", ".CompanyId = ", ".OrderId = ", "o.CustomerId > 1"],
+            linq: [".Join(", "ctx.Set<ShopOrder>()", "ol2.CompanyId", "ol2.OrderId", ".o.CustomerId > 1", ".ol2.ProductId", ".Contains(ol.ProductId"],
+            hql: ["in (select ol2.ProductId", "inner join ShopOrder o", " with ", ".CompanyId = ", ".OrderId = ", "o.CustomerId > 1"],
+            jpa: ["in (select ol2.ProductId", "join ShopOrder o", " on ", ".CompanyId = ", ".OrderId = ", "o.CustomerId > 1"],
+            eclipseLink: ["in (select ol2.ProductId", " from ShopOrderLine ol2, ShopOrder o where (", ".CompanyId = ", ".OrderId = ", ") and o.CustomerId > 1)"]),
+
+        ["CorrelatedExistsWithAJoin"] = Hallmarks(
+            sql: ["EXISTS (SELECT", $"INNER JOIN {Schema}.ShopOrders o ON", "a.LineNumber = ol.LineNumber", "o.CustomerId > 1"],
+            linq: [".Join(", "ctx.Set<ShopOrder>()", ".Any(", "a.LineNumber == ol.LineNumber", ".o.CustomerId > 1"],
+            hql: ["exists (", "inner join ShopOrder o", " with ", "a.LineNumber = ol.LineNumber", "o.CustomerId > 1"],
+            jpa: ["exists (", "join ShopOrder o", " on ", "a.LineNumber = ol.LineNumber", "o.CustomerId > 1"],
+            eclipseLink: ["exists (select ", " from ShopOrderLineAllocation a, ShopOrder o where (", ") and a.CompanyId = ol.CompanyId", "a.LineNumber = ol.LineNumber", "o.CustomerId > 1)"]),
+
         // The quantified comparison (decision 119): SQL, HQL and JPQL keep the keyword, LINQ
         // moves the comparison into the lambda of All() or Any() over the projected values. Both
         // categories run over the one nullable column of the domain, so that the fourth level
@@ -703,13 +722,19 @@ public static class QueryShapeInputs
         return new QueryShape(name, sources, marks, refusedBy, refusedWithoutCatalog, fallbackBy, fallbackWithoutCatalog);
     }
 
-    /// <summary>Hallmarks per target language, spread over the targets that write it.</summary>
+    /// <summary>
+    /// Hallmarks per target language, spread over the targets that write it. The two JPA
+    /// targets share the JPQL marks except where the implementation profile makes EclipseLink
+    /// spell a construct otherwise (<c>eclipseLink</c>), as it does an inner join inside a
+    /// subquery.
+    /// </summary>
     private static Dictionary<ORMEnum, string[]> Hallmarks(
         string[]? sql = null,
         string[]? linq = null,
         string[]? hql = null,
         string[]? jpa = null,
-        string[]? myBatis = null)
+        string[]? myBatis = null,
+        string[]? eclipseLink = null)
     {
         var marks = new Dictionary<ORMEnum, string[]>();
 
@@ -739,7 +764,7 @@ public static class QueryShapeInputs
         if (jpa is not null)
         {
             marks[ORMEnum.Hibernate] = jpa;
-            marks[ORMEnum.EclipseLink] = jpa;
+            marks[ORMEnum.EclipseLink] = eclipseLink ?? jpa;
         }
 
         return marks;

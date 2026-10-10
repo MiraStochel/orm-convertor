@@ -1,0 +1,1 @@
+from ShopOrderLine ol where exists (select a.AllocationId from ShopOrderLineAllocation a inner join ShopOrder o with o.CompanyId = a.CompanyId and o.OrderId = a.OrderId where a.CompanyId = ol.CompanyId and a.OrderId = ol.OrderId and a.LineNumber = ol.LineNumber and o.CustomerId > 1)

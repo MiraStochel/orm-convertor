@@ -51,7 +51,7 @@ Jak cíl konstrukci píše (*jazyk* = svým dotazovým jazykem, *SQL* = `Fallbac
 |---|---|---|---|---|---|---|
 | projekce, filtr, join, agregace, seskupení, `HAVING`, řazení, stránkování, poddotaz, parametr, výraz | jazyk | jazyk | jazyk | jazyk | jazyk | jazyk |
 | druh joinu (vnitřní, levý, pravý, plný) | jazyk | jazyk | jazyk; plný složením `LeftJoin`, `Concat`, `RightJoin` ([065]) | jazyk; plný SQL | jazyk | jazyk; vnější s podmínkou na alias vnitřního joinu SQL |
-| join uvnitř poddotazu | jazyk | jazyk | jazyk | jazyk | jazyk | SQL |
+| join uvnitř poddotazu | jazyk | jazyk | jazyk | jazyk | jazyk | jazyk; vnitřní jako proměnná rozsahu s podmínkou ve `where`, vnější SQL |
 | množinová operace | jazyk | jazyk | jazyk | SQL | jazyk | jazyk |
 | mezivýsledek (`WITH`, odvozená tabulka) | jazyk | jazyk | jazyk (proměnná metody) | SQL | jazyk | SQL |
 | rekurze | jazyk | jazyk | SQL | SQL | jazyk; s limitem SQL | SQL |
@@ -66,11 +66,11 @@ Strojově: deskriptory (`QuerySupport`, `Functions`, `NativeSqlApi`), `Combined/
 
 ### 1.3 Kategorie, na kterých je podmnožina změřená
 
-43 kategorií T2, každá dotazem nad sdílenou doménou sedmi entit v každém zdrojovém jazyce, který ji vysloví; manifest `Tests/Database/QueryShapes/categories.txt` čtou obě sady ([§6.2]). Každá jde každým směrem: 1. stupeň `Combined/QueryShapeMatrixTest`, 2. nad SQL a .NET cíli, 2. a 3. nad javovými (`shapes/QueryCategoryTest`), 4. diferenčně proti kanonickému výsledku (`Tests/Database/Differential/matrix.txt`, [089]). Cíle mimo sloupec *Fallback* píšou kategorii jazykem; odmítnutý směr (`refusedBy`) není žádný.
+45 kategorií T2, každá dotazem nad sdílenou doménou sedmi entit v každém zdrojovém jazyce, který ji vysloví; manifest `Tests/Database/QueryShapes/categories.txt` čtou obě sady ([§6.2]). Každá jde každým směrem: 1. stupeň `Combined/QueryShapeMatrixTest`, 2. nad SQL a .NET cíli, 2. a 3. nad javovými (`shapes/QueryCategoryTest`), 4. diferenčně proti kanonickému výsledku (`Tests/Database/Differential/matrix.txt`, [089]). Cíle mimo sloupec *Fallback* píšou kategorii jazykem; odmítnutý směr (`refusedBy`) není žádný.
 
 | Kategorie | Zdroje, které ji vysloví | `Fallback` (`fallbackBy`) |
 |---|---|---|
-| `Projection`, `Filtering`, `JoinOverTwoColumns`, `AggregationGroupingAndHaving`, `Ordering`, `SubqueryAsTheRightSideOfIn`, `CorrelatedExistsOverThreeColumns`, `ScalarSubquery`, `DistinctProjection`, `InOverAListOfValues`, `ConstantOfAMoment`, `LikeWithAnAnchoredPattern`, `CountOverDistinctValues`, `LikeWithAnEscapedWildcard`, `LikeWithABoundPrefix`, `ArithmeticInAProjection`, `FunctionInAFilter`, `CoalesceInAFilter`, `CaseInAProjection`, `OrderingByAnAggregate`, `ScalarSubqueryAgainstABoundValue`, `GroupingByAnExpression`, `RoundingAndSquareRoot`, `OuterJoinWithAFilterInOn`, `JoinBeyondEqualities`, `QuantifiedComparisonOverAll`, `QuantifiedComparisonOverAny` | všech šest | — |
+| `Projection`, `Filtering`, `JoinOverTwoColumns`, `AggregationGroupingAndHaving`, `Ordering`, `SubqueryAsTheRightSideOfIn`, `CorrelatedExistsOverThreeColumns`, `SubqueryWithAJoinAsTheRightSideOfIn`, `CorrelatedExistsWithAJoin`, `ScalarSubquery`, `DistinctProjection`, `InOverAListOfValues`, `ConstantOfAMoment`, `LikeWithAnAnchoredPattern`, `CountOverDistinctValues`, `LikeWithAnEscapedWildcard`, `LikeWithABoundPrefix`, `ArithmeticInAProjection`, `FunctionInAFilter`, `CoalesceInAFilter`, `CaseInAProjection`, `OrderingByAnAggregate`, `ScalarSubqueryAgainstABoundValue`, `GroupingByAnExpression`, `RoundingAndSquareRoot`, `OuterJoinWithAFilterInOn`, `JoinBeyondEqualities`, `QuantifiedComparisonOverAll`, `QuantifiedComparisonOverAny` | všech šest | — |
 | `ScalarParameter`, `CollectionParameter`, `InListWithABoundValue` | všech šest, Dapper jen s katalogem¹ | — |
 | `PaginationWithBoundCounts` | bez NHibernatu a EclipseLinku | — |
 | `SetOperation` | bez NHibernatu | NHibernate |
@@ -341,7 +341,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 |---|---|---|---|---|
 | jméno entity, které parser JPQL cíle jako jméno nebere (EclipseLink 5.0.0: `from`, `where`, `table`, `union`, `left`, `set` …, jako cíl joinu i `select`, `member`, `case` …; Hibernate 7.4.5: `true`, `false`, `null`) | JPQL nemá kvalifikované ani uvozené jméno entity | `Fallback` (b/z) | VM | [113] |
 | jméno entity, které je klíčovým slovem HQL, bez jmenného prostoru v pozici, kde ho NHibernate 5.7.0 nebere | HQL ho přečte jen kvalifikované | `Fallback` (z) | VM | [113] |
-| join uvnitř poddotazu; vnější join, jehož podmínka jmenuje alias vnitřního joinu — cíl EclipseLink | EclipseLink 5.0.0 join poddotazu z SQL vypustí i s podmínkou (dotaz by vrátil jiné řádky bez chyby) a vnitřní joiny píše za vnější (SQL Server podmínku odmítne); změřeno soudcem LDBC | `Fallback` (`Subquery`, `Join`) (z) | VM | [113], [117] |
+| vnější join uvnitř poddotazu; vnější join, jehož podmínka jmenuje alias vnitřního joinu — cíl EclipseLink | EclipseLink 5.0.0 entitní join poddotazu z SQL vypustí i s podmínkou (dotaz by vrátil jiné řádky bez chyby) — vnitřní join se proto píše jako proměnná rozsahu s podmínkou ve `where`, vnější join takový tvar nemá; vnitřní joiny píše za vnější (SQL Server podmínku odmítne); změřeno soudcem LDBC | `Fallback` (`Subquery`, `Join`) (z) | VM | [113], [117] |
 | každý artefakt únikové cesty | je v SQL deklarovaného dialektu | vždy `Fallback` se jménem konstrukce a dialektu; platí jen pro SQL Server 2022; 3. stupeň = přijetí T-SQL, rozhoduje 4. | VO 5 | [086], [113] |
 | kolekční parametr v nativním SQL EF Core a EclipseLinku | EF Core 10 naváže interpolovanou kolekci jako jednu hodnotu, nativní dotaz EclipseLinku 5.0 seznam nerozvine | `Failure` (`QueryParameter`) (z); Hibernate ho rozvine | VM | [113] |
 | množinová operace nad dvěma entitami, kde API materializuje jednu (`FromSql`, `AddEntity`, `createNativeQuery` s třídou) | řádky jedné strany by se vrátily jako cizí entita | `Failure` (z) | VM | [113] |

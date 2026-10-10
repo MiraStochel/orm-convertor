@@ -135,6 +135,27 @@ Hibernate = hibernate/FindCorrelatedExistsOverThreeColumns.jpql
 EclipseLink = eclipselink/FindCorrelatedExistsOverThreeColumns.jpql
 MyBatis = mybatis/FindCorrelatedExistsOverThreeColumnsMapper.xml
 
+# The two subquery shapes with an inner join inside the subquery, which the LDBC catalog
+# writes eleven times (friends of friends over the edge table, the parent of a message) and
+# which EclipseLink 5.0.0 writes as an entity join into no SQL at all: the builder writes it
+# the original JPQL way, as a further range variable with the condition in where, which the
+# fourth level of the differential matrix holds against the SQL rows.
+[SubqueryWithAJoinAsTheRightSideOfIn]
+Dapper = dapper/FindSubqueryWithAJoinAsTheRightSideOfIn.sql
+EFCore = efcore/FindSubqueryWithAJoinAsTheRightSideOfIn.query.cs
+NHibernate = nhibernate/FindSubqueryWithAJoinAsTheRightSideOfIn.hql
+Hibernate = hibernate/FindSubqueryWithAJoinAsTheRightSideOfIn.jpql
+EclipseLink = eclipselink/FindSubqueryWithAJoinAsTheRightSideOfIn.jpql
+MyBatis = mybatis/FindSubqueryWithAJoinAsTheRightSideOfInMapper.xml
+
+[CorrelatedExistsWithAJoin]
+Dapper = dapper/FindCorrelatedExistsWithAJoin.sql
+EFCore = efcore/FindCorrelatedExistsWithAJoin.query.cs
+NHibernate = nhibernate/FindCorrelatedExistsWithAJoin.hql
+Hibernate = hibernate/FindCorrelatedExistsWithAJoin.jpql
+EclipseLink = eclipselink/FindCorrelatedExistsWithAJoin.jpql
+MyBatis = mybatis/FindCorrelatedExistsWithAJoinMapper.xml
+
 # The quantified comparison (decision 119) over the one nullable column of the domain: the
 # subquery of ALL returns a NULL for some outer rows and none for others, which is the case
 # where SQL's ALL and a provider's All() part. The SQL and MyBatis rows of ANY write SOME, the
