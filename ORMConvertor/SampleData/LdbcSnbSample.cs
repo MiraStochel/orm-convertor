@@ -295,15 +295,6 @@ public static class LdbcSnbSample
         "A count over the whole result is a call that ends a LINQ chain, not a query, so the query goes out as native SQL through SqlQuery.");
 
     /// <summary>
-    /// An ordering by an aggregate the query projects and then by a key it does not, under a
-    /// slice: the LINQ target orders by a projected value after the projection, and an
-    /// ordering after the projection discards the one before it, so the slice would pick
-    /// other rows - EF Core writes the query in native SQL (decision 113).
-    /// </summary>
-    private static readonly LdbcFallback EFCoreOrdering = new(Model.ORMEnum.EFCore,
-        "The rows are ordered by a count the query projects and then by a key it does not, and a LINQ ordering after the projection discards the one before it; under TOP that would pick other rows, so the query goes out as native SQL through SqlQuery.");
-
-    /// <summary>
     /// A query over the result of another query - a common table expression, a derived table -
     /// has no form in two of the six query languages (decision 112), and those two targets
     /// write it in native SQL (decision 113).
@@ -702,7 +693,7 @@ public static class LdbcSnbSample
             GROUP BY f.Id, f.Title
             ORDER BY PostCount DESC, f.Id ASC
             """,
-            [PersonId, new("minDate", "DATE", "2012-06-01")], FallbackBy: [EFCoreOrdering, EclipseLinkOuterJoinOrder],
+            [PersonId, new("minDate", "DATE", "2012-06-01")], FallbackBy: [EclipseLinkOuterJoinOrder],
             Validation: new("IC5", [Bind("personId", "personIdQ5"), Bind("minDate", "minDate")],
                 [Column("ForumTitle", "forumTitle"), Column("PostCount", "postCount")])),
 

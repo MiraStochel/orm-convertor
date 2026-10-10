@@ -66,13 +66,13 @@ Strojově: deskriptory (`QuerySupport`, `Functions`, `NativeSqlApi`), `Combined/
 
 ### 1.3 Kategorie, na kterých je podmnožina změřená
 
-45 kategorií T2, každá dotazem nad sdílenou doménou sedmi entit v každém zdrojovém jazyce, který ji vysloví; manifest `Tests/Database/QueryShapes/categories.txt` čtou obě sady ([§6.2]). Každá jde každým směrem: 1. stupeň `Combined/QueryShapeMatrixTest`, 2. nad SQL a .NET cíli, 2. a 3. nad javovými (`shapes/QueryCategoryTest`), 4. diferenčně proti kanonickému výsledku (`Tests/Database/Differential/matrix.txt`, [089]). Cíle mimo sloupec *Fallback* píšou kategorii jazykem; odmítnutý směr (`refusedBy`) není žádný.
+46 kategorií T2, každá dotazem nad sdílenou doménou sedmi entit v každém zdrojovém jazyce, který ji vysloví; manifest `Tests/Database/QueryShapes/categories.txt` čtou obě sady ([§6.2]). Každá jde každým směrem: 1. stupeň `Combined/QueryShapeMatrixTest`, 2. nad SQL a .NET cíli, 2. a 3. nad javovými (`shapes/QueryCategoryTest`), 4. diferenčně proti kanonickému výsledku (`Tests/Database/Differential/matrix.txt`, [089]). Cíle mimo sloupec *Fallback* píšou kategorii jazykem; odmítnutý směr (`refusedBy`) není žádný.
 
 | Kategorie | Zdroje, které ji vysloví | `Fallback` (`fallbackBy`) |
 |---|---|---|
 | `Projection`, `Filtering`, `JoinOverTwoColumns`, `AggregationGroupingAndHaving`, `Ordering`, `SubqueryAsTheRightSideOfIn`, `CorrelatedExistsOverThreeColumns`, `SubqueryWithAJoinAsTheRightSideOfIn`, `CorrelatedExistsWithAJoin`, `ScalarSubquery`, `DistinctProjection`, `InOverAListOfValues`, `ConstantOfAMoment`, `LikeWithAnAnchoredPattern`, `CountOverDistinctValues`, `LikeWithAnEscapedWildcard`, `LikeWithABoundPrefix`, `ArithmeticInAProjection`, `FunctionInAFilter`, `CoalesceInAFilter`, `CaseInAProjection`, `OrderingByAnAggregate`, `ScalarSubqueryAgainstABoundValue`, `GroupingByAnExpression`, `RoundingAndSquareRoot`, `OuterJoinWithAFilterInOn`, `JoinBeyondEqualities`, `QuantifiedComparisonOverAll`, `QuantifiedComparisonOverAny` | všech šest | — |
 | `ScalarParameter`, `CollectionParameter`, `InListWithABoundValue` | všech šest, Dapper jen s katalogem¹ | — |
-| `PaginationWithBoundCounts` | bez NHibernatu a EclipseLinku | — |
+| `PaginationWithBoundCounts`, `OrderingByAnUnprojectedKeyUnderASlice` | bez NHibernatu a EclipseLinku | — |
 | `SetOperation` | bez NHibernatu | NHibernate |
 | `InOverASetOperation` | bez NHibernatu | NHibernate, EclipseLink (parser 5.0.0 `union` v poddotazu odmítne) |
 | `GroupingOverAGroupedResult`, `IntermediateResultReadTwice`, `DateArithmetic` | bez NHibernatu a EclipseLinku | NHibernate, EclipseLink |
@@ -309,6 +309,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | `GROUP BY ROLLUP`, `CUBE`, `GROUPING SETS` | model je nenese | `Failure` (č) | VM | [070] |
 | LINQ selektor prvků `GroupBy` jiného tvaru než strana spojeného řádku či hodnota (anonymní objekt …); result selector | model je nenese | `Loss` (`Grouping`) (č); krok, který prvky takového selektoru čte (lambda nad nimi, agregát bez argumentu), `Failure` (č) | VM | [103] |
 | cíl EF Core: klíč-výraz, který žádná projekce nepojmenuje; dva sloupce klíče s vlastností téhož jména, které žádná projekce nepojmenuje; agregát přes celý výsledek bez seskupení | anonymní klíč by chtěl vymyšlené jméno (C# jméno člena dvakrát nevezme); LINQ agregát přes vše vysloví jen vykonávacím voláním | `Fallback` (z) | VM | [028], [113] |
+| cíl LINQ (EF Core, druhý tvar NHibernatu): řazení podle aliasu projekce vedle klíče, který projekce nenese, v *neseskupeném* dotazu | řazení LINQ za projekcí zahodí to před ní; seskupený dotaz řadí nad skupinou před `Select` (alias rozepsaný na hodnotu projekce, klíče seskupení a agregáty skupiny), což EF Core 10.0.10 i provider 5.7.0 přeloží i s výřezem | s výřezem `Fallback` (z), bez něj `Loss` (jen pořadí shod) | VM | [053], [113] |
 | druhý tvar NHibernatu (LINQ): tytéž meze LINQ jako řádek výš; agregát nad distinktními hodnotami mimo `COUNT` (`SUM(DISTINCT …)`, `MAX(DISTINCT …)`) | provider 5.7.0 přeloží nad distinktními hodnotami jen `count` | `Omitted` (z), HQL stojí samo | VM | [118] |
 | cíl EclipseLink: klíč seskupení s literálem | literál naváže jako parametr, seskupení se liší od projekce | `Fallback` (z) | VM | [113] |
 | okenní agregát (`SUM(…) OVER`), rámec okna, okno bez řazení, jiná okenní funkce než tři řadicí | slovník nese jen řazení nad oknem s povinným řazením | nečte se (`WindowFunction`) | VM | [113] |

@@ -803,13 +803,28 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         // where some keys need the projection and others stand before it, every key goes
         // after it, named by the projected member that carries it - the order of the keys
         // is the source's, and a key left in front would be lost. A key the projection does
-        // not carry cannot follow it: with a slice the lost key would select other rows, so
-        // the query is refused (decision 053); without one only the order of ties changes.
+        // not carry cannot follow it. Over a grouped scope every key goes before the
+        // projection instead, over the group: the template's rule of grouping holds each
+        // ordering key of such a scope to the grouping keys and the aggregates of the group,
+        // which the lambda over the grouping spells - g.Key.Id, g.Count() -, and a key that
+        // names a projection by its alias is the value the projection gives it. EF Core
+        // 10.0.10 translates an ordering between GroupBy and Select with an aggregate in its
+        // lambda, and the provider of NHibernate 5.7.0 does too (both measured; decision 118
+        // for the latter), so the ordering, the projection and the slice name the same rows.
+        // Over an ungrouped scope the key stays lost: with a slice it would select other
+        // rows, so the query is refused (decision 053); without one only the order of ties
+        // changes.
         if (after.Count > 0 && before.Count > 0)
         {
             if (before.All(o => clauses.Projections.Any(p => Projects(p, o))))
             {
                 orderingAfterProjection = Chain([.. clauses.OrderBys], "p", o => KeyAfterDistinct(clauses, o));
+                return;
+            }
+
+            if (scope.Grouped)
+            {
+                artifact.Ordering.Append(Chain([.. clauses.OrderBys], scope.Param, o => KeyBeforeProjection(clauses, o)));
                 return;
             }
 
@@ -854,8 +869,9 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
     }
 
     /// <summary>
-    /// The ordering key over the row, before the projection: a key that names a projection by
-    /// its alias is the value that projection gives it, any other key is itself.
+    /// The ordering key before the projection, over the row or over the group: a key that
+    /// names a projection by its alias is the value that projection gives it, any other key
+    /// is itself.
     /// </summary>
     private string KeyBeforeProjection(QueryClauses clauses, OrderByInstruction order)
     {

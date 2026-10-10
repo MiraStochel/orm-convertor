@@ -360,6 +360,15 @@ shape = projection
 ordered = true
 mutations = ordering
 
+# Four products tie at two lines and the slice keeps three of them, so the second key is
+# what decides which; without the ordering the slice is the first three groups instead.
+[OrderingByAnUnprojectedKeyUnderASlice]
+category = OrderingByAnUnprojectedKeyUnderASlice
+fields = ProductName, Lines
+shape = projection
+ordered = true
+mutations = ordering, rowCount
+
 # The count is bound as a long, which is the scalar a COUNT answers with (decision 083) and
 # therefore the type of the generated method's parameter.
 [ScalarSubqueryAgainstABoundValue]

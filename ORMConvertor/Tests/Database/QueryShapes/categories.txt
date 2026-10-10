@@ -369,6 +369,17 @@ Hibernate = hibernate/FindOrderingByAnAggregate.jpql
 EclipseLink = eclipselink/FindOrderingByAnAggregate.jpql
 MyBatis = mybatis/FindOrderingByAnAggregateMapper.xml
 
+# The shape of LDBC IC 5: a grouped query under a slice, ordered by the alias of a projected
+# count and then by a grouping key the projection does not carry. The LINQ targets write
+# the whole ordering over the group before the projection - after it the second key would
+# have nothing to name and the slice would pick other rows. Only a source whose query
+# language states a slice in the text can state it (as PaginationWithBoundCounts).
+[OrderingByAnUnprojectedKeyUnderASlice]
+Dapper = dapper/FindOrderingByAnUnprojectedKeyUnderASlice.sql
+EFCore = efcore/FindOrderingByAnUnprojectedKeyUnderASlice.query.cs
+Hibernate = hibernate/FindOrderingByAnUnprojectedKeyUnderASlice.jpql
+MyBatis = mybatis/FindOrderingByAnUnprojectedKeyUnderASliceMapper.xml
+
 # A parameter compared with a correlated scalar subquery, the subquery on the left as LDBC
 # BI 16 writes it. The parameter takes its scalar from the one value the subquery projects,
 # and a COUNT answers with a count whatever it counts, so no source needs a mapping and the

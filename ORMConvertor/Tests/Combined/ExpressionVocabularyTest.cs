@@ -12,6 +12,7 @@ using Model.QueryInstructions.Conditions;
 using MyBatisWrappers;
 using NHibernateWrappers;
 using Tests.Database;
+using Tests.Verification;
 
 namespace Tests.Combined;
 
@@ -652,6 +653,59 @@ public class ExpressionVocabularyTest
     }
 
     // ---- the descriptors ------------------------------------------------------------------
+
+    // ---- ordering of a grouped query before the projection ---------------------------------
+
+    private const string TopByCountThenKey =
+        "SELECT TOP (3) s.CustomerId AS CustomerId, COUNT(*) AS Sold FROM Sales AS s GROUP BY s.CustomerId, s.Code ORDER BY Sold DESC, s.Code ASC";
+
+    /// <summary>
+    /// An ordering by the alias of a projected aggregate and then by a grouping key the
+    /// projection does not carry, under a slice - the shape of LDBC IC 5. After the projection
+    /// the second key would have nothing to name and the slice would pick other rows, so the
+    /// whole ordering stands before the projection, over the group, the alias resolved to the
+    /// aggregate it names. The provider of NHibernate 5.7.0 translates the chain
+    /// (NHibernate/NHibernateLinqProviderTest), so the second form of NHibernate carries it too.
+    /// </summary>
+    [Fact]
+    public void AGroupedQueryUnderASliceOrdersBeforeTheProjection()
+    {
+        var linq = Text(Sql(ORMEnum.EFCore, TopByCountThenKey));
+
+        Assert.Contains(".GroupBy(s => new { s.CustomerId, s.Code })", linq, StringComparison.Ordinal);
+        Assert.Contains(".OrderByDescending(g => g.Count()) .ThenBy(g => g.Key.Code) .Select(g => new { CustomerId = g.Key.CustomerId, Sold = g.Count() }) .Take(3)", linq, StringComparison.Ordinal);
+
+        var nhibernate = Sql(ORMEnum.NHibernate, TopByCountThenKey);
+        var forms = nhibernate.Build();
+        var second = OneLine(forms.Single(s => s.ContentType == ConversionContentType.CSharpLinqQuery).Content);
+
+        Assert.Contains(".OrderByDescending(g => g.Count()) .ThenBy(g => g.Key.Code) .Select(", second, StringComparison.Ordinal);
+        Assert.DoesNotContain(nhibernate.Records, r => r.Kind is ConversionRecordKind.Omitted or ConversionRecordKind.Failure or ConversionRecordKind.Fallback);
+    }
+
+    /// <summary>
+    /// The third level of the shape (decision 027): EF Core 10.0.10 translates an ordering
+    /// between GroupBy and Select with an aggregate in its lambda, keeping both keys and the
+    /// slice in the SQL it makes of the category of the matrix.
+    /// </summary>
+    [Fact]
+    public void EFCoreTranslatesTheOrderingOverTheGroup()
+    {
+        var shape = QueryShapeInputs.Categories.Single(s => s.Name == "OrderingByAnUnprojectedKeyUnderASlice");
+        var result = QueryShapeMatrixTest.Convert(shape, ORMEnum.Dapper, ORMEnum.EFCore);
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "ExpressionVocabulary_OrderingOverTheGroup",
+            result.Sources.Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content,
+            result.Sources.Where(s => s.ContentType == ConversionContentType.CSharpEntity).Select(s => s.Content),
+            GeneratedQueryCompiler.EFCoreConsumerReferences,
+            "using System;\nusing Microsoft.EntityFrameworkCore;\nusing Shop;");
+
+        var sql = OneLine(EFCoreQueryAcceptance.Translate(compiled));
+
+        Assert.Matches(@"SELECT TOP\(\S+\)", sql);
+        Assert.Matches(@"ORDER BY COUNT\(\*\) DESC, \[\w+\]\.\[ProductId\]", sql);
+    }
 
     /// <summary>
     /// Who speaks what of decision 113, as the probes against the pinned releases found it:

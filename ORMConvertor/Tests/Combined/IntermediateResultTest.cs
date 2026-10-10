@@ -560,28 +560,52 @@ public class IntermediateResultTest
     }
 
     /// <summary>
-    /// A LINQ ordering after the projection discards the one before it, so with a slice the
-    /// chain would select other rows; the query goes out in native SQL, which keeps both keys
-    /// (decision 113), into a row class whose COUNT is the int SQL Server answers with.
+    /// The same keys over a grouped query under a slice, one of them a grouping key the
+    /// projection does not carry: the whole ordering stands before the projection, over the
+    /// group, the alias resolved to the count it names, so both keys and the slice survive
+    /// (the shape of LDBC IC 5; EF Core 10 translates it, Combined/ExpressionVocabularyTest).
+    /// </summary>
+    [Fact]
+    public void EFCoreOrdersAGroupedQueryBeforeTheProjectionWhenAKeyIsNotProjected()
+    {
+        var method = Artifact(
+            FromSql(new EFCoreLinqQueryBuilder(), """
+                SELECT TOP (10) o.CustomerId AS CustomerId, COUNT(*) AS Orders
+                FROM Orders AS o
+                GROUP BY o.CustomerId, o.Total
+                ORDER BY Orders DESC, o.Total ASC
+                """),
+            ConversionContentType.CSharpQuery);
+
+        Assert.Contains(".OrderByDescending(g => g.Count())", method);
+        Assert.Contains(".ThenBy(g => g.Key.Total)", method);
+        Assert.Contains(".Select(g => new { CustomerId = g.Key.CustomerId, Orders = g.Count() })", method);
+        Assert.Contains(".Take(10)", method);
+        Assert.DoesNotContain("(p =>", method);
+    }
+
+    /// <summary>
+    /// Over an ungrouped query the key stays lost: a LINQ ordering after the projection
+    /// discards the one before it, so with a slice the chain would select other rows; the
+    /// query goes out in native SQL, which keeps both keys (decision 113).
     /// </summary>
     [Fact]
     public void EFCoreWritesASlicedOrderingWhoseKeyIsNotProjectedInNativeSql()
     {
         const string sql = """
-            SELECT TOP (10) o.CustomerId AS CustomerId, COUNT(*) AS Orders
+            SELECT TOP (10) o.CustomerId AS Customer, o.Total AS Amount
             FROM Orders AS o
-            GROUP BY o.CustomerId, o.Total
-            ORDER BY Orders DESC, o.Total ASC
+            ORDER BY Amount DESC, o.PlacedAt ASC
             """;
 
         var method = AssertFellBack(FromSql(new EFCoreLinqQueryBuilder(), sql), QueryFeature.Ordering, "discards the one before it", sql);
 
         Assert.Contains("public static IQueryable<QueryRow> Query(DbContext ctx)", method);
         Assert.Contains("return ctx.Database.SqlQuery<QueryRow>(", method);
-        Assert.Contains("ORDER BY Orders DESC, o.Total ASC", method);
+        Assert.Contains("ORDER BY Amount DESC, o.PlacedAt ASC", method);
         Assert.Contains("public sealed class QueryRow", method);
-        Assert.Contains("public int? CustomerId { get; set; }", method);
-        Assert.Contains("public int? Orders { get; set; }", method);
+        Assert.Contains("public int? Customer { get; set; }", method);
+        Assert.Contains("public decimal? Amount { get; set; }", method);
     }
 
     /// <summary>

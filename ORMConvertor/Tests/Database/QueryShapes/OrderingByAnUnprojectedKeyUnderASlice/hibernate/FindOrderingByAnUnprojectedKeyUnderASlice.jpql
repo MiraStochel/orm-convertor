@@ -1,0 +1,6 @@
+select p.ProductName as ProductName, count(ol) as Lines
+from ShopOrderLine ol
+inner join ShopProduct p on p.ProductId = ol.ProductId
+group by p.ProductId, p.ProductName
+order by Lines desc, p.ProductId asc
+limit 3

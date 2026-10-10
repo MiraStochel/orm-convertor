@@ -80,7 +80,10 @@
 --                   into a WHERE would drop; flipped to < the join keeps other lines;
 --   beyond keys     two lines are priced below their product, 118 against 120 and 99
 --                   against 250, so four products keep a row of nulls; flipped to > two
---                   other lines are the matches.
+--                   other lines are the matches;
+--   sliced ordering four products (1, 2, 4, 6) have two lines each and two have one, so
+--                   TOP (3) by the count and then by the product keeps 1, 2 and 4, a tie
+--                   the second key decides; dropped, the slice is the first three groups.
 --
 -- No column carries a default, so nothing unstated can reach a canonical result, and every
 -- DATETIME2 value states its fraction, so the renderer's three digits are the column's.

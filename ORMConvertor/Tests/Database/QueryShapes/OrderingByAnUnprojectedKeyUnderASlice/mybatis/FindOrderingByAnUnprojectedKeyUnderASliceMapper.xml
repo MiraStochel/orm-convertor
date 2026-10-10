@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindOrderingByAnUnprojectedKeyUnderASliceMapper">
+  <select id="findOrderingByAnUnprojectedKeyUnderASlice" resultType="ShopOrderLine">
+    SELECT TOP (3) p.ProductName AS ProductName, COUNT(*) AS Lines
+    FROM {{schema}}.ShopOrderLines AS ol
+    INNER JOIN {{schema}}.ShopProducts AS p ON p.ProductId = ol.ProductId
+    GROUP BY p.ProductId, p.ProductName
+    ORDER BY Lines DESC, p.ProductId ASC
+  </select>
+</mapper>

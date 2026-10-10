@@ -498,6 +498,17 @@ public static class QueryShapeInputs
             hql: ["order by count(*) desc, ol.ProductId asc"],
             jpa: ["order by count(ol) desc, ol.ProductId asc"]),
 
+        // The LINQ targets order over the group before the projection, the alias resolved to
+        // the count it names, so that the key the projection does not carry survives the
+        // slice. The LINQ source states the count itself where the SQL and JPQL ones name
+        // the alias, and the text targets write the first key as the source did, so the
+        // hallmarks name the second key alone.
+        ["OrderingByAnUnprojectedKeyUnderASlice"] = Hallmarks(
+            sql: ["SELECT TOP (3)", "GROUP BY p.ProductId, p.ProductName", " DESC, p.ProductId ASC"],
+            linq: [".OrderByDescending(g => g.Count())", ".ThenBy(g => g.Key.ProductId)", ".Select(g => new { ProductName = g.Key.ProductName, Lines = g.Count() })", ".Take(3)"],
+            hql: ["group by p.ProductId, p.ProductName", " desc, p.ProductId asc", ".SetMaxResults(3)"],
+            jpa: ["group by p.ProductId, p.ProductName", " desc, p.ProductId asc", ".setMaxResults(3)"]),
+
         // The parameter is a long because the subquery projects a COUNT (decision 083).
         ["ScalarSubqueryAgainstABoundValue"] = Hallmarks(
             sql: ["(SELECT COUNT(*)", ") >= @minLines", "long minLines"],
