@@ -1,6 +1,8 @@
 package cz.stochel.ormconvertor.javatests.hibernate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cz.stochel.ormconvertor.javatests.TestDatabase;
@@ -9,9 +11,11 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
+import org.hibernate.exception.DataException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -21,9 +25,11 @@ import org.junit.jupiter.api.Test;
  * The two claims of decision 077 that xUnit cannot verify and the Java suite was to
  * confirm first: how {@code @Column} precision on a {@code LocalDateTime} reaches the
  * generated column in Hibernate 7.4.5, and that Hibernate accepts the entity join with
- * {@code on} in every position the JPQL builder emits it. The entities are written by
+ * {@code on} in every position the JPQL builder emits it - and a third, from decision
+ * 113: what a conversion into text does to characters outside the code page, which is
+ * why the builder writes such a conversion in native SQL. The entities are written by
  * hand in the shape the builder writes them; the generated artifacts themselves reach
- * this suite over HTTP from a running instance (decision 078), once that work is done.
+ * this suite over HTTP from a running instance (decision 078).
  */
 @Tag("integration")
 class HibernateClaimsTest {
@@ -143,6 +149,63 @@ class HibernateClaimsTest {
                 select c.name from Customer c
                 """,
                 String.class).getResultList()));
+    }
+
+    // ---- claim 3: what a conversion into text does to characters outside the code page ---
+
+    /** A name with two characters outside the code page of {@code SQL_Latin1_General_CP1_CI_AS}. */
+    private static final String OUTSIDE_THE_CODE_PAGE = "Ωmega 字";
+
+    /**
+     * Why a conversion of a text into text goes out of the JPQL builder in native SQL
+     * (decision 113): under the default configuration, 7.4.5 writes {@code cast(x as String)}
+     * to SQL Server as {@code varchar(max)}, which holds only the characters of the
+     * database's code page, so the name comes back with those outside it replaced. The
+     * registered type {@code nstring} ({@code StandardBasicTypes.NSTRING}) is no way out:
+     * the converter adjusts the cast target to the configuration too, so the SQL says
+     * {@code varchar(max)} as well, while the reader of the result still expects national
+     * text - the driver refuses the column ("The conversion from varchar to NCHAR is
+     * unsupported") and the query fails instead of losing characters.
+     */
+    @Test
+    void castIntoTextLosesCharactersOutsideTheCodePageUnderTheDefaultConfiguration() {
+        try (SessionFactory factory = HibernateBootstrap.build("none", Customer.class, CustomerProfile.class)) {
+            assertNotEquals(OUTSIDE_THE_CODE_PAGE, castOf(factory, "String"));
+            assertThrows(DataException.class, () -> castOf(factory, "nstring"));
+        }
+    }
+
+    /**
+     * Nor is the configuration a way out: {@code hibernate.use_nationalized_character_data},
+     * which makes national text the default of every String of the mapping, leaves the cast
+     * target as it was - the converter adjusts it to indicators of its own, not to the
+     * setting -, so the SQL still says {@code varchar(max)} and the characters are still lost.
+     * Measured against 7.4.5 on 2026-10-10; with these two, the probe the open item on the
+     * conversion named found nothing, and the native SQL stays.
+     */
+    @Test
+    void castIntoTextLosesCharactersOutsideTheCodePageEvenUnderNationalizedCharacterData() {
+        try (SessionFactory factory = HibernateBootstrap.build(
+                "none", Map.of("hibernate.use_nationalized_character_data", "true"), Customer.class, CustomerProfile.class)) {
+            assertNotEquals(OUTSIDE_THE_CODE_PAGE, castOf(factory, "String"));
+        }
+    }
+
+    /** Inserts the name and selects its conversion into the given HQL type, in a transaction rolled back at the end. */
+    private static String castOf(SessionFactory factory, String type) {
+        try (Session session = factory.openSession()) {
+            session.beginTransaction();
+            try {
+                session.persist(new Customer(OUTSIDE_THE_CODE_PAGE));
+                session.flush();
+
+                return session.createSelectionQuery(
+                        "select cast(c.name as " + type + ") from Customer c where c.name = :name", String.class)
+                        .setParameter("name", OUTSIDE_THE_CODE_PAGE).getSingleResult();
+            } finally {
+                session.getTransaction().rollback();
+            }
+        }
     }
 
     /**

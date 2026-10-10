@@ -464,7 +464,10 @@ public sealed class JpqlQueryVisitor(
     /// <c>NVARCHAR(MAX)</c> for a number or a moment converted and a poorer one for a text
     /// holding characters outside the code page; so a conversion into text is written over a
     /// value known not to be text, and over any other the query goes out in native SQL.
-    /// EclipseLink's descriptor leaves cast out altogether.
+    /// Neither the registered type nstring nor hibernate.use_nationalized_character_data
+    /// changes the type the SQL names - the converter adjusts the cast target to indicators
+    /// of its own (measured against 7.4.5, the Java suite's HibernateClaimsTest). EclipseLink's
+    /// descriptor leaves cast out altogether.
     /// </summary>
     private string Cast(QueryExpression expression, string argument)
     {

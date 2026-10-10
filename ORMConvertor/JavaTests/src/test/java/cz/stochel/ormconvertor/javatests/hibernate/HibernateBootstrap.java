@@ -2,6 +2,7 @@ package cz.stochel.ormconvertor.javatests.hibernate;
 
 import cz.stochel.ormconvertor.javatests.TestDatabase;
 import java.util.List;
+import java.util.Map;
 import org.hibernate.SessionFactory;
 import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.BootstrapServiceRegistryBuilder;
@@ -30,6 +31,14 @@ public final class HibernateBootstrap {
     }
 
     /**
+     * For a claim about a setting of the consumer's configuration: the same bootstrap with
+     * the given settings applied over the standard ones.
+     */
+    public static SessionFactory build(String schemaAction, Map<String, String> settings, Class<?>... entities) {
+        return build(schemaAction, null, List.of(entities), TestDatabase.jdbcUrl(), TestDatabase.schemaName(), settings);
+    }
+
+    /**
      * For classes compiled from generated artifacts: the loader of the scenario is applied
      * to the bootstrap registry, so everything Hibernate resolves by name inside the
      * mapping is looked up where those classes live.
@@ -44,16 +53,23 @@ public final class HibernateBootstrap {
      */
     public static SessionFactory build(
             String schemaAction, ClassLoader loader, List<Class<?>> entities, String jdbcUrl, String defaultSchema) {
+        return build(schemaAction, loader, entities, jdbcUrl, defaultSchema, Map.of());
+    }
+
+    private static SessionFactory build(
+            String schemaAction, ClassLoader loader, List<Class<?>> entities, String jdbcUrl, String defaultSchema,
+            Map<String, String> settings) {
         BootstrapServiceRegistryBuilder bootstrap = new BootstrapServiceRegistryBuilder();
         if (loader != null) {
             bootstrap.applyClassLoader(loader);
         }
 
-        StandardServiceRegistry registry = new StandardServiceRegistryBuilder(bootstrap.build())
+        StandardServiceRegistryBuilder builder = new StandardServiceRegistryBuilder(bootstrap.build())
                 .applySetting("jakarta.persistence.jdbc.url", jdbcUrl)
                 .applySetting("hibernate.default_schema", defaultSchema)
-                .applySetting("jakarta.persistence.schema-generation.database.action", schemaAction)
-                .build();
+                .applySetting("jakarta.persistence.schema-generation.database.action", schemaAction);
+        settings.forEach(builder::applySetting);
+        StandardServiceRegistry registry = builder.build();
         try {
             MetadataSources sources = new MetadataSources(registry);
             for (Class<?> entity : entities) {
