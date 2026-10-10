@@ -991,7 +991,7 @@ flowchart LR
 - **Verdikt** — dotaz `AsSpecified` musí souhlasit na každém čtení v každém frameworku; neshoda Dapperu (textu katalogu) je chyba textu, neshoda jen cíle chyba překladu. **Míra** — `Simplified` (IC 13, IC 14) zapíše podíl shodných čtení do výstupu; artefakt musí běžet.
 - **Negativní polovina** — pět mutací 089 nad artefaktem IC 2 v každém frameworku musí skončit neshodou nebo selháním.
 - **Konfigurace** — `ConnectionStrings:LdbcDatabase` (.NET), `ORMCONVERTOR_TEST_LDBC_JDBC_URL` a `ORMCONVERTOR_LDBC_API_URL` (Java); bez nich se soudce přeskočí s důvodem, s `ORMCONVERTOR_REQUIRE_LDBC_DATABASE=1` selže. `ORMCONVERTOR_LDBC_VALIDATION_ROWS` přehraje jen prefix sady; profil `test` přehrává 1000 řádků SF 0,1 ([README](../ORMConvertor/README.md#the-ldbc-judge)).
-- **Doba** — čtení stojí nad SF 0,1 desítky až stovky milisekund, celá sada (přes 130 tisíc čtení) tedy hodiny; 800 řádků trvá .NET sadě 3,4 min, javové 4–8 min.
+- **Doba** — čtení stojí nad SF 0,1 desítky až stovky milisekund, celá sada (přes 130 tisíc čtení) tedy hodiny; 800 řádků trvá .NET sadě 3,4 min, javové 4–8 min. Nad SF 1 přehrává .NET sada 86 řádků za minutu (po rozh. [121](./decisions/121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md)), celá sada je tedy asi den na sadu — samostatný běh, viz [open-items.md](./open-items.md#verdikt-soudce-ldbc-nad-celou-sadou-sf-1).
 
 **Nárok** F7–F10, F12 a F13 stojí na stupních 2–4 javové sady a na maticích (§9, [`traceability.md`](./traceability.md)). Záznamy běhů s commitem nese [README](../ORMConvertor/README.md#how-large-the-suite-is-and-what-it-covers) (rozh. [095](./decisions/095-a-dated-run-record-names-its-commit.md)); poslední běhy předcházely commitu:
 

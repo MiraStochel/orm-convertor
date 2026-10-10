@@ -155,7 +155,21 @@ The validation set of LDBC Interactive v1 judges the Interactive queries of the 
 | replay only the first n lines | `ORMCONVERTOR_LDBC_VALIDATION_ROWS` | the same |
 
 - **Without the settings** the judge skips with the reason; the rest of the suite does not need `LdbcSnb`.
-- **The compose profile** sets everything and replays the first 1000 lines of the SF 0.1 set - a check. `ORMCONVERTOR_LDBC_VALIDATION_ROWS= docker compose --profile test run --rm tests` (set to empty) replays the whole set; that takes hours even at SF 0.1, and the verdict is the whole set over SF 1.
+- **The compose profile** sets everything and replays the first 1000 lines of the SF 0.1 set - a check.
+- **The whole set over SF 1 is a run of its own**, about a day per suite (2026-10-10, after decision [121](../docs/decisions/121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md): 86 lines a minute in the .NET suite), the two suites one after the other because they share the lock. It runs against `mssql_db` of the system profile, started with `docker compose up -d --build mssql_db`, and for the Java suite an instance over the LDBC catalog, `ORMCONVERTOR_CATALOG_DATABASE=LdbcSnb docker compose up -d ormconvertor`. Start each suite detached, named and without `--rm`, so that `docker logs <name>` keeps the result whatever happens to the shell that started it:
+
+  ```sh
+  docker compose --profile test run -d -T --no-deps --name ldbc_judge_dotnet \
+    -e "ConnectionStrings__LdbcDatabase=Server=mssql_db,1433;Database=LdbcSnb;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;" \
+    -e ORMCONVERTOR_LDBC_VALIDATION_ROWS= \
+    tests --filter "FullyQualifiedName~LdbcValidationTest" --logger "console;verbosity=detailed"
+  docker compose --profile test run -d -T --no-deps --name ldbc_judge_java \
+    -e "ORMCONVERTOR_TEST_LDBC_JDBC_URL=jdbc:sqlserver://mssql_db:1433;databaseName=LdbcSnb;user=sa;password=Testingorms123;encrypt=true;trustServerCertificate=true" \
+    -e ORMCONVERTOR_LDBC_API_URL=http://ormconvertor:5072/orm -e ORMCONVERTOR_LDBC_VALIDATION_ROWS= \
+    java_tests -Dtest=LdbcValidationTest
+  ```
+
+  A run stopped in the middle leaves the inserts of the lines it replayed in `LdbcSnb`; the next replay removes them first, and `database/ldbc/updates/undo.sql` does the same by hand.
 - **Loading the set elsewhere:** take `validation_params-sf<N>.csv` of the scale factor the data has from `validation_params-interactive-v1.0.0-sf0.1-to-sf10.tar.zst` at `datasets.ldbcouncil.org/interactive-v1/`, run `database/ldbc/validation.sql` with `{{schema}}` replaced by `dbo` and `-v ValidationFile=<path the server can read>`, then add the extended property `ldbc.validation` with the file's name. After a change to `database/ldbc/indexes.sql` (decision [121](../docs/decisions/121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md)) run that script the same way; it is rerunnable, and the container does it by itself on the next start.
 - **One replay at a time:** a replay holds the application lock `ldbc.validation` on its connection, so the other suite waits; the lock dies with the connection.
 
