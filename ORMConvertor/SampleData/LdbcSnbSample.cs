@@ -742,18 +742,21 @@ public static class LdbcSnbSample
             Validation: new("IC6", [Bind("personId", "personIdQ6"), Bind("tagName", "tagName")],
                 [Column("OtherTagName", "tagName"), Column("PostCount", "postCount")])),
 
-        new("ic7", LdbcWorkload.InteractiveComplex, 7, "Recent likers", LdbcTranslation.Simplified,
+        new("ic7", LdbcWorkload.InteractiveComplex, 7, "Recent likers", LdbcTranslation.AsSpecified,
             "The most recent like of every person who liked the start person's messages - an arg-max per person, written "
-            + "as a NOT EXISTS of a later like - and whether the liker is a friend, with the latency in minutes between the "
-            + "message and the like as DATEDIFF in seconds divided by sixty (decision 113). The specification takes the whole "
-            + "seconds of the difference, which DATEDIFF, counting the boundaries of seconds crossed, exceeds by one where "
-            + "the milliseconds of the like are smaller than those of the message; a latency moves to the next minute by "
-            + "that only where its seconds stand at a whole minute.",
+            + "as a NOT EXISTS of a later like - and whether the liker is a friend, with the latency in whole minutes between "
+            + "the message and the like, rounded down. DATEDIFF counts the minute boundaries crossed, which is one more than "
+            + "the whole minutes wherever the like stands earlier within its minute than the message within its own; the "
+            + "text takes that one away where the message moved forward by the counted minutes - DATEADD - lands after the "
+            + "like (decision 113). LINQ writes it with AddMinutes and EF.Functions.DateDiffMinute, HQL of Hibernate with "
+            + "timestampadd and timestampdiff.",
             """
             SELECT TOP (20) f.Id AS PersonId, f.FirstName AS PersonFirstName, f.LastName AS PersonLastName,
                    l.CreationDate AS LikeCreationDate, m.Id AS MessageId,
                    COALESCE(m.Content, m.ImageFile) AS MessageContent,
-                   DATEDIFF(second, m.CreationDate, l.CreationDate) / 60 AS MinutesLatency,
+                   DATEDIFF(minute, m.CreationDate, l.CreationDate)
+                       - CASE WHEN DATEADD(minute, DATEDIFF(minute, m.CreationDate, l.CreationDate), m.CreationDate) > l.CreationDate
+                              THEN 1 ELSE 0 END AS MinutesLatency,
                    CASE WHEN k.Person1Id IS NULL THEN 1 ELSE 0 END AS IsNew
             FROM Message AS m
             JOIN Person_likes_Message AS l ON l.MessageId = m.Id

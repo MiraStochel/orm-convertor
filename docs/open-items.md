@@ -17,7 +17,7 @@ Schválená [specifikace](./specifikace.tex) (kap. *Milníky* a *Harmonogram*) a
 |---|---|---|---|
 | 1 — .NET část | klíče, vztahy, katalog, diagnostika, dotazová matice, čtyři stupně ověření | červenec–srpen | hotovo, `1.2.0` |
 | 2 — specifikace a analýza | specifikace, rozhodnutí o javové straně, analýza běhového prostředí pro Javu | září | hotovo |
-| 3 — Java a cross-language | Hibernate, MyBatis, EclipseLink, překlad .NET ↔ Java | září–říjen | hotovo, `2.0.0`; dotazy dokončené v `2.1.0` |
+| 3 — Java a cross-language | Hibernate, MyBatis, EclipseLink, překlad .NET ↔ Java | září–říjen | hotovo, `2.0.0`; dotazy dokončené v `2.1.0`; katalog LDBC se dotahuje ([níž](#dotazy-katalog-ldbc-co-nejdál)) |
 | 4 — testy a experimenty | javová sada s diferenčním ověřením (F12–F13) | říjen–listopad | hotovo |
 | | zobrazení mezireprezentace (F14) | | **chybí** |
 | | cross-language matice T2 s metrikami T3 | | **chybí** pipeline a metriky; matice existuje v testech |
@@ -33,6 +33,15 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 
 | Položka | Kategorie | Druh | Pož. |
 |---|---|---|---|
+| [EclipseLink: join v poddotazu](#eclipselink-join-uvnitř-poddotazu-jako-proměnná-rozsahu-s-podmínkou-ve-where) | Dotazy | práce | F9, F13, T2 |
+| [EF Core: řazení seskupeného dotazu před projekcí](#ef-core-řazení-seskupeného-dotazu-před-projekcí) | Dotazy | práce | F13, T2 |
+| [EclipseLink: literál v klíči seskupení](#eclipselink-klíč-seskupení-s-literálem-bez-vázání-literálů) | Dotazy | práce | F9, T2 |
+| [EF Core: seznam nad korelovaným poddotazem](#ef-core-seznam-nad-korelovaným-poddotazem-jako-seskupený-poddotaz) | Dotazy | práce | T2 |
+| [Hibernate: převod textu v IC 12](#hibernate-převod-textu-bez-ztráty-znaků) | Dotazy | práce | F9 |
+| [Hledání cest z obou konců](#hledání-cest-z-obou-konců) | Dotazy | práce | F13, T2, T3 |
+| [Verdikt soudce LDBC nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) | Dotazy | práce | F13, T2, T3 |
+| [Seznamový parametr v nativním dotazu EclipseLinku](#seznamový-parametr-v-nativním-dotazu-eclipselinku) | Dotazy | rozhodnutí | F9, T2 |
+| [Přepis textu katalogu kvůli vadě jednoho cíle](#přepis-textu-katalogu-kvůli-vadě-jednoho-cíle) | Dotazy | rozhodnutí | T2 |
 | [Co zavírá třetí cíl](#co-zavírá-třetí-cíl-schválený-záměr-advisor-nejmenuje) | Třetí cíl | rozhodnutí | F15, T1–T7 |
 | [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Třetí cíl | rozhodnutí | S5, T1–T3 |
 | [Referenční databáze experimentů a případová studie T1](#referenční-databáze-experimentů-a-případová-studie-t1) | Třetí cíl | rozhodnutí | T1, T2, T7, F4 |
@@ -51,7 +60,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [Čísla řádků v editoru jednotky](#editor-jednotky-nemá-čísla-řádků-na-která-se-odvolává-chybová-hláška) | Rozhraní | práce | S7 |
 | [Mapovací fakta mimo `hbm.xml`, která se zahodí beze slova](#mapovací-fakta-mimo-hbmxml-která-čtení-zahodí-beze-slova) | Užitečné | práce | F5, F11 |
 | [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
-| [Verdikt soudce LDBC nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) | Užitečné | práce | F13, T2, T3 |
 | [Druhý databázový dialekt](#druhý-databázový-dialekt) | Užitečné | rozhodnutí | F5, F7–F10, S2 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
 | [Sdílená entitní báze](#sdílená-entitní-báze-roste-a-rozšiřovací-plocha-ne) | Užitečné | rozhodnutí | S1 |
@@ -65,6 +73,8 @@ Co na čem stojí (vazby, které položky samy vyslovují):
 
 ```mermaid
 flowchart LR
+    W["Hledání cest<br/>z obou konců"] --> V["Verdikt soudce<br/>nad SF 1"]
+    V -.->|"IC 14 jen při neshodě"| W
     G["Co zavírá třetí cíl"] -.->|"do rozhodnutí bez značek"| A["Advisor (T7)"]
     DB["Referenční databáze a T1"] -->|vstup| P["Pipeline T2 × T3"]
     X["Cizí artefakt<br/>ve stupních ověření"] --> L["Metodika<br/>srovnání s LLM"]
@@ -78,19 +88,85 @@ Vstup, na který se nárok vztahuje, dá artefakt, který cílový framework odm
 
 Dnes tu žádná položka není.
 
+## Dotazy: katalog LDBC co nejdál
+
+Cíl: co nejvíc ze 41 dotazů katalogu (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)) *podle specifikace* a *jazykem cíle*; úniková cesta nativním SQL (rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md)) jen tam, kde jazyk cíle konstrukci opravdu nemá. Stav katalogu drží `Combined/LdbcCatalogTest` a popisuje [`architecture.md`](./architecture.md) §6.2; meze konstrukcí vede [`subset.md`](./subset.md) 2.6–2.11.
+
+Co položky níž změní (dotazy katalogu, které cíl dnes píše nativním SQL):
+
+| Cíl | Dnes | Zruší | Čím | Zůstane | Proč zůstane |
+|---|---|---|---|---|---|
+| EF Core 10 | 10 | IC 5, IC 1 | řazení před projekcí; seskupený poddotaz | 8: rekurze (6), okenní funkce (BI 14), agregát bez seskupení (BI 11) | LINQ je nemá; seskupení podle konstanty by nad prázdným vstupem vrátilo nula řádků místo jednoho (113) |
+| NHibernate 5.7 | 14 | — | — | 14: mezivýsledek (5), rekurze (6), datumová aritmetika (2), seznam (1) | HQL 5.7 je nemá, změřeno (113, deskriptor) |
+| Hibernate 7.4 | 1 | IC 12 | převod textu bez ztráty znaků, obstojí-li sonda | 0 | — |
+| EclipseLink 5.0 | 27 | 10: IC 3, IC 4, IC 6, IC 9, IC 10, IC 11, BI 6, BI 10, BI 16, BI 1 | join v poddotazu jako proměnná rozsahu; literál v klíči bez vázání | 17: rekurze (6), mezivýsledek (4), datumová aritmetika (2), seznam (1), pořadí joinů (IS 7, IC 5, BI 2, BI 5) | JPQL je nemá; pořadí joinů píše EclipseLink sám — zbývá jen [přepis textu](#přepis-textu-katalogu-kvůli-vadě-jednoho-cíle) |
+| odmítnutí | EclipseLink BI 12 | BI 12 | seznamový parametr v nativním dotazu ([rozhodnutí](#seznamový-parametr-v-nativním-dotazu-eclipselinku)) | 0 | — |
+| `Simplified` | 5 | — | — | 5: cesty s mezí hloubky | rekurzivní člen SQL Serveru řádky neslučuje (113); [mez se zdvojí](#hledání-cest-z-obou-konců) |
+
+Úniková cesta po kouscích (`FUNCTION('DATEDIFF', …)`, `SQL(…)` EclipseLinku) a rekurze rozepsaná do pevného počtu joinů zůstávají zamítnuté — varianta 3 rozh. 113 a jeho odstavec o rekurzi; co by je otevřelo, je nové rozhodnutí, ne položka tady.
+
+### Práce
+
+#### EclipseLink: join uvnitř poddotazu jako proměnná rozsahu s podmínkou ve `where`
+*Na řadě. Profil `DropsJoinsInSubqueries` v `EclipseLinkDescriptor` (rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md), změřeno soudcem rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md)); `AbstractJpaQueryBuilder.RenderSubQuery`; [`subset.md`](./subset.md) 2.11. Požadavky F9, F13, T2.*
+
+EclipseLink 5.0.0 vypustí `join X x on …` uvnitř poddotazu z SQL i s podmínkou, proto dnes každý poddotaz s joinem jde do EclipseLinku nativním SQL — 11 dotazů katalogu, všechny jen s vnitřními joiny v poddotazu (přátelé přátel přes `Person_knows_Person`, rodič zprávy). JPQL má pro vnitřní join i druhý, původní tvar: další proměnnou rozsahu ve `from` poddotazu (`from Person_knows_Person k1, Person_knows_Person k2 where k2.person1Id = k1.person2Id and …`), kterou EclipseLink píše jako křížový join s podmínkou ve `WHERE` — tytéž řádky. Práce: profil EclipseLinku píše vnitřní join v poddotazu jako proměnnou rozsahu a jeho podmínku přesune do `where` (konjunkce s filtrem poddotazu); vnější join v poddotazu zůstává nativním SQL. Nejdřív sonda v javové sadě proti 5.0.0 (kategorie matice s joinem v poddotazu, `SubqueryAsTheRightSideOfIn` a `CorrelatedExistsOverThreeColumns` rozšířené o join), pak katalog: `FallbackBy` bez `EclipseLinkSubqueryJoin` u IC 3, IC 4, IC 6, IC 9, IC 10, IC 11, BI 6, BI 10 a BI 16; IC 5 a BI 5 zůstávají kvůli pořadí joinů. Soudce musí být zelený nad všemi devíti. Zavírá `architecture.md` §5 (odstavec *Joiny, které EclipseLink 5.0.0 nenapíše*), `subset.md` 2.6 a 2.11, `traceability.md` (F9, T2).
+
+#### EF Core: řazení seskupeného dotazu před projekcí
+*Potom. `LinqBuilding/AbstractLinqQueryBuilder.BuildOrdering`; rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md), [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md), [023](./decisions/023-query-builder-template-method.md); [`subset.md`](./subset.md) 2.9. Požadavky F13, T2.*
+
+IC 5 řadí podle projektovaného agregátu (`PostCount`) a pak podle klíče seskupení, který projekce nenese (`f.Id`), pod `TOP`: řazení za `Select` by druhý klíč ztratilo a výřez by vybral jiné řádky, takže EF Core dnes ustupuje. LINQ to vysloví *před* projekcí, nad skupinou: `.GroupBy(…).OrderByDescending(g => g.Select(x => x.m.Id).Distinct().Count()).ThenBy(g => g.Key.Id).Select(…).Take(20)` — operátor za `GroupBy` s agregátem v lambdě překládá EF Core od verze 7 (změřit proti 10.0.10). Pravidlo: nenese-li projekce některý klíč řazení a každý klíč řazení je klíčem seskupení nebo agregátem skupiny, píše se řazení nad skupinou před `Select`; dnešní řazení za projekcí zůstává pro ostatní tvary. Druhý tvar NHibernatu (rozh. [118](./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md)) dostane `Omitted`, kde to provider 5.7.0 nepřeloží. Sonda v `ExpressionVocabularyTest` a kategorie matice (`OrderingByAnAggregate` s neprojektovaným klíčem pod výřezem) ve všech sadách, pak IC 5 bez `EFCoreOrdering`. Zavírá `architecture.md` §5 (*Mechanismus po konstrukcích*), `subset.md` 2.9, `traceability.md` (T2).
+
+#### EclipseLink: klíč seskupení s literálem bez vázání literálů
+*Profil `BindsLiterals` (rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md), změřeno proti 5.0.0); `AbstractJpaQueryBuilder.BuildGrouping`; `ExpressionVocabularyTest.EclipseLinkWritesAKeyWithALiteralInNativeSql`. Požadavky F9, T2.*
+
+EclipseLink váže každý literál JPQL jako parametr, takže klíč seskupení s literálem (`case when m.length < 40 then 0 …`) přijde do SQL Serveru jako jiný výraz než týž klíč v projekci a server dotaz odmítne — BI 1 jde nativním SQL. Vázání literálů je nastavení dotazu, ne jazyka: hint `eclipselink.jdbc.bind-parameters` = `false` na dotazu píše literály i parametry doslova. Práce: builder přidá `.setHint(QueryHints.BIND_PARAMETERS, HintValues.FALSE)` jen dotazu, jehož klíč seskupení nese literál; ostatní dotazy vážou dál. Sonda v javové sadě (kategorie `GroupingByAnExpression` s `CASE`) proti 5.0.0; obstojí-li, BI 1 bez `EclipseLinkLiteralKey`, test přejmenovat podle nového chování, `subset.md` 2.9 a `architecture.md` §5 upravit. Neobstojí-li (hint literály seskupení nezmění), položka zaniká a úniková cesta zůstává.
+
+#### EF Core: seznam nad korelovaným poddotazem jako seskupený poddotaz
+*`AbstractLinqQueryBuilder.RenderSubQuery`; rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) (změřeno: `string.Join` nad řetězem z kořene spojí EF Core 10 na klientovi); [`subset.md`](./subset.md) 2.9. Požadavek T2.*
+
+EF Core 10 překládá `string.Join` nad prvky *skupiny* na `STRING_AGG`, ne nad řetězem z kořene dotazu, a proto IC 1 (e-maily, jazyky, školy, firmy jako korelované skalární poddotazy) jde nativním SQL. Skalární poddotaz se seznamem jde napsat jako řetěz s jedinou skupinou: `ctx.Set<E>().Where(e => e.PersonId == p.Id).GroupBy(e => 1).Select(g => string.Join(";", g.Select(e => e.Email))).FirstOrDefault()` — u skalárního poddotazu je žádný řádek totéž co jeden řádek s `NULL`, takže tvar vrací tutéž hodnotu i nad prázdnou množinou (na rozdíl od agregátu přes celý výsledek, kde 113 seskupení podle konstanty právě proto zamítlo). Sonda proti 10.0.10: seskupení podle konstanty uvnitř skalárního poddotazu a `string.Join` nad ním na `STRING_AGG` (`ToQueryString()`); pravidlo `HoldsNoNull` platí dál. Obstojí-li, IC 1 bez `EFCoreCorrelatedList` a soudce zelený; jinak položka zaniká.
+
+#### Hibernate: převod textu bez ztráty znaků
+*Deskriptor Hibernatu (`Cast`, rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md), změřeno proti 7.4.5); `HibernateTextCast` v katalogu (IC 12); [`subset.md`](./subset.md) 2.8. Požadavek F9.*
+
+HQL `cast(x as String)` píše dialekt SQL Serveru jako `varchar(max)`, což by u jména tagu ztratilo znaky mimo kódovou stránku, a tak jde IC 12 do Hibernatu nativním SQL — jediná úniková cesta Hibernatu v katalogu. Sonda proti 7.4.5: cílový typ převodu, který dialekt vypíše jako `nvarchar(max)` — registrovaný typ `nstring` (`StandardBasicTypes.NSTRING`) jako cíl `cast`, nebo `hibernate.use_nationalized_character_data` v konfiguraci javové sady. Najde-li se, zapisovač HQL ho použije pro `Cast` do textu a IC 12 jde HQL; nenajde-li se, položka zaniká a `subset.md` 2.8 platí.
+
+#### Hledání cest z obou konců
+*Obsah katalogu (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)); rekurze a její pravidla rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md); [`subset.md`](./subset.md) 2.10 (*mez hloubky, sledy místo vrcholů*). Požadavky F13, T2, T3.*
+
+IC 13, IC 14, BI 15, BI 19 a BI 20 jsou `Simplified` kvůli mezi tří kroků: rekurzivní člen SQL Serveru řádky neslučuje, sledy se množí počtem přátel na každém kroku (u příkladové osoby osmdesát) a čtvrtý krok je nedostupný. Z jedné osoby ale k druhé vede hledání z obou konců: procházka z první osoby a procházka z druhé, každá do *n* kroků, každá sloučená mimo rekurzi na dvojici osoba × nejmenší počet kroků (resp. nejmenší cena), a setkání jako join obou — nejkratší cesta do 2*n* kroků za dvojnásobek dnešní ceny, nebo do 4 kroků za zlomek (n = 2). Práce: IC 13, BI 15 a BI 20 (cena cesty je součet obou polovin, hrana `knows` je souměrná), BI 19 (z osob prvního města a z osob druhého, n = 2 vyjde levněji než dnešní tři kroky z jedné strany); IC 14 nese celé cesty a skládá je z obou polovin s `DISTINCT` nad cestou — jde do práce jen tehdy, ukáže-li [verdikt](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) čtení, které mez tří kroků mine. Stav zůstává `Simplified` s novou mezí v poznámce; `architecture.md` §6.2, `subset.md` 2.10 a 1.3.
+
+#### Verdikt soudce LDBC nad celou sadou SF 1
+*Práce podle rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md); stojí na [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md) a [095](./decisions/095-a-dated-run-record-names-its-commit.md). Měří [cesty z obou konců](#hledání-cest-z-obou-konců). Požadavky F13, T2, T3.*
+
+Soudce běží, ale jen nad prefixem: compose profil `test` přehrává 1000 řádků sady SF 0,1. Verdikt, který rozhodnutí bere za doklad stavu „podle specifikace", je celá sada nad SF 1 v obou sadách na MIS3 (`docker compose up --build` dá `mssql_db` se sadou SF 1; `ORMCONVERTOR_LDBC_VALIDATION_ROWS` prázdná) — přes 130 tisíc čtení, při desítkách až stovkách milisekund na čtení hodiny na sadu, proto zatím neproběhl. Výsledek se zapíše do záznamu běhů v [`ORMConvertor/README.md`](../ORMConvertor/README.md) a do [`traceability.md`](./traceability.md) (F13); podíl shodných čtení IC 13 a IC 14 do metrik T3 a do poznámek katalogu. IC 13 a IC 14 souhlasily nad prefixem 800 řádků SF 0,1 ve všech šesti frameworcích ze 100 % — potvrdí-li to celá sada, mez hloubky žádné čtení nemine a zdvojení meze u IC 14 odpadá.
+
+### Rozhodnutí
+
+#### Seznamový parametr v nativním dotazu EclipseLinku
+*Rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) („u EclipseLinku je to třeba ověřit" — změřeno: nerozvine); profil `NativeQueryExpandsCollection`, odmítnutí `EclipseLinkNativeList` (BI 12), [`subset.md`](./subset.md) 2.11; kolekční parametr rozh. [106](./decisions/106-a-bare-parameter-after-in-is-dappers-collection-parameter.md). Požadavky F9, T2.*
+
+Nativní dotaz EclipseLinku 5.0.0 předá `List` vázaný na `?1` ovladači jako jednu hodnotu, takže BI 12 — mezivýsledek, tedy nativní SQL, a k tomu seznam jazyků v `IN` — je jediné odmítnutí katalogu. Rozhodnout, jak nativní dotaz EclipseLinku seznam přijme: **rozvinutím zástupných symbolů za běhu** v generované metodě (text `IN (?3, ?4, …)` složený podle délky seznamu a každý prvek vázaný zvlášť; totéž, co dělá Dapper uvnitř, SQL se od textu cíle Dapper liší jen počtem symbolů, takže `AFallbackEmitsTheStatementTheDapperTargetWrites` musí srovnávat s touto výjimkou); `STRING_SPLIT`/`OPENJSON` nad jedním spojeným řetězcem (mění SQL i typ parametru a oddělovač může být v hodnotě); nebo odmítat dál. Totéž pravidlo pak platí pro každý nativní dotaz EclipseLinku se seznamem, ne jen pro katalog.
+
+#### Přepis textu katalogu kvůli vadě jednoho cíle
+*Rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md) (text vedle referenční implementace LDBC), [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) (odstavec *Proč obecně, a ne jen nejlepší řádek přes `NOT EXISTS`*); profil `InnerJoinsFollowOuterJoins`, `EclipseLinkOuterJoinOrder` u IS 7, IC 5, BI 2 a BI 5. Požadavek T2.*
+
+Čtyři dotazy jdou do EclipseLinku nativním SQL kvůli vnějšímu joinu, jehož podmínka jmenuje alias vnitřního joinu: EclipseLink 5.0.0 píše vnitřní joiny za vnější a SQL Server podmínku odmítne. Nástroj to neobejde — pořadí píše EclipseLink a proměnná rozsahu nepomůže, protože `ON` přes čárku v SQL Serveru nesahá. Obejde to jen text: příznak IS 7 jako `CASE WHEN EXISTS (…)`, počet příspěvků IC 5 jako korelovaný skalární poddotaz, u BI 2 a BI 5 podobně. Rozhodnout, zda text katalogu smí dostat tvar diktovaný vadou jednoho cíle — proti tomu stojí 110 (text je přirozené T-SQL, které jde položit vedle referenční implementace) a to, že matice by pak měřila dotaz, který by takto nikdo nenapsal; pro to mluví čtyři dotazy méně v nativním SQL. Padne-li *ne*, položka zaniká a čtyři únikové cesty zůstávají vyslovené v §6.2.
+
 ## Třetí cíl: experimenty
 
-Experimentální infrastruktura podle specifikace — matice T2 s metrikami T3 a příprava T4–T6 — a zobrazení mezireprezentace (F14) jsou milník 4; experimenty samy (T2, T3, T7) klade harmonogram do milníku 5 a T1 žádá kapitola *Experimentální požadavky*. Advisor je sekundární větev ([níž](#advisor)). Celá oblast je dnes ze záruk vyňatá ([`architecture.md`](./architecture.md), §9) a je látkou na `3.0.0`.
+Experimentální infrastruktura podle specifikace — matice T2 s metrikami T3 a příprava T4–T6 — a zobrazení mezireprezentace (F14) jsou milník 4; experimenty samy (T2, T3, T7) klade harmonogram do milníku 5 a T1 žádá kapitola *Experimentální požadavky*. Advisor je sekundární větev ([níž](#advisor)). Celá oblast je dnes ze záruk vyňatá ([`architecture.md`](./architecture.md), §9) a je látkou na `3.0.0`. Značky pořadí položky nenesou, dokud se nedotáhne [katalog LDBC](#dotazy-katalog-ldbc-co-nejdál).
 
 ### Rozhodnutí
 
 #### Co zavírá třetí cíl: schválený záměr Advisor nejmenuje
-*Potom. Ke kontrole: rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md) („příští MAJOR je `3.0.0` za Advisor nad všemi frameworky a za experimentální část"); stojí na něm věta §9 o příštím MAJOR a sekce *Beyond this version* kořenového [`README.md`](../README.md). Požadavky F15, T1–T7.*
+*Ke kontrole: rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md) („příští MAJOR je `3.0.0` za Advisor nad všemi frameworky a za experimentální část"); stojí na něm věta §9 o příštím MAJOR a sekce *Beyond this version* kořenového [`README.md`](../README.md). Požadavky F15, T1–T7.*
 
 Zadání vedoucího ([`requirements.md`](./requirements.md), F15, T7) a původní prototyp vedly k Advisoru jako třetímu cíli. Schválený [záměr](./zamer.tex) ale Advisor mezi pěti úkoly řešitele nemá — pátým úkolem je experimentální prostředí a výzkumným využitím srovnání s metodami založenými na LLM. Schválená [specifikace](./specifikace.tex) to seřadila jen zčásti: matice T2 s metrikami T3, příprava T4–T6 a zobrazení mezireprezentace jsou milník 4, experimenty T2, T3 a T7 milník 5 a Advisor (F15, T7) je *sekundární cíl podle časových možností*, který nesmí omezit hlavní cross-language cíl; kapitola *Zbývající práce a postup* ale cíl 3 dál jmenuje „Advisor, benchmarking a experimenty" včetně izolace S4. Rozhodnout, co `3.0.0` zavírá. Padne-li volba pro experimenty bez Advisoru, znamená to 098 **nahradit** (podle něj se už vydávalo) a přepsat větu v §9, v README i úvod kategorie [Advisor](#advisor); padne-li pro Advisor, musí nové rozhodnutí odůvodnit odchylku od úkolů záměru a pátý úkol i výzkumné využití zůstanou otevřené jako vyslovená odchylka.
 
 #### Experimentální pipeline, kterou záměr žádá, neexistuje
-*Potom. Platí, ať třetí cíl zavře cokoli: tabulku T2 × T3 žádá milník 4 specifikace. Ke kontrole: rozh. [039](./decisions/039-container-configuration-of-the-environment.md) (co pokrývá kontejnerová konfigurace) a [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md) (co z diferenčního ověření jde použít). Souvisí s [078](./decisions/078-java-suite-as-a-client-of-a-running-instance.md). Zúžení S5 v §9 a vyňatá oblast 6; UC5 v [`use-cases.md`](./use-cases.md). Požadavky S5, T1, T2, T3.*
+*Platí, ať třetí cíl zavře cokoli: tabulku T2 × T3 žádá milník 4 specifikace. Ke kontrole: rozh. [039](./decisions/039-container-configuration-of-the-environment.md) (co pokrývá kontejnerová konfigurace) a [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md) (co z diferenčního ověření jde použít). Souvisí s [078](./decisions/078-java-suite-as-a-client-of-a-running-instance.md). Zúžení S5 v §9 a vyňatá oblast 6; UC5 v [`use-cases.md`](./use-cases.md). Požadavky S5, T1, T2, T3.*
 
 Ověřovací polovina pátého úkolu záměru hotová je: obě sady staví, spouštějí a diferenčně ověřují generovaný kód v zafixovaném prostředí. Chybí experimentální polovina — nic nevolá `/convert` přes všechny dvojice frameworků a kategorie dotazů a nepočítá podíly parsovatelných, kompilovatelných, spustitelných a funkčně ekvivalentních výstupů ani úplnost přenesených mapovacích vlastností (T3). Záměr i S5 chtějí prostředí jako součást výsledku, spustitelné z kontejnerové konfigurace; pipeline, kterou popisuje UC5, v repozitáři není. Rozhodnout:
 
@@ -212,11 +288,6 @@ Invariant „nový framework je nový wrapper" platí: jméno frameworku neprosa
 Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele) a zda tím je nástroj „publikovaný" ve smyslu předpokladu rozh. 098; pak se 098 nahrazuje.
 
 ### Práce
-
-#### Verdikt soudce LDBC nad celou sadou SF 1
-*Práce podle rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md); stojí na [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md) a [095](./decisions/095-a-dated-run-record-names-its-commit.md). Požadavky F13, T2, T3.*
-
-Soudce běží, ale jen nad prefixem: compose profil `test` přehrává 1000 řádků sady SF 0,1. Verdikt, který rozhodnutí bere za doklad stavu „podle specifikace", je celá sada nad SF 1 v obou sadách na MIS3 (`docker compose up --build` dá `mssql_db` se sadou SF 1; `ORMCONVERTOR_LDBC_VALIDATION_ROWS` prázdná) — přes 130 tisíc čtení, při desítkách až stovkách milisekund na čtení hodiny na sadu, proto zatím neproběhl. Výsledek se zapíše do záznamu běhů v [`ORMConvertor/README.md`](../ORMConvertor/README.md) a do [`traceability.md`](./traceability.md) (F13); podíl shodných čtení IC 7, IC 13 a IC 14 do metrik T3. IC 13 a IC 14 souhlasily nad prefixem 800 řádků SF 0,1 ve všech šesti frameworcích ze 100 % — potvrdí-li to celá sada, jsou kandidáty na změnu stavu podle rozh. 110.
 
 #### Mapovací fakta mimo `hbm.xml`, která čtení zahodí beze slova
 *Zdroj: [`subset.md`](./subset.md), 2.13. Práce podle rozh. [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [004](./decisions/004-unexpressible-facts-as-warnings.md). Požadavky F5, F11.*
