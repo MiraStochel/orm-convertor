@@ -210,18 +210,33 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
         // An implementation that binds every literal as a parameter (EclipseLink 5.0.0,
         // measured) writes a key with a literal in it as another expression than the same
-        // value in the select list, and SQL Server refuses the query; the native SQL writes
-        // both the same way (decision 113).
+        // value in the select list, and SQL Server refuses the query. Binding is a setting of
+        // the query, not of the language: where the implementation has a call that switches
+        // it off, the final step appends it to this query and the key stays JPQL; where it has
+        // none, the native SQL writes both the same way (decision 113).
         if (Profile.BindsLiterals && clauses.GroupBys.FirstOrDefault(g => g.Key.IsExpression && ContainsConstant(g.Key)) is { } bound)
         {
-            ReportUnspoken(
-                $"{Profile.Implementation} binds the literal of the grouping key '{bound.Key}' as a parameter, so its GROUP BY would differ from the same value in the select list",
-                QueryFeature.ComputedGrouping);
-            return;
+            if (Profile.InlineLiteralsCall is null)
+            {
+                ReportUnspoken(
+                    $"{Profile.Implementation} binds the literal of the grouping key '{bound.Key}' as a parameter, so its GROUP BY would differ from the same value in the select list",
+                    QueryFeature.ComputedGrouping);
+                return;
+            }
+
+            writesLiteralsInline = true;
         }
 
         artifact.Grouping.Append("group by ").Append(string.Join(", ", clauses.GroupBys.Select(g => g.Accept(visitor))));
     }
+
+    /// <summary>
+    /// Whether the query being built needs <see cref="JpaImplementationProfile.InlineLiteralsCall"/>
+    /// on its query object: set by <see cref="BuildGrouping"/> for a grouping key with a
+    /// literal in it, at the top of the query or inside a subquery alike, because the call
+    /// belongs to the one query object both are written into; consumed by the final step.
+    /// </summary>
+    private bool writesLiteralsInline;
 
     /// <summary>Whether a constant stands anywhere in the operand short of a subquery, the conditions of a CASE included.</summary>
     private static bool ContainsConstant(QueryOperand operand)
@@ -582,10 +597,16 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
     /// <summary>
     /// The two artifacts: a method returning the typed query for a whole-entity result and
-    /// the untyped Query otherwise, and the bare JPQL in a text block.
+    /// the untyped Query otherwise, and the bare JPQL in a text block. The call that has the
+    /// implementation write its literals inline sits on the query object between the
+    /// bindings and the slice, where the grouping asked for it; like the slice it is a
+    /// property of the method, so the bare JPQL does not carry it.
     /// </summary>
     private List<ConversionSource> FinalizeText(string jpql, string? resultEntity, string pagination)
     {
+        var hints = writesLiteralsInline ? $"\n        {Profile.InlineLiteralsCall}" : string.Empty;
+        writesLiteralsInline = false;
+
         var indented = JpaQueryMethod.TextBlock(jpql);
         var typed = resultEntity is not null;
         var returnType = typed ? $"TypedQuery<{resultEntity}>" : "Query";
@@ -609,7 +630,7 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             public static {{returnType}} {{MethodName}}(EntityManager em{{JpaQueryMethod.Parameters(Parameters)}}) {
                 return em.createQuery("""
             {{indented}}
-                    """{{resultClass}}){{binding}}{{pagination}};
+                    """{{resultClass}}){{binding}}{{hints}}{{pagination}};
             }
             """";
 

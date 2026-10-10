@@ -354,12 +354,12 @@ public static class LdbcSnbSample
         "LINQ has no ranking function over a window, so the query goes out as native SQL through SqlQuery.");
 
     /// <summary>
-    /// EclipseLink binds every literal of a query as a parameter (measured against 5.0.0), so
-    /// a grouping by an expression with a literal in it would reach SQL Server as another
-    /// expression than the same value in the select list (decision 113).
+    /// EclipseLink 5.0 passes the type name of a JPQL cast through to SQL Server, which knows no
+    /// type Integer, Long or String and refuses the query (decision 113, measured), so a
+    /// conversion sends the query to native SQL - its descriptor leaves Cast out.
     /// </summary>
-    private static readonly LdbcFallback EclipseLinkLiteralKey = new(Model.ORMEnum.EclipseLink,
-        "EclipseLink 5.0 binds the literals of a grouping key as parameters, which SQL Server then does not match with the select list, so the query goes out as native SQL through createNativeQuery.");
+    private static readonly LdbcFallback EclipseLinkCast = new(Model.ORMEnum.EclipseLink,
+        "JPQL of EclipseLink 5.0 passes the type name of a conversion through to SQL Server, which knows no type Long, so the query goes out as native SQL through createNativeQuery.");
 
     /// <summary>
     /// HQL of Hibernate 7.4 converts into String as varchar(max), which would lose the
@@ -1027,7 +1027,9 @@ public static class LdbcSnbSample
         new("bi1", LdbcWorkload.BusinessIntelligence, 1, "Posting summary", LdbcTranslation.AsSpecified,
             "Messages with content grouped by three expressions - the year of their creation, whether they are comments "
             + "and a length category (decision 113) -, with the share of all messages before the date as a scalar "
-            + "subquery, the length summed as a BIGINT, as the reference implementation of BI sums it.",
+            + "subquery, the length summed as a BIGINT, as the reference implementation of BI sums it. The two CASE "
+            + "keys carry literals, which EclipseLink 5.0 binds as parameters and would carry under the hint that "
+            + "has the query write them inline; the conversion into BIGINT its JPQL cannot spell sends it to native SQL.",
             """
             SELECT YEAR(m.CreationDate) AS MessageYear,
                    CASE WHEN m.ParentMessageId IS NULL THEN 0 ELSE 1 END AS IsComment,
@@ -1045,7 +1047,7 @@ public static class LdbcSnbSample
             ORDER BY MessageYear DESC, IsComment ASC, LengthCategory ASC
             """,
             [new("datetime", "DATETIME2(3)", "2012-06-01")],
-            FallbackBy: [EclipseLinkLiteralKey]),
+            FallbackBy: [EclipseLinkCast]),
 
         new("bi2", LdbcWorkload.BusinessIntelligence, 2, "Tag evolution", LdbcTranslation.AsSpecified,
             "Messages per tag of a tag class in two consecutive 100-day windows and their absolute difference: outer "

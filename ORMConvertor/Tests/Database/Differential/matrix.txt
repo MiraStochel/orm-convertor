@@ -450,12 +450,13 @@ mutations = filter
 
 # ---- the rows of decision 113, the vocabulary of expressions ----
 
-# The year of an order beside its company, over the orders of a known customer. Dropped, the
-# filter lets the two orders of the walk-in customer into the groups, one of them a group of
-# its own; flipped, it keeps none.
+# The year of an order beside its company and a CASE over its customer, over the orders of a
+# known customer. The CASE key carries literals, which one target binds as parameters unless
+# told otherwise (decision 113). Dropped, the filter lets the two orders of the walk-in
+# customer into the groups, one of them a group of its own; flipped, it keeps none.
 [GroupingByAnExpression]
 category = GroupingByAnExpression
-fields = PlacedYear, CompanyId, OrderCount
+fields = PlacedYear, CompanyId, KeyAccount, OrderCount
 shape = projection
 ordered = false
 mutations = filter, operator

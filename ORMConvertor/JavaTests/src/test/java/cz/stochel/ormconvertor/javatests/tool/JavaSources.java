@@ -59,12 +59,23 @@ public final class JavaSources {
      * {@code Collection}. Unused imports are legal Java, and leaving them out would make a
      * parameterized query fail to compile for a reason that is the consumer project's, not
      * the artifact's.
+     *
+     * <p>A query for EclipseLink whose grouping key carries a literal names the hint that has
+     * EclipseLink write its literals inline (decision 113), by the constants of
+     * {@code org.eclipse.persistence.config}; those two are imported where the method names
+     * them, as an EclipseLink consumer project would, and not into a Hibernate query, whose
+     * consumer has no EclipseLink on the class path.
      */
     public static String wrapQuery(String packageName, String className, String method) {
         StringBuilder source = new StringBuilder();
         if (packageName != null) {
             source.append("package ").append(packageName).append(";").append(System.lineSeparator())
                     .append(System.lineSeparator());
+        }
+
+        if (method.contains("QueryHints.")) {
+            source.append("import org.eclipse.persistence.config.HintValues;").append(System.lineSeparator())
+                    .append("import org.eclipse.persistence.config.QueryHints;").append(System.lineSeparator());
         }
 
         return source

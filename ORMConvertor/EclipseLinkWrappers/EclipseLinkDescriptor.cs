@@ -36,8 +36,9 @@ public static class EclipseLinkDescriptor
 
         // EclipseLink groups by an expression beyond the specification's path (decision 113,
         // verified against 5.0.0 over SQL Server: group by extract(year from …)); a key with a
-        // literal in it the builder sends to native SQL, because EclipseLink binds the literal
-        // (the profile's BindsLiterals). No window, no list aggregate, no intermediate result.
+        // literal in it the builder writes under the hint that stops EclipseLink binding the
+        // literal (the profile's BindsLiterals and InlineLiteralsCall). No window, no list
+        // aggregate, no intermediate result.
         QuerySupport = JakartaPersistenceDescriptor.QuerySupportWith(QueryFeature.ComputedGrouping),
 
         // The specification's functions less cast: EclipseLink 5.0.0 passes the type name of
@@ -76,8 +77,13 @@ public static class EclipseLinkDescriptor
         // Measured against 5.0.0 when grouping by an expression was written (decision 113):
         // group by case when o.quantity > 2 then 1 else 0 end reaches SQL Server with six
         // bound parameters, three in the select list and three in GROUP BY, and SQL Server
-        // refuses the column inside as neither grouped nor aggregated (error 8120).
+        // refuses the column inside as neither grouped nor aggregated (error 8120). Binding
+        // is a setting of the query: under the hint eclipselink.jdbc.bind-parameters = false
+        // the query writes its literals - and its parameters - inline, so the builder adds the
+        // hint to a query whose grouping key carries a literal, and that query alone (the
+        // Java suite measures it over the category GroupingByAnExpression).
         BindsLiterals: true,
+        InlineLiteralsCall: ".setHint(QueryHints.BIND_PARAMETERS, HintValues.FALSE)",
 
         // Measured against 5.0.0 when a foreign key column without an attribute began to be
         // written through its reference: p.customer.id joins Customers - in the select list

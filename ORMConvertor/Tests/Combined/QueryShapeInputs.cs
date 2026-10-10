@@ -574,12 +574,15 @@ public static class QueryShapeInputs
         // expression of a key of several parts after the projection that projects it; a
         // MyBatis source declares its moments, numbers and keys as Java wrappers, which the
         // LINQ target reaches through .Value and casts into a nullable type, so the LINQ
-        // hallmarks leave both open.
+        // hallmarks leave both open. The CASE key carries literals, which EclipseLink binds as
+        // parameters: its JPQL is the same as Hibernate's and the method sets the hint that
+        // has the query write them inline (decision 113).
         ["GroupingByAnExpression"] = Hallmarks(
-            sql: ["YEAR(o.PlacedAt) AS PlacedYear", "COUNT(*) AS OrderCount", "WHERE o.CustomerId > 0", "GROUP BY YEAR(o.PlacedAt), o.CompanyId"],
-            linq: [".GroupBy(o => new { PlacedYear = o.PlacedAt.", "Year, o.CompanyId })", "PlacedYear = g.Key.PlacedYear", "CompanyId = g.Key.CompanyId", "OrderCount = g.Count()"],
-            hql: ["year(o.PlacedAt) as PlacedYear", "where o.CustomerId > 0", "group by year(o.PlacedAt), o.CompanyId"],
-            jpa: ["extract(year from o.PlacedAt) as PlacedYear", "where o.CustomerId > 0", "group by extract(year from o.PlacedAt), o.CompanyId"]),
+            sql: ["YEAR(o.PlacedAt) AS PlacedYear", "CASE WHEN o.CustomerId = 1 THEN 1 ELSE 0 END AS KeyAccount", "COUNT(*) AS OrderCount", "WHERE o.CustomerId > 0", "GROUP BY YEAR(o.PlacedAt), o.CompanyId, CASE WHEN o.CustomerId = 1 THEN 1 ELSE 0 END"],
+            linq: [".GroupBy(o => new { PlacedYear = o.PlacedAt.", "Year, o.CompanyId, KeyAccount = (", " ? 1 : 0) })", "PlacedYear = g.Key.PlacedYear", "CompanyId = g.Key.CompanyId", "KeyAccount = g.Key.KeyAccount", "OrderCount = g.Count()"],
+            hql: ["year(o.PlacedAt) as PlacedYear", "case when o.CustomerId = 1 then 1 else 0 end as KeyAccount", "where o.CustomerId > 0", "group by year(o.PlacedAt), o.CompanyId, case when o.CustomerId = 1 then 1 else 0 end"],
+            jpa: ["extract(year from o.PlacedAt) as PlacedYear", "case when o.CustomerId = 1 then 1 else 0 end as KeyAccount", "where o.CustomerId > 0", "group by extract(year from o.PlacedAt), o.CompanyId, case when o.CustomerId = 1 then 1 else 0 end"],
+            eclipseLink: ["extract(year from o.PlacedAt) as PlacedYear", "case when o.CustomerId = 1 then 1 else 0 end as KeyAccount", "where o.CustomerId > 0", "group by extract(year from o.PlacedAt), o.CompanyId, case when o.CustomerId = 1 then 1 else 0 end", ".setHint(QueryHints.BIND_PARAMETERS, HintValues.FALSE)"]),
 
         ["DateArithmetic"] = Hallmarks(
             sql: ["DATEADD(day, 30, o.PlacedAt) AS DueAt", "DATEDIFF(hour, '2025-01-01 00:00:00', o.PlacedAt) AS HoursFromNewYear", "WHERE DATEDIFF(day, o.PlacedAt, '2025-03-01 00:00:00') > 0"],

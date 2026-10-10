@@ -471,9 +471,12 @@ fallbackBy = EFCore:Recursion, NHibernate:Recursion, Hibernate:Recursion, Eclips
 
 # ---- the rows of decision 113, the vocabulary of expressions ----
 #
-# A grouping by an expression and a column together. The LINQ row names the expression in
-# its key object after the projection that projects it, as the EF Core target writes it;
-# HQL 5.7 groups by year(), both JPQL rows by the standard extract.
+# A grouping by two expressions and a column together, one expression a CASE with literals
+# in it. The LINQ row names the expressions in its key object after the projections that
+# project them, as the EF Core target writes it; HQL 5.7 groups by year(), both JPQL rows by
+# the standard extract. EclipseLink binds the literals of the CASE as parameters, so its
+# method sets the hint that has the query write them inline (decision 113) - the row this
+# category measures against 5.0.0.
 [GroupingByAnExpression]
 Dapper = dapper/FindGroupingByAnExpression.sql
 EFCore = efcore/FindGroupingByAnExpression.query.cs

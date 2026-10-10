@@ -33,7 +33,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 
 | Položka | Kategorie | Druh | Pož. |
 |---|---|---|---|
-| [EclipseLink: literál v klíči seskupení](#eclipselink-klíč-seskupení-s-literálem-bez-vázání-literálů) | Dotazy | práce | F9, T2 |
 | [EF Core: seznam nad korelovaným poddotazem](#ef-core-seznam-nad-korelovaným-poddotazem-jako-seskupený-poddotaz) | Dotazy | práce | T2 |
 | [Hibernate: převod textu v IC 12](#hibernate-převod-textu-bez-ztráty-znaků) | Dotazy | práce | F9 |
 | [Hledání cest z obou konců](#hledání-cest-z-obou-konců) | Dotazy | práce | F13, T2, T3 |
@@ -97,18 +96,13 @@ Co položky níž změní (dotazy katalogu, které cíl dnes píše nativním SQ
 | EF Core 10 | 9 | IC 1 | seskupený poddotaz | 8: rekurze (6), okenní funkce (BI 14), agregát bez seskupení (BI 11) | LINQ je nemá; seskupení podle konstanty by nad prázdným vstupem vrátilo nula řádků místo jednoho (113) |
 | NHibernate 5.7 | 14 | — | — | 14: mezivýsledek (5), rekurze (6), datumová aritmetika (2), seznam (1) | HQL 5.7 je nemá, změřeno (113, deskriptor) |
 | Hibernate 7.4 | 1 | IC 12 | převod textu bez ztráty znaků, obstojí-li sonda | 0 | — |
-| EclipseLink 5.0 | 18 | 1: BI 1 | literál v klíči bez vázání | 17: rekurze (6), mezivýsledek (4), datumová aritmetika (2), seznam (1), pořadí joinů (IS 7, IC 5, BI 2, BI 5) | JPQL je nemá; pořadí joinů píše EclipseLink sám — zbývá jen [přepis textu](#přepis-textu-katalogu-kvůli-vadě-jednoho-cíle) |
+| EclipseLink 5.0 | 18 | — | — | 18: rekurze (6), mezivýsledek (4), datumová aritmetika (2), seznam (1), převod typu (BI 1), pořadí joinů (IS 7, IC 5, BI 2, BI 5) | JPQL je nemá; `cast` pošle EclipseLink 5.0 SQL Serveru s javovým jménem typu (113); pořadí joinů píše EclipseLink sám — zbývá jen [přepis textu](#přepis-textu-katalogu-kvůli-vadě-jednoho-cíle) |
 | odmítnutí | EclipseLink BI 12 | BI 12 | seznamový parametr v nativním dotazu ([rozhodnutí](#seznamový-parametr-v-nativním-dotazu-eclipselinku)) | 0 | — |
 | `Simplified` | 5 | — | — | 5: cesty s mezí hloubky | rekurzivní člen SQL Serveru řádky neslučuje (113); [mez se zdvojí](#hledání-cest-z-obou-konců) |
 
 Úniková cesta po kouscích (`FUNCTION('DATEDIFF', …)`, `SQL(…)` EclipseLinku) a rekurze rozepsaná do pevného počtu joinů zůstávají zamítnuté — varianta 3 rozh. 113 a jeho odstavec o rekurzi; co by je otevřelo, je nové rozhodnutí, ne položka tady.
 
 ### Práce
-
-#### EclipseLink: klíč seskupení s literálem bez vázání literálů
-*Na řadě. Profil `BindsLiterals` (rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md), změřeno proti 5.0.0); `AbstractJpaQueryBuilder.BuildGrouping`; `ExpressionVocabularyTest.EclipseLinkWritesAKeyWithALiteralInNativeSql`. Požadavky F9, T2.*
-
-EclipseLink váže každý literál JPQL jako parametr, takže klíč seskupení s literálem (`case when m.length < 40 then 0 …`) přijde do SQL Serveru jako jiný výraz než týž klíč v projekci a server dotaz odmítne — BI 1 jde nativním SQL. Vázání literálů je nastavení dotazu, ne jazyka: hint `eclipselink.jdbc.bind-parameters` = `false` na dotazu píše literály i parametry doslova. Práce: builder přidá `.setHint(QueryHints.BIND_PARAMETERS, HintValues.FALSE)` jen dotazu, jehož klíč seskupení nese literál; ostatní dotazy vážou dál. Sonda v javové sadě (kategorie `GroupingByAnExpression` s `CASE`) proti 5.0.0; obstojí-li, BI 1 bez `EclipseLinkLiteralKey`, test přejmenovat podle nového chování, `subset.md` 2.9 a `architecture.md` §5 upravit. Neobstojí-li (hint literály seskupení nezmění), položka zaniká a úniková cesta zůstává.
 
 #### EF Core: seznam nad korelovaným poddotazem jako seskupený poddotaz
 *`AbstractLinqQueryBuilder.RenderSubQuery`; rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) (změřeno: `string.Join` nad řetězem z kořene spojí EF Core 10 na klientovi); [`subset.md`](./subset.md) 2.9. Požadavek T2.*

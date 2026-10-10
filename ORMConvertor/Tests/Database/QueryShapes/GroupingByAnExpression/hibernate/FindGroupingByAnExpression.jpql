@@ -1,4 +1,4 @@
-select extract(year from o.PlacedAt) as PlacedYear, o.CompanyId as CompanyId, count(o) as OrderCount
+select extract(year from o.PlacedAt) as PlacedYear, o.CompanyId as CompanyId, case when o.CustomerId = 1 then 1 else 0 end as KeyAccount, count(o) as OrderCount
 from ShopOrder o
 where o.CustomerId > 0
-group by extract(year from o.PlacedAt), o.CompanyId
+group by extract(year from o.PlacedAt), o.CompanyId, case when o.CustomerId = 1 then 1 else 0 end

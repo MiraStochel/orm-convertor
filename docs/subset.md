@@ -55,7 +55,7 @@ Jak cíl konstrukci píše (*jazyk* = svým dotazovým jazykem, *SQL* = `Fallbac
 | množinová operace | jazyk | jazyk | jazyk | SQL | jazyk | jazyk |
 | mezivýsledek (`WITH`, odvozená tabulka) | jazyk | jazyk | jazyk (proměnná metody) | SQL | jazyk | SQL |
 | rekurze | jazyk | jazyk | SQL | SQL | jazyk; s limitem SQL | SQL |
-| seskupení podle výrazu | jazyk | jazyk | jazyk | jazyk | jazyk | jazyk; klíč s literálem SQL |
+| seskupení podle výrazu | jazyk | jazyk | jazyk | jazyk | jazyk | jazyk; klíč s literálem s hintem `eclipselink.jdbc.bind-parameters` = `false` na objektu dotazu |
 | okenní funkce řazení | jazyk | jazyk | SQL | SQL | jazyk | SQL |
 | agregace do seznamu | jazyk | jazyk | jazyk nad prvky skupiny a sloupcem bez `NULL`, jinak SQL | SQL | jazyk | SQL |
 | funkce slovníku | všech 17 | všech 17 | všech 17 | bez `DateAdd`, `DateDiff` | všech 17 | bez `DateAdd`, `DateDiff`, `Cast` |
@@ -311,7 +311,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | cíl EF Core: klíč-výraz, který žádná projekce nepojmenuje; dva sloupce klíče s vlastností téhož jména, které žádná projekce nepojmenuje; agregát přes celý výsledek bez seskupení | anonymní klíč by chtěl vymyšlené jméno (C# jméno člena dvakrát nevezme); LINQ agregát přes vše vysloví jen vykonávacím voláním | `Fallback` (z) | VM | [028], [113] |
 | cíl LINQ (EF Core, druhý tvar NHibernatu): řazení podle aliasu projekce vedle klíče, který projekce nenese, v *neseskupeném* dotazu | řazení LINQ za projekcí zahodí to před ní; seskupený dotaz řadí nad skupinou před `Select` (alias rozepsaný na hodnotu projekce, klíče seskupení a agregáty skupiny), což EF Core 10.0.10 i provider 5.7.0 přeloží i s výřezem | s výřezem `Fallback` (z), bez něj `Loss` (jen pořadí shod) | VM | [053], [113] |
 | druhý tvar NHibernatu (LINQ): tytéž meze LINQ jako řádek výš; agregát nad distinktními hodnotami mimo `COUNT` (`SUM(DISTINCT …)`, `MAX(DISTINCT …)`) | provider 5.7.0 přeloží nad distinktními hodnotami jen `count` | `Omitted` (z), HQL stojí samo | VM | [118] |
-| cíl EclipseLink: klíč seskupení s literálem | literál naváže jako parametr, seskupení se liší od projekce | `Fallback` (z) | VM | [113] |
+| cíl EclipseLink: klíč seskupení s literálem | EclipseLink 5.0 váže každý literál jako parametr, klíč by se lišil od projekce (chyba 8120) | JPQL beze změny; metoda nastaví hint `eclipselink.jdbc.bind-parameters` = `false`, pod kterým ten jediný dotaz píše literály *i parametry* doslova (plán na hodnotu); holé JPQL hint nenese (z) | VM | [113] |
 | okenní agregát (`SUM(…) OVER`), rámec okna, okno bez řazení, jiná okenní funkce než tři řadicí | slovník nese jen řazení nad oknem s povinným řazením | nečte se (`WindowFunction`) | VM | [113] |
 | okenní funkce mimo projekci (ve filtru, pod agregátem, v klíči) | SQL ji tam nepřipustí; filtr nad ní jde přes mezivýsledek | `Failure` (`WindowFunction`) (b) | VM | [113] |
 | LINQ `GroupBy(…).Select(g => g.OrderBy(…).First())` | jiný tvar než okenní funkce | jako okenní funkce se nečte | VM | [113] |

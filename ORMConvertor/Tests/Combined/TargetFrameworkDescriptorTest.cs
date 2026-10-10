@@ -170,6 +170,11 @@ public class TargetFrameworkDescriptorTest
         Assert.True(eclipseLinkProfile.LazyReferenceNeedsWeaving);
         Assert.False(hibernateProfile.BindsLiterals);
         Assert.True(eclipseLinkProfile.BindsLiterals);
+
+        // The switch that stops the binding belongs to the implementation that binds, and the
+        // one that writes its literals inline has nothing to switch off (decision 113).
+        Assert.Null(hibernateProfile.InlineLiteralsCall);
+        Assert.Equal(".setHint(QueryHints.BIND_PARAMETERS, HintValues.FALSE)", eclipseLinkProfile.InlineLiteralsCall);
     }
 
     /// <summary>

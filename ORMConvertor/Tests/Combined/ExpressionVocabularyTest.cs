@@ -243,19 +243,37 @@ public class ExpressionVocabularyTest
 
     /// <summary>
     /// EclipseLink binds every literal as a parameter (measured): a key with a literal in it
-    /// would reach SQL Server as another expression than the projection, so EclipseLink writes
-    /// it in native SQL - and a key without one in JPQL.
+    /// would reach SQL Server as another expression than the projection. Binding is a setting
+    /// of the query, so EclipseLink writes the key in JPQL and the method sets the hint that
+    /// has the query write its literals inline - on that query alone: a key without a literal
+    /// gets no hint, and Hibernate, which writes literals inline, never does.
     /// </summary>
     [Fact]
-    public void EclipseLinkWritesAKeyWithALiteralInNativeSql()
+    public void EclipseLinkWritesAKeyWithALiteralUnderTheHintThatInlinesLiterals()
     {
         const string byBand = "SELECT CASE WHEN s.Quantity > 2 THEN 1 ELSE 0 END AS Band, COUNT(*) AS Sold FROM Sales AS s GROUP BY CASE WHEN s.Quantity > 2 THEN 1 ELSE 0 END";
+        const string hint = ".setHint(QueryHints.BIND_PARAMETERS, HintValues.FALSE)";
 
-        var sql = FellBack(Sql(ORMEnum.EclipseLink, byBand), QueryFeature.ComputedGrouping);
-        Assert.Contains("GROUP BY CASE WHEN s.Quantity > 2 THEN 1 ELSE 0 END", sql, StringComparison.Ordinal);
+        const string byYear = "SELECT YEAR(s.SoldAt) AS SoldYear, COUNT(*) AS Sold FROM Sales AS s GROUP BY YEAR(s.SoldAt)";
+
+        Assert.Contains("group by case when s.Quantity > 2 then 1 else 0 end", Text(Sql(ORMEnum.EclipseLink, byBand)), StringComparison.Ordinal);
+        Assert.Contains(hint, Method(Sql(ORMEnum.EclipseLink, byBand)), StringComparison.Ordinal);
+
+        Assert.Contains("group by extract(year from s.SoldAt)", Text(Sql(ORMEnum.EclipseLink, byYear)), StringComparison.Ordinal);
+        Assert.DoesNotContain("setHint", Method(Sql(ORMEnum.EclipseLink, byYear)), StringComparison.Ordinal);
 
         Assert.Contains("group by case when s.Quantity > 2 then 1 else 0 end", Text(Sql(ORMEnum.Hibernate, byBand)), StringComparison.Ordinal);
+        Assert.DoesNotContain("setHint", Method(Sql(ORMEnum.Hibernate, byBand)), StringComparison.Ordinal);
+
         Assert.Contains("group by case when s.Quantity > 2 then 1 else 0 end", Text(Sql(ORMEnum.NHibernate, byBand)), StringComparison.Ordinal);
+    }
+
+    /// <summary>The Java method a JPA target writes beside its JPQL - the calls on the query object live there, not in the bare text.</summary>
+    private static string Method(AbstractQueryBuilder builder)
+    {
+        var built = builder.Build();
+        Assert.DoesNotContain(builder.Records, r => r.Kind is ConversionRecordKind.Failure or ConversionRecordKind.Fallback);
+        return built.Single(s => s.ContentType == ConversionContentType.JavaQuery).Content;
     }
 
     /// <summary>What LINQ, HQL and JPQL write reads back as the same grouping: g.Key is the key's value, in a projection and inside an expression over it.</summary>
