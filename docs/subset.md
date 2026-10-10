@@ -66,14 +66,15 @@ Strojově: deskriptory (`QuerySupport`, `Functions`, `NativeSqlApi`), `Combined/
 
 ### 1.3 Kategorie, na kterých je podmnožina změřená
 
-40 kategorií T2, každá dotazem nad sdílenou doménou sedmi entit v každém zdrojovém jazyce, který ji vysloví; manifest `Tests/Database/QueryShapes/categories.txt` čtou obě sady ([§6.2]). Každá jde každým směrem: 1. stupeň `Combined/QueryShapeMatrixTest`, 2. nad SQL a .NET cíli, 2. a 3. nad javovými (`shapes/QueryCategoryTest`), 4. diferenčně proti kanonickému výsledku (`Tests/Database/Differential/matrix.txt`, [089]). Cíle mimo sloupec *Fallback* píšou kategorii jazykem; odmítnutý směr (`refusedBy`) není žádný.
+43 kategorií T2, každá dotazem nad sdílenou doménou sedmi entit v každém zdrojovém jazyce, který ji vysloví; manifest `Tests/Database/QueryShapes/categories.txt` čtou obě sady ([§6.2]). Každá jde každým směrem: 1. stupeň `Combined/QueryShapeMatrixTest`, 2. nad SQL a .NET cíli, 2. a 3. nad javovými (`shapes/QueryCategoryTest`), 4. diferenčně proti kanonickému výsledku (`Tests/Database/Differential/matrix.txt`, [089]). Cíle mimo sloupec *Fallback* píšou kategorii jazykem; odmítnutý směr (`refusedBy`) není žádný.
 
 | Kategorie | Zdroje, které ji vysloví | `Fallback` (`fallbackBy`) |
 |---|---|---|
-| `Projection`, `Filtering`, `JoinOverTwoColumns`, `AggregationGroupingAndHaving`, `Ordering`, `SubqueryAsTheRightSideOfIn`, `CorrelatedExistsOverThreeColumns`, `ScalarSubquery`, `DistinctProjection`, `InOverAListOfValues`, `ConstantOfAMoment`, `LikeWithAnAnchoredPattern`, `CountOverDistinctValues`, `LikeWithAnEscapedWildcard`, `LikeWithABoundPrefix`, `ArithmeticInAProjection`, `FunctionInAFilter`, `CoalesceInAFilter`, `CaseInAProjection`, `OrderingByAnAggregate`, `ScalarSubqueryAgainstABoundValue`, `GroupingByAnExpression`, `RoundingAndSquareRoot`, `OuterJoinWithAFilterInOn`, `JoinBeyondEqualities` | všech šest | — |
+| `Projection`, `Filtering`, `JoinOverTwoColumns`, `AggregationGroupingAndHaving`, `Ordering`, `SubqueryAsTheRightSideOfIn`, `CorrelatedExistsOverThreeColumns`, `ScalarSubquery`, `DistinctProjection`, `InOverAListOfValues`, `ConstantOfAMoment`, `LikeWithAnAnchoredPattern`, `CountOverDistinctValues`, `LikeWithAnEscapedWildcard`, `LikeWithABoundPrefix`, `ArithmeticInAProjection`, `FunctionInAFilter`, `CoalesceInAFilter`, `CaseInAProjection`, `OrderingByAnAggregate`, `ScalarSubqueryAgainstABoundValue`, `GroupingByAnExpression`, `RoundingAndSquareRoot`, `OuterJoinWithAFilterInOn`, `JoinBeyondEqualities`, `QuantifiedComparisonOverAll`, `QuantifiedComparisonOverAny` | všech šest | — |
 | `ScalarParameter`, `CollectionParameter`, `InListWithABoundValue` | všech šest, Dapper jen s katalogem¹ | — |
 | `PaginationWithBoundCounts` | bez NHibernatu a EclipseLinku | — |
 | `SetOperation` | bez NHibernatu | NHibernate |
+| `InOverASetOperation` | bez NHibernatu | NHibernate, EclipseLink (parser 5.0.0 `union` v poddotazu odmítne) |
 | `GroupingOverAGroupedResult`, `IntermediateResultReadTwice`, `DateArithmetic` | bez NHibernatu a EclipseLinku | NHibernate, EclipseLink |
 | `ListAggregation` | bez NHibernatu a EclipseLinku | NHibernate, EclipseLink; ze zdroje MyBatis bez katalogu i EF Core² |
 | `AggregateOverTheWholeResult` | bez EF Core | EF Core |
@@ -264,11 +265,15 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 
 | Konstrukce | Proč | Co nástroj udělá | Druh | Rozh. |
 |---|---|---|---|---|
-| poddotaz v operandu s tělem množinové operace; `IN` či skalární porovnání s poddotazem, který nemá právě jednu projekci | operand nese jeden `SELECT`; SQL by druhé odmítlo za běhu | `Failure` (b) | VM | [061] |
+| `IN`, kvantifikované či skalární porovnání s poddotazem, který nemá právě jednu projekci (u těla množinové operace rozhoduje nejlevější člen) | SQL by ho odmítlo za běhu | `Failure` (b) | VM | [061], [120] |
+| poddotaz v operandu s tělem množinové operace do NHibernatu; skalární porovnání s takovým tělem do LINQ | HQL 5.7 množinovou operaci nemá; složené řádky nemají jeden koncový agregát, který by LINQ vzal | `Fallback` (z) | VM | [113], [120] |
 | řazení uvnitř poddotazu či těla definice bez výřezu | T-SQL ho tam nepřipouští, řádky nemění | `Loss` | VM | [061], [112] |
 | výřez v poddotazu či operandu množinové operace do HQL a JPQL; literálový počet řádků nad `Int32` do EF Core, NHibernatu a JPA | text výřez nemá, je na objektu dotazu; API jsou 32bitová | `Fallback` (z) | VM | [060], [113] |
 | cíl EF Core: skalární poddotaz, který není jediným neseskupeným agregátem; `IN` nad neseskupeným agregátem; množinová operace nad různými typy prvků | `First()` by tiše vybral řádek; LINQ různé typy nesloží | `Fallback` (z) | VM | [113] |
 | LINQ metoda na jeden řádek v pozici operandu (`… == ctx.Orders.Select(…).FirstOrDefault()`) | skalární poddotaz s výřezem nemá v modelu výrobce | nečte se | VM | [103] |
+| LINQ `All(predikát)`, který není jedním relačním porovnáním s parametrem lambdy právě na jedné straně (`All(o => o.A > 1 && …)`, `All(o => o.A > o.B)`, `All(v => x > v.Value)` nad projekcí) | jediný přepis je `NOT EXISTS` nad negovaným predikátem a negace nad `NULL` vybírá v SQL jiné řádky než v C# | `Failure` (`Subquery`) jmenovitě (č) | VM | [119] |
+| kvantifikované porovnání (`ALL`, `ANY`, `SOME`) nad poddotazem s neseskupeným agregátem (`x > ALL (SELECT MAX(v) …)`) do LINQ | `Select` LINQ neseskupený agregát nenese; kvantifikátor dědí pozici pravé strany `IN` | `Fallback` (z); textové cíle píší | VM | [061], [119] |
+| `= ANY`, `<> ALL`; `SOME` | tytéž řádky jako `IN`, `NOT IN`, `ANY`; model nese jeden zápis | přepis na `IN`/`NOT IN` s `Convention`; `SOME` → `ANY` beze záznamu | VM | [119] |
 | `INTERSECT ALL`; `EXCEPT ALL` do T-SQL a LINQ | slovník `INTERSECT ALL` nemá; `EXCEPT ALL` SQL Server odmítá a LINQ nemá | `INTERSECT ALL` `Failure` (č); `EXCEPT ALL` `Failure` (z) T-SQL i na únikové cestě, cíle JPA ho píšou | VM | [§4.4] |
 | řazení či projekce za množinovou operací | model za operací nic nenese; řádky tytéž | `Loss` (č) | VM | [053], [070] |
 | filtr, join, seskupení či výřez za množinovou operací; `OFFSET` v jejím operandu | bez nich jiné řádky; T-SQL výřez v operandu nezapíše | `Failure` (č/z) | VM | [053], [060], [113] |
@@ -464,6 +469,8 @@ Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhod
 [116]: ./decisions/116-concurrency-check-is-the-version-the-application-keeps.md
 [117]: ./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md
 [118]: ./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md
+[119]: ./decisions/119-quantified-comparison-as-a-comparison-with-a-quantifier.md
+[120]: ./decisions/120-a-set-operation-as-the-body-of-a-subquery-operand.md
 [§1v]: ./architecture.md#zafixované-verze
 [§4.1]: ./architecture.md#41-entity-a-mapování
 [§4.2]: ./architecture.md#42-primární-klíč

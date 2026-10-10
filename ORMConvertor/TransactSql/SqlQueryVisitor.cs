@@ -102,7 +102,9 @@ public class SqlQueryVisitor(
 
     /// <summary>
     /// A comparison one of whose sides is a subquery (decision 061): IN and the scalar
-    /// operators alike write the nested SELECT in parentheses in the operand's place.
+    /// operators alike write the nested SELECT in parentheses in the operand's place. A
+    /// quantified comparison (decision 119) writes its quantifier between the operator and
+    /// the subquery, as T-SQL spells it: <c>x &gt; ALL (SELECT …)</c>.
     /// </summary>
     private string SubQueryComparison(ComparisonCondition cond)
     {
@@ -113,7 +115,8 @@ public class SqlQueryVisitor(
             return string.Empty;
         }
 
-        return $"{left} {MapOperator(cond.Operator)} {right}";
+        var quantifier = cond.Quantifier is { } q ? QuantifiedComparisons.Spelled(q) + " " : string.Empty;
+        return $"{left} {MapOperator(cond.Operator)} {quantifier}{right}";
     }
 
     private string? OperandOrSubQuery(QueryOperand operand, ComparisonOperator op)

@@ -94,6 +94,12 @@ public static class EclipseLinkDescriptor
         // join Message m on ..." became SELECT t1.CreatorPersonId FROM Person_knows_Person t1).
         DropsJoinsInSubqueries: true,
 
+        // Measured by the Java suite over the category InOverASetOperation (decision 120): the
+        // Hermes parser of 5.0.0 reads a union at the top of a query and refuses the same union
+        // inside the parentheses of an IN with "Syntax error parsing", so the query goes out in
+        // native SQL.
+        RefusesSetOperationsInSubqueries: true,
+
         // Measured the same way: the inner entity joins stand in the list of tables after every
         // outer join ("FROM Message t2 LEFT OUTER JOIN Person_knows_Person t3 ON (... t0 ...),
         // Person t1, Message t0"), so the on of an outer join naming an inner join's alias is

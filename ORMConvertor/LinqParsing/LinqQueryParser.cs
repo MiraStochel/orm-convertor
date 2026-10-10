@@ -3633,11 +3633,29 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     return new ComparisonCondition(value, ComparisonOperator.In, right);
                 }
 
+            // chain.All(p => outer op p.X) and chain.Select(x => x.X).All(v => outer op v) are
+            // the quantified comparison outer op ALL (SELECT X …) (decision 119). An All over
+            // any other predicate is not read: NOT EXISTS over the negated predicate is what
+            // the providers make of it, and a negation over a NULL selects other rows than the
+            // quantifier in SQL's logic, so the shape is named and refused rather than guessed.
+            case "All":
+                return ReadQuantifiedCondition(invocation, member, Quantifier.All, refuseOtherShapes: true);
+
             case "Any":
                 {
                     if (!TryDecompose(member.Expression, out var root, out var steps))
                     {
                         return null;
+                    }
+
+                    // Over a chain that ends in a projection, Any(v => outer op v) is the
+                    // quantified comparison outer op ANY (SELECT …) (decision 119). Over an
+                    // unprojected chain Any(predicate) keeps the reading of decision 061,
+                    // Where(predicate).Any(), which selects the same rows.
+                    if (steps.Count > 0 && steps[^1].Name == "Select"
+                        && ReadQuantifiedCondition(invocation, member, Quantifier.Any, refuseOtherShapes: false) is { } quantified)
+                    {
+                        return quantified;
                     }
 
                     if (invocation.ArgumentList.Arguments.Count == 1)
@@ -3653,6 +3671,121 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return null;
         }
     }
+
+    /// <summary>
+    /// Reads All(predicate) or Any(predicate) over a query root as a quantified comparison
+    /// (decision 119). The predicate has to be one relational comparison with the lambda's
+    /// parameter on exactly one side: that side is the value the subquery projects - the
+    /// parameter itself when the chain already ends in a Select, else an expression over the
+    /// row, which becomes the chain's Select -, the other side is the value compared, read in
+    /// the enclosing scope. A comparison written with the element on the left is mirrored, so
+    /// the representation holds its one shape, subquery on the right. Null for any other
+    /// shape; with <paramref name="refuseOtherShapes"/> the shape is named for the refusal,
+    /// without it the caller reads the invocation its own way.
+    /// </summary>
+    private ConditionNode? ReadQuantifiedCondition(
+        InvocationExpressionSyntax invocation,
+        MemberAccessExpressionSyntax member,
+        Quantifier quantifier,
+        bool refuseOtherShapes)
+    {
+        if (!TryDecompose(member.Expression, out var root, out var steps))
+        {
+            return null;
+        }
+
+        var method = member.Name.Identifier.Text;
+        if (invocation.ArgumentList.Arguments.Count != 1
+            || invocation.ArgumentList.Arguments[0].Expression is not SimpleLambdaExpressionSyntax lambda)
+        {
+            if (refuseOtherShapes)
+            {
+                unread ??= ($"'{invocation}', an {method}() without the one predicate lambda the query representation reads as a quantified comparison", QueryFeature.Subquery);
+            }
+
+            return null;
+        }
+
+        var parameter = lambda.Parameter.Identifier.Text;
+        if (lambda.Body is not BinaryExpressionSyntax binary
+            || MapOperator(binary.Kind()) is not { } op
+            || !op.IsRelational())
+        {
+            if (refuseOtherShapes)
+            {
+                unread ??= ($"'{lambda.Body}' under {method}(), which is not one relational comparison; the query representation carries a quantifier over one comparison only, and NOT EXISTS over a negated predicate selects other rows where a value is NULL", QueryFeature.Subquery);
+            }
+
+            return null;
+        }
+
+        var leftNamesElement = Mentions(binary.Left, parameter);
+        var rightNamesElement = Mentions(binary.Right, parameter);
+        if (leftNamesElement == rightNamesElement)
+        {
+            if (refuseOtherShapes)
+            {
+                unread ??= ($"'{binary}' under {method}(), where the element '{parameter}' stands on {(leftNamesElement ? "both sides" : "neither side")} of the comparison; a quantified comparison compares a value of the enclosing query against the one value the subquery projects", QueryFeature.Subquery);
+            }
+
+            return null;
+        }
+
+        var elementSide = leftNamesElement ? binary.Left : binary.Right;
+        var outerSide = leftNamesElement ? binary.Right : binary.Left;
+        var oriented = leftNamesElement ? op.Mirrored() : op;
+
+        if (steps.Count > 0 && steps[^1].Name == "Select")
+        {
+            // The chain projects the value already; the element is that value and nothing
+            // else - a member of it would be a second projection the chain does not state.
+            if (elementSide is not IdentifierNameSyntax)
+            {
+                if (refuseOtherShapes)
+                {
+                    unread ??= ($"'{elementSide}' under {method}() over a projected chain, where the element is the projected value itself and an expression over it is not carried", QueryFeature.Subquery);
+                }
+
+                return null;
+            }
+        }
+        else
+        {
+            // The element side names the value the subquery projects: it becomes the chain's
+            // Select, over the same lambda parameter, so that the nested scope reads it as
+            // its own projection and the aliases stay the source's.
+            var projection = SyntaxFactory.SimpleLambdaExpression(SyntaxFactory.Parameter(SyntaxFactory.Identifier(parameter)), elementSide);
+            steps.Add(new ChainStep(
+                "Select",
+                Synthesized(member.Expression, "Select", SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(SyntaxFactory.Argument(projection))))));
+        }
+
+        // The compared value belongs to the enclosing scope and is read there, before the
+        // nested scope opens, so a correlated subquery does not take it for one of its own.
+        var outer = ReadOperand(outerSide);
+        if (outer is null)
+        {
+            return null;
+        }
+
+        var subQuery = QueryOperand.Nested(ReadSubQueryOperand(root!, steps));
+        if (QuantifiedComparisons.RewriteNote(oriented, quantifier) is { } note)
+        {
+            Report(ConversionRecordKind.Convention, note, QueryFeature.Subquery);
+        }
+
+        return ComparisonCondition.Quantified(outer, oriented, quantifier, subQuery);
+    }
+
+    /// <summary>
+    /// Whether the expression names the identifier as a value - as itself or as the row a
+    /// member is read from -, and not merely as the name of a member (<c>x.p</c>).
+    /// </summary>
+    private static bool Mentions(ExpressionSyntax expression, string identifier)
+        => expression.DescendantNodesAndSelf()
+            .OfType<IdentifierNameSyntax>()
+            .Any(name => name.Identifier.Text == identifier
+                && !(name.Parent is MemberAccessExpressionSyntax access && access.Name == name));
 
     /// <summary>
     /// Reads an inline collection of literals as the values of an IN list (decision 074).

@@ -978,6 +978,36 @@ public class SqlQueryReader(
                     QueryOperand.Nested(ReadSubQueryOperand(exists.Subquery.QueryExpression)),
                     ComparisonOperator.Exists);
 
+            // A comparison against the rows of a subquery under ALL, ANY or SOME (decision
+            // 119); ScriptDom reads SOME as Any. The compared value is read in the enclosing
+            // scope before the nested one opens, so a correlated subquery sees the aliases it
+            // refers to and the outer value is never taken for one of the subquery's columns.
+            case SubqueryComparisonPredicate quantified:
+                {
+                    var op = MapOperator(quantified.ComparisonType);
+                    var left = ReadOperand(quantified.Expression);
+                    if (op is null || left is null)
+                    {
+                        return null;
+                    }
+
+                    var subQuery = QueryOperand.Nested(ReadSubQueryOperand(quantified.Subquery.QueryExpression));
+                    if (quantified.SubqueryComparisonPredicateType == SubqueryComparisonPredicateType.None)
+                    {
+                        return new ComparisonCondition(left, op.Value, subQuery);
+                    }
+
+                    var quantifier = quantified.SubqueryComparisonPredicateType == SubqueryComparisonPredicateType.All
+                        ? Quantifier.All
+                        : Quantifier.Any;
+                    if (QuantifiedComparisons.RewriteNote(op.Value, quantifier) is { } note)
+                    {
+                        Report(ConversionRecordKind.Convention, note, QueryFeature.Subquery);
+                    }
+
+                    return ComparisonCondition.Quantified(left, op.Value, quantifier, subQuery);
+                }
+
             // IN carries two right sides: a subquery (decision 061) and a list of values
             // (decision 074). NOT IN is a negation over either.
             case InPredicate inPredicate:

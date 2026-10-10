@@ -1,0 +1,1 @@
+select p.ProductName, p.UnitPrice from ShopProduct p where p.ProductId in (select ol.ProductId from ShopOrderLine ol where ol.Quantity > 5 union select l.ToProductId from ShopProductLink l where l.FromProductId = 4)

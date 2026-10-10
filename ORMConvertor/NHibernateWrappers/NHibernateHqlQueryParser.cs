@@ -67,8 +67,9 @@ public class NHibernateHqlQueryParser(
 
         // Not part of the read subset - HQL in NHibernate 5.7.0 has no set operations - but
         // reserved so that "from Customer union ..." fails as a syntax error instead of
-        // taking "union" for an alias.
-        "union", "intersect", "except", "all",
+        // taking "union" for an alias. "all" doubles as the quantifier of decision 119,
+        // beside "any" and "some".
+        "union", "intersect", "except", "all", "any", "some",
     };
 
     private List<Token> tokens = [];
@@ -1201,6 +1202,29 @@ public class NHibernateHqlQueryParser(
             return null;
         }
 
+        // all, any or some between the operator and a subquery: a quantified comparison
+        // (decision 119). HQL takes nothing but a subquery after the quantifier.
+        if (TryConsumeQuantifier(out var quantifier, out var word))
+        {
+            if (!(AtSymbol("(") && NextIsSubQuery()))
+            {
+                throw Error($"expected a subquery after '{word}'");
+            }
+
+            var subQuery = QueryOperand.Nested(ParseParenthesizedSubQuery());
+            if (left is null)
+            {
+                return null;
+            }
+
+            if (QuantifiedComparisons.RewriteNote(op.Value, quantifier) is { } note)
+            {
+                Report(ConversionRecordKind.Convention, note, QueryFeature.Subquery);
+            }
+
+            return ComparisonCondition.Quantified(left, op.Value, quantifier, subQuery);
+        }
+
         var beforeRight = position;
         var right = ParseOperandOrSubQuery();
         if (right is null && position == beforeRight)
@@ -1216,6 +1240,24 @@ public class NHibernateHqlQueryParser(
         return TryReadEntityComparison(left, op.Value, right, out var entityComparison)
             ? entityComparison
             : new ComparisonCondition(left, op.Value, right);
+    }
+
+    /// <summary>The quantifier of decision 119 at the current token, consumed; <c>some</c> is <c>any</c>.</summary>
+    private bool TryConsumeQuantifier(out Quantifier quantifier, out string word)
+    {
+        foreach (var (keyword, value) in new[] { ("all", Quantifier.All), ("any", Quantifier.Any), ("some", Quantifier.Any) })
+        {
+            if (TryConsumeKeyword(keyword))
+            {
+                quantifier = value;
+                word = keyword;
+                return true;
+            }
+        }
+
+        quantifier = default;
+        word = string.Empty;
+        return false;
     }
 
     /// <summary>

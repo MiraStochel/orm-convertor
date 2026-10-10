@@ -1,0 +1,4 @@
+2	1	"Hand tools"
+3	2	"Hammers"
+5	1	"Power tools"
+8	7	"Hoses"

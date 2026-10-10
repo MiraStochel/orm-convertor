@@ -107,7 +107,15 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
     /* ---- the steps -------------------------------------------------------------------- */
 
     private LinqQueryVisitor NewVisitor(LinqScope of, LinqQueryVisitor? outer)
-        => CreateVisitor(of, (kind, reason, feature) => Report(kind, reason, feature), RenderSubQuery, Expressions, outer);
+    {
+        var created = CreateVisitor(of, (kind, reason, feature) => Report(kind, reason, feature), RenderSubQuery, Expressions, outer);
+
+        // The visitor resolves the entity behind a subquery's own source when it writes a
+        // quantified comparison (decision 119): the nested scope has closed by then, so the
+        // lookup by name is the builder's to lend.
+        created.EntityByName = EntityFor;
+        return created;
+    }
 
     protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
     {
@@ -999,13 +1007,31 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
     /// </summary>
     private string? RenderSubQuery(SubQueryInstruction subQuery, ComparisonOperator op)
     {
-        var clauses = NormalizeSubQueryOperand(subQuery, op);
+        var clauses = NormalizeSubQueryOperand(subQuery, op, out var setOperation);
+
+        var scalar = op is not (ComparisonOperator.Exists or ComparisonOperator.In);
+
+        // A set operation as the body (decision 120): the members compose into one chain -
+        // a.Union(b) - which Contains and Any range over the way they range over one chain.
+        // A scalar comparison against it has no terminal aggregate to take, so it goes out in
+        // native SQL (decision 113), which writes the subquery as the source did.
+        if (setOperation is not null)
+        {
+            if (scalar)
+            {
+                ReportUnspoken(
+                    "A scalar comparison against a set operation has no LINQ form - the composed rows carry no single aggregate to take",
+                    QueryFeature.Subquery);
+                return null;
+            }
+
+            return InNestedFrame(op, () => RenderSetOperation(setOperation, out _));
+        }
+
         if (clauses is null)
         {
             return null;
         }
-
-        var scalar = op is not (ComparisonOperator.Exists or ComparisonOperator.In);
 
         // A list joined over a subquery (decision 113): EF Core 10 does not translate
         // string.Join over a chain from a query root, it fetches the rows and joins them on
@@ -1036,6 +1062,22 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
             return null;
         }
 
+        return InNestedFrame(op, () =>
+        {
+            var chain = Chain(Compose(clauses));
+            return scalar ? chain + TerminalAggregate(clauses.Projections[0]) : chain;
+        });
+    }
+
+    /// <summary>
+    /// Renders a nested scope inside the enclosing one (decision 061): the enclosing scope,
+    /// visitor and aliases are set aside, the nested chain sees them as the scope it
+    /// correlates with - the lambda parameters it must not shadow -, and everything is
+    /// restored when the chain is done. The chain was written for a multi-line method body;
+    /// embedded in a condition it reads as one expression, so the step breaks are flattened.
+    /// </summary>
+    private string? InNestedFrame(ComparisonOperator op, Func<string?> render)
+    {
         var savedScope = scope;
         var savedVisitor = visitor;
         var savedTuples = tupleAliases.ToList();
@@ -1053,14 +1095,7 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         };
         operandContext = op;
 
-        var artifact = Compose(clauses);
-
-        var chain = Chain(artifact);
-
-        if (scalar)
-        {
-            chain += TerminalAggregate(clauses.Projections[0]);
-        }
+        var chain = render();
 
         scope = savedScope;
         visitor = savedVisitor;
@@ -1072,9 +1107,7 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         enclosingVisitor = savedEnclosingVisitor;
         enclosingParams = savedEnclosingParams;
 
-        // The chain was written for a multi-line method body; embedded in a condition it
-        // reads as one expression, so the step breaks are flattened.
-        return chain.Replace("\n        ", "");
+        return chain?.Replace("\n        ", "");
     }
 
     /// <summary>

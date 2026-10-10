@@ -170,6 +170,33 @@ ordered = false
 decimalScale = 4
 mutations = filter
 
+# The quantified comparison (decision 119). ALL over a subquery that returns a NULL for
+# department 6 and no row at all for department 9: SQL leaves 6 unknown and keeps 9, so the
+# canonical result is the one row, and a translation that kept C#'s two-valued All() would
+# return two.
+[QuantifiedComparisonOverAll]
+category = QuantifiedComparisonOverAll
+fields = DepartmentId, ParentDepartmentId, Name
+shape = entity
+ordered = false
+mutations = filter, operator
+
+[QuantifiedComparisonOverAny]
+category = QuantifiedComparisonOverAny
+fields = DepartmentId, ParentDepartmentId, Name
+shape = entity
+ordered = false
+mutations = filter, operator
+
+# A set operation as the body of an IN (decision 120).
+[InOverASetOperation]
+category = InOverASetOperation
+fields = ProductName, UnitPrice
+shape = projection
+ordered = false
+decimalScale = 4
+mutations = filter, operator
+
 [ScalarSubquery]
 category = ScalarSubquery
 fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice

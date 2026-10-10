@@ -910,6 +910,21 @@ public abstract class AbstractQueryBuilder
         => body.Count == 1 && body[0] is SubQueryInstruction inner ? Unwrap(inner.Instructions) : body;
 
     /// <summary>
+    /// The leftmost SELECT of a set operation, through nested operations on the left: the
+    /// member SQL takes the names and the count of a set operation's columns from.
+    /// </summary>
+    protected static IReadOnlyList<QueryInstruction> LeftmostMember(SetOperationInstruction operation)
+    {
+        var body = Unwrap(operation.Left.Instructions);
+        while (body.Count > 0 && body[0] is SetOperationInstruction nested)
+        {
+            body = Unwrap(nested.Left.Instructions);
+        }
+
+        return body;
+    }
+
+    /// <summary>
     /// Sorts the recorded instructions into clauses and applies the rules that hold for
     /// every target. Returns null when the query cannot be built at all, having reported
     /// why. <paramref name="operand"/> says that the scope is a subquery standing as an
@@ -1306,6 +1321,19 @@ public abstract class AbstractQueryBuilder
                     }
 
                     return true;
+                }
+
+                // A quantifier stands on a relational comparison whose right side is a
+                // subquery (decision 119): x > ALL (SELECT …). Any other tree is one no target
+                // renders, and the template refuses it once for all of them.
+                if (comparison.Quantifier is { } quantifier
+                    && (!comparison.Operator.IsRelational() || comparison.Right?.IsSubQuery != true))
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"The quantifier {quantifier.ToString().ToUpperInvariant()} stands only on a relational comparison against a subquery; under {comparison.Operator} it cannot be rendered; no artifact was generated.",
+                        QueryFeature.Subquery);
+                    return false;
                 }
 
                 // A list of values stands only as IN's right side (decision 074); the
@@ -4360,24 +4388,48 @@ public abstract class AbstractQueryBuilder
 
     /// <summary>
     /// Normalizes the body of a subquery operand and applies the rules that hold for every
-    /// target (decision 061), so that the three builders refuse the same shapes because one
-    /// place refuses them: a body that is a set operation is not carried, and IN and scalar
-    /// comparisons need a subquery projecting exactly one column - zero (the whole entity)
-    /// or several is a query T-SQL itself rejects at run time, refused here earlier and with
-    /// a record. Returns null when the operand cannot be rendered, having reported why.
+    /// target (decision 061), so that the builders refuse the same shapes because one place
+    /// refuses them: IN and scalar comparisons need a subquery projecting exactly one column -
+    /// zero (the whole entity) or several is a query T-SQL itself rejects at run time, refused
+    /// here earlier and with a record. A body that is a set operation (decision 120) comes
+    /// back through <paramref name="setOperation"/> with null clauses, after the same
+    /// one-column rule over its leftmost member, which is where SQL takes the columns of a
+    /// set operation from; a target whose query language has no set operation gets the
+    /// record that sends the query out in native SQL (decision 113) and null for both.
+    /// Returns null clauses and a null set operation when the operand cannot be rendered,
+    /// having reported why.
     /// </summary>
-    protected QueryClauses? NormalizeSubQueryOperand(SubQueryInstruction subQuery, ComparisonOperator op)
+    protected QueryClauses? NormalizeSubQueryOperand(SubQueryInstruction subQuery, ComparisonOperator op, out SetOperationInstruction? setOperation)
     {
         ArgumentNullException.ThrowIfNull(subQuery);
 
+        setOperation = null;
         var body = Unwrap(subQuery.Instructions);
 
-        if (body.Count > 0 && body[0] is SetOperationInstruction && body.Skip(1).All(i => i is DistinctInstruction))
+        if (body.Count > 0 && body[0] is SetOperationInstruction operation && body.Skip(1).All(i => i is DistinctInstruction))
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "A set operation as the body of a subquery operand is not carried - the operand holds one SELECT; no artifact was generated.",
-                QueryFeature.Subquery);
+            if (op is not ComparisonOperator.Exists)
+            {
+                var projected = LeftmostMember(operation).OfType<ProjectInstruction>().Count();
+                if (projected != 1)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"The set operation in the subquery projects {projected} columns where IN and scalar comparisons need exactly one; no artifact was generated.",
+                        QueryFeature.Subquery);
+                    return null;
+                }
+            }
+
+            if (!writesNativeSql && Descriptor.SupportOf(QueryFeature.SetOperation) == FactSupport.NotExpressible)
+            {
+                ReportUnspoken(
+                    $"The query language of {Descriptor.Framework} cannot express a set operation, here the body of a subquery",
+                    QueryFeature.SetOperation);
+                return null;
+            }
+
+            setOperation = body.Count > 1 ? DistinctOver(operation) : operation;
             return null;
         }
 

@@ -228,7 +228,9 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
     /// </summary>
     private string? RenderSubQuery(SubQueryInstruction subQuery, ComparisonOperator op)
     {
-        var clauses = NormalizeSubQueryOperand(subQuery, op);
+        // HQL 5.7 has no set operation, so a body that is one has already been reported by
+        // the template and sends the query out in native SQL (decisions 113, 120).
+        var clauses = NormalizeSubQueryOperand(subQuery, op, out _);
         if (clauses is null)
         {
             return null;

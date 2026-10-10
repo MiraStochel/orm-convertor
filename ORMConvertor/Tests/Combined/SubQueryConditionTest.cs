@@ -373,18 +373,82 @@ public class SubQueryConditionTest
             QueryFeature.Subquery);
     }
 
+    /// <summary>
+    /// A set operation as the body of a subquery operand (decision 120): the members compose
+    /// the rows IN ranges over. SQL and JPQL write the set operation inside the parentheses,
+    /// LINQ composes the two chains and ranges over the result; HQL has no set operation and
+    /// the query goes out in native SQL (decision 113).
+    /// </summary>
     [Fact]
-    public void SetOperationAsSubQueryBodyRefuses()
+    public void SetOperationAsSubQueryBodyIsCarried()
     {
         const string sql = """
         SELECT *
         FROM Sales.Customers AS c
-        WHERE c.CustomerID IN (SELECT o.CustomerID FROM Sales.Orders AS o UNION SELECT o2.CustomerID FROM Sales.Orders AS o2)
+        WHERE c.CustomerID IN (SELECT o.CustomerID FROM Sales.Orders AS o UNION SELECT o2.CustomerID FROM Sales.Orders AS o2 WHERE o2.Total > 500)
+        """;
+
+        Assert.Contains(
+            "WHERE c.CustomerID IN (SELECT o.CustomerID FROM Sales.Orders AS o UNION SELECT o2.CustomerID FROM Sales.Orders AS o2 WHERE o2.Total > 500)",
+            Artifact(ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql), ConversionContentType.SqlQuery));
+
+        Assert.Contains(
+            ".Where(c => ctx.Set<Order>().Select(o => o.CustomerID).Union(ctx.Set<Order>().Where(o2 => o2.Total > 500).Select(o2 => o2.CustomerID)).Contains(c.CustomerID))",
+            Artifact(ParseSql(new EFCoreLinqQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql), ConversionContentType.CSharpQuery));
+
+        Assert.Contains(
+            "where c.CustomerID in (select o.CustomerID from Order o union select o2.CustomerID from Order o2 where o2.Total > 500)",
+            Artifact(ParseSql(new HibernateWrappers.HibernateJpqlQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql), ConversionContentType.JpqlQuery));
+
+        var hql = ParseSql(new NHibernateHqlQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql);
+        var outputs = hql.Build();
+        Assert.Contains(hql.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.SetOperation);
+        Assert.Contains(outputs, s => s.ContentType == ConversionContentType.SqlQuery);
+    }
+
+    [Fact]
+    public void ExistsOverASetOperationBecomesLinqUnionAny()
+    {
+        const string sql = """
+        SELECT *
+        FROM Sales.Customers AS c
+        WHERE EXISTS (SELECT * FROM Sales.Orders AS o WHERE o.CustomerID = c.CustomerID UNION ALL SELECT * FROM Sales.Orders AS o2 WHERE o2.Total > c.Credit)
+        """;
+
+        Assert.Contains(
+            ".Where(c => ctx.Set<Order>().Where(o => o.CustomerID == c.CustomerID).Concat(ctx.Set<Order>().Where(o2 => o2.Total > c.Credit)).Any())",
+            Artifact(ParseSql(new EFCoreLinqQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql), ConversionContentType.CSharpQuery));
+    }
+
+    /// <summary>The one-column rule of IN holds over the leftmost member of the set operation, where SQL takes the columns from.</summary>
+    [Fact]
+    public void InOverASetOperationProjectingTwoColumnsRefuses()
+    {
+        const string sql = """
+        SELECT *
+        FROM Sales.Customers AS c
+        WHERE c.CustomerID IN (SELECT o.CustomerID, o.Total FROM Sales.Orders AS o UNION SELECT o2.CustomerID, o2.Total FROM Sales.Orders AS o2)
         """;
 
         AssertRefused(
             ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql),
             QueryFeature.Subquery);
+    }
+
+    /// <summary>A scalar comparison against a set operation has no terminal aggregate for LINQ to take: native SQL (decision 113).</summary>
+    [Fact]
+    public void ScalarComparisonAgainstASetOperationFallsBackInLinq()
+    {
+        const string sql = """
+        SELECT *
+        FROM Sales.Customers AS c
+        WHERE c.CustomerID = (SELECT MIN(o.CustomerID) FROM Sales.Orders AS o UNION SELECT MIN(o2.CustomerID) FROM Sales.Orders AS o2)
+        """;
+
+        var builder = ParseSql(new EFCoreLinqQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql);
+        var outputs = builder.Build();
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.Subquery);
+        Assert.Contains(outputs, s => s.ContentType == ConversionContentType.SqlQuery);
     }
 
     [Fact]

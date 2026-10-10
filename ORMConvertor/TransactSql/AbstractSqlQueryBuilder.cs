@@ -38,7 +38,22 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
     /// </summary>
     private string? RenderSubQuery(SubQueryInstruction subQuery, ComparisonOperator op)
     {
-        var clauses = NormalizeSubQueryOperand(subQuery, op);
+        var clauses = NormalizeSubQueryOperand(subQuery, op, out var setOperation);
+
+        // A set operation as the body (decision 120): the members compose the rows the
+        // operand ranges over, rendered as a set operation is at the top of a query, on one
+        // line. Whether the members materialize different rows is a fact about the outer
+        // query's result and is left as it was: an operand returns no rows to the caller.
+        if (setOperation is not null)
+        {
+            var differ = OperandsMaterializeDifferentRows;
+            var composed = RenderSetOperation(setOperation, out _);
+            OperandsMaterializeDifferentRows = differ;
+            return composed is null
+                ? null
+                : string.Join(" ", composed.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+
         if (clauses is null)
         {
             return null;

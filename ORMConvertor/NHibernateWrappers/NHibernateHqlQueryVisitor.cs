@@ -195,7 +195,10 @@ public sealed class NHibernateHqlQueryVisitor(
             return string.Empty;
         }
 
-        return $"{left} {Operator(cond.Operator)} {right}";
+        // HQL spells the quantifier of decision 119 as SQL does, in lower case like the rest
+        // of the text this visitor writes: x > all (select …).
+        var quantifier = cond.Quantifier is { } q ? QuantifiedComparisons.Spelled(q).ToLowerInvariant() + " " : string.Empty;
+        return $"{left} {Operator(cond.Operator)} {quantifier}{right}";
     }
 
     private string? OperandOrSubQuery(QueryOperand operand, ComparisonOperator op)

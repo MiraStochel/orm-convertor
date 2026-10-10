@@ -146,7 +146,10 @@ public sealed class JpqlQueryVisitor(
         {
             var left = OperandOrSubQuery(cond.Left, cond.Operator);
             var right = OperandOrSubQuery(cond.Right!, cond.Operator);
-            return left is null || right is null ? string.Empty : $"{left} {Operator(cond.Operator)} {right}";
+
+            // JPQL spells the quantifier of decision 119 as SQL does: x > all (select …).
+            var quantifier = cond.Quantifier is { } q ? QuantifiedComparisons.Spelled(q).ToLowerInvariant() + " " : string.Empty;
+            return left is null || right is null ? string.Empty : $"{left} {Operator(cond.Operator)} {quantifier}{right}";
         }
 
         var operand = Operand(cond.Left);

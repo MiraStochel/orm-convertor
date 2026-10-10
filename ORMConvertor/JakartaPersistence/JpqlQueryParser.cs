@@ -63,7 +63,7 @@ public abstract class JpqlQueryParser(
         "select", "distinct", "new", "from", "as", "inner", "left", "right", "full", "outer",
         "join", "fetch", "on", "with", "where", "group", "having", "order", "by", "asc", "desc",
         "and", "or", "not", "like", "in", "is", "null", "between", "exists", "escape",
-        "union", "intersect", "except", "all", "limit", "offset",
+        "union", "intersect", "except", "all", "any", "some", "limit", "offset",
         "case", "when", "then", "else", "end",
     };
 
@@ -2205,6 +2205,29 @@ public abstract class JpqlQueryParser(
             return null;
         }
 
+        // all, any or some between the operator and a subquery: a quantified comparison
+        // (decision 119), standard JPQL. Nothing but a subquery follows the quantifier.
+        if (TryConsumeQuantifier(out var quantifier, out var word))
+        {
+            if (!(AtSymbol("(") && NextIsSubQuery()))
+            {
+                throw Error($"expected a subquery after '{word}'");
+            }
+
+            var subQuery = QueryOperand.Nested(ParseParenthesizedSubQuery());
+            if (left is null)
+            {
+                return null;
+            }
+
+            if (QuantifiedComparisons.RewriteNote(op.Value, quantifier) is { } note)
+            {
+                Report(ConversionRecordKind.Convention, note, QueryFeature.Subquery);
+            }
+
+            return ComparisonCondition.Quantified(left, op.Value, quantifier, subQuery);
+        }
+
         var beforeRight = position;
         var right = ParseOperandOrSubQuery();
         if (right is null && position == beforeRight)
@@ -2447,8 +2470,24 @@ public abstract class JpqlQueryParser(
         var enclosingAlias = sourceAlias;
         var enclosing = new Dictionary<string, EntityMap?>(aliases, StringComparer.OrdinalIgnoreCase);
 
+        // Two scopes, as for a definition body: the inner one is a member, and a set operator
+        // after it composes the members into the outer one (decision 120) - a subquery whose
+        // body is a set operation. Without an operator the inner scope is all there is, and
+        // the double wrapping is what every reader of a body unwraps.
+        queryBuilder.Push();
         queryBuilder.Push();
         ParseQueryBody();
+
+        while (TryParseSetOperator() is { } operation)
+        {
+            queryBuilder.Pop();
+            queryBuilder.SetOperation(operation);
+            queryBuilder.Push();
+            ParseQueryBody();
+        }
+
+        queryBuilder.Pop();
+
         sourceAlias = enclosingAlias;
         aliases = enclosing;
 
@@ -3237,6 +3276,24 @@ public abstract class JpqlQueryParser(
         }
 
         return ParseOperand();
+    }
+
+    /// <summary>The quantifier of decision 119 at the current token, consumed; <c>some</c> is <c>any</c>.</summary>
+    private bool TryConsumeQuantifier(out Quantifier quantifier, out string word)
+    {
+        foreach (var (keyword, value) in new[] { ("all", Quantifier.All), ("any", Quantifier.Any), ("some", Quantifier.Any) })
+        {
+            if (TryConsumeKeyword(keyword))
+            {
+                quantifier = value;
+                word = keyword;
+                return true;
+            }
+        }
+
+        quantifier = default;
+        word = string.Empty;
+        return false;
     }
 
     private sealed record PathReference(string? Qualifier, string Attribute);

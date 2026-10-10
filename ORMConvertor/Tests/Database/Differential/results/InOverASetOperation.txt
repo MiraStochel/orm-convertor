@@ -1,0 +1,5 @@
+"Bracket"	80.0000
+"W_Bolt"	15.5000
+"Whistle"	12.5000
+"Widget"	120.0000
+"Zither"	1250.5000

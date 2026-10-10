@@ -280,7 +280,37 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     /// </summary>
     private string? RenderSubQuery(SubQueryInstruction subQuery, ComparisonOperator op)
     {
-        var clauses = NormalizeSubQueryOperand(subQuery, op);
+        var clauses = NormalizeSubQueryOperand(subQuery, op, out var setOperation);
+
+        // A set operation as the body (decision 120), rendered as a set operation is at the
+        // top of a query and folded onto one line, inside the enclosing aliases the way one
+        // SELECT is.
+        if (setOperation is not null)
+        {
+            // An implementation whose parser takes a set operation at the top of a query and
+            // refuses the same one inside a subquery (EclipseLink 5.0.0, measured by the Java
+            // suite) gets the query in native SQL (decision 113).
+            if (Profile.RefusesSetOperationsInSubqueries)
+            {
+                ReportUnspoken(
+                    $"{Profile.Implementation} refuses a set operation inside a subquery with a syntax error",
+                    QueryFeature.SetOperation);
+                return null;
+            }
+
+            var enclosingVisitorOfSet = visitor;
+            var enclosingOfSet = enclosingAliases;
+            var currentOfSet = currentAliases;
+
+            enclosingAliases = currentAliases;
+            var composed = RenderSetOperation(setOperation);
+
+            visitor = enclosingVisitorOfSet;
+            enclosingAliases = enclosingOfSet;
+            currentAliases = currentOfSet;
+            return composed?.Replace("\n", " ");
+        }
+
         if (clauses is null)
         {
             return null;

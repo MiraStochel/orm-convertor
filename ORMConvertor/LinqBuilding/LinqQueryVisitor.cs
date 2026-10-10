@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
@@ -65,6 +66,23 @@ public abstract class LinqQueryVisitor(
     /// <summary>Whether the alias belongs to this scope or one enclosing it (decision 061).</summary>
     public bool Knows(string alias) => Scope.Aliases.Contains(alias) || outer?.Knows(alias) == true;
 
+    /// <summary>
+    /// The entity behind a table name, lent by the builder (decision 119): a quantified
+    /// comparison asks it about the column a subquery projects after that subquery's scope
+    /// has closed. Null until the builder sets it, in which case every such column may hold
+    /// NULL as far as the visitor knows.
+    /// </summary>
+    public Func<string, EntityMap?>? EntityByName { get; set; }
+
+    /// <summary>
+    /// Whether the provider carries C#'s two-valued logic into the SQL it writes. EF Core does:
+    /// the negation inside its NOT EXISTS for All() holds over a NULL on either side, which is
+    /// exactly what makes All() select the rows SQL's ALL selects. A provider that writes the
+    /// negation as SQL's NOT (NHibernate 5.7.0) leaves the NULL unknown, so All() keeps rows
+    /// ALL drops, and the lambda has to test for the NULL itself (decision 119).
+    /// </summary>
+    protected virtual bool CompensatesNullSemantics => true;
+
     /// <summary>Puts a record on the builder's channel; a Fallback says the provider does not translate the shape (decision 113).</summary>
     protected void Report(ConversionRecordKind kind, string reason, QueryFeature? feature) => report(kind, reason, feature);
 
@@ -114,6 +132,11 @@ public abstract class LinqQueryVisitor(
         {
             var sub = renderSubQuery(cond.Left.SubQuery!, cond.Operator);
             return sub is null ? string.Empty : $"{sub}.Any()";
+        }
+
+        if (cond.Quantifier is not null)
+        {
+            return QuantifiedComparison(cond);
         }
 
         if (cond.Left.IsSubQuery || cond.Right?.IsSubQuery == true)
@@ -309,6 +332,129 @@ public abstract class LinqQueryVisitor(
     /// </summary>
     private string? OperandOrSubQuery(QueryOperand operand)
         => operand.IsSubQuery ? renderSubQuery(operand.SubQuery!, ComparisonOperator.Equal) : Operand(operand);
+
+    /* ---- quantified comparison (decision 119) ---------------------------------------- */
+
+    /// <summary>
+    /// A quantified comparison in LINQ, which has no quantifier of its own (decision 119). The
+    /// subquery is rendered as the set of values it projects - the position IN has, a
+    /// one-column Select - and the comparison moves into the lambda of All() or Any() over
+    /// it: <c>values.All(v =&gt; x &gt; v)</c>. Any() is EXISTS over the rows the comparison
+    /// holds for, which is <c>x &gt; ANY</c> exactly, NULLs included - a comparison with a NULL
+    /// holds in neither logic. All() is NOT EXISTS over the rows it does not hold for, and
+    /// there the logics part: SQL's ALL is unknown over a NULL and drops the row, C#'s All()
+    /// is true over it and keeps it. A provider that compensates for C#'s semantics writes the
+    /// NULL into its NOT EXISTS itself; for one that does not, the lambda tests each side
+    /// that may be NULL, so that a NULL excludes the row as SQL does. A negated quantified
+    /// comparison never reaches here under <c>!</c> - <see cref="Visit(NotCondition)"/> flips
+    /// it first.
+    /// </summary>
+    private string QuantifiedComparison(ComparisonCondition cond)
+    {
+        var values = renderSubQuery(cond.Right!.SubQuery!, ComparisonOperator.In);
+        var outer = OperandOrSubQuery(cond.Left);
+        if (values is null || outer is null)
+        {
+            return string.Empty;
+        }
+
+        var element = ElementNameFreeIn(outer, values);
+        var comparison = $"{outer} {Operator(cond.Operator)} {element}";
+        if (cond.Quantifier == Quantifier.Any)
+        {
+            return $"{values}.Any({element} => {comparison})";
+        }
+
+        if (!CompensatesNullSemantics)
+        {
+            if (ProjectedValueMayBeNull(cond.Right.SubQuery!))
+            {
+                comparison += $" && {element} != null";
+            }
+
+            if (MayBeNull(cond.Left))
+            {
+                comparison += $" && {outer} != null";
+            }
+        }
+
+        return $"{values}.All({element} => {comparison})";
+    }
+
+    /// <summary>A lambda parameter for the projected value that neither side of the comparison uses as a name.</summary>
+    private static string ElementNameFreeIn(string outer, string values)
+    {
+        foreach (var candidate in new[] { "v", "value", "each" })
+        {
+            var used = new Regex($@"\b{candidate}\b");
+            if (!used.IsMatch(outer) && !used.IsMatch(values))
+            {
+                return candidate;
+            }
+        }
+
+        return "v_";
+    }
+
+    /// <summary>
+    /// Whether the value compared may be NULL as far as the mapping says: a column that the
+    /// mapping does not declare NOT NULL, a parameter, an expression; a constant and a COUNT
+    /// never are.
+    /// </summary>
+    private bool MayBeNull(QueryOperand operand)
+    {
+        if (operand.IsConstant || string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return !operand.IsColumn || operand.Function is not null || !HoldsNoNull(operand.Table, operand.Property!);
+    }
+
+    /// <summary>
+    /// Whether the one value the subquery projects may be NULL. The subquery's scope has
+    /// closed, so its aliases are resolved against its own FROM and joins and the entity is
+    /// looked up by name through <see cref="EntityByName"/>; where nothing settles it, it may.
+    /// </summary>
+    private bool ProjectedValueMayBeNull(SubQueryInstruction subQuery)
+    {
+        IReadOnlyList<QueryInstruction> body = subQuery.Instructions;
+        while (body.Count == 1 && body[0] is SubQueryInstruction wrapped)
+        {
+            body = wrapped.Instructions;
+        }
+
+        var operand = body.OfType<ProjectInstruction>().FirstOrDefault()?.Operand;
+        if (operand is null)
+        {
+            return true;
+        }
+
+        if (operand.IsConstant || string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!operand.IsColumn || operand.Function is not null)
+        {
+            return true;
+        }
+
+        var from = body.OfType<FromInstruction>().FirstOrDefault();
+        string? table = operand.Table is null
+            ? from?.Table
+            : from is not null && (string.Equals(from.Alias, operand.Table, StringComparison.OrdinalIgnoreCase) || string.Equals(from.Table, operand.Table, StringComparison.OrdinalIgnoreCase))
+                ? from.Table
+                : body.OfType<JoinInstruction>()
+                    .FirstOrDefault(j => string.Equals(j.RightTableAlias ?? j.RightTable, operand.Table, StringComparison.OrdinalIgnoreCase))
+                    ?.RightTable;
+
+        var map = table is null ? null : EntityByName?.Invoke(table);
+        var mapped = map?.PropertyMaps
+            .FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, operand.Property, StringComparison.OrdinalIgnoreCase));
+
+        return mapped is null || (mapped.IsNullable ?? mapped.Property.Type?.IsNullable) != false;
+    }
 
     /* ---- LIKE (decisions 051, 102, 107) ------------------------------------------------ */
 
@@ -518,7 +664,18 @@ public abstract class LinqQueryVisitor(
         return string.Join($" {keyword} ", parts);
     }
 
-    public string Visit(NotCondition cond) => $"!({cond.Operand.Accept(this)})";
+    /// <summary>
+    /// A negation. Over a quantified comparison (decision 119) it is not written as <c>!</c>:
+    /// the rewrite of ALL and ANY into All() and Any() is exact only in the direction the
+    /// query filters by - a row SQL leaves unknown is a row both drop -, and <c>!</c> would
+    /// turn those dropped rows into kept ones. De Morgan over the rows of the subquery holds
+    /// exactly in three-valued logic, so the negation is pushed into the comparison first:
+    /// <c>NOT (x &gt; ALL S)</c> goes out as <c>x &lt;= ANY S</c>.
+    /// </summary>
+    public string Visit(NotCondition cond)
+        => cond.Operand is ComparisonCondition { Quantifier: not null } quantified
+            ? Visit(quantified.NegatedQuantified())
+            : $"!({cond.Operand.Accept(this)})";
 
     /// <summary>
     /// The relational operators, exhaustively. No catch-all branch: a value the target has

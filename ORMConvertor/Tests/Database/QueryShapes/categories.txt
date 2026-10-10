@@ -135,6 +135,36 @@ Hibernate = hibernate/FindCorrelatedExistsOverThreeColumns.jpql
 EclipseLink = eclipselink/FindCorrelatedExistsOverThreeColumns.jpql
 MyBatis = mybatis/FindCorrelatedExistsOverThreeColumnsMapper.xml
 
+# The quantified comparison (decision 119) over the one nullable column of the domain: the
+# subquery of ALL returns a NULL for some outer rows and none for others, which is the case
+# where SQL's ALL and a provider's All() part. The SQL and MyBatis rows of ANY write SOME, the
+# second spelling, which is read as ANY.
+[QuantifiedComparisonOverAll]
+Dapper = dapper/FindQuantifiedComparisonOverAll.sql
+EFCore = efcore/FindQuantifiedComparisonOverAll.query.cs
+NHibernate = nhibernate/FindQuantifiedComparisonOverAll.hql
+Hibernate = hibernate/FindQuantifiedComparisonOverAll.jpql
+EclipseLink = eclipselink/FindQuantifiedComparisonOverAll.jpql
+MyBatis = mybatis/FindQuantifiedComparisonOverAllMapper.xml
+
+[QuantifiedComparisonOverAny]
+Dapper = dapper/FindQuantifiedComparisonOverAny.sql
+EFCore = efcore/FindQuantifiedComparisonOverAny.query.cs
+NHibernate = nhibernate/FindQuantifiedComparisonOverAny.hql
+Hibernate = hibernate/FindQuantifiedComparisonOverAny.jpql
+EclipseLink = eclipselink/FindQuantifiedComparisonOverAny.jpql
+MyBatis = mybatis/FindQuantifiedComparisonOverAnyMapper.xml
+
+# A set operation as the body of a subquery operand (decision 120). HQL 5.7 has no set
+# operation, so NHibernate neither states it nor writes it in its language.
+[InOverASetOperation]
+Dapper = dapper/FindInOverASetOperation.sql
+EFCore = efcore/FindInOverASetOperation.query.cs
+Hibernate = hibernate/FindInOverASetOperation.jpql
+EclipseLink = eclipselink/FindInOverASetOperation.jpql
+MyBatis = mybatis/FindInOverASetOperationMapper.xml
+fallbackBy = NHibernate:SetOperation, EclipseLink:SetOperation
+
 [ScalarSubquery]
 Dapper = dapper/FindScalarSubquery.sql
 EFCore = efcore/FindScalarSubquery.query.cs

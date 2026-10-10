@@ -333,6 +333,30 @@ public static class QueryShapeInputs
             hql: ["exists (", "a.LineNumber = ol.LineNumber"],
             jpa: ["exists (", "a.LineNumber = ol.LineNumber"]),
 
+        // The quantified comparison (decision 119): SQL, HQL and JPQL keep the keyword, LINQ
+        // moves the comparison into the lambda of All() or Any() over the projected values. Both
+        // categories run over the one nullable column of the domain, so that the fourth level
+        // measures the NULL case that separates SQL's ALL from C#'s All().
+        ["QuantifiedComparisonOverAll"] = Hallmarks(
+            sql: ["d.DepartmentId < ALL (SELECT c.ParentDepartmentId"],
+            linq: [".Select(c => c.ParentDepartmentId).All(v => d.DepartmentId < v)"],
+            hql: ["d.DepartmentId < all (select c.ParentDepartmentId"],
+            jpa: ["d.DepartmentId < all (select c.ParentDepartmentId"]),
+
+        ["QuantifiedComparisonOverAny"] = Hallmarks(
+            sql: ["d.ParentDepartmentId < ANY (SELECT c.DepartmentId"],
+            linq: [".Select(c => c.DepartmentId).Any(v => d.ParentDepartmentId < v)"],
+            hql: ["d.ParentDepartmentId < any (select c.DepartmentId"],
+            jpa: ["d.ParentDepartmentId < any (select c.DepartmentId"]),
+
+        // A set operation as the body of a subquery operand (decision 120): SQL and JPQL write
+        // the operation inside the parentheses of IN, LINQ composes the two chains and ranges
+        // over the result; HQL has none and NHibernate falls back.
+        ["InOverASetOperation"] = Hallmarks(
+            sql: ["p.ProductId IN (SELECT ol.ProductId", "UNION SELECT l.ToProductId"],
+            linq: [".Select(ol => ol.ProductId).Union(", ".Contains(p.ProductId"],
+            jpa: ["p.ProductId in (select ol.ProductId", "union select l.ToProductId"]),
+
         ["ScalarSubquery"] = Hallmarks(
             sql: ["(SELECT AVG(p.UnitPrice)"],
             linq: [".Average(p => p.UnitPrice)"],

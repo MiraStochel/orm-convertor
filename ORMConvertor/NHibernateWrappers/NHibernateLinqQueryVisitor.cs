@@ -40,6 +40,13 @@ public sealed class NHibernateLinqQueryVisitor(
     /// </summary>
     protected override bool EscapesStringMethodArguments => false;
 
+    /// <summary>
+    /// NHibernate 5.7.0 writes the negation inside the NOT EXISTS it makes of All() as SQL's
+    /// NOT, which leaves a comparison with a NULL unknown, so All() would keep rows that
+    /// SQL's ALL drops; the lambda spells the null tests out instead (decision 119).
+    /// </summary>
+    protected override bool CompensatesNullSemantics => false;
+
     /// <summary>The <c>Like</c> extension of <c>NHibernate.Linq</c>, with the escape as a character beside the pattern.</summary>
     protected override string LikeCall(string left, string pattern, string? escape)
         => escape is null
