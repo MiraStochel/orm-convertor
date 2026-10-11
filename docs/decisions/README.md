@@ -128,6 +128,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 123 | [Nativní dotaz EclipseLinku rozvine kolekční parametr za běhu v generované metodě: jeden zástupný symbol na prvek, číslovaný za skaláry a vázaný po prvcích](123-a-native-query-of-eclipselink-expands-a-collection-parameter-at-run-time.md) | platí | F9, F11, F13, T2, S2 |
 | 124 | [Směr překladu je jeden řádek, vstup stojí vedle výstupu a páruje se po tvrzeních z báze builderu; maketa zůstává](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md) | nahrazeno [125](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md) | F11, F14, S1, S2, S7 |
 | 125 | [Pozice tvrzení ve vstupu a ve výstupu jako volitelná vrstva nad knihou tvrzení; maketa se maže](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md) | platí | F11, F14, S1, S2, S7 |
+| 126 | [Čísla řádků v editoru jednotky vlastním kódem, ne hotovým editorem](126-line-numbers-in-the-unit-editor-by-own-code-not-an-editor-library.md) | platí | S5, S7 |
 
 ## Formát
 

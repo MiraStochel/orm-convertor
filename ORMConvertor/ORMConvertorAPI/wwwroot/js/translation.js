@@ -23,6 +23,11 @@ import {
 } from "./api.js";
 import {
   cloneTemplate,
+  attachLineNumbers,
+  positionIn,
+  markLine,
+  clearLineMarks,
+  goToLine,
   renderCode,
   renderArtifacts,
   renderRecords,
@@ -285,6 +290,7 @@ function renderUnits() {
       unit.content = textarea.value;
       saveState();
     });
+    attachLineNumbers(textarea);
 
     container.append(article);
   }
@@ -429,7 +435,25 @@ function renderResult() {
     artifactPanels: [...document.getElementById("artifacts").querySelectorAll("article.artifact")],
   });
   renderRecords(document.getElementById("records"), response.records, { artifactIndex });
+  markFailures(response.records);
   renderSummary(response);
+}
+
+/*
+ * A record that names its unit and a position in its reason (decision 093) marks that line
+ * in the unit's editor, under the reference the server used (decision 066): the name sent,
+ * or "unit N" by position. The units are matched as the editor holds them now, which is
+ * what was just sent.
+ */
+function markFailures(records) {
+  clearUnitProblems();
+  const container = document.getElementById("units");
+  for (const record of records ?? []) {
+    if (!record.unit || !positionIn(record.reason)) continue;
+    const unit = state.units.find((u) => unitLabel(u) === record.unit);
+    const article = unit && container.querySelector(`[data-unit-id="${unit.id}"]`);
+    if (article) showUnitProblem(article, record.reason);
+  }
 }
 
 /* ---- validation (S7): a helper, not the gate - the server stays authoritative */
@@ -438,18 +462,49 @@ function xmlProblem(content) {
   const parsed = new DOMParser().parseFromString(content, "text/xml");
   const error = parsed.querySelector("parsererror");
   if (!error) return null;
-  const text = error.textContent ?? "";
-  const location = text.match(/line[\s:]+(\d+)/i);
-  return location ? `not well-formed XML (line ${location[1]})` : "not well-formed XML";
+  const position = positionIn(error.textContent);
+  if (!position) return "not well-formed XML";
+  return position.column == null
+    ? `not well-formed XML (line ${position.line})`
+    : `not well-formed XML (line ${position.line}, column ${position.column})`;
+}
+
+/*
+ * The sentence under a unit; where it names a line, that line is marked in the editor's
+ * column and the sentence gets a button that goes there (decision 126).
+ */
+function showUnitProblem(article, text) {
+  const errorElement = article.querySelector(".unit-error");
+  const textarea = article.querySelector(".unit-content");
+  if (!errorElement.hidden) errorElement.append(document.createElement("br"));
+  errorElement.append(text);
+  const position = positionIn(text);
+  if (position && textarea) {
+    markLine(textarea, position.line, text);
+    const jump = document.createElement("button");
+    jump.type = "button";
+    jump.className = "link-button";
+    jump.textContent = `go to line ${position.line}`;
+    jump.addEventListener("click", () => goToLine(textarea, position.line));
+    errorElement.append(" ", jump);
+  }
+  errorElement.hidden = false;
+}
+
+function clearUnitProblems() {
+  for (const article of document.getElementById("units").querySelectorAll("article.unit")) {
+    const errorElement = article.querySelector(".unit-error");
+    errorElement.hidden = true;
+    errorElement.replaceChildren();
+    const textarea = article.querySelector(".unit-content");
+    if (textarea) clearLineMarks(textarea);
+  }
 }
 
 function validate() {
   const problems = [];
   const container = document.getElementById("units");
-  for (const errorElement of container.querySelectorAll(".unit-error")) {
-    errorElement.hidden = true;
-    errorElement.textContent = "";
-  }
+  clearUnitProblems();
 
   if (state.units.length === 0) {
     problems.push({ text: "Add at least one input file." });
@@ -474,11 +529,7 @@ function validate() {
     if (unitProblem) {
       problems.push({ text: `${label}: ${unitProblem}.`, unitId: unit.id });
       const article = container.querySelector(`[data-unit-id="${unit.id}"]`);
-      const errorElement = article?.querySelector(".unit-error");
-      if (errorElement) {
-        errorElement.textContent = unitProblem;
-        errorElement.hidden = false;
-      }
+      if (article) showUnitProblem(article, unitProblem);
     }
   }
   return problems;

@@ -66,6 +66,52 @@ textarea.unit-content {
   resize: vertical;
 }
 
+/*
+ * The unit editor (decision 126): a column of line numbers beside the textarea, in one
+ * grid so that resizing the field stretches the column with it. The field does not wrap,
+ * so a row of the column is a line of the text; the column follows the field's scrolling.
+ */
+.code-editor {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  margin-bottom: var(--pico-spacing);
+}
+
+.code-editor > .line-numbers {
+  overflow: hidden;
+  padding: var(--pico-form-element-spacing-vertical) 0;
+  font-family: var(--app-code-font);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-align: right;
+  color: var(--pico-muted-color);
+  background-color: var(--pico-form-element-background-color);
+  border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+  border-right: 0;
+  border-radius: var(--pico-border-radius) 0 0 var(--pico-border-radius);
+  user-select: none;
+}
+
+.line-numbers > span {
+  display: block;
+  padding: 0 0.5rem 0 0.75rem;
+}
+
+.line-numbers > .marked {
+  color: var(--pico-del-color);
+  font-weight: 700;
+  background-color: color-mix(in srgb, var(--pico-del-color) 15%, transparent);
+  cursor: pointer;
+}
+
+.code-editor > textarea.unit-content {
+  margin-bottom: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  white-space: pre;
+  overflow: auto;
+}
+
 /* ---- input units and output artifacts --------------------------------- */
 
 article.unit,

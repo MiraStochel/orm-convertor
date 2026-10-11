@@ -23,7 +23,7 @@ import {
   getAdvisorSamples,
   runAdvisor,
 } from "./api.js";
-import { cloneTemplate, renderArtifacts } from "./ui.js";
+import { cloneTemplate, attachLineNumbers, renderArtifacts } from "./ui.js";
 
 // Enum member names, used when dictionary keys serialize as names rather than numbers.
 const ORM_NAMES = Object.freeze({
@@ -125,6 +125,7 @@ function renderEntityUnits() {
     textarea.addEventListener("input", () => {
       unit.content = textarea.value;
     });
+    attachLineNumbers(textarea);
     container.append(article);
   }
 }
@@ -155,6 +156,7 @@ function renderQueryUnits() {
     textarea.addEventListener("input", () => {
       unit.content = textarea.value;
     });
+    attachLineNumbers(textarea);
 
     container.append(article);
   });

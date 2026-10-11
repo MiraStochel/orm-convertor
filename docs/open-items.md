@@ -48,7 +48,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [ADO.NET provider v benchmarcích](#sjednocení-adonet-provideru-v-benchmarcích) | Advisor | rozhodnutí | T7 |
 | [Testy Advisoru a benchmarkingu](#advisor-a-benchmarking-nemají-žádné-testy) | Advisor | práce | T7, S6 |
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
-| [Čísla řádků v editoru jednotky](#editor-jednotky-nemá-čísla-řádků-na-která-se-odvolává-chybová-hláška) | Rozhraní | práce | S7 |
 | [`unique` na sloupci cizího klíče](#unique-na-sloupci-cizího-klíče-jako-tvrzení-zdroje) | Užitečné | rozhodnutí | F5, F11 |
 | [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
 | [Druhý databázový dialekt](#druhý-databázový-dialekt) | Užitečné | rozhodnutí | F5, F7–F10, S2 |
@@ -186,17 +185,6 @@ Testy nepokrývají `Advisor` ani `AdvisorBenchmarking`: P/Invoke do ILP solveru
 *Podle rozh. [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md) je Advisor kontejnerový a build pro Windows nevzniká. Požadavky F15, S7.*
 
 Mimo Linux a Docker chybí `libadvisor.so`; `AdvisorRunHandler` vrátí text `DllNotFoundException` až po vyplnění a odeslání formuláře (úvod obrazovky na kontejner upozorňuje předem). Aby obrazovka nedostupnost řekla místo běhu, potřebuje koncový bod „je Advisor na tomhle hostiteli k dispozici?". Je malý, ale sahá do vyňaté oblasti.
-
-## Rozhraní
-
-Zásahy do frontendu mimo milník 4. Z F14 je hotový vícesouborový vstup, výstup po souborech, vstup vedle výstupu s párováním po tvrzeních (rozh. [124](./decisions/124-direction-as-one-row-and-input-beside-output-paired-per-fact.md)); vstupní archiv projektu se nenárokuje (§9) a položku nemá; zobrazení mezireprezentace je v [třetím cíli](#mezireprezentace-se-nezobrazuje-ačkoli-f14-ji-jmenuje).
-
-### Práce
-
-#### Editor jednotky nemá čísla řádků, na která se odvolává chybová hláška
-*Souvisí s rozh. [033](./decisions/033-shape-of-the-static-frontend-screens.md) (validace XML s číslem řádku) a [032](./decisions/032-frontend-as-static-pages-without-a-build.md), bod f (žádná další vendorovaná knihovna bez rozhodnutí). Požadavek S7.*
-
-S7 doslova žádá zvýraznění chyb na úrovni souboru a řádku; chyba přiřazená jednotce hotová je, chybí řádek. Hlášky ho nesou (XML z validace, SQL řádek a sloupec z `TSql160Parser`), editor je ale holý `<textarea>`. Práce: postranní sloupec čísel řádků posouvaný s textovým polem, vlastním kódem o několika desítkách řádků. Hotový editor (CodeMirror) by byl třetí vendorovaná knihovna, a tedy samostatné rozhodnutí.
 
 ## Užitečné, ne nutné
 

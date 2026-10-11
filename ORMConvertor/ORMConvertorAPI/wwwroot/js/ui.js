@@ -28,6 +28,98 @@ export function cloneTemplate(id) {
   return document.getElementById(id).content.firstElementChild.cloneNode(true);
 }
 
+/* ---- the unit editor: line numbers beside a textarea (decision 126) ------ */
+
+const gutters = new WeakMap();
+
+/*
+ * Wraps a textarea in a grid with a column of line numbers that scrolls with it. The
+ * textarea stops wrapping, so one line of text is one row of the column and the number
+ * beside a row is the line a reason names. The column is hidden from assistive technology:
+ * the accessible way to a marked line is the button in the sentence under the unit.
+ */
+export function attachLineNumbers(textarea) {
+  const editor = document.createElement("div");
+  editor.className = "code-editor";
+  const gutter = document.createElement("div");
+  gutter.className = "line-numbers";
+  gutter.setAttribute("aria-hidden", "true");
+  textarea.replaceWith(editor);
+  editor.append(gutter, textarea);
+  textarea.wrap = "off";
+  gutters.set(textarea, gutter);
+
+  const follow = () => {
+    // The textarea's horizontal scrollbar takes height the column does not have; padding
+    // the column by it keeps the last rows aligned when the field is scrolled to the end.
+    const style = getComputedStyle(textarea);
+    const borders = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    const scrollbar = Math.max(0, textarea.offsetHeight - textarea.clientHeight - borders);
+    gutter.style.paddingBottom = `calc(var(--pico-form-element-spacing-vertical) + ${scrollbar}px)`;
+    gutter.scrollTop = textarea.scrollTop;
+  };
+  const refresh = () => {
+    const lines = textarea.value.split("\n").length;
+    while (gutter.childElementCount > lines) gutter.lastElementChild.remove();
+    while (gutter.childElementCount < lines) {
+      const number = document.createElement("span");
+      number.textContent = String(gutter.childElementCount + 1);
+      gutter.append(number);
+    }
+    follow();
+  };
+  textarea.addEventListener("input", refresh);
+  textarea.addEventListener("scroll", follow);
+  new ResizeObserver(follow).observe(textarea);
+  refresh();
+  return editor;
+}
+
+/*
+ * The line and column a sentence names, or null. The server's reasons say "at line 12,
+ * column 5" (decision 093); DOMParser says "error on line 3 at column 10" in Chromium and
+ * "Line Number 3, Column 10" in Firefox, and the expression reads all three.
+ */
+const POSITION = /\bline(?: number)?[\s:]+(\d+)(?:(?:,|\s+at)?\s*column[\s:]+(\d+))?/i;
+
+export function positionIn(text) {
+  const match = POSITION.exec(text ?? "");
+  if (!match) return null;
+  return { line: Number(match[1]), column: match[2] ? Number(match[2]) : null };
+}
+
+/** Marks a line in the column beside the textarea; clicking the number goes to the line. */
+export function markLine(textarea, line, title) {
+  const number = gutters.get(textarea)?.children[line - 1];
+  if (!number) return;
+  number.classList.add("marked");
+  number.title = title;
+  number.addEventListener("click", () => goToLine(textarea, line));
+}
+
+export function clearLineMarks(textarea) {
+  const gutter = gutters.get(textarea);
+  if (!gutter) return;
+  for (const number of gutter.querySelectorAll(".marked")) {
+    const plain = document.createElement("span");
+    plain.textContent = number.textContent;
+    number.replaceWith(plain);
+  }
+}
+
+/** Selects the whole line in the textarea and scrolls it into view. */
+export function goToLine(textarea, line) {
+  const lines = textarea.value.split("\n");
+  const index = Math.min(Math.max(line, 1), lines.length) - 1;
+  let start = 0;
+  for (let i = 0; i < index; i++) start += lines[i].length + 1;
+  textarea.focus({ preventScroll: true });
+  textarea.setSelectionRange(start, start + lines[index].length);
+  const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20;
+  textarea.scrollTop = Math.max(0, index * lineHeight - textarea.clientHeight / 2);
+  textarea.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 /** Fills a <code> element with content and applies syntax highlighting. */
 export function renderCode(codeElement, content, contentType) {
   codeElement.textContent = content;
