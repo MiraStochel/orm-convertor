@@ -48,7 +48,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [ADO.NET provider v benchmarcích](#sjednocení-adonet-provideru-v-benchmarcích) | Advisor | rozhodnutí | T7 |
 | [Testy Advisoru a benchmarkingu](#advisor-a-benchmarking-nemají-žádné-testy) | Advisor | práce | T7, S6 |
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
-| [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | — |
 | [Alias v SQL jako mapování Dapperu](#alias-v-sql-jako-zdroj-mapování-dapperu) | Zbytky | rozhodnutí | F6 |
@@ -197,13 +196,6 @@ Prospělo by to, ale žádná věta záruk na tom nestojí a nic tím není blok
 *Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.1, a [fair-software.eu](https://fair-software.eu/). Souvisí s rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md). Až úplně na konci vývoje.*
 
 Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele) a zda tím je nástroj „publikovaný" ve smyslu předpokladu rozh. 098; pak se 098 nahrazuje.
-
-### Práce
-
-#### Atributy ostatních prvků NHibernate mapování mizí beze slova
-*Práce podle rozh. [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [004](./decisions/004-unexpressible-facts-as-warnings.md); hranice je vyslovená v §5. Požadavek F11.*
-
-Hlášené atributy mají jen `<class>` a `<property>`. Beze slova se přeskakují: na `<id>` `access` a `unsaved-value`; na `<version>` `generated`, `insert` a `source`; na `<many-to-one>` a `<one-to-one>` `cascade`, `fetch`, `lazy`, `not-found` a `formula` (záznam má jen `property-ref`); ostatní atributy `<class>` (`catalog`, `proxy`, `persister`, `entity-name`, `subselect`, `abstract`, `rowid`, `polymorphism`, `select-before-update`, `check`). Mechanické to není: `generated` na `<version>` builder odvodí sám a `insert="false" update="false"` na `<many-to-one>` píše náš vlastní builder (rozh. [005](./decisions/005-many-to-many-as-explicit-junction-entity.md), [006](./decisions/006-flat-composite-key-rendering.md)) — tvrzený atribut je třeba oddělit od odvozeného (kritérium rozh. [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md)).
 
 ## Zbytky
 

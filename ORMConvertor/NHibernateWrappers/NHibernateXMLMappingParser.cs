@@ -332,13 +332,10 @@ public class NHibernateXMLMappingParser(
     /// row with. &lt;timestamp&gt; is the framework's spelling of &lt;version type="timestamp"&gt;,
     /// so it carries the same flag and its element name itself is the type claim; the
     /// generated mapping states the same thing as a &lt;version&gt; element. The other
-    /// attributes - unsaved-value, generated, access, source - have no counterpart in the
-    /// model and are skipped without a record: the named lists of
-    /// <see cref="ReportUnmodelledAttributes"/> cover &lt;class&gt; and &lt;property&gt; only, and
-    /// this element is not among them - what the other elements still swallow is written
-    /// down in docs/open-items.md. generated is the one of the four that would say least
-    /// here anyway: the generated mapping derives generated="always" from the binary type
-    /// family itself.
+    /// attributes have no counterpart in the model and are reported (decision 048) - except
+    /// generated="always" on a binary version, which the generated mapping derives from the
+    /// type family itself (decision 067). The family is judged by what the mapping states;
+    /// one the catalog supplies later is not known here, so the record errs towards saying.
     /// </summary>
     private void ParseVersion(XElement classElement)
     {
@@ -354,19 +351,28 @@ public class NHibernateXMLMappingParser(
         var dbProps = ReadColumnFacts(versionElem, name);
         dbProps["IsVersion"] = "true";
 
-        using var scope = Scope(versionElem);
-
-        entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
-
-        if (versionElem.Name.LocalName == "timestamp")
+        using (Scope(versionElem))
         {
-            // The element name claims the family the way the version element's type
-            // attribute would spell it.
-            entityBuilder.SetPropertyDatabaseType(name, DatabaseType.Timestamp);
-            return;
+            entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
+
+            if (versionElem.Name.LocalName == "timestamp")
+            {
+                // The element name claims the family the way the version element's type
+                // attribute would spell it.
+                entityBuilder.SetPropertyDatabaseType(name, DatabaseType.Timestamp);
+            }
+            else
+            {
+                ApplyTypeFacts(versionElem, name);
+            }
         }
 
-        ApplyTypeFacts(versionElem, name);
+        var binary = entityBuilder.EntityMap.PropertyMaps
+            .FirstOrDefault(pm => pm.Property.Name == name)?.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob;
+
+        ReportUnmodelledAttributes(versionElem, UnmodelledVersionAttributes, name,
+            (attribute, value) => attribute == "generated" && value == "always" && binary);
+        ReportUnreadChildren(versionElem, UnreadMetaChildren, name);
     }
 
     /// <summary>
@@ -407,6 +413,8 @@ public class NHibernateXMLMappingParser(
                     // <composite-id> admits no generator, so the values are the application's to
                     // supply - that is a statement of the framework, not silence of the source.
                     parts.Add((name, order++, PrimaryKeyStrategy.Assigned));
+                    ReportUnmodelledAttributes(part, UnmodelledKeyPartAttributes, name);
+                    ReportUnreadChildren(part, UnreadTypedChildren, name);
                     continue;
                 }
 
@@ -416,8 +424,23 @@ public class NHibernateXMLMappingParser(
                     {
                         order = ParseKeyManyToOne(part, parts, order);
                     }
+
+                    if (part.Attribute("name")?.Value is { Length: > 0 } reference)
+                    {
+                        ReportUnmodelledAttributes(part, UnmodelledKeyPartAttributes, reference);
+                        ReportRelationColumnAttributes(part, reference);
+                        ReportUnreadChildren(part, UnreadMetaChildren, reference);
+                    }
                 }
             }
+
+            // mapped="true" beside a class and without a name is the mirrored key class the
+            // model keeps (SourceKeyClass), so that one is read, not lost.
+            var mirrored = compositeElem.Attribute("class") is not null && compositeElem.Attribute("name") is null;
+
+            ReportUnmodelledAttributes(compositeElem, UnmodelledCompositeIdAttributes, compositeElem.Attribute("name")?.Value,
+                (attribute, value) => attribute == "mapped" && IsTrueValue(value) && mirrored);
+            ReportUnreadChildren(compositeElem, UnreadMetaChildren, compositeElem.Attribute("name")?.Value);
 
             if (parts.Count > 0)
             {
@@ -476,6 +499,9 @@ public class NHibernateXMLMappingParser(
         {
             entityBuilder.SetKeyStrategyDetails(propName, sourceStrategyName, parameters, sourceParameters);
         }
+
+        ReportUnmodelledAttributes(idElem, UnmodelledIdAttributes, propName);
+        ReportUnreadChildren(idElem, UnreadTypedChildren, propName);
     }
 
     /// <summary>
@@ -665,11 +691,45 @@ public class NHibernateXMLMappingParser(
     /// both true/false and 1/0, and mappings in the wild use either.
     /// </summary>
     private static bool IsTrue(XElement element, string attributeName)
-    {
-        var value = element.Attribute(attributeName)?.Value;
+        => element.Attribute(attributeName)?.Value is string value && IsTrueValue(value);
 
-        return value == "1" || (bool.TryParse(value, out var parsed) && parsed);
+    private static bool IsTrueValue(string value)
+        => value == "1" || (bool.TryParse(value, out var parsed) && parsed);
+
+    /// <summary>The false half of the same lexical space; a value that is neither is not false.</summary>
+    private static bool IsFalse(string value)
+        => value == "0" || (bool.TryParse(value, out var parsed) && !parsed);
+
+    /// <summary>
+    /// The columns the references of the class name - &lt;many-to-one&gt; and the
+    /// &lt;key-many-to-one&gt; parts of a composite key, the relations whose pairs the
+    /// generated mapping checks a property's column against. Case-insensitive, as that
+    /// check is.
+    /// </summary>
+    private static HashSet<string> RelationColumns(XElement classElement)
+    {
+        var keyParts = classElement.Elements()
+            .Where(e => e.Name.LocalName == "composite-id")
+            .Elements()
+            .Where(e => e.Name.LocalName == "key-many-to-one");
+
+        return new HashSet<string>(
+            classElement.Elements()
+                .Where(e => e.Name.LocalName == "many-to-one")
+                .Concat(keyParts)
+                .SelectMany(e => ReadRelationColumns(e) ?? []),
+            StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// The columns of the identifier as the generated mapping names them - the column of
+    /// each key part, or its property's name where it states none - against which it decides
+    /// whether a reference over key columns is written read-only.
+    /// </summary>
+    private HashSet<string> KeyColumns()
+        => new(
+            entityBuilder.EntityMap.PrimaryKey?.Parts.Select(p => p.PropertyMap.ColumnName ?? p.PropertyMap.Property.Name) ?? [],
+            StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Parses the properties of the class element, extracting their names, types, and database attributes.
@@ -680,6 +740,7 @@ public class NHibernateXMLMappingParser(
         // <many-to-one> may be a member as well (decision 130).
         var singles = new List<string>();
         var elements = new Dictionary<string, XElement>(StringComparer.Ordinal);
+        var relationColumns = RelationColumns(classElement);
 
         foreach (var prop in classElement.Elements().Where(e => e.Name.LocalName == "property"))
         {
@@ -690,15 +751,16 @@ public class NHibernateXMLMappingParser(
             }
 
             elements[propertyName] = prop;
+            string column;
 
             // Called even with nothing to record: a property that appears only in the XML
             // descriptor has to exist in the model before anything can be attached to it.
             using (Scope(prop))
             {
-                entityBuilder.SetPropertyDatabaseMapping(
-                    propertyName,
-                    ReadColumnFacts(prop, propertyName)
-                );
+                var dbProps = ReadColumnFacts(prop, propertyName);
+                column = dbProps.GetValueOrDefault("column") ?? propertyName;
+
+                entityBuilder.SetPropertyDatabaseMapping(propertyName, dbProps);
 
                 ApplyTypeFacts(prop, propertyName);
             }
@@ -713,7 +775,12 @@ public class NHibernateXMLMappingParser(
                 singles.Add(propertyName);
             }
 
-            ReportUnmodelledAttributes(prop, UnmodelledPropertyAttributes, propertyName);
+            // The generated mapping writes a column a reference of the entity also names
+            // read-only itself, so on such a column insert="false" and update="false" are
+            // derived from the model rather than lost (decision 067).
+            ReportUnmodelledAttributes(prop, UnmodelledPropertyAttributes, propertyName,
+                (attribute, value) => attribute is "insert" or "update" && IsFalse(value) && relationColumns.Contains(column));
+            ReportUnreadChildren(prop, UnreadPropertyChildren, propertyName);
         }
 
         // A constraint stands at the element that states it (decision 125).
@@ -1055,6 +1122,7 @@ public class NHibernateXMLMappingParser(
 
         ReadFacetsInto(dbProps, columnElement);
         ReportUnmodelledFacets(columnElement, propertyName);
+        ReportUnreadChildren(columnElement, UnreadColumnChildren, propertyName);
 
         return dbProps;
     }
@@ -1095,23 +1163,200 @@ public class NHibernateXMLMappingParser(
     /// to skip everything else without a word, which is the silence decisions 048 and 004
     /// rule out: a mapping fact the model cannot keep is a loss and says so.
     ///
-    /// Two of them change what the artifact means rather than only what it states. The
+    /// Some of them change what the artifact means rather than only what it states. The
     /// where condition is a permanent filter on every load of the entity, so an output
-    /// without it reads rows the source never saw; discriminator-value belongs to a
-    /// hierarchy the parser does not read at all, an area outside the guarantees of this
-    /// version as a whole (decision 030, see architecture.md §9). The rest are strategy
-    /// settings NHibernate applies its own default for once the attribute is gone.
+    /// without it reads rows the source never saw; subselect and catalog move the entity
+    /// onto rows other than those of the table the output names; discriminator-value and
+    /// abstract belong to a hierarchy the parser does not read at all, an area outside the
+    /// guarantees of this version as a whole (decision 030, see architecture.md §9). The
+    /// rest are strategy settings NHibernate applies its own default for once the attribute
+    /// is gone.
+    ///
+    /// node is left off this list and the others: it belongs to Hibernate's XML entity
+    /// mode, which NHibernate does not have, so it carries nothing the framework acts on.
     /// </summary>
     private static readonly (string Name, string Consequence)[] UnmodelledClassAttributes =
     [
         ("discriminator-value", "names the class in a table-per-hierarchy mapping, which the parser does not read at all (decision 030)"),
+        ("abstract", "marks the class as the abstract root of a hierarchy, which the parser does not read at all (decision 030)"),
         ("where", "restricts every load of the entity to the rows matching it, so without it the target reads the whole table"),
+        ("subselect", "maps the entity onto the rows of a SQL query instead of a table, so the output maps it onto a table of that name, which need not exist"),
+        ("catalog", "places the table in another database catalog, and without it the target looks for the table in the database of the connection"),
+        ("entity-name", "names the entity apart from its class, and without it the target knows the entity by the class name only, so references by that name do not resolve"),
         ("mutable", "says whether the entity may be updated at all, and without it the target treats it as writable"),
         ("optimistic-lock", "chooses the concurrency strategy of the entity, and without it the target applies its own"),
         ("dynamic-insert", "limits the generated INSERT to the columns actually set, and without it the target writes all of them"),
         ("dynamic-update", "limits the generated UPDATE to the columns actually changed, and without it the target writes all of them"),
+        ("select-before-update", "makes the framework read the row before updating a detached instance and skip the update when nothing changed, and without it the target updates unconditionally"),
+        ("check", "declares a table check constraint in literal SQL, a claim about a database dialect the tool neither verifies nor translates (decision 055)"),
+        ("polymorphism", "decides whether a query for a supertype returns instances of this class, and without it the target applies its own default"),
+        ("persister", "names a custom class that loads and stores the entity, and without it the target persists it the standard way"),
+        ("proxy", "names the type lazy-loading proxies of the class implement, and without it the target proxies the class itself"),
         ("batch-size", "sizes the batch the framework fetches proxies of this class in, which is a fetching strategy and not a mapping fact"),
         ("lazy", "says whether the class is proxied for lazy loading, and without it the target applies its own default"),
+        ("rowid", "lets the framework address rows by a database row identifier, and without it the target addresses them by the key"),
+        ("schema-action", "limits what NHibernate's schema tooling does with the table, and without it the tooling applies every action"),
+    ];
+
+    /// <summary>
+    /// The same for an &lt;id&gt;, whose read attributes are name, column, type and length,
+    /// and its &lt;generator&gt;.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledIdAttributes =
+    [
+        ("access", "chooses how the framework reaches the member, and without it the target goes through the property"),
+        ("unsaved-value", "names the identifier value that marks an instance as not yet saved, and without it the target infers it from the identifier's type"),
+    ];
+
+    /// <summary>
+    /// The same for a &lt;version&gt; or &lt;timestamp&gt;, whose read attributes are name,
+    /// column, type and the facets. The two elements share the list; each states only the
+    /// attributes its schema admits.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledVersionAttributes =
+    [
+        ("generated", "says whether the database produces the version and the framework reads it back, and the generated mapping states that only for a binary version"),
+        ("source", "says whether the timestamp comes from the application's clock or from the database, and without it the target takes it from the application"),
+        ("insert", "says whether the version column takes part in the generated INSERT, and without it the target writes it"),
+        ("unsaved-value", "names the version value that marks an instance as not yet saved, and without it the target decides by the identifier"),
+        ("access", "chooses how the framework reaches the member, and without it the target goes through the property"),
+    ];
+
+    /// <summary>
+    /// The same for a &lt;many-to-one&gt; or &lt;one-to-one&gt;, whose read attributes are name,
+    /// class, column, unique, unique-key and constrained; property-ref has a record of its
+    /// own in <see cref="ParseRelations"/>. formula is the one that changes what the
+    /// artifact means: the reference is joined over an expression, and the output joins it
+    /// over a column the target derives from the navigation's name.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledReferenceAttributes =
+    [
+        ("formula", "joins the reference over a SQL expression instead of a column, so the output joins it over the column the target derives from the navigation's name"),
+        ("not-null", "says the reference is required, which a relation in the model cannot say, and without it the target treats the reference as optional unless a property over the same column says otherwise"),
+        ("not-found", "says what loading does when the referenced row is missing, and without it the target applies its own default"),
+        ("cascade", "propagates operations on the entity to the referenced one, and without it the target cascades nothing"),
+        ("insert", "says whether the foreign key takes part in the generated INSERT, and without it the target writes it"),
+        ("update", "says whether the foreign key takes part in the generated UPDATE, and without it the target writes it"),
+        ("entity-name", "names the referenced entity apart from its class, and without it the reference is resolved by the class alone"),
+        ("foreign-key", "names the foreign key constraint the schema tooling creates, and without it the tooling names it itself"),
+        ("index", "names a plain index over the foreign key, a performance artifact rather than a mapping fact (decision 055)"),
+        ("lazy", "says whether the referenced entity is loaded on access through a proxy, and without it the target applies its own default"),
+        ("fetch", "chooses how the referenced entity is fetched, which is a fetching strategy and not a mapping fact"),
+        ("outer-join", "chooses how the referenced entity is fetched, which is a fetching strategy and not a mapping fact"),
+        ("optimistic-lock", "says whether a change to this reference takes part in the entity's optimistic lock, and without it the target counts it in"),
+        ("access", "chooses how the framework reaches the member, and without it the target goes through the property"),
+    ];
+
+    /// <summary>
+    /// The same for a &lt;composite-id&gt;, whose read attributes are class and name (the
+    /// key class of decision 011).
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledCompositeIdAttributes =
+    [
+        ("mapped", "says whether the key class mirrors properties of the entity, while the model reads the form of the key class from class and name"),
+        ("unsaved-value", "says how the framework tells an instance not yet saved by its key, and without it the target applies its own default"),
+        ("access", "chooses how the framework reaches the member, and without it the target goes through the property"),
+    ];
+
+    /// <summary>
+    /// The same for a &lt;key-property&gt; or &lt;key-many-to-one&gt;, whose read attributes are
+    /// name, column, type and length, or name, class and column. The two share the list;
+    /// each states only the attributes its schema admits.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledKeyPartAttributes =
+    [
+        ("not-found", "says what loading does when the referenced row is missing, and without it the target applies its own default"),
+        ("entity-name", "names the referenced entity apart from its class, and without it the reference is resolved by the class alone"),
+        ("foreign-key", "names the foreign key constraint the schema tooling creates, and without it the tooling names it itself"),
+        ("lazy", "says whether the referenced entity is loaded on access through a proxy, and without it the target applies its own default"),
+        ("access", "chooses how the framework reaches the member, and without it the target goes through the property"),
+    ];
+
+    /// <summary>
+    /// The same for a &lt;bag&gt;, &lt;set&gt;, &lt;list&gt; or &lt;map&gt; that holds an association.
+    /// Read are name, table and schema (the junction facts of decision 005); inverse and
+    /// cascade have their own records. where, subselect and catalog change which rows the
+    /// collection holds, order-by and sort the order it holds them in.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledCollectionAttributes =
+    [
+        ("where", "restricts the collection to the rows matching it, so without it the target loads every associated row"),
+        ("subselect", "loads the collection from the rows of a SQL query instead of a table, so without it the target reads the table"),
+        ("catalog", "places the collection table in another database catalog, and without it the target looks for the table in the database of the connection"),
+        ("order-by", "orders the loaded collection by a SQL expression, and without it the target loads it in no stated order"),
+        ("sort", "keeps the collection sorted in memory, and without it the target leaves it unsorted"),
+        ("mutable", "says whether the collection may change at all, and without it the target treats it as writable"),
+        ("check", "declares a check constraint on the collection table in literal SQL, a claim about a database dialect the tool neither verifies nor translates (decision 055)"),
+        ("collection-type", "names a custom collection type, and without it the target uses its own"),
+        ("persister", "names a custom class that loads and stores the collection, and without it the target persists it the standard way"),
+        ("generic", "says whether the collection is generic, and without it the target infers it from the member's type"),
+        ("lazy", "says whether the collection is loaded on access, and without it the target applies its own default"),
+        ("fetch", "chooses how the collection is fetched, which is a fetching strategy and not a mapping fact"),
+        ("outer-join", "chooses how the collection is fetched, which is a fetching strategy and not a mapping fact"),
+        ("batch-size", "sizes the batch the framework fetches collections of this role in, which is a fetching strategy and not a mapping fact"),
+        ("optimistic-lock", "says whether a change to the collection takes part in the owner's optimistic lock, and without it the target counts it in"),
+        ("access", "chooses how the framework reaches the member, and without it the target goes through the property"),
+    ];
+
+    /// <summary>
+    /// The same for the &lt;key&gt; of a collection, whose read attribute is column.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledCollectionKeyAttributes =
+    [
+        ("property-ref", "makes the foreign key reference a property of the owner instead of its key, and without it the target references the owner's key"),
+        ("on-delete", "lets the database delete the rows of the collection with their owner, and without it the target deletes them itself"),
+        ("not-null", "says the foreign key column is NOT NULL, and without it the target treats it as nullable"),
+        ("unique", "says the foreign key is unique, so that each owner has at most one row, and without it the target lets it repeat"),
+        ("update", "says whether the foreign key is ever updated, and without it the target updates it"),
+        ("foreign-key", "names the foreign key constraint the schema tooling creates, and without it the tooling names it itself"),
+    ];
+
+    /// <summary>
+    /// The same for the &lt;one-to-many&gt; of a collection, whose read attribute is class.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledOneToManyAttributes =
+    [
+        ("not-found", "says what loading does when an associated row is missing, and without it the target applies its own default"),
+        ("entity-name", "names the associated entity apart from its class, and without it the association is resolved by the class alone"),
+    ];
+
+    /// <summary>
+    /// The same for the &lt;many-to-many&gt; of a collection, whose read attributes are class
+    /// and column. where and formula change which rows the collection holds.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledManyToManyAttributes =
+    [
+        ("where", "restricts the associated entities to the rows matching it, so without it the target loads every associated row"),
+        ("formula", "joins the associated entity over a SQL expression instead of a junction column, which the model has no place for"),
+        ("property-ref", "makes the junction reference a property of the associated entity instead of its key, and without it the target references the key"),
+        ("order-by", "orders the associated entities by a SQL expression, and without it the target loads them in no stated order"),
+        ("unique", "says each associated entity belongs to one owner at most, and without it the target lets it repeat"),
+        ("not-found", "says what loading does when an associated row is missing, and without it the target applies its own default"),
+        ("entity-name", "names the associated entity apart from its class, and without it the association is resolved by the class alone"),
+        ("foreign-key", "names the foreign key constraint the schema tooling creates, and without it the tooling names it itself"),
+        ("lazy", "says whether the associated entities are loaded on access through proxies, and without it the target applies its own default"),
+        ("fetch", "chooses how the associated entities are fetched, which is a fetching strategy and not a mapping fact"),
+        ("outer-join", "chooses how the associated entities are fetched, which is a fetching strategy and not a mapping fact"),
+    ];
+
+    /// <summary>
+    /// The same for a &lt;column&gt; nested in a relation element - &lt;many-to-one&gt;,
+    /// &lt;key-many-to-one&gt;, &lt;key&gt; or &lt;many-to-many&gt; - of which only name is read
+    /// (and unique-key under a &lt;many-to-one&gt;). The model keeps the facets of a column on
+    /// the property mapped to it; a foreign key column is named by a relation, which has none.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnmodelledRelationColumnAttributes =
+    [
+        ("sql-type", "states the SQL type of a foreign key column, which a relation in the model cannot carry; the output states it only where a property over the same column does"),
+        ("length", "sizes a foreign key column, which a relation in the model cannot carry; the output states it only where a property over the same column does"),
+        ("precision", "sizes a foreign key column, which a relation in the model cannot carry; the output states it only where a property over the same column does"),
+        ("scale", "sizes a foreign key column, which a relation in the model cannot carry; the output states it only where a property over the same column does"),
+        ("not-null", "says a foreign key column is NOT NULL, which a relation in the model cannot carry; the output states it only where a property over the same column does"),
+        ("unique", "makes a foreign key column unique on its own, which a relation in the model cannot carry"),
+        ("unique-key", "makes a foreign key column a member of a unique constraint the model cannot place on this column"),
+        ("index", "names a plain index over a foreign key column, a performance artifact rather than a mapping fact (decision 055)"),
+        ("check", "declares a check constraint in literal SQL, a claim about a database dialect the tool neither verifies nor translates (decision 055)"),
+        ("default", "declares a default value in literal SQL, a claim about a database dialect the tool neither verifies nor translates (decision 055)"),
     ];
 
     /// <summary>
@@ -1147,15 +1392,24 @@ public class NHibernateXMLMappingParser(
     /// The record carries no <see cref="MappingFactCategory"/>, for the reason decision 048
     /// gives: the categories are a closed vocabulary of facts the model holds, and none of
     /// these is one of them, so naming the nearest would claim more than is known.
+    ///
+    /// <paramref name="survives"/> names the stated values whose fact the model does keep.
+    /// Mostly that separates a stated attribute from a derived one (the criterion of
+    /// decision 067): the generated mapping writes a few of these attributes itself, from
+    /// facts the model holds, and where it would write the same value nothing is lost -
+    /// which is also what keeps a round trip of the tool's own output free of records about
+    /// what it wrote. Elsewhere the value is read in one context and not in another.
     /// </summary>
     private void ReportUnmodelledAttributes(
         XElement element,
         (string Name, string Consequence)[] attributes,
-        string? propertyName)
+        string? propertyName,
+        Func<string, string, bool>? survives = null)
     {
         foreach (var (name, consequence) in attributes)
         {
-            if (element.Attribute(name)?.Value is not string value || string.IsNullOrWhiteSpace(value))
+            if (element.Attribute(name)?.Value is not string value || string.IsNullOrWhiteSpace(value)
+                || survives?.Invoke(name, value) == true)
             {
                 continue;
             }
@@ -1169,6 +1423,107 @@ public class NHibernateXMLMappingParser(
                 Reason = $"The attribute {name}=\"{value}\" of <{element.Name.LocalName}> has no counterpart "
                     + $"in the intermediate representation and was dropped (decision 048): it {consequence}.",
             });
+        }
+    }
+
+    /// <summary>
+    /// The child elements the model has no place for, under the elements this parser reads
+    /// below &lt;class&gt; - the counterpart of the attribute lists above. An unread child of
+    /// &lt;class&gt; itself is the flat-class boundary and has its record from
+    /// <see cref="ReportUnreadClassChildren"/>; a child of a read element would otherwise
+    /// vanish with nothing said (decision 048). Each list names what the element costs, for
+    /// the reason <see cref="ReportUnmodelledAttributes"/> gives; elements the parser reads
+    /// (&lt;column&gt;, &lt;generator&gt;, &lt;key&gt;, the association of a collection) or reports
+    /// elsewhere (the index of &lt;list&gt;, the keys of &lt;map&gt;) are not on them.
+    /// </summary>
+    private static readonly (string Name, string Consequence) UnreadMeta =
+        ("meta", "attaches metadata for code generation and tooling, which the model does not carry");
+
+    /// <summary>The children of &lt;composite-id&gt;, &lt;key-many-to-one&gt;, &lt;version&gt; and &lt;timestamp&gt;.</summary>
+    private static readonly (string Name, string Consequence)[] UnreadMetaChildren = [UnreadMeta];
+
+    /// <summary>The children of &lt;id&gt; and &lt;key-property&gt;.</summary>
+    private static readonly (string Name, string Consequence)[] UnreadTypedChildren =
+    [
+        ("type", "states the NHibernate type of the member - a custom one, with its parameters - which the parser reads only from the type attribute, so the output types the column by the member's type"),
+        UnreadMeta,
+    ];
+
+    /// <summary>The children of &lt;property&gt;; formula is the attribute's fact in element form.</summary>
+    private static readonly (string Name, string Consequence)[] UnreadPropertyChildren =
+    [
+        ("formula", "reads the property from a SQL expression instead of a column, so it has no column of its own; the model requires one and the output names it after the property"),
+        ("type", "states the NHibernate type of the member - a custom one, with its parameters - which the parser reads only from the type attribute, so the output types the column by the member's type"),
+        UnreadMeta,
+    ];
+
+    /// <summary>The children of &lt;many-to-one&gt; and &lt;one-to-one&gt;.</summary>
+    private static readonly (string Name, string Consequence)[] UnreadReferenceChildren =
+    [
+        ("formula", "joins the reference over a SQL expression instead of a column, so the output joins it over the column the target derives from the navigation's name"),
+        UnreadMeta,
+    ];
+
+    /// <summary>
+    /// The children of a &lt;bag&gt;, &lt;set&gt;, &lt;list&gt; or &lt;map&gt; that holds an
+    /// association. filter and subselect change which rows the collection holds; loader and
+    /// the sql- elements replace the SQL the framework would generate for it.
+    /// </summary>
+    private static readonly (string Name, string Consequence)[] UnreadCollectionChildren =
+    [
+        ("filter", "restricts the collection's rows by a named filter whenever the session enables it, and without it the target never restricts them"),
+        ("subselect", "loads the collection from the rows of a SQL query instead of a table, so without it the target reads the table"),
+        ("loader", "loads the collection with a named query instead of generated SQL, and without it the target generates its own"),
+        ("sql-insert", "replaces the generated INSERT of the collection with custom SQL, and without it the target generates its own"),
+        ("sql-update", "replaces the generated UPDATE of the collection with custom SQL, and without it the target generates its own"),
+        ("sql-delete", "replaces the generated DELETE of a collection row with custom SQL, and without it the target generates its own"),
+        ("sql-delete-all", "replaces the generated DELETE of the whole collection with custom SQL, and without it the target generates its own"),
+        ("synchronize", "names tables whose pending changes are flushed before the collection is loaded from a subselect, and without it the target flushes none"),
+        ("cache", "caches the collection in the second-level cache, which is a caching strategy and not a mapping fact"),
+        ("comment", "is a comment the schema tooling writes for the collection table, which the model does not carry"),
+        UnreadMeta,
+    ];
+
+    /// <summary>The children of the &lt;many-to-many&gt; of a collection besides its columns.</summary>
+    private static readonly (string Name, string Consequence)[] UnreadManyToManyChildren =
+    [
+        ("formula", "joins the associated entity over a SQL expression instead of a junction column, which the model has no place for"),
+        ("filter", "restricts the associated entities by a named filter whenever the session enables it, and without it the target never restricts them"),
+        UnreadMeta,
+    ];
+
+    /// <summary>The children of a &lt;column&gt;.</summary>
+    private static readonly (string Name, string Consequence)[] UnreadColumnChildren =
+    [
+        ("comment", "is a comment the schema tooling writes for the column, which the model does not carry"),
+    ];
+
+    /// <summary>
+    /// Reports every child of the list the element actually contains, in document order and
+    /// once per occurrence - two filters are two facts. The record carries no category, as
+    /// the attribute records do not.
+    /// </summary>
+    private void ReportUnreadChildren(
+        XElement element,
+        (string Name, string Consequence)[] children,
+        string? propertyName)
+    {
+        foreach (var child in element.Elements())
+        {
+            var name = child.Name.LocalName;
+
+            if (Array.FindIndex(children, c => c.Name == name) is var index and >= 0)
+            {
+                entityBuilder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = entityBuilder.Descriptor.Framework,
+                    Entity = entityBuilder.EntityMap.Entity.Name,
+                    Property = propertyName,
+                    Reason = $"The element {Opening(child)} of <{element.Name.LocalName}> has no counterpart "
+                        + $"in the intermediate representation and was dropped (decision 048): it {children[index].Consequence}.",
+                });
+            }
         }
     }
 
@@ -1213,6 +1568,8 @@ public class NHibernateXMLMappingParser(
     /// </summary>
     private void ParseRelations(XElement classElement)
     {
+        var identifierColumns = KeyColumns();
+
         foreach (var relation in classElement.Elements().Where(e =>
              e.Name.LocalName == "one-to-one" ||
              e.Name.LocalName == "many-to-one"))
@@ -1252,15 +1609,27 @@ public class NHibernateXMLMappingParser(
                 });
             }
 
-            using var scope = Scope(relation, relation: true);
+            // <one-to-one> admits no column by schema, so only <many-to-one> can state any.
+            var columns = ReadRelationColumns(relation);
 
-            entityBuilder.AddForeignKey(
-                isOneToOne ? Cardinality.OneToOne : Cardinality.ManyToOne,
-                propName,
-                target,
-                role,
-                // <one-to-one> admits no column by schema, so only <many-to-one> can state any.
-                ReadRelationColumns(relation));
+            using (Scope(relation, relation: true))
+            {
+                entityBuilder.AddForeignKey(
+                    isOneToOne ? Cardinality.OneToOne : Cardinality.ManyToOne,
+                    propName,
+                    target,
+                    role,
+                    columns);
+            }
+
+            // The generated mapping writes a reference over key columns read-only itself, so
+            // there insert="false" and update="false" are derived from the model rather than
+            // lost (decision 067).
+            ReportUnmodelledAttributes(relation, UnmodelledReferenceAttributes, propName,
+                (attribute, value) => attribute is "insert" or "update" && IsFalse(value)
+                    && columns?.Any(identifierColumns.Contains) == true);
+            ReportRelationColumnAttributes(relation, propName);
+            ReportUnreadChildren(relation, UnreadReferenceChildren, propName);
         }
 
         string[] collectionTypes = ["bag", "set", "list", "map"];
@@ -1289,6 +1658,7 @@ public class NHibernateXMLMappingParser(
                 {
                     entityBuilder.AddForeignKey(Cardinality.OneToMany, propName, target, foreignKeyColumns: keyColumns);
                     ApplyCollectionShape(collection, propName);
+                    ReportCollectionAttributes(collection, keyElement, oneToMany, UnmodelledOneToManyAttributes, propName);
                 }
                 continue;
             }
@@ -1325,6 +1695,7 @@ public class NHibernateXMLMappingParser(
                         collection.Attribute("schema")?.Value,
                         ReadRelationColumns(manyToMany)));
                 ApplyCollectionShape(collection, propName);
+                ReportCollectionAttributes(collection, keyElement, manyToMany, UnmodelledManyToManyAttributes, propName);
             }
         }
     }
@@ -1373,6 +1744,52 @@ public class NHibernateXMLMappingParser(
             ReportCollectionShapeLoss(propertyName,
                 $"cascade=\"{cascade}\" has no home in the model; the generated mapping states no cascade "
                 + "and the target's default (none) applies.");
+        }
+    }
+
+    /// <summary>
+    /// Reports what a read collection states beyond what the model keeps (decision 048): its
+    /// own attributes, those of its &lt;key&gt; and of the association element, and the facets
+    /// of the columns under both. inverse and cascade have their records in
+    /// <see cref="ApplyCollectionShape"/>; table and schema are read as the junction facts of
+    /// a many-to-many, and a one-to-many has no table of its own for them to name.
+    /// </summary>
+    private void ReportCollectionAttributes(
+        XElement collection,
+        XElement? key,
+        XElement association,
+        (string Name, string Consequence)[] associationAttributes,
+        string propertyName)
+    {
+        ReportUnmodelledAttributes(collection, UnmodelledCollectionAttributes, propertyName);
+        ReportUnreadChildren(collection, UnreadCollectionChildren, propertyName);
+
+        if (key is not null)
+        {
+            ReportUnmodelledAttributes(key, UnmodelledCollectionKeyAttributes, propertyName);
+            ReportRelationColumnAttributes(key, propertyName);
+        }
+
+        ReportUnmodelledAttributes(association, associationAttributes, propertyName);
+        ReportRelationColumnAttributes(association, propertyName);
+
+        // <one-to-many> admits no children by schema.
+        ReportUnreadChildren(association, UnreadManyToManyChildren, propertyName);
+    }
+
+    /// <summary>
+    /// The facets of the nested &lt;column&gt; elements of a relation element, of which only
+    /// the name is read - and, under a &lt;many-to-one&gt;, unique-key (decision 130).
+    /// </summary>
+    private void ReportRelationColumnAttributes(XElement relation, string propertyName)
+    {
+        var readsUniqueKey = relation.Name.LocalName == "many-to-one";
+
+        foreach (var column in relation.Elements().Where(e => e.Name.LocalName == "column"))
+        {
+            ReportUnmodelledAttributes(column, UnmodelledRelationColumnAttributes, propertyName,
+                (attribute, _) => readsUniqueKey && attribute == "unique-key");
+            ReportUnreadChildren(column, UnreadColumnChildren, propertyName);
         }
     }
 
