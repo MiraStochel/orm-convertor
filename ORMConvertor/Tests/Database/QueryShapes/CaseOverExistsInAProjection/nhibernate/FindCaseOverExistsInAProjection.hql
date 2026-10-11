@@ -1,0 +1,1 @@
+select ol.LineNumber as LineNumber, case when exists (select a.AllocationId from ShopOrderLineAllocation a where a.CompanyId = ol.CompanyId and a.OrderId = ol.OrderId and a.LineNumber = ol.LineNumber) then 1 else 0 end as IsAllocated from ShopOrderLine ol where ol.Quantity > 1

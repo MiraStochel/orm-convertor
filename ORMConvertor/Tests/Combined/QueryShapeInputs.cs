@@ -352,6 +352,18 @@ public static class QueryShapeInputs
             jpa: ["exists (", "join ShopOrder o", " on ", "a.LineNumber = ol.LineNumber", "o.CustomerId > 1"],
             eclipseLink: ["exists (select ", " from ShopOrderLineAllocation a, ShopOrder o where (", ") and a.CompanyId = ol.CompanyId", "a.LineNumber = ol.LineNumber", "o.CustomerId > 1)"]),
 
+        // The circle of IC 5 (decision 121): the right side of IN is a subquery whose filter
+        // is a disjunction of an equality and a second IN over the same table. Every target
+        // keeps the nesting; LINQ writes the inner set as a chain whose Contains() is the
+        // right operand of ||. The argument of Contains() is left open after the column, as
+        // in the subquery categories above: a MyBatis source states no nullability, so without
+        // a catalog the compared column is nullable and the argument carries .Value.
+        ["NestedInUnderADisjunctionAsTheRightSideOfIn"] = Hallmarks(
+            sql: ["ol.Quantity > 1", "ol.ProductId IN (SELECT l2.ToProductId", "l2.FromProductId = 3 OR l2.FromProductId IN (SELECT l1.ToProductId", "l1.FromProductId = 3"],
+            linq: ["ol.Quantity > 1", "l2.FromProductId == 3 || ", ".Select(l1 => l1.ToProductId).Contains(l2.FromProductId", ".Select(l2 => l2.ToProductId).Contains(ol.ProductId"],
+            hql: ["ol.Quantity > 1", "ol.ProductId in (select l2.ToProductId", "l2.FromProductId = 3 or l2.FromProductId in (select l1.ToProductId", "l1.FromProductId = 3"],
+            jpa: ["ol.Quantity > 1", "ol.ProductId in (select l2.ToProductId", "l2.FromProductId = 3 or l2.FromProductId in (select l1.ToProductId", "l1.FromProductId = 3"]),
+
         // The quantified comparison (decision 119): SQL, HQL and JPQL keep the keyword, LINQ
         // moves the comparison into the lambda of All() or Any() over the projected values. Both
         // categories run over the one nullable column of the domain, so that the fourth level
@@ -491,6 +503,18 @@ public static class QueryShapeInputs
             linq: ["Volume = (ol.Quantity > 5 ? \"bulk\" : \"single\")"],
             hql: ["case when ol.Quantity > 5 then 'bulk' else 'single' end as Volume"],
             jpa: ["case when ol.Quantity > 5 then 'bulk' else 'single' end as Volume"]),
+
+        // The flag of IS 7 (decision 122): a CASE in the projection whose condition is a
+        // correlated EXISTS. SQL, HQL and JPQL keep the keyword inside the CASE, LINQ writes
+        // the filtered chain and Any() as the condition of the conditional operator. The
+        // projection of the subquery is left open, as in the EXISTS categories above: a LINQ
+        // source states none, and the text targets then write SELECT *, a bare from, or the
+        // range variable.
+        ["CaseOverExistsInAProjection"] = Hallmarks(
+            sql: ["CASE WHEN EXISTS (SELECT", "a.LineNumber = ol.LineNumber", "THEN 1 ELSE 0 END AS IsAllocated", "WHERE ol.Quantity > 1"],
+            linq: ["IsAllocated = (", ".Where(a => ", "a.LineNumber == ol.LineNumber", ".Any() ? 1 : 0)", ".Where(ol => ol.Quantity > 1)"],
+            hql: ["case when exists (", "a.LineNumber = ol.LineNumber", "then 1 else 0 end as IsAllocated", "where ol.Quantity > 1"],
+            jpa: ["case when exists (", "a.LineNumber = ol.LineNumber", "then 1 else 0 end as IsAllocated", "where ol.Quantity > 1"]),
 
         ["OrderingByAnAggregate"] = Hallmarks(
             sql: ["ORDER BY COUNT(*) DESC, ol.ProductId ASC"],

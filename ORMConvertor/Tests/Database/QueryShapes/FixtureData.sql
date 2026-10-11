@@ -44,7 +44,12 @@
 --                   above it, seven below;
 --   bound count     four orders have two lines and two have one, so a count of lines >= 2
 --                   keeps four orders and <= 2 keeps all six;
---   EXISTS          five lines have an allocation, five have none;
+--   EXISTS          five lines have an allocation, five have none; of the eight lines of
+--                   more than one piece, four have one and four have none, which is the
+--                   flag of the CASE over EXISTS;
+--   circle of IN    from product 3 the links reach 1 and 4 in one step and 2 and 5 in
+--                   two; seven lines belong to those four products, and the standard anvil
+--                   of a single piece is the one the filter of more than one piece drops;
 --   set operation   the description 'Zither' of a line with Quantity > 5 is also the name of
 --                   a product above 100, so UNION meets on it and UNION ALL would not;
 --   DISTINCT        ten lines over six products;

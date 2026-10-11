@@ -1,0 +1,1 @@
+select ol from ShopOrderLine ol where ol.Quantity > 1 and ol.ProductId in (select l2.ToProductId from ShopProductLink l2 where l2.FromProductId = 3 or l2.FromProductId in (select l1.ToProductId from ShopProductLink l1 where l1.FromProductId = 3))

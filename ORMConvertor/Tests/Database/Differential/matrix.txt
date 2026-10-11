@@ -191,6 +191,19 @@ ordered = false
 decimalScale = 4
 mutations = filter, operator
 
+# The circle of IC 5 (decision 121) over the graph of product links: from product 3 the
+# links reach 1 and 4 in one step and 2 and 5 in two, and the one set of both steps is the
+# subquery with the disjunction. A translation that made the OR an AND reads an empty set,
+# one that lost the nested IN reads 1 and 4 alone. Dropped, the filter of more than one
+# piece lets the single anvil in; flipped, it keeps nothing.
+[NestedInUnderADisjunctionAsTheRightSideOfIn]
+category = NestedInUnderADisjunctionAsTheRightSideOfIn
+fields = CompanyId, OrderId, LineNumber, ProductId, Description, Quantity, UnitPrice
+shape = entity
+ordered = false
+decimalScale = 4
+mutations = filter, operator
+
 # The quantified comparison (decision 119). ALL over a subquery that returns a NULL for
 # department 6 and no row at all for department 9: SQL leaves 6 unknown and keeps 9, so the
 # canonical result is the one row, and a translation that kept C#'s two-valued All() would
@@ -351,7 +364,17 @@ category = CaseInAProjection
 fields = LineNumber, Volume
 shape = projection
 ordered = false
-mutations = 
+mutations =
+
+# The flag of IS 7 (decision 122): 1 where a line has an allocation, 0 where it has none,
+# four of each over the eight lines of more than one piece. The swap of two projected
+# fields does not reach a CASE, as above; the filter and its operator do.
+[CaseOverExistsInAProjection]
+category = CaseOverExistsInAProjection
+fields = LineNumber, IsAllocated
+shape = projection
+ordered = false
+mutations = filter, operator
 
 [OrderingByAnAggregate]
 category = OrderingByAnAggregate

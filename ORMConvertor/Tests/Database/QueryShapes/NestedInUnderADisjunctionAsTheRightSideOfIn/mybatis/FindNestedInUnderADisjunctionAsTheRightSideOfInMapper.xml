@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindNestedInUnderADisjunctionAsTheRightSideOfInMapper">
+  <select id="findNestedInUnderADisjunctionAsTheRightSideOfIn" resultType="ShopOrderLine">
+    SELECT * FROM {{schema}}.ShopOrderLines AS ol
+    WHERE ol.Quantity &gt; 1
+      AND ol.ProductId IN (SELECT l2.ToProductId FROM {{schema}}.ShopProductLinks AS l2
+                           WHERE l2.FromProductId = 3
+                              OR l2.FromProductId IN (SELECT l1.ToProductId FROM {{schema}}.ShopProductLinks AS l1 WHERE l1.FromProductId = 3))
+  </select>
+</mapper>

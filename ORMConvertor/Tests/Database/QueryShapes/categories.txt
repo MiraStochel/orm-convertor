@@ -156,6 +156,20 @@ Hibernate = hibernate/FindCorrelatedExistsWithAJoin.jpql
 EclipseLink = eclipselink/FindCorrelatedExistsWithAJoin.jpql
 MyBatis = mybatis/FindCorrelatedExistsWithAJoinMapper.xml
 
+# The circle of persons of IC 5 (decision 121): one set stated as a subquery whose filter
+# is a disjunction, one side an equality and the other a second IN subquery over the same
+# table - the persons known by the person or by one of the person's friends. Here the
+# products two links from product 3 over the graph of product links, and the lines of more
+# than one piece over them. The LDBC catalog was the only place the shape was judged at
+# the fourth level before this section.
+[NestedInUnderADisjunctionAsTheRightSideOfIn]
+Dapper = dapper/FindNestedInUnderADisjunctionAsTheRightSideOfIn.sql
+EFCore = efcore/FindNestedInUnderADisjunctionAsTheRightSideOfIn.query.cs
+NHibernate = nhibernate/FindNestedInUnderADisjunctionAsTheRightSideOfIn.hql
+Hibernate = hibernate/FindNestedInUnderADisjunctionAsTheRightSideOfIn.jpql
+EclipseLink = eclipselink/FindNestedInUnderADisjunctionAsTheRightSideOfIn.jpql
+MyBatis = mybatis/FindNestedInUnderADisjunctionAsTheRightSideOfInMapper.xml
+
 # The quantified comparison (decision 119) over the one nullable column of the domain: the
 # subquery of ALL returns a NULL for some outer rows and none for others, which is the case
 # where SQL's ALL and a provider's All() part. The SQL and MyBatis rows of ANY write SOME, the
@@ -358,6 +372,19 @@ NHibernate = nhibernate/FindCaseInAProjection.hql
 Hibernate = hibernate/FindCaseInAProjection.jpql
 EclipseLink = eclipselink/FindCaseInAProjection.jpql
 MyBatis = mybatis/FindCaseInAProjectionMapper.xml
+
+# The flag of IS 7 (decision 122): a CASE in the projection whose condition is a correlated
+# EXISTS, 1 where the row exists and 0 where it does not - whether the author of a reply
+# knows the author of the message. Here whether a line has an allocation, over the lines of
+# more than one piece. LINQ states it as Any() under the conditional operator. The LDBC
+# catalog was the only place the shape was judged at the fourth level before this section.
+[CaseOverExistsInAProjection]
+Dapper = dapper/FindCaseOverExistsInAProjection.sql
+EFCore = efcore/FindCaseOverExistsInAProjection.query.cs
+NHibernate = nhibernate/FindCaseOverExistsInAProjection.hql
+Hibernate = hibernate/FindCaseOverExistsInAProjection.jpql
+EclipseLink = eclipselink/FindCaseOverExistsInAProjection.jpql
+MyBatis = mybatis/FindCaseOverExistsInAProjectionMapper.xml
 
 # ORDER BY COUNT(*) DESC of a grouped query, the ordering that fell as a loss until the
 # ordering key became an operand (decision 107); the second key breaks the ties.
