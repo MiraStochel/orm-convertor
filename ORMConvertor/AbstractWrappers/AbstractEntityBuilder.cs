@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Xml.Linq;
 using Common.Convertors;
 using Common.Naming;
 using Model;
@@ -2648,7 +2649,87 @@ public abstract class AbstractEntityBuilder
         /// Set by BuildTableSchema when it opens an element that FinalizeBuild has to close.
         /// </summary>
         public bool ClassOpened { get; set; }
+
+        /// <summary>The places a builder marked while writing (decision 125); read by the base after FinalizeBuild.</summary>
+        internal List<ArtifactMark> Marks { get; } = [];
+
+        /// <summary>
+        /// States where a fact just written stands (decision 125): the most recent occurrence of
+        /// <paramref name="rendered"/> in <paramref name="buffer"/> - the spelling the builder gave
+        /// the fact, named by the builder itself right after writing the line that holds it. The
+        /// base computes the offsets; the builder states the text. A rendering the buffer does
+        /// not hold is a program error, because the builder claimed to have written it.
+        /// A builder that never calls this marks nothing and is complete all the same.
+        /// </summary>
+        public void Mark(StringBuilder buffer, MappingFactCategory category, string? property, string rendered)
+        {
+            ArgumentNullException.ThrowIfNull(buffer);
+            ArgumentException.ThrowIfNullOrEmpty(rendered);
+
+            var text = buffer.ToString();
+            var start = text.LastIndexOf(rendered, StringComparison.Ordinal);
+
+            if (start < 0)
+            {
+                throw new InvalidOperationException(
+                    $"The builder marked '{rendered}' as the rendering of {category} of '{property}', but the buffer does not contain it.");
+            }
+
+            Marks.Add(new ArtifactMark(buffer, category, property, start, rendered.Length));
+        }
+
+        /// <summary>
+        /// Marks an exact range of the buffer as a rendering of the fact (decision 125): for a
+        /// builder that reads its own finished document back structurally - the elements and
+        /// attributes of the XML it wrote - and knows the offsets rather than the last occurrence.
+        /// </summary>
+        public void MarkAt(StringBuilder buffer, MappingFactCategory category, string? property, int start, int length)
+        {
+            ArgumentNullException.ThrowIfNull(buffer);
+
+            if (start < 0 || length <= 0 || start + length > buffer.Length)
+            {
+                throw new InvalidOperationException(
+                    $"The builder marked [{start}, {start + length}) as the rendering of {category} of '{property}', outside the buffer.");
+            }
+
+            Marks.Add(new ArtifactMark(buffer, category, property, start, length));
+        }
+
+        /// <summary>Appends <paramref name="text"/> and marks exactly it as the rendering of the fact (decision 125).</summary>
+        public void Write(StringBuilder buffer, string text, MappingFactCategory category, string? property)
+        {
+            ArgumentNullException.ThrowIfNull(buffer);
+            ArgumentNullException.ThrowIfNull(text);
+
+            var start = buffer.Length;
+            buffer.Append(text);
+            Marks.Add(new ArtifactMark(buffer, category, property, start, text.Length));
+        }
+
+        /// <summary>
+        /// Marks <paramref name="rendered"/> for every fact of the property (or of the entity,
+        /// for a null property) that no mark names yet (decision 125): the place a fact shows
+        /// itself when the framework states it by writing nothing in particular - the
+        /// declaration a convention applies to, the member a mapping document leaves out. Called
+        /// after the explicit marks of the member, so that it takes only what they left.
+        /// </summary>
+        public void MarkRest(StringBuilder buffer, EntityMap entityMap, string? property, string rendered)
+        {
+            ArgumentNullException.ThrowIfNull(entityMap);
+
+            foreach (var fact in FactsOf(entityMap).Where(f => f.Property == property))
+            {
+                if (!Marks.Any(m => m.Category == fact.Category && m.Property == property))
+                {
+                    Mark(buffer, fact.Category, property, rendered);
+                }
+            }
+        }
     }
+
+    /// <summary>One marked rendering of a fact: in which buffer and where (decision 125).</summary>
+    internal sealed record ArtifactMark(StringBuilder Buffer, MappingFactCategory Category, string? Property, int Start, int Length);
 
     /// <summary>
     /// Declaration of what the target framework requires, can express, and adds to the
@@ -2719,6 +2800,20 @@ public abstract class AbstractEntityBuilder
     /// </summary>
     public void AttributeFacts(IReadOnlyCollection<EntityMap> read, string unit)
     {
+        // A reading scope the parser left open ends with the reading (decision 125), and
+        // every position the reading stated now knows its unit.
+        while (scopes.Count > 0)
+        {
+            Settle(scopes.Pop());
+        }
+
+        foreach (var (key, range) in pendingPositions)
+        {
+            sourcePositions.TryAdd(key, new SourcePosition(unit, range.Start, range.Length));
+        }
+
+        pendingPositions.Clear();
+
         foreach (var entityMap in read)
         {
             if (!declaringUnits.TryGetValue(entityMap, out var units))
@@ -2738,6 +2833,138 @@ public abstract class AbstractEntityBuilder
             {
                 sourceFacts.TryAdd((entityMap.Entity.Name, fact.Property, fact.Category), unit);
             }
+        }
+    }
+
+    /* ---- where a fact stands in the source (decision 125) --------------------------- */
+
+    private readonly record struct FactKey(string Entity, string? Property, MappingFactCategory Category);
+
+    /// <summary>
+    /// One open reading scope: the range of source text the parser is reading, the finer
+    /// ranges it named for particular categories, the entity map that was current when it
+    /// opened, and the facts that already stood on that map - so that the scope takes only
+    /// what its own reading created.
+    /// </summary>
+    private sealed class ReadingScope(
+        TextRange range,
+        IReadOnlyList<FactRefinement> refinements,
+        EntityMap? openedOn,
+        HashSet<FactKey> before)
+    {
+        public TextRange Range { get; } = range;
+
+        public IReadOnlyList<FactRefinement> Refinements { get; } = refinements;
+
+        public EntityMap? OpenedOn { get; } = openedOn;
+
+        public HashSet<FactKey> Before { get; } = before;
+    }
+
+    private readonly Stack<ReadingScope> scopes = new();
+
+    /// <summary>Facts a scope has already placed, so that an outer scope does not take an inner one's.</summary>
+    private readonly HashSet<FactKey> positioned = [];
+
+    /// <summary>Positions of the reading in progress, waiting for the unit the orchestration names at its end.</summary>
+    private readonly Dictionary<FactKey, TextRange> pendingPositions = [];
+
+    private readonly Dictionary<FactKey, SourcePosition> sourcePositions = [];
+
+    /// <summary>
+    /// Opens a reading scope (decision 125): until the returned handle is disposed, every fact
+    /// that first appears in the representation is placed at <paramref name="range"/> - or at
+    /// the range a <paramref name="refinements"/> entry names for its category and property. A
+    /// parser calls it around the reading of a class, a member, an attribute or an element;
+    /// scopes nest, and an inner scope takes the facts its own reading created before the outer
+    /// one takes the rest. A parser that never calls it states no positions, and nothing else
+    /// about it changes - the layer is optional by construction, which is what keeps a new
+    /// framework free of it (S1). A null range opens nothing, so a parser can pass what its
+    /// reader may or may not know without a branch.
+    /// </summary>
+    public IDisposable At(TextRange? range, params FactRefinement[] refinements)
+    {
+        if (range is not { } opened)
+        {
+            return NoScope.Instance;
+        }
+
+        var scope = new ReadingScope(opened, refinements, currentEntityMap, [.. KeysOf(currentEntityMap)]);
+        scopes.Push(scope);
+
+        return new ScopeHandle(this, scope);
+    }
+
+    /// <summary>Closes a scope and every inner scope still open above it.</summary>
+    private void Close(ReadingScope scope)
+    {
+        while (scopes.Count > 0)
+        {
+            var top = scopes.Pop();
+            Settle(top);
+
+            if (ReferenceEquals(top, scope))
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Places the facts a closing scope created: those on the entity current now and on the
+    /// one current when the scope opened, minus what stood there before and what an inner scope
+    /// already placed.
+    /// </summary>
+    private void Settle(ReadingScope scope)
+    {
+        IEnumerable<FactKey> candidates = KeysOf(currentEntityMap);
+
+        if (scope.OpenedOn is not null && !ReferenceEquals(scope.OpenedOn, currentEntityMap))
+        {
+            candidates = candidates.Concat(KeysOf(scope.OpenedOn));
+        }
+
+        foreach (var key in candidates.ToList())
+        {
+            if (scope.Before.Contains(key) || !positioned.Add(key))
+            {
+                continue;
+            }
+
+            var refinement = scope.Refinements.FirstOrDefault(r =>
+                r.Category == key.Category && (r.Property is null || r.Property == key.Property));
+
+            pendingPositions[key] = refinement?.Range ?? scope.Range;
+        }
+    }
+
+    private static IEnumerable<FactKey> KeysOf(EntityMap? entityMap)
+        => entityMap is null
+            ? []
+            : FactsOf(entityMap).Select(f => new FactKey(entityMap.Entity.Name, f.Property, f.Category));
+
+    private sealed class ScopeHandle(AbstractEntityBuilder owner, ReadingScope scope) : IDisposable
+    {
+        private bool closed;
+
+        public void Dispose()
+        {
+            if (closed)
+            {
+                return;
+            }
+
+            closed = true;
+            owner.Close(scope);
+        }
+    }
+
+    private sealed class NoScope : IDisposable
+    {
+        public static readonly NoScope Instance = new();
+
+        public void Dispose()
+        {
         }
     }
 
@@ -2846,12 +3073,16 @@ public abstract class AbstractEntityBuilder
     /// fact, else the build itself; the outcome follows from the descriptor and from the Loss
     /// records already written, so the ledger claims nothing the records do not.
     /// </summary>
-    private void RecordFacts(EntityMap entityMap, bool generated)
+    private void RecordFacts(
+        EntityMap entityMap,
+        bool generated,
+        IReadOnlyDictionary<FactKey, List<TargetPosition>>? targets = null)
     {
         var entity = entityMap.Entity.Name;
 
         foreach (var fact in FactsOf(entityMap))
         {
+            var key = new FactKey(entity, fact.Property, fact.Category);
             FactOrigin origin;
             string? unit = null;
 
@@ -2894,8 +3125,61 @@ public abstract class AbstractEntityBuilder
                 Origin = origin,
                 Unit = unit,
                 Outcome = outcome,
+                Source = sourcePositions.GetValueOrDefault(key),
+                Targets = targets?.GetValueOrDefault(key) ?? [],
             });
         }
+    }
+
+    /// <summary>
+    /// Turns the marks a builder left in its buffers into positions in the finished artifacts
+    /// (decision 125). The artifact that carries a buffer is the one whose content holds the
+    /// buffer's text verbatim - a framework that only wraps its buffer in a header and a
+    /// footer, which every FinalizeBuild does, keeps every offset by one shift. A framework
+    /// that rewrote the text it buffered would be stating positions in a text that is not the
+    /// artifact, so its marks are left out rather than guessed at; <c>FactPositionTest</c>
+    /// is what notices.
+    /// </summary>
+    private static Dictionary<FactKey, List<TargetPosition>> TargetPositionsOf(
+        EntityMap entityMap,
+        EntityArtifact artifact,
+        IReadOnlyList<ConversionSource> finished)
+    {
+        var positions = new Dictionary<FactKey, List<TargetPosition>>();
+
+        foreach (var buffer in new[] { artifact.Code, artifact.Mapping })
+        {
+            var marks = artifact.Marks.Where(m => ReferenceEquals(m.Buffer, buffer)).ToList();
+
+            if (marks.Count == 0)
+            {
+                continue;
+            }
+
+            var text = buffer.ToString();
+            var carrier = finished.FirstOrDefault(o => o.Content.Contains(text, StringComparison.Ordinal));
+
+            if (carrier is null)
+            {
+                continue;
+            }
+
+            var shift = carrier.Content.IndexOf(text, StringComparison.Ordinal);
+
+            foreach (var mark in marks)
+            {
+                var key = new FactKey(entityMap.Entity.Name, mark.Property, mark.Category);
+
+                if (!positions.TryGetValue(key, out var list))
+                {
+                    positions[key] = list = [];
+                }
+
+                list.Add(new TargetPosition(carrier.ContentType, shift + mark.Start, mark.Length));
+            }
+        }
+
+        return positions;
     }
 
     /// <summary>
@@ -2907,6 +3191,44 @@ public abstract class AbstractEntityBuilder
         => record.Entity == entity
             && record.Category == fact.Category
             && (record.Property is null || record.Property == fact.Property);
+
+    /// <summary>
+    /// Marks the facts of a finished XML mapping document by reading it back structurally
+    /// (decision 125): every attribute of every element for which <paramref name="categoryOf"/>
+    /// names a category is marked at its exact range, for the property
+    /// <paramref name="propertyOf"/> names for its element. A builder that writes its mapping
+    /// through an emitter in many places states its positions once, here, in the vocabulary of
+    /// its own document - an exact reading of what it wrote, not a search for values. A
+    /// document the reader cannot parse marks nothing, which cannot happen to a document the
+    /// builder itself just wrote.
+    /// </summary>
+    protected static void MarkXml(
+        EntityArtifact artifact,
+        StringBuilder buffer,
+        Func<XElement, string?> propertyOf,
+        Func<XElement, XAttribute, MappingFactCategory?> categoryOf)
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        ArgumentNullException.ThrowIfNull(buffer);
+
+        var (root, _) = XmlSource.Read(buffer.ToString());
+
+        if (root is null)
+        {
+            return;
+        }
+
+        foreach (var element in root.DescendantsAndSelf())
+        {
+            foreach (var attribute in element.Attributes())
+            {
+                if (categoryOf(element, attribute) is { } category && XmlSource.RangeOf(attribute) is { } range)
+                {
+                    artifact.MarkAt(buffer, category, propertyOf(element), range.Start, range.Length);
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// The artifact with its origin on it: the entity it was generated for and the units that
@@ -2981,13 +3303,17 @@ public abstract class AbstractEntityBuilder
 
             // The artifacts leave with the entity and its declaring units on them, and the
             // ledger is written after the emission so that a loss a framework reported while
-            // emitting counts as dropped (decision 124).
-            foreach (var output in FinalizeBuild(entityMap, artifact))
+            // emitting counts as dropped (decision 124). The marks the builder left while
+            // writing become positions in the finished artifacts first (decision 125).
+            var finished = FinalizeBuild(entityMap, artifact).ToList();
+            var targets = TargetPositionsOf(entityMap, artifact, finished);
+
+            foreach (var output in finished)
             {
                 outputs.Add(Attributed(output, entityMap));
             }
 
-            RecordFacts(entityMap, generated: true);
+            RecordFacts(entityMap, generated: true, targets);
         }
 
         return outputs;

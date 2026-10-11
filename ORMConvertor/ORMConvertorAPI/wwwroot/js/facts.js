@@ -1,19 +1,23 @@
 /*
- * The facts band of the translation screen (decision 124): one row per mapping fact the
- * server's ledger carries - entity, property, category, value, where it came from and what
- * became of it - and, over the code panels, an underline wherever the fact's value shows
- * itself. Two kinds of statement meet here and the page keeps them apart:
+ * The facts band of the translation screen (decisions 124 and 125): one row per mapping fact
+ * the server's ledger carries - entity, property, category, value, where it came from and
+ * what became of it - and, over the code panels, an underline wherever the fact stands.
  *
- *   - the row is the server's: which fact, which unit stated it, whether the artifact carries
- *     it; nothing in it is read out of a name or a text;
- *   - the underline is this page's: a search for the fact's literal value in the unit the
- *     server named and in the artifacts of the fact's entity. It finds the fact where the
- *     value is spelled the same on both sides and misses it where a framework respells it,
- *     and the band says so. The search is the one the mockup uses (comparison-marking.js),
- *     run over server facts instead of authored spans.
+ * Two kinds of underline meet here and the page keeps them apart:
+ *
+ *   - a position the server stated (`source`, `targets`): the reader placed the fact in the
+ *     unit, the builder marked it in the artifact. Solid underline, no caption - it is the
+ *     tool's own word and needs no qualifier;
+ *   - a place this page found by searching for the fact's literal value, where the server
+ *     stated no position (a reader or builder that marks nothing - the layer is optional for
+ *     a framework, decision 125). Dotted underline, and the title and the row say "text
+ *     search", because it finds a value spelled the same on both sides and misses one the
+ *     target respells.
+ *
+ * The search is the one function of marking.js, run over server facts instead of authored spans.
  */
 
-import { occurrences, segmentsOf, markSegments } from "./comparison-marking.js";
+import { occurrences, segmentsOf, markSegments } from "./marking.js";
 import {
   FactOrigin,
   FACT_ORIGIN_LABELS,
@@ -43,12 +47,14 @@ const ORIGIN_CLASSES = Object.freeze({
   [FactOrigin.Derived]: "badge-convention",
 });
 
+const SEARCH_TITLE = "Found by text search for the fact's value - not a position the tool stated.";
+
 /* ---- which fact gets which colour --------------------------------------- */
 
 /*
- * The mockup's three words (decision 100), now assigned by the server's two fields: a fact
- * that travelled from the input is carried, one the output states without the input having
- * said it is added, and one that did not reach the output is dropped.
+ * Three words for what happened: a fact that travelled from the input is carried, one the
+ * output states without the input having said it is added, one that did not reach the
+ * output is dropped.
  */
 function kindOf(fact) {
   if (fact.outcome !== FactOutcome.Carried) return "dropped";
@@ -56,10 +62,10 @@ function kindOf(fact) {
 }
 
 /*
- * The literal texts to look for. A value with several parts - the columns of a foreign key,
- * precision beside scale - is searched part by part; a one-character value would underline
- * every digit on the screen, so it is not searched at all; nullability is a word of the
- * ledger, not of either text.
+ * The literal texts to search for where the server stated no position. A value with several
+ * parts - the columns of a foreign key, precision beside scale - is searched part by part; a
+ * one-character value would underline every digit on the screen, so it is not searched at
+ * all; nullability is a word of the ledger, not of either text.
  */
 function tokensOf(fact) {
   if (fact.category === 7 /* nullability */) return [];
@@ -74,47 +80,88 @@ function tokensOf(fact) {
 /* ---- the underlines ----------------------------------------------------- */
 
 /*
- * Underlines every fact's value in the panels it concerns: the unit the server says stated
- * it, and the artifacts of its entity where the server says it was carried. Returns nothing;
- * the marks carry the indexes of their facts in `data-link`, which is how the rows and the
- * marks find each other afterwards.
+ * Collects the ranges to underline, per code element: the stated positions first, the text
+ * search only where a side has none. Returns the map of code element to ranges, and the set
+ * of fact indexes whose underlines came from searching.
  */
-function markFacts(facts, { inputPanels, artifactPanels }) {
+function rangesOf(facts, { inputPanels, artifactPanels }) {
   const ranges = new Map();
+  const searched = new Set();
 
-  const add = (panel, token, index) => {
+  const add = (panel, start, end, index, stated) => {
     const code = panel?.querySelector("pre > code");
     if (!code) return;
+    if (end > code.textContent.length) return;
     if (!ranges.has(code)) ranges.set(code, []);
-    for (const [start, end] of occurrences(code.textContent, token, { ignoreCase: true })) {
-      ranges.get(code).push({ start, end, link: String(index) });
+    ranges.get(code).push({ start, end, link: String(index), stated });
+  };
+
+  const search = (panel, index, tokens) => {
+    const code = panel?.querySelector("pre > code");
+    if (!code) return;
+    for (const token of tokens) {
+      for (const [start, end] of occurrences(code.textContent, token, { ignoreCase: true })) {
+        add(panel, start, end, index, false);
+        searched.add(String(index));
+      }
     }
   };
 
   facts.forEach((fact, index) => {
     const tokens = tokensOf(fact);
-    if (tokens.length === 0) return;
 
-    const panels = [];
+    // The input side: the unit that stated the fact.
     if (fact.origin === FactOrigin.Source && fact.unit) {
       const panel = inputPanels.get(fact.unit);
-      if (panel) panels.push(panel);
+      if (fact.source) {
+        add(panel, fact.source.start, fact.source.start + fact.source.length, index, true);
+      } else if (tokens.length > 0) {
+        search(panel, index, tokens);
+      }
     }
-    if (fact.outcome === FactOutcome.Carried) {
-      panels.push(...artifactPanels.filter((panel) => panel.dataset.entity === fact.entity));
-    }
-    for (const panel of panels) {
-      for (const token of tokens) add(panel, token, index);
+
+    // The output side: the artifacts of the fact's entity.
+    const own = artifactPanels.filter((panel) => panel.dataset.entity === fact.entity);
+    if (fact.targets && fact.targets.length > 0) {
+      for (const target of fact.targets) {
+        const panel = own.find((p) => Number(p.dataset.contentType) === target.artifact);
+        add(panel, target.start, target.start + target.length, index, true);
+      }
+    } else if (fact.outcome === FactOutcome.Carried && tokens.length > 0) {
+      for (const panel of own) search(panel, index, tokens);
     }
   });
 
+  return { ranges, searched };
+}
+
+/*
+ * Underlines every range in two passes per panel: the stated positions first, then the
+ * search results that touch none of them - a search result inside a stated position would
+ * only nest one mark in another and say less than the stated one already does. The second
+ * pass's marks carry the search flag and its title.
+ */
+function markFacts(facts, panels) {
+  const { ranges, searched } = rangesOf(facts, panels);
+
   for (const [code, found] of ranges) {
-    const marks = markSegments(code, segmentsOf(found));
-    for (const mark of marks) {
-      const first = Number(mark.dataset.link.split(" ")[0]);
-      mark.dataset.kind = kindOf(facts[first]);
+    const stated = found.filter((r) => r.stated);
+    const fromSearch = found.filter(
+      (r) => !r.stated && !stated.some((s) => r.start < s.end && r.end > s.start),
+    );
+
+    for (const mark of markSegments(code, segmentsOf(stated))) {
+      mark.dataset.kind = kindOf(facts[Number(mark.dataset.link.split(" ")[0])]);
+    }
+
+    for (const mark of markSegments(code, segmentsOf(fromSearch))) {
+      mark.dataset.kind = kindOf(facts[Number(mark.dataset.link.split(" ")[0])]);
+      mark.dataset.search = "";
+      mark.title = SEARCH_TITLE;
     }
   }
+
+  return searched;
 }
 
 /* ---- the band ------------------------------------------------------------- */
@@ -131,7 +178,7 @@ function badge(className, text, title) {
  * Renders the facts band into `container` and underlines the facts in the panels.
  * `inputPanels` maps a unit reference - the name the client sent, or "unit N" - to the panel
  * showing that unit; `artifactPanels` are the artifact panels, each carrying the entity the
- * server generated it for in `data-entity`.
+ * server generated it for in `data-entity` and its content type in `data-content-type`.
  */
 export function renderFacts(container, facts, { inputPanels, artifactPanels }) {
   container.replaceChildren();
@@ -144,7 +191,7 @@ export function renderFacts(container, facts, { inputPanels, artifactPanels }) {
     return;
   }
 
-  markFacts(facts, { inputPanels, artifactPanels });
+  const searched = markFacts(facts, { inputPanels, artifactPanels });
 
   /* The per-outcome summary, doubling as a filter like the records band's. */
   const summary = document.createElement("div");
@@ -222,11 +269,20 @@ export function renderFacts(container, facts, { inputPanels, artifactPanels }) {
         row.append(cell);
       }
 
+      // The value, and - only where this page searched for it instead of being told where it
+      // stands - the word that says so. A stated position needs no caption (decision 125).
       const valueCell = document.createElement("td");
       if (fact.value != null) {
         const code = document.createElement("code");
         code.textContent = fact.value;
         valueCell.append(code);
+      }
+      if (searched.has(String(index))) {
+        const note = document.createElement("small");
+        note.className = "search-note";
+        note.textContent = " text search";
+        note.title = SEARCH_TITLE;
+        valueCell.append(note);
       }
       row.append(valueCell);
 

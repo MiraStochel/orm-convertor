@@ -1,7 +1,7 @@
 # 100 — Interaktivní srovnání je maketa nad zmrazeným během; pátý dokument frontendu
 
 Datum: 2026-09-23
-Stav: platí
+Stav: nahrazeno [124](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md)
 Požadavky: F11, F14, S7
 Podklad: rozhodnutí [099](099-examples-are-content-not-a-choice.md), které tímto nahrazujeme, a přes ně [033](033-shape-of-the-static-frontend-screens.md); dále [004](004-unexpressible-facts-as-warnings.md), [010](010-diagnostics-as-returned-data.md), [032](032-frontend-as-static-pages-without-a-build.md), [066](066-records-attributed-to-the-input-unit.md) a [095](095-a-dated-run-record-names-its-commit.md); položka „Směr překladu jako jedna věc a vstup vedle výstupu" v [`open-items.md`](../open-items.md); [`architecture.md`](../architecture.md), §6.3 a §9
 

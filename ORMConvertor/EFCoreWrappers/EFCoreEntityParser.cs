@@ -127,6 +127,8 @@ public class EFCoreEntityParser : CSharpEntityParser
     {
         string? table = null;
         string? schema = null;
+        AttributeArgumentSyntax? tableArgument = null;
+        AttributeArgumentSyntax? schemaArgument = null;
 
         foreach (var arg in attribute.ArgumentList?.Arguments ?? Enumerable.Empty<AttributeArgumentSyntax>())
         {
@@ -135,16 +137,26 @@ public class EFCoreEntityParser : CSharpEntityParser
             if (named is null)
             {
                 table = GetString(arg.Expression);
+                tableArgument = arg;
             }
             else if (named.Equals("Schema", StringComparison.OrdinalIgnoreCase))
             {
                 schema = GetString(arg.Expression);
+                schemaArgument = arg;
             }
             else if (named.Equals("Name", StringComparison.OrdinalIgnoreCase))
             {
                 table = GetString(arg.Expression);
+                tableArgument = arg;
             }
         }
+
+        // The attribute is where both facts stand; each argument is where its own does
+        // (decision 125).
+        using var scope = entityBuilder.At(
+            Range(attribute),
+            new FactRefinement(MappingFactCategory.TableName, Range((SyntaxNode?)tableArgument ?? attribute)),
+            new FactRefinement(MappingFactCategory.SchemaName, Range((SyntaxNode?)schemaArgument ?? attribute)));
 
         if (!string.IsNullOrEmpty(table))
         {
@@ -215,6 +227,8 @@ public class EFCoreEntityParser : CSharpEntityParser
             });
             return;
         }
+
+        using var scope = entityBuilder.At(Range(attribute));
 
         entityBuilder.AddUniqueConstraint(name, propertyNames);
     }
@@ -313,6 +327,12 @@ public class EFCoreEntityParser : CSharpEntityParser
         var concurrencyTokens = properties.Count(p => HasAttribute(p, "ConcurrencyCheck"));
         var classHasTimestamp = properties.Any(p => HasAttribute(p, "Timestamp"));
 
+        // Where each property, its [Key] and its [DatabaseGenerated] stand, for the key the
+        // loop below states once the whole class is read (decision 125).
+        var propertyRanges = new Dictionary<string, TextRange>();
+        var keyRanges = new Dictionary<string, TextRange>();
+        var strategyRanges = new Dictionary<string, TextRange>();
+
         foreach (var prop in properties)
         {
             var reading = ReadProperty(prop);
@@ -329,6 +349,11 @@ public class EFCoreEntityParser : CSharpEntityParser
             string? inverseNavigation = null;
             List<string>? foreignKeyNames = null;
 
+            // Which annotation states which fact, so that the facts of this property are placed
+            // at the annotation rather than at the whole declaration (decision 125).
+            var refinements = new List<FactRefinement>();
+            propertyRanges[name] = Range(prop);
+
             foreach (var attribute in prop.AttributeLists.SelectMany(l => l.Attributes))
             {
                 var attrName = TrimAttribute(attribute.Name.ToString());
@@ -337,9 +362,12 @@ public class EFCoreEntityParser : CSharpEntityParser
                 {
                     case "Key":
                         isPrimaryKey = true;
+                        keyRanges[name] = Range(attribute);
                         break;
                     case "Column":
                         columnTypeName = HandleColumn(attribute, dbProps) ?? columnTypeName;
+                        refinements.Add(new(MappingFactCategory.ColumnName, name, Range(attribute)));
+                        refinements.Add(new(MappingFactCategory.DatabaseType, name, Range(attribute)));
                         break;
                     case "MaxLength":
                     case "StringLength":
@@ -353,6 +381,7 @@ public class EFCoreEntityParser : CSharpEntityParser
                         HandleLength(
                             GetInt(attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression),
                             attrName, dbProps, classDeclaration.Identifier.Text, name);
+                        refinements.Add(new(MappingFactCategory.Length, name, Range(attribute)));
                         break;
                     case "Unicode":
                         // The bare annotation claims unicode, [Unicode(false)] the opposite. It
@@ -363,6 +392,7 @@ public class EFCoreEntityParser : CSharpEntityParser
                         unicodeAttr = attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression is { } unicodeArgument
                             ? GetBool(unicodeArgument)
                             : true;
+                        refinements.Add(new(MappingFactCategory.DatabaseType, name, Range(attribute)));
                         break;
                     case "InverseProperty":
                         // The navigation on the far side that is the other end of this one -
@@ -375,15 +405,19 @@ public class EFCoreEntityParser : CSharpEntityParser
                         break;
                     case "Precision":
                         HandlePrecision(attribute, dbProps);
+                        refinements.Add(new(MappingFactCategory.PrecisionAndScale, name, Range(attribute)));
                         break;
                     case "Required":
                         requiredAttr = true;
+                        refinements.Add(new(MappingFactCategory.Nullability, name, Range(attribute)));
                         break;
                     case "DatabaseGenerated":
                         generatedOption = ReadGeneratedOption(attribute);
+                        strategyRanges[name] = Range(attribute);
                         break;
                     case "ForeignKey":
                         foreignKeyNames = ReadForeignKeyNames(attribute);
+                        refinements.Add(new(MappingFactCategory.ForeignKeyColumns, name, Range(attribute)));
                         break;
                     case "Timestamp":
                         // [Timestamp] is EF Core's mechanism for the version column
@@ -392,6 +426,7 @@ public class EFCoreEntityParser : CSharpEntityParser
                         // the one flag is the claim. The store type it maps to is the
                         // provider's business, so no type is invented here.
                         dbProps["IsVersion"] = "true";
+                        refinements.Add(new(MappingFactCategory.VersionColumn, name, Range(attribute)));
                         break;
                     case "ConcurrencyCheck":
                         // A concurrency token the application keeps: EF Core compares the
@@ -424,12 +459,14 @@ public class EFCoreEntityParser : CSharpEntityParser
 
                         dbProps["IsVersion"] = "true";
                         dbProps["ApplicationManagedVersion"] = "true";
+                        refinements.Add(new(MappingFactCategory.VersionColumn, name, Range(attribute)));
                         break;
                     case "NotMapped":
                         // The property stays on the class and leaves EF Core's model
                         // (decision 072); what that does to the rest of the reading is
                         // decided once all annotations are known, below.
                         isTransient = true;
+                        refinements.Add(new(MappingFactCategory.TransientProperty, name, Range(attribute)));
                         break;
 
                     // Everything else used to fall out of this switch without a trace, and
@@ -448,6 +485,16 @@ public class EFCoreEntityParser : CSharpEntityParser
                         break;
                 }
             }
+
+            // Everything the reading of this property leaves in the representation is placed at
+            // the declaration, or at the annotation that stated it (decision 125). The column's
+            // nullability without [Required] is read from the type, so the type is where it stands.
+            if (!requiredAttr)
+            {
+                refinements.Add(new(MappingFactCategory.Nullability, name, Range(prop.Type)));
+            }
+
+            using var scope = entityBuilder.At(Range(prop), [.. refinements]);
 
             if (isTransient)
             {
@@ -645,13 +692,35 @@ public class EFCoreEntityParser : CSharpEntityParser
         // refuses the entity, because EF Core builds no model from that input either.
         bool statesNoKey = entityBuilder.EntityMap.HasNoKey;
 
+        // Where the key stands (decision 125): at the class-level [PrimaryKey], at each part's
+        // [Key], or at the declaration of the property the convention picks; the strategy of a
+        // part at its [DatabaseGenerated], where the source wrote one.
+        FactRefinement[] KeyRefinements(IEnumerable<string> names, Func<string, TextRange> partRange)
+            => [.. names.SelectMany(n => new FactRefinement[]
+            {
+                new(MappingFactCategory.PrimaryKey, n, partRange(n)),
+                new(MappingFactCategory.PrimaryKeyStrategy, n, strategyRanges.GetValueOrDefault(n, partRange(n))),
+            })];
+
         if (classKeyNames.Count > 0)
         {
+            var primaryKeyAttribute = classDeclaration.AttributeLists
+                .SelectMany(l => l.Attributes)
+                .FirstOrDefault(a => TrimAttribute(a.Name.ToString()).Equals("PrimaryKey", StringComparison.OrdinalIgnoreCase));
+
+            using var scope = entityBuilder.At(
+                primaryKeyAttribute is null ? null : Range(primaryKeyAttribute),
+                KeyRefinements(classKeyNames, n => primaryKeyAttribute is null ? propertyRanges.GetValueOrDefault(n) : Range(primaryKeyAttribute)));
+
             entityBuilder.AddPrimaryKey(
                 classKeyNames.Select((n, i) => (n, i + 1, StrategyFor(n, composite: true))).ToList());
         }
         else if (keyPropertyNames.Count > 0)
         {
+            using var scope = entityBuilder.At(
+                keyRanges.GetValueOrDefault(keyPropertyNames[0], propertyRanges.GetValueOrDefault(keyPropertyNames[0])),
+                KeyRefinements(keyPropertyNames, n => keyRanges.GetValueOrDefault(n, propertyRanges.GetValueOrDefault(n))));
+
             if (statesNoKey)
             {
                 // EF Core ignores [Key] on a keyless type with a warning and the model
@@ -680,6 +749,10 @@ public class EFCoreEntityParser : CSharpEntityParser
         else if (!statesNoKey
             && FindConventionKey(classDeclaration.Identifier.Text, conventionKeyCandidates) is { } conventionKey)
         {
+            using var scope = entityBuilder.At(
+                propertyRanges.GetValueOrDefault(conventionKey),
+                KeyRefinements([conventionKey], n => propertyRanges.GetValueOrDefault(n)));
+
             entityBuilder.AddPrimaryKey(StrategyFor(conventionKey, composite: false), conventionKey);
         }
 

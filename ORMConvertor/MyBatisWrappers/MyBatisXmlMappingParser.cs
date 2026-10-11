@@ -199,15 +199,23 @@ public sealed class MyBatisXmlMappingParser(AbstractEntityBuilder entityBuilder,
                         identity.Add(idColumn);
                     }
 
-                    WriteColumn(entityMap, property!, member.Attribute("column")?.Value,
-                        member.Attribute("javaType")?.Value, member.Attribute("jdbcType")?.Value);
+                    using (Scope(member))
+                    {
+                        WriteColumn(entityMap, property!, member.Attribute("column")?.Value,
+                            member.Attribute("javaType")?.Value, member.Attribute("jdbcType")?.Value);
+                    }
+
                     ReportTypeHandler(entityMap, property, member);
                     closed.Cover(entityMap, property);
                     break;
 
                 case "result":
-                    WriteColumn(entityMap, property!, member.Attribute("column")?.Value,
-                        member.Attribute("javaType")?.Value, member.Attribute("jdbcType")?.Value);
+                    using (Scope(member))
+                    {
+                        WriteColumn(entityMap, property!, member.Attribute("column")?.Value,
+                            member.Attribute("javaType")?.Value, member.Attribute("jdbcType")?.Value);
+                    }
+
                     ReportTypeHandler(entityMap, property, member);
                     closed.Cover(entityMap, property);
                     break;
@@ -244,6 +252,28 @@ public sealed class MyBatisXmlMappingParser(AbstractEntityBuilder entityBuilder,
     /// model carries the column and the two types and nothing that runs between them, so
     /// the handler is reported rather than dropped in silence (decision 048).
     /// </summary>
+    /// <summary>
+    /// The reading scope of one result mapping element (decision 125): its start tag, the
+    /// column attribute as where the column name stands, the jdbcType attribute as where the
+    /// type does.
+    /// </summary>
+    private IDisposable Scope(XElement member)
+    {
+        var refinements = new List<FactRefinement>();
+
+        if (member.Attribute("column") is { } column && XmlSource.RangeOf(column) is { } columnRange)
+        {
+            refinements.Add(new FactRefinement(MappingFactCategory.ColumnName, columnRange));
+        }
+
+        if (member.Attribute("jdbcType") is { } jdbcType && XmlSource.RangeOf(jdbcType) is { } typeRange)
+        {
+            refinements.Add(new FactRefinement(MappingFactCategory.DatabaseType, typeRange));
+        }
+
+        return entityBuilder.At(XmlSource.RangeOf(member), [.. refinements]);
+    }
+
     private void ReportTypeHandler(EntityMap entityMap, string? property, XElement member)
     {
         if (member.Attribute("typeHandler")?.Value is { } handler && !string.IsNullOrWhiteSpace(handler))

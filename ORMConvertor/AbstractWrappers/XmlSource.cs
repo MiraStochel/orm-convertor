@@ -24,6 +24,10 @@ public readonly record struct XmlReadResult(XElement? Root, string? Reason);
 ///
 /// The sentence lives here and nowhere else, next to <see cref="NestingDepthGuard"/> and for
 /// the same reason: five reading sites that each wrote their own would drift apart.
+///
+/// Since decision 125 the document is read with line information, and <see cref="RangeOf(XElement)"/>
+/// and <see cref="RangeOf(XAttribute)"/> turn it into character ranges of the unit as the client
+/// sent it - the positions a parser hands to <see cref="AbstractEntityBuilder.At"/>.
 /// </summary>
 public static class XmlSource
 {
@@ -55,7 +59,16 @@ public static class XmlSource
 
         try
         {
-            return new XmlReadResult(Document(trimmed.TrimEnd(), ignoreDoctype).Root, null);
+            var text = trimmed.TrimEnd();
+            var document = Document(text, ignoreDoctype);
+
+            // The positions of decision 125 are a function of the text the document was read
+            // from, so the text travels with the document - as an annotation, which is what
+            // LINQ to XML has for exactly this - and the offset of its first character in the
+            // unit as the client sent it goes along, so that every range names the client's text.
+            document.AddAnnotation(new Positions(text, cut));
+
+            return new XmlReadResult(document.Root, null);
         }
         catch (XmlException error)
         {
@@ -68,18 +81,179 @@ public static class XmlSource
         }
     }
 
+    /// <summary>
+    /// The range of an element's start tag - from its opening angle bracket to the closing one
+    /// - in the unit as the client sent it, or null for an element of a document that was not
+    /// read through <see cref="Read"/>. The start tag rather than the whole element, because
+    /// that is where the attributes stating the facts stand, and a whole element would span
+    /// every nested statement as well.
+    /// </summary>
+    public static TextRange? RangeOf(XElement element)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+
+        if (element.Document?.Annotation<Positions>() is not { } positions
+            || !((IXmlLineInfo)element).HasLineInfo())
+        {
+            return null;
+        }
+
+        var info = (IXmlLineInfo)element;
+
+        // The line position points at the name, one past the angle bracket.
+        var start = positions.Offset(info.LineNumber, info.LinePosition) - 1;
+        if (start < 0 || start >= positions.Text.Length || positions.Text[start] != '<')
+        {
+            return null;
+        }
+
+        var end = EndOfStartTag(positions.Text, start);
+
+        return end < 0 ? null : new TextRange(positions.Cut + start, end + 1 - start);
+    }
+
+    /// <summary>
+    /// The range of an attribute - its name, the equals sign and the quoted value - in the
+    /// unit as the client sent it, or null where the document carries no positions.
+    /// </summary>
+    public static TextRange? RangeOf(XAttribute attribute)
+    {
+        ArgumentNullException.ThrowIfNull(attribute);
+
+        if (attribute.Document?.Annotation<Positions>() is not { } positions
+            || !((IXmlLineInfo)attribute).HasLineInfo())
+        {
+            return null;
+        }
+
+        var info = (IXmlLineInfo)attribute;
+        var text = positions.Text;
+        var start = positions.Offset(info.LineNumber, info.LinePosition);
+
+        if (start < 0 || start >= text.Length)
+        {
+            return null;
+        }
+
+        // name, optional spaces, '=', optional spaces, a quote, the value, the same quote.
+        var index = start;
+        while (index < text.Length && text[index] != '=' && !char.IsWhiteSpace(text[index]))
+        {
+            index++;
+        }
+
+        while (index < text.Length && char.IsWhiteSpace(text[index]))
+        {
+            index++;
+        }
+
+        if (index >= text.Length || text[index] != '=')
+        {
+            return null;
+        }
+
+        index++;
+        while (index < text.Length && char.IsWhiteSpace(text[index]))
+        {
+            index++;
+        }
+
+        if (index >= text.Length || (text[index] != '"' && text[index] != '\''))
+        {
+            return null;
+        }
+
+        var close = text.IndexOf(text[index], index + 1);
+
+        return close < 0 ? null : new TextRange(positions.Cut + start, close + 1 - start);
+    }
+
+    /// <summary>The offset of the closing bracket of the start tag opened at <paramref name="start"/>, respecting quotes.</summary>
+    private static int EndOfStartTag(string text, int start)
+    {
+        var quote = '\0';
+
+        for (var index = start + 1; index < text.Length; index++)
+        {
+            var c = text[index];
+
+            if (quote != '\0')
+            {
+                if (c == quote)
+                {
+                    quote = '\0';
+                }
+
+                continue;
+            }
+
+            if (c is '"' or '\'')
+            {
+                quote = c;
+            }
+            else if (c == '>')
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// The text a document was read from and where it begins in the client's unit, kept on the
+    /// document so that a line and column can be turned into an offset of the client's text.
+    /// </summary>
+    private sealed class Positions
+    {
+        private readonly int[] lineStarts;
+
+        public Positions(string text, int cut)
+        {
+            Text = text;
+            Cut = cut;
+
+            var starts = new List<int> { 0 };
+            for (var index = 0; index < text.Length; index++)
+            {
+                if (text[index] == '\n')
+                {
+                    starts.Add(index + 1);
+                }
+            }
+
+            lineStarts = [.. starts];
+        }
+
+        public string Text { get; }
+
+        /// <summary>How many characters the client's unit has before the parsed text.</summary>
+        public int Cut { get; }
+
+        /// <summary>The offset in <see cref="Text"/> of a one-based line and column, or -1 off the text.</summary>
+        public int Offset(int line, int column)
+        {
+            if (line < 1 || line > lineStarts.Length || column < 1)
+            {
+                return -1;
+            }
+
+            return lineStarts[line - 1] + column - 1;
+        }
+    }
+
     private static XDocument Document(string text, bool ignoreDoctype)
     {
         if (!ignoreDoctype)
         {
-            return XDocument.Parse(text);
+            return XDocument.Parse(text, LoadOptions.SetLineInfo);
         }
 
         var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Ignore, XmlResolver = null };
 
         using var reader = XmlReader.Create(new StringReader(text), settings);
 
-        return XDocument.Load(reader);
+        return XDocument.Load(reader, LoadOptions.SetLineInfo);
     }
 
     /// <summary>

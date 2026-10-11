@@ -797,6 +797,7 @@ public sealed class JavaClassReader
     {
         var line = Current.Line;
         var column = Current.Column;
+        var start = Current.Offset;
         ConsumeSymbol("@");
         var name = ReadQualifiedName();
         var arguments = new List<JavaAnnotationArgument>();
@@ -823,7 +824,11 @@ public sealed class JavaClassReader
             ConsumeSymbol(")");
         }
 
-        return new JavaAnnotation(name, arguments, line, column);
+        // The end is the offset after the last token consumed - the closing parenthesis, or
+        // the last part of the name (decision 125).
+        var last = tokens[position - 1];
+
+        return new JavaAnnotation(name, arguments, line, column, start, last.Offset + last.Length);
     }
 
     private JavaAnnotationValue ReadAnnotationValue()

@@ -1,3 +1,5 @@
+using AbstractWrappers;
+
 namespace JakartaPersistence;
 
 /// <summary>
@@ -34,6 +36,15 @@ public sealed class JpaEntityFacts
     /// see the record the writer emits for it.
     /// </summary>
     public bool IsMappedSuperclass { get; set; }
+
+    /// <summary>
+    /// Where the class-level statements stand in the source (decision 125), keyed by the
+    /// annotation's simple name - "Table", "IdClass" - whether the reader took them from an
+    /// annotation or from the orm.xml element that spells the same statement. The writer
+    /// opens the builder's reading scopes from these; a reader that records none states no
+    /// positions and the facts stand all the same.
+    /// </summary>
+    public Dictionary<string, TextRange> Positions { get; } = new(StringComparer.Ordinal);
 }
 
 public enum JpaAttributeKind
@@ -126,6 +137,16 @@ public sealed class JpaAttributeFacts
     /// reader knows, as at a lazy reference under EclipseLink. Each entry is a whole reason.
     /// </summary>
     public List<string> Notes { get; } = [];
+
+    /// <summary>
+    /// Where the attribute's statements stand in the source (decision 125), keyed by the
+    /// annotation's simple name - "Column", "Id", "GeneratedValue", "ManyToOne", "JoinColumn",
+    /// a vendor's "Nationalized" - and "member" for the declaration of the attribute itself,
+    /// which is where a fact the language states (a primitive's not-null) stands. The orm.xml
+    /// reader uses the same keys for the elements spelling the same statements, so the writer
+    /// opens one scope whichever reader filled the facts.
+    /// </summary>
+    public Dictionary<string, TextRange> Positions { get; } = new(StringComparer.Ordinal);
 }
 
 public sealed record JpaUniqueConstraintFacts(string? Name, IReadOnlyList<string> ColumnNames);

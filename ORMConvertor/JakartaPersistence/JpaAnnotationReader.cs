@@ -1,3 +1,4 @@
+using AbstractWrappers;
 using JavaEntityParsing;
 
 namespace JakartaPersistence;
@@ -50,8 +51,23 @@ public class JpaAnnotationReader
         return facts;
     }
 
+    /// <summary>
+    /// Where an annotation stands, as the facts carry it (decision 125): recorded under the
+    /// annotation's simple name before the annotation is interpreted, so that a vendor's
+    /// annotation and an unread one are placed as well as the specification's.
+    /// </summary>
+    private static void Place(JavaAnnotation annotation, Dictionary<string, TextRange> positions)
+    {
+        if (annotation.End > annotation.Start)
+        {
+            positions.TryAdd(annotation.SimpleName, TextRange.Between(annotation.Start, annotation.End));
+        }
+    }
+
     private void ReadClassAnnotation(JavaAnnotation annotation, JpaEntityFacts facts)
     {
+        Place(annotation, facts.Positions);
+
         if (!IsJakarta(annotation))
         {
             if (!ReadVendorAnnotation(annotation, facts, null))
@@ -154,6 +170,8 @@ public class JpaAnnotationReader
 
     private void ReadAttributeAnnotation(JavaAnnotation annotation, JpaAttributeFacts facts)
     {
+        Place(annotation, facts.Positions);
+
         if (!IsJakarta(annotation))
         {
             if (!ReadVendorAnnotation(annotation, null, facts))

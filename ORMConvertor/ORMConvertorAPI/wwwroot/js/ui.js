@@ -167,6 +167,7 @@ export function renderArtifacts(container, artifacts, options = {}) {
     // The entity the server generated the artifact for, kept on the panel so that the facts
     // band can find the artifacts of an entity without reading names (decision 124).
     if (artifact.entity) article.dataset.entity = artifact.entity;
+    article.dataset.contentType = String(artifact.contentType);
     renderOrigin(article.querySelector(".artifact-origin"), artifact.units, unitPanelId);
 
     const base = artifact.entity ?? artifactBaseName(artifact);

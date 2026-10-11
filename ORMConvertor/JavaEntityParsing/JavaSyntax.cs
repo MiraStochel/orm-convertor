@@ -39,7 +39,9 @@ public sealed record JavaAnnotationValue(
 /// <summary>An argument of an annotation; a null name is the single-value form, which means "value".</summary>
 public sealed record JavaAnnotationArgument(string? Name, JavaAnnotationValue Value);
 
-public sealed record JavaAnnotation(string Name, IReadOnlyList<JavaAnnotationArgument> Arguments, int Line, int Column)
+/// <param name="Start">The offset of the annotation's at sign in the source; 0 where the reader did not say.</param>
+/// <param name="End">The offset after the annotation's last token - the closing parenthesis, or the name (decision 125).</param>
+public sealed record JavaAnnotation(string Name, IReadOnlyList<JavaAnnotationArgument> Arguments, int Line, int Column, int Start = 0, int End = 0)
 {
     /// <summary>The annotation's name without its package: Column out of jakarta.persistence.Column.</summary>
     public string SimpleName => Name.Split('.')[^1];
