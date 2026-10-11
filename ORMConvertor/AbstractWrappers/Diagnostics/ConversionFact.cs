@@ -43,4 +43,20 @@ public sealed record ConversionFact
     public string? Unit { get; init; }
 
     public required FactOutcome Outcome { get; init; }
+
+    /// <summary>
+    /// Where the fact stands in the unit that stated it, or null where the reader stated no
+    /// position (decision 125). The position is the reader's statement, computed by the
+    /// builder base from the reading scope the reader opened; a fact without one is not a
+    /// fact without a source, only one whose reader did not say where.
+    /// </summary>
+    public SourcePosition? Source { get; init; }
+
+    /// <summary>
+    /// Where the fact stands in the artifacts of its entity, as many places as the builder
+    /// marked while writing them (decision 125); empty where the builder marked nothing. A
+    /// builder that marks nothing is complete all the same - the ledger row stands, only the
+    /// position is missing - which is what keeps the layer optional for a new framework (S1).
+    /// </summary>
+    public IReadOnlyList<TargetPosition> Targets { get; init; } = [];
 }

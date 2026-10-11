@@ -58,6 +58,16 @@ public abstract class JpaEntityParser(
 
         var facts = reader.Read(cls, attributes);
 
+        // Where each attribute's declaration stands (decision 125): the scope a fact falls into
+        // when no annotation states it - a primitive's not-null, a key part without @Column.
+        foreach (var attribute in facts.Attributes)
+        {
+            if (cls.MemberSpans.FirstOrDefault(m => m.Name == attribute.Name) is { } member)
+            {
+                attribute.Positions.TryAdd("member", TextRange.Between(member.Start, member.End));
+            }
+        }
+
         if (embeddedId is not null && facts.Attributes.FirstOrDefault(a => a.Name == embeddedId) is { } declared
             && declared.Kind is JpaAttributeKind.Basic or JpaAttributeKind.EmbeddedId)
         {

@@ -1,11 +1,11 @@
 /*
- * How a literal text is found in a code window and turned into markable pieces. Written for
- * the interactive comparison (decision 100), where it finds the authored spans in a frozen
- * file; since decision 124 the translation screen runs the same functions over the facts the
- * server states, to underline a fact's value in the input unit and in the artifact. It is
- * the only part of either page with an answer that can be right or wrong, so it lives apart
- * from the rendering: everything here is a function of its arguments, and the offline check
- * of the authored data runs exactly this code rather than a second copy of it.
+ * How ranges of a code window are turned into markable pieces, and how a literal text is
+ * found in it. Written for the interactive comparison of decision 100, which decision 125
+ * removed; the translation screen runs the same functions over the facts the server states
+ * (facts.js): the stated positions become segments and marks, and where a framework states
+ * no position the value is searched for. It lives apart from the rendering because it is the
+ * one part of the page with an answer that can be right or wrong: everything here is a
+ * function of its arguments.
  *
  * `markSegments` is the one function that touches the DOM, and only through `document`,
  * which a test can hand it.

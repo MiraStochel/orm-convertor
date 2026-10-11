@@ -189,17 +189,21 @@ public class NHibernateXMLMappingParser(
     /// </summary>
     private void ParseClass(XElement classElement)
     {
-        // Table and schema
-        var table = classElement.Attribute("table")?.Value;
-        if (!string.IsNullOrEmpty(table))
+        // Table and schema, placed at their attributes (decision 125). The start tag of
+        // <class> is the scope and nothing nested: the properties below open scopes of their own.
+        using (entityBuilder.At(XmlSource.RangeOf(classElement), Refinements(classElement, relation: false, nested: false)))
         {
-            entityBuilder.AddTable(table);
-        }
+            var table = classElement.Attribute("table")?.Value;
+            if (!string.IsNullOrEmpty(table))
+            {
+                entityBuilder.AddTable(table);
+            }
 
-        var schema = classElement.Attribute("schema")?.Value;
-        if (!string.IsNullOrEmpty(schema))
-        {
-            entityBuilder.AddSchema(schema);
+            var schema = classElement.Attribute("schema")?.Value;
+            if (!string.IsNullOrEmpty(schema))
+            {
+                entityBuilder.AddSchema(schema);
+            }
         }
 
         ReportUnmodelledAttributes(classElement, UnmodelledClassAttributes, propertyName: null);
@@ -349,6 +353,8 @@ public class NHibernateXMLMappingParser(
         var dbProps = ReadColumnFacts(versionElem, name);
         dbProps["IsVersion"] = "true";
 
+        using var scope = Scope(versionElem);
+
         entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
 
         if (versionElem.Name.LocalName == "timestamp")
@@ -387,12 +393,15 @@ public class NHibernateXMLMappingParser(
 
                     var dbProps = ReadColumnFacts(part, name);
 
-                    if (dbProps.Count > 0)
+                    using (Scope(part))
                     {
-                        entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
-                    }
+                        if (dbProps.Count > 0)
+                        {
+                            entityBuilder.SetPropertyDatabaseMapping(name, dbProps);
+                        }
 
-                    ApplyTypeFacts(part, name);
+                        ApplyTypeFacts(part, name);
+                    }
 
                     // <composite-id> admits no generator, so the values are the application's to
                     // supply - that is a statement of the framework, not silence of the source.
@@ -402,12 +411,23 @@ public class NHibernateXMLMappingParser(
 
                 if (part.Name.LocalName == "key-many-to-one")
                 {
-                    order = ParseKeyManyToOne(part, parts, order);
+                    using (Scope(part, relation: true))
+                    {
+                        order = ParseKeyManyToOne(part, parts, order);
+                    }
                 }
             }
 
             if (parts.Count > 0)
             {
+                // The key stands at <composite-id>, each part at its own element (decision 125).
+                using var keyScope = entityBuilder.At(
+                    XmlSource.RangeOf(compositeElem),
+                    [.. compositeElem.Elements()
+                        .Where(e => e.Name.LocalName is "key-property" or "key-many-to-one")
+                        .Where(e => XmlSource.RangeOf(e) is not null)
+                        .Select(e => new FactRefinement(MappingFactCategory.PrimaryKey, e.Attribute("name")?.Value, XmlSource.RangeOf(e)!.Value))]);
+
                 entityBuilder.AddPrimaryKey(parts, ReadSourceKeyClass(compositeElem));
             }
 
@@ -431,6 +451,10 @@ public class NHibernateXMLMappingParser(
         }
 
         var idDbProps = ReadColumnFacts(idElem, propName);
+
+        // Everything <id> states stands at its own attributes, the strategy at <generator>
+        // (decision 125).
+        using var scope = Scope(idElem);
 
         if (idDbProps.Count > 0)
         {
@@ -657,6 +681,7 @@ public class NHibernateXMLMappingParser(
         // the order the document does (S2).
         var uniqueKeys = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         var singles = new List<string>();
+        var elements = new Dictionary<string, XElement>(StringComparer.Ordinal);
 
         foreach (var prop in classElement.Elements().Where(e => e.Name.LocalName == "property"))
         {
@@ -666,25 +691,35 @@ public class NHibernateXMLMappingParser(
                 continue;
             }
 
+            elements[propertyName] = prop;
+
             // Called even with nothing to record: a property that appears only in the XML
             // descriptor has to exist in the model before anything can be attached to it.
-            entityBuilder.SetPropertyDatabaseMapping(
-                propertyName,
-                ReadColumnFacts(prop, propertyName)
-            );
+            using (Scope(prop))
+            {
+                entityBuilder.SetPropertyDatabaseMapping(
+                    propertyName,
+                    ReadColumnFacts(prop, propertyName)
+                );
 
-            ApplyTypeFacts(prop, propertyName);
+                ApplyTypeFacts(prop, propertyName);
+            }
+
             ReadUniqueness(prop, propertyName, uniqueKeys, singles);
             ReportUnmodelledAttributes(prop, UnmodelledPropertyAttributes, propertyName);
         }
 
+        // A constraint stands at the element that states it - its own for a single column,
+        // the first member's for a unique-key (decision 125).
         foreach (var propertyName in singles)
         {
+            using var scope = Scope(elements[propertyName]);
             entityBuilder.AddUniqueConstraint(null, [propertyName]);
         }
 
         foreach (var (name, propertyNames) in uniqueKeys)
         {
+            using var scope = Scope(elements[propertyNames[0]]);
             entityBuilder.AddUniqueConstraint(name, propertyNames);
         }
     }
@@ -839,6 +874,95 @@ public class NHibernateXMLMappingParser(
     /// dictionary either: they go through the typed channel of
     /// <see cref="ApplyTypeFacts"/> (decision 019).
     /// </summary>
+    /// <summary>
+    /// The reading scope of one mapping element (decision 125): the element's start tag, with
+    /// each attribute that states a fact named as where that fact stands - its own attribute,
+    /// or one of a nested &lt;column&gt; or &lt;generator&gt;. The category an attribute states
+    /// depends on the element: column names on a relation element are the foreign key's.
+    /// </summary>
+    private IDisposable Scope(XElement element, bool relation = false)
+        => entityBuilder.At(XmlSource.RangeOf(element), Refinements(element, relation, nested: true));
+
+    private static FactRefinement[] Refinements(XElement element, bool relation, bool nested)
+    {
+        var refinements = new List<FactRefinement>();
+
+        void Add(XAttribute attribute, MappingFactCategory? category)
+        {
+            if (category is { } c && XmlSource.RangeOf(attribute) is { } range)
+            {
+                refinements.Add(new FactRefinement(c, range));
+            }
+        }
+
+        foreach (var attribute in element.Attributes())
+        {
+            Add(attribute, attribute.Name.LocalName switch
+            {
+                "name" when element.Name.LocalName is "id" or "key-property" => MappingFactCategory.PrimaryKey,
+                "name" when element.Name.LocalName is "version" or "timestamp" => MappingFactCategory.VersionColumn,
+                _ => CategoryOf(attribute.Name.LocalName, relation),
+            });
+        }
+
+        if (!nested)
+        {
+            return [.. refinements];
+        }
+
+        foreach (var child in element.Elements())
+        {
+            switch (child.Name.LocalName)
+            {
+                case "column":
+                    foreach (var attribute in child.Attributes())
+                    {
+                        Add(attribute, attribute.Name.LocalName == "name"
+                            ? (relation ? MappingFactCategory.ForeignKeyColumns : MappingFactCategory.ColumnName)
+                            : CategoryOf(attribute.Name.LocalName, relation));
+                    }
+
+                    break;
+
+                case "generator":
+                    if (XmlSource.RangeOf(child) is { } generator)
+                    {
+                        refinements.Add(new FactRefinement(MappingFactCategory.PrimaryKeyStrategy, generator));
+                    }
+
+                    break;
+
+                case "key":
+                    foreach (var attribute in child.Attributes().Where(a => a.Name.LocalName == "column"))
+                    {
+                        Add(attribute, MappingFactCategory.ForeignKeyColumns);
+                    }
+
+                    foreach (var attribute in child.Elements().Where(e => e.Name.LocalName == "column").SelectMany(e => e.Attributes()).Where(a => a.Name.LocalName == "name"))
+                    {
+                        Add(attribute, MappingFactCategory.ForeignKeyColumns);
+                    }
+
+                    break;
+            }
+        }
+
+        return [.. refinements];
+    }
+
+    private static MappingFactCategory? CategoryOf(string attribute, bool relation) => attribute switch
+    {
+        "column" => relation ? MappingFactCategory.ForeignKeyColumns : MappingFactCategory.ColumnName,
+        "length" => MappingFactCategory.Length,
+        "precision" or "scale" => MappingFactCategory.PrecisionAndScale,
+        "not-null" => MappingFactCategory.Nullability,
+        "type" or "sql-type" => MappingFactCategory.DatabaseType,
+        "unique" or "unique-key" => MappingFactCategory.UniqueConstraint,
+        "table" => MappingFactCategory.TableName,
+        "schema" => MappingFactCategory.SchemaName,
+        _ => null,
+    };
+
     private Dictionary<string, string> ReadColumnFacts(XElement element, string propertyName)
     {
         var dbProps = new Dictionary<string, string>();
@@ -1080,6 +1204,8 @@ public class NHibernateXMLMappingParser(
                 });
             }
 
+            using var scope = Scope(relation, relation: true);
+
             entityBuilder.AddForeignKey(
                 isOneToOne ? Cardinality.OneToOne : Cardinality.ManyToOne,
                 propName,
@@ -1103,6 +1229,9 @@ public class NHibernateXMLMappingParser(
             // pairing happens before generation, once the child is part of the same conversion.
             var keyElement = collection.Elements().FirstOrDefault(e => e.Name.LocalName == "key");
             var keyColumns = keyElement is null ? null : ReadRelationColumns(keyElement);
+
+            // The relation stands at the collection element, its columns at <key> (decision 125).
+            using var scope = Scope(collection, relation: true);
 
             var oneToMany = collection.Elements().FirstOrDefault(e => e.Name.LocalName == "one-to-many");
             if (oneToMany != null)

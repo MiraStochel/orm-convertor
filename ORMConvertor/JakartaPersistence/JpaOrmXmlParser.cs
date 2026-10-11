@@ -179,6 +179,7 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
                     break;
 
                 case "table":
+                    Place(child, facts.Positions, "Table");
                     facts.Table = child.Attribute("name")?.Value;
                     facts.Schema = child.Attribute("schema")?.Value;
 
@@ -258,6 +259,16 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
             }
 
             var attribute = new JpaAttributeFacts { Name = name };
+
+            // Where the statements stand (decision 125), under the names the annotation reader
+            // uses for the same statements: the element is the member and the statement of its
+            // kind, each child the statement its annotation counterpart would make.
+            Place(element, attribute.Positions, "member");
+            Place(element, attribute.Positions, AnnotationName(element.Name.LocalName));
+            foreach (var child in element.Elements())
+            {
+                Place(child, attribute.Positions, AnnotationName(child.Name.LocalName));
+            }
 
             switch (element.Name.LocalName)
             {
@@ -441,6 +452,22 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
             ValueColumnName: element.Attribute("value-column-name")?.Value,
             PkColumnValue: element.Attribute("pk-column-value")?.Value);
     }
+
+    /// <summary>Records where an element stands, under the key the writer looks for (decision 125).</summary>
+    private static void Place(XElement element, Dictionary<string, TextRange> positions, string key)
+    {
+        if (XmlSource.RangeOf(element) is { } range)
+        {
+            positions.TryAdd(key, range);
+        }
+    }
+
+    /// <summary>
+    /// The annotation spelling of an orm.xml element name - generated-value is @GeneratedValue,
+    /// many-to-one is @ManyToOne - so that both readers place a statement under one key.
+    /// </summary>
+    private static string AnnotationName(string localName)
+        => string.Concat(localName.Split('-').Select(part => part.Length == 0 ? part : char.ToUpperInvariant(part[0]) + part[1..]));
 
     private static string? SimpleName(string? qualified)
     {

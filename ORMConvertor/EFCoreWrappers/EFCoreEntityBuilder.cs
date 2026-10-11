@@ -50,6 +50,13 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 : string.Empty;
 
             artifact.Code.AppendLine($"[Table(\"{entityMap.Table}\"{schemaIfPresent})]");
+
+            // Where the table and the schema stand in the artifact (decision 125).
+            artifact.Mark(artifact.Code, MappingFactCategory.TableName, null, $"\"{entityMap.Table}\"");
+            if (entityMap.Schema != null)
+            {
+                artifact.Mark(artifact.Code, MappingFactCategory.SchemaName, null, schemaIfPresent.TrimStart(',', ' '));
+            }
         }
 
         if (entityMap.PrimaryKey is null)
@@ -62,6 +69,11 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         {
             var keyNames = string.Join(", ", entityMap.PrimaryKey.Parts.Select(p => $"nameof({p.PropertyMap.Property.Name})"));
             artifact.Code.AppendLine($"[PrimaryKey({keyNames})]");
+
+            foreach (var part in entityMap.PrimaryKey.Parts)
+            {
+                artifact.Mark(artifact.Code, MappingFactCategory.PrimaryKey, part.PropertyMap.Property.Name, $"nameof({part.PropertyMap.Property.Name})");
+            }
         }
 
         AppendUniqueConstraints(entityMap, artifact);
@@ -133,7 +145,13 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             var parts = string.Join(", ", constraint.PropertyNames.Select(name => $"nameof({name})"));
             var named = constraint.Name is null ? string.Empty : $", Name = \"{constraint.Name}\"";
 
-            artifact.Code.AppendLine($"[Index({parts}, IsUnique = true{named})]");
+            var rendered = $"[Index({parts}, IsUnique = true{named})]";
+            artifact.Code.AppendLine(rendered);
+            artifact.Mark(
+                artifact.Code,
+                MappingFactCategory.UniqueConstraint,
+                constraint.PropertyNames.Count == 1 ? constraint.PropertyNames[0] : null,
+                rendered);
         }
     }
 
@@ -155,11 +173,22 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
             // For a simple key [Key] goes on the property; for a composite key the class-level
             // [PrimaryKey(...)] attribute (see BuildTableSchema) defines it and [Key] is not emitted.
-            artifact.Code.Append(BuildPropertyAttributes(propertyMap, isPrimaryKey: !composite));
-            AppendKeyStrategyAttribute(artifact.Code, entityMap, part, composite);
-            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property, isPrimaryKey: true)}");
-            artifact.Code.AppendLine();
+            AppendPropertyAttributes(artifact, propertyMap, isPrimaryKey: !composite);
+            AppendKeyStrategyAttribute(artifact, entityMap, part, composite);
+            AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property, isPrimaryKey: true));
         }
+    }
+
+    /// <summary>
+    /// The declaration line of a property, and the place every fact of the property that no
+    /// annotation stated shows itself (decision 125): the nullability a type carries, the key
+    /// generation EF Core applies by convention, the unicode default.
+    /// </summary>
+    private static void AppendSignature(EntityArtifact artifact, EntityMap entityMap, PropertyMap propertyMap, string signature)
+    {
+        artifact.Code.AppendLine($"    {signature}");
+        artifact.MarkRest(artifact.Code, entityMap, propertyMap.Property.Name, signature);
+        artifact.Code.AppendLine();
     }
 
     protected override void BuildProperties(EntityMap entityMap, EntityArtifact artifact)
@@ -182,17 +211,16 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 // [NotMapped] is the whole statement: a column annotation beside it would
                 // claim a mapping EF Core does not read on an ignored property.
                 artifact.Code.AppendLine("    [NotMapped]");
-                artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
-                artifact.Code.AppendLine();
+                artifact.Mark(artifact.Code, MappingFactCategory.TransientProperty, propertyMap.Property.Name, "[NotMapped]");
+                AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property));
                 continue;
             }
 
             ReportNullableColumnLoss(entityMap, propertyMap);
             ReportVersionIncrementLoss(entityMap, propertyMap);
 
-            artifact.Code.Append(BuildPropertyAttributes(propertyMap));
-            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
-            artifact.Code.AppendLine();
+            AppendPropertyAttributes(artifact, propertyMap);
+            AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property));
         }
     }
 
@@ -219,12 +247,14 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             // The key properties come first: [ForeignKey] on the navigation names them, so a reader
             // meets them before the annotation that refers to them (decision 012).
             List<string> foreignKeyProperties = relation.Role == RelationRole.Owning
-                ? AppendForeignKeyProperties(artifact.Code, entityMap, relation, propertyMap.Property.Name, nullable)
+                ? AppendForeignKeyProperties(artifact, entityMap, relation, propertyMap.Property.Name, nullable)
                 : [];
 
             if (foreignKeyProperties.Count > 0)
             {
-                artifact.Code.AppendLine($"    [ForeignKey(\"{string.Join(',', foreignKeyProperties)}\")]");
+                var rendered = $"[ForeignKey(\"{string.Join(',', foreignKeyProperties)}\")]";
+                artifact.Code.AppendLine($"    {rendered}");
+                artifact.Mark(artifact.Code, MappingFactCategory.ForeignKeyColumns, propertyMap.Property.Name, rendered);
             }
             else if (relation.Role == RelationRole.Owning && relation.ColumnPairs.Count == 0)
             {
@@ -243,9 +273,8 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 });
             }
 
-            artifact.Code.Append(BuildPropertyAttributes(propertyMap));
-            artifact.Code.AppendLine($"    {BuildPropertySignature(propertyMap.Property)}");
-            artifact.Code.AppendLine();
+            AppendPropertyAttributes(artifact, propertyMap);
+            AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property));
         }
     }
 
@@ -256,12 +285,13 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// labor as with the members a composite key forces on NHibernate (decisions 006 and 012).
     /// </summary>
     private List<string> AppendForeignKeyProperties(
-        StringBuilder code,
+        EntityArtifact artifact,
         EntityMap entityMap,
         Relation relation,
         string navigationProperty,
         bool nullable)
     {
+        var code = artifact.Code;
         var names = new List<string>();
         var missing = new List<(string Name, LangType Type, string Column)>();
 
@@ -302,12 +332,19 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
         foreach (var (name, type, column) in missing)
         {
+            // The generated key property is where the foreign key's columns show themselves
+            // beside [ForeignKey] (decision 125): the column attribute where the name differs,
+            // the declaration itself otherwise.
             if (column != name)
             {
-                code.AppendLine($"    [Column(\"{column}\")]");
+                var columnAttribute = $"[Column(\"{column}\")]";
+                code.AppendLine($"    {columnAttribute}");
+                artifact.Mark(code, MappingFactCategory.ForeignKeyColumns, navigationProperty, columnAttribute);
             }
 
-            code.AppendLine($"    public {CSharpTypeConvertor.ToString(type)}{(nullable ? "?" : string.Empty)} {name} {{ get; set; }}");
+            var declaration = $"public {CSharpTypeConvertor.ToString(type)}{(nullable ? "?" : string.Empty)} {name} {{ get; set; }}";
+            code.AppendLine($"    {declaration}");
+            artifact.Mark(code, MappingFactCategory.ForeignKeyColumns, navigationProperty, declaration);
             code.AppendLine();
         }
 
@@ -450,13 +487,25 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// <summary>
     /// Builds the property attributes for EF Core.
     /// </summary>
-    private static string BuildPropertyAttributes(PropertyMap propMap, bool isPrimaryKey = false)
+    private static void AppendPropertyAttributes(EntityArtifact artifact, PropertyMap propMap, bool isPrimaryKey = false)
     {
-        StringBuilder attributes = new();
+        var code = artifact.Code;
+        var property = propMap.Property.Name;
+
+        // One attribute line, marked as where the facts it states stand (decision 125).
+        void Line(string attribute, params MappingFactCategory[] categories)
+        {
+            code.AppendLine($"    {attribute}");
+
+            foreach (var category in categories)
+            {
+                artifact.Mark(code, category, property, attribute);
+            }
+        }
 
         if (isPrimaryKey)
         {
-            attributes.AppendLine($"    [Key]");
+            Line("[Key]", MappingFactCategory.PrimaryKey);
         }
 
         // A stated NOT NULL over a nullable property: EF Core reads the column's
@@ -466,8 +515,12 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         // a key column is never nullable, so the key needs no claim either.
         if (!isPrimaryKey && propMap.IsNullable == false && propMap.Property.Type is { IsNullable: true })
         {
-            attributes.AppendLine("    [Required]");
+            Line("[Required]", MappingFactCategory.Nullability);
         }
+
+        // [Timestamp] states the type and the length of a rowversion column itself, so
+        // neither travels beside it - see TypeNameFor.
+        var typeCarriedByTimestamp = WritesTimestamp(propMap) && propMap.Type is not null;
 
         // A store-generated version is EF Core's rowversion; any other version is a
         // concurrency token the application keeps - see ReportVersionIncrementLoss. A
@@ -475,40 +528,43 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         // whatever its type.
         if (propMap.IsVersion)
         {
-            attributes.AppendLine(WritesTimestamp(propMap) ? "    [Timestamp]" : "    [ConcurrencyCheck]");
+            Line(
+                WritesTimestamp(propMap) ? "[Timestamp]" : "[ConcurrencyCheck]",
+                typeCarriedByTimestamp
+                    ? [MappingFactCategory.VersionColumn, MappingFactCategory.DatabaseType, MappingFactCategory.Length]
+                    : [MappingFactCategory.VersionColumn]);
         }
-
-        // [Timestamp] states the type and the length of a rowversion column itself, so
-        // neither travels beside it - see TypeNameFor.
-        var typeCarriedByTimestamp = WritesTimestamp(propMap) && propMap.Type is not null;
 
         var typeText = TypeNameFor(propMap);
 
         if (propMap.ColumnName != null || typeText != null)
         {
             var parts = new List<string>();
+            var categories = new List<MappingFactCategory>();
+
             if (propMap.ColumnName != null)
             {
                 parts.Add($"\"{propMap.ColumnName}\"");
+                categories.Add(MappingFactCategory.ColumnName);
             }
 
             if (typeText != null)
             {
                 parts.Add($"TypeName=\"{typeText}\"");
+                categories.Add(MappingFactCategory.DatabaseType);
             }
 
-            attributes.AppendLine($"    [Column({string.Join(", ", parts)})]");
+            Line($"[Column({string.Join(", ", parts)})]", [.. categories]);
         }
-
 
         if (NeedsUnicodeAttribute(propMap))
         {
-            attributes.AppendLine("    [Unicode(false)]");
+            Line("[Unicode(false)]", MappingFactCategory.DatabaseType);
         }
 
         if (propMap.Length != null && !typeCarriedByTimestamp)
         {
-            attributes.AppendLine($"    [MaxLength({propMap.Length})]");
+            Line($"[MaxLength({propMap.Length})]", MappingFactCategory.Length);
         }
 
         if (propMap.Precision != null)
@@ -517,10 +573,8 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 ? $"{propMap.Precision}, {propMap.Scale}"
                 : $"{propMap.Precision}";
 
-            attributes.AppendLine($"    [Precision({args})]");
+            Line($"[Precision({args})]", MappingFactCategory.PrecisionAndScale);
         }
-
-        return attributes.ToString();
     }
 
     /// <summary>
@@ -578,8 +632,9 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// That claim is reported as a convention of the target - the mirror of the record
     /// NHibernate emits for its written 'assigned' fallback (decision 064).
     /// </summary>
-    private void AppendKeyStrategyAttribute(StringBuilder code, EntityMap entityMap, PrimaryKeyPart part, bool composite)
+    private void AppendKeyStrategyAttribute(EntityArtifact artifact, EntityMap entityMap, PrimaryKeyPart part, bool composite)
     {
+        var code = artifact.Code;
         if (part.Strategy is PrimaryKeyStrategy.Identity or PrimaryKeyStrategy.Sequence
             or PrimaryKeyStrategy.HiLo or PrimaryKeyStrategy.Uuid or PrimaryKeyStrategy.Increment)
         {
@@ -621,7 +676,9 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
         if (option is not null)
         {
-            code.AppendLine($"    [DatabaseGenerated(DatabaseGeneratedOption.{option})]");
+            var rendered = $"[DatabaseGenerated(DatabaseGeneratedOption.{option})]";
+            code.AppendLine($"    {rendered}");
+            artifact.Mark(code, MappingFactCategory.PrimaryKeyStrategy, part.PropertyMap.Property.Name, rendered);
         }
     }
 

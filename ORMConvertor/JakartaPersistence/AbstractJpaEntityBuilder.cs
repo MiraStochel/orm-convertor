@@ -48,12 +48,29 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
     /// <summary>Adds an import the artifact needs; called by the hooks as well.</summary>
     protected void Import(string qualifiedName) => imports.Add(qualifiedName);
 
+    /// <summary>
+    /// The artifact of the entity being built, for the marks of decision 125: the emitting
+    /// methods below take the code buffer, and the marks need the artifact that owns it. Set
+    /// at the first step of every entity, like the imports and accessors beside it.
+    /// </summary>
+    private EntityArtifact? current;
+
+    /// <summary>Marks a line of code just written as where the facts of these categories stand (decision 125).</summary>
+    private void Mark(StringBuilder code, string rendered, string? property, params MappingFactCategory[] categories)
+    {
+        foreach (var category in categories)
+        {
+            current?.Mark(code, category, property, rendered);
+        }
+    }
+
     protected override void BuildImports(EntityMap entityMap, EntityArtifact artifact)
     {
         // The imports follow from what the steps below emit, so they are collected while
         // emitting and rendered ahead of the class in FinalizeBuild.
         imports.Clear();
         accessors.Clear();
+        current = artifact;
     }
 
     protected override void BuildTableSchema(EntityMap entityMap, EntityArtifact artifact)
@@ -96,7 +113,32 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             tableArguments.Add($"uniqueConstraints = {constraints}");
         }
 
-        artifact.Code.AppendLine($"@Table({string.Join(", ", tableArguments)})");
+        var tableAnnotation = $"@Table({string.Join(", ", tableArguments)})";
+        artifact.Code.AppendLine(tableAnnotation);
+
+        // Where the table facts stand (decision 125): the name and schema arguments, and the
+        // whole annotation for each constraint it carries.
+        if (entityMap.Table is not null)
+        {
+            artifact.Mark(artifact.Code, MappingFactCategory.TableName, null, $"name = \"{table}\"");
+        }
+
+        if (entityMap.Schema is not null)
+        {
+            artifact.Mark(artifact.Code, MappingFactCategory.SchemaName, null, $"schema = \"{entityMap.Schema}\"");
+        }
+
+        if (constraints is not null)
+        {
+            foreach (var constraint in entityMap.UniqueConstraints)
+            {
+                artifact.Mark(
+                    artifact.Code,
+                    MappingFactCategory.UniqueConstraint,
+                    constraint.PropertyNames.Count == 1 ? constraint.PropertyNames[0] : null,
+                    tableAnnotation);
+            }
+        }
 
         if (entityMap.PrimaryKey is { Parts.Count: > 1 })
         {
@@ -187,6 +229,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
             code.AppendLine();
             code.AppendLine("    @Id");
+            Mark(code, "@Id", propertyMap.Property.Name, MappingFactCategory.PrimaryKey);
             AppendGeneration(entityMap, part, code);
             AppendColumn(entityMap, propertyMap, code, isKey: true);
 
@@ -216,6 +259,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 // it would claim a mapping the provider does not read.
                 Import($"{Jakarta}.Transient");
                 code.AppendLine("    @Transient");
+                Mark(code, "@Transient", propertyMap.Property.Name, MappingFactCategory.TransientProperty);
                 AppendField(entityMap, propertyMap.Property, code);
                 continue;
             }
@@ -224,6 +268,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             {
                 Import($"{Jakarta}.Version");
                 code.AppendLine("    @Version");
+                Mark(code, "@Version", propertyMap.Property.Name, MappingFactCategory.VersionColumn);
 
                 if (propertyMap.IsApplicationManagedVersion)
                 {
@@ -343,6 +388,11 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         var optional = propertyMap.IsNullable == false ? "(optional = false)" : string.Empty;
         code.AppendLine($"    @{annotation}{optional}");
 
+        if (optional.Length > 0)
+        {
+            Mark(code, optional, propertyMap.Property.Name, MappingFactCategory.Nullability);
+        }
+
         if (SharesPrimaryKey(entityMap, relation))
         {
             Import($"{Jakarta}.MapsId");
@@ -368,7 +418,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                     readOnly: keyColumns.Contains(column));
             }).ToList();
 
-            AppendJoinColumns(code, joinColumns);
+            AppendJoinColumns(code, joinColumns, propertyMap.Property.Name);
             return;
         }
 
@@ -381,7 +431,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 unique,
                 readOnly: false)).ToList();
 
-            AppendJoinColumns(code, derived);
+            AppendJoinColumns(code, derived, propertyMap.Property.Name);
             Report(new ConversionRecord
             {
                 Kind = ConversionRecordKind.Convention,
@@ -409,13 +459,15 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         });
     }
 
-    private void AppendJoinColumns(StringBuilder code, List<string> joinColumns)
+    private void AppendJoinColumns(StringBuilder code, List<string> joinColumns, string property)
     {
         Import($"{Jakarta}.JoinColumn");
 
+        // Each join column is where the foreign key's columns show themselves (decision 125).
         if (joinColumns.Count == 1)
         {
             code.AppendLine($"    {joinColumns[0]}");
+            Mark(code, joinColumns[0], property, MappingFactCategory.ForeignKeyColumns);
             return;
         }
 
@@ -424,6 +476,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         for (var i = 0; i < joinColumns.Count; i++)
         {
             code.AppendLine($"        {joinColumns[i]}{(i < joinColumns.Count - 1 ? "," : string.Empty)}");
+            Mark(code, joinColumns[i], property, MappingFactCategory.ForeignKeyColumns);
         }
 
         code.AppendLine("    })");
@@ -563,7 +616,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             });
         }
 
-        AppendJoinColumns(code, columns.Select(c => RenderJoinColumn(c.Item1, c.Item2, null, false, false)).ToList());
+        AppendJoinColumns(code, columns.Select(c => RenderJoinColumn(c.Item1, c.Item2, null, false, false)).ToList(), propertyMap.Property.Name);
     }
 
     /// <summary>
@@ -624,7 +677,9 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             arguments.Add($"inverseJoinColumns = {{ {string.Join(", ", facts.TargetColumns.Select(c => $"@JoinColumn(name = \"{c}\")"))} }}");
         }
 
-        code.AppendLine($"    @JoinTable({string.Join(", ", arguments)})");
+        var joinTable = $"@JoinTable({string.Join(", ", arguments)})";
+        code.AppendLine($"    {joinTable}");
+        Mark(code, joinTable, propertyMap.Property.Name, MappingFactCategory.ForeignKeyColumns);
     }
 
     /// <summary>
@@ -735,11 +790,11 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 return;
 
             case PrimaryKeyStrategy.Identity:
-                AppendGeneratedValue(code, "IDENTITY", null);
+                AppendGeneratedValue(code, "IDENTITY", null, property);
                 return;
 
             case PrimaryKeyStrategy.Uuid:
-                AppendGeneratedValue(code, "UUID", null);
+                AppendGeneratedValue(code, "UUID", null, property);
                 return;
 
             case PrimaryKeyStrategy.Increment:
@@ -783,13 +838,15 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
     private static bool IsForeign(PrimaryKeyPart part)
         => string.Equals(part.SourceStrategyName, "foreign", StringComparison.OrdinalIgnoreCase);
 
-    private void AppendGeneratedValue(StringBuilder code, string strategy, string? generator)
+    private void AppendGeneratedValue(StringBuilder code, string strategy, string? generator, string property)
     {
         Import($"{Jakarta}.GeneratedValue");
         Import($"{Jakarta}.GenerationType");
 
         var named = generator is null ? string.Empty : $", generator = \"{generator}\"";
-        code.AppendLine($"    @GeneratedValue(strategy = GenerationType.{strategy}{named})");
+        var rendered = $"@GeneratedValue(strategy = GenerationType.{strategy}{named})";
+        code.AppendLine($"    {rendered}");
+        Mark(code, rendered, property, MappingFactCategory.PrimaryKeyStrategy);
     }
 
     private void AppendResolvedAuto(EntityMap entityMap, PrimaryKeyPart part, StringBuilder code)
@@ -815,7 +872,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 AppendSequence(entityMap, part, code, convention: null, silent: true);
                 break;
             case PrimaryKeyStrategy.Identity:
-                AppendGeneratedValue(code, "IDENTITY", null);
+                AppendGeneratedValue(code, "IDENTITY", null, part.PropertyMap.Property.Name);
                 break;
             default:
                 AppendTable(entityMap, part, code, silent: true);
@@ -913,8 +970,10 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             GeneratorParameter.CounterKeyColumn, GeneratorParameter.CounterKeyValue);
 
         Import($"{Jakarta}.SequenceGenerator");
-        AppendGeneratedValue(code, "SEQUENCE", generatorName);
-        code.AppendLine($"    @SequenceGenerator({string.Join(", ", arguments)})");
+        AppendGeneratedValue(code, "SEQUENCE", generatorName, property);
+        var generator = $"@SequenceGenerator({string.Join(", ", arguments)})";
+        code.AppendLine($"    {generator}");
+        Mark(code, generator, property, MappingFactCategory.PrimaryKeyStrategy);
     }
 
     /// <summary>
@@ -991,8 +1050,10 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         ReportUnusableParameters(entityMap, part, GeneratorParameter.SequenceName);
 
         Import($"{Jakarta}.TableGenerator");
-        AppendGeneratedValue(code, "TABLE", generatorName);
-        code.AppendLine($"    @TableGenerator({string.Join(", ", arguments)})");
+        AppendGeneratedValue(code, "TABLE", generatorName, property);
+        var generator = $"@TableGenerator({string.Join(", ", arguments)})";
+        code.AppendLine($"    {generator}");
+        Mark(code, generator, property, MappingFactCategory.PrimaryKeyStrategy);
     }
 
     private void ReportUnusableParameters(EntityMap entityMap, PrimaryKeyPart part, params GeneratorParameter[] unusable)
@@ -1036,24 +1097,37 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
     {
         Import($"{Jakarta}.Column");
 
+        var property = propertyMap.Property.Name;
         var arguments = new List<string> { $"name = \"{ColumnOf(propertyMap)}\"" };
+
+        // Which argument renders which fact, so that each is marked at its own argument of
+        // the one annotation (decision 125).
+        var categories = new List<(string Argument, MappingFactCategory Category)>
+        {
+            (arguments[0], MappingFactCategory.ColumnName),
+        };
 
         if (propertyMap.Length is { } length)
         {
             arguments.Add($"length = {length}");
+            categories.Add((arguments[^1], MappingFactCategory.Length));
         }
 
+        var beforePrecision = arguments.Count;
         AppendPrecision(entityMap, propertyMap, arguments);
+        categories.AddRange(arguments.Skip(beforePrecision).Select(a => (a, MappingFactCategory.PrecisionAndScale)));
 
         // A key column is never nullable, so the claim is not restated on it.
         if (!isKey && propertyMap.IsNullable is { } nullable)
         {
             arguments.Add($"nullable = {(nullable ? "true" : "false")}");
+            categories.Add((arguments[^1], MappingFactCategory.Nullability));
         }
 
         if (propertyMap.SourceSqlType is not null)
         {
             arguments.Add($"columnDefinition = \"{propertyMap.SourceSqlType}\"");
+            categories.Add((arguments[^1], MappingFactCategory.DatabaseType));
         }
 
         if (readOnly)
@@ -1067,14 +1141,22 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         var annotations = new List<string>();
         if (propertyMap.IsUnicode == true)
         {
+            var beforeNationalization = arguments.Count;
             AppendNationalization(entityMap, propertyMap, arguments, annotations);
+            categories.AddRange(arguments.Skip(beforeNationalization).Select(a => (a, MappingFactCategory.DatabaseType)));
         }
 
         code.AppendLine($"    @Column({string.Join(", ", arguments)})");
 
+        foreach (var (argument, category) in categories)
+        {
+            Mark(code, argument, property, category);
+        }
+
         foreach (var annotation in annotations)
         {
             code.AppendLine(annotation);
+            Mark(code, annotation.Trim(), property, MappingFactCategory.DatabaseType);
         }
     }
 
@@ -1168,7 +1250,13 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         }
 
         var initializer = RenderInitializer(entityMap, property, langType);
-        code.AppendLine($"    private {type} {property.Name}{initializer};");
+        var declaration = $"private {type} {property.Name}{initializer};";
+        code.AppendLine($"    {declaration}");
+
+        // Whatever fact of the property no annotation above carried stands at the field
+        // itself (decision 125): the key a bare @Id leaves to the application, the type the
+        // provider derives from the Java type.
+        current?.MarkRest(code, entityMap, property.Name, declaration);
 
         // Modifiers translate rather than travel (decision 076): what Java means implicitly
         // or what is a compile-time device of C# - virtual, override, sealed, new, required -

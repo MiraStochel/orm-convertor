@@ -10,6 +10,7 @@ using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers.Convertors;
 using System.Globalization;
 using System.Text;
+using System.Xml.Linq;
 
 namespace NHibernateWrappers;
 
@@ -29,8 +30,18 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// Adds C# namespace.
     /// Adds XML prolog and root <hibernate-mapping> tag.
     /// </summary>
+    /// <summary>
+    /// The declaration line written for each property of the entity being built, so that
+    /// FinalizeBuild can place the facts no mapping attribute carries at the member that
+    /// does (decision 125) - a property the document leaves out states its transience by
+    /// its absence.
+    /// </summary>
+    private readonly Dictionary<string, string> codeDeclarations = new(StringComparer.Ordinal);
+
     protected override void BuildImports(EntityMap entityMap, EntityArtifact artifact)
     {
+        codeDeclarations.Clear();
+
         // System is required for [Serializable] and HashCode in the identity
         // members emitted for composite keys. A plain entity needs no imports.
         if (HasCompositeKey(entityMap))
@@ -920,8 +931,70 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         XmlEmitter.Close(artifact.Mapping, 0, "hibernate-mapping", appendLine: false);
 
+        // Where every fact stands (decision 125): the document is read back by its own
+        // vocabulary - each attribute of each element is the rendering of one fact of the
+        // property its element names - and whatever no attribute carries, such as the
+        // transience a left-out property states by its absence, stands at the C# declaration.
+        MarkXml(artifact, artifact.Mapping, PropertyOfElement, CategoryOfAttribute);
+
+        foreach (var (property, declaration) in codeDeclarations)
+        {
+            artifact.MarkRest(artifact.Code, entityMap, property, declaration);
+        }
+
         yield return new ConversionSource { ContentType = ConversionContentType.CSharpEntity, Content = artifact.Code.ToString() };
         yield return new ConversionSource { ContentType = ConversionContentType.XML, Content = artifact.Mapping.ToString() };
+    }
+
+    /// <summary>The elements of the mapping schema that stand for one property and name it.</summary>
+    private static readonly HashSet<string> PropertyElements =
+    [
+        "id", "key-property", "key-many-to-one", "version", "timestamp", "property",
+        "many-to-one", "one-to-one", "set", "bag", "list", "map",
+    ];
+
+    /// <summary>The elements whose columns are a foreign key's rather than a property's own.</summary>
+    private static readonly HashSet<string> RelationElements =
+    [
+        "many-to-one", "one-to-one", "key-many-to-one", "key", "set", "bag", "list", "map", "many-to-many",
+    ];
+
+    /// <summary>The property an element speaks about: the nearest property element around it, by its name attribute.</summary>
+    private static string? PropertyOfElement(XElement element)
+    {
+        for (var current = element; current is not null; current = current.Parent)
+        {
+            if (PropertyElements.Contains(current.Name.LocalName))
+            {
+                return current.Attribute("name")?.Value;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The fact an attribute of the mapping renders, in the vocabulary the builder writes.</summary>
+    private static MappingFactCategory? CategoryOfAttribute(XElement element, XAttribute attribute)
+    {
+        var name = element.Name.LocalName;
+        var relation = RelationElements.Contains(name) || (name == "column" && element.Parent is { } parent && RelationElements.Contains(parent.Name.LocalName));
+
+        return attribute.Name.LocalName switch
+        {
+            "name" when name is "id" or "key-property" => MappingFactCategory.PrimaryKey,
+            "name" when name is "version" or "timestamp" => MappingFactCategory.VersionColumn,
+            "name" when name == "column" => relation ? MappingFactCategory.ForeignKeyColumns : MappingFactCategory.ColumnName,
+            "column" => relation ? MappingFactCategory.ForeignKeyColumns : MappingFactCategory.ColumnName,
+            "class" when name == "generator" => MappingFactCategory.PrimaryKeyStrategy,
+            "length" => MappingFactCategory.Length,
+            "precision" or "scale" => MappingFactCategory.PrecisionAndScale,
+            "not-null" => MappingFactCategory.Nullability,
+            "type" or "sql-type" => MappingFactCategory.DatabaseType,
+            "unique" or "unique-key" => MappingFactCategory.UniqueConstraint,
+            "table" when name == "class" => MappingFactCategory.TableName,
+            "schema" when name == "class" => MappingFactCategory.SchemaName,
+            _ => null,
+        };
     }
 
     /// <summary>
@@ -932,6 +1005,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         var declaration = BuildPropertySignature(entityMap, prop, isPrimaryKey);
         codeResult.AppendLine($"    {declaration}");
         codeResult.AppendLine();
+        codeDeclarations[prop.Name] = declaration;
     }
 
     /// <summary>

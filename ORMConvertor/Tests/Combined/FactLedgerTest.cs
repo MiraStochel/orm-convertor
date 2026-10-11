@@ -237,6 +237,12 @@ public class FactLedgerTest
             ORMEnum.NHibernate,
             [Unit("Customer.cs", ConversionContentType.CSharp, CustomerSampleEFCore.Entity)]);
 
-        Assert.Equal(Run().Facts, Run().Facts);
+        static IEnumerable<object?[]> Rows(ConversionResult result) => result.Facts.Select(f => new object?[]
+        {
+            f.Entity, f.Property, f.Category, f.Value, f.Origin, f.Unit, f.Outcome, f.Source,
+            string.Join(";", f.Targets.Select(t => $"{t.Artifact}:{t.Start}+{t.Length}")),
+        });
+
+        Assert.Equal(Rows(Run()), Rows(Run()));
     }
 }

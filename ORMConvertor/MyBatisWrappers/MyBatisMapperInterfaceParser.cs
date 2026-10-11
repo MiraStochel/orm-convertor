@@ -172,6 +172,9 @@ public sealed class MyBatisMapperInterfaceParser(AbstractEntityBuilder entityBui
             identity.Add(column);
         }
 
+        // The facts of one @Result stand at that annotation (decision 125).
+        using var scope = entityBuilder.At(result.End > result.Start ? TextRange.Between(result.Start, result.End) : null);
+
         WriteColumn(
             entityMap,
             property!,

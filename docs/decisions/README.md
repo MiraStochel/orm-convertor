@@ -126,7 +126,8 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 121 | [Text dotazu katalogu LDBC smí mít tvar, který plánovač SQL Serveru potřebuje, zůstane-li T-SQL, jaké by stálo vedle referenční implementace (IC 5: okruh osob jako jedna množina poddotazem v poddotazu); fyzický návrh `LdbcSnb` nese v `indexes.sql` dva indexy rozšířené pro čtení katalogu a loader je obnoví při změně skriptu](121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md) | platí | T2, T3, F13, S5 |
 | 122 | [Text dotazu katalogu LDBC smí mít tvar, který implementace jednoho cíle potřebuje, za týchž podmínek jako tvar pro plánovač; kde takový tvar jediný `SELECT` nemá, katalog vysloví mez běhu, ne mez překladu](122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md) | platí | T2, T3, F9, F13 |
 | 123 | [Nativní dotaz EclipseLinku rozvine kolekční parametr za běhu v generované metodě: jeden zástupný symbol na prvek, číslovaný za skaláry a vázaný po prvcích](123-a-native-query-of-eclipselink-expands-a-collection-parameter-at-run-time.md) | platí | F9, F11, F13, T2, S2 |
-| 124 | [Směr překladu je jeden řádek, vstup stojí vedle výstupu a páruje se po tvrzeních z báze builderu; maketa zůstává](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md) | platí | F11, F14, S1, S2, S7 |
+| 124 | [Směr překladu je jeden řádek, vstup stojí vedle výstupu a páruje se po tvrzeních z báze builderu; maketa zůstává](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md) | nahrazeno [125](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md) | F11, F14, S1, S2, S7 |
+| 125 | [Pozice tvrzení ve vstupu a ve výstupu jako volitelná vrstva nad knihou tvrzení; maketa se maže](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md) | platí | F11, F14, S1, S2, S7 |
 
 ## Formát
 

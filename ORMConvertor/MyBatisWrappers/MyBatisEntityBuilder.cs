@@ -31,6 +31,13 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
 
     private readonly List<(string Type, string Name)> accessors = [];
 
+    /// <summary>
+    /// The field declaration written for each property, so that FinalizeBuild can place the
+    /// facts the mapping carries nowhere at the member that states them (decision 125) - a
+    /// property left out of the result map states its transience by its absence.
+    /// </summary>
+    private readonly Dictionary<string, string> codeDeclarations = new(StringComparer.Ordinal);
+
     public override TargetFrameworkDescriptor Descriptor => MyBatisDescriptor.Instance;
 
     protected override void BuildImports(EntityMap entityMap, EntityArtifact artifact)
@@ -39,6 +46,7 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
         // emitting and rendered ahead of the class in FinalizeBuild.
         imports.Clear();
         accessors.Clear();
+        codeDeclarations.Clear();
     }
 
     protected override void BuildTableSchema(EntityMap entityMap, EntityArtifact artifact)
@@ -226,6 +234,13 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
 
         XmlEmitter.Close(artifact.Mapping, 0, "mapper", appendLine: false);
 
+        // Whatever the mapping carries nowhere stands at the field that states it (decision
+        // 125); the mapping's own marks were made as its elements were written.
+        foreach (var (property, declaration) in codeDeclarations)
+        {
+            artifact.MarkRest(artifact.Code, entityMap, property, declaration);
+        }
+
         var header = new StringBuilder();
         if (!string.IsNullOrEmpty(entityMap.Entity.Namespace))
         {
@@ -301,6 +316,28 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
         }
 
         XmlEmitter.Empty(artifact.Mapping, 2, element, attributes);
+
+        // Where the facts stand in the mapping (decision 125): the column attribute, the
+        // jdbcType attribute, and for an <id> the property attribute as the key statement.
+        var property = propertyMap.Property.Name;
+
+        foreach (var attribute in attributes)
+        {
+            var rendered = $"{attribute.Name}=\"{XmlEmitter.EscapeAttribute(attribute.Value)}\"";
+
+            switch (attribute.Name)
+            {
+                case "column":
+                    artifact.Mark(artifact.Mapping, MappingFactCategory.ColumnName, property, rendered);
+                    break;
+                case "jdbcType":
+                    artifact.Mark(artifact.Mapping, MappingFactCategory.DatabaseType, property, rendered);
+                    break;
+                case "property" when element == "id":
+                    artifact.Mark(artifact.Mapping, MappingFactCategory.PrimaryKey, property, rendered);
+                    break;
+            }
+        }
     }
 
     private void ReportTypeLoss(EntityMap entityMap, PropertyMap propertyMap, string reason)
@@ -338,8 +375,10 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
             imports.Add(elementImport);
         }
 
+        var declaration = $"private {type} {property.Name}{RenderInitializer(entityMap, property, langType)};";
         artifact.Code.AppendLine();
-        artifact.Code.AppendLine($"    private {type} {property.Name}{RenderInitializer(entityMap, property, langType)};");
+        artifact.Code.AppendLine($"    {declaration}");
+        codeDeclarations[property.Name] = declaration;
 
         // Modifiers translate rather than travel (decision 076): what Java means implicitly
         // or what is a compile-time device of C# drops without a word; anything else has no

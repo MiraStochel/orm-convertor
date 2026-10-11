@@ -328,6 +328,13 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     protected virtual string FieldNote => string.Empty;
 
     /// <summary>
+    /// Where a syntax node stands in the unit, as the builder's reading scopes take it
+    /// (decision 125): the node's own span, without the trivia around it, counted in the text
+    /// the client sent - which is the text Roslyn parsed.
+    /// </summary>
+    protected static TextRange Range(SyntaxNode node) => new(node.Span.Start, node.Span.Length);
+
+    /// <summary>
     /// The language facts of one property declaration — the reading every framework shares.
     /// </summary>
     protected static PropertyReading ReadProperty(PropertyDeclarationSyntax prop)

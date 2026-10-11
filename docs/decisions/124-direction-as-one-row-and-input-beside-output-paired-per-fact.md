@@ -1,7 +1,7 @@
 # 124 — Směr překladu je jeden řádek, vstup stojí vedle výstupu a páruje se po tvrzeních z báze builderu; maketa zůstává
 
 Datum: 2026-10-11
-Stav: platí
+Stav: nahrazeno [125](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md)
 Požadavky: F11, F14, S1, S2, S7
 Podklad: rozhodnutí [100](100-interactive-comparison-as-a-frozen-mockup.md), které tímto nahrazujeme, a přes ně [099](099-examples-are-content-not-a-choice.md) a [033](033-shape-of-the-static-frontend-screens.md); dále [004](004-unexpressible-facts-as-warnings.md), [009](009-target-framework-descriptor.md), [010](010-diagnostics-as-returned-data.md), [015](015-mapping-fact-completion-from-the-catalog.md), [017](017-source-precedence-for-mapping-facts.md), [032](032-frontend-as-static-pages-without-a-build.md), [041](041-versioning-and-release.md), [066](066-records-attributed-to-the-input-unit.md), [067](067-a-derived-convention-is-a-statement-a-default-is-not.md); položka „Směr překladu jako jedna věc a vstup vedle výstupu" v `open-items.md`; maketa `comparison.html`; [`architecture.md`](../architecture.md), §5.1, §6.3, §7 a §9
 

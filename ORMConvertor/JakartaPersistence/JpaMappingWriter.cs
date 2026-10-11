@@ -30,19 +30,29 @@ public sealed class JpaMappingWriter(
     {
         ArgumentNullException.ThrowIfNull(facts);
 
-        if (!string.IsNullOrWhiteSpace(facts.Table))
+        // Every write below opens the builder's reading scope at the annotation or element
+        // that stated the fact (decision 125), through the positions both readers recorded
+        // under the annotation's name; where a reader recorded none, the scope is no scope.
+        using (At(facts.Positions, "Table"))
         {
-            entityBuilder.AddTable(facts.Table);
-        }
+            if (!string.IsNullOrWhiteSpace(facts.Table))
+            {
+                entityBuilder.AddTable(facts.Table);
+            }
 
-        if (!string.IsNullOrWhiteSpace(facts.Schema))
-        {
-            entityBuilder.AddSchema(facts.Schema);
+            if (!string.IsNullOrWhiteSpace(facts.Schema))
+            {
+                entityBuilder.AddSchema(facts.Schema);
+            }
         }
 
         foreach (var attribute in facts.Attributes.Where(a => a.Kind == JpaAttributeKind.Transient))
         {
-            entityBuilder.MarkTransient(attribute.Name);
+            using (At(attribute.Positions, "Transient", "member"))
+            {
+                entityBuilder.MarkTransient(attribute.Name);
+            }
+
             ReportUnread(attribute);
         }
 
@@ -71,11 +81,13 @@ public sealed class JpaMappingWriter(
 
         foreach (var property in singles)
         {
+            using var scope = At(facts.Attributes.First(a => a.Name == property).Positions, "Column", "member");
             entityBuilder.AddUniqueConstraint(null, [property]);
         }
 
         foreach (var constraint in facts.UniqueConstraints)
         {
+            using var scope = At(facts.Positions, "Table");
             WriteUniqueConstraint(facts, constraint);
         }
 
@@ -99,6 +111,41 @@ public sealed class JpaMappingWriter(
                 + "representation has no place for a hierarchy, so the class is translated as an entity of its "
                 + "own and the entities extending it do not receive its attributes.");
         }
+    }
+
+    /* ---- reading scopes (decision 125) ------------------------------------------- */
+
+    /// <summary>
+    /// The builder's reading scope at the first of <paramref name="keys"/> the reader placed -
+    /// an annotation's name, or "member" for the declaration - or no scope where it placed
+    /// none. The keys are tried in order, so the caller names the most specific statement first.
+    /// </summary>
+    private IDisposable At(Dictionary<string, TextRange> positions, params string[] keys)
+        => entityBuilder.At(First(positions, keys));
+
+    /// <summary>The same, with finer ranges for particular categories where those statements were placed.</summary>
+    private IDisposable At(
+        Dictionary<string, TextRange> positions,
+        string[] keys,
+        params (MappingFactCategory Category, string? Property, string[] Keys)[] refinements)
+        => entityBuilder.At(
+            First(positions, keys),
+            [.. refinements
+                .Select(r => (r.Category, r.Property, Range: First(positions, r.Keys)))
+                .Where(r => r.Range is not null)
+                .Select(r => new FactRefinement(r.Category, r.Property, r.Range!.Value))]);
+
+    private static TextRange? First(Dictionary<string, TextRange> positions, IEnumerable<string> keys)
+    {
+        foreach (var key in keys)
+        {
+            if (positions.TryGetValue(key, out var range))
+            {
+                return range;
+            }
+        }
+
+        return null;
     }
 
     private void WriteColumn(JpaAttributeFacts attribute)
@@ -131,6 +178,19 @@ public sealed class JpaMappingWriter(
         {
             dbProps["version"] = "true";
         }
+
+        // Each column fact stands at the statement that made it (decision 125): @Column for the
+        // column's own facets, @Basic or the declaration for nullability stated nowhere else,
+        // @Version for the version flag, the vendor annotation for the unicode facet.
+        using var scope = At(
+            attribute.Positions,
+            ["member", "Column"],
+            (MappingFactCategory.ColumnName, attribute.Name, ["Column"]),
+            (MappingFactCategory.Length, attribute.Name, ["Column"]),
+            (MappingFactCategory.PrecisionAndScale, attribute.Name, ["Column"]),
+            (MappingFactCategory.Nullability, attribute.Name, ["Column", "Basic", "member"]),
+            (MappingFactCategory.VersionColumn, attribute.Name, ["Version"]),
+            (MappingFactCategory.DatabaseType, attribute.Name, ["Nationalized", "Column"]));
 
         // Called even with nothing to record: an attribute orm.xml names before the class
         // is read has to exist in the model before anything can attach to it.
@@ -248,6 +308,7 @@ public sealed class JpaMappingWriter(
             {
                 // The parts are the members of the class, which may lie in another unit;
                 // the claim waits and the dissolution phase materializes it (decision 077).
+                using var scope = At(embedded.Positions, "EmbeddedId", "member");
                 entityBuilder.AddEmbeddedPrimaryKey(embedded.Name, keyClass);
             }
 
@@ -264,12 +325,26 @@ public sealed class JpaMappingWriter(
         var composite = ids.Count > 1;
         var parts = ids.Select((id, index) => (id.Name, index + 1, StrategyOf(id))).ToList();
 
-        entityBuilder.AddPrimaryKey(
-            parts,
-            composite && facts.IdClass is not null ? new SourceKeyClass(facts.IdClass, KeyClassForm.Mirrored) : null);
+        // The key stands at each part's @Id, its strategy at the part's @GeneratedValue
+        // (decision 125).
+        using (entityBuilder.At(
+            First(ids[0].Positions, ["Id", "member"]),
+            [.. ids.SelectMany(id => new (MappingFactCategory Category, TextRange? Range)[]
+                {
+                    (MappingFactCategory.PrimaryKey, First(id.Positions, ["Id", "member"])),
+                    (MappingFactCategory.PrimaryKeyStrategy, First(id.Positions, ["GeneratedValue", "Id", "member"])),
+                }
+                .Where(r => r.Range is not null)
+                .Select(r => new FactRefinement(r.Category, id.Name, r.Range!.Value)))]))
+        {
+            entityBuilder.AddPrimaryKey(
+                parts,
+                composite && facts.IdClass is not null ? new SourceKeyClass(facts.IdClass, KeyClassForm.Mirrored) : null);
+        }
 
         foreach (var id in ids)
         {
+            using var scope = At(id.Positions, "GeneratedValue", "SequenceGenerator", "TableGenerator", "Id", "member");
             WriteStrategyDetails(facts, id);
         }
     }
@@ -381,6 +456,16 @@ public sealed class JpaMappingWriter(
 
         StateReferencedColumns(attribute, inverse);
         ReportJoinColumnElements(facts, attribute);
+
+        // The relation stands at its annotation, the columns at @JoinColumn or @JoinTable, the
+        // nullability at the join column that stated it (decision 125). The enum's names are
+        // the annotations' names, which is what both readers placed the statements under.
+        var relation = attribute.Kind.ToString();
+        using var scope = At(
+            attribute.Positions,
+            [relation, "member"],
+            (MappingFactCategory.ForeignKeyColumns, attribute.Name, ["JoinColumn", "JoinColumns", "JoinTable", relation]),
+            (MappingFactCategory.Nullability, attribute.Name, ["JoinColumn", relation, "member"]));
 
         switch (attribute.Kind)
         {
