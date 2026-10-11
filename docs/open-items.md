@@ -48,7 +48,7 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [ADO.NET provider v benchmarcích](#sjednocení-adonet-provideru-v-benchmarcích) | Advisor | rozhodnutí | T7 |
 | [Testy Advisoru a benchmarkingu](#advisor-a-benchmarking-nemají-žádné-testy) | Advisor | práce | T7, S6 |
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
-| [`unique` na sloupci cizího klíče](#unique-na-sloupci-cizího-klíče-jako-tvrzení-zdroje) | Užitečné | rozhodnutí | F5, F11 |
+| [Unikátní omezení nad sloupcem cizího klíče bez skaláru](#unikátní-omezení-nad-sloupcem-cizího-klíče-který-mapuje-jen-navigace) | Užitečné | rozhodnutí | F2, F4, F5 |
 | [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
 | [Druhý databázový dialekt](#druhý-databázový-dialekt) | Užitečné | rozhodnutí | F5, F7–F10, S2 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
@@ -212,10 +212,10 @@ Invariant „nový framework je nový wrapper" platí: jméno frameworku neprosa
 
 Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele) a zda tím je nástroj „publikovaný" ve smyslu předpokladu rozh. 098; pak se 098 nahrazuje.
 
-#### `unique` na sloupci cizího klíče jako tvrzení zdroje
-*Zdroj: [`subset.md`](./subset.md), 2.13. Souvisí s rozh. [012](./decisions/012-foreign-key-rendering.md) a [055](./decisions/055-unique-constraint-as-a-carried-mapping-fact.md). Požadavky F5, F11.*
+#### Unikátní omezení nad sloupcem cizího klíče, který mapuje jen navigace
+*Zdroj: rozh. [127](./decisions/127-unique-on-a-foreign-key-column-states-what-the-framework-has-no-other-place-for.md), varianta 2. Souvisí s rozh. [012](./decisions/012-foreign-key-rendering.md) a [055](./decisions/055-unique-constraint-as-a-carried-mapping-fact.md). Požadavky F2, F4, F5.*
 
-JPA `@JoinColumn(unique = true)` a `<join-column unique="true">` se čtou beze slova, ačkoli tvrdí buď unikátní omezení nad sloupcem cizího klíče (rozh. 055 ho nese jen nad vlastnostmi), nebo vlastnící 1:1 — tak čte NHibernate parser `<many-to-one unique="true">`, zatímco NHibernate builder unikátnost na `<many-to-one>` hlásí jako `Loss`. Rozhodnout, které z obou čtení platí pro JPA a zda se obě strany sjednotí; do té doby je to poslední tiché místo čtení JPA.
+`UniqueConstraint` jmenuje vlastnosti, a sloupec cizího klíče, který v třídě nese jen navigace, vlastnost nemá — omezení nad ním (`@JoinColumn(unique = true)` na `@ManyToOne`, `@UniqueConstraint` nad spojovacím sloupcem, omezení z katalogu nad sloupcem cizího klíče) se proto nečte a hlásí se `Incompleteness`. Rozhodnout, zda se takové omezení ponese přes sloupce vztahu (u EF Core nad dogenerovanou vlastností cizího klíče z rozh. 012, v JPA přes `@UniqueConstraint(columnNames)`, v NHibernatu je nad `<many-to-one>` `Loss` podle rozh. 055), nebo zda vyslovená mez stačí.
 
 ### Práce
 

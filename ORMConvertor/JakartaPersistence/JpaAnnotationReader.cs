@@ -387,7 +387,13 @@ public class JpaAnnotationReader
             readOnly.Add("JoinColumn(updatable = false)");
         }
 
-        return new(annotation.String("name"), annotation.String("referencedColumnName"), annotation.Boolean("nullable"), unread, readOnly);
+        return new(
+            annotation.String("name"),
+            annotation.String("referencedColumnName"),
+            annotation.Boolean("nullable"),
+            annotation.Boolean("unique") == true,
+            unread,
+            readOnly);
     }
 
     /// <summary>

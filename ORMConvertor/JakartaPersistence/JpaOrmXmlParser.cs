@@ -428,8 +428,13 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
             readOnly.Add($"<{tag} updatable=\"false\">");
         }
 
-        return new(element.Attribute("name")?.Value, element.Attribute("referenced-column-name")?.Value,
-            ReadBoolean(element.Attribute("nullable")?.Value), unread, readOnly);
+        return new(
+            element.Attribute("name")?.Value,
+            element.Attribute("referenced-column-name")?.Value,
+            ReadBoolean(element.Attribute("nullable")?.Value),
+            ReadBoolean(element.Attribute("unique")?.Value) == true,
+            unread,
+            readOnly);
     }
 
     private static JpaGeneratorFacts? ReadGenerator(XElement element)

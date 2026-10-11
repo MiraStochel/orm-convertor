@@ -129,6 +129,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 124 | [Směr překladu je jeden řádek, vstup stojí vedle výstupu a páruje se po tvrzeních z báze builderu; maketa zůstává](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md) | nahrazeno [125](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md) | F11, F14, S1, S2, S7 |
 | 125 | [Pozice tvrzení ve vstupu a ve výstupu jako volitelná vrstva nad knihou tvrzení; maketa se maže](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md) | platí | F11, F14, S1, S2, S7 |
 | 126 | [Čísla řádků v editoru jednotky vlastním kódem, ne hotovým editorem](126-line-numbers-in-the-unit-editor-by-own-code-not-an-editor-library.md) | platí | S5, S7 |
+| 127 | [`unique` nad sloupcem cizího klíče tvrdí to, pro co framework nemá jiné místo: v JPA unikátní omezení, v NHibernatu kardinalitu](127-unique-on-a-foreign-key-column-states-what-the-framework-has-no-other-place-for.md) | platí | F2, F5, F11, S2 |
 
 ## Formát
 

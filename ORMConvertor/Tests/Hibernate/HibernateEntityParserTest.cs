@@ -465,6 +465,98 @@ public class HibernateEntityParserTest
     }
 
     /// <summary>
+    /// unique = true on the join column of a @OneToOne restates what the cardinality already
+    /// carries - every target writes the uniqueness of a 1:1 foreign key again from there -
+    /// so it adds no constraint and no record (decision 127). It is also what the builder
+    /// writes there, so a second reading of the artifact says nothing new.
+    /// </summary>
+    [Fact]
+    public void UniqueOnTheJoinColumnOfAOneToOneIsTheCardinality()
+    {
+        var (builder, _) = Parse("""
+            import jakarta.persistence.*;
+
+            @Entity
+            public class Customer {
+                @Id private Integer id;
+
+                @OneToOne
+                @JoinColumn(name = "ProfileId", unique = true)
+                private Profile profile;
+            }
+            """);
+
+        var map = builder.EntityMaps.Single();
+        Assert.Equal(Cardinality.OneToOne, map.Relations.Single().Cardinality);
+        Assert.Empty(map.UniqueConstraints);
+        Assert.DoesNotContain(builder.Records, r => r.Category == MappingFactCategory.UniqueConstraint);
+    }
+
+    /// <summary>
+    /// Elsewhere unique = true on a join column is the specification's shortcut for
+    /// @UniqueConstraint over the column (decision 127). Beside a scalar over the same
+    /// column it lands on that scalar, as @Column(unique = true) there would, and the
+    /// relation keeps the cardinality its annotation states - a @ManyToOne is not turned
+    /// into a 1:1 the source never wrote.
+    /// </summary>
+    [Fact]
+    public void UniqueOnAJoinColumnBesideAScalarIsAConstraintOverTheScalar()
+    {
+        var (builder, _) = Parse("""
+            import jakarta.persistence.*;
+
+            @Entity
+            public class Order {
+                @Id private Integer id;
+
+                @Column(name = "CustomerId") private Integer customerId;
+
+                @ManyToOne
+                @JoinColumn(name = "CustomerId", unique = true, insertable = false, updatable = false)
+                private Customer customer;
+            }
+            """);
+
+        var map = builder.EntityMaps.Single();
+        Assert.Equal(Cardinality.ManyToOne, map.Relations.Single().Cardinality);
+        var constraint = Assert.Single(map.UniqueConstraints);
+        Assert.Equal(["customerId"], constraint.PropertyNames);
+        Assert.Null(constraint.Name);
+        Assert.DoesNotContain(builder.Records, r => r.Category == MappingFactCategory.UniqueConstraint);
+    }
+
+    /// <summary>
+    /// Over a column no attribute of the class maps, the constraint has no property to be
+    /// named by and is reported as the same incompleteness @UniqueConstraint over that
+    /// column and the catalog give (decision 127) - no longer dropped in silence.
+    /// </summary>
+    [Fact]
+    public void UniqueOnAJoinColumnNoScalarMapsIsAReportedIncompleteness()
+    {
+        var (builder, _) = Parse("""
+            import jakarta.persistence.*;
+
+            @Entity
+            public class Order {
+                @Id private Integer id;
+
+                @ManyToOne
+                @JoinColumn(name = "CustomerId", unique = true)
+                private Customer customer;
+            }
+            """);
+
+        var map = builder.EntityMaps.Single();
+        Assert.Equal(Cardinality.ManyToOne, map.Relations.Single().Cardinality);
+        Assert.Empty(map.UniqueConstraints);
+        Assert.Contains(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Incompleteness
+            && r.Category == MappingFactCategory.UniqueConstraint
+            && r.Property == "customer"
+            && r.Reason.Contains("CustomerId"));
+    }
+
+    /// <summary>
     /// The accessor's visibility is the property's (decision 077): a private field behind
     /// public accessors is a public property, as every caller sees it; a field with no
     /// accessor at all is the whole property under field access and reads as a public one.

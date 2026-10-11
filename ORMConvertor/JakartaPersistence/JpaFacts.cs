@@ -171,10 +171,16 @@ public sealed record JpaGeneratorFacts(
 /// false and updatable = false, which are a loss only where no basic attribute of the
 /// class maps the same column (see <see cref="JpaAttributeFacts.ReadOnlyFlags"/>).
 /// </summary>
+/// <summary>
+/// One @JoinColumn or join-column element. <paramref name="Unique"/> is unique = true as
+/// the source spelled it: the specification's shortcut for @UniqueConstraint over the
+/// column, which the writer reads as that annotation (decision 127).
+/// </summary>
 public sealed record JpaJoinColumnFacts(
     string? Name,
     string? ReferencedColumnName,
     bool? Nullable,
+    bool Unique,
     IReadOnlyList<string> Unread,
     IReadOnlyList<string> ReadOnlyFlags);
 

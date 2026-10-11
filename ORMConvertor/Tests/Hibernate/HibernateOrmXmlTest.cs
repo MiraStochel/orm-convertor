@@ -239,4 +239,45 @@ public class HibernateOrmXmlTest
         Assert.Contains("[Table(\"Customers\", Schema = \"Sales\")]", entity);
         Assert.DoesNotContain(result.Records, r => r.Kind is ConversionRecordKind.Failure or ConversionRecordKind.Conflict);
     }
+
+    /// <summary>
+    /// unique="true" on a join-column element is read the way the annotation is (decision
+    /// 127): over a column no attribute of the class maps it is a reported incompleteness,
+    /// and the many-to-one keeps the cardinality the element states.
+    /// </summary>
+    [Fact]
+    public void UniqueOnAJoinColumnElementIsReadAsTheAnnotationIs()
+    {
+        var (builder, _) = Read("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <entity-mappings xmlns="https://jakarta.ee/xml/ns/persistence/orm" version="3.2">
+                <entity class="Shop.Order">
+                    <attributes>
+                        <id name="id"/>
+                        <many-to-one name="customer" target-entity="Shop.Customer">
+                            <join-column name="CustomerId" unique="true"/>
+                        </many-to-one>
+                    </attributes>
+                </entity>
+            </entity-mappings>
+            """, """
+            package Shop;
+
+            import jakarta.persistence.*;
+
+            @Entity
+            public class Order {
+                private Integer id;
+                private Customer customer;
+            }
+            """);
+
+        var map = builder.EntityMaps.Single();
+        Assert.Equal(Cardinality.ManyToOne, map.Relations.Single().Cardinality);
+        Assert.Empty(map.UniqueConstraints);
+        Assert.Contains(builder.Records, r =>
+            r.Kind == ConversionRecordKind.Incompleteness
+            && r.Category == MappingFactCategory.UniqueConstraint
+            && r.Property == "customer");
+    }
 }

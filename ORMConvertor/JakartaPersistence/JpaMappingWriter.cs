@@ -73,15 +73,26 @@ public sealed class JpaMappingWriter(
 
         WriteKey(facts);
 
+        var joinColumnSingles = new List<(string Property, JpaAttributeFacts Relation)>();
+
         foreach (var attribute in facts.Attributes.Where(a => a.Kind is JpaAttributeKind.ManyToOne or JpaAttributeKind.OneToOne or JpaAttributeKind.OneToMany or JpaAttributeKind.ManyToMany))
         {
             WriteRelation(facts, attribute);
+            ReadJoinColumnUniqueness(facts, attribute, joinColumnSingles);
             ReportUnread(attribute);
         }
 
         foreach (var property in singles)
         {
             using var scope = At(facts.Attributes.First(a => a.Name == property).Positions, "Column", "member");
+            entityBuilder.AddUniqueConstraint(null, [property]);
+        }
+
+        foreach (var (property, relation) in joinColumnSingles)
+        {
+            // The statement stands on the join column of the relation, not on the scalar it
+            // lands on (decision 125).
+            using var scope = At(relation.Positions, "JoinColumn", "JoinColumns", "JoinTable", relation.Kind.ToString(), "member");
             entityBuilder.AddUniqueConstraint(null, [property]);
         }
 
@@ -725,6 +736,61 @@ public sealed class JpaMappingWriter(
                     $"The annotation {flag} leaves the column out of the framework's write statements; the intermediate "
                     + "representation has no place for it and it was dropped.");
             }
+        }
+    }
+
+    /// <summary>
+    /// unique = true on a join column is the specification's shortcut for @UniqueConstraint
+    /// over that column, and is read as that annotation is (decision 127). On the own join
+    /// column of a @OneToOne it states the uniqueness a 1:1 foreign key has anyway - the
+    /// model carries it in the cardinality and every target writes it again from there -
+    /// so nothing is added and nothing reported. Elsewhere it is a constraint of the
+    /// schema: over a column a scalar of the same class also maps it lands on that scalar,
+    /// as @Column(unique = true) there would; over a column no attribute maps the model
+    /// cannot name it, and the same incompleteness is reported that @UniqueConstraint over
+    /// the column and the catalog give.
+    /// </summary>
+    private void ReadJoinColumnUniqueness(
+        JpaEntityFacts facts,
+        JpaAttributeFacts attribute,
+        List<(string Property, JpaAttributeFacts Relation)> singles)
+    {
+        var own = attribute.JoinColumns.Where(c => c.Unique);
+        var junction = (attribute.JoinTable?.JoinColumns ?? [])
+            .Concat(attribute.JoinTable?.InverseJoinColumns ?? [])
+            .Where(c => c.Unique);
+
+        if (attribute.Kind == JpaAttributeKind.OneToOne)
+        {
+            own = [];
+        }
+
+        foreach (var joinColumn in own.Concat(junction))
+        {
+            var scalar = joinColumn.Name is { } column
+                ? facts.Attributes.FirstOrDefault(a =>
+                    a.Kind is JpaAttributeKind.Basic or JpaAttributeKind.Id or JpaAttributeKind.Version
+                    && string.Equals(a.ColumnName ?? a.Name, column, StringComparison.Ordinal))
+                    ?? facts.Attributes.FirstOrDefault(a =>
+                        a.Kind is JpaAttributeKind.Basic or JpaAttributeKind.Id or JpaAttributeKind.Version
+                        && string.Equals(a.ColumnName ?? a.Name, column, StringComparison.OrdinalIgnoreCase))
+                : null;
+
+            if (scalar is not null)
+            {
+                if (!singles.Any(s => s.Property == scalar.Name))
+                {
+                    singles.Add((scalar.Name, attribute));
+                }
+
+                continue;
+            }
+
+            var named = joinColumn.Name is null ? "the join column" : $"the join column '{joinColumn.Name}'";
+            Report(ConversionRecordKind.Incompleteness, attribute.Name, MappingFactCategory.UniqueConstraint,
+                $"unique = true on {named} of '{attribute.Name}' states a unique constraint over the column, and no attribute "
+                + "of the class maps it; the intermediate representation names a constraint by properties, so it was not read "
+                + "(decision 127).");
         }
     }
 
