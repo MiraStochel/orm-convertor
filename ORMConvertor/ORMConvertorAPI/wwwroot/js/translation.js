@@ -1,7 +1,8 @@
 /*
- * The translation screen (decision 033): five steps on one page - source framework,
- * target framework, input files, convert, result. Screen state is one plain object;
- * rendering functions rebuild whole areas from <template> clones (decision 032).
+ * The translation screen (decision 124, shape inherited from 033): four steps on one page -
+ * direction, input files, convert, result - and the result stands input beside output, with
+ * the pairing the server states and the facts ledger under both. Screen state is one plain
+ * object; rendering functions rebuild whole areas from <template> clones (decision 032).
  *
  * The state is also mirrored into localStorage after every change and restored on load
  * (decision 056), so a reload, a stray back-navigation or a crashed tab does not take a
@@ -22,14 +23,17 @@ import {
 } from "./api.js";
 import {
   cloneTemplate,
+  renderCode,
   renderArtifacts,
   renderRecords,
   renderCatalogState,
+  revealPanel,
   recordCounts,
   kindBadge,
   artifactNames,
   saveBlob,
 } from "./ui.js";
+import { renderFacts } from "./facts.js";
 
 // One extension, one language (decision 111): a unit declares the language of its file and
 // nothing else, so .cs is C# whether the file holds an entity, the code that queries it, or
@@ -54,6 +58,9 @@ const state = {
   units: [],
   requiredContent: [],
   samples: {},
+  // The units exactly as the last conversion sent them, kept apart from `units` so that the
+  // result shows what the server read even after the editor above has moved on.
+  sent: null,
   result: null,
 };
 
@@ -366,7 +373,61 @@ function renderResult() {
     response.catalogReadMilliseconds,
   );
 
-  const artifactIndex = renderArtifacts(document.getElementById("artifacts"), response.sources);
+  // Input beside output (decision 124). The left column shows the units as they were sent,
+  // under the reference the server uses for them; the right one the artifacts, each naming
+  // its units - and the unit panel names the artifacts that came of it, read off the same
+  // server field, so neither side pairs anything by name.
+  const sent = state.sent ?? [];
+  const unitReference = (unit, index) => unit.name ?? `unit ${index + 1}`;
+  const inputPanels = new Map();
+  const inputs = document.getElementById("inputs");
+  inputs.replaceChildren();
+  sent.forEach((unit, index) => {
+    const reference = unitReference(unit, index);
+    const article = cloneTemplate("input-template");
+    article.id = `input-${index + 1}`;
+    article.querySelector(".artifact-name").textContent = reference;
+    article.querySelector(".artifact-type").textContent = CONTENT_TYPE_LABELS[unit.contentType] ?? "";
+    renderCode(article.querySelector("pre > code"), unit.content, unit.contentType);
+    inputs.append(article);
+    inputPanels.set(reference, article);
+  });
+
+  const unitPanelId = (reference) => inputPanels.get(reference)?.id;
+  const artifactIndex = renderArtifacts(document.getElementById("artifacts"), response.sources, {
+    unitPanelId,
+  });
+
+  const names = artifactNames(response.sources);
+  for (const [reference, article] of inputPanels) {
+    const produced = [];
+    response.sources.forEach((artifact, position) => {
+      if (artifact.units?.includes(reference)) produced.push({ name: names[position], id: `artifact-${position + 1}` });
+    });
+    const origin = article.querySelector(".artifact-origin");
+    origin.hidden = false;
+    origin.replaceChildren();
+    if (produced.length === 0) {
+      origin.textContent = "no artifact came of this unit alone - the records say what became of it";
+      continue;
+    }
+    origin.append("went into ");
+    produced.forEach((artifact, position) => {
+      if (position > 0) origin.append(", ");
+      const link = document.createElement("button");
+      link.type = "button";
+      link.className = "link-button";
+      link.textContent = artifact.name;
+      link.title = "Show this artifact";
+      link.addEventListener("click", () => revealPanel(artifact.id));
+      origin.append(link);
+    });
+  }
+
+  renderFacts(document.getElementById("facts"), response.facts, {
+    inputPanels,
+    artifactPanels: [...document.getElementById("artifacts").querySelectorAll("article.artifact")],
+  });
   renderRecords(document.getElementById("records"), response.records, { artifactIndex });
   renderSummary(response);
 }
@@ -483,6 +544,7 @@ async function onConvert() {
       name: unit.name.trim() === "" ? null : unit.name.trim(),
     }));
     state.result = await convert(state.sourceOrm, state.targetOrm, sources, state.sourceDialect);
+    state.sent = sources;
     renderResult();
 
     const artifacts = state.result.sources?.length ?? 0;
@@ -565,6 +627,7 @@ function onLoadSamples() {
 function onClear() {
   if (state.units.length > 0 && !confirm("Remove every unit from the screen?")) return;
   state.units = [];
+  state.sent = null;
   state.result = null;
   forgetState();
   showValidation([]);
@@ -591,6 +654,16 @@ async function init() {
   document.getElementById("target-orm").addEventListener("change", (event) => {
     state.targetOrm = Number(event.target.value);
     saveState();
+  });
+  // The direction is one thing (decision 124): swapping it is one click, and the input list
+  // follows the new source - a unit the new source does not read is marked as such, not
+  // dropped, exactly as a change of the source select treats it.
+  document.getElementById("swap").addEventListener("click", () => {
+    [state.sourceOrm, state.targetOrm] = [state.targetOrm, state.sourceOrm];
+    saveState();
+    renderFrameworkSelects();
+    renderOfferNote();
+    renderUnits();
   });
   document.getElementById("source-dialect").addEventListener("change", (event) => {
     state.sourceDialect = event.target.value === "" ? null : Number(event.target.value);

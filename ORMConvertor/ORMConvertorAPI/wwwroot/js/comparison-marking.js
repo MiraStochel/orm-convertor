@@ -1,9 +1,11 @@
 /*
- * How the interactive comparison finds the authored spans in a file and turns them into
- * markable pieces (decision 100). It is the only part of that page with an answer that can
- * be right or wrong, so it lives apart from the rendering: everything here is a function of
- * its arguments, and the offline check of the authored data runs exactly this code rather
- * than a second copy of it.
+ * How a literal text is found in a code window and turned into markable pieces. Written for
+ * the interactive comparison (decision 100), where it finds the authored spans in a frozen
+ * file; since decision 124 the translation screen runs the same functions over the facts the
+ * server states, to underline a fact's value in the input unit and in the artifact. It is
+ * the only part of either page with an answer that can be right or wrong, so it lives apart
+ * from the rendering: everything here is a function of its arguments, and the offline check
+ * of the authored data runs exactly this code rather than a second copy of it.
  *
  * `markSegments` is the one function that touches the DOM, and only through `document`,
  * which a test can hand it.
@@ -15,12 +17,13 @@ const escapeForRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /**
  * Every occurrence of the literal `find` in `content`, as [start, end] pairs. Whole words
  * only where the text begins or ends with a word character, so `BookId` does not match
- * inside `BookIds` and `getBookId` is not the property.
+ * inside `BookIds` and `getBookId` is not the property. `ignoreCase` is for a value whose
+ * spelling the target changes - `identity` in one framework, `Identity` in another.
  */
-export function occurrences(content, find) {
+export function occurrences(content, find, { ignoreCase = false } = {}) {
   const prefix = WORD.test(find[0]) ? "(?<![A-Za-z0-9_])" : "";
   const suffix = WORD.test(find[find.length - 1]) ? "(?![A-Za-z0-9_])" : "";
-  const pattern = new RegExp(prefix + escapeForRegExp(find) + suffix, "g");
+  const pattern = new RegExp(prefix + escapeForRegExp(find) + suffix, ignoreCase ? "gi" : "g");
   const found = [];
   for (const match of content.matchAll(pattern)) {
     found.push([match.index, match.index + find.length]);

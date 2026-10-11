@@ -771,6 +771,20 @@ Nečitelné XML hlásí `XmlSource` jednou větou s řádkem a sloupcem v textu 
 
 **Atribuce** (rozh. [066](./decisions/066-records-attributed-to-the-input-unit.md)): `Unit` = `ConversionSource.Name`, jinak `unit N`. Entitní záznamy vzniklé při `Parse` jednotky připíše orchestrace (`AttributeRecords`); záznamy doplnění a generování jednotku nenesou. Dotazové záznamy nesou jednotku vždy a `Query` se jménem ze zdroje, u více nepojmenovaných `Query01` atd.
 
+#### Původ artefaktu a kniha tvrzení
+
+Doplněk záznamů (rozh. [124](./decisions/124-direction-as-one-row-and-input-beside-output-paired-per-fact.md)): záznam mluví o tom, co nedoputovalo; kniha o každém faktu. Píše ji jen báze `AbstractEntityBuilder` a orchestrace, wrappery nic.
+
+| Co | Kde | Obsah |
+|---|---|---|
+| původ artefaktu | `ConversionSource.Entity`, `.Units` (jen na artefaktu) | entita, pro kterou artefakt vznikl (`null` u dotazu); jednotky, které entitu založily nebo obohatily (z návratu `Parse`, `AttributeFacts`), u dotazu jednotka, ze které byl přečten (orchestrace); prázdný seznam = syntetizovaná entita |
+| kniha tvrzení | `ConversionResult.Facts` → `ConvertResponse.facts`, `ConversionFact` | po faktu modelu při generování: `Entity`, `Property`, `Category`, `Value`, `Origin`, `Unit`, `Outcome` |
+
+- **Fakt** = jedna kategorie deskriptoru na entitě či vlastnosti (`FactsOf`, instanční čtení `Carries`): klíč a strategie po částech, cizí klíč po vztahu, unikátní omezení po omezení. `Value` je hodnota modelu (`200`, `Customers`, `identity`, sloupce čárkou); klíč, verze a nepersistovanost ji nemají.
+- **`Origin`**: `Source` + `Unit`, přibyl-li fakt v modelu po `Parse` té jednotky (rozdíl klíčů *entita × vlastnost × kategorie*, první vítězí, rozh. 017); `Catalog`, mluví-li o něm záznam `Supplied`; jinak `Derived` (fáze sestavení).
+- **`Outcome`**: `NotGenerated` (brána úplnosti), `Dropped` (deskriptor *neumím vyjádřit* nebo záznam `Loss` o faktu), jinak `Carried` — doplněk ztrát podle rozh. 004, nic navíc.
+- Hlídá `Combined/FactLedgerTest`, přes HTTP `Api/ConvertEndpointTest`.
+
 #### Dotazová větev
 
 Tentýž kanál (rozh. [022](./decisions/022-native-query-syntax-in-builders.md)): `AbstractQueryBuilder` má `Records`, `Report` a `Descriptor`, `ConversionHandler` seznamy slévá. `QueryFeature` má 18 hodnot (12 kategorií T2 a `Expression`, `IntermediateResult`, `Recursion`, `ComputedGrouping`, `WindowFunction`, `ListAggregation`). Nevyjádřitelnou hlásí mechanicky `ReportUnspokenFeatures` jako `Fallback`, u cíle bez API pro nativní SQL jako `Failure`. `Failure` znamená, že dotaz nevznikne; drží to `Report` sám (rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md)).
@@ -1003,21 +1017,21 @@ flowchart LR
 
 ### 6.3 Frontend
 
-Statické soubory ve `wwwroot` bez frameworku, npm a buildu (rozh. [032](./decisions/032-frontend-as-static-pages-without-a-build.md)); šest dokumentů, podoba podle rozh. [100](./decisions/100-interactive-comparison-as-a-frozen-mockup.md).
+Statické soubory ve `wwwroot` bez frameworku, npm a buildu (rozh. [032](./decisions/032-frontend-as-static-pages-without-a-build.md)); šest dokumentů, podoba podle rozh. [124](./decisions/124-direction-as-one-row-and-input-beside-output-paired-per-fact.md).
 
 | Stránka | K čemu | Rozh. |
 |---|---|---|
 | `index.html` | rozcestník | 100 |
-| `translation.html` | překlad: dialekt zdrojového SQL (nevysloveno se neposílá); jednotka = soubor v jednom jazyce z `/required-content`, jazyk podle přípony, jinak ho žádá validace; pás záznamů s větou ke každému druhu, sloupci *Unit*, *Query* a *Artifact* | [088](./decisions/088-a-declared-foreign-source-dialect-is-not-read.md), [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md), [066](./decisions/066-records-attributed-to-the-input-unit.md), [081](./decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md) |
+| `translation.html` | překlad ve čtyřech krocích: směr jako řádek *zdroj → cíl* s prohozením a dialekt zdrojového SQL (nevysloveno se neposílá); jednotka = soubor v jednom jazyce z `/required-content`, jazyk podle přípony, jinak ho žádá validace; převod; výsledek se vstupem vedle výstupu (*from* / *went into* z `units`), pás *Facts* (`facts`, filtr po osudu, podtržení hodnoty hledáním v textu — `facts.js` nad `comparison-marking.js`) a pás záznamů s větou ke každému druhu, sloupci *Unit*, *Query* a *Artifact* | [124](./decisions/124-direction-as-one-row-and-input-beside-output-paired-per-fact.md), [088](./decisions/088-a-declared-foreign-source-dialect-is-not-read.md), [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md), [066](./decisions/066-records-attributed-to-the-input-unit.md), [081](./decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md) |
 | `advisor.html` | všichni změření kandidáti (`measurements`) s poměrem k nejrychlejšímu; panely z `translations` — přesně změřený kód, bez katalogu | [059](./decisions/059-advisor-response-carries-the-measured-translations.md) |
 | `examples.html` | živé příklady z `/examples`, dnes deset: sedm podle hranice, kterou překlad přechází, tři o dotazech (tytéž reporty do EF Core a NHibernatu, repozitář EF Core do EclipseLinku); spodní hranici drží `ExampleCatalogTest` | [099](./decisions/099-examples-are-content-not-a-choice.md) |
 | `ldbc.html` | katalog z `/ldbc` se stavy, tabulkou dotaz × cíl (jazyk cíle, nativní SQL, odmítnutí; z katalogu, ne ručně) a převodem dotazu; výčty dotazů v kartách jsou ruční text | 110 |
-| `comparison.html` | maketa: zmrazené artefakty (`js/comparison-run.js`), **ručně psané** spoje (`js/comparison-links.js`) — nástroj původ slov nehlásí; nevolá nic | 100 |
+| `comparison.html` | maketa: zmrazené artefakty (`js/comparison-run.js`), **ručně psané** spoje (`js/comparison-links.js`) mezi slovy — jemnost, kterou nástroj nedělá (rozh. 124; páruje po tvrzeních); nevolá nic, zůstává jako doklad hranice | 100, 124 |
 
 - **Servírování** — `UseDefaultFiles` před `UseRouting`, `MapStaticAssets` s `.br`/`.gz` z manifestu sestavení: **nový soubor se servíruje až po sestavení**. Adresy jsou relativní, `/orm` nenese žádný soubor.
 - **Kód** — tvar API zná jen `js/api.js`; stav je obyčejný objekt, oblasti z `<template>`. Pico CSS a highlight.js (C#, XML, SQL; ostatní jazyky nejbližší gramatikou) leží ve `wwwroot/vendor/` s licencí a verzí; instance běží bez sítě.
 - **Vstup** — rozpracovaný stav v `localStorage` (rozh. [056](./decisions/056-work-in-progress-input-stays-in-the-browser.md)); selhání úložiště chybou není.
-- **Výstup** — *Copy* a *Download* u panelu, ZIP balí server (`/archive`); odkaz *Artifact* je shoda odvozených jmen, ne párování serveru.
+- **Výstup** — *Copy* a *Download* u panelu, ZIP balí server (`/archive`); párování jednotka ↔ artefakt je výrok serveru (`entity`, `units`); odkaz *Artifact* v pásu záznamů jde přes `entity` artefaktu, u panelu bez něj (vstupní jednotka) přes jméno odvozené z obsahu — zobrazovací heuristika (rozh. 033). Podtržení hodnoty faktu v textu je hledání stránky, ne výrok serveru (rozh. 124).
 - **Rozvržení** — mřížky `minmax(0, …)`, řádky `flex` se zalomením; motiv přes `data-theme`.
 - **Testy** — žádné automatické (rozh. 032); kontrakt hlídá server, rozhraní projití scénáře S7.
 
@@ -1027,7 +1041,7 @@ Deset bodů v `ORMConvertorAPI/Endpoints.cs` pod `/orm` (tvar v [README](../ORMC
 
 | Metoda a cesta | K čemu | Odpověď |
 |---|---|---|
-| `POST /convert` | překlad celou pipeline (§5); nepovinné `declaredSourceDialect` (rozh. 088) | `ConvertResponse`: artefakty, záznamy, záznam běhu (S6) s `targetDatabaseDialect` (rozh. [086](./decisions/086-target-database-dialect-declared-by-the-descriptor.md)) a `maxNestingDepth` (rozh. [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md); určuje instance, v požadavku být nesmí); 400 |
+| `POST /convert` | překlad celou pipeline (§5); nepovinné `declaredSourceDialect` (rozh. 088) | `ConvertResponse`: artefakty (s `entity` a `units`, rozh. [124](./decisions/124-direction-as-one-row-and-input-beside-output-paired-per-fact.md)), záznamy, kniha tvrzení `facts` (§5.1), záznam běhu (S6) s `targetDatabaseDialect` (rozh. [086](./decisions/086-target-database-dialect-declared-by-the-descriptor.md)) a `maxNestingDepth` (rozh. [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md); určuje instance, v požadavku být nesmí); 400 |
 | `GET /required-content`, `/required-content-advisor` | jazyky, které zdroj čte (rozh. [025](./decisions/025-query-language-as-content-type.md), 111) | definice; u Advisoru `required` a `queries` |
 | `GET /samples`, `/samples-advisor` | ukázka ke každé jednotce (`ApiContentContractTest`) | slovník podle klíče jednotky |
 | `GET /examples` | příklady jako celé vstupy převodu | `List<ExampleDefinition>` |
@@ -1078,13 +1092,15 @@ flowchart LR
   C --> D[SynthesizeJunctionEntities]
   D --> E[ResolveEntityNames]
   E --> F{"CheckCompleteness<br/>(každá entita)"}
-  F -->|Failure| X["bez artefaktu"]
+  F -->|Failure| X["bez artefaktu<br/>RecordFacts(NotGenerated)"]
   F -->|ok| G[ReportLosses]
   G --> H["BuildImports → BuildTableSchema<br/>→ BuildPrimaryKey → BuildProperties<br/>→ BuildForeignKey → BuildEnforcedMembers<br/>→ FinalizeBuild"]
+  H --> I["Attributed (entity, units)<br/>RecordFacts"]
 ```
 
 - Brána `CheckCompleteness` odmítne entitu bez vyžadované kategorie, s vlastností bez jazykového typu, s klíčem i jeho popřením nebo s nepersistovanou částí klíče.
 - Sedm kroků je `protected abstract (EntityMap, EntityArtifact)`; `FinalizeBuild` vrací výstupy. `EntityArtifact` drží `Code`, `Mapping` a `ClassOpened`; NHibernate plní oba.
+- Výstupy `FinalizeBuild` opouštějí `Build()` kopií s `Entity` a `Units`; kniha tvrzení (§5.1) se píše po emisi entity, aby ztráta nahlášená při emisi platila jako `Dropped` (rozh. 124). `AttributeFacts(read, unit)` volá jen orchestrace po každém `Parse`.
 - Klíč se píše před vlastnostmi, v pořadí klíče. Prázdné kroky: Dapper `BuildPrimaryKey`, `BuildForeignKey`, `BuildEnforcedMembers`; EF Core `BuildEnforcedMembers`.
 
 #### Dotazový builder
@@ -1209,7 +1225,7 @@ Bez `libadvisor.so` oba vracejí hlášku z P/Invoke.
 | F11 | nárokované v užším rozsahu | za běhu kontrola úplnosti IR před generováním a strukturovaná diagnostika každého převodu (§5.1) — ověřovací kritérium F11 | syntaktickou správnost souborů ověřují testy (stupně rozh. [016](./decisions/016-generated-artifact-verification-levels.md)), ne `/convert`: překladová cesta cizí kód nekompiluje (2. věta S4) |
 | F12 | nárokované | javová sada; integrační test = běh proti databázi (rozh. [087](./decisions/087-an-integration-test-is-a-run-against-the-database.md)), obě meze kritéria tvrdí `SuiteSizeTest` | — |
 | F13 | nárokované v užším rozsahu | 4. stupeň nad dotazem: obě varianty proti jednomu kanonickému výsledku v repozitáři (rozh. [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md)); 6 vlastních dotazů a 50 kategorií T2, 1370 dvojic (99 s nativním SQL), zdrojem všech šest frameworků, negativní polovina 5 mutací artefaktu; kritérium hlídají sady samy | „konfigurovatelná" přesnost a null jen z poloviny: měřítko a platné číslice volí matice u dotazu (`decimalScale`, `floatDigits`), null je vždy holé `NULL` — jednoznačné (řetězec je v uvozovkách), ale pevné, aby se shodly dvě sady ve dvou jazycích |
-| F14 | nárokované v užším rozsahu | vícesouborový vstup, výstup po souborech; jednotka je celý zdrojový soubor (rozh. [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)): framework z něj čte entity i každé předání dotazu a nevzatou třídu jmenuje záznamem; dokument, který je mapováním i dotazem (`<query>` v `hbm.xml`), projde oběma průchody (rozh. [081](./decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md)) | záznam ze čtení jednotky na ni ukazuje polem `unit` (jméno, nebo `unit N`; rozh. [066](./decisions/066-records-attributed-to-the-input-unit.md)), dotaz polem `query`; záznamy doplnění a generování nesou jen entitu a vlastnost, protože entitu smí vyslovit víc jednotek, i téhož jazyka (rozh. [094](./decisions/094-entity-identity-inside-a-conversion.md): týž jmenný prostor a název dá jeden artefakt); výstupní artefakty jméno nenesou (otevřená položka); kód, který dotaz sám nepředává (služba, DTO projekce), se čte jako entita; nenárokuje se procházení repozitáře, archiv projektu ani zobrazení IR |
+| F14 | nárokované v užším rozsahu | vícesouborový vstup, výstup po souborech; jednotka je celý zdrojový soubor (rozh. [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)): framework z něj čte entity i každé předání dotazu a nevzatou třídu jmenuje záznamem; dokument, který je mapováním i dotazem (`<query>` v `hbm.xml`), projde oběma průchody (rozh. [081](./decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md)) | záznam ze čtení jednotky na ni ukazuje polem `unit` (jméno, nebo `unit N`; rozh. [066](./decisions/066-records-attributed-to-the-input-unit.md)), dotaz polem `query`; záznamy doplnění a generování nesou jen entitu a vlastnost, protože entitu smí vyslovit víc jednotek, i téhož jazyka (rozh. [094](./decisions/094-entity-identity-inside-a-conversion.md): týž jmenný prostor a název dá jeden artefakt); výstupní artefakt nese entitu a jednotky, které ji vyslovily, a kniha tvrzení původ i osud každého faktu (rozh. [124](./decisions/124-direction-as-one-row-and-input-beside-output-paired-per-fact.md), §5.1) — párování po slovech nástroj nedělá; kód, který dotaz sám nepředává (služba, DTO projekce), se čte jako entita; nenárokuje se procházení repozitáře, archiv projektu ani zobrazení IR |
 | F15 | vyňaté | — | oblast 1 |
 | S1–S3 | nárokované | modulární rozšiřitelnost, determinismus, výkon překladu ([README](../ORMConvertor/README.md#translation-performance-s3)) | — |
 | S4 | 1. věta vyňatá, 2. nárokovaná | předávaný artefakt nenese přihlašovací údaje (§5) | izolace spouštění: oblast 1 |

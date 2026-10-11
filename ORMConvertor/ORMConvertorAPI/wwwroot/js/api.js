@@ -152,6 +152,30 @@ export const MAPPING_FACT_CATEGORY_LABELS = Object.freeze({
   10: "foreign key columns",
   11: "version column",
   12: "unique constraint",
+  13: "transient property",
+});
+
+/*
+ * The fact ledger (decision 124): where a mapping fact came from and what became of it. The
+ * origin has three values because a fact can be born in exactly three phases - the reading
+ * of a unit, the catalog completion, the build - and the outcome three because a reader can
+ * check exactly three things against the two texts: it is in the output, it is not, there is
+ * no output.
+ */
+export const FactOrigin = Object.freeze({ Source: 1, Catalog: 2, Derived: 3 });
+
+export const FACT_ORIGIN_LABELS = Object.freeze({
+  [FactOrigin.Source]: "stated by the input",
+  [FactOrigin.Catalog]: "supplied by the catalog",
+  [FactOrigin.Derived]: "derived by the tool",
+});
+
+export const FactOutcome = Object.freeze({ Carried: 1, Dropped: 2, NotGenerated: 3 });
+
+export const FACT_OUTCOME_LABELS = Object.freeze({
+  [FactOutcome.Carried]: "carried",
+  [FactOutcome.Dropped]: "dropped",
+  [FactOutcome.NotGenerated]: "not generated",
 });
 
 export const QUERY_FEATURE_LABELS = Object.freeze({
@@ -260,9 +284,11 @@ export const getExamples = () => getJson("examples");
 export const getLdbc = () => getJson("ldbc");
 
 /**
- * POST /convert. Sources are { contentType, content } pairs; the response carries
+ * POST /convert. Sources are { contentType, content, name? } units; the response carries
  * runId, toolVersion, source/target framework with versions, sources (the generated
- * artifacts), records, catalogState, catalogReadMilliseconds and declaredSourceDialect.
+ * artifacts, each with the entity it was generated for and the units it came from -
+ * decision 124), records, facts (the ledger of decision 124), catalogState,
+ * catalogReadMilliseconds and declaredSourceDialect.
  *
  * declaredSourceDialect is optional on the way in and null means the source declares
  * nothing, which reads as it always did (decision 088); the field is sent only when it has

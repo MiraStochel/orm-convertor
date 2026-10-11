@@ -163,6 +163,45 @@ public class ConvertEndpointTest(ApiTestHost host)
     }
 
     /// <summary>
+    /// The pairing of output with input and the fact ledger reach the client as data (decision
+    /// 124): every artifact names its entity and the units it came from - by position here,
+    /// because the request sent no name - and every fact its origin and outcome as numbers,
+    /// the way every other enum of the contract travels.
+    /// </summary>
+    [Fact]
+    public async Task ArtifactsNameTheirUnitsAndTheFactsArriveAsData()
+    {
+        using var body = await ConvertAsync(EFCoreEntityRequest);
+
+        var artifacts = body.RootElement.GetProperty("sources").EnumerateArray().ToList();
+        Assert.NotEmpty(artifacts);
+        Assert.All(artifacts, artifact =>
+        {
+            Assert.Equal("Customer", artifact.GetProperty("entity").GetString());
+            var units = artifact.GetProperty("units").EnumerateArray().Select(u => u.GetString()).ToList();
+            Assert.Equal(["unit 1"], units);
+        });
+
+        var facts = body.RootElement.GetProperty("facts").EnumerateArray().ToList();
+        Assert.NotEmpty(facts);
+        Assert.All(facts, fact =>
+        {
+            Assert.Equal("Customer", fact.GetProperty("entity").GetString());
+            Assert.Equal(JsonValueKind.Number, fact.GetProperty("category").ValueKind);
+            Assert.Equal(JsonValueKind.Number, fact.GetProperty("origin").ValueKind);
+            Assert.Equal(JsonValueKind.Number, fact.GetProperty("outcome").ValueKind);
+        });
+
+        var length = Assert.Single(facts, fact =>
+            fact.GetProperty("property").GetString() == "CustomerName"
+            && fact.GetProperty("category").GetInt32() == (int)AbstractWrappers.Descriptors.MappingFactCategory.Length);
+        Assert.Equal("200", length.GetProperty("value").GetString());
+        Assert.Equal("unit 1", length.GetProperty("unit").GetString());
+        Assert.Equal((int)FactOrigin.Source, length.GetProperty("origin").GetInt32());
+        Assert.Equal((int)FactOutcome.Carried, length.GetProperty("outcome").GetInt32());
+    }
+
+    /// <summary>
     /// A framework the tool does not know is refused with 400 and a reason, not with a 500, and
     /// the reason arrives in the shape the OpenAPI document promises: <c>ProblemDetails</c> per
     /// RFC 9457, served as <c>application/problem+json</c> (decision 044). The reason itself is

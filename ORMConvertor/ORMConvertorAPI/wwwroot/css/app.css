@@ -214,6 +214,89 @@ article.artifact {
   min-width: 0;
 }
 
+/* ---- the direction row and input beside output (decision 124) ---------- */
+
+/* Source, swap, target on one line; the selects share the width and the button keeps its
+   own. Pico gives a select margin-bottom for the stacked form it assumes, which here would
+   push the three controls out of line. */
+.direction-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: var(--pico-spacing);
+}
+
+.direction-row > select {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.direction-row > button {
+  flex: 0 0 auto;
+  width: auto;
+  margin-bottom: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+/* Two columns of panels when the container is wide enough, one otherwise - the same
+   container query as the pane grid, so that the two layouts switch together. */
+.compare {
+  container-type: inline-size;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+@container (min-width: 58rem) {
+  .compare {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.compare-column {
+  min-width: 0;
+}
+
+.compare-column > h3 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.pane-stack > article {
+  min-width: 0;
+}
+
+/* The "from" and "went into" line under a panel's header: the server's pairing, in words. */
+.artifact-origin {
+  font-size: 0.85rem;
+  color: var(--pico-muted-color);
+  margin-bottom: 0.5rem;
+}
+
+.artifact-origin .link-button {
+  font-size: inherit;
+}
+
+/* An input unit's panel is an artifact panel in everything but its actions. */
+article.input-unit .artifact-header {
+  min-height: 2.25rem;
+}
+
+.badge-origin-source { background: #0f6f8c; }
+
+/* The fact row the pointer is on, or whose underline it is on. */
+.facts-table tr.fact-on > td {
+  background: color-mix(in srgb, var(--pico-primary) 14%, transparent);
+}
+
+.facts-table td code {
+  font-size: 0.8rem;
+}
+
 /* ---- validation and errors -------------------------------------------- */
 
 .problem {
@@ -461,12 +544,13 @@ article.artifact.artifact-flash {
   color: var(--pico-primary);
 }
 
-/* ---- interactive comparison (the mockup, decision 100) ------------------- */
+/* ---- underlined facts: the mockup (decision 100) and the facts band (124) -- */
 
-/* Three colours for the page's three kinds. Two of them are the tool's own - the blue of
-   Convention and the amber of Loss - because an added fact is usually a convention and a
-   dropped one is always a loss; carried has no counterpart in the records and gets a
-   colour of its own. */
+/* Three colours for three kinds. Two of them are the tool's own - the blue of Convention
+   and the amber of Loss - because an added fact is usually a convention and a dropped one
+   is always a loss; carried has no counterpart in the records and gets a colour of its
+   own. The mockup assigns the kind by hand, the translation screen from the server's
+   ledger; the marks look the same on both. */
 mark.tok[data-kind="carried"] {
   --tok: #0f6f8c;
   --tok-fill: rgba(15, 111, 140, 0.26);

@@ -32,6 +32,14 @@ namespace ORMConvertorAPI.Dtos;
 /// the operator switched the cap off (decision 092). It stands beside the tool version for
 /// the same reason that one does: S2 promises determinism for the same version of the tool,
 /// and a movable cap is the second thing the answer depends on.</param>
+/// <param name="Sources">The generated artifacts. Each carries the entity it was generated
+/// for and the input units that declared it, or the one unit a query came from (decision
+/// 124) - the pairing of output with input is the server's statement, not a client's
+/// reading of names.</param>
+/// <param name="Facts">One row per mapping fact the representation held at generation time:
+/// entity, property, category, value, where it came from (a unit, the catalog, the build)
+/// and what became of it (carried, dropped, nothing generated) - decision 124. The
+/// complement of <paramref name="Records"/>, which speak only about what did not travel.</param>
 public record ConvertResponse(
     Guid RunId,
     string ToolVersion,
@@ -42,6 +50,7 @@ public record ConvertResponse(
     DatabaseDialect TargetDatabaseDialect,
     List<ConversionSource> Sources,
     List<ConversionRecord> Records,
+    List<ConversionFact> Facts,
     CatalogConnectionState CatalogState,
     double? CatalogReadMilliseconds = null,
     SourceSqlDialect? DeclaredSourceDialect = null,

@@ -2684,6 +2684,244 @@ public abstract class AbstractEntityBuilder
         }
     }
 
+    /* ---- the fact ledger (decision 124) ------------------------------------------ */
+
+    /// <summary>
+    /// Which input units declared or enriched each entity map, by reference: the maps a
+    /// parser returned from reading the unit (decision 066). Reference identity, because the
+    /// name of an entity is not fixed until the build and two maps may briefly share one.
+    /// </summary>
+    private readonly Dictionary<EntityMap, List<string>> declaringUnits = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// The unit after whose reading each fact first stood in the representation. Under
+    /// source precedence a fact is written once (decision 017), so that unit stated it; a
+    /// later unit repeating or contradicting it adds nothing here, and the Conflict record
+    /// is where the contradiction is told.
+    /// </summary>
+    private readonly Dictionary<(string Entity, string? Property, MappingFactCategory Category), string> sourceFacts = [];
+
+    private readonly List<ConversionFact> facts = [];
+
+    /// <summary>
+    /// One sentence per mapping fact of every entity the build saw: where it came from and
+    /// what became of it (decision 124). Filled by <see cref="Build"/>; empty before it.
+    /// </summary>
+    public IReadOnlyList<ConversionFact> Facts => facts;
+
+    /// <summary>
+    /// Attributes to one input unit what its reading left in the representation: the maps
+    /// the parser returned as declared or enriched by the unit, and every fact that was not
+    /// there before the reading. Called by the orchestration after each entity parser's Parse
+    /// call, the only place that knows which unit a parser was fed (decision 066); parsers
+    /// and builders never call it. Nothing in it reads a name or guesses: a fact either
+    /// stood in the representation before the unit was read or it did not.
+    /// </summary>
+    public void AttributeFacts(IReadOnlyCollection<EntityMap> read, string unit)
+    {
+        foreach (var entityMap in read)
+        {
+            if (!declaringUnits.TryGetValue(entityMap, out var units))
+            {
+                declaringUnits[entityMap] = units = [];
+            }
+
+            if (!units.Contains(unit))
+            {
+                units.Add(unit);
+            }
+        }
+
+        foreach (var entityMap in EntityMaps)
+        {
+            foreach (var fact in FactsOf(entityMap))
+            {
+                sourceFacts.TryAdd((entityMap.Entity.Name, fact.Property, fact.Category), unit);
+            }
+        }
+    }
+
+    /// <summary>
+    /// One instance of a stated fact as the ledger speaks of it: the property it is about,
+    /// or null for the entity itself, and the value as the representation holds it.
+    /// </summary>
+    private readonly record struct FactInstance(string? Property, MappingFactCategory Category, string? Value);
+
+    /// <summary>
+    /// Every mapping fact the representation holds for an entity, one instance per subject.
+    /// The instance-level reading of the same predicates <see cref="Carries"/> answers per
+    /// category; the two must agree on whether a category is present at all.
+    /// </summary>
+    private static IEnumerable<FactInstance> FactsOf(EntityMap em)
+    {
+        if (em.Table is not null)
+        {
+            yield return new(null, MappingFactCategory.TableName, em.Table);
+        }
+
+        if (em.Schema is not null)
+        {
+            yield return new(null, MappingFactCategory.SchemaName, em.Schema);
+        }
+
+        foreach (var pm in em.PropertyMaps)
+        {
+            var property = pm.Property.Name;
+
+            if (pm.ColumnName is not null)
+            {
+                yield return new(property, MappingFactCategory.ColumnName, pm.ColumnName);
+            }
+
+            // The unicode facet and the literal source spelling are part of the type claim
+            // (decision 019); the literal spelling is the value a reader can find in the text.
+            if (pm.Type is not null || pm.IsUnicode is not null || pm.SourceSqlType is not null)
+            {
+                yield return new(property, MappingFactCategory.DatabaseType, pm.SourceSqlType ?? pm.Type?.ToString());
+            }
+
+            if (pm.Length is not null)
+            {
+                yield return new(property, MappingFactCategory.Length, pm.Length.Value.ToString());
+            }
+
+            if (pm.Precision is not null || pm.Scale is not null)
+            {
+                yield return new(
+                    property,
+                    MappingFactCategory.PrecisionAndScale,
+                    pm.Scale is null ? pm.Precision?.ToString() : $"{pm.Precision}, {pm.Scale}");
+            }
+
+            if (pm.IsNullable is not null)
+            {
+                yield return new(property, MappingFactCategory.Nullability, pm.IsNullable.Value ? "nullable" : "not null");
+            }
+
+            if (pm.IsVersion)
+            {
+                yield return new(property, MappingFactCategory.VersionColumn, null);
+            }
+
+            if (pm.IsTransient)
+            {
+                yield return new(property, MappingFactCategory.TransientProperty, null);
+            }
+        }
+
+        foreach (var part in em.PrimaryKey?.Parts ?? [])
+        {
+            var property = part.PropertyMap.Property.Name;
+
+            yield return new(property, MappingFactCategory.PrimaryKey, null);
+
+            if (part.Strategy != PrimaryKeyStrategy.Unspecified || part.SourceStrategyName is not null)
+            {
+                yield return new(property, MappingFactCategory.PrimaryKeyStrategy, part.SourceStrategyName ?? part.Strategy.ToString());
+            }
+        }
+
+        foreach (var relation in em.Relations.Where(r => r.ColumnPairs.Count > 0))
+        {
+            yield return new(
+                relation.SourceNavigationProperty,
+                MappingFactCategory.ForeignKeyColumns,
+                string.Join(", ", relation.ColumnPairs.Select(p => p.Source.ColumnName ?? p.Source.Property.Name)));
+        }
+
+        foreach (var constraint in em.UniqueConstraints)
+        {
+            // A constraint over one column concerns that property; over several it concerns
+            // the entity, as the loss records read it.
+            yield return new(
+                constraint.PropertyNames.Count == 1 ? constraint.PropertyNames[0] : null,
+                MappingFactCategory.UniqueConstraint,
+                constraint.Name ?? string.Join(", ", constraint.PropertyNames));
+        }
+    }
+
+    /// <summary>
+    /// Writes the ledger rows of one entity once its fate is known. The origin is the unit
+    /// the reading left the fact behind, else the catalog where a Supplied record names the
+    /// fact, else the build itself; the outcome follows from the descriptor and from the Loss
+    /// records already written, so the ledger claims nothing the records do not.
+    /// </summary>
+    private void RecordFacts(EntityMap entityMap, bool generated)
+    {
+        var entity = entityMap.Entity.Name;
+
+        foreach (var fact in FactsOf(entityMap))
+        {
+            FactOrigin origin;
+            string? unit = null;
+
+            if (sourceFacts.TryGetValue((entity, fact.Property, fact.Category), out var stating))
+            {
+                origin = FactOrigin.Source;
+                unit = stating;
+            }
+            else if (records.Any(r => r.Kind == ConversionRecordKind.Supplied && Names(r, entity, fact)))
+            {
+                origin = FactOrigin.Catalog;
+            }
+            else
+            {
+                origin = FactOrigin.Derived;
+            }
+
+            FactOutcome outcome;
+
+            if (!generated)
+            {
+                outcome = FactOutcome.NotGenerated;
+            }
+            else if (Descriptor.SupportOf(fact.Category) == FactSupport.NotExpressible
+                || records.Any(r => r.Kind == ConversionRecordKind.Loss && Names(r, entity, fact)))
+            {
+                outcome = FactOutcome.Dropped;
+            }
+            else
+            {
+                outcome = FactOutcome.Carried;
+            }
+
+            facts.Add(new ConversionFact
+            {
+                Entity = entity,
+                Property = fact.Property,
+                Category = fact.Category,
+                Value = fact.Value,
+                Origin = origin,
+                Unit = unit,
+                Outcome = outcome,
+            });
+        }
+    }
+
+    /// <summary>
+    /// Whether a record speaks about this fact: same entity and category, and the same
+    /// property or none - the catalog reports the key once for the entity while the ledger
+    /// has one row per part.
+    /// </summary>
+    private static bool Names(ConversionRecord record, string entity, FactInstance fact)
+        => record.Entity == entity
+            && record.Category == fact.Category
+            && (record.Property is null || record.Property == fact.Property);
+
+    /// <summary>
+    /// The artifact with its origin on it: the entity it was generated for and the units that
+    /// declared the entity (decision 124). A copy, because the output is immutable and the
+    /// framework's FinalizeBuild does not know, and must not know, where the entity came from.
+    /// </summary>
+    private ConversionSource Attributed(ConversionSource output, EntityMap entityMap) => new()
+    {
+        ContentType = output.ContentType,
+        Content = output.Content,
+        Name = output.Name,
+        Entity = entityMap.Entity.Name,
+        Units = declaringUnits.TryGetValue(entityMap, out var units) ? [.. units] : [],
+    };
+
     /// <summary>
     /// Builds the artifacts for every accumulated entity. The order of the steps is fixed
     /// here so that it cannot drift between frameworks; a framework with nothing to emit in
@@ -2724,6 +2962,9 @@ public abstract class AbstractEntityBuilder
             // record before half an artifact is written.
             if (!CheckCompleteness(entityMap))
             {
+                // No artifact, so the ledger says of every fact of the entity that there was
+                // nothing to carry it into (decision 124); the Failure records say why.
+                RecordFacts(entityMap, generated: false);
                 continue;
             }
 
@@ -2738,7 +2979,15 @@ public abstract class AbstractEntityBuilder
             BuildForeignKey(entityMap, artifact);
             BuildEnforcedMembers(entityMap, artifact);
 
-            outputs.AddRange(FinalizeBuild(entityMap, artifact));
+            // The artifacts leave with the entity and its declaring units on them, and the
+            // ledger is written after the emission so that a loss a framework reported while
+            // emitting counts as dropped (decision 124).
+            foreach (var output in FinalizeBuild(entityMap, artifact))
+            {
+                outputs.Add(Attributed(output, entityMap));
+            }
+
+            RecordFacts(entityMap, generated: true);
         }
 
         return outputs;

@@ -102,7 +102,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 097 | [Vlastní typ výjimky bydlí tam, kde se vyhazuje; `Model` žádný nenese](097-an-exception-type-lives-where-it-is-thrown.md) | platí | S1 |
 | 098 | [Číslo verze se rozhoduje jednou za vydání, ne u každé změny](098-the-number-is-decided-once-per-release.md) | platí | S2, S6 |
 | 099 | [Příklady výkladové stránky jsou její obsah, ne volba; ostatní podoba obrazovek zůstává](099-examples-are-content-not-a-choice.md) | nahrazeno [100](100-interactive-comparison-as-a-frozen-mockup.md) | F7–F11, F14, S6, S7 |
-| 100 | [Interaktivní srovnání je maketa nad zmrazeným během; pátý dokument frontendu](100-interactive-comparison-as-a-frozen-mockup.md) | platí | F11, F14, S7 |
+| 100 | [Interaktivní srovnání je maketa nad zmrazeným během; pátý dokument frontendu](100-interactive-comparison-as-a-frozen-mockup.md) | nahrazeno [124](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md) | F11, F14, S7 |
 | 101 | [Join po asociační cestě se odvozuje ze vztahu mezireprezentace; bez sloupců se odmítá jmenovitě](101-a-join-along-an-association-path-is-derived-from-the-relation.md) | platí | F7, F8, F9, F11, T1, T2 |
 | 102 | [Agregační `DISTINCT`, únikový znak `LIKE` a parametr uvnitř výčtu hodnot se nesou v mezireprezentaci](102-aggregate-distinct-like-escape-and-a-parameter-among-listed-values-are-carried.md) | platí | F7–F10, F11, T2, T3, S1, S2 |
 | 103 | [Dotazový výraz LINQ se čte jako svůj přepis na řetěz a koncová metoda na jeden řádek jako výřez](103-a-query-expression-is-read-as-its-rewrite-and-a-single-row-terminal-as-a-slice.md) | platí | F7–F10, F11, T1, T2 |
@@ -126,6 +126,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 121 | [Text dotazu katalogu LDBC smí mít tvar, který plánovač SQL Serveru potřebuje, zůstane-li T-SQL, jaké by stálo vedle referenční implementace (IC 5: okruh osob jako jedna množina poddotazem v poddotazu); fyzický návrh `LdbcSnb` nese v `indexes.sql` dva indexy rozšířené pro čtení katalogu a loader je obnoví při změně skriptu](121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md) | platí | T2, T3, F13, S5 |
 | 122 | [Text dotazu katalogu LDBC smí mít tvar, který implementace jednoho cíle potřebuje, za týchž podmínek jako tvar pro plánovač; kde takový tvar jediný `SELECT` nemá, katalog vysloví mez běhu, ne mez překladu](122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md) | platí | T2, T3, F9, F13 |
 | 123 | [Nativní dotaz EclipseLinku rozvine kolekční parametr za běhu v generované metodě: jeden zástupný symbol na prvek, číslovaný za skaláry a vázaný po prvcích](123-a-native-query-of-eclipselink-expands-a-collection-parameter-at-run-time.md) | platí | F9, F11, F13, T2, S2 |
+| 124 | [Směr překladu je jeden řádek, vstup stojí vedle výstupu a páruje se po tvrzeních z báze builderu; maketa zůstává](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md) | platí | F11, F14, S1, S2, S7 |
 
 ## Formát
 

@@ -48,7 +48,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [ADO.NET provider v benchmarcích](#sjednocení-adonet-provideru-v-benchmarcích) | Advisor | rozhodnutí | T7 |
 | [Testy Advisoru a benchmarkingu](#advisor-a-benchmarking-nemají-žádné-testy) | Advisor | práce | T7, S6 |
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
-| [Směr překladu a vstup vedle výstupu](#směr-překladu-jako-jedna-věc-a-vstup-vedle-výstupu) | Rozhraní | rozhodnutí | F14, S7 |
 | [Čísla řádků v editoru jednotky](#editor-jednotky-nemá-čísla-řádků-na-která-se-odvolává-chybová-hláška) | Rozhraní | práce | S7 |
 | [`unique` na sloupci cizího klíče](#unique-na-sloupci-cizího-klíče-jako-tvrzení-zdroje) | Užitečné | rozhodnutí | F5, F11 |
 | [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
@@ -190,14 +189,7 @@ Mimo Linux a Docker chybí `libadvisor.so`; `AdvisorRunHandler` vrátí text `Dl
 
 ## Rozhraní
 
-Zásahy do frontendu mimo milník 4. Z F14 je hotový vícesouborový vstup a výstup po souborech; vstupní archiv projektu se nenárokuje (§9) a položku nemá; zobrazení mezireprezentace je v [třetím cíli](#mezireprezentace-se-nezobrazuje-ačkoli-f14-ji-jmenuje).
-
-### Rozhodnutí
-
-#### Směr překladu jako jedna věc a vstup vedle výstupu
-*Navazuje na rozh. [100](./decisions/100-interactive-comparison-as-a-frozen-mockup.md), [099](./decisions/099-examples-are-content-not-a-choice.md) a [033](./decisions/033-shape-of-the-static-frontend-screens.md) (pětikrokový tvar obrazovky; podle něj je kód, takže změna znamená nové rozhodnutí). Souvisí s [032](./decisions/032-frontend-as-static-pages-without-a-build.md) a [066](./decisions/066-records-attributed-to-the-input-unit.md). Podklad: maketa `comparison.html`. Požadavky F14, S7.*
-
-Směr překladu nestojí na obrazovce jako jedna věc: zdroj a cíl jsou dvě sekce a prohodit je jde jen ručně. Řádek směru s tlačítkem prohození by z pěti sekcí udělal čtyři (S7 dovoluje „nejvýš pět"). Druhá otázka do téhož rozhodnutí: **vstup vedle výstupu**. Server dnes neříká, ze které jednotky artefakt vznikl (jednotky nesou jméno a záznamy na ně ukazují, rozh. 066). Bez toho se sloupce buď spárují toutéž jmennou heuristikou, jakou se artefakty pojmenovávají, a jako heuristika se i označí (odkaz *Artifact* obrazovky už je takovou shodou jmen, [`architecture.md`](./architecture.md) §6.3), nebo párování netvrdí a nesou jen nadpisy „co jste poslali" a „co přišlo zpět". Maketa ukazuje párování po slovech; rozhodnout i jemnost — po artefaktech (levné), nebo po tvrzeních (dotkne se každého builderu). Po naplnění se maketa maže.
+Zásahy do frontendu mimo milník 4. Z F14 je hotový vícesouborový vstup, výstup po souborech, vstup vedle výstupu s párováním po tvrzeních (rozh. [124](./decisions/124-direction-as-one-row-and-input-beside-output-paired-per-fact.md)); vstupní archiv projektu se nenárokuje (§9) a položku nemá; zobrazení mezireprezentace je v [třetím cíli](#mezireprezentace-se-nezobrazuje-ačkoli-f14-ji-jmenuje).
 
 ### Práce
 

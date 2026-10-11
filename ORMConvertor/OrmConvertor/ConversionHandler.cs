@@ -105,6 +105,11 @@ public static class ConversionHandler
 
                 entityBuilder.AttributeRecords(recordsBefore, unit.Reference);
 
+                // And what the reading left in the representation: the maps the unit declared
+                // or enriched, and every fact that was not there before it (decision 124). The
+                // artifacts of those maps will name the unit, and so will the ledger.
+                entityBuilder.AttributeFacts(read, unit.Reference);
+
                 unit.Yielded |= read.Count > 0;
             }
         }
@@ -203,7 +208,16 @@ public static class ConversionHandler
         {
             foreach (var queryBuilder in filled)
             {
-                results.AddRange(queryBuilder.Build());
+                // A query artifact belongs to no entity and came from exactly this unit, so
+                // it leaves with the unit on it (decision 124) - stated here, where the loop
+                // knows the unit, rather than guessed from names on the client.
+                results.AddRange(queryBuilder.Build().Select(artifact => new ConversionSource
+                {
+                    ContentType = artifact.ContentType,
+                    Content = artifact.Content,
+                    Name = artifact.Name,
+                    Units = [unit.Reference],
+                }));
 
                 // Each builder was made for one query of this one unit and dies with it, so
                 // every record it holds - the parser's, the catalog's and the build's alike -
@@ -282,6 +296,7 @@ public static class ConversionHandler
             MaxNestingDepth = parseLimits.MaxNestingDepth,
             Sources = results,
             Records = [.. entityBuilder.Records, .. queryRecords, .. runRecords],
+            Facts = [.. entityBuilder.Facts],
             CatalogState = catalog.ConnectionState,
             CatalogReadTime = catalog.ReadTime,
         };

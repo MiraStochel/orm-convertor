@@ -142,11 +142,16 @@ const artifactKey = (entity, contentType) =>
 /*
  * Renders code panels for a list of artifacts and returns an index from entity name plus
  * content type to the id of the panel carrying it; the records band uses it to point at
- * the artifact a record is about. Both sides are the same display heuristic (decision
- * 033): a match means the two derived names agree, not that the server paired them.
+ * the artifact a record is about. A generated artifact names its entity itself (decision
+ * 124), and then the index is the server's statement; an input unit names none, and for it
+ * the entity is still read out of the content - a display heuristic (decision 033), where
+ * a match means the two derived names agree.
+ *
+ * `options.unitPanelId(unitLabel)` turns a unit reference into the id of the panel showing
+ * that unit; when given, the "from" line of an artifact links to its units.
  */
 export function renderArtifacts(container, artifacts, options = {}) {
-  const { idPrefix = "artifact" } = options;
+  const { idPrefix = "artifact", unitPanelId } = options;
   container.replaceChildren();
   const names = artifactNames(artifacts);
   const index = new Map();
@@ -159,7 +164,12 @@ export function renderArtifacts(container, artifacts, options = {}) {
     article.querySelector(".artifact-type").textContent =
       CONTENT_TYPE_LABELS[artifact.contentType] ?? "";
 
-    const base = artifactBaseName(artifact);
+    // The entity the server generated the artifact for, kept on the panel so that the facts
+    // band can find the artifacts of an entity without reading names (decision 124).
+    if (artifact.entity) article.dataset.entity = artifact.entity;
+    renderOrigin(article.querySelector(".artifact-origin"), artifact.units, unitPanelId);
+
+    const base = artifact.entity ?? artifactBaseName(artifact);
     if (base) index.set(artifactKey(base, artifact.contentType), id);
 
     const buttons = article.querySelector(".artifact-actions");
@@ -187,8 +197,44 @@ export function renderArtifacts(container, artifacts, options = {}) {
   return index;
 }
 
-/** Scrolls an artifact panel into view and marks it briefly, so the eye finds it. */
-function revealArtifact(id) {
+/*
+ * The "from" line of a generated artifact: the units the server says it came from (decision
+ * 124). A template without the element - the examples, the advisor - shows nothing; an
+ * artifact without the field - an input unit - shows nothing either. The empty list is a
+ * statement of its own: an entity no unit declared, which the build synthesized.
+ */
+function renderOrigin(element, units, unitPanelId) {
+  if (!element) return;
+  if (!Array.isArray(units)) {
+    element.hidden = true;
+    return;
+  }
+  element.hidden = false;
+  element.replaceChildren();
+  if (units.length === 0) {
+    element.textContent = "from no input unit - synthesized by the conversion";
+    return;
+  }
+  element.append("from ");
+  units.forEach((unit, position) => {
+    if (position > 0) element.append(", ");
+    const id = unitPanelId?.(unit);
+    if (!id) {
+      element.append(unit);
+      return;
+    }
+    const link = document.createElement("button");
+    link.type = "button";
+    link.className = "link-button";
+    link.textContent = unit;
+    link.title = "Show this input unit";
+    link.addEventListener("click", () => revealPanel(id));
+    element.append(link);
+  });
+}
+
+/** Scrolls a code panel into view and marks it briefly, so the eye finds it. */
+export function revealPanel(id) {
   const panel = document.getElementById(id);
   if (!panel) return;
   // The larger examples fold their output (decision 099); a jump into a folded pane would
@@ -359,7 +405,7 @@ export function renderRecords(container, records, options = {}) {
     link.className = "link-button";
     link.textContent = label;
     link.title = "Show the artifact this record is about";
-    link.addEventListener("click", () => revealArtifact(id));
+    link.addEventListener("click", () => revealPanel(id));
     cell.append(link);
     return cell;
   }

@@ -48,14 +48,18 @@
   <main>
     <h1>Translation</h1>
     <p class="lede">
-      Pick the frameworks, add your source files, convert, and read the artifacts
-      together with the records of everything the conversion had to decide, drop
-      or fill in.
+      Pick the direction, add your source files, convert, and read the artifacts beside
+      what you sent &mdash; with every mapping fact's origin and fate, and the records of
+      everything the conversion had to decide, drop or fill in.
     </p>
 
     <section>
-      <h2>1. Source framework</h2>
-      <select id="source-orm" aria-label="Source framework"></select>
+      <h2>1. Direction</h2>
+      <div class="direction-row">
+        <select id="source-orm" aria-label="Source framework"></select>
+        <button type="button" id="swap" class="secondary outline" title="Swap source and target" aria-label="Swap source and target">&#8644;</button>
+        <select id="target-orm" aria-label="Target framework"></select>
+      </div>
       <select id="source-dialect" aria-label="Dialect of the source's literal SQL"></select>
       <small class="hint">
         Which database system the literal SQL in your source is written for &mdash; the text
@@ -67,12 +71,7 @@
     </section>
 
     <section>
-      <h2>2. Target framework</h2>
-      <select id="target-orm" aria-label="Target framework"></select>
-    </section>
-
-    <section>
-      <h2>3. Input files</h2>
+      <h2>2. Input files</h2>
       <p id="offer-note"></p>
       <div class="toolbar">
         <button type="button" id="add-files">Add files…</button>
@@ -89,7 +88,7 @@
     </section>
 
     <section>
-      <h2>4. Convert</h2>
+      <h2>3. Convert</h2>
       <div id="validation" role="alert" hidden>
         <p class="problem">The input is not ready to send:</p>
         <ul id="validation-list"></ul>
@@ -102,7 +101,7 @@
     </section>
 
     <section id="result" hidden>
-      <h2>5. Result</h2>
+      <h2>4. Result</h2>
       <div class="run-facts">
         <span id="run-frameworks"></span>
         <span id="source-dialect-fact"></span>
@@ -113,9 +112,31 @@
       <div class="toolbar" style="margin-top: 1rem;">
         <button type="button" id="download" class="secondary">Download all as ZIP</button>
       </div>
-      <div class="panes">
-        <div id="artifacts" class="pane-grid"></div>
+      <div class="compare">
+        <div class="compare-column">
+          <h3>What you sent</h3>
+          <div id="inputs" class="pane-stack"></div>
+        </div>
+        <div class="compare-column">
+          <h3>What came back</h3>
+          <div id="artifacts" class="pane-stack"></div>
+        </div>
       </div>
+      <p class="muted-note">
+        Each artifact names the units it came from and each unit the artifacts it went into:
+        that pairing is the server&rsquo;s statement. Point at a fact below, or at an
+        underlined word in a panel, and every place the same fact shows itself lights up.
+      </p>
+      <h3>Facts</h3>
+      <p class="muted-note">
+        Every mapping fact the conversion held when it generated: which unit stated it, or
+        whether the catalog supplied it or the tool derived it, and whether the artifact
+        carries it. The row is the server&rsquo;s word. The underlines are this page&rsquo;s
+        search for the fact&rsquo;s literal value in the unit named and in the entity&rsquo;s
+        artifacts &mdash; they find a value spelled the same on both sides and miss one the
+        target respells, so a fact without an underline is not a fact that went missing.
+      </p>
+      <div id="facts"></div>
       <h3>Records</h3>
       <p class="muted-note">
         What the conversion could not carry, filled in by convention, or read from the
@@ -153,6 +174,20 @@
           <button type="button" class="artifact-download secondary outline">Download</button>
         </span>
       </header>
+      <p class="artifact-origin" hidden></p>
+      <pre><code></code></pre>
+    </article>
+  </template>
+
+  <template id="input-template">
+    <article class="artifact input-unit">
+      <header class="artifact-header">
+        <span>
+          <strong class="artifact-name"></strong>
+          <small class="artifact-type"></small>
+        </span>
+      </header>
+      <p class="artifact-origin" hidden></p>
       <pre><code></code></pre>
     </article>
   </template>

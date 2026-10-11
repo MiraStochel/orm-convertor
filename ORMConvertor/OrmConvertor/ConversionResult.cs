@@ -75,6 +75,14 @@ public sealed class ConversionResult
     public required List<ConversionRecord> Records { get; init; }
 
     /// <summary>
+    /// One row per mapping fact the representation held at generation time - where it came
+    /// from and what became of it (decision 124). The complement of the records: they speak
+    /// about what did not travel, the ledger about every fact, carried ones included. Written
+    /// by the builder base, so a framework adds nothing to it.
+    /// </summary>
+    public required List<ConversionFact> Facts { get; init; }
+
+    /// <summary>
     /// State of the catalog connection during the run - the completion phase over the
     /// target's demand and the one over the queries' (decisions 015 and 105), folded into
     /// the strongest thing that happened to the connection. The connection lives in server

@@ -118,6 +118,7 @@ public static class Endpoints
                 converted.TargetDatabaseDialect,
                 converted.Sources,
                 converted.Records,
+                converted.Facts,
                 converted.CatalogState,
                 converted.CatalogReadTime?.TotalMilliseconds,
                 converted.DeclaredSourceDialect,
