@@ -242,8 +242,8 @@ public class HibernateOrmXmlTest
 
     /// <summary>
     /// unique="true" on a join-column element is read the way the annotation is (decision
-    /// 127): over a column no attribute of the class maps it is a reported incompleteness,
-    /// and the many-to-one keeps the cardinality the element states.
+    /// 130): over a column no scalar of the class maps it is a constraint over the
+    /// navigation, and the many-to-one keeps the cardinality the element states.
     /// </summary>
     [Fact]
     public void UniqueOnAJoinColumnElementIsReadAsTheAnnotationIs()
@@ -274,10 +274,7 @@ public class HibernateOrmXmlTest
 
         var map = builder.EntityMaps.Single();
         Assert.Equal(Cardinality.ManyToOne, map.Relations.Single().Cardinality);
-        Assert.Empty(map.UniqueConstraints);
-        Assert.Contains(builder.Records, r =>
-            r.Kind == ConversionRecordKind.Incompleteness
-            && r.Category == MappingFactCategory.UniqueConstraint
-            && r.Property == "customer");
+        Assert.Equal(["customer"], Assert.Single(map.UniqueConstraints).PropertyNames);
+        Assert.DoesNotContain(builder.Records, r => r.Category == MappingFactCategory.UniqueConstraint);
     }
 }

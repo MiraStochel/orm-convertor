@@ -11,6 +11,12 @@ namespace Model.AbstractRepresentation;
 /// what the catalog knows and what the completion phase translates. By name because key
 /// classes dissolve, junction entities appear and names resolve between reading and
 /// emission, and a held reference would drift out of step with the model.
+///
+/// A part may also name the navigation of an owning N:1 or 1:1 relation (decision 130). It
+/// then stands for every column of that relation's foreign key, in the order of its column
+/// pairs - the only way to name a foreign key column the class maps by its navigation
+/// alone. Each target spells it its own way: EF Core through the foreign key properties,
+/// JPA through the join columns, NHibernate as unique-key on the many-to-one.
 /// </summary>
 public sealed class UniqueConstraint
 {

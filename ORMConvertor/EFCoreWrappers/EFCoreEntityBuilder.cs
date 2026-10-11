@@ -142,7 +142,14 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
-            var parts = string.Join(", ", constraint.PropertyNames.Select(name => $"nameof({name})"));
+            var indexed = IndexedProperties(entityMap, constraint);
+
+            if (indexed is null)
+            {
+                continue;
+            }
+
+            var parts = string.Join(", ", indexed.Select(name => $"nameof({name})"));
             var named = constraint.Name is null ? string.Empty : $", Name = \"{constraint.Name}\"";
 
             var rendered = $"[Index({parts}, IsUnique = true{named})]";
@@ -153,6 +160,93 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 constraint.PropertyNames.Count == 1 ? constraint.PropertyNames[0] : null,
                 rendered);
         }
+    }
+
+    /// <summary>
+    /// The properties an index over the constraint names. [Index] cannot name a navigation,
+    /// so a member that is one is spelled by the properties of its foreign key - the very
+    /// names [ForeignKey] on the navigation gives, an existing scalar or the property the
+    /// builder supplies (decisions 012 and 130). Where those names do not exist - the
+    /// columns are unknown, the type of the key they reference is, or the navigation holds
+    /// no foreign key in this table - the constraint is reported and null returned.
+    /// </summary>
+    private List<string>? IndexedProperties(EntityMap entityMap, UniqueConstraint constraint)
+    {
+        var indexed = new List<string>();
+
+        foreach (var name in constraint.PropertyNames)
+        {
+            if (!entityMap.Relations.Any(r => r.SourceNavigationProperty == name))
+            {
+                indexed.Add(name);
+                continue;
+            }
+
+            var relation = entityMap.ForeignKeyNamedBy(name);
+            var foreignKey = relation is null ? null : ForeignKeyPropertyNames(entityMap, relation, name);
+
+            if (foreignKey is null)
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.CSharpEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = constraint.PropertyNames.Count == 1 ? name : null,
+                    Category = MappingFactCategory.UniqueConstraint,
+                    Reason = $"The unique constraint over ({string.Join(", ", constraint.PropertyNames)}) covers the navigation '{name}', "
+                        + (relation is null
+                            ? "which holds no foreign key in this entity's table"
+                            : "whose foreign key properties cannot be named - its columns or the type of the key they reference are unknown")
+                        + "; [Index] names properties only, so the constraint is not written (decision 130).",
+                });
+                return null;
+            }
+
+            indexed.AddRange(foreignKey.Where(p => !indexed.Contains(p)));
+        }
+
+        return indexed;
+    }
+
+    /// <summary>
+    /// The names of the scalar properties a foreign key consists of, in the order of the key
+    /// it points at: the entity's own where it declares one over the column, else the name
+    /// the builder supplies (decision 012). Null where the columns are unknown or a referenced
+    /// key part has no language type, so no property can be declared.
+    /// </summary>
+    private static List<string>? ForeignKeyPropertyNames(EntityMap entityMap, Relation relation, string navigationProperty)
+    {
+        if (relation.ColumnPairs.Count == 0)
+        {
+            return null;
+        }
+
+        var names = new List<string>();
+
+        foreach (var pair in relation.ColumnPairs)
+        {
+            // A column is not a property until it has a language type, so a property map carrying
+            // only the column does not count as one the entity already has.
+            var existing = entityMap.PropertyMaps.FirstOrDefault(pm =>
+                pm.Property.Name == pair.Source.Property.Name && pm.Property.Type is not null);
+
+            if (existing is not null)
+            {
+                names.Add(existing.Property.Name);
+            }
+            else if (pair.Target.Property.Type is null)
+            {
+                return null;
+            }
+            else
+            {
+                names.Add(EFCoreColumnMember.NameFor(navigationProperty, pair.Target));
+            }
+        }
+
+        return names;
     }
 
     protected override void BuildPrimaryKey(EntityMap entityMap, EntityArtifact artifact)

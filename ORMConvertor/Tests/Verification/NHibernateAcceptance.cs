@@ -79,6 +79,25 @@ internal static class NHibernateAcceptance
         return (Configure(mappingXmls, entities).BuildSessionFactory(), entities);
     }
 
+    /// <summary>
+    /// Builds the session factory the same way and hands the caller the configuration it was
+    /// built from - by then every mapping is bound to its class, so the configuration answers
+    /// what NHibernate made of the mapping (the unique keys of a table, the multiplicity of an
+    /// association) rather than only whether it accepts it.
+    /// </summary>
+    public static void UseConfiguration(byte[] compiledEntities, IEnumerable<string> mappingXmls, Action<Configuration> use)
+    {
+        var entities = Assembly.Load(compiledEntities);
+
+        using var gate = AssemblyResolveGate.EnterScope();
+        using var resolve = new GeneratedEntitiesResolver(entities);
+
+        var configuration = Configure(mappingXmls, entities);
+        using var sessionFactory = configuration.BuildSessionFactory();
+
+        use(configuration);
+    }
+
     private static Configuration Configure(IEnumerable<string> mappingXmls, Assembly entities)
     {
         var configuration = new Configuration();

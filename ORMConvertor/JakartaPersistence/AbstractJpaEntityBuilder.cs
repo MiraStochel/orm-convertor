@@ -159,7 +159,8 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
     /// <summary>
     /// @UniqueConstraint names columns, so each property translates to its column
-    /// (decision 055). A constraint over a property the entity does not declare is a gap
+    /// (decision 055) and a navigation to the join columns of its foreign key (decision
+    /// 130). A constraint over a property the entity does not declare is a gap
     /// of the model and is reported; one over a property the source states is not
     /// persisted has no column to constrain and is dropped with a loss (decision 072).
     /// </summary>
@@ -204,13 +205,73 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
+            var columnNames = new List<string>();
+            string? unnamed = null;
+
+            foreach (var pm in maps)
+            {
+                if (!entityMap.Relations.Any(r => r.SourceNavigationProperty == pm!.Property.Name))
+                {
+                    columnNames.Add(ColumnOf(pm!));
+                }
+                else if (JoinColumnNames(entityMap, pm!.Property.Name) is { } joinColumns)
+                {
+                    columnNames.AddRange(joinColumns.Where(c => !columnNames.Contains(c, StringComparer.Ordinal)));
+                }
+                else
+                {
+                    unnamed = pm.Property.Name;
+                    break;
+                }
+            }
+
+            if (unnamed is not null)
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.JavaEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = constraint.PropertyNames.Count == 1 ? unnamed : null,
+                    Category = MappingFactCategory.UniqueConstraint,
+                    Reason = $"The unique constraint over ({string.Join(", ", constraint.PropertyNames)}) covers the navigation '{unnamed}', "
+                        + "whose join columns are not known or which holds no foreign key in this entity's table; @UniqueConstraint "
+                        + "names columns, so the constraint is not written (decision 130).",
+                });
+                continue;
+            }
+
             Import($"{Jakarta}.UniqueConstraint");
-            var columns = string.Join(", ", maps.Select(pm => $"\"{ColumnOf(pm!)}\""));
+            var columns = string.Join(", ", columnNames.Select(c => $"\"{c}\""));
             var named = constraint.Name is null ? string.Empty : $"name = \"{constraint.Name}\", ";
             rendered.Add($"@UniqueConstraint({named}columnNames = {{ {columns} }})");
         }
 
         return rendered.Count == 0 ? null : $"{{ {string.Join(", ", rendered)} }}";
+    }
+
+    /// <summary>
+    /// The join columns a navigation stands for in a unique constraint (decision 130) -
+    /// exactly what <see cref="AppendOwningReference"/> writes into @JoinColumn: the paired
+    /// columns, else the JPA default over the referenced key. Null where neither is known,
+    /// or the navigation holds no foreign key in this entity's table.
+    /// </summary>
+    private List<string>? JoinColumnNames(EntityMap entityMap, string navigation)
+    {
+        if (entityMap.ForeignKeyNamedBy(navigation) is not { } relation)
+        {
+            return null;
+        }
+
+        if (relation.ColumnPairs.Count > 0)
+        {
+            return [.. relation.ColumnPairs.Select(pair => pair.Source.ColumnName ?? pair.Source.Property.Name)];
+        }
+
+        return FindEntityMap(relation.TargetEntity)?.PrimaryKey is { } key
+            ? [.. key.Parts.Select(p => $"{navigation}_{ColumnOf(p.PropertyMap)}")]
+            : null;
     }
 
     protected override void BuildPrimaryKey(EntityMap entityMap, EntityArtifact artifact)

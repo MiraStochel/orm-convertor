@@ -1009,36 +1009,38 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
-    /// The unique attributes of a property element (decision 055): unique="true" where the
-    /// constraint covers this property alone, unique-key="…" where it groups several. Both
-    /// live on &lt;property&gt; and on a nested &lt;column&gt;, so the caller places them in
-    /// whichever form it is writing.
+    /// The unique attributes of an element a constraint member is written as. On a
+    /// &lt;property&gt; (decision 055): unique="true" where the constraint covers this
+    /// property alone, unique-key="…" where it groups several. Both live on &lt;property&gt;
+    /// and on a nested &lt;column&gt;, so the caller places them in whichever form it is
+    /// writing. On a &lt;many-to-one&gt; (decision 130) always unique-key, whose columns are
+    /// all the foreign key's: unique there means the owning side of a 1:1 (decision 012),
+    /// which a constraint over the foreign key does not state.
     ///
-    /// The grouping token of a nameless multi-column constraint is derived rather than
-    /// asked for: NHibernate needs one to tie the columns together, and unique-key names a
-    /// group inside the document rather than a constraint in the database, so deriving it
-    /// claims nothing about the schema. It is reported as a convention of the target all the
-    /// same (decision 010), and derived deterministically so that the artifact stays
-    /// byte-wise stable (S2).
+    /// The grouping token of a nameless constraint is derived rather than asked for:
+    /// NHibernate needs one to tie the columns together, and unique-key names a group inside
+    /// the document rather than a constraint in the database, so deriving it claims nothing
+    /// about the schema. It is reported as a convention of the target all the same
+    /// (decision 010), and derived deterministically so that the artifact stays byte-wise
+    /// stable (S2). Several groups on one element are one comma-separated value, the form
+    /// NHibernate reads.
     /// </summary>
-    private List<XmlAttribute> UniqueAttributes(EntityMap entityMap, PropertyMap propertyMap)
+    private List<XmlAttribute> UniqueAttributes(EntityMap entityMap, string member)
     {
         var attributes = new List<XmlAttribute>();
+        var keys = new List<string>();
+        var reference = IsWrittenAsManyToOne(entityMap, member);
 
         foreach (var constraint in PlaceableUniqueConstraints(entityMap))
         {
-            if (constraint.PropertyNames.Count == 1)
+            if (!constraint.PropertyNames.Contains(member, StringComparer.Ordinal))
             {
-                if (constraint.PropertyNames[0] == propertyMap.Property.Name)
-                {
-                    attributes.Add(new("unique", "true"));
-                }
-
                 continue;
             }
 
-            if (!constraint.PropertyNames.Contains(propertyMap.Property.Name, StringComparer.Ordinal))
+            if (constraint.PropertyNames.Count == 1 && !reference)
             {
+                attributes.Add(new("unique", "true"));
                 continue;
             }
 
@@ -1048,9 +1050,9 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             {
                 key = $"UQ_{entityMap.Entity.Name}_{string.Join("_", constraint.PropertyNames)}";
 
-                // Once per constraint, not once per column it covers: the convention is one
+                // Once per constraint, not once per element it covers: the convention is one
                 // decision of the tool, however many elements carry its result.
-                if (constraint.PropertyNames[0] == propertyMap.Property.Name)
+                if (constraint.PropertyNames[0] == member)
                 {
                     Report(new ConversionRecord
                     {
@@ -1058,37 +1060,44 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                         Framework = Descriptor.Framework,
                         Artifact = ConversionContentType.XML,
                         Entity = entityMap.Entity.Name,
-                        Property = propertyMap.Property.Name,
+                        Property = member,
                         Category = MappingFactCategory.UniqueConstraint,
                         Reason = $"The unique constraint over ({string.Join(", ", constraint.PropertyNames)}) has no name and "
-                            + $"NHibernate groups its columns by one, so unique-key=\"{key}\" is written by the tool's own "
-                            + "convention (decision 055).",
+                            + (constraint.PropertyNames.Count == 1
+                                ? "NHibernate states one over a many-to-one only by unique-key, unique there being the owning side "
+                                    + $"of a 1:1, so unique-key=\"{key}\" is written by the tool's own convention (decision 130)."
+                                : $"NHibernate groups its columns by one, so unique-key=\"{key}\" is written by the tool's own "
+                                    + "convention (decision 055)."),
                     });
                 }
             }
 
-            attributes.Add(new("unique-key", key));
+            keys.Add(key);
+        }
+
+        if (keys.Count > 0)
+        {
+            attributes.Add(new("unique-key", string.Join(",", keys)));
         }
 
         return attributes;
     }
 
     /// <summary>
-    /// Constraints that can reach the mapping at all: every part has to be a plain mapped
-    /// property, because unique and unique-key are written on &lt;property&gt;. The
-    /// unplaceable ones are reported once per entity by
+    /// Constraints that can reach the mapping at all: every member has to be a plain mapped
+    /// property or a reference written as &lt;many-to-one&gt;, because unique and unique-key
+    /// are written on those. The unplaceable ones are reported once per entity by
     /// <see cref="ReportUnplaceableUniqueConstraints"/> and skipped here.
     /// </summary>
     private static IEnumerable<UniqueConstraint> PlaceableUniqueConstraints(EntityMap entityMap)
-        => entityMap.UniqueConstraints.Where(c => c.PropertyNames.All(name => IsPlainProperty(entityMap, name)));
+        => entityMap.UniqueConstraints.Where(c => c.PropertyNames.All(name =>
+            IsPlainProperty(entityMap, name) || IsWrittenAsManyToOne(entityMap, name)));
 
     /// <summary>
     /// Whether a property reaches the mapping as a &lt;property&gt; element. A key part is
     /// written as &lt;id&gt; or &lt;key-property&gt;, a navigation as an association and the
-    /// row version as &lt;version&gt;, and none of those three is a place where a unique
-    /// constraint of the schema could go: on an association the unique attribute already
-    /// means the owning side of a 1:1 (decision 012), and a second meaning would make the
-    /// output ambiguous.
+    /// row version as &lt;version&gt;; a key part and the version are no place for a unique
+    /// constraint of the schema, and a navigation is one only as <see cref="IsWrittenAsManyToOne"/>.
     /// </summary>
     private static bool IsPlainProperty(EntityMap entityMap, string propertyName)
     {
@@ -1103,6 +1112,17 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
+    /// Whether a constraint member is a navigation written as &lt;many-to-one&gt; - an owning
+    /// reference with a foreign key of its own (decision 012) - whose element takes unique-key
+    /// for all its columns (decision 130). An owning 1:1 over a shared primary key is written
+    /// as &lt;one-to-one constrained="true"&gt;, which has no column to constrain.
+    /// </summary>
+    private static bool IsWrittenAsManyToOne(EntityMap entityMap, string member)
+        => entityMap.ForeignKeyNamedBy(member) is { } relation
+            && entityMap.PropertyMaps.Any(pm => pm.Property.Name == member && !pm.IsTransient)
+            && !(relation.Cardinality == Cardinality.OneToOne && SharesPrimaryKeyThrough(entityMap, member));
+
+    /// <summary>
     /// One loss record per constraint that has nowhere to go (decision 055). Written before
     /// the properties, so the record stands whether or not the properties concerned reach
     /// the output at all.
@@ -1112,7 +1132,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         foreach (var constraint in entityMap.UniqueConstraints)
         {
             var unplaceable = constraint.PropertyNames
-                .Where(name => !IsPlainProperty(entityMap, name))
+                .Where(name => !IsPlainProperty(entityMap, name) && !IsWrittenAsManyToOne(entityMap, name))
                 .ToList();
 
             if (unplaceable.Count == 0)
@@ -1128,10 +1148,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 Entity = entityMap.Entity.Name,
                 Property = constraint.PropertyNames.Count == 1 ? constraint.PropertyNames[0] : null,
                 Category = MappingFactCategory.UniqueConstraint,
-                Reason = $"NHibernate states a unique constraint on the <property> elements it covers, and "
+                Reason = $"NHibernate states a unique constraint on the <property> and <many-to-one> elements it covers, and "
                     + $"({string.Join(", ", unplaceable)}) {(unplaceable.Count == 1 ? "is" : "are")} not written as one - "
-                    + "an identifier, an association, the row version or a property the source states is not persisted. "
-                    + "The constraint is dropped (decision 004).",
+                    + "an identifier, an association holding no foreign key column of its own, the row version or a property "
+                    + "the source states is not persisted. The constraint is dropped (decision 004).",
             });
         }
     }
@@ -1208,7 +1228,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             }
 
             attrs.AddRange(sizeFacets);
-            attrs.AddRange(UniqueAttributes(entityMap, propertyMap));
+            attrs.AddRange(UniqueAttributes(entityMap, propertyMap.Property.Name));
 
             XmlEmitter.Empty(mappingResult, 2, "property", attrs);
             return;
@@ -1228,7 +1248,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         columnFacets.AddRange(sizeFacets);
         columnFacets.Add(new("sql-type", claim.SqlType));
-        columnFacets.AddRange(UniqueAttributes(entityMap, propertyMap));
+        columnFacets.AddRange(UniqueAttributes(entityMap, propertyMap.Property.Name));
 
         XmlEmitter.Open(mappingResult, 2, "property", attrs);
         XmlEmitter.Empty(
@@ -1471,6 +1491,10 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             ? new XmlAttribute?(new XmlAttribute("unique", "true"))
             : null;
 
+        // Membership of unique constraints over the foreign key (decision 130); computed once,
+        // since a nameless one reports its convention as it is derived.
+        var uniqueKeys = UniqueAttributes(entityMap, navigationProperty);
+
         // The identifier owns the write on its columns; a reference over key columns -
         // a foreign key inside the primary key - is therefore mapped read-only, otherwise
         // NHibernate refuses the repeated column.
@@ -1493,6 +1517,8 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             {
                 attributes.Add(unique.Value);
             }
+
+            attributes.AddRange(uniqueKeys);
 
             if (readOnly)
             {

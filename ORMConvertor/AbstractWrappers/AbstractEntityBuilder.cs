@@ -815,7 +815,8 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Adds a unique constraint over the named properties (decision 055). Constraints are
+    /// Adds a unique constraint over the named properties (decision 055) - or navigations of
+    /// owning references, which stand for their foreign key columns (decision 130). Constraints are
     /// identified by the set of properties they cover, not by their name: one and the same
     /// constraint reaches the model from the source and from the catalog under two
     /// spellings, and the set is what decides. A repeated set is therefore not added twice;
@@ -836,6 +837,14 @@ public abstract class AbstractEntityBuilder
 
         if (parts.Count == 0)
         {
+            return;
+        }
+
+        if (parts.Count == 1 && EntityMap.ForeignKeyNamedBy(parts[0]) is { Cardinality: Cardinality.OneToOne })
+        {
+            // The foreign key of an owning 1:1 is unique by its cardinality, which every
+            // target writes again from there; a constraint over it alone would state the
+            // same fact twice (decision 130).
             return;
         }
 

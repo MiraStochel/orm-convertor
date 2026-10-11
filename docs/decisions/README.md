@@ -57,7 +57,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 052 | [Doslovný SQL typ dojde i do anotace EF Core](052-literal-sql-type-reaches-the-ef-core-annotation.md) | platí | F2, F5, F11, S2 |
 | 053 | [Dotaz, který by vrátil jinou množinu řádků, se nevydá](053-a-query-that-would-return-other-rows-is-not-emitted.md) | platí | F7–F10, F11, T2, T3, S1, S2 |
 | 054 | [Jazyková nullabilita části klíče je hlášená ztráta](054-nullable-key-part-is-a-reported-loss.md) | platí | F1, F11, S2 |
-| 055 | [Unikátní omezení je nesené mapovací fakt, ne vyňatá oblast](055-unique-constraint-as-a-carried-mapping-fact.md) | platí | F2, F4, F5, F11, S1, S2 |
+| 055 | [Unikátní omezení je nesené mapovací fakt, ne vyňatá oblast](055-unique-constraint-as-a-carried-mapping-fact.md) | nahrazeno [130](130-a-unique-constraint-over-a-foreign-key-names-the-navigation.md) | F2, F4, F5, F11, S1, S2 |
 | 056 | [Rozpracovaný vstup překladové obrazovky zůstává v prohlížeči](056-work-in-progress-input-stays-in-the-browser.md) | platí | F14, S7 |
 | 057 | [Nasazovací pohled bydlí v provozní příručce, ne v architektuře](057-deployment-view-in-the-operating-manual.md) | nahrazeno [058](058-only-the-operational-half-of-the-deployment-view-moves.md) | žádné |
 | 058 | [Do provozní příručky patří jen provozní polovina nasazovacího pohledu](058-only-the-operational-half-of-the-deployment-view-moves.md) | platí | žádné |
@@ -129,9 +129,10 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 124 | [Směr překladu je jeden řádek, vstup stojí vedle výstupu a páruje se po tvrzeních z báze builderu; maketa zůstává](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md) | nahrazeno [125](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md) | F11, F14, S1, S2, S7 |
 | 125 | [Pozice tvrzení ve vstupu a ve výstupu jako volitelná vrstva nad knihou tvrzení; maketa se maže](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md) | platí | F11, F14, S1, S2, S7 |
 | 126 | [Čísla řádků v editoru jednotky vlastním kódem, ne hotovým editorem](126-line-numbers-in-the-unit-editor-by-own-code-not-an-editor-library.md) | platí | S5, S7 |
-| 127 | [`unique` nad sloupcem cizího klíče tvrdí to, pro co framework nemá jiné místo: v JPA unikátní omezení, v NHibernatu kardinalitu](127-unique-on-a-foreign-key-column-states-what-the-framework-has-no-other-place-for.md) | platí | F2, F5, F11, S2 |
+| 127 | [`unique` nad sloupcem cizího klíče tvrdí to, pro co framework nemá jiné místo: v JPA unikátní omezení, v NHibernatu kardinalitu](127-unique-on-a-foreign-key-column-states-what-the-framework-has-no-other-place-for.md) | nahrazeno [130](130-a-unique-constraint-over-a-foreign-key-names-the-navigation.md) | F2, F5, F11, S2 |
 | 128 | [Jednotka C# se syntaktickou chybou se odmítá s pozicí, ne překládá ze stromu, který Roslyn dopsal](128-a-csharp-unit-with-a-syntax-error-is-refused-with-a-position.md) | platí | F11, F14, S4, S7 |
 | 129 | [Jediným databázovým dialektem zůstává SQL Server 2022; druhý se nepřidává, deklarace a zábrana cizího dialektu zůstávají](129-sql-server-2022-stays-the-only-database-dialect.md) | platí | F4, F5, F7–F10, F11, F13, S2, S5, S6, S7, T2, T3 |
+| 130 | [Unikátní omezení nad sloupci cizího klíče jmenuje navigaci vztahu](130-a-unique-constraint-over-a-foreign-key-names-the-navigation.md) | platí | F3, F4, F5, F11, S1, S2 |
 
 ## Formát
 

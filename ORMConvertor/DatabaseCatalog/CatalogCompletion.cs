@@ -218,6 +218,17 @@ public static class CatalogCompletion
             var ambiguousPairs = CompleteManyToMany(builder, reader, imageByEntity, entityByTable);
             CompleteInverseCollections(builder, imageByEntity, entityByTable, ambiguousPairs);
         }
+
+        // Last, because a column of a constraint may be a foreign key column the class maps
+        // by its navigation alone, and the navigation is recognized by the relation's
+        // columns, which the phase above has only just supplied (decision 130).
+        if (demand.Contains(MappingFactCategory.UniqueConstraint))
+        {
+            foreach (var (em, image) in imageByEntity.Where(e => e.Value.UniqueConstraints.Count > 0))
+            {
+                CompleteUniqueConstraints(builder, em, image);
+            }
+        }
     }
 
     /// <summary>
@@ -495,17 +506,14 @@ public static class CatalogCompletion
         {
             CompletePrimaryKey(builder, em, image);
         }
-
-        if (demand.Contains(MappingFactCategory.UniqueConstraint) && image.UniqueConstraints.Count > 0)
-        {
-            CompleteUniqueConstraints(builder, em, image);
-        }
     }
 
     /// <summary>
     /// Unique constraints the catalog states (decision 055). Each one is translated from
-    /// columns to properties, because that is what the model names; a constraint with a
-    /// column no property maps is not supplied, the same rule the primary key follows -
+    /// columns to properties, because that is what the model names - or to the navigation of
+    /// an owning reference, for the foreign key columns the class maps by the navigation
+    /// alone, provided the constraint covers all of them (decision 130). A constraint with a
+    /// column neither maps is not supplied, the same rule the primary key follows -
     /// inventing the member would put into the class what the source never declared.
     ///
     /// Identity is the set of properties, not the name, so a constraint the source already
@@ -519,19 +527,37 @@ public static class CatalogCompletion
         foreach (var constraint in image.UniqueConstraints)
         {
             var propertyNames = new List<string>();
+            var references = new List<(Relation Relation, IReadOnlyList<string> Columns)>();
             string? unmapped = null;
 
             foreach (var column in constraint.Columns)
             {
-                var pm = FindPropertyMapForColumn(em, column);
+                var pm = FindPropertyMapForColumn(em, column, includeNavigations: false);
 
-                if (pm is null)
+                if (pm is not null)
+                {
+                    propertyNames.Add(pm.Property.Name);
+                    continue;
+                }
+
+                // A foreign key column the class maps by its navigation alone: the navigation
+                // stands for the whole key (decision 130).
+                var reference = em.Relations
+                    .Where(r => r.SourceNavigationProperty is not null && em.ForeignKeyNamedBy(r.SourceNavigationProperty) == r)
+                    .Select(r => (Relation: r, Columns: ForeignKeyColumnsOf(builder, r)))
+                    .FirstOrDefault(r => r.Columns.Contains(column, StringComparer.OrdinalIgnoreCase));
+
+                if (reference.Relation is null)
                 {
                     unmapped = column;
                     break;
                 }
 
-                propertyNames.Add(pm.Property.Name);
+                if (!references.Any(r => r.Relation == reference.Relation))
+                {
+                    references.Add(reference);
+                    propertyNames.Add(reference.Relation.SourceNavigationProperty!);
+                }
             }
 
             if (unmapped is not null)
@@ -546,6 +572,34 @@ public static class CatalogCompletion
                         + $"({string.Join(", ", constraint.Columns)}) of '{image.QualifiedName}', "
                         + $"but no property matches the column '{unmapped}'; the constraint is not supplied.",
                 });
+                continue;
+            }
+
+            var partial = references
+                .Where(r => !r.Columns.All(c => constraint.Columns.Contains(c, StringComparer.OrdinalIgnoreCase)))
+                .Select(r => r.Relation.SourceNavigationProperty)
+                .ToList();
+
+            if (partial.Count > 0)
+            {
+                builder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = builder.Descriptor.Framework,
+                    Entity = em.Entity.Name,
+                    Category = MappingFactCategory.UniqueConstraint,
+                    Reason = $"The catalog states the unique constraint '{constraint.Name}' "
+                        + $"({string.Join(", ", constraint.Columns)}) of '{image.QualifiedName}' over part of the foreign key of "
+                        + $"{string.Join(", ", partial.Select(p => $"'{p}'"))}; a foreign key column the class maps by its navigation "
+                        + "alone is named by the navigation, which stands for all of them, so the constraint is not supplied (decision 130).",
+                });
+                continue;
+            }
+
+            if (propertyNames.Count == 1 && em.ForeignKeyNamedBy(propertyNames[0]) is { Cardinality: Cardinality.OneToOne })
+            {
+                // The uniqueness of a 1:1 foreign key is its cardinality, which the model
+                // already carries; there is nothing to supply (decision 130).
                 continue;
             }
 
@@ -1280,13 +1334,31 @@ public static class CatalogCompletion
     /// The property behind a catalog column: by stated column name first, then by the
     /// property's own name. A property the source states is not persisted is never the
     /// answer (decision 072) - the column the key, the foreign key or the constraint names
-    /// is not its column, whatever it is called.
+    /// is not its column, whatever it is called. Without navigations, the map of a relation's
+    /// navigation is not the answer either: a navigation stands for its foreign key columns,
+    /// whatever its own name (decision 130).
     /// </summary>
-    private static PropertyMap? FindPropertyMapForColumn(EntityMap em, string column)
-        => em.PropertyMaps.FirstOrDefault(pm =>
-                !pm.IsTransient && string.Equals(pm.ColumnName, column, StringComparison.OrdinalIgnoreCase))
+    private static PropertyMap? FindPropertyMapForColumn(EntityMap em, string column, bool includeNavigations = true)
+    {
+        bool Eligible(PropertyMap pm)
+            => !pm.IsTransient
+                && (includeNavigations || !em.Relations.Any(r => r.SourceNavigationProperty == pm.Property.Name));
+
+        return em.PropertyMaps.FirstOrDefault(pm =>
+                Eligible(pm) && string.Equals(pm.ColumnName, column, StringComparison.OrdinalIgnoreCase))
             ?? em.PropertyMaps.FirstOrDefault(pm =>
-                !pm.IsTransient && pm.ColumnName is null && string.Equals(pm.Property.Name, column, StringComparison.OrdinalIgnoreCase));
+                Eligible(pm) && pm.ColumnName is null && string.Equals(pm.Property.Name, column, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The foreign key columns of a relation as the model knows them at this point: its
+    /// pairs where they are resolved, else what the source stated and the pairing has not
+    /// consumed yet - the same two readings <see cref="CompleteExistingRelation"/> compares.
+    /// </summary>
+    private static IReadOnlyList<string> ForeignKeyColumnsOf(AbstractEntityBuilder builder, Relation relation)
+        => relation.ColumnPairs.Count > 0
+            ? [.. relation.ColumnPairs.Select(p => p.Source.ColumnName ?? p.Source.Property.Name)]
+            : builder.StatedForeignKeyColumns(relation) ?? [];
 
     private static string SimpleEntityName(string name)
     {

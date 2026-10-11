@@ -1,7 +1,7 @@
 # 127 — `unique` nad sloupcem cizího klíče tvrdí to, pro co framework nemá jiné místo: v JPA unikátní omezení, v NHibernatu kardinalitu
 
 Datum: 2026-10-11
-Stav: platí
+Stav: nahrazeno [130](130-a-unique-constraint-over-a-foreign-key-names-the-navigation.md)
 Požadavky: F2, F5, F11, S2
 Podklad: rozhodnutí [012](012-foreign-key-rendering.md), [048](048-a-fact-with-no-place-in-the-model-is-a-loss.md), [055](055-unique-constraint-as-a-carried-mapping-fact.md), [067](067-a-derived-convention-is-a-statement-a-default-is-not.md) a [077](077-hibernate-wrapper-over-the-shared-jpa-layer.md); Jakarta Persistence 3.2, javadoc `JoinColumn.unique` a `Column.unique`; referenční dokumentace NHibernate 5.7, atribut `unique` elementu `many-to-one`; položka *`unique` na sloupci cizího klíče jako tvrzení zdroje* v `open-items.md`
 

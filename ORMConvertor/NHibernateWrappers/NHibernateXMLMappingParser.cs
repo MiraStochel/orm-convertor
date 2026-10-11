@@ -212,6 +212,7 @@ public class NHibernateXMLMappingParser(
         ParseVersion(classElement);
         ParseProperties(classElement);
         ParseRelations(classElement);
+        ParseUniqueKeys(classElement);
         ReportUnreadClassChildren(classElement);
         MarkTransientProperties(classElement);
     }
@@ -675,11 +676,8 @@ public class NHibernateXMLMappingParser(
     /// </summary>
     private void ParseProperties(XElement classElement)
     {
-        // Grouped rather than added one by one: a multi-column constraint is spread over as
-        // many <property> elements as it covers, and the model holds it as one fact
-        // (decision 055). Insertion order is kept so that the model states the columns in
-        // the order the document does (S2).
-        var uniqueKeys = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        // unique-key groups are read by ParseUniqueKeys once the relations stand, since a
+        // <many-to-one> may be a member as well (decision 130).
         var singles = new List<string>();
         var elements = new Dictionary<string, XElement>(StringComparer.Ordinal);
 
@@ -705,67 +703,117 @@ public class NHibernateXMLMappingParser(
                 ApplyTypeFacts(prop, propertyName);
             }
 
-            ReadUniqueness(prop, propertyName, uniqueKeys, singles);
+            var columnElement = prop.Elements().FirstOrDefault(e => e.Name.LocalName == "column");
+
+            // unique="true" is a constraint over that column alone (decision 055), read from
+            // the element and from a nested <column>, the two forms NHibernate admits for
+            // every column fact - the same pair ReadColumnFacts reads the other facets from.
+            if (IsTrue(prop, "unique") || (columnElement is not null && IsTrue(columnElement, "unique")))
+            {
+                singles.Add(propertyName);
+            }
+
             ReportUnmodelledAttributes(prop, UnmodelledPropertyAttributes, propertyName);
         }
 
-        // A constraint stands at the element that states it - its own for a single column,
-        // the first member's for a unique-key (decision 125).
+        // A constraint stands at the element that states it (decision 125).
         foreach (var propertyName in singles)
         {
             using var scope = Scope(elements[propertyName]);
             entityBuilder.AddUniqueConstraint(null, [propertyName]);
         }
-
-        foreach (var (name, propertyNames) in uniqueKeys)
-        {
-            using var scope = Scope(elements[propertyNames[0]]);
-            entityBuilder.AddUniqueConstraint(name, propertyNames);
-        }
     }
 
     /// <summary>
-    /// The uniqueness a property element states (decision 055): unique="true" is a
-    /// constraint over that column alone, unique-key groups the columns sharing its value.
-    /// Both are read from the element itself and from a nested &lt;column&gt;, the two forms
-    /// NHibernate admits for every column fact - the same pair <see cref="ReadColumnFacts"/>
-    /// reads the other facets from.
+    /// The unique-key groups of the class (decision 055): the columns sharing a value form
+    /// one constraint, spread over as many elements as it covers, so they are grouped rather
+    /// than added one by one. A &lt;property&gt; is a member through the attribute on itself
+    /// or on its nested &lt;column&gt;; a &lt;many-to-one&gt; through the attribute on itself,
+    /// which covers all its columns, or on every nested &lt;column&gt; - and then its
+    /// navigation is the member, standing for the whole foreign key (decision 130). A group
+    /// on only some columns of a composite foreign key cannot be named that way and is
+    /// reported. Members keep the order of the document (S2); a constraint stands at its
+    /// first member (decision 125).
     ///
-    /// A property stating both is stating one constraint over itself and membership of
-    /// another, which is legal and produces two.
+    /// unique-key on a &lt;many-to-one&gt; says nothing about the multiplicity - that is
+    /// unique="true", read by <see cref="ParseRelations"/> as the owning side of a 1:1
+    /// (decision 012) - so both on one element are two statements, and both are read.
     /// </summary>
-    private static void ReadUniqueness(
-        XElement element,
-        string propertyName,
-        Dictionary<string, List<string>> uniqueKeys,
-        List<string> singles)
+    private void ParseUniqueKeys(XElement classElement)
     {
-        var columnElement = element.Elements().FirstOrDefault(e => e.Name.LocalName == "column");
+        var groups = new Dictionary<string, List<(string Member, XElement Element)>>(StringComparer.Ordinal);
 
-        if (IsTrue(element, "unique") || (columnElement is not null && IsTrue(columnElement, "unique")))
+        void Join(IEnumerable<string> keys, string member, XElement element)
         {
-            singles.Add(propertyName);
-        }
-
-        var key = element.Attribute("unique-key")?.Value
-            ?? columnElement?.Attribute("unique-key")?.Value;
-
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return;
-        }
-
-        // NHibernate admits several groups on one column, comma-separated.
-        foreach (var group in key.Split(',').Select(g => g.Trim()).Where(g => g.Length > 0))
-        {
-            if (!uniqueKeys.TryGetValue(group, out var members))
+            foreach (var group in keys)
             {
-                uniqueKeys[group] = members = [];
+                if (!groups.TryGetValue(group, out var members))
+                {
+                    groups[group] = members = [];
+                }
+
+                members.Add((member, element));
+            }
+        }
+
+        foreach (var element in classElement.Elements())
+        {
+            var member = element.Attribute("name")?.Value;
+
+            if (string.IsNullOrEmpty(member))
+            {
+                continue;
             }
 
-            members.Add(propertyName);
+            var columns = element.Elements().Where(e => e.Name.LocalName == "column").ToList();
+
+            switch (element.Name.LocalName)
+            {
+                case "property":
+                    Join(UniqueKeys(element.Attribute("unique-key") ?? columns.FirstOrDefault()?.Attribute("unique-key")), member, element);
+                    break;
+
+                case "many-to-one":
+                    var own = UniqueKeys(element.Attribute("unique-key"));
+                    var perColumn = columns.Select(c => UniqueKeys(c.Attribute("unique-key"))).ToList();
+                    var stated = perColumn.SelectMany(keys => keys).Distinct(StringComparer.Ordinal).ToList();
+                    var whole = stated.Where(group => perColumn.All(keys => keys.Contains(group, StringComparer.Ordinal))).ToList();
+
+                    Join(own.Concat(whole).Distinct(StringComparer.Ordinal), member, element);
+
+                    foreach (var group in stated.Except(whole, StringComparer.Ordinal))
+                    {
+                        using var scope = Scope(element, relation: true);
+                        entityBuilder.Report(new ConversionRecord
+                        {
+                            Kind = ConversionRecordKind.Incompleteness,
+                            Framework = entityBuilder.Descriptor.Framework,
+                            Entity = entityBuilder.EntityMap.Entity.Name,
+                            Property = member,
+                            Category = MappingFactCategory.UniqueConstraint,
+                            Reason = $"unique-key=\"{group}\" stands on some columns of the foreign key of '{member}' only; the "
+                                + "intermediate representation names a foreign key column by its navigation, which stands for all "
+                                + "of them, so the constraint was not read (decision 130).",
+                        });
+                    }
+
+                    break;
+            }
+        }
+
+        foreach (var (name, members) in groups)
+        {
+            var first = members[0];
+            using var scope = Scope(first.Element, relation: first.Element.Name.LocalName == "many-to-one");
+            entityBuilder.AddUniqueConstraint(name, [.. members.Select(m => m.Member)]);
         }
     }
+
+    /// <summary>The groups a unique-key attribute names; NHibernate admits several, comma-separated.</summary>
+    private static List<string> UniqueKeys(XAttribute? attribute)
+        => attribute?.Value is { } value
+            ? [.. value.Split(',').Select(g => g.Trim()).Where(g => g.Length > 0)]
+            : [];
 
     /// <summary>
     /// The type claim of an element, read through the typed channel (decision 019): the
@@ -867,7 +915,7 @@ public class NHibernateXMLMappingParser(
     /// column; a property spread over several columns would take a composite user type
     /// the model does not carry, so each further column is dropped with a record instead
     /// of vanishing (decision 030). Uniqueness travels its own way, as a fact of the entity
-    /// rather than of the column (<see cref="ReadUniqueness"/>, decision 055); index, check
+    /// rather than of the column (<see cref="ParseUniqueKeys"/>, decision 055); index, check
     /// and default have no counterpart in the model at all and each is reported as a loss
     /// rather than skipped, which is what decision 048 rules for a fact with no place. The
     /// type attribute and the sql-type of a nested &lt;column&gt; do not travel through this
@@ -1068,7 +1116,7 @@ public class NHibernateXMLMappingParser(
 
     /// <summary>
     /// The same for a &lt;property&gt;, whose read attributes are name, column, type and the
-    /// facets <see cref="ReadFacetsInto"/> and <see cref="ReadUniqueness"/> take.
+    /// facets <see cref="ReadFacetsInto"/> and <see cref="ParseProperties"/> take.
     ///
     /// formula is the one that changes what the artifact means: a property read from a SQL
     /// expression has no column at all, while the model requires one, so the output does

@@ -526,12 +526,11 @@ public class HibernateEntityParserTest
     }
 
     /// <summary>
-    /// Over a column no attribute of the class maps, the constraint has no property to be
-    /// named by and is reported as the same incompleteness @UniqueConstraint over that
-    /// column and the catalog give (decision 127) - no longer dropped in silence.
+    /// Over a column no scalar of the class maps, the constraint is named by the navigation,
+    /// which stands for the foreign key (decision 130), and the relation stays N:1.
     /// </summary>
     [Fact]
-    public void UniqueOnAJoinColumnNoScalarMapsIsAReportedIncompleteness()
+    public void UniqueOnAJoinColumnNoScalarMapsIsAConstraintOverTheNavigation()
     {
         var (builder, _) = Parse("""
             import jakarta.persistence.*;
@@ -548,12 +547,10 @@ public class HibernateEntityParserTest
 
         var map = builder.EntityMaps.Single();
         Assert.Equal(Cardinality.ManyToOne, map.Relations.Single().Cardinality);
-        Assert.Empty(map.UniqueConstraints);
-        Assert.Contains(builder.Records, r =>
-            r.Kind == ConversionRecordKind.Incompleteness
-            && r.Category == MappingFactCategory.UniqueConstraint
-            && r.Property == "customer"
-            && r.Reason.Contains("CustomerId"));
+        var constraint = Assert.Single(map.UniqueConstraints);
+        Assert.Equal(["customer"], constraint.PropertyNames);
+        Assert.Null(constraint.Name);
+        Assert.DoesNotContain(builder.Records, r => r.Category == MappingFactCategory.UniqueConstraint);
     }
 
     /// <summary>

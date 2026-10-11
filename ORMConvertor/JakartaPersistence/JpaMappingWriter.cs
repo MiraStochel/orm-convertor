@@ -616,28 +616,40 @@ public sealed class JpaMappingWriter(
     /// <summary>
     /// @UniqueConstraint names columns; the model names properties (decision 055), so the
     /// columns are translated through the attributes' stated or default column names. A
-    /// column no attribute carries cannot be named at all - inventing a member is what the
-    /// catalog completion phase refuses too - and the constraint is dropped with a record.
+    /// column a scalar maps lands on the scalar; a stated join column of an owning reference
+    /// lands on its navigation, which stands for the whole foreign key (decision 130), so the
+    /// constraint has to cover every join column of it. A column no attribute carries cannot
+    /// be named at all - inventing a member is what the catalog completion phase refuses
+    /// too - and neither can part of a composite foreign key: the constraint is dropped with
+    /// a record.
     /// </summary>
     private void WriteUniqueConstraint(JpaEntityFacts facts, JpaUniqueConstraintFacts constraint)
     {
         var properties = new List<string>();
         var missing = new List<string>();
+        var references = new List<JpaAttributeFacts>();
 
         foreach (var column in constraint.ColumnNames)
         {
-            var attribute = facts.Attributes.FirstOrDefault(a =>
-                string.Equals(a.ColumnName ?? a.Name, column, StringComparison.Ordinal))
-                ?? facts.Attributes.FirstOrDefault(a =>
-                    string.Equals(a.ColumnName ?? a.Name, column, StringComparison.OrdinalIgnoreCase));
+            var attribute = FindScalar(facts, column, a => !IsRelation(a.Kind));
 
-            if (attribute is null)
+            if (attribute is not null)
+            {
+                properties.Add(attribute.Name);
+                continue;
+            }
+
+            var reference = facts.Attributes.FirstOrDefault(a => StatedJoinColumns(a).Contains(column, StringComparer.Ordinal))
+                ?? facts.Attributes.FirstOrDefault(a => StatedJoinColumns(a).Contains(column, StringComparer.OrdinalIgnoreCase));
+
+            if (reference is null)
             {
                 missing.Add(column);
             }
-            else
+            else if (!references.Contains(reference))
             {
-                properties.Add(attribute.Name);
+                references.Add(reference);
+                properties.Add(reference.Name);
             }
         }
 
@@ -650,7 +662,50 @@ public sealed class JpaMappingWriter(
             return;
         }
 
+        var partial = references
+            .Where(r => !StatedJoinColumns(r).All(c => constraint.ColumnNames.Contains(c, StringComparer.OrdinalIgnoreCase)))
+            .ToList();
+
+        if (partial.Count > 0)
+        {
+            Report(ConversionRecordKind.Incompleteness, null, MappingFactCategory.UniqueConstraint,
+                $"The unique constraint over ({string.Join(", ", constraint.ColumnNames)}) covers part of the foreign key of "
+                + $"{string.Join(", ", partial.Select(r => $"'{r.Name}'"))}; the intermediate representation names a foreign key "
+                + "column by its navigation, which stands for all of them, so it was not read (decision 130).");
+            return;
+        }
+
         entityBuilder.AddUniqueConstraint(constraint.Name, properties);
+    }
+
+    private static bool IsRelation(JpaAttributeKind kind)
+        => kind is JpaAttributeKind.ManyToOne or JpaAttributeKind.OneToOne or JpaAttributeKind.OneToMany or JpaAttributeKind.ManyToMany;
+
+    /// <summary>The attribute of the given kinds whose stated or default column is the one named, exact case first.</summary>
+    private static JpaAttributeFacts? FindScalar(JpaEntityFacts facts, string column, Func<JpaAttributeFacts, bool> kind)
+        => facts.Attributes.FirstOrDefault(a => kind(a) && string.Equals(a.ColumnName ?? a.Name, column, StringComparison.Ordinal))
+            ?? facts.Attributes.FirstOrDefault(a => kind(a) && string.Equals(a.ColumnName ?? a.Name, column, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// The join columns an owning reference states by name - the columns of this entity's
+    /// table a navigation stands for in a unique constraint (decision 130). Empty for an
+    /// inverse side, a join table, a shared primary key, whose columns are the key's, and
+    /// a reference whose column the source left to the default, which is derived from the
+    /// target's key only after reading.
+    /// </summary>
+    private static IReadOnlyList<string> StatedJoinColumns(JpaAttributeFacts attribute)
+    {
+        if (attribute.Kind is not (JpaAttributeKind.ManyToOne or JpaAttributeKind.OneToOne)
+            || !string.IsNullOrWhiteSpace(attribute.MappedBy)
+            || attribute.JoinTable is not null
+            || attribute.MapsId)
+        {
+            return [];
+        }
+
+        var names = attribute.JoinColumns.Select(c => c.Name).ToList();
+
+        return names.All(n => !string.IsNullOrWhiteSpace(n)) ? [.. names.Select(n => n!)] : [];
     }
 
     /// <summary>
@@ -741,14 +796,15 @@ public sealed class JpaMappingWriter(
 
     /// <summary>
     /// unique = true on a join column is the specification's shortcut for @UniqueConstraint
-    /// over that column, and is read as that annotation is (decision 127). On the own join
+    /// over that column, and is read as that annotation is (decision 130). On the own join
     /// column of a @OneToOne it states the uniqueness a 1:1 foreign key has anyway - the
     /// model carries it in the cardinality and every target writes it again from there -
     /// so nothing is added and nothing reported. Elsewhere it is a constraint of the
     /// schema: over a column a scalar of the same class also maps it lands on that scalar,
-    /// as @Column(unique = true) there would; over a column no attribute maps the model
-    /// cannot name it, and the same incompleteness is reported that @UniqueConstraint over
-    /// the column and the catalog give.
+    /// as @Column(unique = true) there would; over the single join column of a @ManyToOne
+    /// it lands on the navigation, which stands for that column. What the model cannot
+    /// name - one column of a composite foreign key, a column of the target's table or of
+    /// a join table - is reported as the incompleteness @UniqueConstraint over it gives.
     /// </summary>
     private void ReadJoinColumnUniqueness(
         JpaEntityFacts facts,
@@ -768,29 +824,36 @@ public sealed class JpaMappingWriter(
         foreach (var joinColumn in own.Concat(junction))
         {
             var scalar = joinColumn.Name is { } column
-                ? facts.Attributes.FirstOrDefault(a =>
-                    a.Kind is JpaAttributeKind.Basic or JpaAttributeKind.Id or JpaAttributeKind.Version
-                    && string.Equals(a.ColumnName ?? a.Name, column, StringComparison.Ordinal))
-                    ?? facts.Attributes.FirstOrDefault(a =>
-                        a.Kind is JpaAttributeKind.Basic or JpaAttributeKind.Id or JpaAttributeKind.Version
-                        && string.Equals(a.ColumnName ?? a.Name, column, StringComparison.OrdinalIgnoreCase))
+                ? FindScalar(facts, column, a => a.Kind is JpaAttributeKind.Basic or JpaAttributeKind.Id or JpaAttributeKind.Version)
                 : null;
 
-            if (scalar is not null)
+            var standsFor = scalar?.Name
+                ?? (attribute.Kind == JpaAttributeKind.ManyToOne
+                    && attribute.JoinTable is null
+                    && !attribute.MapsId
+                    && attribute.JoinColumns.Count == 1
+                        ? attribute.Name
+                        : null);
+
+            if (standsFor is not null)
             {
-                if (!singles.Any(s => s.Property == scalar.Name))
+                if (!singles.Any(s => s.Property == standsFor))
                 {
-                    singles.Add((scalar.Name, attribute));
+                    singles.Add((standsFor, attribute));
                 }
 
                 continue;
             }
 
             var named = joinColumn.Name is null ? "the join column" : $"the join column '{joinColumn.Name}'";
+            var why = attribute.Kind == JpaAttributeKind.ManyToOne && attribute.JoinTable is null
+                ? "is one column of a composite foreign key, and the intermediate representation names a foreign key column by its "
+                    + "navigation, which stands for all of them"
+                : "lies in another table than the entity's, and the intermediate representation names a constraint by the members "
+                    + "of the entity it belongs to";
             Report(ConversionRecordKind.Incompleteness, attribute.Name, MappingFactCategory.UniqueConstraint,
-                $"unique = true on {named} of '{attribute.Name}' states a unique constraint over the column, and no attribute "
-                + "of the class maps it; the intermediate representation names a constraint by properties, so it was not read "
-                + "(decision 127).");
+                $"unique = true on {named} of '{attribute.Name}' states a unique constraint over the column; the column {why}, "
+                + "so it was not read (decision 130).");
         }
     }
 

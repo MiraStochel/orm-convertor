@@ -1,7 +1,7 @@
 # 055 — Unikátní omezení je nesené mapovací fakt, ne vyňatá oblast
 
 Datum: 2026-08-24
-Stav: platí
+Stav: nahrazeno [130](130-a-unique-constraint-over-a-foreign-key-names-the-navigation.md)
 Požadavky: F2, F4, F5, F11, S1, S2
 Podklad: rozhodnutí [004](004-unexpressible-facts-as-warnings.md), [010](010-diagnostics-as-returned-data.md), [012](012-foreign-key-rendering.md), [015](015-mapping-fact-completion-from-the-catalog.md), [017](017-source-precedence-for-mapping-facts.md) a [048](048-a-fact-with-no-place-in-the-model-is-a-loss.md); nález z 2026-08-23, oddíl 4
 

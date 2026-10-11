@@ -119,7 +119,7 @@ Entita ([§4.1]): třída s vlastnostmi a jejich jazykovými fakty (typ, nullabi
 | strategie klíče | | | `[DatabaseGenerated]` | `<generator>` | `@GeneratedValue` |
 | sloupce cizího klíče | | | `[ForeignKey]` | `column` vztahu | `@JoinColumn` |
 | sloupec verze | | | `[Timestamp]`; číselná a datočasová `[ConcurrencyCheck]` — jako zdroj jen jediný token třídy nad `short`/`int`/`long`/`DateTime` ([116]) | `<version>` | `@Version` |
-| unikátní omezení | | | `[Index(IsUnique = true)]` | `unique`, `unique-key` | `@UniqueConstraint`, `unique` na `@Column` i `@JoinColumn` ([127]) |
+| unikátní omezení, i nad cizím klíčem ([130]) | | | `[Index(IsUnique = true)]`, nad FK přes jeho vlastnosti | `unique`, `unique-key`; nad FK `unique-key` na `<many-to-one>` | `@UniqueConstraint`, `unique` na `@Column` i `@JoinColumn` |
 | transientní vlastnost | | vynechání (`autoMapping="false"`) | `[NotMapped]` | vynechání | `@Transient` |
 
 Co zdroj Dapper či MyBatis nevysloví, doplní katalog ([§5.2], [015]) nebo konvence cíle s `Convention`. **Vynucené členy** (`EnforcedMembers`, [009]): NHibernate `virtual`, u složeného klíče `[Serializable]`, `Equals`, `GetHashCode`; JPA nefinální třída a pole, bezparametrický konstruktor, u složeného klíče vnořená `@IdClass` se `Serializable`, `equals`, `hashCode`; MyBatis třída bez konstruktoru; EF Core `[Keyless]` u entity bez klíče; Dapper nic.
@@ -166,8 +166,8 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | nullable sloupec za nenullovatelnou vlastností, cíl EF Core | `IsRequired(false)` je jen ve fluent API | `Loss` (z) | VM | [§5] |
 | entita bez primárního klíče | NHibernate a JPA klíč vyžadují | `Failure` do NHibernatu, Hibernatu, EclipseLinku; EF Core `[Keyless]`; Dapper, MyBatis prostá třída | VM | [063] |
 | neunikátní index (`index`, `[Index]` bez `IsUnique`, JPA `@Table(indexes)`, `<index>`) | výkonnostní artefakt | `Loss` (č) | VM | [055] |
-| unikátní omezení nad vlastností, která v cíli není sloupcem (část klíče, navigace, verze v NHibernatu; transientní vlastnost) | `unique` na `<many-to-one>` = 1:1; transientní nemá sloupec | `Loss` (z); nad nedeklarovanou vlastností `Incompleteness`; vícesloupcové bez jména dostane jméno s `Convention` | VM | [055], [072] |
-| unikátní omezení nad sloupcem cizího klíče, který v třídě mapuje jen navigace: JPA `unique = true` na `@JoinColumn` či `<join-column>` mimo `@OneToOne`, `@UniqueConstraint` nad spojovacím sloupcem, omezení z katalogu nad sloupcem cizího klíče | IR jmenuje omezení vlastnostmi a sloupec bez skaláru vlastnost nemá; NHibernate `<many-to-one unique="true">` je naproti tomu jediný zápis vlastnící 1:1 a čte se tak | `Incompleteness` (z); nad skalárem vedle vztahu se nese jako jeho omezení; pod `@OneToOne` je důsledkem kardinality a nic nehlásí | VM | [127], [012], [055] |
+| unikátní omezení nad vlastností, která v cíli není sloupcem (část klíče, verze v NHibernatu; transientní vlastnost) | `<id>` ani `<version>` atribut omezení nemají; transientní nemá sloupec | `Loss` (z); nad nedeklarovanou vlastností `Incompleteness`; bez jména tam, kde NHibernate potřebuje `unique-key`, dostane jméno s `Convention` | VM | [130], [072] |
+| unikátní omezení nad částí vícesloupcového cizího klíče; nad sloupcem jiné tabulky (`@JoinTable`, jednosměrné `@OneToMany` s `@JoinColumn`); JPA `@UniqueConstraint` nad spojovacím sloupcem, jehož jméno zdroj nevyslovil | navigace zastupuje celý FK a sloupec jiné tabulky patří jiné entitě; výchozí jméno spojovacího sloupce vzniká až z klíče cíle | `Incompleteness` (č, katalog); cíl, který sloupce navigace nezná (EF Core bez párů, JPA bez párů i klíče cíle), také `Incompleteness` (z) | VM | [130], [012] |
 | druhý sloupec verze; verze na části klíče, navigaci či transientní vlastnosti (NHibernate) | `<version>` je jeden, nad obyčejnou vlastností | `Loss` (z) | VM | [030] |
 | verze, kterou zvyšuje framework (JPA `@Version int`, NHibernate `<version>` nad `Int32`, `<timestamp>`), cíl EF Core | anotace inkrementaci nevyjádří; `[Timestamp]` = hodnota z databáze | `[ConcurrencyCheck]` a `Loss` (z), zvyšuje aplikace; týmž tvarem EF Core `[Timestamp]` nad `ulong` (typ mimo slovník) | VM | [004], [030], [075] |
 | verze, kterou udržuje aplikace (EF Core `[ConcurrencyCheck]`), cíl NHibernate, Hibernate, EclipseLink | `<version>` a `@Version` zvyšuje framework sám | `<version>`/`@Version` a `Convention` (z): inkrementace přechází na framework; do EF Core doslovně beze záznamu | VM | [116] |
@@ -472,9 +472,9 @@ Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhod
 [121]: ./decisions/121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md
 [122]: ./decisions/122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md
 [123]: ./decisions/123-a-native-query-of-eclipselink-expands-a-collection-parameter-at-run-time.md
-[127]: ./decisions/127-unique-on-a-foreign-key-column-states-what-the-framework-has-no-other-place-for.md
 [128]: ./decisions/128-a-csharp-unit-with-a-syntax-error-is-refused-with-a-position.md
 [129]: ./decisions/129-sql-server-2022-stays-the-only-database-dialect.md
+[130]: ./decisions/130-a-unique-constraint-over-a-foreign-key-names-the-navigation.md
 [§1v]: ./architecture.md#zafixované-verze
 [§4.1]: ./architecture.md#41-entity-a-mapování
 [§4.2]: ./architecture.md#42-primární-klíč

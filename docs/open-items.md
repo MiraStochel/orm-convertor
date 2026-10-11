@@ -48,10 +48,8 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [ADO.NET provider v benchmarcích](#sjednocení-adonet-provideru-v-benchmarcích) | Advisor | rozhodnutí | T7 |
 | [Testy Advisoru a benchmarkingu](#advisor-a-benchmarking-nemají-žádné-testy) | Advisor | práce | T7, S6 |
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
-| [Unikátní omezení nad sloupcem cizího klíče bez skaláru](#unikátní-omezení-nad-sloupcem-cizího-klíče-který-mapuje-jen-navigace) | Užitečné | rozhodnutí | F2, F4, F5 |
 | [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
-| [Sdílená entitní báze](#sdílená-entitní-báze-roste-a-rozšiřovací-plocha-ne) | Užitečné | rozhodnutí | S1 |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | — |
 | [Alias v SQL jako mapování Dapperu](#alias-v-sql-jako-zdroj-mapování-dapperu) | Zbytky | rozhodnutí | F6 |
 | [Fluent konfigurace EF Core](#fluent-konfigurace-ef-core-jako-vstupní-jednotka) | Zbytky | rozhodnutí | F1, F5 |
@@ -195,20 +193,10 @@ Prospělo by to, ale žádná věta záruk na tom nestojí a nic tím není blok
 
 „Reprodukovatelné prostředí" dnes znamená „jedním příkazem", ne „bajtově stejně": chybí zámek závislostí, základní obrazy i akce CI (`actions/checkout@v5` a spol.) visí na pohyblivých značkách a pravidla stylu build nevynucuje. Rozhodnout, zda se S2 rozšíří z výstupu překladu i na sestavení (zámek, digesty, styl v CI), nebo jde o údržbu, která počká.
 
-#### Sdílená entitní báze roste a rozšiřovací plocha ne
-*Podklad: revize [2026-09-21](./audits/2026-09-21-pre-release-2-0-0-audit.md), nález 5.4. Invariant S1; souvisí s rozh. [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md).*
-
-Invariant „nový framework je nový wrapper" platí: jméno frameworku neprosakuje do `AbstractWrappers`, `Common` ani `Model` a jmenují ho jen továrny v `OrmConvertor/Factories/`. Podle revize ale `AbstractEntityBuilder` od `1.2.0` vyrostl z 2 137 na 2 728 řádků při stejných devíti `virtual`/`abstract` členech, z nichž sedm jsou kroky šablonové metody — volné háčky jsou dva; `AbstractQueryBuilder` vyrostl víc (651 → 1 475), ale jeho plocha s ním (12 → 16). Rozmyslet, zda poměr měřit u každého vydání, zda entitní bázi rozdělit jako vrstvu JPA, a co je prahem.
-
 #### Trvalý identifikátor vydání
 *Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.1, a [fair-software.eu](https://fair-software.eu/). Souvisí s rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md). Až úplně na konci vývoje.*
 
 Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele) a zda tím je nástroj „publikovaný" ve smyslu předpokladu rozh. 098; pak se 098 nahrazuje.
-
-#### Unikátní omezení nad sloupcem cizího klíče, který mapuje jen navigace
-*Zdroj: rozh. [127](./decisions/127-unique-on-a-foreign-key-column-states-what-the-framework-has-no-other-place-for.md), varianta 2. Souvisí s rozh. [012](./decisions/012-foreign-key-rendering.md) a [055](./decisions/055-unique-constraint-as-a-carried-mapping-fact.md). Požadavky F2, F4, F5.*
-
-`UniqueConstraint` jmenuje vlastnosti, a sloupec cizího klíče, který v třídě nese jen navigace, vlastnost nemá — omezení nad ním (`@JoinColumn(unique = true)` na `@ManyToOne`, `@UniqueConstraint` nad spojovacím sloupcem, omezení z katalogu nad sloupcem cizího klíče) se proto nečte a hlásí se `Incompleteness`. Rozhodnout, zda se takové omezení ponese přes sloupce vztahu (u EF Core nad dogenerovanou vlastností cizího klíče z rozh. 012, v JPA přes `@UniqueConstraint(columnNames)`, v NHibernatu je nad `<many-to-one>` `Loss` podle rozh. 055), nebo zda vyslovená mez stačí.
 
 ### Práce
 
