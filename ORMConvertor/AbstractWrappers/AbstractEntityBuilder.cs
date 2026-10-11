@@ -109,6 +109,8 @@ public abstract class AbstractEntityBuilder
             EntityMap = existing;
         }
 
+        declaredByClass.Add(EntityMap);
+
         if (stated is not null)
         {
             AddNamespace(stated);
@@ -139,6 +141,21 @@ public abstract class AbstractEntityBuilder
     /// in the table at all and answers with its namespace, which is all such an artifact has.
     /// </summary>
     private readonly Dictionary<EntityMap, string> declaredUnder = [];
+
+    /// <summary>The entities a class text declared, through <see cref="DeclareEntity"/>.</summary>
+    private readonly HashSet<EntityMap> declaredByClass = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>The entities a mapping artifact named as such, through <see cref="MarkNamedByMapping"/>.</summary>
+    private readonly HashSet<EntityMap> namedByMapping = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// Records that a mapping artifact names the current entity as an entity of its model -
+    /// EF Core's DbSet&lt;T&gt; and Entity&lt;T&gt;() (decision 132) - without stating anything a
+    /// class would carry. Should no class text of the conversion declare it, the completeness
+    /// gate refuses the entity with a record instead of generating an empty class in its name.
+    /// Opt-in: a mapping artifact that does not call it keeps the behavior it had.
+    /// </summary>
+    public void MarkNamedByMapping() => namedByMapping.Add(EntityMap);
 
     private string DeclaredUnder(EntityMap entityMap)
         => declaredUnder.TryGetValue(entityMap, out var qualifier)
@@ -744,9 +761,21 @@ public abstract class AbstractEntityBuilder
         // later source fills what it left empty rather than replacing it (decisions 017, 094).
         var standing = AddRelation(relation);
 
-        if (foreignKeyColumns is { Count: > 0 } && !pendingForeignKeyColumns.ContainsKey(standing))
+        if (foreignKeyColumns is { Count: > 0 })
         {
-            pendingForeignKeyColumns[standing] = foreignKeyColumns;
+            if (!pendingForeignKeyColumns.TryGetValue(standing, out var stated))
+            {
+                pendingForeignKeyColumns[standing] = foreignKeyColumns;
+            }
+            else if (!stated.SequenceEqual(foreignKeyColumns, StringComparer.Ordinal))
+            {
+                // Two sources naming the columns of one navigation differently - EF Core's
+                // fluent HasForeignKey beside [ForeignKey] - keep the first, as every other
+                // fact does (decision 017).
+                ReportInputConflict(propertyName, MappingFactCategory.ForeignKeyColumns,
+                    $"An earlier source states the foreign key ({string.Join(", ", stated)}), "
+                    + $"a later one ({string.Join(", ", foreignKeyColumns)}).");
+            }
         }
 
         if (conventionalColumns is not null && !conventionalForeignKeys.Any(c => ReferenceEquals(c.Relation, standing)))
@@ -3337,6 +3366,21 @@ public abstract class AbstractEntityBuilder
     private bool CheckCompleteness(EntityMap entityMap)
     {
         var complete = true;
+
+        // An entity a mapping artifact names and no class text of the conversion declares has
+        // no class to generate - the language facts live only in the class (decision 132).
+        if (namedByMapping.Contains(entityMap) && !declaredByClass.Contains(entityMap))
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Reason = "The entity is named by the mapping configuration and no unit of the conversion declares its class; "
+                    + "a class cannot be generated without the one it maps, so the entity's artifacts are not generated.",
+            });
+            return false;
+        }
 
         // An entity stating both a key and that it has none is a contradiction no target
         // can render, and the source framework builds no model from it either; the input

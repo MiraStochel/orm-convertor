@@ -134,6 +134,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 129 | [Jediným databázovým dialektem zůstává SQL Server 2022; druhý se nepřidává, deklarace a zábrana cizího dialektu zůstávají](129-sql-server-2022-stays-the-only-database-dialect.md) | platí | F4, F5, F7–F10, F11, F13, S2, S5, S6, S7, T2, T3 |
 | 130 | [Unikátní omezení nad sloupci cizího klíče jmenuje navigaci vztahu](130-a-unique-constraint-over-a-foreign-key-names-the-navigation.md) | platí | F3, F4, F5, F11, S1, S2 |
 | 131 | [Alias sloupce ve volání Dapperu, které mapuje řádky na entitu, tvrdí sloupec její vlastnosti](131-a-column-alias-in-a-typed-dapper-call-states-the-column-of-the-property.md) | platí | F5, F6, F11, S1, S2 |
+| 132 | [Fluent konfigurace EF Core se čte jako vymezená syntaktická podmnožina před anotacemi; co leží mimo ni, je záznam u příkazu](132-ef-core-fluent-configuration-is-read-as-a-bounded-syntactic-subset.md) | platí | F1, F2, F3, F5, F11, S1, S2, S4 |
 
 ## Formát
 

@@ -36,7 +36,7 @@ Parsers read framework source (C# via Roslyn, NHibernate XML via LINQ to XML) in
 | Framework | Entities and mappings | Queries read from | Queries written as |
 |---|---|---|---|
 | Dapper | C# class | SQL | SQL |
-| EF Core | C# class with data annotations | LINQ, native SQL in code | LINQ |
+| EF Core | C# class with data annotations (fluent configuration in `OnModelCreating` and `IEntityTypeConfiguration<T>` read too, as a bounded subset) | LINQ, native SQL in code | LINQ |
 | NHibernate | C# class + `hbm.xml` | LINQ, bare HQL, native SQL and HQL in code | HQL, and the same query as LINQ beside it |
 | Hibernate | `jakarta.persistence` annotations (`orm.xml` read too) | JPQL and Hibernate's HQL, native SQL in code | JPQL |
 | EclipseLink | the same, EclipseLink profile | JPQL, native SQL in code | JPQL |

@@ -1,0 +1,132 @@
+using Model.AbstractRepresentation.Enums;
+
+namespace EFCoreWrappers;
+
+/// <summary>
+/// What the two entity parsers of an EF Core source share within one conversion
+/// (decision 132): the fluent configuration is read first, and the class parser reading
+/// after it takes from here what the configuration states but cannot write on its own.
+/// A relationship names its navigations by lambda and not their type, so it waits for the
+/// class that declares them; the table a DbSet gives and the default schema are a
+/// convention and a default, which stand below the annotations (decision 068); and a
+/// concurrency token is the version only under conditions the class decides (decision 116).
+/// Created by the wrapper's factory row and handed to both parsers; the orchestration and
+/// the abstract wrappers never see it - the same shape as the JPA reading context
+/// (decision 077).
+/// </summary>
+public sealed class EFCoreReadingContext
+{
+    private readonly Dictionary<string, string> dbSets = new(StringComparer.Ordinal);
+
+    private readonly List<FluentRelationship> relationships = [];
+
+    private readonly HashSet<(string Entity, string Property)> concurrencyTokens = [];
+
+    private readonly HashSet<(string Entity, string Property)> rowVersions = [];
+
+    private readonly Dictionary<(string Entity, string Property), string> generatedOptions = [];
+
+    /// <summary>The schema HasDefaultSchema states for the whole model, or null.</summary>
+    public string? DefaultSchema { get; private set; }
+
+    /// <summary>
+    /// Records the name of the DbSet property that exposes an entity. The first one read
+    /// stands; the second, differing one is returned so that the caller can report it.
+    /// </summary>
+    public string? AddDbSet(string entity, string property)
+    {
+        if (dbSets.TryAdd(entity, property) || dbSets[entity] == property)
+        {
+            return null;
+        }
+
+        return dbSets[entity];
+    }
+
+    /// <summary>The name of the DbSet property that exposes the entity, or null.</summary>
+    public string? DbSetOf(string entity) => dbSets.GetValueOrDefault(entity);
+
+    /// <summary>
+    /// Records HasDefaultSchema. The first one read stands; a differing later one is
+    /// returned so that the caller can report it.
+    /// </summary>
+    public string? SetDefaultSchema(string schema)
+    {
+        if (DefaultSchema is null || DefaultSchema == schema)
+        {
+            DefaultSchema = schema;
+            return null;
+        }
+
+        return DefaultSchema;
+    }
+
+    public void AddRelationship(FluentRelationship relationship) => relationships.Add(relationship);
+
+    /// <summary>The relationships configured on the entity, as the configured side states them.</summary>
+    public IEnumerable<FluentRelationship> RelationshipsOf(string entity)
+        => relationships.Where(r => r.Entity == entity);
+
+    /// <summary>
+    /// The relationship a navigation belongs to: configured on its own entity, or configured
+    /// on the entity it points at and naming it as the far end. The configured side first,
+    /// because that is where the configuration spoke of the navigation by itself.
+    /// </summary>
+    public (FluentRelationship Relationship, bool Mirrored)? RelationshipFor(string entity, string navigation, string target)
+    {
+        if (relationships.FirstOrDefault(r => r.Entity == entity && r.Navigation == navigation) is { } own)
+        {
+            return (own, false);
+        }
+
+        if (relationships.FirstOrDefault(r => r.Entity == target && r.Inverse == navigation) is { } far)
+        {
+            return (far, true);
+        }
+
+        return null;
+    }
+
+    public void MarkConcurrencyToken(string entity, string property) => concurrencyTokens.Add((entity, property));
+
+    public bool IsConcurrencyToken(string entity, string property) => concurrencyTokens.Contains((entity, property));
+
+    public void MarkRowVersion(string entity, string property) => rowVersions.Add((entity, property));
+
+    public bool HasRowVersion(string entity) => rowVersions.Any(v => v.Entity == entity);
+
+    public bool IsRowVersion(string entity, string property) => rowVersions.Contains((entity, property));
+
+    /// <summary>
+    /// Records ValueGeneratedNever (None) or ValueGeneratedOnAdd (Identity), in the vocabulary
+    /// of [DatabaseGenerated], whose reading the class parser shares.
+    /// </summary>
+    public void SetGeneratedOption(string entity, string property, string option) => generatedOptions[(entity, property)] = option;
+
+    public string? GeneratedOptionOf(string entity, string property) => generatedOptions.GetValueOrDefault((entity, property));
+}
+
+/// <summary>
+/// One relationship as the fluent configuration states it, from the side it was configured
+/// on (decision 132): the navigation of HasOne or HasMany, the far end WithOne or WithMany
+/// names, the foreign key properties HasForeignKey lists in their order, and for a
+/// one-to-one the entity HasForeignKey&lt;T&gt; names as the one holding the key.
+/// </summary>
+public sealed record FluentRelationship(
+    string Entity,
+    string Navigation,
+    bool NavigationIsCollection,
+    string? Inverse,
+    bool InverseIsCollection,
+    IReadOnlyList<string>? ForeignKey,
+    string? Dependent)
+{
+    /// <summary>The cardinality seen from the configured navigation.</summary>
+    public Cardinality Cardinality => (NavigationIsCollection, InverseIsCollection) switch
+    {
+        (false, true) => Cardinality.ManyToOne,
+        (false, false) => Cardinality.OneToOne,
+        (true, false) => Cardinality.OneToMany,
+        (true, true) => Cardinality.ManyToMany,
+    };
+}

@@ -160,7 +160,8 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// <summary>
     /// Why the class is the source framework's own API rather than an entity - the reason of
     /// the record that says so -, or null where it is not (decision 111). A fact about the
-    /// framework, so the structure knows none; EF Core's context is the one case today.
+    /// framework, so the structure knows none; EF Core's context and its entity type
+    /// configurations are the cases today (decision 132).
     /// </summary>
     protected virtual string? FrameworkApi(ClassDeclarationSyntax classDeclaration) => null;
 

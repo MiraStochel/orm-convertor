@@ -50,7 +50,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | — |
-| [Fluent konfigurace EF Core](#fluent-konfigurace-ef-core-jako-vstupní-jednotka) | Zbytky | rozhodnutí | F1, F5 |
 | [Dapper.Contrib](#dappercontrib-v-rozsahu-nebo-mimo-něj) | Zbytky | rozhodnutí | F6 |
 
 Co na čem stojí (vazby, které položky samy vyslovují):
@@ -201,11 +200,6 @@ Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-soft
 Zdokumentované mezery a nezodpovězené otázky, na které se nesahá. Jsou tu, aby nález nezůstal jen v konverzaci a aby text práce věděl, co nástroj o svých frameworcích netvrdí.
 
 ### Rozhodnutí
-
-#### Fluent konfigurace EF Core jako vstupní jednotka
-*Počítají s ní rozh. [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) a [068](./decisions/068-source-framework-precedence-orders-the-reading.md); co s třídou kontextu ve vstupu, rozhodlo [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §4. Požadavky F1, F5.*
-
-Fluent API v `OnModelCreating` je primární formou mapování EF Core; nástroj čte jen anotace a konvence. Třída kontextu není entitou a dostane záznam `Loss`, že se jména `DbSet` vlastností a `OnModelCreating` nečtou (`Combined/WholeSourceFileTest`). Rozhodnout, zda se fluent konfigurace čte, v pořadí podle rozh. 068 — jako část souboru, který je jednotkou.
 
 #### Dapper.Contrib v rozsahu, nebo mimo něj
 *Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §2. Souvisí s rozh. [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md). Požadavek F6.*

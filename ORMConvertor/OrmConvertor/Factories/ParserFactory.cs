@@ -17,8 +17,8 @@ internal class ParserFactory
     /// precedence the framework documents for its own artifacts, strongest first; where
     /// it documents none, the default holds: the input text - the entity class, level
     /// 1a - parses before its auxiliary mapping artifacts - level 1b, for NHibernate
-    /// the hbm.xml (decision 068). The first fluent configuration parser will enter the
-    /// EF Core list first, because EF Core puts the fluent API above annotations; the
+    /// the hbm.xml (decision 068). The fluent configuration parser stands first in the
+    /// EF Core list, because EF Core puts the fluent API above annotations (decision 132); the
     /// orm.xml parser stands first in the Hibernate list for the same reason - Jakarta
     /// Persistence puts the descriptor above the annotations (decision 077). The
     /// orchestration runs each parser over all its units before the next one starts, so
@@ -89,10 +89,18 @@ internal class ParserFactory
                     ? [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb, declaredSourceDialect)]
                     : [new NHibernateEntityParser(eb), new NHibernateXMLMappingParser(eb, declaredSourceDialect), new NHibernateLinqQueryParser(qb, declaredSourceDialect), new NHibernateHqlQueryParser(qb), new NHibernateXmlQueryParser(qb, declaredSourceDialect)];
 
+            // The fluent configuration before the class: EF Core puts the fluent API above the
+            // annotations (decisions 068 and 132), and the conventions the class parser
+            // materializes stand below both. What the configuration states but can write only
+            // once the class is read - a relationship, the table of a DbSet - waits in a
+            // context the two parsers share.
             case ORMEnum.EFCore:
+            {
+                var context = new EFCoreReadingContext();
                 return qb is null
-                    ? [new EFCoreEntityParser(eb, declaredSourceDialect)]
-                    : [new EFCoreEntityParser(eb, declaredSourceDialect), new EFCoreLinqQueryParser(qb, declaredSourceDialect)];
+                    ? [new EFCoreFluentConfigurationParser(eb, context, declaredSourceDialect), new EFCoreEntityParser(eb, declaredSourceDialect, context)]
+                    : [new EFCoreFluentConfigurationParser(eb, context, declaredSourceDialect), new EFCoreEntityParser(eb, declaredSourceDialect, context), new EFCoreLinqQueryParser(qb, declaredSourceDialect)];
+            }
 
             // orm.xml before the class: the specification's precedence (Jakarta Persistence
             // 3.2 §12.1 - XML metadata overrides annotations, and metadata-complete switches

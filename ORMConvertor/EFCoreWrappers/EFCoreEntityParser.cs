@@ -16,7 +16,8 @@ namespace EFCoreWrappers;
 
 /// <summary>
 /// Parses an EF Core entity class from C# source code: the shared structural reading plus
-/// EF Core's attribute mapping and the conventions whose absence would change the meaning.
+/// EF Core's attribute mapping and the conventions whose absence would change the meaning, under
+/// whatever the fluent configuration, read before it, already stated (decision 132).
 /// </summary>
 public class EFCoreEntityParser : CSharpEntityParser
 {
@@ -30,10 +31,22 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// </summary>
     private readonly SourceSqlDialect? declaredSourceDialect;
 
-    public EFCoreEntityParser(AbstractEntityBuilder entityBuilder, SourceSqlDialect? declaredSourceDialect = null)
+    /// <summary>
+    /// What the fluent configuration, read before this parser, left for the class to finish
+    /// (decision 132): relationships, which wait for the type of their navigations, and the
+    /// convention and default that stand below the annotations - the table of a DbSet and the
+    /// default schema. A parser constructed without one reads as if no configuration existed.
+    /// </summary>
+    private readonly EFCoreReadingContext context;
+
+    public EFCoreEntityParser(
+        AbstractEntityBuilder entityBuilder,
+        SourceSqlDialect? declaredSourceDialect = null,
+        EFCoreReadingContext? context = null)
         : base(entityBuilder)
     {
         this.declaredSourceDialect = declaredSourceDialect;
+        this.context = context ?? new EFCoreReadingContext();
     }
 
     /// <summary>
@@ -48,16 +61,27 @@ public class EFCoreEntityParser : CSharpEntityParser
         }.FindHandovers(source);
 
     /// <summary>
-    /// The context is EF Core's own API and not an entity type (decision 111). Read as a
-    /// class, it used to come out as an entity with a collection relation to every DbSet it
-    /// declares. Left out, it takes along mapping facts in a form the tool does not read -
-    /// the names of its DbSet properties, from which EF Core takes the table name by
-    /// convention, and the fluent configuration of OnModelCreating -, so the record is a loss.
+    /// The context and an entity type configuration are EF Core's own API and not entity
+    /// types (decision 111). Read as classes, they would come out as entities - the context
+    /// with a collection relation to every DbSet it declares. What they state is read by the
+    /// fluent configuration parser (decision 132); the class itself does not travel, so the
+    /// record stays a loss.
     /// </summary>
     protected override string? FrameworkApi(ClassDeclarationSyntax classDeclaration)
-        => EFCoreContext.IsContext(classDeclaration)
-            ? $"The class '{classDeclaration.Identifier.Text}' is the EF Core context, not an entity; the table names its DbSet properties give and the configuration in OnModelCreating are not read."
+    {
+        var name = classDeclaration.Identifier.Text;
+
+        if (EFCoreContext.IsContext(classDeclaration))
+        {
+            return $"The class '{name}' is the EF Core context, not an entity; its DbSet properties and OnModelCreating "
+                + "are read as configuration (decision 132), and the class itself is not carried into the output.";
+        }
+
+        return EFCoreContext.ConfiguredEntity(classDeclaration) is not null
+            ? $"The class '{name}' is an EF Core entity type configuration, not an entity; its Configure method is read "
+                + "as configuration (decision 132), and the class itself is not carried into the output."
             : null;
+    }
 
     /// <summary>
     /// Parses class attributes: the table and schema of [Table], the unique constraints of
@@ -94,6 +118,26 @@ public class EFCoreEntityParser : CSharpEntityParser
 
             if (name.Equals("Keyless", StringComparison.OrdinalIgnoreCase))
             {
+                if (entityBuilder.EntityMap.PrimaryKey is { } configured)
+                {
+                    // Only the fluent configuration, read before the class, states a key by
+                    // now; HasKey overrides the annotation in EF Core, so the key stands
+                    // (decision 132) - unlike [PrimaryKey] beside [Keyless] in one class,
+                    // which EF Core refuses and the completeness gate refuses (decision 063).
+                    entityBuilder.Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Conflict,
+                        Framework = ORMEnum.EFCore,
+                        Artifact = ConversionContentType.CSharpEntity,
+                        Entity = classDeclaration.Identifier.Text,
+                        Category = MappingFactCategory.PrimaryKey,
+                        Reason = $"The configuration states the key ({string.Join(", ", configured.Parts.Select(p => p.PropertyMap.Property.Name))}) "
+                            + "and the class carries [Keyless]; the fluent configuration overrides the annotation in EF Core, "
+                            + "so the key is kept (decision 132).",
+                    });
+                    continue;
+                }
+
                 entityBuilder.MarkNoKey();
                 continue;
             }
@@ -117,6 +161,21 @@ public class EFCoreEntityParser : CSharpEntityParser
                 Entity = classDeclaration.Identifier.Text,
                 Reason = $"The class annotation [{name}] has no counterpart in the intermediate representation and was dropped.",
             });
+        }
+
+        // Below the configuration and the annotations, both of which are read by now: the
+        // table a DbSet property gives is EF Core's convention and materializes as a claim of
+        // the source (decision 067, applied by decision 132), the default schema of the model
+        // is EF Core's default for every entity without its own. Both fill an empty fact only,
+        // and silently: where a stronger level spoke, EF Core takes its word without an event.
+        if (context.DbSetOf(classDeclaration.Identifier.Text) is { } dbSet && entityBuilder.EntityMap.Table is null)
+        {
+            entityBuilder.AddTable(dbSet);
+        }
+
+        if (context.DefaultSchema is { } schema && entityBuilder.EntityMap.Schema is null)
+        {
+            entityBuilder.AddSchema(schema);
         }
     }
 
@@ -248,6 +307,9 @@ public class EFCoreEntityParser : CSharpEntityParser
         _ => GetString(expression),
     };
 
+    private bool IsConcurrencyToken(PropertyDeclarationSyntax prop, string entityName)
+        => HasAttribute(prop, "ConcurrencyCheck") || context.IsConcurrencyToken(entityName, prop.Identifier.Text);
+
     private static bool HasAttribute(PropertyDeclarationSyntax prop, string name)
         => prop.AttributeLists.SelectMany(l => l.Attributes)
             .Any(a => TrimAttribute(a.Name.ToString()).Equals(name, StringComparison.Ordinal));
@@ -323,9 +385,17 @@ public class EFCoreEntityParser : CSharpEntityParser
         // [ConcurrencyCheck] is read per class, not per property (decision 116): it is the
         // version the application keeps only where it is the one token of the class and no
         // [Timestamp] already names the version.
+        // The fluent IsConcurrencyToken and IsRowVersion count the same as the annotations
+        // (decision 132).
+        var entityName = classDeclaration.Identifier.Text;
         var properties = classDeclaration.Members.OfType<PropertyDeclarationSyntax>().ToList();
-        var concurrencyTokens = properties.Count(p => HasAttribute(p, "ConcurrencyCheck"));
-        var classHasTimestamp = properties.Any(p => HasAttribute(p, "Timestamp"));
+        var concurrencyTokens = properties.Count(p => IsConcurrencyToken(p, entityName));
+        var classHasTimestamp = properties.Any(p => HasAttribute(p, "Timestamp")) || context.HasRowVersion(entityName);
+
+        // A key the configuration stated before the class was read (decision 132): the
+        // convention does not look for another one, and the class supplies the strategy the
+        // configuration left to the convention of the key's type.
+        bool keyConfigured = entityBuilder.EntityMap.PrimaryKey is not null;
 
         // Where each property, its [Key] and its [DatabaseGenerated] stand, for the key the
         // loop below states once the whole class is read (decision 125).
@@ -353,6 +423,44 @@ public class EFCoreEntityParser : CSharpEntityParser
             // at the annotation rather than at the whole declaration (decision 125).
             var refinements = new List<FactRefinement>();
             propertyRanges[name] = Range(prop);
+
+            // A concurrency token the application keeps: EF Core compares the value on write
+            // and never produces a new one. It is the version column only on the one integral
+            // or DateTime property of a class without [Timestamp] (decision 116); anywhere else
+            // it protects a column and is not a version, which the record says. Beside
+            // [Timestamp] or IsRowVersion on the same property it states nothing new.
+            void ReadConcurrencyToken(string spelling, TextRange? range)
+            {
+                if (HasAttribute(prop, "Timestamp") || context.IsRowVersion(entityName, name))
+                {
+                    return;
+                }
+
+                if (ConcurrencyTokenIsNotTheVersion(reading, concurrencyTokens, classHasTimestamp) is { } why)
+                {
+                    entityBuilder.Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Loss,
+                        Framework = ORMEnum.EFCore,
+                        Artifact = ConversionContentType.CSharpEntity,
+                        Entity = entityName,
+                        Property = name,
+                        Category = MappingFactCategory.VersionColumn,
+                        Reason = $"{spelling} is read as the version column the application keeps only on the "
+                            + $"one short, int, long or DateTime property of a class without [Timestamp]; {why}, "
+                            + "so the token protects this column and is dropped (decision 116).",
+                    });
+                    return;
+                }
+
+                dbProps["IsVersion"] = "true";
+                dbProps["ApplicationManagedVersion"] = "true";
+
+                if (range is { } at)
+                {
+                    refinements.Add(new(MappingFactCategory.VersionColumn, name, at));
+                }
+            }
 
             foreach (var attribute in prop.AttributeLists.SelectMany(l => l.Attributes))
             {
@@ -429,37 +537,7 @@ public class EFCoreEntityParser : CSharpEntityParser
                         refinements.Add(new(MappingFactCategory.VersionColumn, name, Range(attribute)));
                         break;
                     case "ConcurrencyCheck":
-                        // A concurrency token the application keeps: EF Core compares the
-                        // value on write and never produces a new one. It is the version
-                        // column only on the one integral or DateTime property of a class
-                        // without [Timestamp] (decision 116); anywhere else it protects a
-                        // column and is not a version, which the record says. Beside
-                        // [Timestamp] on the same property it states nothing new.
-                        if (HasAttribute(prop, "Timestamp"))
-                        {
-                            break;
-                        }
-
-                        if (ConcurrencyTokenIsNotTheVersion(reading, concurrencyTokens, classHasTimestamp) is { } why)
-                        {
-                            entityBuilder.Report(new ConversionRecord
-                            {
-                                Kind = ConversionRecordKind.Loss,
-                                Framework = ORMEnum.EFCore,
-                                Artifact = ConversionContentType.CSharpEntity,
-                                Entity = classDeclaration.Identifier.Text,
-                                Property = name,
-                                Category = MappingFactCategory.VersionColumn,
-                                Reason = "[ConcurrencyCheck] is read as the version column the application keeps only on the "
-                                    + $"one short, int, long or DateTime property of a class without [Timestamp]; {why}, "
-                                    + "so the token protects this column and is dropped (decision 116).",
-                            });
-                            break;
-                        }
-
-                        dbProps["IsVersion"] = "true";
-                        dbProps["ApplicationManagedVersion"] = "true";
-                        refinements.Add(new(MappingFactCategory.VersionColumn, name, Range(attribute)));
+                        ReadConcurrencyToken("[ConcurrencyCheck]", Range(attribute));
                         break;
                     case "NotMapped":
                         // The property stays on the class and leaves EF Core's model
@@ -484,6 +562,41 @@ public class EFCoreEntityParser : CSharpEntityParser
                         });
                         break;
                 }
+            }
+
+            // The fluent IsConcurrencyToken is read by the same rule as the annotation, here,
+            // because the rule asks about the class (decisions 116 and 132); beside the
+            // annotation it says nothing new.
+            if (context.IsConcurrencyToken(entityName, name) && !HasAttribute(prop, "ConcurrencyCheck"))
+            {
+                ReadConcurrencyToken("IsConcurrencyToken()", null);
+            }
+
+            // A property the configuration took out of the model with Ignore is read the way
+            // [NotMapped] is (decision 132).
+            isTransient |= entityBuilder.EntityMap.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == name)?.IsTransient == true;
+
+            // The fluent ValueGeneratedNever or ValueGeneratedOnAdd outranks [DatabaseGenerated]
+            // as the configuration outranks every annotation (decision 132).
+            if (context.GeneratedOptionOf(entityName, name) is { } configuredOption)
+            {
+                if (generatedOption is not null && generatedOption != configuredOption)
+                {
+                    entityBuilder.Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Conflict,
+                        Framework = ORMEnum.EFCore,
+                        Artifact = ConversionContentType.CSharpEntity,
+                        Entity = entityName,
+                        Property = name,
+                        Category = MappingFactCategory.PrimaryKeyStrategy,
+                        Reason = $"The configuration states the value generation '{configuredOption}' and [DatabaseGenerated] "
+                            + $"states '{generatedOption}'; the fluent configuration overrides the annotation in EF Core, so the "
+                            + "configuration is kept (decision 132).",
+                    });
+                }
+
+                generatedOption = configuredOption;
             }
 
             // Everything the reading of this property leaves in the representation is placed at
@@ -523,9 +636,18 @@ public class EFCoreEntityParser : CSharpEntityParser
             // claim and stays on the type, while the column's nullability is what EF Core
             // reads from the type unless [Required] overrides it. Folding them into one
             // value used to lose the question mark of a [Required] property.
-            bool databaseNullable = !requiredAttr && reading.IsNullable;
-
-            dbProps["Nullable"] = databaseNullable ? "true" : "false";
+            // [Required] is an annotation and is compared with the configuration; the reading
+            // from the type is the convention, which stands below both and so speaks only where
+            // neither did - IsRequired(false) over a string is no conflict, EF Core takes the
+            // configuration without an event (decisions 068 and 132).
+            if (requiredAttr)
+            {
+                dbProps["Nullable"] = "false";
+            }
+            else if (entityBuilder.EntityMap.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == name)?.IsNullable is null)
+            {
+                dbProps["Nullable"] = reading.IsNullable ? "true" : "false";
+            }
 
             EmitProperty(reading);
 
@@ -536,7 +658,9 @@ public class EFCoreEntityParser : CSharpEntityParser
 
             if (columnTypeName is not null)
             {
-                ApplyColumnTypeName(name, columnTypeName);
+                EFCoreStoreType.Apply(
+                    entityBuilder, name, columnTypeName, declaredSourceDialect,
+                    $"[Column(TypeName = \"{columnTypeName.Trim()}\")]");
             }
 
             if (unicodeAttr is not null)
@@ -592,6 +716,12 @@ public class EFCoreEntityParser : CSharpEntityParser
                     entityBuilder.Report(RelationshipAnnotationDropped(
                         classDeclaration.Identifier.Text, name, $"[InverseProperty(\"{inverseNavigation}\")]"));
                 }
+            }
+            else if ((isCollection || !IsScalarTypeName(type))
+                && context.RelationshipFor(entityName, name, SimpleName(isCollection ? target : type)) is var (configured, mirrored))
+            {
+                ApplyConfiguredRelationship(
+                    configured, mirrored, entityName, name, isCollection ? target : type, foreignKeyNames, inverseNavigation);
             }
             else if (isCollection)
             {
@@ -733,7 +863,7 @@ public class EFCoreEntityParser : CSharpEntityParser
                     Entity = classDeclaration.Identifier.Text,
                     Property = keyPropertyNames.Count == 1 ? keyPropertyNames[0] : null,
                     Category = MappingFactCategory.PrimaryKey,
-                    Reason = $"The class carries [Keyless] and [Key] on ({string.Join(", ", keyPropertyNames)}); "
+                    Reason = $"The entity is stated keyless ([Keyless] or HasNoKey) and [Key] stands on ({string.Join(", ", keyPropertyNames)}); "
                         + "EF Core reads such a type as keyless and only warns about the KeyAttribute, "
                         + "so the key claim is dropped and the entity stays keyless (decision 063).",
                 });
@@ -747,6 +877,7 @@ public class EFCoreEntityParser : CSharpEntityParser
             }
         }
         else if (!statesNoKey
+            && !keyConfigured
             && FindConventionKey(classDeclaration.Identifier.Text, conventionKeyCandidates) is { } conventionKey)
         {
             using var scope = entityBuilder.At(
@@ -754,6 +885,36 @@ public class EFCoreEntityParser : CSharpEntityParser
                 KeyRefinements([conventionKey], n => propertyRanges.GetValueOrDefault(n)));
 
             entityBuilder.AddPrimaryKey(StrategyFor(conventionKey, composite: false), conventionKey);
+        }
+
+        // The configuration's HasKey names the parts and leaves their strategy to EF Core's
+        // convention over the key's type, which only the class declares: the same claim over
+        // the same parts fills the Unspecified strategy and nothing else (decisions 036, 132).
+        if (keyConfigured && entityBuilder.EntityMap.PrimaryKey is { } standing
+            && standing.Parts.Any(p => p.Strategy == PrimaryKeyStrategy.Unspecified))
+        {
+            var parts = standing.Parts.OrderBy(p => p.Order).Select(p => p.PropertyMap.Property.Name).ToList();
+
+            entityBuilder.AddPrimaryKey(
+                parts.Select((n, i) => (n, i + 1, StrategyFor(n, composite: parts.Count > 1))).ToList());
+        }
+
+        // A relationship the configuration states on a navigation the class does not declare
+        // has nothing to stand on; EF Core refuses such a model, and the claim is dropped out loud.
+        foreach (var relationship in context.RelationshipsOf(entityName)
+            .Where(r => properties.All(p => p.Identifier.Text != r.Navigation)))
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = ORMEnum.EFCore,
+                Artifact = ConversionContentType.CSharpEntity,
+                Entity = entityName,
+                Property = relationship.Navigation,
+                Category = MappingFactCategory.ForeignKeyColumns,
+                Reason = $"The configuration configures the navigation '{relationship.Navigation}', which the class "
+                    + $"'{entityName}' does not declare; the relationship has no navigation to stand on and is dropped (decision 132).",
+            });
         }
 
         // Local because it reads what the loop above collected. The annotation wins where it is
@@ -784,6 +945,66 @@ public class EFCoreEntityParser : CSharpEntityParser
 
             return StrategyFromKeyType(propertyTypes.GetValueOrDefault(propertyName));
         }
+    }
+
+    /// <summary>
+    /// Writes the relationship the fluent configuration states for a navigation, now that the
+    /// class names the navigation's type (decision 132) - before the annotations on the same
+    /// navigation, which are then compared with it rather than read on their own: the
+    /// configuration outranks them in EF Core. Seen from the configured navigation the
+    /// relationship is what HasOne or HasMany and WithOne or WithMany say; seen from the far
+    /// end that WithOne or WithMany named, it is the mirror image. The side holding the key is
+    /// the dependent: the many side, or for a one-to-one the entity HasForeignKey&lt;T&gt; names.
+    /// Without HasForeignKey the columns of a many-to-one are EF Core's convention, derived
+    /// once the target's key is known, exactly as for an unconfigured navigation.
+    /// </summary>
+    private void ApplyConfiguredRelationship(
+        FluentRelationship relationship,
+        bool mirrored,
+        string entityName,
+        string navigation,
+        string target,
+        List<string>? annotatedForeignKey,
+        string? annotatedInverse)
+    {
+        var cardinality = !mirrored
+            ? relationship.Cardinality
+            : relationship.Cardinality switch
+            {
+                Cardinality.ManyToOne => Cardinality.OneToMany,
+                Cardinality.OneToMany => Cardinality.ManyToOne,
+                var same => same,
+            };
+
+        RelationRole? role = cardinality switch
+        {
+            Cardinality.ManyToOne => RelationRole.Owning,
+            Cardinality.OneToOne => relationship.Dependent == entityName ? RelationRole.Owning : RelationRole.Inverse,
+            _ => null,
+        };
+
+        var inverse = mirrored ? relationship.Navigation : relationship.Inverse;
+
+        entityBuilder.AddForeignKey(
+            cardinality, navigation, target, role, relationship.ForeignKey,
+            inverseNavigation: inverse,
+            conventionalColumns: cardinality == Cardinality.ManyToOne && relationship.ForeignKey is null
+                ? (owner, targetMap) => ConventionForeignKeyProperties(owner, targetMap, navigation)
+                : null);
+
+        if (annotatedForeignKey is not null || annotatedInverse is not null)
+        {
+            entityBuilder.AddForeignKey(
+                cardinality, navigation, target, role, annotatedForeignKey, inverseNavigation: annotatedInverse);
+        }
+    }
+
+    /// <summary>A written type name without its namespace, as the configuration names entities.</summary>
+    private static string SimpleName(string typeName)
+    {
+        var trimmed = typeName.Trim();
+        var lastDot = trimmed.LastIndexOf('.');
+        return lastDot < 0 ? trimmed : trimmed[(lastDot + 1)..];
     }
 
     /// <summary>
@@ -1178,61 +1399,6 @@ public class EFCoreEntityParser : CSharpEntityParser
         }
 
         return string.IsNullOrWhiteSpace(typeName) ? null : typeName;
-    }
-
-    /// <summary>
-    /// The TypeName of a [Column] read into the neutral vocabulary (decision 019): the
-    /// family with the facets the name and its arguments claim, and the literal spelling
-    /// on the escape path where the family is coarser or missing. A name outside the
-    /// vocabulary is a record, not an exception - the family fact is missing rather than
-    /// lost, and the catalog may still supply it (decision 010).
-    ///
-    /// Where the source declared the dialect of another database system, the attribute is
-    /// not read at all and the record is a loss (decision 088). The literal spelling does
-    /// not travel either: were it kept, a name that system knows and SQL Server does not
-    /// would be copied into an artifact the descriptor says is written for SQL Server 2022.
-    /// The target derives the column type from the language type instead (decision 014),
-    /// or the catalog supplies it (F6) - the output is poorer, not different.
-    /// </summary>
-    private void ApplyColumnTypeName(string propertyName, string columnTypeName)
-    {
-        if (DatabaseTypeConvertor.FromEfCore(columnTypeName, declaredSourceDialect) is not { } reading)
-        {
-            entityBuilder.Report(new ConversionRecord
-            {
-                Kind = ConversionRecordKind.Loss,
-                Framework = entityBuilder.Descriptor.Framework,
-                Entity = entityBuilder.EntityMap.Entity.Name,
-                Property = propertyName,
-                Category = MappingFactCategory.DatabaseType,
-                Reason = ForeignDialect.Reason($"[Column(TypeName = \"{columnTypeName.Trim()}\")]"),
-            });
-
-            return;
-        }
-
-        entityBuilder.SetPropertyDatabaseType(
-            propertyName,
-            reading.Type,
-            reading.IsUnicode,
-            reading.KeepLiteral || reading.Type is null ? columnTypeName.Trim() : null,
-            reading.Length,
-            reading.Precision,
-            reading.Scale);
-
-        if (reading.Type is null)
-        {
-            entityBuilder.Report(new ConversionRecord
-            {
-                Kind = ConversionRecordKind.Incompleteness,
-                Framework = entityBuilder.Descriptor.Framework,
-                Entity = entityBuilder.EntityMap.Entity.Name,
-                Property = propertyName,
-                Category = MappingFactCategory.DatabaseType,
-                Reason = $"The type '{columnTypeName.Trim()}' has no family in the neutral vocabulary; its literal "
-                    + "spelling is kept on the escape path and no family is claimed (decision 019).",
-            });
-        }
     }
 
     /// <summary>

@@ -17,6 +17,22 @@ internal static class EFCoreContext
         => cls.BaseList?.Types.Any(baseType => LastName(baseType.Type) == "DbContext") == true
            || DbSetProperties(cls).Any();
 
+    /// <summary>
+    /// The entity an entity type configuration configures - the type argument of
+    /// IEntityTypeConfiguration&lt;T&gt; in the class's base list -, or null where the class is
+    /// none (decision 132). EF Core's own API like the context, and no entity type either.
+    /// </summary>
+    public static TypeSyntax? ConfiguredEntity(ClassDeclarationSyntax cls)
+        => cls.BaseList?.Types
+            .Select(baseType => baseType.Type switch
+            {
+                GenericNameSyntax generic => generic,
+                QualifiedNameSyntax { Right: GenericNameSyntax generic } => generic,
+                _ => null,
+            })
+            .FirstOrDefault(generic => generic is { Identifier.Text: "IEntityTypeConfiguration", TypeArgumentList.Arguments.Count: 1 })
+            ?.TypeArgumentList.Arguments[0];
+
     /// <summary>The DbSet properties the class declares, in the order of the text.</summary>
     public static IEnumerable<PropertyDeclarationSyntax> DbSetProperties(ClassDeclarationSyntax cls)
         => cls.Members.OfType<PropertyDeclarationSyntax>().Where(property => IsDbSet(property.Type));
