@@ -73,6 +73,13 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// class annotation never reaches that channel at all - this loop used to be the one
     /// place in the parser where an annotation fell out without a trace.
     /// </summary>
+    /// <summary>
+    /// EF Core discovers properties, not fields, so no column is lost with a field - only the
+    /// member, and a backing field the class may have pointed a property at.
+    /// </summary>
+    protected override string FieldNote
+        => "EF Core maps no field by convention, so no column is lost with it, only the member.";
+
     protected override void ParseClassAttributes(ClassDeclarationSyntax classDeclaration)
     {
         foreach (var attr in classDeclaration.AttributeLists.SelectMany(l => l.Attributes))
@@ -598,6 +605,30 @@ public class EFCoreEntityParser : CSharpEntityParser
                     // [InverseProperty] pairs two navigations, and a scalar is neither.
                     entityBuilder.Report(RelationshipAnnotationDropped(
                         classDeclaration.Identifier.Text, name, $"[InverseProperty(\"{inverseNavigation}\")]"));
+                }
+
+                if (foreignKeyNames is not null && IsScalarTypeName(type)
+                    && !(foreignKeyNames.Count == 1 && name.Equals(foreignKeyNames[0] + "Id", StringComparison.OrdinalIgnoreCase)))
+                {
+                    // The other legal form of the attribute: [ForeignKey("Navigation")] on the
+                    // key property, naming the navigation whose column this is. The reading
+                    // pairs a column with its navigation from the navigation's side only, so
+                    // the claim has no place to land and is dropped (decision 048) - unless
+                    // the property is named as the convention would find it anyway
+                    // ({Navigation}Id), where the annotation states nothing the convention
+                    // does not derive.
+                    entityBuilder.Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Loss,
+                        Framework = ORMEnum.EFCore,
+                        Artifact = ConversionContentType.CSharpEntity,
+                        Entity = classDeclaration.Identifier.Text,
+                        Property = name,
+                        Reason = $"[ForeignKey(\"{string.Join(",", foreignKeyNames)}\")] on the scalar property '{name}' names the "
+                            + "navigation whose foreign key column the property is; the reading pairs a column with its navigation "
+                            + "from the navigation's side only, so the claim is dropped and the column of the navigation "
+                            + $"'{string.Join(",", foreignKeyNames)}' is found by naming convention alone, or supplied by the database catalog.",
+                    });
                 }
 
                 // Candidates for the key EF Core derives by convention. Only a scalar can

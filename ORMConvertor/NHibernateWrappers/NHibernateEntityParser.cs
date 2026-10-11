@@ -21,6 +21,13 @@ public class NHibernateEntityParser(AbstractEntityBuilder entityBuilder) : CShar
 {
     protected override IReadOnlyCollection<string> DeferredModifiers => ["virtual"];
 
+    /// <summary>
+    /// A mapping may name a field through access="field" and its variants; the class reading
+    /// does not know whether this one does, so the record says what would be lost if it did.
+    /// </summary>
+    protected override string FieldNote
+        => "A mapping with access=\"field\" would map it, so a column the field would have received is dropped with it.";
+
     protected override IEnumerable<SyntaxNode> FindHandovers(string source)
         => new NHibernateLinqQueryParser(() => throw new InvalidOperationException("The search for handovers builds no query."))
         {

@@ -111,7 +111,7 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
             // are not candidates and never have to be resolved away.
             if (cls.Extends is { } baseType)
             {
-                entityBuilder.AddStatedBaseType(baseType);
+                entityBuilder.AddStatedBaseType(baseType, StatedBaseTypeKind.Class);
             }
 
             ParseClassBody(cls);
@@ -160,13 +160,30 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
 
     /// <summary>
     /// The class after its header is recorded. The default emits the language facts of
-    /// every attribute with field access; a framework reading annotations overrides it.
+    /// every attribute with field access and reports every annotation it meets, on the class
+    /// and on the attributes (decision 048): a framework that carries no mapping in the
+    /// class has nothing to make of an annotation there, so whatever it states is dropped. A
+    /// framework reading annotations overrides this.
     /// </summary>
     protected virtual void ParseClassBody(JavaClass cls)
     {
+        foreach (var annotation in cls.Annotations)
+        {
+            ReportLoss(null,
+                $"The annotation @{annotation.Name} on the class '{cls.Name}' is not read: the source framework carries "
+                + "no mapping in the class, so the reading takes its structure alone and what the annotation states is dropped.");
+        }
+
         foreach (var reading in ReadAttributes(cls, JavaMemberAccess.Field))
         {
             EmitProperty(reading);
+
+            foreach (var annotation in reading.Annotations)
+            {
+                ReportLoss(reading.Name,
+                    $"The annotation @{annotation.Name} on the attribute '{reading.Name}' is not read: the source framework "
+                    + "carries no mapping in the class, so the reading takes its structure alone and what the annotation states is dropped.");
+            }
         }
     }
 

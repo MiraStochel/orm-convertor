@@ -1015,9 +1015,15 @@ public abstract class AbstractEntityBuilder
     /// claim: a partial class may repeat its base type in another part and two units may be
     /// the same file (decision 094), and identical repetition is not an event.
     /// </summary>
-    public void AddStatedBaseType(string baseTypeName)
+    /// <param name="kind">
+    /// What the source says the name is: the class the entity extends (Java's extends), a
+    /// name standing where the language puts the base class without saying whether it is
+    /// one (the first entry of a C# base list), or an interface. It decides what is said
+    /// about a name no unit of the conversion declares.
+    /// </param>
+    public void AddStatedBaseType(string baseTypeName, StatedBaseTypeKind kind)
     {
-        var claim = new StatedBaseType(EntityMap, baseTypeName);
+        var claim = new StatedBaseType(EntityMap, baseTypeName, kind);
 
         if (!statedBaseTypes.Contains(claim))
         {
@@ -1026,21 +1032,24 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Reports the stated base types that name an entity of this conversion (decision 048).
-    /// Such a header says the source maps a hierarchy, and the intermediate representation
-    /// has no place for one at all - inheritance is excluded area 2 of the guarantees
-    /// (decision 030, architecture.md §9) - so without the record the fact would die on the
-    /// way into the model, while the same fact in an NHibernate mapping (&lt;subclass&gt;) has
-    /// had a record since that decision. What inheritance should mean for the model is not
-    /// answered here; the record only ends the silence.
+    /// Reports the stated base types (decision 048). One naming an entity of this conversion
+    /// says the source maps a hierarchy, and the intermediate representation has no place
+    /// for one at all - inheritance is excluded area 2 of the guarantees (decision 030,
+    /// architecture.md §9) - so without the record the fact would die on the way into the
+    /// model, while the same fact in an NHibernate mapping (&lt;subclass&gt;) has had a record
+    /// since that decision. What inheritance should mean for the model is not answered here;
+    /// the record only ends the silence.
     ///
-    /// A name that resolves to no entity is dropped without a record, the way any unknown
-    /// type name is: the header of a class does not say which of its base types is the
-    /// class and which are interfaces, and about a type no unit of the conversion declares
-    /// the parser knows nothing at all, so a record there would claim more than is known.
-    /// Entities are referenced by simple name (decision 001), so a base type from outside
-    /// the conversion whose simple name is the deriving entity's own resolves to itself and
-    /// is dropped too - no class extends itself.
+    /// One naming a class no unit of the conversion declares is a loss of another kind:
+    /// whatever the entity inherits from that class - its properties, possibly its key - the
+    /// conversion never sees, and the entity leaves with the members it declares itself. The
+    /// record says exactly that, and no more than the source said: Java states which base
+    /// type is the class, a C# header does not, so for the first entry of a C# base list the
+    /// record says both what is lost if the name is a class and what if it is an interface.
+    /// A name the source marks as an interface is dropped without a record - no mapping fact
+    /// is lost with it. Entities are referenced by simple name (decision 001), so a base type
+    /// from outside the conversion whose simple name is the deriving entity's own resolves to
+    /// itself and is dropped too - no class extends itself.
     ///
     /// The record carries no <see cref="MappingFactCategory"/>, for the reason decision 048
     /// gives: the categories are a closed vocabulary of facts the model holds, and a
@@ -1055,9 +1064,137 @@ public abstract class AbstractEntityBuilder
 
         foreach (var claim in pending)
         {
+            var entity = claim.Entity.Entity.Name;
             var baseEntity = FindEntityMap(claim.BaseTypeName);
 
-            if (baseEntity is null || baseEntity == claim.Entity)
+            if (baseEntity == claim.Entity)
+            {
+                continue;
+            }
+
+            if (baseEntity is not null)
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Entity = entity,
+                    Reason = $"The class {entity} derives from {claim.BaseTypeName}, which is an "
+                        + "entity of this conversion, so the source maps a hierarchy over the two. The intermediate "
+                        + "representation has no place for inheritance (decision 048), so both are translated as "
+                        + "unrelated entities: what the base declares reaches the target on the base entity alone, "
+                        + "and a target that would map the hierarchy by convention - table per hierarchy in EF "
+                        + "Core - is given nothing to map.",
+                });
+                continue;
+            }
+
+            var inherited = $"what {entity} inherits from it - properties, possibly the key - the conversion "
+                + $"does not see, and {entity} is translated with the members it declares itself";
+
+            switch (claim.Kind)
+            {
+                case StatedBaseTypeKind.Class:
+                    Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Loss,
+                        Framework = Descriptor.Framework,
+                        Entity = entity,
+                        Reason = $"The class {entity} extends {claim.BaseTypeName}, which no unit of this conversion "
+                            + $"declares, so {inherited}.",
+                    });
+                    break;
+
+                case StatedBaseTypeKind.ClassOrInterface:
+                    Report(new ConversionRecord
+                    {
+                        Kind = ConversionRecordKind.Loss,
+                        Framework = Descriptor.Framework,
+                        Entity = entity,
+                        Reason = $"The class {entity} lists {claim.BaseTypeName} first among its base types, where the "
+                            + "language puts the base class, and no unit of this conversion declares it. If it is a "
+                            + $"class, {inherited}; if it is an interface, the generated class does not implement it.",
+                    });
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// One pending base type claim; see <see cref="AddStatedBaseType"/>.
+    /// </summary>
+    private sealed record StatedBaseType(EntityMap Entity, string BaseTypeName, StatedBaseTypeKind Kind);
+
+    /// <summary>
+    /// Stated base types waiting for the entities of the conversion to be known. Emptied by
+    /// <see cref="ReportStatedBaseTypes"/>, so a second <see cref="Build"/> does not report
+    /// the same claim twice.
+    /// </summary>
+    private readonly List<StatedBaseType> statedBaseTypes = [];
+
+    /// <summary>
+    /// The columns of the referenced entity a source says the foreign key of a relation
+    /// points at - JPA's referencedColumnName. The intermediate representation pairs the
+    /// columns of a foreign key with the referenced entity's primary key, in its order
+    /// (decision 012), and keeps no referenced column: where the source names that key the
+    /// statement adds nothing and is not an event, where it names other columns the relation
+    /// is translated onto the key instead and that is a loss (decision 048). Which of the
+    /// two it is needs the referenced entity's key, which may come from another unit, so the
+    /// claim waits here and <see cref="ReportStatedReferencedColumns"/> judges it.
+    /// </summary>
+    /// <param name="navigationProperty">The navigation whose relation the statement is about.</param>
+    /// <param name="referencedColumns">The referenced columns as the source spelled them.</param>
+    /// <param name="ownKey">
+    /// True where the columns reference the key of the entity being read rather than the
+    /// target's: the join column of a unidirectional one-to-many sits in the target's table
+    /// and points back, and the owning columns of a join table point at the owner.
+    /// </param>
+    public void AddStatedReferencedColumns(string navigationProperty, IReadOnlyList<string> referencedColumns, bool ownKey = false)
+    {
+        var claim = new StatedReferencedColumns(EntityMap, navigationProperty, [.. referencedColumns], ownKey);
+
+        if (!statedReferencedColumns.Any(c => c.Entity == claim.Entity && c.Navigation == claim.Navigation
+                && c.OwnKey == claim.OwnKey && c.Columns.SequenceEqual(claim.Columns, StringComparer.Ordinal)))
+        {
+            statedReferencedColumns.Add(claim);
+        }
+    }
+
+    /// <summary>
+    /// Judges the stated referenced columns against the key they are compared with (see
+    /// <see cref="AddStatedReferencedColumns"/>). Names are compared without regard to case,
+    /// as every implicit name of the frameworks is, and as a set: the order of the pairs is
+    /// the key's (decision 012) whatever order the source listed them in. A referenced
+    /// entity outside the conversion, or one without a key, has nothing to compare with, so
+    /// the claim is dropped without a record - like every other fact the catalog may still
+    /// settle. The record names the navigation and carries no category and no unit, for the
+    /// reasons <see cref="ReportStatedBaseTypes"/> gives.
+    /// </summary>
+    public void ReportStatedReferencedColumns()
+    {
+        var pending = statedReferencedColumns.ToList();
+        statedReferencedColumns.Clear();
+
+        foreach (var claim in pending)
+        {
+            var relation = claim.Entity.Relations.FirstOrDefault(r =>
+                string.Equals(r.SourceNavigationProperty, claim.Navigation, StringComparison.Ordinal));
+
+            var referenced = claim.OwnKey
+                ? claim.Entity
+                : relation is null ? null : FindEntityMap(relation.TargetEntity);
+
+            if (referenced?.PrimaryKey is not { Parts.Count: > 0 } key)
+            {
+                continue;
+            }
+
+            var keyColumns = key.Parts
+                .Select(p => p.PropertyMap.ColumnName ?? p.PropertyMap.Property.Name)
+                .ToList();
+
+            if (claim.Columns.Count == keyColumns.Count
+                && claim.Columns.All(c => keyColumns.Contains(c, StringComparer.OrdinalIgnoreCase)))
             {
                 continue;
             }
@@ -1067,27 +1204,26 @@ public abstract class AbstractEntityBuilder
                 Kind = ConversionRecordKind.Loss,
                 Framework = Descriptor.Framework,
                 Entity = claim.Entity.Entity.Name,
-                Reason = $"The class {claim.Entity.Entity.Name} derives from {claim.BaseTypeName}, which is an "
-                    + "entity of this conversion, so the source maps a hierarchy over the two. The intermediate "
-                    + "representation has no place for inheritance (decision 048), so both are translated as "
-                    + "unrelated entities: what the base declares reaches the target on the base entity alone, "
-                    + "and a target that would map the hierarchy by convention - table per hierarchy in EF "
-                    + "Core - is given nothing to map.",
+                Property = claim.Navigation,
+                Reason = $"The relation '{claim.Navigation}' states that its foreign key references "
+                    + $"{string.Join(", ", claim.Columns.Select(c => $"'{c}'"))} of {referenced.Entity.Name}, whose primary key is "
+                    + $"{string.Join(", ", keyColumns.Select(c => $"'{c}'"))}. The intermediate representation pairs a foreign key "
+                    + "with the referenced entity's primary key (decision 012) and has no place for a reference to another "
+                    + "column, so the referenced columns are dropped and the relation is translated as one onto the key.",
             });
         }
     }
 
     /// <summary>
-    /// One pending base type claim; see <see cref="AddStatedBaseType"/>.
+    /// One pending claim about referenced columns; see <see cref="AddStatedReferencedColumns"/>.
     /// </summary>
-    private sealed record StatedBaseType(EntityMap Entity, string BaseTypeName);
+    private sealed record StatedReferencedColumns(EntityMap Entity, string Navigation, IReadOnlyList<string> Columns, bool OwnKey);
 
     /// <summary>
-    /// Stated base types waiting for the entities of the conversion to be known. Emptied by
-    /// <see cref="ReportStatedBaseTypes"/>, so a second <see cref="Build"/> does not report
-    /// the same claim twice.
+    /// Stated referenced columns waiting for the entities of the conversion to be known.
+    /// Emptied by <see cref="ReportStatedReferencedColumns"/>.
     /// </summary>
-    private readonly List<StatedBaseType> statedBaseTypes = [];
+    private readonly List<StatedReferencedColumns> statedReferencedColumns = [];
 
     /// <summary>
     /// The dissolution phase of decision 031: the name a mapping recorded in
@@ -2563,12 +2699,15 @@ public abstract class AbstractEntityBuilder
         DissolveKeyClasses();
         ResolveConventionNavigations();
 
-        // The one step here that changes nothing in the model: a base type naming another
+        // The two steps here that change nothing in the model: a base type naming another
         // entity of the conversion is a mapped hierarchy, the model has no place for one,
-        // so all that is left to do about it is say so (decision 048). It stands here
-        // because it needs the same complete entity set the phases do, and after the
-        // dissolution so that a dissolved key class is not taken for a base entity.
+        // so all that is left to do about it is say so (decision 048); and a stated
+        // referenced column other than the key is a relation the model pairs with the key
+        // regardless. Both stand here because they need the same complete entity set the
+        // phases do, and after the dissolution so that a dissolved key class is not taken
+        // for a base entity and the keys the claims are compared with are the flat ones.
         ReportStatedBaseTypes();
+        ReportStatedReferencedColumns();
 
         // The junction entities have to stand before names resolve, so that their relations
         // and the retargeted collections pair like any others; both phases sit between

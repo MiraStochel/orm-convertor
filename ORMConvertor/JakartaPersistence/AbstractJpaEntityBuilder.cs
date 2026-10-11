@@ -247,6 +247,31 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 }
             }
 
+            if (propertyMap.Property.Type is { Category: LangTypeCategory.Collection })
+            {
+                // A collection with no relation behind it has nothing to build a mapping
+                // from, and a bare collection field is not nothing to a JPA provider: it is
+                // a basic attribute over one column holding the whole collection - xml in
+                // Hibernate, a serialized image in EclipseLink - a column the source never
+                // claimed. So the member stays on the class as @Transient and the gap is
+                // reported, the NHibernate and MyBatis builders' answer to the same shape.
+                Import($"{Jakarta}.Transient");
+                code.AppendLine("    @Transient");
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.JavaEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = propertyMap.Property.Name,
+                    Reason = "The collection has no relation behind it, so there is nothing to build its mapping from; "
+                        + "a bare collection field would be read as a basic column holding the whole collection, so the "
+                        + "member is written @Transient and the mapping leaves it unmapped.",
+                });
+                AppendField(entityMap, propertyMap.Property, code);
+                continue;
+            }
+
             // A scalar over a column a relation of the entity also maps is read-only here,
             // so that the column is written once, by the relation - the rule NHibernate
             // has for the same shape (decision 012).

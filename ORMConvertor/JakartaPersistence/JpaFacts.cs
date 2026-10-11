@@ -112,6 +112,15 @@ public sealed class JpaAttributeFacts
     public List<string> Unread { get; } = [];
 
     /// <summary>
+    /// insertable = false and updatable = false on the column, as the source spelled them.
+    /// Kept apart from <see cref="Unread"/> because they are a loss only where the column is
+    /// the attribute's own: over a column a relation of the same class also maps they are
+    /// the read-only idiom the model derives from the relation and writes again (decision
+    /// 012), and the writer tells the two apart with the whole class in hand.
+    /// </summary>
+    public List<string> ReadOnlyFlags { get; } = [];
+
+    /// <summary>
     /// Losses an implementation's own reader states in its own words (decision 080): the
     /// generic sentence about an annotation without a counterpart would not say what the
     /// reader knows, as at a lazy reference under EclipseLink. Each entry is a whole reason.
@@ -134,7 +143,19 @@ public sealed record JpaGeneratorFacts(
     string? ValueColumnName = null,
     string? PkColumnValue = null);
 
-public sealed record JpaJoinColumnFacts(string? Name, string? ReferencedColumnName, bool? Nullable);
+/// <summary>
+/// One @JoinColumn or &lt;join-column&gt;: the three elements the model reads, and the rest
+/// as the source spelled them - <paramref name="Unread"/> for the elements the model has no
+/// place for (table, columnDefinition), <paramref name="ReadOnlyFlags"/> for insertable =
+/// false and updatable = false, which are a loss only where no basic attribute of the
+/// class maps the same column (see <see cref="JpaAttributeFacts.ReadOnlyFlags"/>).
+/// </summary>
+public sealed record JpaJoinColumnFacts(
+    string? Name,
+    string? ReferencedColumnName,
+    bool? Nullable,
+    IReadOnlyList<string> Unread,
+    IReadOnlyList<string> ReadOnlyFlags);
 
 public sealed record JpaJoinTableFacts(
     string? Name,

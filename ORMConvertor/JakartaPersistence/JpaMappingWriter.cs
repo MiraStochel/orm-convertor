@@ -58,6 +58,7 @@ public sealed class JpaMappingWriter(
             }
 
             ReportUnread(attribute);
+            ReportReadOnlyFlags(facts, attribute);
         }
 
         WriteKey(facts);
@@ -378,6 +379,9 @@ public sealed class JpaMappingWriter(
             .Select(n => n!)
             .ToList();
 
+        StateReferencedColumns(attribute, inverse);
+        ReportJoinColumnElements(facts, attribute);
+
         switch (attribute.Kind)
         {
             case JpaAttributeKind.ManyToOne:
@@ -551,6 +555,125 @@ public sealed class JpaMappingWriter(
         }
 
         entityBuilder.AddUniqueConstraint(constraint.Name, properties);
+    }
+
+    /// <summary>
+    /// Hands the referenced column names of the join columns the writer uses to the builder
+    /// to judge against the key they point at (decision 012): the target's for a reference,
+    /// the entity's own for the join column of a unidirectional one-to-many, which sits in
+    /// the target's table, and each side's own for the two halves of a join table. The join
+    /// columns of an inverse side are not used by the provider and not judged here either.
+    /// </summary>
+    private void StateReferencedColumns(JpaAttributeFacts attribute, bool inverse)
+    {
+        if (inverse)
+        {
+            return;
+        }
+
+        static List<string> Referenced(IEnumerable<JpaJoinColumnFacts> columns)
+            => [.. columns.Select(c => c.ReferencedColumnName).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!)];
+
+        if (attribute.JoinTable is { } table)
+        {
+            if (attribute.Kind == JpaAttributeKind.ManyToMany)
+            {
+                if (Referenced(table.JoinColumns) is { Count: > 0 } own)
+                {
+                    entityBuilder.AddStatedReferencedColumns(attribute.Name, own, ownKey: true);
+                }
+
+                if (Referenced(table.InverseJoinColumns) is { Count: > 0 } far)
+                {
+                    entityBuilder.AddStatedReferencedColumns(attribute.Name, far);
+                }
+            }
+
+            return;
+        }
+
+        if (Referenced(attribute.JoinColumns) is { Count: > 0 } referenced)
+        {
+            entityBuilder.AddStatedReferencedColumns(attribute.Name, referenced, ownKey: attribute.Kind == JpaAttributeKind.OneToMany);
+        }
+    }
+
+    /// <summary>
+    /// The elements of the join columns the model has no place for (decision 048): table and
+    /// columnDefinition are reported outright; insertable = false and updatable = false only
+    /// where no basic attribute of the class maps the same column, since beside one they are
+    /// the read-only idiom of a relation over a scalar's column, which the model derives
+    /// from the pair and the targets write again (decision 012) - the mirror image of
+    /// <see cref="ReportReadOnlyFlags"/>.
+    /// </summary>
+    private void ReportJoinColumnElements(JpaEntityFacts facts, JpaAttributeFacts attribute)
+    {
+        var joinColumns = attribute.JoinColumns
+            .Concat(attribute.JoinTable?.JoinColumns ?? [])
+            .Concat(attribute.JoinTable?.InverseJoinColumns ?? []);
+
+        foreach (var joinColumn in joinColumns)
+        {
+            foreach (var unread in joinColumn.Unread)
+            {
+                Report(ConversionRecordKind.Loss, attribute.Name, null,
+                    $"The annotation {unread} has no counterpart in the intermediate representation and was dropped.");
+            }
+
+            if (joinColumn.ReadOnlyFlags.Count == 0)
+            {
+                continue;
+            }
+
+            var besideScalar = joinColumn.Name is { } column && facts.Attributes.Any(a =>
+                a.Kind is JpaAttributeKind.Basic or JpaAttributeKind.Id or JpaAttributeKind.Version
+                && string.Equals(a.ColumnName ?? a.Name, column, StringComparison.OrdinalIgnoreCase));
+
+            if (besideScalar)
+            {
+                continue;
+            }
+
+            foreach (var flag in joinColumn.ReadOnlyFlags)
+            {
+                Report(ConversionRecordKind.Loss, attribute.Name, null,
+                    $"The annotation {flag} leaves the column out of the framework's write statements; the intermediate "
+                    + "representation has no place for it and it was dropped.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// insertable = false and updatable = false on a column of the attribute's own are a
+    /// statement about the framework's write statements the model has no place for, and are
+    /// reported (decision 048). Over a column a relation of the same class maps through a join
+    /// column they are the read-only idiom of a scalar beside its relation, which the model
+    /// derives from the relation and every target writes again in its own words (decision
+    /// 012), so there they state nothing the model loses.
+    /// </summary>
+    private void ReportReadOnlyFlags(JpaEntityFacts facts, JpaAttributeFacts attribute)
+    {
+        if (attribute.ReadOnlyFlags.Count == 0)
+        {
+            return;
+        }
+
+        var column = attribute.ColumnName ?? attribute.Name;
+
+        var overRelation = facts.Attributes.Any(a => a != attribute
+            && a.JoinColumns.Any(c => string.Equals(c.Name, column, StringComparison.OrdinalIgnoreCase)));
+
+        if (overRelation)
+        {
+            return;
+        }
+
+        foreach (var flag in attribute.ReadOnlyFlags)
+        {
+            Report(ConversionRecordKind.Loss, attribute.Name, null,
+                $"The annotation {flag} leaves the column out of the framework's write statements; the intermediate "
+                + "representation has no place for it and it was dropped.");
+        }
     }
 
     private void ReportUnread(JpaAttributeFacts attribute)

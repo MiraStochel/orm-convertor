@@ -132,17 +132,26 @@ public class EntityBaseTypeTest
     }
 
     /// <summary>
-    /// A base type no unit of the conversion declares is dropped without a record, the way
-    /// any unknown type name is: the header does not say which of its base types is the
-    /// class and which are interfaces, so a record about a type the parser has never seen
-    /// would claim more than is known.
+    /// The records of a base type no unit of the conversion declares: a loss of another
+    /// kind than the hierarchy - what the entity inherits from the class is never seen.
+    /// </summary>
+    private static List<ConversionRecord> OutsideLosses(ConversionResult result)
+        => [.. result.Records.Where(r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("no unit of this conversion declares"))];
+
+    /// <summary>
+    /// A base type no unit of the conversion declares used to be dropped without a record,
+    /// on the ground that a header does not say which entry is the class. The record now
+    /// says exactly what the header says: the first entry is where C# puts the base class,
+    /// so if it is a class, whatever the entity inherits from it - properties, possibly the
+    /// key - is lost, and if it is an interface, the generated class does not implement it.
+    /// Either way the claim ended in silence, and no longer does (decision 048).
     /// </summary>
     [Theory]
     [InlineData("INotifyPropertyChanged")]
     [InlineData("IEquatable<Employee>")]
     [InlineData("EntityBase")]
     [InlineData("EntityBase<Employee>")]
-    public void ABaseTypeOutsideTheConversionIsSilent(string baseType)
+    public void AFirstBaseTypeOutsideTheConversionIsAReportedLoss(string baseType)
     {
         var result = Convert(Source(Unit($$"""
             public class Employee : {{baseType}}
@@ -153,6 +162,37 @@ public class EntityBaseTypeTest
             """), "Employee.cs"));
 
         Assert.Empty(BaseTypeLosses(result));
+
+        var loss = Assert.Single(OutsideLosses(result));
+
+        Assert.Equal("Employee", loss.Entity);
+        Assert.Null(loss.Property);
+        Assert.Null(loss.Category);
+        Assert.Contains(baseType, loss.Reason);
+        Assert.Contains("If it is a class", loss.Reason);
+        Assert.Contains("if it is an interface", loss.Reason);
+    }
+
+    /// <summary>
+    /// C# puts the base class first and every later entry is an interface, through which
+    /// nothing of the mapping is inherited; so of a base list naming two unknown types only
+    /// the first gets a record.
+    /// </summary>
+    [Fact]
+    public void ALaterBaseTypeIsAnInterfaceAndStaysSilent()
+    {
+        var result = Convert(Source(Unit("""
+            public class Employee : EntityBase, INotifyPropertyChanged
+            {
+                [Key]
+                public int EmployeeId { get; set; }
+            }
+            """), "Employee.cs"));
+
+        var loss = Assert.Single(OutsideLosses(result));
+
+        Assert.Contains("EntityBase", loss.Reason);
+        Assert.DoesNotContain("INotifyPropertyChanged", loss.Reason);
     }
 
     /// <summary>
@@ -349,13 +389,15 @@ public class EntityBaseTypeTest
 
     /// <summary>
     /// Java says outright which base type is the class, so the interfaces are never
-    /// candidates and a base class no unit declares stays silent, as in C#.
+    /// candidates and stay silent; a base class no unit declares is a loss the record
+    /// states without the hedge the C# record needs; and a base type whose simple name is
+    /// the class's own resolves to the class itself and is dropped, as in C#.
     /// </summary>
     [Theory]
-    [InlineData("implements java.io.Serializable")]
-    [InlineData("extends AuditedEntity")]
-    [InlineData("extends shop.legacy.Employee")]
-    public void AJavaBaseTypeOutsideTheConversionIsSilent(string header)
+    [InlineData("implements java.io.Serializable", false)]
+    [InlineData("extends AuditedEntity", true)]
+    [InlineData("extends shop.legacy.Employee", false)]
+    public void AJavaBaseClassOutsideTheConversionIsAReportedLoss(string header, bool reported)
     {
         var result = ConvertJava(ORMEnum.Hibernate, JavaSource($$"""
             package shop;
@@ -371,6 +413,18 @@ public class EntityBaseTypeTest
             """, "Employee.java"));
 
         Assert.Empty(BaseTypeLosses(result));
+
+        if (!reported)
+        {
+            Assert.Empty(OutsideLosses(result));
+            return;
+        }
+
+        var loss = Assert.Single(OutsideLosses(result));
+
+        Assert.Equal("Employee", loss.Entity);
+        Assert.Contains("extends AuditedEntity", loss.Reason);
+        Assert.DoesNotContain("interface", loss.Reason);
     }
 
     /// <summary>

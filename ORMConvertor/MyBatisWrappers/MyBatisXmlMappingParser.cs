@@ -57,6 +57,32 @@ public sealed class MyBatisXmlMappingParser(AbstractEntityBuilder entityBuilder,
 
         foreach (var element in root.Elements())
         {
+            // The elements of the mapper outside the table of decision 084 that are neither a
+            // statement nor a result map: each states something the model has no place for,
+            // and says which (decision 048). They belong to the namespace, not to an entity.
+            switch (element.Name.LocalName)
+            {
+                case "cache":
+                    Report(ConversionRecordKind.Loss, null, null, null,
+                        "<cache> switches on the second-level cache of the mapper's namespace, which is how results are "
+                        + "kept rather than what they are; the intermediate representation does not carry it and it was dropped.");
+                    continue;
+
+                case "cache-ref":
+                    Report(ConversionRecordKind.Loss, null, null, null,
+                        $"<cache-ref namespace=\"{element.Attribute("namespace")?.Value}\"> shares the second-level cache of "
+                        + "another namespace, which is how results are kept rather than what they are; the intermediate "
+                        + "representation does not carry it and it was dropped.");
+                    continue;
+
+                case "parameterMap":
+                    Report(ConversionRecordKind.Loss, null, null, null,
+                        $"<parameterMap id=\"{element.Attribute("id")?.Value}\"> maps the properties of a parameter object "
+                        + "onto the parameters of a statement, a form MyBatis 3 keeps for compatibility; the intermediate "
+                        + "representation reads a parameter from its #{} reference alone and the map was dropped.");
+                    continue;
+            }
+
             var id = element.Attribute("id")?.Value;
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -175,12 +201,14 @@ public sealed class MyBatisXmlMappingParser(AbstractEntityBuilder entityBuilder,
 
                     WriteColumn(entityMap, property!, member.Attribute("column")?.Value,
                         member.Attribute("javaType")?.Value, member.Attribute("jdbcType")?.Value);
+                    ReportTypeHandler(entityMap, property, member);
                     closed.Cover(entityMap, property);
                     break;
 
                 case "result":
                     WriteColumn(entityMap, property!, member.Attribute("column")?.Value,
                         member.Attribute("javaType")?.Value, member.Attribute("jdbcType")?.Value);
+                    ReportTypeHandler(entityMap, property, member);
                     closed.Cover(entityMap, property);
                     break;
 
@@ -208,6 +236,21 @@ public sealed class MyBatisXmlMappingParser(AbstractEntityBuilder entityBuilder,
                         + "does not carry - it maps columns onto properties; it was dropped.");
                     break;
             }
+        }
+    }
+
+    /// <summary>
+    /// A type handler on a pair converts the value between the column and the property; the
+    /// model carries the column and the two types and nothing that runs between them, so
+    /// the handler is reported rather than dropped in silence (decision 048).
+    /// </summary>
+    private void ReportTypeHandler(EntityMap entityMap, string? property, XElement member)
+    {
+        if (member.Attribute("typeHandler")?.Value is { } handler && !string.IsNullOrWhiteSpace(handler))
+        {
+            Report(ConversionRecordKind.Loss, entityMap, property, null,
+                $"The type handler '{handler}' converts the value between the column and the property; the intermediate "
+                + "representation carries the column and the types alone, so the handler was dropped.");
         }
     }
 

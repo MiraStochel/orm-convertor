@@ -181,6 +181,18 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
                 case "table":
                     facts.Table = child.Attribute("name")?.Value;
                     facts.Schema = child.Attribute("schema")?.Value;
+
+                    // The XSD spellings of @Table(catalog) and @Table(indexes).
+                    if (child.Attribute("catalog") is not null)
+                    {
+                        facts.Unread.Add("<table catalog>");
+                    }
+
+                    foreach (var _ in child.Elements().Where(e => e.Name.LocalName == "index"))
+                    {
+                        facts.Unread.Add("<index>");
+                    }
+
                     foreach (var constraint in child.Elements().Where(e => e.Name.LocalName == "unique-constraint"))
                     {
                         var columns = constraint.Elements()
@@ -361,10 +373,53 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
         attribute.Nullable = ReadBoolean(column.Attribute("nullable")?.Value) ?? attribute.Nullable;
         attribute.Unique |= IsTrue(column.Attribute("unique")?.Value);
         attribute.ColumnDefinition = column.Attribute("column-definition")?.Value;
+
+        // The XSD spellings of @Column(table), @Column(insertable) and @Column(updatable).
+        if (column.Attribute("table") is not null)
+        {
+            attribute.Unread.Add("<column table>");
+        }
+
+        if (ReadBoolean(column.Attribute("insertable")?.Value) == false)
+        {
+            attribute.ReadOnlyFlags.Add("<column insertable=\"false\">");
+        }
+
+        if (ReadBoolean(column.Attribute("updatable")?.Value) == false)
+        {
+            attribute.ReadOnlyFlags.Add("<column updatable=\"false\">");
+        }
     }
 
     private static JpaJoinColumnFacts ReadJoinColumn(XElement element)
-        => new(element.Attribute("name")?.Value, element.Attribute("referenced-column-name")?.Value, ReadBoolean(element.Attribute("nullable")?.Value));
+    {
+        var tag = element.Name.LocalName;
+        var unread = new List<string>();
+        var readOnly = new List<string>();
+
+        if (element.Attribute("table") is not null)
+        {
+            unread.Add($"<{tag} table>");
+        }
+
+        if (element.Attribute("column-definition") is not null)
+        {
+            unread.Add($"<{tag} column-definition>");
+        }
+
+        if (ReadBoolean(element.Attribute("insertable")?.Value) == false)
+        {
+            readOnly.Add($"<{tag} insertable=\"false\">");
+        }
+
+        if (ReadBoolean(element.Attribute("updatable")?.Value) == false)
+        {
+            readOnly.Add($"<{tag} updatable=\"false\">");
+        }
+
+        return new(element.Attribute("name")?.Value, element.Attribute("referenced-column-name")?.Value,
+            ReadBoolean(element.Attribute("nullable")?.Value), unread, readOnly);
+    }
 
     private static JpaGeneratorFacts? ReadGenerator(XElement element)
     {

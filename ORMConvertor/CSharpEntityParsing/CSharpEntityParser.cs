@@ -99,6 +99,7 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
             ParseClassAttributes(cls);
             ParseClassHeader(cls);
             ParseProperties(cls);
+            ReportFields(cls);
 
             if (!read.Contains(entityMap))
             {
@@ -226,24 +227,105 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
 
     /// <summary>
     /// Class-level annotations of the source framework. The structure carries none, so the
-    /// base reads none; a framework that maps through annotations overrides this.
+    /// base reads none and reports every one it meets (decision 048): a framework that
+    /// carries no mapping in the class has nothing to make of an annotation there, and
+    /// whatever the annotation states is dropped. A framework that maps through annotations
+    /// overrides this.
     /// </summary>
     protected virtual void ParseClassAttributes(ClassDeclarationSyntax classDeclaration)
     {
+        foreach (var attribute in classDeclaration.AttributeLists.SelectMany(l => l.Attributes))
+        {
+            ReportUnreadAttribute(classDeclaration, null, attribute);
+        }
     }
 
     /// <summary>
     /// The properties of the class. The default emits the language facts of each property
-    /// and nothing else; a framework that reads annotations or conventions around them
-    /// overrides the loop and takes the language facts from <see cref="ReadProperty"/>.
+    /// and nothing else, reporting an annotation on it the way <see cref="ParseClassAttributes"/>
+    /// does; a framework that reads annotations or conventions around them overrides the
+    /// loop and takes the language facts from <see cref="ReadProperty"/>.
     /// </summary>
     protected virtual void ParseProperties(ClassDeclarationSyntax classDeclaration)
     {
         foreach (var prop in classDeclaration.Members.OfType<PropertyDeclarationSyntax>())
         {
             EmitProperty(ReadProperty(prop));
+
+            foreach (var attribute in prop.AttributeLists.SelectMany(l => l.Attributes))
+            {
+                ReportUnreadAttribute(classDeclaration, prop.Identifier.Text, attribute);
+            }
         }
     }
+
+    /// <summary>
+    /// The record of an annotation the structural reading does not read (decision 048):
+    /// the source framework carries no mapping in the class, so the annotation is some other
+    /// library's statement about the member, and the generated class does not carry it.
+    /// </summary>
+    private void ReportUnreadAttribute(ClassDeclarationSyntax classDeclaration, string? property, AttributeSyntax attribute)
+    {
+        var where = property is null
+            ? $"the class '{classDeclaration.Identifier.Text}'"
+            : $"the property '{property}'";
+
+        entityBuilder.Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = entityBuilder.Descriptor.Framework,
+            Artifact = ConversionContentType.CSharp,
+            Entity = classDeclaration.Identifier.Text,
+            Property = property,
+            Reason = $"The annotation [{attribute.Name}] on {where} is not read: the source framework carries no "
+                + "mapping in the class, so the reading takes its structure alone and what the annotation states "
+                + "is dropped.",
+        });
+    }
+
+    /// <summary>
+    /// The fields of the class, which the intermediate representation has no place for - it
+    /// carries properties only - and which therefore leave the class on the way through
+    /// (decision 048). Every framework's reading reports them, with the one sentence the
+    /// framework knows beyond the structure: what it would have made of a field
+    /// (<see cref="FieldNote"/>). Constants and static fields are not members of an instance
+    /// and are not reported.
+    /// </summary>
+    private void ReportFields(ClassDeclarationSyntax classDeclaration)
+    {
+        foreach (var field in classDeclaration.Members.OfType<FieldDeclarationSyntax>())
+        {
+            if (field.Modifiers.Any(SyntaxKind.StaticKeyword) || field.Modifiers.Any(SyntaxKind.ConstKeyword))
+            {
+                continue;
+            }
+
+            foreach (var variable in field.Declaration.Variables)
+            {
+                var note = FieldNote;
+
+                entityBuilder.Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = entityBuilder.Descriptor.Framework,
+                    Artifact = ConversionContentType.CSharp,
+                    Entity = classDeclaration.Identifier.Text,
+                    Property = variable.Identifier.Text,
+                    Reason = $"The field '{variable.Identifier.Text}' of the class '{classDeclaration.Identifier.Text}' is not "
+                        + "read: the intermediate representation carries properties only, so the member is not written into "
+                        + "the target class." + (string.IsNullOrEmpty(note) ? string.Empty : " " + note),
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// What the source framework would have made of a field of the class, as one sentence
+    /// appended to the record of every field the reading drops (<see cref="ReportFields"/>):
+    /// whether a column is lost with the member or only the member itself. The structure
+    /// knows nothing of it, so the base adds nothing.
+    /// </summary>
+    protected virtual string FieldNote => string.Empty;
 
     /// <summary>
     /// The language facts of one property declaration — the reading every framework shares.
@@ -350,7 +432,8 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// maps - EF Core maps one by convention, table per hierarchy - and a fact the model
     /// cannot keep is a loss that says so (decision 048). The judgement waits for the whole
     /// entity set, so the builder collects the claim and reports what it resolves; nothing
-    /// here decides what the base type was.
+    /// here decides what the base type was. What C# does say is handed over with it: the
+    /// base class, if there is one, stands first, and every later entry is an interface.
     /// </summary>
     private void ParseClassHeader(ClassDeclarationSyntax classDeclaration)
     {
@@ -369,9 +452,11 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
 
         if (classDeclaration.BaseList is { } baseList)
         {
-            foreach (var baseType in baseList.Types)
+            for (var i = 0; i < baseList.Types.Count; i++)
             {
-                entityBuilder.AddStatedBaseType(baseType.Type.ToString());
+                entityBuilder.AddStatedBaseType(
+                    baseList.Types[i].Type.ToString(),
+                    i == 0 ? StatedBaseTypeKind.ClassOrInterface : StatedBaseTypeKind.Interface);
             }
         }
     }

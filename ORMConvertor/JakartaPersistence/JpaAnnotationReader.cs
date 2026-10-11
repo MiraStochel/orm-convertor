@@ -75,6 +75,20 @@ public class JpaAnnotationReader
             case "Table":
                 facts.Table = annotation.String("name") ?? facts.Table;
                 facts.Schema = annotation.String("schema") ?? facts.Schema;
+
+                // A catalog is a level of naming the model does not have, and a non-unique
+                // index is a performance artifact outside the mapping ([Index] without
+                // IsUnique has the same record on the EF Core side, decision 055).
+                if (annotation.String("catalog") is not null)
+                {
+                    facts.Unread.Add("Table(catalog)");
+                }
+
+                if (annotation["indexes"] is not null)
+                {
+                    facts.Unread.Add("Table(indexes)");
+                }
+
                 foreach (var constraint in (annotation["uniqueConstraints"]?.AsList ?? []))
                 {
                     if (constraint.Annotation is { } unique)
@@ -181,6 +195,24 @@ public class JpaAnnotationReader
                 facts.Nullable = annotation.Boolean("nullable") ?? facts.Nullable;
                 facts.Unique |= annotation.Boolean("unique") == true;
                 facts.ColumnDefinition = annotation.String("columnDefinition") ?? facts.ColumnDefinition;
+
+                // A column in a secondary table is excluded area 2; the two write flags are
+                // judged by the writer against the relations of the class (ReadOnlyFlags).
+                if (annotation.String("table") is not null)
+                {
+                    facts.Unread.Add("Column(table)");
+                }
+
+                if (annotation.Boolean("insertable") == false)
+                {
+                    facts.ReadOnlyFlags.Add("Column(insertable = false)");
+                }
+
+                if (annotation.Boolean("updatable") == false)
+                {
+                    facts.ReadOnlyFlags.Add("Column(updatable = false)");
+                }
+
                 break;
 
             case "GeneratedValue":
@@ -313,7 +345,32 @@ public class JpaAnnotationReader
     }
 
     private static JpaJoinColumnFacts ReadJoinColumn(JavaAnnotation annotation)
-        => new(annotation.String("name"), annotation.String("referencedColumnName"), annotation.Boolean("nullable"));
+    {
+        var unread = new List<string>();
+        var readOnly = new List<string>();
+
+        if (annotation.String("table") is not null)
+        {
+            unread.Add("JoinColumn(table)");
+        }
+
+        if (annotation.String("columnDefinition") is not null)
+        {
+            unread.Add("JoinColumn(columnDefinition)");
+        }
+
+        if (annotation.Boolean("insertable") == false)
+        {
+            readOnly.Add("JoinColumn(insertable = false)");
+        }
+
+        if (annotation.Boolean("updatable") == false)
+        {
+            readOnly.Add("JoinColumn(updatable = false)");
+        }
+
+        return new(annotation.String("name"), annotation.String("referencedColumnName"), annotation.Boolean("nullable"), unread, readOnly);
+    }
 
     /// <summary>
     /// Whether the annotation is one of the specification's: written bare (imported) or

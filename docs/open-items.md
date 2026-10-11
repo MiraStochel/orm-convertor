@@ -50,7 +50,7 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
 | [Směr překladu a vstup vedle výstupu](#směr-překladu-jako-jedna-věc-a-vstup-vedle-výstupu) | Rozhraní | rozhodnutí | F14, S7 |
 | [Čísla řádků v editoru jednotky](#editor-jednotky-nemá-čísla-řádků-na-která-se-odvolává-chybová-hláška) | Rozhraní | práce | S7 |
-| [Mapovací fakta mimo `hbm.xml`, která se zahodí beze slova](#mapovací-fakta-mimo-hbmxml-která-čtení-zahodí-beze-slova) | Užitečné | práce | F5, F11 |
+| [`unique` na sloupci cizího klíče](#unique-na-sloupci-cizího-klíče-jako-tvrzení-zdroje) | Užitečné | rozhodnutí | F5, F11 |
 | [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
 | [Druhý databázový dialekt](#druhý-databázový-dialekt) | Užitečné | rozhodnutí | F5, F7–F10, S2 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
@@ -232,23 +232,12 @@ Invariant „nový framework je nový wrapper" platí: jméno frameworku neprosa
 
 Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele) a zda tím je nástroj „publikovaný" ve smyslu předpokladu rozh. 098; pak se 098 nahrazuje.
 
+#### `unique` na sloupci cizího klíče jako tvrzení zdroje
+*Zdroj: [`subset.md`](./subset.md), 2.13. Souvisí s rozh. [012](./decisions/012-foreign-key-rendering.md) a [055](./decisions/055-unique-constraint-as-a-carried-mapping-fact.md). Požadavky F5, F11.*
+
+JPA `@JoinColumn(unique = true)` a `<join-column unique="true">` se čtou beze slova, ačkoli tvrdí buď unikátní omezení nad sloupcem cizího klíče (rozh. 055 ho nese jen nad vlastnostmi), nebo vlastnící 1:1 — tak čte NHibernate parser `<many-to-one unique="true">`, zatímco NHibernate builder unikátnost na `<many-to-one>` hlásí jako `Loss`. Rozhodnout, které z obou čtení platí pro JPA a zda se obě strany sjednotí; do té doby je to poslední tiché místo čtení JPA.
+
 ### Práce
-
-#### Mapovací fakta mimo `hbm.xml`, která čtení zahodí beze slova
-*Zdroj: [`subset.md`](./subset.md), 2.13. Práce podle rozh. [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [004](./decisions/004-unexpressible-facts-as-warnings.md). Požadavky F5, F11.*
-
-Fakta, která zdroj tvrdí, model je nenese a čtení o nich mlčí:
-
-| Zdroj | Fakt |
-|---|---|
-| EF Core | `[ForeignKey("Navigace")]` na skalární vlastnosti cizího klíče |
-| Dapper, NHibernate | atributy tříd a vlastností a pole C# třídy (sdílené čtení C# bere jen vlastnosti a atributy předává jen háčku EF Core) |
-| JPA | `@Column(table, insertable, updatable)`, `@Table(indexes, catalog)`, `<index>` v `orm.xml`; `referencedColumnName` v `@JoinColumn` se přečte, ale nepoužije |
-| MyBatis | `<cache>`, `<cache-ref>`, `<parameterMap>`, `typeHandler` na `<result>` |
-| C#, Java | bázový typ, který jmenuje třídu mimo převod (co by z ní entita zdědila, převod nevidí); bázový typ jiné entity převodu hlásí `Loss` |
-| cíl JPA | kolekční vlastnost bez vztahu zapíše jako `@Column` — sloupec, který zdroj netvrdil; Hibernate 7.4.5 ho přijme jako `xml`, EclipseLink 5.0.0 jako serializovaný `IMAGE` (NHibernate a MyBatis vlastnost vynechají s `Incompleteness`) |
-
-Většině stačí `Loss` se jménem (kanál podle 048 existuje). U `referencedColumnName` je třeba rozhodnout, zda stačí ztráta, nebo model vztah na neklíčový sloupec odmítne.
 
 #### Atributy ostatních prvků NHibernate mapování mizí beze slova
 *Práce podle rozh. [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md) a [004](./decisions/004-unexpressible-facts-as-warnings.md); hranice je vyslovená v §5. Požadavek F11.*
