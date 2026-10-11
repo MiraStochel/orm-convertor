@@ -50,7 +50,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | — |
-| [Alias v SQL jako mapování Dapperu](#alias-v-sql-jako-zdroj-mapování-dapperu) | Zbytky | rozhodnutí | F6 |
 | [Fluent konfigurace EF Core](#fluent-konfigurace-ef-core-jako-vstupní-jednotka) | Zbytky | rozhodnutí | F1, F5 |
 | [Dapper.Contrib](#dappercontrib-v-rozsahu-nebo-mimo-něj) | Zbytky | rozhodnutí | F6 |
 
@@ -202,11 +201,6 @@ Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-soft
 Zdokumentované mezery a nezodpovězené otázky, na které se nesahá. Jsou tu, aby nález nezůstal jen v konverzaci a aby text práce věděl, co nástroj o svých frameworcích netvrdí.
 
 ### Rozhodnutí
-
-#### Alias v SQL jako zdroj mapování Dapperu
-*Souvisí s rozh. [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), [017](./decisions/017-source-precedence-for-mapping-facts.md) a [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §4, a [tutoriál k Dapperu](./analysis/tutorials/dapper-getting-started.md), krok 4. Požadavek F6.*
-
-Jedinou formou mapování v Dapperu je alias `AS` v dotazu a nástroj ji nečte: aliasy nese jen projekce a entitní mapa Dapperu dostává sloupce z katalogu, který páruje podle jména. Doménu z tutoriálu (vlastnost `Id` nad sloupcem `AuthorId`) tak katalog nespáruje. Rozhodnout, zda alias z dotazové jednotky téhož převodu propíše název sloupce do entitní mapy jako tvrzení prvního stupně — a co je konflikt, když dva dotazy aliasují týž sloupec různě.
 
 #### Fluent konfigurace EF Core jako vstupní jednotka
 *Počítají s ní rozh. [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) a [068](./decisions/068-source-framework-precedence-orders-the-reading.md); co s třídou kontextu ve vstupu, rozhodlo [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §4. Požadavky F1, F5.*

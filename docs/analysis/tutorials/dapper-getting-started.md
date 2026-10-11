@@ -143,7 +143,7 @@ SqlMapper.SetTypeMap(
 
 Zastav se u toho na chvíli, protože je to jádro věci pro tvoji analýzu. U EF Core je totéž jeden řádek `HasColumnName("AuthorId")` na jednom místě. U NHibernate `column="AuthorId"` v mapovacím souboru. U Dapperu buď **opakuješ alias v každém dotazu**, nebo saháš po globální reflexní registraci, která žije úplně jinde než dotazy, kterých se týká.
 
-To znamená, že parser pro Dapper nemá odkud číst mapování jinak než z SQL řetězců — a co v SQL řetězci není, to prostě neexistuje. Nástroj dnes jde ještě o krok dál: aliasy z SQL nečte vůbec a mapování Dapper zdroje bere z databázového katalogu (rozhodnutí [015](../../decisions/015-mapping-fact-completion-from-the-catalog.md), F6), který sloupec páruje s vlastností podle jména — takže právě dvojici `Id` a `AuthorId` z tohohle tutoriálu nespáruje. Nález je zapsaný v [`open-items.md`](../../open-items.md).
+To znamená, že parser pro Dapper nemá odkud číst mapování jinak než z SQL řetězců — a co v SQL řetězci není, to prostě neexistuje. Nástroj alias čte právě tam, kde je mapováním: ve volání, které řádky mapuje na entitu (`Query<Author>`), nad sloupcem tabulky té entity (rozhodnutí [131](../../decisions/131-a-column-alias-in-a-typed-dapper-call-states-the-column-of-the-property.md)). Dvojici `Id` a `AuthorId` z tohohle tutoriálu tak spáruje a katalog (rozhodnutí [015](../../decisions/015-mapping-fact-completion-from-the-catalog.md), F6) k ní doplní typ i klíč. Globální type map níž nečte a hlásí ji jako ztrátu.
 
 Tenhle tutoriál používá alias, protože to je běžnější a je vidět přímo v dotazu.
 

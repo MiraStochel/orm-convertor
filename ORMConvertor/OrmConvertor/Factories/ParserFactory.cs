@@ -71,10 +71,13 @@ internal class ParserFactory
     {
         switch (orm)
         {
+            // The class states no column, the text of a call that maps rows onto it does: the
+            // alias parser is Dapper's auxiliary mapping artifact and reads after the class
+            // (decisions 017 and 131), on the entity pass, so the catalog pairs by what it read.
             case ORMEnum.Dapper:
                 return qb is null
-                    ? [new DapperEntityParser(eb)]
-                    : [new DapperEntityParser(eb), new DapperSqlQueryParser(qb, declaredSourceDialect)];
+                    ? [new DapperEntityParser(eb), new DapperColumnAliasParser(eb, declaredSourceDialect)]
+                    : [new DapperEntityParser(eb), new DapperColumnAliasParser(eb, declaredSourceDialect), new DapperSqlQueryParser(qb, declaredSourceDialect)];
 
             // The entity parser stands before the XML mapping parser as a rule, not as a
             // coincidence: swapping the two would invert the source precedence (decision 017).

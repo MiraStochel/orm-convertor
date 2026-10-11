@@ -390,6 +390,81 @@ public class DapperSqlQueryParser(
     }
 
     /// <summary>
+    /// The methods that map the rows of their text onto one type (decision 131), the type Dapper
+    /// puts each column of the result into by its name. ExecuteScalar maps a value rather than
+    /// a row, and QueryMultiple maps on a later Read&lt;T&gt;() rather than on this call.
+    /// </summary>
+    private static readonly HashSet<string> RowMethods = new(StringComparer.Ordinal)
+    {
+        "Query", "QueryAsync",
+        "QueryFirst", "QueryFirstAsync", "QueryFirstOrDefault", "QueryFirstOrDefaultAsync",
+        "QuerySingle", "QuerySingleAsync", "QuerySingleOrDefault", "QuerySingleOrDefaultAsync",
+        "QueryUnbufferedAsync",
+    };
+
+    /// <summary>A call that maps the rows of its text onto one type, with where the text stands in the unit.</summary>
+    internal sealed record RowMapping(TypeSyntax Row, string Sql, TextRange Range);
+
+    /// <summary>
+    /// Every call of the unit that maps the rows of its text onto one type (decision 131): one
+    /// of <see cref="RowMethods"/> with a single type argument, or with a Type ahead of the SQL,
+    /// whose text is a string literal that Dapper sends as a query - the arguments told apart
+    /// the way the query pass tells them (<see cref="ParametersOf"/>). A multi-mapping splits
+    /// the row between several types and maps it onto none of them alone. The caller has read
+    /// the unit, under the nesting cap (decision 092).
+    /// </summary>
+    internal static IReadOnlyList<RowMapping> RowMappings(CSharpReadResult read)
+    {
+        var mappings = new List<RowMapping>();
+
+        foreach (var invocation in Calls(read))
+        {
+            var member = (MemberAccessExpressionSyntax)invocation.Expression;
+            var arguments = invocation.ArgumentList.Arguments;
+            var parameters = ParametersOf(member, arguments);
+
+            if (!RowMethods.Contains(member.Name.Identifier.Text) || parameters.Contains("map"))
+            {
+                continue;
+            }
+
+            var row = member.Name is GenericNameSyntax { TypeArgumentList.Arguments: [var argument] } ? argument : null;
+            ExpressionSyntax? sql = null;
+            var query = true;
+
+            for (var i = 0; i < arguments.Count; i++)
+            {
+                var value = arguments[i].Expression;
+
+                switch (arguments[i].NameColon?.Name.Identifier.Text ?? (i < parameters.Length ? parameters[i] : null))
+                {
+                    case "type" when value is TypeOfExpressionSyntax type:
+                        row ??= type.Type;
+                        break;
+
+                    case "sql":
+                        sql = value;
+                        break;
+
+                    case "commandType":
+                        query &= CommandTypeRefusal(value) is null;
+                        break;
+                }
+            }
+
+            if (row is not null && query && sql is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.StringLiteralExpression))
+            {
+                mappings.Add(new RowMapping(
+                    row,
+                    literal.Token.ValueText,
+                    TextRange.Between(read.ToClient(literal.SpanStart), read.ToClient(literal.Span.End))));
+            }
+        }
+
+        return mappings;
+    }
+
+    /// <summary>
     /// The places where the unit hands Dapper a text (decisions 109 and 111): one node for
     /// every call <see cref="Parse"/> reads a query of, found by the same search. The entity
     /// pass of the wrapper asks it which classes hold the code around queries rather than an
@@ -408,8 +483,10 @@ public class DapperSqlQueryParser(
     /// and a fragment inside a class, which is what a method needs to be one (decision 111);
     /// a text that does not read without an error has no call to take (decision 128).
     /// </summary>
-    private static IEnumerable<InvocationExpressionSyntax> Calls(string source)
-        => CSharpSource.Read(source).Tree is not { } tree
+    private static IEnumerable<InvocationExpressionSyntax> Calls(string source) => Calls(CSharpSource.Read(source));
+
+    private static IEnumerable<InvocationExpressionSyntax> Calls(CSharpReadResult read)
+        => read.Tree is not { } tree
             ? []
             : tree.GetCompilationUnitRoot()
                 .DescendantNodes()
@@ -423,7 +500,7 @@ public class DapperSqlQueryParser(
     /// which is a loop, projected onto text and position - the same projection the shared
     /// entity and LINQ readings make of the same text.
     /// </summary>
-    private static IEnumerable<SourceToken> Tracked(string source)
+    internal static IEnumerable<SourceToken> Tracked(string source)
     {
         var text = SourceText.From(source);
 
