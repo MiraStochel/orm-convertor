@@ -44,12 +44,18 @@ public class UnitAttributionTest
         var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, sources);
 
         // The run produced artifacts, so the run-level record of decision 045 stays away -
-        // and the barren unit still gets its own.
+        // and the barren unit still gets its own, beside the one saying where its text stopped
+        // reading as C# (decision 128).
         Assert.NotEmpty(result.Sources);
-        var record = Assert.Single(result.Records, r => r.Kind == ConversionRecordKind.Failure);
-        Assert.Equal("unit 2", record.Unit);
-        Assert.Equal(ConversionContentType.CSharp, record.Artifact);
-        Assert.Contains("came of it", record.Reason);
+        var records = result.Records.Where(r => r.Kind == ConversionRecordKind.Failure).ToList();
+        Assert.Equal(2, records.Count);
+        Assert.All(records, record =>
+        {
+            Assert.Equal("unit 2", record.Unit);
+            Assert.Equal(ConversionContentType.CSharp, record.Artifact);
+        });
+        Assert.Contains(records, record => record.Reason.Contains("came of it"));
+        Assert.Contains(records, record => record.Reason.StartsWith("The C# source could not be read at line 1, column 1: ", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -63,8 +69,9 @@ public class UnitAttributionTest
 
         var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, sources);
 
-        var record = Assert.Single(result.Records, r => r.Kind == ConversionRecordKind.Failure);
-        Assert.Equal("Broken.cs", record.Unit);
+        var records = result.Records.Where(r => r.Kind == ConversionRecordKind.Failure).ToList();
+        Assert.Equal(2, records.Count);
+        Assert.All(records, record => Assert.Equal("Broken.cs", record.Unit));
     }
 
     /// <summary>

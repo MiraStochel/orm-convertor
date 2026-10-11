@@ -1,5 +1,6 @@
 using AbstractWrappers;
 using AbstractWrappers.Diagnostics;
+using Common.Reading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -27,6 +28,15 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// </summary>
     public ParseLimits Limits { get; set; } = ParseLimits.Default;
 
+    /// <summary>
+    /// How the unit being read was parsed (decision 128), set at the start of every Parse:
+    /// whether inside the class of a wrapper, as a fragment is, and how a position of the tree
+    /// is taken back to the text the client sent.
+    /// </summary>
+    private CSharpReadResult unit;
+
+    private bool Wrapped => unit.Wrapper is not null;
+
     public bool CanParse(ConversionContentType contentType)
     {
         return contentType == ConversionContentType.CSharp;
@@ -41,7 +51,9 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// queries; one the source framework names as its own API; and a static class, which
     /// cannot have an instance for any framework to materialize. Each of the three says so
     /// in a record, since a class that yields nothing is exactly where a wrong split would
-    /// hide.
+    /// hide. A source Roslyn does not read without an error is a failure record with a line
+    /// and a column, and yields nothing (decision 128); the query pass reads it after this one
+    /// and keeps quiet about it - one fact, one record.
     /// </summary>
     /// <param name="source">C# source code with one or more classes, optionally wrapped in a namespace.</param>
     /// <returns>The entity maps the unit declared; empty when it held no class (decision 066).</returns>
@@ -65,10 +77,35 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
             return [];
         }
 
-        var root = CSharpSyntaxTree.ParseText(source).GetCompilationUnitRoot();
+        // Not translated from what Roslyn wrote in where the text has an error (decision 128):
+        // the unit is refused with the line and the column of the first one, and this pass is
+        // the one that says so, as it is for the cap above.
+        var parsed = CSharpSource.Read(source);
+
+        if (parsed.Reason is { } unreadable)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = entityBuilder.Descriptor.Framework,
+                Artifact = ConversionContentType.CSharp,
+                Reason = unreadable,
+            });
+
+            return [];
+        }
+
+        // A fragment is read inside the class of its wrapper, which the client never wrote: it
+        // is no class of the unit, and positions count from the wrapper's head. A bare method
+        // declares no class of its own (decision 111); a method beside the class of its rows -
+        // what the EF Core escape path writes - declares that one.
+        unit = parsed;
+
+        var root = parsed.Tree!.GetCompilationUnitRoot();
 
         var classes = root.DescendantNodes()
             .OfType<ClassDeclarationSyntax>()
+            .Where(cls => !IsWrapper(cls))
             .ToList();
 
         // Asked only where there is a class to ask about: a fragment holding a method alone
@@ -130,12 +167,21 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// <summary>A class as the conversion identifies it: namespace, containers and name (decision 094).</summary>
     private readonly record struct ClassKey(string? Namespace, string? DeclaringType, string Name);
 
-    private static ClassKey KeyOf(ClassDeclarationSyntax cls)
+    private ClassKey KeyOf(ClassDeclarationSyntax cls)
         => new(GetNamespace(cls), GetDeclaringType(cls), cls.Identifier.Text);
 
     /// <summary>
+    /// The class a fragment was read inside: the one at the top of a wrapped tree. The test is
+    /// the place in the tree, not a name, so that it holds for the tree the query reading
+    /// searched as well - the same text is a fragment to both passes, and each wraps it in a
+    /// class of its own.
+    /// </summary>
+    private bool IsWrapper(TypeDeclarationSyntax type) => Wrapped && type.Parent is CompilationUnitSyntax;
+
+    /// <summary>
     /// The classes in whose own members a query is handed over, each with the member of its
-    /// first handover. Own members: a handover inside a nested class belongs to that class.
+    /// first handover. Own members: a handover inside a nested class belongs to that class,
+    /// and one in a member of a fragment belongs to no class of the unit.
     /// </summary>
     private Dictionary<ClassKey, string?> HandoverMembers(string source)
     {
@@ -143,7 +189,8 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
 
         foreach (var node in FindHandovers(source))
         {
-            if (node.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().FirstOrDefault() is not ClassDeclarationSyntax cls)
+            if (node.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().FirstOrDefault() is not ClassDeclarationSyntax cls
+                || IsWrapper(cls))
             {
                 continue;
             }
@@ -330,9 +377,10 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// <summary>
     /// Where a syntax node stands in the unit, as the builder's reading scopes take it
     /// (decision 125): the node's own span, without the trivia around it, counted in the text
-    /// the client sent - which is the text Roslyn parsed.
+    /// the client sent - the text Roslyn parsed, less the wrapper's head where a fragment was
+    /// read inside one (decision 128).
     /// </summary>
-    protected static TextRange Range(SyntaxNode node) => new(node.Span.Start, node.Span.Length);
+    protected TextRange Range(SyntaxNode node) => new(unit.ToClient(node.Span.Start), node.Span.Length);
 
     /// <summary>
     /// The language facts of one property declaration — the reading every framework shares.
@@ -414,12 +462,14 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// <summary>
     /// The classes this one is nested in, outermost first, or null for a top-level one. Half
     /// of what identifies the entity beside the namespace (decision 094), and nothing the
-    /// model records: a nested class becomes an entity beside its container.
+    /// model records: a nested class becomes an entity beside its container. The class a
+    /// fragment was wrapped in contains nothing the client declared.
     /// </summary>
-    private static string? GetDeclaringType(ClassDeclarationSyntax classDeclaration)
+    private string? GetDeclaringType(ClassDeclarationSyntax classDeclaration)
     {
         var containers = classDeclaration.Ancestors()
             .OfType<ClassDeclarationSyntax>()
+            .Where(cls => !IsWrapper(cls))
             .Select(cls => cls.Identifier.Text)
             .Reverse()
             .ToList();

@@ -227,11 +227,11 @@ public class ConvertEndpointTest(ApiTestHost host)
 
     /// <summary>
     /// Input the parsers cannot read answers 200 with no artifact - and with records saying
-    /// why, instead of the empty <c>records</c> array that used to come back: one about the
-    /// unit that yielded nothing (decision 066) and one about the run that generated nothing
-    /// (decision 045). The status code stays 200 on purpose: a partial conversion has to
-    /// hand over what it produced, so the reason belongs in the records and not in the
-    /// status line.
+    /// why, instead of the empty <c>records</c> array that used to come back: two about the
+    /// unit - where its text stopped reading as C# (decision 128) and that it yielded nothing
+    /// (decision 066) - and one about the run that generated nothing (decision 045). The
+    /// status code stays 200 on purpose: a partial conversion has to hand over what it
+    /// produced, so the reason belongs in the records and not in the status line.
     /// </summary>
     [Fact]
     public async Task InputThatYieldsNothingIsAnsweredWithAReasonRatherThanSilence()
@@ -249,13 +249,14 @@ public class ConvertEndpointTest(ApiTestHost host)
         Assert.Empty(body.RootElement.GetProperty("sources").EnumerateArray());
 
         var records = body.RootElement.GetProperty("records").EnumerateArray().ToList();
-        Assert.Equal(2, records.Count);
+        Assert.Equal(3, records.Count);
         Assert.All(records, record =>
         {
             Assert.Equal((int)ConversionRecordKind.Failure, record.GetProperty("kind").GetInt32());
             Assert.False(string.IsNullOrWhiteSpace(record.GetProperty("reason").GetString()));
         });
-        Assert.Contains(records, record => record.GetProperty("unit").GetString() == "unit 1");
+        Assert.Equal(2, records.Count(record => record.GetProperty("unit").GetString() == "unit 1"));
+        Assert.Contains(records, record => record.GetProperty("reason").GetString()!.StartsWith("The C# source could not be read at line ", StringComparison.Ordinal));
         Assert.Contains(records, record => record.GetProperty("unit").ValueKind == JsonValueKind.Null);
     }
 

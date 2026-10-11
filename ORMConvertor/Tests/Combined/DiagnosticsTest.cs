@@ -316,15 +316,16 @@ public class EmptyConversionTest
         [new() { ContentType = ConversionContentType.CSharp, Content = content }];
 
     /// <summary>
-    /// Roslyn parses almost anything, so text that is not a class comes back as a parse tree
-    /// with no entity in it. Two records on purpose: the unit's own (decision 066) and the
-    /// run's (decision 045) - one says this unit yielded nothing, the other that the whole
-    /// run generated nothing, and they answer different questions.
+    /// C# that reads perfectly well and declares no class - an enum - yields no entity, and
+    /// the run says so rather than answering with nothing. Two records on purpose: the unit's
+    /// own (decision 066) and the run's (decision 045) - one says this unit yielded nothing,
+    /// the other that the whole run generated nothing, and they answer different questions.
+    /// Text that does not read as C# at all gets a third, saying where (decision 128).
     /// </summary>
     [Fact]
     public void InputWithNoEntityInItIsReportedInsteadOfIgnored()
     {
-        var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, Entity("this is not C#"));
+        var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.NHibernate, Entity("public enum Status { Active, Inactive }"));
 
         Assert.Empty(result.Sources);
         Assert.Equal(2, result.Records.Count);

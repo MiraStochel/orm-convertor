@@ -167,8 +167,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// reads the same text for its classes. A unit with no chain in it is therefore no error -
     /// a file holding an entity alone is an ordinary input - and yields no query; whether the
     /// unit yielded anything at all is asked of both passes together (decision 081). A text
-    /// nested beyond the cap yields nothing here either, and says nothing: the entity pass,
-    /// which read the same text first, has reported it.
+    /// nested beyond the cap or one that does not read without an error (decision 128) yields
+    /// nothing here either, and says nothing: the entity pass, which read the same text first,
+    /// has reported it.
     /// </summary>
     public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? maps = null)
     {
@@ -210,7 +211,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// than an entity, and the answer has to be the one the query pass acts on - two searches
     /// would sooner or later disagree, and a class would come out as both or as neither. The
     /// nodes belong to the tree this parser reads, in which a class keeps its name, its
-    /// namespace and its members; a text nested beyond the cap has none.
+    /// namespace and its members; a text nested beyond the cap or one that does not read has
+    /// none.
     /// </summary>
     public IReadOnlyList<SyntaxNode> FindHandovers(string source)
     {
@@ -227,7 +229,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// written (decision 092), a file parsed as it stands and a fragment wrapped
     /// (decision 111), the query expressions rewritten into the chains the language defines
     /// them as (decision 103), and the variables of the unit that hold a query described
-    /// (decision 109). False for a text nested beyond the cap, which is not parsed at all.
+    /// (decision 109). False for a text nested beyond the cap, which is not parsed at all, and
+    /// for one that does not read without an error, which is not searched (decision 128).
     /// </summary>
     private bool Prepare(string source, out SyntaxNode root, out QueryExpressionRewriter rewriter)
     {
@@ -240,7 +243,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return false;
         }
 
-        root = CSharpUnit.Parse(source, Wrap).GetCompilationUnitRoot();
+        // A query is not read out of what Roslyn wrote into a broken text (decision 128).
+        if (CSharpSource.Read(source, Wrapper).Tree is not { } tree)
+        {
+            return false;
+        }
+
+        root = tree.GetCompilationUnitRoot();
 
         // A query expression is read as the method chain the language defines it as
         // (decision 103), so from here on there is only the one shape to read.
@@ -321,15 +330,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
     }
 
-    private static string Wrap(string source) =>
+    private static readonly FragmentWrapper Wrapper = new(
         "using System;\n" +
         "using System.Linq;\n" +
         "using System.Collections.Generic;\n" +
         "\n" +
         "public class Snippet\n" +
-        "{\n" +
-        source +
-        "\n}\n";
+        "{\n",
+        "\n}\n");
 
     /// <summary>
     /// One query of the unit (decision 109): a chain over a query root, a chain whose query

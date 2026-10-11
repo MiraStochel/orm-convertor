@@ -116,8 +116,9 @@ public class DapperSqlQueryParser(
     /// reads the same text for its classes. One without a Dapper call is therefore no error -
     /// a file holding an entity alone is an ordinary input - and yields no query; whether the
     /// unit yielded anything at all is asked of both passes together (decision 081). A text
-    /// nested beyond the cap yields nothing here either, and says nothing: the entity pass,
-    /// which read the same text first, has reported it.
+    /// nested beyond the cap or one that does not read without an error (decision 128) yields
+    /// nothing here either, and says nothing: the entity pass, which read the same text first,
+    /// has reported it.
     /// </summary>
     public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
@@ -393,7 +394,7 @@ public class DapperSqlQueryParser(
     /// every call <see cref="Parse"/> reads a query of, found by the same search. The entity
     /// pass of the wrapper asks it which classes hold the code around queries rather than an
     /// entity, and the answer has to be the one the query pass acts on. A text nested beyond
-    /// the cap has none, because it is not parsed.
+    /// the cap has none, because it is not parsed, and neither has one that does not read.
     /// </summary>
     public static IReadOnlyList<SyntaxNode> FindHandovers(string source, ParseLimits? limits = null)
         => NestingDepthGuard.FirstBeyond(Tracked(source), limits ?? ParseLimits.Default) is not null
@@ -404,16 +405,18 @@ public class DapperSqlQueryParser(
     /// Every call of a SqlMapper method in the unit, in the order of the text: a member call
     /// by one of the names Dapper sends SQL under, with an argument - ADO.NET's own
     /// ExecuteReader or ExecuteScalar on a command takes none. A file is parsed as it stands
-    /// and a fragment inside a class, which is what a method needs to be one (decision 111).
+    /// and a fragment inside a class, which is what a method needs to be one (decision 111);
+    /// a text that does not read without an error has no call to take (decision 128).
     /// </summary>
     private static IEnumerable<InvocationExpressionSyntax> Calls(string source)
-        => CSharpUnit.Parse(source, fragment => "public class Snippet\n{\n" + fragment + "\n}\n")
-            .GetCompilationUnitRoot()
-            .DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .Where(invocation => invocation.Expression is MemberAccessExpressionSyntax member
-                && DapperMethods.Contains(member.Name.Identifier.Text)
-                && invocation.ArgumentList.Arguments.Count > 0);
+        => CSharpSource.Read(source).Tree is not { } tree
+            ? []
+            : tree.GetCompilationUnitRoot()
+                .DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .Where(invocation => invocation.Expression is MemberAccessExpressionSyntax member
+                    && DapperMethods.Contains(member.Name.Identifier.Text)
+                    && invocation.ArgumentList.Arguments.Count > 0);
 
     /// <summary>
     /// The C# text as the shared nesting guard reads it (decision 092): Roslyn's own lexer,

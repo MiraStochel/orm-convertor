@@ -218,7 +218,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | volání a nápovědy, které mění řádky: Hibernate `setPage`, `getKeyedResultList`, `getResultCount`; EclipseLink `eclipselink.jdbc.max-rows`, `eclipselink.jdbc.first-result`, `eclipselink.history.as-of` (i `.scn`), `eclipselink.query-type` | model je nenese, bez nich jiné řádky | `Failure` (č), i v pozdějším příkazu; pod Hibernatem je nápověda EclipseLinku `Loss` | VM | [070], [109] |
 | `commandType` Dapperu `StoredProcedure`, `TableDirect` nebo spočtený za běhu | text jde jako jméno procedury či tabulky, nebo se rozhodne za běhu | `Failure` (č) se jménem typu | VM | [053], [109] |
 | vstup zanořený hlouběji než strop (výchozí 128, nastavuje provozovatel) | sestup by mohl shodit proces | `Failure` s řádkem a sloupcem před sestupem; XML strop nemá | VM | [092] |
-| nečitelný text jednotky | — | `Failure` s řádkem a sloupcem u SQL, Javy, HQL, JPQL, XML; u C# bez pozice (otevřené, *Zbytky*) | Z S7 | [093] |
+| nečitelný text jednotky, u C# i text, který Roslyn přečte jen zotavením | co Roslyn dopsal, klient nenapsal | `Failure` s řádkem a sloupcem, kde čtení skončilo, ve všech šesti jazycích | VM | [093], [128] |
 
 ### 2.4 Parametry
 
@@ -473,6 +473,7 @@ Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhod
 [122]: ./decisions/122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md
 [123]: ./decisions/123-a-native-query-of-eclipselink-expands-a-collection-parameter-at-run-time.md
 [127]: ./decisions/127-unique-on-a-foreign-key-column-states-what-the-framework-has-no-other-place-for.md
+[128]: ./decisions/128-a-csharp-unit-with-a-syntax-error-is-refused-with-a-position.md
 [§1v]: ./architecture.md#zafixované-verze
 [§4.1]: ./architecture.md#41-entity-a-mapování
 [§4.2]: ./architecture.md#42-primární-klíč

@@ -54,7 +54,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
 | [Sdílená entitní báze](#sdílená-entitní-báze-roste-a-rozšiřovací-plocha-ne) | Užitečné | rozhodnutí | S1 |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | — |
-| [Syntaktická chyba v C# bez pozice](#syntaktickou-chybu-v-c-nehlásí-nikdo-s-pozicí) | Zbytky | rozhodnutí | F11, S7 |
 | [Alias v SQL jako mapování Dapperu](#alias-v-sql-jako-zdroj-mapování-dapperu) | Zbytky | rozhodnutí | F6 |
 | [Fluent konfigurace EF Core](#fluent-konfigurace-ef-core-jako-vstupní-jednotka) | Zbytky | rozhodnutí | F1, F5 |
 | [Dapper.Contrib](#dappercontrib-v-rozsahu-nebo-mimo-něj) | Zbytky | rozhodnutí | F6 |
@@ -229,11 +228,6 @@ Hlášené atributy mají jen `<class>` a `<property>`. Beze slova se přeskakuj
 Zdokumentované mezery a nezodpovězené otázky, na které se nesahá. Jsou tu, aby nález nezůstal jen v konverzaci a aby text práce věděl, co nástroj o svých frameworcích netvrdí.
 
 ### Rozhodnutí
-
-#### Syntaktickou chybu v C# nehlásí nikdo s pozicí
-*Vyšlo z rozh. [093](./decisions/093-unreadable-input-is-a-unit-failure.md), které případ nechalo stranou. Souvisí s [045](./decisions/045-a-conversion-that-produced-nothing-says-so.md). Požadavky F11, S7.*
-
-Parser bere z `CSharpSyntaxTree.ParseText` deklarace tříd a diagnostiky Roslynu nečte, takže rozbitá třída skončí obecným `Failure` orchestrace bez pozice; ostatní čtyři jazyky řádek a sloupec hlásí. Věta §9, že syntaktickou chybu C# hlásí server, platí jen v tom smyslu, že z jednotky nic nevzešlo. Roslyn ale zotavuje: odmítnout jednotku se syntaktickou chybou sjednotí jazyky, vezme však překlad vstupům, které dnes projdou; hlásit a přeložit, co se zotavilo, odporuje významu `Failure` (§5.1).
 
 #### Alias v SQL jako zdroj mapování Dapperu
 *Souvisí s rozh. [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), [017](./decisions/017-source-precedence-for-mapping-facts.md) a [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md). Podklad: [srovnání frameworků](./analysis/orm-frameworks-comparison.md), §4, a [tutoriál k Dapperu](./analysis/tutorials/dapper-getting-started.md), krok 4. Požadavek F6.*
