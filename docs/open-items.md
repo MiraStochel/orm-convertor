@@ -50,7 +50,6 @@ Rejstřík položek, ne pořadí; kategorie jdou od nejbližší práce po zbytk
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
 | [Unikátní omezení nad sloupcem cizího klíče bez skaláru](#unikátní-omezení-nad-sloupcem-cizího-klíče-který-mapuje-jen-navigace) | Užitečné | rozhodnutí | F2, F4, F5 |
 | [Atributy ostatních prvků NHibernate mapování](#atributy-ostatních-prvků-nhibernate-mapování-mizí-beze-slova) | Užitečné | práce | F11 |
-| [Druhý databázový dialekt](#druhý-databázový-dialekt) | Užitečné | rozhodnutí | F5, F7–F10, S2 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
 | [Sdílená entitní báze](#sdílená-entitní-báze-roste-a-rozšiřovací-plocha-ne) | Užitečné | rozhodnutí | S1 |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | — |
@@ -190,11 +189,6 @@ Mimo Linux a Docker chybí `libadvisor.so`; `AdvisorRunHandler` vrátí text `Dl
 Prospělo by to, ale žádná věta záruk na tom nestojí a nic tím není blokované. Značky pořadí položky nedostávají.
 
 ### Rozhodnutí
-
-#### Druhý databázový dialekt
-*Plyne z rozh. [086](./decisions/086-target-database-dialect-declared-by-the-descriptor.md); jednu ze tří otázek odbavilo [088](./decisions/088-a-declared-foreign-source-dialect-is-not-read.md). Souvisí s [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md) a [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md). Vyňatá oblast 5 (§9). Požadavky F5, F7–F10, S2.*
-
-Nástroj píše pro SQL Server 2022 a deklarace cizího dialektu zdroje čtení zastaví (rozh. 088). Zbývá rozhodnout: **čím se dialekt volí** — dnes jediná hodnota v deskriptoru bez volby z rozhraní, pravděpodobně spolu s volbou verze frameworku, kterou nechalo otevřenou rozh. [013](./decisions/013-target-framework-versions.md); **zda platí zamítnutí multidialektové knihovny** — rozh. 082 argumentovalo tichým překladem, který deklarace odstranila, cena (gramatika a tabulka jmen navíc) ale trvá a bez druhého systému k ověření je užitek nulový; a **co dělat, když se dialekt zdroje a cíle rozejdou** — vznikne to až se dvěma čitelnými dialekty, kdy se zábrana z 088 stane přepínačem. Druhý dialekt by potřeboval i vlastní zapisovač únikové cesty.
 
 #### Vynucení stylu a reprodukovatelnost sestavení
 *Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.4. Souvisí s rozh. [034](./decisions/034-central-version-management.md) a [039](./decisions/039-container-configuration-of-the-environment.md). Požadavky S2, S5.*

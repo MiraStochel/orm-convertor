@@ -67,7 +67,7 @@ Záměr ([`zamer.tex`](./zamer.tex)) jmenuje pět úkolů řešitele: 1–4 jsou
 | Úkol záměru | Co ho plní | Zúžení a proč |
 |---|---|---|
 | **1** „rozšířit mezireprezentaci … o složitější mapovací konstrukce, zejména komplexní identifikátory" | F1–F3: `Model` (`PrimaryKey`, `Relation`), wrappery Dapper, EF Core, NHibernate (rozh. [005], [006], [031]) | Dědičnost, komponenty a spojené tabulky model nenese: oblast 2 ([§9 hranice]). |
-| **2** „doplňování a slučování metadat … ze zdrojového kódu a databázového schématu" | F4–F6: `DatabaseCatalog`, fáze doplňování mezi parserem a builderem (rozh. [015], [017]) | Katalog čte jen SQL Server, cílem je jen SQL Server 2022; druhý dialekt je oblast 5 ([§9 hranice]). |
+| **2** „doplňování a slučování metadat … ze zdrojového kódu a databázového schématu" | F4–F6: `DatabaseCatalog`, fáze doplňování mezi parserem a builderem (rozh. [015], [017]) | Katalog čte jen SQL Server, cílem je jen SQL Server 2022; jiný dialekt je vyňatá oblast 5 ([§9 hranice]) a druhý se nepřidává (rozh. [129]). |
 | **3** „podporu Java frameworků Hibernate, EclipseLink a MyBatis" | F7–F10, F12: tři javové wrappery nad `JavaEntityParsing`, `JakartaPersistence` a `TransactSql` (rozh. [076], [077], [080], [084]); javová sada | Každý framework sám za sebe, ne „javový ekosystém" ([§9]). MyBatis nepřekládá dynamický příkaz (`<if>`, `<choose>`, `<bind>`): rozh. [084] čte „dynamicky parametrizované dotazy" z F8 jako parametry, argument v [subset.md], části 3. EclipseLink netvrdí líné načtení reference (rozh. [080]). |
 | **4** „rozšířit podporu překladu read-only dotazů" | překlad dotazů ve 36 směrech (sekce *Guarantees*, *Covered*), změřený na 50 kategoriích matice T2 a diferenčně podle F13 (rozh. [089], [113]) | Meze konstrukce po konstrukci: [subset.md], část 2; nativní SQL váže artefakt na SQL Server 2022. T2 jako experimentální požadavek (tabulka s metrikami T3) zůstává vyňatý (oblast 6). |
 | **5** „testovací a běhové prostředí pro automatizované ověřování a experimenty" | jen ověřovací polovina: S5 — profil `test`, obě sady v kontejneru a v CI (rozh. [039], [089]) | Experimentální pipeline neexistuje (zúžení S5, [§9]); otevřené v [`open-items.md`, *Experimentální pipeline, kterou záměr žádá, neexistuje*](./open-items.md#experimentální-pipeline-kterou-záměr-žádá-neexistuje). |
@@ -136,3 +136,4 @@ Povinný uzavírací krok: změna chování, která se dotkne toho, co požadave
 [113]: ./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md
 [117]: ./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md
 [118]: ./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md
+[129]: ./decisions/129-sql-server-2022-stays-the-only-database-dialect.md

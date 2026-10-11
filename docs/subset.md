@@ -148,7 +148,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | Konstrukce | Proč | Co nástroj udělá | Druh | Rozh. |
 |---|---|---|---|---|
 | dědičnost, komponenty, spojené tabulky: NHibernate `<subclass>`, `<joined-subclass>`, `<union-subclass>`, `<component>`, `<dynamic-component>`, `<join>`, `<natural-id>`, `<idbag>`, `<array>`, `<primitive-array>`, `<any>`, kolekce hodnot či komponent; bázový typ C# třídy, který jmenuje jinou entitu převodu (EF Core = table per hierarchy), i třídu mimo převod (první položka bázového seznamu C#, `extends` v Javě: co by entita zdědila, převod nevidí); JPA `@Inheritance`, `extends` mezi dvěma `@Entity`, `@MappedSuperclass`, `@Embedded`, `@ElementCollection`, `@SecondaryTable`; EF Core `[Owned]`, `[ComplexType]`, primitivní kolekce (`List<string>`: prvek skalár či klíčové slovo C#, jeden sloupec JSON) | model nese jen plochou třídu | `Loss` u každého prvku (č); hierarchie = nesouvisející entity; `@MappedSuperclass` s vlastním záznamem = samostatná entita, jejíž atributy dědící entity nedostanou | VO 2 | [030], [048] |
-| dialekt: jediný je SQL Server 2022 z deskriptoru; zdroj s jiným deklarovaným dialektem; katalog u něj; `CHECK` a výchozí hodnota sloupce jako doslovný SQL výraz | verze nese jeden dialekt | cizí dialekt zastaví čtení doslovného SQL (`Failure`) i doslovného typu sloupce (`Loss`, `DatabaseType`); katalog fakta dodá s jediným `Conflict`; `CHECK`, `default` `Loss`; artefakt únikové cesty vázaný na dialekt | VO 5 | [086], [088], [091], [055] |
+| dialekt: jediný je SQL Server 2022 z deskriptoru; zdroj s jiným deklarovaným dialektem; katalog u něj; `CHECK` a výchozí hodnota sloupce jako doslovný SQL výraz | jeden dialekt vymezuje předmět práce a drží měření jednoznačná; druhý se nepřidává | cizí dialekt zastaví čtení doslovného SQL (`Failure`) i doslovného typu sloupce (`Loss`, `DatabaseType`); katalog fakta dodá s jediným `Conflict`; `CHECK`, `default` `Loss`; artefakt únikové cesty vázaný na dialekt | VO 5 | [086], [088], [091], [055], [129] |
 
 `CHECK` a výchozí hodnotu řadí do VO 5 §9; rozhodnutí 055 je za vyňatou oblast nemělo. Platí §9.
 
@@ -474,6 +474,7 @@ Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhod
 [123]: ./decisions/123-a-native-query-of-eclipselink-expands-a-collection-parameter-at-run-time.md
 [127]: ./decisions/127-unique-on-a-foreign-key-column-states-what-the-framework-has-no-other-place-for.md
 [128]: ./decisions/128-a-csharp-unit-with-a-syntax-error-is-refused-with-a-position.md
+[129]: ./decisions/129-sql-server-2022-stays-the-only-database-dialect.md
 [§1v]: ./architecture.md#zafixované-verze
 [§4.1]: ./architecture.md#41-entity-a-mapování
 [§4.2]: ./architecture.md#42-primární-klíč

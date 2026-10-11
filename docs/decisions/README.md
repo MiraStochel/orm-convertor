@@ -131,6 +131,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 126 | [Čísla řádků v editoru jednotky vlastním kódem, ne hotovým editorem](126-line-numbers-in-the-unit-editor-by-own-code-not-an-editor-library.md) | platí | S5, S7 |
 | 127 | [`unique` nad sloupcem cizího klíče tvrdí to, pro co framework nemá jiné místo: v JPA unikátní omezení, v NHibernatu kardinalitu](127-unique-on-a-foreign-key-column-states-what-the-framework-has-no-other-place-for.md) | platí | F2, F5, F11, S2 |
 | 128 | [Jednotka C# se syntaktickou chybou se odmítá s pozicí, ne překládá ze stromu, který Roslyn dopsal](128-a-csharp-unit-with-a-syntax-error-is-refused-with-a-position.md) | platí | F11, F14, S4, S7 |
+| 129 | [Jediným databázovým dialektem zůstává SQL Server 2022; druhý se nepřidává, deklarace a zábrana cizího dialektu zůstávají](129-sql-server-2022-stays-the-only-database-dialect.md) | platí | F4, F5, F7–F10, F11, F13, S2, S5, S6, S7, T2, T3 |
 
 ## Formát
 
