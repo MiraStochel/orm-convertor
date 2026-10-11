@@ -16,12 +16,18 @@ import jakarta.persistence.EntityManagerFactory;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -141,6 +147,74 @@ final class PreparedJavaQuery implements AutoCloseable {
         } catch (InvocationTargetException e) {
             throw e.getCause() instanceof Exception cause ? cause : e;
         }
+    }
+
+    /**
+     * The third level without a run: a JPA target creates the query, which is where Hibernate
+     * and EclipseLink parse JPQL, with a value of the declared type for every parameter, so
+     * that a typed parameter is bound as the signature says; nothing executes. MyBatis bound
+     * the statement when its factory was built, so there is nothing left to do for it.
+     */
+    void accept() throws Exception {
+        if (target == Orm.MYBATIS) {
+            return;
+        }
+
+        try (EntityManager manager = jpa.createEntityManager()) {
+            Type[] types = method.getGenericParameterTypes();
+            Object[] values = new Object[types.length];
+            values[0] = manager;
+            for (int index = 1; index < types.length; index++) {
+                values[index] = sample(types[index]);
+            }
+
+            if (method.invoke(null, values) == null) {
+                throw new AssertionError(method.getName() + " returned no query.");
+            }
+        } catch (InvocationTargetException e) {
+            throw e.getCause() instanceof Exception cause ? cause : e;
+        }
+    }
+
+    /** A value of the parameter's declared type; a collection takes one element of its element type. */
+    private static Object sample(Type type) {
+        if (type instanceof ParameterizedType parameterized && parameterized.getRawType() instanceof Class<?> raw
+                && Collection.class.isAssignableFrom(raw)) {
+            return List.of(sample(parameterized.getActualTypeArguments()[0]));
+        }
+
+        if (type == long.class || type == Long.class) {
+            return 1L;
+        }
+        if (type == int.class || type == Integer.class) {
+            return 1;
+        }
+        if (type == short.class || type == Short.class) {
+            return (short) 1;
+        }
+        if (type == double.class || type == Double.class) {
+            return 1.0;
+        }
+        if (type == boolean.class || type == Boolean.class) {
+            return Boolean.TRUE;
+        }
+        if (type == String.class) {
+            return "x";
+        }
+        if (type == BigDecimal.class) {
+            return BigDecimal.ONE;
+        }
+        if (type == LocalDate.class) {
+            return LocalDate.of(2011, 1, 1);
+        }
+        if (type == LocalDateTime.class) {
+            return LocalDateTime.of(2011, 1, 1, 0, 0);
+        }
+        if (type == OffsetDateTime.class) {
+            return OffsetDateTime.of(2011, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
+        }
+
+        throw new IllegalStateException("No sample value for a parameter of type " + type.getTypeName() + ".");
     }
 
     /**

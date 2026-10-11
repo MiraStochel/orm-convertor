@@ -417,6 +417,20 @@ Hibernate = hibernate/FindIntermediateResultReadTwice.jpql
 MyBatis = mybatis/FindIntermediateResultReadTwiceMapper.xml
 fallbackBy = NHibernate:IntermediateResult, EclipseLink:IntermediateResult
 
+# The collection parameter inside the body of an intermediate result, the shape BI 12 of
+# the LDBC catalog has: the two targets without an intermediate result write it in native
+# SQL, and the native query of EclipseLink, which does not expand a list, gets the list
+# expanded by the generated method (decision 123). The same two sources are missing as in
+# the row above, and the Dapper row is refused without a catalog like the collection
+# parameter's. The MyBatis row lists the interface, which types the list.
+[CollectionParameterOverAnIntermediateResult]
+Dapper = dapper/FindCollectionParameterOverAnIntermediateResult.sql
+EFCore = efcore/FindCollectionParameterOverAnIntermediateResult.query.cs
+Hibernate = hibernate/FindCollectionParameterOverAnIntermediateResult.jpql
+MyBatis = mybatis/FindCollectionParameterOverAnIntermediateResultMapper.query.java, mybatis/FindCollectionParameterOverAnIntermediateResultMapper.xml
+refusedWithoutCatalog = Dapper:QueryParameter
+fallbackBy = NHibernate:IntermediateResult, EclipseLink:IntermediateResult
+
 # ---- the rows of decision 113, native SQL ----
 #
 # A count and a sum over every row the filter keeps, without a grouping: one row. A LINQ

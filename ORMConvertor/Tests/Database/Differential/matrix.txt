@@ -401,6 +401,18 @@ shape = projection
 ordered = false
 mutations = filter, operator
 
+# The list inside the definition (decision 123): products 2 and 4 have four lines over
+# three orders, one, one and two. The filter stands inside the definition, which HQL
+# writes on one line, so the filter mutation cannot reach it; the projection swap reaches
+# the definition's own projection in every form and joins the counts to the wrong orders.
+[CollectionParameterOverAnIntermediateResult]
+category = CollectionParameterOverAnIntermediateResult
+fields = CompanyId, OrderId, Lines
+shape = projection
+ordered = false
+arguments = ids:int[]=2;4
+mutations = projection
+
 # A count and a sum without a grouping (decision 113), one row, which EF Core writes in
 # native SQL. Five lines have a quantity above five and sum to 55; flipped, the other five
 # sum to 11; dropped, all ten sum to 66.

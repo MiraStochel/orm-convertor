@@ -211,8 +211,7 @@
             no record of the persons it has reached, so an unbounded walk multiplies at every
             step. IC&nbsp;13, BI&nbsp;15, BI&nbsp;19 and BI&nbsp;20 walk two steps from each
             end and meet in the middle, so they reach four steps; IC&nbsp;14 carries whole
-            paths and walks three steps from one end. IC&nbsp;7 counts the latency of a like by the seconds
-            whose boundaries it crosses, which puts a few latencies one minute later.
+            paths and walks three steps from one end.
           </p>
         </article>
         <article>
@@ -233,23 +232,26 @@
       </p>
       <p>
         <strong>EF Core writes <span class="ldbc-fallback-count" data-target="30"></span> in
-        native SQL</strong>: recursion and a window, which LINQ does not have, a list over a
-        subquery, which EF Core joins on the client, a count over the whole result, which
-        ends a LINQ chain instead of forming a query, and an ordering by a count the query
-        projects and then by a key it does not, under <code>TOP</code> (IC&nbsp;5). An outer
-        join that also filters in its <code>ON</code> clause it writes in LINQ: the filter of
-        the joined table before the join, or the rows of that table that meet the whole
-        condition, row by row. <strong>NHibernate writes
+        native SQL</strong>: recursion and a window, which LINQ does not have, and a count
+        over the whole result, which ends a LINQ chain instead of forming a query
+        (BI&nbsp;11). An outer join that also filters in its <code>ON</code> clause it writes
+        in LINQ: the filter of the joined table before the join, or the rows of that table
+        that meet the whole condition, row by row. <strong>NHibernate writes
         <span class="ldbc-fallback-count" data-target="20"></span> and EclipseLink
         <span class="ldbc-fallback-count" data-target="50"></span> in native SQL</strong>: the
         queries over the result of another or over themselves, arithmetic over dates and
         lists, which HQL of NHibernate 5.7 and JPQL do not have, and for EclipseLink a
-        grouping key with a literal in it, which it binds as a parameter.
+        conversion of a type (BI&nbsp;1), whose JPQL hands the Java type name to SQL Server.
+        A list parameter in that native SQL (BI&nbsp;12) the generated EclipseLink method
+        expands itself, one placeholder per element, because the native query of
+        EclipseLink&nbsp;5.0 does not. Four queries whose outer join named an inner join
+        (IS&nbsp;7, IC&nbsp;5, BI&nbsp;2, BI&nbsp;5) are written so that it does not &mdash;
+        the same sentence with another root, or an existence test &mdash; because EclipseLink
+        writes its inner joins after the outer ones; the note of each says so.
         <strong>Hibernate writes <span class="ldbc-fallback-count" data-target="40"></span></strong>:
         a text converted into a text, which HQL 7.4 writes as <code>varchar(max)</code>.
-        <strong>EclipseLink refuses <span class="ldbc-refusal-count" data-target="50"></span></strong>
-        of them, because its native query does not expand a list parameter. Every other
-        translated query reaches all five targets in their own query language.
+        No target refuses a query. Every other translated query reaches all five targets in
+        their own query language.
       </p>
 
       <h3 id="by-target">Every query in every target</h3>
@@ -273,9 +275,10 @@
         NHibernate artifacts compile. Whether it returns the right rows is judged for the 21
         Interactive queries by LDBC's own validation set, replayed against the generated
         artifact of every framework: a query translated as specified has to agree with it on
-        every read, a simplified one reports how many reads agree. LDBC publishes no such set
-        for the Business Intelligence queries over this data, so their status is the
-        author's claim. Every text below does run, against the LDBC tables, in the test suite.
+        every read, a simplified one reports how many reads agree. Each query below names the
+        operation of the validation set that judges it. LDBC publishes no such set for the
+        Business Intelligence queries over this data, so their status is the author's claim.
+        Every text below does run, against the LDBC tables, in the test suite.
       </p>
     </section>
 
@@ -315,6 +318,7 @@
         <span class="query-translation badge"></span>
       </header>
       <p class="query-note"></p>
+      <p class="query-judge muted-note" hidden></p>
       <p class="query-refusals" hidden></p>
       <p class="query-fallbacks" hidden></p>
       <details class="query-text" hidden>

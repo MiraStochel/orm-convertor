@@ -535,6 +535,15 @@ public static class QueryShapeInputs
             linq: ["var ", "Lines = g.Count()", ".Join(", ".lc.Lines >= ", ".Max(m => m.Lines)"],
             jpa: ["with ", "count(ol) as Lines", "join ", " lc on ", "lc.Lines >= (select max(m.Lines) from "]),
 
+        // The list stands inside the definition. The two targets that fall back carry the SQL
+        // marks, as every fallback does; the expansion EclipseLink's method writes around them
+        // (decision 123) is asserted by NativeSqlTest and run by both suites' differential matrix.
+        ["CollectionParameterOverAnIntermediateResult"] = Hallmarks(
+            sql: ["WITH ", "ol.ProductId IN @ids", "COUNT(*) AS Lines", " lc ON "],
+            linq: ["var ", "ids.Contains(ol.ProductId", "Lines = g.Count()", ".Join("],
+            jpa: ["with ", "ol.ProductId in :ids", "count(ol) as Lines", " lc on "],
+            myBatis: ["WITH ", "<foreach", "COUNT(*) AS Lines", " lc ON "]),
+
         // ---- the rows of decision 113, native SQL ----
         //
         // EF Core writes the first in native SQL and so carries the SQL hallmarks; the second

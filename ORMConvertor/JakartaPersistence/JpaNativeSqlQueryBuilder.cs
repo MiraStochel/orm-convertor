@@ -22,7 +22,7 @@ namespace JakartaPersistence;
 /// query, and what the third level of verification reads (decision 113).
 /// </summary>
 /// <param name="descriptor">The descriptor of the JPA target whose records these are.</param>
-/// <param name="profile">The implementation's profile: whether its native query expands a collection.</param>
+/// <param name="profile">The implementation's profile: whether its native query expands a collection, or the method has to (decision 123).</param>
 public sealed class JpaNativeSqlQueryBuilder(TargetFrameworkDescriptor descriptor, JpaImplementationProfile profile)
     : AbstractSqlQueryBuilder
 {
@@ -42,43 +42,87 @@ public sealed class JpaNativeSqlQueryBuilder(TargetFrameworkDescriptor descripto
 
     protected override List<ConversionSource> Emit(string sql, string? resultEntity)
     {
-        if (!profile.NativeQueryExpandsCollection && Parameters.FirstOrDefault(p => p.IsCollection) is { } collection)
-        {
-            Report(
-                ConversionRecordKind.Failure,
-                $"A native query of {Descriptor.Framework} does not expand a collection bound to a parameter into the list IN ranges over, so the collection parameter {QueryParameterNaming.IdentifierFor(collection)} has no form in its native SQL; no artifact was generated.",
-                QueryFeature.QueryParameter);
-            return [];
-        }
-
         if (RefusesAnEntityOverDifferentRows(resultEntity, "createNativeQuery with the entity class"))
         {
             return [];
         }
 
-        var positions = Parameters
+        // Where the implementation expands a collection itself (Hibernate 7.4.5), every
+        // parameter takes the next position in the order of the signature and is bound once.
+        // Where it does not (EclipseLink 5.0.0), the method expands the collection (decision
+        // 123): the scalars take the positions 1..s, each collection as many positions after
+        // them as it has elements, counted when the method runs.
+        var expanded = profile.NativeQueryExpandsCollection
+            ? []
+            : Parameters.Where(p => p.IsCollection).ToList();
+        var fixedParameters = Parameters.Where(p => !expanded.Contains(p)).ToList();
+        var positions = fixedParameters
             .Select((parameter, index) => (parameter, index))
             .ToDictionary(pair => QueryParameterNaming.IdentifierFor(pair.parameter), pair => pair.index + 1, StringComparer.Ordinal);
 
         var text = SqlPlaceholders.Respell(sql, Parameters, p =>
         {
-            var position = $"?{positions[QueryParameterNaming.IdentifierFor(p)]}";
-            return p.IsCollection ? $"({position})" : position;
+            var name = QueryParameterNaming.IdentifierFor(p);
+            if (!positions.TryGetValue(name, out var position))
+            {
+                return $"(?{name})";
+            }
+
+            return p.IsCollection ? $"(?{position})" : $"?{position}";
         });
 
         var resultClass = resultEntity is null ? string.Empty : $", {resultEntity}.class";
-        var binding = string.Concat(Parameters.Select(p =>
+        var binding = string.Concat(fixedParameters.Select(p =>
         {
             var name = QueryParameterNaming.IdentifierFor(p);
             return $"\n        .setParameter({positions[name]}, {name})";
         }));
 
+        if (expanded.Count == 0)
+        {
+            var plain =
+                $$""""
+                public static Query {{MethodName}}(EntityManager em{{JpaQueryMethod.Parameters(Parameters)}}) {
+                    return em.createNativeQuery("""
+                {{JpaQueryMethod.TextBlock(text)}}
+                        """{{resultClass}}){{binding}};
+                }
+                """";
+
+            return
+            [
+                new() { Content = plain, ContentType = ConversionContentType.JavaQuery },
+                new() { Content = sql, ContentType = ConversionContentType.SqlQuery },
+            ];
+        }
+
+        var names = expanded.Select(QueryParameterNaming.IdentifierFor).ToList();
+        var placeholders = string.Concat(names.Select(name =>
+            $$"""
+
+                var {{name}}Placeholders = new StringBuilder();
+                for (var i = 0; i < {{name}}.size(); i++) {
+                    {{name}}Placeholders.append(i == 0 ? "?" : ", ?").append(++position);
+                }
+            """));
+        var replacements = string.Concat(names.Select(name => $".replace(\"(?{name})\", \"(\" + {name}Placeholders + \")\")"));
+        var elements = string.Concat(names.Select(name =>
+            $$"""
+
+                for (var element : {{name}}) {
+                    query.setParameter(++position, element);
+                }
+            """));
+
         var method =
             $$""""
             public static Query {{MethodName}}(EntityManager em{{JpaQueryMethod.Parameters(Parameters)}}) {
-                return em.createNativeQuery("""
+                var position = {{fixedParameters.Count}};{{placeholders}}
+                var query = em.createNativeQuery("""
             {{JpaQueryMethod.TextBlock(text)}}
-                    """{{resultClass}}){{binding}};
+                    """{{replacements}}{{resultClass}}){{binding}};
+                position = {{fixedParameters.Count}};{{elements}}
+                return query;
             }
             """";
 

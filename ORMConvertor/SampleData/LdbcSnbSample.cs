@@ -366,20 +366,6 @@ public static class LdbcSnbSample
     private static readonly LdbcFallback HibernateTextCast = new(Model.ORMEnum.Hibernate,
         "HQL of Hibernate 7.4 converts a text into varchar(max), which would lose characters a tag name may hold, so the query goes out as native SQL through createNativeQuery.");
 
-    /// <summary>
-    /// An outer join whose condition names an inner join: EclipseLink 5.0 writes the inner joins
-    /// after every outer one, and SQL Server refuses the condition (measured the same way).
-    /// </summary>
-    private static readonly LdbcFallback EclipseLinkOuterJoinOrder = new(Model.ORMEnum.EclipseLink,
-        "EclipseLink 5.0 writes the inner joins after the outer ones, so the condition of the outer join would name a table SQL Server has not met yet; the query goes out as native SQL through createNativeQuery.");
-
-    /// <summary>
-    /// The one shape the native query of EclipseLink cannot take: a list parameter, which it
-    /// hands the driver as one value instead of expanding it (decision 113, measured).
-    /// </summary>
-    private static readonly LdbcRefusal EclipseLinkNativeList = new(Model.ORMEnum.EclipseLink,
-        "The query needs native SQL here, and a native query of EclipseLink 5.0 does not expand a list parameter into the values IN ranges over.");
-
     private static readonly LdbcParameter PersonId = new("personId", "BIGINT", "4398046513938");
     private static readonly LdbcParameter MessageId = new("messageId", "BIGINT", "1374390048303");
 
@@ -505,21 +491,23 @@ public static class LdbcSnbSample
             ])),
 
         new("is7", LdbcWorkload.InteractiveShort, 7, "Replies of a message", LdbcTranslation.AsSpecified,
-            "Direct replies with their authors and whether the author of the reply knows the author of the message: an "
-            + "outer join along knows and a CASE over whether it found a row. The flag is 1 or 0.",
+            "Direct replies with their authors and whether the author of the reply knows the author of the message: a "
+            + "CASE over whether the edge along knows exists. The flag is 1 or 0. An outer join along knows with the flag "
+            + "over its key would say the same, but its condition names the alias of an inner join, which EclipseLink "
+            + "5.0 writes after the outer ones; the existence of the edge is the same sentence (decision 122).",
             """
             SELECT c.Id AS CommentId, c.Content AS CommentContent, c.CreationDate AS CommentCreationDate,
                    ra.Id AS ReplyAuthorId, ra.FirstName AS ReplyAuthorFirstName, ra.LastName AS ReplyAuthorLastName,
-                   CASE WHEN k.Person1Id IS NULL THEN 0 ELSE 1 END AS ReplyAuthorKnowsOriginalMessageAuthor
+                   CASE WHEN EXISTS (SELECT k.Person1Id FROM Person_knows_Person AS k
+                                     WHERE k.Person1Id = m.CreatorPersonId AND k.Person2Id = c.CreatorPersonId)
+                        THEN 1 ELSE 0 END AS ReplyAuthorKnowsOriginalMessageAuthor
             FROM Message AS m
             JOIN Message AS c ON c.ParentMessageId = m.Id
             JOIN Person AS ra ON ra.Id = c.CreatorPersonId
-            LEFT JOIN Person_knows_Person AS k ON k.Person1Id = m.CreatorPersonId AND k.Person2Id = c.CreatorPersonId
             WHERE m.Id = @messageId
             ORDER BY c.CreationDate DESC, ra.Id ASC
             """,
             [MessageId],
-            FallbackBy: [EclipseLinkOuterJoinOrder],
             Validation: new("IS7", [Bind("messageId", "messageRepliesId")],
             [
                 Column("CommentId", "commentId"), Column("CommentContent", "commentContent"),
@@ -679,12 +667,15 @@ public static class LdbcSnbSample
             + "reference implementation of LDBC writes them: the persons known by the person or by one of the person's "
             + "friends, a subquery inside the subquery. Written as two IN subqueries joined by OR, SQL Server scans every "
             + "membership on every read - 1.6 million rows at scale factor 1, over five seconds - because an OR over two "
-            + "subqueries is nothing its planner drives a seek from (decision 121); the one set it reads in half a second.",
+            + "subqueries is nothing its planner drives a seek from (decision 121); the one set it reads in half a second. "
+            + "The outer join stands right after the membership and names only its columns, so that the forum's inner join "
+            + "may follow it: EclipseLink 5.0 writes the inner joins after the outer ones, and the order of joins is free in "
+            + "T-SQL (decision 122).",
             """
             SELECT TOP (20) f.Title AS ForumTitle, COUNT(DISTINCT m.Id) AS PostCount
             FROM Forum_hasMember_Person AS fm
+            LEFT JOIN Message AS m ON m.ContainerForumId = fm.ForumId AND m.CreatorPersonId = fm.PersonId AND m.ParentMessageId IS NULL
             JOIN Forum AS f ON f.Id = fm.ForumId
-            LEFT JOIN Message AS m ON m.ContainerForumId = f.Id AND m.CreatorPersonId = fm.PersonId AND m.ParentMessageId IS NULL
             WHERE fm.JoinDate > @minDate
               AND fm.PersonId <> @personId
               AND fm.PersonId IN (SELECT k2.Person2Id FROM Person_knows_Person AS k2
@@ -693,7 +684,7 @@ public static class LdbcSnbSample
             GROUP BY f.Id, f.Title
             ORDER BY PostCount DESC, f.Id ASC
             """,
-            [PersonId, new("minDate", "DATE", "2012-06-01")], FallbackBy: [EclipseLinkOuterJoinOrder],
+            [PersonId, new("minDate", "DATE", "2012-06-01")],
             Validation: new("IC5", [Bind("personId", "personIdQ5"), Bind("minDate", "minDate")],
                 [Column("ForumTitle", "forumTitle"), Column("PostCount", "postCount")])),
 
@@ -1073,15 +1064,17 @@ public static class LdbcSnbSample
         new("bi2", LdbcWorkload.BusinessIntelligence, 2, "Tag evolution", LdbcTranslation.AsSpecified,
             "Messages per tag of a tag class in two consecutive 100-day windows and their absolute difference: outer "
             + "joins keep the tags with no message, counts over a CASE split the windows, ABS of a difference of "
-            + "aggregates orders the result. The caller passes $date, $date + 100 days and $date + 200 days.",
+            + "aggregates orders the result. The caller passes $date, $date + 100 days and $date + 200 days. The tag is "
+            + "the root and its class the inner join, so that the outer joins name only the root: EclipseLink 5.0 writes "
+            + "the inner joins after the outer ones (decision 122).",
             """
             SELECT TOP (100) t.Name AS TagName,
                    COUNT(CASE WHEN m.CreationDate < @window1End THEN m.Id END) AS CountWindow1,
                    COUNT(CASE WHEN m.CreationDate >= @window1End THEN m.Id END) AS CountWindow2,
                    ABS(COUNT(CASE WHEN m.CreationDate < @window1End THEN m.Id END)
                        - COUNT(CASE WHEN m.CreationDate >= @window1End THEN m.Id END)) AS Diff
-            FROM TagClass AS tc
-            JOIN Tag AS t ON t.TypeTagClassId = tc.Id
+            FROM Tag AS t
+            JOIN TagClass AS tc ON tc.Id = t.TypeTagClassId
             LEFT JOIN Message_hasTag_Tag AS mt ON mt.TagId = t.Id
             LEFT JOIN Message AS m ON m.Id = mt.MessageId AND m.CreationDate >= @window1Start AND m.CreationDate < @window2End
             WHERE tc.Name = @tagClass
@@ -1089,8 +1082,7 @@ public static class LdbcSnbSample
             ORDER BY Diff DESC, t.Name ASC
             """,
             [new("tagClass", "NVARCHAR(256)", "MusicalArtist"), new("window1Start", "DATE", "2011-01-01"),
-             new("window1End", "DATE", "2011-04-11"), new("window2End", "DATE", "2011-07-20")],
-            FallbackBy: [EclipseLinkOuterJoinOrder]),
+             new("window1End", "DATE", "2011-04-11"), new("window2End", "DATE", "2011-07-20")]),
 
         new("bi3", LdbcWorkload.BusinessIntelligence, 3, "Popular topics in a country", LdbcTranslation.AsSpecified,
             "Forums moderated by someone living in a country, counted by their messages with a tag of a tag class: eight "
@@ -1153,7 +1145,9 @@ public static class LdbcSnbSample
         new("bi5", LdbcWorkload.BusinessIntelligence, 5, "Most active posters of a given topic", LdbcTranslation.AsSpecified,
             "Per author of messages with a tag: the messages, the direct replies to them and the likes they received, "
             + "weighted into a score. Replies and likes both multiply the rows of a message, so the replies are counted "
-            + "as distinct identifiers and the likes by a correlated scalar subquery in the projection.",
+            + "as distinct identifiers and the likes by a correlated scalar subquery in the projection. The message is "
+            + "the root, so that the outer join onto the replies names only the root: EclipseLink 5.0 writes the inner "
+            + "joins after the outer ones (decision 122).",
             """
             SELECT TOP (100) m.CreatorPersonId AS PersonId,
                    COUNT(DISTINCT r.Id) AS ReplyCount,
@@ -1167,16 +1161,15 @@ public static class LdbcSnbSample
                            JOIN Message_hasTag_Tag AS lt ON lt.MessageId = l.MessageId
                            JOIN Message AS lm ON lm.Id = l.MessageId
                            WHERE lm.CreatorPersonId = m.CreatorPersonId AND lt.TagId = t.Id) AS Score
-            FROM Tag AS t
-            JOIN Message_hasTag_Tag AS mt ON mt.TagId = t.Id
-            JOIN Message AS m ON m.Id = mt.MessageId
+            FROM Message AS m
+            JOIN Message_hasTag_Tag AS mt ON mt.MessageId = m.Id
+            JOIN Tag AS t ON t.Id = mt.TagId
             LEFT JOIN Message AS r ON r.ParentMessageId = m.Id
             WHERE t.Name = @tag
             GROUP BY m.CreatorPersonId, t.Id
             ORDER BY Score DESC, m.CreatorPersonId ASC
             """,
-            [new("tag", "NVARCHAR(256)", "Hamid_Karzai")],
-            FallbackBy: [EclipseLinkOuterJoinOrder]),
+            [new("tag", "NVARCHAR(256)", "Hamid_Karzai")]),
 
         new("bi6", LdbcWorkload.BusinessIntelligence, 6, "Most authoritative users on a given topic", LdbcTranslation.AsSpecified,
             "The authority of an author of messages with a tag is the sum of the popularity of everyone who liked those "
@@ -1326,7 +1319,8 @@ public static class LdbcSnbSample
         new("bi12", LdbcWorkload.BusinessIntelligence, 12, "How many persons have a given number of messages", LdbcTranslation.AsSpecified,
             "A histogram: messages per person, then persons per number of messages. The second grouping is over the "
             + "result of the first - a derived table in FROM, which the representation carries as an intermediate result "
-            + "of the query (decision 112).",
+            + "of the query (decision 112) - and the languages are a list parameter, which the native query of EclipseLink "
+            + "expands in the generated method (decision 123).",
             """
             SELECT pc.MessageCount, COUNT(*) AS PersonCount
             FROM (SELECT p.Id AS PersonId, COUNT(m.Id) AS MessageCount
@@ -1341,7 +1335,7 @@ public static class LdbcSnbSample
             ORDER BY PersonCount DESC, pc.MessageCount DESC
             """,
             [new("startDate", "DATE", "2011-06-01"), new("lengthThreshold", "INT", "100"),
-             new("languages", "VARCHAR(40)", "ar,hu", IsList: true)], [EclipseLinkNativeList], [NHibernateIntermediate]),
+             new("languages", "VARCHAR(40)", "ar,hu", IsList: true)], FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate]),
 
         new("bi13", LdbcWorkload.BusinessIntelligence, 13, "Zombies in a country", LdbcTranslation.AsSpecified,
             "Zombies are persons of a country who wrote on average less than one message a month; the months are counted "
@@ -1420,7 +1414,10 @@ public static class LdbcSnbSample
             + "recursive member has to keep exactly the type its anchor starts the sum with, each merged outside the "
             + "recursion to the cheapest walk to every person it reached, and the cost is the cheapest sum of both halves "
             + "where they meet - the cost of an edge is the same both ways. Each walk is bounded at two steps, so the "
-            + "search reaches four, a cheaper path of more steps is missed and a pair further apart answers -1.",
+            + "search reaches four, a cheaper path of more steps is missed and a pair further apart answers -1. Over scale "
+            + "factor 1 SQL Server computes the definition of the costs anew for every key the walk reaches, so a read "
+            + "takes about 49 seconds (measured 2026-10-10): a limit of the planner over one data set, not of the "
+            + "translation, and no judge runs BI (decision 122).",
             """
             WITH Interaction AS (
                 SELECT m.CreatorPersonId AS AuthorId, r.CreatorPersonId AS ReplierId,
@@ -1566,7 +1563,11 @@ public static class LdbcSnbSample
             + "the second, each summing the weights as a FLOAT and each merged outside the recursion to the cheapest walk "
             + "from each of its persons to every person it reached, and a pair's cost is the cheapest sum of both halves "
             + "where they meet - the weight of an edge is the same both ways. Each walk is bounded at two steps, so the "
-            + "search reaches four and a cheaper path of more steps is missed.",
+            + "search reaches four and a cheaper path of more steps is missed. Over scale factor 1 SQL Server computes the "
+            + "definition of the weights - 969 thousand pairs of authors - anew for every key the walk reaches and the read "
+            + "does not finish in 500 seconds (measured 2026-10-10); only an edge table materialized ahead of the query "
+            + "would, and that is two statements, not a query. A limit of the planner over one data set, not of the "
+            + "translation, and no judge runs BI (decision 122).",
             """
             WITH Interaction AS (
                 SELECT c.CreatorPersonId AS ReplierId, p.CreatorPersonId AS AuthorId, COUNT(*) AS Replies

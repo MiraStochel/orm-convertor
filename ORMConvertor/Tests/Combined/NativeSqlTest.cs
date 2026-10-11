@@ -239,10 +239,11 @@ public class NativeSqlTest
 
     /// <summary>
     /// The one shape the native API of EF Core cannot take: an interpolated collection is one
-    /// value to it, a JSON text, not the list IN ranges over (measured against 10.0.10).
-    /// EclipseLink's native query hands a list to the driver as one value as well (measured
-    /// against 5.0.0). Both refuse, by name; Hibernate expands it (measured against 7.4.5) and
-    /// NHibernate binds it by its own call, as in HQL.
+    /// value to it, a JSON text, not the list IN ranges over (measured against 10.0.10), so
+    /// EF Core refuses it by name. EclipseLink's native query hands a list to the driver as one
+    /// value as well (measured against 5.0.0), so its method expands the list itself (decision
+    /// 123); Hibernate expands it (measured against 7.4.5) and NHibernate binds it by its own
+    /// call, as in HQL.
     /// </summary>
     [Fact]
     public void AListParameterIsRefusedWhereTheNativeApiCannotExpandIt()
@@ -252,7 +253,17 @@ public class NativeSqlTest
             FromSql(new EFCoreLinqQueryBuilder(), "SELECT COUNT(*) AS Orders FROM Orders AS o WHERE o.OrderId IN @ids"),
             QueryFeature.QueryParameter,
             "binds an interpolated collection as one value");
-        AssertRefused(FromSql(new EclipseLinkJpqlQueryBuilder(), ListInASubquery), QueryFeature.QueryParameter, "does not expand a collection");
+
+        var eclipseLink = Artifact(Built(FromSql(new EclipseLinkJpqlQueryBuilder(), ListInASubquery)), ConversionContentType.JavaQuery);
+        Assert.Contains("public static Query query(EntityManager em, Collection<Integer> ids)", eclipseLink, StringComparison.Ordinal);
+        Assert.Contains("var position = 0;", eclipseLink, StringComparison.Ordinal);
+        Assert.Contains("for (var i = 0; i < ids.size(); i++) {", eclipseLink, StringComparison.Ordinal);
+        Assert.Contains("idsPlaceholders.append(i == 0 ? \"?\" : \", ?\").append(++position);", eclipseLink, StringComparison.Ordinal);
+        Assert.Contains("WHERE o.OrderId IN (?ids))", eclipseLink, StringComparison.Ordinal);
+        Assert.Contains("\"\"\".replace(\"(?ids)\", \"(\" + idsPlaceholders + \")\"))", eclipseLink, StringComparison.Ordinal);
+        Assert.Contains("for (var element : ids) {", eclipseLink, StringComparison.Ordinal);
+        Assert.Contains("query.setParameter(++position, element);", eclipseLink, StringComparison.Ordinal);
+        Assert.DoesNotContain(".setParameter(1, ids)", eclipseLink, StringComparison.Ordinal);
 
         var hibernate = Artifact(Built(FromSql(new HibernateJpqlQueryBuilder(), ListInASubquery)), ConversionContentType.JavaQuery);
         Assert.Contains("public static Query query(EntityManager em, Collection<Integer> ids)", hibernate, StringComparison.Ordinal);

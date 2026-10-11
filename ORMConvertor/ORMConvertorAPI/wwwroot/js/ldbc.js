@@ -192,6 +192,26 @@ function renderQuery(catalog, query) {
   badge.classList.add(TRANSLATION_CLASSES[query.translation] ?? "badge-incompleteness");
   article.querySelector(".query-note").textContent = query.note;
 
+  // The binding to the judge of decision 117: an Interactive query names the operation of
+  // the validation set whose reads it has to answer, and how the rows are compared; a BI
+  // query has none, and says that its claim stops at the first two levels.
+  const judge = article.querySelector(".query-judge");
+  if (query.validation) {
+    const comparison = query.validation.ordered ? "as ordered rows" : "as a set";
+    const verdict =
+      query.translation === LdbcTranslation.Simplified
+        ? "the share of reads that agree is measured"
+        : "every read has to agree in every framework";
+    judge.textContent =
+      `Judged by the validation set of LDBC Interactive v1 as operation ${query.validation.operation}, ` +
+      `${comparison}: ${verdict}.`;
+  } else {
+    judge.textContent =
+      "No validation set judges this query: the claim holds at the first level in every target, " +
+      "the artifacts of EF Core and NHibernate compile, and the Java targets compile theirs and accept them.";
+  }
+  judge.hidden = false;
+
   if (query.refusedBy.length > 0) {
     const refusals = article.querySelector(".query-refusals");
     for (const refusal of query.refusedBy) {
