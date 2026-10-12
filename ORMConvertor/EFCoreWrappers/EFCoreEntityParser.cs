@@ -576,6 +576,17 @@ public class EFCoreEntityParser : CSharpEntityParser
             // [NotMapped] is (decision 132).
             isTransient |= entityBuilder.EntityMap.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == name)?.IsTransient == true;
 
+            // So is a property EF Core cannot write (decision 134): its convention maps only a
+            // property with a setter, of any accessibility, and leaves an auto-property with a
+            // getter alone out of the model whatever annotations stand on it - except a
+            // collection navigation, which it fills through the backing field, and a member
+            // the configuration names, which it maps through the same field. A convention
+            // derived from what the class states, so it travels without a record (decision 067).
+            isTransient |= IsGetOnly(prop)
+                && !IsCollectionNavigation(prop)
+                && !context.Names(entityName, name, (navigation, target) => Declares(properties, navigation, target))
+                && context.RelationshipFor(entityName, name, SimpleName(type)) is null;
+
             // The fluent ValueGeneratedNever or ValueGeneratedOnAdd outranks [DatabaseGenerated]
             // as the configuration outranks every annotation (decision 132).
             if (context.GeneratedOptionOf(entityName, name) is { } configuredOption)
@@ -1318,6 +1329,18 @@ public class EFCoreEntityParser : CSharpEntityParser
 
         return false;
     }
+
+    /// <summary>
+    /// Whether the property is a collection EF Core reads as a navigation - a collection whose
+    /// element is not a scalar. A collection of scalars is a primitive collection.
+    /// </summary>
+    private static bool IsCollectionNavigation(PropertyDeclarationSyntax prop)
+        => IsCollection(prop.Type, out var element) && !IsPrimitiveElement(element);
+
+    /// <summary>Whether one of the properties is a reference navigation of the name to the entity of the name.</summary>
+    private static bool Declares(IEnumerable<PropertyDeclarationSyntax> properties, string navigation, string target)
+        => properties.Any(p => p.Identifier.Text == navigation
+            && SimpleName(((p.Type as NullableTypeSyntax)?.ElementType ?? p.Type).ToString()) == target);
 
     /// <summary>
     /// Extracts a string value from an expression syntax, if it is a literal expression containing a string.

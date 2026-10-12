@@ -31,7 +31,8 @@ namespace EFCoreWrappers;
 /// A relationship names its navigations by lambda and not their type, and the target entity
 /// is what the model needs, so it is left in the shared context for the class parser to
 /// write when it reads the navigation; so are the table a DbSet property gives and the
-/// default schema, which stand below the annotations.
+/// default schema, which stand below the annotations, and the members the configuration
+/// names, which EF Core maps even where the class gives them no setter (decision 134).
 /// </summary>
 public sealed class EFCoreFluentConfigurationParser(
     AbstractEntityBuilder entityBuilder,
@@ -404,6 +405,7 @@ public sealed class EFCoreFluentConfigurationParser(
                         return;
                     }
 
+                    MarkNamed(entity, keyParts);
                     Write(entity, call, () => entityBuilder.AddPrimaryKey(
                         keyParts.Select((name, index) => (name, index + 1, PrimaryKeyStrategy.Unspecified)).ToList()));
 
@@ -435,6 +437,7 @@ public sealed class EFCoreFluentConfigurationParser(
                 case "Property" when call.Arguments is [{ Expression: LambdaExpressionSyntax }]:
                     if (Members(call.Arguments) is [var property])
                     {
+                        MarkNamed(entity, [property]);
                         ReadPropertyChain(entity, property, calls, i + 1);
                     }
                     else
@@ -548,6 +551,9 @@ public sealed class EFCoreFluentConfigurationParser(
             ReportNotLiteral(call, entity.Name, null);
             return;
         }
+
+        // EF Core maps the members of an index whether or not the model carries the index.
+        MarkNamed(entity, members);
 
         var unique = isKey;
         var filtered = false;
@@ -751,6 +757,8 @@ public sealed class EFCoreFluentConfigurationParser(
             return;
         }
 
+        MarkNamed(entity, [navigation]);
+
         if (at + 1 >= calls.Count || calls[at + 1] is not { Name: "WithOne" or "WithMany" } with)
         {
             // HasOne without WithOne or WithMany leaves the far end to EF Core's convention,
@@ -896,6 +904,19 @@ public sealed class EFCoreFluentConfigurationParser(
         Entity(entity);
         using var scope = entityBuilder.At(Range(call.Span));
         write();
+    }
+
+    /// <summary>
+    /// Leaves the members a call names in the shared context: EF Core maps a member the
+    /// configuration names even where the class gives it no setter, and the class parser,
+    /// which decides whether a property without one is persisted, reads it there (decision 134).
+    /// </summary>
+    private void MarkNamed(EntityRef entity, IEnumerable<string> members)
+    {
+        foreach (var member in members)
+        {
+            context.MarkNamed(entity.Name, member);
+        }
     }
 
     private TextRange Range(TextSpan span) => new(unit.ToClient(span.Start), span.Length);

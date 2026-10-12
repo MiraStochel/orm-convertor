@@ -136,6 +136,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 131 | [Alias sloupce ve volání Dapperu, které mapuje řádky na entitu, tvrdí sloupec její vlastnosti](131-a-column-alias-in-a-typed-dapper-call-states-the-column-of-the-property.md) | platí | F5, F6, F11, S1, S2 |
 | 132 | [Fluent konfigurace EF Core se čte jako vymezená syntaktická podmnožina před anotacemi; co leží mimo ni, je záznam u příkazu](132-ef-core-fluent-configuration-is-read-as-a-bounded-syntactic-subset.md) | platí | F1, F2, F3, F5, F11, S1, S2, S4 |
 | 133 | [Doplňkový balíček nad frameworkem tím frameworkem není: Dapper.Contrib a MyBatis-Plus stojí mimo rozsah a nástroj je ve svých záznamech jmenuje; volání Contribu je předáním, které se odmítá](133-an-add-on-package-over-a-framework-is-not-that-framework.md) | platí | F6, F8, F11, S1, S4, T1 |
+| 134 | [Vlastnost bez setteru dostane v cíli nejužší setter, kterým ji framework zapíše; čte se tak, jak ji čte zdrojový framework](134-a-property-without-a-setter-gets-the-narrowest-setter-its-framework-writes-through.md) | platí | F2, F5, F10, F11, S1, S2 |
 
 ## Formát
 

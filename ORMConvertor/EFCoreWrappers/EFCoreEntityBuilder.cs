@@ -269,7 +269,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             // [PrimaryKey(...)] attribute (see BuildTableSchema) defines it and [Key] is not emitted.
             AppendPropertyAttributes(artifact, propertyMap, isPrimaryKey: !composite);
             AppendKeyStrategyAttribute(artifact, entityMap, part, composite);
-            AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property, isPrimaryKey: true));
+            AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property, isPrimaryKey: true, NeedsPrivateSetter(entityMap, propertyMap)));
         }
     }
 
@@ -314,7 +314,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             ReportVersionIncrementLoss(entityMap, propertyMap);
 
             AppendPropertyAttributes(artifact, propertyMap);
-            AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property));
+            AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property, privateSetter: NeedsPrivateSetter(entityMap, propertyMap)));
         }
     }
 
@@ -368,7 +368,7 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             }
 
             AppendPropertyAttributes(artifact, propertyMap);
-            AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property));
+            AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property, privateSetter: NeedsPrivateSetter(entityMap, propertyMap)));
         }
     }
 
@@ -492,10 +492,23 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     }
 
     /// <summary>
+    /// Whether the property needs a setter the source does not give it (decision 134): EF Core
+    /// maps by convention only a property it can write, so a persisted property with a getter
+    /// alone gets the narrowest setter EF Core accepts. A collection a relation navigates is
+    /// the exception - EF Core fills it through the backing field -, and a property the source
+    /// keeps out of the model needs none.
+    /// </summary>
+    private static bool NeedsPrivateSetter(EntityMap entityMap, PropertyMap propertyMap)
+        => propertyMap.Property is { HasGetter: true, HasSetter: false }
+           && !propertyMap.IsTransient
+           && !(propertyMap.Property.Type is { Category: LangTypeCategory.Collection }
+                && entityMap.Relations.Any(r => r.SourceNavigationProperty == propertyMap.Property.Name));
+
+    /// <summary>
     /// Builds the property signature for C# code.
     /// Adds modifiers, type, name, getter/setter, and default value.
     /// </summary>
-    private static string BuildPropertySignature(Property prop, bool isPrimaryKey = false)
+    private static string BuildPropertySignature(Property prop, bool isPrimaryKey = false, bool privateSetter = false)
     {
         var otherMods = new List<string>(prop.OtherModifiers ?? []);
 
@@ -505,8 +518,9 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         // The required modifier is a language device - a non-nullable property without an
         // initializer needs it to compile clean - so the language type decides it. What
         // the database says about the column travels through [Required], not through here.
-        // A property without a setter cannot take it (CS9034): a Java field the class only
-        // exposes through a getter is such a property.
+        // A property without a setter cannot take it (CS9034), nor one with a setter narrower
+        // than the class (CS9032): a Java field the class only exposes through a getter is
+        // such a property, and so is one written with a private setter below.
         if (!langType.IsNullable && prop.HasSetter && !otherMods.Contains("required") && string.IsNullOrEmpty(prop.DefaultValue))
         {
             otherMods.Add("required");
@@ -518,8 +532,9 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         var typeName = CSharpTypeConvertor.ToString(langType);
         var type = (!isPrimaryKey && langType.IsNullable) ? $"{typeName}?" : typeName;
 
+        var setter = prop.HasSetter ? " set;" : privateSetter ? " private set;" : "";
         var getterSetter = (prop.HasGetter || prop.HasSetter)
-            ? $" {{ {(prop.HasGetter ? "get;" : "")}{(prop.HasSetter ? " set;" : "")} }}"
+            ? $" {{ {(prop.HasGetter ? "get;" : "")}{setter} }}"
             : "";
         var defaultVal = string.IsNullOrWhiteSpace(prop.DefaultValue)
             ? ""

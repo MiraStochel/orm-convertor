@@ -8,8 +8,10 @@ namespace EFCoreWrappers;
 /// after it takes from here what the configuration states but cannot write on its own.
 /// A relationship names its navigations by lambda and not their type, so it waits for the
 /// class that declares them; the table a DbSet gives and the default schema are a
-/// convention and a default, which stand below the annotations (decision 068); and a
-/// concurrency token is the version only under conditions the class decides (decision 116).
+/// convention and a default, which stand below the annotations (decision 068); a
+/// concurrency token is the version only under conditions the class decides (decision 116);
+/// and a member the configuration names is mapped even where the class gives it no setter
+/// (decision 134).
 /// Created by the wrapper's factory row and handed to both parsers; the orchestration and
 /// the abstract wrappers never see it - the same shape as the JPA reading context
 /// (decision 077).
@@ -25,6 +27,8 @@ public sealed class EFCoreReadingContext
     private readonly HashSet<(string Entity, string Property)> rowVersions = [];
 
     private readonly Dictionary<(string Entity, string Property), string> generatedOptions = [];
+
+    private readonly HashSet<(string Entity, string Property)> named = [];
 
     /// <summary>The schema HasDefaultSchema states for the whole model, or null.</summary>
     public string? DefaultSchema { get; private set; }
@@ -104,6 +108,44 @@ public sealed class EFCoreReadingContext
     public void SetGeneratedOption(string entity, string property, string option) => generatedOptions[(entity, property)] = option;
 
     public string? GeneratedOptionOf(string entity, string property) => generatedOptions.GetValueOrDefault((entity, property));
+
+    /// <summary>
+    /// Records a member the configuration names on the entity it configures - in Property,
+    /// HasKey, HasIndex, HasAlternateKey, HasOne or HasMany. EF Core maps a member so named
+    /// whether or not the class gives it a setter, through its backing field (decision 134);
+    /// Ignore names nothing, it takes the member out.
+    /// </summary>
+    public void MarkNamed(string entity, string property) => named.Add((entity, property));
+
+    /// <summary>
+    /// Whether the configuration names a scalar member of the entity: on the entity itself, or
+    /// as a member of HasForeignKey, which belongs to the dependent - the entity
+    /// HasForeignKey&lt;T&gt; names, the configured one where its navigation is a reference,
+    /// and the far side where it is a collection. The configuration does not spell the far
+    /// side's name, so it is the class that declares the inverse navigation WithOne names,
+    /// pointing back at the configured entity, and any class but the configured one where
+    /// WithOne names none (decision 134). A navigation named as the far end is
+    /// <see cref="RelationshipFor"/>'s answer.
+    /// </summary>
+    public bool Names(string entity, string property, Func<string, string, bool> declaresNavigation)
+        => named.Contains((entity, property))
+           || relationships.Any(r => r.ForeignKey?.Contains(property) == true && IsDependent(r, entity, declaresNavigation));
+
+    private static bool IsDependent(FluentRelationship relationship, string entity, Func<string, string, bool> declaresNavigation)
+    {
+        if (relationship.Dependent is { } dependent)
+        {
+            return dependent == entity;
+        }
+
+        if (!relationship.NavigationIsCollection)
+        {
+            return relationship.Entity == entity;
+        }
+
+        return relationship.Entity != entity
+               && (relationship.Inverse is null || declaresNavigation(relationship.Inverse, relationship.Entity));
+    }
 }
 
 /// <summary>

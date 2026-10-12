@@ -447,8 +447,15 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
         bool hasGetter = prop.ExpressionBody != null
                 || prop.AccessorList?.Accessors.Any(a => a.IsKind(SyntaxKind.GetAccessorDeclaration)) == true;
 
-        bool hasSetter = prop.AccessorList?.Accessors
-                    .Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration)) == true;
+        // The setter the class offers its callers (decision 134). An accessor with an access
+        // modifier of its own - private set, protected set - is the setter the class keeps for
+        // itself and its framework, the very form the targets write for a property without a
+        // setter; read as none, it comes back from every target in the narrowest form that
+        // target's framework needs, rather than widened to a public setter. An init accessor
+        // offers the write to callers, in an object initializer, and is a setter.
+        var offered = prop.AccessorList?.Accessors.FirstOrDefault(a =>
+            (a.IsKind(SyntaxKind.SetAccessorDeclaration) || a.IsKind(SyntaxKind.InitAccessorDeclaration))
+            && a.Modifiers.Count == 0);
 
         bool isNullable = prop.Type is NullableTypeSyntax;
         string type = ((prop.Type as NullableTypeSyntax)?.ElementType ?? prop.Type).ToString();
@@ -459,10 +466,22 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
             string.Join(" ", accessTokens),
             otherModifiers,
             hasGetter,
-            hasSetter,
+            HasSetter: offered is not null,
+            IsInitOnly: offered?.IsKind(SyntaxKind.InitAccessorDeclaration) == true,
             prop.Initializer?.Value?.ToString(),
             isNullable);
     }
+
+    /// <summary>
+    /// Whether the property is an auto-property with a getter alone - no set or init accessor,
+    /// with or without a modifier of its own. A computed property never gets here
+    /// (<see cref="StoredProperties"/>), so a property without either accessor holds a value
+    /// only its constructor assigns, and a framework writes it, if at all, through the backing
+    /// field (decision 134).
+    /// </summary>
+    protected static bool IsGetOnly(PropertyDeclarationSyntax prop)
+        => prop.AccessorList is { } accessors
+           && !accessors.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration) || a.IsKind(SyntaxKind.InitAccessorDeclaration));
 
     /// <summary>
     /// Modifiers the source framework forces onto its mapped members, which the parser
@@ -475,7 +494,9 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
 
     /// <summary>
     /// Writes the language facts of one property into the builder, without the modifiers
-    /// the source framework enforces.
+    /// the source framework enforces. An init accessor travels as a setter, and its
+    /// restriction to initialization, which the model has no place for, is a loss
+    /// (decisions 048 and 134).
     /// </summary>
     protected void EmitProperty(PropertyReading reading)
     {
@@ -488,6 +509,21 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
             hasSetter: reading.HasSetter,
             defaultValue: reading.DefaultValue,
             isNullable: reading.IsNullable);
+
+        if (reading.IsInitOnly)
+        {
+            entityBuilder.Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = entityBuilder.Descriptor.Framework,
+                Artifact = ConversionContentType.CSharp,
+                Entity = entityBuilder.EntityMap.Entity.Name,
+                Property = reading.Name,
+                Reason = $"The init accessor of '{reading.Name}' has no counterpart in the intermediate representation: the "
+                    + "property travels with a setter callers may use, and its restriction to object initialization was "
+                    + "dropped (decision 134).",
+            });
+        }
     }
 
     private static string? GetNamespace(ClassDeclarationSyntax classDeclaration)

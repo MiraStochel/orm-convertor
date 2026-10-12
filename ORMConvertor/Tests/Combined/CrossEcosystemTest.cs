@@ -163,9 +163,10 @@ public class CrossEcosystemTest
     }
 
     /// <summary>
-    /// A Java field the class exposes through a getter alone is a property without a setter,
-    /// and such a property cannot be required in C# (CS9034): the class compiles without the
-    /// modifier, where with it it did not compile at all.
+    /// A Java field the class exposes through a getter alone is a property without a setter.
+    /// EF Core maps it only through a setter, so it gets the narrowest one (decision 134), and
+    /// such a property cannot be required in C# (CS9032): the class compiles without the
+    /// modifier, where with it it did not compile at all, and EF Core maps the key.
     /// </summary>
     [Fact]
     public void AFieldWithoutASetterIsNotRequiredInEfCore()
@@ -200,12 +201,13 @@ public class CrossEcosystemTest
 
         var csharp = Entity(result, ConversionContentType.CSharpEntity);
 
-        Assert.Contains("public long RoomId { get; }", csharp);
-        Assert.Contains("public string Code { get; }", csharp);
-        Tests.Verification.GeneratedEntityCompiler.CompileOrFail(
+        Assert.Contains("public long RoomId { get; private set; }", csharp);
+        Assert.Contains("public string Code { get; private set; }", csharp);
+        var model = Tests.Verification.EFCoreAcceptance.BuildModel(Tests.Verification.GeneratedEntityCompiler.CompileOrFail(
             nameof(AFieldWithoutASetterIsNotRequiredInEfCore),
             [csharp],
-            Tests.Verification.GeneratedEntityCompiler.EFCoreConsumerReferences);
+            Tests.Verification.GeneratedEntityCompiler.EFCoreConsumerReferences));
+        Assert.Equal("RoomId", Assert.Single(model.GetEntityTypes().Single().FindPrimaryKey()!.Properties).Name);
     }
 
     [Fact]

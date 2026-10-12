@@ -2,7 +2,7 @@
 
 Jediný seznam toho, co zbývá. **Rozhodnutí** končí novým souborem v [`decisions/`](./decisions/README.md) a řádkem v jeho rejstříku, **práce** (už rozhodnutá) kódem a aktualizací [`architecture.md`](./architecture.md), podle potřeby i [`subset.md`](./subset.md) a [`traceability.md`](./traceability.md). Hotová položka odsud mizí; co verze nárokuje, říká §9 a kanonicky sekce *Guarantees* kořenového [`README.md`](../README.md).
 
-**Pořadí nesou jen značky** (rozh. [018](./decisions/018-work-order-as-item-marker.md)) na začátku kurzívového řádku vazeb: **Na řadě** nejvýš jedna položka, **Potom** nejvýš dvě, ostatní se berou podle priorit z požadavků. **Vada** — vstup v nároku, z něhož vznikne artefakt, který cíl odmítne nebo který tiše znamená něco jiného — se opravuje přednostně jako práce a nárok, který vyvrací, do opravy platí jen s výhradou; dnes je otevřená jedna, [vlastnost bez setteru v .NET cíli](#vlastnost-bez-setteru-v-net-cíli). Cíle zadání: cíl 1 = vydání `1.2.0`, cíl 2 = `2.0.0`, cíl 3 = příští MAJOR `3.0.0` (rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md)).
+**Pořadí nesou jen značky** (rozh. [018](./decisions/018-work-order-as-item-marker.md)) na začátku kurzívového řádku vazeb: **Na řadě** nejvýš jedna položka, **Potom** nejvýš dvě, ostatní se berou podle priorit z požadavků. **Vada** — vstup v nároku, z něhož vznikne artefakt, který cíl odmítne nebo který tiše znamená něco jiného — se opravuje přednostně jako práce a nárok, který vyvrací, do opravy platí jen s výhradou; dnes žádná otevřená není. Cíle zadání: cíl 1 = vydání `1.2.0`, cíl 2 = `2.0.0`, cíl 3 = příští MAJOR `3.0.0` (rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md)).
 
 ## Kde jsme vůči specifikaci
 
@@ -28,7 +28,6 @@ Rejstřík, ne pořadí.
 
 | Položka | Oblast | Druh | Pož. |
 |---|---|---|---|
-| [Vlastnost bez setteru v .NET cíli](#vlastnost-bez-setteru-v-net-cíli) | Mapování | práce (vada) | F10, F11 |
 | [Verdikt soudce LDBC nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) | Dotazy | práce | F13, T2, T3 |
 | [Co zavírá třetí cíl](#co-zavírá-třetí-cíl-schválený-záměr-advisor-nejmenuje) | Třetí cíl | rozhodnutí | F15, T1–T7 |
 | [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Třetí cíl | rozhodnutí | S5, T1–T3 |
@@ -57,13 +56,6 @@ flowchart LR
 ```
 
 ---
-
-## Mapování
-
-#### Vlastnost bez setteru v .NET cíli
-*Vada. Práce; stojí na rozh. [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md) (jazyková osa) a [009](./decisions/009-target-framework-descriptor.md) (co cíl od třídy vyžaduje). Požadavky F10, F11.*
-
-Javové pole, které třída vystavuje jen getterem (`getRoomId()` bez `setRoomId`), je v modelu vlastnost bez setteru a .NET cíle ji píšou `{ get; }`. EF Core 10 takovou vlastnost konvencí nemapuje — nad `[Key] … { get; }` odmítne model, že entita nemá klíč (3. stupeň) —, Dapper ji nenaplní a NHibernate ji bez `access` nenastaví; žádný záznam to neřekne. Do opravy platí překlad Java → .NET jen nad třídou se settery (příklady `/examples` je mají). Oprava zvolí zápis podle cíle — EF Core a Dapper `private set`, NHibernate `protected set` kvůli proxy — a rozhodne, zda get-only auto-vlastnost zdroje EF Core, kterou EF Core sám nemapuje, čtení dál bere jako sloupec.
 
 ## Dotazy
 

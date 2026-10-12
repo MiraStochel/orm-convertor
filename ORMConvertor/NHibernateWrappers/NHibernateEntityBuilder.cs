@@ -1764,12 +1764,25 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         var type = (!isPrimaryKey && langType.IsNullable) ? $"{typeName}?" : typeName;
 
+        var setter = prop.HasSetter ? " set;" : NeedsProtectedSetter(entityMap, prop) ? " protected set;" : "";
         var getterSetter = (prop.HasGetter || prop.HasSetter)
-            ? $" {{ {(prop.HasGetter ? "get;" : "")}{(prop.HasSetter ? " set;" : "")} }}"
+            ? $" {{ {(prop.HasGetter ? "get;" : "")}{setter} }}"
             : "";
 
         return $"{modifiers} {type} {prop.Name}{getterSetter}{defaultVal}";
     }
+
+    /// <summary>
+    /// Whether the property needs a setter the source does not give it (decision 134):
+    /// NHibernate refuses a member its mapping names without one, and its proxy validator
+    /// refuses one narrower than protected - an enforcement of the same kind as virtual. A
+    /// property the mapping leaves out because the source keeps it out of the model needs none;
+    /// a navigation is mapped by its relation either way.
+    /// </summary>
+    private static bool NeedsProtectedSetter(EntityMap entityMap, Property prop)
+        => prop is { HasGetter: true, HasSetter: false }
+           && (entityMap.PropertyMaps.Any(pm => pm.Property.Name == prop.Name && !pm.IsTransient)
+               || entityMap.Relations.Any(r => r.SourceNavigationProperty == prop.Name));
 
     /// <summary>
     /// A target-typed initializer of the source does not compile once the declaration
