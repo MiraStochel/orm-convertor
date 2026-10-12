@@ -19,6 +19,7 @@ import {
   convert,
   getRequiredContent,
   getSamples,
+  getExamples,
   archive,
 } from "./api.js";
 import {
@@ -63,6 +64,8 @@ const state = {
   units: [],
   requiredContent: [],
   samples: {},
+  // Whole conversion inputs from /examples (decision 099): the direction and named units.
+  examples: [],
   // The units exactly as the last conversion sent them, kept apart from `units` so that the
   // result shows what the server read even after the editor above has moved on.
   sent: null,
@@ -221,6 +224,37 @@ function renderSourceDialectSelect() {
     option.selected = value === state.sourceDialect;
     element.append(option);
   }
+}
+
+/*
+ * The examples in the order the server lists them, each under its title and the direction it
+ * converts in. The list stays disabled until the catalog has arrived, and says so when the
+ * server has none to offer.
+ */
+function renderExampleSelect() {
+  const select = document.getElementById("example-select");
+  const button = document.getElementById("load-example");
+  select.replaceChildren();
+
+  const prompt = document.createElement("option");
+  prompt.value = "";
+  prompt.textContent =
+    state.examples.length === 0 ? "No examples available" : "Start from an example…";
+  prompt.disabled = true;
+  prompt.selected = true;
+  select.append(prompt);
+
+  for (const example of state.examples) {
+    const option = document.createElement("option");
+    option.value = example.key;
+    option.textContent =
+      `${example.title} (${ORM_LABELS[example.sourceOrm]} → ${ORM_LABELS[example.targetOrm]}, ` +
+      `${example.units.length} file${example.units.length === 1 ? "" : "s"})`;
+    select.append(option);
+  }
+
+  select.disabled = state.examples.length === 0;
+  button.disabled = true;
 }
 
 function renderOfferNote() {
@@ -674,6 +708,40 @@ function onLoadSamples() {
   renderUnits();
 }
 
+/*
+ * An example is a whole conversion input (decision 099), so loading one sets everything a
+ * conversion sends: the direction, the units under the names of their files, and no declared
+ * dialect - the example's SQL is read as it always is, exactly as the Examples page sends it.
+ * Like the sample set it replaces the screen wholesale, and with work on it, it asks.
+ */
+function onLoadExample() {
+  const select = document.getElementById("example-select");
+  const example = state.examples.find((e) => e.key === select.value);
+  if (!example) return;
+  if (
+    state.units.length > 0 &&
+    !confirm(
+      `Loading "${example.title}" replaces every unit on the screen and sets the direction to ` +
+        `${ORM_LABELS[example.sourceOrm]} → ${ORM_LABELS[example.targetOrm]}. Continue?`,
+    )
+  ) {
+    return;
+  }
+
+  state.sourceOrm = example.sourceOrm;
+  state.targetOrm = example.targetOrm;
+  state.sourceDialect = null;
+  state.units = example.units.map((unit) => newUnit(unit.name ?? "", unit.contentType, unit.content));
+  saveState();
+  showValidation([]);
+  renderFrameworkSelects();
+  renderSourceDialectSelect();
+  renderOfferNote();
+  renderUnits();
+  document.getElementById("convert-status").textContent =
+    `Loaded "${example.title}": ${example.units.length} file${example.units.length === 1 ? "" : "s"}.`;
+}
+
 /** Clears the screen and the remembered copy together (decision 056). */
 function onClear() {
   if (state.units.length > 0 && !confirm("Remove every unit from the screen?")) return;
@@ -732,6 +800,10 @@ async function init() {
     fileInput.value = "";
   });
   document.getElementById("load-samples").addEventListener("click", onLoadSamples);
+  document.getElementById("example-select").addEventListener("change", (event) => {
+    document.getElementById("load-example").disabled = event.target.value === "";
+  });
+  document.getElementById("load-example").addEventListener("click", onLoadExample);
   document.getElementById("clear").addEventListener("click", onClear);
   document.getElementById("convert").addEventListener("click", onConvert);
   document.getElementById("download").addEventListener("click", onDownload);
@@ -745,15 +817,17 @@ async function init() {
   });
 
   try {
-    [state.requiredContent, state.samples] = await Promise.all([
+    [state.requiredContent, state.samples, state.examples] = await Promise.all([
       getRequiredContent(),
       getSamples(),
+      getExamples(),
     ]);
   } catch (error) {
     const errorElement = document.getElementById("convert-error");
     errorElement.textContent = `Could not load the input catalog: ${error.message}`;
     errorElement.hidden = false;
   }
+  renderExampleSelect();
   renderOfferNote();
   renderUnits();
 }

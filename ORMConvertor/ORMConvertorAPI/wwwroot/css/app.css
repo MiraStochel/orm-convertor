@@ -287,6 +287,31 @@ article.artifact {
   line-height: 1;
 }
 
+/* The example picker of the translation screen: the list takes the row, the button its
+   own width, and the two wrap on a narrow screen. */
+.example-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.example-picker > select {
+  flex: 1 1 16rem;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.example-picker > button {
+  flex: 0 0 auto;
+  width: auto;
+  margin-bottom: 0;
+}
+
+.example-picker + small.hint {
+  margin: 0.35rem 0 1rem;
+}
+
 /* Two columns of panels when the container is wide enough, one otherwise - the same
    container query as the pane grid, so that the two layouts switch together. */
 .compare {

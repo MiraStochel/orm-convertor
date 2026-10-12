@@ -18,9 +18,9 @@ namespace LinqBuilding;
 /// <param name="RightKeys">The key selector's body over <paramref name="InnerParam"/>.</param>
 /// <param name="RightAlias">The alias the joined row takes in the tuple the join yields.</param>
 /// <param name="LeftMembers">The rows of the chain as members of the tuple, each written over <paramref name="LeftParam"/>: the row itself before the first join, the members of the tuple after it.</param>
-/// <param name="ResultSelector">The result selector that puts the rows of the chain and the joined row side by side, as the two-parameter lambda the Join operator takes.</param>
+/// <param name="ResultSelector">The result selector that puts the rows of the chain and the joined row side by side, as the two-parameter lambda the Join operator takes, each row under the member its alias names.</param>
 /// <param name="ChainSoFar">The chain before this join, from its root - what a composed full join repeats.</param>
-/// <param name="RootMember">The member of the tuple that holds the root row, which no left join leaves null.</param>
+/// <param name="RootMember">The member of the tuple that holds the root row, which no left join leaves null: its alias, also where <paramref name="LeftParam"/> had to take another name.</param>
 public sealed record LinqJoinCall(
     JoinKind Kind,
     string RightSequence,
@@ -36,4 +36,18 @@ public sealed record LinqJoinCall(
 {
     /// <summary>The arguments of the Join operator and of its outer variants: the sequence, the two key selectors and the result selector.</summary>
     public string Arguments => $"{RightSequence}, {LeftParam} => {LeftKeys}, {InnerParam} => {RightKeys}, {ResultSelector}";
+
+    /// <summary>The joined row as a member of the tuple: <paramref name="InnerParam"/> under the name <paramref name="RightAlias"/>.</summary>
+    public string RightMember => Member(RightAlias, InnerParam);
+
+    /// <summary>
+    /// A member of an anonymous type named <paramref name="name"/> with the value
+    /// <paramref name="expression"/>: the expression alone where C# infers that name from it,
+    /// <c>name = expression</c> where a renamed lambda parameter would name it otherwise.
+    /// </summary>
+    public static string Member(string name, string expression)
+    {
+        var inferred = expression[(expression.LastIndexOf('.') + 1)..];
+        return inferred == name ? expression : $"{name} = {expression}";
+    }
 }

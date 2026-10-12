@@ -7,14 +7,15 @@ using ORMConvertorAPI.Dtos;
 namespace Tests.Combined;
 
 /// <summary>
-/// The examples of the explanatory page (decision 099). Which examples the page shows is its
-/// content, not a decision; what the decision fixes is a floor - at least seven examples,
-/// every boundary between the ecosystems crossed, every framework taking part - and this
-/// class holds it. The page itself claims no requirement and has no tests (decision 032), so
-/// what is asserted here is the data the server hands it: every example is a conversion the
-/// tool actually performs, in languages its source reads. Without this, a parser change that
-/// broke an example would surface on the page rather than in the suite - the live example
-/// cannot drift from the tool in what it shows, but it can stop working.
+/// The examples of the explanatory page (decision 099), which the translation screen also
+/// lists for loading. Which examples the page shows is its content, not a decision; what the
+/// decision fixes is a floor - at least seven examples, every boundary between the
+/// ecosystems crossed, every framework taking part - and this class holds it. The pages
+/// themselves claim no requirement and have no tests (decision 032), so what is asserted
+/// here is the data the server hands them: every example is a conversion the tool actually
+/// performs, in languages its source reads. Without this, a parser change that broke an
+/// example would surface on a page rather than in the suite - the live example cannot drift
+/// from the tool in what it shows, but it can stop working.
 /// </summary>
 public class ExampleCatalogTest
 {
@@ -92,6 +93,19 @@ public class ExampleCatalogTest
 
         Assert.Equal(keys.Count, keys.Distinct().Count());
         Assert.All(keys, key => Assert.Matches("^[a-z0-9]+(-[a-z0-9]+)*$", key));
+    }
+
+    /// <summary>
+    /// The title is what the translation screen lists an example by, beside the direction it
+    /// states from the two frameworks, so every example has one and no two share it.
+    /// </summary>
+    [Fact]
+    public void TitlesAreUniqueNames()
+    {
+        var titles = Examples.GetExamples.Select(example => example.Title).ToList();
+
+        Assert.All(titles, title => Assert.False(string.IsNullOrWhiteSpace(title)));
+        Assert.Equal(titles.Count, titles.Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 
     /// <summary>

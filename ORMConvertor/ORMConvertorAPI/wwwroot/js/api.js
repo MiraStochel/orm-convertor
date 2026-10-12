@@ -287,9 +287,10 @@ export const getSamples = () => getJson("samples");
 export const getAdvisorSamples = () => getJson("samples-advisor");
 
 /**
- * GET /examples - the explanatory page's examples as whole conversion inputs (decision 099):
- * { key, sourceOrm, targetOrm, units }, each unit the { contentType, content, name } that
- * /convert takes, so the page sends it unchanged.
+ * GET /examples - the examples as whole conversion inputs (decision 099):
+ * { key, title, sourceOrm, targetOrm, units }, each unit the { contentType, content, name }
+ * that /convert takes, so the explanatory page sends it unchanged and the translation screen
+ * loads it into its editor as it is.
  */
 export const getExamples = () => getJson("examples");
 

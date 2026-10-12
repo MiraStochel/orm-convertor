@@ -946,6 +946,7 @@
       "ExampleDefinition": {
         "required": [
           "key",
+          "title",
           "sourceOrm",
           "targetOrm",
           "units"
@@ -953,6 +954,9 @@
         "type": "object",
         "properties": {
           "key": {
+            "type": "string"
+          },
+          "title": {
             "type": "string"
           },
           "sourceOrm": {

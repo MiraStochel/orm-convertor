@@ -72,6 +72,17 @@
     <section>
       <h2>2. Input files</h2>
       <p id="offer-note"></p>
+      <div class="example-picker">
+        <select id="example-select" aria-label="Example to load" disabled>
+          <option value="">Loading the examples…</option>
+        </select>
+        <button type="button" id="load-example" class="secondary" disabled>Load example</button>
+      </div>
+      <small class="hint">
+        An example is a whole conversion input: loading one replaces the units below and sets
+        the direction above. The <a href="examples.html">Examples</a> page explains what each
+        one shows.
+      </small>
       <div class="toolbar">
         <button type="button" id="add-files">Add files…</button>
         <button type="button" id="add-unit" class="secondary">Add empty unit</button>

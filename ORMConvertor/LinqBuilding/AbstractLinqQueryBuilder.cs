@@ -199,11 +199,17 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
                 innerParam = rightAlias + i;
             }
 
+            // Each row enters the tuple under the alias the visitor resolves it by (LinqScope.Row),
+            // whatever its lambda parameter is called: a parameter is renamed where the alias is
+            // taken by an enclosing lambda or by the variable of a derived table, which a lambda
+            // may not shadow (decisions 061 and 112), and the member then names the alias.
+            var rootMember = scope.Composite ? tupleAliases[0] : clauses.From.Alias ?? leftParam;
             var leftMembers = scope.Composite
                 ? tupleAliases.Select(a => $"{leftParam}.{a}").ToList()
                 : [leftParam];
-            var members = string.Join(", ", leftMembers) + $", {rightAlias}";
-            var resultSelector = $"({leftParam}, {rightAlias}) => new {{ {members} }}";
+            var leftNamed = scope.Composite ? leftMembers : [LinqJoinCall.Member(rootMember, leftParam)];
+            var members = string.Join(", ", leftNamed) + $", {LinqJoinCall.Member(rightAlias, innerParam)}";
+            var resultSelector = $"({leftParam}, {innerParam}) => new {{ {members} }}";
 
             // A condition that names both rows other than as keys, or no key at all, is the
             // correlated SelectMany (decision 113): the joined sequence filtered by the whole
@@ -259,7 +265,7 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
                 leftMembers,
                 resultSelector,
                 string.Concat(artifact.Source.ToString(), artifact.Joins.ToString()),
-                scope.Composite ? tupleAliases[0] : leftParam);
+                rootMember);
 
             if (!WriteJoin(call, artifact))
             {

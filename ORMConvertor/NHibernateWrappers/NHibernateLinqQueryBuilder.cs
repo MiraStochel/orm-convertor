@@ -80,13 +80,18 @@ public sealed class NHibernateLinqQueryBuilder : AbstractLinqQueryBuilder
                 // The pair of the row of the chain and the group of its matches, under names no
                 // row of the chain takes, then the group flattened: a row of the chain without a
                 // match yields the pair once, with a null in the joined row's place.
+                // Each row keeps the member its alias names, as in the result selector of a Join;
+                // before the first join the row of the chain is the pair's member named after
+                // its lambda parameter, which the root's alias names again.
                 var group = Fresh(call.RightAlias + "Group", call);
                 var pair = Fresh("pair", call);
-                var flattened = string.Join(", ", call.LeftMembers.Select(member => $"{pair}.{member}"));
+                var flattened = string.Join(", ", call.LeftMembers.Select(member => member == call.LeftParam
+                    ? LinqJoinCall.Member(call.RootMember, $"{pair}.{member}")
+                    : $"{pair}.{member}"));
 
                 artifact.Joins.Append(
                     $"\n        .GroupJoin({call.RightSequence}, {call.LeftParam} => {call.LeftKeys}, {call.InnerParam} => {call.RightKeys}, ({call.LeftParam}, {group}) => new {{ {call.LeftParam}, {group} }})" +
-                    $"\n        .SelectMany({pair} => {pair}.{group}.DefaultIfEmpty(), ({pair}, {call.RightAlias}) => new {{ {flattened}, {call.RightAlias} }})");
+                    $"\n        .SelectMany({pair} => {pair}.{group}.DefaultIfEmpty(), ({pair}, {call.InnerParam}) => new {{ {flattened}, {call.RightMember} }})");
                 return true;
             }
 

@@ -115,14 +115,21 @@
 
     <h2>The examples</h2>
     <p>
-      Ten examples. The first seven are grouped by the boundary the translation
+      Fourteen examples. The first seven are grouped by the boundary the translation
       crosses: two stay inside .NET, two inside Java, and three cross between the
       ecosystems &mdash; the last two over a whole domain rather than a single class.
-      The other three are about queries: what a target does with a construct its
-      query language lacks, and how the queries are found in code. Below each one,
-      the records list every place where the output could not carry a fact of the
-      input, or states something the input did not. That is where a translation
-      explains itself.
+      The next three are about queries: what a target does with a construct its
+      query language lacks, and how the queries are found in code. The last four take
+      one larger domain, a marketplace, from four source frameworks, and together show
+      what the tool reads and writes &mdash; one of them is a single, very long query.
+      Below each one, the records list every place where the output could not carry a
+      fact of the input, or states something the input did not. That is where a
+      translation explains itself.
+    </p>
+    <p>
+      Every example is also in the list on the <a href="translation.html">Translation</a>
+      page: <em>Load example</em> puts its files into the editor and sets its direction,
+      and from there the target can be switched to any of the six.
     </p>
 
     <div class="card-grid example-index">
@@ -159,6 +166,15 @@
           <li><a href="#lending-reports-efcore">Reports: Hibernate &rarr; EF Core</a> &mdash; three in LINQ, two in native SQL</li>
           <li><a href="#lending-reports-nhibernate">Reports: Hibernate &rarr; NHibernate</a> &mdash; the same five, all in native SQL</li>
           <li><a href="#order-repository">Order repository: EF Core &rarr; EclipseLink</a> &mdash; five ways code hands a query over</li>
+        </ul>
+      </article>
+      <article>
+        <h3>The marketplace</h3>
+        <ul>
+          <li><a href="#marketplace-fluent">Fluent configuration: EF Core &rarr; NHibernate</a> &mdash; nine entities configured in code</li>
+          <li><a href="#marketplace-mappings">Mapping documents: NHibernate &rarr; MyBatis</a> &mdash; hbm.xml and named queries</li>
+          <li><a href="#marketplace-query-tour">Query vocabulary: Hibernate &rarr; EF Core</a> &mdash; fourteen reports, twelve in LINQ</li>
+          <li><a href="#marketplace-long-query">One long query: EclipseLink &rarr; EF Core</a> &mdash; fourteen subqueries, one LINQ chain</li>
         </ul>
       </article>
     </div>
@@ -541,6 +557,202 @@
         handed to <code>Database.SqlQuery</code> is read as a query like any other, so
         EclipseLink receives it as JPQL, with the column <code>ShipToCity</code> back as
         the attribute <code>City</code>. JPQL says all five, so nothing falls back.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <h2>The marketplace</h2>
+    <p>
+      One domain &mdash; regions, customers, a hierarchy of categories, suppliers,
+      products with tags, orders, order lines keyed by their order and number, refunds
+      and reviews &mdash; stated by four source frameworks, each in the way its projects
+      usually state it. The first two examples are about the mapping: what each source
+      says and how much of it the target can say back. The other two are about queries:
+      fourteen reports that each rest on another construct of the query vocabulary, and
+      one report that puts most of them into a single query. The inputs run to a dozen
+      files and the outputs to more, so the panes start folded.
+    </p>
+
+    <section id="marketplace-fluent" data-example="marketplace-fluent">
+      <h3>Fluent configuration: EF Core &rarr; NHibernate</h3>
+      <p>
+        Most EF Core projects keep their classes plain and describe the tables in code.
+        The source is nine entities in three files, a context whose
+        <code>OnModelCreating</code> configures them one chain at a time, and a
+        configuration class for the order lines that the context applies. The tool reads
+        that code as a bounded subset, before any annotation, and the context and the
+        configuration class are read as configuration, not as entities. Everything the
+        chains state reaches the NHibernate mapping: the default schema on every class,
+        <code>ValueGeneratedNever</code> as an <code>assigned</code> generator,
+        <code>HasColumnName</code> as a column of its own, <code>IsUnicode(false)</code>
+        as <code>AnsiString</code>, <code>HasColumnType("char(2)")</code> as an
+        <code>sql-type</code>, the alternate key and the unique indexes as
+        <code>unique</code> &mdash; over two columns as a <code>unique-key</code> whose
+        name the tool makes up and says so &mdash;, the one-to-one as a unique
+        <code>many-to-one</code> on the dependent side and a <code>one-to-one</code> on
+        the other, the self-reference of the categories, and the composite keys of the
+        order line and of the explicit junction entity as
+        <code>&lt;composite-id&gt;</code> with the <code>Equals</code>,
+        <code>GetHashCode</code> and <code>[Serializable]</code> NHibernate requires. The
+        row version becomes <code>&lt;version&gt;</code>, and so does the concurrency
+        token of the order, with a Convention record: NHibernate increments it itself,
+        where the EF Core application kept it. <code>Ignore</code> leaves the property on
+        the class and out of the mapping. Two calls lie outside the subset on purpose,
+        <code>HasDefaultValueSql</code> and <code>OnDelete</code>, and each is a Loss
+        record naming the call. The three queries come back as HQL and, beside it, as
+        LINQ over <code>session.Query&lt;T&gt;()</code>.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="marketplace-mappings" data-example="marketplace-mappings">
+      <h3>Mapping documents and named queries: NHibernate &rarr; MyBatis</h3>
+      <p>
+        The shop as an NHibernate project keeps it: the classes in one C# file without a
+        single foreign-key property, a mapping document per class, and the queries in
+        three places &mdash; a mapping document of named queries, one in HQL and one in
+        SQL, a bare HQL file, and a class that hands HQL to the session with the page on
+        the query object. The mappings use what <code>hbm.xml</code> offers: four
+        generators (<code>assigned</code>, <code>identity</code>, a named
+        <code>sequence</code>, <code>hilo</code> over a table of its own), a version, a
+        key whose first part is a <code>key-many-to-one</code>, a literal
+        <code>sql-type</code>, unique columns and a unique key over a column and a
+        relation, and a many-to-many over a join table, which the target receives as the
+        junction entity <code>ProductTag</code>. MyBatis maps results rather than tables,
+        so the classes become plain Java and the mappings result maps; every fact a
+        result map has no place for, from the table to the generator, is a Loss record,
+        one line per fact, which is why the records run long here. The queries are where
+        the source pays off: a join along an association (<code>join o.Customer c</code>)
+        becomes an SQL join whose condition comes from the mapping, a named query keeps
+        its name as the id of its <code>&lt;select&gt;</code> and the name of the mapper
+        method, the SQL query stays SQL, and every parameter is typed &mdash; from
+        <code>&lt;query-param&gt;</code>, or from the column it is compared with. The two
+        queries the source does not name are called <code>query</code>.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="marketplace-query-tour" data-example="marketplace-query-tour">
+      <h3>The query vocabulary in fourteen reports: Hibernate &rarr; EF Core</h3>
+      <p>
+        Ten JPA entities and one Java class with fourteen reports, each resting on
+        another construct: a bound prefix and an escaped wildcard; a collection parameter
+        beside a list of values; grouping with a filter over the groups, ordered by an
+        aggregate; a left join that finds customers without orders, and a full join; a
+        scalar subquery in the projection under a page; the quantified comparisons
+        <code>&gt; all</code> and <code>= any</code>; a union; two common table
+        expressions with a ranking window; a recursive one over the category tree; a list
+        joined from a group; date arithmetic beside a <code>CASE</code>; grouping by an
+        expression; grouping over a grouped result. Twelve of them EF Core says in LINQ:
+        the bound prefix becomes <code>EF.Functions.Like</code>, the escaped wildcard a
+        <code>Contains</code>, the collection parameter an <code>IEnumerable</code> whose
+        <code>Contains</code> EF Core expands, the full join a <code>LeftJoin</code>
+        concatenated with the unmatched rows of a <code>RightJoin</code>,
+        <code>&gt; all</code> an <code>All</code> over the projected amounts and
+        <code>= any</code> an <code>IN</code> (a Convention record says so), the union
+        <code>Union</code>, the list <code>string.Join</code> over the ordered values of
+        each group, the date difference <code>EF.Functions.DateDiffDay</code>,
+        <code>extract(year …)</code> <code>.Year</code>, and the derived table a variable
+        of the method that the chain joins. LINQ has neither a window nor recursion, so
+        the ranking and the category tree go out as native SQL through
+        <code>Database.SqlQuery</code>, each with a row class and a Fallback record that
+        names why. Load it on the Translation page and switch the target: towards
+        NHibernate seven of the fourteen go out as native SQL, towards EclipseLink five,
+        towards Hibernate none.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="marketplace-long-query" data-example="marketplace-long-query">
+      <h3>One long query: EclipseLink &rarr; EF Core</h3>
+      <p>
+        One report, as long as reports get: a dashboard of regional champions in plain
+        JPQL, handed to EclipseLink with its page on the query object. The outer query
+        joins eight entities, one of them by a left join over two columns, groups by
+        region and customer, and projects thirteen aggregates &mdash; three over distinct
+        values, one over a <code>CASE</code>, one under <code>COALESCE</code> &mdash;
+        beside a scalar subquery. Its filter nests subqueries five levels deep, the
+        deepest correlated with the outermost row, and holds an <code>EXISTS</code>, a
+        <code>NOT EXISTS</code> over a join, <code>IN</code> and <code>&gt; any</code>
+        over subqueries, scalar comparisons, a list of values, a range, an escaped
+        pattern and string functions; the filter over the groups nests two levels more.
+        Fourteen subqueries in all. EF Core receives the whole of it as one LINQ chain:
+        <code>Join</code> and <code>LeftJoin</code> calls that build the row, one
+        <code>Where</code> whose subqueries are nested <code>ctx.Set&lt;T&gt;()</code>
+        chains ending in <code>Any</code>, <code>Contains</code>, <code>Average</code>
+        and <code>Max</code>, a <code>GroupBy</code> over an anonymous key, the filter
+        over the groups as a second <code>Where</code>, a projection with
+        <code>Distinct().Count()</code> and a coalesced <code>Sum</code>, then the
+        ordering, <code>Skip</code> and <code>Take</code>. Nothing falls back and
+        nothing is lost; beside the records of the entities the query adds two
+        Conventions &mdash; the class is read as the code around its query, and the range
+        became two comparisons. Load it on the Translation page and switch the target to
+        see the same query as T-SQL for Dapper or MyBatis, as HQL with its LINQ form for
+        NHibernate, or as JPQL for Hibernate and EclipseLink.
       </p>
       <div class="toolbar">
         <button type="button" class="example-run secondary">Run again</button>

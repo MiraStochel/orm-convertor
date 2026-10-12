@@ -107,11 +107,11 @@ public class RestContractTest(ApiTestHost host)
     }
 
     /// <summary>
-    /// The examples arrive as whole conversion inputs (decision 099), in the order the page
-    /// shows them: the direction as numbers of the enum, and every unit with the name, content
-    /// type and content the page then sends to /convert unchanged. <c>Combined/ExampleCatalogTest</c>
-    /// asserts that each of them converts; this asserts that what converts is what the client
-    /// receives.
+    /// The examples arrive as whole conversion inputs (decision 099), in the order the pages
+    /// show them: the title the translation screen lists them by, the direction as numbers of
+    /// the enum, and every unit with the name, content type and content the pages then send to
+    /// /convert unchanged. <c>Combined/ExampleCatalogTest</c> asserts that each of them
+    /// converts; this asserts that what converts is what the client receives.
     /// </summary>
     [Fact]
     public async Task ExamplesArriveAsWholeConversionInputs()
@@ -126,6 +126,7 @@ public class RestContractTest(ApiTestHost host)
         foreach (var (example, element) in expected.Zip(wire.RootElement.EnumerateArray()))
         {
             Assert.Equal(example.Key, element.GetProperty("key").GetString());
+            Assert.Equal(example.Title, element.GetProperty("title").GetString());
             Assert.Equal((int)example.SourceOrm, element.GetProperty("sourceOrm").GetInt32());
             Assert.Equal((int)example.TargetOrm, element.GetProperty("targetOrm").GetInt32());
 
