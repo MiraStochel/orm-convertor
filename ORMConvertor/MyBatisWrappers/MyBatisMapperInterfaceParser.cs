@@ -57,6 +57,14 @@ public sealed class MyBatisMapperInterfaceParser(AbstractEntityBuilder entityBui
         {
             var namespaceName = string.IsNullOrEmpty(unit.Package) ? mapper.Name : $"{unit.Package}.{mapper.Name}";
 
+            // The statements a mapper inherits from the BaseMapper of MyBatis-Plus are composed by
+            // the package at run time and declared nowhere a reading could take them, so the
+            // interface says so once; what it declares itself is read below (decision 133).
+            if (MyBatisPlus.BaseMapper(mapper, unit.Imports) is { } inherited)
+            {
+                Report(ConversionRecordKind.Loss, null, null, null, inherited);
+            }
+
             foreach (var method in mapper.Methods)
             {
                 context.DeclareMethod(namespaceName, SignatureOf(method));

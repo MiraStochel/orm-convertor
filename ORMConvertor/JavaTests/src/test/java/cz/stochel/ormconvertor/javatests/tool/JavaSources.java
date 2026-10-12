@@ -10,9 +10,9 @@ import java.util.regex.Pattern;
  * <p>An artifact of the answer carries no file name, so the name is derived from the
  * content: a public top-level type must live in a file of its own name inside a directory
  * matching its package (JLS §7.6). Nothing is invented by that - it is the only layout
- * Java admits, {@code javac} enforces it itself, and it would hold for any consumer. The
- * open item about naming artifacts on the wire is untouched: its question is which entity
- * and which units an artifact came from, and the answer to it would not change the file.
+ * Java admits, {@code javac} enforces it itself, and it would hold for any consumer. Which
+ * entity and which units an artifact came from the answer states beside the artifact
+ * (decision 125), and that would not change the file either.
  *
  * <p>A query artifact is a bare method, so the class around it and its imports are added
  * here - the contribution of the consumer project, not of the artifact, exactly as

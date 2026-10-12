@@ -1,7 +1,8 @@
 /*
  * The one module that knows the API (decision 032): endpoint paths, DTO shapes and
  * mirrors of the server enums, which serialize as numbers. Every page imports from
- * here; nothing else states a path or an enum value.
+ * here; no other script states a path or an enum value (the markup of the LDBC page carries
+ * a few as numbers in data attributes, which its script reads back through these mirrors).
  *
  * All paths are relative, so the deployment base path (/orm) is never written down.
  */
@@ -139,20 +140,36 @@ export const CatalogState = Object.freeze({
   Unreachable: 3,
 });
 
+export const MappingFactCategory = Object.freeze({
+  TableName: 1,
+  SchemaName: 2,
+  ColumnName: 3,
+  DatabaseType: 4,
+  Length: 5,
+  PrecisionAndScale: 6,
+  Nullability: 7,
+  PrimaryKey: 8,
+  PrimaryKeyStrategy: 9,
+  ForeignKeyColumns: 10,
+  VersionColumn: 11,
+  UniqueConstraint: 12,
+  TransientProperty: 13,
+});
+
 export const MAPPING_FACT_CATEGORY_LABELS = Object.freeze({
-  1: "table name",
-  2: "schema name",
-  3: "column name",
-  4: "database type",
-  5: "length",
-  6: "precision and scale",
-  7: "nullability",
-  8: "primary key",
-  9: "primary key strategy",
-  10: "foreign key columns",
-  11: "version column",
-  12: "unique constraint",
-  13: "transient property",
+  [MappingFactCategory.TableName]: "table name",
+  [MappingFactCategory.SchemaName]: "schema name",
+  [MappingFactCategory.ColumnName]: "column name",
+  [MappingFactCategory.DatabaseType]: "database type",
+  [MappingFactCategory.Length]: "length",
+  [MappingFactCategory.PrecisionAndScale]: "precision and scale",
+  [MappingFactCategory.Nullability]: "nullability",
+  [MappingFactCategory.PrimaryKey]: "primary key",
+  [MappingFactCategory.PrimaryKeyStrategy]: "primary key strategy",
+  [MappingFactCategory.ForeignKeyColumns]: "foreign key columns",
+  [MappingFactCategory.VersionColumn]: "version column",
+  [MappingFactCategory.UniqueConstraint]: "unique constraint",
+  [MappingFactCategory.TransientProperty]: "transient property",
 });
 
 /*
@@ -279,16 +296,18 @@ export const getExamples = () => getJson("examples");
 /**
  * GET /ldbc - the LDBC query catalog (decision 110): { sourceOrm, entities, queries }, the
  * entities as /convert units and every query as { key, workload, number, title, translation,
- * note, sql, parameters, refusedBy }. A query is run by sending the entities plus its text.
+ * note, sql, parameters, refusedBy, fallbackBy, validation } - validation being the operation
+ * of the LDBC validation set that judges an Interactive query (decision 117), null for a BI
+ * one. A query is run by sending the entities plus its text.
  */
 export const getLdbc = () => getJson("ldbc");
 
 /**
  * POST /convert. Sources are { contentType, content, name? } units; the response carries
- * runId, toolVersion, source/target framework with versions, sources (the generated
- * artifacts, each with the entity it was generated for and the units it came from -
- * decision 124), records, facts (the ledger of decision 124), catalogState,
- * catalogReadMilliseconds and declaredSourceDialect.
+ * runId, toolVersion, source/target framework with versions, targetDatabaseDialect, sources
+ * (the generated artifacts, each with the entity it was generated for and the units it came
+ * from - decision 124), records, facts (the ledger, with the positions of decision 125),
+ * catalogState, catalogReadMilliseconds, declaredSourceDialect and maxNestingDepth.
  *
  * declaredSourceDialect is optional on the way in and null means the source declares
  * nothing, which reads as it always did (decision 088); the field is sent only when it has

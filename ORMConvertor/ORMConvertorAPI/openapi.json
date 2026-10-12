@@ -650,6 +650,63 @@
       "ConversionContentType": {
         "type": "integer"
       },
+      "ConversionFact": {
+        "required": [
+          "entity",
+          "category",
+          "origin",
+          "outcome"
+        ],
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string"
+          },
+          "property": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "category": {
+            "$ref": "#/components/schemas/MappingFactCategory"
+          },
+          "value": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "origin": {
+            "$ref": "#/components/schemas/FactOrigin"
+          },
+          "unit": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FactOutcome"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourcePosition"
+              }
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TargetPosition"
+            }
+          }
+        }
+      },
       "ConversionRecord": {
         "required": [
           "kind",
@@ -744,6 +801,21 @@
               "null",
               "string"
             ]
+          },
+          "entity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "units": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -790,6 +862,7 @@
           "targetDatabaseDialect",
           "sources",
           "records",
+          "facts",
           "catalogState"
         ],
         "type": "object",
@@ -826,6 +899,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ConversionRecord"
+            }
+          },
+          "facts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversionFact"
             }
           },
           "catalogState": {
@@ -889,6 +968,12 @@
             }
           }
         }
+      },
+      "FactOrigin": {
+        "type": "integer"
+      },
+      "FactOutcome": {
+        "type": "integer"
       },
       "LdbcArgumentDefinition": {
         "required": [
@@ -1227,8 +1312,66 @@
           }
         }
       },
+      "SourcePosition": {
+        "required": [
+          "unit",
+          "start",
+          "length"
+        ],
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "string"
+          },
+          "start": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "length": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "SourceSqlDialect": {
         "type": "integer"
+      },
+      "TargetPosition": {
+        "required": [
+          "artifact",
+          "start",
+          "length"
+        ],
+        "type": "object",
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ConversionContentType"
+          },
+          "start": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "length": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
       }
     }
   },

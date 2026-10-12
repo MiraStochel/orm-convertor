@@ -52,8 +52,8 @@ class HibernateClaimsTest {
      * {@code precision} on a temporal column and emits the dialect's default,
      * {@code datetime2(7)} on SQL Server; the attribute that does reach the column is
      * {@code secondPrecision}, which Jakarta Persistence 3.2 added for exactly this. The
-     * test states the measured behaviour of the pinned release - the consequence for the
-     * builder is an open item.
+     * test states the measured behaviour of the pinned release, and the builder writes the
+     * fractional-second precision as {@code secondPrecision} accordingly (decision 079).
      */
     @Test
     void precisionIsIgnoredOnLocalDateTimeWhereSecondPrecisionIsNot() throws Exception {
@@ -180,8 +180,8 @@ class HibernateClaimsTest {
      * which makes national text the default of every String of the mapping, leaves the cast
      * target as it was - the converter adjusts it to indicators of its own, not to the
      * setting -, so the SQL still says {@code varchar(max)} and the characters are still lost.
-     * Measured against 7.4.5 on 2026-10-10; with these two, the probe the open item on the
-     * conversion named found nothing, and the native SQL stays.
+     * Measured against 7.4.5 on 2026-10-10; with these two, no cast target of HQL keeps
+     * the characters, so a conversion of text into text goes out as native SQL (decision 113).
      */
     @Test
     void castIntoTextLosesCharactersOutsideTheCodePageEvenUnderNationalizedCharacterData() {

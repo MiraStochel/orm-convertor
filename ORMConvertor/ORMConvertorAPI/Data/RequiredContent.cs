@@ -67,7 +67,7 @@ public static class RequiredContent
             new(4, ConversionContentType.CSharp, "Entity Class"),
         ], [
             new (5, ConversionContentType.CSharp, "Query Method"),
-            new(6, ConversionContentType.CSharp, "Query Method 2"),
+            new (6, ConversionContentType.CSharp, "Query Method"),
         ]),
     ];
 }

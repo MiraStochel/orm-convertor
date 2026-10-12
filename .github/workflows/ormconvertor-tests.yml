@@ -7,8 +7,8 @@ on:
       - "ORMConvertor/**" # run only when something inside the solution changed
       - ".github/workflows/**" # ... and when this file changes, so a broken edit shows up here
   pull_request:
-    # No pull request is ever opened here - development is solo and on `main` (see
-    # ORMConvertor/README.md) - so this trigger is for a future in which one is.
+    # No pull request is ever opened here - development is solo and on `main` (decision
+    # 098) - so this trigger is for a future in which one is.
     paths:
       - "ORMConvertor/**"
       - ".github/workflows/**"
@@ -17,7 +17,7 @@ on:
     # dependency check needs a clock of its own (decision 098). Only that job runs then.
     - cron: "0 6 * * 1"
 
-# Neither job writes anything back, so neither needs more than read access to the code.
+# No job writes anything back, so none needs more than read access to the code.
 permissions:
   contents: read
 

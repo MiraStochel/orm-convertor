@@ -42,9 +42,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         this.benchmarkExecutor = benchmarkExecutor ?? throw new ArgumentNullException(nameof(benchmarkExecutor));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         this.limits = limits ?? throw new ArgumentNullException(nameof(limits));
-        connectionString = configuration.GetConnectionString("AdvisorDatabase")
-            ?? configuration["Advisor:ConnectionString"]
-            ?? string.Empty;
+        connectionString = configuration.GetConnectionString("AdvisorDatabase") ?? string.Empty;
     }
 
     /// <summary>
@@ -92,8 +90,8 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         {
             throw new InvalidOperationException(
                 "Advisor database connection string is not configured. " +
-                "Set 'ConnectionStrings:AdvisorDatabase' (or 'Advisor:ConnectionString') " +
-                "in appsettings.json or via environment variables (ConnectionStrings__AdvisorDatabase).");
+                "Set 'ConnectionStrings:AdvisorDatabase' in user secrets " +
+                "or via environment variables (ConnectionStrings__AdvisorDatabase).");
         }
 
         // One caching reader for the whole run: every (query, framework) pair qualifies

@@ -55,8 +55,8 @@ public class ArtifactCarriesNoCredentialsTest
     /// <summary>
     /// The stronger half of decision 029: connection code in the input is application code,
     /// not a mapping fact, so parsers do not read it and no target writes it back. The
-    /// embedded DbContext still passes the entity parser as another entity - a known F14
-    /// gap - but even then the secret must not survive into any artifact.
+    /// embedded DbContext is read as the framework's API, not as an entity (decisions 111
+    /// and 132), and whichever reading takes it, the secret must not survive into any artifact.
     /// </summary>
     [Theory]
     [MemberData(nameof(CrossFrameworkInputs.Frameworks), MemberType = typeof(CrossFrameworkInputs))]

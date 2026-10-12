@@ -70,8 +70,8 @@ public static class EclipseLinkDescriptor
 
         // Measured against 5.0.0 when the escape path was written (decision 113): a List
         // bound to ?1 of a native query reaches the JDBC driver as one value, which the
-        // SQL Server driver rejects - the native query does not expand it, so the escape
-        // path refuses a collection parameter here.
+        // SQL Server driver rejects - the native query does not expand it, so the generated
+        // method expands the collection itself, one placeholder per element (decision 123).
         NativeQueryExpandsCollection: false,
 
         // Measured against 5.0.0 when grouping by an expression was written (decision 113):

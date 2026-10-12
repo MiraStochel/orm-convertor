@@ -382,8 +382,9 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
     /// The mapping schema of NHibernate declares precision as a positive integer, so zero -
     /// legal in the source as the sub-second precision of a date-time column - has no place
     /// to go: the framework itself refuses the document. The fact is dropped and reported
-    /// as a loss (decision 004); carrying it would take a concrete SQL type on the column,
-    /// which belongs to the database type neutralization (open item).
+    /// as a loss (decision 004); carrying it would take a literal SQL type on the column,
+    /// which the builder writes only where the source stated one or where the type attribute
+    /// alone would change the claim (decisions 019 and 086).
     /// </summary>
     private bool PrecisionIsExpressible(EntityMap entityMap, PropertyMap propertyMap)
     {

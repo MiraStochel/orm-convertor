@@ -1,11 +1,10 @@
 /*
  * How ranges of a code window are turned into markable pieces, and how a literal text is
- * found in it. Written for the interactive comparison of decision 100, which decision 125
- * removed; the translation screen runs the same functions over the facts the server states
- * (facts.js): the stated positions become segments and marks, and where a framework states
- * no position the value is searched for. It lives apart from the rendering because it is the
- * one part of the page with an answer that can be right or wrong: everything here is a
- * function of its arguments.
+ * found in it, for the facts the translation screen shows (facts.js, decision 125): the
+ * stated positions become segments and marks, and where a framework states no position the
+ * value is searched for. It lives apart from the rendering because it is the one part of the
+ * page with an answer that can be right or wrong: everything here is a function of its
+ * arguments.
  *
  * `markSegments` is the one function that touches the DOM, and only through `document`,
  * which a test can hand it.
@@ -29,40 +28,6 @@ export function occurrences(content, find, { ignoreCase = false } = {}) {
     found.push([match.index, match.index + find.length]);
   }
   return found;
-}
-
-/** The spans of one link, with the token shorthand expanded into one span per file. */
-export function spansOf(link) {
-  const spans = [];
-  if (link.token) {
-    for (const file of link.files ?? []) spans.push({ file, find: link.token, all: true });
-  }
-  spans.push(...(link.spans ?? []));
-  return spans;
-}
-
-/**
- * The ranges of one file of one comparison, each tagged with the id of the link that put it
- * there. `onMiss` is called for a span that matches nothing - authored data against a frozen
- * file, so that is a mistake in the data rather than a state to show the reader.
- */
-export function rangesIn(comparison, fileId, content, idOf, onMiss) {
-  const ranges = [];
-  comparison.links.forEach((link, index) => {
-    for (const span of spansOf(link)) {
-      if (span.file !== fileId) continue;
-      const found = occurrences(content, span.find);
-      if (found.length === 0) {
-        onMiss?.(span, fileId);
-        continue;
-      }
-      const chosen = span.all ? found : [found[(span.nth ?? 1) - 1]];
-      for (const range of chosen) {
-        if (range) ranges.push({ start: range[0], end: range[1], link: idOf(index) });
-      }
-    }
-  });
-  return ranges;
 }
 
 /**

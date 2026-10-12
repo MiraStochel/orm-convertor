@@ -267,7 +267,7 @@ Tady je jádro rozdílu proti Dapperu. Mapování má vlastní deklarativní mí
 
 **`<id>` není primární klíč.** Je to příznak, podle kterého se při vnořování poznají řádky patřící témuž objektu. Bez něj by tři řádky výsledku daly tři autory místo jednoho s dvěma knihami. Tabulka žádný klíč mít nemusí a MyBatis se na něj nikdy nezeptá — z hlediska mezireprezentace je to **tvrzení o výsledku dotazu, ne o entitě**, a parser to musí rozlišit: `<id column="AuthorId">` neopravňuje zapsat `PrimaryKey`.
 
-**`<collection>` nese vztah, ale jen v rámci tohoto dotazu.** Že `Author` má `Book`y, je napsané uvnitř `authorWithBooks`. Jiný `<resultMap>` nad týmiž třídami může vztah vynechat nebo popsat jinak — mapování je **per příkaz, ne per třída**. Tady je rozdíl proti všem pěti předchozím dílům největší: `Relation` v mezireprezentaci visí na `EntityMap` (rozhodnutí [001](../../decisions/001-entity-reference-by-name.md)), kdežto tady je vlastností jednoho dotazu. Parser MyBatis zdroje tedy musí rozhodnout, co dělat, když dva `<resultMap>` téže třídy tvrdí různé věci — a to je vstup rozhodnutí k F8.
+**`<collection>` nese vztah, ale jen v rámci tohoto dotazu.** Že `Author` má `Book`y, je napsané uvnitř `authorWithBooks`. Jiný `<resultMap>` nad týmiž třídami může vztah vynechat nebo popsat jinak — mapování je **per příkaz, ne per třída**. Tady je rozdíl proti všem pěti předchozím dílům největší: `Relation` v mezireprezentaci visí na `EntityMap` (rozhodnutí [001](../../decisions/001-entity-reference-by-name.md)), kdežto tady je vlastností jednoho dotazu. Když dva `<resultMap>` téže třídy tvrdí různé věci, je to podle rozhodnutí [084](../../decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md) záznam `Conflict` se zachovanou první hodnotou.
 
 **Vlastnictví vztahu nikde není.** `mappedBy` ani `inverse="true"` nemá MyBatis obdobu, protože FK sloupec se zapisuje ručně v `<insert>`. Role `Owning`/`Inverse` se tedy do MyBatis výstupu nepropíše nijak, a při čtení se z něj nedá zjistit.
 
@@ -311,7 +311,7 @@ Každá metoda se páruje s příkazem stejného `id` v XML mapperu se `namespac
 
 ### Čeho si všimnout
 
-**Tady žijí typy parametrů.** V XML mapperu je parametr jen `#{publishedBefore}` — bez typu. Typ je v signatuře metody, tedy v Javě, ne v mapování. Pro F8 je to podstatné: operand parametru v mezireprezentaci bude muset typ vzít **odjinud než z dotazu**, což je přesně to, co říká položka o operandu parametru v [`open-items.md`](../../open-items.md).
+**Tady žijí typy parametrů.** V XML mapperu je parametr jen `#{publishedBefore}` — bez typu. Typ je v signatuře metody, tedy v Javě, ne v mapování. Pro F8 je to podstatné: operand parametru v mezireprezentaci bere typ **odjinud než z dotazu** — ze signatury metody mapperu (rozhodnutí [083](../../decisions/083-parameter-as-the-fifth-operand-shape.md) a [084](../../decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md)).
 
 **`@Param` je nutné od druhého parametru.** S jedním parametrem by se jméno odvodilo; u dvou a víc bez `@Param` zbydou jen poziční názvy `arg0`, `arg1`. Anotace tedy není mapování, je to náhrada za informaci, kterou bytecode nenese.
 
@@ -362,7 +362,7 @@ Každá metoda se páruje s příkazem stejného `id` v XML mapperu se `namespac
 
 **Ovladač se tady jmenuje.** U Hibernate i EclipseLinku se JDBC ovladač registruje sám přes `ServiceLoader` a v konfiguraci není. Vestavěný `POOLED` zdroj MyBatisu ale třídu ovladače chce explicitně. S externím `DataSource` nebo přes JNDI by odpadl — je to vlastnost vestavěného zdroje, ne frameworku.
 
-**Žádný dialekt, a to doslova.** Hibernate si dialekt odvodí, EclipseLink platformu taky, NHibernate ho chce v konfiguraci. MyBatis nemá **žádný pojem cílové databáze**; přenositelnost SQL je věcí autora. Pro převodník to znamená, že cílový databázový systém nelze z MyBatis artefaktu přečíst ani odhadnout — SQL uvnitř je jediná stopa, a jak se čte, říká položka o čtení SQL MyBatisu gramatikou T-SQL v [`open-items.md`](../../open-items.md).
+**Žádný dialekt, a to doslova.** Hibernate si dialekt odvodí, EclipseLink platformu taky, NHibernate ho chce v konfiguraci. MyBatis nemá **žádný pojem cílové databáze**; přenositelnost SQL je věcí autora. Pro převodník to znamená, že cílový databázový systém nelze z MyBatis artefaktu přečíst ani odhadnout — SQL uvnitř je jediná stopa; nástroj ho čte sdílenou čtečkou T-SQL (rozhodnutí [082](../../decisions/082-t-sql-read-and-written-by-a-shared-project.md) a [084](../../decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md)) a zdroj, který deklaruje jiný dialekt, nečte (rozhodnutí [088](../../decisions/088-a-declared-foreign-source-dialect-is-not-read.md)).
 
 **`<typeAliases>` nad balíčkem** dovolí psát `type="Author"` místo plného jména. Je to pohodlí, ale pro parser je to nepřímost navíc: `type="Author"` sám o sobě neurčuje třídu, tu určí až tenhle element v konfiguraci. Pořadí čtení artefaktů (rozhodnutí [068](../../decisions/068-source-framework-precedence-orders-the-reading.md)) tedy u MyBatisu musí začít konfigurací, ne mapperem.
 
@@ -634,7 +634,7 @@ SELECT a.AuthorId, a.Name, a.BornOn,
 
 Čtyři pozorování, každé s důsledkem pro mezireprezentaci:
 
-**1. Jeden `<select>` dal čtyři různé příkazy.** Bez `WHERE`, se dvěma různými `WHERE` a s oběma. Dotazová jednotka MyBatisu tedy **není dotaz, ale rodina dotazů**, a `getBoundSql` vrací jednoho člena. Mezireprezentace dnes žádný pojem pro takovou rodinu nemá — a co s ní, musí vyslovit rozhodnutí k F8. Samotné čtení jednoho členu je slepá ulička: `[oba parametry null]` a `[oba parametry]` se liší celou klauzulí `WHERE`, takže překlad postavený na jediné sadě parametrů by tiše zahodil zbytek rodiny.
+**1. Jeden `<select>` dal čtyři různé příkazy.** Bez `WHERE`, se dvěma různými `WHERE` a s oběma. Dotazová jednotka MyBatisu tedy **není dotaz, ale rodina dotazů**, a `getBoundSql` vrací jednoho člena. Mezireprezentace žádný pojem pro takovou rodinu nemá, a nástroj ji proto odmítá (zúžení F8, rozhodnutí [084](../../decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md)). Samotné čtení jednoho členu je slepá ulička: `[oba parametry null]` a `[oba parametry]` se liší celou klauzulí `WHERE`, takže překlad postavený na jediné sadě parametrů by tiše zahodil zbytek rodiny.
 
 **2. `<where>` není text, je to operace nad stromem podmínek.** Ve variantě `[jen namePattern]` je ve `WHERE  a.Name LIKE ?` — počáteční `AND`, které je v mapperu napsané, zmizelo. `<where>` klauzuli vynechá, když je prázdná, a odstraní úvodní `AND` nebo `OR`, když není. Je to přesně ta operace, kterou v mezireprezentaci dělá strom podmínek (invariant „podmínky jsou strom, ne plochý seznam"), jen vyjádřená v XML.
 
@@ -727,19 +727,19 @@ Rozšíření tabulky z dílu k EclipseLinku o sloupec MyBatis. Řádky, kde MyB
 
 **1. MyBatis není Dapper, a je to dobrá zpráva.** `<resultMap>` nese dvojice sloupec–vlastnost i vnořený vztah, takže parser MyBatis zdroje **má z čeho postavit entitní mapu** bez katalogu — na rozdíl od Dapperu, kde entitní mapa vzniká celá doplněním (F6). Katalog bude pořád potřeba na délky, nullabilitu a typy, ale ne na základní tvar.
 
-**2. Mapování vázané na příkaz je nový tvar.** `Relation` v mezireprezentaci visí na `EntityMap` (rozhodnutí [001](../../decisions/001-entity-reference-by-name.md)) a předpokládá jedno mapování na třídu. MyBatis dovolí dva `<resultMap>` nad touž třídou, které o vztahu tvrdí různé věci. Rozhodnutí k F8 musí říct, co je konflikt a co legitimní pohled — a je to tentýž typ otázky jako u aliasů Dapperu v položce o propsání aliasu do entitní mapy.
+**2. Mapování vázané na příkaz je nový tvar.** `Relation` v mezireprezentaci visí na `EntityMap` (rozhodnutí [001](../../decisions/001-entity-reference-by-name.md)) a předpokládá jedno mapování na třídu. MyBatis dovolí dva `<resultMap>` nad touž třídou, které o vztahu tvrdí různé věci. Co je konflikt, vyslovilo rozhodnutí [084](../../decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md) (`Conflict`, platí první); tentýž typ otázky u aliasů Dapperu zodpovědělo rozhodnutí [131](../../decisions/131-a-column-alias-in-a-typed-dapper-call-states-the-column-of-the-property.md).
 
-**3. Dynamický příkaz je rodina, ne dotaz.** Tohle je největší otevřená věc a `getBoundSql` ji doložil čtyřmi různými příkazy z jednoho `<select>`. Bez pojmu parametru v mezireprezentaci (rozhodnutí [024](../../decisions/024-typed-query-operand.md) ho vědomě odložilo) nelze F8 splnit vůbec; dnes takový dotaz parser odmítá záznamem `Failure` kategorie `QueryParameter` (rozhodnutí [070](../../decisions/070-a-parser-refuses-what-would-change-the-row-set.md)). Operand parametru proto dostane vlastní rozhodnutí s F8 jako prvním producentem, a tenhle běh mu dává čtyři konkrétní vstupy: typ se bere z podpisu metody, `#{}` je vázaná hodnota a `${}` textová substituce, `<where>` je operace nad stromem podmínek, a jediný vyhodnocený člen rodinu nereprezentuje.
+**3. Dynamický příkaz je rodina, ne dotaz.** Tohle je největší otevřená věc a `getBoundSql` ji doložil čtyřmi různými příkazy z jednoho `<select>`. Parametr nese mezireprezentace jako pátý tvar operandu (rozhodnutí [083](../../decisions/083-parameter-as-the-fifth-operand-shape.md), MyBatis jako jeho první producent podle [084](../../decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md)) a tenhle běh mu dal čtyři konkrétní vstupy: typ se bere z podpisu metody, `#{}` je vázaná hodnota a `${}` textová substituce, `<where>` je operace nad stromem podmínek, a jediný vyhodnocený člen rodinu nereprezentuje.
 
 **4. Souběh anotace a XML je `Failure`, ne `Conflict`.** Doloženo výjimkou při stavbě továrny. Precedence mezi oběma formami neexistuje, takže není mezi čím rozhodovat — a záznam má mít tvar podle rozhodnutí [063](../../decisions/063-stated-keylessness-as-a-carried-fact.md).
 
-**5. Jednotka převodu je u MyBatisu mapování i dotaz zároveň.** Jeden `AuthorMapper.xml` nese `<resultMap>` i `<select>`. Orchestrace dnes dělí jednotky na entitní a dotazové podle typu obsahu a pouští je ve dvou průchodech; tenhle soubor patří do obou. Je to položka „Jednotka, která je mapování i dotaz zároveň" v [`open-items.md`](../../open-items.md) a tenhle díl je jejím nejkonkrétnějším dokladem: dělit takový soubor by musel klient, což jde proti F14.
+**5. Jednotka převodu je u MyBatisu mapování i dotaz zároveň.** Jeden `AuthorMapper.xml` nese `<resultMap>` i `<select>`. Takový soubor čtou oba průchody orchestrace, každý pro svou roli (rozhodnutí [081](../../decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md)), a jednotka deklaruje jen svůj jazyk (rozhodnutí [111](../../decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)); dělit ho by musel klient, což by šlo proti F14.
 
 ---
 
 ## Kam pokračovat
 
-**1. `<foreach>` a `IN` se seznamem hodnot.** Nejčastější důvod, proč se dynamické SQL vůbec používá, a pro mezireprezentaci zajímavý tím, že počet parametrů závisí na datech. Seznam hodnot jako čtvrtý tvar operandu už mezireprezentace zná; tady by se ukázalo, jestli to stačí.
+**1. `<foreach>` a `IN` se seznamem hodnot.** Nejčastější důvod, proč se dynamické SQL vůbec používá, a pro mezireprezentaci zajímavý tím, že počet parametrů závisí na datech. Kanonický `<foreach>` v pozici pravého operandu `IN` čte nástroj jako kolekční parametr (rozhodnutí [084](../../decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md)), jiný tvar odmítá.
 
 **2. Vnořený `<select>` místo JOINu.** Druhá cesta, jak naplnit `<collection>`, a rovnou N+1 z definice. Stojí za vyzkoušení kvůli `fetchType="lazy"` a `lazyLoadingEnabled` — je to jediné místo, kde MyBatis proxy vůbec používá.
 

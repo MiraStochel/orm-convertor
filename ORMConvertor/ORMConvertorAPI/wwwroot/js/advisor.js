@@ -79,10 +79,19 @@ function newQueryUnit(template) {
 
 /* ---- rendering -------------------------------------------------------- */
 
+/*
+ * Only the sources the server lists Advisor inputs for are offered: any other one would get a
+ * form without an entity unit and a C# query field for a framework that writes no C#. Until
+ * the list has arrived - or if it never does - every framework stands, so the form is never
+ * empty.
+ */
 function renderSourceSelect() {
   const select = document.getElementById("source-orm");
   select.replaceChildren();
-  for (const value of Object.values(ORM)) {
+  const listed = Object.values(ORM).filter((value) => state.requiredContent.some((r) => r.ormType === value));
+  const offered = listed.length > 0 ? listed : Object.values(ORM);
+  if (!offered.includes(state.sourceOrm)) state.sourceOrm = offered[0];
+  for (const value of offered) {
     const option = document.createElement("option");
     option.value = String(value);
     option.textContent = ORM_LABELS[value];
@@ -118,9 +127,10 @@ function renderEntityUnits() {
   container.replaceChildren();
   for (const unit of state.entityUnits) {
     const article = cloneTemplate("entity-unit-template");
-    article.querySelector(".unit-label").textContent =
-      `${unit.description} (${CONTENT_TYPE_LABELS[unit.contentType]})`;
+    const label = `${unit.description} (${CONTENT_TYPE_LABELS[unit.contentType]})`;
+    article.querySelector(".unit-label").textContent = label;
     const textarea = article.querySelector(".unit-content");
+    textarea.setAttribute("aria-label", label);
     textarea.value = unit.content;
     textarea.addEventListener("input", () => {
       unit.content = textarea.value;
@@ -135,8 +145,8 @@ function renderQueryUnits() {
   container.replaceChildren();
   state.queryUnits.forEach((unit, index) => {
     const article = cloneTemplate("query-unit-template");
-    article.querySelector(".unit-label").textContent =
-      `${unit.description} ${index + 1} (${CONTENT_TYPE_LABELS[unit.contentType]})`;
+    const label = `${unit.description} ${index + 1} (${CONTENT_TYPE_LABELS[unit.contentType]})`;
+    article.querySelector(".unit-label").textContent = label;
 
     const weight = article.querySelector(".unit-weight");
     weight.value = String(unit.weight);
@@ -152,6 +162,7 @@ function renderQueryUnits() {
     });
 
     const textarea = article.querySelector(".unit-content");
+    textarea.setAttribute("aria-label", label);
     textarea.value = unit.content;
     textarea.addEventListener("input", () => {
       unit.content = textarea.value;
@@ -421,6 +432,7 @@ async function init() {
     errorElement.textContent = `Could not load the input catalog: ${error.message}`;
     errorElement.hidden = false;
   }
+  renderSourceSelect();
   resetUnitsForSource();
   renderEntityUnits();
   renderQueryUnits();

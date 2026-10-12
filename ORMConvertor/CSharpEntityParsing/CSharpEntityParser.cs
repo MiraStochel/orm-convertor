@@ -1,4 +1,5 @@
 using AbstractWrappers;
+using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Reading;
 using Microsoft.CodeAnalysis;
@@ -310,13 +311,17 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// <summary>
     /// The record of an annotation the structural reading does not read (decision 048):
     /// the source framework carries no mapping in the class, so the annotation is some other
-    /// library's statement about the member, and the generated class does not carry it.
+    /// library's statement about the member, and the generated class does not carry it. Where
+    /// the framework knows whose annotation it is (<see cref="UnreadAttributeNote"/>), the
+    /// record says that instead.
     /// </summary>
     private void ReportUnreadAttribute(ClassDeclarationSyntax classDeclaration, string? property, AttributeSyntax attribute)
     {
         var where = property is null
             ? $"the class '{classDeclaration.Identifier.Text}'"
             : $"the property '{property}'";
+
+        var note = UnreadAttributeNote(attribute);
 
         entityBuilder.Report(new ConversionRecord
         {
@@ -325,11 +330,22 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
             Artifact = ConversionContentType.CSharp,
             Entity = classDeclaration.Identifier.Text,
             Property = property,
-            Reason = $"The annotation [{attribute.Name}] on {where} is not read: the source framework carries no "
-                + "mapping in the class, so the reading takes its structure alone and what the annotation states "
-                + "is dropped.",
+            Category = note?.Category,
+            Reason = $"The annotation [{attribute.Name}] on {where} is not read: "
+                + (note?.Why ?? "the source framework carries no mapping in the class, so the reading takes its structure "
+                    + "alone and what the annotation states is dropped") + ".",
         });
     }
+
+    /// <summary>
+    /// What the source framework knows of an annotation the structural reading drops: the
+    /// clause of its record that says why, and the category of the mapping fact the annotation
+    /// states - or null where the framework knows nothing particular of it, and the record says
+    /// what the structure alone can (decision 048). A framework names here the annotations of a
+    /// package over it, which the tool does not read as that framework (decision 133); the
+    /// structure knows no package, so the base names none.
+    /// </summary>
+    protected virtual (string Why, MappingFactCategory? Category)? UnreadAttributeNote(AttributeSyntax attribute) => null;
 
     /// <summary>
     /// The fields of the class, which the intermediate representation has no place for - it

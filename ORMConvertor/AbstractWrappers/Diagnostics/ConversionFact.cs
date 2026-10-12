@@ -29,8 +29,9 @@ public sealed record ConversionFact
     /// The fact's value as the representation holds it - the table name, the column name, the
     /// length, the strategy, the foreign key columns joined by commas - or null where the
     /// category has no value beyond being stated (the key, a version column, a transient
-    /// property). Given so that a reader can find the fact in both texts; where it shows in
-    /// them is the reader's search, not a statement of the tool (decision 124).
+    /// property). Given so that a reader can find the fact in both texts where no position
+    /// is stated (<see cref="Source"/>, <see cref="Targets"/>); that search is the reader's,
+    /// not a statement of the tool (decision 125).
     /// </summary>
     public string? Value { get; init; }
 

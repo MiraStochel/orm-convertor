@@ -1,11 +1,13 @@
 # Container configuration of the environment (decision 039, requirement S5).
 #
 #   docker compose up --build                            the system: application + sample databases
+#   docker compose --profile test build tests java_tests test_app test_app_ldbc test_db
 #   docker compose --profile test run --rm tests         the .NET test suite, in a clean environment
 #   docker compose --profile test run --rm java_tests    the Java test suite, likewise
 #
-# The test commands need nothing on the host but Docker: each builds its suite, starts a
-# SQL Server of its own, waits for it, creates the database and runs the whole suite. The
+# The test commands need nothing on the host but Docker. run does not rebuild - without the
+# build line it runs the suite of whatever tree the images were built from - and then starts
+# a SQL Server of its own, waits for it, creates the database and runs the whole suite. The
 # Java suite additionally gets an instance of the application, because that is where it
 # takes the generated artifacts from (decision 078). The SQL Server of the profile also holds
 # LdbcSnb with the validation set of LDBC Interactive v1, the judge of the LDBC catalog

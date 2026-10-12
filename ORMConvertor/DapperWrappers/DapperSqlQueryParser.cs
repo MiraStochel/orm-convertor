@@ -39,9 +39,11 @@ namespace DapperWrappers;
 /// (decision 109): each call is one exchange with the server, read into a builder of its
 /// own, and which calls those are is Dapper's API as a whole - Execute and ExecuteReader as
 /// much as Query - rather than the part of it whose text the tool can translate. A call whose
-/// text states a write is refused by name, the way the same statement in a bare unit is.
-/// Queries of one unit that the source did not name are numbered by their position in the
-/// text, the calls and the SELECTs of a script alike.
+/// text states a write is refused by name, the way the same statement in a bare unit is, and
+/// so is a call of Dapper.Contrib, an add-on package the tool does not read as Dapper, whose
+/// text the package composes at run time (decision 133). Queries of one unit that the source
+/// did not name are numbered by their position in the text, the calls and the SELECTs of a
+/// script alike.
 ///
 /// The call says more than its text, and none of it passes in silence (decisions 048 and
 /// 109). Each argument is told by its name, or by its position in the overload Dapper
@@ -232,8 +234,17 @@ public class DapperSqlQueryParser(
             return handovers;
         }
 
-        foreach (var invocation in Calls(source))
+        foreach (var invocation in HandoverCalls(CSharpSource.Read(source)))
         {
+            // A call of Dapper.Contrib hands a query over as much as a call of Dapper does, but
+            // the package composes its text at run time - or writes -, so the query is refused
+            // by the name of the call (decision 133).
+            if (DapperContrib.IsCall(invocation))
+            {
+                handovers.Add(new Handover(null, false, (ConversionRecordKind.Failure, DapperContrib.Refusal(invocation)), []));
+                continue;
+            }
+
             var member = (MemberAccessExpressionSyntax)invocation.Expression;
             var arguments = invocation.ArgumentList.Arguments;
             var parameters = ParametersOf(member, arguments);
@@ -465,35 +476,45 @@ public class DapperSqlQueryParser(
     }
 
     /// <summary>
-    /// The places where the unit hands Dapper a text (decisions 109 and 111): one node for
-    /// every call <see cref="Parse"/> reads a query of, found by the same search. The entity
-    /// pass of the wrapper asks it which classes hold the code around queries rather than an
-    /// entity, and the answer has to be the one the query pass acts on. A text nested beyond
-    /// the cap has none, because it is not parsed, and neither has one that does not read.
+    /// The places where the unit hands a query over (decisions 109 and 111): one node for
+    /// every call <see cref="Parse"/> reads a query of or refuses one by, found by the same
+    /// search. The entity pass of the wrapper asks it which classes hold the code around
+    /// queries rather than an entity, and the answer has to be the one the query pass acts on.
+    /// A text nested beyond the cap has none, because it is not parsed, and neither has one
+    /// that does not read.
     /// </summary>
     public static IReadOnlyList<SyntaxNode> FindHandovers(string source, ParseLimits? limits = null)
         => NestingDepthGuard.FirstBeyond(Tracked(source), limits ?? ParseLimits.Default) is not null
             ? []
-            : [.. Calls(source)];
+            : [.. HandoverCalls(CSharpSource.Read(source))];
 
     /// <summary>
-    /// Every call of a SqlMapper method in the unit, in the order of the text: a member call
-    /// by one of the names Dapper sends SQL under, with an argument - ADO.NET's own
-    /// ExecuteReader or ExecuteScalar on a command takes none. A file is parsed as it stands
-    /// and a fragment inside a class, which is what a method needs to be one (decision 111);
-    /// a text that does not read without an error has no call to take (decision 128).
+    /// Every place of the unit that hands a query over, in the order of the text: a call of
+    /// Dapper's own, and a call of Dapper.Contrib's (decision 133), which hands one over too
+    /// and has no text of its own. A file is parsed as it stands and a fragment inside a class,
+    /// which is what a method needs to be one (decision 111); a text that does not read without
+    /// an error has no call to take (decision 128).
     /// </summary>
-    private static IEnumerable<InvocationExpressionSyntax> Calls(string source) => Calls(CSharpSource.Read(source));
+    private static IEnumerable<InvocationExpressionSyntax> HandoverCalls(CSharpReadResult read)
+        => Invocations(read).Where(invocation => IsDapperCall(invocation) || DapperContrib.IsCall(invocation));
 
+    /// <summary>Every call of a SqlMapper method in the unit, in the order of the text.</summary>
     private static IEnumerable<InvocationExpressionSyntax> Calls(CSharpReadResult read)
+        => Invocations(read).Where(IsDapperCall);
+
+    private static IEnumerable<InvocationExpressionSyntax> Invocations(CSharpReadResult read)
         => read.Tree is not { } tree
             ? []
-            : tree.GetCompilationUnitRoot()
-                .DescendantNodes()
-                .OfType<InvocationExpressionSyntax>()
-                .Where(invocation => invocation.Expression is MemberAccessExpressionSyntax member
-                    && DapperMethods.Contains(member.Name.Identifier.Text)
-                    && invocation.ArgumentList.Arguments.Count > 0);
+            : tree.GetCompilationUnitRoot().DescendantNodes().OfType<InvocationExpressionSyntax>();
+
+    /// <summary>
+    /// A member call by one of the names Dapper sends SQL under, with an argument - ADO.NET's
+    /// own ExecuteReader or ExecuteScalar on a command takes none.
+    /// </summary>
+    private static bool IsDapperCall(InvocationExpressionSyntax invocation)
+        => invocation.Expression is MemberAccessExpressionSyntax member
+            && DapperMethods.Contains(member.Name.Identifier.Text)
+            && invocation.ArgumentList.Arguments.Count > 0;
 
     /// <summary>
     /// The C# text as the shared nesting guard reads it (decision 092): Roslyn's own lexer,

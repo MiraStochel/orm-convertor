@@ -40,7 +40,7 @@ Tři skutečnosti o těchto verzích mají dopad na obsah tabulek:
 | **Cílové frameworky balíčku** | .NET 10 (nově v 5.7.0), .NET Framework 4.6.1, .NET Standard 2.0 a další starší | **výhradně .NET 10**; neběží na starším .NETu ani na .NET Framework | .NET Standard 2.0 a výš; běží prakticky všude |
 | **Filozofie** | doménový model je primární, databáze je detail; framework se snaží databázi maximálně skrýt | doménový model je primární, ale s explicitnějším přiznáním relační vrstvy; konvence šetří psaní | SQL je primární a viditelné; framework řeší jen hranici mezi ADO.NET a objekty |
 | **Co framework ví o schématu** | vše, co je v mapování — tabulky, sloupce, klíče, relace, dědičnost, typy | totéž, plus historii schématu přes migrace | nic |
-| **Role v převodníku** | zdrojový i cílový framework; přímý protějšek Hibernate pro plánovanou Java větev | zdrojový i cílový framework | zdrojový i cílový framework; nejslabší článek každého převodního cyklu |
+| **Role v převodníku** | zdrojový i cílový framework; přímý protějšek Hibernate | zdrojový i cílový framework | zdrojový i cílový framework; nejslabší článek každého převodního cyklu |
 
 ---
 
@@ -55,7 +55,7 @@ Tři skutečnosti o těchto verzích mají dopad na obsah tabulek:
 | **Zásah do `.csproj`** | nutný — `<EmbeddedResource Include="Mappings\**\*.hbm.xml" />`, jinak se mapování nenačte | žádný nad rámec `PackageReference` | žádný |
 | **Doplňkové balíčky v ekosystému** | Fluent NHibernate (fluent mapování), NHibernate.Caches.* (cache 2. úrovně) | `.Design` a `.Tools` pro migrace, `.Proxies` pro lazy loading, `.InMemory` pro testy | Dapper.Contrib, Dapper.SimpleCRUD, Dapper.FluentMap — samostatné balíčky, ne součást Dapperu |
 
-Dapper.Contrib zavádí atributy `[Table]`, `[Key]`, `[ExplicitKey]` a metody `Get`/`Insert`/`Update`. Zdrojový projekt používající Contrib by nesl podstatně víc informací než holý Dapper. Nástroj čte jen holý Dapper — jeho entitní parser nečte žádný atribut — a jestli Contrib do rozsahu práce patří, je zapsané jako nerozhodnutá otázka v [`open-items.md`](../open-items.md), mezi nálezy z téhle analýzy.
+Dapper.Contrib zavádí atributy `[Table]`, `[Key]`, `[ExplicitKey]`, `[Write]`, `[Computed]`, konvence (tabulka jménem třídy s `s`, klíč `Id`) a metody `Get`/`GetAll`/`Insert`/`Update`/`Delete`, které SQL skládají za běhu. Zdrojový projekt používající Contrib by nesl podstatně víc informací než holý Dapper. Nástroj čte jen holý Dapper: Contrib je podle rozhodnutí [133](../decisions/133-an-add-on-package-over-a-framework-is-not-that-framework.md) mimo rozsah, jeho atributy a volání ve zdroji nástroj jmenuje záznamem, ale nečte.
 
 ---
 
@@ -71,7 +71,7 @@ Dapper.Contrib zavádí atributy `[Table]`, `[Key]`, `[ExplicitKey]` a metody `G
 | **Kolekce** | `ISet<T>`, `IList<T>`, `IDictionary<K,V>`, `ICollection<T>`; typ kolekce určuje element mapování (`<set>`, `<bag>`, `<list>`, `<map>`) a má sémantický význam | `ICollection<T>` a potomci; typ kolekce nemá vliv na mapování | libovolná kolekce; framework ji nikdy nenaplní sám |
 | **Nullable reference types** | bez vlivu na mapování; nullabilitu určuje `not-null` v XML | **má vliv** — `string` je NOT NULL, `string?` je NULL | bez vlivu; nullabilita je jen v DDL |
 
-**Důsledek pro IR.** Řádky „požadavky na entitu" jsou fakta, která nelze přenést ani odvodit — jsou to omezení cílového frameworku, ne informace o doméně. Builder je musí generovat automaticky (doplnit `virtual` při výstupu do NHibernate), parser je musí ignorovat (nepovažovat `virtual` za fakt o doméně). Deskriptor cíle je tak dnes deklaruje (rozhodnutí [009](../decisions/009-target-framework-descriptor.md)) a NHibernate builder je doplňuje; parser je ale zatím nezahazuje — `virtual` ze zdrojové třídy podrží mezi modifikátory vlastnosti a Dapper i EF Core builder ho vypíší. Nález je zapsaný v [`open-items.md`](../open-items.md).
+**Důsledek pro IR.** Řádky „požadavky na entitu" jsou fakta, která nelze přenést ani odvodit — jsou to omezení cílového frameworku, ne informace o doméně. Builder je musí generovat automaticky (doplnit `virtual` při výstupu do NHibernate), parser je musí ignorovat (nepovažovat `virtual` za fakt o doméně). Deskriptor cíle je tak deklaruje (rozhodnutí [009](../decisions/009-target-framework-descriptor.md)), NHibernate builder je doplňuje a parser zdroje NHibernate `virtual` při čtení zahazuje jako požadavek frameworku, ne fakt o doméně (rozhodnutí [076](../decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)).
 
 ---
 
@@ -285,7 +285,7 @@ Migrations jsou koncept, který NHibernate v jádru nemá vůbec; externí proje
 
 `ToQueryString()` je metodologicky nejcennější metoda z celé trojice: dovoluje získat generované SQL bez běžící databáze a dělat srovnání jako čistou textovou analýzu. NHibernate ekvivalent nemá, tam je nutné dotaz spustit a odchytit log.
 
-Parametr dotazu je zároveň jediný řádek tabulky, který mezireprezentace neunese: konstanta je konstanta a pojem parametru rozhodnutí [024](../decisions/024-typed-query-operand.md) nezavedlo. Co s ním dnes dělají parsery, je zapsané v [`open-items.md`](../open-items.md).
+Parametr dotazu nese mezireprezentace jako pátý tvar operandu (rozhodnutí [083](../decisions/083-parameter-as-the-fifth-operand-shape.md)); jeho meze vede [`subset.md`](../subset.md), 2.4.
 
 ---
 
@@ -410,4 +410,4 @@ Výhrada k poslednímu bodu o ADO.NET: v `benchmarks/ORMComparison.sln` to nepla
 
 **Ground truth je generované SQL.** Dvě API mohou vypadat podobně a generovat jiné SQL. Pro citovatelný důkaz v textu práce je nejsilnější vygenerovaný DDL a vygenerovaný dotaz, ne popis API.
 
-**Cílové verze ORM deklaruje deskriptor každého wrapperu** (rozhodnutí [013](../decisions/013-target-framework-versions.md)) a záznam běhu je podle S6 vydává z téhož místa. Wrappery v `ORMConvertor` přitom dál nereferencují žádný ORM balíček — jen parsery jazyků, tedy Roslyn 5.6.0 a u Dapperu `Microsoft.SqlServer.TransactSql.ScriptDom` (rozhodnutí [026](../decisions/026-home-of-shared-query-reading.md)) —, takže generovaná syntaxe je předpokladem o cílové verzi, ne jejím důsledkem: `[PrimaryKey]` vyžaduje EF Core 7 a vyšší, NHibernate builder generuje `urn:nhibernate-mapping-2.2`. Shodu deklarované verze s balíčky, které načítá ověřovací stupeň, hlídá test `DeclaredVersionsMatchTheVerificationPackages`.
+**Cílové verze ORM deklaruje deskriptor každého wrapperu** (rozhodnutí [013](../decisions/013-target-framework-versions.md)) a záznam běhu je podle S6 vydává z téhož místa. Wrappery v `ORMConvertor` přitom dál nereferencují žádný ORM balíček — jen parsery jazyků, tedy Roslyn 5.6.0 a `Microsoft.SqlServer.TransactSql.ScriptDom` ve sdíleném projektu `TransactSql` (rozhodnutí [082](../decisions/082-t-sql-read-and-written-by-a-shared-project.md)) —, takže generovaná syntaxe je předpokladem o cílové verzi, ne jejím důsledkem: `[PrimaryKey]` vyžaduje EF Core 7 a vyšší, NHibernate builder generuje `urn:nhibernate-mapping-2.2`. Shodu deklarované verze s balíčky, které načítá ověřovací stupeň, hlídá test `DeclaredVersionsMatchTheVerificationPackages`.

@@ -10,6 +10,7 @@ import {
   ORM,
   ORM_LABELS,
   ContentType,
+  LdbcWorkload,
   LdbcTranslation,
   LDBC_TRANSLATION_LABELS,
   getLdbc,
@@ -38,12 +39,16 @@ const TRANSLATION_CLASSES = Object.freeze({
   [LdbcTranslation.NotTranslated]: "badge-ldbc-not-translated",
 });
 
-const WORKLOAD_PREFIXES = Object.freeze({ 10: "IS", 20: "IC", 30: "BI" });
+const WORKLOAD_PREFIXES = Object.freeze({
+  [LdbcWorkload.InteractiveShort]: "IS",
+  [LdbcWorkload.InteractiveComplex]: "IC",
+  [LdbcWorkload.BusinessIntelligence]: "BI",
+});
 
 const WORKLOAD_TITLES = Object.freeze({
-  10: "Interactive short reads",
-  20: "Interactive complex reads",
-  30: "Business Intelligence reads",
+  [LdbcWorkload.InteractiveShort]: "Interactive short reads",
+  [LdbcWorkload.InteractiveComplex]: "Interactive complex reads",
+  [LdbcWorkload.BusinessIntelligence]: "Business Intelligence reads",
 });
 
 const TARGETS = [ORM.EFCore, ORM.NHibernate, ORM.Hibernate, ORM.EclipseLink, ORM.MyBatis];
@@ -194,7 +199,8 @@ function renderQuery(catalog, query) {
 
   // The binding to the judge of decision 117: an Interactive query names the operation of
   // the validation set whose reads it has to answer, and how the rows are compared; a BI
-  // query has none, and says that its claim stops at the first two levels.
+  // query has none, and says how far its claim reaches: the first level everywhere, the
+  // second in EF Core and NHibernate, the second and third in the Java targets.
   const judge = article.querySelector(".query-judge");
   if (query.validation) {
     const comparison = query.validation.ordered ? "as ordered rows" : "as a set";
@@ -274,19 +280,23 @@ function renderSummary(catalog) {
     count.textContent = String(catalog.queries.filter((query) => query.translation === translation).length);
   }
 
-  const refusedBy = (target) =>
-    catalog.queries.filter((query) => query.refusedBy.some((refusal) => refusal.target === target)).length;
   const fallbackBy = (target) =>
     catalog.queries.filter((query) => query.fallbackBy.some((fallback) => fallback.target === target)).length;
 
   // Every count names its target in data-target, so the page states which framework a
   // number is about rather than the script knowing which paragraph means which.
-  for (const count of document.querySelectorAll(".ldbc-refusal-count")) {
-    count.textContent = String(refusedBy(Number(count.dataset.target)));
-  }
-
   for (const count of document.querySelectorAll(".ldbc-fallback-count")) {
     count.textContent = String(fallbackBy(Number(count.dataset.target)));
+  }
+
+  // The sentence about refusals is drawn from the catalog as well, so that a refusal a later
+  // catalog declares cannot stand beside a page still saying there is none.
+  const refused = catalog.queries.filter((query) => query.refusedBy.length > 0).length;
+  for (const sentence of document.querySelectorAll(".ldbc-refusals")) {
+    sentence.textContent =
+      refused === 0
+        ? "No target refuses a query."
+        : `${refused} ${refused === 1 ? "query is" : "queries are"} refused by a target; the table below says which.`;
   }
 }
 

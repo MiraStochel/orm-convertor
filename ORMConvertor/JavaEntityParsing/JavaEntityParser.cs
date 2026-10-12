@@ -1,4 +1,5 @@
 using AbstractWrappers;
+using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model;
 using Model.AbstractRepresentation;
@@ -68,6 +69,8 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
             });
             return [];
         }
+
+        Imports = unit.Imports;
 
         var classes = Flatten(unit.Classes).ToList();
 
@@ -169,9 +172,7 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
     {
         foreach (var annotation in cls.Annotations)
         {
-            ReportLoss(null,
-                $"The annotation @{annotation.Name} on the class '{cls.Name}' is not read: the source framework carries "
-                + "no mapping in the class, so the reading takes its structure alone and what the annotation states is dropped.");
+            ReportUnreadAnnotation(annotation, null, $"the class '{cls.Name}'");
         }
 
         foreach (var reading in ReadAttributes(cls, JavaMemberAccess.Field))
@@ -180,12 +181,42 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
 
             foreach (var annotation in reading.Annotations)
             {
-                ReportLoss(reading.Name,
-                    $"The annotation @{annotation.Name} on the attribute '{reading.Name}' is not read: the source framework "
-                    + "carries no mapping in the class, so the reading takes its structure alone and what the annotation states is dropped.");
+                ReportUnreadAnnotation(annotation, reading.Name, $"the attribute '{reading.Name}'");
             }
         }
     }
+
+    /// <summary>
+    /// The imports of the unit being read, set at the start of every Parse: what a framework
+    /// tells the owner of an annotation by (<see cref="UnreadAnnotationNote"/>), since the reading
+    /// compiles nothing and the import is all the unit says about whose a name is.
+    /// </summary>
+    protected IReadOnlyList<string> Imports { get; private set; } = [];
+
+    /// <summary>
+    /// The record of an annotation the structural reading does not read (decision 048): the
+    /// source framework carries no mapping in the class, so whatever the annotation states is
+    /// dropped. Where the framework knows whose annotation it is, the record says that instead.
+    /// </summary>
+    private void ReportUnreadAnnotation(JavaAnnotation annotation, string? attribute, string where)
+    {
+        var note = UnreadAnnotationNote(annotation);
+
+        ReportLoss(attribute,
+            $"The annotation @{annotation.Name} on {where} is not read: "
+            + (note?.Why ?? "the source framework carries no mapping in the class, so the reading takes its structure alone "
+                + "and what the annotation states is dropped") + ".",
+            note?.Category);
+    }
+
+    /// <summary>
+    /// What the source framework knows of an annotation the structural reading drops: the
+    /// clause of its record that says why, and the category of the mapping fact the annotation
+    /// states - or null where the framework knows nothing particular of it (decision 048). A
+    /// framework names here the annotations of a package over it, which the tool does not read
+    /// as that framework (decision 133); the structure knows no package, so the base names none.
+    /// </summary>
+    protected virtual (string Why, MappingFactCategory? Category)? UnreadAnnotationNote(JavaAnnotation annotation) => null;
 
     /// <summary>
     /// The attributes of a class with their language facts: the non-static fields, and
@@ -344,13 +375,14 @@ public abstract class JavaEntityParser(AbstractEntityBuilder entityBuilder) : IE
         }
     }
 
-    protected void ReportLoss(string? property, string reason) => entityBuilder.Report(new ConversionRecord
+    protected void ReportLoss(string? property, string reason, MappingFactCategory? category = null) => entityBuilder.Report(new ConversionRecord
     {
         Kind = ConversionRecordKind.Loss,
         Framework = entityBuilder.Descriptor.Framework,
         Artifact = ConversionContentType.JavaEntity,
         Entity = entityBuilder.EntityMap.Entity.Name,
         Property = property,
+        Category = category,
         Reason = reason,
     });
 

@@ -22,7 +22,7 @@ flowchart LR
 
 ## Co je ve skutečnosti vstupem
 
-Uživatel má projekt, nástroj ho nevidí. Jednotka = **obsah jednoho souboru v jednom jazyce** (entity, třída s dotazy, mapování, skript SQL); převod = množina jednotek najednou (rozh. [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)). Jednotka deklaruje jen jazyk; entitu a předání dotazu rozpozná zdrojový framework. Nepovinné jméno jednotky nesou záznamy ze čtení (rozh. [066](./decisions/066-records-attributed-to-the-input-unit.md)); záznamy doplnění a generování se vážou k entitě a vlastnosti a artefakty se jednotkám nepřipisují (§9).
+Uživatel má projekt, nástroj ho nevidí. Jednotka = **obsah jednoho souboru v jednom jazyce** (entity, třída s dotazy, mapování, skript SQL); převod = množina jednotek najednou (rozh. [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md)). Jednotka deklaruje jen jazyk; entitu a předání dotazu rozpozná zdrojový framework. Nepovinné jméno jednotky nesou záznamy ze čtení (rozh. [066](./decisions/066-records-attributed-to-the-input-unit.md)); záznamy doplnění a generování se vážou k entitě a vlastnosti; artefakt nese entitu a jednotky, které ji vyslovily, a kniha tvrzení původ každého faktu (rozh. [124](./decisions/124-direction-as-one-row-and-input-beside-output-paired-per-fact.md), [125](./decisions/125-positions-of-facts-as-an-optional-layer-over-the-ledger.md), §9).
 
 - **Uživatel** vybírá soubory; dotaz se najde i v repozitáři či službě, pokud ho zdroj předává způsobem, který wrapper čte (rozh. [109](./decisions/109-a-code-unit-carries-every-query-it-hands-over.md)); kód, který dotaz sám nepředává (služba volající repozitář, DTO projekce), se přečte jako entita.
 - **Uživateli zůstává** aplikační kód: volající metoda, transakce, DI, `DbContext` jako třída (jeho `DbSet` a `OnModelCreating` se čtou jako mapování podle rozh. [132](./decisions/132-ef-core-fluent-configuration-is-read-as-a-bounded-syntactic-subset.md), třída sama do výstupu nejde a převod to hlásí); připojení do mezireprezentace nevstupuje (rozh. [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md)).
@@ -46,14 +46,14 @@ Každý výstup nese záznamy o převodu, identifikátor běhu a verze (S6).
 
 *Migrující vývojář; nejvíc namáhaný scénář.*
 - Katalog doplní klíče, názvy tabulek a sloupců, typy, nullabilitu a unikátní omezení. Konzument doplní soubor projektu, `DbContext` s registrací a připojovací řetězec.
-- Bez katalogu nedoběhne: entita bez klíče se u cíle, který klíč vyžaduje, odmítne záznamem (rozh. [010](./decisions/010-diagnostics-as-returned-data.md)).
+- Bez katalogu doběhne jen zčásti: entita vyjde jako `[Keyless]` s konvencemi a záznamy a dotaz s parametrem se odmítne záznamem, který jmenuje chybějící katalog (rozh. [105](./decisions/105-a-query-formulates-its-own-demand-on-the-catalog.md)); cíl, který klíč vyžaduje (NHibernate, JPA), entitu bez klíče odmítne (rozh. [010](./decisions/010-diagnostics-as-returned-data.md)).
 
 ## UC2 — Sjednocení dvou frameworků v jednom řešení
 
 *Migrující vývojář.*
 - Pořadí zdrojů: text frameworku → pomocné artefakty → katalog → konvence cíle; konflikty se hlásí (rozh. [017](./decisions/017-source-precedence-for-mapping-facts.md)). Výstup nese složené klíče i vícesloupcové cizí klíče, N:M → spojovací entita (rozh. [005](./decisions/005-many-to-many-as-explicit-junction-entity.md)); opakovaný běh nad týmž vstupem je bajtově shodný (S2).
 - Do NHibernate doplní konzument název sestavení a `hibernate.cfg.xml` (rozh. [028](./decisions/028-assembly-name-is-not-ours-to-invent.md)).
-- Dědičnost, komponenty a `<join>` se nečtou, hlásí se ztrátou (§9). LINQ vyjde jako HQL (rozh. [022](./decisions/022-native-query-syntax-in-builders.md)), holé HQL jako týž text (rozh. [062](./decisions/062-hql-read-by-a-hand-written-parser.md)).
+- Dědičnost, komponenty a `<join>` se nečtou, hlásí se ztrátou (§9). LINQ vyjde jako HQL a vedle něj jako LINQ nad `session.Query<T>()` (rozh. [022](./decisions/022-native-query-syntax-in-builders.md), [118](./decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md)), holé HQL jako týž text (rozh. [062](./decisions/062-hql-read-by-a-hand-written-parser.md)).
 
 ## UC3 — Výběr cílového frameworku podle naměřeného výkonu
 
@@ -64,7 +64,7 @@ Každý výstup nese záznamy o převodu, identifikátor běhu a verze (S6).
 ## UC4 — Překlad jediného dotazu jako sonda
 
 *Kdokoli; stačí prohlížeč, bez databáze a projektu.*
-- Výstup: LINQ (EF Core), HQL (NHibernate), JPQL (Hibernate, EclipseLink), SQL (Dapper, MyBatis) (rozh. 022). Co se nepřeloží, říká záznam a předem [`subset.md`](./subset.md) (tab. 1.2, část 2).
+- Výstup: LINQ (EF Core), HQL (NHibernate), JPQL (Hibernate, EclipseLink), SQL (Dapper, MyBatis) (rozh. 022); co jazyk cíle nevysloví, napíšou EF Core, NHibernate, Hibernate a EclipseLink nativním SQL se záznamem `Fallback` (rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md)). Co se nepřeloží, říká záznam a předem [`subset.md`](./subset.md) (tab. 1.2, část 2).
 - **Měřítko S7:** „nahrát vstup → zvolit cíl → přeložit → zobrazit chyby" na nejvýš pět kroků; UC4 je ta cesta.
 
 ## UC5 — Dávka pro experiment
@@ -83,7 +83,7 @@ Každý výstup nese záznamy o převodu, identifikátor běhu a verze (S6).
 ## UC7 — Doklad, že přeložený kód opravdu běží a vrací totéž
 
 *Autor experimentu i vývojář; rozh. [087](./decisions/087-an-integration-test-is-a-run-against-the-database.md), [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md).*
-- Javová sada vezme artefakty z běžící instance (rozh. [078](./decisions/078-java-suite-as-a-client-of-a-running-instance.md)), přeloží `javac`em, předloží Hibernate, EclipseLinku a MyBatisu a spustí proti SQL Serveru; výsledky obou variant dotazu porovná s kanonickým výsledkem v repozitáři. Zmutovaný artefakt **musí** skončit rozdílem.
+- Javová sada vezme artefakty z běžící instance (rozh. [078](./decisions/078-java-suite-as-a-client-of-a-running-instance.md)), přeloží `javac`em, předloží Hibernate, EclipseLinku a MyBatisu a spustí proti SQL Serveru; výsledky obou variant dotazu porovná s kanonickým výsledkem v repozitáři. Zmutovaný artefakt **musí** skončit rozdílem nebo selháním.
 - Pořadí se porovnává jen tam, kde ho dotaz určuje; měřítko desetinných čísel volí matice u dotazu, null je vždy holé `NULL` (§9). Sada běží jedním příkazem nad Dockerem a sama tvrdí svou velikost (087).
 
 ## Co nástroj nedělá

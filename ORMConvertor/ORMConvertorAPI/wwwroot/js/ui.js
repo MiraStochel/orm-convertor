@@ -152,8 +152,8 @@ export function saveText(content, fileName) {
 /* ---- artifact panels ---------------------------------------------------- */
 
 /*
- * Display names for artifacts: generated artifacts carry no names (input units do since
- * decision 066, output naming is a separate open item), so the class or mapped entity
+ * Display names for artifacts: an artifact carries the entity it was generated for and the
+ * units that declared it (decision 125), but no file name, so the class or mapped entity
  * name is read out of the content. A display heuristic, not a contract (decision 033).
  */
 function artifactBaseName(artifact) {

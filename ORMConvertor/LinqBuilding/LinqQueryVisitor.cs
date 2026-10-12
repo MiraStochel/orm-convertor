@@ -1255,7 +1255,7 @@ public abstract class LinqQueryVisitor(
 
         if (operand.IsExpression)
         {
-            return typing.ScalarOf(operand.Expression!);
+            return Typing.ScalarOf(operand.Expression!);
         }
 
         return operand.IsColumn && operand.Property != "*" && PropertyType(operand.Table, operand.Property!) is { Category: LangTypeCategory.Scalar } type
@@ -1277,7 +1277,7 @@ public abstract class LinqQueryVisitor(
         {
             otherwise = Operand(expression.Else);
         }
-        else if (typing.ScalarOf(expression) is { } scalar)
+        else if (Typing.ScalarOf(expression) is { } scalar)
         {
             var type = CSharpTypeConvertor.ToString(LangType.Scalar(scalar));
             otherwise = scalar is ScalarType.String or ScalarType.Object or ScalarType.ByteArray

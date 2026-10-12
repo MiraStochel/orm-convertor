@@ -6,9 +6,10 @@ Autoritativní popis projektu, **členěný podle žánru, ne podle času** (roz
 |---|---|---|
 | [`architecture.md`](architecture.md) | Jak nástroj funguje **dnes**. | živé |
 | [`subset.md`](subset.md) | **Co se přeloží a co ne**, konstrukce po konstrukci (žánr `architecture.md`). | živé |
-| [`../ORMConvertor/README.md`](../ORMConvertor/README.md) | Jak se nástroj **spouští, nasazuje a testuje** (rozh. [058](decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)); jediný živý dokument mimo `docs/`, proto anglicky. | živé |
+| [`../README.md`](../README.md) | Co nástroj dělá a co **nárokuje** (sekce *Guarantees*, kanonicky); anglicky, protože jeho adresátem je konzument nástroje. | živé |
+| [`../ORMConvertor/README.md`](../ORMConvertor/README.md) | Jak se nástroj **spouští, nasazuje a testuje** (rozh. [058](decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)); vedle kořenového README jediný živý dokument mimo `docs/`, proto anglicky. | živé |
 | [`open-items.md`](open-items.md) | Co **zbývá**; `Na řadě` říká, kde se pokračuje. | živé; hotové mizí |
-| [`decisions/`](decisions/README.md) | **Proč** je nástroj takový; jedno rozhodnutí = jeden soubor. | neměnné kromě `Stav` |
+| [`decisions/`](decisions/README.md) | **Proč** je nástroj takový; jedno rozhodnutí = jeden soubor. | neměnné kromě `Stav` (a `revidováno` před implementací) |
 | [`audits/`](audits/README.md) | Co jsme **kdy věděli**. | neměnné |
 | [`analysis/`](analysis/README.md) | Jak se chovají **frameworky samotné**. | přibývá |
 | [`threat-model.md`](threat-model.md) | Čemu je nástroj **vystavený**. | živé |

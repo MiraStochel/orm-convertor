@@ -14,7 +14,8 @@
  *     search", because it finds a value spelled the same on both sides and misses one the
  *     target respells.
  *
- * The search is the one function of marking.js, run over server facts instead of authored spans.
+ * marking.js finds a literal value and slices the marked ranges into segments; what to mark
+ * is decided here, from the facts the server states.
  */
 
 import { occurrences, segmentsOf, markSegments } from "./marking.js";
@@ -23,6 +24,7 @@ import {
   FACT_ORIGIN_LABELS,
   FactOutcome,
   FACT_OUTCOME_LABELS,
+  MappingFactCategory,
   MAPPING_FACT_CATEGORY_LABELS,
 } from "./api.js";
 
@@ -68,7 +70,7 @@ function kindOf(fact) {
  * all; nullability is a word of the ledger, not of either text.
  */
 function tokensOf(fact) {
-  if (fact.category === 7 /* nullability */) return [];
+  if (fact.category === MappingFactCategory.Nullability) return [];
   const value = fact.value ?? fact.property;
   if (!value) return [];
   return value

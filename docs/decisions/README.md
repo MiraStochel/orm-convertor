@@ -135,6 +135,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 130 | [Unikátní omezení nad sloupci cizího klíče jmenuje navigaci vztahu](130-a-unique-constraint-over-a-foreign-key-names-the-navigation.md) | platí | F3, F4, F5, F11, S1, S2 |
 | 131 | [Alias sloupce ve volání Dapperu, které mapuje řádky na entitu, tvrdí sloupec její vlastnosti](131-a-column-alias-in-a-typed-dapper-call-states-the-column-of-the-property.md) | platí | F5, F6, F11, S1, S2 |
 | 132 | [Fluent konfigurace EF Core se čte jako vymezená syntaktická podmnožina před anotacemi; co leží mimo ni, je záznam u příkazu](132-ef-core-fluent-configuration-is-read-as-a-bounded-syntactic-subset.md) | platí | F1, F2, F3, F5, F11, S1, S2, S4 |
+| 133 | [Doplňkový balíček nad frameworkem tím frameworkem není: Dapper.Contrib a MyBatis-Plus stojí mimo rozsah a nástroj je ve svých záznamech jmenuje; volání Contribu je předáním, které se odmítá](133-an-add-on-package-over-a-framework-is-not-that-framework.md) | platí | F6, F8, F11, S1, S4, T1 |
 
 ## Formát
 

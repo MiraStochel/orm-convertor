@@ -1,5 +1,5 @@
 /*
- * The colour-theme control shared by all four documents: system (the default), light or
+ * The colour-theme control shared by all five documents: system (the default), light or
  * dark, written to Pico's `data-theme` on <html> and remembered per browser.
  *
  * Two halves, and the split is the point. The stored theme is applied by a small inline

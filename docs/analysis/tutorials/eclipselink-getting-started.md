@@ -14,7 +14,7 @@ Ověřené verze: EclipseLink **5.0.0** (build `5.0.0.v202603230926-bc4f4eb36eb1
 
 **Tenhle díl neběží v IDE, ale v kontejneru.** Díl k Hibernate předpokládal IntelliJ IDEA s vlastním JDK a zabudovaným Mavenem; tady je jediný předpoklad Docker a na hostiteli není potřeba ani JDK, ani Maven, ani SQL Server.
 
-Důvod je metodický, ne pohodlnost: javová strana řešení zatím neexistuje, kudy vstoupí, říká rozhodnutí [076](../../decisions/076-java-wrappers-in-csharp-jvm-in-containers.md), a kontejnerová konfigurace prostředí je rozhodnutí [039](../../decisions/039-container-configuration-of-the-environment.md). Běh v obrazu s pevnou verzí je doložitelný na cizím stroji přesně tak, jak je zapsaný, což u „nainstaluj si JDK a klikni na zelenou šipku" neplatí.
+Důvod je metodický, ne pohodlnost: javová strana řešení stojí na rozhodnutí [076](../../decisions/076-java-wrappers-in-csharp-jvm-in-containers.md), a kontejnerová konfigurace prostředí je rozhodnutí [039](../../decisions/039-container-configuration-of-the-environment.md). Běh v obrazu s pevnou verzí je doložitelný na cizím stroji přesně tak, jak je zapsaný, což u „nainstaluj si JDK a klikni na zelenou šipku" neplatí.
 
 | Díl k Hibernate | Tenhle díl |
 |---|---|
@@ -650,7 +650,7 @@ alter table Note add constraint FKmjgf94k6xbe2an5ylxr634d1w foreign key (tag_id)
 
 Dvě z devíti řádek nesou **sémantický** rozdíl, zbytek je kosmetika:
 
-**Velká písmena v názvech.** EclipseLink je zapíná vlastností `eclipselink.jpa.uppercase-column-names`, která je ve výchozím stavu zapnutá a má simulovat necitlivost na velikost písmen. Na SQL Serveru s výchozí kolací to databáze sama nerozliší, ale **nástroj ano**: párování přečteného názvu s katalogem (F6) i porovnání dvou mezireprezentací by na tom ztroskotalo. Párování na straně EclipseLinku proto musí být necitlivé na velikost písmen.
+**Velká písmena v názvech.** EclipseLink je zapíná vlastností `eclipselink.jpa.uppercase-column-names`, která je ve výchozím stavu zapnutá a má simulovat necitlivost na velikost písmen. Na SQL Serveru s výchozí kolací to databáze sama nerozliší a nástroj páruje přečtený název s katalogem (F6) také necitlivě na velikost písmen.
 
 **`AUTO` znamená v každé implementaci jinou věc.** Hibernate vyrobí sekvenci, EclipseLink tabulku `SEQUENCE` — a s ní i řádek `INSERT INTO SEQUENCE…`, tedy DML uprostřed DDL skriptu. Překlad Hibernate → EclipseLink, který by `@GeneratedValue` bez strategie jen opsal, by tiše vyměnil generátor za jiný. Proto rozhodnutí k F7 a F9 musí vyslovit dvojí: že **profil cíle jmenuje implementaci, ne jen úroveň specifikace**, a že builder `AUTO` nikdy nevypisuje — kanonický parametr generátoru (rozhodnutí [020](../../decisions/020-canonical-generator-parameter-vocabulary.md)) se do výstupu propisuje vždy konkrétní strategií.
 

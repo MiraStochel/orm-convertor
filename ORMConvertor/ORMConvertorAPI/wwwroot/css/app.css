@@ -618,7 +618,6 @@ mark.tok[data-kind="dropped"] {
 }
 
 .badge-link-carried { background: #0f6f8c; }
-.badge-link-added   { background: #1a5fb4; }
 .badge-link-dropped { background: #a05a00; }
 
 /* A browser paints <mark> yellow with its own text colour, which would fight both the

@@ -19,11 +19,12 @@
 
 | Cesta | Co přichází | Co systém udělá | Co ho chrání |
 |---|---|---|---|
-| `POST /convert` | C#, Java, XML, SQL, HQL, JPQL; jednotek libovolně, velikost jen do výchozího stropu Kestrelu | čte: Roslyn, `XDocument.Parse`, `TSql160Parser` a vlastní rekurzivní sestup (`JavaLexer` + `JavaClassReader`, `NHibernateHqlQueryParser`, `JpqlQueryParser`); **nic nekompiluje ani nespouští** | strop zanoření 128 změřený smyčkou nad tokeny před sestupem, u všech pěti parserů (rozh. [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md)); DTD v `XDocument.Parse` zakázané (bez XXE); vydané XML escapuje zapisovač prvků (rozh. [046](./decisions/046-xml-mapping-written-through-an-element-writer.md)) |
+| `POST /convert` | C#, Java, XML, SQL, HQL, JPQL; jednotek libovolně, velikost jen do výchozího stropu Kestrelu | čte: Roslyn, `XDocument.Parse`, `TSql160Parser` a vlastní rekurzivní sestup (`JavaLexer` + `JavaClassReader`, `NHibernateHqlQueryParser`, `JpqlQueryParser`); **nic nekompiluje ani nespouští** | strop zanoření 128 změřený smyčkou nad tokeny před sestupem, u všech pěti parserů (rozh. [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md)); DTD v `XDocument.Parse` zakázané, u mapperu MyBatisu ignorované a bez resolveru (bez XXE); vydané XML escapuje zapisovač prvků (rozh. [046](./decisions/046-xml-mapping-written-through-an-element-writer.md)) |
 | `POST /archive` | dvojice *jméno + obsah* | ZIP v paměti | nic — jména beze změny, velikost = vstup |
 | `POST /advisor/run` | entity a dotazy | **zkompiluje Roslynem a spustí v procesu** proti nastavené databázi | nic — kolektibilní `AssemblyLoadContext` je úklid, ne izolace; bez limitu CPU, paměti, času |
 | `POST /advisor-test` | matice nákladů a rozměry | P/Invoke do GLPK, pole podle rozměrů z požadavku | kontroly .NET; nesmysl → 400 |
 | `GET /samples`, `/samples-advisor`, `/examples`, `/ldbc`, `/required-content`, `/required-content-advisor` | nic | statická data ze sestavení | — |
+| `GET /openapi/v1.json` (Swagger UI jen v `Development`) | nic | dokument rozhraní ze sestavení | — |
 | `/orm/…` | nic | `wwwroot` z gitu (rozh. [032](./decisions/032-frontend-as-static-pages-without-a-build.md)) | — |
 
 ## Hrozby

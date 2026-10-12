@@ -171,7 +171,7 @@
         or, in PowerShell, <code>$env:ORMCONVERTOR_CATALOG_DATABASE = "LdbcSnb"</code> before
         the same command. Without it the catalog is WideWorldImporters, which has none of
         these tables, and most targets refuse. The line above every translation below says
-        which catalog the instance read.
+        whether the instance read a catalog at all.
       </p>
 
       <h3>Run a query yourself</h3>
@@ -249,8 +249,8 @@
         writes its inner joins after the outer ones; the note of each says so.
         <strong>Hibernate writes <span class="ldbc-fallback-count" data-target="40"></span></strong>:
         a text converted into a text, which HQL 7.4 writes as <code>varchar(max)</code>.
-        No target refuses a query. Every other translated query reaches all five targets in
-        their own query language.
+        <span class="ldbc-refusals">No target refuses a query.</span> Every other translated
+        query reaches all five targets in their own query language.
       </p>
 
       <h3 id="by-target">Every query in every target</h3>
@@ -270,8 +270,9 @@
 
       <p class="muted-note">
         &ldquo;Translated&rdquo; holds for every query at the first level of verification: the
-        target artifact is generated without a Failure record, and the EF&nbsp;Core and
-        NHibernate artifacts compile. Whether it returns the right rows is judged for the 21
+        target artifact is generated without a Failure record, the EF&nbsp;Core and
+        NHibernate artifacts compile, and the Java targets compile theirs and their frameworks
+        accept them. Whether it returns the right rows is judged for the 21
         Interactive queries by LDBC's own validation set, replayed against the generated
         artifact of every framework: a query translated as specified has to agree with it on
         every read, a simplified one reports how many reads agree. Each query below names the
