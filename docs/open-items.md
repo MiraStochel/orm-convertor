@@ -12,7 +12,7 @@ Schválená [specifikace](./specifikace.tex) (kap. *Milníky* a *Harmonogram*) a
 |---|---|---|---|
 | 1 — .NET část | klíče, vztahy, katalog, diagnostika, dotazová matice, čtyři stupně ověření | červenec–srpen | hotovo, `1.2.0` |
 | 2 — specifikace a analýza | specifikace, rozhodnutí o javové straně, analýza běhového prostředí pro Javu | září | hotovo |
-| 3 — Java a cross-language | Hibernate, MyBatis, EclipseLink, překlad .NET ↔ Java | září–říjen | hotovo, `2.0.0`; dotazy dokončené v `2.1.0`; katalog LDBC přeložený celý, zbývá [verdikt soudce nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) |
+| 3 — Java a cross-language | Hibernate, MyBatis, EclipseLink, překlad .NET ↔ Java | září–říjen | hotovo, `2.0.0`; dotazy dokončené v `2.1.0`; katalog LDBC přeložený celý v `2.2.0`, zbývá [verdikt soudce nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) |
 | 4 — testy a experimenty | javová sada s diferenčním ověřením (F12–F13) | říjen–listopad | hotovo |
 | | zobrazení mezireprezentace (F14) | | **chybí** |
 | | cross-language matice T2 s metrikami T3 | | **chybí** pipeline a metriky; matice existuje v testech |
