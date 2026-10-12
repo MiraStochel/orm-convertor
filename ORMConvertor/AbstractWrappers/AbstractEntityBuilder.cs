@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Common.Convertors;
 using Common.Naming;
@@ -1862,9 +1863,49 @@ public abstract class AbstractEntityBuilder
                 LangType.Reference(junctionName, type.ElementType?.IsNullable ?? false),
                 type.CollectionKind ?? CollectionKind.Unspecified,
                 type.IsNullable);
+
+            RetargetInitializer(entityMap, propertyMap.Property, type.ElementType?.TargetEntity, junctionName);
         }
 
         pendingJunctionFacts.Remove(relation);
+    }
+
+    /// <summary>
+    /// The collection's initializer follows its element type, or the class would not compile:
+    /// a type argument that names the former element names the junction entity instead
+    /// (<c>new HashSet&lt;Tag&gt;()</c> becomes <c>new HashSet&lt;ProductTag&gt;()</c>), and a
+    /// form that names no element type - <c>[]</c>, <c>new()</c>, the Java diamond - stays as
+    /// it is. An initializer that names the former element anywhere else holds elements of it,
+    /// which a collection of the junction entity cannot hold, and is dropped with a loss
+    /// (decision 004).
+    /// </summary>
+    private void RetargetInitializer(EntityMap entityMap, Property property, string? formerElement, string junctionName)
+    {
+        if (string.IsNullOrWhiteSpace(property.DefaultValue) || formerElement is null)
+        {
+            return;
+        }
+
+        var element = Regex.Escape(SimpleEntityName(formerElement));
+        var rewritten = Regex.Replace(property.DefaultValue, $@"<\s*(?:[\w.]+\.)?{element}\s*>", $"<{junctionName}>");
+
+        if (!Regex.IsMatch(rewritten, $@"\b{element}\b"))
+        {
+            property.DefaultValue = rewritten;
+            return;
+        }
+
+        Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = Descriptor.Framework,
+            Entity = entityMap.Entity.Name,
+            Property = property.Name,
+            Reason = $"The initializer '{property.DefaultValue}' holds elements of '{SimpleEntityName(formerElement)}', "
+                + $"but the collection now holds the junction entity '{junctionName}' (decision 005); the initializer was dropped.",
+        });
+
+        property.DefaultValue = null;
     }
 
     /// <summary>

@@ -11,9 +11,11 @@ namespace ORMConvertorAPI.Data;
 /// three about queries, over the same two domains, each with its queries in one class as a
 /// project keeps them; then four over the marketplace, one source framework each, that
 /// together show what the tool reads and writes - fluent configuration, mapping documents
-/// with named queries, a tour of the query vocabulary, and one long query. The small examples
-/// are built from the samples the translation screen offers; the larger ones have classes of
-/// their own.
+/// with named queries, a tour of the query vocabulary, and one long query; and last two
+/// applications, one in each ecosystem, whose files are mostly code around the mapping and
+/// the queries, so that what the tool takes out of them is the example (decision 111). The
+/// small examples are built from the samples the translation screen offers; the larger ones
+/// have classes of their own.
 ///
 /// The list is the pages' content, not a decision: an example is added, replaced or changed
 /// here, beside its section in examples.html, and needs no decision file as long as the floor
@@ -120,6 +122,25 @@ public static class Examples
             [.. MarketplaceJpaEntityUnits(), Unit("MarketplaceReports.java", ConversionContentType.Java, MarketplaceSampleJpa.Reports)]),
         new("marketplace-long-query", "Marketplace: one long query with seven joins and fourteen subqueries", ORMEnum.EclipseLink, ORMEnum.EFCore,
             [.. MarketplaceJpaEntityUnits(), Unit("SalesDashboard.java", ConversionContentType.Java, MarketplaceSampleJpa.Dashboard)]),
+
+        // Application code: files as a project has them, in which the mapping and the queries
+        // are a small part of the text. What the tool takes out of them is the example.
+        new("helpdesk-application", "Helpdesk: entities and queries taken out of an ASP.NET Core application", ORMEnum.EFCore, ORMEnum.Dapper,
+        [
+            Unit("Domain.cs", ConversionContentType.CSharp, HelpdeskSampleEFCore.Domain),
+            Unit("HelpdeskContext.cs", ConversionContentType.CSharp, HelpdeskSampleEFCore.Context),
+            Unit("TicketService.cs", ConversionContentType.CSharp, HelpdeskSampleEFCore.Service),
+            Unit("TicketsController.cs", ConversionContentType.CSharp, HelpdeskSampleEFCore.Controller),
+            Unit("BacklogReportJob.cs", ConversionContentType.CSharp, HelpdeskSampleEFCore.ReportJob),
+        ]),
+        new("clinic-application", "Clinic: entities and queries taken out of a Spring Boot application", ORMEnum.Hibernate, ORMEnum.EFCore,
+        [
+            Unit("Patient.java", ConversionContentType.Java, ClinicSampleHibernate.Patient),
+            Unit("Doctor.java", ConversionContentType.Java, ClinicSampleHibernate.Doctor),
+            Unit("Appointment.java", ConversionContentType.Java, ClinicSampleHibernate.Appointment),
+            Unit("SchedulingService.java", ConversionContentType.Java, ClinicSampleHibernate.SchedulingService),
+            Unit("ClinicReports.java", ConversionContentType.Java, ClinicSampleHibernate.Reports),
+        ]),
     ];
 
     private static List<ConversionSource> LendingReportUnits() =>

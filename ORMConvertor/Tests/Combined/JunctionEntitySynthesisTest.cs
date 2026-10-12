@@ -2,6 +2,8 @@ using AbstractWrappers.Diagnostics;
 using Model;
 using Model.AbstractRepresentation.Enums;
 using NHibernateWrappers;
+using OrmConvertor;
+using Tests.Verification;
 
 namespace Tests.Combined;
 
@@ -253,5 +255,58 @@ public class JunctionEntitySynthesisTest
             .Single(o => o.Content.Contains("table=\"Suppliers\""));
         Assert.Contains("<many-to-many class=\"Product\" column=\"ProductId\" />", supplierXml.Content);
         Assert.Contains("<key column=\"SupplierId\" />", supplierXml.Content);
+    }
+
+    /// <summary>
+    /// The initializer follows the element type the collection now has: a type argument that
+    /// named the far entity names the junction entity, so a target that keeps the C#
+    /// initializer - EF Core here - writes a class that compiles. A form that names no element
+    /// type stays as it was.
+    /// </summary>
+    [Fact]
+    public void ATypedInitializerFollowsTheJunctionEntity()
+    {
+        var supplier = SupplierSource.Replace("List<Product> Products { get; set; } = [];", "ISet<Product> Products { get; set; } = new HashSet<Product>();", StringComparison.Ordinal);
+        var product = ProductSource.Replace("List<Supplier> Suppliers { get; set; } = [];", "IList<Supplier> Suppliers { get; set; } = new List<NHibernateEntities.Supplier>();", StringComparison.Ordinal);
+
+        var result = ConversionHandler.Convert(ORMEnum.NHibernate, ORMEnum.EFCore,
+        [
+            new() { ContentType = ConversionContentType.CSharp, Content = supplier },
+            new() { ContentType = ConversionContentType.CSharp, Content = product },
+            new() { ContentType = ConversionContentType.XML, Content = SupplierMapping },
+            new() { ContentType = ConversionContentType.XML, Content = ProductMapping },
+        ]);
+
+        var classes = result.Sources.Where(s => s.ContentType == ConversionContentType.CSharpEntity).ToList();
+        Assert.Contains(classes, c => c.Content.Contains("Products { get; set; } = new HashSet<ProductSupplier>();", StringComparison.Ordinal));
+        Assert.Contains(classes, c => c.Content.Contains("Suppliers { get; set; } = new List<ProductSupplier>();", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("initializer", StringComparison.Ordinal));
+
+        GeneratedEntityCompiler.CompileOrFail(
+            "JunctionInitializer_EFCore",
+            classes.Select(c => c.Content),
+            GeneratedEntityCompiler.EFCoreConsumerReferences);
+    }
+
+    /// <summary>An initializer that holds elements of the far entity cannot hold junction rows: it is dropped, and the record says so.</summary>
+    [Fact]
+    public void AnInitializerWithElementsOfTheFarEntityIsDroppedWithALoss()
+    {
+        var builder = new NHibernateEntityBuilder();
+        var entityParser = new NHibernateEntityParser(builder);
+        var mappingParser = new NHibernateXMLMappingParser(builder);
+
+        entityParser.Parse(SupplierSource.Replace("= [];", "= new List<Product> { new Product() };", StringComparison.Ordinal));
+        entityParser.Parse(ProductSource);
+        mappingParser.Parse(SupplierMapping);
+        mappingParser.Parse(ProductMapping);
+        builder.Build();
+
+        var products = builder.EntityMaps.Single(em => em.Entity.Name == "Supplier")
+            .PropertyMaps.Single(pm => pm.Property.Name == "Products");
+        Assert.Null(products.Property.DefaultValue);
+
+        var loss = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Property == "Products");
+        Assert.Contains("ProductSupplier", loss.Reason, StringComparison.Ordinal);
     }
 }

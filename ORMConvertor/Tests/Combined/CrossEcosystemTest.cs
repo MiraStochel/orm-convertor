@@ -162,6 +162,52 @@ public class CrossEcosystemTest
         Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure);
     }
 
+    /// <summary>
+    /// A Java field the class exposes through a getter alone is a property without a setter,
+    /// and such a property cannot be required in C# (CS9034): the class compiles without the
+    /// modifier, where with it it did not compile at all.
+    /// </summary>
+    [Fact]
+    public void AFieldWithoutASetterIsNotRequiredInEfCore()
+    {
+        var result = Convert(ORMEnum.Hibernate, ORMEnum.EFCore, new ConversionSource
+        {
+            ContentType = ConversionContentType.Java,
+            Content = """
+                package clinic;
+
+                import jakarta.persistence.Column;
+                import jakarta.persistence.Entity;
+                import jakarta.persistence.Id;
+                import jakarta.persistence.Table;
+
+                @Entity
+                @Table(name = "Rooms")
+                public class Room {
+
+                    @Id
+                    @Column(name = "RoomId")
+                    private Long RoomId;
+
+                    @Column(name = "Code", length = 10, nullable = false)
+                    private String Code;
+
+                    public Long getRoomId() { return RoomId; }
+                    public String getCode() { return Code; }
+                }
+                """,
+        });
+
+        var csharp = Entity(result, ConversionContentType.CSharpEntity);
+
+        Assert.Contains("public long RoomId { get; }", csharp);
+        Assert.Contains("public string Code { get; }", csharp);
+        Tests.Verification.GeneratedEntityCompiler.CompileOrFail(
+            nameof(AFieldWithoutASetterIsNotRequiredInEfCore),
+            [csharp],
+            Tests.Verification.GeneratedEntityCompiler.EFCoreConsumerReferences);
+    }
+
     [Fact]
     public void AHibernateEntityBecomesAnNHibernateMapping()
     {

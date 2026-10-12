@@ -513,8 +513,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
-            if (!TryDecompose(invocation, out _, out _, out var rootExpression)
-                || IsNavigation(rootExpression!, out var receiver))
+            if (!TryDecompose(invocation, out _, out var steps, out var rootExpression)
+                || IsNavigation(rootExpression!, out var receiver)
+                || (receiver is { QueryableMember: null } && !steps.Any(step => IsQueryStep(step.Name))))
             {
                 continue;
             }
@@ -677,6 +678,42 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         receiver = new RootReceiver(rootExpression.ToString(), statement.TypeName, null);
         return false;
     }
+
+    /// <summary>
+    /// Whether a link of a chain is a step of a LINQ query: an operator of System.Linq, one of
+    /// the executing terminals and their asynchronous forms, or a step of the provider's own
+    /// query API. A root known only by its position - <c>x.M</c>, where the unit says nothing of
+    /// what <c>x</c> is - begins a query only in a chain that has such a step (decision 109
+    /// reads a LINQ chain): <c>Random.Shared.Next()</c>, <c>span.TotalHours.ToString()</c> and
+    /// <c>scope.ServiceProvider.GetRequiredService&lt;T&gt;()</c> have the position and no LINQ
+    /// at all, and read as queries they claimed tables named Shared, TotalHours and
+    /// ServiceProvider. A root the unit declares as the provider's source, and a root that is
+    /// a call, stay roots without one.
+    /// </summary>
+    private bool IsQueryStep(string name)
+    {
+        var bare = name.EndsWith("Async", StringComparison.Ordinal) ? name[..^"Async".Length] : name;
+        return LinqOperators.Contains(bare) || IsProviderQueryStep(bare);
+    }
+
+    private static readonly HashSet<string> LinqOperators = new(StringComparer.Ordinal)
+    {
+        "Where", "Select", "SelectMany", "Join", "LeftJoin", "RightJoin", "GroupJoin", "GroupBy",
+        "OrderBy", "OrderByDescending", "ThenBy", "ThenByDescending", "Order", "OrderDescending",
+        "Skip", "Take", "SkipWhile", "TakeWhile", "SkipLast", "TakeLast", "Distinct", "DistinctBy",
+        "Union", "UnionBy", "Concat", "Intersect", "IntersectBy", "Except", "ExceptBy", "Zip",
+        "OfType", "Cast", "DefaultIfEmpty", "Reverse", "AsQueryable", "AsEnumerable",
+        "First", "FirstOrDefault", "Single", "SingleOrDefault", "Last", "LastOrDefault",
+        "ElementAt", "ElementAtOrDefault", "Count", "LongCount", "Sum", "Average", "Min", "Max",
+        "MinBy", "MaxBy", "Aggregate", "Any", "All", "Contains",
+        "ToList", "ToArray", "ToDictionary", "ToLookup", "ToHashSet",
+    };
+
+    /// <summary>
+    /// A step of the provider's own query API that may stand in a chain without any operator
+    /// of System.Linq - EF Core's <c>Include</c> or <c>AsNoTracking</c>. The default knows none.
+    /// </summary>
+    protected virtual bool IsProviderQueryStep(string name) => false;
 
     /// <summary>
     /// Why a place whose root is a member of a name is refused when it is read (decision 114),
@@ -3344,9 +3381,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
             case PrefixUnaryExpressionSyntax unary when unary.IsKind(SyntaxKind.LogicalNotExpression):
                 {
+                    // !p.Flag is the comparison with false, as the provider translates it.
+                    if (BooleanMember(unary.Operand) is { } negated)
+                    {
+                        return new ComparisonCondition(negated, ComparisonOperator.Equal, BooleanConstant(false));
+                    }
+
                     var operand = ParseCondition(unary.Operand);
                     return operand is null ? null : new NotCondition(operand);
                 }
+
+            case MemberAccessExpressionSyntax when BooleanMember(expression) is { } flag:
+                return new ComparisonCondition(flag, ComparisonOperator.Equal, BooleanConstant(true));
 
             case BinaryExpressionSyntax logical when logical.IsKind(SyntaxKind.LogicalAndExpression)
                                                   || logical.IsKind(SyntaxKind.LogicalOrExpression):
@@ -3382,6 +3428,32 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return null;
         }
     }
+
+    /// <summary>
+    /// A column that stands as a predicate by itself - a Where body, an operand of
+    /// <c>&amp;&amp;</c>, <c>||</c> or <c>!</c>. C# takes only a <c>bool</c> in that place and
+    /// refuses a <c>bool?</c>, so the member is a truth value that is never null, and it reads
+    /// as the comparison with <c>true</c> it is to the provider; its negation as the comparison
+    /// with <c>false</c>. Only a column: a value from the scope or an expression in that place
+    /// stays unread, as before. Null for anything else.
+    /// </summary>
+    private QueryOperand? BooleanMember(ExpressionSyntax expression)
+    {
+        while (expression is ParenthesizedExpressionSyntax parenthesized)
+        {
+            expression = parenthesized.Expression;
+        }
+
+        if (expression is not MemberAccessExpressionSyntax || !IsColumnOfScope(expression))
+        {
+            return null;
+        }
+
+        return ReadOperand(expression) is { IsColumn: true, IsAggregate: false } column ? column : null;
+    }
+
+    private static QueryOperand BooleanConstant(bool value)
+        => QueryOperand.Value(QueryConstant.Of(value ? "true" : "false", ScalarType.Bool));
 
     /// <summary>
     /// The canonical escape character of a pattern this parser has to escape itself. A

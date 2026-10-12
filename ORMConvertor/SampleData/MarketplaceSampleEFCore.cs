@@ -358,7 +358,7 @@ public static class MarketplaceSampleEFCore
             public List<Product> TaggedProducts(string label, int skip, int take)
             {
                 return ctx.Products
-                    .Where(p => p.Discontinued == false
+                    .Where(p => !p.Discontinued
                         && ctx.Set<ProductTag>()
                             .Where(pt => ctx.Tags.Where(t => t.Label == label).Select(t => t.TagId).Contains(pt.TagId))
                             .Select(pt => pt.ProductId)

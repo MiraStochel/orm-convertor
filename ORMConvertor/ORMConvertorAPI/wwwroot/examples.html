@@ -115,13 +115,15 @@
 
     <h2>The examples</h2>
     <p>
-      Fourteen examples. The first seven are grouped by the boundary the translation
+      Sixteen examples. The first seven are grouped by the boundary the translation
       crosses: two stay inside .NET, two inside Java, and three cross between the
       ecosystems &mdash; the last two over a whole domain rather than a single class.
       The next three are about queries: what a target does with a construct its
-      query language lacks, and how the queries are found in code. The last four take
+      query language lacks, and how the queries are found in code. The next four take
       one larger domain, a marketplace, from four source frameworks, and together show
       what the tool reads and writes &mdash; one of them is a single, very long query.
+      The last two are application code as a project has it, where the mapping and the
+      queries are a small part of the text, and show what the tool takes out of it.
       Below each one, the records list every place where the output could not carry a
       fact of the input, or states something the input did not. That is where a
       translation explains itself.
@@ -175,6 +177,13 @@
           <li><a href="#marketplace-mappings">Mapping documents: NHibernate &rarr; MyBatis</a> &mdash; hbm.xml and named queries</li>
           <li><a href="#marketplace-query-tour">Query vocabulary: Hibernate &rarr; EF Core</a> &mdash; fourteen reports, twelve in LINQ</li>
           <li><a href="#marketplace-long-query">One long query: EclipseLink &rarr; EF Core</a> &mdash; fourteen subqueries, one LINQ chain</li>
+        </ul>
+      </article>
+      <article>
+        <h3>Application code</h3>
+        <ul>
+          <li><a href="#helpdesk-application">Helpdesk: EF Core &rarr; Dapper</a> &mdash; eight queries out of an ASP.NET Core application</li>
+          <li><a href="#clinic-application">Clinic: Hibernate &rarr; EF Core</a> &mdash; seven queries out of a Spring Boot application</li>
         </ul>
       </article>
     </div>
@@ -753,6 +762,109 @@
         became two comparisons. Load it on the Translation page and switch the target to
         see the same query as T-SQL for Dapper or MyBatis, as HQL with its LINQ form for
         NHibernate, or as JPQL for Hibernate and EclipseLink.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <h2>Application code</h2>
+    <p>
+      In a real project the mapping and the queries are a small part of the text: the files
+      around them hold services, controllers, background jobs, records, interfaces, enums,
+      validation, logging, and LINQ or streams over what a query already loaded. These two
+      examples are such files, five of them each, sent as they are. The tool reads every
+      class of a file as an entity except three kinds &mdash; a class in whose own members
+      the code hands a query to the framework, the framework&rsquo;s own API (the EF Core
+      context), and a static class &mdash;, and a Convention or Loss record names each of
+      them, so the split can be checked. Records, interfaces and enums are never entities.
+      A query is every place the code hands one to the framework: a LINQ chain over a set of
+      the context, a <code>createQuery</code> or <code>createNativeQuery</code>. Everything
+      else &mdash; methods, constructors, the code around each query &mdash; stays where it
+      is, and is not translated. Filter the records band to Convention to see the split.
+    </p>
+
+    <section id="helpdesk-application" data-example="helpdesk-application">
+      <h3>Helpdesk: EF Core &rarr; Dapper</h3>
+      <p>
+        An ASP.NET Core helpdesk in five files: a domain file with four entity classes, an
+        enum and a static class of state names; a context with its DbSets, a little fluent
+        configuration and a <code>SaveChangesAsync</code> override that stamps and logs; a
+        service with the records and the interface it speaks in; an API controller; and a
+        background job with a static class of CSV helpers. Out of it come the four entities
+        and eight queries &mdash; six in the service, one in the controller&rsquo;s lookup
+        action, one in the job, each turned into a Dapper method over its SQL. The page the
+        service computes in code becomes <code>OFFSET @skip ROWS FETCH NEXT @take ROWS
+        ONLY</code>, <code>FirstOrDefaultAsync</code> <code>TOP (1)</code>,
+        <code>!t.Escalated</code> <code>t.Escalated = 0</code>, the conditional in a sum a
+        <code>CASE</code>, <code>EF.Functions.Like</code> with a pattern built in code
+        <code>LIKE @pattern</code>, and a <code>Contains</code> over another set an
+        <code>IN</code> subquery; the job&rsquo;s context, taken from a service scope, is a
+        context all the same. What is left alone says as much: the entities&rsquo; methods
+        and computed properties (<code>IsOpen</code>, <code>DisplayName</code>), the
+        <code>Add</code> and <code>SaveChangesAsync</code> calls, LINQ over lists the code
+        has loaded (<code>tickets.Select</code>, <code>overdue.Count</code>,
+        <code>backlog.Sum</code>), adding a comment to a ticket&rsquo;s collection, and
+        calls that look like a chain over a member but are not LINQ at all &mdash;
+        <code>Random.Shared.Next</code>, <code>span.TotalHours.ToString</code>,
+        <code>scope.ServiceProvider.GetRequiredService</code>. Dapper has no place for any
+        mapping fact, so most of the records are its losses, one line per fact.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="clinic-application" data-example="clinic-application">
+      <h3>Clinic: Hibernate &rarr; EF Core</h3>
+      <p>
+        A Spring Boot clinic in five files: three entities with constants, constructors, a
+        static factory, a lifecycle callback, a nested enum, business methods and
+        <code>equals</code>; a <code>@Service</code> with a nested interface and two nested
+        records, an injected <code>EntityManager</code>, a clock and a logger; and a
+        <code>@Component</code> whose scheduled job writes a CSV. Out of it come the three
+        entities and seven queries. Each <code>setParameter</code> becomes a typed parameter
+        of the generated method, <code>setMaxResults</code> a <code>Take</code> &mdash; also
+        before <code>getResultStream().findFirst()</code> &mdash;, the entity join a
+        <code>Join</code>, <code>not exists</code> a negated <code>Any</code>, and the
+        report&rsquo;s grouping with its conditional count a <code>GroupBy</code> with a
+        <code>Sum</code> over a conditional, ordered by <code>g.Count()</code>. The native
+        SQL of the report is read as a query like any other. Two queries aggregate over all
+        their rows without a grouping &mdash; the clash count and that native report &mdash;,
+        which LINQ can say only by the call that runs the query, so they go out as native SQL
+        through <code>Database.SqlQuery</code> with a row class, and three Fallback records
+        name why. Left alone: <code>em.find</code> and <code>em.persist</code>, which hand
+        no query over; a SQL-looking string constant used for logging; the callback, the
+        loops and the streams. The <code>@Email</code> validation annotation is a Loss
+        record, because the mapping has no place for it.
       </p>
       <div class="toolbar">
         <button type="button" class="example-run secondary">Run again</button>

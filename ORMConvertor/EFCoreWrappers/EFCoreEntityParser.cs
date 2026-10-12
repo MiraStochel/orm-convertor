@@ -388,7 +388,7 @@ public class EFCoreEntityParser : CSharpEntityParser
         // The fluent IsConcurrencyToken and IsRowVersion count the same as the annotations
         // (decision 132).
         var entityName = classDeclaration.Identifier.Text;
-        var properties = classDeclaration.Members.OfType<PropertyDeclarationSyntax>().ToList();
+        var properties = StoredProperties(classDeclaration).ToList();
         var concurrencyTokens = properties.Count(p => IsConcurrencyToken(p, entityName));
         var classHasTimestamp = properties.Any(p => HasAttribute(p, "Timestamp")) || context.HasRowVersion(entityName);
 

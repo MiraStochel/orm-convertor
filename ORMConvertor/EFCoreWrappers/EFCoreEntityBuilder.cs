@@ -505,7 +505,9 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         // The required modifier is a language device - a non-nullable property without an
         // initializer needs it to compile clean - so the language type decides it. What
         // the database says about the column travels through [Required], not through here.
-        if (!langType.IsNullable && !otherMods.Contains("required") && string.IsNullOrEmpty(prop.DefaultValue))
+        // A property without a setter cannot take it (CS9034): a Java field the class only
+        // exposes through a getter is such a property.
+        if (!langType.IsNullable && prop.HasSetter && !otherMods.Contains("required") && string.IsNullOrEmpty(prop.DefaultValue))
         {
             otherMods.Add("required");
         }

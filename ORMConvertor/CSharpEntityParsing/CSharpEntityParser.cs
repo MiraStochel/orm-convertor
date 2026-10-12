@@ -297,7 +297,7 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
     /// </summary>
     protected virtual void ParseProperties(ClassDeclarationSyntax classDeclaration)
     {
-        foreach (var prop in classDeclaration.Members.OfType<PropertyDeclarationSyntax>())
+        foreach (var prop in StoredProperties(classDeclaration))
         {
             EmitProperty(ReadProperty(prop));
 
@@ -306,6 +306,31 @@ public abstract class CSharpEntityParser(AbstractEntityBuilder entityBuilder) : 
                 ReportUnreadAttribute(classDeclaration, prop.Identifier.Text, attribute);
             }
         }
+    }
+
+    /// <summary>
+    /// The properties of the class that hold a value, which is what every .NET framework maps:
+    /// all but a computed one - a property with no setter whose getter is code
+    /// (<c>public bool IsOpen =&gt; ClosedAt is null;</c>, <c>get { return …; }</c>). EF Core,
+    /// Dapper and NHibernate have nothing to write into such a property and none of them maps
+    /// it; it is behaviour of the class like a method, and like a method the reading leaves it
+    /// where it is. A get-only auto-property holds a value and stays.
+    /// </summary>
+    protected static IEnumerable<PropertyDeclarationSyntax> StoredProperties(ClassDeclarationSyntax classDeclaration)
+        => classDeclaration.Members.OfType<PropertyDeclarationSyntax>().Where(property => !IsComputed(property));
+
+    private static bool IsComputed(PropertyDeclarationSyntax property)
+    {
+        if (property.ExpressionBody is not null)
+        {
+            return true;
+        }
+
+        var accessors = property.AccessorList?.Accessors ?? default;
+        var written = accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration) || a.IsKind(SyntaxKind.InitAccessorDeclaration));
+        var codedGetter = accessors.Any(a => a.IsKind(SyntaxKind.GetAccessorDeclaration) && (a.Body is not null || a.ExpressionBody is not null));
+
+        return !written && codedGetter;
     }
 
     /// <summary>

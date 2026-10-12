@@ -247,6 +247,17 @@ public class EFCoreLinqQueryParser(
     protected override bool IsProviderQuerySource(TypeSyntax declaredType) => EFCoreContext.IsDbSet(declaredType);
 
     /// <summary>
+    /// The steps of EF Core's own query API: loading related rows, tracking, query tags and
+    /// filters, splitting, and the calls that run a query - a chain of them alone over a root
+    /// is a query of EF Core as much as one with an operator of System.Linq.
+    /// </summary>
+    protected override bool IsProviderQueryStep(string name) => name is
+        "Include" or "ThenInclude" or "AsNoTracking" or "AsNoTrackingWithIdentityResolution" or "AsTracking"
+        or "AsSplitQuery" or "AsSingleQuery" or "IgnoreQueryFilters" or "IgnoreAutoIncludes"
+        or "TagWith" or "TagWithCallSite" or "AsAsyncEnumerable" or "Load" or "Find"
+        or "ExecuteDelete" or "ExecuteUpdate" or "ForEach";
+
+    /// <summary>
     /// The navigation entry of EF Core's explicit loading (decision 115): <c>X.Entry(e)</c>, or
     /// a bare <c>Entry(e)</c> inside the context, with one argument, and on it <c>Collection</c>,
     /// <c>Reference</c> or <c>Navigation</c> with one argument that names the navigation - a
