@@ -249,6 +249,28 @@ article.artifact {
   margin-bottom: 0;
 }
 
+.toolbar + small.hint {
+  margin: -0.5rem 0 1rem;
+}
+
+/* The files an archive brought that did not become units (decision 136): folded, and
+   scrolling on its own, since a whole project can leave hundreds of them. */
+details.unused-files {
+  margin: 0 0 1rem;
+}
+
+details.unused-files > summary {
+  color: var(--pico-muted-color);
+  font-size: 0.9rem;
+}
+
+details.unused-files ul {
+  max-height: 16rem;
+  overflow: auto;
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+
 /* Two columns for artifacts and example panes when the container is wide enough
    (container queries, not window width - decision 032d). */
 

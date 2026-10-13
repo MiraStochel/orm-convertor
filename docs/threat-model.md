@@ -41,7 +41,7 @@
 
 Hloubky bez stropu, změřené 2026-09-21 (Windows, zásobník 1 MB) — poslední bez pádu / první s pádem: HQL a JPQL závorky 2048/3000, poddotazy 1024/2048; javová třída generika 3000/4096, vnitřní třídy 2048/3000; **`TSql160Parser` (Dapper, MyBatis) 1024/2048, nejdřív ze všech**; `CSharpSyntaxTree.ParseText` ve 4096 vydá diagnostiku, padá na 6000; `XDocument.Parse` čte smyčkou a nepadá ani na 65536.
 
-**Co hrozba není:** vstup neopouští proces a kopie v prohlížeči se nikam neodesílá; do artefaktu se nedostane nic, co nástroj nedostal (rozh. [040](./decisions/040-boundary-of-the-handed-over-artifact.md)), hlídá test; heslo `sa` v `docker-compose.yml` a ve workflow je vývojový údaj zahoditelné instance — S4 zakazuje údaje v generovaných artefaktech a v logu, ne v popisu prostředí.
+**Co hrozba není:** archiv projektu rozbaluje prohlížeč (rozh. [136](./decisions/136-a-project-archive-is-unpacked-by-the-browser-with-own-code.md)), takže server dostane jednotky jako z vybraných souborů a vstupní bod nepřibývá; archiv, který se rozbalí do obřích rozměrů, vyčerpá jen záložku, do které ho uživatel přidal. Vstup neopouští proces a kopie v prohlížeči se nikam neodesílá; do artefaktu se nedostane nic, co nástroj nedostal (rozh. [040](./decisions/040-boundary-of-the-handed-over-artifact.md)), hlídá test; heslo `sa` v `docker-compose.yml` a ve workflow je vývojový údaj zahoditelné instance — S4 zakazuje údaje v generovaných artefaktech a v logu, ne v popisu prostředí.
 
 ## Co by se dalo udělat, kdyby se na oblast sáhlo
 

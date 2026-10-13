@@ -48,7 +48,6 @@ Rejstřík, ne pořadí.
 | [Testy Advisoru a benchmarkingu](#advisor-a-benchmarking-nemají-žádné-testy) | Advisor | práce | T7, S6 |
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
 | [Milník 5 do seznamu](#milník-5-nemá-v-seznamu-žádnou-položku) | Odevzdání | práce | — |
-| [Vstupní archiv projektu](#vstupní-archiv-projektu-který-f14-připouští) | Užitečné | rozhodnutí | F14, S7 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | — |
 
@@ -225,11 +224,6 @@ Milník 5 — experimentální výsledky, finální dokumentace, odevzdání a p
 ## Užitečné, ne nutné
 
 Prospělo by to, ale žádná věta záruk na tom nestojí a nic tím není blokované; značky pořadí položky nedostávají.
-
-#### Vstupní archiv projektu, který F14 připouští
-*Rozh. [111](./decisions/111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md) ho výslovně nechalo otevřené; souvisí s [`threat-model.md`](./threat-model.md), hrozba 2. Zúžení F14 v §9. Požadavky F14, S7.*
-
-F14 jmenuje vedle celých tříd „případně archiv projektu"; nástroj bere jen soubory, které uživatel vybere, takže archiv musí rozbalit sám. Po rozh. 111 je převod souboru na jednotku funkcí přípony, a archiv tím zlevnil. Rozhodnout, zda ho rozbalí prohlížeč (kontrakt `/convert` beze změny), nebo server (nový vstup a s ním limit velikosti a počtu jednotek z hrozby 2); co se stane se souborem v jazyce, který zdroj nečte, a s cestou v archivu jako jménem jednotky; a zda tím zúžení F14 v §9 padá.
 
 #### Vynucení stylu a reprodukovatelnost sestavení
 *Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.4. Souvisí s rozh. [034](./decisions/034-central-version-management.md) a [039](./decisions/039-container-configuration-of-the-environment.md). Požadavky S2, S5.*

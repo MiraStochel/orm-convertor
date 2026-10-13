@@ -89,15 +89,24 @@
       <h2>Input files</h2>
       <p id="offer-note"></p>
       <div class="toolbar">
-        <button type="button" id="add-files">Add files…</button>
+        <button type="button" id="add-files">Add files or a ZIP…</button>
         <button type="button" id="add-unit" class="secondary">Add empty unit</button>
         <button type="button" id="clear" class="secondary outline">Clear</button>
-        <input type="file" id="file-input" multiple accept=".cs,.java,.xml,.sql,.hql,.jpql,.txt" hidden>
+        <input type="file" id="file-input" multiple accept=".cs,.java,.xml,.sql,.hql,.jpql,.txt,.zip" hidden>
       </div>
+      <small class="hint">
+        A ZIP archive of a project is unpacked here in the browser: every file in a language
+        the source reads becomes a unit named by its path, and the rest is listed as not used
+        &mdash; so pick the direction first.
+      </small>
       <p id="storage-note" class="muted-note" hidden>
         This browser is not storing the input, so a reload will lose it &mdash; private
         windows and blocked site data both do this.
       </p>
+      <details id="unused-files" class="unused-files" hidden>
+        <summary></summary>
+        <ul></ul>
+      </details>
       <div id="units"></div>
     </section>
 

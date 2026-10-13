@@ -138,6 +138,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 133 | [Doplňkový balíček nad frameworkem tím frameworkem není: Dapper.Contrib a MyBatis-Plus stojí mimo rozsah a nástroj je ve svých záznamech jmenuje; volání Contribu je předáním, které se odmítá](133-an-add-on-package-over-a-framework-is-not-that-framework.md) | platí | F6, F8, F11, S1, S4, T1 |
 | 134 | [Vlastnost bez setteru dostane v cíli nejužší setter, kterým ji framework zapíše; čte se tak, jak ji čte zdrojový framework](134-a-property-without-a-setter-gets-the-narrowest-setter-its-framework-writes-through.md) | platí | F2, F5, F10, F11, S1, S2 |
 | 135 | [Příklad je volitelný první krok překladové obrazovky, kroky nejsou číslované a sada vzorků je šest příkladů vstupu; kód roste s oknem](135-an-example-is-the-optional-first-step-and-the-sample-set-is-six-input-examples.md) | platí | F14, S7 |
+| 136 | [Archiv projektu rozbalí prohlížeč vlastním kódem: jednotkou se stane soubor v jazyce, který zdroj čte, a ostatní soubory obrazovka vyjmenuje](136-a-project-archive-is-unpacked-by-the-browser-with-own-code.md) | platí | F14, S5, S7 |
 
 ## Formát
 

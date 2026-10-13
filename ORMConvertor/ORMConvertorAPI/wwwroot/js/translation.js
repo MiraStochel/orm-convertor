@@ -41,6 +41,7 @@ import {
   saveBlob,
 } from "./ui.js";
 import { renderFacts } from "./facts.js";
+import { readZip } from "./zip.js";
 
 // One extension, one language (decision 111): a unit declares the language of its file and
 // nothing else, so .cs is C# whether the file holds an entity, the code that queries it, or
@@ -73,6 +74,10 @@ const state = {
   // result shows what the server read even after the editor above has moved on.
   sent: null,
   result: null,
+  // The files of the last archive added that did not become units, each with its reason
+  // (decision 136): { archives: [name], files: [{ archive, path, reason }] }. A report on how
+  // the input came about, not input, so it is not remembered with the units.
+  unused: null,
 };
 
 let unitCounter = 0;
@@ -407,6 +412,34 @@ function renderUnits() {
 }
 
 /*
+ * The files an archive brought that did not become units (decision 136): a folded list above
+ * the units, one line per file with its reason, so nothing in the archive goes unmentioned.
+ */
+function renderUnused() {
+  const details = document.getElementById("unused-files");
+  const list = details.querySelector("ul");
+  list.replaceChildren();
+  const unused = state.unused;
+  if (!unused || unused.files.length === 0) {
+    details.hidden = true;
+    return;
+  }
+  details.hidden = false;
+
+  const several = unused.archives.length > 1;
+  details.querySelector("summary").textContent =
+    `${files(unused.files.length)} from ` +
+    `${several ? `${unused.archives.length} archives` : unused.archives[0]} not used`;
+  for (const file of unused.files) {
+    const item = document.createElement("li");
+    const path = document.createElement("code");
+    path.textContent = several ? `${file.archive}: ${file.path}` : file.path;
+    item.append(path, ` - ${file.reason}`);
+    list.append(item);
+  }
+}
+
+/*
  * The summary strip under the Convert button. The result section is a screenful or two
  * further down with a batch of units above it, so pressing Convert has to say what came
  * back where the button is - and the badges jump to the band that carries the detail.
@@ -737,21 +770,108 @@ async function onDownload() {
   }
 }
 
-function onAddFiles(fileList) {
-  const readers = [...fileList].map(
-    (file) =>
-      new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () =>
-          resolve(newUnit(file.name, typeForExtension(file.name), String(reader.result)));
-        reader.readAsText(file);
-      }),
-  );
-  Promise.all(readers).then((units) => {
-    state.units.push(...units);
-    saveState();
-    renderUnits();
+/* One way to read a file's text, for a picked file and a file from an archive alike. */
+function readText(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
   });
+}
+
+const isArchive = (fileName) => fileName.toLowerCase().endsWith(".zip");
+
+/*
+ * Why a file of an archive does not become a unit, or null where it does (decision 136): it
+ * must name, by its extension, a language the source reads - the rule the screen applies to a
+ * picked file, applied before the unit exists rather than by the validation after.
+ * __MACOSX/ is not the project's but the macOS archiver's, with binary files under the very
+ * extensions of the source.
+ */
+function unusedReason(entry, offered) {
+  if (entry.path.startsWith("__MACOSX/")) return "macOS archive metadata, not a file of the project";
+  const type = typeForExtension(entry.path);
+  if (type === null) return "its extension names no language";
+  if (!offered.includes(type)) {
+    return `${ORM_LABELS[state.sourceOrm]} does not read ${CONTENT_TYPE_LABELS[type]}`;
+  }
+  return entry.problem;
+}
+
+/*
+ * A ZIP archive is unpacked here, in the browser (decision 136): every file in a language the
+ * source reads becomes a unit named by its path in the archive, every other file goes to the
+ * list of the unused with its reason, and an archive that cannot be read at all is one line
+ * of that list.
+ */
+async function unpackArchive(file, units, unused) {
+  const skip = (path, reason) => unused.push({ archive: file.name, path, reason });
+  let entries;
+  try {
+    entries = await readZip(file);
+  } catch (error) {
+    skip(file.name, `the archive cannot be read: ${error.message}`);
+    return;
+  }
+  const offered = offeredTypes(state.sourceOrm);
+  for (const entry of entries) {
+    if (entry.directory) continue;
+    const reason = unusedReason(entry, offered);
+    if (reason) {
+      skip(entry.path, reason);
+      continue;
+    }
+    let content;
+    try {
+      content = await readText(await entry.read());
+    } catch (error) {
+      skip(entry.path, `it could not be unpacked: ${error.message}`);
+      continue;
+    }
+    // An empty unit would only stop the validation, so an empty file is reported instead.
+    if (content.trim() === "") {
+      skip(entry.path, "it is empty");
+      continue;
+    }
+    units.push(newUnit(entry.path, typeForExtension(entry.path), content));
+  }
+}
+
+async function onAddFiles(fileList) {
+  // Copied before the first await: the caller empties the file input right after the call,
+  // and with it the list.
+  const picked = [...fileList];
+  const units = [];
+  const unused = [];
+  const archives = [];
+  try {
+    for (const file of picked) {
+      if (isArchive(file.name)) {
+        archives.push(file.name);
+        await unpackArchive(file, units, unused);
+      } else {
+        units.push(newUnit(file.name, typeForExtension(file.name), await readText(file)));
+      }
+    }
+  } catch (error) {
+    const errorElement = document.getElementById("convert-error");
+    errorElement.textContent = `Could not read the files: ${error.message}`;
+    errorElement.hidden = false;
+  }
+
+  state.units.push(...units);
+  saveState();
+  renderUnits();
+  if (archives.length === 0) return;
+  state.unused = { archives, files: unused };
+  renderUnused();
+  document.getElementById("convert-status").textContent =
+    `Added ${files(units.length)}` +
+    (unused.length === 0
+      ? "."
+      : `; ${files(unused.length)} from the archive${archives.length > 1 ? "s" : ""} not used, ` +
+        "listed above the units.");
 }
 
 /*
@@ -778,12 +898,14 @@ function onLoadExample() {
   state.targetOrm = example.targetOrm;
   state.sourceDialect = null;
   state.units = example.units.map((unit) => newUnit(unit.name ?? "", unit.contentType, unit.content));
+  state.unused = null;
   saveState();
   showValidation([]);
   renderFrameworkSelects();
   renderSourceDialectSelect();
   renderOfferNote();
   renderUnits();
+  renderUnused();
   document.getElementById("convert-status").textContent =
     `Loaded "${example.title}": ${example.units.length} file${example.units.length === 1 ? "" : "s"}.`;
 }
@@ -794,11 +916,13 @@ function onClear() {
   state.units = [];
   state.sent = null;
   state.result = null;
+  state.unused = null;
   forgetState();
   showValidation([]);
   document.getElementById("convert-status").textContent = "";
   document.getElementById("convert-error").hidden = true;
   renderUnits();
+  renderUnused();
   renderResult();
 }
 

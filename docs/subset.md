@@ -201,7 +201,8 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 |---|---|---|---|---|
 | jednotka deklarovaná rolí (`CSharpEntity`, `JavaQuery` …), v jazyce, který zdroj nečte, nebo z níž nic nevzešlo | jednotka deklaruje jen jazyk | `Failure` o jednotce (orchestrace) | VM | [045], [066], [111] |
 | aplikační kód, který dotaz nepředává (služba volající repozitář, DTO projekce) | od entity se nerozezná | čte se jako entita | Z F14 | [111] |
-| procházení repozitáře, archiv projektu; jméno jednotky na artefaktu; zobrazení mezireprezentace | vstup vybírá uživatel; sloučená entita nepatří jedné jednotce | nenárokuje se | Z F14 | [066], [094], [111] |
+| procházení repozitáře; archiv jiný než ZIP; jméno jednotky na artefaktu; zobrazení mezireprezentace | vstup vybírá uživatel; sloučená entita nepatří jedné jednotce | nenárokuje se | Z F14 | [066], [094], [111], [136] |
+| soubor archivu ZIP, jehož přípona nejmenuje jazyk, který zdroj čte; prázdný soubor, `__MACOSX/`, šifrovaná položka, komprese jiná než *stored* a deflate; archiv rozdělený do více souborů | jazyk určuje přípona a zdroj; prohlížeč rozbaluje jen deflate | jednotkou se nestane, obrazovka ho jmenuje s důvodem v seznamu nad okny | VM | [136] |
 | příkaz, který není čtecí `SELECT` (`INSERT`, `UPDATE`, `DELETE`, `DECLARE`, `SET`, `USE`, `SELECT … INTO`, `SELECT @x = …`) | mění stav, ze kterého čtou ostatní dotazy | `Failure` celé holé jednotky, u vloženého textu toho dotazu | VM | [108] |
 | druhý `SELECT` v textu vloženém do hostitele (Dapper mimo `QueryMultiple`, `<select>`, `<sql-query>`) | hostitel pošle jeden příkaz s jedním výsledkem | `Failure` dotazu | VM | [108], [109] |
 | `FOR XML`, `FOR JSON`, `TABLESAMPLE`, `WITH XMLNAMESPACES` | dokument či vzorek, ne řádky | `Failure` (č) | VM | [§5] |
@@ -486,6 +487,7 @@ Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhod
 [132]: ./decisions/132-ef-core-fluent-configuration-is-read-as-a-bounded-syntactic-subset.md
 [133]: ./decisions/133-an-add-on-package-over-a-framework-is-not-that-framework.md
 [134]: ./decisions/134-a-property-without-a-setter-gets-the-narrowest-setter-its-framework-writes-through.md
+[136]: ./decisions/136-a-project-archive-is-unpacked-by-the-browser-with-own-code.md
 [§1v]: ./architecture.md#zafixované-verze
 [§4.1]: ./architecture.md#41-entity-a-mapování
 [§4.2]: ./architecture.md#42-primární-klíč
