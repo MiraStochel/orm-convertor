@@ -6,8 +6,10 @@
 
 import hljs from "../vendor/highlightjs-11.12.0/core.min.js";
 import csharp from "../vendor/highlightjs-11.12.0/languages/csharp.min.js";
+import java from "../vendor/highlightjs-11.12.0/languages/java.min.js";
 import xml from "../vendor/highlightjs-11.12.0/languages/xml.min.js";
 import sql from "../vendor/highlightjs-11.12.0/languages/sql.min.js";
+import { windowOffsets } from "./marking.js";
 import {
   ContentType,
   CONTENT_TYPE_EXTENSIONS,
@@ -21,6 +23,7 @@ import {
 } from "./api.js";
 
 hljs.registerLanguage("csharp", csharp);
+hljs.registerLanguage("java", java);
 hljs.registerLanguage("xml", xml);
 hljs.registerLanguage("sql", sql);
 
@@ -120,14 +123,27 @@ export function goToLine(textarea, line) {
   textarea.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-/** Fills a <code> element with content and applies syntax highlighting. */
+const offsetMaps = new WeakMap();
+
+/*
+ * Fills a <code> element with content and applies syntax highlighting. The window holds the
+ * text with LF line endings whatever the content has: the highlighter writes through
+ * innerHTML, whose parser turns CR LF into LF anyway, and a window that is the same with and
+ * without highlighting needs one offset map for both (windowOffset).
+ */
 export function renderCode(codeElement, content, contentType) {
-  codeElement.textContent = content;
+  codeElement.textContent = content.replace(/\r\n?/g, "\n");
+  offsetMaps.set(codeElement, windowOffsets(content));
   const language = CONTENT_TYPE_HIGHLIGHT[contentType];
   if (language) {
     codeElement.className = `language-${language}`;
     hljs.highlightElement(codeElement);
   }
+}
+
+/** Where a character of the content renderCode was given stands in the window's text. */
+export function windowOffset(codeElement, offset) {
+  return offsetMaps.get(codeElement)?.(offset) ?? offset;
 }
 
 /** Offers a blob as a browser download. */
@@ -174,7 +190,7 @@ function artifactBaseName(artifact) {
     const match = artifact.content.match(/\bclass\s+([A-Za-z_]\w*)/);
     return match ? match[1] : null;
   }
-  // A whole source file of the input (decision 111) - the sample set is named this way - is
+  // A whole source file of the input (decision 111) - an input example is named this way - is
   // named after its first class, as a file usually is; a fragment without one is a source.
   if (artifact.contentType === ContentType.CSharp || artifact.contentType === ContentType.Java) {
     const match = artifact.content.match(/\bclass\s+([A-Za-z_]\w*)/);

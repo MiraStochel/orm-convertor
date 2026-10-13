@@ -1,8 +1,9 @@
 /*
- * The translation screen (decision 124, shape inherited from 033): four steps on one page -
- * direction, input files, convert, result - and the result stands input beside output, with
- * the pairing the server states and the facts ledger under both. Screen state is one plain
- * object; rendering functions rebuild whole areas from <template> clones (decision 032).
+ * The translation screen (decision 135, shape inherited from 033 through 124): unnumbered
+ * sections on one page - an optional example, direction, input files, convert, result - and
+ * the result stands input beside output, with the pairing the server states and the facts
+ * ledger under both. Screen state is one plain object; rendering functions rebuild whole
+ * areas from <template> clones (decision 032).
  *
  * The state is also mirrored into localStorage after every change and restored on load
  * (decision 056), so a reload, a stray back-navigation or a crashed tab does not take a
@@ -63,8 +64,10 @@ const state = {
   sourceDialect: null,
   units: [],
   requiredContent: [],
+  // The sample of every unit /required-content asks for: together, one input per framework
+  // (decision 135).
   samples: {},
-  // Whole conversion inputs from /examples (decision 099): the direction and named units.
+  // The described examples from /examples (decision 099): the direction and named units.
   examples: [],
   // The units exactly as the last conversion sent them, kept apart from `units` so that the
   // result shows what the server read even after the editor above has moved on.
@@ -226,35 +229,100 @@ function renderSourceDialectSelect() {
   }
 }
 
+/* ---- the two kinds of example (decision 135) ----------------------------- */
+
+// The value of an input's row in the list; a described example's row carries its key.
+const INPUT_PREFIX = "input:";
+
+const files = (count) => `${count} file${count === 1 ? "" : "s"}`;
+const inputTitle = (orm) => `Customer in ${ORM_LABELS[orm]}`;
+
 /*
- * The examples in the order the server lists them, each under its title and the direction it
- * converts in. The list stays disabled until the catalog has arrived, and says so when the
- * server has none to offer.
+ * The inputs: for every framework, the samples of the units /required-content asks for - the
+ * same customer in each. No direction explains them, so they carry none; a framework the
+ * samples do not fill is left out.
+ */
+function inputSets() {
+  return state.requiredContent
+    .map((definition) => ({
+      orm: definition.ormType,
+      units: definition.required
+        .filter((required) => state.samples[required.id] !== undefined)
+        .map((required) => ({ contentType: required.contentType, content: state.samples[required.id] })),
+    }))
+    .filter((set) => set.units.length > 0);
+}
+
+/*
+ * The list in two groups: first the inputs, one row per framework, then the described
+ * examples in the order the server lists them, each under its title and the direction it is
+ * described for. The list stays disabled until the catalog has arrived, and says so when the
+ * server has nothing to offer.
  */
 function renderExampleSelect() {
   const select = document.getElementById("example-select");
   const button = document.getElementById("load-example");
   select.replaceChildren();
 
+  const inputs = inputSets();
+  const offered = inputs.length + state.examples.length;
+
   const prompt = document.createElement("option");
   prompt.value = "";
-  prompt.textContent =
-    state.examples.length === 0 ? "No examples available" : "Start from an example…";
+  prompt.textContent = offered === 0 ? "No examples available" : "Start from an example…";
   prompt.disabled = true;
   prompt.selected = true;
   select.append(prompt);
 
-  for (const example of state.examples) {
-    const option = document.createElement("option");
-    option.value = example.key;
-    option.textContent =
-      `${example.title} (${ORM_LABELS[example.sourceOrm]} → ${ORM_LABELS[example.targetOrm]}, ` +
-      `${example.units.length} file${example.units.length === 1 ? "" : "s"})`;
-    select.append(option);
+  if (inputs.length > 0) {
+    const group = document.createElement("optgroup");
+    group.label = "Inputs - any target";
+    for (const set of inputs) {
+      const option = document.createElement("option");
+      option.value = `${INPUT_PREFIX}${set.orm}`;
+      option.textContent = `${inputTitle(set.orm)} (${files(set.units.length)})`;
+      group.append(option);
+    }
+    select.append(group);
   }
 
-  select.disabled = state.examples.length === 0;
+  if (state.examples.length > 0) {
+    const group = document.createElement("optgroup");
+    group.label = "Described on the Examples page";
+    for (const example of state.examples) {
+      const option = document.createElement("option");
+      option.value = example.key;
+      option.textContent =
+        `${example.title} (${ORM_LABELS[example.sourceOrm]} → ${ORM_LABELS[example.targetOrm]}, ` +
+        `${files(example.units.length)})`;
+      group.append(option);
+    }
+    select.append(group);
+  }
+
+  select.disabled = offered === 0;
   button.disabled = true;
+}
+
+/*
+ * What a row of the list loads, in the one shape loading needs: a title, the direction and the
+ * units. An input takes its own framework as the target too - the one target that recommends
+ * nothing - and its units are named from their content, as a file usually is.
+ */
+function exampleFor(value) {
+  if (value.startsWith(INPUT_PREFIX)) {
+    const orm = Number(value.slice(INPUT_PREFIX.length));
+    const set = inputSets().find((s) => s.orm === orm);
+    if (!set) return null;
+    const names = artifactNames(set.units);
+    return {
+      title: inputTitle(orm),
+      sourceOrm: orm,
+      targetOrm: orm,
+      units: set.units.map((unit, index) => ({ ...unit, name: names[index] })),
+    };
+  }
+  return state.examples.find((e) => e.key === value) ?? null;
 }
 
 function renderOfferNote() {
@@ -331,7 +399,7 @@ function renderUnits() {
 
   if (state.units.length === 0) {
     const empty = document.createElement("p");
-    empty.textContent = "No input files yet - add files, an empty unit, or the sample set.";
+    empty.textContent = "No input files yet - start from an example, add files, or add an empty unit.";
     container.append(empty);
   }
 
@@ -686,37 +754,15 @@ function onAddFiles(fileList) {
   });
 }
 
-function onLoadSamples() {
-  const definition = state.requiredContent.find((r) => r.ormType === state.sourceOrm);
-  if (!definition) return;
-  // Replacing the screen wholesale is what this button does; with work on it, it asks.
-  if (
-    state.units.length > 0 &&
-    !confirm("Loading the sample set replaces every unit on the screen. Continue?")
-  ) {
-    return;
-  }
-  const units = definition.required
-    .filter((required) => state.samples[required.id] !== undefined)
-    .map((required) => ({
-      contentType: required.contentType,
-      content: state.samples[required.id],
-    }));
-  const names = artifactNames(units);
-  state.units = units.map((unit, index) => newUnit(names[index], unit.contentType, unit.content));
-  saveState();
-  renderUnits();
-}
-
 /*
- * An example is a whole conversion input (decision 099), so loading one sets everything a
- * conversion sends: the direction, the units under the names of their files, and no declared
+ * An example is a whole conversion input (decisions 099 and 135), so loading one sets
+ * everything a conversion sends: the direction, the units under their names, and no declared
  * dialect - the example's SQL is read as it always is, exactly as the Examples page sends it.
- * Like the sample set it replaces the screen wholesale, and with work on it, it asks.
+ * It replaces the screen wholesale, and with work on it, it asks.
  */
 function onLoadExample() {
   const select = document.getElementById("example-select");
-  const example = state.examples.find((e) => e.key === select.value);
+  const example = exampleFor(select.value);
   if (!example) return;
   if (
     state.units.length > 0 &&
@@ -799,7 +845,6 @@ async function init() {
     onAddFiles(fileInput.files);
     fileInput.value = "";
   });
-  document.getElementById("load-samples").addEventListener("click", onLoadSamples);
   document.getElementById("example-select").addEventListener("change", (event) => {
     document.getElementById("load-example").disabled = event.target.value === "";
   });

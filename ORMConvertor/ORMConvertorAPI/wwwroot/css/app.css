@@ -43,12 +43,29 @@ main h1 + p.lede {
   max-width: 60ch;
 }
 
+/* A page that takes the whole window (decision 135): Pico caps the content at 1450 px, so
+   zooming out would only widen the margins. The paragraphs keep a readable measure. */
+body.wide > header,
+body.wide > main,
+body.wide > footer {
+  max-width: none;
+  padding-right: var(--pico-block-spacing-horizontal);
+  padding-left: var(--pico-block-spacing-horizontal);
+}
+
+body.wide main p {
+  max-width: 100ch;
+}
+
 /* ---- code panels ------------------------------------------------------ */
 
+/* The height follows the window, not the type (decision 135): zooming out shrinks the type
+   and keeps the window, so a panel shows more lines. A rem height would show the same lines
+   at every zoom. */
 pre {
   border: var(--app-panel-border);
   border-radius: var(--pico-border-radius);
-  max-height: 30rem;
+  max-height: max(16rem, 75vh);
   overflow: auto;
 }
 
@@ -313,9 +330,14 @@ article.artifact {
 }
 
 /* Two columns of panels when the container is wide enough, one otherwise - the same
-   container query as the pane grid, so that the two layouts switch together. */
-.compare {
+   container query as the pane grid, so that the two layouts switch together. The frame is
+   the container, not the grid itself: a container query matches against an ancestor, never
+   against the element that declares the containment. */
+.compare-frame {
   container-type: inline-size;
+}
+
+.compare {
   display: grid;
   gap: 1rem;
   grid-template-columns: minmax(0, 1fr);

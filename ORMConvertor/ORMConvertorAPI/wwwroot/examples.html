@@ -50,7 +50,8 @@
       The examples on this page are live: each one is a set of input files the
       server hands out, sent to the same <code>/convert</code> endpoint the
       translator uses and shown with the real output next to the real input. They
-      cannot drift away from the tool, because the tool produces them.
+      cannot drift away from the tool, because the tool produces them. The base input
+      before them is shown as the server hands it out, for any target.
     </p>
 
     <h2>The pipeline</h2>
@@ -113,6 +114,20 @@
       </figcaption>
     </figure>
 
+    <h2>The base input</h2>
+    <section id="base-input" data-base-input>
+      <p>
+        One customer, written in each of the six frameworks. It is not an example of a
+        direction: it is the base input, and it goes into any of the six targets, its own
+        framework included. On the <a href="translation.html">Translation</a> page it is the
+        first six entries of the example list, one per framework. Dapper and MyBatis have no
+        place for a key, so into NHibernate, Hibernate and EclipseLink they go only where the
+        server reads the database catalog, which supplies it.
+      </p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="base-inputs panes"></div>
+    </section>
+
     <h2>The examples</h2>
     <p>
       Sixteen examples. The first seven are grouped by the boundary the translation
@@ -130,11 +145,18 @@
     </p>
     <p>
       Every example is also in the list on the <a href="translation.html">Translation</a>
-      page: <em>Load example</em> puts its files into the editor and sets its direction,
-      and from there the target can be switched to any of the six.
+      page, below the base input: <em>Load example</em> puts its files into the editor and
+      sets the direction it is described for, and from there the target can be switched to
+      any of the six.
     </p>
 
     <div class="card-grid example-index">
+      <article>
+        <h3>The base input</h3>
+        <ul>
+          <li><a href="#base-input">One customer in each framework</a> &mdash; the base for any target</li>
+        </ul>
+      </article>
       <article>
         <h3>Within .NET</h3>
         <ul>

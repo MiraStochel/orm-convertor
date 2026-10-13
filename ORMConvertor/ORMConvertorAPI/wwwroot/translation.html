@@ -22,7 +22,7 @@
     } catch (e) { /* storage can be denied; the operating system's preference then decides */ }
   </script>
 </head>
-<body>
+<body class="wide">
   <header>
     <nav>
       <ul>
@@ -47,13 +47,29 @@
   <main>
     <h1>Translation</h1>
     <p class="lede">
-      Pick the direction, add your source files, convert, and read the artifacts beside
-      what you sent &mdash; with every mapping fact's origin and fate, and the records of
-      everything the conversion had to decide, drop or fill in.
+      Start from an example if you like, pick the direction, add your source files, convert,
+      and read the artifacts beside what you sent &mdash; with every mapping fact's origin
+      and fate, and the records of everything the conversion had to decide, drop or fill in.
     </p>
 
     <section>
-      <h2>1. Direction</h2>
+      <h2>Start from an example</h2>
+      <div class="example-picker">
+        <select id="example-select" aria-label="Example to load" disabled>
+          <option value="">Loading the examples…</option>
+        </select>
+        <button type="button" id="load-example" class="secondary" disabled>Load example</button>
+      </div>
+      <small class="hint">
+        Optional. An input is the same customer written in one framework; it loads with that
+        framework as the target too, and the target can then be switched to any of the six.
+        A described example sets the direction the <a href="examples.html">Examples</a> page
+        explains it for. Either one replaces the units below.
+      </small>
+    </section>
+
+    <section>
+      <h2>Direction</h2>
       <div class="direction-row">
         <select id="source-orm" aria-label="Source framework"></select>
         <button type="button" id="swap" class="secondary outline" title="Swap source and target" aria-label="Swap source and target">&#8644;</button>
@@ -70,23 +86,11 @@
     </section>
 
     <section>
-      <h2>2. Input files</h2>
+      <h2>Input files</h2>
       <p id="offer-note"></p>
-      <div class="example-picker">
-        <select id="example-select" aria-label="Example to load" disabled>
-          <option value="">Loading the examples…</option>
-        </select>
-        <button type="button" id="load-example" class="secondary" disabled>Load example</button>
-      </div>
-      <small class="hint">
-        An example is a whole conversion input: loading one replaces the units below and sets
-        the direction above. The <a href="examples.html">Examples</a> page explains what each
-        one shows.
-      </small>
       <div class="toolbar">
         <button type="button" id="add-files">Add files…</button>
         <button type="button" id="add-unit" class="secondary">Add empty unit</button>
-        <button type="button" id="load-samples" class="secondary">Load sample set</button>
         <button type="button" id="clear" class="secondary outline">Clear</button>
         <input type="file" id="file-input" multiple accept=".cs,.java,.xml,.sql,.hql,.jpql,.txt" hidden>
       </div>
@@ -98,7 +102,7 @@
     </section>
 
     <section>
-      <h2>3. Convert</h2>
+      <h2>Convert</h2>
       <div id="validation" role="alert" hidden>
         <p class="problem">The input is not ready to send:</p>
         <ul id="validation-list"></ul>
@@ -111,7 +115,7 @@
     </section>
 
     <section id="result" hidden>
-      <h2>4. Result</h2>
+      <h2>Result</h2>
       <div class="run-facts">
         <span id="run-frameworks"></span>
         <span id="source-dialect-fact"></span>
@@ -122,14 +126,16 @@
       <div class="toolbar" style="margin-top: 1rem;">
         <button type="button" id="download" class="secondary">Download all as ZIP</button>
       </div>
-      <div class="compare">
-        <div class="compare-column">
-          <h3>What you sent</h3>
-          <div id="inputs" class="pane-stack"></div>
-        </div>
-        <div class="compare-column">
-          <h3>What came back</h3>
-          <div id="artifacts" class="pane-stack"></div>
+      <div class="compare-frame">
+        <div class="compare">
+          <div class="compare-column">
+            <h3>What you sent</h3>
+            <div id="inputs" class="pane-stack"></div>
+          </div>
+          <div class="compare-column">
+            <h3>What came back</h3>
+            <div id="artifacts" class="pane-stack"></div>
+          </div>
         </div>
       </div>
       <p class="muted-note">

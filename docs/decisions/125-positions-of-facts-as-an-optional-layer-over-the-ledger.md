@@ -1,7 +1,7 @@
 # 125 — Pozice tvrzení ve vstupu a ve výstupu jako volitelná vrstva nad knihou tvrzení; maketa se maže
 
 Datum: 2026-10-11
-Stav: platí
+Stav: nahrazeno [135](135-an-example-is-the-optional-first-step-and-the-sample-set-is-six-input-examples.md)
 Požadavky: F11, F14, S1, S2, S7
 Podklad: rozhodnutí [124](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md), které tímto nahrazujeme, a přes ně [100](100-interactive-comparison-as-a-frozen-mockup.md); dále [004](004-unexpressible-facts-as-warnings.md), [009](009-target-framework-descriptor.md), [017](017-source-precedence-for-mapping-facts.md), [032](032-frontend-as-static-pages-without-a-build.md), [041](041-versioning-and-release.md), [066](066-records-attributed-to-the-input-unit.md), [076](076-java-wrappers-in-csharp-jvm-in-containers.md), [093](093-unreadable-input-is-a-unit-failure.md); [`architecture.md`](../architecture.md), §5.1, §6.3, §7 a §9
 

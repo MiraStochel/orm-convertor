@@ -9,12 +9,46 @@
  * its own. A key the server does not know says so in its section instead of converting
  * nothing, and the suite asserts that every example the server knows converts
  * (ExampleCatalogTest).
+ *
+ * Before the examples stands the base input (decision 135): the sample set of every
+ * framework from /required-content and /samples, shown as it is and not converted - it
+ * explains no direction, so there is no output to show.
  */
 
-import { ORM_LABELS, getExamples, convert } from "./api.js";
+import { ORM_LABELS, getExamples, getRequiredContent, getSamples, convert } from "./api.js";
 import { renderArtifacts, renderRecords, renderCatalogState } from "./ui.js";
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/** One folded pane per framework, in the order /required-content lists them. */
+async function renderBaseInput(section) {
+  const container = section.querySelector(".base-inputs");
+  try {
+    const [requiredContent, samples] = await Promise.all([getRequiredContent(), getSamples()]);
+    for (const definition of requiredContent) {
+      const units = definition.required
+        .filter((required) => samples[required.id] !== undefined)
+        .map((required) => ({ contentType: required.contentType, content: samples[required.id] }));
+      if (units.length === 0) continue;
+
+      const pane = document.createElement("details");
+      pane.className = "example-pane";
+      const summary = document.createElement("summary");
+      const count = document.createElement("small");
+      count.textContent = plural(units.length, "file");
+      summary.append(`${ORM_LABELS[definition.ormType]} `, count);
+      const grid = document.createElement("div");
+      grid.className = "pane-grid";
+      pane.append(summary, grid);
+      container.append(pane);
+      renderArtifacts(grid, units, { idPrefix: `base-input-${definition.ormType}` });
+    }
+  } catch (error) {
+    const errorElement = section.querySelector(".example-error");
+    errorElement.textContent = `Could not load the base input: ${error.message}`;
+    errorElement.hidden = false;
+  }
+}
 
 function showError(section, message) {
   section.querySelector(".example-status").hidden = true;
@@ -64,6 +98,9 @@ async function runExample(example, section) {
 }
 
 async function init() {
+  const baseInput = document.querySelector("[data-base-input]");
+  if (baseInput) renderBaseInput(baseInput);
+
   const sections = [...document.querySelectorAll("[data-example]")];
 
   let examples;

@@ -95,19 +95,19 @@ export const CONTENT_TYPE_EXTENSIONS = Object.freeze({
   [ContentType.CSharpLinqQuery]: ".linq.cs",
 });
 
-// HQL and JPQL have no grammar of their own and are highlighted as SQL, Java as C# -
-// approximations over the vendored grammars, not claims about the languages (decision 032d).
+// HQL and JPQL have no grammar of their own and are highlighted as SQL - an approximation
+// over the vendored grammars, not a claim about the languages (decision 032d).
 export const CONTENT_TYPE_HIGHLIGHT = Object.freeze({
   [ContentType.CSharpEntity]: "csharp",
   [ContentType.CSharpQuery]: "csharp",
   [ContentType.Xml]: "xml",
   [ContentType.SqlQuery]: "sql",
   [ContentType.HqlQuery]: "sql",
-  [ContentType.JavaEntity]: "csharp",
-  [ContentType.JavaQuery]: "csharp",
+  [ContentType.JavaEntity]: "java",
+  [ContentType.JavaQuery]: "java",
   [ContentType.JpqlQuery]: "sql",
   [ContentType.CSharp]: "csharp",
-  [ContentType.Java]: "csharp",
+  [ContentType.Java]: "java",
   [ContentType.CSharpLinqQuery]: "csharp",
 });
 

@@ -19,6 +19,7 @@
  */
 
 import { occurrences, segmentsOf, markSegments } from "./marking.js";
+import { windowOffset } from "./ui.js";
 import {
   FactOrigin,
   FACT_ORIGIN_LABELS,
@@ -90,20 +91,28 @@ function rangesOf(facts, { inputPanels, artifactPanels }) {
   const ranges = new Map();
   const searched = new Set();
 
-  const add = (panel, start, end, index, stated) => {
-    const code = panel?.querySelector("pre > code");
-    if (!code) return;
+  const add = (code, start, end, index, stated) => {
     if (end > code.textContent.length) return;
     if (!ranges.has(code)) ranges.set(code, []);
     ranges.get(code).push({ start, end, link: String(index), stated });
   };
 
+  // A stated position counts characters of the text as the server holds it, and the window
+  // shows that text with LF line endings (renderCode), so both ends move to the same
+  // characters there first.
+  const place = (panel, start, length, index) => {
+    const code = panel?.querySelector("pre > code");
+    if (!code) return;
+    add(code, windowOffset(code, start), windowOffset(code, start + length), index, true);
+  };
+
+  // A search runs over the window's own text, so its offsets are the window's already.
   const search = (panel, index, tokens) => {
     const code = panel?.querySelector("pre > code");
     if (!code) return;
     for (const token of tokens) {
       for (const [start, end] of occurrences(code.textContent, token, { ignoreCase: true })) {
-        add(panel, start, end, index, false);
+        add(code, start, end, index, false);
         searched.add(String(index));
       }
     }
@@ -116,7 +125,7 @@ function rangesOf(facts, { inputPanels, artifactPanels }) {
     if (fact.origin === FactOrigin.Source && fact.unit) {
       const panel = inputPanels.get(fact.unit);
       if (fact.source) {
-        add(panel, fact.source.start, fact.source.start + fact.source.length, index, true);
+        place(panel, fact.source.start, fact.source.length, index);
       } else if (tokens.length > 0) {
         search(panel, index, tokens);
       }
@@ -127,7 +136,7 @@ function rangesOf(facts, { inputPanels, artifactPanels }) {
     if (fact.targets && fact.targets.length > 0) {
       for (const target of fact.targets) {
         const panel = own.find((p) => Number(p.dataset.contentType) === target.artifact);
-        add(panel, target.start, target.start + target.length, index, true);
+        place(panel, target.start, target.length, index);
       }
     } else if (fact.outcome === FactOutcome.Carried && tokens.length > 0) {
       for (const panel of own) search(panel, index, tokens);

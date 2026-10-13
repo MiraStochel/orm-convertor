@@ -1,3 +1,4 @@
+using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model;
 using ORMConvertorAPI.Data;
@@ -94,6 +95,52 @@ public class ApiContentContractTest
 
             Assert.Contains(result.Sources, s => !s.ContentType.IsQuery());
             Assert.Contains(result.Sources, s => s.ContentType.IsQuery());
+        }
+    }
+
+    public static TheoryData<ORMEnum, ORMEnum> EveryDirection()
+    {
+        var directions = new TheoryData<ORMEnum, ORMEnum>();
+        foreach (var source in Enum.GetValues<ORMEnum>())
+        {
+            foreach (var target in Enum.GetValues<ORMEnum>())
+            {
+                directions.Add(source, target);
+            }
+        }
+        return directions;
+    }
+
+    /// <summary>
+    /// The sample set is the base input: the translation screen offers it first, one row per
+    /// framework with that framework as the target, and the explanatory page says it can go
+    /// into any target (decision 135). So every framework's set converts into every framework.
+    /// Dapper and MyBatis have no place for a key, so their sets state none, and a target that
+    /// requires one refuses the entity unless the catalog supplies it - the one failure the
+    /// matrix admits, and the one the page says in a sentence. Into its own framework, the
+    /// direction the row sets, nothing is refused.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(EveryDirection))]
+    public void EveryFrameworksSampleSetConvertsIntoEveryTarget(ORMEnum source, ORMEnum target)
+    {
+        var definition = RequiredContent.GetRequiredContent.Single(d => d.OrmType == source);
+        var sources = definition.Required
+            .Select(c => new ConversionSource { Content = Samples.GetSamples[c.Id], ContentType = c.ContentType, Name = c.Description })
+            .ToList();
+
+        var result = OrmConvertor.ConversionHandler.Convert(source, target, sources);
+
+        var failures = result.Records.Where(r => r.Kind == ConversionRecordKind.Failure).ToList();
+        if (source == target || source is not (ORMEnum.Dapper or ORMEnum.MyBatis))
+        {
+            Assert.Empty(failures);
+        }
+        Assert.All(failures, f => Assert.Equal(MappingFactCategory.PrimaryKey, f.Category));
+        Assert.Contains(result.Sources, s => s.ContentType.IsQuery());
+        if (failures.Count == 0)
+        {
+            Assert.Contains(result.Sources, s => !s.ContentType.IsQuery());
         }
     }
 
