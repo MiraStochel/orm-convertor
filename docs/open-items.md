@@ -12,7 +12,7 @@ Schválená [specifikace](./specifikace.tex) (kap. *Milníky* a *Harmonogram*) a
 |---|---|---|---|
 | 1 — .NET část | klíče, vztahy, katalog, diagnostika, dotazová matice, čtyři stupně ověření | červenec–srpen | hotovo, `1.2.0` |
 | 2 — specifikace a analýza | specifikace, rozhodnutí o javové straně, analýza běhového prostředí pro Javu | září | hotovo |
-| 3 — Java a cross-language | Hibernate, MyBatis, EclipseLink, překlad .NET ↔ Java | září–říjen | hotovo, `2.0.0`; dotazy dokončené v `2.1.0`; katalog LDBC přeložený celý v `2.2.0`, zbývá [verdikt soudce nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) |
+| 3 — Java a cross-language | Hibernate, MyBatis, EclipseLink, překlad .NET ↔ Java | září–říjen | hotovo, `2.0.0`; dotazy dokončené v `2.1.0`; katalog LDBC přeložený celý v `2.2.0`, zbývá javová polovina [verdiktu soudce nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) |
 | 4 — testy a experimenty | javová sada s diferenčním ověřením (F12–F13) | říjen–listopad | hotovo |
 | | zobrazení mezireprezentace (F14) | | **chybí** |
 | | cross-language matice T2 s metrikami T3 | | **chybí** pipeline a metriky; matice existuje v testech |
@@ -66,19 +66,19 @@ flowchart LR
 
 ## Dotazy
 
-Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)) je přeložený celý: 36 dotazů podle specifikace, 5 se zjednodušením, žádný cíl žádný neodmítá a nativním SQL píše každý cíl jen to, co jeho jazyk nemá — počty vede [`architecture.md`](./architecture.md) §6.2, konstrukce a důvody [`subset.md`](./subset.md) 1.2–1.4 a 2.11. Úniková cesta po kouscích a rekurze rozepsaná do pevného počtu joinů zůstávají zamítnuté rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md). Zbývá doklad stavu „podle specifikace".
+Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)) je přeložený celý: 36 dotazů podle specifikace, 5 se zjednodušením, žádný cíl žádný neodmítá a nativním SQL píše každý cíl jen to, co jeho jazyk nemá — počty vede [`architecture.md`](./architecture.md) §6.2, konstrukce a důvody [`subset.md`](./subset.md) 1.2–1.4 a 2.11. Úniková cesta po kouscích a rekurze rozepsaná do pevného počtu joinů zůstávají zamítnuté rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md). Texty katalogu a cíle .NET doložila celá validační sada SF 1; zbývají javové cíle.
 
 #### Verdikt soudce LDBC nad celou sadou SF 1
 *Na řadě. Práce podle rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md); stojí na [095](./decisions/095-a-dated-run-record-names-its-commit.md), [121](./decisions/121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md) a [122](./decisions/122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md). Požadavky F13, T2, T3.*
 
-Soudce běží v compose profilu `test` jen nad prefixem 1000 řádků SF 0,1. Doklad, který rozh. 117 bere za stav „podle specifikace", je celá sada SF 1 v obou sadách nad `mssql_db` na MIS3 — **samostatný běh, nikdy součást jiné práce**; jak se pouští a odkud se bere výsledek, říká [README](../ORMConvertor/README.md#the-ldbc-judge).
+Doklad, který rozh. 117 bere za stav „podle specifikace", je celá sada SF 1 v obou sadách nad `mssql_db` na MIS3. **.NET polovina je hotová a zelená** ([záznam](../ORMConvertor/README.md#whole-set-runs)): text katalogu (zdroj Dapper), EF Core i NHibernate souhlasí na každém čtení 19 dotazů podle specifikace, IC 13 a IC 14 ze 100 %. Chybí javová sada — Hibernate, EclipseLink, MyBatis —, **samostatný běh, nikdy součást jiné práce**; jak se pouští, říká [README](../ORMConvertor/README.md#the-ldbc-judge). Compose profil `test` přehrává jen prefix 1000 řádků SF 0,1.
 
 | | |
 |---|---|
-| rozsah | 138 747 řádků, z toho 131 706 čtení; obě sady po sobě, protože se o databázi dělí zámkem |
-| doba | .NET sada 86 řádků za minutu (2026-10-10, prvních 2 888 řádků), tedy asi 27 hodin; javová podobně nebo déle. Čas nesou IC 14 (1,2 s na čtení a framework), IC 9 (0,9 s) a IC 3 (0,65 s); zkrátit ho může index nebo tvar textu v mezích 121, ne sada |
-| kam výsledek | záznam běhů v README a řádek F13 v [`traceability.md`](./traceability.md); podíl shodných čtení IC 13 a IC 14 do metrik T3 a do poznámek katalogu |
-| co rozhodne | IC 14 jde jednou procházkou do tří kroků; nad prefixem 800 řádků SF 0,1 souhlasila ve všech šesti frameworcích ze 100 %. Ukáže-li celá sada čtení, které mez mine, skládá se IC 14 z obou konců jako IC 13 (dvě procházky po dvou krocích, setkání jako join, `DISTINCT` nad cestou). Tvary IS 7 a IC 5 z rozh. 122 projdou celou sadou poprvé |
+| rozsah | 138 747 řádků, z toho 131 706 čtení; jen javová sada (o databázi se dělí zámkem s .NET sadou, ta už neběží) |
+| doba | .NET sada 20,4 h (113 řádků za minutu); javová podobně nebo déle. Čas nesou IC 14 (1,2 s na čtení a framework), IC 9 (0,9 s) a IC 3 (0,65 s); zkrátit ho může index nebo tvar textu v mezích 121, ne sada |
+| kam výsledek | řádek do záznamu v README vedle .NET běhu a řádek F13 v [`traceability.md`](./traceability.md); podíl shodných čtení IC 13 a IC 14 v javových cílech do téhož záznamu |
+| co rozhodne | O textech nic: mez IC 14 (jedna procházka do tří kroků) žádnou dvojici sady nemine, složení z obou konců jako u IC 13 tedy není třeba. Javová polovina rozhodne o překladu — tvary IS 7 a IC 5 z rozh. 122, kvůli nimž EclipseLink píše jazykem cíle, projdou celou sadou v EclipseLinku poprvé. Vyjde-li i v javových cílech IC 13 a IC 14 100 %, jsou oba podle 117 kandidáty na změnu stavu (práce podle 110) |
 
 ## Třetí cíl: experimenty
 

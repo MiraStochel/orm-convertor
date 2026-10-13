@@ -919,7 +919,8 @@ public static class LdbcSnbSample
             + "persons it has already reached, so it counts walks rather than persons, and the walks multiply by the "
             + "number of friends at every step - the example person has eighty -, which is why two walks of two steps "
             + "cost a fraction of one walk of three. From the example person the bound reaches every one of the 9,163 "
-            + "persons it is connected to; the farthest 26 of them are four steps away.",
+            + "persons it is connected to; the farthest 26 of them are four steps away. Over the whole validation set of "
+            + "SF 1 (decision 117) the bound misses no pair: all 6,818 reads agree with the expected length.",
             """
             WITH WalkFromFirst AS (
                 SELECT p.Id AS PersonId, 0 AS Steps
@@ -967,7 +968,8 @@ public static class LdbcSnbSample
             + "every walk. The identifiers of the path are converted from columns, because a parameter converted into "
             + "text is one HQL cannot show to fit a code page. The walk is bounded at three steps, so two persons "
             + "further apart have no path; it walks from one end only, unlike IC 13, because it carries whole paths, "
-            + "and the validation set has shown no pair the bound misses.",
+            + "and over the whole validation set of SF 1 (decision 117) the bound misses no pair: all 6,818 reads agree "
+            + "with the expected paths.",
             """
             WITH Walk AS (
                 SELECT p.Id AS PersonId, 0 AS Steps, CAST(NULL AS BIGINT) AS Step1Id, CAST(NULL AS BIGINT) AS Step2Id
