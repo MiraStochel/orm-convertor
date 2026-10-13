@@ -54,6 +54,8 @@ The authoritative boundary between what the tool vouches for and what merely shi
 
 **Query translation is complete within its catalog** (F7–F10, F13): no query parser drops a construct it knows without a record; every construct of the query vocabulary is bounded by a decision — carried in every direction, or refused, dropped with a record or written in native SQL as that decision says, never left to what happened not to come up; and the subset, with every case that has no complete or unambiguous translation, stands whole in [`docs/subset.md`](docs/subset.md).
 
+**With a reservation until six known defects are fixed.** Running real open-source code through the tool found six shapes it reads but translates as something else — an `Any` over a collection navigation losing its correlation, `Find` losing its key, JPA's derived identity narrowing a composite key, a quoted alias losing its quotes, a bare column in a join given to the first table, one table's whole row in a join read as the whole joined row. Each is listed in [`docs/open-items.md`](docs/open-items.md) and [`docs/subset.md`](docs/subset.md) §2.13; the claims above hold for input without them.
+
 **Covered:** entity, mapping and query translation as described above, including the following within stated limits, each refused, dropped with a record naming it or written in native SQL, never guessed at:
 
 | Covered | Stated limits |
@@ -123,7 +125,7 @@ What remains is tracked in [`docs/open-items.md`](docs/open-items.md), where the
 
 ## License
 
-Released under the [MIT License](LICENSE) — use, modify and redistribute it freely, commercially included, as long as the licence text and the copyright notice travel with it. The licence covers the contents of this repository; third-party assets vendored under `ORMConvertor/ORMConvertorAPI/wwwroot/vendor/` keep their own terms, stated in the licence file shipped beside each of them.
+Released under the [MIT License](LICENSE) — use, modify and redistribute it freely, commercially included, as long as the licence text and the copyright notice travel with it. The licence covers the contents of this repository; third-party assets vendored under `ORMConvertor/ORMConvertorAPI/wwwroot/vendor/`, and excerpts of open-source projects under `ORMConvertor/SampleData/ThirdParty/` that the examples translate, keep their own terms, stated in the licence file shipped beside each of them — permissive ones only (MIT, Apache-2.0, BSD).
 
 ## How to cite
 

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+       Copyright 2010-2026 the original author or authors.
+
+       Licensed under the Apache License, Version 2.0 (the "License");
+       you may not use this file except in compliance with the License.
+       You may obtain a copy of the License at
+
+          https://www.apache.org/licenses/LICENSE-2.0
+
+       Unless required by applicable law or agreed to in writing, software
+       distributed under the License is distributed on an "AS IS" BASIS,
+       WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+       See the License for the specific language governing permissions and
+       limitations under the License.
+
+-->
+<!--
+  ORMConvertor: taken from mybatis/jpetstore-6 at 344ef63, src/main/resources/org/mybatis/jpetstore/mapper/OrderMapper.xml.
+  Changed: the statements that write (insertOrder, insertOrderStatus) are left out; in the
+  selects, the comma-separated tables are written as INNER JOIN ... ON with the same
+  conditions; #{value} becomes #{orderId}; #{value} becomes #{username}; every column of a
+  joined select is qualified by its table (the original leaves most of them bare). See
+  README.md in the folder above.
+-->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.mybatis.jpetstore.mapper.OrderMapper">
+
+  <cache />
+
+  <select id="getOrder" resultType="Order">
+    select
+      ORDERS.BILLADDR1 AS billAddress1,
+      ORDERS.BILLADDR2 AS billAddress2,
+      ORDERS.BILLCITY,
+      ORDERS.BILLCOUNTRY,
+      ORDERS.BILLSTATE,
+      ORDERS.BILLTOFIRSTNAME,
+      ORDERS.BILLTOLASTNAME,
+      ORDERS.BILLZIP,
+      ORDERS.SHIPADDR1 AS shipAddress1,
+      ORDERS.SHIPADDR2 AS shipAddress2,
+      ORDERS.SHIPCITY,
+      ORDERS.SHIPCOUNTRY,
+      ORDERS.SHIPSTATE,
+      ORDERS.SHIPTOFIRSTNAME,
+      ORDERS.SHIPTOLASTNAME,
+      ORDERS.SHIPZIP,
+      ORDERS.CARDTYPE,
+      ORDERS.COURIER,
+      ORDERS.CREDITCARD,
+      ORDERS.EXPRDATE AS expiryDate,
+      ORDERS.LOCALE,
+      ORDERS.ORDERDATE,
+      ORDERS.ORDERID,
+      ORDERS.TOTALPRICE,
+      ORDERS.USERID AS username,
+      ORDERSTATUS.STATUS
+    FROM ORDERS
+    INNER JOIN ORDERSTATUS ON ORDERS.ORDERID = ORDERSTATUS.ORDERID
+    WHERE ORDERS.ORDERID = #{orderId}
+  </select>
+
+  <select id="getOrdersByUsername" resultType="Order">
+    SELECT
+      ORDERS.BILLADDR1 AS billAddress1,
+      ORDERS.BILLADDR2 AS billAddress2,
+      ORDERS.BILLCITY,
+      ORDERS.BILLCOUNTRY,
+      ORDERS.BILLSTATE,
+      ORDERS.BILLTOFIRSTNAME,
+      ORDERS.BILLTOLASTNAME,
+      ORDERS.BILLZIP,
+      ORDERS.SHIPADDR1 AS shipAddress1,
+      ORDERS.SHIPADDR2 AS shipAddress2,
+      ORDERS.SHIPCITY,
+      ORDERS.SHIPCOUNTRY,
+      ORDERS.SHIPSTATE,
+      ORDERS.SHIPTOFIRSTNAME,
+      ORDERS.SHIPTOLASTNAME,
+      ORDERS.SHIPZIP,
+      ORDERS.CARDTYPE,
+      ORDERS.COURIER,
+      ORDERS.CREDITCARD,
+      ORDERS.EXPRDATE AS expiryDate,
+      ORDERS.LOCALE,
+      ORDERS.ORDERDATE,
+      ORDERS.ORDERID,
+      ORDERS.TOTALPRICE,
+      ORDERS.USERID AS username,
+      ORDERSTATUS.STATUS
+    FROM ORDERS
+    INNER JOIN ORDERSTATUS ON ORDERS.ORDERID = ORDERSTATUS.ORDERID
+    WHERE ORDERS.USERID = #{username}
+    ORDER BY ORDERS.ORDERDATE
+  </select>
+
+</mapper>

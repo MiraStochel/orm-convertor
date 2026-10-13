@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+       Copyright 2010-2026 the original author or authors.
+
+       Licensed under the Apache License, Version 2.0 (the "License");
+       you may not use this file except in compliance with the License.
+       You may obtain a copy of the License at
+
+          https://www.apache.org/licenses/LICENSE-2.0
+
+       Unless required by applicable law or agreed to in writing, software
+       distributed under the License is distributed on an "AS IS" BASIS,
+       WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+       See the License for the specific language governing permissions and
+       limitations under the License.
+
+-->
+<!--
+  ORMConvertor: taken from mybatis/jpetstore-6 at 344ef63, src/main/resources/org/mybatis/jpetstore/mapper/AccountMapper.xml.
+  Changed: the statements that write (updateAccount, insertAccount, updateProfile,
+  insertProfile, updateSignon, insertSignon) are left out; in the selects, the comma-separated
+  tables are written as INNER JOIN ... ON with the same conditions; #{param1} and #{param2}
+  become #{username} and #{password}. See README.md in the folder above.
+-->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.mybatis.jpetstore.mapper.AccountMapper">
+
+  <cache />
+
+  <select id="getAccountByUsername" resultType="Account">
+    SELECT
+          SIGNON.USERNAME,
+          ACCOUNT.EMAIL,
+          ACCOUNT.FIRSTNAME,
+          ACCOUNT.LASTNAME,
+          ACCOUNT.STATUS,
+          ACCOUNT.ADDR1 AS address1,
+          ACCOUNT.ADDR2 AS address2,
+          ACCOUNT.CITY,
+          ACCOUNT.STATE,
+          ACCOUNT.ZIP,
+          ACCOUNT.COUNTRY,
+          ACCOUNT.PHONE,
+          PROFILE.LANGPREF AS languagePreference,
+          PROFILE.FAVCATEGORY AS favouriteCategoryId,
+          PROFILE.MYLISTOPT AS listOption,
+          PROFILE.BANNEROPT AS bannerOption,
+          BANNERDATA.BANNERNAME
+    FROM ACCOUNT
+    INNER JOIN SIGNON ON SIGNON.USERNAME = ACCOUNT.USERID
+    INNER JOIN PROFILE ON PROFILE.USERID = ACCOUNT.USERID
+    INNER JOIN BANNERDATA ON PROFILE.FAVCATEGORY = BANNERDATA.FAVCATEGORY
+    WHERE ACCOUNT.USERID = #{username}
+  </select>
+
+  <select id="getAccountByUsernameAndPassword" resultType="Account">
+    SELECT
+      SIGNON.USERNAME,
+      ACCOUNT.EMAIL,
+      ACCOUNT.FIRSTNAME,
+      ACCOUNT.LASTNAME,
+      ACCOUNT.STATUS,
+      ACCOUNT.ADDR1 AS address1,
+      ACCOUNT.ADDR2 AS address2,
+      ACCOUNT.CITY,
+      ACCOUNT.STATE,
+      ACCOUNT.ZIP,
+      ACCOUNT.COUNTRY,
+      ACCOUNT.PHONE,
+      PROFILE.LANGPREF AS languagePreference,
+      PROFILE.FAVCATEGORY AS favouriteCategoryId,
+      PROFILE.MYLISTOPT AS listOption,
+      PROFILE.BANNEROPT AS bannerOption,
+      BANNERDATA.BANNERNAME
+    FROM ACCOUNT
+    INNER JOIN SIGNON ON SIGNON.USERNAME = ACCOUNT.USERID
+    INNER JOIN PROFILE ON PROFILE.USERID = ACCOUNT.USERID
+    INNER JOIN BANNERDATA ON PROFILE.FAVCATEGORY = BANNERDATA.FAVCATEGORY
+    WHERE ACCOUNT.USERID = #{username}
+      AND SIGNON.PASSWORD = #{password}
+  </select>
+
+</mapper>

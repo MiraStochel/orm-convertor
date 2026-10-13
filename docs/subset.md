@@ -270,7 +270,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | cíl NHibernate: plný vnější join | HQL 5.7 ho nemá ani množinové operace na složení | `Fallback` (z) | VM | [065], [113] |
 | druhý tvar NHibernatu (LINQ): pravý vnější join (plný píše už HQL nativně, řádek výš) | provider 5.7.0 zná `Join` a levý join jako `GroupJoin` s `DefaultIfEmpty()`; `LeftJoin` a `RightJoin` .NET 10 nepřekládá | `Omitted` (z), HQL stojí samo | VM | [118] |
 | sloupec cizího klíče bez skalární vlastnosti mimo podmínku joinu po asociaci: cíl EclipseLink vždy, cíl NHibernate u části složeného klíče | cesta přes referenci (`p.customer.id`) je v nich vnitřní join a ztratí řádky s `NULL` | `Fallback` (z) | VM | [113] |
-| navigace v operandu: LINQ `o.Customer.Name`, `x.o.Customer.Name`, `o.Customer != null`; JPQL cesta přes referenci v projekci (`select o.customer.id`) | join po cestě se v LINQ píše druhým `from` nad kolekcí; model operand přes referenci nenese | nečte se (ve filtru `Failure`, v projekci a agregátu `Loss`) (č) | VM | [070], [101] |
+| navigace v operandu: LINQ `o.Customer.Name`, `x.o.Customer.Name`, `o.Customer != null`; JPQL a HQL cesta přes referenci v podmínce (`consent.user.id = :userId`) či projekci (`select o.customer.id`) | join po cestě se v LINQ píše druhým `from` nad kolekcí; model operand přes referenci nenese | nečte se (ve filtru `Failure`, v projekci a agregátu `Loss`) (č) | VM | [070], [101] |
 | JPQL a HQL srovnání celé entity jinak než `asociace = řádek` (s parametrem, hodnotou, jiným řádkem, kolekcí, vztahem bez sloupců) | model operand entity nemá; `p.customer = c` se čte jako rovnosti klíče | nečte se (`Failure`) (č) | VM | [101] |
 | JPQL a HQL: test celé entity na `NULL` jinde než nad vlastnící jednohodnotovou asociací se známými sloupci — kolekce, inverzní reference, `c is null` nad proměnnou, reference bez sloupců | model nenese nulovost řádku ani prázdnost kolekce; inverzní reference je nepřítomnost řádku na druhé straně | `Failure` (č) | VM | [101] |
 
@@ -380,10 +380,16 @@ Pod 2.4–2.11 stojí jedno pravidlo ([053], [065], [070]): **nepřečtená či 
 
 Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhodnutí ticho neobhajuje, proto je vede [`open-items.md`](./open-items.md) jako práci.
 
-| Tiché místo | Kategorie v `open-items.md` |
-|---|---|
-| čtení dotazů: žádné známé | — |
-| čtení mapování: žádné známé | — |
+Šest tichých míst ukázal reálný kód ([`analysis/real-world-sources.md`](./analysis/real-world-sources.md), *Nálezy*); jsou to vady a výňatky v `SampleData/ThirdParty` je obcházejí přepisem ([138]).
+
+| Tiché místo | Strana | Kategorie v `open-items.md` |
+|---|---|---|
+| LINQ `Any` nad kolekční navigací (`c.InvoiceLines.Any(o => …)`) se čte jako poddotaz bez korelace s vnějším řádkem, bez záznamu | č | Vady z reálného kódu |
+| `Find`, `FindAsync` se čte jako neznámý krok: `Loss` neřekne, že dotaz vrátí celou tabulku místo řádku s klíčem | č | Vady z reálného kódu |
+| JPA `@Id` na `@ManyToOne` uvnitř `@IdClass` (odvozená identita): část klíče přes vztah vypadne, klíč se zúží | č | Vady z reálného kódu |
+| alias v uvozovkách, který není identifikátorem (`AS "product.productId"`), vyjde v T-SQL i LINQ bez uvozovek | č/z | Vady z reálného kódu |
+| holý sloupec dotazu SQL přes víc tabulek dostane bez katalogu první tabulku joinu | č | Vady z reálného kódu |
+| projekce celého řádku jedné tabulky joinu (`select r from R r join C c …`, `SELECT T.* …`) se čte jako celý spojený řádek; s `DISTINCT` jiné řádky | č | Vady z reálného kódu |
 
 ---
 
@@ -488,6 +494,7 @@ Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhod
 [133]: ./decisions/133-an-add-on-package-over-a-framework-is-not-that-framework.md
 [134]: ./decisions/134-a-property-without-a-setter-gets-the-narrowest-setter-its-framework-writes-through.md
 [136]: ./decisions/136-a-project-archive-is-unpacked-by-the-browser-with-own-code.md
+[138]: ./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md
 [§1v]: ./architecture.md#zafixované-verze
 [§4.1]: ./architecture.md#41-entity-a-mapování
 [§4.2]: ./architecture.md#42-primární-klíč

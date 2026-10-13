@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+       Copyright 2010-2026 the original author or authors.
+
+       Licensed under the Apache License, Version 2.0 (the "License");
+       you may not use this file except in compliance with the License.
+       You may obtain a copy of the License at
+
+          https://www.apache.org/licenses/LICENSE-2.0
+
+       Unless required by applicable law or agreed to in writing, software
+       distributed under the License is distributed on an "AS IS" BASIS,
+       WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+       See the License for the specific language governing permissions and
+       limitations under the License.
+
+-->
+<!--
+  ORMConvertor: taken from mybatis/jpetstore-6 at 344ef63, src/main/resources/org/mybatis/jpetstore/mapper/ItemMapper.xml.
+  Changed: the statements that write (updateInventoryQuantity) are left out; in the selects,
+  the comma-separated tables are written as INNER JOIN ... ON with the same conditions;
+  #{value} becomes #{productId}; #{value} becomes #{itemId}; every column of a joined select
+  is qualified by its table (the original leaves most of them bare); the dotted aliases that
+  fill item.product by auto-mapping become two result maps with an association. See README.md
+  in the folder above.
+-->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="org.mybatis.jpetstore.mapper.ItemMapper">
+
+  <cache />
+
+  <!-- ORMConvertor: added - the result maps state, with an association, what the original's
+       dotted aliases ("product.productId") left to auto-mapping. -->
+  <resultMap id="itemResult" type="Item">
+    <id property="itemId" column="ITEMID" />
+    <result property="listPrice" column="LISTPRICE" />
+    <result property="unitCost" column="UNITCOST" />
+    <result property="supplierId" column="SUPPLIER" />
+    <result property="status" column="STATUS" />
+    <result property="attribute1" column="ATTR1" />
+    <result property="attribute2" column="ATTR2" />
+    <result property="attribute3" column="ATTR3" />
+    <result property="attribute4" column="ATTR4" />
+    <result property="attribute5" column="ATTR5" />
+    <association property="product" javaType="Product">
+      <id property="productId" column="PRODUCTID" />
+      <result property="name" column="NAME" />
+      <result property="description" column="DESCN" />
+      <result property="categoryId" column="CATEGORY" />
+    </association>
+  </resultMap>
+
+  <resultMap id="itemWithQuantityResult" type="Item" extends="itemResult">
+    <result property="quantity" column="QTY" />
+  </resultMap>
+
+  <select id="getItemListByProduct" resultMap="itemResult">
+    SELECT
+      I.ITEMID,
+      I.LISTPRICE,
+      I.UNITCOST,
+      I.SUPPLIER,
+      I.PRODUCTID,
+      P.NAME,
+      P.DESCN,
+      P.CATEGORY,
+      I.STATUS,
+      I.ATTR1,
+      I.ATTR2,
+      I.ATTR3,
+      I.ATTR4,
+      I.ATTR5
+    FROM ITEM I
+    INNER JOIN PRODUCT P ON P.PRODUCTID = I.PRODUCTID
+    WHERE I.PRODUCTID = #{productId}
+  </select>
+
+  <select id="getItem" resultMap="itemWithQuantityResult">
+    select
+      I.ITEMID,
+      I.LISTPRICE,
+      I.UNITCOST,
+      I.SUPPLIER,
+      I.PRODUCTID,
+      P.NAME,
+      P.DESCN,
+      P.CATEGORY,
+      I.STATUS,
+      I.ATTR1,
+      I.ATTR2,
+      I.ATTR3,
+      I.ATTR4,
+      I.ATTR5,
+      V.QTY
+    from ITEM I
+    inner join INVENTORY V on I.ITEMID = V.ITEMID
+    inner join PRODUCT P on P.PRODUCTID = I.PRODUCTID
+    where I.ITEMID = #{itemId}
+  </select>
+
+  <select id="getInventoryQuantity" resultType="int">
+    SELECT QTY AS value
+    FROM INVENTORY
+    WHERE ITEMID = #{itemId}
+  </select>
+
+</mapper>

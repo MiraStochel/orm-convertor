@@ -140,6 +140,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 135 | [Příklad je volitelný první krok překladové obrazovky, kroky nejsou číslované a sada vzorků je šest příkladů vstupu; kód roste s oknem](135-an-example-is-the-optional-first-step-and-the-sample-set-is-six-input-examples.md) | nahrazeno [137](137-text-runs-the-full-width-and-controls-keep-a-fixed-width.md) | F14, S7 |
 | 136 | [Archiv projektu rozbalí prohlížeč vlastním kódem: jednotkou se stane soubor v jazyce, který zdroj čte, a ostatní soubory obrazovka vyjmenuje](136-a-project-archive-is-unpacked-by-the-browser-with-own-code.md) | platí | F14, S5, S7 |
 | 137 | [Text běží přes celou šířku stránky, výběry a pole mají pevnou šířku vlevo, šipka složeného oddílu stojí u popisku a výkladová stránka zabírá celé okno](137-text-runs-the-full-width-and-controls-keep-a-fixed-width.md) | platí | F14, S7 |
+| 138 | [Kód cizích open-source projektů vstupuje do repozitáře jako výňatek pod vlastní permisivní licencí, se změnou vyznačenou v každém souboru, a ukazuje se jako příklad](138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md) | platí | T1, F11, F14, S2, S5 |
 
 ## Formát
 

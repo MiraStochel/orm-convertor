@@ -4,4 +4,11 @@
     <ProjectReference Include="..\Model\Model.csproj" />
   </ItemGroup>
 
+  <!-- Excerpts of open-source projects (decision 138): read as text, never compiled. Every file
+       of the folder is embedded, the licences with the code, under its path below ThirdParty/. -->
+  <ItemGroup>
+    <Compile Remove="ThirdParty\**" />
+    <EmbeddedResource Include="ThirdParty\**" LogicalName="ThirdParty/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

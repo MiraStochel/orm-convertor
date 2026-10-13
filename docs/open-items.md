@@ -2,7 +2,7 @@
 
 Jediný seznam toho, co zbývá. **Rozhodnutí** končí novým souborem v [`decisions/`](./decisions/README.md) a řádkem v jeho rejstříku, **práce** (už rozhodnutá) kódem a aktualizací [`architecture.md`](./architecture.md), podle potřeby i [`subset.md`](./subset.md) a [`traceability.md`](./traceability.md). Hotová položka odsud mizí; co verze nárokuje, říká §9 a kanonicky sekce *Guarantees* kořenového [`README.md`](../README.md).
 
-**Pořadí nesou jen značky** (rozh. [018](./decisions/018-work-order-as-item-marker.md)) na začátku kurzívového řádku vazeb: **Na řadě** nejvýš jedna položka, **Potom** nejvýš dvě, ostatní se berou podle priorit z požadavků. **Vada** — vstup v nároku, z něhož vznikne artefakt, který cíl odmítne nebo který tiše znamená něco jiného — se opravuje přednostně jako práce a nárok, který vyvrací, do opravy platí jen s výhradou; dnes žádná otevřená není. Cíle zadání: cíl 1 = vydání `1.2.0`, cíl 2 = `2.0.0`, cíl 3 = příští MAJOR `3.0.0` (rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md)).
+**Pořadí nesou jen značky** (rozh. [018](./decisions/018-work-order-as-item-marker.md)) na začátku kurzívového řádku vazeb: **Na řadě** nejvýš jedna položka, **Potom** nejvýš dvě, ostatní se berou podle priorit z požadavků. **Vada** — vstup v nároku, z něhož vznikne artefakt, který cíl odmítne nebo který tiše znamená něco jiného — se opravuje přednostně jako práce a nárok, který vyvrací, do opravy platí jen s výhradou; otevřených je šest, všechny z reálného kódu ([Vady z reálného kódu](#vady-z-reálného-kódu)). Cíle zadání: cíl 1 = vydání `1.2.0`, cíl 2 = `2.0.0`, cíl 3 = příští MAJOR `3.0.0` (rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md)).
 
 ## Kde jsme vůči specifikaci
 
@@ -28,10 +28,19 @@ Rejstřík, ne pořadí.
 
 | Položka | Oblast | Druh | Pož. |
 |---|---|---|---|
+| [`Any` nad kolekční navigací bez korelace](#any-nad-kolekční-navigací-se-čte-bez-korelace) | Vady | práce | F7–F10, F11 |
+| [`Find` vrátí celou tabulku](#find-a-findasync-vrátí-celou-tabulku) | Vady | práce | F7–F10, F11 |
+| [Odvozená identita JPA zúží klíč](#odvozená-identita-jpa-tiše-zúží-složený-klíč) | Vady | práce | F1, F2, F7, F9, F11 |
+| [Alias v uvozovkách](#alias-v-uvozovkách-vyjde-bez-uvozovek) | Vady | práce | F7–F10 |
+| [Holý sloupec joinu](#holý-sloupec-dotazu-přes-víc-tabulek-dostane-první-tabulku) | Vady | práce | F6–F10 |
+| [Řádek jedné tabulky joinu](#projekce-řádku-jedné-tabulky-joinu-se-čte-jako-celý-spojený-řádek) | Vady | práce | F7–F10 |
 | [Verdikt soudce LDBC nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) | Dotazy | práce | F13, T2, T3 |
+| [Pojmenované dotazy JPA](#pojmenované-dotazy-jpa-se-nepřekládají-ačkoli-na-nich-stojí-reálné-projekty) | Dotazy | rozhodnutí | F7, F9, F14 |
+| [Cesta přes asociaci mimo `join`](#cesta-přes-asociaci-mimo-join-se-nečte-ačkoli-ji-pravidlo-q7-článku-pokrývá) | Dotazy | rozhodnutí | F7–F10 |
 | [Co zavírá třetí cíl](#co-zavírá-třetí-cíl-schválený-záměr-advisor-nejmenuje) | Třetí cíl | rozhodnutí | F15, T1–T7 |
 | [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Třetí cíl | rozhodnutí | S5, T1–T3 |
 | [Referenční databáze experimentů a případová studie T1](#referenční-databáze-experimentů-a-případová-studie-t1) | Třetí cíl | rozhodnutí | T1, T2, T7, F4 |
+| [Schémata převzatých projektů v katalogu](#schémata-převzatých-projektů-v-katalogu-instance) | Třetí cíl | rozhodnutí | F6, T1 |
 | [Meze složitosti a velikosti vstupu](#meze-složitosti-dotazu-hloubky-zanoření-a-velikosti-tříd-nikdo-nehledal) | Třetí cíl | rozhodnutí | S3, T3–T5 |
 | [Zobrazení mezireprezentace](#mezireprezentace-se-nezobrazuje-ačkoli-f14-ji-jmenuje) | Třetí cíl | rozhodnutí | F11, F14 |
 | [Artefakt, který nevyrobil nástroj, ve stupních ověření](#ověřovací-stupně-nad-artefaktem-který-nevyrobil-nástroj) | Třetí cíl | rozhodnutí | T3–T6 |
@@ -60,7 +69,44 @@ flowchart LR
     X["Cizí artefakt<br/>ve stupních ověření"] --> L["Metodika<br/>srovnání s LLM"]
     M["Meze složitosti<br/>a velikosti"] -->|"tytéž řady vstupů"| L
     I["Izolace spouštění"] ---|"rozhodují se spolu"| J["Měření javových<br/>frameworků"]
+    SCH["Schémata převzatých<br/>projektů v katalogu"] -->|"klíče zdrojů Dapper a MyBatis"| DB
 ```
+
+---
+
+## Vady z reálného kódu
+
+Šest tvarů, které nástroj přečte a přeloží jinak, než znamenají; ukázaly je výňatky open-source projektů ([`analysis/real-world-sources.md`](./analysis/real-world-sources.md), *Nálezy*; rozh. [138](./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md)). Výňatky v `ORMConvertor/SampleData/ThirdParty` každou obcházejí přepisem s poznámkou; po opravě se přepis smí vrátit k textu projektu. [`subset.md`](./subset.md) 2.13 je vede jako tichá místa, §9 nárok do opravy omezuje výhradou.
+
+#### `Any` nad kolekční navigací se čte bez korelace
+*Vada. Práce podle rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) a [101](./decisions/101-a-join-along-an-association-path-is-derived-from-the-relation.md). Nález V1 (Chinook, `DataEF/TrackRepository.cs`). Požadavky F7–F10, F11.*
+
+LINQ `Tracks.Where(c => c.InvoiceLines.Any(o => o.InvoiceId == id))` se čte jako `EXISTS` nad `InvoiceLine` bez podmínky, která řádek faktury váže k vnější skladbě (`o.TrackId = c.Id`), a žádný záznam to neřekne: dotaz vrátí všechny skladby, jakmile má podmínku kterýkoli řádek faktury. Podmínku korelace dává vztah navigace, tak jako u joinu po asociační cestě (rozh. 101); kde vztah ani jeho sloupce v mapách převodu nejsou, má čtení odmítnout. Test: `Any`, `All` a `Count` nad kolekční navigací ve filtru, nad oběma stranami vztahu.
+
+#### `Find` a `FindAsync` vrátí celou tabulku
+*Vada. Práce; rozh. [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) bere neznámý krok jako `Loss` a předpokládá, že řádky nemění, [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) žádá opak. Nález V2 (Chinook, všechny repozitáře EF Core). Požadavky F7–F10, F11.*
+
+`ctx.Tracks.FindAsync(id)` čte LINQ jako neznámý krok, vynechá ho se záznamem `Loss` a vydaný dotaz vrátí celou tabulku. Neznámý krok je `Loss`, aby čtení neodmítlo `Include`; `Find` je ale vyhledání podle klíče a řádky mění. Nejméně ho odmítnout jmenovitě; přečíst ho jako filtr klíče s výřezem jednoho řádku (tvar `FirstOrDefault`) jde tam, kde klíč entity zná mapování.
+
+#### Odvozená identita JPA tiše zúží složený klíč
+*Vada. Práce podle rozh. [006](./decisions/006-flat-composite-key-rendering.md), [031](./decisions/031-key-class-as-declaration-of-key-parts.md) a [077](./decisions/077-hibernate-wrapper-over-the-shared-jpa-layer.md). Nález V3 (Keycloak, deset entit). Požadavky F1, F2, F7, F9, F11.*
+
+Entita s `@IdClass`, jejíž část klíče je `@Id` přímo na `@ManyToOne` (odvozená identita Jakarta Persistence), se čte bez té části: klíč `USER_ROLE_MAPPING(USER_ID, ROLE_ID)` vyjde jako samotné `ROLE_ID` a jediný záznam se týká člena klíčové třídy, ne klíče. Část klíče je tu sloupec vztahu; čtení ji má vzít jako část klíče nad sloupci `@JoinColumn` a vztah vedle ní, jako `hbm.xml` čte `<key-many-to-one>`. V téže oblasti: jedenáct vnořených tříd `Key` v Keycloaku hlásí `Conflict`, jako by byly entitami, ačkoli rozh. 031 klíčovou třídu entitou nečiní; výstup je správný.
+
+#### Alias v uvozovkách vyjde bez uvozovek
+*Vada. Práce podle rozh. [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md) a [084](./decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md). Nález V4 (JPetStore, `ItemMapper.xml`). Požadavky F7–F10.*
+
+`I.PRODUCTID AS "product.productId"` — alias, který identifikátorem není a zdroj ho proto oddělil uvozovkami — vyjde v T-SQL cíle jako `AS product.productId` a v LINQ jako člen anonymního typu `product.productId`; SQL Server i kompilátor text odmítnou. Alias má nést, že byl oddělený, cíl SQL ho oddělit po svém (`[…]`) a cíl, jehož jazyk takové jméno nemá (anonymní typ C#, alias JPQL), odmítnout se záznamem. U MyBatisu je tečkový alias navíc pokyn automatickému mapování do vnořeného objektu (`item.product`), který mezireprezentace nenese — ten patří do záznamu, ne do jména.
+
+#### Holý sloupec dotazu přes víc tabulek dostane první tabulku
+*Vada. Práce podle rozh. [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md) a [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Nález V5 (JPetStore, `ItemMapper.xml`, `OrderMapper.xml`). Požadavky F6–F10.*
+
+V `SELECT LISTPRICE, NAME FROM ITEM I INNER JOIN PRODUCT P ON …` čtení přidělí každý nekvalifikovaný sloupec první tabulce: cíl napíše `I.NAME`, ačkoli `NAME` je sloupec `PRODUCT`, a SQL Server dotaz odmítne — nebo, má-li `ITEM` sloupec téhož jména, tiše přečte jiný. Komu holý sloupec patří, ví jen schéma: cíl SQL ho má nechat holý, cíl, který stranu joinu potřebuje (LINQ, JPQL), ji má vzít z katalogu, a bez katalogu odmítnout.
+
+#### Projekce řádku jedné tabulky joinu se čte jako celý spojený řádek
+*Vada. Práce podle rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) a [101](./decisions/101-a-join-along-an-association-path-is-derived-from-the-relation.md). Nález V6 (Keycloak, Ambari, Chinook). Požadavky F7–F10.*
+
+`select r from RoleEntity r join CompositeRoleEntity c on …` i `SELECT Track.* FROM Playlist INNER JOIN …` čte mezireprezentace jako dotaz bez projekce, tedy s celým řádkem — a ten je po joinu spojený. Cíl SQL napíše `SELECT *` přes obě tabulky (Dapper pak plní vlastnosti podle jmen sloupců a vezme `Id` jiné tabulky), HQL vynechá `select` a vrátí dvojice, LINQ vynechá `Select`; s `distinct` vrátí jiné řádky. JPQL cíl píše správně jen proto, že bere kořen. Projekce má nést, kterou proměnnou rozsahu bere celou.
 
 ---
 
@@ -80,6 +126,16 @@ Doklad, který rozh. 117 bere za stav „podle specifikace", je celá sada SF 1 
 | kam výsledek | řádek do záznamu v README vedle .NET běhu a řádek F13 v [`traceability.md`](./traceability.md); podíl shodných čtení IC 13 a IC 14 v javových cílech do téhož záznamu |
 | co rozhodne | O textech nic: mez IC 14 (jedna procházka do tří kroků) žádnou dvojici sady nemine, složení z obou konců jako u IC 13 tedy není třeba. Javová polovina rozhodne o překladu — tvary IS 7 a IC 5 z rozh. 122, kvůli nimž EclipseLink píše jazykem cíle, projdou celou sadou v EclipseLinku poprvé. Vyjde-li i v javových cílech IC 13 a IC 14 100 %, jsou oba podle 117 kandidáty na změnu stavu (práce podle 110) |
 
+#### Pojmenované dotazy JPA se nepřekládají, ačkoli na nich stojí reálné projekty
+*Ke kontrole: rozh. [081](./decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md) a [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) — pojmenovaný dotaz JPA je `Loss` a nepřekládá se nikde ([`subset.md`](./subset.md) 2.2, 2.3). Podklad: [`analysis/real-world-sources.md`](./analysis/real-world-sources.md). Požadavky F7, F9, F14.*
+
+Keycloak, Apache Ambari, Roller, Ranger i Broadleaf drží čtecí dotazy v `@NamedQuery` nebo v `<named-query>` souboru `orm.xml` a spouštějí je jménem; výňatky Keycloaku a Ambari je proto musely vytáhnout do `em.createQuery` třídou, kterou projekt nemá. Pojmenované dotazy `hbm.xml` NHibernatu nástroj čte a jméno dotazu nese do cíle (rozh. 081), pojmenované dotazy JPA ne. Rozhodnout, zda se čtou stejně — jako dotaz, kterému zdroj dal jméno —, odkud se typuje parametr, který text porovnává jen s jinou entitou nebo který typuje až volání `setParameter`, a co s pojmenovaným dotazem, který zapisuje.
+
+#### Cesta přes asociaci mimo `join` se nečte, ačkoli ji pravidlo Q7 článku pokrývá
+*Ke kontrole: rozh. [101](./decisions/101-a-join-along-an-association-path-is-derived-from-the-relation.md) — podmínka podle Q7 jen pro `join alias.asociace`. Podklad: [`analysis/real-world-sources.md`](./analysis/real-world-sources.md) (Keycloak, Ambari). Požadavky F7–F10.*
+
+`where consent.user.id = :userId` i `where alert.alertHistory.clusterId = :clusterId` jsou v JPQL a HQL implicitní join; čtení je dnes odmítne `Failure` s obecným důvodem ([`subset.md`](./subset.md) 2.6, *navigace v operandu*). Výňatky obou projektů je proto přepsaly do korelovaného `exists` či srovnání sloupce klíče — čtrnáct dotazů. Pravidlo Q7 článku odvozuje podmínku implicitního joinu z metadat vztahu a rozh. 101 ho uplatnilo jen na `join` po asociační cestě. Rozhodnout, zda cesta v podmínce a v projekci vytvoří vnitřní join s odvozenou podmínkou, jak ho specifikace JPA vykládá, a kdy stačí sloupec cizího klíče vlastnící strany (`c.user.id`) bez joinu.
+
 ## Třetí cíl: experimenty
 
 Matice T2 s metrikami T3, příprava T4–T6 a zobrazení mezireprezentace (F14) jsou milník 4, experimenty T2, T3 a T7 milník 5 a T1 žádá kapitola *Experimentální požadavky*. Oblast je ze záruk vyňatá (§9, oblast 6) a je látkou na `3.0.0`. Značku nese jen první položka, protože na ní stojí ostatní.
@@ -95,14 +151,19 @@ Zadání ([`requirements.md`](./requirements.md), F15, T7) a prototyp vedly k Ad
 Ověřovací polovina pátého úkolu záměru hotová je: obě sady staví, spouštějí a diferenčně ověřují generovaný kód v zafixovaném prostředí. Chybí experimentální polovina — nic nevolá `/convert` přes všechny dvojice frameworků a kategorie dotazů a nepočítá podíly parsovatelných, kompilovatelných, spustitelných a funkčně ekvivalentních výstupů ani úplnost přenesených mapovacích vlastností (T3). Rozhodnout:
 
 - kde pipeline bydlí — třetí profil compose, nebo profil `test` rozšířený o běh, který vydá tabulku měření s identifikátorem běhu a verzemi (S6);
-- co je vstupem — dnes `CrossFrameworkInputs`, `QueryShapeInputs`, diferenční matice a vstupy javové sady; žádný není případovou studií T1;
+- co je vstupem — dnes `CrossFrameworkInputs`, `QueryShapeInputs`, diferenční matice a vstupy javové sady; případovou studií T1 může být výňatek Keycloaku v `SampleData/ThirdParty` (rozh. [138](./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md));
 - kam se ukládá výstup, když rozh. [042](./decisions/042-measured-benchmark-output-out-of-git.md) vyloučilo naměřený výstup z gitu;
 - jak se počítají podíly T3 nad čtyřmi stupni rozh. [016](./decisions/016-generated-artifact-verification-levels.md); funkční ekvivalenci dává diferenční ověření.
 
 #### Referenční databáze experimentů a případová studie T1
-*Ke kontrole proti záměru: rozh. [016](./decisions/016-generated-artifact-verification-levels.md) (testy nad vlastním schématem, WideWorldImporters zamítnutá). Kandidát: `LdbcSnb`, rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md). Požadavky T1, T2, T7, F4.*
+*Ke kontrole proti záměru: rozh. [016](./decisions/016-generated-artifact-verification-levels.md) (testy nad vlastním schématem, WideWorldImporters zamítnutá). Kandidáti: `LdbcSnb`, rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md); výňatek Keycloaku, rozh. [138](./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md) a [katalog zdrojů](./analysis/real-world-sources.md). Požadavky T1, T2, T7, F4.*
 
-Záměr i specifikace jmenují jedinou referenční databázi, SQL Server s WideWorldImporters; ta slouží compose stacku, Advisoru a ukázkám `/samples`, kdežto obě sady a 4. stupeň běží nad vlastním schématem, což rozh. 016 odůvodňuje pro *ověřování*. Pro *experimenty* odpověď chybí: T2 běží nad fixturou, T7 nad WideWorldImporters a T1 nad ničím. Specifikace čte T1 jako „případovou studii **nebo testovací sadu**" s netriviálními entitami, vztahy a read-only dotazy, a tomu katalog LDBC SNB odpovídá; zmrazené zadání ([`requirements.md`](./requirements.md), T1) ale žádá open-source aplikaci a [`traceability.md`](./traceability.md) u T1 říká, že LDBC aplikací není. Rozhodnout, které čtení T1 platí, nad čím který experiment běží a kde se to vysloví.
+Záměr i specifikace jmenují jedinou referenční databázi, SQL Server s WideWorldImporters; ta slouží compose stacku, Advisoru a ukázkám `/samples`, kdežto obě sady a 4. stupeň běží nad vlastním schématem, což rozh. 016 odůvodňuje pro *ověřování*. Pro *experimenty* odpověď chybí: T2 běží nad fixturou, T7 nad WideWorldImporters a T1 nad ničím. Specifikace čte T1 jako „případovou studii **nebo testovací sadu**" s netriviálními entitami, vztahy a read-only dotazy, a tomu katalog LDBC SNB odpovídá; zmrazené zadání ([`requirements.md`](./requirements.md), T1) ale žádá open-source aplikaci a [`traceability.md`](./traceability.md) u T1 říká, že LDBC aplikací není. Open-source aplikací je výňatek Keycloaku v `SampleData/ThirdParty` a čísla zadání splní (21 entit, vztahy, deset složených klíčů, 47 čtecích dotazů); jeho schéma ale v žádné databázi nástroje není. Rozhodnout, které čtení T1 platí, nad čím který experiment běží a kde se to vysloví.
+
+#### Schémata převzatých projektů v katalogu instance
+*Ke kontrole: rozh. [015](./decisions/015-mapping-fact-completion-from-the-catalog.md), [099](./decisions/099-examples-are-content-not-a-choice.md) (příklady běží bez katalogu) a [138](./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md). Podklad: [`analysis/real-world-sources.md`](./analysis/real-world-sources.md), *Převzaté výňatky*. Požadavky F6, T1.*
+
+Výňatky Chinooku (vrstva Dapper) a JPetStore nemají klíč — Dapper a MyBatis ho nevysloví —, takže do NHibernate, Hibernate a EclipseLink je nástroj bez katalogu odmítne, a do EF Core odvodí entity z tabulek bez třídy. Všechny převzaté projekty své schéma zveřejňují: Keycloak migracemi a Ambari skriptem pro SQL Server, Chinook autorovou databází pro SQL Server, JPetStore skriptem HSQLDB, který T-SQL přečte. Rozhodnout, zda je databáze compose stacku načte vedle WideWorldImporters a `LdbcSnb` — jen schéma, prázdné tabulky —, aby převod výňatku na instanci s katalogem doplnil klíče, sloupce a vztahy, a jak se vyhnout víceznačnosti jmen tabulek mezi schématy ([`architecture.md`](./architecture.md) §5.2, *Kandidáti*).
 
 #### Meze složitosti dotazu, hloubky zanoření a velikosti tříd nikdo nehledal
 *[Záměr](./zamer.tex) (*Využití pro výzkumnou činnost*: posoudit „praktickou použitelnost navrženého přístupu a jeho omezení"); [specifikace](./specifikace.tex) S3 („konkrétní výkonnostní výsledky budou součástí vyhodnocení") a kap. *Vyhodnocení*. Souvisí s rozh. [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md) a [`threat-model.md`](./threat-model.md), hrozba 2; srovnání metodicky vede [položka o LLM](#metodika-srovnání-s-llm-a-vymezení-proti-souběžným-pracím). Požadavky S3, T3, T4, T5.*

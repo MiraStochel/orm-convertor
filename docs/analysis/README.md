@@ -1,9 +1,10 @@
 # Analýzy
 
-Podklad o frameworcích samotných: čím se liší, co vyjádří a jak v nich vypadá minimální aplikace — vstup pro rozhodnutí a materiál pro analytickou část práce. O nástroji samém nejsou (ten popisuje [`architecture.md`](../architecture.md)). Tvrzení platí **jen proti zafixovaným verzím** (`architecture.md`, „Zafixované verze", rozh. [013](../decisions/013-target-framework-versions.md)).
+Podklad o frameworcích samotných — čím se liší, co vyjádří a jak v nich vypadá minimální aplikace — a o veřejném kódu, který na nich stojí: vstup pro rozhodnutí a materiál pro analytickou část práce. O nástroji samém nejsou (ten popisuje [`architecture.md`](../architecture.md)); katalog zdrojů jen shrnuje, co jeho vstupy na nástroji ukázaly. Tvrzení platí **jen proti zafixovaným verzím** (`architecture.md`, „Zafixované verze", rozh. [013](../decisions/013-target-framework-versions.md)).
 
 | Dokument | Obsah |
 |---|---|
+| [`real-world-sources.md`](real-world-sources.md) | veřejné projekty s netriviální vrstvou ORM po frameworcích: licence, rozsah, schéma pro katalog, použití beze změny či s úpravou; pět převzatých výňatků (rozh. [138](../decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md)) a co ukázaly |
 | [`orm-frameworks-comparison.md`](orm-frameworks-comparison.md) | NHibernate, EF Core, Dapper tematicky: expresivita, syntaxe, implicitní defaulty pro parser |
 | [`java-orm-frameworks-comparison.md`](java-orm-frameworks-comparison.md) | Hibernate (F7), EclipseLink (F9), MyBatis (F8) se stejným číslováním; značí shody z Jakarta Persistence 3.2; doloženo během |
 | [`tutorials/nhibernate-getting-started.md`](tutorials/nhibernate-getting-started.md) | `Author` 1:N `Book`, `hbm.xml`, konfigurace v kódu, `SchemaExport` |

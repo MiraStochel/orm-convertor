@@ -1,0 +1,68 @@
+/*
+ *    Copyright 2010-2026 the original author or authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *       https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
+/*
+ * ORMConvertor: taken from mybatis/jpetstore-6 at 344ef63, src/main/java/org/mybatis/jpetstore/mapper/OrderMapper.java.
+ * Unchanged apart from this note.
+ */
+package org.mybatis.jpetstore.mapper;
+
+import java.util.List;
+
+import org.mybatis.jpetstore.domain.Order;
+
+/**
+ * The Interface OrderMapper.
+ */
+public interface OrderMapper {
+
+  /**
+   * Get orders by username.
+   *
+   * @param username
+   *          the username
+   *
+   * @return the list
+   */
+  List<Order> getOrdersByUsername(String username);
+
+  /**
+   * Get order.
+   *
+   * @param orderId
+   *          the order id
+   *
+   * @return the order
+   */
+  Order getOrder(int orderId);
+
+  /**
+   * Insert order.
+   *
+   * @param order
+   *          the order
+   */
+  void insertOrder(Order order);
+
+  /**
+   * Insert order status.
+   *
+   * @param order
+   *          the order
+   */
+  void insertOrderStatus(Order order);
+
+}

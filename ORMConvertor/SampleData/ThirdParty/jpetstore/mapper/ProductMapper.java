@@ -1,0 +1,62 @@
+/*
+ *    Copyright 2010-2026 the original author or authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *       https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
+/*
+ * ORMConvertor: taken from mybatis/jpetstore-6 at 344ef63, src/main/java/org/mybatis/jpetstore/mapper/ProductMapper.java.
+ * Unchanged apart from this note.
+ */
+package org.mybatis.jpetstore.mapper;
+
+import java.util.List;
+
+import org.mybatis.jpetstore.domain.Product;
+
+/**
+ * The Interface ProductMapper.
+ */
+public interface ProductMapper {
+
+  /**
+   * Get product list by category.
+   *
+   * @param categoryId
+   *          the category id
+   *
+   * @return the list
+   */
+  List<Product> getProductListByCategory(String categoryId);
+
+  /**
+   * Get product.
+   *
+   * @param productId
+   *          the product id
+   *
+   * @return the product
+   */
+  Product getProduct(String productId);
+
+  /**
+   * Search product list.
+   *
+   * @param keywords
+   *          the keywords
+   *
+   * @return the list
+   */
+  List<Product> searchProductList(String keywords);
+
+}

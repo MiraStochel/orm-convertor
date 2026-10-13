@@ -11,7 +11,7 @@ Autoritativní popis projektu, **členěný podle žánru, ne podle času** (roz
 | [`open-items.md`](open-items.md) | Co **zbývá**; `Na řadě` říká, kde se pokračuje. | živé; hotové mizí |
 | [`decisions/`](decisions/README.md) | **Proč** je nástroj takový; jedno rozhodnutí = jeden soubor. | neměnné kromě `Stav` (a `revidováno` před implementací) |
 | [`audits/`](audits/README.md) | Co jsme **kdy věděli**. | neměnné |
-| [`analysis/`](analysis/README.md) | Jak se chovají **frameworky samotné**. | přibývá |
+| [`analysis/`](analysis/README.md) | Jak se chovají **frameworky samotné** a jaký **veřejný kód** na nich stojí. | přibývá |
 | [`threat-model.md`](threat-model.md) | Čemu je nástroj **vystavený**. | živé |
 | [`use-cases.md`](use-cases.md) | **Kdo** nástroj používá a proč. | živé |
 | [`requirements.md`](requirements.md) | Co **zadal vedoucí** (F1–F15, S1–S7, T1–T7). | zmražené |

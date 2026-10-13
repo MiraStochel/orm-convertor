@@ -130,18 +130,20 @@
 
     <h2>The examples</h2>
     <p>
-      Sixteen examples. The first seven are grouped by the boundary the translation
+      Twenty-one examples. The first seven are grouped by the boundary the translation
       crosses: two stay inside .NET, two inside Java, and three cross between the
       ecosystems &mdash; the last two over a whole domain rather than a single class.
       The next three are about queries: what a target does with a construct its
       query language lacks, and how the queries are found in code. The next four take
       one larger domain, a marketplace, from four source frameworks, and together show
       what the tool reads and writes &mdash; one of them is a single, very long query.
-      The last two are application code as a project has it, where the mapping and the
-      queries are a small part of the text, and show what the tool takes out of it.
-      Below each one, the records list every place where the output could not carry a
-      fact of the input, or states something the input did not. That is where a
-      translation explains itself.
+      The next two are application code as a project has it, where the mapping and the
+      queries are a small part of the text, and show what the tool takes out of it. The
+      last five are not written for the tool at all: they are excerpts of real
+      open-source projects, taken at one commit and changed only where the tool reads a
+      construct in another form. Below each one, the records list every place where the
+      output could not carry a fact of the input, or states something the input did not.
+      That is where a translation explains itself.
     </p>
     <p>
       Every example is also in the list on the <a href="translation.html">Translation</a>
@@ -206,6 +208,16 @@
         <ul>
           <li><a href="#helpdesk-application">Helpdesk: EF Core &rarr; Dapper</a> &mdash; eight queries out of an ASP.NET Core application</li>
           <li><a href="#clinic-application">Clinic: Hibernate &rarr; EF Core</a> &mdash; seven queries out of a Spring Boot application</li>
+        </ul>
+      </article>
+      <article>
+        <h3>Real projects</h3>
+        <ul>
+          <li><a href="#keycloak-identity">Keycloak: Hibernate &rarr; NHibernate</a> &mdash; 21 entities, ten composite keys, 47 named queries</li>
+          <li><a href="#ambari-alerts">Apache Ambari: EclipseLink &rarr; EF Core</a> &mdash; alerts, two many-to-many, 35 named queries</li>
+          <li><a href="#chinook-dapper">Chinook: Dapper &rarr; EF Core</a> &mdash; a repository layer in literal SQL</li>
+          <li><a href="#chinook-efcore">Chinook: EF Core &rarr; Hibernate</a> &mdash; the same layer as the project wrote it in LINQ</li>
+          <li><a href="#jpetstore-mybatis">JPetStore: MyBatis &rarr; Dapper</a> &mdash; the MyBatis team&rsquo;s reference shop</li>
         </ul>
       </article>
     </div>
@@ -887,6 +899,223 @@
         no query over; a SQL-looking string constant used for logging; the callback, the
         loops and the streams. The <code>@Email</code> validation annotation is a Loss
         record, because the mapping has no place for it.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <h2>Real projects</h2>
+    <p>
+      Every example above was written for this page. The five below were not: they are
+      excerpts of open-source projects, one for each source framework but NHibernate,
+      taken at one commit under the project&rsquo;s own licence. The files are the
+      project&rsquo;s, changed only where the tool reads a construct in another form or
+      does not translate it at all &mdash; statements that write, code that only serves
+      them &mdash; and every file says so in a note at its top: which project, which
+      commit and path, and either <em>Unchanged apart from this note</em> or what was
+      changed. The meaning stays the project&rsquo;s: the same tables, the same rows. The
+      excerpts and their licences live in <code>SampleData/ThirdParty</code> of the
+      repository, with a README per project that lists every change. What these
+      excerpts showed about the tool, and which other projects were considered, is in
+      the repository&rsquo;s documentation. The inputs run to dozens of files, so the
+      panes start folded.
+    </p>
+
+    <section id="keycloak-identity" data-example="keycloak-identity">
+      <h3>Keycloak: Hibernate &rarr; NHibernate</h3>
+      <p>
+        <a href="https://github.com/keycloak/keycloak">Keycloak</a>, the identity and
+        access management server, keeps its users, roles, groups and clients in JPA
+        entities on Hibernate. The input is 21 of them and one class the project does
+        not have: Keycloak runs its queries by name from <code>@NamedQuery</code>
+        annotations, which the tool does not read, so
+        <code>KeycloakNamedQueries.java</code> hands the 47 read-only ones to
+        <code>em.createQuery</code>, one method each. Two kinds of change keep them
+        readable, each marked where it is made. Ten entities put <code>@Id</code> on a
+        <code>@ManyToOne</code>; there the key part is written as its own column beside a
+        relation that does not write it. Twenty queries compare a whole entity, follow a
+        path through an association or project one side of a join; there they compare a
+        key column or ask a correlated <code>exists</code>. Out of it come 21 NHibernate
+        classes with their mappings &mdash; ten composite keys as
+        <code>&lt;composite-id&gt;</code> with the <code>Equals</code>,
+        <code>GetHashCode</code> and <code>[Serializable]</code> NHibernate requires, the
+        relation over each key part as a <code>many-to-one</code> with
+        <code>insert="false"</code> &mdash; and the 47 queries in HQL, 46 of them with the
+        LINQ form beside it: the count of the members of a set of groups has none, and an
+        Omitted record says why. The other records name what NHibernate has no place for:
+        the <code>@NamedQueries</code> still on the entities, Hibernate&rsquo;s own
+        <code>@Fetch</code> and <code>@BatchSize</code>, element collections, cascades,
+        initializers such as <code>KeycloakModelUtils.generateId()</code>; a Conflict says
+        that eleven nested key classes share the name <code>Key</code>. Switch the target
+        to EF Core and that count is refused: EF Core says it only in native SQL, where it
+        cannot bind the list of groups.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="ambari-alerts" data-example="ambari-alerts">
+      <h3>Apache Ambari: EclipseLink &rarr; EF Core</h3>
+      <p>
+        <a href="https://github.com/apache/ambari">Apache Ambari</a>, the manager of Hadoop
+        clusters, maps its tables with EclipseLink. The input is its six alert entities,
+        unchanged &mdash; definitions, groups, targets, the current alert, its history, the
+        notices sent &mdash; and a class with 35 of their 41 read-only named queries handed
+        to <code>em.createQuery</code>. Eight of those reach the alert&rsquo;s history or
+        definition through the key column the entity maps beside the association &mdash; a
+        correlated <code>EXISTS</code> over it, or a comparison of it &mdash; instead of a
+        path through the association; six are left out with a
+        note, five of them because they compare a parameter with an enum attribute whose
+        type lies outside the excerpt. EF Core receives the six classes and two junction
+        entities for the two many-to-many relations Ambari declares with
+        <code>@JoinTable</code>, a Convention record beside each, and 35 LINQ queries: each
+        <code>EXISTS</code> becomes an <code>Any</code> over another set, the
+        <code>BETWEEN</code> two comparisons. Most of the records are what EF Core&rsquo;s
+        annotations cannot say: Ambari&rsquo;s <code>TABLE</code> generators,
+        <code>@Enumerated</code>, <code>@Lob</code>, and the columns Ambari maps twice, once
+        through the relation and once read-only beside it.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="chinook-dapper" data-example="chinook-dapper">
+      <h3>Chinook: Dapper &rarr; EF Core</h3>
+      <p>
+        A <a href="https://github.com/cwoodruff/ChinookASPNETWebAPI">Web API over the
+        Chinook music store</a> whose author wrote the data layer twice, behind the same
+        repository interfaces: once with Dapper, once with EF Core. This example is the
+        Dapper layer &mdash; eleven repositories of literal T-SQL over the eleven entity
+        classes both layers share &mdash; with what the tool does not translate left out:
+        the methods that write through Dapper.Contrib and the <code>count(1)</code> checks
+        that serve them. One query names a column the project&rsquo;s schema does not have
+        and is corrected. Dapper states no mapping, so EF Core receives the classes as
+        <code>[Keyless]</code> entities with their navigations, and the <code>[Key]</code>
+        on <code>Album.Id</code> stays unread, with a Loss record; a server with a catalog
+        connection would read keys, columns and relations from the database instead. The 38
+        queries become LINQ: <code>SELECT *</code> the entity itself, a
+        <code>WHERE</code> a <code>Where</code>, a join a <code>Join</code> followed by the
+        selected columns.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="chinook-efcore" data-example="chinook-efcore">
+      <h3>Chinook: EF Core &rarr; Hibernate</h3>
+      <p>
+        The other half of the same project: the same eleven entity classes, the context
+        with its fluent configuration, and the eleven EF Core repositories. The reads are
+        kept and four kinds of them are written in the form the tool reads, each marked:
+        <code>FindAsync(id)</code> as <code>Where(x =&gt; x.Id == id).FirstOrDefaultAsync()</code>,
+        and the reads that go through a navigation &mdash; a projected
+        <code>p.Track</code>, a <code>SelectMany</code> over <code>a.Tracks</code>, an
+        <code>Any</code> over <code>c.InvoiceLines</code> &mdash; as a correlated
+        <code>Any</code> over the other set. Hibernate receives JPA entities whose keys and
+        relations, the composite key of <code>PlaylistTrack</code> among them, come from
+        the fluent chains, and 35 JPQL queries; <code>FirstOrDefaultAsync</code> becomes a
+        page of one row on the query object, with a Convention record. Most other records
+        are fluent calls JPA&rsquo;s annotations have no place for:
+        <code>HasConstraintName</code>, <code>OnDelete</code> and the indexes that are not
+        unique. Read the two Chinook examples side by side: the same queries, once from SQL
+        and once from LINQ.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="example-run secondary">Run again</button>
+      </div>
+      <p class="example-status" aria-busy="true">Running the conversion…</p>
+      <p class="example-error problem" role="alert" hidden></p>
+      <div class="panes">
+        <details class="example-pane">
+          <summary>Input <small class="example-input-count"></small></summary>
+          <div class="example-inputs pane-grid"></div>
+        </details>
+        <details class="example-pane">
+          <summary>Output <small class="example-output-count"></small></summary>
+          <div class="example-outputs pane-grid"></div>
+        </details>
+      </div>
+      <h4>Records</h4>
+      <div class="example-records"></div>
+    </section>
+
+    <section id="jpetstore-mybatis" data-example="jpetstore-mybatis">
+      <h3>JPetStore: MyBatis &rarr; Dapper</h3>
+      <p>
+        <a href="https://github.com/mybatis/jpetstore-6">JPetStore 6</a>, the MyBatis
+        team&rsquo;s reference shop: seven domain classes, seven mapper interfaces and seven
+        XML mapper documents, with the statements that write left out. Its selects are
+        written as the tool reads them, and each document lists the changes in its opening
+        note: comma-separated tables as <code>INNER JOIN</code>, <code>#{value}</code> by
+        the name of the interface method&rsquo;s parameter, every column of a join
+        qualified by its table, and the dotted aliases that fill
+        <code>item.product</code> by auto-mapping as two result maps with an
+        <code>&lt;association&gt;</code>. The SQL travels as T-SQL into fourteen Dapper
+        methods, each parameter typed from the mapper interface. A MyBatis mapper maps
+        results rather than tables, so most of the records are what Dapper has no place
+        for &mdash; column names, result types, the <code>&lt;cache/&gt;</code> &mdash;
+        and an Incompleteness says that an <code>&lt;id&gt;</code> marks a row of the
+        result, not the primary key of a table.
       </p>
       <div class="toolbar">
         <button type="button" class="example-run secondary">Run again</button>

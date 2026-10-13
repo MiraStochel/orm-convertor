@@ -50,7 +50,7 @@ Všechny jsou **vyňaté** (oblast 6, [§9 hranice]); *Implementace* říká, co
 
 | Pož. | Stav | Implementace | Důkaz | Zúžení / poznámka |
 |---|---|---|---|---|
-| **T1** případová studie | vyňaté | nic; scénář [`use-cases.md`](./use-cases.md), UC5 | — | LDBC SNB (databáze `LdbcSnb`, rozh. [110]) splňuje číselná kritéria (17 tabulek, 41 čtecích dotazů), aplikace to ale není. |
+| **T1** případová studie | vyňaté | nic; scénář [`use-cases.md`](./use-cases.md), UC5; kandidáti v [katalogu zdrojů](./analysis/real-world-sources.md) | `Combined/ExampleCatalogTest` (výňatky se přeloží), `Combined/ThirdPartySourcesTest` (licence a původ) | LDBC SNB (databáze `LdbcSnb`, rozh. [110]) splňuje číselná kritéria (17 tabulek, 41 čtecích dotazů), aplikace to ale není. Výňatek Keycloaku (příklad `keycloak-identity`, rozh. [138]) je open-source aplikace a splní je taky (21 entit, vztahy, 10 složených klíčů, 47 čtecích dotazů); jeho schéma v databázi nástroje není a experiment nad ním neběží. |
 | **T2** matice překladů | vyňaté | 50 kategorií v `Tests/Database/QueryShapes/categories.txt` z každého zdroje, který je vysloví, do šesti cílů; buňka: jazyk cíle / nativní SQL (`Fallback`, rozh. [113]) / odmítnuto | `Combined/QueryShapeMatrixTest` (1. stupeň, 2. nad SQL a .NET cíli); javová sada `shapes/QueryCategoryTest` (2.–3. stupeň); 4. stupeň viz F13; `Combined/LdbcCatalogTest`, javová `ldbc/LdbcBusinessIntelligenceAcceptanceTest` | Co zdroj nevysloví, buňkou není ([subset.md] 1.3–1.4). LDBC: 41 ze 41 přeloženo, 5 se zjednodušením, žádné odmítnutí; čtyři texty ve tvaru pro implementaci EclipseLinku a dva s mezí běhu nad SF 1 (rozh. [122]). Dotazy Interactive na 4. stupni proti validační sadě LDBC (rozh. [117]), BI na 1. stupni, v cílech EF Core a NHibernate na 2. a v javových na 2. a 3. |
 | **T3** metriky korektnosti | vyňaté | čtyřstupňový model ověření (rozh. [016]) dává, co se dá počítat | — | Čísla se nevykazují (níž), kromě podílu shodných čtení dotazů LDBC se zjednodušením, který měří soudce (rozh. [117], [záznam][judge]). |
 | **T4** LLM baseline | vyňaté | nic | — | — |
@@ -144,3 +144,4 @@ Povinný uzavírací krok: změna chování, která se dotkne toho, co požadave
 [133]: ./decisions/133-an-add-on-package-over-a-framework-is-not-that-framework.md
 [134]: ./decisions/134-a-property-without-a-setter-gets-the-narrowest-setter-its-framework-writes-through.md
 [136]: ./decisions/136-a-project-archive-is-unpacked-by-the-browser-with-own-code.md
+[138]: ./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md

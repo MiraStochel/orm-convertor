@@ -11,11 +11,13 @@ namespace ORMConvertorAPI.Data;
 /// three about queries, over the same two domains, each with its queries in one class as a
 /// project keeps them; then four over the marketplace, one source framework each, that
 /// together show what the tool reads and writes - fluent configuration, mapping documents
-/// with named queries, a tour of the query vocabulary, and one long query; and last two
+/// with named queries, a tour of the query vocabulary, and one long query; then two
 /// applications, one in each ecosystem, whose files are mostly code around the mapping and
-/// the queries, so that what the tool takes out of them is the example (decision 111). The
-/// small examples are built from the samples the translation screen offers; the larger ones
-/// have classes of their own.
+/// the queries, so that what the tool takes out of them is the example (decision 111); and
+/// last five excerpts of real open-source projects, one per source framework but NHibernate,
+/// vendored under SampleData/ThirdParty with their licences (decision 138). The small
+/// examples are built from the samples the translation screen offers; the larger ones have
+/// classes of their own.
 ///
 /// The list is the pages' content, not a decision: an example is added, replaced or changed
 /// here, beside its section in examples.html, and needs no decision file as long as the floor
@@ -141,7 +143,43 @@ public static class Examples
             Unit("SchedulingService.java", ConversionContentType.Java, ClinicSampleHibernate.SchedulingService),
             Unit("ClinicReports.java", ConversionContentType.Java, ClinicSampleHibernate.Reports),
         ]),
+
+        // Real projects: excerpts of open-source code at one commit, under their own licence,
+        // changed only where the tool reads a construct in another form or does not translate
+        // it at all; every file says so in its opening note, and the folder's README lists the
+        // changes (decision 138).
+        new("keycloak-identity", "Keycloak: users, roles and groups in 21 entities and 47 named queries", ORMEnum.Hibernate, ORMEnum.NHibernate,
+            ThirdParty("keycloak", "entities", "")),
+        new("ambari-alerts", "Apache Ambari: alerts in six entities and 35 named queries", ORMEnum.EclipseLink, ORMEnum.EFCore,
+            ThirdParty("ambari", "entities", "")),
+        new("chinook-dapper", "Chinook: a Dapper data layer of eleven repositories", ORMEnum.Dapper, ORMEnum.EFCore,
+            ThirdParty("chinook", "Entities", "DataDapper")),
+        new("chinook-efcore", "Chinook: the same data layer on EF Core", ORMEnum.EFCore, ORMEnum.Hibernate,
+            ThirdParty("chinook", "Entities", "DataEF")),
+        new("jpetstore-mybatis", "JPetStore: the MyBatis reference shop", ORMEnum.MyBatis, ORMEnum.Dapper,
+            ThirdParty("jpetstore", "domain", "mapper")),
     ];
+
+    /// <summary>
+    /// The code files of the given folders of a vendored project (decision 138), folder by
+    /// folder in the order given and by name within one, one unit each, named by the file and in
+    /// the language its extension names; the licence and the README stay out.
+    /// </summary>
+    private static List<ConversionSource> ThirdParty(string project, params string[] folders) =>
+    [
+        .. folders
+            .SelectMany(folder => ThirdPartySources.Files(project, folder))
+            .Where(path => LanguageOf(path) is not null)
+            .Select(path => Unit(Path.GetFileName(path), LanguageOf(path)!.Value, ThirdPartySources.Read(path))),
+    ];
+
+    private static ConversionContentType? LanguageOf(string path) => Path.GetExtension(path) switch
+    {
+        ".cs" => ConversionContentType.CSharp,
+        ".java" => ConversionContentType.Java,
+        ".xml" => ConversionContentType.XML,
+        _ => null,
+    };
 
     private static List<ConversionSource> LendingReportUnits() =>
     [
