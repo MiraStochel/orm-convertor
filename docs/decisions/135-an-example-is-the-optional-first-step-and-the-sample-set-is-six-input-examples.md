@@ -1,7 +1,7 @@
 # 135 — Příklad je volitelný první krok překladové obrazovky, kroky nejsou číslované a sada vzorků je šest příkladů vstupu; kód roste s oknem
 
 Datum: 2026-10-12
-Stav: platí
+Stav: nahrazeno [137](137-text-runs-the-full-width-and-controls-keep-a-fixed-width.md)
 Požadavky: F14, S7
 Podklad: rozhodnutí [125](125-positions-of-facts-as-an-optional-layer-over-the-ledger.md), které tímto nahrazujeme, a přes ně [124](124-direction-as-one-row-and-input-beside-output-paired-per-fact.md), [100](100-interactive-comparison-as-a-frozen-mockup.md), [099](099-examples-are-content-not-a-choice.md) a [033](033-shape-of-the-static-frontend-screens.md); dále [032](032-frontend-as-static-pages-without-a-build.md), [056](056-work-in-progress-input-stays-in-the-browser.md), [098](098-the-number-is-decided-once-per-release.md), [111](111-a-unit-is-a-whole-source-file-that-declares-only-its-language.md); schválená specifikace (`docs/specifikace.tex`, oddíl *Uživatelské rozhraní*); [`architecture.md`](../architecture.md), §6.3
 

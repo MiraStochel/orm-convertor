@@ -10,6 +10,9 @@
   --pico-form-element-spacing-horizontal: 0.9rem;
   --app-code-font: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
   --app-panel-border: 1px solid var(--pico-muted-border-color);
+  --app-control-width: 24rem;
+  --app-control-width-short: 12rem;
+  --app-control-width-long: 40rem;
 }
 
 /* ---- shared chrome ---------------------------------------------------- */
@@ -40,11 +43,10 @@ body > footer {
 
 main h1 + p.lede {
   color: var(--pico-muted-color);
-  max-width: 60ch;
 }
 
-/* A page that takes the whole window (decision 135): Pico caps the content at 1450 px, so
-   zooming out would only widen the margins. The paragraphs keep a readable measure. */
+/* A page that takes the whole window (decision 137): Pico caps the content at 1450 px, so
+   zooming out would only widen the margins. The text runs as wide as the panels under it. */
 body.wide > header,
 body.wide > main,
 body.wide > footer {
@@ -53,13 +55,40 @@ body.wide > footer {
   padding-left: var(--pico-block-spacing-horizontal);
 }
 
-body.wide main p {
-  max-width: 100ch;
+/*
+ * A select or a field keeps a fixed width at the left of its row (decision 137). Pico
+ * stretches every control over its container, which on a wide page puts a framework name at
+ * one end of a field a screen wide and its chevron at the other. The width is the value's;
+ * below it, on a narrow screen, the field gives way.
+ */
+main select,
+main input:not([type="checkbox"], [type="radio"], [type="file"]) {
+  width: var(--app-control-width);
+  max-width: 100%;
+}
+
+main input[type="number"],
+main select#source-orm,
+main select#target-orm {
+  width: var(--app-control-width-short);
+}
+
+/* In a stacked form the field stays under its label, as it did at full width. */
+main label > input:not([type="checkbox"], [type="radio"]) {
+  display: block;
+}
+
+/* A fold's chevron stands at its label (decision 137): Pico floats it to the right edge of
+   the summary, a screen away from the text on a wide page. The summary is as wide as its
+   text, and the chevron follows it. */
+main details > summary {
+  width: fit-content;
+  max-width: 100%;
 }
 
 /* ---- code panels ------------------------------------------------------ */
 
-/* The height follows the window, not the type (decision 135): zooming out shrinks the type
+/* The height follows the window, not the type (decision 137): zooming out shrinks the type
    and keeps the window, so a panel shows more lines. A rem height would show the same lines
    at every zoom. */
 pre {
@@ -167,7 +196,8 @@ article.artifact {
 }
 
 .unit-header .unit-name {
-  flex: 1 1 10rem;
+  flex: 0 1 auto;
+  width: var(--app-control-width-long);
 }
 
 .unit-header .unit-type {
@@ -189,6 +219,7 @@ article.artifact {
 }
 
 .unit-header .unit-weight {
+  display: inline-block;
   width: 5rem;
   margin-bottom: 0;
 }
@@ -301,8 +332,8 @@ details.unused-files ul {
 
 /* ---- the direction row and input beside output (decision 124) ---------- */
 
-/* Source, swap, target on one line; the selects share the width and the button keeps its
-   own. Pico gives a select margin-bottom for the stacked form it assumes, which here would
+/* Source, swap, target on one line at the left; the selects keep the width of a framework
+   name. Pico gives a select margin-bottom for the stacked form it assumes, which here would
    push the three controls out of line. */
 .direction-row {
   display: flex;
@@ -313,7 +344,7 @@ details.unused-files ul {
 }
 
 .direction-row > select {
-  flex: 1 1 12rem;
+  flex: 0 1 auto;
   min-width: 0;
   margin-bottom: 0;
 }
@@ -326,8 +357,8 @@ details.unused-files ul {
   line-height: 1;
 }
 
-/* The example picker of the translation screen: the list takes the row, the button its
-   own width, and the two wrap on a narrow screen. */
+/* The example picker of the translation screen: the list as wide as an example's title, the
+   button beside it, and the two wrap on a narrow screen. */
 .example-picker {
   display: flex;
   flex-wrap: wrap;
@@ -336,7 +367,8 @@ details.unused-files ul {
 }
 
 .example-picker > select {
-  flex: 1 1 16rem;
+  flex: 0 1 auto;
+  width: var(--app-control-width-long);
   min-width: 0;
   margin-bottom: 0;
 }
@@ -499,8 +531,11 @@ figure.diagram {
   margin: 1.5rem 0;
 }
 
+/* The diagram keeps its drawn size on a wide page; stretched over the window, its labels
+   would grow past the headings. */
 figure.diagram svg {
   width: 100%;
+  max-width: 60rem;
   height: auto;
 }
 
@@ -567,10 +602,6 @@ small.hint,
 
 small.hint {
   margin-top: 0.25rem;
-}
-
-.muted-note {
-  max-width: 70ch;
 }
 
 /* A button that reads as text: used where a control has to sit inside a sentence or a
