@@ -22,6 +22,9 @@
     <PackageVersion Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.78.1" />
     <PackageVersion Include="NHibernate" Version="5.7.0" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+    <!-- Not chosen for itself: Microsoft.Data.SqlClient pulls a version with a known
+         advisory, so the patched one is referenced directly beside it (decision 034). -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="9.0.21" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
   </ItemGroup>

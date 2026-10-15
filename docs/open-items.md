@@ -2,7 +2,7 @@
 
 Jediný seznam toho, co zbývá. **Rozhodnutí** končí novým souborem v [`decisions/`](./decisions/README.md) a řádkem v jeho rejstříku, **práce** (už rozhodnutá) kódem a aktualizací [`architecture.md`](./architecture.md), podle potřeby i [`subset.md`](./subset.md) a [`traceability.md`](./traceability.md). Hotová položka odsud mizí; co verze nárokuje, říká §9 a kanonicky sekce *Guarantees* kořenového [`README.md`](../README.md).
 
-**Pořadí nesou jen značky** (rozh. [018](./decisions/018-work-order-as-item-marker.md)) na začátku kurzívového řádku vazeb: **Na řadě** nejvýš jedna položka, **Potom** nejvýš dvě, ostatní se berou podle priorit z požadavků. **Vada** — vstup v nároku, z něhož vznikne artefakt, který cíl odmítne nebo který tiše znamená něco jiného — se opravuje přednostně jako práce a nárok, který vyvrací, do opravy platí jen s výhradou; otevřených je šest, všechny z reálného kódu ([Vady z reálného kódu](#vady-z-reálného-kódu)). Cíle zadání: cíl 1 = vydání `1.2.0`, cíl 2 = `2.0.0`, cíl 3 = příští MAJOR `3.0.0` (rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md)).
+**Pořadí nesou jen značky** (rozh. [018](./decisions/018-work-order-as-item-marker.md)) na začátku kurzívového řádku vazeb: **Na řadě** nejvýš jedna položka, **Potom** nejvýš dvě, ostatní se berou podle priorit z požadavků. **Vada** — vstup v nároku, z něhož vznikne artefakt, který cíl odmítne nebo který tiše znamená něco jiného — se opravuje přednostně jako práce a nárok, který vyvrací, do opravy platí jen s výhradou; otevřených je sedm, šest z reálného kódu ([Vady z reálného kódu](#vady-z-reálného-kódu)) a jedna z analýzy rekurze ([Konstanta bez aliasu v operandu množinové operace](#konstanta-bez-aliasu-v-dalším-operandu-množinové-operace-vypadne)). Cíle zadání: cíl 1 = vydání `1.2.0`, cíl 2 = `2.0.0`, cíl 3 = příští MAJOR `3.0.0` (rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md)).
 
 ## Kde jsme vůči specifikaci
 
@@ -34,6 +34,7 @@ Rejstřík, ne pořadí.
 | [Alias v uvozovkách](#alias-v-uvozovkách-vyjde-bez-uvozovek) | Vady | práce | F7–F10 |
 | [Holý sloupec joinu](#holý-sloupec-dotazu-přes-víc-tabulek-dostane-první-tabulku) | Vady | práce | F6–F10 |
 | [Řádek jedné tabulky joinu](#projekce-řádku-jedné-tabulky-joinu-se-čte-jako-celý-spojený-řádek) | Vady | práce | F7–F10 |
+| [Konstanta bez aliasu v operandu množinové operace](#konstanta-bez-aliasu-v-dalším-operandu-množinové-operace-vypadne) | Dotazy | práce | F7–F10, F11 |
 | [Verdikt soudce LDBC nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) | Dotazy | práce | F13, T2, T3 |
 | [Pojmenované dotazy JPA](#pojmenované-dotazy-jpa-se-nepřekládají-ačkoli-na-nich-stojí-reálné-projekty) | Dotazy | rozhodnutí | F7, F9, F14 |
 | [Cesta přes asociaci mimo `join`](#cesta-přes-asociaci-mimo-join-se-nečte-ačkoli-ji-pravidlo-q7-článku-pokrývá) | Dotazy | rozhodnutí | F7–F10 |
@@ -113,6 +114,11 @@ V `SELECT LISTPRICE, NAME FROM ITEM I INNER JOIN PRODUCT P ON …` čtení přid
 ## Dotazy
 
 Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)) je přeložený celý: 36 dotazů podle specifikace, 5 se zjednodušením, žádný cíl žádný neodmítá a nativním SQL píše každý cíl jen to, co jeho jazyk nemá — počty vede [`architecture.md`](./architecture.md) §6.2, konstrukce a důvody [`subset.md`](./subset.md) 1.2–1.4 a 2.11. Úniková cesta po kouscích a rekurze rozepsaná do pevného počtu joinů zůstávají zamítnuté rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md). Texty katalogu a cíle .NET doložila celá validační sada SF 1; zbývají javové cíle.
+
+#### Konstanta bez aliasu v dalším operandu množinové operace vypadne
+*Vada. Práce podle rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) a [112](./decisions/112-a-query-as-a-row-source-is-a-named-intermediate-result.md). Nález analýzy rekurze ([`analysis/recursion-and-its-limit.md`](./analysis/recursion-and-its-limit.md) 6.2). Požadavky F7–F10, F11.*
+
+V `SELECT l.PersonId AS PersonId, 0 AS Steps FROM L0 AS l UNION ALL SELECT l.PersonId, 1 FROM L1 AS l` čtení zahodí konstantu `1` druhého operandu se záznamem `Loss` (pravidlo „konstanta bez aliasu", [`subset.md`](./subset.md) 2.8) a cíl napíše operandy s různým počtem sloupců, které SQL Server odmítne. V dalším operandu množinové operace dává jméno sloupci levý operand podle pozice (112) — tak už čtení pojmenuje výraz bez aliasu v rekurzivním členu (`w.Steps + 1`) —, takže konstanta má dostat jméno téže pozice, ne vypadnout. Změřeno v těle definice; test i nahoře v dotazu a v poddotazu.
 
 #### Verdikt soudce LDBC nad celou sadou SF 1
 *Na řadě. Práce podle rozh. [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md); stojí na [095](./decisions/095-a-dated-run-record-names-its-commit.md), [121](./decisions/121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md) a [122](./decisions/122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md). Požadavky F13, T2, T3.*

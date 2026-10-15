@@ -5,6 +5,7 @@ Podklad o frameworcích samotných — čím se liší, co vyjádří a jak v ni
 | Dokument | Obsah |
 |---|---|
 | [`real-world-sources.md`](real-world-sources.md) | veřejné projekty s netriviální vrstvou ORM po frameworcích: licence, rozsah, schéma pro katalog, použití beze změny či s úpravou; pět převzatých výňatků (rozh. [138](../decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md)) a co ukázaly |
+| [`recursion-and-its-limit.md`](recursion-and-its-limit.md) | rekurzivní `WITH` a `MAXRECURSION` v SQL Serveru, jeden příklad nad `LdbcSnb` ve všech šesti zdrojích k vložení na stránku překladu a změřený překlad do 36 směrů, proč katalog LDBC zjednodušuje pět dotazů (sledy proti osobám, rozdělení vzdáleností SF 1) a sedm cest blíž specifikaci |
 | [`orm-frameworks-comparison.md`](orm-frameworks-comparison.md) | NHibernate, EF Core, Dapper tematicky: expresivita, syntaxe, implicitní defaulty pro parser |
 | [`java-orm-frameworks-comparison.md`](java-orm-frameworks-comparison.md) | Hibernate (F7), EclipseLink (F9), MyBatis (F8) se stejným číslováním; značí shody z Jakarta Persistence 3.2; doloženo během |
 | [`tutorials/nhibernate-getting-started.md`](tutorials/nhibernate-getting-started.md) | `Author` 1:N `Book`, `hbm.xml`, konfigurace v kódu, `SchemaExport` |

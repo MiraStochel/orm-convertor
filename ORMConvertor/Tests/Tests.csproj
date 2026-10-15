@@ -45,6 +45,7 @@
          the connection string is read from. -->
     <PackageReference Include="Dapper" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <!-- Target framework packages for the acceptance level of artifact verification
          (decision 016): the frameworks themselves judge the generated mapping and class.
          S1 is not violated - the wrappers stay free of them, only the verification depends
