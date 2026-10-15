@@ -157,7 +157,7 @@ The validation set of LDBC Interactive v1 judges the Interactive queries of the 
 
 - **Without the settings** the judge skips with the reason; the rest of the suite does not need `LdbcSnb`.
 - **The compose profile** sets everything and replays the first 1000 lines of the SF 0.1 set - a check.
-- **The whole set over SF 1 is a run of its own**, about a day per suite ([the record](#whole-set-runs): 20 hours for the .NET one), the two suites one after the other because they share the lock. It runs against `mssql_db` of the system profile, started with `docker compose up -d --build mssql_db`, and for the Java suite an instance over the LDBC catalog, `ORMCONVERTOR_CATALOG_DATABASE=LdbcSnb docker compose up -d --build ormconvertor`. Build the suites first — a day spent on a stale image is the trap above at its most expensive — and start each detached, named and without `--rm`, so that `docker logs <name>` keeps the result whatever happens to the shell that started it:
+- **The whole set over SF 1 is a run of its own**, about a day per suite ([the record](#whole-set-runs): 20 hours for the .NET one, 25 for the Java one), the two suites one after the other because they share the lock. It runs against `mssql_db` of the system profile, started with `docker compose up -d --build mssql_db`, and for the Java suite an instance over the LDBC catalog, `ORMCONVERTOR_CATALOG_DATABASE=LdbcSnb docker compose up -d --build ormconvertor`. Build the suites first — a day spent on a stale image is the trap above at its most expensive — and start each detached, named and without `--rm`, so that `docker logs <name>` keeps the result whatever happens to the shell that started it:
 
   ```sh
   docker compose --profile test build tests java_tests
@@ -182,6 +182,7 @@ The verdict of decision [117](../docs/decisions/117-the-interactive-v1-validatio
 | Started | Tree | Suite | Tests | As specified (19 queries) | IC 13, IC 14 (measured) | Replay |
 |---|---|---|---|---|---|---|
 | 2026-10-12 | `580ab90` | .NET: Dapper, EF Core, NHibernate | 86 passed, 0 skipped | every read agrees in all three | 6 818 of 6 818 reads (100.0 %) each, in all three | 1226 min, 113 lines a minute |
+| 2026-10-14 | `5656945` | Java: Hibernate, EclipseLink, MyBatis | 81 passed, 0 skipped | every read agrees in all three | 6 818 of 6 818 reads (100.0 %) each, in all three | 1518 min, 91 lines a minute |
 
 The tests also count the five mutations of IC 2 in each framework, all rejected, and the compensation, which returned `LdbcSnb` to its loaded state.
 
