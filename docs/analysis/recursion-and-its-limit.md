@@ -439,25 +439,37 @@ U vážených dotazů (BI 15, BI 19, BI 20) je mez v krocích ještě slabší: 
 
 ---
 
-## 6. Kudy dál
+## 6. Normalizace běhů a cesta bez zjednodušení
 
-| Cesta | Které dotazy | Přesná? | Jeden `SELECT`? | Překlad (jazykem kde) | Co to stojí v nástroji | Naráží na |
-|---|---|---|---|---|---|---|
-| [6.1](#61-mez-podle-dat-s-důkazem) mez podle dat s důkazem | IC 13, IC 14 | jen nad daty, jejichž průměr se změří | ano | beze změny | nic; měření průměru | stav zůstane *zjednodušený* |
-| [6.2](#62-prohledání-do-šířky-rozepsané-do-nerekurzivních-definic) BFS rozepsané do nerekurzivních definic | IC 13, IC 14; vážené jako Bellman–Ford | do zvolené hloubky přesná, s hloubkou ≥ průměr úplně | ano | Dapper, MyBatis, Hibernate; EF Core podle konce dotazu | nic nového ve slovníku | zamítnutí „rekurze rozepsané do pevného počtu joinů" (113, 122) |
-| [6.3](#63-iterativní-hledání-v-uložené-proceduře-či-funkci) procedura / tabulková funkce s cyklem | všech pět | ano, bez meze | ne (`EXEC`, funkce ve `FROM`) | volání procedury umí všech šest, tělo nepřekládá nikdo | nová konstrukce slovníku | rozh. [108](../decisions/108-a-sql-unit-carries-a-query-per-select-numbered-by-position.md) (jen čtecí `SELECT`), argument 022/113 proti obalu kolem textu |
-| [6.4](#64-graf-sql-serveru-match-a-shortest_path) graf SQL Serveru, `SHORTEST_PATH` | IC 13 | ano (ověřeno) | ano | nikde, jen nativní SQL | nová konstrukce slovníku a tabulky uzlů a hran | jen nevážená cesta a jen jedna cesta |
-| [6.5](#65-předvýpočet) předvýpočet | BI 19, BI 20 (váhy hran); IC 13 (vzdálenosti) | ano | ano | beze změny | loader, údržba při aktualizacích | soudce Interactive přehrává aktualizace (117) |
-| [6.6](#66-jiná-data) jiná data | všech pět | nad nimi ano | ano | beze změny | vlastní orákulum výsledků | validační sada LDBC neplatí |
-| [6.7](#67-jiná-databázová-platforma) jiná platforma | všech pět | podle platformy | ano | podle ORM a dialektu | druhý dialekt | rozh. [129](../decisions/129-sql-server-2022-stays-the-only-database-dialect.md), schválený záměr |
+Cíl pro katalog: **každý dotaz má na MIS3 běžet mezi 0,2 s a 300 s**, a dosáhnout toho má volba dat, ne ohýbání textu. Pět dotazů na cesty k tomu přidává druhou otázku, jestli zjednodušení zůstane. Rozhodnutí [140](../decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) volí **jeden tvar textu** pro všech pět a **jeden parametr z dat**; tenhle oddíl drží podklad, ze kterého vychází, a to, co ještě změřené není.
 
-### 6.1 Mez podle dat s důkazem
+### 6.1 Co s časem udělají větší data
 
-Dnešní mez (dosah 4) nechat, nebo zvednout na 3 + 3 (dosah 6; z příkladové osoby 2 × 919 376 řádků), a **změřit průměr** komponenty `knows` ve SF 1 prohledáním do šířky ze všech 9 163 osob (skript v [oddílu 7](#7-jak-měření-zopakovat), jen bez výběru vzorku). Je-li průměr nejvýš dosah, je IC 13 nad SF 1 přesný a dá se to doložit jednou větou s číslem. Text zůstává textem s mezí, takže podle rozh. 110 dál *zjednodušený*; mění se jen to, co o něm umíme říct. Pro IC 14 (jedna procházka, nese cesty) je 3 + 3 dražší: musí se nést cesta z obou stran a spojit.
+Časy jednotlivých dotazů změřené nejsou. Jediné měření je běh soudce nad celou sadou SF 1 (113 řádků za minutu včetně režie frameworku; nejpomalejší IC 14 s 1,2 s na čtení, IC 9 s 0,9 s, IC 3 s 0,65 s) a dvě čísla z rozh. [122](../decisions/122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md): BI 15 asi 49 s, BI 19 nedoběhne do 500 s. Všechno ostatní je rychlejší než 0,65 s a první krok je proto tabulka časů všech dotazů nad SF 1 na MIS3 ([`open-items.md`](../open-items.md), *Normalizace běhů katalogu LDBC*).
 
-### 6.2 Prohledání do šířky rozepsané do nerekurzivních definic
+Dva tvary dotazu reagují na větší data opačně:
 
-To, co rekurzivní člen nesmí — sloučit úroveň (`DISTINCT`) a vyřadit dřív dosažené (`NOT EXISTS`) —, nerekurzivní definice smí. Prohledání do šířky se tak dá napsat jako řetěz definic `L0 … Ld`, kde úroveň *k* + 1 jsou sousedé úrovně *k*, kteří nejsou v úrovních *k* a *k* − 1 (v neorientovaném grafu nemůže soused ležet jinde):
+| Tvar | Jak roste čas s daty | Dotazy (odhad do změření) | Páka pro okno 0,2–300 s |
+|---|---|---|---|
+| **průchod** — join a seskupení nad velkou částí tabulky | zhruba lineárně s počtem řádků | většina IC, všechna BI | scale factor |
+| **vyhledání** — klíč nebo cizí klíč přes index z rozh. [121](../decisions/121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md) | s logaritmem; SF 10 přidá k 5 ms jednotky procent | IS 1–7, patrně IC 2 a IC 8 | **data ne**; počet opakování v měření (Advisor iteruje, položka *Iterační politika benchmarku*) |
+
+Spodní mez tedy nedosáhne žádný SF u dotazu, který je vyhledáním; horní mez je věcí SF jen u dotazu, který je průchodem. Rozdělení do těchto dvou tříd je výstup měření, ne předpoklad.
+
+**Rekurze zvlášť.** Dnešní procházky vydávají sledy a sledů je stupeň<sup>*k*</sup>: roste-li průměrný stupeň `knows` se scale factorem (generátor LDBC — neověřeno), IC 14 s 919 tisíci řádky nad SF 1 roste s třetí mocninou stupně. Tvar z 6.3 je lineární v hranách a stupeň mu je lhostejný.
+
+### 6.2 Žádná data nespustí neomezený rekurzivní text
+
+Na cyklickém grafu rekurzivní `WITH` bez meze hloubky buď běží, dokud ho limit nezastaví chybou, nebo — s hlídáním cyklu cestou — vyjmenuje všechny jednoduché cesty, a těch není omezeně mnoho s průměrem grafu: jednoduchá cesta se smí vinout celou komponentou. Menší SF nebo prořídlé hrany mění konstantu, ne tvar. Volbou dat lze tedy jen:
+
+- udělat z meze **prokazatelně přesnou** hodnotu — je-li změřený průměr dat nejvýš mez, odpovídá dotaz s mezí správně na každou dvojici těch dat;
+- udělat prohledání do šířky (6.3) **levné** pro hloubku aspoň rovnou průměru.
+
+Text „podle specifikace" bez meze se daty nevrátí; zjednodušení je vlastnost rekurzivního členu SQL Serveru, ne dat.
+
+### 6.3 Zvolený tvar: prohledání do šířky v nerekurzivních definicích
+
+To, co rekurzivní člen nesmí — sloučit úroveň (`DISTINCT`) a vyřadit dřív dosažené (`NOT EXISTS`) —, nerekurzivní definice smí. Prohledání do šířky je řetěz definic `L0 … Ld`, kde úroveň *k* + 1 jsou sousedé úrovně *k*, kteří nejsou v úrovních *k* a *k* − 1 (v neorientovaném grafu nemůže soused ležet jinde):
 
 ```sql
 WITH L0 AS (
@@ -502,97 +514,45 @@ FROM Reached AS r
 WHERE r.PersonId = 96
 ```
 
-- **Změřeno nad SF 1:** dvojice příkladu IC 13 (4398046513938 → 96) dá 3; počty úrovní 1 / 80 / 4 476 / 4 580 / 26 se shodují s prohledáním do šířky výš i s `SHORTEST_PATH` (6.4). Úroveň má nejvýš tolik řádků, kolik je osob, a join úrovně s hranami nejvýš tolik, kolik je hran — žádný exponent.
-- **Přeloženo nástrojem** (Dapper do šesti cílů): Dapper, MyBatis a Hibernate jazykem; EF Core nativním SQL kvůli koncovému `MIN` bez seskupení (`Fallback` `Aggregation`, kategorie `AggregateOverTheWholeResult`), NHibernate a EclipseLink nativním SQL kvůli mezivýsledkům. Limit rekurze tu není co nést.
-- **Vážené dotazy** jdou týmž tvarem jako Bellman–Ford: úroveň *k* nese pro každou osobu nejlevnější cenu sledu o nejvýš *k* hranách, `MIN` se seskupením mezi úrovněmi — to, co rekurzivní člen nesmí. Přesné, je-li *k* aspoň počet hran nejlevnější cesty. Nezměřeno.
-- **Hloubka je pořád pevná** a text roste s ní (dvě definice na krok, z obou konců polovina). Rozdíl proti dnešku: mez neomezuje přesnost na vzorku dat, ale jen počet kroků — s hloubkou ≥ průměr (6.1) je výsledek úplný a cena lineární.
-- **Naráží na rozhodnutí.** Rozh. 113 a 122 zamítají jako text katalogu „rekurzi rozepsanou do pevného počtu joinů". Tohle není rekurze rozepsaná do joinů, ale jiný algoritmus (BFS místo výčtu sledů), přesto by text katalogu změnil nové rozhodnutí, ne oprava. Je třeba zodpovědět, jestli kritérium 122 (b) — tvar, jaký by referenční implementace mohla napsat — takový text unese.
-- **Vada nalezená cestou.** Konstanta bez aliasu v dalším operandu množinové operace (`SELECT l.PersonId, 1 FROM L1`) se zahodí se záznamem `Loss` a vyjde příkaz s různým počtem sloupců v operandech, který SQL Server odmítne. Text výš proto píše alias u každé konstanty; vada je v [`open-items.md`](../open-items.md).
-
-### 6.3 Iterativní hledání v uložené proceduře či funkci
-
-Smyčka `WHILE` nad dočasnou tabulkou navštívených osob je prohledání do šířky bez meze a s cenou úměrnou hranám (tak jsou změřena čísla v oddílu 5). Do jednoho čtecího `SELECT` se nevejde: žije v uložené proceduře (`EXEC dbo.ShortestPath @a, @b`) nebo ve vícepříkazové tabulkové funkci, kterou dotaz čte ve `FROM`. Procedura by patřila k fyzickému návrhu `LdbcSnb` stejně jako indexy (rozh. [121](../decisions/121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md)).
-
-| Framework | Volání procedury | Tabulková funkce ve `FROM` |
-|---|---|---|
-| Dapper | `CommandType.StoredProcedure` | v textu SQL |
-| MyBatis | `statementType="CALLABLE"` | v textu SQL |
-| EF Core | `SqlQuery($"EXEC …")` | mapovaná funkce (`HasDbFunction`) skládatelná v LINQ |
-| NHibernate | `CreateSQLQuery("EXEC …")` | v nativním SQL |
-| Hibernate, EclipseLink | `createStoredProcedureQuery` (JPA) | v nativním SQL; HQL 7 a funkce vracející množinu — neověřeno |
-
-Podle dokumentace, neověřeno. Pro nástroj je to nová konstrukce slovníku (volání procedury či funkce jako zdroj řádků) a dnes ji čtečka T-SQL odmítne (108 bere jen čtecí `SELECT`, laterální join na funkci odmítá `subset.md` 2.6). Hlavní námitka: tělo procedury se nepřekládá, takže by matice u těchto dotazů měřila obal kolem jednoho volání — tentýž argument, kterým rozh. 022 a 113 odmítly nativní SQL tam, kde jazyk cíle konstrukci má.
-
-### 6.4 Graf SQL Serveru: `MATCH` a `SHORTEST_PATH`
-
-SQL Server 2019 a novější hledá nejkratší cestu ve vlastním grafovém modelu. Data musejí být v tabulkách uzlů a hran (`AS NODE`, `AS EDGE`) vedle relačních:
-
-```sql
-CREATE TABLE dbo.PersonNode (Id BIGINT PRIMARY KEY) AS NODE;
-CREATE TABLE dbo.Knows AS EDGE;
-INSERT dbo.PersonNode (Id) SELECT Id FROM dbo.Person;
-INSERT dbo.Knows ($from_id, $to_id)
-SELECT a.$node_id, b.$node_id
-FROM dbo.Person_knows_Person AS k
-JOIN dbo.PersonNode AS a ON a.Id = k.Person1Id
-JOIN dbo.PersonNode AS b ON b.Id = k.Person2Id;
-
-SELECT q.EndId, q.Hops
-FROM (
-    SELECT LAST_VALUE(p2.Id) WITHIN GROUP (GRAPH PATH) AS EndId,
-           COUNT(p2.Id) WITHIN GROUP (GRAPH PATH) AS Hops
-    FROM dbo.PersonNode AS p1, dbo.Knows FOR PATH AS k, dbo.PersonNode FOR PATH AS p2
-    WHERE MATCH(SHORTEST_PATH(p1(-(k)->p2)+)) AND p1.Id = 4398046513938) AS q
-WHERE q.EndId = 96
-```
-
-| Změřeno 2026-10-15 nad kopií `knows` SF 1 | Výsledek |
+| | |
 |---|---|
-| IC 13 pro dvojici příkladu | 3 kroky, bez meze |
-| vzdálenosti od příkladové osoby | 80 / 4 477 / 4 580 / 26 — totéž co BFS; o jednu víc ve druhém kroku, protože `SHORTEST_PATH` počítá i návrat k výchozí osobě |
-| cesta (`STRING_AGG … WITHIN GROUP (GRAPH PATH)`) | jedna: `4047,13194139537478,96` |
-| funkce grafu ve `WHERE` téže úrovně | odmítnuto (chyba 13961), filtruje se o úroveň výš |
+| **změřeno nad SF 1** | dvojice příkladu IC 13 (4398046513938 → 96) dá 3; úrovně 1 / 80 / 4 476 / 4 580 / 26 se shodují s prohledáním do šířky z oddílu 5 i se `SHORTEST_PATH` (6.5). Úroveň má nejvýš tolik řádků, kolik je osob, join s hranami nejvýš tolik, kolik je hran |
+| **přeloženo nástrojem** (Dapper do šesti cílů) | Dapper, MyBatis a Hibernate jazykem; EF Core nativním SQL kvůli koncovému `MIN` bez seskupení (`Fallback` `Aggregation`, kategorie `AggregateOverTheWholeResult`), NHibernate a EclipseLink kvůli mezivýsledkům. Limit rekurze tu není co nést |
+| **hloubka** *d* | parametr dat: průměr komponenty `knows` zvoleného data setu, změřený skriptem z [oddílu 7](#7-jak-měření-zopakovat) bez výběru vzorku. Nad SF 1 je aspoň 5 (vzorek); text roste o dvě definice na krok, z obou konců o polovinu |
+| **vážené dotazy** (BI 15, BI 19, BI 20) | týž řetěz jako Bellman–Ford: úroveň *k* nese pro každou osobu nejlevnější cenu sledu o nejvýš *k* hranách, `MIN` se seskupením mezi úrovněmi. Přesné pro *d* aspoň rovné největšímu počtu hran nejlevnější cesty nad daty — a ten může být větší než průměr, protože levnější cesta smí mít víc hran. Jistotou je *d* = počet osob komponenty − 1, praktickou hodnotou změřené maximum nad daty; nezměřeno |
+| **IC 14** (všechny nejkratší cesty) | týž řetěz, úroveň nese cestu jen mezi sousedními úrovněmi: cest nejkratší délky je málo. Nezkoušeno |
+| **IC 12** | zůstává rekurzivní: hierarchie tříd tagů je strom, 71 tříd, hloubka nejvýš 5, žádné sledy navíc |
 
-Pro IC 13 přesné. IC 14 chce **všechny** nejkratší cesty a `SHORTEST_PATH` vrací jednu na koncovou osobu; BI 15, BI 19 a BI 20 chtějí cestu váženou a `SHORTEST_PATH` váhy nezná. `MATCH` nevysloví žádný z šesti ORM, takže by šel všude nativním SQL a mezireprezentace by potřebovala novou konstrukci; jestli `MATCH` přečte ScriptDom, ověřené není.
+**Vada nalezená cestou.** Konstanta bez aliasu v dalším operandu množinové operace (`SELECT l.PersonId, 1 FROM L1`) se zahodí se záznamem `Loss` a vyjde příkaz s různým počtem sloupců v operandech, který SQL Server odmítne. Text výš proto píše alias u každé konstanty; vada je v [`open-items.md`](../open-items.md).
 
-### 6.5 Předvýpočet
+### 6.4 Data jako parametr
 
-Katalog už předpočítává tam, kde to dělá referenční implementace: `RootPostId` a `ContainerForumId` (IS 2, IS 6, BI 3) jsou sloupce naplněné při načtení. Stejně by šlo:
+Co o datech platí před rozhodnutím, které data set zvolí:
 
-- **váhy hran BI 19 a BI 20** jako tabulka načtená s daty. Poznámka BI 19 říká, že dotaz doběhne jen nad hranou materializovanou předem (969 tisíc dvojic autorů); procházka pak čte tabulku místo definice. Indexovaný pohled to nezastoupí — podle dokumentace nesmí obsahovat self-join, a interakce je join `Message` se sebou.
-- **vzdálenosti** pro IC 13: všechny dvojice komponenty jsou přes 80 milionů řádků; do dvou kroků desítky milionů. Prakticky jen jako pomocná struktura procházky z obou konců.
-
-Interactive má aktualizace (IU 8 přidává přátelství) a soudce je přehrává (rozh. [117](../decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md)), takže předvýpočet nad `knows` by musel loader udržovat při každém vložení. BI aktualizace v katalogu nemá.
-
-### 6.6 Jiná data
-
-| Data | Co umožní | Cena |
+| Volba | Co umožní | Co stojí |
 |---|---|---|
-| **malý vlastní graf** (desítky osob, řídký) | text bez meze s hlídáním cyklu cestou doběhne — počet jednoduchých cest je malý — a jde napsat dotaz tak, jak ho specifikace myslí | orákulum výsledků v testu (BFS, Dijkstra) místo validační sady; měří správnost textu, ne LDBC |
-| **SF 0,1** (už v `test_db`) | menší komponenta, menší stupně; validační sada LDBC pro SF 0,1 vychází v témže archivu | sledy rostou s mocninou stupně i tak; stupeň SF 0,1 změřený není |
-| **prořídlé `knows`** (hrany vybrané pravidlem) | nižší stupeň, procházky hlouběji | mění odpovědi, validační sada neplatí; vlastní orákulum |
-| **generátor LDBC s jiným rozdělením stupňů** | totéž bez ručního zásahu | jestli generátor parametr nabízí, ověřené není |
+| **oficiální scale factor** (0,1 / 0,3 / 1 / 3 / 10) | validační sada Interactive je vydaná pro každý z nich v témže archivu, soudce (rozh. [117](../decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md)) platí dál; průměr a stupeň se změří skriptem | čas vyhledávacích dotazů skoro nemění (6.1) |
+| **upravená data** (prořídlé `knows`, vlastní malý graf) | nižší stupeň; nad malým grafem doběhne i text bez meze s hlídáním cyklu, takže jde ověřit správnost textu, jak ho specifikace myslí | **soudce odpadá pro všech 19 dotazů Interactive**, ne jen pro rekurzivní — data sdílejí; orákulum výsledků by dal algoritmus v testu (BFS, Dijkstra) v duchu rozh. [089](../decisions/089-differential-verification-as-the-fourth-level-over-a-query.md). Smysl má jen pro databázi, nad kterou běží jen BI |
+| **odvozená tabulka vah hran** pro BI 19 a BI 20 | jejich váhy nemají parametr dotazu (počty odpovědí; společná univerzita a ročník), takže tabulka naplněná při načtení je datová volba jako `RootPostId`; BI 19 jinak nedoběhne (122) | údržba loaderem; aktualizace Interactive (IU 6, IU 7 vkládají zprávy) by ji měnily, ale BI v katalogu aktualizace nemá. BI 15 to nejde: jeho váhy závisejí na parametrech období a zůstávají v textu |
 
-Malý graf zapadá do diferenčního ověření (rozh. [089](../decisions/089-differential-verification-as-the-fourth-level-over-a-query.md)): kanonický výsledek by dal algoritmus v testu, ne zdrojová varianta dotazu. Dokazoval by, že text dotazu bez meze je správný; nad SF 1 by dál neběžel.
+Stupeň `knows` ve SF 0,1 a SF 0,3 změřený není; sledy rostou se stupněm, prohledání do šířky ne, takže pro zvolený tvar rozhoduje průměr, pro dnešní texty stupeň.
 
-### 6.7 Jiná databázová platforma
+### 6.5 Zamítnuté cesty
 
-Všechno podle dokumentace platforem, nic ověřené sondou.
+Drží se tu kvůli textu práce; žádnou z nich 140 nevolí.
 
-| Platforma | Slučování mezi úrovněmi | Obdoba `MAXRECURSION` | Nejkratší cesta |
-|---|---|---|---|
-| PostgreSQL | `UNION` (bez `ALL`) zahodí řádek, který už rekurze vydala, takže dosažitelnost bez počítadla skončí sama; `SEARCH` a `CYCLE` (od 14) | žádný limit | rekurzí; `CYCLE` hlídá cyklus po cestě |
-| MySQL 8 | `UNION DISTINCT` totéž | `cte_max_recursion_depth` (výchozí 1000), i jako hint `SET_VAR` | rekurzí |
-| Oracle | `CONNECT BY NOCYCLE`, rekurzivní `WITH` se `SEARCH` a `CYCLE` | — | SQL/PGQ `GRAPH_TABLE` (23ai) |
-| DuckDB | rekurze `USING KEY` přepisuje řádek podle klíče, takže úroveň nese jen nejlepší cenu ke každému vrcholu | — | rozšíření DuckPGQ |
+| Cesta | Proč ne | Co je o ní změřené |
+|---|---|---|
+| **uložená procedura či tabulková funkce** se smyčkou `WHILE` | tělo se nepřekládá — matice by měřila obal kolem jednoho volání, tentýž argument, kterým rozh. [022](../decisions/022-native-query-syntax-in-builders.md) a 113 odmítly nativní SQL tam, kde jazyk cíle konstrukci má; nová konstrukce slovníku (volání jako zdroj řádků), čtečka T-SQL bere jen čtecí `SELECT` (rozh. [108](../decisions/108-a-sql-unit-carries-a-query-per-select-numbered-by-position.md)) | nic; volání procedury umí všech šest frameworků podle dokumentace (`CommandType.StoredProcedure`, `statementType="CALLABLE"`, `SqlQuery($"EXEC …")`, `CreateSQLQuery`, `createStoredProcedureQuery`) |
+| **graf SQL Serveru**, `MATCH(SHORTEST_PATH(…))` | jen nevážená cesta a jen jedna na koncovou osobu — IC 14 chce všechny, BI 15/19/20 váhy; žádný ORM `MATCH` nevysloví, čtení ScriptDomem neověřené; vyžaduje tabulky `AS NODE` / `AS EDGE` vedle relačních | 2026-10-15 nad kopií `knows` SF 1: dvojice IC 13 dá 3 kroky bez meze; vzdálenosti od příkladové osoby 80 / 4 477 / 4 580 / 26 (o jednu víc ve druhém kroku: počítá i návrat k výchozí osobě); cesta `4047,13194139537478,96`; funkce grafu ve `WHERE` téže úrovně odmítne (chyba 13961), filtruje se o úroveň výš |
+| **předpočítané vzdálenosti** pro IC 13 | přes 80 milionů dvojic komponenty; aktualizace IU 8 přidává přátelství a soudce ji přehrává | nic |
+| **jiná databázová platforma** | druhý dialekt zamítá rozh. [129](../decisions/129-sql-server-2022-stays-the-only-database-dialect.md) jako vymezení předmětu práce; referenční implementace LDBC stojí na PostgreSQL a Umbře | podle dokumentace: PostgreSQL `UNION` bez `ALL` zahodí řádek, který rekurze už vydala, a `SEARCH`/`CYCLE` (od 14); MySQL 8 `UNION DISTINCT` a `cte_max_recursion_depth` (výchozí 1000); Oracle `CONNECT BY NOCYCLE` a SQL/PGQ `GRAPH_TABLE` (23ai); DuckDB rekurze `USING KEY`. Platforma se sloučením mezi úrovněmi napíše IC 13 přesně jedním rekurzivním dotazem — argument, proč SQL Server zjednodušení vynucuje |
+| **`hierarchyid` EF Core**, hierarchický dotaz EclipseLinku (`CONNECT BY`) | první chce sloupec `hierarchyid` ve schématu a jen hierarchii, ne graf; druhý je podle dokumentace jen pro Oracle | nic, neověřeno |
 
-Referenční implementace LDBC, ze kterých schéma `LdbcSnb` vychází, stojí na PostgreSQL (Interactive v1) a Umbra (BI). Druhý dialekt ale rozh. 129 zamítá jako vymezení předmětu práce a schválený záměr jmenuje SQL Server jedinou větou. Platforma se sloučením mezi úrovněmi by IC 13 napsala přesně jedním rekurzivním dotazem; pro nástroj by to znamenalo druhý dialekt ve všech čtyřech stupních ověření. Jako argument do textu práce — proč SQL Server zjednodušení vynucuje — se hodí bez toho.
+### Co zbývá rozhodnout
 
-### Je třeba zodpovědět
-
-- Smí text katalogu být prohledáním do šířky rozepsaným do nerekurzivních definic (6.2)? Je to nové rozhodnutí proti 113 a 122; pro IC 13 dává přesnost i lineární cenu jedním `SELECT`, a ve třech cílech jazykem.
-- Jaký je průměr komponenty `knows` ve SF 1 (6.1)? Je to jediné číslo, které 6.1 i 6.2 potřebují.
-- Má katalog nést váhy hran BI 19 a BI 20 jako předpočítanou tabulku (6.5), jako to dělá s `RootPostId`?
+- **Který data set** pro kterou databázi (6.4): oficiální SF pro vše, nad čím běží Interactive, upravená data nejvýš pro databázi jen s BI, odvozená tabulka vah pro BI 19 a BI 20 — rozhodnutí až po tabulce časů a průměru (6.1, položka *Normalizace běhů katalogu LDBC*).
+- **Hloubka *d*** každého data setu, který katalog nese, a kde ji zapsat (vlastnost databáze jako `ldbc.indexes`, nebo poznámka dotazu).
 
 ---
 

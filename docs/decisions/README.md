@@ -142,6 +142,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 137 | [Text běží přes celou šířku stránky, výběry a pole mají pevnou šířku vlevo, šipka složeného oddílu stojí u popisku a výkladová stránka zabírá celé okno](137-text-runs-the-full-width-and-controls-keep-a-fixed-width.md) | platí | F14, S7 |
 | 138 | [Kód cizích open-source projektů vstupuje do repozitáře jako výňatek pod vlastní permisivní licencí, se změnou vyznačenou v každém souboru, a ukazuje se jako příklad](138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md) | platí | T1, F11, F14, S2, S5 |
 | 139 | [Hibernate vysloví limit rekurze databázovým hintem na objektu dotazu, takže dotaz s limitem zůstává v HQL](139-hibernate-states-the-limit-of-recursion-as-a-hint-on-the-query-object.md) | platí | F7, F11, F13, T2 |
+| 140 | [Dotazy katalogu LDBC na cesty píše prohledání do šířky rozepsané do nerekurzivních definic s hloubkou rovnou změřenému průměru dat; čas běhu normalizuje volba dat, ne text](140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) | platí | T1, T2, T3, F11, F13 |
 
 ## Formát
 

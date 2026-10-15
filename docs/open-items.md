@@ -35,6 +35,7 @@ Rejstřík, ne pořadí.
 | [Holý sloupec joinu](#holý-sloupec-dotazu-přes-víc-tabulek-dostane-první-tabulku) | Vady | práce | F6–F10 |
 | [Řádek jedné tabulky joinu](#projekce-řádku-jedné-tabulky-joinu-se-čte-jako-celý-spojený-řádek) | Vady | práce | F7–F10 |
 | [Konstanta bez aliasu v operandu množinové operace](#konstanta-bez-aliasu-v-dalším-operandu-množinové-operace-vypadne) | Dotazy | práce | F7–F10, F11 |
+| [Normalizace běhů katalogu LDBC](#normalizace-běhů-katalogu-ldbc-a-dotazy-na-cesty-bez-zjednodušení) | Dotazy | práce, pak rozhodnutí | T1, T2, T3, F13 |
 | [Verdikt soudce LDBC nad SF 1](#verdikt-soudce-ldbc-nad-celou-sadou-sf-1) | Dotazy | práce | F13, T2, T3 |
 | [Pojmenované dotazy JPA](#pojmenované-dotazy-jpa-se-nepřekládají-ačkoli-na-nich-stojí-reálné-projekty) | Dotazy | rozhodnutí | F7, F9, F14 |
 | [Cesta přes asociaci mimo `join`](#cesta-přes-asociaci-mimo-join-se-nečte-ačkoli-ji-pravidlo-q7-článku-pokrývá) | Dotazy | rozhodnutí | F7–F10 |
@@ -113,7 +114,7 @@ V `SELECT LISTPRICE, NAME FROM ITEM I INNER JOIN PRODUCT P ON …` čtení přid
 
 ## Dotazy
 
-Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)) je přeložený celý: 36 dotazů podle specifikace, 5 se zjednodušením, žádný cíl žádný neodmítá a nativním SQL píše každý cíl jen to, co jeho jazyk nemá — počty vede [`architecture.md`](./architecture.md) §6.2, konstrukce a důvody [`subset.md`](./subset.md) 1.2–1.4 a 2.11. Úniková cesta po kouscích a rekurze rozepsaná do pevného počtu joinů zůstávají zamítnuté rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md). Texty katalogu a cíle .NET doložila celá validační sada SF 1; zbývají javové cíle.
+Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)) je přeložený celý: 36 dotazů podle specifikace, 5 se zjednodušením, žádný cíl žádný neodmítá a nativním SQL píše každý cíl jen to, co jeho jazyk nemá — počty vede [`architecture.md`](./architecture.md) §6.2, konstrukce a důvody [`subset.md`](./subset.md) 1.2–1.4 a 2.11. Úniková cesta po kouscích a rekurze rozepsaná do pevného počtu joinů zůstávají zamítnuté rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md); pět dotazů na cesty dostane místo rekurze prohledání do šířky v nerekurzivních definicích (rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md)). Texty katalogu a cíle .NET doložila celá validační sada SF 1; zbývají javové cíle.
 
 #### Konstanta bez aliasu v dalším operandu množinové operace vypadne
 *Vada. Práce podle rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) a [112](./decisions/112-a-query-as-a-row-source-is-a-named-intermediate-result.md). Nález analýzy rekurze ([`analysis/recursion-and-its-limit.md`](./analysis/recursion-and-its-limit.md) 6.2). Požadavky F7–F10, F11.*
@@ -131,6 +132,18 @@ Doklad, který rozh. 117 bere za stav „podle specifikace", je celá sada SF 1 
 | doba | .NET sada 20,4 h (113 řádků za minutu); javová podobně nebo déle. Čas nesou IC 14 (1,2 s na čtení a framework), IC 9 (0,9 s) a IC 3 (0,65 s); zkrátit ho může index nebo tvar textu v mezích 121, ne sada |
 | kam výsledek | řádek do záznamu v README vedle .NET běhu a řádek F13 v [`traceability.md`](./traceability.md); podíl shodných čtení IC 13 a IC 14 v javových cílech do téhož záznamu |
 | co rozhodne | O textech nic: mez IC 14 (jedna procházka do tří kroků) žádnou dvojici sady nemine, složení z obou konců jako u IC 13 tedy není třeba. Javová polovina rozhodne o překladu — tvary IS 7 a IC 5 z rozh. 122, kvůli nimž EclipseLink píše jazykem cíle, projdou celou sadou v EclipseLinku poprvé. Vyjde-li i v javových cílech IC 13 a IC 14 100 %, jsou oba podle 117 kandidáty na změnu stavu (práce podle 110) |
+
+#### Normalizace běhů katalogu LDBC a dotazy na cesty bez zjednodušení
+*Potom. Práce podle rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md), po ní rozhodnutí o datech; stojí na [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md), [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md), [121](./decisions/121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md), [122](./decisions/122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md); podklad [`analysis/recursion-and-its-limit.md`](./analysis/recursion-and-its-limit.md) 6. Požadavky T1, T2, T3, F13.*
+
+Každý dotaz katalogu má na MIS3 běžet mezi 0,2 s a 300 s a dosáhnout toho má volba dat (scale factor, sady dotazů podle databáze, případně upravená data), nikdy text (rozh. 140). Pět dotazů na cesty (IC 13, IC 14, BI 15, BI 19, BI 20) přitom přejde z rekurze s mezí na prohledání do šířky v nerekurzivních definicích s hloubkou danou změřeným průměrem dat. Kroky v pořadí; první je měření, bez něj se o datech nedá rozhodnout:
+
+| Krok | Co | Výstup |
+|---|---|---|
+| 1 | **Změřit všechny dotazy katalogu nad SF 1 na MIS3** (`mssql_db`, text katalogu s příkladovými parametry, několik opakování, warm cache) — kromě dlouhých: BI 19 (přes 500 s) a celé sady soudce. Měří Míra, samostatný běh | tabulka časů na dotaz, datovaný záznam podle rozh. [095](./decisions/095-a-dated-run-record-names-its-commit.md) v [`ORMConvertor/README.md`](../ORMConvertor/README.md); rozdělení dotazů na **průchody** (čas roste s daty) a **vyhledání** (přes index, skoro ne) — první třídu posune scale factor, druhou jen počet opakování |
+| 2 | Změřit průměr a průměrný stupeň komponenty `knows` ve SF 1 a v kandidátních SF (skript v analýze, oddíl 7, bez vzorku); pro vážené dotazy největší počet hran nejlevnější cesty | hloubka *d* na data set |
+| 3 | Rozhodnout data: oficiální SF pro databáze, nad kterými běží Interactive (soudce platí dál), upravená data nejvýš pro databázi jen s BI, tabulka vah hran pro BI 19 a BI 20 jako datová volba | nové rozhodnutí |
+| 4 | Opravit vadu *Konstanta bez aliasu v dalším operandu množinové operace*; přepsat pět textů podle 140 s *d* z kroku 2, stav `AsSpecified` s hloubkou v poznámce; soudce .NET znovu nad celou sadou SF 1 (IC 13, IC 14); BI 15, 19, 20 proti algoritmu v testu | katalog, `architecture.md` §6.2, `subset.md` 1.3 a 2.10, `traceability.md` T2, `README.md` *Guarantees* |
 
 #### Pojmenované dotazy JPA se nepřekládají, ačkoli na nich stojí reálné projekty
 *Ke kontrole: rozh. [081](./decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md) a [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) — pojmenovaný dotaz JPA je `Loss` a nepřekládá se nikde ([`subset.md`](./subset.md) 2.2, 2.3). Podklad: [`analysis/real-world-sources.md`](./analysis/real-world-sources.md). Požadavky F7, F9, F14.*
