@@ -83,6 +83,11 @@ public static class HibernateDescriptor
         // and a position named twice binds one value twice.
         NativeQueryExpandsCollection: true,
 
+        // Measured against 7.4.5.Final over SQL Server (decision 139): a database hint added
+        // to the query object closes the SQL with OPTION (MAXRECURSION n), and the database
+        // stops the walk at that level, or lets it run on with zero.
+        RecursionLimitCall: ".unwrap(org.hibernate.query.Query.class).addQueryHint(\"MAXRECURSION {0}\")",
+
         // Measured against 7.4.5.Final with every identifier of the JPQL grammar and the
         // keywords of HQL as an entity name - at the head of a from clause, as the target of
         // an inner and a left entity join and in a subquery: the parser takes every one of

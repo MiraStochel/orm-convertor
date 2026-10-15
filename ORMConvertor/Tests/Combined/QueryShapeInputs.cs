@@ -590,16 +590,19 @@ public static class QueryShapeInputs
         //
         // The recursive member comes out named by position after the anchor, so the counter
         // the source left without an alias carries the anchor's name in every target. EF Core,
-        // NHibernate and EclipseLink write both rows in native SQL, Hibernate the second, so
-        // they carry the SQL hallmarks; the limit of recursion closes the statement.
+        // NHibernate and EclipseLink write both rows in native SQL; the limit of recursion
+        // closes the statement.
         ["RecursiveDescentOfAHierarchy"] = Hallmarks(
             sql: ["WITH DepartmentTree AS (", "0 AS Depth", "UNION ALL", "t.Depth + 1 AS Depth", "INNER JOIN DepartmentTree t ON c.ParentDepartmentId = t.DepartmentId", "WHERE t.Depth >= 2"],
             jpa: ["with DepartmentTree as (", "0 as Depth", "union all", "t.Depth + 1 as Depth", "join DepartmentTree t on c.ParentDepartmentId = t.DepartmentId", "where t.Depth >= 2"]),
 
         // The walk guards its cycle over the path walked so far, the keys converted to text
-        // (decision 113); NOT LIKE is written as the negation of the LIKE it is.
+        // (decision 113); NOT LIKE is written as the negation of the LIKE it is. Hibernate
+        // writes the limit as a hint on the query object (decision 139).
         ["RecursiveWalkOfACyclicGraph"] = Hallmarks(
-            sql: ["WITH Walk AS (", "',1,' + CAST(l.ToProductId AS NVARCHAR(MAX)) + ',' AS Path", "UNION ALL", "w.Path + CAST(n.ToProductId AS NVARCHAR(MAX)) + ',' AS Path", "NOT (w.Path LIKE '%,' + CAST(n.ToProductId AS NVARCHAR(MAX)) + ',%')", "SELECT DISTINCT w.ProductId AS ProductId", "OPTION (MAXRECURSION 10)"]),
+            sql: ["WITH Walk AS (", "',1,' + CAST(l.ToProductId AS NVARCHAR(MAX)) + ',' AS Path", "UNION ALL", "w.Path + CAST(n.ToProductId AS NVARCHAR(MAX)) + ',' AS Path", "NOT (w.Path LIKE '%,' + CAST(n.ToProductId AS NVARCHAR(MAX)) + ',%')", "SELECT DISTINCT w.ProductId AS ProductId", "OPTION (MAXRECURSION 10)"],
+            jpa: ["with Walk as (", "concat(',1,', cast(l.ToProductId as String), ',') as Path", "union all", "concat(w.Path, cast(n.ToProductId as String), ',') as Path", "not (w.Path like concat('%,', cast(n.ToProductId as String), ',%'))", "select distinct w.ProductId as ProductId", ".addQueryHint(\"MAXRECURSION 10\")"],
+            eclipseLink: []),
 
         // ---- the rows of decision 113, the vocabulary of expressions ----
         //

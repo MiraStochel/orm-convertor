@@ -24,8 +24,9 @@ namespace HibernateWrappers;
 /// What Hibernate adds to the query object (SelectionQuery, Query and NativeQuery of 7.4)
 /// is the other half of its profile: three calls change the rows - a page, a keyed page and
 /// a count in place of the rows -, and are refused; the transformers and the result mapping
-/// of a native query say how rows are materialized; its own lock calls lock; and its own
-/// ways of binding a parameter and of running the query say nothing the artifact would lose.
+/// of a native query say how rows are materialized; its own lock calls lock; its own
+/// ways of binding a parameter and of running the query say nothing the artifact would lose;
+/// and a hint to the database carries the limit of recursion (decision 139).
 /// </summary>
 public sealed class HibernateJpqlQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
@@ -58,6 +59,7 @@ public sealed class HibernateJpqlQueryParser(
         ["setLockScope"] = new(QueryObjectCallKind.Locks),
         ["setFollowOnLocking"] = new(QueryObjectCallKind.Locks),
         ["setFollowOnStrategy"] = new(QueryObjectCallKind.Locks),
+        ["addQueryHint"] = new(QueryObjectCallKind.HintsDatabase),
     };
 
     protected override IReadOnlyDictionary<string, QueryObjectCall> ImplementationCalls => Calls;

@@ -498,17 +498,19 @@ MyBatis = mybatis/FindRecursiveDescentOfAHierarchyMapper.xml
 fallbackBy = EFCore:Recursion, NHibernate:Recursion, EclipseLink:Recursion
 
 # A walk of the product links from one product, through a cycle, under a limit of recursion,
-# OPTION (MAXRECURSION 10). The limit is T-SQL's alone: HQL 7.4 has the recursion but no
-# limit, so Hibernate is no source of this row and writes it in native SQL as a target,
-# beside the three targets without recursion. The guard is the one the walk of a graph is
+# OPTION (MAXRECURSION 10). HQL 7.4 has the recursion but no limit in its text, so the
+# Hibernate row states the limit as a hint on the query object, which its dialect writes as
+# that very clause (decision 139), and Hibernate writes the row in HQL as a target; the
+# three targets without recursion write it in native SQL. The guard is the one the walk of a graph is
 # written with: the path walked so far, the keys converted to text and joined by commas,
 # and a step only to a product the path does not hold yet - the conversion of decision 113.
 # Until that conversion was in the vocabulary, the row bounded the walk by a count of its
 # steps instead.
 [RecursiveWalkOfACyclicGraph]
 Dapper = dapper/FindRecursiveWalkOfACyclicGraph.sql
+Hibernate = hibernate/FindRecursiveWalkOfACyclicGraph.query.java
 MyBatis = mybatis/FindRecursiveWalkOfACyclicGraphMapper.xml
-fallbackBy = EFCore:Recursion, NHibernate:Recursion, Hibernate:Recursion, EclipseLink:Recursion
+fallbackBy = EFCore:Recursion, NHibernate:Recursion, EclipseLink:Recursion
 
 # ---- the rows of decision 113, the vocabulary of expressions ----
 #

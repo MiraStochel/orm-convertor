@@ -18,9 +18,9 @@ namespace Tests.Combined;
 /// The recursive definition of decision 113: an intermediate result of decision 112 whose
 /// body is a UNION ALL of an anchor member and a recursive member that names the definition
 /// itself, with the limit of recursion the query may carry. T-SQL reads and writes it, with
-/// the limit as OPTION (MAXRECURSION n); HQL of Hibernate 7.4 reads and writes it without a
-/// limit; EF Core, NHibernate and EclipseLink write the query in native SQL, and so does
-/// Hibernate where the query limits its recursion. The rules of SQL Server's recursive
+/// the limit as OPTION (MAXRECURSION n); HQL of Hibernate 7.4 reads and writes it, the limit
+/// as a hint on the query object (decision 139); EF Core, NHibernate and EclipseLink write the
+/// query in native SQL. The rules of SQL Server's recursive
 /// common table expression refuse in one place for every target, because the database would
 /// refuse the query in any language. The starting value of a counter - 0 AS Depth - is a
 /// constant under an alias, which the vocabulary carries for it. The categories of T2 carry
@@ -208,16 +208,80 @@ public class RecursionTest
         Assert.Equal(DapperSql(Descent), Artifact(Built(reread), ConversionContentType.SqlQuery));
     }
 
-    /// <summary>HQL has recursion and no limit of it, so a query whose source states one goes to native SQL in Hibernate too.</summary>
+    /// <summary>
+    /// HQL has recursion and no limit of it in its text; Hibernate takes the limit as a hint
+    /// on the query object, which its SQL Server dialect writes as OPTION (MAXRECURSION n), so
+    /// the query stays HQL (decision 139). The bare HQL does not carry it, as it does not carry
+    /// the slice.
+    /// </summary>
     [Fact]
-    public void HibernateFallsBackWhereTheQueryLimitsItsRecursion()
+    public void HibernateWritesTheLimitOfRecursionOnTheQueryObject()
     {
         var builder = FromSql(new HibernateJpqlQueryBuilder(), Walk);
         var built = Built(builder);
+        var method = Artifact(built, ConversionContentType.JavaQuery);
 
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.Recursion && r.Reason.Contains("MAXRECURSION 10", StringComparison.Ordinal));
-        Assert.Equal(DapperSql(Walk), Artifact(built, ConversionContentType.SqlQuery));
-        Assert.Contains("em.createNativeQuery(", Artifact(built, ConversionContentType.JavaQuery), StringComparison.Ordinal);
+        Assert.Contains("return em.createQuery(", method, StringComparison.Ordinal);
+        Assert.Contains(".unwrap(org.hibernate.query.Query.class).addQueryHint(\"MAXRECURSION 10\");", method, StringComparison.Ordinal);
+        Assert.DoesNotContain("MAXRECURSION", Artifact(built, ConversionContentType.JpqlQuery), StringComparison.Ordinal);
+        Assert.DoesNotContain(builder.Records, r => r.Kind is ConversionRecordKind.Fallback or ConversionRecordKind.Failure or ConversionRecordKind.Loss);
+    }
+
+    /// <summary>A query without a limit gets no hint: the dialect's default of a hundred levels stays the database's.</summary>
+    [Fact]
+    public void HibernateWritesNoHintWithoutALimit()
+    {
+        var method = Artifact(Built(FromSql(new HibernateJpqlQueryBuilder(), Descent)), ConversionContentType.JavaQuery);
+
+        Assert.DoesNotContain("addQueryHint", method, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// What Hibernate writes reads back as the query it was written from, limit included: the
+    /// hint on the query object is read as T-SQL's OPTION clause is.
+    /// </summary>
+    [Fact]
+    public void TheLimitHibernateWritesReadsBack()
+    {
+        var method = Artifact(Built(FromSql(new HibernateJpqlQueryBuilder(), Walk)), ConversionContentType.JavaQuery);
+
+        var reread = new DapperSqlQueryBuilder { EntityMaps = Maps() };
+        Assert.Single(new HibernateJpqlQueryParser(() => reread).Parse(ConversionContentType.Java, method, Maps()));
+
+        Assert.Equal(DapperSql(Walk), Artifact(Built(reread), ConversionContentType.SqlQuery));
+    }
+
+    /// <summary>
+    /// Hibernate closes a native query with the hint as well (measured against 7.4.5), so the
+    /// hint on the object of createNativeQuery is the limit too; a hint other than the limit
+    /// tunes the plan and is a loss, as T-SQL's other hints are.
+    /// </summary>
+    [Fact]
+    public void AHintOnTheQueryObjectIsReadAsTheLimitOrDropped()
+    {
+        const string code = """
+            public static Query query(EntityManager em) {
+                return em.createNativeQuery("SELECT c.Name AS Name FROM Categories AS c")
+                    .unwrap(org.hibernate.query.Query.class).addQueryHint("RECOMPILE");
+            }
+            """;
+
+        var other = new DapperSqlQueryBuilder { EntityMaps = Maps() };
+        new HibernateJpqlQueryParser(() => other).Parse(ConversionContentType.Java, code, Maps());
+        Built(other);
+        Assert.Contains(other.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("addQueryHint(\"RECOMPILE\")", StringComparison.Ordinal));
+
+        var limited = new DapperSqlQueryBuilder { EntityMaps = Maps() };
+        new HibernateJpqlQueryParser(() => limited).Parse(
+            ConversionContentType.Java,
+            $$"""
+            public static Query query(EntityManager em) {
+                return em.createNativeQuery("{{OneLine(Walk).Replace(" OPTION (MAXRECURSION 10)", string.Empty, StringComparison.Ordinal)}}")
+                    .unwrap(org.hibernate.query.Query.class).addQueryHint("maxrecursion 10");
+            }
+            """,
+            Maps());
+        Assert.Equal(DapperSql(Walk), Artifact(Built(limited), ConversionContentType.SqlQuery));
     }
 
     /// <summary>The search and cycle clauses of HQL are refused by name: SQL Server has neither, and a cycle is guarded in the text of the query.</summary>

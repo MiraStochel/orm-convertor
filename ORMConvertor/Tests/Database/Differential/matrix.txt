@@ -471,7 +471,8 @@ ordered = false
 mutations = filter, operator
 
 # The walk of the product links through their cycle (decision 113), in native SQL wherever
-# the target's language is not T-SQL. Guarded over its path, it reaches 2, 3, 4 and 5 from
+# the target's language has no recursion; Hibernate writes it in HQL with the limit as a
+# hint on the query object (decision 139). Guarded over its path, it reaches 2, 3, 4 and 5 from
 # product 1 and does not step back into 1; dropped, the guard and the start go with their
 # lines, the walk circles until the limit of recursion stops the query with an error. The
 # walk has no comparison to flip since the guard over the path replaced the bound of its

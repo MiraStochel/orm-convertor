@@ -657,6 +657,12 @@ public abstract class JpqlQueryParser(
         /// <summary>Passes a hint, answered by its key.</summary>
         Hints,
 
+        /// <summary>
+        /// Passes a hint to the database in the words of its dialect, answered by its text: the
+        /// limit of recursion is read (decision 139), any other hint is a loss.
+        /// </summary>
+        HintsDatabase,
+
         /// <summary>Locks the rows the query reads: a loss with a reason of its own.</summary>
         Locks,
 
@@ -754,6 +760,10 @@ public abstract class JpqlQueryParser(
                 case QueryObjectCallKind.Binds or QueryObjectCallKind.Slices or QueryObjectCallKind.Runs:
                     break;
 
+                case QueryObjectCallKind.HintsDatabase:
+                    ReadDatabaseHint(javaTokens, from, to, name, method);
+                    break;
+
                 case QueryObjectCallKind.Locks:
                     Report(ConversionRecordKind.Loss,
                         $"{spelled} on the query object of {method} has the query lock the rows it reads, which changes what the query does with its rows rather than which rows they are; the query representation has no place for a lock, so it was dropped and every target reads the rows without one.");
@@ -782,6 +792,31 @@ public abstract class JpqlQueryParser(
                 $"The code declares how the rows of the {method} query are materialized ({string.Join(", ", mapped)}), which the query representation does not carry; it was dropped and every target derives the row again.",
                 QueryFeature.Projection);
         }
+    }
+
+    /// <summary>
+    /// A hint to the database between <paramref name="from"/> and <paramref name="to"/>
+    /// (decision 139). <c>MAXRECURSION n</c> as a string literal is the limit of recursion,
+    /// which the implementation closes the SQL with as T-SQL's <c>OPTION (MAXRECURSION n)</c>
+    /// does - on the query in its language and on a native one alike, as measured - and which
+    /// decides whether the query finishes, so it is read as the T-SQL reader reads the
+    /// clause. Any other hint tunes how the database runs the query and is a loss, as the
+    /// T-SQL reader's other hints are.
+    /// </summary>
+    private void ReadDatabaseHint(List<JavaToken> javaTokens, int from, int to, string name, string method)
+    {
+        if (to - from == 1
+            && javaTokens[from] is { Kind: JavaTokenKind.String } literal
+            && System.Text.RegularExpressions.Regex.Match(literal.Text, @"^\s*MAXRECURSION\s+(\d+)\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } match
+            && int.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var maximum))
+        {
+            queryBuilder.LimitRecursion(maximum);
+            return;
+        }
+
+        var spelled = string.Concat(javaTokens[from..to].Select(token => token.Kind == JavaTokenKind.String ? $"\"{token.Text}\"" : token.Text));
+        Report(ConversionRecordKind.Loss,
+            $"{name}({spelled}) on the query object of {method} is a hint to the database the reading does not take; it was dropped, which changes nothing the query text says about its rows.");
     }
 
     /// <summary>A call by its name: the implementation's first, then the specification's; null for one neither names.</summary>

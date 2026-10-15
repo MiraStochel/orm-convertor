@@ -53,6 +53,12 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     /// </summary>
     protected override AbstractQueryBuilder NativeSqlBuilder() => new JpaNativeSqlQueryBuilder(Descriptor, Profile);
 
+    /// <summary>
+    /// The limit of recursion is a call on the query object where the implementation has one
+    /// (decision 139), so the query stays in its language; otherwise it goes to native SQL.
+    /// </summary>
+    protected override bool WritesRecursionLimit => Profile.RecursionLimitCall is not null;
+
     protected override void BuildSource(QueryClauses clauses, QueryArtifact artifact)
     {
         var aliased = AliasedEntities(clauses);
@@ -461,7 +467,7 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         {
             var clauses = NormalizeDefinition(definition, out var setOperation);
             var body = setOperation is not null
-                ? RenderSetOperation(setOperation)
+                ? RenderSetOperation(setOperation, spread: true)
                 : clauses is not null ? OneLine(Compose(clauses), withOrdering: true) + SliceText(clauses) : null;
 
             if (body is null)
@@ -506,10 +512,15 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         return text;
     }
 
-    private string? RenderSetOperation(SetOperationInstruction instruction)
+    /// <param name="spread">
+    /// Whether each operand is written a clause to a line, as the body of a definition is - a
+    /// recursive one is a set operation (decision 113) -, so that its filter stands on a line
+    /// of its own as in every other query; elsewhere each operand is one line.
+    /// </param>
+    private string? RenderSetOperation(SetOperationInstruction instruction, bool spread = false)
     {
-        var left = RenderSetOperand(instruction.Left);
-        var right = RenderSetOperand(instruction.Right);
+        var left = RenderSetOperand(instruction.Left, spread);
+        var right = RenderSetOperand(instruction.Right, spread);
         if (left is null || right is null)
         {
             return null;
@@ -534,13 +545,13 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         return $"{left}\n{keyword}\n{right}";
     }
 
-    private string? RenderSetOperand(SubQueryInstruction operand)
+    private string? RenderSetOperand(SubQueryInstruction operand, bool spread)
     {
         var body = Unwrap(operand.Instructions);
 
         if (body.Count == 1 && body[0] is SetOperationInstruction nested)
         {
-            var text = RenderSetOperation(nested);
+            var text = RenderSetOperation(nested, spread);
             return text is null ? null : $"({text})";
         }
 
@@ -559,7 +570,19 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         }
 
         var artifact = Compose(clauses);
-        return OneLine(artifact, withOrdering: true);
+        return spread ? Lines(artifact) : OneLine(artifact, withOrdering: true);
+    }
+
+    /// <summary>The clauses of a composed query a line each, in the order the final step writes them.</summary>
+    private static string Lines(QueryArtifact artifact)
+    {
+        var parts = new[]
+        {
+            artifact.Projection, artifact.Source, artifact.Joins, artifact.Filter,
+            artifact.Grouping, artifact.PostFilter, artifact.Ordering,
+        };
+
+        return string.Join("\n", parts.Where(p => p.Length > 0).Select(p => p.ToString()));
     }
 
     private static string OneLine(QueryArtifact artifact, bool withOrdering)
@@ -583,13 +606,7 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
     {
-        var parts = new[]
-        {
-            artifact.Projection, artifact.Source, artifact.Joins, artifact.Filter,
-            artifact.Grouping, artifact.PostFilter, artifact.Ordering,
-        };
-
-        var jpql = string.Join("\n", parts.Where(p => p.Length > 0).Select(p => p.ToString()));
+        var jpql = Lines(artifact);
         return WithClause() is { } with
             ? FinalizeText(with + jpql, clauses.ProjectsWholeEntity ? artifact.ResultEntity : null, artifact.Pagination.ToString())
             : [];
@@ -598,14 +615,20 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     /// <summary>
     /// The two artifacts: a method returning the typed query for a whole-entity result and
     /// the untyped Query otherwise, and the bare JPQL in a text block. The call that has the
-    /// implementation write its literals inline sits on the query object between the
-    /// bindings and the slice, where the grouping asked for it; like the slice it is a
-    /// property of the method, so the bare JPQL does not carry it.
+    /// implementation write its literals inline and the one that limits the recursion
+    /// (decision 139) sit on the query object between the bindings and the slice, where the
+    /// query asked for them; like the slice they are properties of the method, so the bare
+    /// JPQL does not carry them.
     /// </summary>
     private List<ConversionSource> FinalizeText(string jpql, string? resultEntity, string pagination)
     {
         var hints = writesLiteralsInline ? $"\n        {Profile.InlineLiteralsCall}" : string.Empty;
         writesLiteralsInline = false;
+
+        if (RecursionLimit is { } limit && Profile.RecursionLimitCall is { } limitCall)
+        {
+            hints += "\n        " + string.Format(System.Globalization.CultureInfo.InvariantCulture, limitCall, limit);
+        }
 
         var indented = JpaQueryMethod.TextBlock(jpql);
         var typed = resultEntity is not null;
