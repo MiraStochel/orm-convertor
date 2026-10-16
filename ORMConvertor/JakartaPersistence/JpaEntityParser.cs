@@ -44,7 +44,8 @@ public abstract class JpaEntityParser(
             // key class of an embedded id the descriptor declared, which only the class can name.
             foreach (var reading in attributes)
             {
-                EmitProperty(reading, reading.Name == embeddedId || (reading.IsCollection && reading.HasInitializer) ? false : null);
+                var identifier = reading.Name == embeddedId || context.IsDerivedIdentity(cls.Name, reading.Name);
+                EmitProperty(reading, identifier || (reading.IsCollection && reading.HasInitializer) ? false : null);
                 MaterializePrimitiveNotNull(reading);
 
                 if (reading.Name == embeddedId)
@@ -73,11 +74,13 @@ public abstract class JpaEntityParser(
         {
             declared.Kind = JpaAttributeKind.EmbeddedId;
         }
-
         foreach (var reading in attributes)
         {
             var attribute = facts.Attributes.First(a => a.Name == reading.Name);
-            EmitProperty(reading, LanguageNullability(reading, attribute));
+
+            // A relation the descriptor made a key part (id="true") is an identifier here as
+            // well, whatever the annotations say: the language side follows the key (decision 068).
+            EmitProperty(reading, context.IsDerivedIdentity(cls.Name, reading.Name) ? false : LanguageNullability(reading, attribute));
 
             // Hibernate documents that a primitive attribute yields a NOT NULL column - a
             // derivation from the stated type whose gap would travel elsewhere, so it is
@@ -108,7 +111,7 @@ public abstract class JpaEntityParser(
     /// </summary>
     private static bool LanguageNullability(JavaAttributeReading reading, JpaAttributeFacts attribute)
     {
-        if (!reading.IsNullable || attribute.Kind is JpaAttributeKind.Id or JpaAttributeKind.EmbeddedId)
+        if (!reading.IsNullable || attribute.Kind is JpaAttributeKind.Id or JpaAttributeKind.EmbeddedId || attribute.IsDerivedIdentity)
         {
             return false;
         }

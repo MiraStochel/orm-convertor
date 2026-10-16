@@ -17,9 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/GroupRoleMappingEntity.java.
- * Changed: the key part groupId (GROUP_ID) is stated as its own @Id column beside a read-only
- * @ManyToOne over the same column, and the nested key class holds the column; the original
- * puts @Id on the @ManyToOne itself. See README.md in the folder above.
+ * Unchanged apart from this note.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -55,14 +53,9 @@ import jakarta.persistence.Table;
 @IdClass(GroupRoleMappingEntity.Key.class)
 public class GroupRoleMappingEntity {
 
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "GROUP_ID")
-    protected String groupId;
-
     @ManyToOne(fetch= FetchType.LAZY)
-    @JoinColumn(name = "GROUP_ID", insertable = false, updatable = false)
+    @JoinColumn(name="GROUP_ID")
     protected GroupEntity group;
 
     @Id
@@ -87,20 +80,20 @@ public class GroupRoleMappingEntity {
 
     public static class Key implements Serializable {
 
-        protected String groupId;
+        protected GroupEntity group;
 
         protected String roleId;
 
         public Key() {
         }
 
-        public Key(String groupId, String roleId) {
-            this.groupId = groupId;
+        public Key(GroupEntity group, String roleId) {
+            this.group = group;
             this.roleId = roleId;
         }
 
-        public String getGroupId() {
-            return groupId;
+        public GroupEntity getGroup() {
+            return group;
         }
 
         public String getRoleId() {
@@ -115,14 +108,14 @@ public class GroupRoleMappingEntity {
             Key key = (Key) o;
 
             if (!roleId.equals(key.roleId)) return false;
-            if (!groupId.equals(key.groupId)) return false;
+            if (!group.equals(key.group)) return false;
 
             return true;
         }
 
         @Override
         public int hashCode() {
-            int result = groupId.hashCode();
+            int result = group.hashCode();
             result = 31 * result + roleId.hashCode();
             return result;
         }

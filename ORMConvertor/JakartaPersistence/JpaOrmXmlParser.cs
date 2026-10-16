@@ -326,6 +326,13 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
                     attribute.MapsId = element.Attribute("maps-id") is not null
                         || element.Elements().Any(e => e.Name.LocalName == "primary-key-join-column");
 
+                    // id="true" is the descriptor's spelling of @Id beside the relation.
+                    attribute.IsDerivedIdentity = ReadBoolean(element.Attribute("id")?.Value) == true;
+                    if (attribute.IsDerivedIdentity)
+                    {
+                        context.MarkDerivedIdentity(facts.ClassName, name);
+                    }
+
                     foreach (var joinColumn in element.Elements().Where(e => e.Name.LocalName == "join-column"))
                     {
                         attribute.JoinColumns.Add(ReadJoinColumn(joinColumn));

@@ -17,17 +17,13 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/ClientScopeRoleMappingEntity.java.
- * Changed: the key parts clientScopeId (SCOPE_ID) and roleId (ROLE_ID) are stated as their own
- * @Id columns beside a read-only @ManyToOne over the same column, and the nested key class
- * holds the column; the original puts @Id on the @ManyToOne itself. See README.md in the
- * folder above.
+ * Unchanged apart from this note.
  */
 
 package org.keycloak.models.jpa.entities;
 
 import java.io.Serializable;
 
-import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
@@ -51,24 +47,14 @@ import jakarta.persistence.Table;
 @IdClass(ClientScopeRoleMappingEntity.Key.class)
 public class ClientScopeRoleMappingEntity {
 
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "SCOPE_ID")
-    protected String clientScopeId;
-
     @ManyToOne(fetch= FetchType.LAZY)
-    @JoinColumn(name = "SCOPE_ID", insertable = false, updatable = false)
+    @JoinColumn(name = "SCOPE_ID")
     protected ClientScopeEntity clientScope;
 
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "ROLE_ID")
-    protected String roleId;
-
     @ManyToOne(fetch= FetchType.LAZY)
-    @JoinColumn(name = "ROLE_ID", insertable = false, updatable = false)
+    @JoinColumn(name="ROLE_ID")
     protected RoleEntity role;
 
     public ClientScopeEntity getClientScope() {
@@ -89,24 +75,24 @@ public class ClientScopeRoleMappingEntity {
 
     public static class Key implements Serializable {
 
-        protected String clientScopeId;
+        protected ClientScopeEntity clientScope;
 
-        protected String roleId;
+        protected RoleEntity role;
 
         public Key() {
         }
 
-        public Key(String clientScopeId, String roleId) {
-            this.clientScopeId = clientScopeId;
-            this.roleId = roleId;
+        public Key(ClientScopeEntity clientScope, RoleEntity role) {
+            this.clientScope = clientScope;
+            this.role = role;
         }
 
-        public String getClientScopeId() {
-            return clientScopeId;
+        public ClientScopeEntity getClientScope() {
+            return clientScope;
         }
 
-        public String getRoleId() {
-            return roleId;
+        public RoleEntity getRole() {
+            return role;
         }
 
         @Override
@@ -116,16 +102,16 @@ public class ClientScopeRoleMappingEntity {
 
             Key key = (Key) o;
 
-            if (clientScopeId != null ? !clientScopeId.getId().equals(key.clientScopeId != null ? key.clientScopeId.getId() : null) : key.clientScopeId != null) return false;
-            if (roleId != null ? !roleId.getId().equals(key.roleId != null ? key.roleId.getId() : null) : key.roleId != null) return false;
+            if (clientScope != null ? !clientScope.getId().equals(key.clientScope != null ? key.clientScope.getId() : null) : key.clientScope != null) return false;
+            if (role != null ? !role.getId().equals(key.role != null ? key.role.getId() : null) : key.role != null) return false;
 
             return true;
         }
 
         @Override
         public int hashCode() {
-            int result = clientScopeId != null ? clientScopeId.getId().hashCode() : 0;
-            result = 31 * result + (roleId != null ? roleId.getId().hashCode() : 0);
+            int result = clientScope != null ? clientScope.getId().hashCode() : 0;
+            result = 31 * result + (role != null ? role.getId().hashCode() : 0);
             return result;
         }
     }

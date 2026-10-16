@@ -2,7 +2,7 @@
 
 Jediný seznam toho, co zbývá. **Rozhodnutí** končí novým souborem v [`decisions/`](./decisions/README.md) a řádkem v jeho rejstříku, **práce** (už rozhodnutá) kódem a aktualizací [`architecture.md`](./architecture.md), podle potřeby i [`subset.md`](./subset.md) a [`traceability.md`](./traceability.md). Hotová položka odsud mizí; co verze nárokuje, říká §9 a kanonicky sekce *Guarantees* kořenového [`README.md`](../README.md).
 
-**Pořadí nesou jen značky** (rozh. [018](./decisions/018-work-order-as-item-marker.md)) na začátku kurzívového řádku vazeb: **Na řadě** nejvýš jedna položka, **Potom** nejvýš dvě, ostatní se berou podle priorit z požadavků. **Vada** — vstup v nároku, z něhož vznikne artefakt, který cíl odmítne nebo který tiše znamená něco jiného — se opravuje přednostně jako práce a nárok, který vyvrací, do opravy platí jen s výhradou; otevřené jsou čtyři, tři z reálného kódu ([Vady z reálného kódu](#vady-z-reálného-kódu)) a jedna ze soudce LDBC ([Zřetězení s `NULL` v LINQ EF Core](#zřetězení-s-null-dá-v-linq-ef-core-prázdný-text-místo-null)). Cíle zadání: cíl 1 = vydání `1.2.0`, cíl 2 = `2.0.0`, cíl 3 = příští MAJOR `3.0.0` (rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md)).
+**Pořadí nesou jen značky** (rozh. [018](./decisions/018-work-order-as-item-marker.md)) na začátku kurzívového řádku vazeb: **Na řadě** nejvýš jedna položka, **Potom** nejvýš dvě, ostatní se berou podle priorit z požadavků. **Vada** — vstup v nároku, z něhož vznikne artefakt, který cíl odmítne nebo který tiše znamená něco jiného — se opravuje přednostně jako práce a nárok, který vyvrací, do opravy platí jen s výhradou; položka vady začíná slovem *Vada* v kurzívovém řádku vazeb. Cíle zadání: cíl 1 = vydání `1.2.0`, cíl 2 = `2.0.0`, cíl 3 = příští MAJOR `3.0.0` (rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md)).
 
 ## Kde jsme vůči specifikaci
 
@@ -28,7 +28,6 @@ Rejstřík, ne pořadí.
 
 | Položka | Oblast | Druh | Pož. |
 |---|---|---|---|
-| [Odvozená identita JPA zúží klíč](#odvozená-identita-jpa-tiše-zúží-složený-klíč) | Vady | práce | F1, F2, F7, F9, F11 |
 | [Zřetězení s `NULL` v LINQ EF Core](#zřetězení-s-null-dá-v-linq-ef-core-prázdný-text-místo-null) | Dotazy | práce | F7–F10, F11 |
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | T2, T3, F13 |
 | [Nový kontejner databáze zahodí `LdbcSnb`](#nový-kontejner-mssql_db-může-zahodit-načtené-ldbcsnb) | Dotazy | práce | S5, F13 |
@@ -68,17 +67,6 @@ flowchart LR
     I["Izolace spouštění"] ---|"rozhodují se spolu"| J["Měření javových<br/>frameworků"]
     SCH["Schémata převzatých<br/>projektů v katalogu"] -->|"klíče zdrojů Dapper a MyBatis"| DB
 ```
-
----
-
-## Vady z reálného kódu
-
-Jeden tvar, který nástroj přečte a přeloží jinak, než znamená; ukázaly ho výňatky open-source projektů ([`analysis/real-world-sources.md`](./analysis/real-world-sources.md), *Nálezy*; rozh. [138](./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md)). Výňatek v `ORMConvertor/SampleData/ThirdParty` ho obchází přepisem s poznámkou; po opravě se přepis smí vrátit k textu projektu. [`subset.md`](./subset.md) 2.13 ho vede jako tiché místo, §9 nárok do opravy omezuje výhradou.
-
-#### Odvozená identita JPA tiše zúží složený klíč
-*Vada. Práce podle rozh. [006](./decisions/006-flat-composite-key-rendering.md), [031](./decisions/031-key-class-as-declaration-of-key-parts.md) a [077](./decisions/077-hibernate-wrapper-over-the-shared-jpa-layer.md). Nález V3 (Keycloak, deset entit). Požadavky F1, F2, F7, F9, F11.*
-
-Entita s `@IdClass`, jejíž část klíče je `@Id` přímo na `@ManyToOne` (odvozená identita Jakarta Persistence), se čte bez té části: klíč `USER_ROLE_MAPPING(USER_ID, ROLE_ID)` vyjde jako samotné `ROLE_ID` a jediný záznam se týká člena klíčové třídy, ne klíče. Část klíče je tu sloupec vztahu; čtení ji má vzít jako část klíče nad sloupci `@JoinColumn` a vztah vedle ní, jako `hbm.xml` čte `<key-many-to-one>`. V téže oblasti: jedenáct vnořených tříd `Key` v Keycloaku hlásí `Conflict`, jako by byly entitami, ačkoli rozh. 031 klíčovou třídu entitou nečiní; výstup je správný.
 
 ---
 

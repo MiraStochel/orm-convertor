@@ -17,9 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/FederatedIdentityEntity.java.
- * Changed: the key part localUserId (USER_ID) is stated as its own @Id column beside a
- * read-only @ManyToOne over the same column, and the nested key class holds the column; the
- * original puts @Id on the @ManyToOne itself. See README.md in the folder above.
+ * Unchanged apart from this note.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -55,14 +53,9 @@ import jakarta.persistence.Table;
 @IdClass(FederatedIdentityEntity.Key.class)
 public class FederatedIdentityEntity {
 
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "USER_ID")
-    private String localUserId;
-
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "USER_ID", insertable = false, updatable = false)
+    @JoinColumn(name = "USER_ID")
     private UserEntity user;
 
     @Column(name = "REALM_ID")
@@ -129,20 +122,20 @@ public class FederatedIdentityEntity {
 
     public static class Key implements Serializable {
 
-        protected String localUserId;
+        protected UserEntity user;
 
         protected String identityProvider;
 
         public Key() {
         }
 
-        public Key(String localUserId, String identityProvider) {
-            this.localUserId = localUserId;
+        public Key(UserEntity user, String identityProvider) {
+            this.user = user;
             this.identityProvider = identityProvider;
         }
 
-        public String getLocalUserId() {
-            return localUserId;
+        public UserEntity getUser() {
+            return user;
         }
 
         public String getIdentityProvider() {
@@ -158,21 +151,21 @@ public class FederatedIdentityEntity {
 
             if (identityProvider != null ? !identityProvider.equals(key.identityProvider) : key.identityProvider != null)
                 return false;
-            if (localUserId != null ? !localUserId.getId().equals(key.localUserId != null ? key.localUserId.getId() : null) : key.localUserId != null) return false;
+            if (user != null ? !user.getId().equals(key.user != null ? key.user.getId() : null) : key.user != null) return false;
 
             return true;
         }
 
         @Override
         public int hashCode() {
-            int result = localUserId != null ? localUserId.getId().hashCode() : 0;
+            int result = user != null ? user.getId().hashCode() : 0;
             result = 31 * result + (identityProvider != null ? identityProvider.hashCode() : 0);
             return result;
         }
 
         @Override
         public String toString() {
-            return "FederatedIdentityEntity.Key [localUserId=" + (localUserId != null ? localUserId.getId() : null) + ", identityProvider=" + identityProvider + "]";
+            return "FederatedIdentityEntity.Key [user=" + (user != null ? user.getId() : null) + ", identityProvider=" + identityProvider + "]";
         }
     }
 

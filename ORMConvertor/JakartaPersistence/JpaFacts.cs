@@ -115,6 +115,14 @@ public sealed class JpaAttributeFacts
     /// <summary>@MapsId or @PrimaryKeyJoinColumn: the relation shares the primary key.</summary>
     public bool MapsId { get; set; }
 
+    /// <summary>
+    /// @Id beside the relation annotation, or id="true" on the element - the derived identity
+    /// of Jakarta Persistence 3.2 §2.4.1: the attribute is a relation whose foreign key
+    /// column(s) are part of the primary key. The kind stays the relation's, so that the
+    /// relation is written as one, and the key reading takes the join columns as its parts.
+    /// </summary>
+    public bool IsDerivedIdentity { get; set; }
+
     public List<JpaJoinColumnFacts> JoinColumns { get; } = [];
 
     public JpaJoinTableFacts? JoinTable { get; set; }

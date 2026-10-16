@@ -54,8 +54,6 @@ The authoritative boundary between what the tool vouches for and what merely shi
 
 **Query translation is complete within its catalog** (F7–F10, F13): no query parser drops a construct it knows without a record; every construct of the query vocabulary is bounded by a decision — carried in every direction, or refused, dropped with a record or written in native SQL as that decision says, never left to what happened not to come up; and the subset, with every case that has no complete or unambiguous translation, stands whole in [`docs/subset.md`](docs/subset.md).
 
-**With a reservation until one known defect is fixed.** Running real open-source code through the tool found shapes it reads but translates as something else; one remains — JPA's derived identity narrowing a composite key. It is listed in [`docs/open-items.md`](docs/open-items.md) and [`docs/subset.md`](docs/subset.md) §2.13; the claims above hold for input without it.
-
 **Covered:** entity, mapping and query translation as described above, including the following within stated limits, each refused, dropped with a record naming it or written in native SQL, never guessed at:
 
 | Covered | Stated limits |

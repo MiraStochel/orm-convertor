@@ -124,7 +124,7 @@ public final class KeycloakNamedQueries {
         return em.createQuery("""
                 select link
                 from FederatedIdentityEntity link
-                where link.localUserId = :userId
+                where link.USER_ID = :userId
                 """, FederatedIdentityEntity.class);
     }
 
@@ -135,7 +135,7 @@ public final class KeycloakNamedQueries {
         return em.createQuery("""
                 select link
                 from FederatedIdentityEntity link
-                where link.localUserId = :userId
+                where link.USER_ID = :userId
                 and link.identityProvider = :identityProvider
                 """, FederatedIdentityEntity.class);
     }
@@ -150,7 +150,7 @@ public final class KeycloakNamedQueries {
                 where exists (
                     select link
                     from FederatedIdentityEntity link
-                    where link.localUserId = u.id
+                    where link.USER_ID = u.id
                     and link.realmId = :realmId
                     and link.identityProvider = :identityProvider
                     and link.userId = :userId)
@@ -197,7 +197,7 @@ public final class KeycloakNamedQueries {
         return em.createQuery("""
                 select m
                 from GroupRoleMappingEntity m
-                where m.groupId = :groupId
+                where m.GROUP_ID = :groupId
                 and m.roleId = :roleId
                 """, GroupRoleMappingEntity.class);
     }
@@ -209,7 +209,7 @@ public final class KeycloakNamedQueries {
         return em.createQuery("""
                 select m
                 from GroupRoleMappingEntity m
-                where m.groupId = :groupId
+                where m.GROUP_ID = :groupId
                 """, GroupRoleMappingEntity.class);
     }
 
@@ -220,7 +220,7 @@ public final class KeycloakNamedQueries {
         return em.createQuery("""
                 select m.roleId
                 from GroupRoleMappingEntity m
-                where m.groupId = :groupId
+                where m.GROUP_ID = :groupId
                 """, String.class);
     }
 
@@ -364,8 +364,8 @@ public final class KeycloakNamedQueries {
                 where exists (
                     select c
                     from CompositeRoleEntity c
-                    where c.childRoleId = r.id
-                    and c.parentRoleId = :parentRoleId)
+                    where c.CHILD_ROLE = r.id
+                    and c.COMPOSITE = :parentRoleId)
                 """, RoleEntity.class);
     }
 
@@ -379,8 +379,8 @@ public final class KeycloakNamedQueries {
                 where exists (
                     select c
                     from CompositeRoleEntity c
-                    where c.childRoleId = r.id
-                    and c.parentRoleId in :parentRoleIds)
+                    where c.CHILD_ROLE = r.id
+                    and c.COMPOSITE in :parentRoleIds)
                 """, RoleEntity.class);
     }
 
@@ -514,7 +514,7 @@ public final class KeycloakNamedQueries {
         return em.createQuery("""
                 select m
                 from UserGroupMembershipEntity m
-                where m.userId = :userId
+                where m.USER_ID = :userId
                 and m.groupId = :groupId
                 """, UserGroupMembershipEntity.class);
     }
@@ -526,21 +526,21 @@ public final class KeycloakNamedQueries {
         return em.createQuery("""
                 select m
                 from UserGroupMembershipEntity m
-                where m.userId = :userId
+                where m.USER_ID = :userId
                 """, UserGroupMembershipEntity.class);
     }
 
     /** Named query "userCountInGroups" of UserGroupMembershipEntity. */
-    // ORMConvertor: rewritten - asks for the realm of the user through a correlated exists over the key column userId instead of a path through the association; counts the key column.
+    // ORMConvertor: rewritten - asks for the realm of the user through a correlated exists over the key column USER_ID instead of a path through the association; counts the key column.
     //   was: select count(m.user) from UserGroupMembershipEntity m where m.user.realmId = :realmId and m.groupId in :groupIds
     public static TypedQuery<Long> userCountInGroups(EntityManager em) {
         return em.createQuery("""
-                select count(m.userId)
+                select count(m.USER_ID)
                 from UserGroupMembershipEntity m
                 where exists (
                     select u
                     from UserEntity u
-                    where u.id = m.userId
+                    where u.id = m.USER_ID
                     and u.realmId = :realmId)
                 and m.groupId in :groupIds
                 """, Long.class);
@@ -553,7 +553,7 @@ public final class KeycloakNamedQueries {
         return em.createQuery("""
                 select m
                 from UserRoleMappingEntity m
-                where m.userId = :userId
+                where m.USER_ID = :userId
                 and m.roleId = :roleId
                 """, UserRoleMappingEntity.class);
     }
@@ -565,7 +565,7 @@ public final class KeycloakNamedQueries {
         return em.createQuery("""
                 select m
                 from UserRoleMappingEntity m
-                where m.userId = :userId
+                where m.USER_ID = :userId
                 """, UserRoleMappingEntity.class);
     }
 
@@ -576,7 +576,7 @@ public final class KeycloakNamedQueries {
         return em.createQuery("""
                 select m.roleId
                 from UserRoleMappingEntity m
-                where m.userId = :userId
+                where m.USER_ID = :userId
                 """, String.class);
     }
 

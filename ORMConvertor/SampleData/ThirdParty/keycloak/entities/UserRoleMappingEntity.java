@@ -17,9 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/UserRoleMappingEntity.java.
- * Changed: the key part userId (USER_ID) is stated as its own @Id column beside a read-only
- * @ManyToOne over the same column, and the nested key class holds the column; the original
- * puts @Id on the @ManyToOne itself. See README.md in the folder above.
+ * Unchanged apart from this note.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -57,14 +55,9 @@ import jakarta.persistence.Table;
 @IdClass(UserRoleMappingEntity.Key.class)
 public class UserRoleMappingEntity  {
 
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "USER_ID")
-    protected String userId;
-
     @ManyToOne(fetch= FetchType.LAZY)
-    @JoinColumn(name = "USER_ID", insertable = false, updatable = false)
+    @JoinColumn(name="USER_ID")
     protected UserEntity user;
 
     @Id
@@ -90,20 +83,20 @@ public class UserRoleMappingEntity  {
 
     public static class Key implements Serializable {
 
-        protected String userId;
+        protected UserEntity user;
 
         protected String roleId;
 
         public Key() {
         }
 
-        public Key(String userId, String roleId) {
-            this.userId = userId;
+        public Key(UserEntity user, String roleId) {
+            this.user = user;
             this.roleId = roleId;
         }
 
-        public String getUserId() {
-            return userId;
+        public UserEntity getUser() {
+            return user;
         }
 
         public String getRoleId() {
@@ -118,14 +111,14 @@ public class UserRoleMappingEntity  {
             Key key = (Key) o;
 
             if (!roleId.equals(key.roleId)) return false;
-            if (!userId.equals(key.userId)) return false;
+            if (!user.equals(key.user)) return false;
 
             return true;
         }
 
         @Override
         public int hashCode() {
-            int result = userId.hashCode();
+            int result = user.hashCode();
             result = 31 * result + roleId.hashCode();
             return result;
         }

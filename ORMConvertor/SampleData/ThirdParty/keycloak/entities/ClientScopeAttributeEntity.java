@@ -17,9 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/ClientScopeAttributeEntity.java.
- * Changed: the key part clientScopeId (SCOPE_ID) is stated as its own @Id column beside a
- * read-only @ManyToOne over the same column, and the nested key class holds the column; the
- * original puts @Id on the @ManyToOne itself. See README.md in the folder above.
+ * Unchanged apart from this note.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -43,14 +41,9 @@ import jakarta.persistence.Table;
 @IdClass(ClientScopeAttributeEntity.Key.class)
 public class ClientScopeAttributeEntity {
 
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "SCOPE_ID")
-    protected String clientScopeId;
-
     @ManyToOne(fetch= FetchType.LAZY)
-    @JoinColumn(name = "SCOPE_ID", insertable = false, updatable = false)
+    @JoinColumn(name = "SCOPE_ID")
     protected ClientScopeEntity clientScope;
 
     @Id
@@ -87,20 +80,20 @@ public class ClientScopeAttributeEntity {
 
     public static class Key implements Serializable {
 
-        protected String clientScopeId;
+        protected ClientScopeEntity clientScope;
 
         protected String name;
 
         public Key() {
         }
 
-        public Key(String clientScopeId, String name) {
-            this.clientScopeId = clientScopeId;
+        public Key(ClientScopeEntity clientScope, String name) {
+            this.clientScope = clientScope;
             this.name = name;
         }
 
-        public String getClientScopeId() {
-            return clientScopeId;
+        public ClientScopeEntity getClientScope() {
+            return clientScope;
         }
 
         public String getName() {
@@ -114,7 +107,7 @@ public class ClientScopeAttributeEntity {
 
             ClientScopeAttributeEntity.Key key = (ClientScopeAttributeEntity.Key) o;
 
-            if (clientScopeId != null ? !clientScopeId.getId().equals(key.clientScopeId != null ? key.clientScopeId.getId() : null) : key.clientScopeId != null) return false;
+            if (clientScope != null ? !clientScope.getId().equals(key.clientScope != null ? key.clientScope.getId() : null) : key.clientScope != null) return false;
             if (name != null ? !name.equals(key.name != null ? key.name : null) : key.name != null) return false;
 
             return true;
@@ -122,7 +115,7 @@ public class ClientScopeAttributeEntity {
 
         @Override
         public int hashCode() {
-            int result = clientScopeId != null ? clientScopeId.getId().hashCode() : 0;
+            int result = clientScope != null ? clientScope.getId().hashCode() : 0;
             result = 31 * result + (name != null ? name.hashCode() : 0);
             return result;
         }

@@ -43,4 +43,16 @@ public sealed class JpaReadingContext(SourceSqlDialect? declaredSourceDialect = 
 
     public string? EmbeddedIdOf(string className)
         => embeddedIds.TryGetValue(className, out var attribute) ? attribute : null;
+
+    private readonly HashSet<(string Class, string Attribute)> derivedIdentities = [];
+
+    /// <summary>
+    /// orm.xml declared the relation a part of the key (id="true"); the class reading then
+    /// treats the attribute as an identifier, which is never nullable, the same as it would
+    /// under @Id - otherwise the class would claim a nullable reference against the
+    /// descriptor's key part and the two would be a conflict the source never had.
+    /// </summary>
+    public void MarkDerivedIdentity(string className, string attributeName) => derivedIdentities.Add((className, attributeName));
+
+    public bool IsDerivedIdentity(string className, string attributeName) => derivedIdentities.Contains((className, attributeName));
 }

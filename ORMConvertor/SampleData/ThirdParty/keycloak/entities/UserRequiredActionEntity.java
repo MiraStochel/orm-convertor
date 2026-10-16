@@ -17,9 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/UserRequiredActionEntity.java.
- * Changed: the key part userId (USER_ID) is stated as its own @Id column beside a read-only
- * @ManyToOne over the same column, and the nested key class holds the column; the original
- * puts @Id on the @ManyToOne itself. See README.md in the folder above.
+ * Unchanged apart from this note.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -50,14 +48,9 @@ import jakarta.persistence.Table;
 @IdClass(UserRequiredActionEntity.Key.class)
 public class UserRequiredActionEntity {
 
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "USER_ID")
-    protected String userId;
-
     @ManyToOne(fetch= FetchType.LAZY)
-    @JoinColumn(name = "USER_ID", insertable = false, updatable = false)
+    @JoinColumn(name="USER_ID")
     protected UserEntity user;
 
     @Id
@@ -82,20 +75,20 @@ public class UserRequiredActionEntity {
 
     public static class Key implements Serializable {
 
-        protected String userId;
+        protected UserEntity user;
 
         protected String action;
 
         public Key() {
         }
 
-        public Key(String userId, String action) {
-            this.userId = userId;
+        public Key(UserEntity user, String action) {
+            this.user = user;
             this.action = action;
         }
 
-        public String getUserId() {
-            return userId;
+        public UserEntity getUser() {
+            return user;
         }
 
         public String getAction() {
@@ -110,14 +103,14 @@ public class UserRequiredActionEntity {
             Key key = (Key) o;
 
             if (action != key.action) return false;
-            if (userId != null ? !userId.getId().equals(key.userId != null ? key.userId.getId() : null) : key.userId != null) return false;
+            if (user != null ? !user.getId().equals(key.user != null ? key.user.getId() : null) : key.user != null) return false;
 
             return true;
         }
 
         @Override
         public int hashCode() {
-            int result = userId != null ? userId.getId().hashCode() : 0;
+            int result = user != null ? user.getId().hashCode() : 0;
             result = 31 * result + (action != null ? action.hashCode() : 0);
             return result;
         }

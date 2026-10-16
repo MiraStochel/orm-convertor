@@ -17,9 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/ClientAttributeEntity.java.
- * Changed: the key part clientId (CLIENT_ID) is stated as its own @Id column beside a
- * read-only @ManyToOne over the same column, and the nested key class holds the column; the
- * original puts @Id on the @ManyToOne itself. See README.md in the folder above.
+ * Unchanged apart from this note.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -46,14 +44,9 @@ import org.hibernate.annotations.Nationalized;
 @IdClass(ClientAttributeEntity.Key.class)
 public class ClientAttributeEntity {
 
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "CLIENT_ID")
-    protected String clientId;
-
     @ManyToOne(fetch= FetchType.LAZY)
-    @JoinColumn(name = "CLIENT_ID", insertable = false, updatable = false)
+    @JoinColumn(name = "CLIENT_ID")
     protected ClientEntity client;
 
     @Id
@@ -91,20 +84,20 @@ public class ClientAttributeEntity {
 
     public static class Key implements Serializable {
 
-        protected String clientId;
+        protected ClientEntity client;
 
         protected String name;
 
         public Key() {
         }
 
-        public Key(String clientId, String name) {
-            this.clientId = clientId;
+        public Key(ClientEntity client, String name) {
+            this.client = client;
             this.name = name;
         }
 
-        public String getClientId() {
-            return clientId;
+        public ClientEntity getClient() {
+            return client;
         }
 
         public String getName() {
@@ -118,7 +111,7 @@ public class ClientAttributeEntity {
 
             ClientAttributeEntity.Key key = (ClientAttributeEntity.Key) o;
 
-            if (clientId != null ? !clientId.getId().equals(key.clientId != null ? key.clientId.getId() : null) : key.clientId != null) return false;
+            if (client != null ? !client.getId().equals(key.client != null ? key.client.getId() : null) : key.client != null) return false;
             if (name != null ? !name.equals(key.name != null ? key.name : null) : key.name != null) return false;
 
             return true;
@@ -126,7 +119,7 @@ public class ClientAttributeEntity {
 
         @Override
         public int hashCode() {
-            int result = clientId != null ? clientId.getId().hashCode() : 0;
+            int result = client != null ? client.getId().hashCode() : 0;
             result = 31 * result + (name != null ? name.hashCode() : 0);
             return result;
         }

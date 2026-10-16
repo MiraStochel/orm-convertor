@@ -317,20 +317,64 @@ public class EntityIdentityTest
         """;
 
     [Fact]
-    public void TwoNestedKeyClassesOfOneNameAreTwoEntitiesAndAreSaid()
+    public void TwoNestedKeyClassesOfOneNameEachBindToTheirOwnEntity()
     {
         var result = ConvertJava(
             JavaUnit(WithNestedKey("OrderLine", "OrderLines", "orderId", "lineNumber"), "OrderLine.java"),
             JavaUnit(WithNestedKey("Invoice", "Invoices", "invoiceId", "invoiceYear"), "Invoice.java"));
 
-        // Two key classes, not one merged out of both - and because the representation
-        // resolves a key class by its simple name (decision 001), the pair is exactly what
-        // the record is for. Which of the two a claim then reaches is decision 001's rule
-        // and is not what this decision changes; that it is no longer silent, is.
+        // Two key classes, not one merged out of both - and each entity's claim reaches the
+        // class nested in it (decision 142), so neither entity receives the other's parts and
+        // nothing is left in the list for the shared-name record to speak about.
+        var entities = result.Sources.Where(s => s.ContentType == ConversionContentType.JavaEntity).ToList();
+        var orderLine = Assert.Single(entities, e => e.Content.Contains("class OrderLine", StringComparison.Ordinal));
+        var invoice = Assert.Single(entities, e => e.Content.Contains("class Invoice", StringComparison.Ordinal));
+
+        Assert.Contains("lineNumber", orderLine.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("invoiceYear", orderLine.Content, StringComparison.Ordinal);
+        Assert.Contains("invoiceYear", invoice.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("lineNumber", invoice.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain(result.Records, r => r.Kind is ConversionRecordKind.Conflict or ConversionRecordKind.Failure);
+    }
+
+    private static string WithTopLevelKey(string package, string entity, string table, string part) =>
+        $$"""
+        package {{package}};
+
+        import jakarta.persistence.Column;
+        import jakarta.persistence.Embeddable;
+        import jakarta.persistence.EmbeddedId;
+        import jakarta.persistence.Entity;
+        import jakarta.persistence.Table;
+
+        @Entity
+        @Table(name = "{{table}}", schema = "Sales")
+        public class {{entity}} {
+            @EmbeddedId
+            private Key id;
+        }
+
+        @Embeddable
+        class Key implements java.io.Serializable {
+            @Column(name = "{{part}}")
+            private int {{part}};
+        }
+        """;
+
+    [Fact]
+    public void TwoTopLevelKeyClassesOfOneNameInTwoPackagesAreSaid()
+    {
+        // Reached by a bare name from outside any scope, each claim binds to the first class
+        // of that name read (decision 001), whichever package declared it: the pair the record
+        // is for (decision 094), still said before the dissolution takes either class away.
+        var result = ConvertJava(
+            JavaUnit(WithTopLevelKey("shop", "OrderLine", "OrderLines", "lineNumber"), "OrderLine.java"),
+            JavaUnit(WithTopLevelKey("billing", "Invoice", "Invoices", "invoiceYear"), "Invoice.java"));
+
         var record = Assert.Single(result.Records, r => r.Kind == ConversionRecordKind.Conflict);
         Assert.Equal("Key", record.Entity);
-        Assert.Contains("shop.OrderLine", record.Reason, StringComparison.Ordinal);
-        Assert.Contains("shop.Invoice", record.Reason, StringComparison.Ordinal);
+        Assert.Contains("shop", record.Reason, StringComparison.Ordinal);
+        Assert.Contains("billing", record.Reason, StringComparison.Ordinal);
     }
 
     [Fact]

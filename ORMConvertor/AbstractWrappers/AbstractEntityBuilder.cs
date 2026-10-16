@@ -347,7 +347,7 @@ public abstract class AbstractEntityBuilder
 
         foreach (var claim in pending)
         {
-            var keyClassMap = FindEntityMap(claim.KeyClassName);
+            var keyClassMap = FindKeyClassMap(claim.Entity, claim.KeyClassName);
             var keyClass = new SourceKeyClass(claim.KeyClassName, KeyClassForm.Embedded, claim.HoldingProperty);
 
             if (keyClassMap is null)
@@ -1283,17 +1283,18 @@ public abstract class AbstractEntityBuilder
     /// </summary>
     public void DissolveKeyClasses()
     {
-        // The entity list is spoken about as the reading left it, before this phase takes a
-        // key class out of it again (decision 094): a key class that two entities declared
-        // under one name is exactly the pair that record is about, and it would be gone by
-        // the time anything else looked. The phase is the first one over the list whoever
-        // calls it - the completion phase, or Build where no catalog was met - and the
-        // record is written once.
-        ReportSharedEntityNames();
-
         // An @EmbeddedId claim becomes an ordinary Embedded key first, over the members of
         // its class, so that the loop below dissolves it like any other (decision 077).
         MaterializeEmbeddedKeys();
+
+        // The entity list is spoken about as the reading left it, before this phase takes a
+        // key class out of it again (decision 094): two key classes two entities reach by a
+        // bare name from outside any scope bind to the first one read, and that pair is
+        // exactly what the record is for - it would be gone by the time anything else
+        // looked. A key class an entity reaches in its own scope is left out of it (decision
+        // 142). The phase is the first one over the list whoever calls it - the completion
+        // phase, or Build where no catalog was met - and the record is written once.
+        ReportSharedEntityNames();
 
         foreach (var entityMap in EntityMaps.ToList())
         {
@@ -1304,7 +1305,7 @@ public abstract class AbstractEntityBuilder
                 continue;
             }
 
-            var keyClassMap = FindEntityMap(keyClass.ClassName);
+            var keyClassMap = FindKeyClassMap(entityMap, keyClass.ClassName);
 
             if (keyClassMap is null)
             {
@@ -1426,6 +1427,52 @@ public abstract class AbstractEntityBuilder
                 currentEntityMap = entityMap;
             }
         }
+    }
+
+    /// <summary>
+    /// The class a key names (decision 142): first a class nested in the entity that names
+    /// it - the scope the language itself gives a bare name, and what @IdClass(Entity.Key.class)
+    /// spells out - and otherwise a class of that simple name anywhere in the conversion,
+    /// the rule of decision 001 for everything else the representation refers to.
+    /// </summary>
+    private EntityMap? FindKeyClassMap(EntityMap referrer, string className)
+        => FindNestedKeyClass(referrer, className) ?? FindEntityMap(className);
+
+    /// <summary>
+    /// The class of that simple name nested in the referring entity, or null. The enclosing
+    /// class is a fact of the builder, not of the model (decision 094), so the match is made
+    /// here, against where the declaration placed the class.
+    /// </summary>
+    private EntityMap? FindNestedKeyClass(EntityMap referrer, string className)
+    {
+        var simpleName = SimpleEntityName(className);
+        var outer = DeclaredUnder(referrer);
+        var container = string.IsNullOrEmpty(outer) ? referrer.Entity.Name : $"{outer}.{referrer.Entity.Name}";
+
+        return EntityMaps.FirstOrDefault(em =>
+            !ReferenceEquals(em, referrer)
+            && em.Entity.Name == simpleName
+            && string.Equals(DeclaredUnder(em), container, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The key classes the entities of the conversion reach in their own scope (decision
+    /// 142): never a second entity of their name, so the shared-name record leaves them out.
+    /// </summary>
+    private HashSet<EntityMap> ScopedKeyClasses()
+    {
+        var scoped = new HashSet<EntityMap>();
+
+        foreach (var entityMap in EntityMaps)
+        {
+            if (entityMap.PrimaryKey?.SourceKeyClass is { } keyClass
+                && FindNestedKeyClass(entityMap, keyClass.ClassName) is { } nested)
+            {
+                scoped.Add(nested);
+            }
+        }
+
+        return scoped;
     }
 
     /// <summary>
@@ -1612,8 +1659,10 @@ public abstract class AbstractEntityBuilder
 
         sharedNamesReported = true;
 
+        var scoped = ScopedKeyClasses();
+
         var shared = EntityMaps
-            .Where(em => !string.IsNullOrEmpty(em.Entity.Name))
+            .Where(em => !string.IsNullOrEmpty(em.Entity.Name) && !scoped.Contains(em))
             .GroupBy(em => em.Entity.Name, StringComparer.Ordinal)
             .Where(group => group.Count() > 1);
 

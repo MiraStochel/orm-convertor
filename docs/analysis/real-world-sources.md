@@ -24,7 +24,6 @@ Stav k 2026-10-13: počty jsou z mělkých klonů výchozí větve (grep, ±10 %
 | **DS** | dynamické SQL MyBatisu (`<if>`, `<choose>`, `${}`) vypustit či rozepsat | zúžení Z F8 (subset 2.3, 2.4) |
 | **CE** | srovnání s celou entitou (`m.user = :user`) na srovnání klíče | parametr entitou model nenese (subset 2.6) |
 | **CP** | cesta přes asociaci v podmínce (`c.user.id = :id`) na korelované `exists` | cestu mimo `join` nástroj nečte (subset 2.6); projekci jedné strany joinu (`select r … join …`) čte od 2026-10-16 správně, ty přepisy se vrátily k textu projektu |
-| **DI** | `@Id` na `@ManyToOne` (odvozená identita) na sloupec klíče s relací jen pro čtení | vada V3 |
 | **DD** | dědičnost a `@MappedSuperclass`: sloupce předka přenést do entity | VO 2 (subset 2.1) |
 | **KR** | kořen dotazu přes vlastní repozitář (`_repository.Query()`, `Repository.Table`) na `DbSet`/`Set<T>()` | rozh. [114](../decisions/114-what-the-unit-states-about-a-name-decides-an-ef-core-root.md) |
 | **SQ** | SQL jiného dialektu přepsat do T-SQL | čtečka SQL je T-SQL nad ScriptDom (rozh. [082](../decisions/082-t-sql-read-and-written-by-a-shared-project.md)) |
@@ -35,7 +34,7 @@ Stav k 2026-10-13: počty jsou z mělkých klonů výchozí větve (grep, ±10 %
 
 | Zdroj | Licence | Rozsah | Schéma | Použití |
 |---|---|---|---|---|
-| [Keycloak](https://github.com/keycloak/keycloak) — identity a přístup | P Apache-2.0 | 47 entit v `model/jpa/…/entities` · 26 `@IdClass` · 48 čtecích `@NamedQuery` u 21 jádrových entit | Liquibase, SQL Server podporovaný | s úpravou PD, DI, CE, CP — **převzato**, příklad `keycloak-identity` |
+| [Keycloak](https://github.com/keycloak/keycloak) — identity a přístup | P Apache-2.0 | 47 entit v `model/jpa/…/entities` · 26 `@IdClass` · 48 čtecích `@NamedQuery` u 21 jádrových entit | Liquibase, SQL Server podporovaný | s úpravou PD, CE, CP — **převzato**, příklad `keycloak-identity` |
 | [HAPI FHIR JPA server](https://github.com/hapifhir/hapi-fhir) | P Apache-2.0 | 62 · 26 `@IdClass` a 9 `@EmbeddedId` · ~178 čtecích `@Query` | migrační úlohy, SQL Server podporovaný | s úpravou PD, DD (`@MappedSuperclass` u hlavních tabulek) |
 | [Broadleaf Commerce CE](https://github.com/BroadleafCommerce/BroadleafCommerce) | C Fair Use License | 154 · 3 `@EmbeddedId` · 131 `<named-query>` v `orm.xml` | `hbm2ddl` | nevhodné: licence není open source; `@Inheritance` u skoro všech entit |
 | [OpenMRS core](https://github.com/openmrs/openmrs-core) | C MPL-2.0 | 86 + 17 v `hbm.xml` · žádný · ~28 `createQuery`, jinak Criteria API | Liquibase, MySQL a PostgreSQL | nevhodné: bez složeného klíče, dotazy skládá Criteria API |
@@ -136,11 +135,11 @@ Co výňatky ukázaly o nástroji. **Vada** je tvar uvnitř nároku, který nás
 |---|---|---|---|
 | V1 | `Any` nad kolekční navigací (`c.InvoiceLines.Any(o => …)`) | Chinook, EF Core | **opraveno 2026-10-16:** zdrojem poddotazu je cílová entita vztahu a korelace FK = PK se odvodí z jeho párů jako u joinu po cestě; totéž `All`, `Count`, agregát a `Select(…).Contains`; co mapy nemají, `Failure` jmenovitě ([`architecture.md`](../architecture.md) §6.2) |
 | V2 | `Find`, `FindAsync` | Chinook, EF Core | **opraveno 2026-10-16:** filtr přes části klíče z mapování + `Take(1)` s `Convention`; bez klíče či s jiným počtem hodnot `Failure` jmenovitě |
-| V3 | `@Id` na `@ManyToOne` uvnitř `@IdClass` (odvozená identita JPA) | Keycloak | část klíče přes vztah vypadne, klíč se tiše zúží na zbylé sloupce |
+| V3 | `@Id` na `@ManyToOne` uvnitř `@IdClass` (odvozená identita JPA) | Keycloak | **opraveno 2026-10-16:** čte se jako `<key-many-to-one>` — sloupec `@JoinColumn` je část klíče pojmenovaná sloupcem, vztah stojí vedle jen pro čtení ([`subset.md`](../subset.md), část 2); entity výňatku se vrátily k textu projektu a dotazy, které srovnávají klíč, jmenují sloupec (`m.USER_ID`) |
 | V4 | alias v uvozovkách s tečkou (`AS "product.productId"`) | JPetStore | **opraveno 2026-10-16:** SQL cíl `AS [product.productId]`, cíl nad členy řádku nativním SQL (`Fallback`), zdroj MyBatis hlásí ztracené vnoření ([`subset.md`](../subset.md) 2.8) |
 | V5 | holý sloupec v dotazu přes víc tabulek | JPetStore | **opraveno 2026-10-16:** vlastníka dá mapa aliasu, kterou doplní i katalog; bez ní SQL cíl nechá sloupec holý a cíl nad členy řádku jde nativním SQL (2.6) |
 | V6 | projekce celého řádku jedné tabulky joinu (`select r from R r join C c …`, `SELECT Track.* …`) | Keycloak, Ambari, Chinook | **opraveno 2026-10-16:** projekce nese alias celého řádku; SQL `r.*`, HQL a JPQL `select r`, LINQ `Select(x => x.r)`, typ výsledku entita za aliasem (2.6) |
 
 Vyslovené meze, na které výňatky narazily ([`subset.md`](../subset.md), část 2): pojmenované dotazy JPA (`Loss`), srovnání celé entity s parametrem, cesta přes asociaci v podmínce (*navigace v operandu*, `Failure` s obecným důvodem), křížový join čárkou, parametr porovnaný s atributem výčtového typu mimo převod (parametr bez skaláru), zápis, Dapper.Contrib, uložené procedury, dynamické SQL MyBatisu, `@ElementCollection` a dědičnost (VO 2), koncový skalár `AnyAsync` a `CountAsync`, projekce navigace a `SelectMany` s jedním argumentem (`Loss`). Dvě z nich vedou otevřené položky jako otázky k rozhodnutí, protože na nich stojí velká část reálného kódu: pojmenované dotazy JPA a cesta přes asociaci mimo `join`.
 
-Drobnost: vnořené klíčové třídy se stejným jménem (`Key` v jedenácti entitách Keycloaku) hlásí `Conflict`, jako by byly entitami; výstup je správný. Vede ji položka vady V3, které je sousedem.
+Drobnost: vnořené klíčové třídy se stejným jménem (`Key` v jedenácti entitách Keycloaku) hlásily `Conflict`, jako by byly entitami; **opraveno 2026-10-16** rozh. [142](../decisions/142-a-key-class-claim-binds-first-to-the-class-nested-in-the-entity-that-names-it.md) — nárok klíčové třídy ji najde ve vlastním rozsahu entity.

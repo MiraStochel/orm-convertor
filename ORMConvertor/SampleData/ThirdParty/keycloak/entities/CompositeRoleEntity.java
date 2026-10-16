@@ -17,10 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/CompositeRoleEntity.java.
- * Changed: the key parts parentRoleId (COMPOSITE) and childRoleId (CHILD_ROLE) are stated as
- * their own @Id columns beside a read-only @ManyToOne over the same column, and the nested key
- * class holds the column; the original puts @Id on the @ManyToOne itself. See README.md in the
- * folder above.
+ * Unchanged apart from this note.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -28,7 +25,6 @@ package org.keycloak.models.jpa.entities;
 import java.io.Serializable;
 import java.util.Objects;
 
-import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
@@ -52,24 +48,14 @@ import jakarta.persistence.Table;
 })
 @IdClass(CompositeRoleEntity.Key.class)
 public class CompositeRoleEntity {
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "COMPOSITE")
-    private String parentRoleId;
-
     @ManyToOne(fetch=FetchType.LAZY)
-    @JoinColumn(name = "COMPOSITE", insertable = false, updatable = false)
+    @JoinColumn(name="COMPOSITE")
     private RoleEntity parentRole;
 
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "CHILD_ROLE")
-    private String childRoleId;
-
     @ManyToOne(fetch=FetchType.LAZY)
-    @JoinColumn(name = "CHILD_ROLE", insertable = false, updatable = false)
+    @JoinColumn(name="CHILD_ROLE")
     private RoleEntity childRole;
 
     public CompositeRoleEntity() {
@@ -112,42 +98,42 @@ public class CompositeRoleEntity {
     }
 
     public static class Key implements Serializable {
-        private String childRoleId;
-        private String parentRoleId;
+        private RoleEntity childRole;
+        private RoleEntity parentRole;
 
         public Key() {
         }
 
-        public Key(String parentRoleId, String childRoleId) {
-            this.childRoleId = childRoleId;
-            this.parentRoleId = parentRoleId;
+        public Key(RoleEntity parentRole, RoleEntity childRole) {
+            this.childRole = childRole;
+            this.parentRole = parentRole;
         }
 
-        public String getChildRoleId() {
-            return childRoleId;
+        public RoleEntity getChildRole() {
+            return childRole;
         }
 
-        public void setChildRoleId(String childRoleId) {
-            this.childRoleId = childRoleId;
+        public void setChildRole(RoleEntity childRole) {
+            this.childRole = childRole;
         }
 
-        public String getParentRoleId() {
-            return parentRoleId;
+        public RoleEntity getParentRole() {
+            return parentRole;
         }
 
-        public void setParentRoleId(String parentRoleId) {
-            this.parentRoleId = parentRoleId;
+        public void setParentRole(RoleEntity parentRole) {
+            this.parentRole = parentRole;
         }
 
         @Override
         public boolean equals(Object o) {
             if (!(o instanceof Key key)) return false;
-            return Objects.equals(childRoleId, key.childRoleId) && Objects.equals(parentRoleId, key.parentRoleId);
+            return Objects.equals(childRole, key.childRole) && Objects.equals(parentRole, key.parentRole);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(childRoleId, parentRoleId);
+            return Objects.hash(childRole, parentRole);
         }
     }
 }

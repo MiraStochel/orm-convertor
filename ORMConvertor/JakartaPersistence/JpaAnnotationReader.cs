@@ -185,7 +185,18 @@ public class JpaAnnotationReader
         switch (annotation.SimpleName)
         {
             case "Id":
-                facts.Kind = JpaAttributeKind.Id;
+                // On a relation attribute the annotation is the derived identity (3.2 §2.4.1):
+                // the attribute stays a relation and the key is told apart by the flag,
+                // whichever of the two annotations the source wrote first.
+                if (IsRelation(facts.Kind))
+                {
+                    facts.IsDerivedIdentity = true;
+                }
+                else
+                {
+                    facts.Kind = JpaAttributeKind.Id;
+                }
+
                 break;
 
             case "EmbeddedId":
@@ -248,6 +259,11 @@ public class JpaAnnotationReader
             case "OneToOne":
             case "OneToMany":
             case "ManyToMany":
+                if (facts.Kind == JpaAttributeKind.Id)
+                {
+                    facts.IsDerivedIdentity = true;
+                }
+
                 facts.Kind = annotation.SimpleName switch
                 {
                     "ManyToOne" => JpaAttributeKind.ManyToOne,
@@ -406,4 +422,7 @@ public class JpaAnnotationReader
         => annotation.Qualifier is null || annotation.Qualifier == Jakarta;
 
     private static string Spelling(JavaAnnotation annotation) => "@" + annotation.Name;
+
+    private static bool IsRelation(JpaAttributeKind kind)
+        => kind is JpaAttributeKind.ManyToOne or JpaAttributeKind.OneToOne or JpaAttributeKind.OneToMany or JpaAttributeKind.ManyToMany;
 }

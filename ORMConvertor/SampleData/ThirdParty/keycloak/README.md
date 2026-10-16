@@ -31,13 +31,8 @@
    tool reads the projection of one side of a join.
 3. **One query is left out:** `getAllRedirectUrisOfEnabledClients` joins the element collection
    `client.redirectUris` and builds a `map`, neither of which the tool reads.
-4. **Ten entities state their composite key differently.** Keycloak puts `@Id` on a `@ManyToOne`
-   (JPA derived identity), for example `@Id @ManyToOne @JoinColumn(name = "USER_ID") UserEntity user`
-   in `UserRoleMappingEntity`. Each such key part is written as its own `@Id @Column(name = "USER_ID")
-   String userId` beside the same `@ManyToOne`, now `insertable = false, updatable = false`, and the
-   nested `Key` class holds the column instead of the entity. The table, the key and the relation
-   stay what they were. `FederatedIdentityEntity` already has a `userId` (the federated user's id),
-   so its key part is called `localUserId`.
 
-Everything else in the files - the remaining annotations, `@ElementCollection`, `@Nationalized`,
-cascades, accessors, `equals` and `hashCode` - is the project's.
+The entities are the project's text. Where Keycloak puts `@Id` on a `@ManyToOne` (JPA derived
+identity, for example `@Id @ManyToOne @JoinColumn(name = "USER_ID") UserEntity user` in
+`UserRoleMappingEntity`), the tool reads the join column as a key part named after the column, so
+a rewritten query that compares the key names that column (`m.USER_ID = :userId`).

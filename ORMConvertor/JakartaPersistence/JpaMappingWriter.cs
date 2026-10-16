@@ -327,37 +327,107 @@ public sealed class JpaMappingWriter(
             return;
         }
 
-        var ids = facts.Attributes.Where(a => a.Kind == JpaAttributeKind.Id).ToList();
+        var ids = facts.Attributes.Where(a => a.Kind == JpaAttributeKind.Id || a.IsDerivedIdentity).ToList();
         if (ids.Count == 0)
         {
             return;
         }
 
-        var composite = ids.Count > 1;
-        var parts = ids.Select((id, index) => (id.Name, index + 1, StrategyOf(id))).ToList();
+        // Each @Id in declaration order; a derived identity contributes its join columns,
+        // each as a part of its own, or nothing (DerivedIdentityParts).
+        var parts = new List<(string PropertyName, int Order, PrimaryKeyStrategy Strategy, JpaAttributeFacts Source)>();
+        foreach (var id in ids)
+        {
+            if (id.Kind == JpaAttributeKind.Id)
+            {
+                parts.Add((id.Name, parts.Count + 1, StrategyOf(id), id));
+                continue;
+            }
+
+            foreach (var column in DerivedIdentityParts(id))
+            {
+                parts.Add((column, parts.Count + 1, PrimaryKeyStrategy.Assigned, id));
+            }
+        }
+
+        if (parts.Count == 0)
+        {
+            return;
+        }
+
+        var composite = parts.Count > 1;
 
         // The key stands at each part's @Id, its strategy at the part's @GeneratedValue
-        // (decision 125).
+        // (decision 125); the parts of a derived identity stand at the @Id of the relation.
         using (entityBuilder.At(
             First(ids[0].Positions, ["Id", "member"]),
-            [.. ids.SelectMany(id => new (MappingFactCategory Category, TextRange? Range)[]
+            [.. parts.SelectMany(part => new (MappingFactCategory Category, TextRange? Range)[]
                 {
-                    (MappingFactCategory.PrimaryKey, First(id.Positions, ["Id", "member"])),
-                    (MappingFactCategory.PrimaryKeyStrategy, First(id.Positions, ["GeneratedValue", "Id", "member"])),
+                    (MappingFactCategory.PrimaryKey, First(part.Source.Positions, ["Id", "member"])),
+                    (MappingFactCategory.PrimaryKeyStrategy, First(part.Source.Positions, ["GeneratedValue", "Id", "member"])),
                 }
                 .Where(r => r.Range is not null)
-                .Select(r => new FactRefinement(r.Category, id.Name, r.Range!.Value)))]))
+                .Select(r => new FactRefinement(r.Category, part.PropertyName, r.Range!.Value)))]))
         {
             entityBuilder.AddPrimaryKey(
-                parts,
+                [.. parts.Select(p => (p.PropertyName, p.Order, p.Strategy))],
                 composite && facts.IdClass is not null ? new SourceKeyClass(facts.IdClass, KeyClassForm.Mirrored) : null);
         }
 
-        foreach (var id in ids)
+        foreach (var id in ids.Where(id => id.Kind == JpaAttributeKind.Id))
         {
             using var scope = At(id.Positions, "GeneratedValue", "SequenceGenerator", "TableGenerator", "Id", "member");
             WriteStrategyDetails(facts, id);
         }
+    }
+
+    /// <summary>
+    /// The key parts a derived identity stands for - @Id on a @ManyToOne or @OneToOne
+    /// (Jakarta Persistence 3.2 §2.4.1). The flat key of decision 006 has no reference-typed
+    /// part, so the relation is read the way the NHibernate parser reads &lt;key-many-to-one&gt;:
+    /// its stated join columns become scalar parts named after the column, Assigned because
+    /// the specification derives the value from the parent and admits no generator on it,
+    /// and the relation stands beside them over the same columns, which the targets write
+    /// read-only (decision 012); the language type of a part arrives from the referenced key
+    /// when the pairs resolve. Both readings are reported (decision 010): the reference form
+    /// is not restated, and a relation without stated columns has no column to name a part
+    /// by - the default of @JoinColumn is derived only once the referenced key is known - so
+    /// the key comes out shorter, which is said rather than left silent.
+    /// </summary>
+    private IReadOnlyList<string> DerivedIdentityParts(JpaAttributeFacts relation)
+    {
+        var spelled = relation.Positions.ContainsKey("Id") ? "@Id on" : "id=\"true\" on";
+
+        if (relation.Kind is not (JpaAttributeKind.ManyToOne or JpaAttributeKind.OneToOne))
+        {
+            Report(ConversionRecordKind.Loss, relation.Name, MappingFactCategory.PrimaryKey,
+                $"{spelled} the collection '{relation.Name}' has no meaning in Jakarta Persistence - a derived identity "
+                + "stands only on a single-valued relation - so it is dropped and the relation is read as it is.");
+            return [];
+        }
+
+        var columns = relation.JoinColumns
+            .Select(c => c.Name)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => n!)
+            .ToList();
+
+        if (columns.Count == 0)
+        {
+            Report(ConversionRecordKind.Incompleteness, relation.Name, MappingFactCategory.PrimaryKey,
+                $"{spelled} the relation '{relation.Name}' makes its foreign key column a part of the key, but no "
+                + "@JoinColumn names the column, so the flat key (decision 006) has no scalar part to stand in for "
+                + "it; the key comes out with fewer parts than the source described.");
+            return [];
+        }
+
+        Report(ConversionRecordKind.Loss, relation.Name, MappingFactCategory.PrimaryKey,
+            $"{spelled} the relation '{relation.Name}' (derived identity) is read as its join column(s) "
+            + $"{string.Join(", ", columns.Select(c => $"'{c}'"))} plus the relation: the key renders flat (decision 006), "
+            + "so the key part is the column and the relation stands beside it read-only over the same column; the "
+            + "reference form of the key part is not restated in the output.");
+
+        return columns;
     }
 
     /// <summary>
@@ -546,6 +616,14 @@ public sealed class JpaMappingWriter(
         if (attribute.JoinColumns.Count > 0 && attribute.JoinColumns.All(c => c.Nullable is { } n && !n)
             && attribute.Nullable is null && attribute.Optional is null)
         {
+            entityBuilder.SetPropertyDatabaseMapping(attribute.Name, new Dictionary<string, string> { ["nullable"] = "false" });
+        }
+
+        if (attribute.IsDerivedIdentity && attribute.Nullable is null && attribute.Optional is null
+            && attribute.JoinColumns.All(c => c.Nullable is null))
+        {
+            // A column of the primary key admits no NULL: the specification's statement about
+            // a derived identity, not the source's silence (decision 067).
             entityBuilder.SetPropertyDatabaseMapping(attribute.Name, new Dictionary<string, string> { ["nullable"] = "false" });
         }
     }

@@ -17,9 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/UserConsentClientScopeEntity.java.
- * Changed: the key part userConsentId (USER_CONSENT_ID) is stated as its own @Id column beside
- * a read-only @ManyToOne over the same column, and the nested key class holds the column; the
- * original puts @Id on the @ManyToOne itself. See README.md in the folder above.
+ * Unchanged apart from this note.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -57,14 +55,9 @@ public class UserConsentClientScopeEntity {
 
     public static String NOT_AVAILABLE_PARAM = "#N A#";
 
-    // ORMConvertor: the key part is stated as its own column and the relation over that
-    // column is read-only; the original puts @Id on the @ManyToOne itself.
     @Id
-    @Column(name = "USER_CONSENT_ID")
-    protected String userConsentId;
-
     @ManyToOne(fetch= FetchType.LAZY)
-    @JoinColumn(name = "USER_CONSENT_ID", insertable = false, updatable = false)
+    @JoinColumn(name = "USER_CONSENT_ID")
     protected UserConsentEntity userConsent;
 
     @Id
@@ -123,7 +116,7 @@ public class UserConsentClientScopeEntity {
 
     public static class Key implements Serializable {
 
-        protected String userConsentId;
+        protected UserConsentEntity userConsent;
 
         protected String scopeId;
 
@@ -132,14 +125,14 @@ public class UserConsentClientScopeEntity {
         public Key() {
         }
 
-        public Key(String userConsentId, String scopeId, String parameter) {
-            this.userConsentId = userConsentId;
+        public Key(UserConsentEntity userConsent, String scopeId, String parameter) {
+            this.userConsent = userConsent;
             this.scopeId = scopeId;
             this.parameter = parameter;
         }
 
-        public String getUserConsentId() {
-            return userConsentId;
+        public UserConsentEntity getUserConsent() {
+            return userConsent;
         }
 
         public String getScopeId() {
@@ -157,7 +150,7 @@ public class UserConsentClientScopeEntity {
 
             UserConsentClientScopeEntity.Key key = (UserConsentClientScopeEntity.Key) o;
 
-            if (userConsentId != null ? !userConsentId.getId().equals(key.userConsentId != null ? key.userConsentId.getId() : null) : key.userConsentId != null) return false;
+            if (userConsent != null ? !userConsent.getId().equals(key.userConsent != null ? key.userConsent.getId() : null) : key.userConsent != null) return false;
             if (scopeId != null ? !scopeId.equals(key.scopeId) : key.scopeId != null) return false;
             if (parameter != null ? !parameter.equals(key.parameter) : key.parameter != null) return false;
 
@@ -166,7 +159,7 @@ public class UserConsentClientScopeEntity {
 
         @Override
         public int hashCode() {
-            int result = userConsentId != null ? userConsentId.getId().hashCode() : 0;
+            int result = userConsent != null ? userConsent.getId().hashCode() : 0;
             result = 31 * result + (scopeId != null ? scopeId.hashCode() : 0);
             result = 31 * result + (parameter != null ? parameter.hashCode() : 0);
             return result;
