@@ -355,7 +355,7 @@ public final class KeycloakNamedQueries {
     }
 
     /** Named query "getChildRoles" of RoleEntity. */
-    // ORMConvertor: rewritten - asks for the child role through a correlated exists over the key columns of the composite role, instead of joining it and projecting one side of the join.
+    // ORMConvertor: rewritten - asks for the child role through a correlated exists over the key columns of the composite role, instead of a join whose condition reaches the key through the association (c.childRole.id).
     //   was: select r from RoleEntity r join CompositeRoleEntity c on r.id = c.childRole.id where c.parentRole.id = :parentRoleId
     public static TypedQuery<RoleEntity> getChildRoles(EntityManager em) {
         return em.createQuery("""
@@ -370,7 +370,7 @@ public final class KeycloakNamedQueries {
     }
 
     /** Named query "getChildRolesFromParentIds" of RoleEntity. */
-    // ORMConvertor: rewritten - asks for the child role through a correlated exists over the key columns of the composite role, instead of joining it and projecting one side of the join; exists yields each role once, as distinct did.
+    // ORMConvertor: rewritten - asks for the child role through a correlated exists over the key columns of the composite role, instead of a join whose condition reaches the key through the association (c.childRole.id); exists yields each role once, as distinct did.
     //   was: select distinct r from RoleEntity r join CompositeRoleEntity c on r.id = c.childRole.id where c.parentRole.id in :parentRoleIds
     public static TypedQuery<RoleEntity> getChildRolesFromParentIds(EntityManager em) {
         return em.createQuery("""
@@ -484,36 +484,26 @@ public final class KeycloakNamedQueries {
     }
 
     /** Named query "getRealmUsersByAttributeNameAndValue" of UserEntity. */
-    // ORMConvertor: rewritten - asks for the attribute through a correlated exists instead of joining the collection and projecting one side of the join; a user with two equal attributes now comes once.
-    //   was: select u from UserEntity u join u.attributes attr where u.realmId = :realmId and attr.name = :name and attr.value = :value
     public static TypedQuery<UserEntity> getRealmUsersByAttributeNameAndValue(EntityManager em) {
         return em.createQuery("""
                 select u
                 from UserEntity u
+                join u.attributes attr
                 where u.realmId = :realmId
-                and exists (
-                    select attr
-                    from UserAttributeEntity attr
-                    where attr.user = u
-                    and attr.name = :name
-                    and attr.value = :value)
+                and attr.name = :name
+                and attr.value = :value
                 """, UserEntity.class);
     }
 
     /** Named query "getRealmUsersByAttributeNameAndLongValue" of UserEntity. */
-    // ORMConvertor: rewritten - asks for the attribute through a correlated exists instead of joining the collection and projecting one side of the join; a user with two equal attributes now comes once.
-    //   was: select u from UserEntity u join u.attributes attr where u.realmId = :realmId and attr.name = :name and attr.longValueHash = :longValueHash
     public static TypedQuery<UserEntity> getRealmUsersByAttributeNameAndLongValue(EntityManager em) {
         return em.createQuery("""
                 select u
                 from UserEntity u
+                join u.attributes attr
                 where u.realmId = :realmId
-                and exists (
-                    select attr
-                    from UserAttributeEntity attr
-                    where attr.user = u
-                    and attr.name = :name
-                    and attr.longValueHash = :longValueHash)
+                and attr.name = :name
+                and attr.longValueHash = :longValueHash
                 """, UserEntity.class);
     }
 

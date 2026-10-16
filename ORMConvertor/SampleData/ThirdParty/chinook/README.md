@@ -30,12 +30,13 @@ column is called `Id`; `PlaylistTrack` keeps its composite key.
      `SelectMany` over a navigation, or `Any` over a collection navigation - become a correlated
      `Any` over the other set; the tool reads the first two as one side of a join and loses the
      correlation of the third.
-4. **One Dapper query is corrected and spelled out.** `PlaylistRepository.GetTrackByPlaylistId`
-   names `Playlist.PlaylistId`, a column the schema and the class call `Id`, so it does not run;
-   it now says `Playlist.Id`, and its `Track.*` lists the columns of `Track`, as the other
-   queries of the layer do.
+4. **Two Dapper queries are corrected.** `PlaylistRepository.GetTrackByPlaylistId` names
+   `Playlist.PlaylistId`, a column the schema and the class call `Id`, so it does not run; it
+   now says `Playlist.Id`, and its `Track.*` stays as written. `CustomerRepository.GetBySupportRepId`
+   filters by `ArtistId`, a column `Customer` does not have, so it does not run either; it now
+   says `SupportRepId`, which the method asks for.
 
 Upstream mistakes that do not keep the code from running stay as they are: `GetByArtistId` of
 the EF Core track repository and `GetByEmployeeId` of the invoice repository compare with the
-literal `5` instead of `id`, and two Dapper queries compare another column than their method
-names promise (`ArtistId` in `GetBySupportRepId`, `A.Id` in `GetByArtistId`).
+literal `5` instead of `id`, and the Dapper `GetByArtistId` of the track repository compares
+`A.Id`, another column than its method name promises.

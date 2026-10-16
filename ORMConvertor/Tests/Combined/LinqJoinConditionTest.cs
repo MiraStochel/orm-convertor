@@ -279,11 +279,21 @@ public class LinqJoinConditionTest
         Assert.Contains(".RightJoin(ctx.Set<Order>()", Linq(keysOnly), StringComparison.Ordinal);
     }
 
-    /// <summary>A column of the condition without its table belongs to neither row for certain, so LINQ has no place for it; native SQL writes it as the source did.</summary>
+    /// <summary>
+    /// A column of the condition without its table belongs to the row whose entity maps it;
+    /// one no mapping holds belongs to neither row for certain, so LINQ has no place for it
+    /// and native SQL writes it as the source did.
+    /// </summary>
     [Fact]
-    public void AnUnqualifiedColumnInTheConditionFallsBack()
+    public void AnUnqualifiedColumnInTheConditionBelongsToTheRowThatMapsItOrFallsBack()
     {
-        var builder = Sql(new EFCoreLinqQueryBuilder(), "SELECT c.Name AS Name, o.Note AS Note FROM Customers AS c LEFT JOIN Orders o ON o.CustomerId = c.CustomerId AND Total > 100");
+        var mapped = Sql(new EFCoreLinqQueryBuilder(), "SELECT c.Name AS Name, o.Note AS Note FROM Customers AS c LEFT JOIN Orders o ON o.CustomerId = c.CustomerId AND Total > 100");
+        var linq = Built(mapped).Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
+
+        Assert.Contains("o.Total > 100", linq);
+        Assert.DoesNotContain(mapped.Records, r => r.Kind == ConversionRecordKind.Fallback);
+
+        var builder = Sql(new EFCoreLinqQueryBuilder(), "SELECT c.Name AS Name, o.Note AS Note FROM Customers AS c LEFT JOIN Orders o ON o.CustomerId = c.CustomerId AND Bonus > 100");
         Built(builder);
 
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.Join && r.Reason.Contains("without its table", StringComparison.Ordinal));

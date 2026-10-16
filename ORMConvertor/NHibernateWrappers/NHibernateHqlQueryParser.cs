@@ -631,18 +631,13 @@ public class NHibernateHqlQueryParser(
                 continue;
             }
 
-            // A bare declared alias projects the whole entity, which rule Q3 spells as the
-            // absence of a projection — the same reading LINQ's Select(c => c) gets.
+            // A bare declared alias projects the whole row of that alias - the root's, which
+            // rule Q3 spells as the absence of a projection, or one side of a join, which the
+            // builder template materializes into that entity; beside other columns the
+            // template drops it with a record.
             if (operand is { IsColumn: true, IsAggregate: false, Property: "*" })
             {
-                if (projections.Count > 1)
-                {
-                    Report(
-                        ConversionRecordKind.Loss,
-                        $"The whole-entity projection '{operand.Table}' next to other columns is not carried by the query representation; it was dropped.",
-                        QueryFeature.Projection);
-                }
-
+                queryBuilder.Project(operand);
                 continue;
             }
 

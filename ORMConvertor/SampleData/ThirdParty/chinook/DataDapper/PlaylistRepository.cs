@@ -2,8 +2,7 @@
 // Changed: the read-only methods are kept and PlaylistExists, Add, Update, Delete are left
 // out, because they write through Dapper.Contrib or only serve writing; the using of
 // Dapper.Contrib goes with them; in GetTrackByPlaylistId the column Playlist.PlaylistId, which
-// the schema and the class call Id, is corrected and Track.* is spelled out as the columns of
-// Track. See README.md in the folder above.
+// the schema and the class call Id, is corrected. See README.md in the folder above.
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -48,15 +47,14 @@ namespace Chinook.DataDapper.Repositories
         }
 
         // ORMConvertor: corrected - the query named the column Playlist.PlaylistId, which the
-        // schema of this project calls Id (the class Playlist has no PlaylistId either);
-        // rewritten - Track.* is spelled out as the columns of Track, as the other queries here do.
+        // schema of this project calls Id (the class Playlist has no PlaylistId either).
         //   was: "SELECT Track.* FROM Playlist INNER JOIN PlaylistTrack ON Playlist.PlaylistId = PlaylistTrack.PlaylistId INNER JOIN Track ON PlaylistTrack.TrackId = Track.Id WHERE Playlist.PlaylistId = @Id"
         public async Task<List<Track>> GetTrackByPlaylistId(int id)
         {
             using var cn = Connection;
             cn.Open();
             var tracks = await cn.QueryAsync<Track>(
-                "SELECT Track.Id, Track.Name, Track.AlbumId, Track.MediaTypeId, Track.GenreId, Track.Composer, Track.Milliseconds, Track.Bytes, Track.UnitPrice FROM Playlist INNER JOIN PlaylistTrack ON Playlist.Id = PlaylistTrack.PlaylistId INNER JOIN Track ON PlaylistTrack.TrackId = Track.Id WHERE Playlist.Id = @Id",
+                "SELECT Track.* FROM Playlist INNER JOIN PlaylistTrack ON Playlist.Id = PlaylistTrack.PlaylistId INNER JOIN Track ON PlaylistTrack.TrackId = Track.Id WHERE Playlist.Id = @Id",
                 new { id });
             return tracks.ToList();
         }

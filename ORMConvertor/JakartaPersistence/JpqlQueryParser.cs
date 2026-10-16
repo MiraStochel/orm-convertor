@@ -1659,17 +1659,14 @@ public abstract class JpqlQueryParser(
                 continue;
             }
 
-            // A bare identification variable projects the whole entity, which rule Q3 spells
-            // as the absence of a projection; count(c) over one is JPQL's count(*).
+            // A bare identification variable projects the whole row of that variable - the
+            // root's, which rule Q3 spells as the absence of a projection, or one side of a
+            // join (select c from R r join C c …), which the builder template materializes
+            // into that entity; beside other columns the template drops it with a record.
+            // count(c) over one is JPQL's count(*).
             if (operand is { IsColumn: true, IsAggregate: false, Property: "*" })
             {
-                if (projections.Count > 1)
-                {
-                    Report(ConversionRecordKind.Loss,
-                        $"The whole-entity projection '{operand.Table}' next to other columns is not carried by the query representation; it was dropped.",
-                        QueryFeature.Projection);
-                }
-
+                queryBuilder.Project(operand);
                 continue;
             }
 

@@ -211,16 +211,15 @@ public class LinqQueryExpressionTest
         AssertClean(builder);
     }
 
-    /// <summary>Selecting one range variable after a join is one side of the joined row, the loss a chain gets for it.</summary>
+    /// <summary>Selecting one range variable after a join is the whole row of that side, as a chain reads it.</summary>
     [Fact]
-    public void SelectingOneSideAfterAJoinIsTheSameLossAsInAChain()
+    public void SelectingOneSideAfterAJoinIsTheWholeRowOfThatSideAsInAChain()
     {
         var builder = Parse(new DapperSqlQueryBuilder(), Method(
             "from ol in ctx.OrderLines join o in ctx.CustomerOrders on ol.OrderId equals o.OrderId where o.CustomerId > 0 select ol"));
 
-        Assert.StartsWith("SELECT *", Sql(builder));
-        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
-        Assert.Contains("leaves out the row 'o'", record.Reason);
+        Assert.StartsWith("SELECT ol.*", Sql(builder));
+        AssertClean(builder);
     }
 
     // ---- grouping and continuations ------------------------------------------------------

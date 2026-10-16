@@ -21,11 +21,12 @@
      written as `INNER JOIN ... ON` with the same conditions - the tool refuses a cross join;
    - `#{value}`, which MyBatis binds to the method's only parameter whatever its name, names that
      parameter (`#{productId}`, `#{orderId}`, ...) - the tool types a parameter from the interface
-     by its name;
-   - every column of a joined select is qualified by its table (`P.NAME`, `ORDERSTATUS.STATUS`) -
-     without the schema the tool gives a bare column to the first table of the join;
-   - the dotted aliases of the item selects (`I.PRODUCTID AS "product.productId"`), with which
-     MyBatis fills `item.product` by auto-mapping, become two result maps with an `<association>`
-     - the tool writes such an alias without its quotes.
+     by its name.
+
+   The columns the joined selects leave bare (`LISTPRICE`, `NAME`, `STATUS`) and the dotted aliases
+   of the item selects (`I.PRODUCTID AS "product.productId"`), with which MyBatis fills `item.product`
+   by auto-mapping, stay as the project wrote them: the tool gives a bare column to the row whose
+   class declares it and writes a delimited alias delimited, with a record that the nesting of the
+   auto-mapping is not carried.
 
 The SQL is the project's HSQLDB SQL, which is also T-SQL as far as these selects go.

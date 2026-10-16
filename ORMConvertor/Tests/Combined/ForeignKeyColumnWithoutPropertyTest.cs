@@ -309,7 +309,7 @@ public class ForeignKeyColumnWithoutPropertyTest
         var written = Assert.Single(result.Sources, s => s.ContentType is ConversionContentType.JpqlQuery or ConversionContentType.HqlQuery or ConversionContentType.SqlQuery).Content;
 
         Assert.Contains(expected, written);
-        Assert.DoesNotContain("*", written.Replace("SELECT *", string.Empty, StringComparison.Ordinal));
+        Assert.DoesNotContain("*", written.Replace("SELECT *", string.Empty, StringComparison.Ordinal).Replace("SELECT p.*", string.Empty, StringComparison.Ordinal));
     }
 
     /// <summary>An entity compared with anything else - a parameter here - has no operand in the representation, and the condition is refused, not written as a column.</summary>

@@ -17,16 +17,18 @@
    named queries of these entities, each as a method that hands its text to `em.createQuery`.
    The annotations stay on the entities as they were; the 51 queries among them that delete,
    update or insert are not carried over.
-2. **Twenty of the 47 are rewritten**, each with a note and its original text above it:
+2. **Eighteen of the 47 are rewritten**, each with a note and its original text above it:
    - a comparison with a whole entity (`m.user = :user`) compares the key column with the key
      (`m.userId = :userId`) - the tool does not read an entity as a parameter;
-   - a path through an association in a condition (`consent.user.id = :userId`) and a join whose
-     one side is projected (`select r from RoleEntity r join CompositeRoleEntity c ...`,
-     `select u from UserEntity u join u.attributes attr ...`) become a correlated `exists` - the
-     tool reads neither a path outside `join` nor the projection of one side of a join;
+   - a path through an association in a condition (`consent.user.id = :userId`, the
+     `c.childRole.id` of `select r from RoleEntity r join CompositeRoleEntity c on ...`) becomes
+     a correlated `exists` - the tool does not read a path outside `join`;
    - `select distinct r ... join` becomes `exists` without `distinct`, which returns each role
-     once as `distinct` did; the two queries over user attributes return a user with two equal
-     attributes once rather than twice.
+     once as `distinct` did.
+
+   The two queries that join the attribute collection and project the user
+   (`select u from UserEntity u join u.attributes attr ...`) stand as the project wrote them: the
+   tool reads the projection of one side of a join.
 3. **One query is left out:** `getAllRedirectUrisOfEnabledClients` joins the element collection
    `client.redirectUris` and builds a `map`, neither of which the tool reads.
 4. **Ten entities state their composite key differently.** Keycloak puts `@Id` on a `@ManyToOne`

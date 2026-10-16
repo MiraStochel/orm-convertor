@@ -1,7 +1,8 @@
 ﻿// ORMConvertor: taken from cwoodruff/ChinookASPNETWebAPI at 82c89e0, ChinookASPNETWebAPI/Chinook.DataDapper/Repositories/CustomerRepository.cs.
 // Changed: the read-only methods are kept and CustomerExists, Add, Update, Delete are left
 // out, because they write through Dapper.Contrib or only serve writing; the using of
-// Dapper.Contrib goes with them. See README.md in the folder above.
+// Dapper.Contrib goes with them; in GetBySupportRepId the column ArtistId, which
+// Customer does not have, is corrected to SupportRepId. See README.md in the folder above.
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -45,11 +46,14 @@ namespace Chinook.DataDapper.Repositories
             return cn.QueryFirstOrDefault<Customer>("Select * From Customer WHERE Id = @Id", new { id });
         }
 
+        // ORMConvertor: corrected - the query named the column ArtistId, which Customer does not
+        // have (the method asks for the support representative), so it did not run.
+        //   was: "Select * From Customer WHERE ArtistId = @Id"
         public async Task<List<Customer>> GetBySupportRepId(int id)
         {
             using var cn = Connection;
             cn.Open();
-            var customers = await cn.QueryAsync<Customer>("Select * From Customer WHERE ArtistId = @Id", new { id });
+            var customers = await cn.QueryAsync<Customer>("Select * From Customer WHERE SupportRepId = @Id", new { id });
             return customers.ToList();
         }
     }

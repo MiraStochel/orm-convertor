@@ -23,7 +23,7 @@ Stav k 2026-10-13: počty jsou z mělkých klonů výchozí větve (grep, ±10 %
 | **ZP** | vypustit zápis (`<insert>`, `Execute`, Dapper.Contrib, `SaveChanges`) a kód, který slouží jen jemu | překládají se čtecí dotazy (rozh. [053](../decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md), [133](../decisions/133-an-add-on-package-over-a-framework-is-not-that-framework.md)) |
 | **DS** | dynamické SQL MyBatisu (`<if>`, `<choose>`, `${}`) vypustit či rozepsat | zúžení Z F8 (subset 2.3, 2.4) |
 | **CE** | srovnání s celou entitou (`m.user = :user`) na srovnání klíče | parametr entitou model nenese (subset 2.6) |
-| **CP** | cesta přes asociaci v podmínce (`c.user.id = :id`) a projekce jedné strany joinu na korelované `exists` | cestu mimo `join` nástroj nečte, projekci strany joinu čte chybně (vada V6) |
+| **CP** | cesta přes asociaci v podmínce (`c.user.id = :id`) na korelované `exists` | cestu mimo `join` nástroj nečte (subset 2.6); projekci jedné strany joinu (`select r … join …`) čte od 2026-10-16 správně, ty přepisy se vrátily k textu projektu |
 | **DI** | `@Id` na `@ManyToOne` (odvozená identita) na sloupec klíče s relací jen pro čtení | vada V3 |
 | **DD** | dědičnost a `@MappedSuperclass`: sloupce předka přenést do entity | VO 2 (subset 2.1) |
 | **KR** | kořen dotazu přes vlastní repozitář (`_repository.Query()`, `Repository.Table`) na `DbSet`/`Set<T>()` | rozh. [114](../decisions/114-what-the-unit-states-about-a-name-decides-an-ef-core-root.md) |
@@ -56,7 +56,7 @@ Stav k 2026-10-13: počty jsou z mělkých klonů výchozí větve (grep, ±10 %
 
 | Zdroj | Licence | Rozsah | Schéma | Použití |
 |---|---|---|---|---|
-| [MyBatis JPetStore 6](https://github.com/mybatis/jpetstore-6) — referenční obchod | P Apache-2.0 | 7 tříd, 13 tabulek · 2 · 14 selectů, všechny statické | `jpetstore-hsqldb-schema.sql` (HSQLDB, do T-SQL přímo) | s úpravou ZP, čárkový join na `INNER JOIN`, sloupce joinu kvalifikované, tečkové aliasy na `<association>` — **převzato**, příklad `jpetstore-mybatis` |
+| [MyBatis JPetStore 6](https://github.com/mybatis/jpetstore-6) — referenční obchod | P Apache-2.0 | 7 tříd, 13 tabulek · 2 · 14 selectů, všechny statické | `jpetstore-hsqldb-schema.sql` (HSQLDB, do T-SQL přímo) | s úpravou ZP, čárkový join na `INNER JOIN` — **převzato**, příklad `jpetstore-mybatis` |
 | [SonarQube](https://github.com/SonarSource/sonarqube) | C LGPL-3.0 | 176 tabulek · 24 · 448 statických selectů z 626 | `schema-sq.ddl`, SQL Server podporovaný | s úpravou ZP, DS; vztahy v mapperech řídké |
 | [Apache Guacamole JDBC](https://github.com/apache/guacamole-client/tree/main/extensions/guacamole-auth-jdbc) | P Apache-2.0 | 23 tabulek · 3 · 40 statických z 62 | `001-create-schema.sql` v T-SQL | s velkou úpravou ZP, DS, `<include>` napříč dokumenty, `<foreach>` s `jdbcType`, model s předky |
 | [RuoYi](https://github.com/yangzongzhuan/RuoYi) | P MIT | 21 tabulek · 4 · 65 statických z 87 | dump MySQL | s úpravou ZP, DS, SQ |
@@ -83,7 +83,7 @@ Stav k 2026-10-13: počty jsou z mělkých klonů výchozí větve (grep, ±10 %
 
 | Zdroj | Licence | Rozsah | Schéma | Použití |
 |---|---|---|---|---|
-| [Chinook Web API](https://github.com/cwoodruff/ChinookASPNETWebAPI) — vrstva Dapper | P MIT | 11 · klíče ne (Dapper je nevysloví) · 38 literálů T-SQL | jako u vrstvy EF Core | s úpravou ZP, `Track.*` rozepsat (V6) — **převzato**, příklad `chinook-dapper` |
+| [Chinook Web API](https://github.com/cwoodruff/ChinookASPNETWebAPI) — vrstva Dapper | P MIT | 11 · klíče ne (Dapper je nevysloví) · 38 literálů T-SQL | jako u vrstvy EF Core | s úpravou ZP — **převzato**, příklad `chinook-dapper` |
 | [StackExchange.DataExplorer](https://github.com/StackExchange/StackExchange.DataExplorer) | P MIT | ~17 tabulek · žádný · ~45 literálů | `Migrations/*.sql`, SQL Server | beze změny až na `Dapper.SqlBuilder`; nesplní T1 |
 | [Hangfire.SqlServer](https://github.com/HangfireIO/Hangfire/tree/main/src/Hangfire.SqlServer) | C LGPL-3.0 | 11 tabulek · 6 · literály se schématem interpolovaným do textu | `Install.sql`, SQL Server | s úpravou: interpolace `[{schemaName}]` |
 | [bitwarden/server](https://github.com/bitwarden/server) — vrstva Dapper | C AGPL-3.0 | 376 volání | jako výš | nevhodné: každé volání je uložená procedura (subset 2.3) |
@@ -118,11 +118,11 @@ Co se změnilo, vypisuje README složky výňatku a poznámka na začátku každ
 
 | Výňatek | Vstup | Ukázaný směr | Ostatní cíle |
 |---|---|---|---|
-| `keycloak/` | 21 entit, 10 složených klíčů, 47 čtecích dotazů v jedné třídě (20 přepsaných, 1 vypuštěný) | Hibernate → NHibernate, bez `Failure`; 46 dotazů i s tvarem LINQ | Dapper, MyBatis, Hibernate bez `Failure`; EclipseLink 6× `Fallback`; EF Core odmítne 1 dotaz (`COUNT` bez seskupení s kolekčním parametrem nemá nativní tvar) |
+| `keycloak/` | 21 entit, 10 složených klíčů, 47 čtecích dotazů v jedné třídě (18 přepsaných, 1 vypuštěný) | Hibernate → NHibernate, bez `Failure`; 46 dotazů i s tvarem LINQ | Dapper, MyBatis, Hibernate bez `Failure`; EclipseLink 4× `Fallback`; EF Core odmítne 1 dotaz (`COUNT` bez seskupení s kolekčním parametrem nemá nativní tvar) |
 | `ambari/` | 6 entit beze změny, 2 N:M přes `@JoinTable`, 35 dotazů (8 přepsaných, 6 vypuštěných) | EclipseLink → EF Core, bez `Failure`; N:M jako spojovací entity | všech šest cílů bez `Failure` |
 | `chinook/` vrstva Dapper | 11 entit beze změny, 11 repozitářů jen se čtením, 38 dotazů | Dapper → EF Core, bez `Failure`; entity `[Keyless]` | MyBatis, Dapper bez `Failure`; NHibernate, Hibernate, EclipseLink odmítnou 11 entit pro chybějící klíč — doplní ho katalog |
 | `chinook/` vrstva EF Core | tytéž entity, kontext s fluent konfigurací, 35 dotazů | EF Core → Hibernate, bez `Failure`; klíče a vztahy z fluent řetězů | všech šest cílů bez `Failure` |
-| `jpetstore/` | 7 tříd, 7 rozhraní, 7 dokumentů mapperu, 14 selectů | MyBatis → Dapper, bez `Failure` | EF Core a MyBatis bez `Failure`, EF Core ale s entitami odvozenými z tabulek bez třídy; NHibernate, Hibernate, EclipseLink odmítnou 7 entit pro chybějící klíč — doplní ho katalog |
+| `jpetstore/` | 7 tříd, 7 rozhraní, 7 dokumentů mapperu, 14 selectů | MyBatis → Dapper, bez `Failure` | MyBatis bez `Failure`; EF Core odmítne 4 dotazy (holé sloupce joinu, které žádná třída nemapuje — `SUPPLIER`, `BILLADDR1` —, nemají v řádku `SqlQuery` typ) a entity odvozuje z tabulek bez třídy; NHibernate, Hibernate, EclipseLink píšou tytéž 4 dotazy nativním SQL (`Fallback`) a odmítnou 7 entit pro chybějící klíč — doplní ho katalog |
 
 **T1:** výňatek Keycloaku jako jediný splní všechna čísla zadání (21 entit, vztahy, 10 složených klíčů, 47 čtecích dotazů); bitwarden/server by je splnil v .NET, ale licence převzetí nedovolí.
 
@@ -137,9 +137,9 @@ Co výňatky ukázaly o nástroji. **Vada** je tvar uvnitř nároku, který nás
 | V1 | `Any` nad kolekční navigací (`c.InvoiceLines.Any(o => …)`) | Chinook, EF Core | poddotaz bez korelace s vnějším řádkem, bez záznamu — vrátí všechny řádky, má-li kterákoli faktura podmínku |
 | V2 | `Find`, `FindAsync` | Chinook, EF Core | čte se jako neznámý krok, tedy `Loss`, a dotaz vrátí celou tabulku místo řádku s klíčem |
 | V3 | `@Id` na `@ManyToOne` uvnitř `@IdClass` (odvozená identita JPA) | Keycloak | část klíče přes vztah vypadne, klíč se tiše zúží na zbylé sloupce |
-| V4 | alias v uvozovkách s tečkou (`AS "product.productId"`) | JPetStore | T-SQL i LINQ ho napíšou bez uvozovek, cíl text odmítne |
-| V5 | holý sloupec v dotazu přes víc tabulek | JPetStore | bez katalogu ho dostane první tabulka joinu (`I.NAME` místo `P.NAME`, `ORDERS.STATUS` místo `ORDERSTATUS.STATUS`) |
-| V6 | projekce celého řádku jedné tabulky joinu (`select r from R r join C c …`, `SELECT Track.* …`) | Keycloak, Ambari, Chinook | čte se jako celý spojený řádek: SQL `SELECT *` přes obě tabulky, HQL bez `select`, LINQ bez `Select`; s `DISTINCT` jiné řádky |
+| V4 | alias v uvozovkách s tečkou (`AS "product.productId"`) | JPetStore | **opraveno 2026-10-16:** SQL cíl `AS [product.productId]`, cíl nad členy řádku nativním SQL (`Fallback`), zdroj MyBatis hlásí ztracené vnoření ([`subset.md`](../subset.md) 2.8) |
+| V5 | holý sloupec v dotazu přes víc tabulek | JPetStore | **opraveno 2026-10-16:** vlastníka dá mapa aliasu, kterou doplní i katalog; bez ní SQL cíl nechá sloupec holý a cíl nad členy řádku jde nativním SQL (2.6) |
+| V6 | projekce celého řádku jedné tabulky joinu (`select r from R r join C c …`, `SELECT Track.* …`) | Keycloak, Ambari, Chinook | **opraveno 2026-10-16:** projekce nese alias celého řádku; SQL `r.*`, HQL a JPQL `select r`, LINQ `Select(x => x.r)`, typ výsledku entita za aliasem (2.6) |
 
 Vyslovené meze, na které výňatky narazily ([`subset.md`](../subset.md), část 2): pojmenované dotazy JPA (`Loss`), srovnání celé entity s parametrem, cesta přes asociaci v podmínce (*navigace v operandu*, `Failure` s obecným důvodem), křížový join čárkou, parametr porovnaný s atributem výčtového typu mimo převod (parametr bez skaláru), zápis, Dapper.Contrib, uložené procedury, dynamické SQL MyBatisu, `@ElementCollection` a dědičnost (VO 2), koncový skalár `AnyAsync` a `CountAsync`, projekce navigace a `SelectMany` s jedním argumentem (`Loss`). Dvě z nich vedou otevřené položky jako otázky k rozhodnutí, protože na nich stojí velká část reálného kódu: pojmenované dotazy JPA a cesta přes asociaci mimo `join`.
 

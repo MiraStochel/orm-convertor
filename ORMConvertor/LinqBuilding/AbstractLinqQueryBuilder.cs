@@ -28,6 +28,9 @@ namespace LinqBuilding;
 /// </summary>
 public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
 {
+    /// <summary>LINQ names a column as a member of the row it belongs to, so a column whose row nobody knows and an alias that is no identifier have no spelling here.</summary>
+    protected override bool WritesColumnsAsMembers => true;
+
     private LinqScope scope = new();
     private LinqQueryVisitor visitor = null!;
     private readonly List<string> tupleAliases = [];
@@ -139,7 +142,11 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         tupleAliases.Add(clauses.From.Alias ?? entity ?? clauses.From.Table);
         orderingAfterProjection = string.Empty;
 
-        artifact.ResultEntity = entity;
+        // The entity the chain yields: the source's, or the one behind the range variable a
+        // whole-row projection selects out of the joined row (Select(x => x.t)).
+        artifact.ResultEntity = clauses.MaterializesTheSource || clauses.MaterializedTable is not { } materialized
+            ? entity
+            : IsDefinition(materialized) ? null : EntityFor(materialized)?.Entity.Name ?? SingularOf(materialized);
         artifact.Source.Append(definition ? Variables[clauses.From.Table] : Root(entity!));
 
         if (map is null && !definition)
@@ -985,6 +992,13 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         // simply the absence of a Select.
         if (clauses.ProjectsWholeEntity && !scope.Grouped)
         {
+            // The whole row of one range variable of a join is that member of the joined row,
+            // selected out of the tuple; the source's own whole row is the absence of a Select.
+            if (!clauses.MaterializesTheSource && scope.Composite)
+            {
+                artifact.Projection.Append($"\n        .Select({scope.Param} => {scope.Row(clauses.MaterializedAlias)})");
+            }
+
             AppendDistinct(clauses, artifact);
             return;
         }
@@ -1296,12 +1310,18 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         }
 
         var artifact = Compose(clauses);
-        elementEntity = clauses.ProjectsWholeEntity && !scope.Composite && !scope.Grouped
-            ? artifact.ResultEntity
-            : null;
+        elementEntity = YieldsAnEntity(clauses) ? artifact.ResultEntity : null;
 
         return Chain(artifact);
     }
+
+    /// <summary>
+    /// Whether the chain's element is an entity: a whole-entity query that is not grouped and
+    /// whose row is not the tuple of a join - the source's row before any join, or the one
+    /// member of the joined row a whole-row projection selects out of it.
+    /// </summary>
+    private bool YieldsAnEntity(QueryClauses clauses)
+        => clauses.ProjectsWholeEntity && !scope.Grouped && (!scope.Composite || !clauses.MaterializesTheSource);
 
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
     {
@@ -1310,7 +1330,7 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         // A projection into an anonymous type, a tuple produced by a join and a grouping all
         // have element types the artifact cannot name, so the method is typed non-generically;
         // so has the row of an intermediate result (decision 112).
-        var returnType = clauses.ProjectsWholeEntity && !scope.Composite && !scope.Grouped && artifact.ResultEntity is not null
+        var returnType = YieldsAnEntity(clauses) && artifact.ResultEntity is not null
             ? $"IQueryable<{artifact.ResultEntity}>"
             : "IQueryable";
 

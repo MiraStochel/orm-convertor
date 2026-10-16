@@ -23,7 +23,7 @@ namespace AbstractWrappers;
 /// then runs eight abstract steps in relational evaluation order and lets the framework
 /// assemble the text in <see cref="FinalizeQuery"/>.
 /// </summary>
-public abstract class AbstractQueryBuilder
+public abstract partial class AbstractQueryBuilder
 {
     protected readonly List<QueryInstruction> instructions = [];
     protected readonly Stack<int> marks = [];
@@ -387,12 +387,13 @@ public abstract class AbstractQueryBuilder
     /// Records one projected value with an optional alias (decision 107): a column, a
     /// column under an aggregate, the whole entity as the column <c>*</c>, or an
     /// expression. The parsers hand over the operand and do not build the instruction
-    /// themselves.
+    /// themselves. <paramref name="delimitedAlias"/> says the source set the alias off with
+    /// delimiters because it is no identifier of its language (<see cref="ProjectInstruction.DelimitedAlias"/>).
     /// </summary>
-    public void Project(QueryOperand operand, string? alias = null)
+    public void Project(QueryOperand operand, string? alias = null, bool delimitedAlias = false)
     {
         ArgumentNullException.ThrowIfNull(operand);
-        instructions.Add(new ProjectInstruction(operand, alias));
+        instructions.Add(new ProjectInstruction(operand, alias, delimitedAlias && alias is not null));
     }
 
     /// <summary>
@@ -810,10 +811,14 @@ public abstract class AbstractQueryBuilder
         // the whole query and before anything reads the comparisons (decision 024, the
         // direction the readers cannot cover). The bodies of the definitions are part of the
         // query, so they are typed with it.
+        // Before anything reads a column: the row every bare column belongs to, as far as the
+        // mapping says it (QualifyColumns) - the typing of a literal, the gate of a parameter
+        // and every visitor resolve a column through its row.
         var typedDefinitions = new List<WithInstruction>(gatedDefinitions.Count);
         foreach (var definition in gatedDefinitions)
         {
-            if (TypeTemporalLiterals(definition.Body, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase)) is not { } typed)
+            var qualified = definition.Body with { Instructions = [.. QualifyColumns(definition.Body.Instructions, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase))] };
+            if (TypeTemporalLiterals(qualified, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase)) is not { } typed)
             {
                 return [];
             }
@@ -823,7 +828,7 @@ public abstract class AbstractQueryBuilder
 
         gatedDefinitions = typedDefinitions;
 
-        if (!TypeTemporalLiterals(body, [], out body))
+        if (!TypeTemporalLiterals(QualifyColumns(body, []), [], out body))
         {
             return [];
         }
@@ -1001,7 +1006,14 @@ public abstract class AbstractQueryBuilder
             return null;
         }
 
-        var projections = body.OfType<ProjectInstruction>().ToList();
+        // The select list and the columns it names, held once for every target: a whole row
+        // beside columns, a column whose row nobody knows, an alias that is no identifier.
+        if (GateSelectList(body, body.OfType<ProjectInstruction>().ToList()) is not { } gated)
+        {
+            return null;
+        }
+
+        var projections = gated.ToList();
         var groupBys = body.OfType<GroupByInstruction>().ToList();
         var orderBys = body.OfType<OrderByInstruction>().ToList();
 
@@ -1124,6 +1136,12 @@ public abstract class AbstractQueryBuilder
             && string.Equals(projection.Alias, key.Property, StringComparison.OrdinalIgnoreCase))
         {
             return true;
+        }
+
+        // The whole row of one range variable keeps every column of that row.
+        if (projection.IsWholeRow && key is { IsColumn: true, IsAggregate: false, Table: { } keyTable })
+        {
+            return string.Equals(projected.Table, keyTable, StringComparison.OrdinalIgnoreCase);
         }
 
         if (projected is { IsColumn: true, IsAggregate: false } && key is { IsColumn: true, IsAggregate: false })
@@ -4461,11 +4479,11 @@ public abstract class AbstractQueryBuilder
             return null;
         }
 
-        if (op is not ComparisonOperator.Exists && clauses.Projections.Count != 1)
+        if (op is not ComparisonOperator.Exists && (clauses.Projections.Count != 1 || clauses.Projections[0].IsWholeRow))
         {
             Report(
                 ConversionRecordKind.Failure,
-                $"The subquery projects {clauses.Projections.Count} columns where IN and scalar comparisons need exactly one; no artifact was generated.",
+                $"The subquery projects {(clauses.ProjectsWholeEntity ? "a whole row" : $"{clauses.Projections.Count} columns")} where IN and scalar comparisons need exactly one column; no artifact was generated.",
                 QueryFeature.Subquery);
             return null;
         }

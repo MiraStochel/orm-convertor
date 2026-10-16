@@ -2266,9 +2266,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         // one side.
         if (args.Count == 1)
         {
-            var reach = AliasesOf(row);
-            reach.Add(rightAlias);
-            ReportRowsLeftOut(reach, AliasesOf(joined), "SelectMany() without a result selector", $"materializes the rows of '{written}' alone and leaves out");
+            // The rows of the collection alone: the whole-row projection of the joined alias.
+            queryBuilder.Project(QueryOperand.Column(rightAlias, "*"));
             row = joined;
             return;
         }
@@ -2326,9 +2325,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         // association path above.
         if (arguments == 1)
         {
-            var reach = AliasesOf(row);
-            reach.Add(rightAlias);
-            ReportRowsLeftOut(reach, AliasesOf(joined), "SelectMany() without a result selector", $"materializes the rows of '{root.Name}' alone and leaves out");
+            // The rows of the collection alone: the whole-row projection of the joined alias.
+            queryBuilder.Project(QueryOperand.Column(rightAlias, "*"));
             row = joined;
             return;
         }
@@ -2542,6 +2540,16 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
         else if (resolve(body, out var endsOnRow, out _) && endsOnRow is not null)
         {
+            // One row of the joined row alone - Select(x => x.o), (ol, o) => o - is the
+            // whole-row projection of that alias, which every target materializes into the
+            // row's entity; a row the selector composed of several is the joined row, left out
+            // members and all, as before.
+            if (endsOnRow is EntityRow { Alias: var alias } && AliasesOf(endsOnRow).Count < reach.Count)
+            {
+                queryBuilder.Project(QueryOperand.Column(alias, "*"));
+                return endsOnRow;
+            }
+
             ReportRowsLeftOut(reach, AliasesOf(endsOnRow), clause, $"'{body}' materializes one side of the join and leaves out");
             return endsOnRow;
         }

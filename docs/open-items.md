@@ -2,7 +2,7 @@
 
 Jediný seznam toho, co zbývá. **Rozhodnutí** končí novým souborem v [`decisions/`](./decisions/README.md) a řádkem v jeho rejstříku, **práce** (už rozhodnutá) kódem a aktualizací [`architecture.md`](./architecture.md), podle potřeby i [`subset.md`](./subset.md) a [`traceability.md`](./traceability.md). Hotová položka odsud mizí; co verze nárokuje, říká §9 a kanonicky sekce *Guarantees* kořenového [`README.md`](../README.md).
 
-**Pořadí nesou jen značky** (rozh. [018](./decisions/018-work-order-as-item-marker.md)) na začátku kurzívového řádku vazeb: **Na řadě** nejvýš jedna položka, **Potom** nejvýš dvě, ostatní se berou podle priorit z požadavků. **Vada** — vstup v nároku, z něhož vznikne artefakt, který cíl odmítne nebo který tiše znamená něco jiného — se opravuje přednostně jako práce a nárok, který vyvrací, do opravy platí jen s výhradou; otevřených je sedm, šest z reálného kódu ([Vady z reálného kódu](#vady-z-reálného-kódu)) a jedna ze soudce LDBC ([Zřetězení s `NULL` v LINQ EF Core](#zřetězení-s-null-dá-v-linq-ef-core-prázdný-text-místo-null)). Cíle zadání: cíl 1 = vydání `1.2.0`, cíl 2 = `2.0.0`, cíl 3 = příští MAJOR `3.0.0` (rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md)).
+**Pořadí nesou jen značky** (rozh. [018](./decisions/018-work-order-as-item-marker.md)) na začátku kurzívového řádku vazeb: **Na řadě** nejvýš jedna položka, **Potom** nejvýš dvě, ostatní se berou podle priorit z požadavků. **Vada** — vstup v nároku, z něhož vznikne artefakt, který cíl odmítne nebo který tiše znamená něco jiného — se opravuje přednostně jako práce a nárok, který vyvrací, do opravy platí jen s výhradou; otevřené jsou čtyři, tři z reálného kódu ([Vady z reálného kódu](#vady-z-reálného-kódu)) a jedna ze soudce LDBC ([Zřetězení s `NULL` v LINQ EF Core](#zřetězení-s-null-dá-v-linq-ef-core-prázdný-text-místo-null)). Cíle zadání: cíl 1 = vydání `1.2.0`, cíl 2 = `2.0.0`, cíl 3 = příští MAJOR `3.0.0` (rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md)).
 
 ## Kde jsme vůči specifikaci
 
@@ -31,9 +31,6 @@ Rejstřík, ne pořadí.
 | [`Any` nad kolekční navigací bez korelace](#any-nad-kolekční-navigací-se-čte-bez-korelace) | Vady | práce | F7–F10, F11 |
 | [`Find` vrátí celou tabulku](#find-a-findasync-vrátí-celou-tabulku) | Vady | práce | F7–F10, F11 |
 | [Odvozená identita JPA zúží klíč](#odvozená-identita-jpa-tiše-zúží-složený-klíč) | Vady | práce | F1, F2, F7, F9, F11 |
-| [Alias v uvozovkách](#alias-v-uvozovkách-vyjde-bez-uvozovek) | Vady | práce | F7–F10 |
-| [Holý sloupec joinu](#holý-sloupec-dotazu-přes-víc-tabulek-dostane-první-tabulku) | Vady | práce | F6–F10 |
-| [Řádek jedné tabulky joinu](#projekce-řádku-jedné-tabulky-joinu-se-čte-jako-celý-spojený-řádek) | Vady | práce | F7–F10 |
 | [Zřetězení s `NULL` v LINQ EF Core](#zřetězení-s-null-dá-v-linq-ef-core-prázdný-text-místo-null) | Dotazy | práce | F7–F10, F11 |
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | T2, T3, F13 |
 | [Nový kontejner databáze zahodí `LdbcSnb`](#nový-kontejner-mssql_db-může-zahodit-načtené-ldbcsnb) | Dotazy | práce | S5, F13 |
@@ -78,7 +75,7 @@ flowchart LR
 
 ## Vady z reálného kódu
 
-Šest tvarů, které nástroj přečte a přeloží jinak, než znamenají; ukázaly je výňatky open-source projektů ([`analysis/real-world-sources.md`](./analysis/real-world-sources.md), *Nálezy*; rozh. [138](./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md)). Výňatky v `ORMConvertor/SampleData/ThirdParty` každou obcházejí přepisem s poznámkou; po opravě se přepis smí vrátit k textu projektu. [`subset.md`](./subset.md) 2.13 je vede jako tichá místa, §9 nárok do opravy omezuje výhradou.
+Tři tvary, které nástroj přečte a přeloží jinak, než znamenají; ukázaly je výňatky open-source projektů ([`analysis/real-world-sources.md`](./analysis/real-world-sources.md), *Nálezy*; rozh. [138](./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md)). Výňatky v `ORMConvertor/SampleData/ThirdParty` každou obcházejí přepisem s poznámkou; po opravě se přepis smí vrátit k textu projektu. [`subset.md`](./subset.md) 2.13 je vede jako tichá místa, §9 nárok do opravy omezuje výhradou.
 
 #### `Any` nad kolekční navigací se čte bez korelace
 *Vada. Práce podle rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) a [101](./decisions/101-a-join-along-an-association-path-is-derived-from-the-relation.md). Nález V1 (Chinook, `DataEF/TrackRepository.cs`). Požadavky F7–F10, F11.*
@@ -94,21 +91,6 @@ LINQ `Tracks.Where(c => c.InvoiceLines.Any(o => o.InvoiceId == id))` se čte jak
 *Vada. Práce podle rozh. [006](./decisions/006-flat-composite-key-rendering.md), [031](./decisions/031-key-class-as-declaration-of-key-parts.md) a [077](./decisions/077-hibernate-wrapper-over-the-shared-jpa-layer.md). Nález V3 (Keycloak, deset entit). Požadavky F1, F2, F7, F9, F11.*
 
 Entita s `@IdClass`, jejíž část klíče je `@Id` přímo na `@ManyToOne` (odvozená identita Jakarta Persistence), se čte bez té části: klíč `USER_ROLE_MAPPING(USER_ID, ROLE_ID)` vyjde jako samotné `ROLE_ID` a jediný záznam se týká člena klíčové třídy, ne klíče. Část klíče je tu sloupec vztahu; čtení ji má vzít jako část klíče nad sloupci `@JoinColumn` a vztah vedle ní, jako `hbm.xml` čte `<key-many-to-one>`. V téže oblasti: jedenáct vnořených tříd `Key` v Keycloaku hlásí `Conflict`, jako by byly entitami, ačkoli rozh. 031 klíčovou třídu entitou nečiní; výstup je správný.
-
-#### Alias v uvozovkách vyjde bez uvozovek
-*Vada. Práce podle rozh. [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md) a [084](./decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md). Nález V4 (JPetStore, `ItemMapper.xml`). Požadavky F7–F10.*
-
-`I.PRODUCTID AS "product.productId"` — alias, který identifikátorem není a zdroj ho proto oddělil uvozovkami — vyjde v T-SQL cíle jako `AS product.productId` a v LINQ jako člen anonymního typu `product.productId`; SQL Server i kompilátor text odmítnou. Alias má nést, že byl oddělený, cíl SQL ho oddělit po svém (`[…]`) a cíl, jehož jazyk takové jméno nemá (anonymní typ C#, alias JPQL), odmítnout se záznamem. U MyBatisu je tečkový alias navíc pokyn automatickému mapování do vnořeného objektu (`item.product`), který mezireprezentace nenese — ten patří do záznamu, ne do jména.
-
-#### Holý sloupec dotazu přes víc tabulek dostane první tabulku
-*Vada. Práce podle rozh. [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md) a [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Nález V5 (JPetStore, `ItemMapper.xml`, `OrderMapper.xml`). Požadavky F6–F10.*
-
-V `SELECT LISTPRICE, NAME FROM ITEM I INNER JOIN PRODUCT P ON …` čtení přidělí každý nekvalifikovaný sloupec první tabulce: cíl napíše `I.NAME`, ačkoli `NAME` je sloupec `PRODUCT`, a SQL Server dotaz odmítne — nebo, má-li `ITEM` sloupec téhož jména, tiše přečte jiný. Komu holý sloupec patří, ví jen schéma: cíl SQL ho má nechat holý, cíl, který stranu joinu potřebuje (LINQ, JPQL), ji má vzít z katalogu, a bez katalogu odmítnout.
-
-#### Projekce řádku jedné tabulky joinu se čte jako celý spojený řádek
-*Vada. Práce podle rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) a [101](./decisions/101-a-join-along-an-association-path-is-derived-from-the-relation.md). Nález V6 (Keycloak, Ambari, Chinook). Požadavky F7–F10.*
-
-`select r from RoleEntity r join CompositeRoleEntity c on …` i `SELECT Track.* FROM Playlist INNER JOIN …` čte mezireprezentace jako dotaz bez projekce, tedy s celým řádkem — a ten je po joinu spojený. Cíl SQL napíše `SELECT *` přes obě tabulky (Dapper pak plní vlastnosti podle jmen sloupců a vezme `Id` jiné tabulky), HQL vynechá `select` a vrátí dvojice, LINQ vynechá `Select`; s `distinct` vrátí jiné řádky. JPQL cíl píše správně jen proto, že bere kořen. Projekce má nést, kterou proměnnou rozsahu bere celou.
 
 ---
 

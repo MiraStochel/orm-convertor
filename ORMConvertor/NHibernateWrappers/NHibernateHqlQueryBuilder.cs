@@ -68,7 +68,11 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
         var entity = map?.Entity.Name ?? SingularOf(clauses.From.Table);
         var alias = HqlNames.Alias(clauses.From.Alias ?? entity.ToLowerInvariant());
 
-        artifact.ResultEntity = entity;
+        // The entity the query materializes: the source's, or the one behind the declared
+        // alias a whole-row projection names out of a join (select r from R r join C c …).
+        artifact.ResultEntity = clauses.MaterializesTheSource || clauses.MaterializedTable is not { } materialized
+            ? entity
+            : EntityFor(materialized)?.Entity.Name ?? SingularOf(materialized);
 
         // A few keywords the parser refuses as an entity name even here; qualified with its
         // namespace the name is read (HqlNames), without one only native SQL names it.
@@ -157,12 +161,16 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
         // say that is to leave the select clause out entirely. DISTINCT needs the clause,
         // though (decision 073), so a distinct whole-entity projection names the source
         // alias - the one case in which a select clause is written without a projection.
+        // The whole row of one range variable of a join names the clause as well: without it
+        // HQL returns the pair of rows the join composes.
         if (clauses.ProjectsWholeEntity)
         {
-            if (clauses.Distinct)
+            if (clauses.Distinct || !clauses.MaterializesTheSource)
             {
-                var alias = HqlNames.Alias(clauses.From.Alias ?? artifact.ResultEntity!.ToLowerInvariant());
-                artifact.Projection.Append($"select distinct {alias}");
+                var alias = HqlNames.Alias(clauses.MaterializesTheSource
+                    ? clauses.From.Alias ?? artifact.ResultEntity!.ToLowerInvariant()
+                    : clauses.MaterializedAlias!);
+                artifact.Projection.Append(clauses.Distinct ? $"select distinct {alias}" : $"select {alias}");
             }
 
             return;
@@ -177,6 +185,9 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
     /// The slice is not in the HQL, so neither is a bound row count (decision 085).
     /// </summary>
     protected override bool WritesRowCountsIntoQueryText => false;
+
+    /// <summary>HQL names a column as a path over the row it belongs to, so a column whose row nobody knows and an alias that is no identifier have no spelling here.</summary>
+    protected override bool WritesColumnsAsMembers => true;
 
     /// <summary>
     /// HQL in NHibernate 5.7.0 has no limit or offset of its own: pagination belongs to the

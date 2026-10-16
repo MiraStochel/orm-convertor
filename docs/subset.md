@@ -262,7 +262,8 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | asociační cesta, kterou mapy převodu nerozresolvují (entita, vztah či cíl mimo převod, prázdné páry vztahu i vlastnící protistrany); cesta přes víc asociací či přes N:M | podmínka se odvozuje z mapování, nic se nehádá; mezičlánek by chtěl vymyšlený alias | `Failure` (`Join`) se jménem cesty (č: HQL, JPQL, LINQ) | VM | [101] |
 | join po asociační cestě ve zdroji | builder cestu nevydává | entity join s odvozenou podmínkou, řádky tytéž | VM | [101] |
 | LINQ `GroupJoin` (`join … into`), `Zip`; `Join` se selektory, které nejsou lambdy či se nespárují | model je nenese | `Failure` (`Join`) (č) | VM | [103], [113] |
-| result selector LINQ joinu, který vynechá řádek, vrátí jen jednu stranu nebo celý řádek vedle sloupců; `SelectMany` s jedním argumentem | řádky tytéž, sloupce ne | `Loss` (`Projection`) (č) | VM | [070] |
+| result selector či `Select` LINQ joinu, který ze složeného řádku vynechá řádek, nebo dá celý řádek vedle sloupců; `select r, c.x` v HQL a JPQL; `SELECT t.*, c.x` v T-SQL | řádky tytéž, sloupce ne; řádek vedle sloupců model nenese | `Loss` (`Projection`) (č); jedna strana sama (`(ol, o) => o`, `select r … join`, `SELECT t.*`, `SelectMany` s jedním argumentem) je celý řádek té strany a čte se bez záznamu | VM | [070] |
+| holý sloupec dotazu T-SQL přes víc tabulek, který nemapuje entita žádného aliasu (tabulka mimo převod, sloupec mimo mapu) | komu patří, ví jen schéma; cíl, který sloupec píše jako člen řádku, ho bez řádku nenapíše | SQL cíl ho píše holý, jak stál; EF Core, NHibernate, Hibernate, EclipseLink `Fallback` (z) s kategorií klauzule; mapu doplní katalog (F6) | VM | [015], [113] |
 | spojovaná posloupnost s jiným krokem než `Where` | je to dotaz sám o sobě | `Failure` (`IntermediateResult`) (č) | VM | [113] |
 | cíl EF Core: pravý či plný vnější join s podmínkou nad rámec rovností klíčů; podmínka joinu se sloupcem bez tabulky | filtr posloupnosti by ubral zachované řádky; sloupec nejde přiřadit straně | `Fallback` (z) | VM | [113] |
 | cíl NHibernate: plný vnější join | HQL 5.7 ho nemá ani množinové operace na složení | `Fallback` (z) | VM | [065], [113] |
@@ -301,6 +302,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | `+`, jehož ani jedna strana není typovaná | cíle ho hláskují různě (konkatenace, nebo sčítání) | `Failure` (`Expression`) (b) | VM | [107] |
 | aritmetika, `COALESCE`, `CASE` nad skaláry, které se nesjednotí (`Decimal` s `Float`) | C# nepřeloží, T-SQL porovná jinou hodnotu | `Failure` (b) | VM | [107] |
 | agregát nad agregátem (`SUM(COUNT(*))`), i do seznamu | žádný cíl ho nezapíše | `Failure`: přímo vnořený (`MAX(SUM(x))`) při čtení (č), uvnitř výrazu bránou (b); přes odvozenou tabulku se nese | VM | [107], [112] |
+| alias projekce, který zdroj oddělil, protože není identifikátorem (`AS "product.productId"`); u MyBatisu zároveň pokyn automatickému mapování do vnořené vlastnosti | anonymní typ C#, výsledková proměnná JPQL a HQL takové jméno nemají; vnoření model nenese | SQL cíl `AS [product.productId]`; EF Core, NHibernate, Hibernate, EclipseLink `Fallback` (z) — třída řádku `SqlQuery` EF Core sloupec odmítne (`Failure`); zdroj MyBatis `Loss` o vnoření (č) | VM | [082], [084], [113] |
 | výraz v projekci bez aliasu | sloupec bez jména nečte žádný cíl, jméno se nevymýšlí | `Failure` (b); konstanta bez aliasu `Loss` (č); v dalším členu množinové operace dostane výraz i konstanta jméno levého členu podle pozice, jak ho dává SQL ([112]) — v definici, nahoře v dotazu i v poddotazu | VM | [107], [028], [112] |
 | výraz jako prvek výčtu či počet řádků | ty mají vlastní uzavřené tvary | `Failure` (č) | VM | [074], [085], [107] |
 | konkatenace nad sloupcem ve zdroji LINQ | C# bere `null` jako prázdný řetězec, SQL, HQL i JPQL vracejí `NULL` | `Loss` (č); artefakt má sémantiku SQL | VM | [107] |
@@ -378,16 +380,13 @@ Pod 2.4–2.11 stojí jedno pravidlo ([053], [065], [070]): **nepřečtená či 
 
 Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhodnutí ticho neobhajuje, proto je vede [`open-items.md`](./open-items.md) jako práci.
 
-Šest tichých míst ukázal reálný kód ([`analysis/real-world-sources.md`](./analysis/real-world-sources.md), *Nálezy*); jsou to vady a výňatky v `SampleData/ThirdParty` je obcházejí přepisem ([138]).
+Tři tichá místa ukázal reálný kód ([`analysis/real-world-sources.md`](./analysis/real-world-sources.md), *Nálezy*); jsou to vady a výňatky v `SampleData/ThirdParty` je obcházejí přepisem ([138]).
 
 | Tiché místo | Strana | Kategorie v `open-items.md` |
 |---|---|---|
 | LINQ `Any` nad kolekční navigací (`c.InvoiceLines.Any(o => …)`) se čte jako poddotaz bez korelace s vnějším řádkem, bez záznamu | č | Vady z reálného kódu |
 | `Find`, `FindAsync` se čte jako neznámý krok: `Loss` neřekne, že dotaz vrátí celou tabulku místo řádku s klíčem | č | Vady z reálného kódu |
 | JPA `@Id` na `@ManyToOne` uvnitř `@IdClass` (odvozená identita): část klíče přes vztah vypadne, klíč se zúží | č | Vady z reálného kódu |
-| alias v uvozovkách, který není identifikátorem (`AS "product.productId"`), vyjde v T-SQL i LINQ bez uvozovek | č/z | Vady z reálného kódu |
-| holý sloupec dotazu SQL přes víc tabulek dostane bez katalogu první tabulku joinu | č | Vady z reálného kódu |
-| projekce celého řádku jedné tabulky joinu (`select r from R r join C c …`, `SELECT T.* …`) se čte jako celý spojený řádek; s `DISTINCT` jiné řádky | č | Vady z reálného kódu |
 
 ---
 

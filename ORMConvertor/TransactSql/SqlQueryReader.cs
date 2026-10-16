@@ -767,8 +767,16 @@ public class SqlQueryReader(
         foreach (var element in query.SelectElements)
         {
             // Rule Q3: SELECT * is the absence of a projection, not a projection of everything.
-            if (element is SelectStarExpression)
+            // SELECT t.* names the one row of the joined row it materializes, and is carried
+            // as the whole-row projection of that alias; read as the absence of a projection,
+            // it materialized the whole joined row and typed it after the first table.
+            if (element is SelectStarExpression star)
             {
+                if (star.Qualifier is { Identifiers.Count: > 0 } qualifier)
+                {
+                    queryBuilder.Project(QueryOperand.Column(qualifier.Identifiers[^1].Value, "*"));
+                }
+
                 continue;
             }
 
@@ -781,23 +789,29 @@ public class SqlQueryReader(
                 continue;
             }
 
+            // The alias undecorated, with whether the source delimited it (AS "product.productId",
+            // AS [Order]) - a name that is no identifier, which a target delimits in its own
+            // spelling or refuses; written bare it is text no parser reads.
             var alias = scalar.ColumnName?.Value;
-            ReadProjection(scalar.Expression, alias, namedByPosition);
+            var delimited = scalar.ColumnName?.Identifier is { QuoteType: not QuoteType.NotQuoted };
+            ReadProjection(scalar.Expression, alias, delimited, namedByPosition);
         }
     }
 
     /// <summary>
     /// One projected value (decision 107): a column, an aggregate over a column, the whole
     /// row as <c>COUNT(*)</c>, an expression - arithmetic, a function of the vocabulary,
-    /// a CASE -, or a constant under an alias (decision 113), each qualified by the source
-    /// alias where the text left it unqualified. A constant without an alias is not a shape
+    /// a CASE -, or a constant under an alias (decision 113). A column the text left
+    /// unqualified stays so: which row of a join it belongs to is the schema's to say, and the
+    /// builder template resolves it through the mapping - qualified here by the source alias,
+    /// it named the first table of a join whatever table held it. A constant without an alias is not a shape
     /// any target names a column by and stays the loss it was - except in a member of a set
     /// operation after the leftmost, where SQL names the column after the leftmost member's
     /// by position (decision 112) and the builder gives it that name, as it does an
     /// expression there; a construct outside the vocabulary is dropped with a record that
     /// names it, under the category of expressions.
     /// </summary>
-    private void ReadProjection(ScalarExpression expression, string? alias, bool namedByPosition)
+    private void ReadProjection(ScalarExpression expression, string? alias, bool delimitedAlias, bool namedByPosition)
     {
         var operand = ReadOperand(expression);
 
@@ -825,14 +839,8 @@ public class SqlQueryReader(
             return;
         }
 
-        queryBuilder.Project(Qualified(operand), alias);
+        queryBuilder.Project(operand, alias, delimitedAlias);
     }
-
-    /// <summary>A column operand the text left unqualified, qualified by the source alias - the projection and the grouping name their table.</summary>
-    private QueryOperand Qualified(QueryOperand operand)
-        => operand.IsColumn && operand.Table is null
-            ? QueryOperand.Column(sourceAlias, operand.Property!, operand.Function, operand.Distinct)
-            : operand;
 
     private void ReadWhere(QuerySpecification query)
     {
@@ -887,14 +895,14 @@ public class SqlQueryReader(
 
         foreach (var specification in query.GroupByClause.GroupingSpecifications)
         {
-            // A column, qualified by the source alias where the text left it bare, as the
-            // projection is; or since decision 113 an expression, which the builder template
-            // holds the projection, the HAVING and the ordering to.
+            // A column, bare where the text left it bare, as the projection is; or since
+            // decision 113 an expression, which the builder template holds the projection,
+            // the HAVING and the ordering to.
             if (specification is ExpressionGroupingSpecification { Expression: { } written }
                 && ReadOperand(written) is { } key
                 && (key is { IsColumn: true, IsAggregate: false } || key is { IsExpression: true, IsAggregate: false }))
             {
-                queryBuilder.GroupBy(Qualified(key));
+                queryBuilder.GroupBy(key);
                 continue;
             }
 

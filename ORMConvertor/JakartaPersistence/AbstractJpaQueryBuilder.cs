@@ -44,6 +44,9 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     /// </summary>
     protected override bool WritesRowCountsIntoQueryText => false;
 
+    /// <summary>JPQL names a column as a path over the row it belongs to, so a column whose row nobody knows and an alias that is no identifier have no spelling here.</summary>
+    protected override bool WritesColumnsAsMembers => true;
+
     /// <summary>The profile of the implementation whose query this is (decision 076).</summary>
     protected abstract JpaImplementationProfile Profile { get; }
 
@@ -94,7 +97,11 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             intermediate,
             Profile);
 
-        artifact.ResultEntity = definition ? null : entity;
+        // The entity the query materializes: the source's, or the one behind the range variable
+        // a whole-row projection names (select c from R r join C c …).
+        artifact.ResultEntity = clauses.MaterializesTheSource || clauses.MaterializedTable is not { } materialized
+            ? definition ? null : entity
+            : IsDefinition(materialized) ? null : EntityFor(materialized)?.Entity.Name ?? EntityTableNaming.EntityNameFor(materialized);
         artifact.Source.Append($"from {entity} {JpqlNames.Alias(alias)}");
 
         // JPQL has no other spelling of an entity name than the name itself (JpqlNames).
@@ -275,16 +282,20 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
         // The whole row of an intermediate result is its columns: HQL refuses `select d` over
         // a derived root, which has no identity to select by (decision 112, verified).
-        if (clauses.ProjectsWholeEntity && IsDefinition(clauses.From.Table))
+        if (clauses.ProjectsWholeEntity && IsDefinition(clauses.MaterializedTable!))
         {
-            var row = JpqlNames.Alias(clauses.From.Alias ?? clauses.From.Table);
-            artifact.Projection.Append(distinct).Append(string.Join(", ", ColumnsOf(clauses.From.Table).Select(column => $"{row}.{JpqlNames.Alias(column)}")));
+            var row = JpqlNames.Alias(clauses.MaterializedAlias!);
+            artifact.Projection.Append(distinct).Append(string.Join(", ", ColumnsOf(clauses.MaterializedTable!).Select(column => $"{row}.{JpqlNames.Alias(column)}")));
             return;
         }
 
+        // The identification variable of the row the query materializes: the source's, or the
+        // one a whole-row projection names out of a join.
         if (clauses.ProjectsWholeEntity)
         {
-            var alias = JpqlNames.Alias(clauses.From.Alias ?? artifact.ResultEntity!.ToLowerInvariant());
+            var alias = JpqlNames.Alias(clauses.MaterializesTheSource
+                ? clauses.From.Alias ?? artifact.ResultEntity!.ToLowerInvariant()
+                : clauses.MaterializedAlias!);
             artifact.Projection.Append(distinct).Append(alias);
             return;
         }

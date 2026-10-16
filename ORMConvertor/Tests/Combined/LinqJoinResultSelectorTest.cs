@@ -117,15 +117,15 @@ public class LinqJoinResultSelectorTest
         Assert.Contains("WHERE o.CustomerId > 0", sql);
     }
 
+    /// <summary>One side alone is the whole row of that side, which the representation carries as the whole-row projection of its alias (finding V6 of the open-source excerpts).</summary>
     [Fact]
-    public void OneSideAloneIsALossWithTheArtifact()
+    public void OneSideAloneIsTheWholeRowOfThatSide()
     {
         var builder = Parse(new DapperSqlQueryBuilder(), Method(TwoColumnJoin + "(ol, o) => ol)"));
 
-        Assert.StartsWith("SELECT *", Sql(builder));
-        var record = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
-        Assert.Equal(QueryFeature.Projection, record.Feature);
-        Assert.Contains("leaves out the row 'o'", record.Reason);
+        Assert.StartsWith("SELECT ol.*", Sql(builder));
+        Assert.Contains("connection.Query<OrderLine>(", builder.Build().Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content);
+        Assert.DoesNotContain(builder.Records, r => r.Kind is ConversionRecordKind.Loss or ConversionRecordKind.Failure);
     }
 
     [Fact]

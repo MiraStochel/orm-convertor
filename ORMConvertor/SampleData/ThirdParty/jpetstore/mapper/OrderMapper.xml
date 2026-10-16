@@ -20,9 +20,8 @@
   ORMConvertor: taken from mybatis/jpetstore-6 at 344ef63, src/main/resources/org/mybatis/jpetstore/mapper/OrderMapper.xml.
   Changed: the statements that write (insertOrder, insertOrderStatus) are left out; in the
   selects, the comma-separated tables are written as INNER JOIN ... ON with the same
-  conditions; #{value} becomes #{orderId}; #{value} becomes #{username}; every column of a
-  joined select is qualified by its table (the original leaves most of them bare). See
-  README.md in the folder above.
+  conditions; #{value} becomes #{orderId}; #{value} becomes #{username}. The columns the
+  original leaves bare stay as they are. See README.md in the folder above.
 -->
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
@@ -33,32 +32,32 @@
 
   <select id="getOrder" resultType="Order">
     select
-      ORDERS.BILLADDR1 AS billAddress1,
-      ORDERS.BILLADDR2 AS billAddress2,
-      ORDERS.BILLCITY,
-      ORDERS.BILLCOUNTRY,
-      ORDERS.BILLSTATE,
-      ORDERS.BILLTOFIRSTNAME,
-      ORDERS.BILLTOLASTNAME,
-      ORDERS.BILLZIP,
-      ORDERS.SHIPADDR1 AS shipAddress1,
-      ORDERS.SHIPADDR2 AS shipAddress2,
-      ORDERS.SHIPCITY,
-      ORDERS.SHIPCOUNTRY,
-      ORDERS.SHIPSTATE,
-      ORDERS.SHIPTOFIRSTNAME,
-      ORDERS.SHIPTOLASTNAME,
-      ORDERS.SHIPZIP,
-      ORDERS.CARDTYPE,
-      ORDERS.COURIER,
-      ORDERS.CREDITCARD,
-      ORDERS.EXPRDATE AS expiryDate,
-      ORDERS.LOCALE,
-      ORDERS.ORDERDATE,
+      BILLADDR1 AS billAddress1,
+      BILLADDR2 AS billAddress2,
+      BILLCITY,
+      BILLCOUNTRY,
+      BILLSTATE,
+      BILLTOFIRSTNAME,
+      BILLTOLASTNAME,
+      BILLZIP,
+      SHIPADDR1 AS shipAddress1,
+      SHIPADDR2 AS shipAddress2,
+      SHIPCITY,
+      SHIPCOUNTRY,
+      SHIPSTATE,
+      SHIPTOFIRSTNAME,
+      SHIPTOLASTNAME,
+      SHIPZIP,
+      CARDTYPE,
+      COURIER,
+      CREDITCARD,
+      EXPRDATE AS expiryDate,
+      LOCALE,
+      ORDERDATE,
       ORDERS.ORDERID,
-      ORDERS.TOTALPRICE,
-      ORDERS.USERID AS username,
-      ORDERSTATUS.STATUS
+      TOTALPRICE,
+      USERID AS username,
+      STATUS
     FROM ORDERS
     INNER JOIN ORDERSTATUS ON ORDERS.ORDERID = ORDERSTATUS.ORDERID
     WHERE ORDERS.ORDERID = #{orderId}
@@ -66,36 +65,36 @@
 
   <select id="getOrdersByUsername" resultType="Order">
     SELECT
-      ORDERS.BILLADDR1 AS billAddress1,
-      ORDERS.BILLADDR2 AS billAddress2,
-      ORDERS.BILLCITY,
-      ORDERS.BILLCOUNTRY,
-      ORDERS.BILLSTATE,
-      ORDERS.BILLTOFIRSTNAME,
-      ORDERS.BILLTOLASTNAME,
-      ORDERS.BILLZIP,
-      ORDERS.SHIPADDR1 AS shipAddress1,
-      ORDERS.SHIPADDR2 AS shipAddress2,
-      ORDERS.SHIPCITY,
-      ORDERS.SHIPCOUNTRY,
-      ORDERS.SHIPSTATE,
-      ORDERS.SHIPTOFIRSTNAME,
-      ORDERS.SHIPTOLASTNAME,
-      ORDERS.SHIPZIP,
-      ORDERS.CARDTYPE,
-      ORDERS.COURIER,
-      ORDERS.CREDITCARD,
-      ORDERS.EXPRDATE AS expiryDate,
-      ORDERS.LOCALE,
-      ORDERS.ORDERDATE,
+      BILLADDR1 AS billAddress1,
+      BILLADDR2 AS billAddress2,
+      BILLCITY,
+      BILLCOUNTRY,
+      BILLSTATE,
+      BILLTOFIRSTNAME,
+      BILLTOLASTNAME,
+      BILLZIP,
+      SHIPADDR1 AS shipAddress1,
+      SHIPADDR2 AS shipAddress2,
+      SHIPCITY,
+      SHIPCOUNTRY,
+      SHIPSTATE,
+      SHIPTOFIRSTNAME,
+      SHIPTOLASTNAME,
+      SHIPZIP,
+      CARDTYPE,
+      COURIER,
+      CREDITCARD,
+      EXPRDATE AS expiryDate,
+      LOCALE,
+      ORDERDATE,
       ORDERS.ORDERID,
-      ORDERS.TOTALPRICE,
-      ORDERS.USERID AS username,
-      ORDERSTATUS.STATUS
+      TOTALPRICE,
+      USERID AS username,
+      STATUS
     FROM ORDERS
     INNER JOIN ORDERSTATUS ON ORDERS.ORDERID = ORDERSTATUS.ORDERID
     WHERE ORDERS.USERID = #{username}
-    ORDER BY ORDERS.ORDERDATE
+    ORDER BY ORDERDATE
   </select>
 
 </mapper>

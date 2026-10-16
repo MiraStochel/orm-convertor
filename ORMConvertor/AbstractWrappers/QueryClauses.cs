@@ -53,9 +53,49 @@ public sealed class QueryClauses
     public bool HasAggregates => Projections.Any(p => OperandStructure.ContainsAggregate(p.Operand));
 
     /// <summary>
-    /// True when the query materializes whole entities because nobody named columns
-    /// (rule Q3). Kept as a question about the clauses rather than a decision each builder
-    /// re-derives.
+    /// True when the query materializes a whole entity rather than a row of named columns:
+    /// nobody named columns (rule Q3), or the one projection takes the whole row of one range
+    /// variable (<see cref="ProjectInstruction.IsWholeRow"/>). Kept as a question about the
+    /// clauses rather than a decision each builder re-derives.
     /// </summary>
-    public bool ProjectsWholeEntity => Projections.Count == 0;
+    public bool ProjectsWholeEntity => Projections.Count == 0 || Projections is [{ IsWholeRow: true }];
+
+    /// <summary>The alias of the source: its own, or the table where the source wrote none.</summary>
+    public string SourceAlias => From.Alias ?? From.Table;
+
+    /// <summary>
+    /// The range variable whose whole row the query materializes: the source where nobody
+    /// named columns - the whole joined row under its first alias -, the one variable a
+    /// whole-row projection names, null for a row of named columns.
+    /// </summary>
+    public string? MaterializedAlias => Projections.Count == 0
+        ? SourceAlias
+        : Projections is [{ IsWholeRow: true } whole] ? whole.Operand.Table : null;
+
+    /// <summary>
+    /// The table - or the intermediate result - behind <see cref="MaterializedAlias"/>, which
+    /// is what the entity the query materializes into is resolved from; null for a row of
+    /// named columns.
+    /// </summary>
+    public string? MaterializedTable
+    {
+        get
+        {
+            if (MaterializedAlias is not { } alias)
+            {
+                return null;
+            }
+
+            if (string.Equals(alias, SourceAlias, StringComparison.OrdinalIgnoreCase))
+            {
+                return From.Table;
+            }
+
+            return Joins.FirstOrDefault(j => string.Equals(j.RightTableAlias ?? j.RightTable, alias, StringComparison.OrdinalIgnoreCase))?.RightTable
+                   ?? From.Table;
+        }
+    }
+
+    /// <summary>True when the whole row materialized is the source's own, under which no Select, no select clause and a bare <c>*</c> say the same thing.</summary>
+    public bool MaterializesTheSource => MaterializedAlias is { } alias && string.Equals(alias, SourceAlias, StringComparison.OrdinalIgnoreCase);
 }

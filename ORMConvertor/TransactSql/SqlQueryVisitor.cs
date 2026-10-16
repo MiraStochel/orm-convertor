@@ -41,13 +41,20 @@ public class SqlQueryVisitor(
     /// <summary>
     /// A projected value with its alias (decision 107). COUNT(*) is the one aggregate whose
     /// argument is not a column, so it is the one the table alias must not qualify:
-    /// `COUNT(c.*)` is not T-SQL at all, which the operand rendering below knows.
+    /// `COUNT(c.*)` is not T-SQL at all, which the operand rendering below knows. An alias
+    /// the source delimited - no identifier of its language - is delimited again in T-SQL's
+    /// own brackets; bare, it is text the parser refuses or reads as something else.
     /// </summary>
     public string Visit(ProjectInstruction instr)
     {
-        var alias = instr.Alias is null ? string.Empty : $" AS {instr.Alias}";
+        var alias = instr.Alias is null
+            ? string.Empty
+            : instr.DelimitedAlias ? $" AS {Delimited(instr.Alias)}" : $" AS {instr.Alias}";
         return $"{BuildOperand(instr.Operand)}{alias}";
     }
+
+    /// <summary>A name in T-SQL's delimiters, a closing bracket inside it doubled.</summary>
+    private static string Delimited(string name) => $"[{name.Replace("]", "]]")}]";
 
     public string Visit(SelectInstruction instr) => instr.Condition.Accept(this);
 
@@ -230,18 +237,35 @@ public class SqlQueryVisitor(
         // before the statement reaches the server.
         // COUNT(*) in operand position - a HAVING over the row count - is the same one
         // aggregate whose argument is no column, and the alias must not qualify it here any
-        // more than in the projection above: `COUNT(o.*)` is not T-SQL.
+        // more than in the projection above: `COUNT(o.*)` is not T-SQL. The whole row of one
+        // range variable under no aggregate is `t.*`. A bare name that is no identifier - an
+        // ordering by an alias the source delimited - is delimited as the source had to.
         var text = operand.IsParameter
             ? $"@{QueryParameterNaming.IdentifierFor(operand.Parameter!)}"
             : operand.IsExpression
                 ? Expression(operand.Expression!)
                 : operand.IsColumn
-                    ? (operand.Table is null || operand.Property == "*" ? operand.Property! : $"{operand.Table}.{operand.Property}")
+                    ? Column(operand)
                     : Literal(operand.Constant!);
 
         return operand.Function is null
             ? text
             : $"{operand.Function}({(operand.Distinct ? "DISTINCT " : string.Empty)}{text})";
+    }
+
+    private static string Column(QueryOperand operand)
+    {
+        if (operand.Property == "*")
+        {
+            return operand.Table is null || operand.Function is not null ? "*" : $"{operand.Table}.*";
+        }
+
+        if (operand.Table is null)
+        {
+            return Identifiers.IsRegular(operand.Property!) ? operand.Property! : Delimited(operand.Property!);
+        }
+
+        return $"{operand.Table}.{operand.Property}";
     }
 
     /* ---- expressions (decision 107) --------------------------------------------------- */

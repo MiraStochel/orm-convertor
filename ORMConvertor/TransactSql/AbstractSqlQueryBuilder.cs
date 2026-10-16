@@ -103,14 +103,16 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
         // materializes as an untyped row instead, which is what a null result entity means to
         // the wrapper (decision 104), and no type is derived or reported for it. The whole row
         // of an intermediate result goes the same way: a definition has no class to
-        // materialize into (decision 112).
-        if (!clauses.ProjectsWholeEntity || IsDefinition(clauses.From.Table))
+        // materialize into (decision 112). The entity is the one behind the row the query
+        // materializes - the source's, or the one range variable a whole-row projection names
+        // (SELECT t.* over a join), whose columns are exactly the entity's.
+        if (clauses.MaterializedTable is not { } materialized || IsDefinition(materialized))
         {
             return;
         }
 
-        var map = EntityFor(clauses.From.Table);
-        var table = clauses.From.Table.Split('.').LastOrDefault();
+        var map = EntityFor(materialized);
+        var table = materialized.Split('.').LastOrDefault();
 
         if (map is not null)
         {
@@ -121,7 +123,7 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
             artifact.ResultEntity = EntityTableNaming.EntityNameFor(table);
             Report(
                 ConversionRecordKind.Convention,
-                $"The result type '{artifact.ResultEntity}' was derived from the table name '{clauses.From.Table}'; the query does not name it.",
+                $"The result type '{artifact.ResultEntity}' was derived from the table name '{materialized}'; the query does not name it.",
                 QueryFeature.Projection,
                 entity: artifact.ResultEntity);
         }
@@ -193,8 +195,9 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
         // (decision 073); the final step slots TOP in after it, as T-SQL's grammar orders them.
         artifact.Projection.Append(clauses.Distinct ? "SELECT DISTINCT " : "SELECT ");
 
-        // Rule Q3: no projection means the whole entity is materialized.
-        artifact.Projection.Append(clauses.ProjectsWholeEntity
+        // Rule Q3: no projection means the whole entity is materialized; the whole row of one
+        // range variable of a join is that row's columns, `t.*`.
+        artifact.Projection.Append(clauses.Projections.Count == 0
             ? "*"
             : string.Join(", ", clauses.Projections.Select(p => p.Accept(visitor))));
     }

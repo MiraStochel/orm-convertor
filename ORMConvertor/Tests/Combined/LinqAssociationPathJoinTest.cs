@@ -212,20 +212,18 @@ public class LinqAssociationPathJoinTest
     }
 
     [Fact]
-    public void ASelectManyWithoutAResultSelectorMaterializesTheCollectionAloneAndSaysSo()
+    public void ASelectManyWithoutAResultSelectorMaterializesTheCollectionAlone()
     {
         var (orders, customers) = Linked();
         var builder = Parse(new DapperSqlQueryBuilder(), Method("ctx.Customers.SelectMany(c => c.Orders)"), orders, customers);
 
-        // The rows are the orders alone: one side of the join, which the representation
-        // does not carry (decision 048) - the whole joined row goes out and the record says
-        // which row the source left out, as for a result selector that names one side.
+        // The rows are the orders alone: the whole row of the joined side, which the
+        // representation carries as the whole-row projection of its alias.
         var sql = Sql(builder);
 
+        Assert.StartsWith("SELECT orders.*", sql);
         Assert.Contains("INNER JOIN Sales.Orders orders ON orders.CustomerID = c.CustomerID", sql);
-        Assert.Contains(
-            builder.Records,
-            r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Projection && r.Reason.Contains("leaves out the row 'c'"));
+        Assert.DoesNotContain(builder.Records, r => r.Kind is ConversionRecordKind.Loss or ConversionRecordKind.Failure);
     }
 
     [Fact]

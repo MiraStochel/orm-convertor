@@ -371,10 +371,26 @@ internal sealed partial class MyBatisStatementText(
                 QueryFeature.QueryParameter);
         }
 
+        // A dotted alias in quotes - AS "product.productId" - is MyBatis's instruction to its
+        // auto-mapping to fill the nested property product.productId of the result. The query
+        // representation carries the name alone, a SQL target writes it delimited and a
+        // target over members refuses it; the nesting is what is lost, and it is said here,
+        // where the name is still MyBatis's.
+        foreach (Match nested in NestedAlias().Matches(text))
+        {
+            report(
+                ConversionRecordKind.Loss,
+                $"The alias \"{nested.Groups[1].Value}\" tells MyBatis to map the column into the nested property '{nested.Groups[1].Value}' of the result; the query representation carries the name only, so the target reads a column of that name and nothing is nested.",
+                QueryFeature.Projection);
+        }
+
         var substituted = Placeholder.Replace(text, match => ReadPlaceholder(match.Groups[1].Value) ?? match.Value);
 
         return refused ? null : substituted;
     }
+
+    [GeneratedRegex(@"\bAS\s+""([^""]+\.[^""]+)""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NestedAlias();
 
     /// <summary>
     /// One #{…}: the property it binds, and the attributes beside it. javaType is the stated
