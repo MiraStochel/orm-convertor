@@ -83,6 +83,7 @@ Strojově: deskriptory (`QuerySupport`, `Functions`, `NativeSqlApi`), `Combined/
 | `ListAggregationOverACorrelatedSubquery` | bez NHibernatu a EclipseLinku | NHibernate, EclipseLink; ze zdroje MyBatis bez katalogu i EF Core² |
 | `AggregateOverTheWholeResult` | bez EF Core | EF Core |
 | `CastInAConcatenation` | bez EclipseLinku | EclipseLink |
+| `ConcatenationOverANullableColumn` | všech šest | — |
 | `NativeSqlInCode` | EF Core, NHibernate, Hibernate, EclipseLink | — |
 | `RecursiveDescentOfAHierarchy`, `RecursiveWalkOfACyclicGraph`, `BestRowPerGroup` | Dapper, Hibernate, MyBatis | EF Core, NHibernate, EclipseLink |
 
@@ -306,7 +307,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | alias projekce, který zdroj oddělil, protože není identifikátorem (`AS "product.productId"`); u MyBatisu zároveň pokyn automatickému mapování do vnořené vlastnosti | anonymní typ C#, výsledková proměnná JPQL a HQL takové jméno nemají; vnoření model nenese | SQL cíl `AS [product.productId]`; EF Core, NHibernate, Hibernate, EclipseLink `Fallback` (z) — třída řádku `SqlQuery` EF Core sloupec odmítne (`Failure`); zdroj MyBatis `Loss` o vnoření (č) | VM | [082], [084], [113] |
 | výraz v projekci bez aliasu | sloupec bez jména nečte žádný cíl, jméno se nevymýšlí | `Failure` (b); konstanta bez aliasu `Loss` (č); v dalším členu množinové operace dostane výraz i konstanta jméno levého členu podle pozice, jak ho dává SQL ([112]) — v definici, nahoře v dotazu i v poddotazu | VM | [107], [028], [112] |
 | výraz jako prvek výčtu či počet řádků | ty mají vlastní uzavřené tvary | `Failure` (č) | VM | [074], [085], [107] |
-| konkatenace nad sloupcem ve zdroji LINQ | C# bere `null` jako prázdný řetězec, SQL, HQL i JPQL vracejí `NULL` | `Loss` (č); artefakt má sémantiku SQL | VM | [107] |
+| konkatenace nad sloupcem ve zdroji LINQ mimo stráž `x == null ? null : …` nad hodnotami konkatenace | C# bere `null` jako prázdný řetězec, SQL, HQL i JPQL vracejí `NULL`; stráž říká totéž co SQL a čte se jako holá konkatenace | `Loss` (č); artefakt má sémantiku SQL a cíl EF Core ji píše pod stráží ([§5]) | VM | [107] |
 | druhý tvar NHibernatu (LINQ): konkatenace v projekci nad textem, který smí být `NULL`; skalární poddotaz, který není jediným agregátem | provider 5.7.0 projekci vyhodnotí na klientovi, kde `null` je prázdný řetězec; obecné meze LINQ jako u EF Core | `Omitted` (z), HQL stojí samo | VM | [118] |
 | funkce, kterou deskriptor cíle neuvádí: `DateAdd`, `DateDiff` u NHibernatu, k nim `Cast` u EclipseLinku | sonda proti připnuté verzi zápis nepotvrdila | `Fallback` (b) | VM | [113] |
 | převod textu na text do NHibernatu (`NVARCHAR(4000)`) a Hibernatu (`varchar(max)`); do EF Core `Math.Round` nad celým číslem, hodina a menší jednotka k datu bez času, převod textu na číslo, rozdíl dat nad datem a okamžikem | jazyk cíle tvar má, ale s jinou hodnotou, nebo bez přetížení pro dva typy | `Fallback` (z) | VM | [113] |

@@ -629,3 +629,17 @@ NHibernate = nhibernate/FindJoinBeyondEqualities.hql
 Hibernate = hibernate/FindJoinBeyondEqualities.jpql
 EclipseLink = eclipselink/FindJoinBeyondEqualities.jpql
 MyBatis = mybatis/FindJoinBeyondEqualitiesMapper.xml
+
+# A label concatenated over the one nullable column of the domain. SQL, HQL and JPQL yield
+# NULL for a customer without notes; C# takes a null in + as the empty string and EF Core 10
+# translates it so, which would answer "Alice ()" instead, so the LINQ row and the LINQ
+# target guard the concatenation on the column (null where it is null, the concatenation
+# otherwise), and the reader takes the guard back as the bare concatenation. NHibernate's
+# LINQ form, which the provider concatenates on the client, is omitted and the HQL stands.
+[ConcatenationOverANullableColumn]
+Dapper = dapper/FindConcatenationOverANullableColumn.sql
+EFCore = efcore/FindConcatenationOverANullableColumn.query.cs
+NHibernate = nhibernate/FindConcatenationOverANullableColumn.hql
+Hibernate = hibernate/FindConcatenationOverANullableColumn.jpql
+EclipseLink = eclipselink/FindConcatenationOverANullableColumn.jpql
+MyBatis = mybatis/FindConcatenationOverANullableColumnMapper.xml

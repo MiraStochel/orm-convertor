@@ -633,9 +633,19 @@ public static class QueryShapeInputs
 
         ["CastInAConcatenation"] = Hallmarks(
             sql: ["'#' + CAST(p.ProductId AS NVARCHAR(MAX)) + ' ' + p.ProductName AS Label", "WHERE CAST(p.UnitPrice AS INT) > 100"],
-            linq: ["Label = \"#\" + p.ProductId.", "ToString() + \" \" + p.ProductName", ".Where(p => (int", "(p.UnitPrice) > 100)"],
+            // A MyBatis source says nothing of NULL, so without a catalog the LINQ target
+            // writes the label under its null guard; the concatenation stands inside either way.
+            linq: ["\"#\" + p.ProductId.", "ToString() + \" \" + p.ProductName", ".Where(p => (int", "(p.UnitPrice) > 100)"],
             hql: ["concat('#', cast(p.ProductId as string), ' ', p.ProductName) as Label", "where cast(p.UnitPrice as int) > 100"],
             jpa: ["concat('#', cast(p.ProductId as String), ' ', p.ProductName) as Label", "where cast(p.UnitPrice as Integer) > 100"]),
+
+        ["ConcatenationOverANullableColumn"] = Hallmarks(
+            sql: ["c.Name + ' (' + c.Notes + ')' AS Label"],
+            // The guard over the nullable column; a MyBatis source without a catalog vouches
+            // for the name no more than for the notes, and tests both.
+            linq: ["c.Notes == null ? null : c.Name + \" (\" + c.Notes + \")\")"],
+            hql: ["concat(c.Name, ' (', c.Notes, ')') as Label"],
+            jpa: ["concat(c.Name, ' (', c.Notes, ')') as Label"]),
 
         ["BestRowPerGroup"] = Hallmarks(
             sql: ["WITH Ranked AS (", "ROW_NUMBER() OVER (PARTITION BY ol.ProductId ORDER BY ol.Quantity DESC, ol.LineNumber ASC) AS RowNumber", "WHERE r.RowNumber = 1"],

@@ -28,7 +28,6 @@ Rejstřík, ne pořadí.
 
 | Položka | Oblast | Druh | Pož. |
 |---|---|---|---|
-| [Zřetězení s `NULL` v LINQ EF Core](#zřetězení-s-null-dá-v-linq-ef-core-prázdný-text-místo-null) | Dotazy | práce | F7–F10, F11 |
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | T2, T3, F13 |
 | [Nový kontejner databáze zahodí `LdbcSnb`](#nový-kontejner-mssql_db-může-zahodit-načtené-ldbcsnb) | Dotazy | práce | S5, F13 |
 | [Pojmenované dotazy JPA](#pojmenované-dotazy-jpa-se-nepřekládají-ačkoli-na-nich-stojí-reálné-projekty) | Dotazy | rozhodnutí | F7, F9, F14 |
@@ -73,11 +72,6 @@ flowchart LR
 ## Dotazy
 
 Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md)) je přeložený celý: 41 dotazů podle specifikace, žádný cíl žádný neodmítá a nativním SQL píše každý cíl jen to, co jeho jazyk nemá — počty vede [`architecture.md`](./architecture.md) §6.2, konstrukce a důvody [`subset.md`](./subset.md) 1.2–1.4 a 2.11. Úniková cesta po kouscích a rekurze rozepsaná do pevného počtu joinů zůstávají zamítnuté rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md); pět dotazů na cesty píše prohledání do šířky v nerekurzivních definicích s hloubkou změřenou nad SF 1 (rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md), [141](./decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md)). Text katalogu i všech pět cílů doložila celá validační sada SF 1 ([záznam](../ORMConvertor/README.md#whole-set-runs)) — nad texty s mezí; nad novými texty cest zatím jen prefix (položka níže).
-
-#### Zřetězení s `NULL` dá v LINQ EF Core prázdný text místo `NULL`
-*Vada. Práce podle rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) a [107](./decisions/107-an-expression-is-the-sixth-operand-shape-and-stands-wherever-an-operand-stands.md); nález soudce LDBC nad IC 14 z 2026-10-15. Požadavky F7–F10, F11.*
-
-`LinqQueryVisitor` píše zřetězení textů jako `+` (`ExpressionOperator.Concat`), a EF Core 10 přeloží `a + b` nad textem tak, že `NULL` na kterékoli straně dá prázdný text, kdežto T-SQL dá `NULL`: `COALESCE(',' + CAST(p.Person4Id AS NVARCHAR(MAX)), '')` vrátilo z artefaktu EF Core `,` místo prázdného textu, takže všech 95 čtení IC 14 v prefixu sady neslo cestu se dvěma čárkami navíc. Text IC 14 to říká `CASE WHEN … IS NULL` (týž význam v obou sémantikách, rozh. [122](./decisions/122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md)), vada v builderu trvá: zřetězení, jehož operand může být `NULL` — sloupec s `NULL`, literál `NULL`, `CASE` bez `ELSE`, poddotaz —, má LINQ psát věrně (`a == null || b == null ? null : a + b`), nebo jít nativním SQL jako druhý tvar NHibernatu (`Omitted`), a `IsNeverNull` má literál `NULL` brát jako nullovatelný. Nad sloupci bez `NULL` se nic nemění.
 
 #### Verdikt soudce nad celou sadou SF 1 po přepisu dotazů na cesty
 *Na řadě. Práce podle rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) a [141](./decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md); samostatný běh obou sad, který spouští Míra jménem ([`ORMConvertor/README.md`](../ORMConvertor/README.md), *The LDBC judge*). Požadavky T2, T3, F13.*

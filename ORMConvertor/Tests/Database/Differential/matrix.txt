@@ -342,7 +342,7 @@ fields = LineNumber, Total
 shape = projection
 ordered = false
 decimalScale = 4
-mutations = 
+mutations =
 
 [FunctionInAFilter]
 category = FunctionInAFilter
@@ -583,3 +583,13 @@ fields = ProductName, Description
 shape = projection
 ordered = false
 mutations = operator, projection
+
+# The label of every customer over the one nullable column: NULL for the three without
+# notes, as SQL concatenates, and the name with the notes for the one with them. A target
+# whose provider turned the NULL into the empty string would answer "Alice ()" instead.
+[ConcatenationOverANullableColumn]
+category = ConcatenationOverANullableColumn
+fields = CustomerId, Label
+shape = projection
+ordered = false
+mutations =

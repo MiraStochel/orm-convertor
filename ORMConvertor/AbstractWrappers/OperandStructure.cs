@@ -148,6 +148,37 @@ public static class OperandStructure
         }
     }
 
+    /// <summary>
+    /// The values a NULL in any one of which makes the expression NULL, as SQL, HQL and JPQL
+    /// evaluate it (decision 107): the sides of an operation and the arguments of a function,
+    /// followed through nested operations and functions, with COALESCE, CASE, a window and a
+    /// list aggregate left whole, since each of those is NULL on a condition of its own, and
+    /// an aggregate left whole, since it is NULL over what it aggregates rather than over its
+    /// value. The LINQ writer guards a concatenation on these values, and the LINQ reader
+    /// takes a guard over them back as the bare concatenation.
+    /// </summary>
+    public static IEnumerable<QueryOperand> NullSources(QueryExpression expression)
+    {
+        foreach (var leaf in expression.Leaves())
+        {
+            if (leaf is { IsExpression: true, IsAggregate: false } && PropagatesNull(leaf.Expression!))
+            {
+                foreach (var inner in NullSources(leaf.Expression!))
+                {
+                    yield return inner;
+                }
+            }
+            else
+            {
+                yield return leaf;
+            }
+        }
+    }
+
+    /// <summary>Whether a NULL among the leaves of the expression is a NULL of the expression: an operation, or a function other than COALESCE.</summary>
+    public static bool PropagatesNull(QueryExpression expression)
+        => expression.IsBinary || (expression.IsCall && expression.Function != QueryFunction.Coalesce);
+
     private static IEnumerable<QueryOperand> OperandsOf(ConditionNode node) => node switch
     {
         ComparisonCondition comparison => comparison.Right is null ? [comparison.Left] : [comparison.Left, comparison.Right],

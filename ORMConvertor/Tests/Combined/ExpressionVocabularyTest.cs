@@ -653,6 +653,71 @@ public class ExpressionVocabularyTest
     }
 
     /// <summary>
+    /// A concatenation over a value that may be NULL is NULL in SQL, HQL and JPQL, where C#
+    /// takes a null in <c>+</c> as the empty string and EF Core 10 translates it so -
+    /// <c>COALESCE(a, N'') + COALESCE(b, N'')</c> -: a path that concatenated
+    /// <c>',' + CAST(NULL AS NVARCHAR(MAX))</c> came out of the EF Core artifact as <c>,</c>
+    /// (the LDBC judge over IC 14, 2026-10-15). EF Core therefore writes such a concatenation
+    /// under a guard over the values the mapping does not vouch for, which the provider
+    /// translates to a CASE over IS NULL, and the LINQ reader takes the guard back as the
+    /// bare concatenation, with no loss; a guard over anything else is the CASE it is. Over
+    /// columns that hold no NULL nothing changes.
+    /// </summary>
+    [Fact]
+    public void AConcatenationOverAValueThatMayBeNullIsGuardedInLinq()
+    {
+        const string nullable = "SELECT s.SaleId AS SaleId, s.Code + ' (' + s.Notes + ')' AS Label FROM Sales AS s";
+        const string guarded = "Label = (s.Notes == null ? null : s.Code + \" (\" + s.Notes + \")\")";
+
+        var written = Sql(ORMEnum.EFCore, nullable);
+        Assert.Contains(guarded, Text(written), StringComparison.Ordinal);
+        Assert.DoesNotContain(written.Records, r => r.Kind is ConversionRecordKind.Loss or ConversionRecordKind.Fallback);
+
+        var read = Linq(ORMEnum.Dapper, "Select(s => new { SaleId = s.SaleId, Label = s.Notes == null ? null : s.Code + \" (\" + s.Notes + \")\" })");
+        Assert.Equal(nullable, Text(read));
+        Assert.DoesNotContain(read.Records, r => r.Kind == ConversionRecordKind.Loss);
+        Assert.Contains(guarded, Text(Linq(ORMEnum.EFCore, "Select(s => new { SaleId = s.SaleId, Label = s.Notes == null ? null : s.Code + \" (\" + s.Notes + \")\" })")), StringComparison.Ordinal);
+
+        var other = Linq(ORMEnum.Dapper, "Select(s => new { SaleId = s.SaleId, Label = s.Code == null ? null : \"x\" + s.Notes })");
+        Assert.Contains("CASE WHEN s.Code IS NULL THEN null ELSE 'x' + s.Notes END AS Label", Text(other), StringComparison.Ordinal);
+        Assert.Contains(other.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Expression);
+
+        Assert.Contains(
+            "Label = s.Code + \":\" + s.Quantity.ToString()",
+            Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId, s.Code + ':' + CAST(s.Quantity AS NVARCHAR(MAX)) AS Label FROM Sales AS s")),
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// What the guard tests: the values whose NULL makes the concatenation NULL and which the
+    /// mapping does not vouch for - a CASE without an ELSE and a scalar subquery as wholes, a
+    /// column declared NOT NULL on the optional side of an outer join -, and not a COALESCE
+    /// that ends in a literal. A NULL literal is the whole value: the concatenation is NULL.
+    /// </summary>
+    [Fact]
+    public void TheGuardTestsTheValuesThatMayBeNull()
+    {
+        var caseWithoutElse = Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId, 'x' + CASE WHEN s.Quantity > 1 THEN 'many' END AS Label FROM Sales AS s"));
+        Assert.Contains("Label = ((s.Quantity > 1 ? \"many\" : (string)null) == null ? null : \"x\" + (s.Quantity > 1 ? \"many\" : (string)null))", caseWithoutElse, StringComparison.Ordinal);
+
+        var subquery = Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId, 'x' + (SELECT MAX(o.Code) FROM Sales AS o WHERE o.CustomerId = s.CustomerId) AS Label FROM Sales AS s"));
+        Assert.Contains(".Max(o => o.Code) == null ? null : \"x\" + ", subquery, StringComparison.Ordinal);
+
+        var outerJoin = Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId, 'x' + o.Code AS Label FROM Sales AS s LEFT JOIN Sales AS o ON o.CustomerId = s.CustomerId"));
+        Assert.Contains(".Code == null ? null : \"x\" + ", outerJoin, StringComparison.Ordinal);
+
+        Assert.Contains(
+            "Label = s.Code + (s.Notes ?? \"\")",
+            Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId, s.Code + COALESCE(s.Notes, '') AS Label FROM Sales AS s")),
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "Label = (string)null",
+            Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId, 'x' + NULL AS Label FROM Sales AS s")),
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A list over an expression joins the same in both languages when no column in it may be
     /// NULL - a concatenation of texts that hold no NULL and a number converted into text is
     /// never NULL -, so EF Core writes it as string.Join over the expression, where a list over

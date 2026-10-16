@@ -57,6 +57,14 @@ public abstract class LinqQueryVisitor(
     /// </summary>
     private bool insideAggregate;
 
+    /// <summary>
+    /// True while a value is being written whose NULL sources an enclosing guard already
+    /// tests (<see cref="GuardedConcatenation"/>): a concatenation inside it is written bare,
+    /// and anything that is NULL on a condition of its own - COALESCE, CASE, an aggregate, a
+    /// list - starts afresh.
+    /// </summary>
+    private bool nullTested;
+
     /// <summary>The escape character of the LIKE whose pattern is being written (decision 107); null outside a pattern.</summary>
     private string? patternEscape;
 
@@ -253,15 +261,21 @@ public abstract class LinqQueryVisitor(
     }
 
     /// <summary>
-    /// Whether the mapping says the column holds no NULL: its nullability as a column where a
+    /// Whether the column holds no NULL where it stands: its nullability as a column where a
     /// source or the catalog states one - a Java String is a reference whatever the column
-    /// holds -, else the nullability of its language type (decision 113).
+    /// holds -, else the nullability of its language type (decision 113); and never on the
+    /// optional side of an outer join, where the row itself may be missing.
     /// </summary>
     protected bool HoldsNoNull(string? alias, string column)
     {
         if (alias is not null && outer is not null && !Scope.Aliases.Contains(alias) && outer.Knows(alias))
         {
             return outer.HoldsNoNull(alias, column);
+        }
+
+        if (alias is not null && Scope.OptionalAliases.Contains(alias))
+        {
+            return false;
         }
 
         var map = alias is not null && Scope.Entities.TryGetValue(alias, out var found) ? found : null;
@@ -714,7 +728,7 @@ public abstract class LinqQueryVisitor(
 
         if (operand.IsAggregate)
         {
-            return Aggregate(operand);
+            return Afresh(() => Aggregate(operand));
         }
 
         // After GroupBy a value equal to a key is read off the key object - g.Key, or a member
@@ -987,11 +1001,16 @@ public abstract class LinqQueryVisitor(
 
         if (expression.IsListAggregate)
         {
-            return ListAggregate(expression);
+            return Afresh(() => ListAggregate(expression));
         }
 
         if (expression.IsBinary)
         {
+            if (!nullTested && GuardsConcatenation && Typing.IsConcatenation(expression) && NullableValues(expression) is { Count: > 0 } nullable)
+            {
+                return GuardedConcatenation(expression, nullable);
+            }
+
             var symbol = expression.Operator!.Value switch
             {
                 ExpressionOperator.Concat or ExpressionOperator.Add => "+",
@@ -1015,7 +1034,7 @@ public abstract class LinqQueryVisitor(
                 QueryFunction.Trim => $"{Receiver(arguments[0])}.Trim()",
                 QueryFunction.Substring => $"{Receiver(arguments[0])}.Substring({ZeroBased(arguments[1])}, {Operand(arguments[2])})",
                 QueryFunction.Length => $"{Receiver(arguments[0])}.Length",
-                QueryFunction.Coalesce => $"({string.Join(" ?? ", arguments.Select((argument, i) => i < arguments.Count - 1 ? Lifted(argument) : Operand(argument)))})",
+                QueryFunction.Coalesce => Afresh(() => $"({string.Join(" ?? ", arguments.Select((argument, i) => i < arguments.Count - 1 ? Lifted(argument) : Operand(argument)))})"),
                 QueryFunction.Abs => $"Math.Abs({Operand(arguments[0])})",
                 QueryFunction.Year => $"{Receiver(arguments[0])}.Year",
                 QueryFunction.Month => $"{Receiver(arguments[0])}.Month",
@@ -1031,7 +1050,63 @@ public abstract class LinqQueryVisitor(
             };
         }
 
-        return Case(expression);
+        return Afresh(() => Case(expression));
+    }
+
+    /// <summary>
+    /// Whether a concatenation over a value that may be NULL is written under a guard
+    /// (<see cref="GuardedConcatenation"/>). True for a provider that translates C#'s
+    /// <c>+</c> over text as C# evaluates it, a null as the empty string; a provider that
+    /// hands the concatenation to the database as it stands turns the guard off.
+    /// </summary>
+    protected virtual bool GuardsConcatenation => true;
+
+    /// <summary>
+    /// A concatenation that may be NULL, written so that it is: C# takes a null in <c>+</c>
+    /// over text as the empty string and EF Core 10 translates it so - <c>COALESCE(a, N'')
+    /// + COALESCE(b, N'')</c> -, where SQL, HQL and JPQL yield NULL (decision 107), and a
+    /// path that concatenates <c>',' + CAST(NULL AS NVARCHAR(MAX))</c> came out as <c>,</c>
+    /// instead of NULL. The values whose NULL makes the concatenation NULL are tested first
+    /// and the concatenation stands in the else: <c>(a == null || b == null ? null : a + b)</c>,
+    /// which the provider translates to a CASE over IS NULL. The tests name the values the
+    /// mapping does not vouch for - a column that may hold NULL, on the optional side of an
+    /// outer join too, an aggregate, a subquery, a CASE without an ELSE, a COALESCE whose
+    /// last value may be NULL -, not a literal, a column declared NOT NULL or a parameter,
+    /// which the caller binds. A NULL literal among them is the whole value: the
+    /// concatenation is NULL and is written as the typed null. The reader takes the guard
+    /// back as the bare concatenation.
+    /// </summary>
+    private string GuardedConcatenation(QueryExpression concatenation, List<QueryOperand> nullable)
+    {
+        if (nullable.Any(value => value.IsConstant))
+        {
+            return "(string)null";
+        }
+
+        var tests = nullable
+            .Select(value => $"{Afresh(() => Operand(value))} == null")
+            .Distinct(StringComparer.Ordinal);
+
+        var wasTested = nullTested;
+        nullTested = true;
+        var text = Expression(concatenation);
+        nullTested = wasTested;
+
+        return $"({string.Join(" || ", tests)} ? null : {text})";
+    }
+
+    /// <summary>The values of the concatenation a guard has to test (<see cref="GuardedConcatenation"/>), in the order they stand.</summary>
+    private List<QueryOperand> NullableValues(QueryExpression concatenation)
+        => [.. OperandStructure.NullSources(concatenation).Where(value => !value.IsParameter && !IsNeverNull(value))];
+
+    /// <summary>A value written outside any guard: what it holds is NULL on a condition of its own, which an enclosing guard does not test.</summary>
+    private string Afresh(Func<string> write)
+    {
+        var wasTested = nullTested;
+        nullTested = false;
+        var text = write();
+        nullTested = wasTested;
+        return text;
     }
 
     /// <summary>
@@ -1239,21 +1314,40 @@ public abstract class LinqQueryVisitor(
         return value.IsExpression && ScalarOf(value) == ScalarType.String && IsNeverNull(value);
     }
 
-    /// <summary>A literal, a column that holds no NULL, or an expression - no list, no window, no CASE without an ELSE - over such values alone.</summary>
+    /// <summary>
+    /// A literal other than NULL, a column that holds no NULL, a COUNT, an aggregate over such
+    /// a column in a grouped query - a group is never empty -, a COALESCE whose last value is
+    /// never NULL, or an expression - no list, no window, no CASE without an ELSE - over such
+    /// values alone.
+    /// </summary>
     private bool IsNeverNull(QueryOperand operand)
     {
         if (operand.IsConstant)
+        {
+            return !IsNullLiteral(operand.Constant!);
+        }
+
+        if (string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         if (operand.IsColumn)
         {
-            return !operand.IsAggregate && operand.Property is not null and not "*" && HoldsNoNull(operand.Table, operand.Property);
+            return (!operand.IsAggregate || Scope.Grouped) && operand.Property is not null and not "*" && HoldsNoNull(operand.Table, operand.Property);
         }
 
-        return operand.IsExpression
-            && !operand.Expression!.IsListAggregate
+        if (!operand.IsExpression || operand.IsAggregate)
+        {
+            return false;
+        }
+
+        if (operand.Expression!.Function == QueryFunction.Coalesce)
+        {
+            return IsNeverNull(operand.Expression.Arguments![^1]);
+        }
+
+        return !operand.Expression.IsListAggregate
             && !operand.Expression.IsWindow
             && (!operand.Expression.IsCase || operand.Expression.Else is not null)
             && OperandStructure.Inside(operand.Expression).All(IsNeverNull);

@@ -143,6 +143,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     private (string What, QueryFeature? Category)? unread;
 
     /// <summary>
+    /// The depth of null guards whose else is being read (<see cref="ReadNullGuarded"/>),
+    /// and the columns concatenated inside them, whose loss is decided when the guard is.
+    /// </summary>
+    private int nullGuards;
+
+    private readonly List<QueryOperand> concatenatedUnderGuard = [];
+
+    /// <summary>
     /// The limits this parser reads its input under (decision 092). The orchestration sets
     /// them on every parser it creates; one constructed by hand - in a test - runs under the
     /// default, which is the cap the application uses unless its operator moved it.
@@ -4577,22 +4585,34 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         return QueryOperand.Computed(QueryExpression.Binary(op.Value, left, right));
     }
 
+    /// <summary>
+    /// A concatenation, with the loss a column in it means (decision 107): C# takes its NULL
+    /// as the empty string where the targets yield NULL. Inside the else of a null guard the
+    /// loss waits (<see cref="ReadNullGuarded"/>): the guard may be the one the LINQ writer
+    /// spells SQL's NULL with, and then there is nothing lost.
+    /// </summary>
     private QueryOperand Concatenation(QueryOperand left, QueryOperand right)
     {
-        foreach (var side in new[] { left, right })
+        if (new[] { left, right }.FirstOrDefault(side => side.IsColumn) is { } column)
         {
-            if (side.IsColumn)
+            if (nullGuards > 0)
             {
-                Report(
-                    ConversionRecordKind.Loss,
-                    $"The concatenation over the column '{side}' takes a NULL as the empty string in C#, where SQL, HQL and JPQL yield NULL; the query representation does not carry the difference, and the targets concatenate as their language does.",
-                    QueryFeature.Expression);
-                break;
+                concatenatedUnderGuard.Add(column);
+            }
+            else
+            {
+                ReportConcatenationLoss(column);
             }
         }
 
         return QueryOperand.Computed(QueryExpression.Binary(ExpressionOperator.Concat, left, right));
     }
+
+    private void ReportConcatenationLoss(QueryOperand column)
+        => Report(
+            ConversionRecordKind.Loss,
+            $"The concatenation over the column '{column}' takes a NULL as the empty string in C#, where SQL, HQL and JPQL yield NULL; the query representation does not carry the difference, and the targets concatenate as their language does.",
+            QueryFeature.Expression);
 
     private static bool ReadsAsString(QueryOperand operand)
     {
@@ -4621,6 +4641,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private QueryOperand? ReadConditional(ConditionalExpressionSyntax conditional)
     {
+        if (NullGuard(conditional) is { } guard)
+        {
+            return ReadNullGuarded(conditional, guard);
+        }
+
         var branches = new List<CaseBranch>();
         ExpressionSyntax current = conditional;
 
@@ -4650,6 +4675,96 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         return QueryOperand.Computed(QueryExpression.Case(branches, otherwise));
+    }
+
+    /// <summary>
+    /// The shape of a null guard - <c>x == null || y == null ? null : …</c>, one conditional,
+    /// null when any of the tested values is -, as the tested values; null for any other
+    /// conditional.
+    /// </summary>
+    private static List<ExpressionSyntax>? NullGuard(ConditionalExpressionSyntax conditional)
+    {
+        if (!IsNullLiteral(conditional.WhenTrue) || Unparenthesized(conditional.WhenFalse) is ConditionalExpressionSyntax)
+        {
+            return null;
+        }
+
+        var tested = new List<ExpressionSyntax>();
+        var pending = new Stack<ExpressionSyntax>();
+        pending.Push(conditional.Condition);
+        while (pending.Count > 0)
+        {
+            var test = Unparenthesized(pending.Pop());
+            if (test is BinaryExpressionSyntax disjunction && disjunction.IsKind(SyntaxKind.LogicalOrExpression))
+            {
+                pending.Push(disjunction.Right);
+                pending.Push(disjunction.Left);
+            }
+            else if (test is BinaryExpressionSyntax equality && equality.IsKind(SyntaxKind.EqualsExpression) && IsNullLiteral(equality.Right))
+            {
+                tested.Add(equality.Left);
+            }
+            else if (test is BinaryExpressionSyntax reversed && reversed.IsKind(SyntaxKind.EqualsExpression) && IsNullLiteral(reversed.Left))
+            {
+                tested.Add(reversed.Right);
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        return tested;
+    }
+
+    private static ExpressionSyntax Unparenthesized(ExpressionSyntax expression)
+    {
+        while (expression is ParenthesizedExpressionSyntax parenthesized)
+        {
+            expression = parenthesized.Expression;
+        }
+
+        return expression;
+    }
+
+    /// <summary>
+    /// A conditional in the shape of a null guard. When its else is a concatenation and every
+    /// tested value is one a NULL in which makes that concatenation NULL, the guard says in
+    /// C# what SQL's concatenation says by itself - it is the spelling the LINQ writer gives
+    /// a concatenation that may be NULL -, so it is read as the bare concatenation, with no
+    /// loss over its columns. Any other guard is the CASE it is, and the columns concatenated
+    /// inside it get the loss they get anywhere.
+    /// </summary>
+    private QueryOperand? ReadNullGuarded(ConditionalExpressionSyntax conditional, List<ExpressionSyntax> guard)
+    {
+        var when = ParseCondition(conditional.Condition);
+        var mark = concatenatedUnderGuard.Count;
+        nullGuards++;
+        var otherwise = ReadLeaf(conditional.WhenFalse);
+        nullGuards--;
+        var concatenated = concatenatedUnderGuard.GetRange(mark, concatenatedUnderGuard.Count - mark);
+        concatenatedUnderGuard.RemoveRange(mark, concatenatedUnderGuard.Count - mark);
+
+        if (when is null || otherwise is null)
+        {
+            unread ??= ($"the conditional '{conditional}', a branch of which the query representation does not carry", QueryFeature.Expression);
+            return null;
+        }
+
+        var tested = guard.Select(ReadLeaf).ToList();
+        if (otherwise is { IsExpression: true, IsAggregate: false }
+            && otherwise.Expression!.Operator is ExpressionOperator.Concat or ExpressionOperator.Add
+            && tested.All(value => value is not null && OperandStructure.NullSources(otherwise.Expression).Any(source => OperandStructure.Same(value, source))))
+        {
+            return otherwise;
+        }
+
+        foreach (var column in concatenated)
+        {
+            ReportConcatenationLoss(column);
+        }
+
+        return QueryOperand.Computed(QueryExpression.Case([new CaseBranch(when, ReadLeaf(conditional.WhenTrue)!)], otherwise));
     }
 
     /// <summary>

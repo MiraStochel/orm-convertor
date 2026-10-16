@@ -77,6 +77,14 @@ public sealed class NHibernateLinqQueryVisitor(
     protected override bool AggregatesOverDistinctValues(string function) => function == "COUNT";
 
     /// <summary>
+    /// The provider hands a concatenation in a filter or an ordering to the database as it
+    /// stands, where a NULL yields NULL as HQL's does, so the guard the shared writer puts
+    /// around one for EF Core has nothing to correct here; in the projection the provider
+    /// concatenates on the client and the form is omitted (<see cref="Unspoken"/>).
+    /// </summary>
+    protected override bool GuardsConcatenation => false;
+
+    /// <summary>
     /// A concatenation in the final projection over text that may hold NULL: the provider
     /// fetches the columns and lets C# concatenate, where a null becomes the empty string and
     /// SQL, HQL and the HQL form of this query yield NULL (decision 107). In a filter or an

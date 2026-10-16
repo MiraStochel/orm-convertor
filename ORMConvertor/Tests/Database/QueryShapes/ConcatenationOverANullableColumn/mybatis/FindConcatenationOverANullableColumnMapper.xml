@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindConcatenationOverANullableColumnMapper">
+  <select id="findConcatenationOverANullableColumn" resultType="ShopCustomer">
+    SELECT c.CustomerId AS CustomerId, c.Name + ' (' + c.Notes + ')' AS Label
+    FROM {{schema}}.ShopCustomers AS c
+  </select>
+</mapper>
