@@ -28,8 +28,6 @@ public class LdbcValidationTest(ITestOutputHelper output)
 {
     public static TheoryData<string, ORMEnum> AsSpecified() => Cells(LdbcTranslation.AsSpecified);
 
-    public static TheoryData<string, ORMEnum> Simplified() => Cells(LdbcTranslation.Simplified);
-
     public static TheoryData<string, ORMEnum> Mutations()
     {
         var data = new TheoryData<string, ORMEnum>();
@@ -66,28 +64,40 @@ public class LdbcValidationTest(ITestOutputHelper output)
     /// <summary>
     /// A query with a simplification is run against the judge as well, and what it yields is a
     /// number, not a verdict: the share of reads that agree. Its artifact still has to run - a
-    /// read that fails is a failure of the translation, whatever the note says.
+    /// read that fails is a failure of the translation, whatever the note says. A fact over
+    /// every such query rather than a theory: since decisions 140 and 141 the catalog has none,
+    /// and a theory without data is no claim at all.
     /// </summary>
-    [Theory]
-    [MemberData(nameof(Simplified))]
-    public void AQueryWithASimplificationIsMeasuredAgainstTheJudge(string key, ORMEnum framework)
+    [Fact]
+    public void EveryQueryWithASimplificationIsMeasuredAgainstTheJudge()
     {
         var replay = LdbcReplay.Current;
         replay.SkipIfUnavailable();
 
-        var tally = replay.Tally(key, framework);
-        var cell = $"{key} in {framework}";
-
-        Assert.True(tally.Unprepared is null, tally.Describe(cell));
-        SkipIfThePrefixHoldsNoRead(replay, tally, key);
-        Assert.True(tally.Failures == 0, tally.Describe(cell));
-
-        output.WriteLine(string.Create(
-            CultureInfo.InvariantCulture,
-            $"{cell}: {tally.Matches} of {tally.Reads} reads agree with the judge ({100.0 * tally.Matches / tally.Reads:F1} %), set {replay.SetName}."));
-        foreach (var disagreement in tally.Disagreements)
+        foreach (var query in LdbcReplay.Judged().Where(query => query.Translation == LdbcTranslation.Simplified))
         {
-            output.WriteLine("  " + disagreement);
+            foreach (var framework in LdbcReplay.Frameworks)
+            {
+                var tally = replay.Tally(query.Key, framework);
+                var cell = $"{query.Key} in {framework}";
+
+                Assert.True(tally.Unprepared is null, tally.Describe(cell));
+                if (tally.Reads == 0)
+                {
+                    Assert.True(LdbcDatabase.Rows is not null, $"The whole set {replay.SetName} was replayed and holds no read of {query.Key}.");
+                    continue;
+                }
+
+                Assert.True(tally.Failures == 0, tally.Describe(cell));
+
+                output.WriteLine(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{cell}: {tally.Matches} of {tally.Reads} reads agree with the judge ({100.0 * tally.Matches / tally.Reads:F1} %), set {replay.SetName}."));
+                foreach (var disagreement in tally.Disagreements)
+                {
+                    output.WriteLine("  " + disagreement);
+                }
+            }
         }
     }
 

@@ -61,6 +61,15 @@ public class SqlQueryReader(
     private string sourceAlias = "t";
 
     /// <summary>
+    /// Whether the next SELECT is a member of a set operation after its leftmost one, whose
+    /// columns SQL names after the leftmost member by position (decision 112): a constant
+    /// projected there without an alias is a column with a name, not the nameless loss it is
+    /// anywhere else. Armed before a right operand is read, consumed by the SELECT that reads
+    /// it, so that a subquery inside that member is not taken for a member itself.
+    /// </summary>
+    private bool furtherMember;
+
+    /// <summary>
     /// The names the statement gives a table or a common table expression, which a derived
     /// table lifted into a definition of the whole query may not take (decision 112).
     /// </summary>
@@ -291,6 +300,9 @@ public class SqlQueryReader(
                 break;
 
             case QuerySpecification query:
+                var namedByPosition = furtherMember;
+                furtherMember = false;
+
                 // FOR XML and FOR JSON turn the rows into one value; a query read without the
                 // clause returns something else entirely (decision 070).
                 if (query.ForClause is not null)
@@ -304,7 +316,7 @@ public class SqlQueryReader(
 
                 queryBuilder.Push();
                 ReadFrom(query);
-                ReadSelect(query);
+                ReadSelect(query, namedByPosition);
                 ReadWhere(query);
                 ReadGroupBy(query);
                 ReadHaving(query);
@@ -411,6 +423,7 @@ public class SqlQueryReader(
         EmitSetNode(branch.Left);
         queryBuilder.SetOperation(branch.Operation);
         queryBuilder.Push();
+        furtherMember = true;
         EmitSetNode(branch.Right);
         queryBuilder.Pop();
     }
@@ -741,7 +754,7 @@ public class SqlQueryReader(
         return true;
     }
 
-    private void ReadSelect(QuerySpecification query)
+    private void ReadSelect(QuerySpecification query, bool namedByPosition)
     {
         // DISTINCT is a property of the whole projection, carried per SELECT (decision 073)
         // - inside set-operation operands and subqueries too, where the grammar puts it. It
@@ -769,7 +782,7 @@ public class SqlQueryReader(
             }
 
             var alias = scalar.ColumnName?.Value;
-            ReadProjection(scalar.Expression, alias);
+            ReadProjection(scalar.Expression, alias, namedByPosition);
         }
     }
 
@@ -778,10 +791,13 @@ public class SqlQueryReader(
     /// row as <c>COUNT(*)</c>, an expression - arithmetic, a function of the vocabulary,
     /// a CASE -, or a constant under an alias (decision 113), each qualified by the source
     /// alias where the text left it unqualified. A constant without an alias is not a shape
-    /// any target names a column by and stays the loss it was; a construct outside the
-    /// vocabulary is dropped with a record that names it, under the category of expressions.
+    /// any target names a column by and stays the loss it was - except in a member of a set
+    /// operation after the leftmost, where SQL names the column after the leftmost member's
+    /// by position (decision 112) and the builder gives it that name, as it does an
+    /// expression there; a construct outside the vocabulary is dropped with a record that
+    /// names it, under the category of expressions.
     /// </summary>
-    private void ReadProjection(ScalarExpression expression, string? alias)
+    private void ReadProjection(ScalarExpression expression, string? alias, bool namedByPosition)
     {
         var operand = ReadOperand(expression);
 
@@ -798,8 +814,9 @@ public class SqlQueryReader(
 
         // A constant under an alias is a column of the result with a value every row shares -
         // the starting depth of a recursion is one (decision 113); without an alias it names
-        // no column any target could read it by, and stays the loss it was.
-        if (operand.IsConstant && !operand.IsAggregate && alias is null)
+        // no column any target could read it by, and stays the loss it was - unless the
+        // member it stands in takes its names from the leftmost member by position.
+        if (operand.IsConstant && !operand.IsAggregate && alias is null && !namedByPosition)
         {
             Report(
                 ConversionRecordKind.Loss,

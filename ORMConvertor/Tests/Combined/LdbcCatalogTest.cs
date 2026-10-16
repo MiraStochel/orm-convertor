@@ -271,6 +271,38 @@ public class LdbcCatalogTest(TestSchemaFixture fixture)
         }
     }
 
+    /// <summary>
+    /// A query that searches for a path states the depth of its search (decision 140), and its
+    /// text has exactly that many levels - definitions L1 … Ld or T1 … Td -, so that the depth
+    /// the page claims and <c>LdbcJudge/LdbcPathQueryTest</c> measures is the depth the text
+    /// runs with. A query without a depth has no such chain; and no path query is a
+    /// simplification any more, because the depth is what makes it exact over the data set.
+    /// </summary>
+    [Fact]
+    public void EveryPathQueryStatesTheDepthItsTextRunsWith()
+    {
+        foreach (var query in LdbcSnbSample.Queries)
+        {
+            var levels = query.Sql is null
+                ? []
+                : Regex.Matches(query.Sql, @"^\s*[LT](\d+) AS \(", RegexOptions.Multiline).Select(match => int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)).ToList();
+
+            if (query.SearchDepth is null)
+            {
+                Assert.Empty(levels);
+                continue;
+            }
+
+            Assert.True(query.SearchDepth.Levels > 0, $"{query.Key} states a depth of {query.SearchDepth.Levels}.");
+            Assert.False(string.IsNullOrWhiteSpace(query.SearchDepth.Measured), $"{query.Key} does not say what its depth measures.");
+            Assert.Equal(LdbcTranslation.AsSpecified, query.Translation);
+            Assert.Equal(query.SearchDepth.Levels, levels.Max());
+            Assert.Equal(Enumerable.Range(0, query.SearchDepth.Levels + 1), levels.Distinct().Order());
+        }
+
+        Assert.Equal(["ic13", "ic14", "bi15", "bi19", "bi20"], LdbcSnbSample.Queries.Where(query => query.SearchDepth is not null).Select(query => query.Key));
+    }
+
     /// <summary>A target refuses a query or falls back from it or translates it - never two of the three.</summary>
     [Fact]
     public void NoTargetBothRefusesAndFallsBack()

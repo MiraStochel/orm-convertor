@@ -19,11 +19,19 @@ namespace SampleData;
 /// a friend is also two steps away, over the start person and back - and the queries say
 /// "within n steps" as the union of the walks of length 1 to n, and "exactly n" by excluding
 /// the shorter ones. That is how a path of bounded length is stated without recursion. A
-/// search whose length is not fixed in advance - a shortest path, a hierarchy of unknown
-/// depth - is a recursive definition since decision 113.
+/// hierarchy of unknown depth is a recursive definition (decision 113); a shortest or a
+/// cheapest path over the cyclic graph of knows is a chain of non-recursive definitions, one
+/// per level of a breadth-first search, as deep as the data set measures (decision 140).
 /// </summary>
 public static class LdbcSnbSample
 {
+    /// <summary>
+    /// The data set the texts are written over and the depths of the path queries are
+    /// measured on (decision 140): LDBC SNB Interactive v1 at scale factor 1, named as the
+    /// archive the loader records in the extended property <c>ldbc.dataset</c> of LdbcSnb.
+    /// </summary>
+    public const string DataSet = "social_network-sf1-CsvMergeForeign-StringDateFormatter";
+
     /// <summary>The Dapper entity classes, one file per table, in the order of schema.sql.</summary>
     public static IReadOnlyList<(string FileName, string Content)> Entities { get; } =
     [
@@ -909,132 +917,196 @@ public static class LdbcSnbSample
                 Column("PersonLastName", "personLastName"), Names("TagNames", "tagNames"), Column("ReplyCount", "replyCount"),
             ])),
 
-        new("ic13", LdbcWorkload.InteractiveComplex, 13, "Single shortest path", LdbcTranslation.Simplified,
+        new("ic13", LdbcWorkload.InteractiveComplex, 13, "Single shortest path", LdbcTranslation.AsSpecified,
             "The length of the shortest path along knows between two persons: 0 for one person, -1 where there is no "
-            + "path. The search runs from both ends (decision 113): one recursive definition walks along knows from the "
-            + "first person and another from the second - knows is stored in both directions -, each is merged outside "
-            + "the recursion to the persons it reached and the fewest steps to each, and the length is the smallest sum "
-            + "of both halves over the persons where they meet. Each walk is bounded at two steps, so the search reaches "
-            + "four and a pair further apart answers -1: the recursive member of SQL Server keeps no record of the "
-            + "persons it has already reached, so it counts walks rather than persons, and the walks multiply by the "
-            + "number of friends at every step - the example person has eighty -, which is why two walks of two steps "
-            + "cost a fraction of one walk of three. From the example person the bound reaches every one of the 9,163 "
-            + "persons it is connected to; the farthest 26 of them are four steps away. Over the whole validation set of "
-            + "SF 1 (decision 117) the bound misses no pair: all 6,818 reads agree with the expected length.",
+            + "path. The search is a breadth-first search written as a chain of non-recursive definitions (decision "
+            + "140): Step is every knows edge at one step beside every person at no step, and level k holds every "
+            + "person within k steps of the first person with the fewest steps to them - the fewest over the previous "
+            + "level plus one step, the person itself at no step keeping what the previous level found. Five levels, "
+            + "the diameter of knows over scale factor 1 measured from every person (2,172 ordered pairs of the 84 "
+            + "million lie five steps apart, none further), so no pair of the data set lies beyond the last level, and "
+            + "the answer is the second person joined to it from the left. A recursive definition cannot do this: its "
+            + "recursive member may neither merge rows nor look at an earlier level, so it enumerates walks - 95 "
+            + "million at four steps from the example person - where a level holds persons (decision 113).",
             """
-            WITH WalkFromFirst AS (
+            WITH Step AS (
+                SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId, 1 AS Steps
+                FROM Person_knows_Person AS k
+                UNION ALL
+                SELECT p.Id AS FromPersonId, p.Id AS ToPersonId, 0 AS Steps
+                FROM Person AS p),
+            L0 AS (
                 SELECT p.Id AS PersonId, 0 AS Steps
                 FROM Person AS p
-                WHERE p.Id = @person1Id
-                UNION ALL
-                SELECT k.Person2Id, w.Steps + 1
-                FROM WalkFromFirst AS w
-                JOIN Person_knows_Person AS k ON k.Person1Id = w.PersonId
-                WHERE w.Steps < 2 AND w.PersonId <> @person2Id),
-            WalkFromSecond AS (
-                SELECT p.Id AS PersonId, 0 AS Steps
-                FROM Person AS p
-                WHERE p.Id = @person2Id
-                UNION ALL
-                SELECT k.Person2Id, w.Steps + 1
-                FROM WalkFromSecond AS w
-                JOIN Person_knows_Person AS k ON k.Person1Id = w.PersonId
-                WHERE w.Steps < 2 AND w.PersonId <> @person1Id),
-            NearestToFirst AS (
-                SELECT w.PersonId AS PersonId, MIN(w.Steps) AS Steps
-                FROM WalkFromFirst AS w
-                GROUP BY w.PersonId),
-            NearestToSecond AS (
-                SELECT w.PersonId AS PersonId, MIN(w.Steps) AS Steps
-                FROM WalkFromSecond AS w
-                GROUP BY w.PersonId)
-            SELECT COALESCE(MIN(f.Steps + s.Steps), -1) AS ShortestPathLength
-            FROM NearestToFirst AS f
-            JOIN NearestToSecond AS s ON s.PersonId = f.PersonId
+                WHERE p.Id = @person1Id),
+            L1 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Steps + s.Steps) AS Steps
+                FROM L0 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L2 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Steps + s.Steps) AS Steps
+                FROM L1 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L3 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Steps + s.Steps) AS Steps
+                FROM L2 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L4 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Steps + s.Steps) AS Steps
+                FROM L3 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L5 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Steps + s.Steps) AS Steps
+                FROM L4 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId)
+            SELECT COALESCE(l.Steps, -1) AS ShortestPathLength
+            FROM Person AS p
+            LEFT JOIN L5 AS l ON l.PersonId = p.Id
+            WHERE p.Id = @person2Id
             """,
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "96")],
-            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion],
+            FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate],
             Validation: new("IC13", [Bind("person1Id", "person1IdQ13StartNode"), Bind("person2Id", "person2IdQ13EndNode")],
-                [Column("ShortestPathLength", "shortestPathLength")])),
+                [Column("ShortestPathLength", "shortestPathLength")]),
+            SearchDepth: new(5, "the diameter of knows over scale factor 1, from every person")),
 
-        new("ic14", LdbcWorkload.InteractiveComplex, 14, "Trusted connection paths", LdbcTranslation.Simplified,
+        new("ic14", LdbcWorkload.InteractiveComplex, 14, "Trusted connection paths", LdbcTranslation.AsSpecified,
             "Every shortest path between two persons with its weight - one for every reply to a post and a half for every "
             + "reply to a comment between the neighbours along it, both ways -, the path as the identifiers of its persons "
-            + "joined by commas. The search is a recursive definition (decision 113) that walks along knows from the first "
-            + "person and carries the persons of its first two steps; its last step goes only to the second person, since "
-            + "no longer walk is kept, and a walk that returns to a person it passed is never among the shortest, so none "
-            + "is excluded. The shortest walks are then split into their steps and each step is weighed over the replies "
-            + "between its two persons: weights joined inside the recursion would be computed again for every step of "
-            + "every walk. The identifiers of the path are converted from columns, because a parameter converted into "
-            + "text is one HQL cannot show to fit a code page. The walk is bounded at three steps, so two persons "
-            + "further apart have no path; it walks from one end only, unlike IC 13, because it carries whole paths, "
-            + "and over the whole validation set of SF 1 (decision 117) the bound misses no pair: all 6,818 reads agree "
-            + "with the expected paths.",
+            + "joined by commas. The breadth-first search of decision 140 runs from the second person: level k holds "
+            + "every person within k steps with their distance, five levels for the diameter of knows over scale factor "
+            + "1. A shortest path from the first person is a walk that brings the distance to the second person down by "
+            + "one at every step, so the paths are a second chain from the first person that carries the distance "
+            + "remaining and extends a path only to a neighbour one step nearer - level i reads the level of the search "
+            + "deep enough for what remains -, keeps a path that has arrived through the levels that remain, and carries "
+            + "its persons as columns: the weight is summed over those columns at the end, once per path, where a weight "
+            + "taken inside the chain was computed for every candidate step. The identifiers of the path are converted "
+            + "from columns, because a parameter converted into text is one HQL cannot show to fit a code page. A read "
+            + "takes about 2 seconds over scale factor 1 (measured 2026-10-15).",
             """
-            WITH Walk AS (
-                SELECT p.Id AS PersonId, 0 AS Steps, CAST(NULL AS BIGINT) AS Step1Id, CAST(NULL AS BIGINT) AS Step2Id
+            WITH Step AS (
+                SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId, 1 AS Steps
+                FROM Person_knows_Person AS k
+                UNION ALL
+                SELECT p.Id AS FromPersonId, p.Id AS ToPersonId, 0 AS Steps
+                FROM Person AS p),
+            T0 AS (
+                SELECT p.Id AS PersonId, 0 AS Steps
                 FROM Person AS p
-                WHERE p.Id = @person1Id
-                UNION ALL
-                SELECT k.Person2Id, w.Steps + 1,
-                       CASE WHEN w.Steps = 0 THEN k.Person2Id ELSE w.Step1Id END,
-                       CASE WHEN w.Steps = 1 THEN k.Person2Id ELSE w.Step2Id END
-                FROM Walk AS w
-                JOIN Person_knows_Person AS k ON k.Person1Id = w.PersonId
-                WHERE w.Steps < 3
-                  AND w.PersonId <> @person2Id
-                  AND (w.Steps < 2 OR k.Person2Id = @person2Id)),
-            Reached AS (
-                SELECT w.PersonId AS PersonId, w.Steps AS Steps, w.Step1Id AS Step1Id, w.Step2Id AS Step2Id
-                FROM Walk AS w
-                WHERE w.PersonId = @person2Id),
-            Shortest AS (
-                SELECT r.Steps AS Steps, r.Step1Id AS Step1Id, r.Step2Id AS Step2Id,
-                       CAST(f.Id AS NVARCHAR(MAX)) + COALESCE(',' + CAST(r.Step1Id AS NVARCHAR(MAX)), '')
-                           + COALESCE(',' + CAST(r.Step2Id AS NVARCHAR(MAX)), '')
-                           + CASE WHEN r.Steps = 3 THEN ',' + CAST(r.PersonId AS NVARCHAR(MAX)) ELSE '' END AS Path
-                FROM Reached AS r
-                JOIN Person AS f ON f.Id = @person1Id
-                WHERE r.Steps = (SELECT MIN(m.Steps) FROM Reached AS m)),
-            Hop AS (
-                SELECT s.Path AS Path, CAST(NULL AS BIGINT) AS FromPersonId, CAST(NULL AS BIGINT) AS ToPersonId
-                FROM Shortest AS s
-                WHERE s.Steps = 0
-                UNION ALL
-                SELECT s.Path, @person1Id, s.Step1Id
-                FROM Shortest AS s
-                WHERE s.Steps >= 1
-                UNION ALL
-                SELECT s.Path, s.Step1Id, s.Step2Id
-                FROM Shortest AS s
-                WHERE s.Steps >= 2
-                UNION ALL
-                SELECT s.Path, s.Step2Id, @person2Id
-                FROM Shortest AS s
-                WHERE s.Steps = 3),
-            Weight AS (
-                SELECT h.Path AS Path,
-                       (SELECT COALESCE(SUM(CASE WHEN p.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END), 0.0)
-                        FROM Message AS c
-                        JOIN Message AS p ON p.Id = c.ParentMessageId
-                        WHERE c.CreatorPersonId = h.FromPersonId AND p.CreatorPersonId = h.ToPersonId)
-                       + (SELECT COALESCE(SUM(CASE WHEN p.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END), 0.0)
-                          FROM Message AS c
-                          JOIN Message AS p ON p.Id = c.ParentMessageId
-                          WHERE c.CreatorPersonId = h.ToPersonId AND p.CreatorPersonId = h.FromPersonId) AS Score
-                FROM Hop AS h)
-            SELECT wt.Path AS PersonIdsInPath, CAST(SUM(wt.Score) AS FLOAT) AS PathWeight
-            FROM Weight AS wt
-            GROUP BY wt.Path
-            ORDER BY PathWeight DESC, wt.Path ASC
+                WHERE p.Id = @person2Id),
+            T1 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(t.Steps + s.Steps) AS Steps
+                FROM T0 AS t
+                JOIN Step AS s ON s.FromPersonId = t.PersonId
+                GROUP BY s.ToPersonId),
+            T2 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(t.Steps + s.Steps) AS Steps
+                FROM T1 AS t
+                JOIN Step AS s ON s.FromPersonId = t.PersonId
+                GROUP BY s.ToPersonId),
+            T3 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(t.Steps + s.Steps) AS Steps
+                FROM T2 AS t
+                JOIN Step AS s ON s.FromPersonId = t.PersonId
+                GROUP BY s.ToPersonId),
+            T4 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(t.Steps + s.Steps) AS Steps
+                FROM T3 AS t
+                JOIN Step AS s ON s.FromPersonId = t.PersonId
+                GROUP BY s.ToPersonId),
+            T5 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(t.Steps + s.Steps) AS Steps
+                FROM T4 AS t
+                JOIN Step AS s ON s.FromPersonId = t.PersonId
+                GROUP BY s.ToPersonId),
+            P0 AS (
+                SELECT p.Id AS PersonId, t.Steps AS Remaining, p.Id AS Person0Id,
+                       CAST(NULL AS BIGINT) AS Person1Id, CAST(NULL AS BIGINT) AS Person2Id, CAST(NULL AS BIGINT) AS Person3Id,
+                       CAST(NULL AS BIGINT) AS Person4Id, CAST(NULL AS BIGINT) AS Person5Id
+                FROM Person AS p
+                JOIN T5 AS t ON t.PersonId = p.Id
+                WHERE p.Id = @person1Id),
+            P1 AS (
+                SELECT s.ToPersonId AS PersonId, t.Steps AS Remaining, p.Person0Id AS Person0Id,
+                       CASE WHEN s.Steps = 1 THEN s.ToPersonId ELSE p.Person1Id END AS Person1Id, p.Person2Id AS Person2Id, p.Person3Id AS Person3Id,
+                       p.Person4Id AS Person4Id, p.Person5Id AS Person5Id
+                FROM P0 AS p
+                JOIN Step AS s ON s.FromPersonId = p.PersonId AND (s.Steps = 1 OR p.Remaining = 0)
+                JOIN T4 AS t ON t.PersonId = s.ToPersonId AND t.Steps = p.Remaining - s.Steps),
+            P2 AS (
+                SELECT s.ToPersonId AS PersonId, t.Steps AS Remaining, p.Person0Id AS Person0Id,
+                       p.Person1Id AS Person1Id, CASE WHEN s.Steps = 1 THEN s.ToPersonId ELSE p.Person2Id END AS Person2Id, p.Person3Id AS Person3Id,
+                       p.Person4Id AS Person4Id, p.Person5Id AS Person5Id
+                FROM P1 AS p
+                JOIN Step AS s ON s.FromPersonId = p.PersonId AND (s.Steps = 1 OR p.Remaining = 0)
+                JOIN T3 AS t ON t.PersonId = s.ToPersonId AND t.Steps = p.Remaining - s.Steps),
+            P3 AS (
+                SELECT s.ToPersonId AS PersonId, t.Steps AS Remaining, p.Person0Id AS Person0Id,
+                       p.Person1Id AS Person1Id, p.Person2Id AS Person2Id, CASE WHEN s.Steps = 1 THEN s.ToPersonId ELSE p.Person3Id END AS Person3Id,
+                       p.Person4Id AS Person4Id, p.Person5Id AS Person5Id
+                FROM P2 AS p
+                JOIN Step AS s ON s.FromPersonId = p.PersonId AND (s.Steps = 1 OR p.Remaining = 0)
+                JOIN T2 AS t ON t.PersonId = s.ToPersonId AND t.Steps = p.Remaining - s.Steps),
+            P4 AS (
+                SELECT s.ToPersonId AS PersonId, t.Steps AS Remaining, p.Person0Id AS Person0Id,
+                       p.Person1Id AS Person1Id, p.Person2Id AS Person2Id, p.Person3Id AS Person3Id,
+                       CASE WHEN s.Steps = 1 THEN s.ToPersonId ELSE p.Person4Id END AS Person4Id, p.Person5Id AS Person5Id
+                FROM P3 AS p
+                JOIN Step AS s ON s.FromPersonId = p.PersonId AND (s.Steps = 1 OR p.Remaining = 0)
+                JOIN T1 AS t ON t.PersonId = s.ToPersonId AND t.Steps = p.Remaining - s.Steps),
+            P5 AS (
+                SELECT s.ToPersonId AS PersonId, t.Steps AS Remaining, p.Person0Id AS Person0Id,
+                       p.Person1Id AS Person1Id, p.Person2Id AS Person2Id, p.Person3Id AS Person3Id,
+                       p.Person4Id AS Person4Id, CASE WHEN s.Steps = 1 THEN s.ToPersonId ELSE p.Person5Id END AS Person5Id
+                FROM P4 AS p
+                JOIN Step AS s ON s.FromPersonId = p.PersonId AND (s.Steps = 1 OR p.Remaining = 0)
+                JOIN T0 AS t ON t.PersonId = s.ToPersonId AND t.Steps = p.Remaining - s.Steps)
+            SELECT CAST(p.Person0Id AS NVARCHAR(MAX))
+                       + CASE WHEN p.Person1Id IS NULL THEN '' ELSE ',' + CAST(p.Person1Id AS NVARCHAR(MAX)) END + CASE WHEN p.Person2Id IS NULL THEN '' ELSE ',' + CAST(p.Person2Id AS NVARCHAR(MAX)) END
+                       + CASE WHEN p.Person3Id IS NULL THEN '' ELSE ',' + CAST(p.Person3Id AS NVARCHAR(MAX)) END + CASE WHEN p.Person4Id IS NULL THEN '' ELSE ',' + CAST(p.Person4Id AS NVARCHAR(MAX)) END
+                       + CASE WHEN p.Person5Id IS NULL THEN '' ELSE ',' + CAST(p.Person5Id AS NVARCHAR(MAX)) END AS PersonIdsInPath,
+                   CAST(CASE WHEN p.Person1Id IS NULL THEN 0.0 ELSE
+                            COALESCE((SELECT SUM(CASE WHEN m.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) FROM Message AS c JOIN Message AS m ON m.Id = c.ParentMessageId
+                                      WHERE c.CreatorPersonId = p.Person0Id AND m.CreatorPersonId = p.Person1Id), 0.0)
+                          + COALESCE((SELECT SUM(CASE WHEN m.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) FROM Message AS c JOIN Message AS m ON m.Id = c.ParentMessageId
+                                      WHERE c.CreatorPersonId = p.Person1Id AND m.CreatorPersonId = p.Person0Id), 0.0) END
+                      + CASE WHEN p.Person2Id IS NULL THEN 0.0 ELSE
+                            COALESCE((SELECT SUM(CASE WHEN m.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) FROM Message AS c JOIN Message AS m ON m.Id = c.ParentMessageId
+                                      WHERE c.CreatorPersonId = p.Person1Id AND m.CreatorPersonId = p.Person2Id), 0.0)
+                          + COALESCE((SELECT SUM(CASE WHEN m.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) FROM Message AS c JOIN Message AS m ON m.Id = c.ParentMessageId
+                                      WHERE c.CreatorPersonId = p.Person2Id AND m.CreatorPersonId = p.Person1Id), 0.0) END
+                      + CASE WHEN p.Person3Id IS NULL THEN 0.0 ELSE
+                            COALESCE((SELECT SUM(CASE WHEN m.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) FROM Message AS c JOIN Message AS m ON m.Id = c.ParentMessageId
+                                      WHERE c.CreatorPersonId = p.Person2Id AND m.CreatorPersonId = p.Person3Id), 0.0)
+                          + COALESCE((SELECT SUM(CASE WHEN m.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) FROM Message AS c JOIN Message AS m ON m.Id = c.ParentMessageId
+                                      WHERE c.CreatorPersonId = p.Person3Id AND m.CreatorPersonId = p.Person2Id), 0.0) END
+                      + CASE WHEN p.Person4Id IS NULL THEN 0.0 ELSE
+                            COALESCE((SELECT SUM(CASE WHEN m.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) FROM Message AS c JOIN Message AS m ON m.Id = c.ParentMessageId
+                                      WHERE c.CreatorPersonId = p.Person3Id AND m.CreatorPersonId = p.Person4Id), 0.0)
+                          + COALESCE((SELECT SUM(CASE WHEN m.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) FROM Message AS c JOIN Message AS m ON m.Id = c.ParentMessageId
+                                      WHERE c.CreatorPersonId = p.Person4Id AND m.CreatorPersonId = p.Person3Id), 0.0) END
+                      + CASE WHEN p.Person5Id IS NULL THEN 0.0 ELSE
+                            COALESCE((SELECT SUM(CASE WHEN m.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) FROM Message AS c JOIN Message AS m ON m.Id = c.ParentMessageId
+                                      WHERE c.CreatorPersonId = p.Person4Id AND m.CreatorPersonId = p.Person5Id), 0.0)
+                          + COALESCE((SELECT SUM(CASE WHEN m.ParentMessageId IS NULL THEN 1.0 ELSE 0.5 END) FROM Message AS c JOIN Message AS m ON m.Id = c.ParentMessageId
+                                      WHERE c.CreatorPersonId = p.Person5Id AND m.CreatorPersonId = p.Person4Id), 0.0) END AS FLOAT) AS PathWeight
+            FROM P5 AS p
+            WHERE p.PersonId = @person2Id
+            ORDER BY PathWeight DESC, PersonIdsInPath ASC
             """,
-            [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65")],
-            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion],
+            [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "96")],
+            FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate],
             // The specification orders the paths by their weight alone, so two paths of one
             // weight come in either order: the rows are compared as a set.
             Validation: new("IC14", [Bind("person1Id", "person1IdQ14StartNode"), Bind("person2Id", "person2IdQ14EndNode")],
                 [new("PersonIdsInPath", "personIdsInPath", LdbcValueKind.Sequence, ","), Column("PathWeight", "pathWeight")],
-                Ordered: false)),
+                Ordered: false),
+            SearchDepth: new(5, "the diameter of knows over scale factor 1, from every person")),
 
         // Business Intelligence reads (specification section 8.4).
 
@@ -1407,19 +1479,18 @@ public static class LdbcSnbSample
             [new("country1", "NVARCHAR(256)", "India"), new("country2", "NVARCHAR(256)", "China")],
             FallbackBy: [EFCoreWindow, NHibernateIntermediate, EclipseLinkIntermediate]),
 
-        new("bi15", LdbcWorkload.BusinessIntelligence, 15, "Trusted connection paths through forums created in a given timeframe", LdbcTranslation.Simplified,
+        new("bi15", LdbcWorkload.BusinessIntelligence, 15, "Trusted connection paths through forums created in a given timeframe", LdbcTranslation.AsSpecified,
             "The cost of the weighted shortest path between two persons: an edge along knows costs ten divided by ten plus "
             + "the weight of the replies between its ends inside forums created in the timeframe - ten for a reply to a post, "
             + "five for a reply to a comment, both ways -, -1 where there is no path. The costs are a definition over the "
-            + "replies; the search runs from both ends, as in IC 13 (decision 113): a recursive definition from each person "
-            + "that sums the costs as a FLOAT, converted in its anchor and in the definition of the costs, because the "
-            + "recursive member has to keep exactly the type its anchor starts the sum with, each merged outside the "
-            + "recursion to the cheapest walk to every person it reached, and the cost is the cheapest sum of both halves "
-            + "where they meet - the cost of an edge is the same both ways. Each walk is bounded at two steps, so the "
-            + "search reaches four, a cheaper path of more steps is missed and a pair further apart answers -1. Over scale "
-            + "factor 1 SQL Server computes the definition of the costs anew for every key the walk reaches, so a read "
-            + "takes about 49 seconds (measured 2026-10-10): a limit of the planner over one data set, not of the "
-            + "translation, and no judge runs BI (decision 122).",
+            + "replies, and the search is the chain of decision 140 from the first person: Step is every knows edge at "
+            + "its cost beside every person at no cost, and level k holds the cheapest cost to every person over at most "
+            + "k edges - the cheapest over the previous level plus one edge, the person itself at no cost keeping what "
+            + "the previous level found; Bellman-Ford as eleven definitions. The depth is the most edges a cheapest path "
+            + "has over the data set, measured from every person: eleven over scale factor 1 for the example timeframe, "
+            + "whose costs the depth depends on - another timeframe may need another. The answer is the second person "
+            + "joined to the last level from the left. A read takes about 5 seconds over scale factor 1 (measured "
+            + "2026-10-15), each level reading the definition of the costs once; no judge runs BI.",
             """
             WITH Interaction AS (
                 SELECT m.CreatorPersonId AS AuthorId, r.CreatorPersonId AS ReplierId,
@@ -1431,45 +1502,83 @@ public static class LdbcSnbSample
                 WHERE mf.CreationDate >= @startDate AND mf.CreationDate <= @endDate
                   AND rf.CreationDate >= @startDate AND rf.CreationDate <= @endDate
                 GROUP BY m.CreatorPersonId, r.CreatorPersonId),
-            Edge AS (
+            Step AS (
                 SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId,
                        CAST(10 AS FLOAT) / (COALESCE(i1.Weight, 0) + COALESCE(i2.Weight, 0) + 10) AS Cost
                 FROM Person_knows_Person AS k
                 LEFT JOIN Interaction AS i1 ON i1.AuthorId = k.Person1Id AND i1.ReplierId = k.Person2Id
-                LEFT JOIN Interaction AS i2 ON i2.AuthorId = k.Person2Id AND i2.ReplierId = k.Person1Id),
-            WalkFromFirst AS (
-                SELECT p.Id AS PersonId, CAST(0 AS FLOAT) AS Cost, 0 AS Steps
-                FROM Person AS p
-                WHERE p.Id = @person1Id
+                LEFT JOIN Interaction AS i2 ON i2.AuthorId = k.Person2Id AND i2.ReplierId = k.Person1Id
                 UNION ALL
-                SELECT e.ToPersonId, w.Cost + e.Cost, w.Steps + 1
-                FROM WalkFromFirst AS w
-                JOIN Edge AS e ON e.FromPersonId = w.PersonId
-                WHERE w.Steps < 2 AND w.PersonId <> @person2Id),
-            WalkFromSecond AS (
-                SELECT p.Id AS PersonId, CAST(0 AS FLOAT) AS Cost, 0 AS Steps
+                SELECT p.Id AS FromPersonId, p.Id AS ToPersonId, CAST(0 AS FLOAT) AS Cost
+                FROM Person AS p),
+            L0 AS (
+                SELECT p.Id AS PersonId, CAST(0 AS FLOAT) AS Cost
                 FROM Person AS p
-                WHERE p.Id = @person2Id
-                UNION ALL
-                SELECT e.ToPersonId, w.Cost + e.Cost, w.Steps + 1
-                FROM WalkFromSecond AS w
-                JOIN Edge AS e ON e.FromPersonId = w.PersonId
-                WHERE w.Steps < 2 AND w.PersonId <> @person1Id),
-            CheapestFromFirst AS (
-                SELECT w.PersonId AS PersonId, MIN(w.Cost) AS Cost
-                FROM WalkFromFirst AS w
-                GROUP BY w.PersonId),
-            CheapestFromSecond AS (
-                SELECT w.PersonId AS PersonId, MIN(w.Cost) AS Cost
-                FROM WalkFromSecond AS w
-                GROUP BY w.PersonId)
-            SELECT COALESCE(MIN(f.Cost + s.Cost), -1) AS TotalWeight
-            FROM CheapestFromFirst AS f
-            JOIN CheapestFromSecond AS s ON s.PersonId = f.PersonId
+                WHERE p.Id = @person1Id),
+            L1 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L0 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L2 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L1 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L3 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L2 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L4 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L3 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L5 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L4 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L6 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L5 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L7 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L6 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L8 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L7 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L9 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L8 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L10 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L9 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L11 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Cost) AS Cost
+                FROM L10 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId)
+            SELECT COALESCE(l.Cost, -1) AS TotalWeight
+            FROM Person AS p
+            LEFT JOIN L11 AS l ON l.PersonId = p.Id
+            WHERE p.Id = @person2Id
             """,
-            [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "65"),
+            [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "96"),
              new("startDate", "DATE", "2011-01-01"), new("endDate", "DATE", "2011-02-01")],
-            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
+            FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate],
+            SearchDepth: new(11, "the most edges a cheapest path has over scale factor 1 for the example timeframe, from every person")),
 
         new("bi16", LdbcWorkload.BusinessIntelligence, 16, "Fake news detection", LdbcTranslation.AsSpecified,
             "Persons who wrote about two tags on two given days, keeping those with few friends who did the same: the "
@@ -1557,19 +1666,19 @@ public static class LdbcSnbSample
             """,
             [new("tag", "NVARCHAR(256)", "Augustine_of_Hippo")]),
 
-        new("bi19", LdbcWorkload.BusinessIntelligence, 19, "Interaction path between cities", LdbcTranslation.Simplified,
+        new("bi19", LdbcWorkload.BusinessIntelligence, 19, "Interaction path between cities", LdbcTranslation.AsSpecified,
             "The pairs of persons of two cities joined by the cheapest path among all such pairs: an edge along knows between "
             + "persons who replied to each other weighs max(round(40 - sqrt(replies)), 1), the replies counted both ways - ROUND "
-            + "and SQRT (decision 113) -, and the weights are a definition over the replies; the search runs from both ends, "
-            + "as in IC 13: a recursive definition from every person of the first city and another from every person of "
-            + "the second, each summing the weights as a FLOAT and each merged outside the recursion to the cheapest walk "
-            + "from each of its persons to every person it reached, and a pair's cost is the cheapest sum of both halves "
-            + "where they meet - the weight of an edge is the same both ways. Each walk is bounded at two steps, so the "
-            + "search reaches four and a cheaper path of more steps is missed. Over scale factor 1 SQL Server computes the "
-            + "definition of the weights - 969 thousand pairs of authors - anew for every key the walk reaches and the read "
-            + "does not finish in 500 seconds (measured 2026-10-10); only an edge table materialized ahead of the query "
-            + "would, and that is two statements, not a query. A limit of the planner over one data set, not of the "
-            + "translation, and no judge runs BI (decision 122).",
+            + "and SQRT (decision 113) -, and the weights are a definition over the replies. The search is the chain of "
+            + "decision 140 from every person of the first city at once: Step is every such edge at its weight beside "
+            + "every person at no weight, and level k holds, for each person of the first city, the cheapest cost to "
+            + "every person over at most k edges - the cheapest over the previous level plus one edge, the person itself "
+            + "at no weight keeping what the previous level found; Bellman-Ford as five definitions, the depth being the "
+            + "most edges a cheapest path has over scale factor 1, measured from every person. The pairs are the persons "
+            + "of the second city in the last level, those at the cheapest cost of all. A read takes about 7 seconds over "
+            + "scale factor 1 (measured 2026-10-15), each level reading the definition of the weights once, where the "
+            + "recursive walk of decision 113 read it once per key it reached and did not finish in 500 seconds; no judge "
+            + "runs BI.",
             """
             WITH Interaction AS (
                 SELECT c.CreatorPersonId AS ReplierId, p.CreatorPersonId AS AuthorId, COUNT(*) AS Replies
@@ -1577,7 +1686,7 @@ public static class LdbcSnbSample
                 JOIN Message AS p ON p.Id = c.ParentMessageId
                 WHERE c.CreatorPersonId <> p.CreatorPersonId
                 GROUP BY c.CreatorPersonId, p.CreatorPersonId),
-            Edge AS (
+            Step AS (
                 SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId,
                        CASE WHEN ROUND(40 - SQRT(COALESCE(i1.Replies, 0) + COALESCE(i2.Replies, 0)), 0) > 1
                             THEN ROUND(40 - SQRT(COALESCE(i1.Replies, 0) + COALESCE(i2.Replies, 0)), 0)
@@ -1585,98 +1694,122 @@ public static class LdbcSnbSample
                 FROM Person_knows_Person AS k
                 LEFT JOIN Interaction AS i1 ON i1.ReplierId = k.Person1Id AND i1.AuthorId = k.Person2Id
                 LEFT JOIN Interaction AS i2 ON i2.ReplierId = k.Person2Id AND i2.AuthorId = k.Person1Id
-                WHERE i1.Replies IS NOT NULL OR i2.Replies IS NOT NULL),
-            WalkFromCity1 AS (
-                SELECT p.Id AS SourceId, p.Id AS PersonId, CAST(0 AS FLOAT) AS Weight, 0 AS Steps
-                FROM Person AS p
-                WHERE p.LocationCityId = @city1Id
+                WHERE i1.Replies IS NOT NULL OR i2.Replies IS NOT NULL
                 UNION ALL
-                SELECT w.SourceId, e.ToPersonId, w.Weight + e.Weight, w.Steps + 1
-                FROM WalkFromCity1 AS w
-                JOIN Edge AS e ON e.FromPersonId = w.PersonId
-                WHERE w.Steps < 2),
-            WalkFromCity2 AS (
-                SELECT p.Id AS SourceId, p.Id AS PersonId, CAST(0 AS FLOAT) AS Weight, 0 AS Steps
+                SELECT p.Id AS FromPersonId, p.Id AS ToPersonId, CAST(0 AS FLOAT) AS Weight
+                FROM Person AS p),
+            L0 AS (
+                SELECT p.Id AS SourceId, p.Id AS PersonId, CAST(0 AS FLOAT) AS Weight
                 FROM Person AS p
-                WHERE p.LocationCityId = @city2Id
-                UNION ALL
-                SELECT w.SourceId, e.ToPersonId, w.Weight + e.Weight, w.Steps + 1
-                FROM WalkFromCity2 AS w
-                JOIN Edge AS e ON e.FromPersonId = w.PersonId
-                WHERE w.Steps < 2),
-            CheapestFromCity1 AS (
-                SELECT w.SourceId AS SourceId, w.PersonId AS PersonId, MIN(w.Weight) AS Weight
-                FROM WalkFromCity1 AS w
-                GROUP BY w.SourceId, w.PersonId),
-            CheapestFromCity2 AS (
-                SELECT w.SourceId AS SourceId, w.PersonId AS PersonId, MIN(w.Weight) AS Weight
-                FROM WalkFromCity2 AS w
-                GROUP BY w.SourceId, w.PersonId),
-            Cheapest AS (
-                SELECT c1.SourceId AS Person1Id, c2.SourceId AS Person2Id, MIN(c1.Weight + c2.Weight) AS TotalWeight
-                FROM CheapestFromCity1 AS c1
-                JOIN CheapestFromCity2 AS c2 ON c2.PersonId = c1.PersonId
-                GROUP BY c1.SourceId, c2.SourceId)
+                WHERE p.LocationCityId = @city1Id),
+            L1 AS (
+                SELECT l.SourceId AS SourceId, s.ToPersonId AS PersonId, MIN(l.Weight + s.Weight) AS Weight
+                FROM L0 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY l.SourceId, s.ToPersonId),
+            L2 AS (
+                SELECT l.SourceId AS SourceId, s.ToPersonId AS PersonId, MIN(l.Weight + s.Weight) AS Weight
+                FROM L1 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY l.SourceId, s.ToPersonId),
+            L3 AS (
+                SELECT l.SourceId AS SourceId, s.ToPersonId AS PersonId, MIN(l.Weight + s.Weight) AS Weight
+                FROM L2 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY l.SourceId, s.ToPersonId),
+            L4 AS (
+                SELECT l.SourceId AS SourceId, s.ToPersonId AS PersonId, MIN(l.Weight + s.Weight) AS Weight
+                FROM L3 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY l.SourceId, s.ToPersonId),
+            L5 AS (
+                SELECT l.SourceId AS SourceId, s.ToPersonId AS PersonId, MIN(l.Weight + s.Weight) AS Weight
+                FROM L4 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY l.SourceId, s.ToPersonId),
+            Pair AS (
+                SELECT l.SourceId AS Person1Id, l.PersonId AS Person2Id, l.Weight AS TotalWeight
+                FROM L5 AS l
+                JOIN Person AS p ON p.Id = l.PersonId
+                WHERE p.LocationCityId = @city2Id)
             SELECT c.Person1Id AS Person1Id, c.Person2Id AS Person2Id, c.TotalWeight AS TotalWeight
-            FROM Cheapest AS c
-            WHERE c.TotalWeight = (SELECT MIN(m.TotalWeight) FROM Cheapest AS m)
+            FROM Pair AS c
+            WHERE c.TotalWeight = (SELECT MIN(m.TotalWeight) FROM Pair AS m)
             ORDER BY c.Person1Id ASC, c.Person2Id ASC
             """,
             [new("city1Id", "BIGINT", "1226"), new("city2Id", "BIGINT", "1353")],
-            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
+            FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate],
+            SearchDepth: new(5, "the most edges a cheapest path has over scale factor 1, from every person")),
 
-        new("bi20", LdbcWorkload.BusinessIntelligence, 20, "Recruitment", LdbcTranslation.Simplified,
+        new("bi20", LdbcWorkload.BusinessIntelligence, 20, "Recruitment", LdbcTranslation.AsSpecified,
             "The cheapest path from employees of a company to a person, through friends who studied at the same "
             + "university, an edge weighing the difference of their class years plus one. The edges and their weights are "
-            + "a definition that groups the shared universities of every pair, and the search runs from both ends, as in "
-            + "IC 13 (decision 113): a recursive definition over the edges from the person and another from every "
-            + "employee of the company, each merged outside the recursion to the cheapest walk to every person it "
-            + "reached, and an employee's cost is the cheapest sum of both halves where they meet - the weight of an "
-            + "edge is the same both ways. Each walk is bounded at two steps, so the search reaches four and an "
-            + "employee further away is left out. The person is not a candidate even where they work at the company.",
+            + "a definition that groups the shared universities of every pair, and the search is the chain of decision "
+            + "140 from the person: Step is every such edge at its weight beside every person at no weight, and level k "
+            + "holds the cheapest cost to every person over at most k edges - the cheapest over the previous level plus "
+            + "one edge, the person itself at no weight keeping what the previous level found; Bellman-Ford as seven "
+            + "definitions, the depth being the most edges a cheapest path has over scale factor 1, measured from every "
+            + "person. The employees of the company are joined to the last level. The person is not a candidate even "
+            + "where they work at the company.",
             """
-            WITH Edge AS (
-                SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId,
-                       MIN(ABS(s1.ClassYear - s2.ClassYear) + 1) AS Weight
+            WITH Step AS (
+                SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId, MIN(ABS(s1.ClassYear - s2.ClassYear) + 1) AS Weight
                 FROM Person_knows_Person AS k
                 JOIN Person_studyAt_University AS s1 ON s1.PersonId = k.Person1Id
                 JOIN Person_studyAt_University AS s2 ON s2.PersonId = k.Person2Id AND s2.UniversityId = s1.UniversityId
-                GROUP BY k.Person1Id, k.Person2Id),
-            WalkFromPerson AS (
-                SELECT p.Id AS PersonId, 0 AS Cost, 0 AS Steps
+                GROUP BY k.Person1Id, k.Person2Id
+                UNION ALL
+                SELECT p.Id AS FromPersonId, p.Id AS ToPersonId, 0 AS Weight
+                FROM Person AS p),
+            L0 AS (
+                SELECT p.Id AS PersonId, 0 AS Cost
                 FROM Person AS p
-                WHERE p.Id = @person2Id
-                UNION ALL
-                SELECT e.ToPersonId, w.Cost + e.Weight, w.Steps + 1
-                FROM WalkFromPerson AS w
-                JOIN Edge AS e ON e.FromPersonId = w.PersonId
-                WHERE w.Steps < 2),
-            WalkFromEmployee AS (
-                SELECT wa.PersonId AS EmployeeId, wa.PersonId AS PersonId, 0 AS Cost, 0 AS Steps
-                FROM Person_workAt_Company AS wa
-                JOIN Organisation AS o ON o.Id = wa.CompanyId
-                WHERE o.Name = @company
-                UNION ALL
-                SELECT w.EmployeeId, e.ToPersonId, w.Cost + e.Weight, w.Steps + 1
-                FROM WalkFromEmployee AS w
-                JOIN Edge AS e ON e.FromPersonId = w.PersonId
-                WHERE w.Steps < 2),
-            CheapestFromPerson AS (
-                SELECT w.PersonId AS PersonId, MIN(w.Cost) AS Cost
-                FROM WalkFromPerson AS w
-                GROUP BY w.PersonId),
-            CheapestFromEmployee AS (
-                SELECT w.EmployeeId AS EmployeeId, w.PersonId AS PersonId, MIN(w.Cost) AS Cost
-                FROM WalkFromEmployee AS w
-                GROUP BY w.EmployeeId, w.PersonId)
-            SELECT TOP (20) e.EmployeeId AS Person1Id, MIN(p.Cost + e.Cost) AS TotalWeight
-            FROM CheapestFromPerson AS p
-            JOIN CheapestFromEmployee AS e ON e.PersonId = p.PersonId
-            WHERE e.EmployeeId <> @person2Id
-            GROUP BY e.EmployeeId
-            ORDER BY TotalWeight ASC, e.EmployeeId ASC
+                WHERE p.Id = @person2Id),
+            L1 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Weight) AS Cost
+                FROM L0 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L2 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Weight) AS Cost
+                FROM L1 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L3 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Weight) AS Cost
+                FROM L2 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L4 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Weight) AS Cost
+                FROM L3 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L5 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Weight) AS Cost
+                FROM L4 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L6 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Weight) AS Cost
+                FROM L5 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId),
+            L7 AS (
+                SELECT s.ToPersonId AS PersonId, MIN(l.Cost + s.Weight) AS Cost
+                FROM L6 AS l
+                JOIN Step AS s ON s.FromPersonId = l.PersonId
+                GROUP BY s.ToPersonId)
+            SELECT TOP (20) wa.PersonId AS Person1Id, MIN(l.Cost) AS TotalWeight
+            FROM Person_workAt_Company AS wa
+            JOIN Organisation AS o ON o.Id = wa.CompanyId
+            JOIN L7 AS l ON l.PersonId = wa.PersonId
+            WHERE o.Name = @company AND wa.PersonId <> @person2Id
+            GROUP BY wa.PersonId
+            ORDER BY TotalWeight ASC, wa.PersonId ASC
             """,
             [new("company", "NVARCHAR(256)", "China_Northwest_Airlines"), new("person2Id", "BIGINT", "4398046521830")],
-            FallbackBy: [EFCoreRecursion, NHibernateRecursion, EclipseLinkRecursion]),
+            FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate],
+            SearchDepth: new(7, "the most edges a cheapest path has over scale factor 1, from every person")),
     ];
 }

@@ -1,7 +1,7 @@
 # 140 — Dotazy katalogu LDBC na cesty píše prohledání do šířky rozepsané do nerekurzivních definic s hloubkou rovnou změřenému průměru dat; čas běhu normalizuje volba dat, ne text
 
 Datum: 2026-10-15
-Stav: platí
+Stav: revidováno
 Požadavky: T1, T2, T3, F11, F13
 Podklad: [`analysis/recursion-and-its-limit.md`](../analysis/recursion-and-its-limit.md) (oddíly 5 a 6, měření nad `LdbcSnb` SF 1 z 2026-10-15); rozhodnutí [110](110-ldbc-snb-as-a-second-reference-domain.md), [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) (odstavec *Co rekurze v SQL Serveru neumí*), [117](117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md), [121](121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md), [122](122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md); běh soudce nad celou sadou SF 1 (`ORMConvertor/README.md`, *Whole-set runs*)
 
@@ -39,7 +39,7 @@ Zamítáme z důvodu v kontextu: nejde to na žádném grafu s cykly a netriviá
 
 ## Rozhodnutí
 
-**Volíme variantu 6. Pět dotazů katalogu na cesty — IC 13, IC 14, BI 15, BI 19, BI 20 — píše prohledání do šířky jako řetěz nerekurzivních definic `L0 … Ld`: úroveň *k* + 1 jsou sousedé úrovně *k* bez osob úrovní *k* a *k* − 1 (`DISTINCT`, `NOT EXISTS`), vážené dotazy týmž řetězem jako Bellman–Ford, kde úroveň nese pro každou osobu nejlevnější cenu sledu o nejvýš *k* hranách. Hloubka *d* je parametr data setu, nad kterým katalog běží: změřený průměr komponenty `knows` pro nevážené dotazy a změřený největší počet hran nejlevnější cesty pro vážené; zapisuje se k data setu a k dotazu, ne hádá. Text je jeden `SELECT`, roste lineárně s hranami a s *d* aspoň rovným změřené hodnotě je nad těmi daty přesný; takový dotaz katalog vede jako *podle specifikace*, s hloubkou uvedenou v poznámce. IC 12 zůstává rekurzivní: hierarchie tříd tagů je strom. Čas běhu v okně 0,2–300 s zajišťuje volba dat — scale factor pro dotazy, které procházejí tabulky, počet opakování v měření pro dotazy, které vyhledávají přes index —, nikdy úprava textu kvůli času.**
+**Volíme variantu 6. Pět dotazů katalogu na cesty — IC 13, IC 14, BI 15, BI 19, BI 20 — píše prohledání do šířky jako řetěz nerekurzivních definic `L0 … Ld` jednoho tvaru pro vážené i nevážené hledání: úroveň *k* + 1 nese pro každou osobu nejlevnější cenu sledu o nejvýš *k* + 1 hranách — nejlevnější přes úroveň *k* plus jednu hranu, přičemž definice hran `Step` dává každé osobě i ji samu jako souseda s nulovou cenou, takže úroveň drží vše, co našla předchozí (Bellman–Ford; s jednotkovou cenou prohledání do šířky). Každá úroveň odkazuje na předchozí právě jednou. Hloubka *d* je parametr data setu, nad kterým katalog běží: změřený průměr komponenty `knows` pro nevážené dotazy a změřený největší počet hran nejlevnější cesty pro vážené; zapisuje se k data setu a k dotazu, ne hádá. Text je jeden `SELECT`, roste lineárně s hranami a s *d* aspoň rovným změřené hodnotě je nad těmi daty přesný; takový dotaz katalog vede jako *podle specifikace*, s hloubkou uvedenou u dotazu. IC 12 zůstává rekurzivní: hierarchie tříd tagů je strom. Čas běhu v okně 0,2–300 s zajišťuje volba dat — scale factor pro dotazy, které procházejí tabulky, počet opakování v měření pro dotazy, které vyhledávají přes index —, nikdy úprava textu kvůli času.**
 
 ### Proč to není „rekurze rozepsaná do joinů", kterou 113 a 122 zamítají
 
@@ -64,3 +64,7 @@ Který data set pro kterou databázi — oficiální scale factor, nebo upraven�
 - **Dokumentace po implementaci:** `architecture.md` §6.2 (počty `AsSpecified` / `Simplified`, poznámka o `FallbackBy`), `subset.md` 1.3 (katalog) a 2.10 (řádek „mez hloubky, sledy místo vrcholů"), `traceability.md` T2; `README.md` *Guarantees*, řádek o rekurzi.
 - **Rozh. 113 a 122 platí dál**; věta o zamítnutí rekurze rozepsané do pevného počtu joinů platí pro tvar, který sledy vyjmenovává, a tohle rozhodnutí vymezuje, co pod ni nespadá.
 - **Měření:** tabulka časů všech dotazů nad SF 1 na MIS3 jako první krok; z ní rozdělení na průchody a vyhledání a volba data setů.
+
+## Historie
+
+**2026-10-15 — revidováno.** Volba platí; upřesněn je tvar jedné úrovně, dřív než podle rozhodnutí vznikl kód. Původní znění psalo nevážené úrovně jako sousedy předchozí úrovně bez osob dvou předchozích (`DISTINCT`, `NOT EXISTS`) a vážené jinak, jako Bellman–Ford. Takový nevážený tvar odkazuje na předchozí úroveň dvakrát — jako zdroj a v `NOT EXISTS` — a SQL Server definici při každém odkazu vyhodnotí znovu, takže práce roste s mocninou hloubky; a byly by to dva tvary pro jeden problém. Tvar s nulovou smyčkou v definici hran odkazuje na předchozí úroveň jednou, je lineární v hloubce a je týž pro vážené i nevážené hledání. Změřeno 2026-10-15 nad SF 1: IC 13 s pěti úrovněmi 0,17 s proti 0,65 s původního tvaru se čtyřmi, BI 19 s pěti 6,6 s, BI 15 s jedenácti 5,3 s. Data set, hloubky a jejich zápis u dotazu určuje rozhodnutí [141](141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md).

@@ -143,6 +143,17 @@ public sealed record LdbcValidation(
     bool Ordered = true);
 
 /// <summary>
+/// The depth of a path query's search (decision 140): the number of levels its text is
+/// written with, and the measured property of the data set the catalog is written over
+/// (<c>LdbcSnbSample.DataSet</c>) that makes the text exact there - the diameter of the graph
+/// the query walks for a search by the fewest steps, the most edges a cheapest path has for a
+/// search by weight. Measured from every person by <c>LdbcJudge/LdbcPathQueryTest</c>, which
+/// holds the claim; where the edges depend on a parameter of the query, the measurement is
+/// over the example parameters and the note says so.
+/// </summary>
+public sealed record LdbcSearchDepth(int Levels, string Measured);
+
+/// <summary>
 /// One read query of the LDBC Social Network Benchmark, as the page of decision 110 shows
 /// it: the number and title the specification gives it, how much of it the tool translates,
 /// a note saying what the text exercises, simplifies or cannot state, and the T-SQL text
@@ -150,7 +161,8 @@ public sealed record LdbcValidation(
 /// reaches every target except those it names as refusing it, and those it names as falling
 /// back reach it in native SQL - the three values of decision 113, the second never passed
 /// off as the first. A query of the Interactive workload is bound to the validation set that
-/// judges it (decision 117); the BI workload has no such judge.
+/// judges it (decision 117); the BI workload has no such judge. A query that searches for a
+/// path states the depth of its search (decision 140).
 /// </summary>
 public sealed record LdbcQuery(
     string Key,
@@ -163,7 +175,8 @@ public sealed record LdbcQuery(
     IReadOnlyList<LdbcParameter> Parameters,
     IReadOnlyList<LdbcRefusal>? RefusedBy = null,
     IReadOnlyList<LdbcFallback>? FallbackBy = null,
-    LdbcValidation? Validation = null)
+    LdbcValidation? Validation = null,
+    LdbcSearchDepth? SearchDepth = null)
 {
     /// <summary>The targets that refuse the query although it is translated into the others.</summary>
     public IReadOnlyList<LdbcRefusal> Refusals => RefusedBy ?? [];

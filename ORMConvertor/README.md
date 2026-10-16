@@ -184,7 +184,37 @@ The verdict of decision [117](../docs/decisions/117-the-interactive-v1-validatio
 | 2026-10-12 | `580ab90` | .NET: Dapper, EF Core, NHibernate | 86 passed, 0 skipped | every read agrees in all three | 6 818 of 6 818 reads (100.0 %) each, in all three | 1226 min, 113 lines a minute |
 | 2026-10-14 | `5656945` | Java: Hibernate, EclipseLink, MyBatis | 81 passed, 0 skipped | every read agrees in all three | 6 818 of 6 818 reads (100.0 %) each, in all three | 1518 min, 91 lines a minute |
 
-The tests also count the five mutations of IC 2 in each framework, all rejected, and the compensation, which returned `LdbcSnb` to its loaded state.
+The tests also count the five mutations of IC 2 in each framework, all rejected, and the compensation, which returned `LdbcSnb` to its loaded state. Both runs judged IC 13 and IC 14 as the simplifications they were then; since decisions [140](../docs/decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) and [141](../docs/decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) the five path queries are translated as specified, so the next whole-set run judges them by verdict. A check on 2026-10-15, the first 2000 lines of SF 1 through the .NET suite from the host over `86a102b` + the next commit: 86 of 87 cells passed, IC 13 and IC 14 agreeing on every read in Dapper and NHibernate and IC 13 in EF Core; IC 14 in EF Core agreed on 94 of 95 reads and one read timed out at the 30 s default, which the same statement with the same parameters did not repeat by hand (2.2 s).
+
+### Catalog query times
+
+The window of decision [140](../docs/decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md): every query of the catalog runs over `LdbcSnb` on MIS3 between 0.2 s and 300 s, the upper bound met by scale factor 1, the lower one by repetitions in a measurement (decision [141](../docs/decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md)). Measured 2026-10-15 over `86a102b` + the next commit (the five path queries in their new texts, the rest unchanged): each text with its example parameters through Dapper against `mssql_db` (SF 1), four runs, the smallest of the three warm ones; Intel Core i9-9900, SQL Server 2022 in Docker Desktop.
+
+| Query | ms | Query | ms | Query | ms | Query | ms |
+|---|---|---|---|---|---|---|---|
+| IS 1 | 2 | IC 1 | 58 | IC 12 | 1 001 | BI 9 | 341 |
+| IS 2 | 2 | IC 2 | 85 | IC 13 | 170 | BI 10 | 1 004 |
+| IS 3 | 3 | IC 3 | 1 446 | IC 14 | 2 243 | BI 11 | 5 205 (2.5–14 s between runs) |
+| IS 4 | 2 | IC 4 | 61 | BI 1 | 235 | BI 12 | 603 |
+| IS 5 | 2 | IC 5 | 210 | BI 2 | 305 | BI 13 | 257 |
+| IS 6 | 2 | IC 6 | 266 | BI 3 | 479 | BI 14 | 38 469 |
+| IS 7 | 3 | IC 7 | 68 | BI 4 | 412 | BI 15 | 5 259 |
+| | | IC 8 | 8 | BI 5 | 2 820 | BI 16 | 3 959 |
+| | | IC 9 | 237 | BI 6 | 26 785 | BI 17 | 1 488 |
+| | | IC 10 | 173 | BI 7 | 130 | BI 18 | 11 807 |
+| | | IC 11 | 19 | BI 8 | 835 | BI 19 | 6 623 |
+| | | | | | | BI 20 | 128 |
+
+The texts with a depth bound they replaced measured IC 13 116, IC 14 2 003, BI 15 46 084, BI 20 166 and BI 19 over 500 000 ms the same day. Below 0.2 s are index lookups and small joins (IS 1–7, IC 1, IC 2, IC 4, IC 7, IC 8, IC 10, IC 11, IC 13, IC 14, BI 7, BI 20), which no scale factor lifts over the bound.
+
+The depths of the path queries, measured from every person over the same data set (`LdbcJudge/LdbcPathQueryTest` holds them):
+
+| Edges | Persons with an edge | Average degree | Components | Depth | Pairs at the depth |
+|---|---|---|---|---|---|
+| `knows` (IC 13, IC 14) | 9 163 | 39.4 | 1 | 5, the diameter | 2 172 of 83 951 406 |
+| `knows` between persons who replied to each other (BI 19) | 8 674 | 32.4 | 1 | 5, the most edges on a cheapest path | 21 056 of 75 229 602 |
+| `knows` through a shared university (BI 20) | 3 038 | 4.9 | 443 | 7 | 12 of 70 146 |
+| `knows` priced by the forums of the example timeframe (BI 15) | 9 163 | 39.4 | 1 | 11 | 4 of 83 951 406 |
 
 ## The Java test suite
 
@@ -239,6 +269,7 @@ The only place that records it; a record names the commit it measured (decision 
 | 2026-10-03 | `a1e3a1e` + next commit ([117](../docs/decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md)) | 7878, pinned | 2163 (1608), pinned | the LDBC judge over 1000 lines of SF 0.1 in both; integration of the Java suite as 1527 + the judge's 81, not recounted |
 | 2026-10-11 | `e321ea7` + next commit ([122](../docs/decisions/122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md), [123](../docs/decisions/123-a-native-query-of-eclipselink-expands-a-collection-parameter-at-run-time.md)) | 9294, pinned (46 skipped: the `Omitted` LINQ forms) | 2633 (1662), pinned | the judge over 1000 lines of SF 0.1 in both, the BI queries accepted by the Java targets; integration as 1608 + the 54 differential rows of the new category, not recounted |
 | 2026-10-12 | `fcb4ccb` + next commit ([133](../docs/decisions/133-an-add-on-package-over-a-framework-is-not-that-framework.md)) | 9936, pinned (46 skipped: the `Omitted` LINQ forms) | 2757 (2023), pinned | **release `2.2.0`**; the judge over 1000 lines of SF 0.1 in both, the BI queries accepted by the Java targets; integration recounted |
+| 2026-10-15 | `86a102b` + next commit ([140](../docs/decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md), [141](../docs/decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md)) | 9931, host (137 skipped: the 46 `Omitted` LINQ forms, the judge and the path queries without `LdbcSnb`) | 2765 (not recounted), pinned | the five path queries as level chains; on the host the judge and `LdbcPathQueryTest` ran separately over `mssql_db` (SF 1, [above](#the-ldbc-judge)); the Java judge over 1000 lines of SF 0.1 in the container |
 
 **Coverage** is measured, never a threshold. Over `36d688d`, the same 1551 tests: **80.0 % of lines** (12 650 / 15 801), **69.1 % of branches** (8 047 / 11 642). By project: `SampleData`, `EclipseLinkWrappers` 100; `CSharpEntityParsing` 99.1; `DapperWrappers` 97.6; `HibernateWrappers` 97.0; `OrmConvertor` 95.8; `Model` 94.2; `DatabaseCatalog` 90.2; `NHibernateWrappers` 89.3; `AbstractWrappers` 89.2; `EFCoreWrappers` 87.1; `Common` 83.2; `TransactSql` 81.3; `JakartaPersistence` 80.3; `MyBatisWrappers` 78.5 (branches 53.7); `JavaEntityParsing` 75.8; `LinqParsing` 74.6; `ORMConvertorAPI` 45.1; `Advisor`, `AdvisorBenchmarking` **0.0** — the measured basis of area 1 in [`architecture.md`](../docs/architecture.md) §9. No coverage is measured for the Java suite.
 

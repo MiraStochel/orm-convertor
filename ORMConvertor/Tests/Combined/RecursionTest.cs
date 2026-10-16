@@ -480,4 +480,44 @@ public class RecursionTest
         Assert.DoesNotContain(", 0", sql, StringComparison.Ordinal);
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("constant without an alias", StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// In a member of a set operation after the leftmost, a constant without an alias is a
+    /// column with a name - SQL names the columns of a set operation after the leftmost
+    /// member by position (decision 112), as it names the counter of a recursive member -,
+    /// so it is carried and comes out under that name; dropped, the members would project
+    /// different numbers of columns and SQL Server would refuse the statement. In a definition,
+    /// at the top of the query and in a subquery alike.
+    /// </summary>
+    [Theory]
+    [InlineData(
+        """
+        WITH Reached AS (
+            SELECT c.CategoryId AS CategoryId, 0 AS Steps FROM Categories AS c WHERE c.ParentCategoryId IS NULL
+            UNION ALL
+            SELECT c.CategoryId, 1 FROM Categories AS c WHERE c.ParentCategoryId IS NOT NULL)
+        SELECT r.CategoryId AS CategoryId, r.Steps AS Steps FROM Reached AS r
+        """,
+        "SELECT c.CategoryId AS CategoryId, 1 AS Steps")]
+    [InlineData(
+        """
+        SELECT c.CategoryId AS CategoryId, 0 AS Steps FROM Categories AS c WHERE c.ParentCategoryId IS NULL
+        UNION ALL
+        SELECT c.CategoryId, 1 FROM Categories AS c WHERE c.ParentCategoryId IS NOT NULL
+        """,
+        "SELECT c.CategoryId, 1 AS Steps")]
+    [InlineData(
+        """
+        SELECT c.CategoryId AS CategoryId FROM Categories AS c
+        WHERE c.ParentCategoryId IN (SELECT p.CategoryId FROM Categories AS p WHERE p.Name = N'root' UNION ALL SELECT 0 FROM Categories AS q)
+        """,
+        "UNION ALL SELECT 0 AS CategoryId FROM Categories AS q")]
+    public void AConstantWithoutAnAliasInAFurtherMemberTakesTheNameOfItsPosition(string sql, string expected)
+    {
+        var builder = FromSql(new DapperSqlQueryBuilder(), sql);
+        var text = OneLine(Artifact(Built(builder), ConversionContentType.SqlQuery));
+
+        Assert.Contains(expected, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(builder.Records, r => r.Kind is ConversionRecordKind.Loss or ConversionRecordKind.Failure);
+    }
 }

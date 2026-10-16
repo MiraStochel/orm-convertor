@@ -853,12 +853,12 @@ public abstract class AbstractQueryBuilder
         if (body.Count > 1 && body[0] is SetOperationInstruction over && body.Skip(1).All(i => i is DistinctInstruction))
         {
             var folded = DistinctOver(over);
-            return folded is null ? [] : BuildSetOperation(folded);
+            return folded is null ? [] : BuildSetOperation(NamedByPosition(folded));
         }
 
         if (body.Count == 1 && body[0] is SetOperationInstruction setOperation)
         {
-            return BuildSetOperation(setOperation);
+            return BuildSetOperation(NamedByPosition(setOperation));
         }
 
         var clauses = Normalize(body);
@@ -2106,21 +2106,34 @@ public abstract class AbstractQueryBuilder
                 : instruction)]);
     }
 
-    private static SetOperationInstruction NamedAs(SetOperationInstruction operation, IReadOnlyList<string?> names)
-        => operation with { Left = NamedAs(operation.Left, names), Right = NamedAs(operation.Right, names) };
+    private static SetOperationInstruction NamedAs(SetOperationInstruction operation, IReadOnlyList<string?> names, bool onlyNameless = false)
+        => operation with { Left = NamedAs(operation.Left, names, onlyNameless), Right = NamedAs(operation.Right, names, onlyNameless) };
+
+    /// <summary>
+    /// A set operation with the columns of every member after its leftmost named after the
+    /// leftmost by position - the rule SQL applies to a set operation wherever it stands,
+    /// and so the tool: as the body of a definition (<see cref="Named"/>), as the whole query
+    /// and as the body of a subquery, so that a constant or an expression a further member
+    /// projects without an alias is the column SQL says it is, not the nameless one the gate
+    /// of decision 107 refuses. Only the nameless columns are named: a column that names
+    /// itself keeps the spelling the source gave it, as it does outside a set operation.
+    /// </summary>
+    private static SetOperationInstruction NamedByPosition(SetOperationInstruction operation)
+        => NamedAs(operation, LeftmostSelect([operation]).OfType<ProjectInstruction>().Select(ColumnNameOf).ToList(), onlyNameless: true);
 
     /// <summary>
     /// One member of a set operation with its columns named by position. A member that does
     /// not project as many columns as the names stays as it is: that is a query SQL Server
-    /// refuses, and the gate that holds the count says so.
+    /// refuses, and the gate that holds the count says so. With <paramref name="onlyNameless"/>
+    /// a column that has a name of its own keeps it.
     /// </summary>
-    private static SubQueryInstruction NamedAs(SubQueryInstruction member, IReadOnlyList<string?> names)
+    private static SubQueryInstruction NamedAs(SubQueryInstruction member, IReadOnlyList<string?> names, bool onlyNameless = false)
     {
         var inner = Unwrap(member.Instructions);
 
         if (inner.Count > 0 && inner[0] is SetOperationInstruction nested)
         {
-            return new SubQueryInstruction([NamedAs(nested, names), .. inner.Skip(1)]);
+            return new SubQueryInstruction([NamedAs(nested, names, onlyNameless), .. inner.Skip(1)]);
         }
 
         if (inner.OfType<ProjectInstruction>().Count() != names.Count)
@@ -2130,9 +2143,17 @@ public abstract class AbstractQueryBuilder
 
         var position = 0;
         return new SubQueryInstruction([.. inner.Select(instruction =>
-            instruction is ProjectInstruction projection
-                ? projection with { Alias = names[position++] ?? projection.Alias }
-                : instruction)]);
+        {
+            if (instruction is not ProjectInstruction projection)
+            {
+                return instruction;
+            }
+
+            var name = names[position++];
+            return onlyNameless && ColumnNameOf(projection) is not null
+                ? projection
+                : projection with { Alias = name ?? projection.Alias };
+        })]);
     }
 
     /// <summary>The names the row sources of one scope carry: its FROM and the right sides of its joins.</summary>
@@ -4429,7 +4450,8 @@ public abstract class AbstractQueryBuilder
                 return null;
             }
 
-            setOperation = body.Count > 1 ? DistinctOver(operation) : operation;
+            var named = NamedByPosition(operation);
+            setOperation = body.Count > 1 ? DistinctOver(named) : named;
             return null;
         }
 

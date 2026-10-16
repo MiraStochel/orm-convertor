@@ -1051,6 +1051,15 @@ public abstract class LinqQueryVisitor(
             return $"(int?){Operand(operand)}";
         }
 
+        // A scalar subquery that is one aggregate - COALESCE((SELECT SUM(…) …), 0) - is a
+        // Sum() or Min() whose C# type is the non-nullable scalar of what it aggregates, so
+        // the ?? needs it lifted, as a column that holds no NULL is lifted below.
+        if (operand.IsSubQuery && SubQueryScalar(operand.SubQuery!) is { } scalar
+            && scalar is not (ScalarType.String or ScalarType.Object or ScalarType.ByteArray))
+        {
+            return $"({CSharpTypeConvertor.ToString(LangType.Scalar(scalar))}?){Operand(operand)}";
+        }
+
         if (!operand.IsColumn
             || operand.Property is null or "*"
             || !Scope.Entities.TryGetValue(operand.Table ?? string.Empty, out var map)
@@ -1069,6 +1078,19 @@ public abstract class LinqQueryVisitor(
         }
 
         return $"({type}?){Operand(operand)}";
+    }
+
+    /// <summary>The scalar of the one value a subquery projects, where this visitor can know it.</summary>
+    private ScalarType? SubQueryScalar(SubQueryInstruction subQuery)
+    {
+        var body = subQuery.Instructions;
+        while (body.Count == 1 && body[0] is SubQueryInstruction inner)
+        {
+            body = inner.Instructions;
+        }
+
+        var projections = body.OfType<ProjectInstruction>().ToList();
+        return projections.Count == 1 ? ScalarOf(projections[0].Operand) : null;
     }
 
     /* ---- the functions of decision 113 ------------------------------------------------ */
@@ -1139,7 +1161,7 @@ public abstract class LinqQueryVisitor(
         }
 
         var type = CSharpTypeConvertor.ToString(LangType.Scalar(into));
-        var nullable = NullableElementType(value) is not null;
+        var nullable = NullableElementType(value) is not null || (value.IsConstant && IsNullLiteral(value.Constant!));
         return $"({type}{(nullable ? "?" : string.Empty)})({Operand(value)})";
     }
 
@@ -1394,6 +1416,13 @@ public abstract class LinqQueryVisitor(
         ScalarType.TimeOfDay => $"TimeOnly.Parse(\"{constant.Text}\")",
         ScalarType.DateTimeOffset => $"DateTimeOffset.Parse(\"{constant.Text}\")",
         ScalarType.Duration => $"TimeSpan.Parse(\"{constant.Text}\")",
-        _ => constant.Text,
+        // NULL reaches here as the literal outside the vocabulary that it is (the reader says
+        // so); C# spells it in lower case, and the whole point of a NULL projected under a
+        // conversion - CAST(NULL AS BIGINT), the empty slot of a path - is the type the cast
+        // gives it, which Cast makes nullable.
+        _ => IsNullLiteral(constant) ? "null" : constant.Text,
     };
+
+    private static bool IsNullLiteral(QueryConstant constant)
+        => constant.Type is null && constant.Text.Equals("NULL", StringComparison.OrdinalIgnoreCase);
 }

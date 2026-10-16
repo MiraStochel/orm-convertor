@@ -445,7 +445,7 @@ Cíl pro katalog: **každý dotaz má na MIS3 běžet mezi 0,2 s a 300 s**, a do
 
 ### 6.1 Co s časem udělají větší data
 
-Časy jednotlivých dotazů změřené nejsou. Jediné měření je běh soudce nad celou sadou SF 1 (113 řádků za minutu včetně režie frameworku; nejpomalejší IC 14 s 1,2 s na čtení, IC 9 s 0,9 s, IC 3 s 0,65 s) a dvě čísla z rozh. [122](../decisions/122-the-text-of-a-catalog-query-takes-the-shape-a-targets-implementation-needs-under-the-same-criterion.md): BI 15 asi 49 s, BI 19 nedoběhne do 500 s. Všechno ostatní je rychlejší než 0,65 s a první krok je proto tabulka časů všech dotazů nad SF 1 na MIS3 ([`open-items.md`](../open-items.md), *Normalizace běhů katalogu LDBC*).
+Časy všech dotazů nad SF 1 nese [`ORMConvertor/README.md`](../../ORMConvertor/README.md), *Catalog query times* (2026-10-15): všech 41 pod 300 s, dvanáct pod 0,2 s. Rozhodnutí [141](../decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) z toho volí jeden data set.
 
 Dva tvary dotazu reagují na větší data opačně:
 
@@ -469,61 +469,40 @@ Text „podle specifikace" bez meze se daty nevrátí; zjednodušení je vlastno
 
 ### 6.3 Zvolený tvar: prohledání do šířky v nerekurzivních definicích
 
-To, co rekurzivní člen nesmí — sloučit úroveň (`DISTINCT`) a vyřadit dřív dosažené (`NOT EXISTS`) —, nerekurzivní definice smí. Prohledání do šířky je řetěz definic `L0 … Ld`, kde úroveň *k* + 1 jsou sousedé úrovně *k*, kteří nejsou v úrovních *k* a *k* − 1 (v neorientovaném grafu nemůže soused ležet jinde):
+To, co rekurzivní člen nesmí — sloučit řádky úrovně a podívat se na dřívější —, nerekurzivní definice smí. Tvar rozh. 140 (po revizi) je řetěz definic `L0 … Ld` jednoho tvaru pro nevážené i vážené hledání: definice hran `Step` dává každé osobě i ji samu jako souseda s nulovou cenou, a úroveň *k* + 1 nese pro každou osobu nejlevnější cenu přes úroveň *k* plus jednu hranu — tedy nejlevnější sled o nejvýš *k* + 1 hranách (Bellman–Ford; s jednotkovou cenou prohledání do šířky). Každá úroveň odkazuje na předchozí právě jednou; SQL Server definici při každém odkazu vyhodnotí znovu, takže tvar, který odkazuje dvakrát (`DISTINCT` sousedé bez `NOT EXISTS` dvou předchozích úrovní), roste s mocninou hloubky — IC 13 se čtyřmi takovými úrovněmi 0,65 s, s pěti úrovněmi tohoto tvaru 0,17 s.
 
 ```sql
-WITH L0 AS (
-    SELECT p.Id AS PersonId
+WITH Step AS (
+    SELECT k.Person1Id AS FromPersonId, k.Person2Id AS ToPersonId, 1 AS Steps
+    FROM Person_knows_Person AS k
+    UNION ALL
+    SELECT p.Id AS FromPersonId, p.Id AS ToPersonId, 0 AS Steps
+    FROM Person AS p),
+L0 AS (
+    SELECT p.Id AS PersonId, 0 AS Steps
     FROM Person AS p
-    WHERE p.Id = 4398046513938),
+    WHERE p.Id = @person1Id),
 L1 AS (
-    SELECT DISTINCT k.Person2Id AS PersonId
-    FROM L0 AS f
-    JOIN Person_knows_Person AS k ON k.Person1Id = f.PersonId
-    WHERE NOT EXISTS (SELECT s.PersonId FROM L0 AS s WHERE s.PersonId = k.Person2Id)),
-L2 AS (
-    SELECT DISTINCT k.Person2Id AS PersonId
-    FROM L1 AS f
-    JOIN Person_knows_Person AS k ON k.Person1Id = f.PersonId
-    WHERE NOT EXISTS (SELECT s.PersonId FROM L0 AS s WHERE s.PersonId = k.Person2Id)
-      AND NOT EXISTS (SELECT s.PersonId FROM L1 AS s WHERE s.PersonId = k.Person2Id)),
-L3 AS (
-    SELECT DISTINCT k.Person2Id AS PersonId
-    FROM L2 AS f
-    JOIN Person_knows_Person AS k ON k.Person1Id = f.PersonId
-    WHERE NOT EXISTS (SELECT s.PersonId FROM L1 AS s WHERE s.PersonId = k.Person2Id)
-      AND NOT EXISTS (SELECT s.PersonId FROM L2 AS s WHERE s.PersonId = k.Person2Id)),
-L4 AS (
-    SELECT DISTINCT k.Person2Id AS PersonId
-    FROM L3 AS f
-    JOIN Person_knows_Person AS k ON k.Person1Id = f.PersonId
-    WHERE NOT EXISTS (SELECT s.PersonId FROM L2 AS s WHERE s.PersonId = k.Person2Id)
-      AND NOT EXISTS (SELECT s.PersonId FROM L3 AS s WHERE s.PersonId = k.Person2Id)),
-Reached AS (
-    SELECT l.PersonId AS PersonId, 0 AS Steps FROM L0 AS l
-    UNION ALL
-    SELECT l.PersonId AS PersonId, 1 AS Steps FROM L1 AS l
-    UNION ALL
-    SELECT l.PersonId AS PersonId, 2 AS Steps FROM L2 AS l
-    UNION ALL
-    SELECT l.PersonId AS PersonId, 3 AS Steps FROM L3 AS l
-    UNION ALL
-    SELECT l.PersonId AS PersonId, 4 AS Steps FROM L4 AS l)
-SELECT COALESCE(MIN(r.Steps), -1) AS ShortestPathLength
-FROM Reached AS r
-WHERE r.PersonId = 96
+    SELECT s.ToPersonId AS PersonId, MIN(l.Steps + s.Steps) AS Steps
+    FROM L0 AS l
+    JOIN Step AS s ON s.FromPersonId = l.PersonId
+    GROUP BY s.ToPersonId),
+-- L2 … L5 stejně, každá z předchozí
+SELECT COALESCE(l.Steps, -1) AS ShortestPathLength
+FROM Person AS p
+LEFT JOIN L5 AS l ON l.PersonId = p.Id
+WHERE p.Id = @person2Id
 ```
 
 | | |
 |---|---|
-| **změřeno nad SF 1** | dvojice příkladu IC 13 (4398046513938 → 96) dá 3; úrovně 1 / 80 / 4 476 / 4 580 / 26 se shodují s prohledáním do šířky z oddílu 5 i se `SHORTEST_PATH` (6.5). Úroveň má nejvýš tolik řádků, kolik je osob, join s hranami nejvýš tolik, kolik je hran |
-| **přeloženo nástrojem** (Dapper do šesti cílů) | Dapper, MyBatis a Hibernate jazykem; EF Core nativním SQL kvůli koncovému `MIN` bez seskupení (`Fallback` `Aggregation`, kategorie `AggregateOverTheWholeResult`), NHibernate a EclipseLink kvůli mezivýsledkům. Limit rekurze tu není co nést |
-| **hloubka** *d* | parametr dat: průměr komponenty `knows` zvoleného data setu, změřený skriptem z [oddílu 7](#7-jak-měření-zopakovat) bez výběru vzorku. Nad SF 1 je aspoň 5 (vzorek); text roste o dvě definice na krok, z obou konců o polovinu |
-| **vážené dotazy** (BI 15, BI 19, BI 20) | týž řetěz jako Bellman–Ford: úroveň *k* nese pro každou osobu nejlevnější cenu sledu o nejvýš *k* hranách, `MIN` se seskupením mezi úrovněmi. Přesné pro *d* aspoň rovné největšímu počtu hran nejlevnější cesty nad daty — a ten může být větší než průměr, protože levnější cesta smí mít víc hran. Jistotou je *d* = počet osob komponenty − 1, praktickou hodnotou změřené maximum nad daty; nezměřeno |
-| **IC 14** (všechny nejkratší cesty) | týž řetěz, úroveň nese cestu jen mezi sousedními úrovněmi: cest nejkratší délky je málo. Nezkoušeno |
+| **změřeno nad SF 1** (2026-10-15) | IC 13 0,17 s, IC 14 2,2 s, BI 15 5,3 s (11 úrovní), BI 19 6,6 s (z více než 500 s), BI 20 0,13 s; úroveň má nejvýš tolik řádků, kolik je osob, join s hranami nejvýš tolik, kolik je hran, a definici vah čte každá úroveň jednou |
+| **přeloženo nástrojem** (Dapper do pěti cílů) | Dapper, MyBatis, Hibernate jazykem, EF Core LINQem (mezivýsledek jako proměnná), NHibernate a EclipseLink nativním SQL kvůli mezivýsledkům; rekurze ani její limit v textu nejsou |
+| **hloubka** *d* | vlastnost dvojice data set × definice hran, z každé osoby: průměr pro nevážené (5), nejvíc hran nejlevnější cesty pro vážené (BI 19 5, BI 20 7, BI 15 pro příkladové období 11); zapsaná u dotazu, držená testem (rozh. 141) |
+| **IC 14** (všechny nejkratší cesty) | úrovně od druhé osoby dají vzdálenost; osoba leží na nejkratší cestě na pozici *m* − vzdálenost; druhý řetěz od první osoby prodlužuje cestu jen k sousedovi na další pozici, váhu kroku přičte při kroku a hotovou cestu nese smyčkou přes zbylé úrovně |
 | **IC 12** | zůstává rekurzivní: hierarchie tříd tagů je strom, 71 tříd, hloubka nejvýš 5, žádné sledy navíc |
 
-**Vada nalezená cestou.** Konstanta bez aliasu v dalším operandu množinové operace (`SELECT l.PersonId, 1 FROM L1`) se zahodí se záznamem `Loss` a vyjde příkaz s různým počtem sloupců v operandech, který SQL Server odmítne. Text výš proto píše alias u každé konstanty; vada je v [`open-items.md`](../open-items.md).
+**Vada nalezená cestou.** Konstanta bez aliasu v dalším operandu množinové operace (`SELECT p.Id, p.Id, 0 FROM Person`) se zahazovala se záznamem `Loss` a vycházel příkaz s různým počtem sloupců v operandech; opravena 2026-10-15 — dostává jméno levého operandu podle pozice jako výraz bez aliasu, v definici, nahoře v dotazu i v poddotazu.
 
 ### 6.4 Data jako parametr
 
@@ -549,10 +528,9 @@ Drží se tu kvůli textu práce; žádnou z nich 140 nevolí.
 | **jiná databázová platforma** | druhý dialekt zamítá rozh. [129](../decisions/129-sql-server-2022-stays-the-only-database-dialect.md) jako vymezení předmětu práce; referenční implementace LDBC stojí na PostgreSQL a Umbře | podle dokumentace: PostgreSQL `UNION` bez `ALL` zahodí řádek, který rekurze už vydala, a `SEARCH`/`CYCLE` (od 14); MySQL 8 `UNION DISTINCT` a `cte_max_recursion_depth` (výchozí 1000); Oracle `CONNECT BY NOCYCLE` a SQL/PGQ `GRAPH_TABLE` (23ai); DuckDB rekurze `USING KEY`. Platforma se sloučením mezi úrovněmi napíše IC 13 přesně jedním rekurzivním dotazem — argument, proč SQL Server zjednodušení vynucuje |
 | **`hierarchyid` EF Core**, hierarchický dotaz EclipseLinku (`CONNECT BY`) | první chce sloupec `hierarchyid` ve schématu a jen hierarchii, ne graf; druhý je podle dokumentace jen pro Oracle | nic, neověřeno |
 
-### Co zbývá rozhodnout
+### Co z toho rozhodlo 141
 
-- **Který data set** pro kterou databázi (6.4): oficiální SF pro vše, nad čím běží Interactive, upravená data nejvýš pro databázi jen s BI, odvozená tabulka vah pro BI 19 a BI 20 — rozhodnutí až po tabulce časů a průměru (6.1, položka *Normalizace běhů katalogu LDBC*).
-- **Hloubka *d*** každého data setu, který katalog nese, a kde ji zapsat (vlastnost databáze jako `ldbc.indexes`, nebo poznámka dotazu).
+Jeden data set (SF 1), žádná upravená data ani tabulka vah; hloubka je vlastnost dvojice data set × definice hran dotazu, měřená z každé osoby a zapsaná u dotazu (`LdbcSearchDepth`), držená `LdbcJudge/LdbcPathQueryTest`.
 
 ---
 

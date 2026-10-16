@@ -89,7 +89,7 @@ Strojově: deskriptory (`QuerySupport`, `Functions`, `NativeSqlApi`), `Combined/
 ¹ `refusedWithoutCatalog`, jediné odmítnutí manifestu: bez katalogu nemá parametr zdroje Dapper skalár (2.4); s katalogem, který tabulku má, se typuje do všech cílů ([105], [106]).
 ² `fallbackWithoutCatalog`: zdroj MyBatis neříká, že sloupec nesmí mít `NULL`.
 
-**Mimo kategorie.** *Záměrně špatný dotaz* (osm poddotazů do čtyř úrovní, joiny přes dva a tři sloupce, seskupení s `HAVING`, řazení, výřez) jde ze všech šesti zdrojů do všech šesti cílů (`Combined/DeeplyNestedQueryTest`, javově `shapes/DeeplyNestedQueryTest`). *Katalog LDBC* — 41 čtecích dotazů LDBC SNB ([110]) — měří úplnost: přeloženo všech 41, pět se zjednodušením, které katalog u dotazu vyslovuje; žádný cíl žádný neodmítá. Čtyři texty mají tvar, který unese implementace EclipseLinku (vnější join nejmenuje alias vnitřního), a dva nesou mez běhu nad SF 1 — v mezích [122]. `SampleData/LdbcSnbSample`, koncový bod `/ldbc`, `Combined/LdbcCatalogTest` (1. stupeň, artefakty EF Core a NHibernate i 2.), javová `ldbc/LdbcBusinessIntelligenceAcceptanceTest` (BI do javových cílů, 2. a 3. stupeň). Stav „podle specifikace" drží u 19 dotazů Interactive validační sada LDBC na 4. stupni ([117], `LdbcJudge/LdbcValidationTest`, javové `ldbc/`); u 17 dotazů BI je tvrzením autora — validační sadu pro BI nad daty Interactive LDBC nevydává.
+**Mimo kategorie.** *Záměrně špatný dotaz* (osm poddotazů do čtyř úrovní, joiny přes dva a tři sloupce, seskupení s `HAVING`, řazení, výřez) jde ze všech šesti zdrojů do všech šesti cílů (`Combined/DeeplyNestedQueryTest`, javově `shapes/DeeplyNestedQueryTest`). *Katalog LDBC* — 41 čtecích dotazů LDBC SNB ([110]) — měří úplnost: přeloženo všech 41 podle specifikace, pět dotazů na cesty s hloubkou změřenou nad SF 1 ([140], [141]); žádný cíl žádný neodmítá. Čtyři texty mají tvar, který unese implementace EclipseLinku (vnější join nejmenuje alias vnitřního), a dva nesou mez běhu nad SF 1 — v mezích [122]. `SampleData/LdbcSnbSample`, koncový bod `/ldbc`, `Combined/LdbcCatalogTest` (1. stupeň, artefakty EF Core a NHibernate i 2.), javová `ldbc/LdbcBusinessIntelligenceAcceptanceTest` (BI do javových cílů, 2. a 3. stupeň). Stav „podle specifikace" drží u 19 dotazů Interactive validační sada LDBC na 4. stupni ([117], `LdbcJudge/LdbcValidationTest`, javové `ldbc/`); u 17 dotazů BI je tvrzením autora — validační sadu pro BI nad daty Interactive LDBC nevydává.
 
 ### 1.4 Proč u kategorie chybí zdroj
 
@@ -301,7 +301,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | `+`, jehož ani jedna strana není typovaná | cíle ho hláskují různě (konkatenace, nebo sčítání) | `Failure` (`Expression`) (b) | VM | [107] |
 | aritmetika, `COALESCE`, `CASE` nad skaláry, které se nesjednotí (`Decimal` s `Float`) | C# nepřeloží, T-SQL porovná jinou hodnotu | `Failure` (b) | VM | [107] |
 | agregát nad agregátem (`SUM(COUNT(*))`), i do seznamu | žádný cíl ho nezapíše | `Failure`: přímo vnořený (`MAX(SUM(x))`) při čtení (č), uvnitř výrazu bránou (b); přes odvozenou tabulku se nese | VM | [107], [112] |
-| výraz v projekci bez aliasu | sloupec bez jména nečte žádný cíl, jméno se nevymýšlí | `Failure` (b); konstanta bez aliasu `Loss` (č) | VM | [107], [028] |
+| výraz v projekci bez aliasu | sloupec bez jména nečte žádný cíl, jméno se nevymýšlí | `Failure` (b); konstanta bez aliasu `Loss` (č); v dalším členu množinové operace dostane výraz i konstanta jméno levého členu podle pozice, jak ho dává SQL ([112]) — v definici, nahoře v dotazu i v poddotazu | VM | [107], [028], [112] |
 | výraz jako prvek výčtu či počet řádků | ty mají vlastní uzavřené tvary | `Failure` (č) | VM | [074], [085], [107] |
 | konkatenace nad sloupcem ve zdroji LINQ | C# bere `null` jako prázdný řetězec, SQL, HQL i JPQL vracejí `NULL` | `Loss` (č); artefakt má sémantiku SQL | VM | [107] |
 | druhý tvar NHibernatu (LINQ): konkatenace v projekci nad textem, který smí být `NULL`; skalární poddotaz, který není jediným agregátem | provider 5.7.0 projekci vyhodnotí na klientovi, kde `null` je prázdný řetězec; obecné meze LINQ jako u EF Core | `Omitted` (z), HQL stojí samo | VM | [118] |
@@ -345,7 +345,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | rekurzivní člen, který přičítá `COUNT` ke kotvě začínající konstantou | model typuje `COUNT` jako `Long`, T-SQL jako `int` | `Failure` (b), ač by ho SQL Server přijal (vědomě bezpečnější strana) | VM | [113] |
 | délka řetězce a přesnost desetinného čísla mezi kotvou a rekurzivním členem | model je nenese | brána nehlídá; dotaz musí text srovnat převodem, jinak ho odmítne SQL Server | VM | [113] |
 | limit rekurze bez rekurzivní definice | nic neohraničuje | vypustí se s `Convention` | VM | [§7] |
-| mez hloubky, sledy místo vrcholů | rekurzivní člen SQL Serveru řádky neslučuje | obsah dotazu, ne mez nástroje; katalog LDBC ji u IC 13, IC 14, BI 15, BI 19, BI 20 vyslovuje jako zjednodušení — IC 13, BI 15, BI 19 a BI 20 hledají z obou konců (dvě procházky po dvou krocích, sloučené mimo rekurzi, setkání jako join: do čtyř kroků), IC 14 nese celé cesty a jde z jednoho konce do tří | — | [110], [113] |
+| mez hloubky, sledy místo vrcholů | rekurzivní člen SQL Serveru řádky neslučuje | obsah dotazu, ne mez nástroje; katalog LDBC proto nejkratší a nejlevnější cestu po `knows` (IC 13, IC 14, BI 15, BI 19, BI 20) nepíše rekurzí, ale řetězem nerekurzivních definic, jednou na úroveň prohledání do šířky, s hloubkou změřenou nad data setem SF 1 z každé osoby (5 / 5 / 11 / 5 / 7) — bez zjednodušení, drží `LdbcJudge/LdbcPathQueryTest` | — | [110], [113], [140], [141] |
 
 ### 2.11 Úniková cesta a nativní SQL
 
@@ -494,6 +494,8 @@ Fakt zmizí beze slova, ačkoli podle [004] a [048] zaznít má. Žádné rozhod
 [136]: ./decisions/136-a-project-archive-is-unpacked-by-the-browser-with-own-code.md
 [138]: ./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md
 [139]: ./decisions/139-hibernate-states-the-limit-of-recursion-as-a-hint-on-the-query-object.md
+[140]: ./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md
+[141]: ./decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md
 [§1v]: ./architecture.md#zafixované-verze
 [§4.1]: ./architecture.md#41-entity-a-mapování
 [§4.2]: ./architecture.md#42-primární-klíč
