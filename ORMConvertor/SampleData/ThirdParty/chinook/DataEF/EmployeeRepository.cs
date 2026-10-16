@@ -1,9 +1,8 @@
 ﻿// ORMConvertor: taken from cwoodruff/ChinookASPNETWebAPI at 82c89e0, ChinookASPNETWebAPI/Chinook.DataEF/Repositories/EmployeeRepository.cs.
 // Changed: the read-only methods are kept and EmployeeExists, Add, Update, Delete,
 // GetToReports are left out, because they write or only serve writing (GetToReports hands
-// FindAsync a query instead of a key, which EF Core rejects at run time); FindAsync(id) is
-// written as Where(x => x.Id == id).FirstOrDefaultAsync() (2x). See README.md in the folder
-// above.
+// FindAsync a query instead of a key, which EF Core rejects at run time). See README.md in
+// the folder above.
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -29,10 +28,10 @@ namespace Chinook.DataEFCore.Repositories
             await _context.Employees.AsNoTrackingWithIdentityResolution().ToListAsync();
 
         public async Task<Employee> GetById(int id) =>
-            await _context.Employees.Where(x => x.Id == id).FirstOrDefaultAsync();
+            await _context.Employees.FindAsync(id);
 
         public async Task<Employee> GetReportsTo(int id) =>
-            await _context.Employees.Where(x => x.Id == id).FirstOrDefaultAsync();
+            await _context.Employees.FindAsync(id);
 
         public async Task<List<Employee>> GetDirectReports(int id) =>
             await _context.Employees.Where(e => e.ReportsTo == id).AsNoTrackingWithIdentityResolution().ToListAsync();

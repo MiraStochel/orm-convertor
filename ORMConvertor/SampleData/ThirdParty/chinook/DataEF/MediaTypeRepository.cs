@@ -1,7 +1,6 @@
 ﻿// ORMConvertor: taken from cwoodruff/ChinookASPNETWebAPI at 82c89e0, ChinookASPNETWebAPI/Chinook.DataEF/Repositories/MediaTypeRepository.cs.
 // Changed: the read-only methods are kept and MediaTypeExists, Add, Update, Delete are left
-// out, because they write or only serve writing; FindAsync(id) is written as Where(x => x.Id
-// == id).FirstOrDefaultAsync() (1x). See README.md in the folder above.
+// out, because they write or only serve writing. See README.md in the folder above.
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Chinook.DataEF;
@@ -26,6 +25,6 @@ namespace Chinook.DataEFCore.Repositories
             await _context.MediaTypes.AsNoTrackingWithIdentityResolution().ToListAsync();
 
         public async Task<MediaType> GetById(int id) =>
-            await _context.MediaTypes.Where(x => x.Id == id).FirstOrDefaultAsync();
+            await _context.MediaTypes.FindAsync(id);
     }
 }

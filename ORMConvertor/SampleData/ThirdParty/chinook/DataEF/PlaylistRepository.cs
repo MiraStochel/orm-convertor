@@ -1,7 +1,6 @@
 ﻿// ORMConvertor: taken from cwoodruff/ChinookASPNETWebAPI at 82c89e0, ChinookASPNETWebAPI/Chinook.DataEF/Repositories/PlaylistRepository.cs.
 // Changed: the read-only methods are kept and PlaylistExists, Add, Update, Delete are left
-// out, because they write or only serve writing; FindAsync(id) is written as Where(x => x.Id
-// == id).FirstOrDefaultAsync() (1x). See README.md in the folder above.
+// out, because they write or only serve writing. See README.md in the folder above.
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -27,7 +26,7 @@ namespace Chinook.DataEFCore.Repositories
             await _context.Playlists.AsNoTrackingWithIdentityResolution().ToListAsync();
 
         public async Task<Playlist> GetById(int id) =>
-            await _context.Playlists.Where(x => x.Id == id).FirstOrDefaultAsync();
+            await _context.Playlists.FindAsync(id);
 
         public async Task<List<Playlist>> GetByTrackId(int id)
         {

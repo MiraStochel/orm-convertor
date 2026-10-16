@@ -22,14 +22,12 @@ column is called `Id`; `PlaylistTrack` keeps its composite key.
    `EmployeeRepository.GetToReports` of the EF Core layer is left out as well: it hands
    `FindAsync` a query instead of a key, which EF Core rejects at run time.
 3. **EF Core reads that the tool reads only in another form are rewritten**, each with a note and
-   its original text above it:
-   - `FindAsync(id)` becomes `Where(x => x.Id == id).FirstOrDefaultAsync()` - the tool reads
-     `FindAsync` as a query without its key;
-   - the tracks of a playlist, of an artist's albums, of an invoice and the invoices of a support
-     representative's customers - written as a projected navigation (`Select(p => p.Track)`),
-     `SelectMany` over a navigation, or `Any` over a collection navigation - become a correlated
-     `Any` over the other set; the tool reads the first two as one side of a join and loses the
-     correlation of the third.
+   its original text above it: the tracks of a playlist, of an artist's albums and the invoices of
+   a support representative's customers - written as a projected navigation (`Select(p => p.Track)`)
+   or as `SelectMany` over a navigation - become a correlated `Any` over the other set; the tool
+   reads both shapes as one side of a join. `FindAsync(id)` and `Any` over a collection navigation
+   (`c.InvoiceLines.Any(…)`) stay as the project wrote them: the tool reads the first as the filter
+   on the key with the one row taken and the second as the subquery correlated by the relation.
 4. **Two Dapper queries are corrected.** `PlaylistRepository.GetTrackByPlaylistId` names
    `Playlist.PlaylistId`, a column the schema and the class call `Id`, so it does not run; it
    now says `Playlist.Id`, and its `Track.*` stays as written. `CustomerRepository.GetBySupportRepId`

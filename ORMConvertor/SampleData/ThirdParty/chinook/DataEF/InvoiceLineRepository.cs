@@ -1,7 +1,6 @@
 ﻿// ORMConvertor: taken from cwoodruff/ChinookASPNETWebAPI at 82c89e0, ChinookASPNETWebAPI/Chinook.DataEF/Repositories/InvoiceLineRepository.cs.
 // Changed: the read-only methods are kept and InvoiceLineExists, Add, Update, Delete are left
-// out, because they write or only serve writing; FindAsync(id) is written as Where(x => x.Id
-// == id).FirstOrDefaultAsync() (1x). See README.md in the folder above.
+// out, because they write or only serve writing. See README.md in the folder above.
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -27,7 +26,7 @@ namespace Chinook.DataEFCore.Repositories
             await _context.InvoiceLines.AsNoTrackingWithIdentityResolution().ToListAsync();
 
         public async Task<InvoiceLine> GetById(int id) =>
-            await _context.InvoiceLines.Where(x => x.Id == id).FirstOrDefaultAsync();
+            await _context.InvoiceLines.FindAsync(id);
 
         public async Task<List<InvoiceLine>> GetByInvoiceId(int id) =>
             await _context.InvoiceLines.Where(a => a.InvoiceId == id).AsNoTrackingWithIdentityResolution().ToListAsync();

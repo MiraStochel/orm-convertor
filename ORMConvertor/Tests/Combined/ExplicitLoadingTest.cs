@@ -122,7 +122,7 @@ public class ExplicitLoadingTest
     /// </summary>
     [Theory]
     [InlineData("public void Fill() { var order = ctx.SalesOrders.First(o => o.SalesOrderID == 7); ctx.Entry(order).Collection(o => o.Lines).Load(); }", 2)]
-    [InlineData("public async Task Fill(int id) { var order = await ctx.SalesOrders.FindAsync(id); ctx.Entry(order!).Collection(o => o.Lines).Load(); }", 2)]
+    [InlineData("public async Task Fill() { var order = await ctx.SalesOrders.FindAsync(7); ctx.Entry(order!).Collection(o => o.Lines).Load(); }", 2)]
     [InlineData("public void Fill(object order) => ctx.Entry<SalesOrder>(order).Collection(o => o.Lines).Load();", 1)]
     [InlineData("public void Fill() => ctx.Entry(Current).Collection(o => o.Lines).Load();", 1)]
     public void TheEntityInMemoryIsTakenFromWhatTheUnitStatesOrFromTheOneNavigationOfTheName(string member, int queries)

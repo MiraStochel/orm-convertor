@@ -1,9 +1,8 @@
 ﻿// ORMConvertor: taken from cwoodruff/ChinookASPNETWebAPI at 82c89e0, ChinookASPNETWebAPI/Chinook.DataEF/Repositories/InvoiceRepository.cs.
 // Changed: the read-only methods are kept and InvoiceExists, Add, Update, Delete are left out,
-// because they write or only serve writing; FindAsync(id) is written as Where(x => x.Id ==
-// id).FirstOrDefaultAsync() (1x); the invoices of the customers through a correlated Any over
-// Customers instead of SelectMany over the navigation t.Invoices. See README.md in the folder
-// above.
+// because they write or only serve writing; the invoices of the customers through a correlated
+// Any over Customers instead of SelectMany over the navigation t.Invoices. See README.md in the
+// folder above.
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -41,7 +40,7 @@ namespace Chinook.DataEFCore.Repositories
         }
 
         public async Task<Invoice> GetById(int id) =>
-            await _context.Invoices.Where(x => x.Id == id).FirstOrDefaultAsync();
+            await _context.Invoices.FindAsync(id);
 
         // ORMConvertor: rewritten - the invoices of the customers through a correlated Any over Customers instead of SelectMany over the navigation t.Invoices; the literal 5 is the original's.
         //   was: await _context.Customers.Where(a => a.SupportRepId == 5).SelectMany(t => t.Invoices).AsNoTrackingWithIdentityResolution().ToListAsync();

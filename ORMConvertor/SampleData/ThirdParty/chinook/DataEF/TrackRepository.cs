@@ -1,11 +1,9 @@
 ﻿// ORMConvertor: taken from cwoodruff/ChinookASPNETWebAPI at 82c89e0, ChinookASPNETWebAPI/Chinook.DataEF/Repositories/TrackRepository.cs.
 // Changed: the read-only methods are kept and TrackExists, Add, Update, Delete are left out,
-// because they write or only serve writing; FindAsync(id) is written as Where(x => x.Id ==
-// id).FirstOrDefaultAsync() (1x); the tracks of the playlist through a correlated Any over
-// PlaylistTracks instead of projecting the navigation p.Track; the tracks of the albums
-// through a correlated Any over Albums instead of SelectMany over the navigation t.Tracks; the
-// Any over the navigation c.InvoiceLines states its correlation o.TrackId == c.Id over the set
-// of invoice lines. See README.md in the folder above.
+// because they write or only serve writing; the tracks of the playlist through a correlated Any
+// over PlaylistTracks instead of projecting the navigation p.Track; the tracks of the albums
+// through a correlated Any over Albums instead of SelectMany over the navigation t.Tracks. See
+// README.md in the folder above.
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -31,7 +29,7 @@ namespace Chinook.DataEFCore.Repositories
             await _context.Tracks.AsNoTrackingWithIdentityResolution().ToListAsync();
 
         public async Task<Track> GetById(int id) =>
-            await _context.Tracks.Where(x => x.Id == id).FirstOrDefaultAsync();
+            await _context.Tracks.FindAsync(id);
 
         public async Task<List<Track>> GetByAlbumId(int id) =>
             await _context.Tracks.Where(a => a.AlbumId == id).AsNoTrackingWithIdentityResolution().ToListAsync();
@@ -52,10 +50,8 @@ namespace Chinook.DataEFCore.Repositories
         public async Task<List<Track>> GetByArtistId(int id) =>
             await _context.Tracks.Where(t => _context.Albums.Any(a => a.Id == t.AlbumId && a.ArtistId == 5)).AsNoTrackingWithIdentityResolution().ToListAsync();
 
-        // ORMConvertor: rewritten - the Any over the navigation c.InvoiceLines states its correlation o.TrackId == c.Id over the set of invoice lines.
-        //   was: await _context.Tracks.Where(c => c.InvoiceLines.Any(o => o.InvoiceId == id))
         public async Task<List<Track>> GetByInvoiceId(int id) => await _context.Tracks
-            .Where(c => _context.InvoiceLines.Any(o => o.TrackId == c.Id && o.InvoiceId == id))
+            .Where(c => c.InvoiceLines.Any(o => o.InvoiceId == id))
             .AsNoTrackingWithIdentityResolution().ToListAsync();
     }
 }

@@ -828,7 +828,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         ExpressionSyntax expression,
         out LinqQueryRoot? root,
         out List<ChainStep> steps,
-        out ExpressionSyntax? rootExpression)
+        out ExpressionSyntax? rootExpression,
+        bool navigationIsRoot = false)
     {
         var chain = new ChainSteps();
         steps = chain;
@@ -836,6 +837,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         while (true)
         {
+            // Inside a lambda, a chain written from a row in scope - c.Orders.Any(…) - ranges
+            // over a collection navigation of that row, not over a set of the context,
+            // whatever the root recognizer makes of the two-identifier shape (decision 026
+            // recognizes ctx.Customers by its position). The nested readers ask for it and
+            // derive the source and the correlation from the relation (TryDecomposeNested).
+            if (navigationIsRoot && IsNavigationOfRow(current, out _, out var navigation))
+            {
+                root = new LinqQueryRoot(navigation!);
+                steps.Reverse();
+                rootExpression = current;
+                return true;
+            }
+
             if (TryReadQueryRoot(current, out root))
             {
                 steps.Reverse();
@@ -1183,7 +1197,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         LinqQueryRoot root,
         List<ChainStep> steps,
         Action? beforeClose = null,
-        string? elementParameter = null)
+        string? elementParameter = null,
+        Action? afterSource = null)
     {
         var enclosingGroupingKeys = groupingKeys;
         var enclosingGroupElement = groupElement;
@@ -1198,7 +1213,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         try
         {
-            EmitChainCore(root, steps, beforeClose, elementParameter);
+            EmitChainCore(root, steps, beforeClose, elementParameter, afterSource);
         }
         finally
         {
@@ -1292,13 +1307,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         LinqQueryRoot root,
         List<ChainStep> steps,
         Action? beforeClose,
-        string? elementParameter)
+        string? elementParameter,
+        Action? afterSource)
     {
+        steps = ExpandFind(root, steps);
         steps = ExpandSingleRowTerminals(steps);
         var endsWithVariable = (steps as ChainSteps)?.EndsWithVariable;
 
         queryBuilder.Push();
         EmitSource(root, FirstElementLambdaParameter(steps) ?? elementParameter);
+
+        // The correlation of a subquery over a collection navigation (TryDecomposeNested),
+        // which needs the alias the source just took.
+        afterSource?.Invoke();
 
         bool inSetOperation = false;
         bool distinct = false;
@@ -1485,7 +1506,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 {
                     refusedTerminal = step.RewrittenFrom;
                 }
-                else if (step.Name == "Take" && step.RewrittenFrom is { } terminal)
+                else if (step.Name == "Take" && step.RewrittenFrom is { } terminal && WithoutAsync(terminal) != "Find")
                 {
                     ReportSingleRowTerminal(terminal);
                 }
@@ -1784,14 +1805,16 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// fell through to the unknown step and left with a loss record while the artifact went
     /// out returning every row. The async forms EF Core adds are the same steps. First(),
     /// Single() and ElementAt() are not here: they are the slices the chain already carries,
-    /// and the chain is expanded to say so before it is read (decision 103). SelectMany() is
-    /// not here either: it is the join along an association path, read from the relation
+    /// and the chain is expanded to say so before it is read (decision 103); Find() is the
+    /// filter on the key with the slice, expanded the same way where the mapping states the
+    /// key (<see cref="ExpandFind"/>), and is here for the chain that kept it. SelectMany()
+    /// is not here either: it is the join along an association path, read from the relation
     /// (decision 101), and what it cannot be read as it refuses by itself. Null means the
     /// step is not one of them.
     /// </summary>
     private static QueryFeature? ChangesTheRowSet(string method) => WithoutAsync(method) switch
     {
-        "OfType" => QueryFeature.Filtering,
+        "OfType" or "Find" => QueryFeature.Filtering,
         "SkipWhile" or "TakeWhile" or "DefaultIfEmpty" => QueryFeature.Pagination,
         "Last" or "LastOrDefault" => QueryFeature.Pagination,
         "GroupJoin" or "Zip" => QueryFeature.Join,
@@ -1868,6 +1891,143 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         => SyntaxFactory.InvocationExpression(
             SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, receiver, SyntaxFactory.IdentifierName(method)),
             arguments);
+
+    /// <summary>
+    /// Replaces Find(key…) and FindAsync(key…) on the root by the steps they are short for,
+    /// where the mapping of the entity states its key: Where(x =&gt; x.Key1 == key1 &amp;&amp; …)
+    /// over the key parts in their order and Take(1), the shape FirstOrDefault(predicate)
+    /// expands into (decision 103). The call is the provider's look-up of one row by its
+    /// primary key: read as a step the representation does not carry, it was left out with a
+    /// loss record and the artifact returned the whole table (decision 053). The key values
+    /// are the arguments, or the elements of the one array among them with a cancellation
+    /// token after it left alone, and each is read as any operand is - a value from the
+    /// enclosing scope is the parameter of the same name (decision 083). What the call says
+    /// beyond the rows - the look-up among the entities the context tracks before the
+    /// database is asked, the one object instead of a list - is a fact of the calling code,
+    /// named in a convention record. Without the key, or with another number of values than
+    /// the key has parts, the row cannot be stated, and the call is refused by name: a query
+    /// emitted without the filter returns the whole table (decision 070).
+    /// </summary>
+    private List<ChainStep> ExpandFind(LinqQueryRoot root, List<ChainStep> steps)
+    {
+        var index = steps.FindIndex(step => WithoutAsync(step.Name) == "Find");
+        if (index < 0)
+        {
+            return steps;
+        }
+
+        var step = steps[index];
+        var map = root.Load is null ? MapFor(root.Name) : null;
+        var values = KeyValuesOf(step.Node);
+        string? refusal = null;
+
+        if (index != 0)
+        {
+            refusal = $"{step.Name}() stands after other steps of the chain, where it is no method of the set and the row it selects cannot be stated";
+        }
+        else if (map is null)
+        {
+            refusal = $"{step.Name}() selects the row of the primary key of '{root.Name}', whose entity mapping is not part of the conversion, so the filter on the key could not be derived";
+        }
+        else if (map.PrimaryKey is null)
+        {
+            refusal = $"{step.Name}() selects the row of the primary key of '{map.Entity.Name}', which the mapping does not state, so the filter on the key could not be derived";
+        }
+        else if (values.Count != map.PrimaryKey.Parts.Count)
+        {
+            var parts = map.PrimaryKey.Parts;
+            refusal = $"{step.Name}() is handed {values.Count} key value{(values.Count == 1 ? "" : "s")} and the key of '{map.Entity.Name}' has {parts.Count} part{(parts.Count == 1 ? "" : "s")} ({Listed(parts.Select(p => p.PropertyMap.Property.Name))}), so the row it selects cannot be stated";
+        }
+
+        var expanded = new ChainSteps(steps.Take(index)) { EndsWithVariable = (steps as ChainSteps)?.EndsWithVariable };
+
+        if (refusal is not null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"{refusal}, and a query emitted without the filter would return the whole table; no artifact was generated.",
+                QueryFeature.Filtering);
+            expanded.AddRange(steps.Skip(index + 1));
+            return expanded;
+        }
+
+        var keyParts = map!.PrimaryKey!.Parts;
+        var names = keyParts.Select(part => part.PropertyMap.Property.Name).ToList();
+        var parameter = ParameterOutside(map.Entity.Name, values);
+        var element = SyntaxFactory.IdentifierName(parameter);
+        var comparisons = keyParts
+            .Select((part, i) => (ExpressionSyntax)SyntaxFactory.BinaryExpression(
+                SyntaxKind.EqualsExpression,
+                SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, element, SyntaxFactory.IdentifierName(names[i])),
+                values[i]))
+            .ToList();
+        var body = comparisons.Skip(1).Aggregate(comparisons[0], (left, right) => SyntaxFactory.BinaryExpression(SyntaxKind.LogicalAndExpression, left, right));
+        var predicate = SyntaxFactory.SimpleLambdaExpression(SyntaxFactory.Parameter(SyntaxFactory.Identifier(parameter)), body);
+
+        var receiver = ((MemberAccessExpressionSyntax)step.Node.Expression).Expression;
+        expanded.Add(new ChainStep(
+            "Where",
+            Synthesized(receiver, "Where", SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(SyntaxFactory.Argument(predicate)))),
+            step.Name,
+            step.AfterVariable));
+        expanded.Add(new ChainStep(
+            "Take",
+            Synthesized(receiver, "Take", SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(
+                SyntaxFactory.Argument(SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(1)))))),
+            step.Name));
+        expanded.AddRange(steps.Skip(index + 1));
+
+        Report(
+            ConversionRecordKind.Convention,
+            $"{step.Name}() is carried as the filter on the key of '{map.Entity.Name}' ({Listed(names)}) with Take(1), which selects the same row; the look-up among the entities the context tracks before the database is asked, and that the caller receives one object rather than a list of one, are facts of the calling code, and the artifact does not carry them.",
+            QueryFeature.Filtering);
+
+        return expanded;
+    }
+
+    /// <summary>
+    /// The key values handed to Find(): its arguments, or the elements of the array its first
+    /// argument is - <c>FindAsync(new object[] { a, b }, token)</c> - with a cancellation token
+    /// after the array left alone.
+    /// </summary>
+    private static IReadOnlyList<ExpressionSyntax> KeyValuesOf(InvocationExpressionSyntax node)
+    {
+        var arguments = node.ArgumentList.Arguments.Select(argument => argument.Expression).ToList();
+
+        if (arguments.Count is 1 or 2 && ArrayElementsOf(arguments[0]) is { } elements)
+        {
+            return elements;
+        }
+
+        return arguments;
+    }
+
+    private static IReadOnlyList<ExpressionSyntax>? ArrayElementsOf(ExpressionSyntax expression) => expression switch
+    {
+        ImplicitArrayCreationExpressionSyntax implicitArray => [.. implicitArray.Initializer.Expressions],
+        ArrayCreationExpressionSyntax { Initializer: { } initializer } => [.. initializer.Expressions],
+        CollectionExpressionSyntax collection when collection.Elements.All(element => element is ExpressionElementSyntax)
+            => [.. collection.Elements.Cast<ExpressionElementSyntax>().Select(element => element.Expression)],
+        _ => null,
+    };
+
+    /// <summary>
+    /// A lambda parameter for the row of the entity that none of the values mentions and no
+    /// row in scope has: the first letter of the entity, numbered from 2 while taken - the
+    /// same way the source would be aliased without a lambda.
+    /// </summary>
+    private string ParameterOutside(string entity, IReadOnlyList<ExpressionSyntax> values)
+    {
+        var taken = AliasesInScope();
+        var derived = entity.Length > 0 ? entity[..1].ToLowerInvariant() : "t";
+        var candidate = derived;
+        for (int n = 2; taken.Contains(candidate) || aliasSubstitutions.ContainsKey(candidate) || values.Any(value => Mentions(value, candidate)); n++)
+        {
+            candidate = derived + n;
+        }
+
+        return candidate;
+    }
 
     /// <summary>
     /// The convention record of a single-row terminal read as a slice (decision 103): the
@@ -3686,7 +3846,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     }
 
                     QueryOperand? right;
-                    if (TryDecompose(member.Expression, out var root, out var steps))
+                    if (TryDecomposeNested(member.Expression, out var root, out var steps, out var correlate, out var defaultAlias))
                     {
                         right = null;
                     }
@@ -3717,7 +3877,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                         return null;
                     }
 
-                    right ??= QueryOperand.Nested(ReadSubQueryOperand(root!, steps));
+                    right ??= QueryOperand.Nested(ReadSubQueryOperand(root!, steps, elementParameter: defaultAlias, afterSource: correlate));
                     return new ComparisonCondition(value, ComparisonOperator.In, right);
                 }
 
@@ -3727,11 +3887,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             // the providers make of it, and a negation over a NULL selects other rows than the
             // quantifier in SQL's logic, so the shape is named and refused rather than guessed.
             case "All":
-                return ReadQuantifiedCondition(invocation, member, Quantifier.All, refuseOtherShapes: true);
+                return TryDecomposeNested(member.Expression, out var allRoot, out var allSteps, out var allCorrelate, out var allAlias)
+                    ? ReadQuantifiedCondition(invocation, member, allRoot!, allSteps, allCorrelate, allAlias, Quantifier.All, refuseOtherShapes: true)
+                    : null;
 
             case "Any":
                 {
-                    if (!TryDecompose(member.Expression, out var root, out var steps))
+                    if (!TryDecomposeNested(member.Expression, out var root, out var steps, out var correlate, out var defaultAlias))
                     {
                         return null;
                     }
@@ -3741,7 +3903,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     // unprojected chain Any(predicate) keeps the reading of decision 061,
                     // Where(predicate).Any(), which selects the same rows.
                     if (steps.Count > 0 && steps[^1].Name == "Select"
-                        && ReadQuantifiedCondition(invocation, member, Quantifier.Any, refuseOtherShapes: false) is { } quantified)
+                        && ReadQuantifiedCondition(invocation, member, root!, steps, correlate, defaultAlias, Quantifier.Any, refuseOtherShapes: false) is { } quantified)
                     {
                         return quantified;
                     }
@@ -3751,7 +3913,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                         steps.Add(new ChainStep("Where", invocation));
                     }
 
-                    var sub = ReadSubQueryOperand(root!, steps);
+                    var sub = ReadSubQueryOperand(root!, steps, elementParameter: defaultAlias, afterSource: correlate);
                     return new ComparisonCondition(QueryOperand.Nested(sub), ComparisonOperator.Exists);
                 }
 
@@ -3769,19 +3931,20 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// the enclosing scope. A comparison written with the element on the left is mirrored, so
     /// the representation holds its one shape, subquery on the right. Null for any other
     /// shape; with <paramref name="refuseOtherShapes"/> the shape is named for the refusal,
-    /// without it the caller reads the invocation its own way.
+    /// without it the caller reads the invocation its own way. The chain comes decomposed
+    /// from the caller (<see cref="TryDecomposeNested"/>), with the correlation and the
+    /// alias a collection navigation at its head brings.
     /// </summary>
     private ConditionNode? ReadQuantifiedCondition(
         InvocationExpressionSyntax invocation,
         MemberAccessExpressionSyntax member,
+        LinqQueryRoot root,
+        List<ChainStep> steps,
+        Action? correlate,
+        string? defaultAlias,
         Quantifier quantifier,
         bool refuseOtherShapes)
     {
-        if (!TryDecompose(member.Expression, out var root, out var steps))
-        {
-            return null;
-        }
-
         var method = member.Name.Identifier.Text;
         if (invocation.ArgumentList.Arguments.Count != 1
             || invocation.ArgumentList.Arguments[0].Expression is not SimpleLambdaExpressionSyntax lambda)
@@ -3856,7 +4019,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return null;
         }
 
-        var subQuery = QueryOperand.Nested(ReadSubQueryOperand(root!, steps));
+        var subQuery = QueryOperand.Nested(ReadSubQueryOperand(root, steps, elementParameter: defaultAlias, afterSource: correlate));
         if (QuantifiedComparisons.RewriteNote(oriented, quantifier) is { } note)
         {
             Report(ConversionRecordKind.Convention, note, QueryFeature.Subquery);
@@ -3949,15 +4112,131 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         LinqQueryRoot root,
         List<ChainStep> steps,
         Action? beforeClose = null,
-        string? elementParameter = null)
+        string? elementParameter = null,
+        Action? afterSource = null)
     {
         var enclosingAlias = sourceAlias;
 
         queryBuilder.Push();
-        EmitChain(root, steps, beforeClose, elementParameter);
+        EmitChain(root, steps, beforeClose, elementParameter, afterSource);
         sourceAlias = enclosingAlias;
 
         return queryBuilder.PopOperand();
+    }
+
+    /// <summary>
+    /// Whether the expression is a member of a row in scope - <c>c.Orders</c> under a lambda
+    /// over c -, which at the head of a chain is a collection navigation of that row and not
+    /// a set of the context: a lambda parameter is never the context. The alias is the row's
+    /// - the parameter stands for the alias of its scope -, the navigation the member's name.
+    /// </summary>
+    private bool IsNavigationOfRow(ExpressionSyntax expression, out string? alias, out string? navigation)
+    {
+        alias = navigation = null;
+
+        if (expression is not MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax head } member)
+        {
+            return false;
+        }
+
+        var name = head.Identifier.Text;
+        if (aliasSubstitutions.TryGetValue(name, out var substituted))
+        {
+            alias = substituted;
+        }
+        else if (AliasesInScope().Contains(name))
+        {
+            alias = name;
+        }
+        else
+        {
+            return false;
+        }
+
+        navigation = member.Name.Identifier.Text;
+        return true;
+    }
+
+    /// <summary>
+    /// The nested chain of a subquery operand (decision 061). A head that is a member of a
+    /// row in scope - <c>c.InvoiceLines.Any(o =&gt; …)</c> - is a collection navigation of
+    /// that row: the provider reads it as the rows of the navigation's target that belong to
+    /// the outer row, and so does this reading, from the relation of the mapping, exactly as
+    /// the join along an association path (decision 101) - the source is the target entity
+    /// of the relation and <paramref name="correlate"/> adds FK = PK over its column pairs to
+    /// the nested scope once the source is emitted and the nested alias is known. Read as a
+    /// set of the context, which is what the root recognizer makes of the shape, the
+    /// subquery lost its correlation without a word and the query returned other rows
+    /// (decision 053). What the maps lack is named in <see cref="unread"/> and never guessed
+    /// (decision 067): the mapping of the row, a relation of the name, the target entity,
+    /// the column pairs, and a many-to-many relation, whose rows are two joins away.
+    /// <paramref name="defaultAlias"/> is the alias of the nested rows where no lambda of the
+    /// chain names them, unique among the aliases in scope, because the outer row is referred
+    /// to from the nested scope and the first letter of the entity may be its alias already.
+    /// False where the expression is no chain, or a navigation the maps cannot derive.
+    /// </summary>
+    private bool TryDecomposeNested(
+        ExpressionSyntax expression,
+        out LinqQueryRoot? root,
+        out List<ChainStep> steps,
+        out Action? correlate,
+        out string? defaultAlias)
+    {
+        correlate = null;
+        defaultAlias = null;
+
+        if (!TryDecompose(expression, out root, out steps, out var rootExpression, navigationIsRoot: true))
+        {
+            return false;
+        }
+
+        if (!IsNavigationOfRow(rootExpression!, out var alias, out var navigation))
+        {
+            return true;
+        }
+
+        var written = rootExpression!.ToString();
+        var owner = MapOfAlias(alias!);
+        if (owner is null)
+        {
+            unread ??= ($"'{written}', a navigation of the row '{alias}', whose entity mapping is not part of the conversion, so no relation was there to derive the correlation of the subquery with the row from", QueryFeature.Subquery);
+            return false;
+        }
+
+        var relation = owner.Relations.FirstOrDefault(r =>
+            string.Equals(r.SourceNavigationProperty, navigation, StringComparison.OrdinalIgnoreCase));
+        if (relation is null)
+        {
+            unread ??= ($"'{written}', which names no association the mapping of '{owner.Entity.Name}' declares, so no relation was there to derive the correlation of the subquery with the row from", QueryFeature.Subquery);
+            return false;
+        }
+
+        if (relation.Cardinality == Cardinality.ManyToMany)
+        {
+            unread ??= ($"'{written}', the many-to-many relation to '{relation.TargetEntity}', whose rows are reached over its junction entity by two joins, which the subquery does not derive", QueryFeature.Subquery);
+            return false;
+        }
+
+        var target = entityMaps?.FirstOrDefault(m =>
+            string.Equals(m.Entity?.Name, relation.TargetEntity, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+        {
+            unread ??= ($"'{written}', a navigation to the entity '{relation.TargetEntity}', which is not part of the conversion", QueryFeature.Subquery);
+            return false;
+        }
+
+        var pairs = ColumnPairsOf(relation, owner, target);
+        if (pairs.Count == 0)
+        {
+            unread ??= ($"'{written}', a navigation whose relation to '{relation.TargetEntity}' states no foreign key columns and the database catalog supplied none, so the correlation of the subquery with the row could not be derived", QueryFeature.Subquery);
+            return false;
+        }
+
+        root = new LinqQueryRoot(target.Entity.Name);
+        defaultAlias = ParameterOutside(target.Entity.Name, []);
+        var outerAlias = alias!;
+        correlate = () => queryBuilder.Where(AssociationCondition(relation, pairs, outerAlias, sourceAlias));
+        return true;
     }
 
     private static void Flatten(ConditionNode node, LogicalOperator op, List<ConditionNode> into)
@@ -4859,7 +5138,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         if (invocation.Expression is not MemberAccessExpressionSyntax { Name.Identifier.Text: "FirstOrDefault" } member
             || invocation.ArgumentList.Arguments.Count != 0
             || (member.Expression is IdentifierNameSyntax head && aliasSubstitutions.ContainsKey(head.Identifier.Text))
-            || !TryDecompose(member.Expression, out var root, out var steps)
+            || !TryDecomposeNested(member.Expression, out var root, out var steps, out var correlate, out _)
             || steps.Count < 2
             || steps[^1] is not { Name: "Select" } select
             || steps[^2] is not { Name: "GroupBy" } groupBy
@@ -4894,7 +5173,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     queryBuilder.Project(list);
                 }
             },
-            groupLambda.Parameter.Identifier.Text);
+            groupLambda.Parameter.Identifier.Text,
+            correlate);
 
         // What the list could not be read as is in <see cref="unread"/>; the caller reports it
         // as it reports any operand outside the vocabulary.
@@ -4929,7 +5209,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         // - is no query root, whatever the root recognizer makes of a bare identifier.
         if (function is null
             || (member.Expression is IdentifierNameSyntax head && aliasSubstitutions.ContainsKey(head.Identifier.Text))
-            || !TryDecompose(member.Expression, out var root, out var steps))
+            || !TryDecomposeNested(member.Expression, out var root, out var steps, out var correlate, out var defaultAlias))
         {
             return null;
         }
@@ -5007,7 +5287,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             root!,
             steps,
             () => queryBuilder.Project(sourceAlias, attribute == "*" ? attribute : ColumnOf(sourceAlias, attribute), null, function, distinct),
-            elementParameter);
+            elementParameter ?? defaultAlias,
+            correlate);
 
         return QueryOperand.Nested(sub);
     }

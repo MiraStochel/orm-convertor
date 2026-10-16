@@ -68,7 +68,7 @@ Stav k 2026-10-13: počty jsou z mělkých klonů výchozí větve (grep, ±10 %
 
 | Zdroj | Licence | Rozsah | Schéma | Použití |
 |---|---|---|---|---|
-| [Chinook Web API](https://github.com/cwoodruff/ChinookASPNETWebAPI) — vrstva EF Core | P MIT | 11 · 1 (`PlaylistTrack`) · 35 čtecích LINQ | autorova varianta Chinooku pro SQL Server ([ChinookDatabase](https://github.com/cwoodruff/ChinookDatabase), klíče `Id`) | s úpravou ZP, `FindAsync` na `Where` (vada V2), navigace v projekci a `Any` na korelované `Any` (V1) — **převzato**, příklad `chinook-efcore` |
+| [Chinook Web API](https://github.com/cwoodruff/ChinookASPNETWebAPI) — vrstva EF Core | P MIT | 11 · 1 (`PlaylistTrack`) · 35 čtecích LINQ | autorova varianta Chinooku pro SQL Server ([ChinookDatabase](https://github.com/cwoodruff/ChinookDatabase), klíče `Id`) | s úpravou ZP, navigace v projekci a `SelectMany` nad navigací na korelované `Any` — **převzato**, příklad `chinook-efcore` |
 | [bitwarden/server](https://github.com/bitwarden/server) | C AGPL-3.0 | 63 tabulek · 5+ (`CollectionCipher`, `GroupUser`, …) · 56 tříd dotazů a ~180 LINQ v repozitářích | SSDT `src/Sql`, SQL Server | s úpravou ZP; nejlepší kandidát T1 v .NET, převzít ho nelze |
 | [SimplCommerce](https://github.com/simplcommerce/SimplCommerce) | P Apache-2.0 | ~73 · 8 · ~330 přes `_repository.Query()` | migrace, SQL Server výchozí | s úpravou KR, DD (`EntityBase`) |
 | [Piranha CMS](https://github.com/PiranhaCMS/piranha.core) | P MIT | 39 `DbSet` · 7 · ~180 kroků LINQ | migrace pro SQL Server | s úpravou DD (`ContentBase`, `BlockBase` …) |
@@ -134,8 +134,8 @@ Co výňatky ukázaly o nástroji. **Vada** je tvar uvnitř nároku, který nás
 
 | | Nález | Kde | Co nástroj udělá |
 |---|---|---|---|
-| V1 | `Any` nad kolekční navigací (`c.InvoiceLines.Any(o => …)`) | Chinook, EF Core | poddotaz bez korelace s vnějším řádkem, bez záznamu — vrátí všechny řádky, má-li kterákoli faktura podmínku |
-| V2 | `Find`, `FindAsync` | Chinook, EF Core | čte se jako neznámý krok, tedy `Loss`, a dotaz vrátí celou tabulku místo řádku s klíčem |
+| V1 | `Any` nad kolekční navigací (`c.InvoiceLines.Any(o => …)`) | Chinook, EF Core | **opraveno 2026-10-16:** zdrojem poddotazu je cílová entita vztahu a korelace FK = PK se odvodí z jeho párů jako u joinu po cestě; totéž `All`, `Count`, agregát a `Select(…).Contains`; co mapy nemají, `Failure` jmenovitě ([`architecture.md`](../architecture.md) §6.2) |
+| V2 | `Find`, `FindAsync` | Chinook, EF Core | **opraveno 2026-10-16:** filtr přes části klíče z mapování + `Take(1)` s `Convention`; bez klíče či s jiným počtem hodnot `Failure` jmenovitě |
 | V3 | `@Id` na `@ManyToOne` uvnitř `@IdClass` (odvozená identita JPA) | Keycloak | část klíče přes vztah vypadne, klíč se tiše zúží na zbylé sloupce |
 | V4 | alias v uvozovkách s tečkou (`AS "product.productId"`) | JPetStore | **opraveno 2026-10-16:** SQL cíl `AS [product.productId]`, cíl nad členy řádku nativním SQL (`Fallback`), zdroj MyBatis hlásí ztracené vnoření ([`subset.md`](../subset.md) 2.8) |
 | V5 | holý sloupec v dotazu přes víc tabulek | JPetStore | **opraveno 2026-10-16:** vlastníka dá mapa aliasu, kterou doplní i katalog; bez ní SQL cíl nechá sloupec holý a cíl nad členy řádku jde nativním SQL (2.6) |

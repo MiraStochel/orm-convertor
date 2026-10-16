@@ -1,7 +1,6 @@
 ﻿// ORMConvertor: taken from cwoodruff/ChinookASPNETWebAPI at 82c89e0, ChinookASPNETWebAPI/Chinook.DataEF/Repositories/GenreRepository.cs.
 // Changed: the read-only methods are kept and GenreExists, Add, Update, Delete are left out,
-// because they write or only serve writing; FindAsync(id) is written as Where(x => x.Id ==
-// id).FirstOrDefaultAsync() (1x). See README.md in the folder above.
+// because they write or only serve writing. See README.md in the folder above.
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Chinook.DataEF;
@@ -27,7 +26,7 @@ namespace Chinook.DataEFCore.Repositories
 
         public async Task<Genre> GetById(int id)
         {
-            var dbGenre = await _context.Genres.Where(x => x.Id == id).FirstOrDefaultAsync();
+            var dbGenre = await _context.Genres.FindAsync(id);
             return dbGenre;
         }
     }

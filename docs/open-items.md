@@ -28,8 +28,6 @@ Rejstřík, ne pořadí.
 
 | Položka | Oblast | Druh | Pož. |
 |---|---|---|---|
-| [`Any` nad kolekční navigací bez korelace](#any-nad-kolekční-navigací-se-čte-bez-korelace) | Vady | práce | F7–F10, F11 |
-| [`Find` vrátí celou tabulku](#find-a-findasync-vrátí-celou-tabulku) | Vady | práce | F7–F10, F11 |
 | [Odvozená identita JPA zúží klíč](#odvozená-identita-jpa-tiše-zúží-složený-klíč) | Vady | práce | F1, F2, F7, F9, F11 |
 | [Zřetězení s `NULL` v LINQ EF Core](#zřetězení-s-null-dá-v-linq-ef-core-prázdný-text-místo-null) | Dotazy | práce | F7–F10, F11 |
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | T2, T3, F13 |
@@ -75,17 +73,7 @@ flowchart LR
 
 ## Vady z reálného kódu
 
-Tři tvary, které nástroj přečte a přeloží jinak, než znamenají; ukázaly je výňatky open-source projektů ([`analysis/real-world-sources.md`](./analysis/real-world-sources.md), *Nálezy*; rozh. [138](./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md)). Výňatky v `ORMConvertor/SampleData/ThirdParty` každou obcházejí přepisem s poznámkou; po opravě se přepis smí vrátit k textu projektu. [`subset.md`](./subset.md) 2.13 je vede jako tichá místa, §9 nárok do opravy omezuje výhradou.
-
-#### `Any` nad kolekční navigací se čte bez korelace
-*Vada. Práce podle rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) a [101](./decisions/101-a-join-along-an-association-path-is-derived-from-the-relation.md). Nález V1 (Chinook, `DataEF/TrackRepository.cs`). Požadavky F7–F10, F11.*
-
-LINQ `Tracks.Where(c => c.InvoiceLines.Any(o => o.InvoiceId == id))` se čte jako `EXISTS` nad `InvoiceLine` bez podmínky, která řádek faktury váže k vnější skladbě (`o.TrackId = c.Id`), a žádný záznam to neřekne: dotaz vrátí všechny skladby, jakmile má podmínku kterýkoli řádek faktury. Podmínku korelace dává vztah navigace, tak jako u joinu po asociační cestě (rozh. 101); kde vztah ani jeho sloupce v mapách převodu nejsou, má čtení odmítnout. Test: `Any`, `All` a `Count` nad kolekční navigací ve filtru, nad oběma stranami vztahu.
-
-#### `Find` a `FindAsync` vrátí celou tabulku
-*Vada. Práce; rozh. [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) bere neznámý krok jako `Loss` a předpokládá, že řádky nemění, [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) žádá opak. Nález V2 (Chinook, všechny repozitáře EF Core). Požadavky F7–F10, F11.*
-
-`ctx.Tracks.FindAsync(id)` čte LINQ jako neznámý krok, vynechá ho se záznamem `Loss` a vydaný dotaz vrátí celou tabulku. Neznámý krok je `Loss`, aby čtení neodmítlo `Include`; `Find` je ale vyhledání podle klíče a řádky mění. Nejméně ho odmítnout jmenovitě; přečíst ho jako filtr klíče s výřezem jednoho řádku (tvar `FirstOrDefault`) jde tam, kde klíč entity zná mapování.
+Jeden tvar, který nástroj přečte a přeloží jinak, než znamená; ukázaly ho výňatky open-source projektů ([`analysis/real-world-sources.md`](./analysis/real-world-sources.md), *Nálezy*; rozh. [138](./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md)). Výňatek v `ORMConvertor/SampleData/ThirdParty` ho obchází přepisem s poznámkou; po opravě se přepis smí vrátit k textu projektu. [`subset.md`](./subset.md) 2.13 ho vede jako tiché místo, §9 nárok do opravy omezuje výhradou.
 
 #### Odvozená identita JPA tiše zúží složený klíč
 *Vada. Práce podle rozh. [006](./decisions/006-flat-composite-key-rendering.md), [031](./decisions/031-key-class-as-declaration-of-key-parts.md) a [077](./decisions/077-hibernate-wrapper-over-the-shared-jpa-layer.md). Nález V3 (Keycloak, deset entit). Požadavky F1, F2, F7, F9, F11.*

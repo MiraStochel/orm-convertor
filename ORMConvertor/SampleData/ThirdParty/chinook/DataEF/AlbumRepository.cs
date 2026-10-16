@@ -1,7 +1,6 @@
 ﻿// ORMConvertor: taken from cwoodruff/ChinookASPNETWebAPI at 82c89e0, ChinookASPNETWebAPI/Chinook.DataEF/Repositories/AlbumRepository.cs.
 // Changed: the read-only methods are kept and AlbumExists, Add, Update, Delete are left out,
-// because they write or only serve writing; FindAsync(id) is written as Where(x => x.Id ==
-// id).FirstOrDefaultAsync() (1x). See README.md in the folder above.
+// because they write or only serve writing. See README.md in the folder above.
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -27,7 +26,7 @@ namespace Chinook.DataEFCore.Repositories
 
         public async Task<Album> GetById(int? id)
         {
-            var dbAlbum = await _context.Albums.Where(x => x.Id == id).FirstOrDefaultAsync();
+            var dbAlbum = await _context.Albums.FindAsync(id);
             return dbAlbum;
         }
 
