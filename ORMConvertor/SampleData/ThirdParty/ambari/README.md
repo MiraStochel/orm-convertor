@@ -19,15 +19,14 @@ and the opening note of each file counts the changes it carries.
 
 1. **The six named queries that delete are left out**, each with a note in place of its
    annotation: the tool translates read-only queries.
-2. **Eight of the 41 read-only queries are rewritten**, each with a note and its original text
-   above it: a path through an association in a condition
-   (`alert.alertHistory.clusterId = :clusterId`) becomes a correlated `EXISTS` over the scalar
-   key column the entity also maps (`historyId`, `definitionId`, `alertDefinitionId`), or a
-   comparison of that column. The tool does not read a path outside `JOIN`, and a `JOIN` whose
-   one side is projected it does not read faithfully.
-3. **Six queries are left out**, each with a note in place of its annotation: five compare a
+2. **Six queries are left out**, each with a note in place of its annotation: five compare a
    parameter with an attribute of an enum type (`Scope`, `SourceType`, `AlertState`,
    `NotificationState`) that lives outside the excerpt, so the generated method could not type the
    parameter; one asks `MEMBER OF` a many-to-many with the whole entity as the parameter.
+3. **No read-only query is rewritten.** The eight queries of `AlertCurrentEntity` with a path
+   through an association in a condition (`alert.alertHistory.clusterId = :clusterId`,
+   `alert.alertHistory.alertDefinition.definitionName = :definitionName`) stand as the project
+   wrote them: the tool reads a path to the referenced key as the foreign key column and every
+   other path as an implicit join.
 4. **The query hints stand as the project wrote them** (`eclipselink.query-results-cache` on
    `AlertDefinitionEntity.findByName`); the tool reports each as a dropped hint.

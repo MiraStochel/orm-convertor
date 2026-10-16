@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/UserConsentEntity.java.
- * Changed: of its 9 named queries, 6 that write are left out and 3 are rewritten, each with a note and, where rewritten, the original text above it; the rest stand as the project wrote them. See README.md.
+ * Changed: of its 9 named queries, 6 that write are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -48,15 +48,9 @@ import jakarta.persistence.UniqueConstraint;
         @UniqueConstraint(columnNames = {"USER_ID", "CLIENT_ID"})
 })
 @NamedQueries({
-        // ORMConvertor: rewritten - asks for the user through a correlated exists that compares the association with the user row, instead of a path through the association; the parameter is the user's id.
-        //   was: select consent from UserConsentEntity consent where consent.user.id = :userId and consent.clientId = :clientId
-        @NamedQuery(name = "userConsentByUserAndClient", query = "select consent from UserConsentEntity consent where exists ( select u from UserEntity u where consent.user = u and u.id = :userId) and consent.clientId = :clientId"),
-        // ORMConvertor: rewritten - asks for the user through a correlated exists that compares the association with the user row, instead of a path through the association; the parameter is the user's id.
-        //   was: select consent from UserConsentEntity consent where consent.user.id = :userId and consent.clientStorageProvider = :clientStorageProvider and consent.externalClientId = :externalClientId
-        @NamedQuery(name = "userConsentByUserAndExternalClient", query = "select consent from UserConsentEntity consent where exists ( select u from UserEntity u where consent.user = u and u.id = :userId) and consent.clientStorageProvider = :clientStorageProvider and consent.externalClientId = :externalClientId"),
-        // ORMConvertor: rewritten - asks for the user through a correlated exists that compares the association with the user row, instead of a path through the association; the parameter is the user's id.
-        //   was: select consent from UserConsentEntity consent where consent.user.id = :userId
-        @NamedQuery(name = "userConsentsByUser", query = "select consent from UserConsentEntity consent where exists ( select u from UserEntity u where consent.user = u and u.id = :userId)")
+        @NamedQuery(name = "userConsentByUserAndClient", query = "select consent from UserConsentEntity consent where consent.user.id = :userId and consent.clientId = :clientId"),
+        @NamedQuery(name = "userConsentByUserAndExternalClient", query = "select consent from UserConsentEntity consent where consent.user.id = :userId and consent.clientStorageProvider = :clientStorageProvider and consent.externalClientId = :externalClientId"),
+        @NamedQuery(name = "userConsentsByUser", query = "select consent from UserConsentEntity consent where consent.user.id = :userId")
         // ORMConvertor: "deleteUserConsentsByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
         // ORMConvertor: "deleteUserConsentsByRealmAndLink" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
         // ORMConvertor: "deleteUserConsentsByUser" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.

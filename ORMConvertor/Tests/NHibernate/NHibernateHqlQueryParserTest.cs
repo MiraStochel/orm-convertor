@@ -440,10 +440,84 @@ public class NHibernateHqlQueryParserTest
         Assert.Contains("INNER JOIN Sales.Customers c ON o.CustomerID = c.CustomerID", sql);
     }
 
+    /* ---- a path through an association outside join (decision 144) ---------------- */
+
+    [Theory]
+    [InlineData(false, "where o.CustomerID = 7")]
+    [InlineData(true, "where o.CustomerID = 7")]
+    public void APathToTheReferencedKeyReadsTheForeignKeyColumnWithoutAJoin(bool composite, string expected)
+    {
+        var (orders, customers) = Linked(composite: composite);
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Order o where o.Customer.CustomerID = 7", orders, customers);
+
+        // The key the owning reference points at is the foreign key the order carries - one
+        // column of it under a composite key -, the reading NHibernate makes of the path,
+        // with no join of the customer.
+        var hql = Hql(builder);
+
+        Assert.Contains(expected, hql);
+        Assert.DoesNotContain("join", hql);
+    }
+
+    [Fact]
+    public void APathThroughAReferenceBringsOneImplicitJoinForEveryPathOverIt()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(
+            new NHibernateHqlQueryBuilder(),
+            "select o.Customer.CustomerName from Order o where o.Customer.CustomerName like 'A%' order by o.Customer.CustomerName",
+            orders,
+            customers);
+
+        // Rule Q7 outside join: an inner join of the customer with the derived condition,
+        // made once for the association and shared by every path over it.
+        var hql = Hql(builder);
+
+        Assert.Contains("inner join Customer o_Customer with o.CustomerID = o_Customer.CustomerID", hql);
+        Assert.Equal(1, hql.Split("join ").Length - 1);
+        Assert.Contains("select o_Customer.CustomerName", hql);
+        Assert.Contains("where o_Customer.CustomerName like 'A%'", hql);
+        Assert.Contains("order by o_Customer.CustomerName", hql);
+    }
+
+    [Fact]
+    public void APathThroughACollectionRefusesByName()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Customer c where c.Orders.Total > 100", orders, customers);
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("navigates the collection 'Orders'"));
+    }
+
+    [Fact]
+    public void APathInsideAJoinConditionThatWouldBringAJoinRefuses()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new NHibernateHqlQueryBuilder(), "from Order o join Customer c with c.CustomerName = o.Customer.CustomerName", orders, customers);
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("inside the condition of a join"));
+    }
+
+    [Fact]
+    public void AnImplicitJoinReachesSqlAsAnOrdinaryJoin()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new DapperSqlQueryBuilder(), "from Order o where o.Customer.CustomerName = 'Alice'", orders, customers);
+
+        var sql = builder.Build().Single(s => s.ContentType == ConversionContentType.SqlQuery).Content;
+
+        Assert.Contains("INNER JOIN Sales.Customers o_Customer ON o.CustomerID = o_Customer.CustomerID", sql);
+        Assert.Contains("o_Customer.CustomerName = 'Alice'", sql);
+    }
+
     [Theory]
     [InlineData("from Order o join o.Customer c", false, "the mapping of the entity behind 'o'")]
     [InlineData("from Order o join o.Shipper s", true, "names no association")]
-    [InlineData("from Order o join o.Customer.Region r", true, "crosses more than one association")]
+    [InlineData("from Order o join o.Customer.Region r", true, "names no association the mapping of 'Customer' declares")]
+    [InlineData("from Order o where o.Shipper.Name = 'A'", true, "names no association")]
+    [InlineData("from Order o where o.Customer.CustomerName = 'A'", false, "the mapping of the entity behind 'o'")]
     public void AnAssociationPathTheMapsDoNotResolveRefusesByName(string hql, bool withMaps, string reason)
     {
         var (orders, customers) = Linked();

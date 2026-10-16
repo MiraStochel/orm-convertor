@@ -52,9 +52,9 @@ import org.keycloak.representations.idm.MembershipType;
         // ORMConvertor: "deleteUserGroupMembershipsByRealmAndLink" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
         // ORMConvertor: "deleteUserGroupMembershipsByGroup" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
         // ORMConvertor: "deleteUserGroupMembershipsByUser" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
-        // ORMConvertor: rewritten - asks for the realm of the user through a correlated exists over the key column USER_ID instead of a path through the association; counts the key column.
+        // ORMConvertor: rewritten - counts the key column USER_ID instead of the association the project counts; the tool does not read an association as the argument of an aggregate. The path through the association in the condition stands as the project wrote it.
         //   was: select count(m.user) from UserGroupMembershipEntity m where m.user.realmId = :realmId and m.groupId in :groupIds
-        @NamedQuery(name = "userCountInGroups", query = "select count(m.USER_ID) from UserGroupMembershipEntity m where exists ( select u from UserEntity u where u.id = m.USER_ID and u.realmId = :realmId) and m.groupId in :groupIds")
+        @NamedQuery(name = "userCountInGroups", query = "select count(m.USER_ID) from UserGroupMembershipEntity m where m.user.realmId = :realmId and m.groupId in :groupIds")
 })
 @Table(name="USER_GROUP_MEMBERSHIP")
 @Entity

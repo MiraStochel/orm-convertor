@@ -1,6 +1,7 @@
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using DapperWrappers;
 using HibernateWrappers;
 using Model;
 using Model.AbstractRepresentation;
@@ -427,6 +428,178 @@ public class HibernateJpqlQueryParserTest
         // the query reader's to guess.
         Assert.Empty(builder.Build());
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("no foreign key columns"));
+    }
+
+    /* ---- a path through an association outside join (decision 144) ---------------- */
+
+    /// <summary>Orders, customers and regions: the customer refers to its region through an owning reference with stated pairs.</summary>
+    private static (EntityMap Orders, EntityMap Customers, EntityMap Regions) LinkedThroughRegion()
+    {
+        var (orders, customers) = Linked();
+
+        var regionKey = new Property { Name = "RegionID", Type = LangType.Scalar(ScalarType.Int) };
+        var regionName = new Property { Name = "RegionName", Type = LangType.Scalar(ScalarType.String) };
+        var regionKeyMap = new PropertyMap { Property = regionKey, ColumnName = "RegionID" };
+        var regions = new EntityMap
+        {
+            Entity = new Entity { Name = "Region", Properties = [regionKey, regionName] },
+            Table = "Regions",
+            Schema = "Sales",
+            PropertyMaps = [regionKeyMap, new PropertyMap { Property = regionName, ColumnName = "RegionName" }],
+        };
+
+        var customerRegionMap = new PropertyMap { Property = new Property { Name = "RegionID", Type = LangType.Scalar(ScalarType.Int) }, ColumnName = "RegionID" };
+        customers.PropertyMaps.Add(customerRegionMap);
+        customers.Relations.Add(new Relation
+        {
+            Cardinality = Cardinality.ManyToOne,
+            Role = RelationRole.Owning,
+            SourceEntity = "Customer",
+            TargetEntity = "Region",
+            SourceNavigationProperty = "region",
+            ColumnPairs = [new ColumnPair { Source = customerRegionMap, Target = regionKeyMap }],
+        });
+
+        return (orders, customers, regions);
+    }
+
+    [Fact]
+    public void APathToTheReferencedKeyReadsTheForeignKeyColumnWithoutAJoin()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o where o.customer.CustomerID = 7", orders, customers);
+
+        // The key the owning reference points at is the foreign key the order carries: the
+        // reading Hibernate makes of the path, with no join of the customer.
+        var jpql = Build(builder);
+
+        Assert.Contains("where o.CustomerID = 7", jpql);
+        Assert.DoesNotContain("join", jpql);
+    }
+
+    [Fact]
+    public void APathToTheReferencedKeyWithoutAScalarPropertyIsAFixedPoint()
+    {
+        var (orders, customers) = Linked();
+        orders.PropertyMaps.RemoveAll(p => p.Property.Name == "CustomerID");
+
+        // The column the reference alone maps is written back as the path through the
+        // reference (ColumnMember), so the language's own spelling reads back to itself.
+        AssertFixedPoint("""
+            select o
+            from Order o
+            where o.customer.CustomerID = :customerId
+            """, orders, customers);
+    }
+
+    [Fact]
+    public void APathThroughAReferenceBringsOneImplicitJoinForEveryPathOverIt()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(
+            new HibernateJpqlQueryBuilder(),
+            "select o.customer.CustomerName from Order o where o.customer.CustomerName like 'A%' order by o.customer.CustomerName",
+            orders,
+            customers);
+
+        // Rule Q7 outside join: the path is an inner join of the customer with the derived
+        // condition, made once for the association and shared by the projection, the filter
+        // and the ordering.
+        var jpql = Build(builder);
+
+        Assert.Contains("join Customer o_customer on o.CustomerID = o_customer.CustomerID", jpql);
+        Assert.Equal(1, jpql.Split("join ").Length - 1);
+        Assert.Contains("select o_customer.CustomerName", jpql);
+        Assert.Contains("where o_customer.CustomerName like 'A%'", jpql);
+        Assert.Contains("order by o_customer.CustomerName", jpql);
+    }
+
+    [Fact]
+    public void APathThroughTwoReferencesCrossesTwoImplicitJoins()
+    {
+        var (orders, customers, regions) = LinkedThroughRegion();
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o where o.customer.region.RegionName = 'EU'", orders, customers, regions);
+
+        var jpql = Build(builder);
+
+        Assert.Contains("join Customer o_customer on o.CustomerID = o_customer.CustomerID", jpql);
+        Assert.Contains("join Region o_customer_region on o_customer.RegionID = o_customer_region.RegionID", jpql);
+        Assert.Contains("where o_customer_region.RegionName = 'EU'", jpql);
+    }
+
+    [Fact]
+    public void AJoinAlongAPathOfTwoAssociationsCrossesTheFirstAsAnImplicitJoin()
+    {
+        var (orders, customers, regions) = LinkedThroughRegion();
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o join o.customer.region r where r.RegionName = 'EU'", orders, customers, regions);
+
+        var jpql = Build(builder);
+
+        Assert.Contains("join Customer o_customer on o.CustomerID = o_customer.CustomerID", jpql);
+        Assert.Contains("join Region r on o_customer.RegionID = r.RegionID", jpql);
+    }
+
+    [Fact]
+    public void APathInsideAJoinConditionReadsTheForeignKeyButBringsNoJoin()
+    {
+        var (orders, customers) = Linked();
+        var keyed = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o join Customer c on c.CustomerID = o.customer.CustomerID", orders, customers);
+        var joined = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o join Customer c on c.CustomerName = o.customer.CustomerName", orders, customers);
+
+        // The foreign key needs no join and reads inside the condition; a path that would
+        // bring a join cannot stand there, because the join it brings would have to precede
+        // the join whose condition names it.
+        Assert.Contains("join Customer c on c.CustomerID = o.CustomerID", Build(keyed));
+        Assert.Empty(joined.Build());
+        Assert.Contains(joined.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("inside the condition of a join"));
+    }
+
+    [Fact]
+    public void APathThroughACollectionRefusesByName()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select c from Customer c where c.orders.Total > 100", orders, customers);
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("navigates the collection 'orders'"));
+    }
+
+    [Theory]
+    [InlineData("select o from Order o where o.customer.CustomerName = 'A'", false, true, "the mapping of the entity behind 'o'")]
+    [InlineData("select o from Order o where o.shipper.Name = 'A'", true, true, "names no association")]
+    [InlineData("select o from Order o where o.customer.CustomerName = 'A'", true, false, "states no foreign key columns")]
+    [InlineData("select o from Order o where x.customer.CustomerName = 'A'", true, true, "no identification variable")]
+    public void APathTheMapsDoNotResolveRefusesByName(string jpql, bool withMaps, bool withPairs, string reason)
+    {
+        var (orders, customers) = Linked(withPairs: withPairs);
+        var builder = withMaps
+            ? Parse(new HibernateJpqlQueryBuilder(), jpql, orders, customers)
+            : Parse(new HibernateJpqlQueryBuilder(), jpql);
+
+        // Nothing is guessed (decision 067); the filter refuses the artifact and names the
+        // path and what is missing.
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains(reason));
+    }
+
+    [Fact]
+    public void AnImplicitJoinReachesSqlAsAnOrdinaryJoin()
+    {
+        var (orders, customers) = Linked();
+        var builder = Parse(new DapperSqlQueryBuilder(), "select o from Order o where o.customer.CustomerName = 'Alice'", orders, customers);
+
+        var sql = builder.Build().Single(s => s.ContentType == ConversionContentType.SqlQuery).Content;
+
+        Assert.Contains("INNER JOIN Sales.Customers o_customer ON o.CustomerID = o_customer.CustomerID", sql);
+        Assert.Contains("o_customer.CustomerName = 'Alice'", sql);
+    }
+
+    private static string Build(AbstractQueryBuilder builder)
+    {
+        var artifacts = builder.Build();
+
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        return artifacts.Single(s => s.ContentType == ConversionContentType.JpqlQuery).Content;
     }
 
     [Fact]

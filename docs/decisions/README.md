@@ -146,6 +146,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 141 | [Katalog LDBC běží nad jedním data setem, oficiálním scale factorem 1, a hloubka dotazu na cestu je změřená vlastnost těchto dat zapsaná u dotazu; upravená data ani tabulka vah nevznikají](141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) | platí | T1, T2, T3, F13 |
 | 142 | [Nárok klíčové třídy se váže nejdřív na třídu vnořenou v entitě, která ho vyslovila, a teprve potom prostým jménem](142-a-key-class-claim-binds-first-to-the-class-nested-in-the-entity-that-names-it.md) | platí; mění jeden důsledek 094 | F1, F2, F11, S2 |
 | 143 | [Pojmenovaný dotaz JPA se čte tam, kde je definovaný, dotazovým parserem jednotky, která ho nese](143-a-named-query-of-jpa-is-read-where-it-is-defined.md) | platí | F7, F9, F11, F14, S1, S2 |
+| 144 | [Cesta přes asociaci mimo `join` je implicitní join odvozený ze vztahu; cesta ke klíči vlastnící reference je sloupec cizího klíče](144-a-path-through-an-association-outside-join-is-an-implicit-join-or-the-foreign-key-column.md) | platí; nahrazuje jeden odstavec 101 | F7, F9, F11, T1, T2 |
 
 ## Formát
 

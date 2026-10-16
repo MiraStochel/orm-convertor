@@ -18,19 +18,22 @@ query, and the opening note of each file counts the changes it carries.
 
 1. **The 51 named queries that delete, update or insert are left out**, each with a note in
    place of its annotation: the tool translates read-only queries.
-2. **Eighteen of the 48 read-only queries are rewritten**, each with a note and its original
+2. **Thirteen of the 48 read-only queries are rewritten**, each with a note and its original
    text above it:
    - a comparison with a whole entity (`m.user = :user`) compares the key column with the key
      (`m.USER_ID = :userId`) - the tool does not read an entity as a parameter;
-   - a path through an association in a condition (`consent.user.id = :userId`, the
-     `c.childRole.id` of `select r from RoleEntity r join CompositeRoleEntity c on ...`) becomes
-     a correlated `exists` - the tool does not read a path outside `join`;
-   - `select distinct r ... join` becomes `exists` without `distinct`, which returns each role
-     once as `distinct` did.
+   - the projection of an association (`select link.user from FederatedIdentityEntity link ...`)
+     selects the user and asks for the link through a correlated `exists` - the tool does not
+     read a reference as a projection;
+   - `count(m.user)` counts the key column `m.USER_ID` - the tool does not read an association
+     as the argument of an aggregate.
 
-   The two queries that join the attribute collection and project the user
-   (`select u from UserEntity u join u.attributes attr ...`) stand as the project wrote them: the
-   tool reads the projection of one side of a join.
+   The queries with a path through an association (`consent.user.id = :userId`,
+   `m.user.realmId = :realmId`, the `c.childRole.id` of
+   `select r from RoleEntity r join CompositeRoleEntity c on ...`) and the two that join the
+   attribute collection and project the user (`select u from UserEntity u join u.attributes attr ...`)
+   stand as the project wrote them: the tool reads a path through an association as the foreign
+   key column or as an implicit join, and the projection of one side of a join.
 3. **One query is left out:** `getAllRedirectUrisOfEnabledClients` joins the element collection
    `client.redirectUris` and builds a `map`, neither of which the tool reads.
 

@@ -85,6 +85,16 @@ public class NHibernateHqlQueryParser(
     private Dictionary<string, EntityMap?> aliases = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The implicit joins of the body being read (decision 144): the association a path
+    /// crossed, as <c>alias.navigation</c>, and the alias of the join it brought, so that
+    /// every path over the same association shares one join. Each body keeps its own.
+    /// </summary>
+    private Dictionary<string, string> implicitJoins = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Whether the written condition of a join is being read, where a path cannot bring a join of its own (decision 144).</summary>
+    private bool readingJoinCondition;
+
+    /// <summary>
     /// The construct that sank the condition being read, when the parser can name it - a
     /// parameter, a null among the values of an in list - so that the clause's refusal says
     /// what the caller would have to change (F11). The category overrides the clause's own
@@ -389,8 +399,28 @@ public class NHibernateHqlQueryParser(
     /// emitted only after from and the joins, because an unqualified projection needs the
     /// source alias and a whole-entity projection needs the declared aliases — the textual
     /// permutation the relational step order of decision 023 undoes on the builder side.
+    /// A body keeps the implicit joins of its own paths (decision 144), and a path inside it
+    /// may bring a join whatever clause of the enclosing query the body stands in.
     /// </summary>
     private void ParseQueryBody()
+    {
+        var enclosingImplicitJoins = implicitJoins;
+        var enclosingJoinCondition = readingJoinCondition;
+        implicitJoins = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        readingJoinCondition = false;
+
+        try
+        {
+            ParseClauses();
+        }
+        finally
+        {
+            implicitJoins = enclosingImplicitJoins;
+            readingJoinCondition = enclosingJoinCondition;
+        }
+    }
+
+    private void ParseClauses()
     {
         // The select clause is skipped on the first pass and read after the from clause and
         // the joins have declared the aliases (decision 107): a projected expression
@@ -734,7 +764,7 @@ public class NHibernateHqlQueryParser(
             return;
         }
 
-        var condition = ParseCondition();
+        var condition = ParseJoinCondition();
         if (condition is null)
         {
             Refuse("join's with condition", "a query emitted without its join would return different rows", QueryFeature.Join);
@@ -742,6 +772,24 @@ public class NHibernateHqlQueryParser(
         }
 
         queryBuilder.Join(kind, sourceAlias, TableFor(map, entity), condition, alias);
+    }
+
+    /// <summary>
+    /// The written condition of a join. A path inside it may not bring an implicit join of
+    /// its own (decision 144): the join would have to stand before the one whose condition
+    /// names it, and after it at the same time. Read as a column, the path says what it is.
+    /// </summary>
+    private ConditionNode? ParseJoinCondition()
+    {
+        readingJoinCondition = true;
+        try
+        {
+            return ParseCondition();
+        }
+        finally
+        {
+            readingJoinCondition = false;
+        }
     }
 
     /// <summary>
@@ -753,7 +801,9 @@ public class NHibernateHqlQueryParser(
     /// (decision 067): a query emitted without its join would return different rows
     /// (decision 070). The syntax is consumed either way, so that the clauses after it are
     /// still read and every reason arrives at once. The same reading as the JPQL parser's,
-    /// with HQL's <c>with</c> as the written condition.
+    /// with HQL's <c>with</c> as the written condition. A path of more than one association
+    /// crosses the earlier ones as implicit joins (decision 144) and joins the last one
+    /// explicitly, under the alias the source wrote.
     /// </summary>
     private void ParseAssociationJoin(JoinKind kind, List<string> parts)
     {
@@ -767,7 +817,7 @@ public class NHibernateHqlQueryParser(
         ConditionNode? written = null;
         if (TryConsumeKeyword("with"))
         {
-            written = ParseCondition();
+            written = ParseJoinCondition();
             if (written is null)
             {
                 if (failure is null)
@@ -786,39 +836,49 @@ public class NHibernateHqlQueryParser(
             return;
         }
 
-        var condition = AssociationCondition(association.Relation, association.Pairs, parts[0], alias, written);
+        var condition = AssociationCondition(association.Relation, association.Pairs, association.PathAlias, alias, written);
         queryBuilder.Join(kind, sourceAlias, TableFor(association.Target, association.Relation.TargetEntity), condition, alias);
     }
 
-    private sealed record AssociationJoin(Relation Relation, EntityMap Target, IReadOnlyList<ColumnPair> Pairs);
+    /// <param name="PathAlias">The alias the joined association is written from: the declared one, or the alias of the implicit join that crossed the associations before it.</param>
+    private sealed record AssociationJoin(Relation Relation, EntityMap Target, IReadOnlyList<ColumnPair> Pairs, string PathAlias);
 
     /// <summary>
     /// The relation a path names, or null with the sentence that says what the maps of the
-    /// conversion are missing (decision 101). The path is the alias and one association: a
-    /// longer one crosses a component or an intermediate join the model does not carry.
-    /// A many-to-many relation stands on its junction entity (decision 005), so a path
-    /// across it would be two joins and an invented alias - a stated limit, refused by name.
+    /// conversion are missing (decision 101). The path is an alias, the associations crossed
+    /// on the way - each an implicit join (decision 144) - and the association joined. A
+    /// many-to-many relation stands on its junction entity (decision 005), so a path across
+    /// it would be two joins and an invented alias - a stated limit, refused by name.
     /// </summary>
     private AssociationJoin? ResolveAssociation(List<string> parts, out string? failure)
     {
         var path = string.Join('.', parts);
         const string consequence = "a query emitted without its join would return different rows; no artifact was generated.";
 
-        if (parts.Count > 2)
+        var pathAlias = parts[0];
+        for (var index = 1; index < parts.Count - 1; index++)
         {
-            failure = $"The join along the path '{path}' crosses more than one association, and exactly one association is read from an alias; {consequence}";
-            return null;
+            var crossed = ImplicitJoin(pathAlias, parts[index], path);
+            if (crossed is null)
+            {
+                var (what, _) = unread!.Value;
+                unread = null;
+                failure = $"The join along the association path '{path}' could not be derived from {what}; {consequence}";
+                return null;
+            }
+
+            pathAlias = crossed;
         }
 
-        var owner = aliases[parts[0]];
+        var owner = aliases[pathAlias];
         if (owner is null)
         {
-            failure = $"The join along the association path '{path}' needs the mapping of the entity behind '{parts[0]}', which is not part of the conversion, so no relation was there to derive the join condition from; {consequence}";
+            failure = $"The join along the association path '{path}' needs the mapping of the entity behind '{pathAlias}', which is not part of the conversion, so no relation was there to derive the join condition from; {consequence}";
             return null;
         }
 
         var relation = owner.Relations.FirstOrDefault(r =>
-            string.Equals(r.SourceNavigationProperty, parts[1], StringComparison.OrdinalIgnoreCase));
+            string.Equals(r.SourceNavigationProperty, parts[^1], StringComparison.OrdinalIgnoreCase));
         if (relation is null)
         {
             failure = $"The join along the association path '{path}' names no association the mapping of '{owner.Entity.Name}' declares, so no relation was there to derive the join condition from; {consequence}";
@@ -846,7 +906,7 @@ public class NHibernateHqlQueryParser(
         }
 
         failure = null;
-        return new AssociationJoin(relation, target, pairs);
+        return new AssociationJoin(relation, target, pairs, pathAlias);
     }
 
     /// <summary>
@@ -904,6 +964,161 @@ public class NHibernateHqlQueryParser(
         }
 
         return conjuncts.Count == 1 ? conjuncts[0] : new LogicalCondition(LogicalOperator.And, conjuncts);
+    }
+
+    /* ---- a path through an association outside join (decision 144) ------------------ */
+
+    /// <summary>
+    /// A path of an alias, one or more associations and a property - <c>o.Customer.Id</c>,
+    /// <c>o.Customer.Region.Name</c> - wherever an operand stands (decision 144, paper rule
+    /// Q7). The association before the property, where it is an owning reference and the
+    /// property is the key it references, is the foreign key column the holder carries: the
+    /// reading NHibernate makes of the path and the inverse of what <see cref="ColumnMember.PathOf"/>
+    /// writes for that column, so that the language's own text reads back to the same
+    /// column. Every other association on the path is an implicit inner join derived from
+    /// the relation, one per association and body, with the property read from the alias of
+    /// the last one. What cannot be derived leaves the reason in <see cref="unread"/> and the
+    /// operand unread, for the clause to refuse or drop as it does any operand it cannot
+    /// read (decision 070). The same reading as the JPQL parser's.
+    /// </summary>
+    private QueryOperand? ReadPathOperand(List<string> parts)
+    {
+        var path = string.Join('.', parts);
+        if (!aliases.ContainsKey(parts[0]))
+        {
+            unread ??= ($"the path '{path}', whose first part '{parts[0]}' is no alias of the query", null);
+            return null;
+        }
+
+        var alias = parts[0];
+        for (var index = 1; index < parts.Count - 1; index++)
+        {
+            if (index == parts.Count - 2 && ForeignKeyOf(alias, parts[index], parts[^1]) is { } foreignKey)
+            {
+                return foreignKey;
+            }
+
+            var joined = ImplicitJoin(alias, parts[index], path);
+            if (joined is null)
+            {
+                return null;
+            }
+
+            alias = joined;
+        }
+
+        return QueryOperand.Column(alias, ColumnFor(alias, parts[^1]));
+    }
+
+    /// <summary>
+    /// The foreign key column under <paramref name="holder"/> that a path through an owning
+    /// single-valued association to the key it references stands for, or null where the
+    /// association is not that - not declared, a collection, an inverse side whose key the
+    /// other entity holds - or the property is not a referenced key column of its pairs.
+    /// </summary>
+    private QueryOperand? ForeignKeyOf(string holder, string navigation, string property)
+    {
+        if (aliases[holder] is not { } owner)
+        {
+            return null;
+        }
+
+        var relation = owner.Relations.FirstOrDefault(r =>
+            r is { Role: RelationRole.Owning, Cardinality: Cardinality.ManyToOne or Cardinality.OneToOne }
+            && string.Equals(r.SourceNavigationProperty, navigation, StringComparison.OrdinalIgnoreCase));
+        if (relation is null)
+        {
+            return null;
+        }
+
+        var pairs = MapFor(relation.TargetEntity) is { } target ? ColumnPairsOf(relation, owner, target) : relation.ColumnPairs;
+        var pair = pairs.FirstOrDefault(p => string.Equals(p.Target.Property.Name, property, StringComparison.OrdinalIgnoreCase));
+
+        return pair is null ? null : QueryOperand.Column(holder, pair.Source.ColumnName ?? pair.Source.Property.Name);
+    }
+
+    /// <summary>
+    /// The alias of the implicit join a path makes by crossing the single-valued association
+    /// <paramref name="navigation"/> of the entity under <paramref name="alias"/> (decision
+    /// 144): the one already made for that association in this body, or a new inner join of
+    /// the association's target under an alias of its own, with the condition derived from
+    /// the relation the way a join along the association path is (decision 101). Null, with
+    /// the reason in <see cref="unread"/>, where the maps of the conversion do not resolve
+    /// the association - nothing is guessed (decision 067) -, where the association is a
+    /// collection, which a path does not navigate, or inside the written condition of a join.
+    /// </summary>
+    private string? ImplicitJoin(string alias, string navigation, string path)
+    {
+        var key = $"{alias}.{navigation}";
+        if (implicitJoins.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        var owner = aliases[alias];
+        if (owner is null)
+        {
+            unread ??= ($"'{key}' in the path '{path}', which needs the mapping of the entity behind '{alias}', which is not part of the conversion, so no relation was there to derive the implicit join from", QueryFeature.Join);
+            return null;
+        }
+
+        var relation = owner.Relations.FirstOrDefault(r =>
+            string.Equals(r.SourceNavigationProperty, navigation, StringComparison.OrdinalIgnoreCase));
+        if (relation is null)
+        {
+            unread ??= ($"'{key}' in the path '{path}', which names no association the mapping of '{owner.Entity.Name}' declares, so no relation was there to derive the implicit join from", QueryFeature.Join);
+            return null;
+        }
+
+        if (relation.Cardinality is Cardinality.OneToMany or Cardinality.ManyToMany)
+        {
+            unread ??= ($"'{key}' in the path '{path}', which navigates the collection '{navigation}' of '{owner.Entity.Name}', and a path crosses single-valued associations only - a collection is joined by name", QueryFeature.Join);
+            return null;
+        }
+
+        if (readingJoinCondition)
+        {
+            unread ??= ($"'{key}' in the path '{path}', which would bring an implicit join of '{relation.TargetEntity}' inside the condition of a join, where the joined entity is not in scope yet", QueryFeature.Join);
+            return null;
+        }
+
+        var target = MapFor(relation.TargetEntity);
+        if (target is null)
+        {
+            unread ??= ($"'{key}' in the path '{path}', which leads to the entity '{relation.TargetEntity}', which is not part of the conversion", QueryFeature.Join);
+            return null;
+        }
+
+        var pairs = ColumnPairsOf(relation, owner, target);
+        if (pairs.Count == 0)
+        {
+            unread ??= ($"'{key}' in the path '{path}', whose relation to '{relation.TargetEntity}' states no foreign key columns and the database catalog supplied none, so the implicit join could not be derived", QueryFeature.Join);
+            return null;
+        }
+
+        var joinAlias = ImplicitAlias(alias, navigation);
+        aliases[joinAlias] = target;
+        implicitJoins[key] = joinAlias;
+        queryBuilder.Join(JoinKind.Inner, sourceAlias, TableFor(target, relation.TargetEntity), AssociationCondition(relation, pairs, alias, joinAlias, written: null), joinAlias);
+
+        return joinAlias;
+    }
+
+    /// <summary>
+    /// The alias of an implicit join: the alias of the path and the navigation, joined by an
+    /// underscore (<c>o_Customer</c>), which says where the row came from and is no word of
+    /// the grammar; numbered where the query already declares it.
+    /// </summary>
+    private string ImplicitAlias(string alias, string navigation)
+    {
+        var stem = $"{alias}_{navigation}";
+        var candidate = stem;
+        for (var number = 2; aliases.ContainsKey(candidate) || queryBuilder.Defines(candidate); number++)
+        {
+            candidate = stem + number;
+        }
+
+        return candidate;
     }
 
     private List<string> ParseDottedName(string expectation)
@@ -1667,20 +1882,23 @@ public class NHibernateHqlQueryParser(
             return ParseFunctionCall();
         }
 
-        var reference = ParsePath();
-        if (reference is null)
-        {
-            return null;
-        }
+        var parts = ParseDottedName("expected a property reference");
 
         // A bare declared alias is the whole entity - the projection reads it as rule Q3's
         // absence of a projection.
-        if (reference.Qualifier is null && aliases.ContainsKey(reference.Attribute))
+        if (parts.Count == 1)
         {
-            return QueryOperand.Column(reference.Attribute, "*");
+            return aliases.ContainsKey(parts[0])
+                ? QueryOperand.Column(parts[0], "*")
+                : QueryOperand.Column(null, ColumnFor(null, parts[0]));
         }
 
-        return QueryOperand.Column(reference.Qualifier, ColumnFor(reference.Qualifier, reference.Attribute));
+        if (parts.Count == 2)
+        {
+            return QueryOperand.Column(parts[0], ColumnFor(parts[0], parts[1]));
+        }
+
+        return ReadPathOperand(parts);
     }
 
     /* ---- expressions (decision 107) --------------------------------------------------- */
@@ -2021,25 +2239,6 @@ public class NHibernateHqlQueryParser(
         }
 
         return ParseOperand();
-    }
-
-    private sealed record PathReference(string? Qualifier, string Attribute);
-
-    /// <summary>
-    /// alias.Property or a bare property. Three or more segments navigate an association,
-    /// which the flat operand does not carry — the tokens are consumed and null is the
-    /// answer, so the enclosing clause refuses the artifact.
-    /// </summary>
-    private PathReference? ParsePath()
-    {
-        var parts = ParseDottedName("expected a property reference");
-
-        return parts.Count switch
-        {
-            1 => new PathReference(null, parts[0]),
-            2 => new PathReference(parts[0], parts[1]),
-            _ => null,
-        };
     }
 
     private static QueryConstant NumberConstant(string text)

@@ -29,7 +29,7 @@ Rejstřík, ne pořadí.
 | Položka | Oblast | Druh | Pož. |
 |---|---|---|---|
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | T2, T3, F13 |
-| [Cesta přes asociaci mimo `join`](#cesta-přes-asociaci-mimo-join-se-nečte-ačkoli-ji-pravidlo-q7-článku-pokrývá) | Dotazy | rozhodnutí | F7–F10 |
+| [Navigace přes referenci v operandu LINQ](#navigace-přes-referenci-v-operandu-linq-se-nečte-ačkoli-ji-jpql-a-hql-čtou) | Dotazy | rozhodnutí | F7–F10 |
 | [Co zavírá třetí cíl](#co-zavírá-třetí-cíl-schválený-záměr-advisor-nejmenuje) | Třetí cíl | rozhodnutí | F15, T1–T7 |
 | [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Třetí cíl | rozhodnutí | S5, T1–T3 |
 | [Referenční databáze experimentů a případová studie T1](#referenční-databáze-experimentů-a-případová-studie-t1) | Třetí cíl | rozhodnutí | T1, T2, T7, F4 |
@@ -76,10 +76,10 @@ Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.
 
 Pět dotazů na cesty je `AsSpecified` a soudce je posuzuje verdiktem, ne mírou; nad celou sadou SF 1 (6 818 čtení IC 13 i IC 14 v každém frameworku) zatím běžel jen nad texty s mezí (záznamy *Whole-set runs* z 2026-10-12 a 2026-10-14). Prefix 2 000 řádků SF 1 prošel 2026-10-15 v .NET sadě z hostitele: IC 13 95 z 95 čtení ve všech třech frameworcích, IC 14 95 z 95 v Dapperu a NHibernatu, v EF Core 94 z 95 — řádek 340 vypršel na výchozích 30 s příkazu, ač týž příkaz EF Core s týmiž parametry i s plánem prvního čtení běží ručně 2,2 s; nereprodukováno. Zbývá celá sada nad novými texty, .NET a javová sada po sobě, se záznamem do *Whole-set runs*; neshoda IC 13 nebo IC 14 by byla chybou textu nebo překladu, ne vlastností sady, a opakované vypršení čtení IC 14 v EF Core by bylo vlastností jeho SQL (vnořené poddotazy místo definic), kterou by řešilo nové rozhodnutí.
 
-#### Cesta přes asociaci mimo `join` se nečte, ačkoli ji pravidlo Q7 článku pokrývá
-*Ke kontrole: rozh. [101](./decisions/101-a-join-along-an-association-path-is-derived-from-the-relation.md) — podmínka podle Q7 jen pro `join alias.asociace`. Podklad: [`analysis/real-world-sources.md`](./analysis/real-world-sources.md) (Keycloak, Ambari). Požadavky F7–F10.*
+#### Navigace přes referenci v operandu LINQ se nečte, ačkoli ji JPQL a HQL čtou
+*Ke kontrole: rozh. [144](./decisions/144-a-path-through-an-association-outside-join-is-an-implicit-join-or-the-foreign-key-column.md) — cesta mimo `join` v JPQL a HQL; rozh. [026](./decisions/026-home-of-shared-query-reading.md) — sdílený parser LINQ s háčky jen pro kořen. Požadavky F7–F10.*
 
-`where consent.user.id = :userId` i `where alert.alertHistory.clusterId = :clusterId` jsou v JPQL a HQL implicitní join; čtení je dnes odmítne `Failure` s obecným důvodem ([`subset.md`](./subset.md) 2.6, *navigace v operandu*). Výňatky obou projektů je proto přepsaly do korelovaného `exists` či srovnání sloupce klíče — čtrnáct dotazů. Pravidlo Q7 článku odvozuje podmínku implicitního joinu z metadat vztahu a rozh. 101 ho uplatnilo jen na `join` po asociační cestě. Rozhodnout, zda cesta v podmínce a v projekci vytvoří vnitřní join s odvozenou podmínkou, jak ho specifikace JPA vykládá, a kdy stačí sloupec cizího klíče vlastnící strany (`c.user.id`) bez joinu.
+`Where(o => o.Customer.Name == "x")` a `Select(o => o.Customer.Name)` jsou v LINQ totéž, co cesta přes referenci v JPQL, a čtení je dnes odmítne (`ColumnUnlessNavigation`; [`subset.md`](./subset.md) 2.6, *navigace v operandu LINQ*). Mechanismus rozh. 144 — implicitní join odvozený ze vztahu, sloupec cizího klíče pro cestu ke klíči — by šel převzít, jenže druh joinu tu určuje provider, ne jazyk: EF Core píše pro volitelnou referenci (nullable cizí klíč) `LEFT JOIN` a pro povinnou `INNER JOIN`, provider NHibernatu vnitřní join vždy, takže táž věta nad týmž mapováním vrací v projekci a v testu na `null` jiné řádky podle toho, kdo ji čte. Rozhodnout, zda sdílený parser dostane druhý háček (druh joinu podle frameworku a nulovosti sloupce cizího klíče, kterou model nese v `PropertyMap`), nebo zda zůstane vyslovená mez.
 
 ## Třetí cíl: experimenty
 

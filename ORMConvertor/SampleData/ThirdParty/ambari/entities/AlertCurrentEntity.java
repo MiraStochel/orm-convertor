@@ -18,7 +18,7 @@
 
 /*
  * ORMConvertor: taken from apache/ambari at a01b674, ambari-server/src/main/java/org/apache/ambari/server/orm/entities/AlertCurrentEntity.java.
- * Changed: of its 13 named queries, 3 that write and 1 the tool reads in no form are left out and 8 are rewritten, each with a note and, where rewritten, the original text above it; the rest stand as the project wrote them. See README.md.
+ * Changed: of its 13 named queries, 3 that write and 1 the tool reads in no form are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 package org.apache.ambari.server.orm.entities;
 
@@ -58,31 +58,15 @@ import org.apache.commons.lang3.builder.EqualsBuilder;
 @TableGenerator(name = "alert_current_id_generator", table = "ambari_sequences", pkColumnName = "sequence_name", valueColumnName = "sequence_value", pkColumnValue = "alert_current_id_seq", initialValue = 0)
 @NamedQueries({
   @NamedQuery(name = "AlertCurrentEntity.findAll", query = "SELECT alert FROM AlertCurrentEntity alert"),
-  // ORMConvertor: rewritten - asks for the alert history through a correlated EXISTS over the key column historyId instead of a path through the association.
-  //   was: SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.clusterId = :clusterId
-  @NamedQuery(name = "AlertCurrentEntity.findByCluster", query = "SELECT alert FROM AlertCurrentEntity alert WHERE EXISTS ( SELECT history FROM AlertHistoryEntity history WHERE history.alertId = alert.historyId AND history.clusterId = :clusterId)"),
-  // ORMConvertor: rewritten - compares the key column definitionId, which holds the definition's key, instead of a path through the association.
-  //   was: SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertDefinition.definitionId = :definitionId
-  @NamedQuery(name = "AlertCurrentEntity.findByDefinitionId", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.definitionId = :definitionId"),
+  @NamedQuery(name = "AlertCurrentEntity.findByCluster", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.clusterId = :clusterId"),
+  @NamedQuery(name = "AlertCurrentEntity.findByDefinitionId", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertDefinition.definitionId = :definitionId"),
   // ORMConvertor: "AlertCurrentEntity.findByService" is left out: it compares a parameter with an attribute of an enum type the conversion does not hold, so the generated method could not type it.
-  // ORMConvertor: rewritten - asks for the alert history through a correlated EXISTS over the key column historyId instead of a path through the association, and for its definition the same way over alertDefinitionId.
-  //   was: SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.clusterId = :clusterId AND alert.alertHistory.alertDefinition.definitionName = :definitionName AND alert.alertHistory.hostName = :hostName
-  @NamedQuery(name = "AlertCurrentEntity.findByHostAndName", query = "SELECT alert FROM AlertCurrentEntity alert WHERE EXISTS ( SELECT history FROM AlertHistoryEntity history WHERE history.alertId = alert.historyId AND history.clusterId = :clusterId AND history.hostName = :hostName AND EXISTS ( SELECT definition FROM AlertDefinitionEntity definition WHERE definition.definitionId = history.alertDefinitionId AND definition.definitionName = :definitionName))"),
-  // ORMConvertor: rewritten - asks for the alert history through a correlated EXISTS over the key column historyId instead of a path through the association, and for its definition the same way over alertDefinitionId.
-  //   was: SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.clusterId = :clusterId AND alert.alertHistory.alertDefinition.definitionName = :definitionName AND alert.alertHistory.hostName IS NULL
-  @NamedQuery(name = "AlertCurrentEntity.findByNameAndNoHost", query = "SELECT alert FROM AlertCurrentEntity alert WHERE EXISTS ( SELECT history FROM AlertHistoryEntity history WHERE history.alertId = alert.historyId AND history.clusterId = :clusterId AND history.hostName IS NULL AND EXISTS ( SELECT definition FROM AlertDefinitionEntity definition WHERE definition.definitionId = history.alertDefinitionId AND definition.definitionName = :definitionName))"),
-  // ORMConvertor: rewritten - asks for the alert history through a correlated EXISTS over the key column historyId instead of a path through the association.
-  //   was: SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.serviceName = :serviceName AND alert.alertHistory.componentName = :componentName AND alert.alertHistory.hostName = :hostName
-  @NamedQuery(name = "AlertCurrentEntity.findByHostComponent", query = "SELECT alert FROM AlertCurrentEntity alert WHERE EXISTS ( SELECT history FROM AlertHistoryEntity history WHERE history.alertId = alert.historyId AND history.serviceName = :serviceName AND history.componentName = :componentName AND history.hostName = :hostName)"),
-  // ORMConvertor: rewritten - asks for the alert history through a correlated EXISTS over the key column historyId instead of a path through the association.
-  //   was: SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.hostName = :hostName
-  @NamedQuery(name = "AlertCurrentEntity.findByHost", query = "SELECT alert FROM AlertCurrentEntity alert WHERE EXISTS ( SELECT history FROM AlertHistoryEntity history WHERE history.alertId = alert.historyId AND history.hostName = :hostName)"),
-  // ORMConvertor: rewritten - asks for the alert history through a correlated EXISTS over the key column historyId instead of a path through the association.
-  //   was: SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.serviceName = :serviceName
-  @NamedQuery(name = "AlertCurrentEntity.findByServiceName", query = "SELECT alert FROM AlertCurrentEntity alert WHERE EXISTS ( SELECT history FROM AlertHistoryEntity history WHERE history.alertId = alert.historyId AND history.serviceName = :serviceName)"),
-  // ORMConvertor: rewritten - asks for the definition through a correlated EXISTS over the key column definitionId instead of a path through the association.
-  //   was: SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertDefinition.enabled = 0
-  @NamedQuery(name = "AlertCurrentEntity.findDisabled", query = "SELECT alert FROM AlertCurrentEntity alert WHERE EXISTS ( SELECT definition FROM AlertDefinitionEntity definition WHERE definition.definitionId = alert.definitionId AND definition.enabled = 0)")
+  @NamedQuery(name = "AlertCurrentEntity.findByHostAndName", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.clusterId = :clusterId AND alert.alertHistory.alertDefinition.definitionName = :definitionName AND alert.alertHistory.hostName = :hostName"),
+  @NamedQuery(name = "AlertCurrentEntity.findByNameAndNoHost", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.clusterId = :clusterId AND alert.alertHistory.alertDefinition.definitionName = :definitionName AND alert.alertHistory.hostName IS NULL"),
+  @NamedQuery(name = "AlertCurrentEntity.findByHostComponent", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.serviceName = :serviceName AND alert.alertHistory.componentName = :componentName AND alert.alertHistory.hostName = :hostName"),
+  @NamedQuery(name = "AlertCurrentEntity.findByHost", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.hostName = :hostName"),
+  @NamedQuery(name = "AlertCurrentEntity.findByServiceName", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.serviceName = :serviceName"),
+  @NamedQuery(name = "AlertCurrentEntity.findDisabled", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertDefinition.enabled = 0")
   // ORMConvertor: "AlertCurrentEntity.removeByHistoryId" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
   // The remove queries can be handled by a simpler JPQL query,
   // however, MySQL gtid enforce policy gets violated due to creation and

@@ -1,0 +1,70 @@
+# 144 — Cesta přes asociaci mimo `join` je implicitní join odvozený ze vztahu; cesta ke klíči vlastnící reference je sloupec cizího klíče
+
+Datum: 2026-10-16
+Stav: platí
+Požadavky: F7, F9, F11, T1, T2
+Podklad: rozhodnutí [001](001-entity-reference-by-name.md), [005](005-many-to-many-as-explicit-junction-entity.md), [012](012-foreign-key-rendering.md), [015](015-mapping-fact-completion-from-the-catalog.md), [065](065-row-set-as-the-boundary-of-rule-053.md), [067](067-a-derived-convention-is-a-statement-a-default-is-not.md), [070](070-a-parser-refuses-what-would-change-the-row-set.md), [096](096-a-rule-of-the-paper-is-cited-where-it-argues.md), [101](101-a-join-along-an-association-path-is-derived-from-the-relation.md), [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) a [138](138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md); otevřená položka „Cesta přes asociaci mimo `join` se nečte, ačkoli ji pravidlo Q7 článku pokrývá"; [reálné zdroje](../analysis/real-world-sources.md) (Keycloak, Ambari); specifikace Jakarta Persistence 3.2, §4.4.4 *Path Expressions*
+
+## Kontext
+
+Pravidlo **Q7** článku odvozuje podmínku implicitního joinu z metadat vztahu. Rozhodnutí 101 ho uplatnilo na jediný tvar: `join alias.asociace`, tedy na cestu, která stojí ve `from` a dostává od zdroje alias. Cesta na každém jiném místě dotazu — `where consent.user.id = :userId`, `where alert.alertHistory.clusterId = :clusterId`, `select o.customer.name`, `order by o.customer.name` — končila od rozhodnutí 070 záznamem `Failure` s obecnou větou, že podmínkový strom konstrukci nenese, v projekci záznamem `Loss` ([`subset.md`](../subset.md), 2.6, *navigace v operandu*). Přitom právě tenhle tvar je v JPQL a HQL tím, jak se po asociaci **píše**: specifikace Jakarta Persistence (§4.4.4) říká, že cesta přes jednohodnotovou asociaci se vyhodnocuje se sémantikou vnitřního joinu — je-li asociace na cestě `null`, cesta nemá hodnotu a řádek se výsledku neúčastní — a že dál navigovat lze jen jednohodnotovou asociaci, kolekce se jmenuje jen v `join`. Hibernate 7.4, EclipseLink 5.0 i NHibernate 5.7 ji takhle čtou.
+
+Jak je to časté, ukázaly výňatky rozhodnutí 138: ze čtyřiceti osmi čtecích dotazů Keycloaku a jedenačtyřiceti Ambari jich čtrnáct neslo cestu mimo `join`, a každý se musel ručně přepsat na korelované `exists` nebo na srovnání sloupce klíče (úprava CP v analýze reálných zdrojů), jen aby ho nástroj vůbec přečetl. Rozhodnutí 101 napsalo, že případová studie T1 nad kódem Hibernate by bez cesty v `join` narazila na odmítnutí u většiny joinů; cesta v podmínce je ještě častější než cesta v `join`, protože nahrazuje join všude, kde zdroj potřebuje jediný atribut druhé strany.
+
+Dvě věci bylo třeba rozhodnout nad rámec 101. **Co s cestou ke klíči:** `c.user.id` je nejčastější cesta vůbec (dotaz „podle cizího klíče") a obě implementace, se kterými nástroj pracuje, ji čtou různě. Hibernate (a NHibernate) ji čte jako sloupec cizího klíče, který `c` nese, bez joinu — tzv. optimalizaci cizího klíče —, EclipseLink ji vykládá doslova podle specifikace, vnitřním joinem odkazované tabulky (profil `KeyThroughReferenceJoins`, změřeno v rozhodnutí 113). Nástroj má k tomu už postoj na straně **zápisu**: sloupec cizího klíče, který nemapuje žádná skalární vlastnost — obvyklý tvar v JPA, kde sloupec patří referenci —, píší buildery JPQL a HQL jako cestu `c.user.id` (`ColumnMember.PathOf`), a u cíle EclipseLink k tomu přidávají `Fallback`, protože ten řádky s `NULL` klíčem ztratí. **A kde se vezme alias:** cesta mimo `join` žádný nemá, takže join, který z ní vznikne, ho musí dostat od nástroje — totéž, co rozhodnutí 101 u cesty o víc částech odmítlo s tím, že „mezičlánek by potřeboval alias, který zdroj nenapsal".
+
+K tomu, co parser v ruce má: totéž co v rozhodnutí 101 — mapy převodu po rozresolvování (001) a po doplnění z katalogu (015), tedy `Relation` s `SourceNavigationProperty`, `Role` a `ColumnPairs` (i z vlastnící protistrany, 012) — a kód, který z nich join odvozuje (`ResolveAssociation`, `ColumnPairsOf`, `AssociationCondition`), v obou parserech, JPQL v `JakartaPersistence` i HQL NHibernatu.
+
+## Zvažované varianty
+
+### 1 — Nechat odmítnutí
+
+Dnešní stav. Zamítáme z týchž důvodů jako variantu 1 rozhodnutí 101 — model cestu nese celou, jen ji nikdo nečte — a navíc s důkazem z reálného kódu: čtrnáct dotazů ve dvou výňatcích, které nástroj bez ručního přepisu nepřečte, je zúžení, které by případová studie T1 musela vysvětlovat u každého druhého dotazu.
+
+### 2 — Každou cestu číst jako vnitřní join, i cestu ke klíči
+
+Doslovné čtení specifikace: `c.user.id` by bylo `join User c_user on c.user_id = c_user.id where c_user.id = :id`. Zamítáme ze tří důvodů. Za prvé by nejčastější cesta vůbec potřebovala cílovou entitu v převodu, ač k ní nepotřebuje nic než páry sloupců vztahu — převod jediné třídy s jejími dotazy by cestu ke klíči odmítl s větou o entitě, která v převodu není. Za druhé by čtení nebylo inverzí zápisu: builder téhož nástroje píše sloupec `USER_ID` mezireprezentace jako `c.user.id`, takže textový round trip JPQL → JPQL by z `c.user.id` udělal join a z joinu zase cestu — a identita textu, kterou §9 nárokuje, by u nejběžnějšího tvaru padla. Za třetí by všech šest cílů dostalo join, který zafixovaný Hibernate ani NHibernate pro tutéž cestu nikdy nevyrobí; SQL cílů by bylo jiné než SQL zdroje, bez důvodu v řádcích.
+
+### 3 — Nést cestu v modelu a nechat odvození builderům
+
+Zamítáme jako variantu 3 rozhodnutí 101: mezireprezentace dotazu je relační (Q6) a Q7 říká, že se cesta *rozresolvuje* metadaty, ne že se nese dál; operand přes referenci by musel odvodit každý ze šesti builderů znovu.
+
+### 4 — Číst jen cestu ke klíči, jiné cesty dál odmítat
+
+Pokryje Keycloak (všechny jeho cesty končí klíčem) a nepokryje Ambari (`alert.alertHistory.clusterId` ke klíči nevede), a Q7 by zůstalo splněné napůl: podmínku implicitního joinu by nástroj odvozoval jen tam, kde ji nakonec nepotřebuje.
+
+### 5 — Cesta ke klíči jako sloupec cizího klíče, každá jiná asociace na cestě jako implicitní vnitřní join odvozený ze vztahu
+
+## Rozhodnutí
+
+**Volíme variantu 5. Parser JPQL i HQL čte cestu `alias.asociace….atribut` v každém operandu — v projekci, podmínce, seskupení, `having`, řazení, argumentu funkce i v poddotazu — jedním mechanismem: končí-li cesta klíčem, který vlastnící jednohodnotová asociace odkazuje, je to sloupec cizího klíče nositele a žádný join nevzniká; každá jiná jednohodnotová asociace na cestě je vnitřní join cílové entity s podmínkou odvozenou ze vztahu přesně podle rozhodnutí 101, pod aliasem, který nástroj tvoří pravidlem, jeden na asociaci a tělo dotazu. Co odvodit nejde, nechá operand nepřečtený s důvodem, který cestu jmenuje — nikdy se nehádá.** Mění se jen čtení; model, `AbstractWrappers`, orchestrace ani žádný builder se nemění (S1).
+
+Konkrétně:
+
+**Cesta se prochází zleva doprava, od aliasu.** První část je alias deklarovaný ve `from`, v joinu nebo implicitním joinem výše; co není alias, se odmítne (plně kvalifikované jméno výčtu, jak je JPQL připouští, by jinak vypadalo jako cesta). Každá další část kromě poslední je jméno asociace, párované s `Relation.SourceNavigationProperty` entity za aktuálním aliasem bez ohledu na velikost písmen; poslední část je atribut.
+
+**Cesta ke klíči je sloupec cizího klíče, bez joinu.** Je-li asociace před atributem vlastnící (`Role = Owning`) a jednohodnotová (N:1, 1:1) a atribut jmenuje vlastnost, na kterou ukazuje některý z jejích párů (`ColumnPair.Target.Property.Name`), je operandem sloupcový operand s aliasem nositele a sloupcem `ColumnPair.Source` toho páru — `c.user.id` je `c.USER_ID`. Páry se berou jako v rozhodnutí 101, tedy i z vlastnící protistrany (012); cílová entita v převodu být nemusí. U složeného klíče dává každý jmenovaný atribut svůj sloupec. Je to inverze `ColumnMember.PathOf`: sloupec, který buildery JPQL a HQL píšou jako cestu, se jako táž cesta čte zpět, a textový round trip nad ní je identita (test `APathToTheReferencedKeyWithoutAScalarPropertyIsAFixedPoint`). Hibernate i NHibernate ji čtou stejně; cesta ke klíči inverzní strany (1:1 s `mappedBy`) žádný sloupec na nositeli nemá a jde přes join jako každá jiná.
+
+**Každá jiná jednohodnotová asociace na cestě je vnitřní join.** Cílová entita je `Relation.TargetEntity` z map převodu, podmínka `FK(levá) = PK(pravá)` přes `ColumnPairs`, stranu dá `Role`, víc párů `And` — týž `AssociationCondition` jako v rozhodnutí 101, takže builder nepozná, zda join přišel z `join` nebo z cesty. Alias je `<alias>_<navigace>` (`o_customer`, `alert_alertHistory_alertDefinition`): říká, odkud řádek přišel, není slovem žádné z gramatik a při kolizi s aliasem deklarovaným nebo definovaným dotazem dostane číslo. Join vzniká při prvním průchodu asociací a každá další cesta přes touž dvojici alias–navigace v témž těle dotazu ho sdílí (registr `implicitJoins`, jeden na tělo, poddotaz má svůj); alias se zapíše mezi aliasy s mapou cílové entity, takže zbytek cesty, srovnání entity s řádkem (`o.customer.address = a`) i test asociace na `NULL` nad ním čtou jako nad aliasem ze `from`. Join je vždy vnitřní, jak ho specifikace vykládá.
+
+**Řetěz je opakování téhož kroku.** `alert.alertHistory.alertDefinition.definitionName` je join `alertHistory`, join `alertDefinition` od jeho aliasu a sloupec; `join o.customer.region r` kříží `o.customer` implicitním joinem a `region` joinuje explicitně pod aliasem `r`. Odstavec rozhodnutí 101 *Cesta o víc než dvou částech se odmítá* tím přestává platit — jeho důvod byl alias, který zdroj nenapsal, a ten teď dává pravidlo; zbytek rozhodnutí 101 platí beze změny.
+
+**Co se odmítá, se odmítá jmenovitě**, a to tak, že operand zůstane nepřečtený s důvodem a klauzule rozhodne jako u každého operandu, který nepřečte (070): filtr, seskupení a řazení `Failure`, projekce `Loss`. Důvody: první část není alias; mapování entity za aliasem není v převodu; entita asociaci toho jména nedeklaruje (i komponenta, kterou model nenese — vyňatá oblast 2); asociace na cestě je kolekce (1:N, N:M) — kolekci oba jazyky navigují jen v `join`, a cesta přes N:M by stejně chtěla dva joiny přes junction entitu (005); cílová entita vztahu není v převodu; vztah nemá páry ani z protistrany; a cesta, která by přinesla join uvnitř podmínky `on`/`with` joinu — ten by musel stát před joinem, jehož podmínka ho jmenuje, a zároveň za ním (sloupec cizího klíče se tam čte, protože join nepotřebuje). Dosadit jméno sloupce by bylo hádání, které rozhodnutí 067 váže na vyslovené tvrzení zdroje.
+
+**Vyslovená mez: řádek s `NULL` cizím klíčem.** Čtení cesty ke klíči jako sloupce ho ponechá tam, kde by ho vnitřní join specifikace vypustil — v projekci (`select c.user.id` dá `NULL`) a v testu na `NULL` (`c.user.id is null` je pravda). U každého porovnání s hodnotou, parametrem, seznamem i vzorem rozdíl není: `NULL` porovnání nesplní. Je to čtení, které Hibernate i NHibernate dělají samy, a na straně zápisu už ho nástroj má: tam, kde cíl EclipseLink nebo NHibernate cestu k části klíče vykládá joinem, hlásí `Fallback` (113). U zdroje EclipseLink tedy cesta ke klíči znamená o řádek s `NULL` klíčem víc, než implementace vrátí; mez je zapsaná v [`subset.md`](../subset.md).
+
+**LINQ zůstává mimo.** `o.Customer.Name` v LINQ je týž tvar, ale druh joinu určuje provider, ne jazyk: EF Core píše pro volitelnou referenci `LEFT JOIN` a pro povinnou `INNER JOIN`, provider NHibernatu vnitřní join vždy. Sdílený parser LINQ (026) by potřeboval háček, který rozhodnutí 026 nezná, a fakt o nulovosti sloupce cizího klíče; je to vlastní otázka, kterou [`open-items.md`](../open-items.md) zapisuje. Dnešní odmítnutí v LINQ (`ColumnUnlessNavigation`) trvá.
+
+## Důsledky
+
+**Q7 je splněné všude, kde ho článek míní.** Implicitní join z metadat vztahu se odvozuje v `join` (101) i mimo něj; věta rozhodnutí 096 o mezeře u Q7 platí jako historie.
+
+**Výňatky Keycloaku a Ambari nesou cesty tak, jak je projekty napsaly.** Všech čtrnáct dotazů přepsaných úpravou CP se vrátilo k textu projektu (osm v `AlertCurrentEntity`, pět v `UserConsentEntity` a `RoleEntity`, podmínka `userCountInGroups`); úprava CP v analýze reálných zdrojů končí, třináct přepisů Keycloaku z jiných důvodů (srovnání s celou entitou, projekce reference, agregát nad asociací) zůstává. `Combined/AssociationPathOutsideJoinTest` oba výňatky převádí: `consent.user.id = :userId` se vrací jako táž cesta bez joinu, `findByHostAndName` Ambari jako dva vnitřní joiny pod odvozenými aliasy; `Combined/ExampleCatalogTest` převádí oba příklady celé.
+
+**Textový round trip nad cestou k jinému než klíčovému atributu vrací jiný text:** `select o from Order o where o.customer.name = 'A'` se vrací jako `join Customer o_customer on … where o_customer.name = 'A'`. Je to změna zápisu, ne množiny řádků (065), stejně jako u joinu po cestě v rozhodnutí 101; cesta ke klíči se vrací beze změny.
+
+**Dotaz bez mapování entity cestu nepřeloží — a je to vyslovené.** Jediná dotazová jednotka s cestou končí záznamem, který říká, co dodat; cesta ke klíči potřebuje jen vztah s páry na entitě za aliasem, join navíc cílovou entitu.
+
+**Podle rozhodnutí [041](041-versioning-and-release.md) je to MINOR:** přibývá schopnost čtení, žádný dosavadní výstup se nemění — co bylo odmítnuté, se buď přeloží, nebo odmítne s přesnější větou; jediná dosavadní věta, která se mění, je odmítnutí cesty o víc částech v `join`, které teď jmenuje, co na cestě chybí.
+
+**Testy.** U obou parserů: cesta ke klíči dává sloupec cizího klíče bez joinu, i nad složeným klíčem (HQL); cesta bez skalární vlastnosti je textový pevný bod (JPQL); cesta k jinému atributu dává jeden vnitřní join sdílený projekcí, filtrem a řazením; řetěz dva joiny za sebou a `join o.customer.region r` implicitní join plus explicitní (JPQL); odvozený join projde do SQL cíle jako `INNER JOIN … ON …`; cesta ke klíči v podmínce joinu se čte, cesta, která by tam přinesla join, se odmítá; cesta přes kolekci, bez map, přes neznámou asociaci, bez párů a od ne-aliasu se odmítá jmenovitě. Nad výňatky `Combined/AssociationPathOutsideJoinTest`.
