@@ -130,6 +130,15 @@ public class JpaAnnotationReader
                 facts.IsMappedSuperclass = true;
                 break;
 
+            case "NamedQuery":
+            case "NamedQueries":
+            case "NamedNativeQuery":
+            case "NamedNativeQueries":
+                // A query, not a mapping fact: the query pass reads the same unit and takes
+                // the definition out of it (decision 143), so nothing is lost here and
+                // nothing is said - one fact, one record.
+                break;
+
             case "IdClass":
                 facts.IdClass = annotation["value"] is { Kind: JavaAnnotationValueKind.ClassLiteral } literal
                     ? literal.SimpleName

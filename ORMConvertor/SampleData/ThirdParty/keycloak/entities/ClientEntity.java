@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/ClientEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 5 named queries, 1 the tool reads in no form is left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -61,8 +61,8 @@ import org.hibernate.annotations.Nationalized;
         @NamedQuery(name="getClientById", query="select client from ClientEntity client where client.id = :id and client.realmId = :realm"),
         @NamedQuery(name="getAlwaysDisplayInConsoleClients", query="select client.id from ClientEntity client where client.alwaysDisplayInConsole = true and client.realmId = :realm order by client.clientId"),
         @NamedQuery(name="findClientIdByClientId", query="select client.id from ClientEntity client where client.clientId = :clientId and client.realmId = :realm"),
-        @NamedQuery(name="findClientByClientId", query="select client from ClientEntity client where client.clientId = :clientId and client.realmId = :realm"),
-        @NamedQuery(name="getAllRedirectUrisOfEnabledClients", query="select new map(client as client, r as redirectUri) from ClientEntity client join client.redirectUris r where client.realmId = :realm and client.enabled = true"),
+        @NamedQuery(name="findClientByClientId", query="select client from ClientEntity client where client.clientId = :clientId and client.realmId = :realm")
+        // ORMConvertor: "getAllRedirectUrisOfEnabledClients" is left out: it joins the element collection client.redirectUris and builds a map, neither of which the tool reads.
 })
 public class ClientEntity {
 

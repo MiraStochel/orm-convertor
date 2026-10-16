@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/RoleEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 14 named queries, 2 are rewritten, each with a note and, where rewritten, the original text above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -65,8 +65,12 @@ import org.hibernate.annotations.Nationalized;
         @NamedQuery(name="searchForRealmRoles", query="select role from RoleEntity role where role.clientRole = false and role.realmId = :realm and ( lower(role.name) like :search or lower(role.description) like :search ) order by role.name"),
         @NamedQuery(name="getRoleIdsFromIdList", query="select role.id from RoleEntity role where role.realmId = :realm and role.id in :ids order by role.name ASC"),
         @NamedQuery(name="getRoleIdsByNameContainingFromIdList", query="select role.id from RoleEntity role where role.realmId = :realm and lower(role.name) like lower(concat('%',:search,'%')) and role.id in :ids order by role.name ASC"),
-        @NamedQuery(name="getChildRoles", query="select r from RoleEntity r join CompositeRoleEntity c on r.id = c.childRole.id where c.parentRole.id = :parentRoleId"),
-        @NamedQuery(name="getChildRolesFromParentIds", query="select distinct r from RoleEntity r join CompositeRoleEntity c on r.id = c.childRole.id where c.parentRole.id in :parentRoleIds"),
+        // ORMConvertor: rewritten - asks for the child role through a correlated exists over the key columns of the composite role, instead of a join whose condition reaches the key through the association (c.childRole.id).
+        //   was: select r from RoleEntity r join CompositeRoleEntity c on r.id = c.childRole.id where c.parentRole.id = :parentRoleId
+        @NamedQuery(name = "getChildRoles", query = "select r from RoleEntity r where exists ( select c from CompositeRoleEntity c where c.CHILD_ROLE = r.id and c.COMPOSITE = :parentRoleId)"),
+        // ORMConvertor: rewritten - asks for the child role through a correlated exists over the key columns of the composite role, instead of a join whose condition reaches the key through the association (c.childRole.id); exists yields each role once, as distinct did.
+        //   was: select distinct r from RoleEntity r join CompositeRoleEntity c on r.id = c.childRole.id where c.parentRole.id in :parentRoleIds
+        @NamedQuery(name = "getChildRolesFromParentIds", query = "select r from RoleEntity r where exists ( select c from CompositeRoleEntity c where c.CHILD_ROLE = r.id and c.COMPOSITE in :parentRoleIds)")
 })
 
 public class RoleEntity {

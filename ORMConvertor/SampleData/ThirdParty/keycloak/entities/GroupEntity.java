@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/GroupEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 3 named queries, 1 that write is left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -48,8 +48,8 @@ import org.hibernate.annotations.Nationalized;
  */
 @NamedQueries({
         @NamedQuery(name="getGroupIdsByParent", query="select u.id from GroupEntity u where u.realm = :realm and u.type = 0 and u.parentId = :parent order by u.name ASC"),
-        @NamedQuery(name="getChildGroupIdsByParentIds", query="select g.id from GroupEntity g where g.realm = :realm and g.type = 0 and g.parentId in :parentIds"),
-        @NamedQuery(name="deleteGroupsByRealm", query="delete from GroupEntity g where g.realm = :realm")
+        @NamedQuery(name="getChildGroupIdsByParentIds", query="select g.id from GroupEntity g where g.realm = :realm and g.type = 0 and g.parentId in :parentIds")
+        // ORMConvertor: "deleteGroupsByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 })
 @Entity
 @Table(name="KEYCLOAK_GROUP",

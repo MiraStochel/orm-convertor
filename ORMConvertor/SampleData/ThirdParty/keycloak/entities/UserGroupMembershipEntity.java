@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/UserGroupMembershipEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 7 named queries, 4 that write are left out and 3 are rewritten, each with a note and, where rewritten, the original text above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -42,13 +42,19 @@ import org.keycloak.representations.idm.MembershipType;
  * @version $Revision: 1 $
  */
 @NamedQueries({
-        @NamedQuery(name="userMemberOf", query="select m from UserGroupMembershipEntity m where m.user = :user and m.groupId = :groupId"),
-        @NamedQuery(name="userGroupMembership", query="select m from UserGroupMembershipEntity m where m.user = :user"),
-        @NamedQuery(name="deleteUserGroupMembershipByRealm", query="delete from  UserGroupMembershipEntity mapping where mapping.user IN (select u from UserEntity u where u.realmId=:realmId)"),
-        @NamedQuery(name="deleteUserGroupMembershipsByRealmAndLink", query="delete from  UserGroupMembershipEntity mapping where mapping.user IN (select u from UserEntity u where u.realmId=:realmId and u.federationLink=:link)"),
-        @NamedQuery(name="deleteUserGroupMembershipsByGroup", query="delete from UserGroupMembershipEntity m where m.groupId = :groupId"),
-        @NamedQuery(name="deleteUserGroupMembershipsByUser", query="delete from UserGroupMembershipEntity m where m.user = :user"),
-        @NamedQuery(name="userCountInGroups", query="select count(m.user) from UserGroupMembershipEntity m where m.user.realmId = :realmId and m.groupId in :groupIds")
+        // ORMConvertor: rewritten - compares the key column, and takes the key as the parameter, instead of the whole entity.
+        //   was: select m from UserGroupMembershipEntity m where m.user = :user and m.groupId = :groupId
+        @NamedQuery(name = "userMemberOf", query = "select m from UserGroupMembershipEntity m where m.USER_ID = :userId and m.groupId = :groupId"),
+        // ORMConvertor: rewritten - compares the key column, and takes the key as the parameter, instead of the whole entity.
+        //   was: select m from UserGroupMembershipEntity m where m.user = :user
+        @NamedQuery(name = "userGroupMembership", query = "select m from UserGroupMembershipEntity m where m.USER_ID = :userId"),
+        // ORMConvertor: "deleteUserGroupMembershipByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteUserGroupMembershipsByRealmAndLink" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteUserGroupMembershipsByGroup" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteUserGroupMembershipsByUser" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: rewritten - asks for the realm of the user through a correlated exists over the key column USER_ID instead of a path through the association; counts the key column.
+        //   was: select count(m.user) from UserGroupMembershipEntity m where m.user.realmId = :realmId and m.groupId in :groupIds
+        @NamedQuery(name = "userCountInGroups", query = "select count(m.USER_ID) from UserGroupMembershipEntity m where exists ( select u from UserEntity u where u.id = m.USER_ID and u.realmId = :realmId) and m.groupId in :groupIds")
 })
 @Table(name="USER_GROUP_MEMBERSHIP")
 @Entity

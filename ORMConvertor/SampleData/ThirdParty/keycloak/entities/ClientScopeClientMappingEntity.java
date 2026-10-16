@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/ClientScopeClientMappingEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 5 named queries, 4 that write are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -38,11 +38,11 @@ import jakarta.persistence.Table;
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
 @NamedQueries({
-        @NamedQuery(name="clientScopeClientMappingIdsByClient", query="select m.clientScopeId from ClientScopeClientMappingEntity m where m.clientId = :clientId and m.defaultScope = :defaultScope"),
-        @NamedQuery(name="deleteClientScopeClientMapping", query="delete from ClientScopeClientMappingEntity where clientId = :clientId and clientScopeId = :clientScopeId"),
-        @NamedQuery(name="deleteClientScopeClientMappingByClient", query="delete from ClientScopeClientMappingEntity where clientId = :clientId"),
-        @NamedQuery(name="deleteClientScopeClientMappingByClientScope", query="delete from ClientScopeClientMappingEntity where clientScopeId = :clientScopeId"),
-        @NamedQuery(name="addClientScopeToAllClients", query="insert into ClientScopeClientMappingEntity (clientScopeId, defaultScope, clientId) select :clientScopeId, :defaultScope, client.id from ClientEntity client where client.realmId = :realmId and client.bearerOnly <> true and client.protocol = :clientProtocol")
+        @NamedQuery(name="clientScopeClientMappingIdsByClient", query="select m.clientScopeId from ClientScopeClientMappingEntity m where m.clientId = :clientId and m.defaultScope = :defaultScope")
+        // ORMConvertor: "deleteClientScopeClientMapping" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteClientScopeClientMappingByClient" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteClientScopeClientMappingByClientScope" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "addClientScopeToAllClients" is left out: it is a bulk insert statement, which changes the rows other queries read; the tool translates read-only queries.
 })
 @Entity
 @Table(name="CLIENT_SCOPE_CLIENT")

@@ -452,17 +452,20 @@ public class HibernateJpqlQueryParserTest
     }
 
     /// <summary>
-    /// Bare JPQL, and Java - a whole file or a fragment of one, whatever it holds besides
-    /// (decision 111). The value of the query artifact is the builder's, not a language a
-    /// unit declares.
+    /// Bare JPQL, Java - a whole file or a fragment of one, whatever it holds besides
+    /// (decision 111) - and XML, for the named queries of an orm.xml (decision 143). The
+    /// value of the query artifact is the builder's, not a language a unit declares.
     /// </summary>
     [Fact]
-    public void TheParserClaimsJpqlAndJava()
+    public void TheParserClaimsJpqlJavaAndXml()
     {
         var parser = new HibernateJpqlQueryParser(() => new HibernateJpqlQueryBuilder());
 
         Assert.True(parser.CanParse(ConversionContentType.JpqlQuery));
         Assert.True(parser.CanParse(ConversionContentType.Java));
+
+        // The orm.xml carries named queries, so the document is read by both passes (decisions 081 and 143).
+        Assert.True(parser.CanParse(ConversionContentType.XML));
         Assert.False(parser.CanParse(ConversionContentType.JavaQuery));
         Assert.False(parser.CanParse(ConversionContentType.HqlQuery));
         Assert.False(parser.CanParse(ConversionContentType.CSharp));

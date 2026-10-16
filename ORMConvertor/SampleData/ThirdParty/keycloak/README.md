@@ -11,15 +11,17 @@
 
 ## What was changed
 
-1. **`KeycloakNamedQueries.java` is new.** Keycloak keeps its queries in `@NamedQuery`
-   annotations on the entities and runs them with `em.createNamedQuery`; the tool reads a query
-   where code hands it to the framework, not from the annotation. The class holds the 47 read-only
-   named queries of these entities, each as a method that hands its text to `em.createQuery`.
-   The annotations stay on the entities as they were; the 51 queries among them that delete,
-   update or insert are not carried over.
-2. **Eighteen of the 47 are rewritten**, each with a note and its original text above it:
+Keycloak keeps its queries in `@NamedQuery` annotations on the entities and runs them with
+`em.createNamedQuery`; the tool reads a named query where it is defined, so the queries stay in
+the annotations. Every change is marked in the file where it stands, with a note above the
+query, and the opening note of each file counts the changes it carries.
+
+1. **The 51 named queries that delete, update or insert are left out**, each with a note in
+   place of its annotation: the tool translates read-only queries.
+2. **Eighteen of the 48 read-only queries are rewritten**, each with a note and its original
+   text above it:
    - a comparison with a whole entity (`m.user = :user`) compares the key column with the key
-     (`m.userId = :userId`) - the tool does not read an entity as a parameter;
+     (`m.USER_ID = :userId`) - the tool does not read an entity as a parameter;
    - a path through an association in a condition (`consent.user.id = :userId`, the
      `c.childRole.id` of `select r from RoleEntity r join CompositeRoleEntity c on ...`) becomes
      a correlated `exists` - the tool does not read a path outside `join`;
@@ -32,7 +34,7 @@
 3. **One query is left out:** `getAllRedirectUrisOfEnabledClients` joins the element collection
    `client.redirectUris` and builds a `map`, neither of which the tool reads.
 
-The entities are the project's text. Where Keycloak puts `@Id` on a `@ManyToOne` (JPA derived
+Apart from these notes the entities are the project's text. Where Keycloak puts `@Id` on a `@ManyToOne` (JPA derived
 identity, for example `@Id @ManyToOne @JoinColumn(name = "USER_ID") UserEntity user` in
 `UserRoleMappingEntity`), the tool reads the join column as a key part named after the column, so
 a rewritten query that compares the key names that column (`m.USER_ID = :userId`).

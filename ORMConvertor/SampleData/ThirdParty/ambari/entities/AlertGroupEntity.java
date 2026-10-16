@@ -18,7 +18,7 @@
 
 /*
  * ORMConvertor: taken from apache/ambari at a01b674, ambari-server/src/main/java/org/apache/ambari/server/orm/entities/AlertGroupEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 6 named queries, 1 the tool reads in no form is left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 package org.apache.ambari.server.orm.entities;
 
@@ -69,15 +69,14 @@ import jakarta.persistence.UniqueConstraint;
     @NamedQuery(
         name = "AlertGroupEntity.findByNameInCluster",
         query = "SELECT alertGroup FROM AlertGroupEntity alertGroup WHERE alertGroup.groupName = :groupName AND alertGroup.clusterId = :clusterId"),
-    @NamedQuery(
-        name = "AlertGroupEntity.findByAssociatedDefinition",
-        query = "SELECT alertGroup FROM AlertGroupEntity alertGroup WHERE :alertDefinition MEMBER OF alertGroup.alertDefinitions"),
+    // ORMConvertor: "AlertGroupEntity.findByAssociatedDefinition" is left out: it asks MEMBER OF a many-to-many with the whole entity as the parameter, which the tool reads in no form.
     @NamedQuery(
         name = "AlertGroupEntity.findServiceDefaultGroup",
         query = "SELECT alertGroup FROM AlertGroupEntity alertGroup WHERE alertGroup.clusterId = :clusterId AND alertGroup.serviceName = :serviceName AND alertGroup.isDefault = 1"),
     @NamedQuery(
         name = "AlertGroupEntity.findByIds",
-        query = "SELECT alertGroup FROM AlertGroupEntity alertGroup WHERE alertGroup.groupId IN :groupIds") })
+        query = "SELECT alertGroup FROM AlertGroupEntity alertGroup WHERE alertGroup.groupId IN :groupIds")
+})
 public class AlertGroupEntity {
 
   @Id

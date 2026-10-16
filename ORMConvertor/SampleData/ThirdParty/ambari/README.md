@@ -12,17 +12,22 @@
 
 ## What was changed
 
-1. **The entity files are unchanged** apart from the provenance note.
-2. **`AlertNamedQueries.java` is new.** Ambari keeps its queries in `@NamedQuery` annotations
-   and runs them with `createNamedQuery`; the tool reads a query where code hands it to the
-   framework. The class holds 35 of the 41 read-only named queries of the six entities, each as a
-   method that hands its text to `em.createQuery`; the six that delete are not carried over.
-3. **Eight of the 35 are rewritten**, each with a note and its original text above it: a path
-   through an association in a condition (`alert.alertHistory.clusterId = :clusterId`) becomes a
-   correlated `EXISTS` over the scalar key column the entity also maps (`historyId`,
-   `definitionId`, `alertDefinitionId`), or a comparison of that column. The tool does not read
-   a path outside `JOIN`, and a `JOIN` whose one side is projected it does not read faithfully.
-4. **Six queries are left out**, each with a note at the end of the class: five compare a
+Ambari keeps its queries in `@NamedQuery` annotations on the entities and runs them with
+`createNamedQuery`; the tool reads a named query where it is defined, so the queries stay in the
+annotations. Every change is marked in the file where it stands, with a note above the query,
+and the opening note of each file counts the changes it carries.
+
+1. **The six named queries that delete are left out**, each with a note in place of its
+   annotation: the tool translates read-only queries.
+2. **Eight of the 41 read-only queries are rewritten**, each with a note and its original text
+   above it: a path through an association in a condition
+   (`alert.alertHistory.clusterId = :clusterId`) becomes a correlated `EXISTS` over the scalar
+   key column the entity also maps (`historyId`, `definitionId`, `alertDefinitionId`), or a
+   comparison of that column. The tool does not read a path outside `JOIN`, and a `JOIN` whose
+   one side is projected it does not read faithfully.
+3. **Six queries are left out**, each with a note in place of its annotation: five compare a
    parameter with an attribute of an enum type (`Scope`, `SourceType`, `AlertState`,
    `NotificationState`) that lives outside the excerpt, so the generated method could not type the
    parameter; one asks `MEMBER OF` a many-to-many with the whole entity as the parameter.
+4. **The query hints stand as the project wrote them** (`eclipselink.query-results-cache` on
+   `AlertDefinitionEntity.findByName`); the tool reports each as a dropped hint.

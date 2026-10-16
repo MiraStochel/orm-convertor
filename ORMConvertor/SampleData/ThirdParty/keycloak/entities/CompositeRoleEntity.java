@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/CompositeRoleEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 2 named queries, 2 that write are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -42,10 +42,8 @@ import jakarta.persistence.Table;
  */
 @Entity
 @Table(name="COMPOSITE_ROLE")
-@NamedQueries({
-        @NamedQuery(name="deleteRoleFromComposites", query="delete CompositeRoleEntity c where c.parentRole = :role or c.childRole = :role"),
-        @NamedQuery(name="deleteSingleCompositeFromRole", query="delete CompositeRoleEntity c where c.parentRole = :parentRole and c.childRole = :childRole"),
-})
+// ORMConvertor: "deleteRoleFromComposites" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteSingleCompositeFromRole" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 @IdClass(CompositeRoleEntity.Key.class)
 public class CompositeRoleEntity {
     @Id

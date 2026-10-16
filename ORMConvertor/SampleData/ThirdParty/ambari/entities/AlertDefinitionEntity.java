@@ -18,7 +18,7 @@
 
 /*
  * ORMConvertor: taken from apache/ambari at a01b674, ambari-server/src/main/java/org/apache/ambari/server/orm/entities/AlertDefinitionEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 9 named queries, 2 the tool reads in no form are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 package org.apache.ambari.server.orm.entities;
 
@@ -76,10 +76,10 @@ import org.apache.ambari.server.state.alert.SourceType;
     }),
   @NamedQuery(name = "AlertDefinitionEntity.findByService", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.serviceName = :serviceName AND ad.clusterId = :clusterId"),
   @NamedQuery(name = "AlertDefinitionEntity.findByServiceAndComponent", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.serviceName = :serviceName AND ad.componentName = :componentName AND ad.clusterId = :clusterId"),
-  @NamedQuery(name = "AlertDefinitionEntity.findByServiceMaster", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.serviceName IN :services AND ad.scope = :scope AND ad.clusterId = :clusterId AND ad.componentName IS NULL" +
-      " AND ad.sourceType <> org.apache.ambari.server.state.alert.SourceType.AGGREGATE"),
-  @NamedQuery(name = "AlertDefinitionEntity.findByIds", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.definitionId IN :definitionIds"),
-  @NamedQuery(name = "AlertDefinitionEntity.findBySourceType", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.clusterId = :clusterId AND ad.sourceType = :sourceType")})
+  // ORMConvertor: "AlertDefinitionEntity.findByServiceMaster" is left out: it compares a parameter with an attribute of an enum type the conversion does not hold, so the generated method could not type it; it also names the enum constant by its Java path.
+  @NamedQuery(name = "AlertDefinitionEntity.findByIds", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.definitionId IN :definitionIds")
+  // ORMConvertor: "AlertDefinitionEntity.findBySourceType" is left out: it compares a parameter with an attribute of an enum type the conversion does not hold, so the generated method could not type it.
+})
 public class AlertDefinitionEntity {
 
   @Id

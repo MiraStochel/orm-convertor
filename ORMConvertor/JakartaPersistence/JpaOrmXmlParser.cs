@@ -112,6 +112,12 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
 
                     break;
 
+                case "named-query":
+                case "named-native-query":
+                    // A query, not a mapping: the query pass reads the same document and
+                    // takes the definition out of it (decision 143).
+                    break;
+
                 default:
                     entityBuilder.Report(new ConversionRecord
                     {
@@ -225,6 +231,11 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
 
                 case "attributes":
                     ReadAttributes(child, facts);
+                    break;
+
+                case "named-query":
+                case "named-native-query":
+                    // Read by the query pass of the same document (decision 143).
                     break;
 
                 default:

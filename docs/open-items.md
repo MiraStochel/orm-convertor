@@ -29,7 +29,6 @@ Rejstřík, ne pořadí.
 | Položka | Oblast | Druh | Pož. |
 |---|---|---|---|
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | T2, T3, F13 |
-| [Pojmenované dotazy JPA](#pojmenované-dotazy-jpa-se-nepřekládají-ačkoli-na-nich-stojí-reálné-projekty) | Dotazy | rozhodnutí | F7, F9, F14 |
 | [Cesta přes asociaci mimo `join`](#cesta-přes-asociaci-mimo-join-se-nečte-ačkoli-ji-pravidlo-q7-článku-pokrývá) | Dotazy | rozhodnutí | F7–F10 |
 | [Co zavírá třetí cíl](#co-zavírá-třetí-cíl-schválený-záměr-advisor-nejmenuje) | Třetí cíl | rozhodnutí | F15, T1–T7 |
 | [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Třetí cíl | rozhodnutí | S5, T1–T3 |
@@ -76,11 +75,6 @@ Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.
 *Na řadě. Práce podle rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) a [141](./decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md); samostatný běh obou sad, který spouští Míra jménem ([`ORMConvertor/README.md`](../ORMConvertor/README.md), *The LDBC judge*). Požadavky T2, T3, F13.*
 
 Pět dotazů na cesty je `AsSpecified` a soudce je posuzuje verdiktem, ne mírou; nad celou sadou SF 1 (6 818 čtení IC 13 i IC 14 v každém frameworku) zatím běžel jen nad texty s mezí (záznamy *Whole-set runs* z 2026-10-12 a 2026-10-14). Prefix 2 000 řádků SF 1 prošel 2026-10-15 v .NET sadě z hostitele: IC 13 95 z 95 čtení ve všech třech frameworcích, IC 14 95 z 95 v Dapperu a NHibernatu, v EF Core 94 z 95 — řádek 340 vypršel na výchozích 30 s příkazu, ač týž příkaz EF Core s týmiž parametry i s plánem prvního čtení běží ručně 2,2 s; nereprodukováno. Zbývá celá sada nad novými texty, .NET a javová sada po sobě, se záznamem do *Whole-set runs*; neshoda IC 13 nebo IC 14 by byla chybou textu nebo překladu, ne vlastností sady, a opakované vypršení čtení IC 14 v EF Core by bylo vlastností jeho SQL (vnořené poddotazy místo definic), kterou by řešilo nové rozhodnutí.
-
-#### Pojmenované dotazy JPA se nepřekládají, ačkoli na nich stojí reálné projekty
-*Ke kontrole: rozh. [081](./decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md) a [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) — pojmenovaný dotaz JPA je `Loss` a nepřekládá se nikde ([`subset.md`](./subset.md) 2.2, 2.3). Podklad: [`analysis/real-world-sources.md`](./analysis/real-world-sources.md). Požadavky F7, F9, F14.*
-
-Keycloak, Apache Ambari, Roller, Ranger i Broadleaf drží čtecí dotazy v `@NamedQuery` nebo v `<named-query>` souboru `orm.xml` a spouštějí je jménem; výňatky Keycloaku a Ambari je proto musely vytáhnout do `em.createQuery` třídou, kterou projekt nemá. Pojmenované dotazy `hbm.xml` NHibernatu nástroj čte a jméno dotazu nese do cíle (rozh. 081), pojmenované dotazy JPA ne. Rozhodnout, zda se čtou stejně — jako dotaz, kterému zdroj dal jméno —, odkud se typuje parametr, který text porovnává jen s jinou entitou nebo který typuje až volání `setParameter`, a co s pojmenovaným dotazem, který zapisuje.
 
 #### Cesta přes asociaci mimo `join` se nečte, ačkoli ji pravidlo Q7 článku pokrývá
 *Ke kontrole: rozh. [101](./decisions/101-a-join-along-an-association-path-is-derived-from-the-relation.md) — podmínka podle Q7 jen pro `join alias.asociace`. Podklad: [`analysis/real-world-sources.md`](./analysis/real-world-sources.md) (Keycloak, Ambari). Požadavky F7–F10.*

@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/RoleAttributeEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 1 named queries, 1 that write is left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -39,9 +39,7 @@ import org.hibernate.annotations.Nationalized;
 /**
  * @author <a href="mailto:leon.graser@bosch-si.com">Leon Graser</a>
  */
-@NamedQueries({
-        @NamedQuery(name = "deleteRoleAttributesByNameAndUser", query = "delete from RoleAttributeEntity attr where attr.role.id = :roleId and attr.name = :name"),
-})
+// ORMConvertor: "deleteRoleAttributesByNameAndUser" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 @Table(name = "ROLE_ATTRIBUTE")
 @Entity
 public class RoleAttributeEntity {

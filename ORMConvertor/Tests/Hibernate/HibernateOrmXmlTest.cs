@@ -132,7 +132,7 @@ public class HibernateOrmXmlTest
     {
         var (builder, _) = Read("""
             <entity-mappings xmlns="https://jakarta.ee/xml/ns/persistence/orm" version="3.2">
-                <named-query name="Customer.all"><query>select c from Customer c</query></named-query>
+                <sql-result-set-mapping name="rows"/>
                 <entity class="Customer">
                     <inheritance strategy="JOINED"/>
                     <attributes>
@@ -143,7 +143,7 @@ public class HibernateOrmXmlTest
             </entity-mappings>
             """, Entity);
 
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("<named-query>"));
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("<sql-result-set-mapping>"));
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("<inheritance>"));
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("<element-collection name=\"tags\">"));
     }

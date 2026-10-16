@@ -18,7 +18,7 @@
 
 /*
  * ORMConvertor: taken from apache/ambari at a01b674, ambari-server/src/main/java/org/apache/ambari/server/orm/entities/AlertNoticeEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 5 named queries, 1 that write and 1 the tool reads in no form are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 package org.apache.ambari.server.orm.entities;
 
@@ -53,13 +53,13 @@ import org.apache.commons.lang3.builder.EqualsBuilder;
 @TableGenerator(name = "alert_notice_id_generator", table = "ambari_sequences", pkColumnName = "sequence_name", valueColumnName = "sequence_value", pkColumnValue = "alert_notice_id_seq", initialValue = 0)
 @NamedQueries({
   @NamedQuery(name = "AlertNoticeEntity.findAll", query = "SELECT notice FROM AlertNoticeEntity notice"),
-  @NamedQuery(name = "AlertNoticeEntity.findByState", query = "SELECT notice FROM AlertNoticeEntity notice WHERE notice.notifyState = :notifyState  ORDER BY  notice.notificationId"),
+  // ORMConvertor: "AlertNoticeEntity.findByState" is left out: it compares a parameter with an attribute of an enum type the conversion does not hold, so the generated method could not type it.
   @NamedQuery(name = "AlertNoticeEntity.findByUuid", query = "SELECT notice FROM AlertNoticeEntity notice WHERE notice.uuid = :uuid"),
-  @NamedQuery(name = "AlertNoticeEntity.findByHistoryIds", query = "SELECT notice FROM AlertNoticeEntity notice WHERE notice.historyId IN :historyIds"),
+  @NamedQuery(name = "AlertNoticeEntity.findByHistoryIds", query = "SELECT notice FROM AlertNoticeEntity notice WHERE notice.historyId IN :historyIds")
   // The remove query can be handled by a simpler JPQL query,
   // however, MySQL gtid enforce policy gets violated due to creation and
   // deletion of TEMP table in the same transaction
-  @NamedQuery(name = "AlertNoticeEntity.removeByHistoryIds", query = "DELETE FROM AlertNoticeEntity notice WHERE notice.historyId IN :historyIds")
+  // ORMConvertor: "AlertNoticeEntity.removeByHistoryIds" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 })
 public class AlertNoticeEntity {
 

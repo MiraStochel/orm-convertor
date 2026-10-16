@@ -182,8 +182,11 @@ public class HibernateDerivedIdentityTest
     }
 
     /// <summary>
-    /// The shape as the project writes it (SampleData/ThirdParty/keycloak, unchanged apart from
-    /// the note), through the orchestration into NHibernate: both parts of the key arrive.
+    /// The shape as the project writes it (SampleData/ThirdParty/keycloak; the entity's mapping
+    /// is the project's text, its named queries carry the excerpt's notes), through the
+    /// orchestration into NHibernate: both parts of the key arrive. The named queries of the two
+    /// classes are read as well since decision 143 and some of them reach entities this input
+    /// does not carry, so the assertion about records is about the mapping records alone.
     /// </summary>
     [Fact]
     public void TheKeycloakMappingKeepsBothKeyParts()
@@ -200,6 +203,6 @@ public class HibernateDerivedIdentityTest
         Assert.Contains("<key-property name=\"USER_ID\"", xml, StringComparison.Ordinal);
         Assert.Contains("<key-property name=\"roleId\"", xml, StringComparison.Ordinal);
         Assert.Contains("<many-to-one name=\"user\"", xml, StringComparison.Ordinal);
-        Assert.DoesNotContain(result.Records, r => r.Kind is ConversionRecordKind.Failure or ConversionRecordKind.Conflict);
+        Assert.DoesNotContain(result.Records, r => r.Query is null && r.Kind is (ConversionRecordKind.Failure or ConversionRecordKind.Conflict));
     }
 }

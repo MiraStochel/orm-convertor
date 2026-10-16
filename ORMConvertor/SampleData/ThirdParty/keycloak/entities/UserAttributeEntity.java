@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/UserAttributeEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 4 named queries, 4 that write are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -42,12 +42,10 @@ import org.hibernate.annotations.Nationalized;
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
-@NamedQueries({
-        @NamedQuery(name="deleteUserAttributesByRealm", query="delete from  UserAttributeEntity attr where attr.user IN (select u from UserEntity u where u.realmId=:realmId)"),
-        @NamedQuery(name="deleteUserAttributesByNameAndUser", query="delete from  UserAttributeEntity attr where attr.user.id = :userId and attr.name = :name"),
-        @NamedQuery(name="deleteUserAttributesByNameAndUserOtherThan", query="delete from  UserAttributeEntity attr where attr.user.id = :userId and attr.name = :name and attr.id <> :attrId"),
-        @NamedQuery(name="deleteUserAttributesByRealmAndLink", query="delete from  UserAttributeEntity attr where attr.user IN (select u from UserEntity u where u.realmId=:realmId and u.federationLink=:link)")
-})
+// ORMConvertor: "deleteUserAttributesByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteUserAttributesByNameAndUser" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteUserAttributesByNameAndUserOtherThan" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteUserAttributesByRealmAndLink" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 @Table(name="USER_ATTRIBUTE")
 @Entity
 public class UserAttributeEntity {

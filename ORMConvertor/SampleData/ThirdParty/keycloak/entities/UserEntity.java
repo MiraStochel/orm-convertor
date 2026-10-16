@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/UserEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 10 named queries, 3 that write are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -57,10 +57,10 @@ import org.hibernate.annotations.Nationalized;
         @NamedQuery(name="getRealmUsersByAttributeNameAndValue", query="select u from UserEntity u join u.attributes attr " +
                 "where u.realmId = :realmId and attr.name = :name and attr.value = :value"),
         @NamedQuery(name="getRealmUsersByAttributeNameAndLongValue", query="select u from UserEntity u join u.attributes attr " +
-                "where u.realmId = :realmId and attr.name = :name and attr.longValueHash = :longValueHash"),
-        @NamedQuery(name="deleteUsersByRealm", query="delete from UserEntity u where u.realmId = :realmId"),
-        @NamedQuery(name="deleteUsersByRealmAndLink", query="delete from UserEntity u where u.realmId = :realmId and u.federationLink=:link"),
-        @NamedQuery(name="unlinkUsers", query="update UserEntity u set u.federationLink = null where u.realmId = :realmId and u.federationLink=:link")
+                "where u.realmId = :realmId and attr.name = :name and attr.longValueHash = :longValueHash")
+        // ORMConvertor: "deleteUsersByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteUsersByRealmAndLink" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "unlinkUsers" is left out: it is a bulk update statement, which changes the rows other queries read; the tool translates read-only queries.
 })
 @Entity
 @Table(name="USER_ENTITY", uniqueConstraints = {

@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/GroupAttributeEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 2 named queries, 1 that write is left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -41,8 +41,8 @@ import org.hibernate.annotations.Nationalized;
  * @version $Revision: 1 $
  */
 @NamedQueries({
-        @NamedQuery(name="getGroupAttributesByNameAndValue", query="select attr from GroupAttributeEntity attr where attr.name = :name and attr.value = :value"),
-        @NamedQuery(name="deleteGroupAttributesByRealm", query="delete from  GroupAttributeEntity a where a.group IN (select u from GroupEntity u where u.realm=:realm)")
+        @NamedQuery(name="getGroupAttributesByNameAndValue", query="select attr from GroupAttributeEntity attr where attr.name = :name and attr.value = :value")
+        // ORMConvertor: "deleteGroupAttributesByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 })
 @Table(name="GROUP_ATTRIBUTE")
 @Entity

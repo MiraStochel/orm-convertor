@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/FederatedIdentityEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 7 named queries, 4 that write are left out and 3 are rewritten, each with a note and, where rewritten, the original text above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -40,13 +40,19 @@ import jakarta.persistence.Table;
  * @version $Revision: 1 $
  */
 @NamedQueries({
-        @NamedQuery(name= "findFederatedIdentityByUser", query="select link from FederatedIdentityEntity link where link.user = :user"),
-        @NamedQuery(name= "findFederatedIdentityByUserAndProvider", query="select link from FederatedIdentityEntity link where link.user = :user and link.identityProvider = :identityProvider"),
-        @NamedQuery(name= "findUserByFederatedIdentityAndRealm", query="select link.user from FederatedIdentityEntity link where link.realmId = :realmId and link.identityProvider = :identityProvider and link.userId = :userId"),
-        @NamedQuery(name= "deleteFederatedIdentityByRealm", query="delete from FederatedIdentityEntity social where social.user IN (select u from UserEntity u where realmId=:realmId)"),
-        @NamedQuery(name= "deleteFederatedIdentityByProvider", query="delete from FederatedIdentityEntity fdi where fdi.realmId = :realmId and fdi.identityProvider = :providerAlias "),
-        @NamedQuery(name= "deleteFederatedIdentityByRealmAndLink", query="delete from FederatedIdentityEntity social where social.user IN (select u from UserEntity u where realmId=:realmId and u.federationLink=:link)"),
-        @NamedQuery(name= "deleteFederatedIdentityByUser", query="delete from FederatedIdentityEntity social where social.user = :user")
+        // ORMConvertor: rewritten - compares the key column, and takes the key as the parameter, instead of the whole entity.
+        //   was: select link from FederatedIdentityEntity link where link.user = :user
+        @NamedQuery(name = "findFederatedIdentityByUser", query = "select link from FederatedIdentityEntity link where link.USER_ID = :userId"),
+        // ORMConvertor: rewritten - compares the key column, and takes the key as the parameter, instead of the whole entity.
+        //   was: select link from FederatedIdentityEntity link where link.user = :user and link.identityProvider = :identityProvider
+        @NamedQuery(name = "findFederatedIdentityByUserAndProvider", query = "select link from FederatedIdentityEntity link where link.USER_ID = :userId and link.identityProvider = :identityProvider"),
+        // ORMConvertor: rewritten - selects the user and asks for the link through a correlated exists, instead of projecting the association of the link.
+        //   was: select link.user from FederatedIdentityEntity link where link.realmId = :realmId and link.identityProvider = :identityProvider and link.userId = :userId
+        @NamedQuery(name = "findUserByFederatedIdentityAndRealm", query = "select u from UserEntity u where exists ( select link from FederatedIdentityEntity link where link.USER_ID = u.id and link.realmId = :realmId and link.identityProvider = :identityProvider and link.userId = :userId)")
+        // ORMConvertor: "deleteFederatedIdentityByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteFederatedIdentityByProvider" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteFederatedIdentityByRealmAndLink" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteFederatedIdentityByUser" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 })
 @Table(name="FEDERATED_IDENTITY")
 @Entity

@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/UserRequiredActionEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 2 named queries, 2 that write are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -39,10 +39,8 @@ import jakarta.persistence.Table;
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
-@NamedQueries({
-        @NamedQuery(name="deleteUserRequiredActionsByRealm", query="delete from UserRequiredActionEntity action where action.user IN (select u from UserEntity u where u.realmId=:realmId)"),
-        @NamedQuery(name="deleteUserRequiredActionsByRealmAndLink", query="delete from UserRequiredActionEntity action where action.user IN (select u from UserEntity u where u.realmId=:realmId and u.federationLink=:link)")
-})
+// ORMConvertor: "deleteUserRequiredActionsByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteUserRequiredActionsByRealmAndLink" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 @Entity
 @Table(name="USER_REQUIRED_ACTION")
 @IdClass(UserRequiredActionEntity.Key.class)

@@ -18,7 +18,7 @@
 
 /*
  * ORMConvertor: taken from apache/ambari at a01b674, ambari-server/src/main/java/org/apache/ambari/server/orm/entities/AlertHistoryEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 10 named queries, 2 that write and 1 the tool reads in no form are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 package org.apache.ambari.server.orm.entities;
 
@@ -54,13 +54,13 @@ import org.apache.ambari.server.state.AlertState;
 @NamedQueries({
   @NamedQuery(name = "AlertHistoryEntity.findAll", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory"),
   @NamedQuery(name = "AlertHistoryEntity.findAllInCluster", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId"),
-  @NamedQuery(name = "AlertHistoryEntity.findAllInClusterWithState", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId AND alertHistory.alertState IN :alertStates"),
+  // ORMConvertor: "AlertHistoryEntity.findAllInClusterWithState" is left out: it compares a parameter with an attribute of an enum type the conversion does not hold, so the generated method could not type it.
   @NamedQuery(name = "AlertHistoryEntity.findAllInClusterBetweenDates", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId AND alertHistory.alertTimestamp BETWEEN :startDate AND :endDate"),
   @NamedQuery(name = "AlertHistoryEntity.findAllInClusterBeforeDate", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId AND alertHistory.alertTimestamp <= :beforeDate"),
   @NamedQuery(name = "AlertHistoryEntity.findAllIdsInClusterBeforeDate", query = "SELECT alertHistory.alertId FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId AND alertHistory.alertTimestamp <= :beforeDate"),
   @NamedQuery(name = "AlertHistoryEntity.findAllInClusterAfterDate", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId AND alertHistory.alertTimestamp >= :afterDate"),
-  @NamedQuery(name = "AlertHistoryEntity.removeByDefinitionId", query = "DELETE FROM AlertHistoryEntity alertHistory WHERE alertHistory.alertDefinitionId = :definitionId"),
-  @NamedQuery(name = "AlertHistoryEntity.removeInClusterBeforeDate", query = "DELETE FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId AND alertHistory.alertTimestamp <= :beforeDate"),
+  // ORMConvertor: "AlertHistoryEntity.removeByDefinitionId" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+  // ORMConvertor: "AlertHistoryEntity.removeInClusterBeforeDate" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
   @NamedQuery(name = "AlertHistoryEntity.findHistoryIdsByDefinitionId", query = "SELECT alertHistory.alertId FROM AlertHistoryEntity alertHistory WHERE alertHistory.alertDefinitionId = :definitionId ORDER BY alertHistory.alertId")
 })
 public class AlertHistoryEntity {

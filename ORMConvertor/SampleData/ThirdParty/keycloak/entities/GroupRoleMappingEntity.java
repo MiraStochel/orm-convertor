@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/GroupRoleMappingEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 6 named queries, 3 that write are left out and 3 are rewritten, each with a note and, where rewritten, the original text above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -40,13 +40,18 @@ import jakarta.persistence.Table;
  * @version $Revision: 1 $
  */
 @NamedQueries({
-        @NamedQuery(name="groupHasRole", query="select m from GroupRoleMappingEntity m where m.group = :group and m.roleId = :roleId"),
-        @NamedQuery(name="groupRoleMappings", query="select m from GroupRoleMappingEntity m where m.group = :group"),
-        @NamedQuery(name="groupRoleMappingIds", query="select m.roleId from GroupRoleMappingEntity m where m.group = :group"),
-        @NamedQuery(name="deleteGroupRoleMappingsByRealm", query="delete from  GroupRoleMappingEntity mapping where mapping.group IN (select u from GroupEntity u where u.realm=:realm)"),
-        @NamedQuery(name="deleteGroupRoleMappingsByRole", query="delete from GroupRoleMappingEntity m where m.roleId = :roleId"),
-        @NamedQuery(name="deleteGroupRoleMappingsByGroup", query="delete from GroupRoleMappingEntity m where m.group = :group")
-
+        // ORMConvertor: rewritten - compares the key column, and takes the key as the parameter, instead of the whole entity.
+        //   was: select m from GroupRoleMappingEntity m where m.group = :group and m.roleId = :roleId
+        @NamedQuery(name = "groupHasRole", query = "select m from GroupRoleMappingEntity m where m.GROUP_ID = :groupId and m.roleId = :roleId"),
+        // ORMConvertor: rewritten - compares the key column, and takes the key as the parameter, instead of the whole entity.
+        //   was: select m from GroupRoleMappingEntity m where m.group = :group
+        @NamedQuery(name = "groupRoleMappings", query = "select m from GroupRoleMappingEntity m where m.GROUP_ID = :groupId"),
+        // ORMConvertor: rewritten - compares the key column, and takes the key as the parameter, instead of the whole entity.
+        //   was: select m.roleId from GroupRoleMappingEntity m where m.group = :group
+        @NamedQuery(name = "groupRoleMappingIds", query = "select m.roleId from GroupRoleMappingEntity m where m.GROUP_ID = :groupId")
+        // ORMConvertor: "deleteGroupRoleMappingsByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteGroupRoleMappingsByRole" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteGroupRoleMappingsByGroup" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 })
 @Table(name="GROUP_ROLE_MAPPING")
 @Entity

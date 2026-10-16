@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/CredentialEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 3 named queries, 2 that write are left out and 1 is rewritten, each with a note and, where rewritten, the original text above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -40,10 +40,11 @@ import jakarta.persistence.Version;
  * @version $Revision: 1 $
  */
 @NamedQueries({
-        @NamedQuery(name="credentialByUser", query="select cred from CredentialEntity cred where cred.user = :user order by cred.priority"),
-        @NamedQuery(name="deleteCredentialsByRealm", query="delete from CredentialEntity cred where cred.user IN (select u from UserEntity u where u.realmId=:realmId)"),
-        @NamedQuery(name="deleteCredentialsByRealmAndLink", query="delete from CredentialEntity cred where cred.user IN (select u from UserEntity u where u.realmId=:realmId and u.federationLink=:link)")
-
+        // ORMConvertor: rewritten - asks for the user through a correlated exists that compares the association with the user row, instead of a path through the association; the parameter is the user's id.
+        //   was: select cred from CredentialEntity cred where cred.user = :user order by cred.priority
+        @NamedQuery(name = "credentialByUser", query = "select cred from CredentialEntity cred where exists ( select u from UserEntity u where cred.user = u and u.id = :userId) order by cred.priority")
+        // ORMConvertor: "deleteCredentialsByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteCredentialsByRealmAndLink" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 })
 @Table(name="CREDENTIAL")
 @Entity

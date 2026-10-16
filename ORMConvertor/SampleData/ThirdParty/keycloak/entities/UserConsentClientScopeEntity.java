@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/UserConsentClientScopeEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 7 named queries, 7 that write are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -39,15 +39,13 @@ import jakarta.persistence.Table;
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
-@NamedQueries({
-        @NamedQuery(name="deleteUserConsentClientScopesByRealm", query="delete from UserConsentClientScopeEntity grantedScope where grantedScope.userConsent IN (select consent from UserConsentEntity consent where consent.user IN (select user from UserEntity user where user.realmId = :realmId))"),
-        @NamedQuery(name="deleteUserConsentClientScopesByRealmAndLink", query="delete from UserConsentClientScopeEntity grantedScope where grantedScope.userConsent IN (select consent from UserConsentEntity consent where consent.user IN (select u from UserEntity u where u.realmId=:realmId and u.federationLink=:link))"),
-        @NamedQuery(name="deleteUserConsentClientScopesByUser", query="delete from UserConsentClientScopeEntity grantedScope where grantedScope.userConsent IN (select consent from UserConsentEntity consent where consent.user = :user)"),
-        @NamedQuery(name="deleteUserConsentClientScopesByClientScope", query="delete from UserConsentClientScopeEntity grantedScope where grantedScope.scopeId = :scopeId"),
-        @NamedQuery(name="deleteUserConsentClientScopesByClient", query="delete from UserConsentClientScopeEntity grantedScope where grantedScope.userConsent IN (select consent from UserConsentEntity consent where consent.clientId = :clientId)"),
-        @NamedQuery(name="deleteUserConsentClientScopesByExternalClient", query="delete from UserConsentClientScopeEntity grantedScope where grantedScope.userConsent IN (select consent from UserConsentEntity consent where consent.clientStorageProvider = :clientStorageProvider and consent.externalClientId = :externalClientId)"),
-        @NamedQuery(name="deleteUserConsentClientScopesByClientStorageProvider", query="delete from UserConsentClientScopeEntity grantedScope where grantedScope.userConsent IN (select consent from UserConsentEntity consent where consent.clientStorageProvider = :clientStorageProvider)"),
-})
+// ORMConvertor: "deleteUserConsentClientScopesByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteUserConsentClientScopesByRealmAndLink" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteUserConsentClientScopesByUser" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteUserConsentClientScopesByClientScope" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteUserConsentClientScopesByClient" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteUserConsentClientScopesByExternalClient" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+// ORMConvertor: "deleteUserConsentClientScopesByClientStorageProvider" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
 @Entity
 @Table(name="USER_CONSENT_CLIENT_SCOPE")
 @IdClass(UserConsentClientScopeEntity.Key.class)

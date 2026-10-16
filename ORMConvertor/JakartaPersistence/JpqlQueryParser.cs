@@ -31,8 +31,17 @@ namespace JakartaPersistence;
 /// <c>createNativeQuery</c> with native SQL, by the shared T-SQL reader in the dialect the
 /// source declared (decision 088) - which is what the escape path writes, so that it reads
 /// back -, and <c>createNamedQuery</c> with the name of a query an annotation or orm.xml
-/// defines, which yields no query and says so: the definition itself is a loss where it
-/// stands, so a named query of JPA is read nowhere.
+/// defines, which yields no query of its own and says so: the definition is where the query
+/// is read.
+///
+/// The definitions are the third language claimed (decision 143): a named query stands on
+/// a class of a Java unit - <c>@NamedQuery</c>, its container, the native pair - or in an
+/// orm.xml, on the root or inside an <c>&lt;entity&gt;</c>, and this parser reads them out of
+/// the same unit the entity pass read its mapping from, on the query pass, which is what
+/// decision 081 lets a unit be. The class or the document is parsed a second time on
+/// purpose, for the reason <c>NHibernateXmlQueryParser</c> gives: the catalog completion
+/// phase stands between the two passes. What the definition states beside its text is
+/// answered the way the calls on a query object are (<see cref="ReadDefinitionOptions"/>).
 ///
 /// What the code calls on the query object beside the slice passes in silence nowhere
 /// either (decisions 048 and 109), the answer the reading of a CreateQuery in NHibernate
@@ -93,25 +102,33 @@ public abstract class JpqlQueryParser(
     public ParseLimits Limits { get; set; } = ParseLimits.Default;
 
     public bool CanParse(ConversionContentType contentType)
-        => contentType is ConversionContentType.JpqlQuery or ConversionContentType.Java;
+        => contentType is ConversionContentType.JpqlQuery or ConversionContentType.Java or ConversionContentType.XML;
 
     /// <summary>
     /// A bare JPQL unit is one query. A Java unit carries a query for every createQuery and
     /// createSelectionQuery call in it, not for the first one alone (decision 109): each call
     /// makes a query object of its own and is read into a builder of its own, so a call whose
     /// query is composed at run time refuses itself alone. Queries of one unit are numbered by
-    /// the position of their call in the text, since the calls name nothing.
+    /// the position of their call in the text, since the calls name nothing - and beside them
+    /// a query for every named query a class of the unit defines (decision 143), under the
+    /// name the source gave it. An XML unit carries a query for every named query the
+    /// orm.xml defines, and nothing where the document is not an orm.xml.
     ///
     /// The Java unit is a whole file or a fragment of one (decision 111), and the entity pass
-    /// reads the same text for its classes. One without a call is therefore no error - a file
-    /// holding an entity alone is an ordinary input - and yields no query; whether the unit
-    /// yielded anything at all is asked of both passes together (decision 081). A text the
-    /// lexer cannot read yields nothing here either, and says nothing: the entity pass, which
-    /// read the same text first, has reported it.
+    /// reads the same text for its classes. One without a call or a definition is therefore
+    /// no error - a file holding an entity alone is an ordinary input - and yields no query;
+    /// whether the unit yielded anything at all is asked of both passes together (decision
+    /// 081). A text the lexer cannot read yields nothing here either, and says nothing: the
+    /// entity pass, which read the same text first, has reported it (decision 093).
     /// </summary>
     public IReadOnlyCollection<AbstractQueryBuilder> Parse(ConversionContentType contentType, string source, IReadOnlyList<EntityMap>? entityMaps = null)
     {
         maps = entityMaps;
+
+        if (contentType == ConversionContentType.XML)
+        {
+            return ReadOrmXml(source);
+        }
 
         // Every builder leaves, refused ones included: it holds the records of what went
         // wrong, and only the parser can say that this unit yielded a query at all (decision
@@ -125,6 +142,11 @@ public abstract class JpqlQueryParser(
 
         var javaTokens = Calls(source, out var calls);
         var builders = new List<AbstractQueryBuilder>(calls.Count);
+
+        // The definitions first: they stand on the classes, before any code that hands a
+        // query over, and each carries its own name, so the numbering of the calls is
+        // untouched by them.
+        builders.AddRange(ReadDefinedQueries(source));
 
         for (var i = 0; i < calls.Count; i++)
         {
@@ -142,8 +164,11 @@ public abstract class JpqlQueryParser(
 
             if (method == "createNamedQuery")
             {
+                // The reference, not the query: the definition is read where it stands - the
+                // @NamedQuery of a class or the <named-query> of an orm.xml (decision 143) -,
+                // the answer the NHibernate reading gives GetNamedQuery.
                 Report(ConversionRecordKind.Incompleteness,
-                    $"The code hands over the named query {(javaTokens[calls[i] + 2].Kind == JavaTokenKind.String ? $"'{javaTokens[calls[i] + 2].Text}'" : "named at run time")} through createNamedQuery; a named query of JPA is not read anywhere - an @NamedQuery or a <named-query> is reported as a loss where it is defined -, so the reference yields no query.");
+                    $"The code hands over the named query {(javaTokens[calls[i] + 2].Kind == JavaTokenKind.String ? $"'{javaTokens[calls[i] + 2].Text}'" : "named at run time")} through createNamedQuery; a named query is read where it is defined - an @NamedQuery on a class or a <named-query> of an orm.xml -, so the reference yields no query of its own.");
             }
             else if (LiteralOf(javaTokens, calls[i]) is not { } text)
             {
@@ -181,6 +206,7 @@ public abstract class JpqlQueryParser(
         try
         {
             tokens = Lex(jpql);
+            position = 0;
 
             // Before the descent, because the descent is what the cap protects: from here on
             // the depth of the input is the depth of the recursion, and an overflow is not a
@@ -189,6 +215,16 @@ public abstract class JpqlQueryParser(
             if (NestingDepthGuard.FirstBeyond(Tracked(tokens), Limits) is { } tooDeep)
             {
                 Report(ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep, Limits));
+            }
+            else if (AtKeyword("update") || AtKeyword("delete") || AtKeyword("insert"))
+            {
+                // A bulk statement changes the rows other queries read rather than reading
+                // them, and the tool translates read-only queries (decision 053): the answer
+                // the SQL reading gives a statement that is not a SELECT (decision 108) and
+                // the MyBatis reading gives <insert>, <update> and <delete>, named here
+                // rather than left to fail on its first token (decision 143).
+                Report(ConversionRecordKind.Failure,
+                    $"The query is a bulk {Current.Text.ToLowerInvariant()} statement, which changes the rows other queries read rather than reading them; the tool translates read-only queries, so no artifact was generated.");
             }
             else
             {
@@ -241,42 +277,29 @@ public abstract class JpqlQueryParser(
     /// </summary>
     private void ReadNative(string sql, List<JavaToken> javaTokens, int call)
     {
-        var channel = (Action<ConversionRecordKind, string, QueryFeature?>)((kind, reason, feature) => queryBuilder.Report(new ConversionRecord
-        {
-            Kind = kind,
-            Framework = queryBuilder.Descriptor.Framework,
-            Artifact = ConversionContentType.SqlQuery,
-            Feature = feature,
-            Reason = reason,
-        }));
-
         var close = Closing(javaTokens, call + 1);
         var mapping = javaTokens.Skip(call + 3).Take(Math.Max(0, close - call - 3))
             .FirstOrDefault(token => token.Kind == JavaTokenKind.String);
-        if (mapping.Kind == JavaTokenKind.String)
-        {
-            channel(ConversionRecordKind.Loss,
-                $"The native query names the result set mapping '{mapping.Text}', which states how its rows are materialized and which the query representation does not carry; it was dropped and every target derives the row again.",
-                QueryFeature.Projection);
-        }
 
-        if (TransactSql.SqlPlaceholders.FromHost(sql, out var facts, out var unread) is not { } text)
+        var read = ReadNativeText(
+            sql,
+            mapping.Kind == JavaTokenKind.String ? mapping.Text : null,
+            "The native query",
+            facts =>
+            {
+                foreach (var (parameter, variable, isList) in BoundParameters(javaTokens, QueryObjectChains(javaTokens, call)))
+                {
+                    if (isList || (variable is not null && IsCollectionVariable(javaTokens, call, variable)))
+                    {
+                        facts[parameter] = facts.GetValueOrDefault(parameter) with { IsCollection = true };
+                    }
+                }
+            });
+
+        if (!read)
         {
-            channel(ConversionRecordKind.Failure,
-                $"The native query writes {unread}, so it could not be read; no artifact was generated.",
-                QueryFeature.QueryParameter);
             return;
         }
-
-        foreach (var (parameter, variable, isList) in BoundParameters(javaTokens, QueryObjectChains(javaTokens, call)))
-        {
-            if (isList || (variable is not null && IsCollectionVariable(javaTokens, call, variable)))
-            {
-                facts[parameter] = facts.GetValueOrDefault(parameter) with { IsCollection = true };
-            }
-        }
-
-        new TransactSql.SqlQueryReader(queryBuilder, channel, declaredSourceDialect, facts, Limits).Read(text);
 
         var slice = ReadSlice(javaTokens, call);
         foreach (var reason in slice.Unread)
@@ -287,6 +310,223 @@ public abstract class JpqlQueryParser(
         if (slice.Unread.Count == 0)
         {
             queryBuilder.PaginateReadQuery(slice.Offset, slice.Limit);
+        }
+    }
+
+    /// <summary>
+    /// Native SQL - the text of a createNativeQuery or of a native named query - read by the
+    /// shared T-SQL reader once the parameters are spelled as it takes them (decision 113):
+    /// <c>?1</c> as <c>@p1</c>, carried as the positional parameter it is, <c>:name</c> as
+    /// <c>@name</c>. A result set mapping says how the rows are materialized, which the
+    /// representation does not carry, and is a loss, as the children of an hbm.xml
+    /// &lt;sql-query&gt; are. <paramref name="bind"/> lets a unit of code mark the parameters
+    /// it binds as lists; a definition binds nothing. <paramref name="what"/> names the query
+    /// in the records. False where the text could not be read at all.
+    /// </summary>
+    private bool ReadNativeText(string sql, string? resultSetMapping, string what, Action<Dictionary<string, TransactSql.SqlParameterFacts>>? bind)
+    {
+        var channel = (Action<ConversionRecordKind, string, QueryFeature?>)((kind, reason, feature) => queryBuilder.Report(new ConversionRecord
+        {
+            Kind = kind,
+            Framework = queryBuilder.Descriptor.Framework,
+            Artifact = ConversionContentType.SqlQuery,
+            Feature = feature,
+            Reason = reason,
+        }));
+
+        if (resultSetMapping is not null)
+        {
+            channel(ConversionRecordKind.Loss,
+                $"{what} names the result set mapping '{resultSetMapping}', which states how its rows are materialized and which the query representation does not carry; it was dropped and every target derives the row again.",
+                QueryFeature.Projection);
+        }
+
+        if (TransactSql.SqlPlaceholders.FromHost(sql, out var facts, out var unread) is not { } text)
+        {
+            channel(ConversionRecordKind.Failure,
+                $"{what} writes {unread}, so it could not be read; no artifact was generated.",
+                QueryFeature.QueryParameter);
+            return false;
+        }
+
+        bind?.Invoke(facts);
+
+        new TransactSql.SqlQueryReader(queryBuilder, channel, declaredSourceDialect, facts, Limits).Read(text);
+        return true;
+    }
+
+    /* ---- the definitions of named queries (decision 143) ------------------------------ */
+
+    /// <summary>
+    /// The named queries the classes of a Java unit define, nested classes included, in the
+    /// order of the text, each read into a builder of its own. A text the reader cannot read,
+    /// or one deeper than the cap, yields none and says nothing: the entity pass read the
+    /// same text first and has reported it (decision 093).
+    /// </summary>
+    private IReadOnlyCollection<AbstractQueryBuilder> ReadDefinedQueries(string source)
+    {
+        JavaCompilationUnit unit;
+        try
+        {
+            unit = JavaClassReader.Read(source, Limits);
+        }
+        catch (JavaSyntaxError)
+        {
+            return [];
+        }
+        catch (JavaInputTooDeep)
+        {
+            return [];
+        }
+
+        return Classes(unit.Classes)
+            .SelectMany(cls => cls.Annotations)
+            .SelectMany(JpaNamedQueryReader.FromAnnotation)
+            .Select(ReadDefinition)
+            .ToList();
+    }
+
+    private static IEnumerable<JavaClass> Classes(IReadOnlyList<JavaClass> classes)
+    {
+        foreach (var cls in classes)
+        {
+            yield return cls;
+
+            foreach (var nested in Classes(cls.NestedClasses))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The named queries of an orm.xml: the definitions on the root and inside every
+    /// &lt;entity&gt;, in the order of the document. A document that is no orm.xml - an
+    /// hbm.xml or a MyBatis mapper sent to a JPA source - yields none, and one that cannot
+    /// be read yields none and says nothing (decision 093): the entity pass read the same
+    /// unit first and has reported it.
+    /// </summary>
+    private IReadOnlyCollection<AbstractQueryBuilder> ReadOrmXml(string source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return [];
+        }
+
+        var root = XmlSource.Read(source).Root;
+        if (root is null || root.Name.LocalName != "entity-mappings")
+        {
+            return [];
+        }
+
+        var filled = new List<AbstractQueryBuilder>();
+
+        foreach (var element in root.Elements())
+        {
+            if (JpaNamedQueryReader.Defines(element))
+            {
+                filled.Add(ReadDefinition(JpaNamedQueryReader.FromElement(element)));
+            }
+            else if (element.Name.LocalName == "entity")
+            {
+                filled.AddRange(element.Elements().Where(JpaNamedQueryReader.Defines).Select(child => ReadDefinition(JpaNamedQueryReader.FromElement(child))));
+            }
+        }
+
+        return filled;
+    }
+
+    /// <summary>
+    /// One definition into a fresh builder, which carries the source's name of the query from
+    /// the moment it exists (decision 081): the generated method is named after it and so are
+    /// the records of this query. Every form requires the name, so a nameless definition is
+    /// malformed input and refused rather than a query under the fixed name. The text goes
+    /// where the text of the matching call goes - JPQL into this parser's reading, native SQL
+    /// into the shared reader -, after what the definition states beside it has been answered.
+    /// </summary>
+    private AbstractQueryBuilder ReadDefinition(JpaNamedQueryFacts facts)
+    {
+        queryBuilder = queryBuilders();
+        queryBuilder.QueryName = facts.Name;
+
+        if (string.IsNullOrWhiteSpace(facts.Name))
+        {
+            Report(ConversionRecordKind.Failure,
+                $"A {facts.Form} states the name of its query and this one carries none, so the query could not be translated.");
+            return queryBuilder;
+        }
+
+        ReadDefinitionOptions(facts);
+
+        if (string.IsNullOrWhiteSpace(facts.Text))
+        {
+            Report(ConversionRecordKind.Failure,
+                $"The named query '{facts.Name}' states no query text, so there is nothing to read; no artifact was generated.");
+        }
+        else if (facts.Native)
+        {
+            ReadNativeText(facts.Text, facts.ResultSetMapping, $"The native query '{facts.Name}'", null);
+        }
+        else
+        {
+            ReadQuery(facts.Text);
+        }
+
+        return queryBuilder;
+    }
+
+    /// <summary>
+    /// What a definition states beside its text, answered as the calls on a query object are
+    /// (decisions 048 and 109): a hint by the implementation's vocabulary - one that changes
+    /// the rows refuses the query, one that locks or materializes is a loss with its own
+    /// reason, any other a loss as a hint the reading does not take -, a lock mode as a lock,
+    /// and a child the orm.xml schema gives no named query as a loss by name; the text stands
+    /// in its own &lt;query&gt; element, so a stray child cannot be a piece of it.
+    /// </summary>
+    private void ReadDefinitionOptions(JpaNamedQueryFacts facts)
+    {
+        foreach (var hint in facts.Hints)
+        {
+            var known = ImplementationHints.TryGetValue(hint.Key, out var byKey) ? byKey
+                : ImplementationHints.TryGetValue(hint.Constant, out var byConstant) ? byConstant
+                : (QueryObjectCall?)null;
+
+            switch (known?.Kind)
+            {
+                case QueryObjectCallKind.ChangesRows:
+                    Report(ConversionRecordKind.Failure,
+                        $"The hint {hint.Spelled} of the named query '{facts.Name}' {known.Value.Effect}, which the query representation does not carry, and dropping it would change which rows the query returns; no artifact was generated.",
+                        known.Value.Feature);
+                    break;
+
+                case QueryObjectCallKind.Locks:
+                    Report(ConversionRecordKind.Loss,
+                        $"The hint {hint.Spelled} of the named query '{facts.Name}' has the query lock the rows it reads, which changes what the query does with its rows rather than which rows they are; the query representation has no place for a lock, so it was dropped and every target reads the rows without one.");
+                    break;
+
+                case QueryObjectCallKind.MapsResult:
+                    Report(ConversionRecordKind.Loss,
+                        $"The hint {hint.Spelled} of the named query '{facts.Name}' states how its rows are materialized, which the query representation does not carry; it was dropped and every target derives the row again.",
+                        QueryFeature.Projection);
+                    break;
+
+                default:
+                    Report(ConversionRecordKind.Loss,
+                        $"The hint {hint.Spelled} of the named query '{facts.Name}' is a hint the reading does not take; it was dropped, which changes nothing the query text says about its rows.");
+                    break;
+            }
+        }
+
+        if (facts.LockMode is { } lockMode)
+        {
+            Report(ConversionRecordKind.Loss,
+                $"The named query '{facts.Name}' states the lock mode {lockMode}, which has the query lock the rows it reads, which changes what the query does with its rows rather than which rows they are; the query representation has no place for a lock, so it was dropped and every target reads the rows without one.");
+        }
+
+        foreach (var unread in facts.Unread)
+        {
+            Report(ConversionRecordKind.Loss,
+                $"The named query '{facts.Name}' carries {unread}, which is no part of a named query in the orm.xml schema; it was dropped, and the text of the query, which stands in its own <query> element, is read as it is.");
         }
     }
 

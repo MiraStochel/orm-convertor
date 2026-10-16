@@ -17,7 +17,7 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/UserRoleMappingEntity.java.
- * Unchanged apart from this note.
+ * Changed: of its 8 named queries, 5 that write are left out and 3 are rewritten, each with a note and, where rewritten, the original text above it; the rest stand as the project wrote them. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -40,15 +40,20 @@ import jakarta.persistence.Table;
  * @version $Revision: 1 $
  */
 @NamedQueries({
-        @NamedQuery(name="userHasRole", query="select m from UserRoleMappingEntity m where m.user = :user and m.roleId = :roleId"),
-        @NamedQuery(name="userRoleMappings", query="select m from UserRoleMappingEntity m where m.user = :user"),
-        @NamedQuery(name="userRoleMappingIds", query="select m.roleId from UserRoleMappingEntity m where m.user = :user"),
-        @NamedQuery(name="deleteUserRoleMappingsByRealm", query="delete from  UserRoleMappingEntity mapping where mapping.user IN (select u from UserEntity u where u.realmId=:realmId)"),
-        @NamedQuery(name="deleteUserRoleMappingsByRealmAndLink", query="delete from  UserRoleMappingEntity mapping where mapping.user IN (select u from UserEntity u where u.realmId=:realmId and u.federationLink=:link)"),
-        @NamedQuery(name="deleteUserRoleMappingsByRole", query="delete from UserRoleMappingEntity m where m.roleId = :roleId"),
-        @NamedQuery(name="deleteUserRoleMappingsByUser", query="delete from UserRoleMappingEntity m where m.user = :user"),
-        @NamedQuery(name="grantRoleToAllUsers", query="insert into UserRoleMappingEntity (roleId, user) select :roleId, user from UserEntity user where user.realmId = :realmId")
-
+        // ORMConvertor: rewritten - compares the key column, and takes the key as the parameter, instead of the whole entity.
+        //   was: select m from UserRoleMappingEntity m where m.user = :user and m.roleId = :roleId
+        @NamedQuery(name = "userHasRole", query = "select m from UserRoleMappingEntity m where m.USER_ID = :userId and m.roleId = :roleId"),
+        // ORMConvertor: rewritten - compares the key column, and takes the key as the parameter, instead of the whole entity.
+        //   was: select m from UserRoleMappingEntity m where m.user = :user
+        @NamedQuery(name = "userRoleMappings", query = "select m from UserRoleMappingEntity m where m.USER_ID = :userId"),
+        // ORMConvertor: rewritten - compares the key column, and takes the key as the parameter, instead of the whole entity.
+        //   was: select m.roleId from UserRoleMappingEntity m where m.user = :user
+        @NamedQuery(name = "userRoleMappingIds", query = "select m.roleId from UserRoleMappingEntity m where m.USER_ID = :userId")
+        // ORMConvertor: "deleteUserRoleMappingsByRealm" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteUserRoleMappingsByRealmAndLink" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteUserRoleMappingsByRole" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "deleteUserRoleMappingsByUser" is left out: it is a bulk delete statement, which changes the rows other queries read; the tool translates read-only queries.
+        // ORMConvertor: "grantRoleToAllUsers" is left out: it is a bulk insert statement, which changes the rows other queries read; the tool translates read-only queries.
 })
 @Table(name="USER_ROLE_MAPPING")
 @Entity

@@ -145,6 +145,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 140 | [Dotazy katalogu LDBC na cesty píše prohledání do šířky rozepsané do nerekurzivních definic s hloubkou rovnou změřenému průměru dat; čas běhu normalizuje volba dat, ne text](140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) | revidováno | T1, T2, T3, F11, F13 |
 | 141 | [Katalog LDBC běží nad jedním data setem, oficiálním scale factorem 1, a hloubka dotazu na cestu je změřená vlastnost těchto dat zapsaná u dotazu; upravená data ani tabulka vah nevznikají](141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) | platí | T1, T2, T3, F13 |
 | 142 | [Nárok klíčové třídy se váže nejdřív na třídu vnořenou v entitě, která ho vyslovila, a teprve potom prostým jménem](142-a-key-class-claim-binds-first-to-the-class-nested-in-the-entity-that-names-it.md) | platí; mění jeden důsledek 094 | F1, F2, F11, S2 |
+| 143 | [Pojmenovaný dotaz JPA se čte tam, kde je definovaný, dotazovým parserem jednotky, která ho nese](143-a-named-query-of-jpa-is-read-where-it-is-defined.md) | platí | F7, F9, F11, F14, S1, S2 |
 
 ## Formát
 

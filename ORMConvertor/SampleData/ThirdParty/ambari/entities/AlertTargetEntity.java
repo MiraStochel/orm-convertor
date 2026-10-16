@@ -82,7 +82,8 @@ import com.google.common.collect.ImmutableSet;
         query = "SELECT alertTarget FROM AlertTargetEntity alertTarget WHERE alertTarget.targetName = :targetName"),
     @NamedQuery(
         name = "AlertTargetEntity.findByIds",
-        query = "SELECT alertTarget FROM AlertTargetEntity alertTarget WHERE alertTarget.targetId IN :targetIds") })
+        query = "SELECT alertTarget FROM AlertTargetEntity alertTarget WHERE alertTarget.targetId IN :targetIds")
+})
 public class AlertTargetEntity {
 
   @Id
