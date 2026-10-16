@@ -29,7 +29,6 @@ Rejstřík, ne pořadí.
 | Položka | Oblast | Druh | Pož. |
 |---|---|---|---|
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | T2, T3, F13 |
-| [Nový kontejner databáze zahodí `LdbcSnb`](#nový-kontejner-mssql_db-může-zahodit-načtené-ldbcsnb) | Dotazy | práce | S5, F13 |
 | [Pojmenované dotazy JPA](#pojmenované-dotazy-jpa-se-nepřekládají-ačkoli-na-nich-stojí-reálné-projekty) | Dotazy | rozhodnutí | F7, F9, F14 |
 | [Cesta přes asociaci mimo `join`](#cesta-přes-asociaci-mimo-join-se-nečte-ačkoli-ji-pravidlo-q7-článku-pokrývá) | Dotazy | rozhodnutí | F7–F10 |
 | [Co zavírá třetí cíl](#co-zavírá-třetí-cíl-schválený-záměr-advisor-nejmenuje) | Třetí cíl | rozhodnutí | F15, T1–T7 |
@@ -77,11 +76,6 @@ Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.
 *Na řadě. Práce podle rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) a [141](./decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md); samostatný běh obou sad, který spouští Míra jménem ([`ORMConvertor/README.md`](../ORMConvertor/README.md), *The LDBC judge*). Požadavky T2, T3, F13.*
 
 Pět dotazů na cesty je `AsSpecified` a soudce je posuzuje verdiktem, ne mírou; nad celou sadou SF 1 (6 818 čtení IC 13 i IC 14 v každém frameworku) zatím běžel jen nad texty s mezí (záznamy *Whole-set runs* z 2026-10-12 a 2026-10-14). Prefix 2 000 řádků SF 1 prošel 2026-10-15 v .NET sadě z hostitele: IC 13 95 z 95 čtení ve všech třech frameworcích, IC 14 95 z 95 v Dapperu a NHibernatu, v EF Core 94 z 95 — řádek 340 vypršel na výchozích 30 s příkazu, ač týž příkaz EF Core s týmiž parametry i s plánem prvního čtení běží ručně 2,2 s; nereprodukováno. Zbývá celá sada nad novými texty, .NET a javová sada po sobě, se záznamem do *Whole-set runs*; neshoda IC 13 nebo IC 14 by byla chybou textu nebo překladu, ne vlastností sady, a opakované vypršení čtení IC 14 v EF Core by bylo vlastností jeho SQL (vnořené poddotazy místo definic), kterou by řešilo nové rozhodnutí.
-
-#### Nový kontejner `mssql_db` může zahodit načtené `LdbcSnb`
-*Práce podle rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.md) a [117](./decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md) — každá část `LdbcSnb` se načítá jednou a načtení pozná rozšířená vlastnost. Požadavky S5, F13.*
-
-`database/ldbc/load-ldbc.sh` pozná načtená data podle vlastnosti `ldbc.dataset`. Při prvním startu nově vytvořeného kontejneru nad existujícím svazkem (server přitom upgraduje systémové databáze) je `LdbcSnb` chvíli nedostupná: dotaz na vlastnost selže, prázdná odpověď se čte jako „data chybí" a skript databázi zahodí. Proběhne-li `DROP`, dokud je nedostupná, soubory zůstanou na disku, `CREATE DATABASE` na nich selže a `LdbcSnb` zmizí; jinak se jen celá znovu načte (SF 1 asi 8 min). Na MIS3 doloženo obojí, pokaždé po `up --force-recreate mssql_db`. Nový kontejner vznikne i po `down` a po změně obrazu nebo konfigurace služby; obyčejný restart ne. Selhání dotazu se nesmí číst jako chybějící data.
 
 #### Pojmenované dotazy JPA se nepřekládají, ačkoli na nich stojí reálné projekty
 *Ke kontrole: rozh. [081](./decisions/081-a-unit-may-be-a-mapping-and-a-query-at-once.md) a [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) — pojmenovaný dotaz JPA je `Loss` a nepřekládá se nikde ([`subset.md`](./subset.md) 2.2, 2.3). Podklad: [`analysis/real-world-sources.md`](./analysis/real-world-sources.md). Požadavky F7, F9, F14.*
