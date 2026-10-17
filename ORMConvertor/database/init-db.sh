@@ -21,6 +21,13 @@ until grep -q "Recovery is complete" /var/opt/mssql/log/errorlog 2>/dev/null; do
     sleep 2
 done
 
+# The measurement environment (decision 145): a fixed buffer pool, large enough to hold the
+# LDBC data set at scale factor 1 after warm-up, and single-threaded plans whose time does not
+# depend on how many cores happen to be idle. Set on every start, so that an existing volume
+# gets them too; both are server settings and survive in master either way.
+/opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P "${MSSQL_SA_PASSWORD}" -C -b \
+    -Q "EXEC sp_configure 'show advanced options', 1; RECONFIGURE; EXEC sp_configure 'max server memory (MB)', 4096; EXEC sp_configure 'max degree of parallelism', 1; RECONFIGURE;"
+
 db_path="/var/opt/mssql/data/WideWorldImporters.mdf"
 
 if [ ! -f "${db_path}" ]; then

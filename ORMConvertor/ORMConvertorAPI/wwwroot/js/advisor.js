@@ -215,7 +215,7 @@ function candidatesFor(measurements, queryId) {
     .filter((candidate) => candidate.measurement)
     .sort(
       (a, b) =>
-        a.measurement.meanDurationMilliseconds - b.measurement.meanDurationMilliseconds,
+        a.measurement.medianDurationMilliseconds - b.measurement.medianDurationMilliseconds,
     );
 }
 
@@ -246,7 +246,7 @@ function renderResult(labels, conversions) {
   for (const [queryId, assigned] of assignments) {
     const candidates = candidatesFor(result.measurements, queryId);
     const rows = candidates.length > 0 ? candidates : [{ framework: assigned, measurement: null }];
-    const best = rows[0]?.measurement?.meanDurationMilliseconds;
+    const best = rows[0]?.measurement?.medianDurationMilliseconds;
 
     rows.forEach((candidate, index) => {
       const row = document.createElement("tr");
@@ -262,7 +262,7 @@ function renderResult(labels, conversions) {
       }
 
       const time = candidate.measurement
-        ? candidate.measurement.meanDurationMilliseconds
+        ? candidate.measurement.medianDurationMilliseconds
         : null;
       const memory = candidate.measurement
         ? Math.round(candidate.measurement.allocatedBytes / 1024)

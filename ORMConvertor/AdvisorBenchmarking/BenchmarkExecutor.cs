@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using DatabaseCatalog;
 using Microsoft.Extensions.Logging;
 using Model;
@@ -28,7 +29,6 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
         logger?.LogInformation("Benchmark start for framework {Framework} with {SourceCount} sources.", framework, sources.Count);
 
         var benchmarkSource = BenchmarkHarnessBuilder.Build(framework, sources, connectionString, catalogReader);
-        // logger?.LogDebug("Generated benchmark source (first 10000 chars): {SourceSnippet}", Truncate(benchmarkSource.Source, 10000));
 
         var assemblyName = $"DynamicBenchmarks_{Guid.NewGuid():N}";
 
@@ -50,60 +50,42 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
         var instance = Activator.CreateInstance(benchmarkType)
             ?? throw new InvalidOperationException("Failed to instantiate benchmark harness.");
 
-        // Warm-up and measurement configuration
-        const int warmupIterations = 2;         // non-measured iterations to stabilize JIT/caches
-        const int minIterations = 3;            // ensure some averaging
-        const int maxIterations = 20;           // avoid overlong DB runs
-        const double targetTotalMs = 500;       // aim for ~0.5s total per benchmark
-
-        int iterations = minIterations;
+        var warmups = new List<double>();
+        var measured = new List<double>();
         long allocatedBefore = 0;
         long allocatedAfter = 0;
-        var stopwatch = new Stopwatch();
 
         try
         {
             setup?.Invoke(instance, null);
             logger?.LogDebug("Setup invoked.");
 
-            // Warm-ups (non-measured) to stabilize caches/JIT.
-            for (int i = 0; i < warmupIterations; i++)
+            // Warm-up (decision 145): until two consecutive executions agree, at most
+            // MaxWarmupIterations. The first execution of a query after a start of the
+            // server also reads its pages from disk; later cells of the same query find them.
+            do
             {
-                execute.Invoke(instance, null);
+                warmups.Add(TimeOne(execute, instance));
             }
+            while (warmups.Count < 2
+                || (warmups.Count < BenchmarkPolicy.MaxWarmupIterations && !Agree(warmups[^2], warmups[^1])));
 
-            // Pilot run to estimate time/op and decide iteration count.
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
 
-            var pilotWatch = Stopwatch.StartNew();
-            var pilotAllocBefore = GC.GetAllocatedBytesForCurrentThread();
-            execute.Invoke(instance, null);
-            var pilotAllocAfter = GC.GetAllocatedBytesForCurrentThread();
-            pilotWatch.Stop();
-
-            var pilotMs = Math.Max(0.01, pilotWatch.Elapsed.TotalMilliseconds);
-            var suggestedIterations = (int)Math.Ceiling(targetTotalMs / pilotMs);
-            if (suggestedIterations < minIterations) suggestedIterations = minIterations;
-            if (suggestedIterations > maxIterations) suggestedIterations = maxIterations;
-            iterations = suggestedIterations;
-            logger?.LogDebug("Pilot: {PilotMs} ms/op, {PilotAlloc} bytes, chosen iterations {Iterations}.", pilotMs, Math.Max(0, pilotAllocAfter - pilotAllocBefore), iterations);
-
-            // Final measured run
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            GC.Collect();
-
+            // Measured loop: until the accumulated time reaches the target, at least
+            // MinIterations times. Each execution is timed on its own so that the median
+            // of one execution can be reported.
             allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-            stopwatch.Start();
-
-            for (int i = 0; i < iterations; i++)
+            double total = 0;
+            while (measured.Count < BenchmarkPolicy.MinIterations || total < BenchmarkPolicy.TargetMilliseconds)
             {
-                execute.Invoke(instance, null);
+                var ms = TimeOne(execute, instance);
+                measured.Add(ms);
+                total += ms;
             }
 
-            stopwatch.Stop();
             allocatedAfter = GC.GetAllocatedBytesForCurrentThread();
         }
         catch (TargetInvocationException tie) when (tie.InnerException != null)
@@ -129,23 +111,34 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
             }
         }
 
-        double meanMilliseconds = stopwatch.Elapsed.TotalMilliseconds / Math.Max(1, iterations);
-        long allocatedBytesPerOp = 0;
-        try
-        {
-            var delta = allocatedAfter - allocatedBefore;
-            if (iterations > 0 && delta > 0)
-            {
-                allocatedBytesPerOp = delta / iterations;
-            }
-        }
-        catch
-        {
-            allocatedBytesPerOp = 0;
-        }
+        double median = Median(measured);
+        long allocatedBytesPerOp = Math.Max(0, allocatedAfter - allocatedBefore) / measured.Count;
 
-        logger?.LogInformation("Benchmark finished: {Iterations} iters, mean {Mean} ms/op, allocated {Allocated} bytes/op.", iterations, meanMilliseconds, allocatedBytesPerOp);
+        logger?.LogInformation(
+            "Benchmark finished: {Warmups} warm-ups, {Iterations} iterations, median {Median} ms/op, allocated {Allocated} bytes/op.",
+            warmups.Count, measured.Count, median, allocatedBytesPerOp);
 
-        return new BenchmarkMeasurement(meanMilliseconds, allocatedBytesPerOp);
+        return new BenchmarkMeasurement(median, allocatedBytesPerOp, warmups.Count, measured.Count);
+    }
+
+    private static double TimeOne(MethodInfo execute, object instance)
+    {
+        var watch = Stopwatch.StartNew();
+        execute.Invoke(instance, null);
+        watch.Stop();
+        return watch.Elapsed.TotalMilliseconds;
+    }
+
+    private static bool Agree(double previous, double current)
+    {
+        var slower = Math.Max(previous, current);
+        return slower <= 0 || Math.Abs(previous - current) <= BenchmarkPolicy.WarmupTolerance * slower;
+    }
+
+    private static double Median(List<double> values)
+    {
+        var sorted = values.OrderBy(v => v).ToList();
+        int middle = sorted.Count / 2;
+        return sorted.Count % 2 == 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
     }
 }

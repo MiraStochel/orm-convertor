@@ -405,7 +405,8 @@
           "selectedFrameworks",
           "queryAssignments",
           "measurements",
-          "translations"
+          "translations",
+          "policy"
         ],
         "type": "object",
         "properties": {
@@ -435,6 +436,9 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/AdvisorTranslationsDto"
             }
+          },
+          "policy": {
+            "$ref": "#/components/schemas/BenchmarkPolicyDto"
           }
         }
       },
@@ -621,12 +625,14 @@
       },
       "BenchmarkMeasurementDto": {
         "required": [
-          "meanDurationMilliseconds",
-          "allocatedBytes"
+          "medianDurationMilliseconds",
+          "allocatedBytes",
+          "warmupIterations",
+          "iterations"
         ],
         "type": "object",
         "properties": {
-          "meanDurationMilliseconds": {
+          "medianDurationMilliseconds": {
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
             "type": [
               "number",
@@ -641,6 +647,65 @@
               "string"
             ],
             "format": "int64"
+          },
+          "warmupIterations": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "iterations": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "BenchmarkPolicyDto": {
+        "required": [
+          "warmupTolerance",
+          "maxWarmupIterations",
+          "minIterations",
+          "targetMilliseconds"
+        ],
+        "type": "object",
+        "properties": {
+          "warmupTolerance": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "maxWarmupIterations": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "minIterations": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "targetMilliseconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },

@@ -11,8 +11,19 @@ public record AdvisorRunResult(
     IReadOnlyList<ORMEnum> SelectedFrameworks,
     IReadOnlyDictionary<string, ORMEnum> QueryAssignments,
     IReadOnlyDictionary<string, IReadOnlyDictionary<ORMEnum, BenchmarkMeasurementDto>> Measurements,
-    IReadOnlyDictionary<ORMEnum, AdvisorTranslationsDto> Translations
+    IReadOnlyDictionary<ORMEnum, AdvisorTranslationsDto> Translations,
+    BenchmarkPolicyDto Policy
 );
+
+/// <summary>
+/// The iteration policy the run measured under (decision 145), for the record of the run:
+/// the values are constants of the methodology, not of the request.
+/// </summary>
+public sealed record BenchmarkPolicyDto(
+    double WarmupTolerance,
+    int MaxWarmupIterations,
+    int MinIterations,
+    double TargetMilliseconds);
 
 /// <summary>
 /// One framework's translated artifacts exactly as the run compiled and measured them
@@ -27,6 +38,11 @@ public sealed record AdvisorTranslationsDto(
 );
 
 /// <summary>
-/// Lightweight DTO for benchmark results used in the API contract.
+/// One measured cell (decision 145): the median time of one execution, the mean bytes one
+/// execution allocated, and the warm-up and measured executions behind them.
 /// </summary>
-public sealed record BenchmarkMeasurementDto(double MeanDurationMilliseconds, long AllocatedBytes);
+public sealed record BenchmarkMeasurementDto(
+    double MedianDurationMilliseconds,
+    long AllocatedBytes,
+    int WarmupIterations,
+    int Iterations);

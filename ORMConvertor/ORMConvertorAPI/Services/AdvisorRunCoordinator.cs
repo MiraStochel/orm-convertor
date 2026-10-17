@@ -234,7 +234,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
 
                 var measurement = benchmarkExecutor.Execute(framework, sources, connectionString, catalogReader);
                 perFramework[framework] = measurement;
-                logger.LogInformation("Benchmark {QueryId} on {Framework}: mean {Mean} ms, memory {Memory} bytes.", query.Id, framework, measurement.MeanDurationMilliseconds, measurement.AllocatedBytes);
+                logger.LogInformation("Benchmark {QueryId} on {Framework}: median {Median} ms, memory {Memory} bytes.", query.Id, framework, measurement.MedianDurationMilliseconds, measurement.AllocatedBytes);
             }
 
             results[query.Id] = perFramework;
@@ -267,7 +267,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
                 var framework = targetFrameworks[fi];
                 var m = queryMeasurements[framework];
                 int index = (qi * frameworkCount) + fi;
-                cost[index] = m.MeanDurationMilliseconds;
+                cost[index] = m.MedianDurationMilliseconds;
                 mem[index] = m.AllocatedBytes;
             }
         }
@@ -324,12 +324,18 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
             var map = new Dictionary<ORMEnum, BenchmarkMeasurementDto>();
             foreach (var (framework, m) in perFramework)
             {
-                map[framework] = new BenchmarkMeasurementDto(m.MeanDurationMilliseconds, m.AllocatedBytes);
+                map[framework] = new BenchmarkMeasurementDto(m.MedianDurationMilliseconds, m.AllocatedBytes, m.WarmupIterations, m.Iterations);
             }
             dtoMeasurements[qid] = map;
         }
 
-        return new AdvisorRunResult(chosenFrameworks, assignments, dtoMeasurements, GroupTranslations(request, targetFrameworks, translations));
+        var policy = new BenchmarkPolicyDto(
+            BenchmarkPolicy.WarmupTolerance,
+            BenchmarkPolicy.MaxWarmupIterations,
+            BenchmarkPolicy.MinIterations,
+            BenchmarkPolicy.TargetMilliseconds);
+
+        return new AdvisorRunResult(chosenFrameworks, assignments, dtoMeasurements, GroupTranslations(request, targetFrameworks, translations), policy);
     }
 
     /// <summary>

@@ -1220,7 +1220,7 @@ sequenceDiagram
 
 **ILP model** (`Advisor/ilp.c`, přímo GLPK C API): binární $x_{q,f}$ (dotaz $q$ na framework $f$) a $y_f$ (výběr).
 
-- účel: $\min \sum_{q,f} z_q \, c_{q,f} \, x_{q,f}$, kde $c$ je průměrná doba (ms) a $z_q$ váha dotazu (nejméně 1);
+- účel: $\min \sum_{q,f} z_q \, c_{q,f} \, x_{q,f}$, kde $c$ je medián doby jednoho spuštění (ms) a $z_q$ váha dotazu (nejméně 1);
 - (1) $\sum_f y_f \le N$; (2) $\sum_f x_{q,f} = 1$; (3) $x_{q,f} \le y_f$; (4) $\sum_{q,f} m_{q,f} \, x_{q,f} \le MEM$ (alokace v bajtech).
 
 Řeší `glp_intopt()` s presolverem. `[LibraryImport("libadvisor.so")]` znamená, že knihovna vzniká jen v Docker stage `advisor-native` (gcc + `libglpk-dev`); verze pro Windows není (rozh. [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)).
@@ -1236,7 +1236,8 @@ Bez `libadvisor.so` oba vracejí hlášku z P/Invoke.
 
 - Měří jen Dapper a EF Core (`SupportedFrameworks`); NHibernate z `KnownFrameworks` vypadne bez záznamu i na výslovné vyžádání.
 - Překlad (`BuildTranslations`) běží bez katalogu, stav `NotConfigured`. Měření vyžaduje `ConnectionStrings:AdvisorDatabase` a drží jeden `CachingCatalogReader` na běh.
-- `BenchmarkExecutor`: 2 zahřívací iterace, pilot, pak 3–20 iterací (cíl ~500 ms). Výsledek je `MeanDurationMilliseconds` a `AllocatedBytes` na operaci.
+- **Iterační politika** (rozh. [145](./decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md), hodnoty jen v `BenchmarkPolicy`, odpověď je vrací jako `policy`): `BenchmarkExecutor` zahřívá, dokud se dvě po sobě jdoucí spuštění neshodnou na 10 %, nejvýš pětkrát; měří, dokud úhrn nedosáhne 1 000 ms a nejméně třikrát. Buňka nese `MedianDurationMilliseconds` (cena ILP), `AllocatedBytes` (průměr na spuštění), `WarmupIterations`, `Iterations`. Běh jde po dotazech, v dotazu přes frameworky.
+- **Měřicí prostředí** (rozh. [145](./decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md)): obraz databáze nastaví při každém startu `max server memory (MB)` 4096 a `max degree of parallelism` 1; compose dává databázím procesory 0–1 a klientům 2–3 (`cpuset`); hostitel dává virtuálnímu stroji pevné čtyři procesory a 8 GB bez swapu. Krátký dotaz se neprodlužuje, opakuje se do meze. Turbo procesoru hostitele je mimo nástroj a může časy ovlivnit; záznam měření říká, zda bylo vypnuté. Soudce LDBC (§6.2) čas neměří a běží s turbem zapnutým.
 - Odpověď nese výběr, přiřazení, měření a `translations`, tedy změřené artefakty (rozh. [059](./decisions/059-advisor-response-carries-the-measured-translations.md)).
 - Paměťový strop `MaxMemoryBytes <= 0` znamená `long.MaxValue`.
 
