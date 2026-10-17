@@ -148,6 +148,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 143 | [Pojmenovaný dotaz JPA se čte tam, kde je definovaný, dotazovým parserem jednotky, která ho nese](143-a-named-query-of-jpa-is-read-where-it-is-defined.md) | platí | F7, F9, F11, F14, S1, S2 |
 | 144 | [Cesta přes asociaci mimo `join` je implicitní join odvozený ze vztahu; cesta ke klíči vlastnící reference je sloupec cizího klíče](144-a-path-through-an-association-outside-join-is-an-implicit-join-or-the-foreign-key-column.md) | platí; nahrazuje jeden odstavec 101 | F7, F9, F11, T1, T2 |
 | 145 | [Měření stojí na zafixovaném prostředí a vyslovené iterační politice: SQL Server s pevnou pamětí a bez paralelismu, databáze a klienti na oddělených procesorech, virtuální stroj s pevnými procesory a pamětí; krátký dotaz se neprodlužuje, opakuje se do meze a vykazuje se medián](145-the-measurement-environment-and-the-iteration-policy-are-fixed.md) | platí | T2, T3, T7, S5, S6 |
+| 146 | [Javovou větev Advisoru měří tatáž smyčka jako .NET větev, ve vlastním kontejneru s JVM jako služba vedle aplikace; spuštění dotazu má jednu mez času, ve smyčce obou větví i u soudce, nastavenou na spojení ovladače](146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md) | platí | F15, T7, S4, S5, T2, T3, F13 |
 
 ## Formát
 

@@ -24,13 +24,13 @@ import java.util.Map;
  * the operation, and this class binds every field of it to the parameter of the same name -
  * a number as BIGINT, a text as NVARCHAR, a list or an object as its JSON text - and knows
  * nothing else. JDBC has no named parameters, so the names are declared in front of the
- * script and bound by position; the script itself is the one the .NET suite runs.
+ * script and bound by position; the script itself is the one the .NET suite runs. The time
+ * limit of a step is the judge's, carried by the connection (decision 146).
  */
 public final class LdbcUpdates {
 
     private static final String DIRECTORY = "/ldbc/updates/";
     private static final String SCHEMA_PLACEHOLDER = "{{schema}}";
-    private static final int TIMEOUT_SECONDS = 600;
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private LdbcUpdates() {
@@ -48,7 +48,6 @@ public final class LdbcUpdates {
         }
 
         try (PreparedStatement statement = connection.prepareStatement(declarations + script(operation.toLowerCase(Locale.ROOT) + ".sql"))) {
-            statement.setQueryTimeout(TIMEOUT_SECONDS);
             for (int index = 0; index < bound.size(); index++) {
                 bind(statement, index + 1, bound.get(index).getValue());
             }
@@ -59,7 +58,6 @@ public final class LdbcUpdates {
     /** Deletes every row the inserts of the set write, however many of them ran ({@code undo.sql}). */
     public static void undo(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
-            statement.setQueryTimeout(TIMEOUT_SECONDS);
             statement.execute(script("undo.sql"));
         }
     }

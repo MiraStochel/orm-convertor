@@ -17,13 +17,15 @@ public record AdvisorRunResult(
 
 /// <summary>
 /// The iteration policy the run measured under (decision 145), for the record of the run:
-/// the values are constants of the methodology, not of the request.
+/// the values are constants of the methodology, not of the request; the time limit of one
+/// execution among them (decision 146).
 /// </summary>
 public sealed record BenchmarkPolicyDto(
     double WarmupTolerance,
     int MaxWarmupIterations,
     int MinIterations,
-    double TargetMilliseconds);
+    double TargetMilliseconds,
+    int ExecutionTimeoutSeconds);
 
 /// <summary>
 /// One framework's translated artifacts exactly as the run compiled and measured them

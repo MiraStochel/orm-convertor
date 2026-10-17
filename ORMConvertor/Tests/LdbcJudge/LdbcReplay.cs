@@ -631,7 +631,6 @@ internal sealed class LdbcReplay
     {
         using var command = connection.CreateCommand();
         command.CommandText = sql;
-        command.CommandTimeout = 600;
         var value = command.ExecuteScalar();
         return value is null or DBNull ? default : (T)value;
     }

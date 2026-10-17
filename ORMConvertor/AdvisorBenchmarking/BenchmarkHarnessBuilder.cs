@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using DatabaseCatalog;
+using Microsoft.Data.SqlClient;
 using Model;
 
 namespace AdvisorBenchmarking;
@@ -25,7 +26,16 @@ internal static class BenchmarkHarnessBuilder
             throw new NotSupportedException($"Benchmark harness for framework {framework} is not implemented yet.");
         }
 
-        return generator(sources, connectionString, catalogReader);
+        return generator(sources, WithExecutionTimeout(connectionString), catalogReader);
     }
+
+    /// <summary>
+    /// The connection string a harness opens its connection with: the caller's, with the
+    /// time limit of one execution (decision 146) as its <c>Command Timeout</c>, which every
+    /// command created over the connection takes as its default - Dapper, EF Core and
+    /// NHibernate alike, none of which sets a timeout of its own unless configured to.
+    /// </summary>
+    internal static string WithExecutionTimeout(string connectionString)
+        => new SqlConnectionStringBuilder(connectionString) { CommandTimeout = BenchmarkPolicy.ExecutionTimeoutSeconds }.ConnectionString;
 }
 

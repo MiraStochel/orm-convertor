@@ -132,6 +132,22 @@ class LdbcValidationTest {
         }
     }
 
+    /**
+     * The URL the judge hands a cell carries its time limit as the driver's queryTimeout, the
+     * default of every statement created over the connection (decision 146), whatever the
+     * configured URL said - the driver's default is no limit at all, and a configured value is
+     * not the judge's.
+     */
+    @Test
+    void theUrlHandedToACellCarriesTheJudgesTimeLimit() {
+        String base = "jdbc:sqlserver://db:1433;databaseName=LdbcSnb;user=sa;password=p;encrypt=true;trustServerCertificate=true";
+
+        assertEquals(base + ";queryTimeout=" + LdbcDatabase.QUERY_TIMEOUT_SECONDS, LdbcDatabase.withQueryTimeout(base));
+        assertEquals(base + ";queryTimeout=" + LdbcDatabase.QUERY_TIMEOUT_SECONDS, LdbcDatabase.withQueryTimeout(base + ";"));
+        assertEquals(base + ";queryTimeout=" + LdbcDatabase.QUERY_TIMEOUT_SECONDS,
+                LdbcDatabase.withQueryTimeout("jdbc:sqlserver://db:1433;databaseName=LdbcSnb;queryTimeout=30;user=sa;password=p;encrypt=true;trustServerCertificate=true"));
+    }
+
     private static void skipIfThePrefixHoldsNoRead(LdbcReplay replay, LdbcReplay.Tally tally, String key) {
         if (tally.reads > 0) {
             return;

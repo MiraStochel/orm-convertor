@@ -26,11 +26,38 @@ public final class LdbcDatabase {
     /** The schema of the LDBC tables in LdbcSnb; the loader substitutes it for the placeholder of its scripts. */
     public static final String SCHEMA = "dbo";
 
+    /**
+     * The time limit of every command of a replay in seconds (decision 146): the reads of the
+     * cells, which the frameworks run over connections opened from {@link #jdbcUrl()}, and the
+     * judge's own inserts, compensation and counts alike. The URL carries it as the driver's
+     * {@code queryTimeout}, the default of every statement created over the connection, so no
+     * framework has to be told; a read over it fails its cell. The same value is the limit of
+     * one execution in the Advisor's policy and in the .NET judge, which holds the three equal.
+     */
+    public static final int QUERY_TIMEOUT_SECONDS = 600;
+
+    private static final String QUERY_TIMEOUT_PROPERTY = "queryTimeout";
+
     private LdbcDatabase() {
     }
 
+    /** JDBC URL of LdbcSnb with the judge's time limit, or null when none is configured. */
     public static String jdbcUrl() {
-        return blankToNull(System.getenv(JDBC_URL_VARIABLE));
+        String configured = blankToNull(System.getenv(JDBC_URL_VARIABLE));
+        return configured == null ? null : withQueryTimeout(configured);
+    }
+
+    /** The configured URL with {@link #QUERY_TIMEOUT_SECONDS} as its {@code queryTimeout}, whatever it carried. */
+    static String withQueryTimeout(String jdbcUrl) {
+        StringBuilder url = new StringBuilder();
+        for (String part : jdbcUrl.split(";")) {
+            int equals = part.indexOf('=');
+            if (part.isBlank() || (equals > 0 && part.substring(0, equals).trim().equalsIgnoreCase(QUERY_TIMEOUT_PROPERTY))) {
+                continue;
+            }
+            url.append(part).append(';');
+        }
+        return url.append(QUERY_TIMEOUT_PROPERTY).append('=').append(QUERY_TIMEOUT_SECONDS).toString();
     }
 
     public static String apiUrl() {

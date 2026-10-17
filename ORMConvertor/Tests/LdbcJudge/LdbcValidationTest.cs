@@ -1,6 +1,9 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
+using Microsoft.Data.SqlClient;
 using Model;
 using SampleData;
+using Tests.Combined;
 using Tests.Differential;
 
 namespace Tests.LdbcJudge;
@@ -188,6 +191,44 @@ public class LdbcValidationTest(ITestOutputHelper output)
     [InlineData("many")]
     public void APrefixThatIsNoNumberOfLinesIsRefused(string configured)
         => Assert.Throws<InvalidOperationException>(() => LdbcDatabase.ResolveRows(configured));
+
+    /// <summary>
+    /// The connection the judge hands a cell carries its time limit as the default of every
+    /// command created over it (decision 146), whatever the configured string said - the
+    /// driver's 30 s cut a correct read of IC 14 once, and a configured value is not the judge's.
+    /// </summary>
+    [Theory]
+    [InlineData("Server=db,1433;Database=LdbcSnb;User ID=sa;Password=p;TrustServerCertificate=true;")]
+    [InlineData("Server=db,1433;Database=LdbcSnb;Command Timeout=30;Trusted_Connection=True;")]
+    public void TheConnectionHandedToACellCarriesTheJudgesTimeLimit(string configured)
+    {
+        var builder = new SqlConnectionStringBuilder(LdbcDatabase.WithCommandTimeout(configured));
+
+        Assert.Equal(LdbcDatabase.CommandTimeoutSeconds, builder.CommandTimeout);
+        Assert.Equal("LdbcSnb", builder.InitialCatalog);
+        using var connection = new SqlConnection(builder.ConnectionString);
+        using var command = connection.CreateCommand();
+        Assert.Equal(LdbcDatabase.CommandTimeoutSeconds, command.CommandTimeout);
+    }
+
+    /// <summary>
+    /// One limit of an execution (decision 146): the Advisor's policy, this judge and the Java
+    /// judge name the same number of seconds. The Java one is read from its source, as the
+    /// descriptor test reads the versions of the Java suite from its pom.
+    /// </summary>
+    [Fact]
+    public void TheJudgesOfBothSuitesAndTheAdvisorGiveAnExecutionTheSameLimit()
+    {
+        Assert.Equal(AdvisorBenchmarking.BenchmarkPolicy.ExecutionTimeoutSeconds, LdbcDatabase.CommandTimeoutSeconds);
+
+        var source = File.ReadAllText(Path.Combine(
+            TargetFrameworkDescriptorTest.SolutionDirectory(),
+            "JavaTests", "src", "test", "java", "cz", "stochel", "ormconvertor", "javatests", "ldbc", "LdbcDatabase.java"));
+        var declared = Regex.Match(source, @"QUERY_TIMEOUT_SECONDS\s*=\s*(\d+)\s*;");
+
+        Assert.True(declared.Success, "The Java judge declares QUERY_TIMEOUT_SECONDS in LdbcDatabase.java.");
+        Assert.Equal(LdbcDatabase.CommandTimeoutSeconds, int.Parse(declared.Groups[1].Value, CultureInfo.InvariantCulture));
+    }
 
     private static TheoryData<string, ORMEnum> Cells(LdbcTranslation translation)
     {

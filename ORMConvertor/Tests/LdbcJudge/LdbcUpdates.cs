@@ -17,16 +17,16 @@ internal static class LdbcUpdates
     private const string ResourcePrefix = "Tests.Database.Ldbc.updates.";
     private const string SchemaPlaceholder = "{{schema}}";
 
-    /// <summary>A replay over SF 1 inserts thousands of rows and deletes them again; no step may time out at the default 30 s.</summary>
-    private const int CommandTimeoutSeconds = 600;
-
-    /// <summary>Runs the script of one insert - INS1 to INS8 - with the fields of the operation as its parameters.</summary>
+    /// <summary>
+    /// Runs the script of one insert - INS1 to INS8 - with the fields of the operation as its
+    /// parameters. A replay over SF 1 inserts thousands of rows and deletes them again; the
+    /// time limit of the step is the judge's, carried by the connection (decision 146).
+    /// </summary>
     public static void Insert(SqlConnection connection, string operation, string parameters)
     {
         using var document = JsonDocument.Parse(parameters);
         using var command = connection.CreateCommand();
         command.CommandText = Script(operation.ToLowerInvariant() + ".sql");
-        command.CommandTimeout = CommandTimeoutSeconds;
 
         foreach (var field in document.RootElement.EnumerateObject())
         {
@@ -41,7 +41,6 @@ internal static class LdbcUpdates
     {
         using var command = connection.CreateCommand();
         command.CommandText = Script("undo.sql");
-        command.CommandTimeout = CommandTimeoutSeconds;
         command.ExecuteNonQuery();
     }
 

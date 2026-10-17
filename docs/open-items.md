@@ -41,7 +41,7 @@ Rejstřík, ne pořadí.
 | [Advisor nad všemi frameworky](#advisor-měří-jen-dapper-a-ef-core) | Advisor | práce | F15, T7 |
 | [Srovnání s variantami a heuristikou](#srovnání-advisoru-s-jednotlivými-frameworky-a-heuristikou-chybí) | Advisor | práce | T7, F15 |
 | [Izolace spouštění cizího kódu](#izolace-spouštění-cizího-kódu-advisorem) | Advisor | rozhodnutí | S4, F15, T7 |
-| [Měření javových frameworků](#čím-advisor-měří-javové-frameworky) | Advisor | rozhodnutí | F15, T7, S4 |
+| [Javová větev Advisoru](#javová-větev-advisoru-podle-rozh-146-nestojí) | Advisor | práce | F15, T7, S4 |
 | [Parametrizovaný dotaz](#parametrizovaný-dotaz-advisor-nezměří) | Advisor | rozhodnutí | F15, T4, T7 |
 | [Nedoplněný překlad](#advisor-měří-nedoplněný-překlad) | Advisor | rozhodnutí | F15, T7 |
 | [Jednotka s víc dotazy](#jednotka-s-víc-dotazy-vstupuje-do-advisoru-jako-jeden-dotaz) | Advisor | rozhodnutí | F15, T7 |
@@ -60,7 +60,6 @@ flowchart LR
     DB["Referenční databáze a T1"] -->|vstup| P["Pipeline T2 × T3"]
     X["Cizí artefakt<br/>ve stupních ověření"] --> L["Metodika<br/>srovnání s LLM"]
     M["Meze složitosti<br/>a velikosti"] -->|"tytéž řady vstupů"| L
-    I["Izolace spouštění"] ---|"rozhodují se spolu"| J["Měření javových<br/>frameworků"]
     SCH["Schémata převzatých<br/>projektů v katalogu"] -->|"klíče zdrojů Dapper a MyBatis"| DB
 ```
 
@@ -73,7 +72,7 @@ Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.
 #### Verdikt soudce nad celou sadou SF 1 po přepisu dotazů na cesty
 *Na řadě. Práce podle rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) a [141](./decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md); samostatný běh obou sad, který spouští Míra jménem ([`ORMConvertor/README.md`](../ORMConvertor/README.md), *The LDBC judge*). Požadavky T2, T3, F13.*
 
-Pět dotazů na cesty je `AsSpecified` a soudce je posuzuje verdiktem, ne mírou; nad celou sadou SF 1 (6 818 čtení IC 13 i IC 14 v každém frameworku) zatím běžel jen nad texty s mezí (záznamy *Whole-set runs* z 2026-10-12 a 2026-10-14). Prefix 2 000 řádků SF 1 prošel 2026-10-15 v .NET sadě z hostitele: IC 13 95 z 95 čtení ve všech třech frameworcích, IC 14 95 z 95 v Dapperu a NHibernatu, v EF Core 94 z 95 — řádek 340 vypršel na výchozích 30 s příkazu, ač týž příkaz EF Core s týmiž parametry i s plánem prvního čtení běží ručně 2,2 s; nereprodukováno. Zbývá celá sada nad novými texty, .NET a javová sada po sobě, se záznamem do *Whole-set runs*; neshoda IC 13 nebo IC 14 by byla chybou textu nebo překladu, ne vlastností sady, a opakované vypršení čtení IC 14 v EF Core by bylo vlastností jeho SQL (vnořené poddotazy místo definic), kterou by řešilo nové rozhodnutí.
+Pět dotazů na cesty je `AsSpecified` a soudce je posuzuje verdiktem, ne mírou; nad celou sadou SF 1 (6 818 čtení IC 13 i IC 14 v každém frameworku) zatím běžel jen nad texty s mezí (záznamy *Whole-set runs* z 2026-10-12 a 2026-10-14). Prefix 2 000 řádků SF 1 prošel 2026-10-15 v .NET sadě z hostitele: IC 13 95 z 95 čtení ve všech třech frameworcích, IC 14 95 z 95 v Dapperu a NHibernatu, v EF Core 94 z 95 — řádek 340 vypršel na tehdejších výchozích 30 s příkazu, ač týž příkaz EF Core s týmiž parametry i s plánem prvního čtení běží ručně 2,2 s; nereprodukováno, a od rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md) má každé čtení obou sad mez 600 s. Zbývá celá sada nad novými texty, .NET a javová sada po sobě, se záznamem do *Whole-set runs*; běh je v zafixovaném prostředí rozh. [145](./decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md) delší než záznamy z 2026-10-12 a 2026-10-14 (selecty jsou devět desetin doby a `max degree of parallelism` 1 i `cpuset` platí i soudci), takže pozastavení Windows Update musí přesáhnout jeho konec. Neshoda IC 13 nebo IC 14 by byla chybou textu nebo překladu, ne vlastností sady, a čtení IC 14 v EF Core nad mezí by bylo vlastností jeho SQL (vnořené poddotazy místo definic), kterou by řešilo nové rozhodnutí.
 
 #### Navigace přes referenci v operandu LINQ se nečte, ačkoli ji JPQL a HQL čtou
 *Ke kontrole: rozh. [144](./decisions/144-a-path-through-an-association-outside-join-is-an-implicit-join-or-the-foreign-key-column.md) — cesta mimo `join` v JPQL a HQL; rozh. [026](./decisions/026-home-of-shared-query-reading.md) — sdílený parser LINQ s háčky jen pro kořen. Požadavky F7–F10.*
@@ -141,9 +140,9 @@ Podle specifikace projekt jen *připraví* data, rozhraní a měřicí infrastru
 Advisor, benchmarking a T7 jsou podle specifikace **sekundární cíl podle časových možností**, který nesmí omezit hlavní cross-language cíl; ze záruk je vyňatý vcelku (§9, oblast 1), popis je v [`architecture.md`](./architecture.md) §8. Značky pořadí položky nenesou, dokud nepadne [Co zavírá třetí cíl](#co-zavírá-třetí-cíl-schválený-záměr-advisor-nejmenuje).
 
 #### Advisor měří jen Dapper a EF Core
-*Práce. [Specifikace](./specifikace.tex) F15 a T7 („rozšířen o nové frameworky"), maketa obrazovky Advisoru se šesti kandidáty (kap. *Uživatelské rozhraní*). Javová větev stojí na [rozhodnutí o měření](#čím-advisor-měří-javové-frameworky). Požadavky F15, T7.*
+*Práce. [Specifikace](./specifikace.tex) F15 a T7 („rozšířen o nové frameworky"), maketa obrazovky Advisoru se šesti kandidáty (kap. *Uživatelské rozhraní*). Javové frameworky nese [položka javové větve](#javová-větev-advisoru-podle-rozh-146-nestojí). Požadavky F15, T7.*
 
-`SupportedFrameworks` drží Dapper a EF Core; NHibernate z `KnownFrameworks` vypadne bez záznamu i na výslovné vyžádání a Hibernate, EclipseLink ani MyBatis harness nemají ([`architecture.md`](./architecture.md) §8). NHibernate je práce jen na .NET straně — harness nad vygenerovaným mapováním a HQL, který zůstává závazným tvarem (§9); javové frameworky čekají na rozhodnutí o měření.
+`SupportedFrameworks` drží Dapper a EF Core; NHibernate z `KnownFrameworks` vypadne bez záznamu i na výslovné vyžádání ([`architecture.md`](./architecture.md) §8). NHibernate je práce jen na .NET straně — harness nad vygenerovaným mapováním a HQL, který zůstává závazným tvarem (§9), s novou `ISession` na spuštění podle rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md).
 
 #### Srovnání Advisoru s jednotlivými frameworky a heuristikou chybí
 *Práce. [Specifikace](./specifikace.tex) T7 („porovnán s jednotlivými frameworky a alespoň jednou jednoduchou heuristikou"), kap. *Vyhodnocení* a tabulka variant na maketě obrazovky Advisoru (kap. *Uživatelské rozhraní*). Požadavky T7, F15.*
@@ -151,38 +150,14 @@ Advisor, benchmarking a T7 jsou podle specifikace **sekundární cíl podle čas
 Obrazovka ukazuje po dotazech všechny změřené kandidáty s poměrem k nejrychlejšímu a součet přiřazených řádků (§6.3). Variant téhož workloadu, které specifikace žádá, není: pro každého kandidáta „vše v jednom frameworku", heuristika volící každému dotazu nejrychlejšího kandidáta a ILP. Všechny se spočítají z měření, která běh už má; otevřené je jen, zda součty variant váží vahami dotazů jako účel ILP (maketa je nevažuje) a jak varianta řekne, že porušila strop paměti či počtu frameworků.
 
 #### Izolace spouštění cizího kódu Advisorem
-*[`threat-model.md`](./threat-model.md), hrozba 1; hranici pro javovou větev vyslovilo rozh. [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md). Požadavky S4, F15, T7.*
+*[`threat-model.md`](./threat-model.md), hrozba 1; hranici pro javovou větev vyslovilo rozh. [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md) a umístilo rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md). Požadavky S4, F15, T7.*
 
-`/advisor/run` je jediné místo, kde nástroj cizí kód kompiluje a spouští: `RoslynBenchmarkCompiler` ho zavede do kolektibilního `AssemblyLoadContext` a `BenchmarkExecutor` ho volá v procesu aplikace, s jejími právy a připojením, bez limitu CPU, paměti i času. Rozhodnout, kudy povede hranice — samostatný proces s limity OS, kontejner na běh, nebo zúžení vstupu. Volba mění měřená čísla (startovní režie, JIT, paměť) a rozhoduje se spolu s [metodologií javové větve](#čím-advisor-měří-javové-frameworky), která podle 076 běží mimo proces. Do té doby platí jen předpoklad důvěryhodné sítě.
+`/advisor/run` je jediné místo, kde nástroj cizí kód kompiluje a spouští: `RoslynBenchmarkCompiler` ho zavede do kolektibilního `AssemblyLoadContext` a `BenchmarkExecutor` ho volá v procesu aplikace, s jejími právy a připojením, bez limitu CPU a paměti; čas drží jen mez spuštění dotazu (146). Javová větev je podle 146 mimo proces z konstrukce — služba ve vlastním kontejneru —, takže položka zůstává jen pro .NET větev. Rozhodnout, kudy povede hranice — samostatný proces s limity OS, kontejner na běh, nebo zúžení vstupu. Volba mění měřená čísla (startovní režie, JIT, paměť). Do té doby platí jen předpoklad důvěryhodné sítě.
 
-#### Čím Advisor měří javové frameworky
-*Riziko „Metodologie měření pro Javu" ve [specifikaci](./specifikace.tex) (kap. *Rizika*); hranici dalo rozh. [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md): javová větev mimo proces aplikace, JVM v kontejneru. Rozhoduje se spolu s [izolací spouštění](#izolace-spouštění-cizího-kódu-advisorem), iterační politiku dalo rozh. [145](./decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md). Požadavky F15, T7, S4.*
+#### Javová větev Advisoru podle rozh. 146 nestojí
+*Práce podle rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md); hranici dalo rozh. [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md), politiku rozh. [145](./decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md), vzor klienta přes HTTP rozh. [078](./decisions/078-java-suite-as-a-client-of-a-running-instance.md). Požadavky F15, T7, S4.*
 
-.NET větev měří v procesu vlastní smyčkou `BenchmarkExecutor`: `Stopwatch` a `GC.GetAllocatedBytesForCurrentThread`, tedy průměrnou dobu a alokované bajty na operaci jen volajícího vlákna — to jsou $c_{q,f}$ a $m_{q,f}$ ILP (§8). Hibernate, EclipseLink ani MyBatis nemá co změřit. Hledá se prostředek volně dostupný (licence slučitelná s MIT nástroje, bez komerční licence), udržovaný a spolehlivý, který poběží v zafixovaném obrazu s Temurinem 25 v linuxovém kontejneru bez zvláštních práv a dá čas, paměť a další údaje srovnatelné s .NET větví. Varianty měřicího jádra se vylučují (stav k 2026-10-12):
-
-| Varianta | Čas | Paměť | Licence, verze |
-|---|---|---|---|
-| **A. JMH** (OpenJDK Code Tools), jen javová větev | režimy `AverageTime`, `SampleTime` (percentily), `SingleShotTime` (studený běh); fork JVM, zahřátí, interval spolehlivosti, výstup JSON | profiler `gc`: `gc.alloc.rate.norm` v B/op přes `getTotalThreadAllocatedBytes` (JDK 21+, všechna vlákna), `gc.count`, `gc.time`; profiler `mempool`: špička každého poolu za iteraci | GPLv2 s Classpath Exception; 1.37 (2023-08), tutéž bere JDK pro vlastní mikrobenchmarky |
-| **B. Vlastní smyčka** zrcadlící `BenchmarkExecutor` | `System.nanoTime()` | `com.sun.management.ThreadMXBean#getCurrentThreadAllocatedBytes` (JDK 14+), přesný protějšek `GC.GetAllocatedBytesForCurrentThread` | jen JDK |
-| **C. JMH + BenchmarkDotNet**, obě větve na zavedeném harnessu mimo proces aplikace | Java jako A; BDN totéž v .NET (zahřátí, pilot, statistika, samostatný proces) | BDN `MemoryDiagnoser` přes `GC.GetTotalAllocatedBytes(precise: true)`: všechna vlákna, tatáž sémantika jako JMH na JDK 21+ | BDN MIT; 0.15.8 |
-
-- **A** je de facto standard a řeší, co vlastní smyčka v JVM neřeší (OSR, eliminace mrtvého kódu přes `Blackhole`, profil JIT oddělený forkem). Harness generuje anotační procesor `jmh-generator-annprocess` při kompilaci `javac`em. Výchozí nastavení (5 forků, 5 + 5 iterací po 10 s) míří na nanosekundy, pro dotaz do databáze se vysloví vlastní. Asymetrie zůstává: Java s forkem a statistikou, .NET v procesu s alokacemi jednoho vlákna.
-- **B** dává symetrii s .NET bez závislosti, ale přenáší i nezdůvodněné konstanty, nemá rozptyl ani fork a to, co JMH řeší za nás, musí obhájit práce sama — u dotazu do databáze je toho málo, ne nic.
-- **C** je nejobhajitelnější srovnatelnost pro T7: dva zavedené harnessy stejné stavby a sémantiky alokací. Cena: přestavět i .NET větev (BDN generuje vlastní projekt a staví ho `dotnet build` za běhu Advisoru; `InProcessEmitToolchain` by kód nechal v procesu) a změnit význam dosavadních .NET čísel. Samostatný proces je zároveň hranice, kterou hledá izolace.
-
-Další údaje se kombinují s kteroukoli variantou; do ILP vstoupí, jen řekne-li to rozhodnutí:
-
-- **JFR** (součást OpenJDK i Temurinu 25; v JMH `-prof jfr`, programově `jdk.jfr.consumer`): pauzy GC, halda po GC (`jdk.GCHeapSummary`), vzorky alokací, čtení ze soketu k databázi (`jdk.SocketRead`), od JDK 25 přesné časy vybraných metod bez změny kódu (JEP 520, `jdk.MethodTiming`). Rozloží čas na ORM, ovladač a síť; protějšek v .NET je EventPipe (`dotnet-counters`, `dotnet-trace`).
-- **Strana SQL Serveru**, jediné údaje z podstaty stejné pro obě větve: relace Extended Events na `rpc_completed` a `sql_batch_completed` filtrovaná podle `client_app_name` (JDBC `applicationName`, ADO.NET `Application Name`) dá počet příkazů na operaci (N+1), `duration`, `cpu_time`, `logical_reads` a řádky. `sys.dm_exec_query_stats` dá totéž po plánech, ale míchá klienty a mizí s plánem z cache. Obojí chce serverové oprávnění.
-
-Rovnou zavržené: komerční profilery (YourKit, JProfiler) nejsou volně dostupné; async-profiler (Apache 2.0, 4.5) vzorkuje, přesné B/op nedá a v kontejneru chce `perf_event_open` (seccomp, případně `SYS_ADMIN`); `memory.peak` cgroupy kontejneru je špička celého procesu včetně page cache a haldy rezervované podle `-Xmx`, rozdíl mezi dotazy v ní zanikne; JMeter a Gatling měří zátěží latenci klienta, alokace ne.
-
-Rozhodnout:
-
-- variantu A, B, nebo C — podle toho, zda ILP smí v jednom běhu míchat .NET a javové kandidáty; jen pak musí být čísla obou větví přímo srovnatelná;
-- kterou paměť měří obě větve: alokace na operaci (dnešní kód, JMH `gc`, BDN), nebo špičku, kterou za $mem(q,f)$ bere článek *A Unified Framework for Object-Relational Mapping Translation and Performance-Aware Selection* (§8.1; JMH `mempool`, JFR);
-- co je jedna operace: EF Core harness drží jeden `DbContext` přes všechny iterace; drží javová větev jednu `Session`, `EntityManager` či `SqlSession` (cache první úrovně zkreslí opakované čtení), nebo je otevírá v každé operaci — a továrna (`SessionFactory`, `EntityManagerFactory`, `SqlSessionFactory`) zůstane mimo měření;
-- které další údaje se uloží a ukážou.
+Hibernate, EclipseLink ani MyBatis nemá Advisor čím změřit. Rozh. 146 je měří touž smyčkou jako .NET větev ve službě `advisor_java` vedle aplikace: javový projekt vedle `JavaTests` (kompilace artefaktů `javax.tools.JavaCompiler`, továrny jako `HibernateBootstrap`, `EclipseLinkBootstrap` a `MyBatisBootstrap` javové sady, smyčka s hodnotami politiky z požadavku, `System.nanoTime()` a `ThreadMXBean#getCurrentThreadAllocatedBytes`, nová `EntityManager` či `SqlSession` na spuštění, `queryTimeout` z politiky v JDBC URL), stage obrazu ze stejného obrazu Maven a Temurin 25 jako `java-tests`, služba v compose s `cpuset` 2–3, v aplikaci klient `IBenchmarkExecutor` pro javové frameworky s adresou `Advisor:JavaRunnerUrl` (compose ji nastaví), `KnownFrameworks` a `SupportedFrameworks` o tři javové frameworky širší a kandidát bez služby vypadlý se záznamem. Odpověď služby má tvar `BenchmarkMeasurementDto`; obrazovka Advisoru pak ukáže šest kandidátů, jak ji kreslí maketa specifikace.
 
 #### Parametrizovaný dotaz Advisor nezměří
 *Plyne z rozh. [083](./decisions/083-parameter-as-the-fifth-operand-shape.md). Požadavky F15, T4, T7.*

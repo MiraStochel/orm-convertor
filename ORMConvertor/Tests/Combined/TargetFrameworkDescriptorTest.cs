@@ -181,7 +181,7 @@ public class TargetFrameworkDescriptorTest
     /// The solution directory, found by walking up from the test assembly: on the host
     /// that is the checkout, in the container the copy the tests stage was built from.
     /// </summary>
-    private static string SolutionDirectory()
+    internal static string SolutionDirectory()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {

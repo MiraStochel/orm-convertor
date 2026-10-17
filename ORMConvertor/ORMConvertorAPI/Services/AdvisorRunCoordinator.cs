@@ -333,7 +333,8 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
             BenchmarkPolicy.WarmupTolerance,
             BenchmarkPolicy.MaxWarmupIterations,
             BenchmarkPolicy.MinIterations,
-            BenchmarkPolicy.TargetMilliseconds);
+            BenchmarkPolicy.TargetMilliseconds,
+            BenchmarkPolicy.ExecutionTimeoutSeconds);
 
         return new AdvisorRunResult(chosenFrameworks, assignments, dtoMeasurements, GroupTranslations(request, targetFrameworks, translations), policy);
     }

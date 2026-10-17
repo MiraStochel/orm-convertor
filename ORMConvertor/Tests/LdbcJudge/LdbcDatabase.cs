@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 
 namespace Tests.LdbcJudge;
@@ -26,6 +27,16 @@ public static class LdbcDatabase
     public const string Schema = "dbo";
 
     /// <summary>
+    /// The time limit of every command of a replay in seconds (decision 146): the reads of the
+    /// cells, which the frameworks run over a connection opened from <see cref="ConnectionString"/>,
+    /// and the judge's own inserts, compensation and counts alike. It is carried by the
+    /// connection string as <c>Command Timeout</c>, the default of every command created over
+    /// it, so no framework has to be told; a read over it fails its cell. The same value is
+    /// the limit of one execution in the Advisor's policy and in the Java judge.
+    /// </summary>
+    public const int CommandTimeoutSeconds = 600;
+
+    /// <summary>
     /// The variable by which an environment states that it provides the judge. It is not the
     /// variable of the test database: that one promises a database, not a data set (decision 117).
     /// </summary>
@@ -44,7 +55,7 @@ public static class LdbcDatabase
             .AddEnvironmentVariables()
             .Build();
 
-    /// <summary>Connection string, or <c>null</c> when none is configured.</summary>
+    /// <summary>Connection string with the judge's time limit, or <c>null</c> when none is configured.</summary>
     public static string? ConnectionString { get; } = ResolveConnectionString();
 
     /// <summary>Whether a connection string was found at all.</summary>
@@ -108,6 +119,10 @@ public static class LdbcDatabase
     private static string? ResolveConnectionString()
     {
         var configured = Configuration.GetConnectionString(ConnectionStringName);
-        return string.IsNullOrWhiteSpace(configured) ? null : configured.Trim();
+        return string.IsNullOrWhiteSpace(configured) ? null : WithCommandTimeout(configured.Trim());
     }
+
+    /// <summary>The configured connection string with <see cref="CommandTimeoutSeconds"/> as its <c>Command Timeout</c>, whatever it carried.</summary>
+    internal static string WithCommandTimeout(string connectionString)
+        => new SqlConnectionStringBuilder(connectionString) { CommandTimeout = CommandTimeoutSeconds }.ConnectionString;
 }
