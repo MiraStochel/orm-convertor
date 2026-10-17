@@ -186,6 +186,20 @@ The verdict of decision [117](../docs/decisions/117-the-interactive-v1-validatio
 
 The tests also count the five mutations of IC 2 in each framework, all rejected, and the compensation, which returned `LdbcSnb` to its loaded state. Both runs judged IC 13 and IC 14 as the simplifications they were then; since decisions [140](../docs/decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) and [141](../docs/decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) the five path queries are translated as specified, so the next whole-set run judges them by verdict. A check on 2026-10-15, the first 2000 lines of SF 1 through the .NET suite from the host over `86a102b` + the next commit: 86 of 87 cells passed, IC 13 and IC 14 agreeing on every read in Dapper and NHibernate and IC 13 in EF Core; IC 14 in EF Core agreed on 94 of 95 reads and one read timed out at the 30 s default, which the same statement with the same parameters did not repeat by hand (2.2 s).
 
+### Time by step
+
+The compensation test of each suite prints the time of the replay split by step: the steps outside the cells, per framework the translation and compilation of its cells and the select and comparison summed over its reads, and per query the mean select of a read in each framework. Measured 2026-10-17 over `bac7dd4` + the next commit, the first 500 lines of SF 1 (476 reads of all 21 judged queries, 24 inserts) against `mssql_db`, the .NET suite from the host and the Java suite in its container against the rebuilt `ormconvertor`, one after the other; Intel Core i9-9900, SQL Server 2022 in Docker Desktop. Every cell agreed with the judge.
+
+| | Dapper | EF Core | NHibernate | Hibernate | EclipseLink | MyBatis |
+|---|---|---|---|---|---|---|
+| translation of 21 cells | 1.6 s | 1.5 s | 0.9 s | 2.6 s | 1.3 s | 1.0 s |
+| compilation of 21 cells | 3.5 s | 8.2 s | 4.0 s | 6.5 s (4.0 s bootstrap) | 3.3 s (1.0 s bootstrap) | 4.2 s (0.3 s bootstrap) |
+| select, 476 reads | 120.2 s | 130.3 s | 111.0 s | 137.7 s | 130.3 s | 151.4 s |
+| select, mean of a read | 253 ms | 274 ms | 233 ms | 289 ms | 274 ms | 318 ms |
+| comparison, mean of a read | 0.06 ms | 0.06 ms | 0.06 ms | 0.10 ms | 0.09 ms | 0.11 ms |
+
+The replay took 6.7 min in the .NET suite and 7.5 min in the Java one; the selects are 90 % of the first and 93 % of the second. The steps outside the cells together took under 20 s in either: the compensation before the replay 2.8 s (.NET, removing what the interrupted run before it had inserted) and 0.2 s (Java), the row counts 0.3–1.6 s each, the mutated artifacts 1.9 s to prepare and 12 s (.NET) or 5 s (Java) to run until caught, paging, expected rows and the 24 inserts under 0.5 s each, the Java instance and catalog 1.1 s. The mean of a read is set by IC 9, IC 12 and IC 14 at about a second each in every framework; the one query whose time differs by framework is IC 3, 140–150 ms in the .NET frameworks and 700–770 ms in the Java ones, and the short queries show a floor of about 20 ms a read in MyBatis (a session per read) and the first-read cost of EF Core and Hibernate on IS 1. The per-query lines are in the test output of a run.
+
 ### Catalog query times
 
 The window of decision [140](../docs/decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md): every query of the catalog runs over `LdbcSnb` on MIS3 between 0.2 s and 300 s, the upper bound met by scale factor 1, the lower one by repetitions in a measurement (decision [141](../docs/decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md)). Measured 2026-10-15 over `86a102b` + the next commit (the five path queries in their new texts, the rest unchanged): each text with its example parameters through Dapper against `mssql_db` (SF 1), four runs, the smallest of the three warm ones; Intel Core i9-9900, SQL Server 2022 in Docker Desktop.

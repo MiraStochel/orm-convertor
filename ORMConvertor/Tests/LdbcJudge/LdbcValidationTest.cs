@@ -150,6 +150,10 @@ public class LdbcValidationTest(ITestOutputHelper output)
         output.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
             $"{replay.SetName}: {replay.Lines} lines replayed ({replay.Inserts} inserts) in {replay.Elapsed.TotalMinutes:F1} min, {extent}."));
+        foreach (var line in replay.DescribeTimes())
+        {
+            output.WriteLine(line);
+        }
     }
 
     /// <summary>

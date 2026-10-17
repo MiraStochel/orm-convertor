@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using AbstractWrappers.Diagnostics;
 using DatabaseCatalog;
@@ -28,6 +29,18 @@ internal sealed class LdbcTally
     public string? Unprepared { get; set; }
 
     public IReadOnlyList<string> Disagreements => disagreements;
+
+    /// <summary>The time the translation of this cell took, the completion from the catalog included.</summary>
+    public TimeSpan Translated { get; set; }
+
+    /// <summary>The time the compilation of this cell took: Roslyn, and the EF Core model or the NHibernate session factory over it.</summary>
+    public TimeSpan Compiled { get; set; }
+
+    /// <summary>The time the artifact spent returning rows, summed over the reads of the cell.</summary>
+    public TimeSpan Selected { get; set; }
+
+    /// <summary>The time the canonical form of the rows and their comparison took, summed over the reads of the cell.</summary>
+    public TimeSpan Compared { get; set; }
 
     public void Match() => (Reads, Matches) = (Reads + 1, Matches + 1);
 
@@ -89,6 +102,54 @@ internal sealed class LdbcMutationTally
 }
 
 /// <summary>
+/// How long the steps of a replay outside the cells took, so that the summary of a run splits
+/// its time by step and the frameworks' share is read against the judge's own.
+/// </summary>
+internal sealed class LdbcPhases
+{
+    /// <summary>Waiting for the application lock - the other suite's replay, where one runs.</summary>
+    public TimeSpan Lock { get; set; }
+
+    /// <summary>The compensation before the replay, which removes what an interrupted replay left.</summary>
+    public TimeSpan UndoBefore { get; set; }
+
+    /// <summary>Counting the rows of every LDBC table before the replay.</summary>
+    public TimeSpan CountsBefore { get; set; }
+
+    /// <summary>Translating and compiling the mutated artifacts of the negative half.</summary>
+    public TimeSpan Mutations { get; set; }
+
+    /// <summary>Reading the lines of the validation set, page by page.</summary>
+    public TimeSpan Paging { get; set; }
+
+    /// <summary>Parsing the expected result of every read into its canonical form.</summary>
+    public TimeSpan Expected { get; set; }
+
+    /// <summary>Running the insert scripts of the update lines.</summary>
+    public TimeSpan Inserts { get; set; }
+
+    /// <summary>Running the mutated artifacts against the reads of their query until each is caught.</summary>
+    public TimeSpan MutationReads { get; set; }
+
+    /// <summary>Counting the rows of every LDBC table after the last line.</summary>
+    public TimeSpan CountsReplayed { get; set; }
+
+    /// <summary>The compensation after the replay.</summary>
+    public TimeSpan UndoAfter { get; set; }
+
+    /// <summary>Counting the rows of every LDBC table after the compensation.</summary>
+    public TimeSpan CountsAfter { get; set; }
+
+    public string Describe() => string.Create(
+        CultureInfo.InvariantCulture,
+        $"steps outside the cells: lock {Lock.TotalSeconds:F1} s, compensation before {UndoBefore.TotalSeconds:F1} s, "
+        + $"counts before {CountsBefore.TotalSeconds:F1} s, mutations prepared {Mutations.TotalSeconds:F1} s, "
+        + $"paging {Paging.TotalSeconds:F1} s, expected rows {Expected.TotalSeconds:F1} s, inserts {Inserts.TotalSeconds:F1} s, "
+        + $"mutation reads {MutationReads.TotalSeconds:F1} s, counts after the last line {CountsReplayed.TotalSeconds:F1} s, "
+        + $"compensation after {UndoAfter.TotalSeconds:F1} s, counts after {CountsAfter.TotalSeconds:F1} s.");
+}
+
+/// <summary>
 /// The replay of the validation set of LDBC Interactive v1 over LdbcSnb (decision 117): the
 /// fourth verification level over the LDBC catalog, with LDBC's own expected results as the
 /// judge. The lines are replayed in their order: an insert runs its script from
@@ -135,6 +196,9 @@ internal sealed class LdbcReplay
 
     public TimeSpan Elapsed { get; private set; }
 
+    /// <summary>How long the steps outside the cells took; the cells' own steps are on their tallies.</summary>
+    public LdbcPhases Phases { get; } = new();
+
     /// <summary>The rows of every LDBC table after the compensation before the replay - the loaded state.</summary>
     public IReadOnlyDictionary<string, long> Loaded { get; private set; } = new Dictionary<string, long>();
 
@@ -159,6 +223,45 @@ internal sealed class LdbcReplay
 
     /// <summary>The queries the set judges: every query of the Interactive workload, each bound to an operation.</summary>
     public static IEnumerable<LdbcQuery> Judged() => LdbcSnbSample.Queries.Where(query => query.Validation is not null);
+
+    /// <summary>
+    /// The time of the replay split by step: the steps outside the cells, then per framework the
+    /// translation and compilation of its cells and the select and comparison over its reads,
+    /// then per query the mean select of a read in each framework - the lines of the summary.
+    /// </summary>
+    public IEnumerable<string> DescribeTimes()
+    {
+        yield return Phases.Describe();
+
+        foreach (var framework in Frameworks)
+        {
+            var cells = tallies.Where(pair => pair.Key.Framework == framework).Select(pair => pair.Value).ToList();
+            var reads = cells.Sum(cell => cell.Reads);
+            var translated = cells.Aggregate(TimeSpan.Zero, (sum, cell) => sum + cell.Translated);
+            var compiled = cells.Aggregate(TimeSpan.Zero, (sum, cell) => sum + cell.Compiled);
+            var selected = cells.Aggregate(TimeSpan.Zero, (sum, cell) => sum + cell.Selected);
+            var compared = cells.Aggregate(TimeSpan.Zero, (sum, cell) => sum + cell.Compared);
+
+            yield return string.Create(
+                CultureInfo.InvariantCulture,
+                $"{framework}: {cells.Count} cells translated in {translated.TotalSeconds:F1} s and compiled in {compiled.TotalSeconds:F1} s; "
+                + $"{reads} reads: select {selected.TotalSeconds:F1} s ({(reads == 0 ? 0 : selected.TotalMilliseconds / reads):F1} ms a read), "
+                + $"comparison {compared.TotalSeconds:F1} s ({(reads == 0 ? 0 : compared.TotalMilliseconds / reads):F2} ms a read).");
+        }
+
+        foreach (var query in Judged())
+        {
+            var parts = Frameworks.Select(framework =>
+            {
+                var tally = tallies[(query.Key, framework)];
+                return tally.Reads == 0
+                    ? $"{framework} -"
+                    : string.Create(CultureInfo.InvariantCulture, $"{framework} {tally.Selected.TotalMilliseconds / tally.Reads:F1}");
+            });
+
+            yield return $"{query.Key}: {string.Join(", ", parts)} ms a read (select), {tallies[(query.Key, Frameworks[0])].Reads} reads.";
+        }
+    }
 
     private static LdbcReplay Replay()
     {
@@ -204,32 +307,46 @@ internal sealed class LdbcReplay
         using var catalog = new CachingCatalogReader(new SqlServerCatalogReader(connectionString));
 
         var prepared = Prepare(catalog, connectionString);
+        var started = Stopwatch.GetTimestamp();
         var mutated = PrepareMutations(catalog, connectionString);
+        Phases.Mutations = Stopwatch.GetElapsedTime(started);
 
         try
         {
             // Held for the lifetime of this connection: a replay of the other suite waits, and a
             // replay that dies releases the lock with its connection.
+            started = Stopwatch.GetTimestamp();
             Execute(
                 control,
                 $"DECLARE @granted INT; EXEC @granted = sp_getapplock @Resource = N'{LockResource}', @LockMode = 'Exclusive', @LockOwner = 'Session', @LockTimeout = -1; "
                 + $"IF @granted < 0 THROW 50117, 'The application lock {LockResource} was not granted.', 1;",
                 timeout: 0);
+            Phases.Lock = Stopwatch.GetElapsedTime(started);
 
+            started = Stopwatch.GetTimestamp();
             LdbcUpdates.Undo(control);
+            Phases.UndoBefore = Stopwatch.GetElapsedTime(started);
+            started = Stopwatch.GetTimestamp();
             Loaded = Counts(control);
+            Phases.CountsBefore = Stopwatch.GetElapsedTime(started);
 
             try
             {
                 Replay(control, prepared, mutated);
+                started = Stopwatch.GetTimestamp();
                 Replayed = Counts(control);
+                Phases.CountsReplayed = Stopwatch.GetElapsedTime(started);
             }
             finally
             {
+                started = Stopwatch.GetTimestamp();
                 LdbcUpdates.Undo(control);
+                Phases.UndoAfter = Stopwatch.GetElapsedTime(started);
             }
 
+            started = Stopwatch.GetTimestamp();
             Restored = Counts(control);
+            Phases.CountsAfter = Stopwatch.GetElapsedTime(started);
         }
         finally
         {
@@ -257,8 +374,13 @@ internal sealed class LdbcReplay
 
                 try
                 {
+                    var started = Stopwatch.GetTimestamp();
                     var conversion = Translate(query, framework, catalog);
+                    tally.Translated = Stopwatch.GetElapsedTime(started);
+
+                    started = Stopwatch.GetTimestamp();
                     cells[framework] = PreparedQuery.Prepare($"Ldbc_{query.Key}_{framework}", framework, conversion, connectionString);
+                    tally.Compiled = Stopwatch.GetElapsedTime(started);
                 }
                 catch (Exception exception)
                 {
@@ -323,7 +445,9 @@ internal sealed class LdbcReplay
 
         while (true)
         {
+            var started = Stopwatch.GetTimestamp();
             var page = Page(control, after, last);
+            Phases.Paging += Stopwatch.GetElapsedTime(started);
             if (page.Count == 0)
             {
                 return;
@@ -336,13 +460,17 @@ internal sealed class LdbcReplay
 
                 if (operation.StartsWith("INS", StringComparison.Ordinal))
                 {
+                    started = Stopwatch.GetTimestamp();
                     LdbcUpdates.Insert(control, operation, parameters);
+                    Phases.Inserts += Stopwatch.GetElapsedTime(started);
                     Inserts++;
                     continue;
                 }
 
                 var query = queries[operation];
+                started = Stopwatch.GetTimestamp();
                 var expected = LdbcCanonicalForm.Expected(query.Validation!, result);
+                Phases.Expected += Stopwatch.GetElapsedTime(started);
 
                 foreach (var (framework, artifact) in prepared[operation])
                 {
@@ -354,7 +482,9 @@ internal sealed class LdbcReplay
 
                 if (query.Key == MutatedQuery)
                 {
+                    started = Stopwatch.GetTimestamp();
                     Catch(mutated, query, position, parameters, expected);
+                    Phases.MutationReads += Stopwatch.GetElapsedTime(started);
                 }
             }
         }
@@ -362,11 +492,19 @@ internal sealed class LdbcReplay
 
     private static void Judge(LdbcTally tally, LdbcQuery query, PreparedQuery artifact, int position, string parameters, List<string> expected)
     {
+        var started = Stopwatch.GetTimestamp();
+
         try
         {
-            var actual = Run(query, artifact, parameters);
+            var rows = Rows(query, artifact, parameters);
+            var selected = Stopwatch.GetTimestamp();
+            tally.Selected += Stopwatch.GetElapsedTime(started, selected);
 
-            if (actual.SequenceEqual(expected))
+            var actual = LdbcCanonicalForm.Actual(query.Validation!, rows);
+            var agrees = actual.SequenceEqual(expected);
+            tally.Compared += Stopwatch.GetElapsedTime(selected);
+
+            if (agrees)
             {
                 tally.Match();
             }
@@ -377,6 +515,7 @@ internal sealed class LdbcReplay
         }
         catch (Exception exception)
         {
+            tally.Selected += Stopwatch.GetElapsedTime(started);
             tally.Fail(position, exception);
         }
     }
@@ -414,14 +553,16 @@ internal sealed class LdbcReplay
     }
 
     private static List<string> Run(LdbcQuery query, PreparedQuery artifact, string parameters)
+        => LdbcCanonicalForm.Actual(query.Validation!, Rows(query, artifact, parameters));
+
+    /// <summary>The rows the artifact returns for the parameters of a line - the select alone, before the canonical form.</summary>
+    private static List<object?[]> Rows(LdbcQuery query, PreparedQuery artifact, string parameters)
     {
         var binding = query.Validation!;
         var arguments = LdbcCanonicalForm.Arguments(query, artifact.Parameters.Select(parameter => parameter.Name!), parameters);
 
         // Every query of the workload is a projection: HQL hands its rows back by position.
-        var rows = artifact.Run(query.Key, arguments, [.. binding.Fields.Select(field => field.Column)], projection: true);
-
-        return LdbcCanonicalForm.Actual(binding, rows);
+        return artifact.Run(query.Key, arguments, [.. binding.Fields.Select(field => field.Column)], projection: true);
     }
 
     /// <summary>

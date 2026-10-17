@@ -105,6 +105,9 @@ class LdbcValidationTest {
         System.out.println(String.format(Locale.ROOT, "%s: %d lines replayed (%d inserts) in %.1f min, %s.",
                 replay.setName(), replay.lines(), replay.inserts(), replay.elapsed().toMillis() / 60000.0,
                 LdbcDatabase.rows() != null ? "a prefix of " + LdbcDatabase.rows() : "the whole set"));
+        for (String line : replay.describeTimes()) {
+            System.out.println(line);
+        }
     }
 
     /** Without the judge's configuration a case skips with the reason; where it was promised, the same reason fails. */

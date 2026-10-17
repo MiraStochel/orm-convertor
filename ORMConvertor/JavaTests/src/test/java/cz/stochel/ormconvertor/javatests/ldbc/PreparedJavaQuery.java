@@ -48,6 +48,7 @@ import org.apache.ibatis.session.SqlSessionFactory;
 final class PreparedJavaQuery implements AutoCloseable {
 
     private static final Map<String, Domain> DOMAINS = new LinkedHashMap<>();
+    private static final Map<Integer, Long> BOOTSTRAP_NANOS = new HashMap<>();
 
     private final int target;
     private final JavaProject project;
@@ -303,7 +304,23 @@ final class PreparedJavaQuery implements AutoCloseable {
         List<String> entities = response.artifactsOf(ContentType.JAVA_ENTITY).stream().map(ConversionUnit::content).toList();
         String key = target + "|" + jdbcUrl + "|" + String.join("\u0000", entities);
 
-        return DOMAINS.computeIfAbsent(key, k -> new Domain("ldbc-" + Orm.nameOf(target).toLowerCase(), entities, jdbcUrl));
+        Domain domain = DOMAINS.get(key);
+        if (domain == null) {
+            long started = System.nanoTime();
+            domain = new Domain("ldbc-" + Orm.nameOf(target).toLowerCase(), entities, jdbcUrl);
+            DOMAINS.put(key, domain);
+            bootstrapped(target, System.nanoTime() - started);
+        }
+        return domain;
+    }
+
+    /** The time the bootstrap of a target took - its entities compiled and its factory built -, counted into the cell that first asked for it. */
+    static synchronized long bootstrapNanos(int target) {
+        return BOOTSTRAP_NANOS.getOrDefault(target, 0L);
+    }
+
+    private static synchronized void bootstrapped(int target, long nanos) {
+        BOOTSTRAP_NANOS.merge(target, nanos, Long::sum);
     }
 
     /** The entity artifacts of a target, compiled once, and the JPA factory built over them once. */
@@ -333,17 +350,21 @@ final class PreparedJavaQuery implements AutoCloseable {
         synchronized EntityManagerFactory factory(int target) {
             if (target == Orm.HIBERNATE) {
                 if (hibernate == null) {
+                    long started = System.nanoTime();
                     hibernate = HibernateBootstrap.build("none", loader, mapped, jdbcUrl, LdbcDatabase.SCHEMA);
+                    bootstrapped(target, System.nanoTime() - started);
                 }
                 return hibernate;
             }
 
             if (eclipseLink == null) {
+                long started = System.nanoTime();
                 Map<String, Object> connection = new HashMap<>();
                 connection.put("jakarta.persistence.jdbc.url", jdbcUrl);
                 putIfPresent(connection, "jakarta.persistence.jdbc.user", TestDatabase.property(jdbcUrl, "user"));
                 putIfPresent(connection, "jakarta.persistence.jdbc.password", TestDatabase.property(jdbcUrl, "password"));
                 eclipseLink = EclipseLinkBootstrap.build("none", loader, project.rootUrl(), mapped, connection);
+                bootstrapped(target, System.nanoTime() - started);
             }
             return eclipseLink;
         }

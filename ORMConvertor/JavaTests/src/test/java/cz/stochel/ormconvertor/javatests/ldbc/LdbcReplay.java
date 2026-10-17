@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -64,6 +65,7 @@ final class LdbcReplay {
     private int lines;
     private int inserts;
     private Duration elapsed = Duration.ZERO;
+    private final Phases phases = new Phases();
     private Map<String, Long> loaded = Map.of();
     private Map<String, Long> replayed = Map.of();
     private Map<String, Long> restored = Map.of();
@@ -139,6 +141,54 @@ final class LdbcReplay {
         return mutations.get(mutation + "|" + framework);
     }
 
+    /**
+     * The time of the replay split by step: the steps outside the cells, then per target the
+     * translation and compilation of its cells (the bootstrap of the target - its entities
+     * compiled and its factory built - apart) and the select and comparison over its reads,
+     * then per query the mean select of a read in each target - the lines of the summary.
+     */
+    List<String> describeTimes() {
+        List<String> lines = new ArrayList<>();
+        lines.add(phases.describe());
+
+        for (int framework : FRAMEWORKS) {
+            int cells = 0;
+            int reads = 0;
+            long translated = 0;
+            long compiled = 0;
+            long selected = 0;
+            long compared = 0;
+
+            for (String key : KEYS) {
+                Tally tally = tally(key, framework);
+                cells++;
+                reads += tally.reads;
+                translated += tally.translateNanos;
+                compiled += tally.compileNanos;
+                selected += tally.selectNanos;
+                compared += tally.compareNanos;
+            }
+
+            lines.add(String.format(Locale.ROOT,
+                    "%s: %d cells translated in %.1f s and compiled in %.1f s (bootstrap of the target %.1f s of it); "
+                            + "%d reads: select %.1f s (%.1f ms a read), comparison %.1f s (%.2f ms a read).",
+                    Orm.nameOf(framework), cells, translated / 1e9, compiled / 1e9, PreparedJavaQuery.bootstrapNanos(framework) / 1e9,
+                    reads, selected / 1e9, reads == 0 ? 0 : selected / 1e6 / reads, compared / 1e9, reads == 0 ? 0 : compared / 1e6 / reads));
+        }
+
+        for (String key : KEYS) {
+            StringBuilder parts = new StringBuilder();
+            for (int framework : FRAMEWORKS) {
+                Tally tally = tally(key, framework);
+                parts.append(parts.length() == 0 ? "" : ", ").append(Orm.nameOf(framework)).append(' ')
+                        .append(tally.reads == 0 ? "-" : String.format(Locale.ROOT, "%.1f", tally.selectNanos / 1e6 / tally.reads));
+            }
+            lines.add(key + ": " + parts + " ms a read (select), " + tally(key, FRAMEWORKS[0]).reads + " reads.");
+        }
+
+        return lines;
+    }
+
     private static LdbcReplay replay() throws Exception {
         String reason = LdbcDatabase.notConfigured();
         if (reason != null) {
@@ -162,11 +212,14 @@ final class LdbcReplay {
                         + "database/ldbc/load-ldbc.sh loads it on the start of the container; elsewhere run database/ldbc/validation.sql (decision 117).");
             }
 
-            ToolApi.awaitReady(LdbcDatabase.apiUrl());
-
             LdbcReplay replay = new LdbcReplay(null);
             replay.setName = setName;
+
+            long started = System.nanoTime();
+            ToolApi.awaitReady(LdbcDatabase.apiUrl());
             replay.catalog = ToolApi.get(LdbcDatabase.apiUrl(), "/ldbc", LdbcCatalog.class);
+            replay.phases.catalogNanos = System.nanoTime() - started;
+
             replay.run(control, jdbcUrl);
             return replay;
         }
@@ -176,28 +229,42 @@ final class LdbcReplay {
         long start = System.nanoTime();
 
         Map<String, Map<Integer, PreparedJavaQuery>> prepared = prepare(jdbcUrl);
+        long started = System.nanoTime();
         Map<String, PreparedJavaQuery> mutated = prepareMutations(jdbcUrl);
+        phases.mutationsNanos = System.nanoTime() - started;
 
         try {
             // Held for the lifetime of this connection: a replay of the other suite waits, and
             // a replay that dies releases the lock with its connection.
+            started = System.nanoTime();
             try (Statement statement = control.createStatement()) {
                 statement.execute("DECLARE @granted INT; EXEC @granted = sp_getapplock @Resource = N'" + LOCK_RESOURCE
                         + "', @LockMode = 'Exclusive', @LockOwner = 'Session', @LockTimeout = -1; "
                         + "IF @granted < 0 THROW 50117, 'The application lock " + LOCK_RESOURCE + " was not granted.', 1;");
             }
+            phases.lockNanos = System.nanoTime() - started;
 
+            started = System.nanoTime();
             LdbcUpdates.undo(control);
+            phases.undoBeforeNanos = System.nanoTime() - started;
+            started = System.nanoTime();
             loaded = counts(control);
+            phases.countsBeforeNanos = System.nanoTime() - started;
 
             try {
                 replay(control, prepared, mutated);
+                started = System.nanoTime();
                 replayed = counts(control);
+                phases.countsReplayedNanos = System.nanoTime() - started;
             } finally {
+                started = System.nanoTime();
                 LdbcUpdates.undo(control);
+                phases.undoAfterNanos = System.nanoTime() - started;
             }
 
+            started = System.nanoTime();
             restored = counts(control);
+            phases.countsAfterNanos = System.nanoTime() - started;
         } finally {
             for (Map<Integer, PreparedJavaQuery> cells : prepared.values()) {
                 for (PreparedJavaQuery query : cells.values()) {
@@ -230,7 +297,13 @@ final class LdbcReplay {
                 tallies.put(key + "|" + framework, tally);
 
                 try {
-                    cells.put(framework, PreparedJavaQuery.prepare(key, framework, translate(query, framework), null, jdbcUrl));
+                    long started = System.nanoTime();
+                    ConversionResponse response = translate(query, framework);
+                    tally.translateNanos = System.nanoTime() - started;
+
+                    started = System.nanoTime();
+                    cells.put(framework, PreparedJavaQuery.prepare(key, framework, response, null, jdbcUrl));
+                    tally.compileNanos = System.nanoTime() - started;
                 } catch (Throwable e) {
                     tally.unprepared = innermost(e).toString();
                     cells.put(framework, null);
@@ -287,7 +360,9 @@ final class LdbcReplay {
         int after = 0;
 
         while (true) {
+            long started = System.nanoTime();
             List<Line> page = page(control, after, last);
+            phases.pagingNanos += System.nanoTime() - started;
             if (page.isEmpty()) {
                 return;
             }
@@ -297,13 +372,17 @@ final class LdbcReplay {
                 lines++;
 
                 if (line.operation().startsWith("INS")) {
+                    started = System.nanoTime();
                     LdbcUpdates.insert(control, line.operation(), line.parameters());
+                    phases.insertsNanos += System.nanoTime() - started;
                     inserts++;
                     continue;
                 }
 
                 LdbcCatalog.Query query = queries.get(line.operation());
+                started = System.nanoTime();
                 List<String> expected = LdbcCanonicalForm.expected(query.validation(), line.result());
+                phases.expectedNanos += System.nanoTime() - started;
 
                 for (Map.Entry<Integer, PreparedJavaQuery> cell : prepared.get(line.operation()).entrySet()) {
                     if (cell.getValue() != null) {
@@ -312,21 +391,32 @@ final class LdbcReplay {
                 }
 
                 if (query.key().equals(MUTATED_QUERY)) {
+                    started = System.nanoTime();
                     catchMutations(mutated, query, line, expected);
+                    phases.mutationReadsNanos += System.nanoTime() - started;
                 }
             }
         }
     }
 
     private static void judge(Tally tally, LdbcCatalog.Query query, PreparedJavaQuery artifact, Line line, List<String> expected) {
+        long started = System.nanoTime();
         try {
-            List<String> actual = run(query, artifact, line.parameters());
-            if (actual.equals(expected)) {
+            List<List<Object>> rows = rows(query, artifact, line.parameters());
+            long selected = System.nanoTime();
+            tally.selectNanos += selected - started;
+
+            List<String> actual = LdbcCanonicalForm.actual(query.validation(), rows);
+            boolean agrees = actual.equals(expected);
+            tally.compareNanos += System.nanoTime() - selected;
+
+            if (agrees) {
                 tally.match();
             } else {
                 tally.mismatch(line.position(), expected, actual);
             }
         } catch (Throwable e) {
+            tally.selectNanos += System.nanoTime() - started;
             tally.fail(line.position(), e);
         }
     }
@@ -351,15 +441,19 @@ final class LdbcReplay {
     }
 
     private static List<String> run(LdbcCatalog.Query query, PreparedJavaQuery artifact, String parameters) throws Exception {
-        LdbcCatalog.Validation binding = query.validation();
+        return LdbcCanonicalForm.actual(query.validation(), rows(query, artifact, parameters));
+    }
+
+    /** The rows the artifact returns for the parameters of a line - the select alone, before the canonical form. */
+    private static List<List<Object>> rows(LdbcCatalog.Query query, PreparedJavaQuery artifact, String parameters) throws Exception {
         Object[] arguments = LdbcCanonicalForm.arguments(query, artifact.parameterNames(), parameters);
 
         List<String> columns = new ArrayList<>();
-        for (LdbcCatalog.Field field : binding.fields()) {
+        for (LdbcCatalog.Field field : query.validation().fields()) {
             columns.add(field.column());
         }
 
-        return LdbcCanonicalForm.actual(binding, artifact.run(query.key(), arguments, columns));
+        return artifact.run(query.key(), arguments, columns);
     }
 
     /** The artifact of one target, from Dapper with LdbcSnb as the catalog; a Failure record makes the cell unpreparable. */
@@ -430,6 +524,18 @@ final class LdbcReplay {
         String unprepared;
         final List<String> disagreements = new ArrayList<>();
 
+        /** The translation of the cell over HTTP, the completion from the catalog included. */
+        long translateNanos;
+
+        /** The compilation of the cell - javac, and for MyBatis the session factory over the mappers. */
+        long compileNanos;
+
+        /** The time the artifact spent returning rows, summed over the reads of the cell. */
+        long selectNanos;
+
+        /** The canonical form of the rows and their comparison, summed over the reads of the cell. */
+        long compareNanos;
+
         void match() {
             reads++;
             matches++;
@@ -468,6 +574,33 @@ final class LdbcReplay {
                 text.append(System.lineSeparator()).append("  ").append(disagreement);
             }
             return text.toString();
+        }
+    }
+
+    /** How long the steps of a replay outside the cells took, so that the summary splits the time of a run by step. */
+    static final class Phases {
+
+        long catalogNanos;
+        long lockNanos;
+        long undoBeforeNanos;
+        long countsBeforeNanos;
+        long mutationsNanos;
+        long pagingNanos;
+        long expectedNanos;
+        long insertsNanos;
+        long mutationReadsNanos;
+        long countsReplayedNanos;
+        long undoAfterNanos;
+        long countsAfterNanos;
+
+        String describe() {
+            return String.format(Locale.ROOT,
+                    "steps outside the cells: instance and catalog %.1f s, lock %.1f s, compensation before %.1f s, counts before %.1f s, "
+                            + "mutations prepared %.1f s, paging %.1f s, expected rows %.1f s, inserts %.1f s, mutation reads %.1f s, "
+                            + "counts after the last line %.1f s, compensation after %.1f s, counts after %.1f s.",
+                    catalogNanos / 1e9, lockNanos / 1e9, undoBeforeNanos / 1e9, countsBeforeNanos / 1e9, mutationsNanos / 1e9,
+                    pagingNanos / 1e9, expectedNanos / 1e9, insertsNanos / 1e9, mutationReadsNanos / 1e9,
+                    countsReplayedNanos / 1e9, undoAfterNanos / 1e9, countsAfterNanos / 1e9);
         }
     }
 
