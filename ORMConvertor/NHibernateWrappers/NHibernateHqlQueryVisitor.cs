@@ -543,7 +543,10 @@ public sealed class NHibernateHqlQueryVisitor(
 
     /// <summary>
     /// Writes a constant the way HQL wants it (decision 024). Strings and dates are quoted,
-    /// numbers are not, and no suffix survives from whichever language the source was in.
+    /// numbers are not, and no suffix survives from whichever language the source was in. A
+    /// number with an exponent (1.0E6) is written out in full: the HQL parser of NHibernate
+    /// 5.7 reads no exponent and fails on the literal at run time (measured over the FIBEN
+    /// catalog, decision 149).
     /// </summary>
     private static string Literal(QueryConstant constant) => constant.Type switch
     {
@@ -553,6 +556,9 @@ public sealed class NHibernateHqlQueryVisitor(
         ScalarType.DateTime or ScalarType.Date or ScalarType.TimeOfDay
             or ScalarType.DateTimeOffset or ScalarType.Duration => $"'{constant.Text}'",
         ScalarType.Bool => constant.Text.ToLowerInvariant(),
+        _ when constant.Text.IndexOfAny(['e', 'E']) >= 0
+            && decimal.TryParse(constant.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var number)
+            => number.ToString(System.Globalization.CultureInfo.InvariantCulture),
         _ => constant.Text,
     };
 }

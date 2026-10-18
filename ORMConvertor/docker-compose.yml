@@ -43,15 +43,18 @@ services:
       mssql_db:
         condition: service_healthy
 
-  # Two databases: WideWorldImporters, and LdbcSnb with the LDBC SNB Interactive v1 data set
+  # Three databases: WideWorldImporters; LdbcSnb with the LDBC SNB Interactive v1 data set
   # (decision 110), loaded on the first start - about a minute at scale factor 1, while the
-  # server already answers. LDBC_SCALE_FACTOR picks another published scale factor, or none.
+  # server already answers; and Fiben with the FIBEN benchmark (decision 149), loaded the same
+  # way with the judge of its catalog beside the data. LDBC_SCALE_FACTOR picks another
+  # published scale factor, or none; FIBEN_DATASET another commit of IBM/fiben-benchmark, or none.
   mssql_db:
     build:
       context: .
       dockerfile: database.Dockerfile
       args:
         LDBC_SCALE_FACTOR: ${LDBC_SCALE_FACTOR:-1}
+        FIBEN_DATASET: ${FIBEN_DATASET:-96eaffc60cc824b8f545cd29adffc2a170e08d04}
     ports:
       - "1444:1433"
     cpuset: "0,1"
@@ -69,7 +72,8 @@ services:
   # and the tests create it themselves (decision 016). The server is the image of mssql_db,
   # because the judge of the LDBC catalog needs LdbcSnb with its validation set (decision
   # 117) - at scale factor 0.1 here, loaded in seconds; LDBC_TEST_SCALE_FACTOR picks another
-  # one LDBC publishes a validation set for (0.1 to 10).
+  # one LDBC publishes a validation set for (0.1 to 10). The FIBEN benchmark stays out: its
+  # catalog runs on demand against mssql_db, never as part of a build (decision 149).
   test_db:
     profiles: ["test"]
     build:
@@ -77,6 +81,7 @@ services:
       dockerfile: database.Dockerfile
       args:
         LDBC_SCALE_FACTOR: ${LDBC_TEST_SCALE_FACTOR:-0.1}
+        FIBEN_DATASET: none
     cpuset: "0,1"
     environment:
       - ACCEPT_EULA=Y

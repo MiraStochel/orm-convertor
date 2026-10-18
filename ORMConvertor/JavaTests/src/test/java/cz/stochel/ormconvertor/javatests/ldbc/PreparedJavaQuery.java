@@ -45,7 +45,7 @@ import org.apache.ibatis.session.SqlSessionFactory;
  * a project of its own on top. A run takes an EntityManager or a session of its own and closes
  * it, so nothing a run does stays open after it.
  */
-final class PreparedJavaQuery implements AutoCloseable {
+public final class PreparedJavaQuery implements AutoCloseable {
 
     private static final Map<String, Domain> DOMAINS = new LinkedHashMap<>();
     private static final Map<Integer, Long> BOOTSTRAP_NANOS = new HashMap<>();
@@ -71,7 +71,7 @@ final class PreparedJavaQuery implements AutoCloseable {
      * negative case supplies ({@link JavaQueryRunner#mutableArtifact}) - over the database
      * the JDBC URL names.
      */
-    static PreparedJavaQuery prepare(String name, int target, ConversionResponse response, String mutated, String jdbcUrl) {
+    public static PreparedJavaQuery prepare(String name, int target, ConversionResponse response, String mutated, String jdbcUrl) {
         Domain domain = domain(target, response, jdbcUrl);
 
         if (target == Orm.MYBATIS) {
@@ -111,7 +111,7 @@ final class PreparedJavaQuery implements AutoCloseable {
     }
 
     /** The names of the query's parameters, after the framework's handle where there is one (decision 083). */
-    List<String> parameterNames() {
+    public List<String> parameterNames() {
         List<String> names = new ArrayList<>();
         Parameter[] parameters = method.getParameters();
 
@@ -128,7 +128,7 @@ final class PreparedJavaQuery implements AutoCloseable {
      * queries hand a projection back as an object array per row, MyBatis as a map keyed by the
      * projected columns (decision 104).
      */
-    List<List<Object>> run(String id, Object[] arguments, List<String> fields) throws Exception {
+    public List<List<Object>> run(String id, Object[] arguments, List<String> fields) throws Exception {
         try {
             if (target == Orm.MYBATIS) {
                 try (SqlSession session = myBatis.openSession()) {
@@ -156,7 +156,7 @@ final class PreparedJavaQuery implements AutoCloseable {
      * that a typed parameter is bound as the signature says; nothing executes. MyBatis bound
      * the statement when its factory was built, so there is nothing left to do for it.
      */
-    void accept() throws Exception {
+    public void accept() throws Exception {
         if (target == Orm.MYBATIS) {
             return;
         }
@@ -248,7 +248,7 @@ final class PreparedJavaQuery implements AutoCloseable {
     }
 
     /** Closes every compiled domain and the factories built over them. */
-    static synchronized void closeAll() {
+    public static synchronized void closeAll() {
         for (Domain domain : DOMAINS.values()) {
             domain.close();
         }
@@ -315,7 +315,7 @@ final class PreparedJavaQuery implements AutoCloseable {
     }
 
     /** The time the bootstrap of a target took - its entities compiled and its factory built -, counted into the cell that first asked for it. */
-    static synchronized long bootstrapNanos(int target) {
+    public static synchronized long bootstrapNanos(int target) {
         return BOOTSTRAP_NANOS.getOrDefault(target, 0L);
     }
 

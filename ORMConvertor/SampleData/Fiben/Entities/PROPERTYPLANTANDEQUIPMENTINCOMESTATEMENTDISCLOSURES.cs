@@ -1,0 +1,8 @@
+namespace Fiben;
+
+public class PROPERTYPLANTANDEQUIPMENTINCOMESTATEMENTDISCLOSURES
+{
+    public long PROPERTYPLANTANDEQUIPMENTINCOMESTATEMENTDISCLOSURESID { get; set; }
+
+    public string? HASNAME { get; set; }
+}

@@ -46,5 +46,10 @@ if ! /opt/ldbc/load-ldbc.sh; then
     echo "The LDBC loader stopped before it finished; see its messages above for what LdbcSnb holds."
 fi
 
+# The FIBEN benchmark goes into a third database the same way (decision 149).
+if ! /opt/fiben/load-fiben.sh; then
+    echo "The FIBEN loader stopped before it finished; see its messages above for what Fiben holds."
+fi
+
 # Keep container running
 wait "${sql_pid}"

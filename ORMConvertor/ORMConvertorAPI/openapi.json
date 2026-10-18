@@ -183,6 +183,26 @@
         }
       }
     },
+    "/fiben": {
+      "get": {
+        "tags": [
+          "ORMConvertorAPI"
+        ],
+        "operationId": "Fiben",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FibenCatalogDefinition"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/advisor-test": {
       "post": {
         "tags": [
@@ -671,7 +691,8 @@
           "warmupTolerance",
           "maxWarmupIterations",
           "minIterations",
-          "targetMilliseconds"
+          "targetMilliseconds",
+          "executionTimeoutSeconds"
         ],
         "type": "object",
         "properties": {
@@ -706,6 +727,14 @@
               "string"
             ],
             "format": "double"
+          },
+          "executionTimeoutSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -1042,6 +1071,106 @@
         "type": "integer"
       },
       "FactOutcome": {
+        "type": "integer"
+      },
+      "FibenCatalogDefinition": {
+        "required": [
+          "sourceOrm",
+          "dataSet",
+          "entities",
+          "queries"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceOrm": {
+            "$ref": "#/components/schemas/ORMEnum"
+          },
+          "dataSet": {
+            "type": "string"
+          },
+          "entities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversionSource"
+            }
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FibenQueryDefinition"
+            }
+          }
+        }
+      },
+      "FibenNesting": {
+        "type": "integer"
+      },
+      "FibenQueryDefinition": {
+        "required": [
+          "key",
+          "number",
+          "nesting",
+          "questions",
+          "tables",
+          "columns",
+          "ordered",
+          "sql",
+          "benchmarkSql",
+          "translation",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "number": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "nesting": {
+            "$ref": "#/components/schemas/FibenNesting"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ordered": {
+            "type": "boolean"
+          },
+          "sql": {
+            "type": "string"
+          },
+          "benchmarkSql": {
+            "type": "string"
+          },
+          "translation": {
+            "$ref": "#/components/schemas/FibenTranslation"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "FibenTranslation": {
         "type": "integer"
       },
       "LdbcArgumentDefinition": {

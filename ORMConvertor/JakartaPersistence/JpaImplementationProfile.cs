@@ -30,6 +30,8 @@ namespace JakartaPersistence;
 /// <param name="InnerJoinsFollowOuterJoins">Whether the implementation writes every inner entity join into the list of tables after the outer joins, where a run measured that it does: the condition of an outer join that names the alias of an inner join then names a table SQL Server has not met yet, which it refuses, so the builder writes such a query in native SQL (decision 113). EclipseLink 5.0.0 moves them, Hibernate 7.4.5 keeps the order of the query.</param>
 /// <param name="EntityNamesRefused">The entity names the implementation's JPQL parser refuses wherever an entity is named - the words of its grammar it does not take for a name there, compared without regard to case -, where a run measured them. JPQL has no qualified or quoted spelling of an entity name, so the builder writes such a query in native SQL (decision 113).</param>
 /// <param name="EntityNamesRefusedAsJoinTarget">The entity names the parser refuses as the target of an entity join only, measured the same way.</param>
+/// <param name="DropsJoinsInSetOperations">Whether the implementation leaves the entity joins of a member of a set operation out of the SQL it writes, as <paramref name="DropsJoinsInSubqueries"/> says of a subquery, where a run measured that it does: the member then answers the rows of its own entity alone, without an error. A member has no range-variable spelling the builder trusts there, so a set operation with a joined member goes out in native SQL (decision 113). EclipseLink 5.0.0 drops them (measured over the FIBEN catalog, decision 149: a union of two joined members returned 49 870 rows for 189), Hibernate 7.4.5 writes them.</param>
+/// <param name="ResolvesNamesAsAttributesBeforeEntities">Whether the implementation's query language resolves an unqualified name in a join against the attributes of the entities already in the from clause before it tries the entity names, where a run measured that it does: an entity join onto an entity whose name is also an attribute of a joined entity (<c>join POSTALADDRESS p</c> beside an entity with a column <c>POSTALADDRESS</c>) then joins the attribute, and a path through the alias fails. The builder names such an entity by its fully qualified class name, which the implementation resolves as the entity (measured over the FIBEN catalog, decision 149). Hibernate 7.4.5 resolves attributes first; EclipseLink 5.0.0 reads the entity name.</param>
 public sealed record JpaImplementationProfile(
     ORMEnum Implementation,
     string SpecificationLevel,
@@ -50,7 +52,9 @@ public sealed record JpaImplementationProfile(
     bool RefusesSetOperationsInSubqueries = false,
     bool InnerJoinsFollowOuterJoins = false,
     IReadOnlySet<string>? EntityNamesRefused = null,
-    IReadOnlySet<string>? EntityNamesRefusedAsJoinTarget = null);
+    IReadOnlySet<string>? EntityNamesRefusedAsJoinTarget = null,
+    bool DropsJoinsInSetOperations = false,
+    bool ResolvesNamesAsAttributesBeforeEntities = false);
 
 /// <summary>
 /// The table behind a TABLE generator, as the implementation would create it from its own

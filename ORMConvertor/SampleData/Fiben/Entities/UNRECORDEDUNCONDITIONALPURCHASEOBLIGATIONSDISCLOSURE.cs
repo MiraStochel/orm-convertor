@@ -1,0 +1,8 @@
+namespace Fiben;
+
+public class UNRECORDEDUNCONDITIONALPURCHASEOBLIGATIONSDISCLOSURE
+{
+    public long UNRECORDEDUNCONDITIONALPURCHASEOBLIGATIONSDISCLOSUREID { get; set; }
+
+    public string? HASNAME { get; set; }
+}

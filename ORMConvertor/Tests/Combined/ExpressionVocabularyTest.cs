@@ -594,6 +594,92 @@ public class ExpressionVocabularyTest
         Assert.Contains(read.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.WindowFunction);
     }
 
+    /// <summary>
+    /// The same column inside a derived table or a definition is a column the query around it
+    /// reads by name: dropped, it would leave an artifact that names a column no intermediate
+    /// result has, so there the loss is a refusal (decision 070; found over the FIBEN catalog,
+    /// decision 149).
+    /// </summary>
+    [Fact]
+    public void AnAggregateOverAWindowInsideAnIntermediateResultIsRefused()
+    {
+        Refused(
+            Sql(ORMEnum.Dapper, "SELECT d.Running AS Running FROM (SELECT s.SaleId AS SaleId, SUM(s.Total) OVER (PARTITION BY s.CustomerId) AS Running FROM Sales AS s) AS d"),
+            QueryFeature.WindowFunction);
+        Refused(
+            Sql(ORMEnum.Dapper, "WITH Running AS (SELECT s.SaleId AS SaleId, AVG(s.Total) OVER (PARTITION BY s.CustomerId) AS Average FROM Sales AS s) SELECT r.Average AS Average FROM Running AS r"),
+            QueryFeature.WindowFunction);
+    }
+
+    /// <summary>
+    /// LINQ composes two anonymous types in a set operation, which are one type only when their
+    /// members are spelled alike: every member takes the leftmost member's names by position,
+    /// the names SQL gives the result anyway (decision 112; found over the FIBEN catalog).
+    /// </summary>
+    [Fact]
+    public void ASetOperationInLinqNamesEveryMemberAfterTheLeftmost()
+    {
+        var text = Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS Chosen FROM Sales AS s WHERE s.Total > 10 UNION SELECT s.CustomerId AS Other FROM Sales AS s WHERE s.Total < 5"));
+
+        Assert.Equal(2, text.Split("new { Chosen = ").Length - 1);
+        Assert.DoesNotContain("Other", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A numeric literal has no scale of its own: beside a decimal or a floating-point value it
+    /// takes that value's scalar, as SQL Server makes the two one when it computes - so the gate
+    /// does not refuse the arithmetic as mixed, and LINQ writes the suffix the column needs
+    /// (found over the FIBEN catalog, decision 149: FLOAT columns against 1.5 and 50.0).
+    /// </summary>
+    [Fact]
+    public void ANumericLiteralTakesTheScalarOfTheValueBesideIt()
+    {
+        var arithmetic = Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId, s.Total * 1.0E6 AS Scaled FROM Sales AS s WHERE s.Total > 2.5E3");
+        var text = Text(arithmetic);
+
+        Assert.DoesNotContain(arithmetic.Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.Contains("* 1.0E6m", text, StringComparison.Ordinal);
+        Assert.Contains("> 2.5E3m", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// T-SQL resolves an alias without regard to case; a target that names its range variables
+    /// in C# or Java does not, so a reference takes the spelling the alias was declared with.
+    /// </summary>
+    [Fact]
+    public void AnAliasReferencedInAnotherCaseTakesItsDeclaredSpelling()
+    {
+        var text = Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId FROM Sales AS s WHERE S.Total > 10"));
+
+        Assert.Contains("s.Total", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("S.Total", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// EclipseLink 5.0.0 leaves the joins of a member of a set operation out of its SQL (measured
+    /// over the FIBEN catalog, decision 149), so a union with a joined member goes out in native
+    /// SQL there; Hibernate writes it in JPQL.
+    /// </summary>
+    [Fact]
+    public void ASetOperationWithAJoinedMemberLeavesEclipseLinkInNativeSql()
+    {
+        const string sql = "SELECT s.SaleId AS Id FROM Sales AS s INNER JOIN Sales AS t ON t.SaleId = s.CustomerId WHERE t.Total > 10 UNION SELECT s.SaleId AS Id FROM Sales AS s WHERE s.Total < 5";
+
+        FellBack(Sql(ORMEnum.EclipseLink, sql), QueryFeature.SetOperation);
+        Assert.Contains("union", Text(Sql(ORMEnum.Hibernate, sql)), StringComparison.Ordinal);
+    }
+
+    /// <summary>The HQL parser of NHibernate 5.7 reads no exponent, so a number written with one goes out in full.</summary>
+    [Fact]
+    public void ANumberWithAnExponentIsWrittenOutInHql()
+    {
+        var text = Text(Sql(ORMEnum.NHibernate, "SELECT s.SaleId AS SaleId FROM Sales AS s WHERE s.Total > 1.5E6"));
+
+        Assert.Contains("1500000", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("E6", text, StringComparison.Ordinal);
+        Assert.Contains("1.5E6", Text(Sql(ORMEnum.Dapper, "SELECT s.SaleId AS SaleId FROM Sales AS s WHERE s.Total > 1.5E6")), StringComparison.Ordinal);
+    }
+
     // ---- the aggregate into a list ----------------------------------------------------------
 
     private const string Listed =

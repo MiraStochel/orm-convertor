@@ -232,6 +232,29 @@ export const LDBC_TRANSLATION_LABELS = Object.freeze({
 });
 
 /*
+ * The FIBEN query catalog (decision 149): Kim's type of a nested query and how much of it the
+ * tool translates, numbered as SampleData numbers them. The status is a claim the on-demand run
+ * checks; the page shows it and lets the reader translate any query.
+ */
+export const FibenNesting = Object.freeze({ NonNested: 10, TypeN: 20, TypeA: 30, TypeJ: 40, TypeJA: 50 });
+
+export const FIBEN_NESTING_LABELS = Object.freeze({
+  [FibenNesting.NonNested]: "single block",
+  [FibenNesting.TypeN]: "type N",
+  [FibenNesting.TypeA]: "type A",
+  [FibenNesting.TypeJ]: "type J",
+  [FibenNesting.TypeJA]: "type JA",
+});
+
+export const FibenTranslation = Object.freeze({ AsSpecified: 10, Simplified: 20, NotTranslated: 30 });
+
+export const FIBEN_TRANSLATION_LABELS = Object.freeze({
+  [FibenTranslation.AsSpecified]: "Translated as the benchmark states it",
+  [FibenTranslation.Simplified]: "Translated, simplified",
+  [FibenTranslation.NotTranslated]: "Not translated",
+});
+
+/*
  * Error bodies: handlers answer with ProblemDetails per RFC 9457 (decision 044), so the
  * reason is in `detail`; `title` is the generic "Bad Request" and would tell the user
  * nothing. The string branch stays for a bare-string body, which costs nothing and reads
@@ -302,6 +325,14 @@ export const getExamples = () => getJson("examples");
  * one. A query is run by sending the entities plus its text.
  */
 export const getLdbc = () => getJson("ldbc");
+
+/**
+ * GET /fiben - the FIBEN query catalog (decision 149): { sourceOrm, dataSet, entities, queries },
+ * the entities as /convert units and every query as { key, number, nesting, questions, tables,
+ * columns, ordered, sql, benchmarkSql, translation, note }. A query is run by sending the
+ * entities of the tables it names plus its text.
+ */
+export const getFiben = () => getJson("fiben");
 
 /**
  * POST /convert. Sources are { contentType, content, name? } units; the response carries

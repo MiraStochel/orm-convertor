@@ -8,7 +8,7 @@ USER root
 RUN --mount=type=cache,target=/var/lib/apt \
     --mount=type=cache,target=/var/cache/apt \
     apt-get update && \
-    apt-get install -y --no-install-recommends curl zstd && \
+    apt-get install -y --no-install-recommends curl zstd unzip && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /var/opt/mssql/backup && \
     curl -L -o /var/opt/mssql/backup/WideWorldImporters-Full.bak \
@@ -38,13 +38,27 @@ RUN case "${LDBC_SCALE_FACTOR}" in \
             zstd -q --rm "/opt/ldbc/validation_params-sf${LDBC_SCALE_FACTOR}.csv" ;; \
     esac
 
+# The FIBEN benchmark of the third database, Fiben (decision 149): data.zip of IBM/fiben-benchmark
+# (Apache-2.0, 80 MB) at the commit the catalog was imported from, fetched while the image is
+# built and unpacked by load-fiben.sh once, on the first start. Another commit of the repository
+# selects its archive; none leaves the benchmark out.
+ARG FIBEN_DATASET=96eaffc60cc824b8f545cd29adffc2a170e08d04
+RUN mkdir -p /opt/fiben && \
+    if [ "${FIBEN_DATASET}" != "none" ]; then \
+        curl -fL -o "/opt/fiben/fiben-benchmark-$(echo "${FIBEN_DATASET}" | cut -c1-7).zip" \
+        "https://github.com/IBM/fiben-benchmark/raw/${FIBEN_DATASET}/data.zip"; \
+    fi
+
 # The scripts are shared with the test suite, which checks out with CRLF on Windows; sqlcmd
-# and bash here want LF, so the line endings are normalized on the way in.
+# and bash here want LF, so the line endings are normalized on the way in. The FIBEN folder
+# goes whole: its judge, judge.tsv, exists only from the first documented run on.
 COPY database/ldbc/schema.sql database/ldbc/load.sql database/ldbc/constraints.sql database/ldbc/indexes.sql database/ldbc/validation.sql database/ldbc/load-ldbc.sh /opt/ldbc/
+COPY database/fiben/ /opt/fiben/
 COPY database/init-db.sh /usr/local/bin/init-db.sh
-RUN sed -i 's/\r$//' /opt/ldbc/*.sql /opt/ldbc/load-ldbc.sh /usr/local/bin/init-db.sh && \
-    chmod +x /usr/local/bin/init-db.sh /opt/ldbc/load-ldbc.sh && \
-    chmod -R a+rX /opt/ldbc
+RUN sed -i 's/\r$//' /opt/ldbc/*.sql /opt/ldbc/load-ldbc.sh /opt/fiben/*.sql /opt/fiben/load-fiben.sh /usr/local/bin/init-db.sh && \
+    if [ -f /opt/fiben/judge.tsv ]; then sed -i 's/\r$//' /opt/fiben/judge.tsv; fi && \
+    chmod +x /usr/local/bin/init-db.sh /opt/ldbc/load-ldbc.sh /opt/fiben/load-fiben.sh && \
+    chmod -R a+rX /opt/ldbc /opt/fiben
 
 USER mssql
 

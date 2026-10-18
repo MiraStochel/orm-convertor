@@ -152,7 +152,16 @@ public class SqlQueryReader(
         var enclosingAlias = sourceAlias;
 
         queryBuilder.Push();
-        ReadQueryExpression(expression);
+        definitionDepth++;
+        try
+        {
+            ReadQueryExpression(expression);
+        }
+        finally
+        {
+            definitionDepth--;
+        }
+
         sourceAlias = enclosingAlias;
         var body = queryBuilder.PopOperand();
 
@@ -194,6 +203,9 @@ public class SqlQueryReader(
     /// only for a parameter, which has a category of its own (decision 070).
     /// </summary>
     private (string What, QueryFeature? Category)? unread;
+
+    /// <summary>How many definitions and derived tables the reader is inside; a dropped projection there is a refusal, not a loss.</summary>
+    private int definitionDepth;
 
     /// <summary>
     /// Reads the one SELECT the text states into the builder: the text is the argument of
@@ -636,6 +648,7 @@ public class SqlQueryReader(
             }
 
             sourceAlias = definition;
+            DeclareAlias(definition);
             queryBuilder.From(definition, definition);
 
             foreach (var join in joins)
@@ -661,6 +674,7 @@ public class SqlQueryReader(
 
         var (name, alias) = NameAndAlias(table);
         sourceAlias = alias;
+        DeclareAlias(alias);
         queryBuilder.From(name, alias);
 
         foreach (var join in joins)
@@ -716,6 +730,7 @@ public class SqlQueryReader(
         }
 
         var (name, alias) = NameAndAlias(right);
+        DeclareAlias(alias);
         queryBuilder.Join(kind, sourceAlias, name, condition, alias);
     }
 
@@ -819,6 +834,19 @@ public class SqlQueryReader(
         {
             var (what, category) = unread ?? ($"'{Describe(expression)}'", QueryFeature.Projection);
             unread = null;
+
+            // A column of a definition or a derived table is a column the query around it
+            // reads by name; dropped, it would leave that query naming a column that does not
+            // exist - an artifact no target runs -, so here the loss is a refusal (decision 070).
+            if (definitionDepth > 0)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The projected expression {what} is not a column, an aggregate or an expression the query representation carries, and it is a column of an intermediate result the query reads; no artifact was generated.",
+                    category ?? QueryFeature.Projection);
+                return;
+            }
+
             Report(
                 ConversionRecordKind.Loss,
                 $"The projected expression {what} is not a column, an aggregate or an expression the query representation carries, and was dropped.",
@@ -1779,7 +1807,7 @@ public class SqlQueryReader(
         return queryBuilder.PopOperand();
     }
 
-    private static (string? Table, string Column)? ReadColumn(ColumnReferenceExpression column)
+    private (string? Table, string Column)? ReadColumn(ColumnReferenceExpression column)
     {
         var parts = column.MultiPartIdentifier?.Identifiers;
         if (parts is null || parts.Count == 0)
@@ -1787,10 +1815,22 @@ public class SqlQueryReader(
             return null;
         }
 
-        return parts.Count == 1
-            ? (null, parts[0].Value)
-            : (parts[^2].Value, parts[^1].Value);
+        if (parts.Count == 1)
+        {
+            return (null, parts[0].Value);
+        }
+
+        // T-SQL resolves an alias without regard to case (oPERSON for oPerson); the targets
+        // that name their range variables in C# or Java do not, so the reference takes the
+        // spelling the alias was declared with (found over the FIBEN catalog, decision 149).
+        var table = parts[^2].Value;
+        return (aliasSpellings.TryGetValue(table, out var declared) ? declared : table, parts[^1].Value);
     }
+
+    /// <summary>The aliases of the query as they were declared, by their case-insensitive name; the first declaration of a spelling wins.</summary>
+    private readonly Dictionary<string, string> aliasSpellings = new(StringComparer.OrdinalIgnoreCase);
+
+    private void DeclareAlias(string alias) => aliasSpellings.TryAdd(alias, alias);
 
     /// <summary>
     /// Turns a T-SQL literal into a typed constant (decision 024), undecorated: the quotes

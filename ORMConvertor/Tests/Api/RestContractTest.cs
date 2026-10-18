@@ -25,6 +25,7 @@ public class RestContractTest(ApiTestHost host)
         "/samples-advisor",
         "/examples",
         "/ldbc",
+        "/fiben",
     ];
 
     [Theory]

@@ -258,6 +258,14 @@ public final class JavaQueryRunner {
         }
 
         for (Object item : returned) {
+            // A projection of one column whose value is NULL comes back as a null element -
+            // from JPA and from MyBatis alike -, which is a row of one NULL, not a missing row
+            // (found over the FIBEN catalog, decision 149).
+            if (item == null) {
+                rows.add(java.util.Collections.nCopies(fields.size(), null));
+                continue;
+            }
+
             rows.add(positional ? positional(item, id, fields) : byName(item, id, fields, columns));
         }
 
@@ -266,7 +274,7 @@ public final class JavaQueryRunner {
 
     private static List<Object> positional(Object item, String id, List<String> fields) {
         // A single projected field comes back bare rather than as a one-element array.
-        List<Object> values = item instanceof Object[] array ? Arrays.asList(array) : List.of(item);
+        List<Object> values = item instanceof Object[] array ? Arrays.asList(array) : java.util.Collections.singletonList(item);
 
         assertEquals(fields.size(), values.size(),
                 id + ": a row came back with " + values.size() + " fields and the caller states "

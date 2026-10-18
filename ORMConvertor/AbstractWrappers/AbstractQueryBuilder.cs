@@ -2140,6 +2140,17 @@ public abstract partial class AbstractQueryBuilder
         => NamedAs(operation, LeftmostSelect([operation]).OfType<ProjectInstruction>().Select(ColumnNameOf).ToList(), onlyNameless: true);
 
     /// <summary>
+    /// A set operation with every column of every member named after the leftmost by
+    /// position, the named ones included - what a target needs where the members have to
+    /// agree in their names and not only in their positions: LINQ composes two anonymous
+    /// types, which are one type only when their members are spelled alike (decision 112).
+    /// The rows are the same; only the names a further member gave its columns, which SQL
+    /// discards, go.
+    /// </summary>
+    protected static SetOperationInstruction NamedAfterTheLeftmost(SetOperationInstruction operation)
+        => NamedAs(operation, LeftmostSelect([operation]).OfType<ProjectInstruction>().Select(ColumnNameOf).ToList(), onlyNameless: false);
+
+    /// <summary>
     /// One member of a set operation with its columns named by position. A member that does
     /// not project as many columns as the names stays as it is: that is a query SQL Server
     /// refuses, and the gate that holds the count says so. With <paramref name="onlyNameless"/>
@@ -3616,6 +3627,8 @@ public abstract partial class AbstractQueryBuilder
     /// false where two typed scalars do not unify - Decimal with a floating-point number,
     /// a string with a number -, and the result is then null.
     /// </summary>
+    private static bool IsFractional(ScalarType? scalar) => scalar is ScalarType.Decimal or ScalarType.Double or ScalarType.Float;
+
     private static ScalarType? CommonScalar(IEnumerable<ScalarType?> scalars, out bool unified)
     {
         var typed = scalars.Where(s => s is not null).Select(s => s!.Value).Distinct().ToList();
@@ -3861,6 +3874,19 @@ public abstract partial class AbstractQueryBuilder
         if (expression.IsBinary && !concatenates)
         {
             var sides = new[] { ScalarOf(expression.Left!, aliases), ScalarOf(expression.Right!, aliases) };
+
+            // A numeric literal has no scale of its own: beside a floating-point or a decimal
+            // value it takes that value's scalar, as SQL Server makes the two one when it
+            // computes (a FLOAT column times 1.5, which T-SQL reads as a decimal; FIBEN).
+            if (expression.Left!.IsConstant && IsFractional(sides[0]) && IsFractional(sides[1]))
+            {
+                sides[0] = sides[1];
+            }
+            else if (expression.Right!.IsConstant && IsFractional(sides[0]) && IsFractional(sides[1]))
+            {
+                sides[1] = sides[0];
+            }
+
             scalar = CommonScalar(sides, out var unified);
 
             if (expression.Operator == ExpressionOperator.Add && sides.All(s => s is null))

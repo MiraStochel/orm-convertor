@@ -833,3 +833,29 @@ article.ldbc-query .toolbar select {
   min-width: 0;
   margin: 0;
 }
+
+/* The FIBEN page (decision 149) reuses the catalog styles above; what it adds is the list
+   of facts under a query - its paraphrases and the tables it reads - and the buttons that
+   fill a column of the overview from the running instance. */
+article.fiben-query .query-facts {
+  padding-left: 1.1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+article.fiben-query .query-facts li {
+  margin-bottom: 0.2rem;
+}
+
+table.fiben-matrix thead th button {
+  margin-top: 0.4rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+table.fiben-matrix th[scope="row"] small {
+  display: block;
+  white-space: normal;
+  max-width: 28rem;
+}

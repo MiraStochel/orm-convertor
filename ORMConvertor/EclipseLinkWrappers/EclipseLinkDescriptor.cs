@@ -115,6 +115,13 @@ public static class EclipseLinkDescriptor
         // refused by SQL Server (error 4104).
         InnerJoinsFollowOuterJoins: true,
 
+        // Measured against 5.0.0 by the first run of the FIBEN catalog (decision 149): a union
+        // whose members join other entities answered the rows of the members' own entities
+        // alone (q127: 49 870 rows for the 189 of the text; q129, q131, q132 alike), the way
+        // a join inside a subquery is left out above, so a set operation with a joined member
+        // goes out in native SQL.
+        DropsJoinsInSetOperations: true,
+
         // Measured against 5.0.0 with every identifier of its JPQL grammar as an entity name
         // - at the head of a from clause, as the target of an inner and a left entity join
         // and in a subquery: these it refuses as a syntax error wherever an entity is named

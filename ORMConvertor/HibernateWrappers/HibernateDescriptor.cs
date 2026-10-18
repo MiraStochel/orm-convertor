@@ -83,6 +83,14 @@ public static class HibernateDescriptor
         // and a position named twice binds one value twice.
         NativeQueryExpandsCollection: true,
 
+        // Measured against 7.4.5.Final by the first run of the FIBEN catalog (decision 149):
+        // "join POSTALADDRESS oPostalAddress" beside the joined entity ADDRESS, whose column
+        // POSTALADDRESS holds the key, joined that column, and every path through the alias
+        // failed ("Terminal path 'POSTALADDRESS' has no attribute 'POSTALADDRESSID'"). The
+        // fully qualified class name resolves as the entity, so the builder writes it where
+        // an attribute of a joined entity shadows the name.
+        ResolvesNamesAsAttributesBeforeEntities: true,
+
         // Measured against 7.4.5.Final over SQL Server (decision 139): a database hint added
         // to the query object closes the SQL with OPTION (MAXRECURSION n), and the database
         // stops the walk at that level, or lets it run on with zero.

@@ -45,6 +45,13 @@ public static class Endpoints
             .WithName("Ldbc")
             .Produces<LdbcCatalogDefinition>(StatusCodes.Status200OK);
 
+        // The FIBEN query catalog for its page and for the on-demand run of the Java suite
+        // (decision 149): the entity units over the FIBEN tables and the 237 queries with
+        // their questions, each naming the units it reads.
+        group.MapGet("/fiben", () => Fiben.GetCatalog)
+            .WithName("Fiben")
+            .Produces<FibenCatalogDefinition>(StatusCodes.Status200OK);
+
         group.MapPost("/advisor-test", AdvisorTestHandler)
             .WithName("AdvisorTest")
               .Produces<AdvisorSolveResponse>(StatusCodes.Status200OK)

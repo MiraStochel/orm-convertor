@@ -132,7 +132,27 @@ public sealed class JpqlQueryVisitor(
     {
         var entity = EntityName(instr.RightTableAlias ?? instr.RightTable) ?? EntityTableNaming.EntityNameFor(instr.RightTable);
         var alias = JpqlNames.Alias(instr.RightTableAlias ?? entity.ToLowerInvariant());
-        return (entity, alias);
+        return (Qualified(entity), alias);
+    }
+
+    /// <summary>
+    /// The entity of a join by its fully qualified class name where the implementation would
+    /// read the bare name as an attribute of an entity already in the from clause
+    /// (<see cref="JpaImplementationProfile.ResolvesNamesAsAttributesBeforeEntities"/>; Hibernate
+    /// 7.4.5 read <c>join POSTALADDRESS p</c> as the column POSTALADDRESS of the joined ADDRESS
+    /// over the FIBEN catalog, decision 149). A name no attribute shadows stays bare, as JPQL
+    /// writes it.
+    /// </summary>
+    private string Qualified(string entity)
+    {
+        if (profile is not { ResolvesNamesAsAttributesBeforeEntities: true })
+        {
+            return entity;
+        }
+
+        var shadowed = entities.Values.Any(map => map.Entity.Properties.Any(property => property.Name == entity));
+        var package = entities.Values.FirstOrDefault(map => map.Entity.Name == entity)?.Entity.Namespace;
+        return shadowed && !string.IsNullOrEmpty(package) ? $"{package}.{entity}" : entity;
     }
 
     /// <summary>

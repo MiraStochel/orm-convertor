@@ -1,0 +1,8 @@
+namespace Fiben;
+
+public class FINANCIALINSTRUMENTSSUBJECTTOMANDATORYREDEMPTION
+{
+    public long FINANCIALINSTRUMENTSSUBJECTTOMANDATORYREDEMPTIONID { get; set; }
+
+    public string? HASNAME { get; set; }
+}

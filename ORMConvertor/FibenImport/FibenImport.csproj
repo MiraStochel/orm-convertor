@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The import of the FIBEN benchmark (decision 149): a console tool outside ORMConvertor.sln,
+       as JavaTests is, run once by hand over a checkout of IBM/fiben-benchmark. It writes the
+       T-SQL scripts of database/fiben/, the Dapper entities and the query catalog of
+       SampleData/Fiben/; what it writes is committed, so nothing builds or runs it afterwards.
+       It takes the target framework from Directory.Build.props and needs no package. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>FibenImport</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

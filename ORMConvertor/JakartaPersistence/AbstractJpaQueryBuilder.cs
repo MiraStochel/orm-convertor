@@ -572,6 +572,17 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
             return null;
         }
 
+        // An implementation that leaves the entity joins of a member out of its SQL
+        // (EclipseLink 5.0.0, measured over the FIBEN catalog) would answer other rows without
+        // an error; the set operation goes out in native SQL (decision 113).
+        if (Profile.DropsJoinsInSetOperations && clauses.Joins.Count > 0)
+        {
+            ReportUnspoken(
+                $"{Profile.Implementation} leaves the joins of a member of a set operation out of the SQL it writes, so the member onto '{clauses.Joins[0].RightTable}' would answer other rows",
+                QueryFeature.SetOperation);
+            return null;
+        }
+
         if (clauses.Offset is not null || clauses.Limit is not null)
         {
             ReportUnspoken(

@@ -1,2 +1,4 @@
 * text=auto eol=crlf
 *.sh text eol=lf
+# The judge of the FIBEN catalog is bulk-loaded by the database server with LF as its row terminator, in the container and by hand alike (decision 149).
+ORMConvertor/database/fiben/judge.tsv text eol=lf

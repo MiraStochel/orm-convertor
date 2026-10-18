@@ -1256,6 +1256,11 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
     {
         elementEntity = null;
 
+        // The anonymous types of two projections are one type only when their members are
+        // spelled alike, so every member takes the leftmost member's names by position - the
+        // names SQL gives the result anyway (decision 112).
+        instruction = NamedAfterTheLeftmost(instruction);
+
         var left = RenderOperandChain(instruction.Left, out var leftEntity);
         var right = RenderOperandChain(instruction.Right, out var rightEntity);
         if (left is null || right is null)

@@ -205,8 +205,31 @@ public abstract class LinqQueryVisitor(
             return string.Empty;
         }
 
-        return $"{left} {Operator(cond.Operator)} {Operand(cond.Right)}";
+        return $"{Beside(cond.Left, cond.Right)} {Operator(cond.Operator)} {Beside(cond.Right, cond.Left)}";
     }
+
+    /// <summary>
+    /// An operand rendered beside the other operand of its comparison or arithmetic: a
+    /// numeric literal has no scale of its own, so beside a floating-point or a decimal value
+    /// it takes that value's scalar - the suffix C# needs for the two to be one type, as SQL
+    /// Server makes them one when it computes (found over the FIBEN catalog, decision 149:
+    /// a FLOAT column compared with 50.0, which T-SQL reads as a decimal).
+    /// </summary>
+    private string Beside(QueryOperand operand, QueryOperand other)
+    {
+        if (operand.IsConstant && operand.Constant!.Type is { } type && IsFractional(type))
+        {
+            var scalar = ScalarOf(other);
+            if (scalar is not null && IsFractional(scalar.Value) && scalar.Value != type)
+            {
+                return Literal(QueryConstant.Of(operand.Constant.Text, scalar.Value));
+            }
+        }
+
+        return Operand(operand);
+    }
+
+    private static bool IsFractional(ScalarType scalar) => scalar is ScalarType.Decimal or ScalarType.Double or ScalarType.Float;
 
     /// <summary>
     /// The inline array of an IN list (decision 074). Its element type is inferred from the
@@ -1424,7 +1447,7 @@ public abstract class LinqQueryVisitor(
     /// </summary>
     private string Side(QueryOperand side, QueryExpression parent, bool rightSide)
     {
-        var text = Operand(side);
+        var text = Beside(side, rightSide ? parent.Left! : parent.Right!);
         return ExpressionSpelling.NeedsParentheses(side, parent, rightSide) ? $"({text})" : text;
     }
 

@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ORMConvertor — FIBEN data</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
+  <link rel="stylesheet" id="hljs-dark" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    /* Applied before first paint: js/theme.js is a module and therefore deferred, so
+       restoring the theme there would repaint a page the reader can already see. */
+    try {
+      var storedTheme = localStorage.getItem("ormconvertor.theme");
+      if (storedTheme === "light" || storedTheme === "dark") {
+        document.documentElement.dataset.theme = storedTheme;
+        document.getElementById("hljs-dark").media = storedTheme === "dark" ? "all" : "not all";
+      }
+    } catch (e) { /* storage can be denied; the operating system's preference then decides */ }
+  </script>
+</head>
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><strong><a href="index.html">ORMConvertor</a></strong></li>
+      </ul>
+      <ul>
+        <li><a href="translation.html">Translation</a></li>
+        <li><a href="advisor.html">Advisor</a></li>
+        <li><a href="examples.html">Examples</a></li>
+        <li><a href="ldbc.html">LDBC</a></li>
+        <li><a href="fiben.html" aria-current="page">FIBEN</a></li>
+        <li>
+          <select id="theme" aria-label="Colour theme">
+            <option value="system">System theme</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Testing on the FIBEN finance benchmark</h1>
+    <p class="lede">
+      FIBEN is IBM Research's benchmark for asking a financial data mart questions in plain
+      English: 300 questions over 152 tables built on the FIBO and FRO ontologies, and for
+      each one the SQL that answers it &mdash; 237 distinct queries, 170 of them nested. Here
+      it is the third domain for the translator, and the second it did not choose: a
+      population of queries written by somebody else, each with its intent stated in a
+      sentence, deep in nesting where LDBC is wide in joins. The tool does not answer
+      questions; it translates the SQL, and this page shows how far.
+    </p>
+
+    <p class="muted-note">
+      FIBEN is published by IBM under the
+      <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>, data
+      included: <a href="https://github.com/IBM/fiben-benchmark">github.com/IBM/fiben-benchmark</a>,
+      J.&nbsp;Sen et al., <cite>ATHENA++: Natural Language Querying for Complex Nested SQL
+      Queries</cite>, PVLDB 13(11), 2020. Nothing run here is a run of the benchmark: the
+      queries are the benchmark's own SQL carried from the Db2 dialect into T-SQL, and the
+      question beside each one is its intent, for the reader and for the comparison with
+      language models.
+    </p>
+
+    <nav aria-label="On this page">
+      <ul class="page-index">
+        <li><a href="#data-set">The data set</a></li>
+        <li><a href="#using-it">Using it</a></li>
+        <li><a href="#what-translates">What translates and what does not</a></li>
+        <li><a href="#run">The first documented run</a></li>
+        <li><a href="#by-target">Every query in every target</a></li>
+        <li><a href="#queries">The queries</a></li>
+      </ul>
+    </nav>
+
+    <section id="data-set">
+      <h2>The data set</h2>
+      <p>
+        The container loads <strong>the benchmark's own data</strong> into a third database,
+        <code>Fiben</code>, beside WideWorldImporters and <code>LdbcSnb</code>: the 152 tables of
+        <code>FIBEN.sql</code> with their 159 foreign keys, and the 400&nbsp;MB of CSV the
+        repository ships, 720&nbsp;MB once loaded. Every primary key is one <code>BIGINT</code>
+        column; most tables are FIBO or FRO concepts that hold nothing but a key and a name,
+        and 111 of them are empty in the published data. The data set is named
+        <code class="fiben-data-set"></code> after the commit it was taken from.
+      </p>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Table</th><th>Rows</th><th>What it holds</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>CORPORATION</code>, <code>LISTEDSECURITY</code>, <code>SECURITY</code></td><td>2,324; 2,745; 2,745</td><td>public companies with their legal name, ticker and industry classifier, and the securities they issue</td></tr>
+            <tr><td><code>PERSON</code>, <code>CONTRACT</code>, <code>CONTRACTPARTY</code></td><td>50,100; 2,998; 2,094</td><td>investors and officers, and the officer appointments of companies</td></tr>
+            <tr><td><code>FINANCIALSERVICEACCOUNT</code></td><td>97,270</td><td>customer accounts, each owned and managed by a person</td></tr>
+            <tr><td><code>HOLDING</code>, <code>SECURITIESTRANSACTION</code></td><td>534,473; 500,000</td><td>what accounts hold, and their purchases and sales with a price and a settlement moment</td></tr>
+            <tr><td><code>MONETARYAMOUNT</code></td><td>502,745</td><td>the amounts prices and values point at</td></tr>
+            <tr><td><code>FINANCIALREPORT</code>, <code>ELEMENTSOFFINANCIALREPORT</code>, <code>ELEMENTOFFINANCIALSTATEMENT</code>, <code>DISCLOSURE</code></td><td>48,301; 8,120,084; 443,794; 208,158</td><td>XBRL filings and their line items: a metric value with its fiscal year, quarter and period</td></tr>
+            <tr><td><code>REVENUE</code>, <code>EXPENSE</code>, <code>ASSET</code>, <code>LIABILITY</code>, &hellip;</td><td>42,474; 38,757; 48,016; 48,002</td><td>subclass tables whose key is the key of a statement element: which line items are revenues, expenses and so on</td></tr>
+            <tr><td><code>ADDRESS</code>, <code>POSTALADDRESS</code>, <code>VIRTUALADDRESS</code>, <code>EMAILADDRESS</code>, <code>PHONENUMBER</code></td><td>210,062; 79,989; 130,073; 50,000; 80,073</td><td>where persons and companies are reached</td></tr>
+            <tr><td><code>COUNTRY</code>, <code>FINANCIALMARKET</code>, <code>INDUSTRYSECTORCLASSIFIER</code></td><td>249; 3; 452</td><td>reference data</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The schema arrives in the Db2 dialect and is carried over by a small import tool
+        (<code>FibenImport</code>), which also generates the Dapper entity class of every table
+        and the catalog of queries. What changes on the way is written down in the tool and
+        nowhere else:
+      </p>
+      <ul>
+        <li>
+          <strong>Types follow the declarations:</strong> <code>DOUBLE PRECISION</code> is
+          <code>FLOAT</code>, <code>TIMESTAMP</code> is <code>DATETIME2(6)</code>,
+          <code>VARCHAR(1024)</code> is <code>NVARCHAR(1024)</code> because the data holds names
+          outside ASCII, and every text compares binary, as Db2 compares it.
+        </li>
+        <li>
+          <strong>Nothing is indexed beyond the keys</strong>, because the benchmark declares
+          nothing beyond them. Two queries take minutes for it.
+        </li>
+        <li>
+          <strong>Names stay as the ontology spells them</strong>, <code>LISTEDSECURITY</code>
+          and <code>HASTICKERSYMBOL</code>, uppercase and without a word boundary: the
+          foreign convention is one of the things the catalog completion is measured against.
+        </li>
+      </ul>
+    </section>
+
+    <section id="using-it">
+      <h2>Using it</h2>
+      <h3>Start the database</h3>
+      <p>
+        From the <code>ORMConvertor</code> directory, <code>docker compose up --build</code>
+        starts the application and a SQL Server with three databases. The benchmark's
+        <code>data.zip</code> (80&nbsp;MB) is downloaded while the image is built; the first
+        start unpacks it and loads it, which takes two to three minutes while the server
+        already answers. The volume keeps the data, so later starts skip the load.
+        Connect with:
+      </p>
+      <pre><code>Server=localhost,1444;Database=Fiben;User ID=sa;Password=Testingorms123;TrustServerCertificate=true</code></pre>
+      <p>
+        <code>FIBEN_DATASET=none docker compose up --build</code> leaves the benchmark out of
+        the image; another commit of the repository selects its archive.
+      </p>
+
+      <h3>Translate against it</h3>
+      <p>
+        The queries are written for Dapper, as plain classes and T-SQL, because the
+        benchmark's queries are SQL. A Dapper source states no key, no relation and no type;
+        the translator takes all of that from the database catalog, so the instance has to
+        read <code>Fiben</code> as its catalog:
+      </p>
+      <pre><code>ORMCONVERTOR_CATALOG_DATABASE=Fiben docker compose up --build</code></pre>
+      <p>
+        Without it the catalog is WideWorldImporters, which has none of these tables. Every
+        query below is sent with the entities of the tables it reads and nothing else, as
+        the run sends it; the line above each translation says whether the instance read a
+        catalog at all.
+      </p>
+
+      <h3>Run the catalog</h3>
+      <p>
+        The catalog does not run as part of a build. It runs on demand, for a version or a
+        substantial change, in both suites one after the other, in five stages: the catalog
+        is complete; every query reaches every target; the artifacts compile; every target
+        returns the rows the catalog's own text returns, and the text returns the rows the
+        frozen judge holds; and every cell is measured. The commands and the record of each
+        run are in the README of the solution.
+      </p>
+    </section>
+
+    <section id="what-translates">
+      <h2>What translates and what does not</h2>
+      <div class="card-grid ldbc-summary">
+        <article>
+          <h3><span class="fiben-count" data-translation="10"></span> as the benchmark states them</h3>
+          <p>
+            The text states the benchmark's query, and the run holds every target to it.
+            Inner joins along foreign keys, grouped sums, averages, counts, minima and maxima
+            with <code>HAVING</code>, subqueries in <code>IN</code> and <code>NOT IN</code>,
+            correlated scalar subqueries compared with an aggregate, <code>UNION</code>, the
+            first <em>n</em> rows, <code>BETWEEN</code>, <code>YEAR</code> and <code>MONTH</code>,
+            and a common table expression.
+          </p>
+        </article>
+        <article>
+          <h3><span class="fiben-count" data-translation="20"></span> simplified</h3>
+          <p>
+            The text returns less or other than the benchmark's query and its note says what.
+          </p>
+        </article>
+        <article>
+          <h3><span class="fiben-count" data-translation="30"></span> not translated</h3>
+          <p>
+            Two shapes the representation does not carry, each refused in every target
+            with its reason in the note: an aggregate over a window &mdash; <code>AVG</code>,
+            <code>MAX</code> or <code>MIN</code> <code>OVER (PARTITION BY …)</code> &mdash;
+            inside a derived table, where it is a column the query around it reads; and a
+            scalar subquery inside the <code>ON</code> condition of a <code>LEFT JOIN</code>.
+          </p>
+        </article>
+      </div>
+      <p>
+        By Kim's taxonomy the catalog holds
+        <span class="fiben-nesting-count" data-nesting="10"></span> single-block queries,
+        <span class="fiben-nesting-count" data-nesting="20"></span> of type N,
+        <span class="fiben-nesting-count" data-nesting="30"></span> of type A,
+        <span class="fiben-nesting-count" data-nesting="40"></span> of type J and
+        <span class="fiben-nesting-count" data-nesting="50"></span> of type JA, answering
+        <span class="fiben-question-count"></span> questions over
+        <span class="fiben-table-count"></span> of the tables.
+      </p>
+      <p>
+        A target whose query language cannot say a query writes it in the native SQL of its
+        database instead, through its framework's own API, and says so in a record; that is
+        counted apart from a translation into the target's own language. Which queries each
+        target writes that way is not a claim of the catalog but a measure of the version,
+        taken by the run and shown in the overview below, which the reader can fill from the
+        running instance.
+      </p>
+    </section>
+
+    <section id="run">
+      <h2>The first documented run</h2>
+      <p>
+        On 2026-10-18 the catalog ran for the first time in both suites, one after the other,
+        against the container's <code>Fiben</code> database in the fixed environment of the
+        measurements (four processors, the server on two of them and the clients on the other
+        two, one-threaded plans, turbo on). The .NET suite took 112 minutes for the 237 queries
+        in Dapper, EF&nbsp;Core and NHibernate; the judge was made from the rows the catalog's
+        own text returned in it. The record with every number is in the README of the solution;
+        this is what it says.
+      </p>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Framework</th><th>In its own language</th><th>In native SQL</th><th>Refused</th><th>Rows agree with the source</th><th>Median of a cell's medians</th><th>All medians summed</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Dapper (the catalog's text)</td><td>229</td><td>&mdash;</td><td>8</td><td>is the source</td><td>45.0 ms</td><td>327 s</td></tr>
+            <tr><td>EF Core</td><td>170</td><td>59</td><td>8</td><td>224 of 229</td><td>40.9 ms</td><td>329 s</td></tr>
+            <tr><td>NHibernate</td><td>208</td><td>21</td><td>8</td><td>229 of 229</td><td>48.4 ms</td><td>323 s</td></tr>
+            <tr><td>Hibernate</td><td>204</td><td>14</td><td>8</td><td>218 of 218 that ran</td><td>62.2 ms</td><td>322 s</td></tr>
+            <tr><td>EclipseLink</td><td>194</td><td>14</td><td>8</td><td>203 of 208 that ran</td><td>53.6 ms</td><td>353 s</td></tr>
+            <tr><td>MyBatis</td><td>226</td><td>&mdash;</td><td>8</td><td>226 of 226 that ran</td><td>57.5 ms</td><td>334 s</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>What the run found</h3>
+      <ul>
+        <li>
+          <strong>Eight queries the tool refuses</strong>, in every target and for two reasons
+          only: an aggregate over a window inside a derived table (queries 99 and 237) and a
+          scalar subquery inside the <code>ON</code> condition of a <code>LEFT JOIN</code>
+          (124&ndash;126, 200&ndash;202). Everything else &mdash; 229 queries, 124 of them
+          nested &mdash; the tool translates into all five targets.
+        </li>
+        <li>
+          <strong>Where a target leaves its language.</strong> EF Core writes 59 queries in
+          native SQL: 36 for an aggregation LINQ does not form, such as an aggregate compared
+          with a subquery in <code>HAVING</code> or an average over a <code>BIGINT</code>, and
+          23 for a scalar subquery with its own joins as a comparison operand. It stays in LINQ
+          for 80 of the 106 single-block queries but for only 9 of the 27 correlated queries
+          without an aggregate (type J). NHibernate writes 21 in native SQL: 14 for
+          <code>TOP</code> inside a subquery, which HQL&nbsp;5.7 cannot say, and 7 for
+          <code>UNION</code>.
+        </li>
+        <li>
+          <strong>One semantic difference between SQL and LINQ.</strong> <code>SUM</code> over
+          an empty set is <code>NULL</code> in SQL and <code>0</code> in LINQ, because EF Core
+          keeps the meaning of <code>Enumerable.Sum</code> and writes
+          <code>COALESCE(SUM(x), 0)</code>. A query of type JA that compares a sum with the
+          sum of a correlated subquery therefore keeps rows in EF Core that SQL drops: query
+          207 (<em>who holds IBM stocks more than he holds Alphabet</em>) returns one person
+          from the text, from Dapper and from NHibernate, and 211 from EF Core &mdash; everyone
+          who holds IBM and no Alphabet at all. Five queries differ this way (150, 155, 207,
+          211, 213); they are the only cells of the run where a target disagrees with the
+          source, and they are an open decision, not a fix in the comparison.
+        </li>
+        <li>
+          <strong>Three things the Java frameworks taught the tool.</strong> Hibernate reads
+          <code>join POSTALADDRESS p</code> beside a joined entity whose column is also called
+          <code>POSTALADDRESS</code> as a join of that column, so the JPQL for Hibernate now names
+          such an entity by its fully qualified class name (nine queries ran after the fix).
+          EclipseLink leaves the joins of a <code>UNION</code> member out of its SQL and answered
+          49&nbsp;870 rows where the text answers 189, so a set operation with a joined member
+          goes out in native SQL for EclipseLink (four queries). And EclipseLink refuses an
+          aggregate in <code>HAVING</code> over a column of an entity it joined
+          (<em>Invalid query key</em>, eighteen queries of type A and two single-block ones)
+          and trims the trailing spaces of a <code>CHAR(5)</code> &mdash; both open as defects
+          to be pinned down.
+        </li>
+        <li>
+          <strong>The benchmark's own texts needed care.</strong> Two of the published queries
+          do not run in any dialect (136 lacks a closing parenthesis, 172 a closing quote), four
+          group a correlated subquery by a column of the outer query, which Db2 accepts and SQL
+          Server refuses, one derived table has no alias, three nested derived tables share the
+          name <code>a</code>, a hundred comparisons put a number in quotes against a
+          <code>BIGINT</code> column, and sixteen aggregates are projected without a name. Each
+          is a named patch or a rule of the import, and every string literal of every query is
+          checked to equal the benchmark's.
+        </li>
+        <li>
+          <strong>Ninety-five of the 229 translated queries return no rows</strong> over the
+          benchmark's own data: the questions name dates, companies and investors the published
+          data does not hold. Thirty return more than a thousand rows, three more than a hundred
+          thousand (query 32, the e-mail addresses of account holders in California with their
+          accounts and addresses, 610&nbsp;907 rows), which is
+          why the judge keeps a digest of every result and the rows themselves only up to a
+          thousand.
+        </li>
+        <li>
+          <strong>The frameworks cost the same, the queries do not.</strong> Summed over the
+          catalog, the medians of the three .NET frameworks are within two percent of each other
+          (323&ndash;329&nbsp;s). Two queries set the length of the run: 205 (<em>which companies
+          reported year over year revenue loss for 2019</em>) at 182&nbsp;s and 233 at 97&nbsp;s
+          per execution, correlated scalar subqueries with five joins evaluated for every outer
+          row over tables without an index beyond their keys. Most queries run in under
+          50&nbsp;ms. Where the frameworks differ, EF Core's SQL does: queries 120 and 121 run
+          fifteen times faster in EF Core than from the text (its rewritten subquery gets another
+          plan), 164 and 181 four to five times slower.
+        </li>
+        <li>
+          <strong>The catalog completion scales.</strong> Reading the catalog of 152 tables and
+          159 foreign keys for the first query took 408&nbsp;ms; translating a query with the
+          entities of its tables takes a few milliseconds after that, and compiling an artifact
+          15&ndash;30&nbsp;ms.
+        </li>
+      </ul>
+    </section>
+
+    <section id="by-target">
+      <h2>Every query in every target</h2>
+      <p>
+        One row per query and one column per target. The status column is the catalog's; a
+        target column is filled by the button in its heading, which translates every query
+        into that target through the running instance, one after another, and writes the
+        outcome into its cell &mdash; the target's own language, native SQL, or a refusal.
+        Point at a cell for the reason. This is the first stage of the run, watched live;
+        whether the rows agree is the fourth, which only the run itself does.
+      </p>
+      <div class="table-scroll">
+        <table class="ldbc-matrix fiben-matrix">
+          <thead><tr><th scope="col">Query</th><th scope="col">Status</th></tr></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+    </section>
+
+    <section id="queries">
+      <h2>The queries</h2>
+      <p class="fiben-load-status" aria-busy="true">Loading the catalog…</p>
+      <p class="fiben-error problem" role="alert" hidden></p>
+
+      <details class="example-pane">
+        <summary>The entity classes <small class="fiben-entity-count"></small></summary>
+        <p class="muted-note">
+          One per table, generated from the benchmark's DDL. They state properties and nothing
+          else; the rest comes from the catalog. A query is sent with those of the tables it reads.
+        </p>
+        <div class="fiben-entities pane-grid"></div>
+      </details>
+
+      <h3>Single-block queries</h3>
+      <div class="fiben-queries" data-nesting="10"></div>
+
+      <h3>Type N — an uncorrelated inner block without an aggregate</h3>
+      <div class="fiben-queries" data-nesting="20"></div>
+
+      <h3>Type A — an uncorrelated inner block with an aggregate</h3>
+      <div class="fiben-queries" data-nesting="30"></div>
+
+      <h3>Type J — a correlated inner block without an aggregate</h3>
+      <div class="fiben-queries" data-nesting="40"></div>
+
+      <h3>Type JA — a correlated inner block with an aggregate</h3>
+      <div class="fiben-queries" data-nesting="50"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>ORMConvertor &mdash; a research prototype. FIBEN by IBM under Apache-2.0; not a run of the benchmark.</p>
+  </footer>
+
+  <template id="query-template">
+    <article class="ldbc-query fiben-query">
+      <header>
+        <strong class="query-title"></strong>
+        <span class="query-nesting badge badge-incompleteness"></span>
+        <span class="query-translation badge"></span>
+      </header>
+      <ul class="query-facts"></ul>
+      <p class="query-note muted-note" hidden></p>
+      <details class="query-text">
+        <summary>The text in T-SQL <small class="query-column-count"></small></summary>
+        <pre><code></code></pre>
+        <div class="toolbar">
+          <button type="button" class="query-copy secondary outline">Copy the T-SQL</button>
+        </div>
+      </details>
+      <details class="query-benchmark">
+        <summary>The benchmark's text, in the Db2 dialect</summary>
+        <pre><code></code></pre>
+      </details>
+      <div class="toolbar query-run">
+        <label>
+          Translate into
+          <select class="query-target"></select>
+        </label>
+        <button type="button" class="query-translate">Translate</button>
+      </div>
+      <p class="query-status" hidden></p>
+      <p class="query-error problem" role="alert" hidden></p>
+      <div class="query-result" hidden>
+        <div class="query-outputs pane-grid"></div>
+        <h4>Records about the query</h4>
+        <div class="query-records"></div>
+      </div>
+    </article>
+  </template>
+
+  <template id="artifact-template">
+    <article class="artifact">
+      <header class="artifact-header">
+        <span>
+          <strong class="artifact-name"></strong>
+          <small class="artifact-type"></small>
+        </span>
+        <span class="artifact-actions">
+          <button type="button" class="artifact-copy secondary outline">Copy</button>
+          <button type="button" class="artifact-download secondary outline">Download</button>
+        </span>
+      </header>
+      <pre><code></code></pre>
+    </article>
+  </template>
+
+  <script type="module" src="js/theme.js"></script>
+  <script type="module" src="js/fiben.js"></script>
+</body>
+</html>
