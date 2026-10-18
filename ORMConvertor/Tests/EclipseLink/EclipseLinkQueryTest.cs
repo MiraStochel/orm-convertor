@@ -182,6 +182,145 @@ public class EclipseLinkQueryTest
         Assert.Contains("em.createNativeQuery(", Method(result));
     }
 
+    private static readonly string AggregateOverAJoinedEntityInHaving = $"""
+        SELECT o.CustomerId AS CustomerId, SUM(ol.Quantity) AS Total
+        FROM {QueryShapeInputs.Schema}.ShopOrders AS o
+        INNER JOIN {QueryShapeInputs.Schema}.ShopOrderLines AS ol ON ol.CompanyId = o.CompanyId AND ol.OrderId = o.OrderId
+        GROUP BY o.CustomerId
+        HAVING SUM(ol.Quantity) > 10
+        """;
+
+    /// <summary>
+    /// EclipseLink 5.0.0 rebuilds the having clause on the root of the block when its first
+    /// path is over another variable (profile RebuildsHavingOnTheRoot, measured over the FIBEN
+    /// catalog and pinned by the Java suite): <c>sum(ol.Quantity)</c> over
+    /// <c>from ShopOrder o join ShopOrderLine ol</c> would name the order's attribute, refused
+    /// where it has none and another column where it has one. The query goes out in native SQL
+    /// with the record that says so (decision 113).
+    /// </summary>
+    [Fact]
+    public void AnAggregateOverAJoinedEntityInHavingSendsTheQueryToNativeSql()
+    {
+        var result = ConvertShop(AggregateOverAJoinedEntityInHaving);
+
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.PostAggregationFiltering && r.Reason.Contains("'ol'", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.JpqlQuery);
+        Assert.Contains("em.createNativeQuery(", Method(result));
+        Assert.Contains("HAVING SUM(ol.Quantity) > 10", result.Sources.Single(s => s.ContentType == ConversionContentType.SqlQuery).Content);
+    }
+
+    /// <summary>
+    /// The same inside a subquery, where the join stands as a further range variable and the
+    /// subquery's root is the one the path would be resolved against.
+    /// </summary>
+    [Fact]
+    public void AnAggregateOverAJoinedEntityInTheHavingOfASubquerySendsTheQueryToNativeSql()
+    {
+        var result = ConvertShop($"""
+            SELECT * FROM {QueryShapeInputs.Schema}.ShopCustomers AS c
+            WHERE c.CustomerId IN (SELECT o.CustomerId FROM {QueryShapeInputs.Schema}.ShopOrders AS o
+                                   INNER JOIN {QueryShapeInputs.Schema}.ShopOrderLines AS ol ON ol.CompanyId = o.CompanyId AND ol.OrderId = o.OrderId
+                                   GROUP BY o.CustomerId
+                                   HAVING SUM(ol.Quantity) > 10)
+            """);
+
+        Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.PostAggregationFiltering);
+        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.JpqlQuery);
+    }
+
+    /// <summary>
+    /// An aggregate over the root of the block beside a join is what EclipseLink reads as
+    /// written, and so is a path over the joined entity in the select list and the grouping:
+    /// the query stays JPQL.
+    /// </summary>
+    [Fact]
+    public void AnAggregateOverTheRootInHavingStaysJpqlBesideAJoin()
+    {
+        var result = ConvertShop($"""
+            SELECT ol.ProductId AS ProductId, COUNT(o.OrderId) AS Orders
+            FROM {QueryShapeInputs.Schema}.ShopOrders AS o
+            INNER JOIN {QueryShapeInputs.Schema}.ShopOrderLines AS ol ON ol.CompanyId = o.CompanyId AND ol.OrderId = o.OrderId
+            GROUP BY ol.ProductId
+            HAVING COUNT(o.OrderId) > 1
+            """);
+
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        var jpql = Jpql(result);
+        Assert.Contains("group by ol.ProductId", jpql);
+        Assert.Contains("having count(o.OrderId) > 1", jpql);
+    }
+
+    /// <summary>
+    /// The first operand that carries a variable decides, and a constant carries none: with the
+    /// constant on the left the path on the right is the first.
+    /// </summary>
+    [Fact]
+    public void AConstantBeforeTheJoinedPathStillSendsTheQueryToNativeSql()
+    {
+        var result = ConvertShop($"""
+            SELECT o.CustomerId AS CustomerId, COUNT(o.OrderId) AS Orders
+            FROM {QueryShapeInputs.Schema}.ShopOrders AS o
+            INNER JOIN {QueryShapeInputs.Schema}.ShopOrderLines AS ol ON ol.CompanyId = o.CompanyId AND ol.OrderId = o.OrderId
+            GROUP BY o.CustomerId
+            HAVING 10 < SUM(ol.Quantity)
+            """);
+
+        Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.PostAggregationFiltering);
+    }
+
+    /// <summary>
+    /// A clause whose first path is over the root EclipseLink takes as written, the paths over
+    /// the joined entity after it included, so the query stays JPQL.
+    /// </summary>
+    [Fact]
+    public void AHavingThatOpensWithTheRootStaysJpql()
+    {
+        var result = ConvertShop($"""
+            SELECT o.CustomerId AS CustomerId, SUM(ol.Quantity) AS Total
+            FROM {QueryShapeInputs.Schema}.ShopOrders AS o
+            INNER JOIN {QueryShapeInputs.Schema}.ShopOrderLines AS ol ON ol.CompanyId = o.CompanyId AND ol.OrderId = o.OrderId
+            GROUP BY o.CustomerId
+            HAVING COUNT(o.OrderId) > 0 AND SUM(ol.Quantity) > 10
+            """);
+
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        Assert.Contains("having count(o.OrderId) > 0 and sum(ol.Quantity) > 10", Jpql(result));
+    }
+
+    /// <summary>
+    /// So is a clause that opens with a CASE - the counts of LDBC IC 3 and BI 16, which the
+    /// validation set judged in EclipseLink -, whatever paths the CASE and the rest name.
+    /// </summary>
+    [Fact]
+    public void AHavingThatOpensWithACaseStaysJpql()
+    {
+        var result = ConvertShop($"""
+            SELECT o.CustomerId AS CustomerId, COUNT(DISTINCT CASE WHEN ol.Quantity > 4 THEN ol.LineNumber END) AS Large
+            FROM {QueryShapeInputs.Schema}.ShopOrders AS o
+            INNER JOIN {QueryShapeInputs.Schema}.ShopOrderLines AS ol ON ol.CompanyId = o.CompanyId AND ol.OrderId = o.OrderId
+            GROUP BY o.CustomerId
+            HAVING COUNT(DISTINCT CASE WHEN ol.Quantity > 4 THEN ol.LineNumber END) > 1 AND MAX(ol.Quantity) > 10
+            """);
+
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        Assert.Contains("having count(distinct case when ol.Quantity > 4 then ol.LineNumber", Jpql(result));
+    }
+
+    /// <summary>Hibernate reads the path as it stands, so the same query stays JPQL there.</summary>
+    [Fact]
+    public void HibernateKeepsAnAggregateOverAJoinedEntityInHavingInJpql()
+    {
+        var result = ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.Hibernate,
+        [
+            .. QueryShapeInputs.MappingUnits(ORMEnum.Dapper),
+            new() { Content = AggregateOverAJoinedEntityInHaving, ContentType = ConversionContentType.SqlQuery },
+        ]);
+
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        Assert.Contains("having sum(ol.Quantity) > 10", Jpql(result));
+    }
+
     /// <summary>A Dapper query over the shop domain of the matrices, into EclipseLink.</summary>
     private static ConversionResult ConvertShop(string sql)
         => ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.EclipseLink,

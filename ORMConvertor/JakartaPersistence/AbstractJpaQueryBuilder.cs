@@ -257,11 +257,69 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
     protected override void BuildPostFilter(QueryClauses clauses, QueryArtifact artifact)
     {
-        if (clauses.PostFilter is not null)
+        if (clauses.PostFilter is null)
         {
-            artifact.PostFilter.Append("having ").Append(clauses.PostFilter.Accept(visitor));
+            return;
         }
+
+        // An implementation that rebuilds the having clause on the root of the block when the
+        // first path it meets is over another variable (EclipseLink 5.0.0, measured) reads every
+        // path of the clause as the root's attribute of that name: refused where the root has
+        // none, other rows without an error where it has one. Where the first operand that
+        // carries a variable is a path over the root, a CASE or a subquery, every path stands as
+        // written and the query stays JPQL; otherwise the native SQL keeps the paths (decision 113).
+        if (Profile.RebuildsHavingOnTheRoot
+            && FirstVariableIn(clauses.PostFilter) is { Alias: { } alias }
+            && !IsRootOf(clauses.From, alias))
+        {
+            ReportUnspoken(
+                $"{Profile.Implementation} rebuilds the having clause on the root of the block when its first path is over another variable, so the paths over '{alias}' would name the root's columns",
+                QueryFeature.PostAggregationFiltering);
+            return;
+        }
+
+        artifact.PostFilter.Append("having ").Append(clauses.PostFilter.Accept(visitor));
     }
+
+    /// <summary>
+    /// The first operand of a condition that carries a variable, in the order the visitor
+    /// writes the condition - the left side of a comparison before the right, the operands of a
+    /// conjunction in turn, the arguments of an operation or a call in turn, constants and
+    /// parameters carrying none -: the alias of a path, bare or under an aggregate, or a variable
+    /// without an alias for a CASE and a subquery, which <see cref="JpaImplementationProfile.RebuildsHavingOnTheRoot"/>
+    /// takes as they stand. Null where no operand carries one.
+    /// </summary>
+    private static FirstVariable? FirstVariableIn(ConditionNode node) => node switch
+    {
+        ComparisonCondition comparison => FirstVariableIn(comparison.Left) ?? (comparison.Right is null ? null : FirstVariableIn(comparison.Right)),
+        LogicalCondition logical => logical.Operands.Select(FirstVariableIn).FirstOrDefault(found => found is not null),
+        NotCondition negation => FirstVariableIn(negation.Operand),
+        _ => null,
+    };
+
+    private static FirstVariable? FirstVariableIn(QueryOperand operand)
+    {
+        if (operand.IsSubQuery || operand.Expression is { IsCase: true })
+        {
+            return new FirstVariable(null);
+        }
+
+        if (operand.IsColumn)
+        {
+            return new FirstVariable(operand.Table ?? string.Empty);
+        }
+
+        return operand.IsExpression
+            ? operand.Expression!.Leaves().Select(FirstVariableIn).FirstOrDefault(found => found is not null)
+            : null;
+    }
+
+    /// <summary>Whether a path's alias names the root of the block: its alias, its table where it has none, or no alias at all.</summary>
+    private static bool IsRootOf(FromInstruction from, string alias)
+        => alias.Length == 0 || string.Equals(alias, from.Alias ?? from.Table, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The first variable of a having clause; <see cref="Alias"/> null for a CASE or a subquery.</summary>
+    private readonly record struct FirstVariable(string? Alias);
 
     protected override void BuildOrdering(QueryClauses clauses, QueryArtifact artifact)
     {

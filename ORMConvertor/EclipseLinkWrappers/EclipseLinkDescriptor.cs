@@ -122,6 +122,17 @@ public static class EclipseLinkDescriptor
         // goes out in native SQL.
         DropsJoinsInSetOperations: true,
 
+        // Measured against 5.0.0 by the same run and pinned by the Java suite (eclipselink/
+        // JoinedHavingClaimsTest): when the first path of the having clause, read from the left,
+        // is over another variable than the root, the whole clause is rebuilt on the root -
+        // "having sum(l.quantity) > 10" over "from HvOrder o join HvLine l" fails with "Invalid
+        // query key [quantity]" (FIBEN q4, q176, q135-140, q147-149, q163-169), and "having
+        // max(l.id) > 3" becomes HAVING (MAX(t0.id) > ?), the order's key for the line's, other
+        // rows without an error. "having count(o.id) > 0 and max(l.id) > 3" it writes as it
+        // stands, and so a clause opening with a CASE (LDBC IC 3, BI 16) or a subquery; the
+        // select list, group by and order by are never rebuilt. Such a query goes out in native SQL.
+        RebuildsHavingOnTheRoot: true,
+
         // Measured against 5.0.0 with every identifier of its JPQL grammar as an entity name
         // - at the head of a from clause, as the target of an inner and a left entity join
         // and in a subquery: these it refuses as a syntax error wherever an entity is named
