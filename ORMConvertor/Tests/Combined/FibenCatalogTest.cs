@@ -93,7 +93,7 @@ public class FibenCatalogTest
 
         var result = ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.Dapper, units, catalogReader: null);
 
-        Assert.Empty(result.Records.Where(record => record.Kind == ConversionRecordKind.Failure));
+        Assert.DoesNotContain(result.Records, record => record.Kind == ConversionRecordKind.Failure);
         Assert.Equal(FibenSample.Entities.Count, result.Sources.Count(source => source.ContentType == ConversionContentType.CSharpEntity));
     }
 }

@@ -89,7 +89,7 @@ jobs:
 
       - name: Upload test results and coverage
         if: always() # the coverage of a failed run is the interesting one
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: ORMConvertor/Tests/TestResults/
@@ -182,7 +182,7 @@ jobs:
 
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: java-test-results
           path: ORMConvertor/JavaTests/target/surefire-reports/
@@ -192,7 +192,7 @@ jobs:
       # log and nowhere else.
       - name: Upload the application log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: java-test-app-log
           path: ${{ runner.temp }}/app.log

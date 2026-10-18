@@ -18,12 +18,14 @@ namespace TransactSql;
 /// target cannot render is a record, not an exception - exceptions stay reserved for errors
 /// of the program, and a condition tree a foreign parser produced is not one
 /// (decisions 010 and 053).
+///
+/// Unlike the other visitors it takes no typed view of the expressions (decision 107):
+/// T-SQL spells <c>+</c> for a concatenation and an addition alike, so it has nothing to
+/// read from one.
 /// </summary>
-/// <param name="typing">The typed view of the query's expressions the builder's gate filled (decision 107); T-SQL spells <c>+</c> for a concatenation and an addition alike, so this visitor reads nothing from it today and takes it so that the four visitors have one shape.</param>
 public class SqlQueryVisitor(
     Action<ConversionRecordKind, string, QueryFeature?> report,
-    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery,
-    ExpressionTyping typing) : IQueryVisitor
+    Func<SubQueryInstruction, ComparisonOperator, string?> renderSubQuery) : IQueryVisitor
 {
     /// <summary>
     /// The escape character of the LIKE whose pattern is being written, so that an
