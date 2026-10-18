@@ -186,15 +186,16 @@ public class CountOverANullableColumnTest(TestSchemaFixture fixture)
     }
 
     /// <summary>
-    /// A reference to another row is no column: read as one, the test for null over it came
-    /// out as <c>COUNT(o.Customer)</c> and <c>o.Customer IS NOT NULL</c>, a column no table
-    /// has. The navigation is not read - the projection is dropped with a record and the
-    /// filter refused, as any operand the reading cannot take (decision 070).
+    /// A reference to another row is no column, and read as one the test for null over it
+    /// came out as <c>COUNT(o.Customer)</c> and <c>o.Customer IS NOT NULL</c>, a column no
+    /// table has. Since decision 148 the test of the reference is the test of its foreign key
+    /// column, as it is in HQL and JPQL (decision 101): the conditional count counts the
+    /// column, the filter tests it, and no record is made.
     /// </summary>
     [Theory]
-    [InlineData(".GroupBy(o => o.CustomerId).Select(g => new { CustomerId = g.Key, Placed = g.Count(e => e.Customer != null) })")]
-    [InlineData(".Where(o => o.Customer != null).Select(o => new { o.OrderId })")]
-    public void ANavigationIsNotReadAsAColumn(string chain)
+    [InlineData(".GroupBy(o => o.CustomerId).Select(g => new { CustomerId = g.Key, Placed = g.Count(e => e.Customer != null) })", @"COUNT\(\w+\.CustomerId\)")]
+    [InlineData(".Where(o => o.Customer != null).Select(o => new { o.OrderId })", @"WHERE \w+\.CustomerId IS NOT NULL")]
+    public void AReferenceTestedForNullIsTheTestOfItsForeignKeyColumn(string chain, string expected)
     {
         var unit = $$"""
             using System.ComponentModel.DataAnnotations;
@@ -231,10 +232,11 @@ public class CountOverANullableColumnTest(TestSchemaFixture fixture)
             ORMEnum.Dapper,
             [new() { Content = unit, ContentType = ConversionContentType.CSharp, Name = "Orders.cs" }]);
 
-        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery
-            && System.Text.RegularExpressions.Regex.IsMatch(s.Content, @"\.Customer\b"));
-        Assert.Contains(result.Records, r => r.Kind is ConversionRecordKind.Loss or ConversionRecordKind.Failure
-            && r.Reason.Contains("navigation", StringComparison.Ordinal));
+        var sql = Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery).Content;
+        Assert.True(System.Text.RegularExpressions.Regex.IsMatch(sql, expected), sql);
+        Assert.DoesNotMatch(@"\.Customer\b", sql);
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure
+            || (r.Kind == ConversionRecordKind.Loss && r.Feature is not null));
     }
 
     private const string LinksPerProduct =

@@ -134,6 +134,15 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     private readonly List<RowShape> enclosingRows = [];
 
     /// <summary>
+    /// The implicit joins a path through a reference has brought into the body being read
+    /// (decision 148), by the alias and navigation crossed (<c>o.Customer</c>), each with the
+    /// row of the joined entity, so that every path over the same reference in the same body
+    /// shares one join. One registry per body: saved and restored around a nested chain and
+    /// around the body of a definition like the row.
+    /// </summary>
+    private Dictionary<string, EntityRow> implicitJoins = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// The construct that sank the condition being read, when the parser can name it - a
     /// value from the enclosing scope, which is what a parameter looks like in LINQ - so
     /// that the clause's refusal says what the caller would have to change (F11). The
@@ -196,6 +205,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             queryBuilder = queryBuilders();
             unread = null;
             followed.Clear();
+            implicitJoins.Clear();
 
             // Given before the reading, to every query, so that a refused one does not
             // renumber its neighbours (decisions 108 and 109); a single query keeps the fixed
@@ -291,6 +301,17 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// A fact about the provider, not about System.Linq, which is why the subclass states it.
     /// </summary>
     protected virtual bool ProviderEscapesStringMethodArguments => true;
+
+    /// <summary>
+    /// The kind of the join a path through a reference brings (decision 148): a fact about
+    /// the provider, not about the language. The shared parser says whether the foreign key
+    /// column of the reference may hold NULL - from the mapping's own statements, in the
+    /// order the EF Core entity builder reads them - and the provider answers with the join
+    /// it writes for that reference. NHibernate translates the navigation to an implicit
+    /// join of HQL, which is inner whatever the key; EF Core writes a left join for an
+    /// optional reference and an inner one for a required one, and overrides this.
+    /// </summary>
+    protected virtual JoinKind ImplicitJoinKind(bool nullableForeignKey) => JoinKind.Inner;
 
     /// <summary>
     /// The provider's own pattern function, when it has one and the invocation is it: EF Core's
@@ -1213,10 +1234,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         var enclosingRow = row;
         var enclosingProjected = scopeProjected;
         var enclosingProjections = scopeProjections;
+        var enclosingImplicitJoins = implicitJoins;
         groupingKeys = [];
         groupElement = null;
         scopeProjected = false;
         scopeProjections = [];
+        implicitJoins = new Dictionary<string, EntityRow>(StringComparer.OrdinalIgnoreCase);
         enclosingRows.Add(enclosingRow);
 
         try
@@ -1230,6 +1253,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             row = enclosingRow;
             scopeProjected = enclosingProjected;
             scopeProjections = enclosingProjections;
+            implicitJoins = enclosingImplicitJoins;
             enclosingRows.RemoveAt(enclosingRows.Count - 1);
         }
     }
@@ -3485,16 +3509,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         // g.Count(x => x.Col != null) counts the non-null values of the column, which is
         // COUNT(Col) - the shape the EF Core target writes it in - and is read back as such.
+        var testedForNull = false;
         if (name == "COUNT" && selector is null
             && body is BinaryExpressionSyntax notNull && notNull.IsKind(SyntaxKind.NotEqualsExpression))
         {
             if (notNull.Right.IsKind(SyntaxKind.NullLiteralExpression))
             {
                 body = notNull.Left;
+                testedForNull = true;
             }
             else if (notNull.Left.IsKind(SyntaxKind.NullLiteralExpression))
             {
                 body = notNull.Right;
+                testedForNull = true;
             }
         }
 
@@ -3514,7 +3541,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         QueryOperand? ranged;
         try
         {
-            ranged = ReadLeaf(body);
+            // g.Count(x => x.Customer != null) counts the rows whose reference is set, which
+            // is the count of its foreign key column (decision 148).
+            ranged = testedForNull && IsReference(body) ? CountedReference(body) : ReadLeaf(body);
         }
         finally
         {
@@ -3620,12 +3649,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             expression = parenthesized.Expression;
         }
 
-        if (expression is not MemberAccessExpressionSyntax || !IsColumnOfScope(expression))
+        if (expression is not MemberAccessExpressionSyntax member)
         {
             return null;
         }
 
-        return ReadOperand(expression) is { IsColumn: true, IsAggregate: false } column ? column : null;
+        // o.Customer.IsActive: a flag of the referenced entity, through the path (decision 148).
+        if (!IsColumnOfScope(member))
+        {
+            return TryReadReferencePath(member, out var throughReference) && throughReference is { IsColumn: true } ? throughReference : null;
+        }
+
+        return ReadOperand(member) is { IsColumn: true, IsAggregate: false } column ? column : null;
     }
 
     private static QueryOperand BooleanConstant(bool value)
@@ -4283,7 +4318,16 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return null;
             }
 
-            var operand = ReadOperand(leftIsNull ? binary.Right : binary.Left);
+            var tested = leftIsNull ? binary.Right : binary.Left;
+
+            // o.Customer != null: the test of a reference is the test of its foreign key
+            // columns (decision 148), as it is in HQL and JPQL (decision 101).
+            if (TryReadReferenceNullness(tested, negated: op == ComparisonOperator.NotEqual, out var nullness))
+            {
+                return nullness;
+            }
+
+            var operand = ReadOperand(tested);
             if (operand is null)
             {
                 return null;
@@ -4361,8 +4405,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             case MemberAccessExpressionSyntax nested when TryResolveInScope(nested, out _, out var resolved) && resolved is { } column:
                 return ColumnUnlessNavigation(column.Alias, column.Column, nested);
 
-            // The members of the vocabulary over an operand: c.Name.Length, o.PlacedAt.Year.
-            case MemberAccessExpressionSyntax { Name.Identifier.Text: "Length" or "Year" or "Month" or "Day" } part:
+            // The members of the vocabulary over an operand: c.Name.Length, o.PlacedAt.Year -
+            // unless the receiver is a reference, whose member of that name is a column of the
+            // referenced entity (o.Period.Year), read as the path below (decision 148).
+            case MemberAccessExpressionSyntax { Name.Identifier.Text: "Length" or "Year" or "Month" or "Day" } part
+                when !IsReference(part.Expression):
                 {
                     var receiver = ReadLeaf(part.Expression);
                     if (receiver is null)
@@ -4380,6 +4427,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
                     return QueryOperand.Computed(QueryExpression.Call(function, [receiver]));
                 }
+
+            // o.Customer.Name, x.o.Customer.Region.Name: a path through a reference of the row
+            // (decision 148) - the foreign key column where it ends on the key the reference
+            // points at, a column of the joined entity under an implicit join otherwise.
+            case MemberAccessExpressionSyntax path when TryReadReferencePath(path, out var throughReference):
+                return throughReference;
 
             case LiteralExpressionSyntax literal:
                 return QueryOperand.Value(ReadConstant(literal));
@@ -4432,6 +4485,366 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
     }
 
+    /* ---- a path through a reference in an operand (decision 148) ---------------------- */
+
+    /// <summary>
+    /// Reads <c>o.Customer.Name</c>, <c>x.o.Customer.Region.Name</c>: a path from a row of an
+    /// entity in scope through one or more references to a member (decision 148, paper rule
+    /// Q7) - the shape JPQL and HQL read since decision 144, in LINQ. The reference before the
+    /// member, where it is an owning one and the member is the key it references, is the
+    /// foreign key column the holder carries - the reading both providers make, without a
+    /// join, and the inverse of the property the EF Core entity builder declares for such a
+    /// column; every other reference on the path is a join derived from the relation, one
+    /// per reference and body, of the kind the provider says. False where the expression is
+    /// no such path - its head is no row of an entity the conversion maps, or its second
+    /// part no association of that entity -, for the other shapes to read; true with a null
+    /// operand where the path is one but cannot be derived, the reason in <see cref="unread"/>
+    /// for the clause to refuse or drop as it does any operand it cannot read (decision 070).
+    /// </summary>
+    private bool TryReadReferencePath(MemberAccessExpressionSyntax written, out QueryOperand? operand)
+    {
+        operand = null;
+        if (PathOf(written) is not { Count: >= 3 } path
+            || HeadOf(path, out var index) is not { Map: not null } current
+            || index > path.Count - 2
+            || RelationOf(current.Map, path[index]) is null)
+        {
+            return false;
+        }
+
+        var spelling = string.Join('.', path);
+        for (; index < path.Count - 1; index++)
+        {
+            if (index == path.Count - 2 && ForeignKeyOf(current, path[index], path[^1]) is { } foreignKey)
+            {
+                operand = foreignKey;
+                return true;
+            }
+
+            var joined = ImplicitJoin(current, path[index], spelling);
+            if (joined is null)
+            {
+                return true;
+            }
+
+            current = joined;
+        }
+
+        operand = QueryOperand.Column(current.Alias, ColumnIn(current.Map, path[^1]));
+        return true;
+    }
+
+    /// <summary>
+    /// <c>o.Customer != null</c>, <c>o.Customer.Region == null</c>: the test of a reference for
+    /// null is the test of its foreign key columns under the holder (decision 148), as it is in
+    /// HQL and JPQL (decision 101) and as both providers translate it - every column of the
+    /// pairs, more than one under And. The references before the last are crossed as a path
+    /// is. False where the expression names no reference; true with a null condition where the
+    /// reference is one whose nullness the representation does not carry - a collection, a
+    /// reference whose key the other side holds, one without columns -, the reason in
+    /// <see cref="unread"/>.
+    /// </summary>
+    private bool TryReadReferenceNullness(ExpressionSyntax tested, bool negated, out ConditionNode? condition)
+    {
+        condition = null;
+        if (PathOf(tested) is not { Count: >= 2 } path
+            || HeadOf(path, out var index) is not { Map: not null } current
+            || index > path.Count - 1
+            || RelationOf(current.Map, path[index]) is null)
+        {
+            return false;
+        }
+
+        var spelling = string.Join('.', path);
+        for (; index < path.Count - 1; index++)
+        {
+            var joined = ImplicitJoin(current, path[index], spelling);
+            if (joined is null)
+            {
+                return true;
+            }
+
+            current = joined;
+        }
+
+        var relation = RelationOf(current.Map, path[^1])!;
+        var test = negated ? "!= null" : "== null";
+        var why = relation switch
+        {
+            { Cardinality: Cardinality.OneToMany or Cardinality.ManyToMany } =>
+                "a collection, which is never null and whose emptiness the query representation does not test",
+            { Role: RelationRole.Inverse } =>
+                "a reference whose foreign key the other side holds, so its nullness is the absence of a row there, which is not derived",
+            _ when PairsOf(relation, current.Map!).Count == 0 =>
+                "a reference whose foreign key columns neither the relation states nor the database catalog supplied, so no column was there to test",
+            _ => null,
+        };
+
+        if (why is not null)
+        {
+            unread ??= ($"the test '{spelling} {test}' of {why}", null);
+            return true;
+        }
+
+        var op = negated ? ComparisonOperator.IsNotNull : ComparisonOperator.IsNull;
+        var conjuncts = PairsOf(relation, current.Map!)
+            .Select(pair => (ConditionNode)new ComparisonCondition(QueryOperand.Column(current.Alias, ColumnNameOf(pair.Source)), op))
+            .ToList();
+
+        condition = conjuncts.Count == 1 ? conjuncts[0] : new LogicalCondition(LogicalOperator.And, conjuncts);
+        return true;
+    }
+
+    /// <summary>
+    /// The column whose non-null values a conditional count over a reference counts
+    /// (decision 148): the one foreign key column of an owning single-valued reference, under
+    /// the holder, the references before it crossed as a path is. Null with the reason in
+    /// <see cref="unread"/> where the reference has no such column - a collection, an
+    /// inverse side, no pairs - or more than one, since the count of one column of a
+    /// composite key is not the count of the rows that have the whole reference.
+    /// </summary>
+    private QueryOperand? CountedReference(ExpressionSyntax reference)
+    {
+        var path = PathOf(reference)!;
+        var current = HeadOf(path, out var index)!;
+        var spelling = string.Join('.', path);
+        for (; index < path.Count - 1; index++)
+        {
+            var joined = ImplicitJoin(current, path[index], spelling);
+            if (joined is null)
+            {
+                return null;
+            }
+
+            current = joined;
+        }
+
+        var relation = RelationOf(current.Map, path[^1])!;
+        if (relation is { Role: RelationRole.Owning, Cardinality: Cardinality.ManyToOne or Cardinality.OneToOne }
+            && PairsOf(relation, current.Map!) is [var pair])
+        {
+            return QueryOperand.Column(current.Alias, ColumnNameOf(pair.Source));
+        }
+
+        unread ??= ($"the count of the rows whose reference '{spelling}' is set, which the query representation counts only as the one foreign key column of an owning reference, and '{spelling}' has no such column", QueryFeature.Aggregation);
+        return null;
+    }
+
+    /// <summary>
+    /// Whether the expression is a path from a row of an entity in scope that ends on a
+    /// reference of the entity it reaches, every part crossed being an association the maps
+    /// resolve - decided without reading, for the member of the vocabulary to step aside
+    /// where its receiver is a reference (decision 148).
+    /// </summary>
+    private bool IsReference(ExpressionSyntax expression)
+    {
+        if (PathOf(expression) is not { Count: >= 2 } path || HeadOf(path, out var index) is not { } row)
+        {
+            return false;
+        }
+
+        var map = row.Map;
+        for (; index < path.Count; index++)
+        {
+            if (RelationOf(map, path[index]) is not { } relation)
+            {
+                return false;
+            }
+
+            if (index < path.Count - 1)
+            {
+                map = MapFor(relation.TargetEntity);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The row of an entity a path starts from and the index of the first part after it: the
+    /// row the head names as the alias of the scope or of one around it (through the name a
+    /// later step's lambda gave the rows), the row a join is bringing in while its condition
+    /// is read, or the row a member of a joined row leads to (<c>x.o</c>). Null where the head
+    /// leads to no row of an entity.
+    /// </summary>
+    private EntityRow? HeadOf(List<string> path, out int index)
+    {
+        index = 1;
+        var head = AliasFor(path[0]);
+
+        foreach (var shape in ScopeRows())
+        {
+            switch (shape)
+            {
+                case EntityRow entity when string.Equals(entity.Alias, head, StringComparison.OrdinalIgnoreCase):
+                    return entity;
+
+                case JoinedRow joined when joined.Members.ContainsKey(path[1]):
+                    RowShape current = joined;
+                    while (current is JoinedRow nested && index < path.Count && nested.Members.TryGetValue(path[index], out var member))
+                    {
+                        current = member;
+                        index++;
+                    }
+
+                    return current as EntityRow;
+            }
+        }
+
+        return joiningRow is { } joining && string.Equals(joining.Alias, head, StringComparison.OrdinalIgnoreCase) ? joining : null;
+    }
+
+    private static Relation? RelationOf(EntityMap? map, string navigation)
+        => map?.Relations.FirstOrDefault(r => string.Equals(r.SourceNavigationProperty, navigation, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The column pairs of a relation, from the owning counterpart where it states none itself (decision 012); the target's mapping is looked up by name.</summary>
+    private IReadOnlyList<ColumnPair> PairsOf(Relation relation, EntityMap owner)
+        => MapFor(relation.TargetEntity) is { } target ? ColumnPairsOf(relation, owner, target) : relation.ColumnPairs;
+
+    private static string ColumnNameOf(PropertyMap map) => map.ColumnName ?? map.Property.Name;
+
+    /// <summary>
+    /// The foreign key column under <paramref name="holder"/> that a path through an owning
+    /// single-valued reference to the key it references stands for, or null where the
+    /// reference is not that - not declared, a collection, an inverse side whose key the other
+    /// entity holds - or the member is no referenced key column of its pairs. Both providers
+    /// read the path so, without a join, which is why the kind of the join is not asked.
+    /// </summary>
+    private QueryOperand? ForeignKeyOf(EntityRow holder, string navigation, string member)
+    {
+        if (holder.Map is not { } owner
+            || RelationOf(owner, navigation) is not { Role: RelationRole.Owning, Cardinality: Cardinality.ManyToOne or Cardinality.OneToOne } relation)
+        {
+            return null;
+        }
+
+        var pair = PairsOf(relation, owner).FirstOrDefault(p => string.Equals(p.Target.Property.Name, member, StringComparison.OrdinalIgnoreCase));
+        return pair is null ? null : QueryOperand.Column(holder.Alias, ColumnNameOf(pair.Source));
+    }
+
+    /// <summary>
+    /// The row of the implicit join a path makes by crossing the single-valued reference
+    /// <paramref name="navigation"/> of the entity under <paramref name="owner"/> (decision
+    /// 148): the one already made for that reference in this body, or a new join of the
+    /// reference's target under an alias of its own, with the condition derived from the
+    /// relation the way a join along the association path is (decision 101) and of the kind
+    /// the provider writes for a reference whose foreign key may or may not hold NULL. Null,
+    /// with the reason in <see cref="unread"/>, where the maps of the conversion do not
+    /// resolve the reference - nothing is guessed (decision 067) -, where the association is a
+    /// collection, which LINQ navigates by a second from or an aggregate over it, or inside the
+    /// condition of a join, whose joined row is not in the query yet.
+    /// </summary>
+    private EntityRow? ImplicitJoin(EntityRow owner, string navigation, string path)
+    {
+        var key = $"{owner.Alias}.{navigation}";
+        if (implicitJoins.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        if (owner.Map is not { } ownerMap)
+        {
+            unread ??= ($"'{key}' in the path '{path}', which needs the mapping of the entity behind '{owner.Alias}', which is not part of the conversion, so no relation was there to derive the implicit join from", QueryFeature.Join);
+            return null;
+        }
+
+        var relation = RelationOf(ownerMap, navigation);
+        if (relation is null)
+        {
+            unread ??= ($"'{key}' in the path '{path}', which names no association the mapping of '{ownerMap.Entity.Name}' declares, so no relation was there to derive the implicit join from", QueryFeature.Join);
+            return null;
+        }
+
+        if (relation.Cardinality is Cardinality.OneToMany or Cardinality.ManyToMany)
+        {
+            unread ??= ($"'{key}' in the path '{path}', which navigates the collection '{navigation}' of '{ownerMap.Entity.Name}', and a path crosses single-valued references only - a collection is joined by a second from or aggregated over", QueryFeature.Join);
+            return null;
+        }
+
+        if (joiningRow is not null)
+        {
+            unread ??= ($"'{key}' in the path '{path}', which would bring an implicit join of '{relation.TargetEntity}' inside the condition of a join, where the joined entity is not in scope yet", QueryFeature.Join);
+            return null;
+        }
+
+        var target = MapFor(relation.TargetEntity);
+        if (target is null)
+        {
+            unread ??= ($"'{key}' in the path '{path}', which leads to the entity '{relation.TargetEntity}', which is not part of the conversion", QueryFeature.Join);
+            return null;
+        }
+
+        var pairs = ColumnPairsOf(relation, ownerMap, target);
+        if (pairs.Count == 0)
+        {
+            unread ??= ($"'{key}' in the path '{path}', whose relation to '{relation.TargetEntity}' states no foreign key columns and the database catalog supplied none, so the implicit join could not be derived", QueryFeature.Join);
+            return null;
+        }
+
+        var joined = new EntityRow(ImplicitAlias(owner.Alias, navigation), target);
+        var kind = ImplicitJoinKind(ForeignKeyMayBeNull(ownerMap, relation, pairs));
+        queryBuilder.Join(kind, sourceAlias, Qualify(target, target.Table ?? relation.TargetEntity), AssociationCondition(relation, pairs, owner.Alias, joined.Alias), joined.Alias);
+        implicitJoins[key] = joined;
+
+        return joined;
+    }
+
+    /// <summary>
+    /// Whether the foreign key of a reference may hold NULL, from what the mapping states
+    /// (decision 148), in the order the EF Core entity builder reads the same facts: an
+    /// inverse single-valued reference always, since the row of the other side may be absent;
+    /// for an owning one the column fact of a pair's foreign key property, else the
+    /// nullability of its language type (<c>int?</c>); where no pair states anything - a
+    /// column no scalar property maps -, the map of the navigation property (<c>Customer?</c>);
+    /// and with nothing stated at all, optional, as EF Core takes an unstated reference.
+    /// </summary>
+    private static bool ForeignKeyMayBeNull(EntityMap owner, Relation relation, IReadOnlyList<ColumnPair> pairs)
+    {
+        if (relation.Role == RelationRole.Inverse)
+        {
+            return true;
+        }
+
+        var stated = pairs
+            .Select(pair => pair.Source.IsNullable ?? (pair.Source.Property.Type is { } type ? type.IsNullable : (bool?)null))
+            .ToList();
+        if (stated.Any(nullable => nullable == true))
+        {
+            return true;
+        }
+
+        if (stated.All(nullable => nullable == false))
+        {
+            return false;
+        }
+
+        var navigation = owner.PropertyMaps.FirstOrDefault(pm => string.Equals(pm.Property.Name, relation.SourceNavigationProperty, StringComparison.OrdinalIgnoreCase));
+        return navigation?.IsNullable ?? (navigation?.Property.Type is { } navigationType ? navigationType.IsNullable : true);
+    }
+
+    /// <summary>
+    /// The alias of an implicit join: the alias of the path and the navigation, joined by an
+    /// underscore (<c>o_Customer</c>), which says where the row came from and is no name the
+    /// source wrote; numbered where the scope, a definition or another implicit join has it.
+    /// </summary>
+    private string ImplicitAlias(string alias, string navigation)
+    {
+        var taken = AliasesInScope();
+        foreach (var joined in implicitJoins.Values)
+        {
+            taken.Add(joined.Alias);
+        }
+
+        var stem = $"{alias}_{navigation}";
+        var candidate = stem;
+        for (var number = 2; taken.Contains(candidate) || queryBuilder.Defines(candidate); number++)
+        {
+            candidate = stem + number;
+        }
+
+        return candidate;
+    }
+
     /* ---- expressions (decision 107) --------------------------------------------------- */
 
     /// <summary>
@@ -4476,7 +4889,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// SQL targets, and a parameter compared with it found no scalar to take (decision 083).
     /// </summary>
     private string ColumnOf(string alias, string member)
-        => MapOfAlias(alias)?.PropertyMaps
+        => ColumnIn(MapOfAlias(alias), member);
+
+    /// <summary>The column of a member under a mapping, or the member where the mapping names no other column or there is none - for a row an implicit join brought in, which no alias of the scope names (decision 148).</summary>
+    private static string ColumnIn(EntityMap? map, string member)
+        => map?.PropertyMaps
                .FirstOrDefault(p => string.Equals(p.Property.Name, member, StringComparison.Ordinal))
                ?.ColumnName
            ?? member;

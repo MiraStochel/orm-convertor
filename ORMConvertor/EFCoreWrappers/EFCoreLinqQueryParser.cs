@@ -6,6 +6,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Model;
 using Model.QueryInstructions.Conditions;
+using Model.QueryInstructions.Enums;
 using TransactSql;
 
 namespace EFCoreWrappers;
@@ -143,6 +144,15 @@ public class EFCoreLinqQueryParser(
     /// against EF Core 10), so the shared reading of it is on here.
     /// </summary>
     protected override bool ReadsIntermediateResults => true;
+
+    /// <summary>
+    /// EF Core expands a navigation in an operand into a join whose kind follows the
+    /// relationship (decision 148): a left join for an optional reference, whose foreign key
+    /// may hold NULL and whose row the query keeps with nulls, an inner one for a required
+    /// reference. The shared parser derives the nullability from the mapping the way this
+    /// wrapper's entity builder does; the kind is this provider's answer.
+    /// </summary>
+    protected override JoinKind ImplicitJoinKind(bool nullableForeignKey) => nullableForeignKey ? JoinKind.Left : JoinKind.Inner;
 
     /// <summary>
     /// <c>EF.Functions.Like(column, pattern)</c> and the overload with the escape - the

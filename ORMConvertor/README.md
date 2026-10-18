@@ -225,6 +225,25 @@ The texts with a depth bound they replaced measured IC 13 116, IC 14 2 003, BI 1
 
 **Noise, and the fixed environment** (decision [145](../docs/decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md)). Measured 2026-10-17 over `6f2c1a2` + the next commit, the same way over 21 of the queries, three passes each. Before the fixed environment, with turbo on, the medians of IC 5 were 936, 214 and 608 ms and those of IC 9 813, 230 and 599 ms. In the fixed environment (MAXDOP 1, 4096 MB, the database on two processors, the VM at four, turbo off, on AC) IC 5 gave 1 810, 1 790 and 1 782 ms, IC 9 1 301, 1 318 and 1 350 ms, BI 1 2 246, 2 230 and 2 333 ms, and IS 1–7 stayed at 2–4 ms throughout: the spread between passes fell from 2–4× to under 5 %. The absolute times rose 4–9×; about half of that is MAXDOP 1 (the same pass with parallelism allowed again: IC 5 943 ms, BI 1 1 459 ms, IC 10 574 ms), the rest the fixed clock and the two processors. Dropping the 22 indexes of `indexes.sql` the same day moved none of IS 1, IS 3–6 (1–5 ms with or without), lifted IS 2 and IS 7 to 48–173 ms and IC 8 to 122–310 ms, and slowed BI 20 eightfold; it does not lift a short query over the bound.
 
+**The whole catalog in the fixed environment.** Measured 2026-10-17 over `d3d1a9a`, the same way: each text with its example parameters through Dapper from the host against `mssql_db` (SF 1, MAXDOP 1, 4096 MB, processors 0–1, the VM at four processors and 8 GB), the maximum and minimum processor state of the power plan both read `0x63` for AC and the laptop was on AC. The value is the median of the warm runs after one cold run: four runs for queries below 5 s, three for the longer ones, two for BI 6. BI 14 was not run: its 38 s with turbo on and the 2.3–18× the fixed environment cost the other long queries (BI 6 and BI 18 2.3×, BI 19 18×) put it anywhere between 90 s and over the window, and it is run alone when it is run.
+
+| Query | ms | Query | ms | Query | ms | Query | ms |
+|---|---|---|---|---|---|---|---|
+| IS 1 | 3 | IC 1 | 121 | IC 12 | 2 331 | BI 9 | 1 272 |
+| IS 2 | 3 | IC 2 | 274 | IC 13 | 269 | BI 10 | 2 199 |
+| IS 3 | 4 | IC 3 | 2 804 | IC 14 | 4 927 | BI 11 | 3 141 |
+| IS 4 | 3 | IC 4 | 124 | BI 1 | 2 200 | BI 12 | 1 358 |
+| IS 5 | 3 | IC 5 | 1 737 | BI 2 | 1 071 | BI 13 | 245 |
+| IS 6 | 3 | IC 6 | 625 | BI 3 | 1 035 | BI 14 | not run |
+| IS 7 | 4 | IC 7 | 334 | BI 4 | 3 591 | BI 15 | 12 406 |
+| | | IC 8 | 16 | BI 5 | 6 702 | BI 16 | 912 |
+| | | IC 9 | 1 259 | BI 6 | 60 507 | BI 17 | 3 304 |
+| | | IC 10 | 977 | BI 7 | 273 | BI 18 | 36 310 (26.6–36.3 s between runs) |
+| | | IC 11 | 35 | BI 8 | 3 320 | BI 19 | 117 773 |
+| | | | | | | BI 20 | 290 |
+
+Every query that ran is under the upper bound; the cold run was 1.1–1.5× the warm ones for the long queries and up to 60× for IS 1 (183 ms). Below 0.2 s remain IS 1–7, IC 1, IC 4, IC 8 and IC 11; the fixed environment lifted IC 2, IC 7, IC 10, IC 13, IC 14, BI 7 and BI 20 over the bound. To reach 0.2 s the short ones need about 70 repetitions (IS 1–7), 13 (IC 8), 6 (IC 11) and 2 (IC 1, IC 4); the policy of decision 145 does not take these as parameters but derives them from its 1 000 ms target, which repeats them 250–334, 63, 29 and 9 times, every query from 0.25 to 1 s three to five times and every longer one three times.
+
 The depths of the path queries, measured from every person over the same data set (`LdbcJudge/LdbcPathQueryTest` holds them):
 
 | Edges | Persons with an edge | Average degree | Components | Depth | Pairs at the depth |
