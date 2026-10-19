@@ -442,7 +442,9 @@ internal sealed class FibenRun
     /// <summary>
     /// Whether the source agrees with the judge - by the digest, which every entry has, and by
     /// the rows where the judge keeps them -; null where the source has no rows to compare or
-    /// there is no judge. A query the judge has no entry for returned no rows when it was made.
+    /// there is no judge. A query that returned no rows has an entry with the digest of none;
+    /// a query the judge has no entry for was not run when the judge was made, so it agrees
+    /// with nothing.
     /// </summary>
     public bool? AgreesWithJudge(string key)
     {
@@ -451,18 +453,27 @@ internal sealed class FibenRun
             return null;
         }
 
-        var digest = JudgeDigest(key) ?? Digest([]);
+        if (JudgeDigest(key) is not { } digest)
+        {
+            return false;
+        }
+
         return Digest(rows) == digest && (JudgeRows(key) is not { Count: > 0 } kept || kept.SequenceEqual(rows));
     }
 
     /// <summary>What the source differs from the judge in, for a failure message.</summary>
     public string JudgeDifference(string key)
     {
+        if (JudgeDigest(key) is not { } digest)
+        {
+            return "the judge holds no entry for it - the run it was made from did not run it, and a new judge is a decision (149)";
+        }
+
         var rows = cells[(key, Frameworks[0])].Rows!;
         var kept = JudgeRows(key) ?? [];
         return kept.Count > 0 || rows.Count <= RowsKeptByTheJudge
             ? Difference(kept, rows)
-            : $"the judge holds {JudgeDigest(key) ?? Digest([])}, the source returned {Digest(rows)}";
+            : $"the judge holds {digest}, the source returned {Digest(rows)}";
     }
 
     /// <summary>The first row where two renderings differ, both ways.</summary>

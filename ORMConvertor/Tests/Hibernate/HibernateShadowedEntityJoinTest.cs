@@ -69,4 +69,26 @@ public class HibernateShadowedEntityJoinTest
         Assert.Contains("join POSTALADDRESS p on", jpql, StringComparison.Ordinal);
         Assert.DoesNotContain("Fiben.", jpql, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Without a package the shadowed entity has no other name, and the bare one would join
+    /// the attribute: the query goes out in native SQL with the reason (decision 113).
+    /// </summary>
+    [Fact]
+    public void HibernateWritesNativeSqlForAShadowedEntityWithoutAPackage()
+    {
+        AbstractWrappers.AbstractQueryBuilder builder = new HibernateJpqlQueryBuilder();
+        var entities = Entities().Select(map => new EntityMap
+        {
+            Entity = new Entity { Name = map.Entity.Name, Properties = map.Entity.Properties },
+            Table = map.Table,
+            PropertyMaps = map.PropertyMaps,
+        }).ToList();
+        builder.EntityMaps = entities;
+        new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery, Sql, entities);
+        var artifacts = builder.Build();
+
+        Assert.DoesNotContain(artifacts, source => source.ContentType == ConversionContentType.JpqlQuery);
+        Assert.Contains(builder.Records, record => record.Kind == AbstractWrappers.Diagnostics.ConversionRecordKind.Fallback && record.Reason.Contains("'POSTALADDRESS'", StringComparison.Ordinal));
+    }
 }

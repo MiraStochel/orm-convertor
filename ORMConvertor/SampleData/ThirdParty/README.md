@@ -15,8 +15,7 @@ folder is one project at one commit, with the project's licence beside the files
   hold for everything outside this folder.
 - **Every file says where it comes from.** It opens - after the project's own licence header,
   where it has one - with an `ORMConvertor:` note naming the project, the commit and the path,
-  followed by `Unchanged apart from this note.` or by what was changed. A file the project does
-  not have, such as the class that carries Keycloak's named queries, says so in its note.
+  followed by `Unchanged apart from this note.` or by what was changed.
 - **A change keeps the meaning.** It rewrites what the tool reads only in another form, leaves
   out what the tool does not translate (statements that write, code that only serves them), or
   corrects an upstream mistake that keeps the code from running; the tables, the rows and the

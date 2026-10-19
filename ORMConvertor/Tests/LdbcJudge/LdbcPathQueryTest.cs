@@ -118,7 +118,7 @@ public class LdbcPathQueryTest(ITestOutputHelper output)
 
     /// <summary>The rows the text returns, one string per row, in the order of the text.</summary>
     private static List<string> Rows(SqlConnection connection, LdbcQuery query, DynamicParameters arguments)
-        => connection.Query(query.Sql!, arguments, commandTimeout: 900)
+        => connection.Query(query.Sql!, arguments)
             .Select(row => Row(((IDictionary<string, object>)row).Values))
             .ToList();
 
@@ -355,8 +355,7 @@ public class LdbcPathQueryTest(ITestOutputHelper output)
             WHERE c.CreatorPersonId IN @persons AND m.CreatorPersonId IN @persons
             GROUP BY c.CreatorPersonId, m.CreatorPersonId
             """,
-            new { persons },
-            commandTimeout: 900).ToDictionary(reply => (reply.Replier, reply.Author), reply => (double)reply.Weight);
+            new { persons }).ToDictionary(reply => (reply.Replier, reply.Author), reply => (double)reply.Weight);
 
         double Between(long a, long b)
             => (replies.TryGetValue((a, b), out var ab) ? ab : 0.0) + (replies.TryGetValue((b, a), out var ba) ? ba : 0.0);
@@ -439,7 +438,7 @@ public class LdbcPathQueryTest(ITestOutputHelper output)
             };
 
             var graph = new Graph();
-            foreach (var (from, to, weight) in connection.Query<(long F, long T, double W)>(sql, arguments, commandTimeout: 900))
+            foreach (var (from, to, weight) in connection.Query<(long F, long T, double W)>(sql, arguments))
             {
                 if (!graph.adjacency.TryGetValue(from, out var edges))
                 {

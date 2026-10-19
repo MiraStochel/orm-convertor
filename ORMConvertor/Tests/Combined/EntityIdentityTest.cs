@@ -377,6 +377,39 @@ public class EntityIdentityTest
         Assert.Contains("billing", record.Reason, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A third entity that names one of the nested classes from outside its container
+    /// (<c>@EmbeddedId OrderLine.Key</c>) reaches it by the simple name, which binds to the first
+    /// class of that name read (decision 001) - the ambiguity the record of decision 094 is
+    /// for, so the record stays, though each container's own claim still binds in its scope.
+    /// </summary>
+    [Fact]
+    public void ANestedKeyClassClaimedFromOutsideItsContainerKeepsTheSharedNameRecord()
+    {
+        const string archive = """
+            package shop;
+
+            import jakarta.persistence.EmbeddedId;
+            import jakarta.persistence.Entity;
+            import jakarta.persistence.Table;
+
+            @Entity
+            @Table(name = "OrderLineArchive", schema = "Sales")
+            public class OrderLineArchive {
+                @EmbeddedId
+                private OrderLine.Key id;
+            }
+            """;
+
+        var result = ConvertJava(
+            JavaUnit(WithNestedKey("OrderLine", "OrderLines", "orderId", "lineNumber"), "OrderLine.java"),
+            JavaUnit(WithNestedKey("Invoice", "Invoices", "invoiceId", "invoiceYear"), "Invoice.java"),
+            JavaUnit(archive, "OrderLineArchive.java"));
+
+        var record = Assert.Single(result.Records, r => r.Kind == ConversionRecordKind.Conflict);
+        Assert.Equal("Key", record.Entity);
+    }
+
     [Fact]
     public void ANestedClassOfOneContainerIsOneEntityAcrossUnits()
     {

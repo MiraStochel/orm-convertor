@@ -110,9 +110,20 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <summary>
     /// The row of one table, under the alias its clause declared, with the mapping behind
     /// it when the conversion holds one - a navigation written from the row is matched to
-    /// a relation of that mapping (decision 101).
+    /// a relation of that mapping (decision 101). <paramref name="Optional"/> says the row
+    /// may be absent from a result row - the right side of a left join, the left side of a
+    /// right one, either side of a full one -, so that a reference crossed from it joins left
+    /// whatever its foreign key says (decision 151).
     /// </summary>
-    private sealed record EntityRow(string Alias, EntityMap? Map = null) : RowShape;
+    private sealed record EntityRow(string Alias, EntityMap? Map = null, bool Optional = false) : RowShape;
+
+    /// <summary>The same shape with every row of an entity in it optional: what the rows already in scope become under a right or full join, which may leave them out of a result row.</summary>
+    private static RowShape MadeOptional(RowShape shape) => shape switch
+    {
+        EntityRow entity => entity with { Optional = true },
+        JoinedRow joined => new JoinedRow(joined.Members.ToDictionary(member => member.Key, member => MadeOptional(member.Value), StringComparer.Ordinal)),
+        _ => shape,
+    };
 
     /// <summary>The row a result selector composed, member by member, under the names it gave them.</summary>
     private sealed record JoinedRow(IReadOnlyDictionary<string, RowShape> Members) : RowShape;
@@ -303,15 +314,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     protected virtual bool ProviderEscapesStringMethodArguments => true;
 
     /// <summary>
-    /// The kind of the join a path through a reference brings (decision 148): a fact about
-    /// the provider, not about the language. The shared parser says whether the foreign key
-    /// column of the reference may hold NULL - from the mapping's own statements, in the
-    /// order the EF Core entity builder reads them - and the provider answers with the join
-    /// it writes for that reference. NHibernate translates the navigation to an implicit
-    /// join of HQL, which is inner whatever the key; EF Core writes a left join for an
-    /// optional reference and an inner one for a required one, and overrides this.
+    /// The kind of the join a path through a reference brings (decisions 148 and 151): a fact
+    /// about the provider, not about the language. The shared parser says whether the row the
+    /// reference leads to may be absent - its foreign key may hold NULL, from the mapping's own
+    /// statements in the order the EF Core entity builder reads them, or the row it is crossed
+    /// from may itself be absent - and the provider answers with the join it writes. Both
+    /// providers the tool reads answer alike, as measured against their pinned versions: EF Core
+    /// writes a left join for an optional reference and an inner one for a required one, and
+    /// NHibernate's provider writes a left outer join wherever the navigation stands outside
+    /// a filter that NULL cannot satisfy, which over a required reference returns the rows an
+    /// inner join does (<c>NHibernate/NHibernateLinqProviderTest</c>).
     /// </summary>
-    protected virtual JoinKind ImplicitJoinKind(bool nullableForeignKey) => JoinKind.Inner;
+    protected virtual JoinKind ImplicitJoinKind(bool optional) => optional ? JoinKind.Left : JoinKind.Inner;
 
     /// <summary>
     /// The provider's own pattern function, when it has one and the invocation is it: EF Core's
@@ -1233,11 +1247,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         var enclosingGroupElement = groupElement;
         var enclosingRow = row;
         var enclosingProjected = scopeProjected;
+        var enclosingProjectsRow = scopeProjectsRow;
         var enclosingProjections = scopeProjections;
         var enclosingImplicitJoins = implicitJoins;
         groupingKeys = [];
         groupElement = null;
         scopeProjected = false;
+        scopeProjectsRow = false;
         scopeProjections = [];
         implicitJoins = new Dictionary<string, EntityRow>(StringComparer.OrdinalIgnoreCase);
         enclosingRows.Add(enclosingRow);
@@ -1252,6 +1268,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             groupElement = enclosingGroupElement;
             row = enclosingRow;
             scopeProjected = enclosingProjected;
+            scopeProjectsRow = enclosingProjectsRow;
             scopeProjections = enclosingProjections;
             implicitJoins = enclosingImplicitJoins;
             enclosingRows.RemoveAt(enclosingRows.Count - 1);
@@ -1265,6 +1282,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// nested chain like the grouping keys.
     /// </summary>
     private bool scopeProjected;
+
+    /// <summary>
+    /// Whether the scope being read projects the whole row of one alias (<c>o.*</c>) - one side
+    /// of a join, or the collection of a SelectMany -, which is a projection as much as named
+    /// columns are. Saved and restored with <see cref="scopeProjected"/>.
+    /// </summary>
+    private bool scopeProjectsRow;
 
     /// <summary>The names the projection of the scope gave its columns, which an ordering after it may name.</summary>
     private List<string> scopeProjections = [];
@@ -1418,6 +1442,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             groupingKeys = [];
             groupElement = null;
             scopeProjected = false;
+            scopeProjectsRow = false;
             scopeProjections = [];
             return true;
         }
@@ -1596,6 +1621,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             if (beforeClose is not null && scopeProjected)
             {
                 SplitScope(endsWithVariable ?? elementParameter, endsWithVariable is not null, elementParameter);
+            }
+
+            if (beforeClose is null)
+            {
+                ProjectTheRowPastImplicitJoins();
             }
 
             beforeClose?.Invoke();
@@ -2241,7 +2271,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         queryBuilder.Join(kind, sourceAlias, rightTable, onCondition, rightAlias);
-        ReadResultSelector(selector, new EntityRow(rightAlias, rightMap), "join");
+        if (kind is JoinKind.Right or JoinKind.Full)
+        {
+            row = MadeOptional(row);
+        }
+
+        ReadResultSelector(selector, new EntityRow(rightAlias, rightMap, Optional: kind is JoinKind.Left or JoinKind.Full), "join");
     }
 
     /// <summary>
@@ -2460,6 +2495,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         {
             // The rows of the collection alone: the whole-row projection of the joined alias.
             queryBuilder.Project(QueryOperand.Column(rightAlias, "*"));
+            scopeProjectsRow = true;
             row = joined;
             return;
         }
@@ -2510,7 +2546,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        var joined = new EntityRow(rightAlias, MapFor(root.Name));
+        var joined = new EntityRow(rightAlias, MapFor(root.Name), Optional: kind == JoinKind.Left);
         queryBuilder.Join(kind, sourceAlias, rightTable, condition, rightAlias);
 
         // Without a result selector the rows are the collection's alone, as over an
@@ -2519,6 +2555,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         {
             // The rows of the collection alone: the whole-row projection of the joined alias.
             queryBuilder.Project(QueryOperand.Column(rightAlias, "*"));
+            scopeProjectsRow = true;
             row = joined;
             return;
         }
@@ -2739,6 +2776,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             if (endsOnRow is EntityRow { Alias: var alias } && AliasesOf(endsOnRow).Count < reach.Count)
             {
                 queryBuilder.Project(QueryOperand.Column(alias, "*"));
+                scopeProjectsRow = true;
                 return endsOnRow;
             }
 
@@ -4485,6 +4523,39 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
     }
 
+    /// <summary>
+    /// The projection a scope needs when a path brought implicit joins into it and nothing
+    /// was projected (decision 148): the source's chain materializes the row it ranges over,
+    /// but without a projection the targets materialize the whole joined row (rule Q3), the
+    /// row of each implicit join in it - a pair of entities in HQL, a tuple in LINQ, the
+    /// columns of every table in SQL. So the row of the scope is projected whole, as one side
+    /// of a join is. A row a result selector composed has no such projection, and the joined
+    /// row the targets materialize then carries the rows of the implicit joins too, which is
+    /// said.
+    /// </summary>
+    private void ProjectTheRowPastImplicitJoins()
+    {
+        if (implicitJoins.Count == 0 || scopeProjected || scopeProjectsRow || groupingKeys.Count > 0)
+        {
+            return;
+        }
+
+        switch (row)
+        {
+            case EntityRow { Alias: var alias }:
+                queryBuilder.Project(QueryOperand.Column(alias, "*"));
+                scopeProjectsRow = true;
+                break;
+
+            case JoinedRow { Members.Count: > 0 }:
+                Report(
+                    ConversionRecordKind.Loss,
+                    $"The joined row the chain materializes is composed by its result selector, and a path through a reference added the implicit join{(implicitJoins.Count == 1 ? string.Empty : "s")} {Listed(implicitJoins.Values.Select(joined => joined.Alias))} to it, which the representation cannot leave out of a whole joined row; the materialized row carries {(implicitJoins.Count == 1 ? "that row" : "those rows")} too.",
+                    QueryFeature.Projection);
+                break;
+        }
+    }
+
     /* ---- a path through a reference in an operand (decision 148) ---------------------- */
 
     /// <summary>
@@ -4513,6 +4584,16 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         var spelling = string.Join('.', path);
+
+        // A path that ends on a reference or a collection names a row, not a value: the model
+        // has no operand for it, as for o.Customer alone, and it is left unread before any
+        // join is made for it (decision 148).
+        if (IsReference(written))
+        {
+            unread ??= ($"'{spelling}', a navigation rather than a column, which no operand of the query representation stands for", null);
+            return true;
+        }
+
         for (; index < path.Count - 1; index++)
         {
             if (index == path.Count - 2 && ForeignKeyOf(current, path[index], path[^1]) is { } foreignKey)
@@ -4781,8 +4862,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return null;
         }
 
-        var joined = new EntityRow(ImplicitAlias(owner.Alias, navigation), target);
-        var kind = ImplicitJoinKind(ForeignKeyMayBeNull(ownerMap, relation, pairs));
+        // A reference crossed from a row that may be absent leads to a row that may be absent,
+        // whatever its own foreign key says: an inner join behind the outer one would drop
+        // the very rows the outer one kept (decision 151).
+        var kind = ImplicitJoinKind(owner.Optional || ForeignKeyMayBeNull(ownerMap, relation, pairs));
+        var joined = new EntityRow(ImplicitAlias(owner.Alias, navigation), target, Optional: kind != JoinKind.Inner);
         queryBuilder.Join(kind, sourceAlias, Qualify(target, target.Table ?? relation.TargetEntity), AssociationCondition(relation, pairs, owner.Alias, joined.Alias), joined.Alias);
         implicitJoins[key] = joined;
 
@@ -5145,12 +5229,15 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     }
 
     /// <summary>
-    /// A conditional in the shape of a null guard. When its else is a concatenation and every
-    /// tested value is one a NULL in which makes that concatenation NULL, the guard says in
-    /// C# what SQL's concatenation says by itself - it is the spelling the LINQ writer gives
-    /// a concatenation that may be NULL -, so it is read as the bare concatenation, with no
-    /// loss over its columns. Any other guard is the CASE it is, and the columns concatenated
-    /// inside it get the loss they get anywhere.
+    /// A conditional in the shape of a null guard. When its else is a concatenation, every
+    /// tested value is one a NULL in which makes that concatenation NULL, and every such value
+    /// it does not test holds no NULL - a literal, a parameter, a column the mapping declares
+    /// not nullable in a row that cannot be absent -, the guard says in C# what SQL's
+    /// concatenation says by itself - it is the spelling the LINQ writer gives a concatenation
+    /// that may be NULL -, so it is read as the bare concatenation, with no loss over its
+    /// columns. Any other guard is the CASE it is - one that leaves a value that may be NULL
+    /// untested yields the text that value is missing from where SQL yields NULL -, and the
+    /// columns concatenated inside it get the loss they get anywhere.
     /// </summary>
     private QueryOperand? ReadNullGuarded(ConditionalExpressionSyntax conditional, List<ExpressionSyntax> guard)
     {
@@ -5171,7 +5258,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         var tested = guard.Select(ReadLeaf).ToList();
         if (otherwise is { IsExpression: true, IsAggregate: false }
             && otherwise.Expression!.Operator is ExpressionOperator.Concat or ExpressionOperator.Add
-            && tested.All(value => value is not null && OperandStructure.NullSources(otherwise.Expression).Any(source => OperandStructure.Same(value, source))))
+            && OperandStructure.NullSources(otherwise.Expression).ToList() is var sources
+            && tested.All(value => value is not null && sources.Any(source => OperandStructure.Same(value, source)))
+            && sources.All(source => source.IsParameter || IsNeverNull(source) || tested.Any(value => OperandStructure.Same(value!, source))))
         {
             return otherwise;
         }
@@ -5182,6 +5271,68 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         return QueryOperand.Computed(QueryExpression.Case([new CaseBranch(when, ReadLeaf(conditional.WhenTrue)!)], otherwise));
+    }
+
+    /// <summary>
+    /// Whether a value holds no NULL, by the facts the LINQ writer reads when it decides what
+    /// its guard tests: a literal other than NULL, a COUNT, a column the mapping declares not
+    /// nullable in a row that cannot be absent, a COALESCE whose last value is such, or an
+    /// expression - no list, no window, no CASE without an ELSE - over such values alone.
+    /// </summary>
+    private bool IsNeverNull(QueryOperand value)
+    {
+        if (value.IsConstant)
+        {
+            return !(value.Constant!.Type is null && value.Constant.Text.Equals("NULL", StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (string.Equals(value.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (value.IsColumn)
+        {
+            return !value.IsAggregate
+                && value is { Table: { } alias, Property: { } column and not "*" }
+                && EntityRowOf(alias) is { Optional: false, Map: { } map }
+                && map.PropertyMaps.FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, column, StringComparison.OrdinalIgnoreCase)) is { } mapped
+                && (mapped.IsNullable ?? mapped.Property.Type?.IsNullable) == false;
+        }
+
+        if (!value.IsExpression || value.IsAggregate)
+        {
+            return false;
+        }
+
+        if (value.Expression!.Function == QueryFunction.Coalesce)
+        {
+            return IsNeverNull(value.Expression.Arguments![^1]);
+        }
+
+        return !value.Expression.IsListAggregate
+            && !value.Expression.IsWindow
+            && (!value.Expression.IsCase || value.Expression.Else is not null)
+            && OperandStructure.Inside(value.Expression).All(IsNeverNull);
+    }
+
+    /// <summary>
+    /// The row of an entity an alias names: in the scope being read or one around it, the row a
+    /// join is bringing in, or the row of an implicit join a path made; null where none does.
+    /// </summary>
+    private EntityRow? EntityRowOf(string alias)
+    {
+        EntityRow? Find(RowShape shape) => shape switch
+        {
+            EntityRow entity when string.Equals(entity.Alias, alias, StringComparison.OrdinalIgnoreCase) => entity,
+            JoinedRow joined => joined.Members.Values.Select(Find).FirstOrDefault(found => found is not null),
+            _ => null,
+        };
+
+        return Find(row)
+               ?? (joiningRow is { } joining ? Find(joining) : null)
+               ?? implicitJoins.Values.FirstOrDefault(joined => string.Equals(joined.Alias, alias, StringComparison.OrdinalIgnoreCase))
+               ?? enclosingRows.Select(Find).LastOrDefault(found => found is not null);
     }
 
     /// <summary>

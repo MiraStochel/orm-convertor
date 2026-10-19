@@ -582,6 +582,30 @@ public class HibernateJpqlQueryParserTest
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains(reason));
     }
 
+    /// <summary>
+    /// A path the maps do not resolve refuses the query in the projection and the ordering as
+    /// well, where an operand the reading cannot take is otherwise dropped with a record: the
+    /// path is an inner join, so the source leaves out every order without its customer, and
+    /// a query without the path keeps them (decision 152). Nothing is emitted, the joins the
+    /// path had already made included.
+    /// </summary>
+    [Theory]
+    [InlineData("select o.Total, o.customer.CustomerName from Order o", false)]
+    [InlineData("select o from Order o order by o.customer.CustomerName", false)]
+    [InlineData("select o.Total, o.shipper.Name from Order o", true)]
+    [InlineData("select o from Order o order by o.shipper.Name", true)]
+    public void APathTheMapsDoNotResolveRefusesTheProjectionAndTheOrderingToo(string jpql, bool withMaps)
+    {
+        var (orders, customers) = Linked();
+        var builder = withMaps
+            ? Parse(new HibernateJpqlQueryBuilder(), jpql, orders, customers)
+            : Parse(new HibernateJpqlQueryBuilder(), jpql);
+
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join && r.Reason.Contains("semantics of an inner join"));
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Loss);
+    }
+
     [Fact]
     public void AnImplicitJoinReachesSqlAsAnOrdinaryJoin()
     {

@@ -1,7 +1,7 @@
 # 094 — Totožnost entity uvnitř převodu je dvojice jmenný prostor a název
 
 Datum: 2026-09-21
-Stav: platí
+Stav: platí; důsledek *Jeden druh ticha mizí i tam, kde s vkládáním dvou souborů nesouvisí* nahrazuje 142
 Požadavky: F5, F11, F14, S1, S2
 Podklad: rozhodnutí [001](001-entity-reference-by-name.md), [017](017-source-precedence-for-mapping-facts.md), [049](049-language-facts-under-source-precedence.md) a [066](066-records-attributed-to-the-input-unit.md); článek §6.1, pravidlo E1
 

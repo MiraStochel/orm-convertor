@@ -6,9 +6,11 @@
 -- its rows in the canonical form of decision 089, one row per line as
 -- "key<TAB>position<TAB>rendered row", the rendered row itself tab-separated as the form
 -- writes it, and lines beginning with # the record of when and over which commit it was made.
--- A query with no row in the file returned no rows. The judge is a regression judge: it says
--- that a version returns what the first documented version returned, not what is true
--- elsewhere, and it changes only by a decision with a date and a reason.
+-- Every query the run translated has its digest at position 0, one that returned no rows the
+-- digest of none; a query with no line was refused by that run and is not judged. The judge
+-- is a regression judge: it says that a version returns what the first documented version
+-- returned, not what is true elsewhere, and it changes only by a decision with a date and a
+-- reason.
 --
 -- The lines go into a staging table whole - a separator no line contains - and are split
 -- here, because the rendered row carries the very tabs a field terminator would split. The

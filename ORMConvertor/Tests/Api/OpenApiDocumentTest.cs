@@ -5,9 +5,10 @@ using OrmConvertor;
 namespace Tests.Api;
 
 /// <summary>
-/// The OpenAPI document as decision 041 argues for it: the REST contract is one of the three
-/// surfaces the version number protects, so the description of that contract has to be
-/// readable wherever the tool runs - not only on a development machine.
+/// The OpenAPI document as decision 041 argued for it, under decision 098: the REST contract is
+/// one of the public surfaces whose changes the annotation of a release names, so the
+/// description of that contract has to be readable wherever the tool runs - not only on a
+/// development machine.
 /// <para>
 /// The committed <c>ORMConvertorAPI/openapi.json</c> is deliberately not compared against:
 /// <c>architecture.md</c> §6.5 makes it a derived reading artifact whose authority is the
@@ -25,7 +26,7 @@ public class OpenApiDocumentTest(ApiTestHost host)
     /// on purpose: the document is generated from what the application maps, so comparing the
     /// two would be a tautology. Against a written list, adding, renaming or dropping a route
     /// has to be an edit here as well - which is what makes it the visible, deliberate change
-    /// decision 041 treats as MAJOR.
+    /// the annotation of the next release names (decision 098).
     /// </summary>
     private static readonly string[] MappedPaths =
     [
@@ -60,7 +61,7 @@ public class OpenApiDocumentTest(ApiTestHost host)
 
     /// <summary>
     /// The document names the version the build produced, not one of its own - the same number
-    /// the run record reports (S6, decisions 034 and 041).
+    /// the run record reports (S6, decisions 034 and 098).
     /// </summary>
     [Fact]
     public async Task TheDocumentCarriesTheVersionOfTheBuild()

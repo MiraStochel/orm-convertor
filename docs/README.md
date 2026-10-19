@@ -35,7 +35,7 @@ flowchart LR
 ## Pravidla
 
 - **Volba se nejdřív zapíše** do `decisions/` (a rejstříku), pak se programuje. Provedení rozhodnutého, oprava ani test volbou nejsou — zkouška: zeptá se čtenář *proč tohle a ne jiné*?
-- **Rozhodnutí se nepřepisují:** změna = nový soubor a `nahrazeno NNN`; `revidováno` jen pro nepředvídaný případ před implementací ([`decisions/README.md`](decisions/README.md)).
+- **Rozhodnutí se nepřepisují:** změna = nový soubor a `nahrazeno NNN`, změna části = nový soubor a stav `platí; <část> nahrazuje NNN` na obou stranách (rozh. [150](decisions/150-a-part-of-a-decision-is-replaced-by-a-new-file-and-both-statuses-say-so.md)); `revidováno` jen pro nepředvídaný případ před implementací ([`decisions/README.md`](decisions/README.md)).
 - **Změna chování končí v `architecture.md`**; běh a testy v `ORMConvertor/README.md`, posun hranice v `subset.md`, změna nároku či důkazu v `traceability.md`; hotová položka mizí z `open-items.md`.
 - **Zmražené se nepřepisuje:** `requirements.md`, `baseline.md`, audity, schválený záměr a specifikace.
 - **Živé dokumenty popisují jen současnost, stručně:** žádná historie („od data", „do té doby", jak se co našlo — to nese git a anotace značek), žádné odůvodnění (odkaz na rozhodnutí), každý fakt na jednom místě; žádné počty, které další změna posune (kolik je testů, položek, vad, příkladů, dotazů, záznamů) — pojmenuj množinu a odkaž, kde se počítá; číslo zůstává jen tam, kde je samo faktem (zafixovaná verze, změřená hodnota s datem, číslo požadavku, údaj zmrazeného dokumentu nebo datované analýzy); tabulky a schémata (`mermaid`) mají přednost před odstavci.

@@ -128,6 +128,27 @@ public class LinqJoinResultSelectorTest
         Assert.DoesNotContain(builder.Records, r => r.Kind is ConversionRecordKind.Loss or ConversionRecordKind.Failure);
     }
 
+    /// <summary>
+    /// The source's own side is a row of the joined row like the other: LINQ selects it out of
+    /// the tuple and HQL names it in the select clause, where leaving both out returned the
+    /// tuple of the join and the pair of rows, typed as neither entity.
+    /// </summary>
+    [Fact]
+    public void TheSourceSideAloneIsSelectedOutOfTheJoinInLinqAndHql()
+    {
+        var efCore = Parse(new EFCoreLinqQueryBuilder(), Method(TwoColumnJoin + "(ol, o) => ol)"));
+        var linq = efCore.Build().Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
+        Assert.Contains(".Select(t => t.ol)", linq);
+        Assert.Contains("IQueryable<OrderLine>", linq);
+
+        var nhibernate = Parse(new NHibernateWrappers.NHibernateHqlQueryBuilder(), Method(TwoColumnJoin + "(ol, o) => ol)"));
+        var hql = nhibernate.Build().Single(s => s.ContentType == ConversionContentType.HqlQuery).Content;
+        Assert.StartsWith("select ol", hql.TrimStart());
+
+        Assert.DoesNotContain(efCore.Records, r => r.Kind is ConversionRecordKind.Loss or ConversionRecordKind.Failure);
+        Assert.DoesNotContain(nhibernate.Records, r => r.Kind is ConversionRecordKind.Loss or ConversionRecordKind.Failure);
+    }
+
     [Fact]
     public void AWholeRowBesideColumnsIsALossAndTheColumnsAreProjected()
     {

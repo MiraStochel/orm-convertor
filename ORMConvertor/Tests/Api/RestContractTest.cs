@@ -71,8 +71,9 @@ public class RestContractTest(ApiTestHost host)
     /// <summary>
     /// Enums travel as numbers. It is worth an assertion of its own because the change that
     /// would break it - registering a <c>JsonStringEnumConverter</c> - looks like a formatting
-    /// preference and is a MAJOR break of the contract (decision 041): every client that reads
-    /// <c>contentType</c> or <c>ormType</c> as a number would stop.
+    /// preference and is a break of the contract, which the annotation of the release tag has to
+    /// name (decision 098): every client that reads <c>contentType</c> or <c>ormType</c> as a
+    /// number would stop.
     /// </summary>
     [Fact]
     public async Task EnumsAreNumbersOnTheWire()

@@ -314,6 +314,25 @@ public class JpaNamedQueryTest
         Assert.All(result.Records.Where(r => r.Query is not null), r => Assert.Equal("orm.xml", r.Unit));
     }
 
+    /// <summary>The orm.xml schema gives the lock mode as a child element of the definition, and it is the same loss as the annotation's lockMode.</summary>
+    [Fact]
+    public void TheLockModeElementOfAnOrmXmlIsALossAndTheQueryIsRead()
+    {
+        var result = Convert(ORMEnum.Hibernate, string.Empty, $"""
+            <entity-mappings xmlns="{OrmXmlNamespace}" version="3.2">
+                <named-query name="Customer.locked">
+                    <query>select c from Customer c</query>
+                    <lock-mode>PESSIMISTIC_WRITE</lock-mode>
+                </named-query>
+            </entity-mappings>
+            """);
+
+        AssertNoFailure(result);
+        Assert.Single(QueryArtifacts(result));
+        Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Loss && r.Query == "Customer.locked" && r.Reason.Contains("lock mode PESSIMISTIC_WRITE", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Records, r => r.Reason.Contains("<lock-mode>", StringComparison.Ordinal));
+    }
+
     /// <summary>The text stands in its own element, so a stray child cannot be a piece of it: it is a loss by name, and the query is read.</summary>
     [Fact]
     public void AChildTheSchemaDoesNotGiveANamedQueryIsALoss()

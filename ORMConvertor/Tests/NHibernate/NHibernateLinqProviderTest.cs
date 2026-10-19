@@ -109,7 +109,80 @@ public class NHibernateLinqProviderTest
         Assert.ThrowsAny<Exception>(() => Translate(shape, chain));
     }
 
-    private static string Translate(string shape, string chain)
+    private const string NavigatedEntities = """
+        namespace Navigated;
+
+        public class Region
+        {
+            public virtual int RegionId { get; set; }
+            public virtual string RegionName { get; set; }
+        }
+
+        public class Customer
+        {
+            public virtual int CustomerId { get; set; }
+            public virtual string CustomerName { get; set; }
+            public virtual Region Region { get; set; }
+        }
+
+        public class Order
+        {
+            public virtual int OrderId { get; set; }
+            public virtual Customer Customer { get; set; }
+            public virtual decimal Total { get; set; }
+        }
+        """;
+
+    private const string NavigatedMapping = """
+        <?xml version="1.0" encoding="utf-8" ?>
+        <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="Navigated">
+          <class name="Region" table="Regions" schema="Sales">
+            <id name="RegionId" column="RegionId" type="Int32"><generator class="identity" /></id>
+            <property name="RegionName" type="String" />
+          </class>
+          <class name="Customer" table="Customers" schema="Sales">
+            <id name="CustomerId" column="CustomerId" type="Int32"><generator class="identity" /></id>
+            <property name="CustomerName" type="String" />
+            <many-to-one name="Region" class="Region" column="RegionId" />
+          </class>
+          <class name="Order" table="Orders" schema="Sales">
+            <id name="OrderId" column="OrderId" type="Int32"><generator class="identity" /></id>
+            <many-to-one name="Customer" class="Customer" column="CustomerId" />
+            <property name="Total" type="Decimal" />
+          </class>
+        </hibernate-mapping>
+        """;
+
+    /// <summary>
+    /// The join the provider makes of a navigation in an operand (decision 151): a left outer
+    /// join wherever the navigation stands - projection, ordering, grouping key, a test for
+    /// NULL, a disjunct - and an inner one only in a filter a NULL cannot satisfy, where the
+    /// two return the same rows. The shared LINQ reader joins a reference left where its row
+    /// may be absent and inner where it may not, which over this provider is the same rows.
+    /// </summary>
+    public static TheoryData<string, string, string> Navigations => new()
+    {
+        { "in a projection", "session.Query<Order>().Select(o => o.Customer.CustomerName)", "left outer join Sales.Customers" },
+        { "along a chain", "session.Query<Order>().Select(o => o.Customer.Region.RegionName)", "left outer join Sales.Regions" },
+        { "in an ordering", "session.Query<Order>().OrderBy(o => o.Customer.CustomerName).Select(o => o.Total)", "left outer join Sales.Customers" },
+        { "in a grouping key", "session.Query<Order>().GroupBy(o => o.Customer.CustomerName).Select(g => new { g.Key, C = g.Count() })", "left outer join Sales.Customers" },
+        { "under a test for NULL", "session.Query<Order>().Where(o => o.Customer.CustomerName == null).Select(o => o.Total)", "left outer join Sales.Customers" },
+        { "in a disjunct", "session.Query<Order>().Where(o => o.Customer.CustomerName == \"A\" || o.Total > 5m).Select(o => o.Total)", "left outer join Sales.Customers" },
+        { "in a comparison with a value", "session.Query<Order>().Where(o => o.Customer.CustomerName == \"A\").Select(o => o.Total)", "inner join Sales.Customers" },
+    };
+
+    [Theory]
+    [MemberData(nameof(Navigations))]
+    public void TheProviderJoinsANavigation(string shape, string chain, string hallmark)
+    {
+        var sql = Translate(shape, chain, NavigatedEntities, NavigatedMapping, "Navigated");
+
+        Assert.Contains(hallmark, sql);
+    }
+
+    private static string Translate(string shape, string chain) => Translate(shape, chain, Entities, Mapping, "Probe");
+
+    private static string Translate(string shape, string chain, string entities, string mapping, string ns)
     {
         var method = $$"""
             public static IQueryable Query(ISession session)
@@ -119,12 +192,12 @@ public class NHibernateLinqProviderTest
             """;
 
         var compiled = GeneratedQueryCompiler.CompileOrFail(
-            "NHibernateLinqProvider_" + string.Concat(shape.Where(char.IsLetterOrDigit)),
+            $"NHibernateLinqProvider_{ns}_" + string.Concat(shape.Where(char.IsLetterOrDigit)),
             method,
-            [Entities],
+            [entities],
             GeneratedQueryCompiler.NHibernateConsumerReferences,
-            "using NHibernate;" + Environment.NewLine + "using NHibernate.Linq;" + Environment.NewLine + "using Probe;");
+            "using NHibernate;" + Environment.NewLine + "using NHibernate.Linq;" + Environment.NewLine + $"using {ns};");
 
-        return NHibernateLinqAcceptance.Sql(compiled, [Mapping]);
+        return NHibernateLinqAcceptance.Sql(compiled, [mapping]);
     }
 }

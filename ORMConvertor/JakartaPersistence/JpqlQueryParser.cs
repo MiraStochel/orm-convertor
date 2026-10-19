@@ -536,7 +536,7 @@ public abstract class JpqlQueryParser(
         foreach (var unread in facts.Unread)
         {
             Report(ConversionRecordKind.Loss,
-                $"The named query '{facts.Name}' carries {unread}, which is no part of a named query in the orm.xml schema; it was dropped, and the text of the query, which stands in its own <query> element, is read as it is.");
+                $"The named query '{facts.Name}' carries {unread}, which the reading does not take; it was dropped, and the text of the query is read as it stands.");
         }
     }
 
@@ -1050,23 +1050,40 @@ public abstract class JpqlQueryParser(
     /// which the implementation closes the SQL with as T-SQL's <c>OPTION (MAXRECURSION n)</c>
     /// does - on the query in its language and on a native one alike, as measured - and which
     /// decides whether the query finishes, so it is read as the T-SQL reader reads the
-    /// clause. Any other hint tunes how the database runs the query and is a loss, as the
-    /// T-SQL reader's other hints are.
+    /// clause, out of a list of hints the literal may hold as much as alone, since the
+    /// implementation writes the literal into the clause as it stands. Any other hint tunes
+    /// how the database runs the query and is a loss, as the T-SQL reader's other hints are;
+    /// an argument that is no string literal is one the reading cannot tell apart from a
+    /// limit, and its record says so.
     /// </summary>
     private void ReadDatabaseHint(List<JavaToken> javaTokens, int from, int to, string name, string method)
     {
-        if (to - from == 1
-            && javaTokens[from] is { Kind: JavaTokenKind.String } literal
-            && System.Text.RegularExpressions.Regex.Match(literal.Text, @"^\s*MAXRECURSION\s+(\d+)\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } match
-            && int.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var maximum))
+        var spelled = string.Concat(javaTokens[from..to].Select(token => token.Kind == JavaTokenKind.String ? $"\"{token.Text}\"" : token.Text));
+        if (to - from != 1 || javaTokens[from] is not { Kind: JavaTokenKind.String } literal)
         {
-            queryBuilder.LimitRecursion(maximum);
+            Report(ConversionRecordKind.Loss,
+                $"{name}({spelled}) on the query object of {method} is a hint to the database whose argument is no string literal, so the reading cannot tell what it says; it was dropped, and where it limited recursion, a recursive query runs under the database's default limit.");
             return;
         }
 
-        var spelled = string.Concat(javaTokens[from..to].Select(token => token.Kind == JavaTokenKind.String ? $"\"{token.Text}\"" : token.Text));
-        Report(ConversionRecordKind.Loss,
-            $"{name}({spelled}) on the query object of {method} is a hint to the database the reading does not take; it was dropped, which changes nothing the query text says about its rows.");
+        var dropped = new List<string>();
+        foreach (var hint in literal.Text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (System.Text.RegularExpressions.Regex.Match(hint, @"^MAXRECURSION\s+(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) is { Success: true } match
+                && int.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var maximum))
+            {
+                queryBuilder.LimitRecursion(maximum);
+                continue;
+            }
+
+            dropped.Add(hint);
+        }
+
+        if (dropped.Count > 0)
+        {
+            Report(ConversionRecordKind.Loss,
+                $"{name}(\"{string.Join(", ", dropped)}\") on the query object of {method} is a hint to the database the reading does not take; it was dropped, which changes nothing the query text says about its rows.");
+        }
     }
 
     /// <summary>A call by its name: the implementation's first, then the specification's; null for one neither names.</summary>
@@ -1829,7 +1846,14 @@ public abstract class JpqlQueryParser(
                 {
                     var (what, category) = unread ?? ("a construct that is not an attribute reference", null);
                     unread = null;
-                    Report(ConversionRecordKind.Loss, $"An ordering key that is {what} was dropped.", category ?? QueryFeature.Ordering);
+                    if (category == QueryFeature.Join)
+                    {
+                        Report(ConversionRecordKind.Failure, PathNotDropped("An ordering key", what), QueryFeature.Join);
+                    }
+                    else
+                    {
+                        Report(ConversionRecordKind.Loss, $"An ordering key that is {what} was dropped.", category ?? QueryFeature.Ordering);
+                    }
                 }
                 else if (key is { IsColumn: true, Property: "*" })
                 {
@@ -1925,7 +1949,15 @@ public abstract class JpqlQueryParser(
             {
                 var (what, category) = unread ?? ("an attribute reference, an aggregate, an expression or a constant under an alias", null);
                 unread = null;
-                Report(ConversionRecordKind.Loss, $"A projected expression that is not {what} was dropped.", category ?? QueryFeature.Projection);
+                if (category == QueryFeature.Join)
+                {
+                    Report(ConversionRecordKind.Failure, PathNotDropped("A projected path", what), QueryFeature.Join);
+                }
+                else
+                {
+                    Report(ConversionRecordKind.Loss, $"A projected expression that is not {what} was dropped.", category ?? QueryFeature.Projection);
+                }
+
                 continue;
             }
 
@@ -2255,6 +2287,16 @@ public abstract class JpqlQueryParser(
 
         return conjuncts.Count == 1 ? conjuncts[0] : new LogicalCondition(LogicalOperator.And, conjuncts);
     }
+
+    /// <summary>
+    /// The refusal of an operand whose path through an association could not be derived, in a
+    /// clause that would drop any other operand it cannot read (decision 152): the path has the
+    /// semantics of an inner join (Jakarta Persistence 3.2, §4.4.4), so the source leaves out
+    /// every row in which an association on it is NULL, and a query without the path keeps
+    /// them - other rows, which decision 053 does not emit, not a poorer projection.
+    /// </summary>
+    private static string PathNotDropped(string what, string why)
+        => $"{what} cannot be read - {why} -, and it cannot be dropped either: a path through an association has the semantics of an inner join, so the query without it would return other rows; no artifact was generated.";
 
     /* ---- a path through an association outside join (decision 144) ------------------ */
 

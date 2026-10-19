@@ -19,8 +19,8 @@ public enum StatedBaseTypeKind
     ClassOrInterface,
 
     /// <summary>
-    /// The source says the name is an interface - Java's implements, or any later entry of
-    /// a C# base list. Nothing of the mapping is inherited through it.
+    /// The source says the name is an interface - any later entry of a C# base list.
+    /// Nothing of the mapping is inherited through it.
     /// </summary>
     Interface,
 }

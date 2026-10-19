@@ -1,7 +1,7 @@
 # 065 — Hranicí pravidla o nevydaném dotazu je množina řádků
 
 Datum: 2026-08-25
-Stav: platí
+Stav: platí; věty o plném vnějším joinu NHibernatu a o joinu bez rovností klíčů v EF Core nahrazuje 113
 Požadavky: F11, T2, T3, S2
 Podklad: rozhodnutí [004](004-unexpressible-facts-as-warnings.md), [053](053-a-query-that-would-return-other-rows-is-not-emitted.md), [060](060-pagination-as-a-query-instruction.md) a [061](061-subquery-as-a-condition-operand.md); otevřená položka „Meze pravidla ‚dotaz, který vrátí jiné řádky, se nevydá‘"
 

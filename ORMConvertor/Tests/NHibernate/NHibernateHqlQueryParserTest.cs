@@ -518,6 +518,8 @@ public class NHibernateHqlQueryParserTest
     [InlineData("from Order o join o.Customer.Region r", true, "names no association the mapping of 'Customer' declares")]
     [InlineData("from Order o where o.Shipper.Name = 'A'", true, "names no association")]
     [InlineData("from Order o where o.Customer.CustomerName = 'A'", false, "the mapping of the entity behind 'o'")]
+    [InlineData("select o.Total, o.Shipper.Name from Order o", true, "semantics of an inner join")]
+    [InlineData("from Order o order by o.Shipper.Name", true, "semantics of an inner join")]
     public void AnAssociationPathTheMapsDoNotResolveRefusesByName(string hql, bool withMaps, string reason)
     {
         var (orders, customers) = Linked();

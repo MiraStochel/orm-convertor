@@ -89,7 +89,10 @@ public class KeywordNameTest
             [Java(Customer()), Java(Order()), Jpql("select o from Order o join o.customer c")]);
         var hql = Text(result, ConversionContentType.HqlQuery);
 
-        Assert.StartsWith("from Order o", hql.TrimStart());
+        // The source selects the order out of the join, and HQL without the select clause
+        // would return the pair of rows the join composes.
+        Assert.StartsWith("select o", hql.TrimStart());
+        Assert.Contains("from Order o", hql);
         Compile(result, hql, "KeywordName_Root");
     }
 

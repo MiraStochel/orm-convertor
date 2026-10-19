@@ -161,11 +161,11 @@ public class NHibernateHqlQueryBuilder : AbstractQueryBuilder
         // say that is to leave the select clause out entirely. DISTINCT needs the clause,
         // though (decision 073), so a distinct whole-entity projection names the source
         // alias - the one case in which a select clause is written without a projection.
-        // The whole row of one range variable of a join names the clause as well: without it
-        // HQL returns the pair of rows the join composes.
+        // The whole row of one range variable of a join names the clause as well, the source's
+        // own included: without it HQL returns the pair of rows the join composes.
         if (clauses.ProjectsWholeEntity)
         {
-            if (clauses.Distinct || !clauses.MaterializesTheSource)
+            if (clauses.Distinct || !clauses.MaterializesTheSource || (clauses.ProjectsOneWholeRow && clauses.Joins.Count > 0))
             {
                 var alias = HqlNames.Alias(clauses.MaterializesTheSource
                     ? clauses.From.Alias ?? artifact.ResultEntity!.ToLowerInvariant()

@@ -21,9 +21,9 @@
 |---|---|---|---|
 | `POST /convert` | C#, Java, XML, SQL, HQL, JPQL; jednotek libovolně, velikost jen do výchozího stropu Kestrelu | čte: Roslyn, `XDocument.Parse`, `TSql160Parser` a vlastní rekurzivní sestup (`JavaLexer` + `JavaClassReader`, `NHibernateHqlQueryParser`, `JpqlQueryParser`); **nic nekompiluje ani nespouští** | strop zanoření 128 změřený smyčkou nad tokeny před sestupem, u všech pěti parserů (rozh. [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md)); DTD v `XDocument.Parse` zakázané, u mapperu MyBatisu ignorované a bez resolveru (bez XXE); vydané XML escapuje zapisovač prvků (rozh. [046](./decisions/046-xml-mapping-written-through-an-element-writer.md)) |
 | `POST /archive` | dvojice *jméno + obsah* | ZIP v paměti | nic — jména beze změny, velikost = vstup |
-| `POST /advisor/run` | entity a dotazy | **zkompiluje Roslynem a spustí v procesu** proti nastavené databázi | nic — kolektibilní `AssemblyLoadContext` je úklid, ne izolace; bez limitu CPU, paměti, času |
+| `POST /advisor/run` | entity a dotazy | **zkompiluje Roslynem a spustí v procesu** proti nastavené databázi | jen mez jednoho spuštění dotazu — `Command Timeout` harnessu z politiky měření (rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md)); kolektibilní `AssemblyLoadContext` je úklid, ne izolace; bez limitu CPU, paměti a délky celého běhu |
 | `POST /advisor-test` | matice nákladů a rozměry | P/Invoke do GLPK, pole podle rozměrů z požadavku | kontroly .NET; nesmysl → 400 |
-| `GET /samples`, `/samples-advisor`, `/examples`, `/ldbc`, `/required-content`, `/required-content-advisor` | nic | statická data ze sestavení | — |
+| `GET /samples`, `/samples-advisor`, `/examples`, `/ldbc`, `/fiben`, `/required-content`, `/required-content-advisor` | nic | statická data ze sestavení | — |
 | `GET /openapi/v1.json` (Swagger UI jen v `Development`) | nic | dokument rozhraní ze sestavení | — |
 | `/orm/…` | nic | `wwwroot` z gitu (rozh. [032](./decisions/032-frontend-as-static-pages-without-a-build.md)) | — |
 
@@ -31,7 +31,7 @@
 
 | Hrozba | Vstupní bod | Co ohrožuje | Co chrání dnes | Co verze nenárokuje |
 |---|---|---|---|---|
-| **1. Spuštění cizího kódu Advisorem** (jediné místo, kde se cizí kód spouští) | `/advisor/run` | proces s jeho právy a připojením do Advisor databáze | nic; zužuje ji jen potřeba připojení a `libadvisor.so` (jen v Dockeru) | první větu S4 — §9, oblast 1 |
+| **1. Spuštění cizího kódu Advisorem** (jediné místo, kde se cizí kód spouští) | `/advisor/run` | proces s jeho právy a připojením do Advisor databáze | mez jednoho spuštění dotazu (146); zužuje ji jen potřeba připojení a `libadvisor.so` (jen v Dockeru) | první větu S4 — §9, oblast 1 |
 | **2. Vyčerpání zdrojů překladem** | `/convert` | CPU, paměť; hluboké zanoření **shodí proces** (`0xC00000FD`, v .NET nezachytitelné) | strop zanoření → záznam `Failure` s řádkem a sloupcem | limit počtu a velikosti jednotek; odolnost parserů proti nepřátelskému vstupu (neanalyzovaná, neměřená); S3 platí jen pro běžnou zátěž |
 | **3. Jména položek v archivu** | `/archive` | soubory uživatele při rozbalení (`../`, absolutní cesta) | nic; jediné místo, kde nástroj vydá soubor se jménem, které neurčil (jinde je jméno popiskem klienta, rozh. [033](./decisions/033-shape-of-the-static-frontend-screens.md)) | chování rozbalovače |
 | **4. Text chyby z infrastruktury** | všechny (`400` s textem výjimky); katalog záznamem s `ex.Message` | název serveru či instance (údaje ne) | předpoklad důvěryhodné sítě | veřejnou instanci — tam je to únik |
@@ -47,7 +47,7 @@ Hloubky bez stropu, změřené 2026-09-21 (Windows, zásobník 1 MB) — posledn
 
 Není to plán — Advisor je ze záruk vyňatý vcelku; rozhodnutí patří do `decisions/`.
 
-- **Izolace spouštění** (první věta S4): samostatný proces nebo kontejner s limitem CPU, paměti a času.
-- **Časový strop** benchmarku a ILP; dnes jen `CancellationToken` klienta.
+- **Izolace spouštění** (první věta S4): proces na každou buňku měření rozhodlo rozh. [147](./decisions/147-a-cell-is-a-process-and-reports-the-cost-of-the-first-result-beside-the-steady-state.md) a zatím nestojí; limity CPU, paměti a práv toho procesu rozhodnuté nejsou ([`open-items.md`](./open-items.md), *Izolace spouštění cizího kódu Advisorem*).
+- **Časový strop** celého běhu a ILP; dnes jen mez jednoho spuštění (146) a `CancellationToken` klienta.
 - **Limit velikosti a počtu jednotek** na `/convert` (hrozba 2); strop zanoření už platí.
 - **Autentizace před Advisorem** mimo důvěryhodnou síť; překladu stačí proxy.

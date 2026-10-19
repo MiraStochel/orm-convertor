@@ -146,15 +146,6 @@ public class EFCoreLinqQueryParser(
     protected override bool ReadsIntermediateResults => true;
 
     /// <summary>
-    /// EF Core expands a navigation in an operand into a join whose kind follows the
-    /// relationship (decision 148): a left join for an optional reference, whose foreign key
-    /// may hold NULL and whose row the query keeps with nulls, an inner one for a required
-    /// reference. The shared parser derives the nullability from the mapping the way this
-    /// wrapper's entity builder does; the kind is this provider's answer.
-    /// </summary>
-    protected override JoinKind ImplicitJoinKind(bool nullableForeignKey) => nullableForeignKey ? JoinKind.Left : JoinKind.Inner;
-
-    /// <summary>
     /// <c>EF.Functions.Like(column, pattern)</c> and the overload with the escape - the
     /// shape the EF Core builder writes where the split of decision 051 is not exact, so
     /// the one the identity direction has to read back. Recognized by the last two names of

@@ -285,8 +285,9 @@
           207 (<em>who holds IBM stocks more than he holds Alphabet</em>) returns one person
           from the text, from Dapper and from NHibernate, and 211 from EF Core &mdash; everyone
           who holds IBM and no Alphabet at all. Five queries differ this way (150, 155, 207,
-          211, 213); they are the only cells of the run where a target disagrees with the
-          source, and they are an open decision, not a fix in the comparison.
+          211, 213) - the only cells of the .NET run where a target disagrees with the source.
+          A query that returns other rows than its source is a defect of the translation,
+          open as one, and not a fix in the comparison.
         </li>
         <li>
           <strong>Three things the Java frameworks taught the tool.</strong> Hibernate reads
@@ -297,9 +298,12 @@
           49&nbsp;870 rows where the text answers 189, so a set operation with a joined member
           goes out in native SQL for EclipseLink (four queries). And EclipseLink refuses an
           aggregate in <code>HAVING</code> over a column of an entity it joined
-          (<em>Invalid query key</em>, eighteen queries of type A and two single-block ones)
-          and trims the trailing spaces of a <code>CHAR(5)</code> &mdash; both open as defects
-          to be pinned down.
+          (<em>Invalid query key</em>, eighteen cells): measured afterwards, it rebuilds the
+          <code>HAVING</code> on the root of the block when the clause opens with a path over
+          another variable, so such a query now goes out in native SQL. It also trims the
+          trailing spaces of a <code>CHAR(5)</code> value (query 63) - a setting of the
+          consumer's session, which the artifact does not make, and a stated limit of the
+          target.
         </li>
         <li>
           <strong>The benchmark's own texts needed care.</strong> Two of the published queries

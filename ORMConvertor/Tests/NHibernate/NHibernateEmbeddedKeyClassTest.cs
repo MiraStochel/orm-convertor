@@ -73,6 +73,46 @@ public class NHibernateEmbeddedKeyClassTest
         return builder;
     }
 
+    /// <summary>
+    /// A key class nested in the entity is named in a mapping with the CLR's separator of a
+    /// nested type (<c>OrderLine+Key</c>), and that is the class in the entity's scope
+    /// (decision 142): it dissolves into the key as a top-level one does.
+    /// </summary>
+    [Fact]
+    public void AKeyClassNamedWithTheNestedSeparatorDissolvesIntoTheKeyOfItsContainer()
+    {
+        const string nested = """
+            namespace KeyClassEntities;
+
+            public class OrderLine
+            {
+                public virtual Key Id { get; set; } = null!;
+
+                public virtual int Quantity { get; set; }
+
+                [Serializable]
+                public class Key
+                {
+                    public virtual int OrderID { get; set; }
+
+                    public virtual int LineNo { get; set; }
+
+                    public override bool Equals(object? obj) => obj is Key other && other.OrderID == OrderID && other.LineNo == LineNo;
+
+                    public override int GetHashCode() => HashCode.Combine(OrderID, LineNo);
+                }
+            }
+            """;
+
+        var builder = ParseWith(EmbeddedMapping.Replace("class=\"OrderLineId\"", "class=\"KeyClassEntities.OrderLine+Key, KeyClassEntities\"", StringComparison.Ordinal), nested);
+        builder.Build();
+
+        var entityMap = Assert.Single(builder.EntityMaps);
+        Assert.Equal("OrderLine", entityMap.Entity.Name);
+        Assert.Equal(new[] { "OrderID", "LineNo" }, entityMap.PrimaryKey!.Parts.Select(p => p.PropertyMap.Property.Name));
+        Assert.DoesNotContain(builder.Records, r => r.Kind is ConversionRecordKind.Incompleteness or ConversionRecordKind.Conflict);
+    }
+
     [Fact]
     public void KeyClassDissolvesIntoTheKeyOfTheEntityThatNamesIt()
     {

@@ -1,7 +1,7 @@
 # 107 — Výraz je šestý tvar operandu a stojí všude, kde stojí operand
 
 Datum: 2026-09-30
-Stav: platí
+Stav: platí; větu, že `GroupByInstruction` zůstává sloupec, a měřítko slovníku funkcí nahrazuje 113
 Požadavky: F7–F10, F11, T1, T2, T3, S1, S2
 Podklad: rozhodnutí [004](004-unexpressible-facts-as-warnings.md), [022](022-native-query-syntax-in-builders.md), [023](023-query-builder-template-method.md), [024](024-typed-query-operand.md), [028](028-assembly-name-is-not-ours-to-invent.md), [048](048-a-fact-with-no-place-in-the-model-is-a-loss.md), [051](051-like-pattern-translated-not-carried-over.md), [053](053-a-query-that-would-return-other-rows-is-not-emitted.md), [061](061-subquery-as-a-condition-operand.md), [065](065-row-set-as-the-boundary-of-rule-053.md), [070](070-a-parser-refuses-what-would-change-the-row-set.md), [073](073-distinct-as-a-flag-of-the-query-scope.md), [074](074-a-list-of-values-as-the-fourth-operand-shape.md), [083](083-parameter-as-the-fifth-operand-shape.md), [085](085-a-row-count-is-a-number-or-a-parameter.md), [086](086-target-database-dialect-declared-by-the-descriptor.md), [102](102-aggregate-distinct-like-escape-and-a-parameter-among-listed-values-are-carried.md), [103](103-a-query-expression-is-read-as-its-rewrite-and-a-single-row-terminal-as-a-slice.md), [104](104-a-projection-into-a-sql-target-materializes-as-an-untyped-row.md) a [105](105-a-query-formulates-its-own-demand-on-the-catalog.md); JSS §5.3 a §5.4, pravidla Q3, Q5, Q14 a Q15; schválený záměr projektu ([`zamer.tex`](../zamer.tex), „explicitně vymezená společná podmnožina konstrukcí"); otevřené položky „Řetězcová metoda LINQ s parametrem jako argumentem se nečte, protože vzorek by byl výraz" a „Výrazy nad sloupci nemají v mezireprezentaci místo"
 

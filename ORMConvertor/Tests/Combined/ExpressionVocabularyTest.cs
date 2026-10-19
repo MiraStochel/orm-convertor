@@ -768,6 +768,12 @@ public class ExpressionVocabularyTest
         Assert.Contains("CASE WHEN s.Code IS NULL THEN null ELSE 'x' + s.Notes END AS Label", Text(other), StringComparison.Ordinal);
         Assert.Contains(other.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Expression);
 
+        // A guard that leaves a value which may be NULL untested is no spelling of SQL's
+        // concatenation: over a NULL Notes the source yields the text without it, SQL NULL.
+        var partial = Linq(ORMEnum.Dapper, "Select(s => new { SaleId = s.SaleId, Label = s.Code == null ? null : s.Code + \" (\" + s.Notes + \")\" })");
+        Assert.Contains("CASE WHEN s.Code IS NULL THEN null ELSE s.Code + ' (' + s.Notes + ')' END AS Label", Text(partial), StringComparison.Ordinal);
+        Assert.Contains(partial.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Expression);
+
         Assert.Contains(
             "Label = s.Code + \":\" + s.Quantity.ToString()",
             Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId, s.Code + ':' + CAST(s.Quantity AS NVARCHAR(MAX)) AS Label FROM Sales AS s")),

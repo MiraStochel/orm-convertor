@@ -163,6 +163,17 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
                 return;
             }
 
+            // An entity the implementation reads as an attribute of an entity already in the
+            // from clause is joined by its fully qualified class name (JpqlQueryVisitor); one
+            // without a package has no such name, and the bare one would join the attribute.
+            if (Profile.ResolvesNamesAsAttributesBeforeEntities && ShadowedWithoutPackage(join) is { } shadowed)
+            {
+                ReportUnspoken(
+                    $"{Profile.Implementation} reads '{shadowed}' in a join as the attribute of that name of an entity already in the from clause, and the entity has no package to be named by",
+                    QueryFeature.Join);
+                return;
+            }
+
             if (join.Kind == JoinKind.Inner)
             {
                 innerAliases.Add(join.RightTableAlias ?? join.RightTable);
@@ -175,6 +186,22 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
             artifact.Joins.Append("    ").Append(join.Accept(visitor));
         }
+    }
+
+    /// <summary>The name of the entity a join brings in where an attribute of a mapped entity is spelled the same and the entity has no package; null otherwise.</summary>
+    private string? ShadowedWithoutPackage(JoinInstruction join)
+    {
+        if (IsDefinition(join.RightTable))
+        {
+            return null;
+        }
+
+        var map = EntityFor(join.RightTable);
+        var entity = map?.Entity.Name ?? EntityTableNaming.EntityNameFor(join.RightTable);
+        return string.IsNullOrEmpty(map?.Entity.Namespace)
+            && currentAliases.Values.Any(other => other.Entity.Properties.Any(property => property.Name == entity))
+            ? entity
+            : null;
     }
 
     /// <summary>The aliases the columns of a join condition name, the columns inside its expressions included.</summary>

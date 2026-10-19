@@ -1,7 +1,7 @@
 # 142 — Nárok klíčové třídy se váže nejdřív na třídu vnořenou v entitě, která ho vyslovila, a teprve potom prostým jménem
 
 Datum: 2026-10-16
-Stav: platí
+Stav: platí; nahrazuje důsledek *Jeden druh ticha mizí i tam, kde s vkládáním dvou souborů nesouvisí* rozh. 094
 Požadavky: F1, F2, F11, S2
 Podklad: rozhodnutí [001](001-entity-reference-by-name.md), [031](031-key-class-as-declaration-of-key-parts.md) a [094](094-entity-identity-inside-a-conversion.md); nález z výňatku Keycloaku ([`analysis/real-world-sources.md`](../analysis/real-world-sources.md), *Nálezy*, drobnost u V3); Java Language Specification §6.3 (rozsah platnosti jména vnořeného typu)
 

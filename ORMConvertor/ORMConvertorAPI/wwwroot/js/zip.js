@@ -123,11 +123,17 @@ async function readEntry(blob, entry) {
     entry.localOffset + LOCAL_HEADER_LENGTH + header.getUint16(26, true) + header.getUint16(28, true);
   const data = blob.slice(start, start + entry.compressedSize);
   if (entry.method === STORED) return data;
+  let inflate;
   try {
-    return await new Response(data.stream().pipeThrough(new DecompressionStream("deflate-raw"))).blob();
+    inflate = new DecompressionStream("deflate-raw");
   } catch {
+    throw new Error("this browser cannot inflate it");
+  }
+  try {
+    return await new Response(data.stream().pipeThrough(inflate)).blob();
+  } catch (error) {
     // Browsers word a failed inflate differently, some with no message at all.
-    throw new Error("its compressed data is damaged");
+    throw new Error(error?.message ? `its compressed data is damaged (${error.message})` : "its compressed data is damaged");
   }
 }
 

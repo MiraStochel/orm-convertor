@@ -942,16 +942,15 @@
       <p>
         <a href="https://github.com/keycloak/keycloak">Keycloak</a>, the identity and
         access management server, keeps its users, roles, groups and clients in JPA
-        entities on Hibernate. The input is 21 of them and one class the project does
-        not have: Keycloak runs its queries by name from <code>@NamedQuery</code>
-        annotations, which the tool does not read, so
-        <code>KeycloakNamedQueries.java</code> hands the 47 read-only ones to
-        <code>em.createQuery</code>, one method each. Two kinds of change keep them
-        readable, each marked where it is made. Ten entities put <code>@Id</code> on a
-        <code>@ManyToOne</code>; there the key part is written as its own column beside a
-        relation that does not write it. Twenty queries compare a whole entity, follow a
-        path through an association or project one side of a join; there they compare a
-        key column or ask a correlated <code>exists</code>. Out of it come 21 NHibernate
+        entities on Hibernate. The input is 21 of them, with the queries where Keycloak
+        defines them: the tool reads a <code>@NamedQuery</code> on its entity, so the
+        read-only ones stay in their annotations. Those that write are left out, and a
+        few are written in the form the tool reads, each marked where it is made: a
+        comparison with a whole entity compares the key column, the projection of an
+        association asks a correlated <code>exists</code>. Paths through an association
+        and the ten entities that put <code>@Id</code> on a <code>@ManyToOne</code> stand as
+        the project wrote them; the tool reads such a key part as its join column beside
+        the relation, and says so. Out of it come 21 NHibernate
         classes with their mappings &mdash; ten composite keys as
         <code>&lt;composite-id&gt;</code> with the <code>Equals</code>,
         <code>GetHashCode</code> and <code>[Serializable]</code> NHibernate requires, the
@@ -959,12 +958,10 @@
         <code>insert="false"</code> &mdash; and the 47 queries in HQL, 46 of them with the
         LINQ form beside it: the count of the members of a set of groups has none, and an
         Omitted record says why. The other records name what NHibernate has no place for:
-        the <code>@NamedQueries</code> still on the entities, Hibernate&rsquo;s own
-        <code>@Fetch</code> and <code>@BatchSize</code>, element collections, cascades,
-        initializers such as <code>KeycloakModelUtils.generateId()</code>; a Conflict says
-        that eleven nested key classes share the name <code>Key</code>. Switch the target
-        to EF Core and that count is refused: EF Core says it only in native SQL, where it
-        cannot bind the list of groups.
+        element collections, cascades, orphan removal, initializers such as
+        <code>KeycloakModelUtils.generateId()</code>. The eleven nested
+        <code>Key</code> classes are eleven key classes, each bound to the entity that
+        nests it.
       </p>
       <div class="toolbar">
         <button type="button" class="example-run secondary">Run again</button>
@@ -989,19 +986,17 @@
       <h3>Apache Ambari: EclipseLink &rarr; EF Core</h3>
       <p>
         <a href="https://github.com/apache/ambari">Apache Ambari</a>, the manager of Hadoop
-        clusters, maps its tables with EclipseLink. The input is its six alert entities,
-        unchanged &mdash; definitions, groups, targets, the current alert, its history, the
-        notices sent &mdash; and a class with 35 of their 41 read-only named queries handed
-        to <code>em.createQuery</code>. Eight of those reach the alert&rsquo;s history or
-        definition through the key column the entity maps beside the association &mdash; a
-        correlated <code>EXISTS</code> over it, or a comparison of it &mdash; instead of a
-        path through the association; six are left out with a
-        note, five of them because they compare a parameter with an enum attribute whose
-        type lies outside the excerpt. EF Core receives the six classes and two junction
+        clusters, maps its tables with EclipseLink. The input is its six alert entities &mdash;
+        definitions, groups, targets, the current alert, its history, the notices sent
+        &mdash; with their named queries where Ambari defines them. The queries that delete
+        are left out, and six of the read-only ones with a note, five of them because they
+        compare a parameter with an enum attribute whose type lies outside the excerpt; no
+        read-only query is rewritten, and the paths through an association
+        (<code>alert.alertHistory.clusterId</code>) stand as written: the tool reads a path
+        to the referenced key as the foreign key column and any other path as a join. EF Core receives the six classes and two junction
         entities for the two many-to-many relations Ambari declares with
-        <code>@JoinTable</code>, a Convention record beside each, and 35 LINQ queries: each
-        <code>EXISTS</code> becomes an <code>Any</code> over another set, the
-        <code>BETWEEN</code> two comparisons. Most of the records are what EF Core&rsquo;s
+        <code>@JoinTable</code>, a Convention record beside each, and 35 LINQ queries: a path through an
+        association becomes a join, the <code>BETWEEN</code> two comparisons. Most of the records are what EF Core&rsquo;s
         annotations cannot say: Ambari&rsquo;s <code>TABLE</code> generators,
         <code>@Enumerated</code>, <code>@Lob</code>, and the columns Ambari maps twice, once
         through the relation and once read-only beside it.
@@ -1034,8 +1029,8 @@
         Dapper layer &mdash; eleven repositories of literal T-SQL over the eleven entity
         classes both layers share &mdash; with what the tool does not translate left out:
         the methods that write through Dapper.Contrib and the <code>count(1)</code> checks
-        that serve them. One query names a column the project&rsquo;s schema does not have
-        and is corrected. Dapper states no mapping, so EF Core receives the classes as
+        that serve them. Two queries name a column the project&rsquo;s schema does not have
+        and are corrected, each with a note. Dapper states no mapping, so EF Core receives the classes as
         <code>[Keyless]</code> entities with their navigations, and the <code>[Key]</code>
         on <code>Album.Id</code> stays unread, with a Loss record; a server with a catalog
         connection would read keys, columns and relations from the database instead. The 38
@@ -1067,14 +1062,13 @@
       <p>
         The other half of the same project: the same eleven entity classes, the context
         with its fluent configuration, and the eleven EF Core repositories. The reads are
-        kept and four kinds of them are written in the form the tool reads, each marked:
-        <code>FindAsync(id)</code> as <code>Where(x =&gt; x.Id == id).FirstOrDefaultAsync()</code>,
-        and the reads that go through a navigation &mdash; a projected
-        <code>p.Track</code>, a <code>SelectMany</code> over <code>a.Tracks</code>, an
-        <code>Any</code> over <code>c.InvoiceLines</code> &mdash; as a correlated
-        <code>Any</code> over the other set. Hibernate receives JPA entities whose keys and
+        kept; those that go through a navigation the tool reads only in another form
+        &mdash; a projected <code>p.Track</code>, a <code>SelectMany</code> over
+        <code>a.Tracks</code> &mdash; are written as a correlated <code>Any</code> over the
+        other set, each marked, while <code>FindAsync(id)</code> and an <code>Any</code>
+        over <code>c.InvoiceLines</code> stand as the project wrote them. Hibernate receives JPA entities whose keys and
         relations, the composite key of <code>PlaylistTrack</code> among them, come from
-        the fluent chains, and 35 JPQL queries; <code>FirstOrDefaultAsync</code> becomes a
+        the fluent chains, and 35 JPQL queries; <code>FindAsync</code> becomes the filter on the key with a
         page of one row on the query object, with a Convention record. Most other records
         are fluent calls JPA&rsquo;s annotations have no place for:
         <code>HasConstraintName</code>, <code>OnDelete</code> and the indexes that are not
@@ -1107,11 +1101,11 @@
         team&rsquo;s reference shop: seven domain classes, seven mapper interfaces and seven
         XML mapper documents, with the statements that write left out. Its selects are
         written as the tool reads them, and each document lists the changes in its opening
-        note: comma-separated tables as <code>INNER JOIN</code>, <code>#{value}</code> by
-        the name of the interface method&rsquo;s parameter, every column of a join
-        qualified by its table, and the dotted aliases that fill
-        <code>item.product</code> by auto-mapping as two result maps with an
-        <code>&lt;association&gt;</code>. The SQL travels as T-SQL into fourteen Dapper
+        note: comma-separated tables as <code>INNER JOIN</code> and <code>#{value}</code> by
+        the name of the interface method&rsquo;s parameter. The bare columns of the joins
+        and the dotted aliases that fill <code>item.product</code> by auto-mapping stand as
+        written: a bare column goes to the row whose class declares it, and a record says
+        that the nesting of the auto-mapping is not carried. The SQL travels as T-SQL into fourteen Dapper
         methods, each parameter typed from the mapper interface. A MyBatis mapper maps
         results rather than tables, so most of the records are what Dapper has no place
         for &mdash; column names, result types, the <code>&lt;cache/&gt;</code> &mdash;

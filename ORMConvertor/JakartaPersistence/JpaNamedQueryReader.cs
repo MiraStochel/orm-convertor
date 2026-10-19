@@ -107,6 +107,16 @@ public static class JpaNamedQueryReader
         // LockModeType.NONE is what an absent lockMode means, so stating it states nothing.
         var lockMode = annotation["lockMode"]?.SimpleName;
 
+        // The result class is the type every target derives anyway and says nothing. Every
+        // other member - the entities, classes and columns of a native query (Jakarta
+        // Persistence 3.2) - states how the rows are materialized, which the representation
+        // does not carry; each is named, as an unread child of the XML form is.
+        var unread = annotation.Arguments
+            .Select(argument => argument.Name ?? "value")
+            .Where(member => member is not ("name" or "query" or "lockMode" or "hints" or "resultClass") && !(native && member == "resultSetMapping"))
+            .Select(member => $"the member {member}")
+            .ToList();
+
         return new JpaNamedQueryFacts(
             Form: "@" + annotation.SimpleName,
             Name: annotation.String("name"),
@@ -115,7 +125,7 @@ public static class JpaNamedQueryReader
             ResultSetMapping: native ? annotation.String("resultSetMapping") : null,
             Hints: hints,
             LockMode: lockMode is null or "NONE" ? null : lockMode,
-            Unread: []);
+            Unread: unread);
     }
 
     /// <summary>Whether the element defines a named query, in either form.</summary>
@@ -124,8 +134,9 @@ public static class JpaNamedQueryReader
 
     /// <summary>
     /// The definition one element states. The text is its &lt;query&gt; child, the hints its
-    /// &lt;hint&gt; children, the lock mode its lock-mode attribute; a &lt;description&gt; says
-    /// nothing about the query, and any other child is named among the unread.
+    /// &lt;hint&gt; children, the lock mode its &lt;lock-mode&gt; child, as the orm.xml schema
+    /// has them; a &lt;description&gt; says nothing about the query, nor does the result-class
+    /// of a native query, and any other child is named among the unread.
     /// </summary>
     public static JpaNamedQueryFacts FromElement(XElement element)
     {
@@ -133,6 +144,7 @@ public static class JpaNamedQueryReader
         var hints = new List<JpaQueryHintFacts>();
         var unread = new List<string>();
         string? text = null;
+        string? lockMode = null;
 
         foreach (var child in element.Elements())
         {
@@ -147,6 +159,10 @@ public static class JpaNamedQueryReader
                     hints.Add(new JpaQueryHintFacts(name, string.Empty, child.Attribute("value")?.Value, $"\"{name}\""));
                     break;
 
+                case "lock-mode":
+                    lockMode = child.Value.Trim();
+                    break;
+
                 case "description":
                     break;
 
@@ -156,7 +172,6 @@ public static class JpaNamedQueryReader
             }
         }
 
-        var lockMode = element.Attribute("lock-mode")?.Value.Trim();
 
         return new JpaNamedQueryFacts(
             Form: $"<{element.Name.LocalName}>",

@@ -235,9 +235,12 @@ final class LdbcReplay {
 
         try {
             // Held for the lifetime of this connection: a replay of the other suite waits, and
-            // a replay that dies releases the lock with its connection.
+            // a replay that dies releases the lock with its connection. The wait has no limit,
+            // as in the .NET replay: the queryTimeout the URL carries for every other statement
+            // (decision 146) would cut it while the other suite's replay is still running.
             started = System.nanoTime();
             try (Statement statement = control.createStatement()) {
+                statement.setQueryTimeout(0);
                 statement.execute("DECLARE @granted INT; EXEC @granted = sp_getapplock @Resource = N'" + LOCK_RESOURCE
                         + "', @LockMode = 'Exclusive', @LockOwner = 'Session', @LockTimeout = -1; "
                         + "IF @granted < 0 THROW 50117, 'The application lock " + LOCK_RESOURCE + " was not granted.', 1;");

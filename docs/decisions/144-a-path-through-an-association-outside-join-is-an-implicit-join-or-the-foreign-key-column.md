@@ -1,7 +1,7 @@
 # 144 — Cesta přes asociaci mimo `join` je implicitní join odvozený ze vztahu; cesta ke klíči vlastnící reference je sloupec cizího klíče
 
 Datum: 2026-10-16
-Stav: platí
+Stav: platí; nahrazuje odstavec *Cesta o víc než dvou částech se odmítá* rozh. 101; odstavec *LINQ zůstává mimo* nahrazuje 148; větu o projekci a řazení odstavce *Co se odmítá, se odmítá jmenovitě* nahrazuje 152
 Požadavky: F7, F9, F11, T1, T2
 Podklad: rozhodnutí [001](001-entity-reference-by-name.md), [005](005-many-to-many-as-explicit-junction-entity.md), [012](012-foreign-key-rendering.md), [015](015-mapping-fact-completion-from-the-catalog.md), [065](065-row-set-as-the-boundary-of-rule-053.md), [067](067-a-derived-convention-is-a-statement-a-default-is-not.md), [070](070-a-parser-refuses-what-would-change-the-row-set.md), [096](096-a-rule-of-the-paper-is-cited-where-it-argues.md), [101](101-a-join-along-an-association-path-is-derived-from-the-relation.md), [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) a [138](138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md); otevřená položka „Cesta přes asociaci mimo `join` se nečte, ačkoli ji pravidlo Q7 článku pokrývá"; [reálné zdroje](../analysis/real-world-sources.md) (Keycloak, Ambari); specifikace Jakarta Persistence 3.2, §4.4.4 *Path Expressions*
 

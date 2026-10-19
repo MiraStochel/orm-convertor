@@ -95,7 +95,8 @@ public class FibenRunTest(ITestOutputHelper output)
     /// The judge: the catalog's own text returns what the first documented version returned.
     /// A disagreement is a change of the text or of the data that a new judge has to document,
     /// never something to be fixed in the comparison. Until a judge exists the case skips and
-    /// says that this run can make one.
+    /// says that this run can make one. A query the catalog marks as not translated has no
+    /// entry, because the run the judge was made from refused it, and skips with that reason.
     /// </summary>
     [Theory]
     [MemberData(nameof(Keys))]
@@ -108,6 +109,11 @@ public class FibenRunTest(ITestOutputHelper output)
         if (!run.HasJudge)
         {
             Assert.Skip("The Fiben database holds no judge yet; the source rows of this run (judge-candidate.tsv in the results directory) become one once the run is documented (decision 149).");
+        }
+
+        if (FibenSample.Queries.Single(candidate => candidate.Key == key).Translation == FibenTranslation.NotTranslated)
+        {
+            Assert.Skip($"{key} is not translated, so the judge holds no entry for it.");
         }
 
         var source = run.Cell(key, FibenRun.Frameworks[0]);

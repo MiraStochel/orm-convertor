@@ -575,10 +575,17 @@ public class NHibernateHqlQueryParser(
                 {
                     var (what, category) = unread ?? ("a construct that is not a property reference", null);
                     unread = null;
-                    Report(
-                        ConversionRecordKind.Loss,
-                        $"An ordering key that is {what} was dropped.",
-                        category ?? QueryFeature.Ordering);
+                    if (category == QueryFeature.Join)
+                    {
+                        Report(ConversionRecordKind.Failure, PathNotDropped("An ordering key", what), QueryFeature.Join);
+                    }
+                    else
+                    {
+                        Report(
+                            ConversionRecordKind.Loss,
+                            $"An ordering key that is {what} was dropped.",
+                            category ?? QueryFeature.Ordering);
+                    }
                 }
                 else
                 {
@@ -654,10 +661,18 @@ public class NHibernateHqlQueryParser(
             {
                 var (what, category) = unread ?? ("a property reference, an aggregate, an expression or a constant under an alias", null);
                 unread = null;
-                Report(
-                    ConversionRecordKind.Loss,
-                    $"A projected expression that is not {what} was dropped.",
-                    category ?? QueryFeature.Projection);
+                if (category == QueryFeature.Join)
+                {
+                    Report(ConversionRecordKind.Failure, PathNotDropped("A projected path", what), QueryFeature.Join);
+                }
+                else
+                {
+                    Report(
+                        ConversionRecordKind.Loss,
+                        $"A projected expression that is not {what} was dropped.",
+                        category ?? QueryFeature.Projection);
+                }
+
                 continue;
             }
 
@@ -965,6 +980,16 @@ public class NHibernateHqlQueryParser(
 
         return conjuncts.Count == 1 ? conjuncts[0] : new LogicalCondition(LogicalOperator.And, conjuncts);
     }
+
+    /// <summary>
+    /// The refusal of an operand whose path through an association could not be derived, in a
+    /// clause that would drop any other operand it cannot read (decision 152): HQL's implicit
+    /// join is an inner one, so the source leaves out every row in which an association on the
+    /// path is NULL, and a query without the path keeps them - other rows, which decision 053
+    /// does not emit, not a poorer projection.
+    /// </summary>
+    private static string PathNotDropped(string what, string why)
+        => $"{what} cannot be read - {why} -, and it cannot be dropped either: a path through an association has the semantics of an inner join, so the query without it would return other rows; no artifact was generated.";
 
     /* ---- a path through an association outside join (decision 144) ------------------ */
 

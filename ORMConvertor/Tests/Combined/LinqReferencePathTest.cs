@@ -19,8 +19,10 @@ namespace Tests.Combined;
 /// under an alias of the tool's, one per reference and body. What differs from the Java
 /// languages is the kind of that join, which is the provider's rather than the language's:
 /// EF Core writes a left join for an optional reference and an inner one for a required
-/// reference, NHibernate's provider an inner join always - so the shared parser derives
-/// whether the foreign key may hold NULL from the mapping and asks the provider's descendant
+/// reference, and NHibernate's provider a left outer join wherever a NULL could satisfy the
+/// clause (decision 151, measured in <c>NHibernate/NHibernateLinqProviderTest</c>) - the same
+/// rows - so the shared parser derives whether the row a reference leads to may be absent
+/// from the mapping and from the row it is crossed from, and asks the provider's descendant
 /// for the kind. The test of a reference for null is the test of its foreign key columns, as
 /// decision 101 made it in HQL and JPQL. What the maps do not resolve is refused by name.
 /// </summary>
@@ -263,18 +265,116 @@ public class LinqReferencePathTest
     }
 
     [Fact]
-    public void TheKindOfTheJoinOverANullableForeignKeyIsTheProviders()
+    public void ANullableForeignKeyJoinsLeftUnderBothProviders()
     {
         var (orders, customers, regions) = Linked(nullableForeignKey: true);
 
         var efCore = Sql(ParseEFCore("Set<Order>().Select(o => o.Customer.CustomerName)", orders, customers, regions));
         var nhibernate = Sql(ParseNHibernate("Query<Order>().Select(o => o.Customer.CustomerName)", orders, customers, regions));
 
-        // EF Core keeps the order without a customer and projects NULL for it; NHibernate's
-        // provider makes the implicit join of HQL, which drops it. The same text, the rows
-        // each provider returns.
+        // Both providers keep the order without a customer and project NULL for it: EF Core
+        // by the optional relationship, NHibernate 5.7.0 by the left outer join its provider
+        // writes for a navigation in a projection (decision 151).
         Assert.Contains("LEFT JOIN Sales.Customers o_Customer ON o.CustomerID = o_Customer.CustomerID", efCore);
-        Assert.Contains("INNER JOIN Sales.Customers o_Customer ON o.CustomerID = o_Customer.CustomerID", nhibernate);
+        Assert.Equal(efCore, nhibernate);
+    }
+
+    /// <summary>
+    /// A reference crossed from a row that may be absent joins left, whatever its own foreign
+    /// key says: the inner join a required key would get drops exactly the rows the left join
+    /// before it kept (decision 151). The customer's region is required, the order's customer
+    /// is not.
+    /// </summary>
+    [Fact]
+    public void AReferenceCrossedFromAnOptionalRowJoinsLeft()
+    {
+        var (orders, customers, regions) = Linked(nullableForeignKey: true);
+
+        var sql = Sql(ParseEFCore("Set<Order>().Select(o => o.Customer.Region.RegionName)", orders, customers, regions));
+
+        Assert.Contains("LEFT JOIN Sales.Customers o_Customer ON o.CustomerID = o_Customer.CustomerID", sql);
+        Assert.Contains("LEFT JOIN Sales.Regions o_Customer_Region ON o_Customer.RegionID = o_Customer_Region.RegionID", sql);
+    }
+
+    /// <summary>The row a left join brings in may be absent too, and so may every row a reference leads to from it.</summary>
+    [Fact]
+    public void AReferenceCrossedFromTheOptionalSideOfAnOuterJoinJoinsLeft()
+    {
+        var (orders, customers, regions) = Linked();
+
+        // Both foreign keys are required; the order is on the optional side of the left join.
+        var throughTheReference = Sql(ParseEFCore(
+            "Set<Customer>().LeftJoin(ctx.Set<Order>(), c => c.CustomerID, o => o.CustomerID, (c, o) => new { c, o }).Select(x => new { x.c.CustomerName, Region = x.o.Customer.Region.RegionName })",
+            orders, customers, regions));
+
+        Assert.Contains("LEFT JOIN Sales.Customers o_Customer ON o.CustomerID = o_Customer.CustomerID", throughTheReference);
+        Assert.Contains("LEFT JOIN Sales.Regions o_Customer_Region ON o_Customer.RegionID = o_Customer_Region.RegionID", throughTheReference);
+    }
+
+    /// <summary>
+    /// A filter through a reference brings a join the chain never composed, and the chain
+    /// still materializes its own row: the row of the source is projected whole, so that no
+    /// target materializes the pair of the join instead - SQL every column of both tables, LINQ
+    /// the tuple, HQL the pair of entities.
+    /// </summary>
+    [Fact]
+    public void AFilterThroughAReferenceStillMaterializesTheSourceRow()
+    {
+        var (orders, customers, regions) = Linked();
+        const string chain = "Set<Order>().Where(o => o.Customer.CustomerName == \"A\")";
+
+        Assert.StartsWith("SELECT o.*", Sql(ParseEFCore(chain, orders, customers, regions)));
+
+        var linq = new EFCoreLinqQueryBuilder { EntityMaps = [orders, customers, regions] };
+        new EFCoreLinqQueryParser(() => linq).Parse(ConversionContentType.CSharp, Method("ctx." + chain), [orders, customers, regions]);
+        var method = linq.Build().Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content;
+        Assert.Contains(".Select(t => t.o)", method);
+        Assert.Contains("IQueryable<Order>", method);
+
+        var hql = new NHibernateHqlQueryBuilder { EntityMaps = [orders, customers, regions] };
+        new EFCoreLinqQueryParser(() => hql).Parse(ConversionContentType.CSharp, Method("ctx." + chain), [orders, customers, regions]);
+        Assert.StartsWith("select o", hql.Build().Single(s => s.ContentType == ConversionContentType.HqlQuery).Content.TrimStart());
+    }
+
+    /// <summary>A path that ends on a reference names a row, not a value: no operand, and no join made for it.</summary>
+    [Fact]
+    public void APathThatEndsOnAReferenceIsNoOperandAndMakesNoJoin()
+    {
+        var (orders, customers, regions) = Linked();
+        var builder = ParseEFCore("Set<Order>().Select(o => new { o.Total, R = o.Customer.Region })", orders, customers, regions);
+
+        var sql = builder.Build().Single(s => s.ContentType == ConversionContentType.SqlQuery).Content;
+        Assert.DoesNotContain("JOIN", sql);
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("'o.Customer.Region', a navigation", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The SQL a path reads into reads back to itself (decision 148): EF Core → Dapper →
+    /// Dapper is a fixed point, the join of the path an ordinary join of the text.
+    /// </summary>
+    [Fact]
+    public void TheSqlOfAPathReadsBackToItself()
+    {
+        var (orders, customers, regions) = Linked(nullableForeignKey: true);
+        var sql = Sql(ParseEFCore(
+            "Set<Order>().Where(o => o.Customer.CustomerName == \"A\").Select(o => new { o.Total, Name = o.Customer.CustomerName })",
+            orders, customers, regions));
+
+        var reread = new DapperSqlQueryBuilder { EntityMaps = [orders, customers, regions] };
+        new DapperSqlQueryParser(() => reread).Parse(ConversionContentType.SqlQuery, sql, [orders, customers, regions]);
+
+        Assert.Equal(sql, Sql(reread));
+    }
+
+    /// <summary>The null-forgiving mark changes nothing at run time, and the path reads through it.</summary>
+    [Fact]
+    public void ThePathReadsThroughTheNullForgivingMark()
+    {
+        var (orders, customers, regions) = Linked(nullableForeignKey: true);
+
+        Assert.Equal(
+            Sql(ParseEFCore("Set<Order>().Select(o => o.Customer.Region.RegionName)", orders, customers, regions)),
+            Sql(ParseEFCore("Set<Order>().Select(o => o.Customer!.Region!.RegionName)", orders, customers, regions)));
     }
 
     [Fact]

@@ -28,6 +28,8 @@ namespace LinqParsing;
 /// query representation has no place for, and the rewrite stops there so that the clauses
 /// after it - which would read its variable as a value from the enclosing scope - do not go
 /// out as a query saying something else.
+///
+/// The same pass drops the null-forgiving mark, which is no part of what any query says.
 /// </summary>
 internal sealed class QueryExpressionRewriter : CSharpSyntaxRewriter
 {
@@ -41,9 +43,6 @@ internal sealed class QueryExpressionRewriter : CSharpSyntaxRewriter
     /// </summary>
     public List<(string Reason, QueryFeature Feature, SyntaxAnnotation Anchor)> Refusals { get; } = [];
 
-    /// <summary>Whether the tree held a query expression at all.</summary>
-    public bool Rewrote { get; private set; }
-
     public QueryExpressionRewriter(SyntaxNode root)
     {
         used = root.DescendantTokens()
@@ -52,12 +51,22 @@ internal sealed class QueryExpressionRewriter : CSharpSyntaxRewriter
             .ToHashSet(StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// The null-forgiving mark (<c>o.Customer!.Name</c>) only silences the compiler's nullable
+    /// analysis and does nothing at run time, so the provider translates the expression as if
+    /// it were not there; the reading drops it here, once, rather than in every place that
+    /// walks a member path.
+    /// </summary>
+    public override SyntaxNode? VisitPostfixUnaryExpression(PostfixUnaryExpressionSyntax node)
+        => node.IsKind(SyntaxKind.SuppressNullableWarningExpression)
+            ? Visit(node.Operand)!.WithTriviaFrom(node)
+            : base.VisitPostfixUnaryExpression(node);
+
     public override SyntaxNode? VisitQueryExpression(QueryExpressionSyntax node)
     {
         // Inner first: a query expression nested in a clause is a chain by the time the
         // clause becomes a lambda.
         var visited = (QueryExpressionSyntax)base.VisitQueryExpression(node)!;
-        Rewrote = true;
 
         // `from T x in e` casts the elements; the type says what they are, and the rows of
         // an entity set are its entities already, so the cast adds nothing the parser reads.

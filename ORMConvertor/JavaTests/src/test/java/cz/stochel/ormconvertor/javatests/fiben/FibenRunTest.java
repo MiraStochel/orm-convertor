@@ -85,6 +85,10 @@ class FibenRunTest {
             Assumptions.abort("The Fiben database holds no judge yet; the .NET suite's run makes one once it is documented (decision 149).");
         }
 
+        if (run.catalog().query(key).translation() == FibenCatalog.NOT_TRANSLATED) {
+            Assumptions.abort(key + " is not translated, so the judge holds no entry for it.");
+        }
+
         FibenRun.Source source = run.source(key);
         assertNotNull(source.rows, () -> key + ": the text failed over JDBC: " + source.failed);
         assertEquals(Boolean.TRUE, run.agreesWithJudge(key), () -> key + ": the source differs from the judge: " + run.judgeDifference(key));

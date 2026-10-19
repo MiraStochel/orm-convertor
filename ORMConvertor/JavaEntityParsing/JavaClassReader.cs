@@ -414,7 +414,6 @@ public sealed class JavaClassReader
         }
 
         string? extends = null;
-        var interfaces = new List<string>();
 
         if (TryConsumeWord("extends"))
         {
@@ -423,9 +422,10 @@ public sealed class JavaClassReader
 
         if (TryConsumeWord("implements"))
         {
+            // What a class implements is nothing its mapping inherits, so the types are read past.
             do
             {
-                interfaces.Add(ReadType());
+                ReadType();
             }
             while (TryConsumeSymbol(","));
         }
@@ -458,7 +458,7 @@ public sealed class JavaClassReader
 
         ConsumeSymbol("}");
 
-        return new JavaClass(name, modifiers, annotations, fields, methods, nested, extends, interfaces, line, start, EndOfPrevious, spans);
+        return new JavaClass(name, modifiers, annotations, fields, methods, nested, extends, line, start, EndOfPrevious, spans);
     }
 
     private void ReadMember(string className, List<JavaField> fields, List<JavaMethod> methods, List<JavaClass> nested, List<JavaMemberSpan> spans)

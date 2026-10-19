@@ -98,4 +98,12 @@ public sealed class QueryClauses
 
     /// <summary>True when the whole row materialized is the source's own, under which no Select, no select clause and a bare <c>*</c> say the same thing.</summary>
     public bool MaterializesTheSource => MaterializedAlias is { } alias && string.Equals(alias, SourceAlias, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True when the projection names the whole row of one range variable (<c>o.*</c>) rather
+    /// than leaving the projection out. Without joins the two are the same; with joins only
+    /// the absence is the whole joined row, and the named row - the source's own included -
+    /// is that one member of it.
+    /// </summary>
+    public bool ProjectsOneWholeRow => Projections is [{ IsWholeRow: true }];
 }

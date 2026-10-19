@@ -132,15 +132,12 @@ public sealed record JavaClass(
     IReadOnlyList<JavaMethod> Methods,
     IReadOnlyList<JavaClass> NestedClasses,
     string? Extends,
-    IReadOnlyList<string> Interfaces,
     int Line,
     int Start,
     int End,
     IReadOnlyList<JavaMemberSpan> MemberSpans)
 {
     public bool Contains(int offset) => offset >= Start && offset < End;
-
-    public bool IsStatic => Modifiers.Contains("static", StringComparer.Ordinal);
 
     /// <summary>The getter of a field by the JavaBeans convention: getName, or isName for a boolean.</summary>
     public JavaMethod? GetterOf(string name) => Methods.FirstOrDefault(m =>

@@ -1,7 +1,7 @@
 # 120 — Tělo poddotazového operandu smí být množinová operace: `IN (A UNION B)` a `EXISTS (A UNION B)` se nesou, cíl bez množinové operace jde únikovou cestou a skalární porovnání s takovým tělem do LINQ také
 
 Datum: 2026-10-10
-Stav: platí
+Stav: platí; nahrazuje odrážku o těle poddotazu tvořeném množinovou operací rozh. 061
 Požadavky: F7–F10, F11, F13, T2, T3, S1, S2
 Podklad: rozhodnutí [023](023-query-builder-template-method.md), [053](053-a-query-that-would-return-other-rows-is-not-emitted.md), [060](060-pagination-as-a-query-instruction.md), [061](061-subquery-as-a-condition-operand.md), [073](073-distinct-as-a-flag-of-the-query-scope.md), [112](112-a-query-as-a-row-source-is-a-named-intermediate-result.md), [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) a [119](119-quantified-comparison-as-a-comparison-with-a-quantifier.md); JSS pravidla Q11 a Q12
 

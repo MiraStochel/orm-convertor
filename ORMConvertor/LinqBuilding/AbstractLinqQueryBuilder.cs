@@ -993,8 +993,9 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         if (clauses.ProjectsWholeEntity && !scope.Grouped)
         {
             // The whole row of one range variable of a join is that member of the joined row,
-            // selected out of the tuple; the source's own whole row is the absence of a Select.
-            if (!clauses.MaterializesTheSource && scope.Composite)
+            // selected out of the tuple - the source's own as much as any other's; only the
+            // absence of a projection is the whole joined row, the tuple itself.
+            if (clauses.ProjectsOneWholeRow && scope.Composite)
             {
                 artifact.Projection.Append($"\n        .Select({scope.Param} => {scope.Row(clauses.MaterializedAlias)})");
             }
@@ -1326,7 +1327,7 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
     /// member of the joined row a whole-row projection selects out of it.
     /// </summary>
     private bool YieldsAnEntity(QueryClauses clauses)
-        => clauses.ProjectsWholeEntity && !scope.Grouped && (!scope.Composite || !clauses.MaterializesTheSource);
+        => clauses.ProjectsWholeEntity && !scope.Grouped && (!scope.Composite || clauses.ProjectsOneWholeRow);
 
     protected override List<ConversionSource> FinalizeQuery(QueryClauses clauses, QueryArtifact artifact)
     {

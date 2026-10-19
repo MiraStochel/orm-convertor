@@ -1123,8 +1123,8 @@ public abstract class AbstractEntityBuilder
                         + "entity of this conversion, so the source maps a hierarchy over the two. The intermediate "
                         + "representation has no place for inheritance (decision 048), so both are translated as "
                         + "unrelated entities: what the base declares reaches the target on the base entity alone, "
-                        + "and a target that would map the hierarchy by convention - table per hierarchy in EF "
-                        + "Core - is given nothing to map.",
+                        + "and a target that would map the hierarchy by convention - one table for the whole "
+                        + "hierarchy - is given nothing to map.",
                 });
                 continue;
             }
@@ -1457,21 +1457,34 @@ public abstract class AbstractEntityBuilder
 
     /// <summary>
     /// The key classes the entities of the conversion reach in their own scope (decision
-    /// 142): never a second entity of their name, so the shared-name record leaves them out.
+    /// 142): never a second entity of their name, so the shared-name record leaves them out -
+    /// unless a claim of another entity names that simple name from outside every scope, which
+    /// then binds to the first class of the name read (decision 001) and is the ambiguity the
+    /// record of decision 094 exists to name.
     /// </summary>
     private HashSet<EntityMap> ScopedKeyClasses()
     {
         var scoped = new HashSet<EntityMap>();
+        var claimedAtLarge = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var entityMap in EntityMaps)
         {
-            if (entityMap.PrimaryKey?.SourceKeyClass is { } keyClass
-                && FindNestedKeyClass(entityMap, keyClass.ClassName) is { } nested)
+            if (entityMap.PrimaryKey?.SourceKeyClass is not { } keyClass)
+            {
+                continue;
+            }
+
+            if (FindNestedKeyClass(entityMap, keyClass.ClassName) is { } nested)
             {
                 scoped.Add(nested);
             }
+            else
+            {
+                claimedAtLarge.Add(SimpleEntityName(keyClass.ClassName));
+            }
         }
 
+        scoped.RemoveWhere(nested => claimedAtLarge.Contains(nested.Entity.Name));
         return scoped;
     }
 
@@ -2229,14 +2242,17 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// Trims an assembly-qualified or namespaced name to the class itself.
+    /// Trims an assembly-qualified or namespaced name to the class itself - past the CLR's
+    /// separator of a nested type too (<c>Shop.Order+Key</c>, the spelling an NHibernate
+    /// mapping names a nested key class with), so that the class nested in the entity is found
+    /// in its scope (decision 142).
     /// </summary>
     private static string SimpleEntityName(string name)
     {
         var typeName = name.Split(',')[0].Trim();
-        var lastDot = typeName.LastIndexOf('.');
+        var last = typeName.LastIndexOfAny(['.', '+']);
 
-        return lastDot < 0 ? typeName : typeName[(lastDot + 1)..];
+        return last < 0 ? typeName : typeName[(last + 1)..];
     }
 
     /// <summary>

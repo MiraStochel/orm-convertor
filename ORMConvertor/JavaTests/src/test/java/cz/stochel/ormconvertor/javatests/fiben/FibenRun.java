@@ -162,24 +162,38 @@ public final class FibenRun {
         return source != null && source.rows != null && cell.rows != null && cell.rows.equals(source.rows);
     }
 
-    /** Whether the source agrees with the judge; null where there is no judge or the source has no rows. */
+    /**
+     * Whether the source agrees with the judge; null where there is no judge, the source has no rows
+     * or the catalog marks the query as not translated - the text runs over JDBC here, but the run the
+     * judge was made from refused it. A query that returned no rows has an entry with the digest of none;
+     * any other query the judge has no entry for was not run when the judge was made, so it agrees with nothing.
+     */
     public Boolean agreesWithJudge(String key) {
         Source source = sources.get(key);
-        if (!hasJudge || source == null || source.rows == null) {
+        if (!hasJudge || source == null || source.rows == null || catalog.query(key).translation() == FibenCatalog.NOT_TRANSLATED) {
             return null;
         }
 
-        String expected = judgeDigests.getOrDefault(key, digest(List.of()));
+        String expected = judgeDigests.get(key);
+        if (expected == null) {
+            return false;
+        }
+
         List<String> kept = judgeRows.getOrDefault(key, List.of());
         return digest(source.rows).equals(expected) && (kept.isEmpty() || kept.equals(source.rows));
     }
 
     public String judgeDifference(String key) {
+        String expected = judgeDigests.get(key);
+        if (expected == null) {
+            return "the judge holds no entry for it - the run it was made from did not run it, and a new judge is a decision (149)";
+        }
+
         List<String> rows = sources.get(key).rows;
         List<String> kept = judgeRows.getOrDefault(key, List.of());
         return !kept.isEmpty() || rows.size() <= ROWS_KEPT_BY_THE_JUDGE
                 ? difference(kept, rows)
-                : "the judge holds " + judgeDigests.getOrDefault(key, digest(List.of())) + ", the source returned " + digest(rows);
+                : "the judge holds " + expected + ", the source returned " + digest(rows);
     }
 
     public static String difference(List<String> expected, List<String> actual) {

@@ -284,6 +284,41 @@ public class RecursionTest
         Assert.Equal(DapperSql(Walk), Artifact(Built(limited), ConversionContentType.SqlQuery));
     }
 
+    /// <summary>
+    /// Hibernate writes the literal into the OPTION clause as it stands, so a list of hints in
+    /// one literal is the clause's list: the limit is read out of it and the rest dropped with
+    /// a record. An argument that is no literal is one the reading cannot tell from a limit.
+    /// </summary>
+    [Fact]
+    public void TheLimitIsReadOutOfAListOfHintsAndAHintThatIsNoLiteralSaysItIsUnread()
+    {
+        var listed = new DapperSqlQueryBuilder { EntityMaps = Maps() };
+        new HibernateJpqlQueryParser(() => listed).Parse(
+            ConversionContentType.Java,
+            $$"""
+            public static Query query(EntityManager em) {
+                return em.createNativeQuery("{{OneLine(Walk).Replace(" OPTION (MAXRECURSION 10)", string.Empty, StringComparison.Ordinal)}}")
+                    .unwrap(org.hibernate.query.Query.class).addQueryHint("MAXRECURSION 10, MAXDOP 1");
+            }
+            """,
+            Maps());
+        Assert.Equal(DapperSql(Walk), Artifact(Built(listed), ConversionContentType.SqlQuery));
+        Assert.Contains(listed.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("addQueryHint(\"MAXDOP 1\")", StringComparison.Ordinal));
+
+        var constant = new DapperSqlQueryBuilder { EntityMaps = Maps() };
+        new HibernateJpqlQueryParser(() => constant).Parse(
+            ConversionContentType.Java,
+            """
+            public static Query query(EntityManager em) {
+                return em.createNativeQuery("SELECT c.Name AS Name FROM Categories AS c")
+                    .unwrap(org.hibernate.query.Query.class).addQueryHint(Hints.LIMIT);
+            }
+            """,
+            Maps());
+        Built(constant);
+        Assert.Contains(constant.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("no string literal", StringComparison.Ordinal));
+    }
+
     /// <summary>The search and cycle clauses of HQL are refused by name: SQL Server has neither, and a cycle is guarded in the text of the query.</summary>
     [Theory]
     [InlineData("search depth first by CategoryId set ord")]

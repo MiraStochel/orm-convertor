@@ -1,7 +1,7 @@
 ﻿# 101 — Join po asociační cestě se odvozuje ze vztahu mezireprezentace; bez sloupců se odmítá jmenovitě
 
 Datum: 2026-09-29
-Stav: platí
+Stav: platí; odstavec *Cesta o víc než dvou částech se odmítá* nahrazuje 144
 Požadavky: F7, F8, F9, F11, T1, T2
 Podklad: rozhodnutí [001](001-entity-reference-by-name.md), [005](005-many-to-many-as-explicit-junction-entity.md), [015](015-mapping-fact-completion-from-the-catalog.md), [065](065-row-set-as-the-boundary-of-rule-053.md), [067](067-a-derived-convention-is-a-statement-a-default-is-not.md), [070](070-a-parser-refuses-what-would-change-the-row-set.md) a [096](096-a-rule-of-the-paper-is-cited-where-it-argues.md); revize [2026-09-21](../audits/2026-09-21-pre-release-2-0-0-audit.md), nález 6.2; otevřená položka „Join po asociační cestě jde odvodit ze vztahu, a neodvozuje se"; [srovnání javových frameworků](../analysis/java-orm-frameworks-comparison.md), řádek *Explicitní LEFT a RIGHT JOIN*
 
