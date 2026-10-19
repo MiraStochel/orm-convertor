@@ -202,7 +202,8 @@ public class LinqCollectionNavigationSubQueryTest
 
         var sql = Sql("ctx.Customers.Where(c => c.Orders.Sum(o => o.Total) > 1000)", orders, customers);
 
-        Assert.Contains("(SELECT SUM(o.Total) FROM Sales.Orders AS o WHERE o.CustomerID = c.CustomerID) > 1000", sql);
+        // The Sum of EF Core is 0 over no rows (decision 155).
+        Assert.Contains("COALESCE((SELECT SUM(o.Total) FROM Sales.Orders AS o WHERE o.CustomerID = c.CustomerID), 0) > 1000", sql);
     }
 
     [Fact]

@@ -183,7 +183,7 @@ public class InValueListTest
 
         Assert.Contains(
             ".Where(c => !(new[] { 1, 2 }.Contains(c.CustomerID)))",
-            Linq(ParseSql(new EFCoreLinqQueryBuilder { EntityMaps = [Customers()] }, sql)));
+            Linq(ParseSql(new EFCoreLinqQueryBuilder { EntityMaps = [TypedCustomers()] }, sql)));
 
         Assert.Contains(
             "where not (c.CustomerID in (1, 2))",

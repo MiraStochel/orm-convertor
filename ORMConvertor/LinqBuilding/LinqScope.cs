@@ -25,6 +25,13 @@ public sealed class LinqScope
     /// </summary>
     public IReadOnlyList<LinqGroupKey> GroupKeys { get; set; } = [];
 
+    /// <summary>
+    /// True when the group is the one group of a scalar subquery grouped by a constant
+    /// (decisions 113 and 155): over no rows there is no group, and the subquery yields NULL
+    /// only if what it projects from the group can hold one.
+    /// </summary>
+    public bool OneGroup { get; set; }
+
     /// <summary>Parameter used inside an aggregate lambda, which ranges over group elements.</summary>
     public string ElementParam { get; set; } = "e";
 

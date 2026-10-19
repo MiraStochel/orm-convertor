@@ -222,19 +222,21 @@ public class ExpressionVocabularyTest
     }
 
     /// <summary>
-    /// COALESCE over a value C# types as non-nullable - SUM over an int, a member on the optional
+    /// COALESCE over a value C# types as non-nullable - MIN over an int, a member on the optional
     /// side of an outer join - is lifted to the nullable type C#'s ?? takes on its left (CS0019
-    /// otherwise): an aggregate through its element, which EF Core translates to the bare SUM;
-    /// a value that may be null already - a nullable text - stays as it is.
+    /// otherwise): an aggregate through its element; a value that may be null already - a
+    /// nullable text - stays as it is. COALESCE(SUM(x), 0) is the Sum of EF Core exactly and is
+    /// written as it (decision 155).
     /// </summary>
     [Fact]
     public void CoalesceLiftsANonNullableLeftSideInLinq()
     {
         var grouped = Text(Sql(
             ORMEnum.EFCore,
-            "SELECT s.CustomerId AS CustomerId, COALESCE(SUM(o.Quantity), 0) AS Later, COALESCE(MAX(o.Notes), '') AS Note FROM Sales AS s LEFT JOIN Sales AS o ON o.CustomerId = s.CustomerId GROUP BY s.CustomerId"));
+            "SELECT s.CustomerId AS CustomerId, COALESCE(MIN(o.Quantity), 0) AS Least, COALESCE(SUM(o.Quantity), 0) AS Later, COALESCE(MAX(o.Notes), '') AS Note FROM Sales AS s LEFT JOIN Sales AS o ON o.CustomerId = s.CustomerId GROUP BY s.CustomerId"));
 
-        Assert.Contains("Later = (g.Sum(t => (int?)t.o.Quantity) ?? 0)", grouped, StringComparison.Ordinal);
+        Assert.Contains("Least = (g.Min(t => (int?)t.o.Quantity) ?? 0)", grouped, StringComparison.Ordinal);
+        Assert.Contains("Later = g.Sum(t => t.o.Quantity)", grouped, StringComparison.Ordinal);
         Assert.Contains("Note = (g.Max(t => t.o.Notes) ?? \"\")", grouped, StringComparison.Ordinal);
 
         var rows = Text(Sql(ORMEnum.EFCore, "SELECT s.SaleId AS SaleId, COALESCE(o.Quantity, 0) AS Quantity FROM Sales AS s LEFT JOIN Sales AS o ON o.SaleId = s.SaleId"));

@@ -472,7 +472,7 @@ public class IntermediateResultTest
             var orderCount = ctx.Orders.GroupBy(o => o.CustomerId).Select(g => new { CustomerId = g.Key, Orders = g.Count() });
             var q = ctx.Customers
                 .Join(orderCount, c => c.CustomerId, oc => oc.CustomerId, (c, oc) => new { c, oc })
-                .Where(x => x.oc.Orders == orderCount.Max(m => m.Orders))
+                .Where(x => x.oc.Orders >= orderCount.Max(m => m.Orders))
                 .Select(x => new { Name = x.c.Name, Orders = x.oc.Orders })
                 .ToList();
             """;
@@ -490,7 +490,7 @@ public class IntermediateResultTest
             "WITH orderCount AS ( SELECT o.CustomerId AS CustomerId, COUNT(*) AS Orders FROM Orders AS o GROUP BY o.CustomerId ) "
             + "SELECT c.Name AS Name, oc.Orders AS Orders FROM Customers AS c "
             + "INNER JOIN orderCount oc ON c.CustomerId = oc.CustomerId "
-            + "WHERE oc.Orders = (SELECT MAX(m.Orders) FROM orderCount AS m)",
+            + "WHERE oc.Orders >= (SELECT MAX(m.Orders) FROM orderCount AS m)",
             text);
     }
 

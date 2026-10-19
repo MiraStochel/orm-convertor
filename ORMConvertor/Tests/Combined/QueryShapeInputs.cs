@@ -286,7 +286,9 @@ public static class QueryShapeInputs
 
         ["Filtering"] = Hallmarks(
             sql: ["WHERE", "ol.Quantity > 5 OR ol.UnitPrice >= 100.5", "ol.Description IS NOT NULL", "NOT ("],
-            linq: [".Where(", "ol.Quantity > 5 || ol.UnitPrice >= 100.5", "ol.Description != null", "!("],
+            // The negation over the key stands as !(…) where the column holds no NULL, and as !=
+            // with a test for NULL where the source leaves it nullable - a MyBatis Integer (decision 156).
+            linq: [".Where(", "ol.Quantity > 5 || ol.UnitPrice >= 100.5", "ol.Description != null", "ol.ProductId"],
             hql: ["where", "ol.Quantity > 5 or ol.UnitPrice >= 100.5", "ol.Description is not null", "not ("],
             jpa: ["where", "ol.Quantity > 5 or ol.UnitPrice >= 100.5", "ol.Description is not null", "not ("]),
 
@@ -677,7 +679,8 @@ public static class QueryShapeInputs
 
         ["JoinBeyondEqualities"] = Hallmarks(
             sql: [$"LEFT JOIN {Schema}.ShopOrderLines ol ON ol.ProductId = p.ProductId AND ol.UnitPrice < p.UnitPrice", "p.ProductName AS ProductName"],
-            linq: [".SelectMany(p => ctx.Set<ShopOrderLine>().Where(ol => ol.ProductId == p.ProductId && ol.UnitPrice < p.UnitPrice).DefaultIfEmpty(), (p, ol) => new { p, ol })", "ProductName = t.p.ProductName", "Description = t.ol.Description"],
+            // A source that leaves both keys nullable (MyBatis) has the equality tested for NULL (decision 156).
+            linq: [".SelectMany(p => ctx.Set<ShopOrderLine>().Where(ol => ol.ProductId == p.ProductId && ", "ol.UnitPrice < p.UnitPrice).DefaultIfEmpty(), (p, ol) => new { p, ol })", "ProductName = t.p.ProductName", "Description = t.ol.Description"],
             hql: ["left join ShopOrderLine ol with ol.ProductId = p.ProductId and ol.UnitPrice < p.UnitPrice", "p.ProductName as ProductName"],
             jpa: ["left join ShopOrderLine ol on (ol.ProductId = p.ProductId and ol.UnitPrice < p.UnitPrice)", "p.ProductName as ProductName"]),
     };

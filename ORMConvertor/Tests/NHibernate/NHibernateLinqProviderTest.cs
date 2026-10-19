@@ -8,7 +8,9 @@ namespace Tests.NHibernate;
 /// These are the facts the hooks of <c>NHibernateLinqQueryBuilder</c> and
 /// <c>NHibernateLinqQueryVisitor</c> rest on (decision 118): which join operators it knows,
 /// where an ordering under DISTINCT may stand, how a COUNT over a column that may hold NULL
-/// is spelled, which aggregates it takes over distinct values. A fact the provider stops
+/// is spelled, which aggregates it takes over distinct values, that its Sum is the bare sum
+/// (decision 155), that it compensates == and != for NULL but writes a negation as SQL's NOT
+/// and Contains over a subquery as IN (decision 156). A fact the provider stops
 /// holding on an upgrade shows up here, beside the hook that assumes it.
 /// </summary>
 public class NHibernateLinqProviderTest
@@ -79,6 +81,14 @@ public class NHibernateLinqProviderTest
         { "IN over a subquery", "session.Query<Customer>().Where(c => session.Query<Order>().Select(o => o.CustomerId).Distinct().Contains(c.CustomerId))", "in (select distinct" },
         { "EXISTS", "session.Query<Customer>().Where(c => session.Query<Order>().Where(o => o.CustomerId == c.CustomerId).Any())", "where exists (select" },
         { "scalar subquery", "session.Query<Customer>().Where(c => c.CreditLimit > session.Query<Order>().Where(o => o.CustomerId == c.CustomerId).Max(o => o.Total))", "(select max(order1_.Total)" },
+        { "Sum in a subquery as the bare sum", "session.Query<Customer>().Where(c => c.CreditLimit > session.Query<Order>().Where(o => o.CustomerId == c.CustomerId).Sum(o => o.Total))", "where customer0_.CreditLimit>(select (sum(order1_.Total)) from" },
+        { "Sum over a group as the bare sum", "session.Query<Order>().GroupBy(o => o.CustomerId).Select(g => new { g.Key, S = g.Sum(e => e.Rating) })", "select order0_.CustomerId as col_0_0_, cast(sum(order0_.Rating) as INT) as col_1_0_" },
+        { "inequality with a constant compensated", "session.Query<Customer>().Where(c => c.Score != 5)", "where customer0_.Score<>? or customer0_.Score is null" },
+        { "equality of two nullable values compensated", "session.Query<Customer>().Where(c => c.Score == c.CreditLimit)", "or (cast(customer0_.Score as DECIMAL(29, 10)) is null) and (customer0_.CreditLimit is null)" },
+        { "negation as SQL's NOT", "session.Query<Customer>().Where(c => !(c.Score > 5))", "where  not (customer0_.Score>?)" },
+        { "Contains over a subquery as IN", "session.Query<Customer>().Where(c => session.Query<Order>().Select(o => o.Rating).Contains(c.Score))", "where customer0_.Score in (select order1_.Rating from Sales.Orders order1_)" },
+        { "inequality tested for NULL", "session.Query<Customer>().Where(c => c.Score != 5 && c.Score != null)", "where customer0_.Score<>? and (customer0_.Score is not null)" },
+        { "NOT IN over a nullable subquery as All", "session.Query<Customer>().Where(c => c.Score != null && session.Query<Order>().Select(o => o.Rating).All(v => v != null && v != c.Score))", "where (customer0_.Score is not null) and  not (exists (select order1_.Rating from Sales.Orders order1_ where  not ((order1_.Rating is not null) and" },
         { "Math.Round, Math.Sqrt, a cast and ToString", "session.Query<Order>().Select(o => new { R = Math.Round(o.Total, 1), S = Math.Sqrt((double)(o.Total)), I = (int)(o.Total), T = o.Total.ToString() })", "round(order0_.Total, ?)" },
         { "modulo", "session.Query<Order>().Where(o => o.OrderId % 2 == 0)", "% (?)" },
         { "a nullable member through Value", "session.Query<Customer>().Where(c => c.Score.Value > 3)", "customer0_.Score>?" },

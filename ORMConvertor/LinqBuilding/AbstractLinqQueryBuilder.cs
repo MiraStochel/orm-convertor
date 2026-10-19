@@ -763,29 +763,32 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
     }
 
     /// <summary>
-    /// A scalar subquery whose one value is a list (decision 113), as the chain the provider
-    /// translates to STRING_AGG: the clauses composed as usual, then grouped by a constant,
-    /// so that the list ranges over the elements of the one group, projected as the group's
-    /// value and taken by FirstOrDefault(). Null when the list has no form the provider
-    /// translates faithfully, which the visitor has reported.
+    /// A scalar subquery whose one value is taken over one group: a list (decision 113), which
+    /// the provider translates to STRING_AGG only over the elements of a group, and a SUM under
+    /// a provider that coalesces Sum (decision 155), whose subquery is NULL over no rows only
+    /// where there is no group. The clauses composed as usual, then grouped by a constant, so
+    /// that the value ranges over the elements of the one group, projected as the group's value
+    /// and taken by FirstOrDefault(). Null when the value has no form the provider translates
+    /// faithfully, which the visitor has reported.
     /// </summary>
-    private string? ListOverOneGroup(QueryClauses clauses)
+    private string? OverOneGroup(QueryClauses clauses)
     {
         var artifact = Compose(clauses);
 
         artifact.Grouping.Append($"\n        .GroupBy({scope.Param} => 1)");
         EnterGroup([]);
+        scope.OneGroup = true;
 
         visitor.InProjection = true;
-        var list = visitor.Visit(clauses.Projections[0]);
+        var value = visitor.Visit(clauses.Projections[0]);
         visitor.InProjection = false;
 
-        if (list.Length == 0)
+        if (value.Length == 0)
         {
             return null;
         }
 
-        artifact.Projection.Append($"\n        .Select({scope.Param} => {list})");
+        artifact.Projection.Append($"\n        .Select({scope.Param} => {value})");
         return Chain(artifact) + ".FirstOrDefault()";
     }
 
@@ -1071,8 +1074,9 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
     /// Renders a subquery operand as a nested chain from its own root (decision 061). The
     /// visitor decides what surrounds it - Contains for IN, Any for EXISTS, nothing for a
     /// scalar - and this renderer decides how the chain ends: bare for EXISTS, a one-column
-    /// Select for IN, a terminal aggregate call for a scalar, and for a scalar that is a list
-    /// the chain grouped by a constant (<see cref="ListOverOneGroup"/>). A scalar subquery
+    /// Select for IN, a terminal aggregate call for a scalar, and for a scalar that is a list,
+    /// or a SUM under a provider that coalesces Sum, the chain grouped by a constant
+    /// (<see cref="OverOneGroup"/>). A scalar subquery
     /// that is not a single ungrouped aggregate has no faithful LINQ form - First() would
     /// silently pick one row where SQL refuses several - and the query goes out in native
     /// SQL, which writes the subquery as the source did (decision 113).
@@ -1117,7 +1121,16 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         // rules on as it does inside a grouped query.
         if (scalar && clauses.GroupBys.Count == 0 && clauses.Projections[0].Operand is { IsExpression: true } listed && listed.Expression!.IsListAggregate)
         {
-            return InNestedFrame(op, () => ListOverOneGroup(clauses));
+            return InNestedFrame(op, () => OverOneGroup(clauses));
+        }
+
+        // A SUM, which over no rows is NULL, under a provider whose Sum is 0 there (decision
+        // 155): the same one group, absent over no rows, so the subquery yields NULL - unless
+        // the subquery stands inside COALESCE(…, 0), which is the plain Sum exactly.
+        if (scalar && clauses.GroupBys.Count == 0 && clauses.Projections[0].Operand is { Function: "SUM" }
+            && visitor.CoalescesSum && !visitor.WritesCoalescedSum)
+        {
+            return InNestedFrame(op, () => OverOneGroup(clauses));
         }
 
         if (scalar && (clauses.GroupBys.Count > 0 || !clauses.Projections[0].Operand.IsAggregate))

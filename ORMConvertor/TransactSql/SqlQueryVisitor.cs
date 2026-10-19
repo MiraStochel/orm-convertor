@@ -73,6 +73,14 @@ public class SqlQueryVisitor(
             return sub is null ? string.Empty : $"EXISTS ({sub})";
         }
 
+        // A null test over a scalar subquery - the reading of a LINQ comparison its provider
+        // compensates for NULL (decision 156) - writes the subquery in the operand's place.
+        if (cond.Operator is ComparisonOperator.IsNull or ComparisonOperator.IsNotNull && cond.Left.IsSubQuery)
+        {
+            var tested = OperandOrSubQuery(cond.Left, cond.Operator);
+            return tested is null ? string.Empty : $"{tested} {(cond.Operator == ComparisonOperator.IsNull ? "IS NULL" : "IS NOT NULL")}";
+        }
+
         if (cond.Left.IsSubQuery || cond.Right?.IsSubQuery == true)
         {
             return SubQueryComparison(cond);

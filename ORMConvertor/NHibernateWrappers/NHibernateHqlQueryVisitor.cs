@@ -145,6 +145,14 @@ public sealed class NHibernateHqlQueryVisitor(
             return sub is null ? string.Empty : $"exists ({sub})";
         }
 
+        // A null test over a scalar subquery (decision 156) writes the subquery in the
+        // operand's place.
+        if (cond.Operator is ComparisonOperator.IsNull or ComparisonOperator.IsNotNull && cond.Left.IsSubQuery)
+        {
+            var sub = renderSubQuery(cond.Left.SubQuery!, cond.Operator);
+            return sub is null ? string.Empty : $"({sub}) {(cond.Operator == ComparisonOperator.IsNull ? "is null" : "is not null")}";
+        }
+
         if (cond.Left.IsSubQuery || cond.Right?.IsSubQuery == true)
         {
             return SubQueryComparison(cond);

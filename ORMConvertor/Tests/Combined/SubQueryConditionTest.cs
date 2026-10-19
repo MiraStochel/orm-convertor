@@ -20,11 +20,25 @@ namespace Tests.Combined;
 /// </summary>
 public class SubQueryConditionTest
 {
-    private static EntityMap Customers() =>
-        new() { Entity = new() { Name = "Customer" }, Table = "Customers", Schema = "Sales" };
+    // The columns the queries compare hold no NULL, so that the shapes here are the subquery's
+    // alone; what a NULL changes in a LINQ comparison is LinqNullSemanticsTest's (decision 156).
+    private static EntityMap Customers() => Typed(
+        "Customer", "Customers", ("CustomerID", ScalarType.Int), ("Credit", ScalarType.Decimal), ("CreditLimit", ScalarType.Decimal));
 
-    private static EntityMap Orders() =>
-        new() { Entity = new() { Name = "Order" }, Table = "Orders", Schema = "Sales" };
+    private static EntityMap Orders() => Typed(
+        "Order", "Orders", ("OrderID", ScalarType.Int), ("CustomerID", ScalarType.Int), ("Total", ScalarType.Decimal));
+
+    private static EntityMap Typed(string entity, string table, params (string Name, ScalarType Scalar)[] columns)
+    {
+        var properties = columns.Select(c => new Property { Name = c.Name, Type = LangType.Scalar(c.Scalar) }).ToList();
+        return new EntityMap
+        {
+            Entity = new Entity { Name = entity, Properties = properties },
+            Table = table,
+            Schema = "Sales",
+            PropertyMaps = [.. properties.Select(p => new PropertyMap { Property = p, ColumnName = p.Name })],
+        };
+    }
 
     private static AbstractQueryBuilder ParseSql(AbstractQueryBuilder builder, string sql)
     {
@@ -104,6 +118,7 @@ public class SubQueryConditionTest
         """;
 
         var customers = Customers();
+        customers.PropertyMaps.RemoveAll(p => p.ColumnName == "CustomerID");
         customers.PropertyMaps.Add(new PropertyMap
         {
             Property = new Property { Name = "CustomerID", Type = LangType.Scalar(ScalarType.Int, true) },

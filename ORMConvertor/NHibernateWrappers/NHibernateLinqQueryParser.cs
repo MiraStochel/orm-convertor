@@ -53,6 +53,15 @@ public class NHibernateLinqQueryParser(
     /// </summary>
     protected override bool ProviderEscapesStringMethodArguments => false;
 
+    /// <summary>NHibernate 5.7.0 writes a negation as SQL's NOT (decision 156, measured by its query plan).</summary>
+    protected override bool ProviderCompensatesNegation => false;
+
+    /// <summary>NHibernate 5.7.0 writes Contains over a subquery as IN, which matches no NULL (decision 156).</summary>
+    protected override bool ProviderMatchesNullInContains => false;
+
+    /// <summary>NHibernate 5.7.0 writes Sum as the bare sum, NULL over no values as SQL's (decision 155).</summary>
+    protected override bool ProviderCoalescesSum => false;
+
     protected override bool TryReadQueryRoot(ExpressionSyntax expression, out LinqQueryRoot? root)
     {
         root = null;

@@ -91,6 +91,22 @@ public abstract class LinqQueryVisitor(
     /// </summary>
     protected virtual bool CompensatesNullSemantics => true;
 
+    /// <summary>
+    /// Whether the provider writes Sum as COALESCE(SUM(x), 0) - the sum Enumerable.Sum gives
+    /// over no values -, where SQL's SUM over no values is NULL (decision 155). EF Core 10.0.10
+    /// does, over a group and in a subquery alike, whatever the type of the element; NHibernate
+    /// 5.7.0 writes the bare sum. Where it does, a SUM is written in a shape that is NULL over
+    /// no values, and COALESCE(SUM(x), 0) as the plain Sum it is.
+    /// </summary>
+    public virtual bool CoalescesSum => true;
+
+    /// <summary>
+    /// True while the SUM inside COALESCE(SUM(x), 0) is being written (decision 155): the
+    /// aggregate over the group, or the scalar subquery whose chain the builder renders, ends
+    /// in the plain Sum rather than in a shape that is NULL over no values.
+    /// </summary>
+    public bool WritesCoalescedSum { get; private set; }
+
     /// <summary>Puts a record on the builder's channel; a Fallback says the provider does not translate the shape (decision 113).</summary>
     protected void Report(ConversionRecordKind kind, string reason, QueryFeature? feature) => report(kind, reason, feature);
 
@@ -131,7 +147,22 @@ public abstract class LinqQueryVisitor(
         }
     }
 
-    public string Visit(ComparisonCondition cond)
+    /* ---- conditions in SQL's three-valued logic (decision 156) ----------------------- */
+
+    // A condition of SQL, HQL and JPQL selects where it is true and drops a row where it is
+    // false or unknown; a C# predicate has two values, and both providers carry them into
+    // the SQL they write - EF Core 10.0.10 compensates ==, != and every negation for NULL,
+    // NHibernate 5.7.0 == and != (measured, EFCore/EFCoreNullSemanticsProviderTest). So a
+    // condition is written as the predicate that is true exactly where it is true, and under
+    // NOT as the one true exactly where it is false: the negation goes down to the
+    // comparisons by De Morgan, as a quantifier's does (decision 119), and the provider is
+    // given no ! over anything it would compensate. A side that may be NULL is tested where
+    // the predicate would otherwise hold over it.
+
+    public string Visit(ComparisonCondition cond) => Holds(cond);
+
+    /// <summary>The predicate that is true exactly where the comparison is true in SQL.</summary>
+    private string Holds(ComparisonCondition cond)
     {
         // EXISTS carries its subquery as the left operand, the way IS NULL carries its
         // column (decisions 002 and 061). LINQ's EXISTS is Any() on the nested chain; the
@@ -145,6 +176,14 @@ public abstract class LinqQueryVisitor(
         if (cond.Quantifier is not null)
         {
             return QuantifiedComparison(cond);
+        }
+
+        // A null test over a scalar subquery (decision 156): the chain's terminal aggregate is
+        // a value C# may type as one that cannot be null, so it is lifted.
+        if (cond.Operator is ComparisonOperator.IsNull or ComparisonOperator.IsNotNull && cond.Left.IsSubQuery)
+        {
+            var tested = Lifted(cond.Left);
+            return tested.Length == 0 ? tested : $"{tested} {(cond.Operator == ComparisonOperator.IsNull ? "==" : "!=")} null";
         }
 
         if (cond.Left.IsSubQuery || cond.Right?.IsSubQuery == true)
@@ -205,8 +244,127 @@ public abstract class LinqQueryVisitor(
             return string.Empty;
         }
 
-        return $"{Beside(cond.Left, cond.Right)} {Operator(cond.Operator)} {Beside(cond.Right, cond.Left)}";
+        return Tested($"{Beside(cond.Left, cond.Right)} {Operator(cond.Operator)} {Beside(cond.Right, cond.Left)}", cond.Operator, cond.Left, cond.Right);
     }
+
+    /// <summary>
+    /// The predicate that is true exactly where the condition is false in SQL - the place a
+    /// NOT selects: a negation is the condition under it, a conjunction the disjunction of
+    /// where its parts fail and the other way round, a comparison the one of the negated
+    /// operator (a NULL leaves both unknown), a quantified comparison its De Morgan
+    /// (decision 119), and LIKE, IN and EXISTS their negation where the value is there.
+    /// </summary>
+    private string Fails(ConditionNode node)
+    {
+        // Where no value may be NULL the two logics agree, and the negation stands as written.
+        if (MeetsNoNull(node))
+        {
+            return $"!({node.Accept(this)})";
+        }
+
+        switch (node)
+        {
+            case NotCondition negation:
+                return negation.Operand.Accept(this);
+
+            case LogicalCondition junction:
+                return Junction(junction.Operands, junction.Operator == LogicalOperator.And ? LogicalOperator.Or : LogicalOperator.And, Fails);
+
+            case ComparisonCondition { Quantifier: not null } quantified:
+                return Visit(quantified.NegatedQuantified());
+
+            case ComparisonCondition { Operator: ComparisonOperator.Exists } exists:
+                var sub = renderSubQuery(exists.Left.SubQuery!, exists.Operator);
+                return sub is null ? string.Empty : $"!{sub}.Any()";
+
+            case ComparisonCondition { Operator: ComparisonOperator.IsNull } isNull:
+                return Holds(isNull with { Operator = ComparisonOperator.IsNotNull });
+
+            case ComparisonCondition { Operator: ComparisonOperator.IsNotNull } isNotNull:
+                return Holds(isNotNull with { Operator = ComparisonOperator.IsNull });
+
+            case ComparisonCondition { Operator: ComparisonOperator.In, Right.IsSubQuery: true } inSubQuery:
+                return NotInSubQuery(inSubQuery);
+
+            case ComparisonCondition { Operator: ComparisonOperator.Like or ComparisonOperator.In } predicate:
+                var held = Holds(predicate);
+                if (held.Length == 0)
+                {
+                    return held;
+                }
+
+                return MayBeNull(predicate.Left) ? $"!({held}) && {NotNullTest(predicate.Left)}" : $"!({held})";
+
+            case ComparisonCondition comparison when comparison.Operator.IsRelational():
+                return Holds(comparison with { Operator = comparison.Operator.Negated() });
+
+            default:
+                return $"!({node.Accept(this)})";
+        }
+    }
+
+    /// <summary>
+    /// A comparison with the tests that keep it from holding over a NULL: equality, which
+    /// C# makes true over two NULLs, needs one side tested where both may be NULL, and
+    /// inequality, which C# makes true over one NULL, each side that may be NULL. The other
+    /// operators are false over a NULL in C# already, as SQL leaves them unknown.
+    /// </summary>
+    private string Tested(string comparison, ComparisonOperator op, QueryOperand left, QueryOperand right)
+    {
+        var tests = new List<QueryOperand>();
+        if (op == ComparisonOperator.Equal && MayBeNull(left) && MayBeNull(right))
+        {
+            tests.Add(left.IsSubQuery && !right.IsSubQuery ? right : left);
+        }
+        else if (op == ComparisonOperator.NotEqual)
+        {
+            tests.AddRange(new[] { left, right }.Where(MayBeNull));
+        }
+
+        return tests.Count == 0
+            ? comparison
+            : $"{comparison} && {string.Join(" && ", tests.Select(NotNullTest))}";
+    }
+
+    /// <summary>
+    /// The test that a value is there, as the left side of C#'s != null: lifted where C#
+    /// types it as a value that cannot be null - a member so declared on the optional side
+    /// of an outer join, an aggregate over one, a scalar subquery - which the provider writes
+    /// as IS NOT NULL of the column or the subquery itself.
+    /// </summary>
+    private string NotNullTest(QueryOperand value) => $"{Lifted(value)} != null";
+
+    /// <summary>
+    /// Whether the condition compares no value that may be NULL - a null test and EXISTS are
+    /// two-valued whatever they test -, so that C# and SQL agree on it under a negation too.
+    /// A quantified comparison is pushed through by De Morgan whatever it compares (decision 119).
+    /// </summary>
+    private bool MeetsNoNull(ConditionNode node) => node switch
+    {
+        NotCondition negation => MeetsNoNull(negation.Operand),
+        LogicalCondition junction => junction.Operands.All(MeetsNoNull),
+        ComparisonCondition { Quantifier: not null } => false,
+        ComparisonCondition { Operator: ComparisonOperator.IsNull or ComparisonOperator.IsNotNull or ComparisonOperator.Exists } => true,
+        ComparisonCondition { Operator: ComparisonOperator.In, Right.IsSubQuery: true } inSubQuery
+            => !MayBeNull(inSubQuery.Left) && !ProjectedValueMayBeNull(inSubQuery.Right.SubQuery!),
+        ComparisonCondition comparison => !MayBeNull(comparison.Left) && (comparison.Right is null or { IsValueList: true } || !MayBeNull(comparison.Right)),
+        _ => false,
+    };
+
+    /// <summary>The conjunction or disjunction of the parts, each written by <paramref name="write"/>; a part that is itself a junction stands in parentheses.</summary>
+    private string Junction(IReadOnlyList<ConditionNode> operands, LogicalOperator op, Func<ConditionNode, string> write)
+    {
+        var keyword = op == LogicalOperator.And ? "&&" : "||";
+        return string.Join($" {keyword} ", operands.Select(operand => IsJunction(operand) ? $"({write(operand)})" : write(operand)));
+    }
+
+    /// <summary>Whether the condition is written as a conjunction or a disjunction - a negated one is too, its dual.</summary>
+    private static bool IsJunction(ConditionNode node) => node switch
+    {
+        LogicalCondition => true,
+        NotCondition negation => IsJunction(negation.Operand),
+        _ => false,
+    };
 
     /// <summary>
     /// An operand rendered beside the other operand of its comparison or arithmetic: a
@@ -349,7 +507,13 @@ public abstract class LinqQueryVisitor(
                 element += ".Value";
             }
 
-            return $"{values}.Contains({element})";
+            // EF Core 10.0.10 translates Contains over a subquery whose value may be NULL as
+            // EXISTS of v = x OR both NULL (decision 156): a NULL on the left is tested away,
+            // as IN leaves it unknown.
+            var contains = $"{values}.Contains({element})";
+            return MayBeNull(cond.Left) && ProjectedValueMayBeNull(cond.Right!.SubQuery!)
+                ? $"{contains} && {NotNullTest(cond.Left)}"
+                : contains;
         }
 
         var left = OperandOrSubQuery(cond.Left);
@@ -359,7 +523,34 @@ public abstract class LinqQueryVisitor(
             return string.Empty;
         }
 
-        return $"{left} {Operator(cond.Operator)} {right}";
+        return Tested($"{left} {Operator(cond.Operator)} {right}", cond.Operator, cond.Left, cond.Right!);
+    }
+
+    /// <summary>
+    /// Where NOT IN over a subquery is true (decision 156): the value is there and differs
+    /// from every value of the subquery, and where the subquery may project a NULL, none of
+    /// them is one - over a NULL among them NOT IN is unknown. Written as All() over the
+    /// projected values, which both providers translate to NOT EXISTS over the ones that
+    /// break it; where the subquery projects no NULL, as the negated Contains.
+    /// </summary>
+    private string NotInSubQuery(ComparisonCondition cond)
+    {
+        var values = renderSubQuery(cond.Right!.SubQuery!, ComparisonOperator.In);
+        var left = OperandOrSubQuery(cond.Left);
+        if (values is null || left is null)
+        {
+            return string.Empty;
+        }
+
+        var tested = MayBeNull(cond.Left) ? $"{NotNullTest(cond.Left)} && " : string.Empty;
+        if (ProjectedValueMayBeNull(cond.Right.SubQuery!))
+        {
+            var element = ElementNameFreeIn(left, values);
+            return $"{tested}{values}.All({element} => {element} != null && {element} != {left})";
+        }
+
+        var member = NullableElementType(cond.Left) is null ? left : $"{left}.Value";
+        return $"{tested}!{values}.Contains({member})";
     }
 
     /// <summary>
@@ -396,26 +587,29 @@ public abstract class LinqQueryVisitor(
         }
 
         var element = ElementNameFreeIn(outer, values);
-        var comparison = $"{outer} {Operator(cond.Operator)} {element}";
-        if (cond.Quantifier == Quantifier.Any)
+        var valueMayBeNull = ProjectedValueMayBeNull(cond.Right.SubQuery!);
+        var outerMayBeNull = MayBeNull(cond.Left);
+
+        // Where the comparison holds in SQL (decision 156): = tests one side where both may
+        // be NULL, <> each side that may be; inside the All() of a provider that does not
+        // compensate its negation, every side that may be NULL.
+        var tests = new List<string>();
+        var guardsAll = cond.Quantifier == Quantifier.All && !CompensatesNullSemantics;
+        if (valueMayBeNull && (guardsAll || cond.Operator == ComparisonOperator.NotEqual))
         {
-            return $"{values}.Any({element} => {comparison})";
+            tests.Add($"{element} != null");
         }
 
-        if (!CompensatesNullSemantics)
+        if (outerMayBeNull && (guardsAll || cond.Operator == ComparisonOperator.NotEqual
+                               || (cond.Operator == ComparisonOperator.Equal && valueMayBeNull)))
         {
-            if (ProjectedValueMayBeNull(cond.Right.SubQuery!))
-            {
-                comparison += $" && {element} != null";
-            }
-
-            if (MayBeNull(cond.Left))
-            {
-                comparison += $" && {outer} != null";
-            }
+            tests.Add(NotNullTest(cond.Left));
         }
 
-        return $"{values}.All({element} => {comparison})";
+        var comparison = string.Join(" && ", tests.Prepend($"{outer} {Operator(cond.Operator)} {element}"));
+        return cond.Quantifier == Quantifier.Any
+            ? $"{values}.Any({element} => {comparison})"
+            : $"{values}.All({element} => {comparison})";
     }
 
     /// <summary>A lambda parameter for the projected value that neither side of the comparison uses as a name.</summary>
@@ -434,19 +628,11 @@ public abstract class LinqQueryVisitor(
     }
 
     /// <summary>
-    /// Whether the value compared may be NULL as far as the mapping says: a column that the
-    /// mapping does not declare NOT NULL, a parameter, an expression; a constant and a COUNT
-    /// never are.
+    /// Whether the value compared may be NULL, by the rule the guard of a concatenation
+    /// follows (decision 107): what <see cref="IsNeverNull"/> does not vouch for, except a
+    /// parameter, which the caller binds.
     /// </summary>
-    private bool MayBeNull(QueryOperand operand)
-    {
-        if (operand.IsConstant || string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return !operand.IsColumn || operand.Function is not null || !HoldsNoNull(operand.Table, operand.Property!);
-    }
+    private bool MayBeNull(QueryOperand operand) => !operand.IsParameter && !IsNeverNull(operand);
 
     /// <summary>
     /// Whether the one value the subquery projects may be NULL. The subquery's scope has
@@ -459,6 +645,12 @@ public abstract class LinqQueryVisitor(
         while (body.Count == 1 && body[0] is SubQueryInstruction wrapped)
         {
             body = wrapped.Instructions;
+        }
+
+        // A set operation projects what its members project: a NULL of either is one of its.
+        if (body is [SetOperationInstruction setOperation])
+        {
+            return ProjectedValueMayBeNull(setOperation.Left) || ProjectedValueMayBeNull(setOperation.Right);
         }
 
         var operand = body.OfType<ProjectInstruction>().FirstOrDefault()?.Operand;
@@ -689,30 +881,16 @@ public abstract class LinqQueryVisitor(
     protected static string StringLiteral(string text)
         => $"\"{text.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
 
-    public string Visit(LogicalCondition cond)
-    {
-        var keyword = cond.Operator == LogicalOperator.And ? "&&" : "||";
-
-        var parts = cond.Operands.Select(operand =>
-            operand is LogicalCondition
-                ? $"({operand.Accept(this)})"
-                : operand.Accept(this));
-
-        return string.Join($" {keyword} ", parts);
-    }
+    public string Visit(LogicalCondition cond) => Junction(cond.Operands, cond.Operator, operand => operand.Accept(this));
 
     /// <summary>
-    /// A negation. Over a quantified comparison (decision 119) it is not written as <c>!</c>:
-    /// the rewrite of ALL and ANY into All() and Any() is exact only in the direction the
-    /// query filters by - a row SQL leaves unknown is a row both drop -, and <c>!</c> would
-    /// turn those dropped rows into kept ones. De Morgan over the rows of the subquery holds
-    /// exactly in three-valued logic, so the negation is pushed into the comparison first:
-    /// <c>NOT (x &gt; ALL S)</c> goes out as <c>x &lt;= ANY S</c>.
+    /// A negation, as where the condition under it is false (<see cref="Fails"/>) and never
+    /// as <c>!</c> over it: the provider would take <c>!</c> over a comparison with a NULL as
+    /// true (decision 156), and over a quantified comparison <c>!</c> would turn the rows
+    /// All() dropped into kept ones (decision 119) - <c>NOT (x &gt; ALL S)</c> goes out as
+    /// <c>x &lt;= ANY S</c>.
     /// </summary>
-    public string Visit(NotCondition cond)
-        => cond.Operand is ComparisonCondition { Quantifier: not null } quantified
-            ? Visit(quantified.NegatedQuantified())
-            : $"!({cond.Operand.Accept(this)})";
+    public string Visit(NotCondition cond) => Fails(cond.Operand);
 
     /// <summary>
     /// The relational operators, exhaustively. No catch-all branch: a value the target has
@@ -860,6 +1038,8 @@ public abstract class LinqQueryVisitor(
     {
         var function = operand.Function!;
         var bare = operand.Bare();
+        var coalesced = WritesCoalescedSum;
+        WritesCoalescedSum = false;
 
         // An aggregate over an ungrouped scope has no place inside a LINQ projection: the
         // chain must end in the aggregate call, which is not the IQueryable this builder
@@ -878,37 +1058,10 @@ public abstract class LinqQueryVisitor(
             return string.Empty;
         }
 
-        // COUNT(column) counts the non-null values of the column, not the rows - over a
-        // nullable column Count() answered with another number, the kind of difference
-        // decision 004 forbids. A member the entity declares as a value type that cannot be
-        // null holds no null to skip, so Count() is exact there, a key part included - unless
-        // the row stands on the side of an outer join that may find no match, where the
-        // column is null exactly when the row is missing, so the row itself is what is
-        // tested; and a constant is counted once per row, as COUNT(*) is.
-        // Any other is counted through a test for null, which EF Core 10.0.10 translates to
-        // the COUNT of the column's non-null values (measured with ToQueryString).
+        // COUNT(column) counts the non-null values of the column, not the rows.
         if (function == "COUNT" && !operand.Distinct)
         {
-            // The representation carries no NULL literal, so every constant is a value.
-            if (bare.Property == "*" || bare.IsConstant)
-            {
-                return $"{Scope.Param}.Count()";
-            }
-
-            var map = bare.Table is not null && Scope.Entities.TryGetValue(bare.Table, out var found) ? found : null;
-            if (bare.IsColumn && Members.DeclaredValue(map, bare.Property!) is { Nullable: false })
-            {
-                return bare.Table is not null && Scope.OptionalAliases.Contains(bare.Table)
-                    ? CountOfNonNull(Scope.ElementParam, Scope.ElementRow(bare.Table))
-                    : $"{Scope.Param}.Count()";
-            }
-
-            var wasCounting = insideAggregate;
-            insideAggregate = true;
-            var counted = Operand(bare);
-            insideAggregate = wasCounting;
-
-            return CountOfNonNull(Scope.ElementParam, counted);
+            return CountOf(bare);
         }
 
         var method = function switch
@@ -942,6 +1095,7 @@ public abstract class LinqQueryVisitor(
         // the argument, collapsed, then the parameterless aggregate - the shape the provider
         // translates to COUNT(DISTINCT ...). It counts distinct non-null values, exactly as
         // COUNT(DISTINCT x) does, so unlike Count() it needs no record.
+        string aggregate;
         if (operand.Distinct)
         {
             if (!AggregatesOverDistinctValues(function))
@@ -953,11 +1107,89 @@ public abstract class LinqQueryVisitor(
                 return string.Empty;
             }
 
-            return $"{Scope.Param}.Select({element}).Distinct().{method}()";
+            aggregate = $"{Scope.Param}.Select({element}).Distinct().{method}()";
+        }
+        else
+        {
+            aggregate = $"{Scope.Param}.{method}({element})";
         }
 
-        return $"{Scope.Param}.{method}({element})";
+        return function == "SUM" && !coalesced ? SumOverValues(bare, aggregate) : aggregate;
     }
+
+    /// <summary>
+    /// COUNT over a value, the count of its non-null values - over a nullable column Count()
+    /// answered with another number, the kind of difference decision 004 forbids. A count of
+    /// rows and a constant (the representation carries no NULL literal) are the group's
+    /// Count(), and so is a member the entity declares as a value type that cannot be null, a
+    /// key part included - unless the row stands on the side of an outer join that may find no
+    /// match, where the column is null exactly when the row is missing, so the row itself is
+    /// what is tested. Any other is counted through a test for null, which EF Core 10.0.10
+    /// translates to the COUNT of the column's non-null values (measured with ToQueryString).
+    /// </summary>
+    private string CountOf(QueryOperand bare)
+    {
+        if (bare.Property == "*" || bare.IsConstant)
+        {
+            return $"{Scope.Param}.Count()";
+        }
+
+        var map = bare.Table is not null && Scope.Entities.TryGetValue(bare.Table, out var found) ? found : null;
+        if (bare.IsColumn && Members.DeclaredValue(map, bare.Property!) is { Nullable: false })
+        {
+            return bare.Table is not null && Scope.OptionalAliases.Contains(bare.Table)
+                ? CountOfNonNull(Scope.ElementParam, Scope.ElementRow(bare.Table))
+                : $"{Scope.Param}.Count()";
+        }
+
+        var wasCounting = insideAggregate;
+        insideAggregate = true;
+        var counted = Operand(bare);
+        insideAggregate = wasCounting;
+
+        return CountOfNonNull(Scope.ElementParam, counted);
+    }
+
+    /// <summary>
+    /// SQL's SUM over the group as a provider that coalesces Sum spells it (decision 155): the
+    /// plain Sum where the group has a value whatever happens - a group of GROUP BY over a value
+    /// that holds no NULL -, otherwise lifted into its nullable type, and over a value that may
+    /// be NULL guarded by the count of the values, so that it is NULL where there is none, as
+    /// SQL's SUM is. The one group of a scalar subquery may be absent, and its sum is lifted
+    /// whatever it ranges over, or the provider coalesces the subquery as well. Without a C#
+    /// type of the sum there is no nullable to lift it into, and the query goes out in native
+    /// SQL (decision 113).
+    /// </summary>
+    private string SumOverValues(QueryOperand bare, string sum)
+    {
+        var valued = IsNeverNull(bare);
+        if (!CoalescesSum || (valued && !Scope.OneGroup))
+        {
+            return sum;
+        }
+
+        if (SumType(bare) is not { } type)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"SUM({bare}) is NULL over no values, where {Provider} sums to 0, and the C# type of the sum, which would hold that NULL, does not follow from the mapping",
+                QueryFeature.Aggregation);
+            return string.Empty;
+        }
+
+        return valued ? $"({type}?){sum}" : $"({CountOf(bare)} > 0 ? ({type}?){sum} : null)";
+    }
+
+    /// <summary>The C# type Sum yields over a value: int over the whole numbers up to int, which C# widens to it, otherwise the value's own number type; null for anything else.</summary>
+    private string? SumType(QueryOperand value) => ScalarOf(value) switch
+    {
+        ScalarType.Byte or ScalarType.Short or ScalarType.Int => "int",
+        ScalarType.Long => "long",
+        ScalarType.Decimal => "decimal",
+        ScalarType.Double => "double",
+        ScalarType.Float => "float",
+        _ => null,
+    };
 
     /// <summary>
     /// The path to the grouping key the operand is equal to, or null when it is none. A
@@ -1057,7 +1289,7 @@ public abstract class LinqQueryVisitor(
                 QueryFunction.Trim => $"{Receiver(arguments[0])}.Trim()",
                 QueryFunction.Substring => $"{Receiver(arguments[0])}.Substring({ZeroBased(arguments[1])}, {Operand(arguments[2])})",
                 QueryFunction.Length => $"{Receiver(arguments[0])}.Length",
-                QueryFunction.Coalesce => Afresh(() => $"({string.Join(" ?? ", arguments.Select((argument, i) => i < arguments.Count - 1 ? Lifted(argument) : Operand(argument)))})"),
+                QueryFunction.Coalesce => Afresh(() => Coalesce(arguments)),
                 QueryFunction.Abs => $"Math.Abs({Operand(arguments[0])})",
                 QueryFunction.Year => $"{Receiver(arguments[0])}.Year",
                 QueryFunction.Month => $"{Receiver(arguments[0])}.Month",
@@ -1133,14 +1365,55 @@ public abstract class LinqQueryVisitor(
     }
 
     /// <summary>
+    /// COALESCE as C#'s <c>??</c>, every side but the last lifted to hold null. COALESCE(SUM(x), 0)
+    /// - over the group, or over a scalar subquery whose one value is an ungrouped SUM - is
+    /// exactly the Sum of a provider that coalesces it (decision 155) and is written as that
+    /// plain Sum, with a zero of any number type.
+    /// </summary>
+    private string Coalesce(IReadOnlyList<QueryOperand> arguments)
+    {
+        if (CoalescesSum
+            && arguments is [var summed, { IsConstant: true } zero]
+            && IsZero(zero.Constant!)
+            && ((summed.Function == "SUM" && Scope.Grouped) || (summed.IsSubQuery && IsUngroupedSum(summed.SubQuery!))))
+        {
+            WritesCoalescedSum = true;
+            var sum = Operand(summed);
+            WritesCoalescedSum = false;
+            return sum;
+        }
+
+        return $"({string.Join(" ?? ", arguments.Select((argument, i) => i < arguments.Count - 1 ? Lifted(argument) : Operand(argument)))})";
+    }
+
+    private static bool IsZero(QueryConstant constant)
+        => constant.Type is ScalarType.Byte or ScalarType.Short or ScalarType.Int or ScalarType.Long or ScalarType.Decimal or ScalarType.Double or ScalarType.Float
+           && decimal.TryParse(constant.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+           && value == 0;
+
+    /// <summary>Whether the one value a subquery projects is a SUM over no grouping - the subquery the plain Sum of a scalar subquery stands for.</summary>
+    private static bool IsUngroupedSum(SubQueryInstruction subQuery)
+    {
+        var body = subQuery.Instructions;
+        while (body.Count == 1 && body[0] is SubQueryInstruction inner)
+        {
+            body = inner.Instructions;
+        }
+
+        return body.OfType<ProjectInstruction>().ToList() is [{ Operand.Function: "SUM" }]
+            && !body.OfType<GroupByInstruction>().Any();
+    }
+
+    /// <summary>
     /// A side of COALESCE before the last, as the left side of C#'s <c>??</c>, which has to be
     /// able to hold null. A value C# types as a non-nullable value - a member declared so, on
     /// the optional side of an outer join too, an aggregate over such a member, a count - does
     /// not compile there (CS0019), so it is lifted: an aggregate through its element,
-    /// <c>g.Sum(t =&gt; (int?)t.fs.Score)</c>, which the provider translates to the bare SUM
-    /// that is NULL over no values, as SQL's is; a count, whose Count() is an int, and a
-    /// member by a cast of the whole. A value that is nullable already, or whose type nothing
-    /// states, stays as it is.
+    /// <c>g.Sum(t =&gt; (int?)t.fs.Score)</c>, which EF Core 10.0.10 translates to the
+    /// COALESCE(SUM(…), 0) of any Sum (measured, decision 155) - over a group that has a value
+    /// in every element the same number -; a count, whose Count() is an int, and a member by a
+    /// cast of the whole. A value that is nullable already, or whose type nothing states, stays
+    /// as it is.
     /// </summary>
     private string Lifted(QueryOperand operand)
     {
@@ -1149,9 +1422,10 @@ public abstract class LinqQueryVisitor(
             return $"(int?){Operand(operand)}";
         }
 
-        // A scalar subquery that is one aggregate - COALESCE((SELECT SUM(…) …), 0) - is a
-        // Sum() or Min() whose C# type is the non-nullable scalar of what it aggregates, so
-        // the ?? needs it lifted, as a column that holds no NULL is lifted below.
+        // A scalar subquery that is one aggregate - COALESCE((SELECT MIN(…) …), 0) - is a
+        // Min() or Max() whose C# type is the non-nullable scalar of what it aggregates, so
+        // the ?? needs it lifted, as a column that holds no NULL is lifted below; a SUM there
+        // is nullable already (decision 155), and the cast changes nothing.
         if (operand.IsSubQuery && SubQueryScalar(operand.SubQuery!) is { } scalar
             && scalar is not (ScalarType.String or ScalarType.Object or ScalarType.ByteArray))
         {

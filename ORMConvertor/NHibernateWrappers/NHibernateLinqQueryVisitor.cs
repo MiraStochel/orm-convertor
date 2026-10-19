@@ -20,6 +20,7 @@ namespace NHibernateWrappers;
 /// <item>it joins the argument of StartsWith, EndsWith and Contains with the wildcard as written, so a pattern whose core the source escaped goes through its <c>Like</c> extension (<c>NHibernate.Linq</c>), which takes the escape character beside the pattern;</item>
 /// <item>it refuses <c>Count</c> with a predicate over a group of join tuples, and translates <c>Sum</c> over a conditional in its place;</item>
 /// <item>it translates COUNT alone over the distinct values of a group;</item>
+/// <item>it writes Sum as the bare sum, which is NULL over no values as SQL's SUM is (decision 155);</item>
 /// <item>it evaluates a projected expression on the client where C# can, and C# concatenates a null as the empty string where SQL yields NULL (decision 107), so a concatenation projected over text that may hold NULL has no faithful form.</item>
 /// </list>
 /// </summary>
@@ -46,6 +47,12 @@ public sealed class NHibernateLinqQueryVisitor(
     /// SQL's ALL drops; the lambda spells the null tests out instead (decision 119).
     /// </summary>
     protected override bool CompensatesNullSemantics => false;
+
+    /// <summary>
+    /// NHibernate 5.7.0 writes Sum as the bare sum, over a group and in a subquery alike, so a
+    /// SUM is NULL over no values as SQL's is and the plain Sum needs no other shape (decision 155).
+    /// </summary>
+    public override bool CoalescesSum => false;
 
     /// <summary>The <c>Like</c> extension of <c>NHibernate.Linq</c>, with the escape as a character beside the pattern.</summary>
     protected override string LikeCall(string left, string pattern, string? escape)

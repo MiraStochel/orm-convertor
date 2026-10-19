@@ -20,8 +20,19 @@ public class EFCoreLinqToDapperSqlTest
             .Content;
     }
 
-    private static EntityMap Customers() =>
-        new() { Entity = new() { Name = "Customer" }, Table = "Customers", Schema = "Sales" };
+    // The key is declared an int, which holds no NULL; every other column is one the map says
+    // nothing of, and a comparison over it reads as the provider writes it (decision 156).
+    private static EntityMap Customers()
+    {
+        var id = new Property { Name = "Id", Type = LangType.Scalar(Model.AbstractRepresentation.Enums.ScalarType.Int) };
+        return new EntityMap
+        {
+            Entity = new Entity { Name = "Customer", Properties = [id] },
+            Table = "Customers",
+            Schema = "Sales",
+            PropertyMaps = [new PropertyMap { Property = id, ColumnName = "Id" }],
+        };
+    }
 
     [Fact]
     public void SimpleLinqToSql()
@@ -62,7 +73,7 @@ public class EFCoreLinqToDapperSqlTest
         string expected = """
         SELECT *
         FROM Sales.Customers AS c
-        WHERE (c.CreditLimit > 2000 OR c.CreditLimit IS NULL) AND c.Name <> 'Foo'
+        WHERE (c.CreditLimit > 2000 OR c.CreditLimit IS NULL) AND (c.Name <> 'Foo' OR c.Name IS NULL)
         """;
 
         Assert.Equal(expected, Translate(linqSource, Customers()), ignoreWhiteSpaceDifferences: true, ignoreLineEndingDifferences: true);

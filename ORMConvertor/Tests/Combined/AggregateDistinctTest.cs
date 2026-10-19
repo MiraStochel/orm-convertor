@@ -178,7 +178,8 @@ public class AggregateDistinctTest
                 .Select(g => new { Country = g.Key, Limit = g.Select(x => x.CreditLimit).Sum() })
             """;
 
-        Assert.Contains("SUM(c.CreditLimit) AS Limit", Sql(ParseLinq(new DapperSqlQueryBuilder(), chain)));
+        // The Sum of EF Core is 0 over no values, COALESCE(SUM(x), 0) over a column that may be NULL (decision 155).
+        Assert.Contains("COALESCE(SUM(c.CreditLimit), 0) AS Limit", Sql(ParseLinq(new DapperSqlQueryBuilder(), chain)));
     }
 
     [Fact]

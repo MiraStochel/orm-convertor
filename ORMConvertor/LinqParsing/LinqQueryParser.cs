@@ -314,6 +314,27 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     protected virtual bool ProviderEscapesStringMethodArguments => true;
 
     /// <summary>
+    /// Whether the provider writes a negation as the place where the predicate under it is
+    /// false in C# - true over a NULL, where SQL's NOT leaves it unknown (decision 156). EF
+    /// Core 10.0.10 does; NHibernate 5.7.0 writes SQL's NOT. Both write == and != as C#'s,
+    /// which the shared reading takes for granted.
+    /// </summary>
+    protected virtual bool ProviderCompensatesNegation => true;
+
+    /// <summary>
+    /// Whether Contains over a subquery matches a NULL with a NULL, as C# does (decision 156):
+    /// EF Core 10.0.10 writes it as EXISTS of v = x OR both NULL, NHibernate 5.7.0 as IN.
+    /// </summary>
+    protected virtual bool ProviderMatchesNullInContains => true;
+
+    /// <summary>
+    /// Whether the provider's Sum is COALESCE(SUM(x), 0), 0 over no values where SQL's SUM is
+    /// NULL (decision 155): EF Core 10.0.10's is, over a group and in a subquery alike;
+    /// NHibernate 5.7.0's is the bare sum.
+    /// </summary>
+    protected virtual bool ProviderCoalescesSum => true;
+
+    /// <summary>
     /// The kind of the join a path through a reference brings (decisions 148 and 151): a fact
     /// about the provider, not about the language. The shared parser says whether the row the
     /// reference leads to may be absent - its foreign key may hold NULL, from the mapping's own
@@ -2133,7 +2154,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        var condition = ParseCondition(body!);
+        var condition = ReadCondition(body!);
         if (condition is null)
         {
             // Silence here used to lose the whole predicate, then a loss record let the
@@ -2350,7 +2371,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             ConditionNode? condition;
             try
             {
-                condition = ParseCondition((ExpressionSyntax)filter.Body);
+                condition = ReadCondition((ExpressionSyntax)filter.Body);
             }
             finally
             {
@@ -3424,39 +3445,57 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         return groupingKeys.Count == 1 ? groupingKeys[0] : null;
     }
 
+    /// <summary>
+    /// A Where after GroupBy as the post-aggregation filter: a condition over the group's
+    /// aggregates and keys, read as any other condition - the LINQ writer puts the tests a
+    /// comparison needs over NULL beside it there too (decision 156).
+    /// </summary>
     private void HandleHaving(InvocationExpressionSyntax node)
     {
-        if (!TryReadLambdaBody(node, out var body) || body is not BinaryExpressionSyntax binary)
+        if (!TryReadLambdaBody(node, out var body))
         {
             Report(
                 ConversionRecordKind.Failure,
-                "A post-aggregation filter that is not a simple comparison cannot be read, and a query emitted without it would return different rows; no artifact was generated.",
+                "A post-aggregation filter whose argument is not a lambda cannot be read, and a query emitted without it would return different rows; no artifact was generated.",
                 QueryFeature.PostAggregationFiltering);
             return;
         }
 
-        var op = MapOperator(binary.Kind());
-        var left = ReadHavingOperand(binary.Left);
-        var right = ReadHavingOperand(binary.Right);
-
-        if (op is null || left is null || right is null)
+        var condition = ReadCondition(body!);
+        if (condition is null)
         {
-            Refuse($"post-aggregation filter '{binary}'", "a query emitted without it would return different rows", QueryFeature.PostAggregationFiltering);
+            Refuse($"post-aggregation filter '{body}'", "a query emitted without it would return different rows", QueryFeature.PostAggregationFiltering);
             return;
         }
 
-        queryBuilder.Having(new ComparisonCondition(left, op.Value, right));
+        queryBuilder.Having(condition);
     }
 
-    private QueryOperand? ReadHavingOperand(ExpressionSyntax expression)
+    /// <summary>
+    /// An aggregate of the group as the provider computes it: <see cref="TryReadGroupAggregate"/>,
+    /// and where the provider's Sum is 0 over no values (decision 155), a Sum over a value
+    /// that may be NULL as COALESCE(SUM(x), 0) - a group whose values are all NULL sums to 0
+    /// there, where SQL's SUM is NULL. Over a value that is never NULL the group has one, and
+    /// the two agree.
+    /// </summary>
+    private bool TryReadAggregate(ExpressionSyntax expression, out QueryOperand? aggregate)
     {
-        if (TryReadAggregate(expression, out var aggregate))
+        if (!TryReadGroupAggregate(expression, out aggregate))
         {
-            return aggregate;
+            return false;
         }
 
-        return ReadOperand(expression);
+        if (ProviderCoalescesSum && aggregate is { Function: "SUM" } sum && MayBeNull(sum.Bare()))
+        {
+            aggregate = CoalescedToZero(sum);
+        }
+
+        return true;
     }
+
+    /// <summary>COALESCE(value, 0): the Sum of a provider whose Sum is 0 over no values (decision 155).</summary>
+    private static QueryOperand CoalescedToZero(QueryOperand value)
+        => QueryOperand.Computed(QueryExpression.Call(QueryFunction.Coalesce, [value, QueryOperand.Value(QueryConstant.Of("0", ScalarType.Int))]));
 
     /// <summary>
     /// Reads g.Sum(x =&gt; x.Total), g.Count() and their kin as the aggregate operand of the
@@ -3471,7 +3510,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// (decision 102) - <c>g.Select(x =&gt; x.Id).Distinct().Count()</c> is
     /// <c>COUNT(DISTINCT Id)</c>, which is the shape EF Core translates it to.
     /// </summary>
-    private bool TryReadAggregate(ExpressionSyntax expression, out QueryOperand? aggregate)
+    private bool TryReadGroupAggregate(ExpressionSyntax expression, out QueryOperand? aggregate)
     {
         aggregate = null;
 
@@ -3613,6 +3652,304 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         return false;
+    }
+
+    /* ---- the provider's logic of a predicate (decision 156) --------------------------- */
+
+    /// <summary>
+    /// A predicate read as the condition of SQL that is true exactly where the provider of
+    /// the source makes it true. <see cref="ParseCondition"/> reads the text as it stands;
+    /// over a value that may be NULL the two logics part, and the condition is turned into
+    /// the one the provider writes (<see cref="Logic"/>). Null when the predicate cannot be
+    /// read, or holds over a NULL in a way the representation does not carry, with the reason
+    /// in <see cref="unread"/>.
+    /// </summary>
+    private ConditionNode? ReadCondition(ExpressionSyntax expression)
+        => ParseCondition(expression) is { } read ? Logic(read, holds: true) : null;
+
+    /// <summary>
+    /// The condition true where the provider makes <paramref name="node"/> true, or with
+    /// <paramref name="holds"/> false, where it makes it false. A negation is the place its
+    /// operand is false where the provider compensates one (EF Core), SQL's NOT of what was
+    /// read where it does not (NHibernate); a conjunction and a disjunction go over their
+    /// parts, by De Morgan where they must fail; a comparison is <see cref="ComparisonLogic"/>.
+    /// </summary>
+    private ConditionNode? Logic(ConditionNode node, bool holds)
+    {
+        switch (node)
+        {
+            case NotCondition negation when ProviderCompensatesNegation && !MeetsNoNull(negation.Operand):
+                return Logic(negation.Operand, !holds);
+
+            case NotCondition negation:
+                var under = Logic(negation.Operand, holds: true);
+                return under is null ? null : holds ? new NotCondition(under) : under;
+
+            case LogicalCondition junction:
+                var op = holds ? junction.Operator : junction.Operator == LogicalOperator.And ? LogicalOperator.Or : LogicalOperator.And;
+                var parts = new List<ConditionNode>();
+                foreach (var operand in junction.Operands)
+                {
+                    if (Logic(operand, holds) is not { } part)
+                    {
+                        return null;
+                    }
+
+                    Flatten(part, op, parts);
+                }
+
+                return new LogicalCondition(op, parts);
+
+            case ComparisonCondition comparison:
+                return ComparisonLogic(comparison, holds);
+
+            default:
+                return holds ? node : new NotCondition(node);
+        }
+    }
+
+    /// <summary>
+    /// A comparison as the provider writes it (measured, decision 156). == over two values
+    /// that may be NULL holds over two NULLs, != over one; the other relational operators are
+    /// false over a NULL in C# as SQL leaves them unknown, and fail over it. LIKE and IN over
+    /// a list fail where the value is NULL, EXISTS never meets one. Contains over a subquery
+    /// matches a NULL with a NULL in EF Core, and a quantifier is <see cref="QuantifiedLogic"/>.
+    /// Where every value compared holds no NULL, the two logics agree and the comparison is
+    /// what was read.
+    /// </summary>
+    private ConditionNode? ComparisonLogic(ComparisonCondition comparison, bool holds)
+    {
+        if (comparison.Quantifier is not null)
+        {
+            return QuantifiedLogic(comparison, holds);
+        }
+
+        var left = comparison.Left;
+        var right = comparison.Right;
+        switch (comparison.Operator)
+        {
+            case ComparisonOperator.Exists:
+                return holds ? comparison : new NotCondition(comparison);
+
+            case ComparisonOperator.IsNull:
+                return holds ? comparison : comparison with { Operator = ComparisonOperator.IsNotNull };
+
+            case ComparisonOperator.IsNotNull:
+                return holds ? comparison : comparison with { Operator = ComparisonOperator.IsNull };
+
+            case ComparisonOperator.In when right is { IsSubQuery: true }:
+                var projectedMayBeNull = ProjectedValueMayBeNull(right.SubQuery!);
+                if (holds)
+                {
+                    if (ProviderMatchesNullInContains && MayBeNull(left) && projectedMayBeNull)
+                    {
+                        unread ??= ($"Contains over a subquery where both '{left}' and the value the subquery projects may be NULL, which the provider matches with each other where IN does not", QueryFeature.Subquery);
+                        return null;
+                    }
+
+                    return comparison;
+                }
+
+                if (projectedMayBeNull)
+                {
+                    unread ??= ($"a negated Contains over a subquery whose value may be NULL, which the provider writes as NOT EXISTS of a match that pairs a NULL with a NULL, where NOT IN is unknown over a NULL", QueryFeature.Subquery);
+                    return null;
+                }
+
+                return OrNull(new NotCondition(comparison), left);
+
+            case ComparisonOperator.Like:
+            case ComparisonOperator.In:
+                return holds ? comparison : OrNull(new NotCondition(comparison), left);
+
+            case ComparisonOperator.Equal when holds:
+            case ComparisonOperator.NotEqual when !holds:
+                var equal = comparison with { Operator = ComparisonOperator.Equal };
+                return MayBeNull(left) && MayBeNull(right!)
+                    ? Or(equal, And(IsNull(left), IsNull(right!)))
+                    : equal;
+
+            case ComparisonOperator.NotEqual when holds:
+            case ComparisonOperator.Equal when !holds:
+                var differs = comparison with { Operator = ComparisonOperator.NotEqual };
+                return (MayBeNull(left), MayBeNull(right!)) switch
+                {
+                    (true, true) => Or(differs, And(IsNull(left), IsNotNull(right!)), And(IsNotNull(left), IsNull(right!))),
+                    (true, false) => Or(differs, IsNull(left)),
+                    (false, true) => Or(differs, IsNull(right!)),
+                    _ => differs,
+                };
+
+            default:
+                if (holds)
+                {
+                    return comparison;
+                }
+
+                var failed = new List<ConditionNode> { comparison with { Operator = comparison.Operator.Negated() } };
+                failed.AddRange(new[] { left, right! }.Where(MayBeNull).Select(IsNull));
+                return failed.Count == 1 ? failed[0] : Or([.. failed]);
+        }
+    }
+
+    /// <summary>
+    /// A quantified comparison as the provider writes All() and Any() (decision 156). Over
+    /// values that hold no NULL both logics agree. Over one that may: == and != under the
+    /// lambda pair a NULL with a NULL, which no quantifier of SQL does, and are refused; in EF
+    /// Core All() and Any() over a relational operator are exactly ALL and ANY - false where
+    /// SQL is unknown -, but their negation is not and is refused; NHibernate writes All() as
+    /// NOT EXISTS of the negated comparison, NOT (x op' ANY …), which a NULL does not break.
+    /// </summary>
+    private ConditionNode? QuantifiedLogic(ComparisonCondition quantified, bool holds)
+    {
+        if (!MayBeNull(quantified.Left) && !ProjectedValueMayBeNull(quantified.Right!.SubQuery!))
+        {
+            return holds ? quantified : new NotCondition(quantified);
+        }
+
+        if (ProviderCompensatesNegation)
+        {
+            if (holds)
+            {
+                return quantified;
+            }
+
+            unread ??= ($"a negated {quantified.Quantifier} comparison over a value that may be NULL, which the provider makes true where SQL's NOT leaves it unknown", QueryFeature.Subquery);
+            return null;
+        }
+
+        ConditionNode read = quantified.Quantifier == Quantifier.All
+            ? new NotCondition(ComparisonCondition.Quantified(quantified.Left, quantified.Operator.Negated(), Quantifier.Any, quantified.Right!))
+            : quantified;
+        return holds ? read : new NotCondition(read);
+    }
+
+    /// <summary>
+    /// Contains over a subquery whose value may be NULL, as the provider writes it (decision
+    /// 156, EF Core 10.0.10): EXISTS of a row whose value equals the one sought, a NULL
+    /// equal to a NULL - <c>EXISTS (… WHERE v = x OR (v IS NULL AND x IS NULL))</c>. IN would
+    /// leave both NULLs unknown, and NOT IN would be unknown over any NULL among the values,
+    /// where the negated Contains is NOT EXISTS of a match. The match is a filter of the
+    /// subquery's rows, so a subquery that groups, slices or is a set operation, where a filter
+    /// would stand elsewhere, is refused.
+    /// </summary>
+    private ConditionNode? MatchingExists(QueryOperand value, SubQueryInstruction sub)
+    {
+        var body = sub.Instructions;
+        while (body.Count == 1 && body[0] is SubQueryInstruction nested)
+        {
+            body = nested.Instructions;
+        }
+
+        if (body.Any(i => i is GroupByInstruction or HavingInstruction or PaginationInstruction or SetOperationInstruction or WithInstruction)
+            || body.OfType<ProjectInstruction>().ToList() is not [{ Operand: { IsAggregate: false } projected }])
+        {
+            unread ??= ($"Contains over a subquery whose value may be NULL and which groups, slices or composes its rows, where the provider's match of a NULL with a NULL has no place to stand", QueryFeature.Subquery);
+            return null;
+        }
+
+        ConditionNode match = new ComparisonCondition(projected, ComparisonOperator.Equal, value);
+        if (MayBeNull(value))
+        {
+            match = Or(match, And(IsNull(projected), IsNull(value)));
+        }
+
+        return new ComparisonCondition(QueryOperand.Nested(new SubQueryInstruction([.. body, new SelectInstruction(match)])), ComparisonOperator.Exists);
+    }
+
+    /// <summary>
+    /// Whether the condition compares no value that may be NULL - a null test and EXISTS are
+    /// two-valued whatever they test -, so that the provider's logic and SQL's agree on it,
+    /// under a negation too, and it reads as written.
+    /// </summary>
+    private bool MeetsNoNull(ConditionNode node) => node switch
+    {
+        NotCondition negation => MeetsNoNull(negation.Operand),
+        LogicalCondition junction => junction.Operands.All(MeetsNoNull),
+        ComparisonCondition { Operator: ComparisonOperator.IsNull or ComparisonOperator.IsNotNull or ComparisonOperator.Exists } => true,
+        ComparisonCondition { Right.IsSubQuery: true } overSubQuery
+            => !MayBeNull(overSubQuery.Left) && !ProjectedValueMayBeNull(overSubQuery.Right.SubQuery!),
+        ComparisonCondition comparison => !MayBeNull(comparison.Left) && (comparison.Right is null or { IsValueList: true } || !MayBeNull(comparison.Right)),
+        _ => false,
+    };
+
+    /// <summary>The condition, or the value being NULL where it may be - where a negated test of the value holds in C#.</summary>
+    private ConditionNode OrNull(ConditionNode condition, QueryOperand value)
+        => MayBeNull(value) ? Or(condition, IsNull(value)) : condition;
+
+    private static ConditionNode IsNull(QueryOperand value) => new ComparisonCondition(value, ComparisonOperator.IsNull);
+
+    private static ConditionNode IsNotNull(QueryOperand value) => new ComparisonCondition(value, ComparisonOperator.IsNotNull);
+
+    private static ConditionNode Or(params ConditionNode[] operands) => new LogicalCondition(LogicalOperator.Or, operands);
+
+    private static ConditionNode And(params ConditionNode[] operands) => new LogicalCondition(LogicalOperator.And, operands);
+
+    /// <summary>
+    /// Whether a value compared may be NULL, by the facts the LINQ writer reads when it tests
+    /// for one (<see cref="IsNeverNull"/>); a parameter is the caller's to bind, as in the
+    /// guard of a concatenation (decision 107).
+    /// </summary>
+    private bool MayBeNull(QueryOperand value) => !value.IsParameter && !IsNeverNull(value);
+
+    /// <summary>
+    /// Whether the one value a subquery projects may be NULL, by the mapping of the table it
+    /// reads it from: a COUNT and a constant are never NULL, a column the mapping declares
+    /// not nullable is not unless an outer join may leave its row out; anything else may be.
+    /// </summary>
+    private bool ProjectedValueMayBeNull(SubQueryInstruction subQuery)
+    {
+        IReadOnlyList<QueryInstruction> body = subQuery.Instructions;
+        while (body.Count == 1 && body[0] is SubQueryInstruction wrapped)
+        {
+            body = wrapped.Instructions;
+        }
+
+        // A set operation projects what its members project: a NULL of either is one of its.
+        if (body is [SetOperationInstruction setOperation])
+        {
+            return ProjectedValueMayBeNull(setOperation.Left) || ProjectedValueMayBeNull(setOperation.Right);
+        }
+
+        var operand = body.OfType<ProjectInstruction>().FirstOrDefault()?.Operand;
+        if (operand is null)
+        {
+            return true;
+        }
+
+        if (operand.IsConstant || string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!operand.IsColumn || operand.Function is not null)
+        {
+            return true;
+        }
+
+        var from = body.OfType<FromInstruction>().FirstOrDefault();
+        string? table;
+        if (operand.Table is null || (from is not null && (string.Equals(from.Alias, operand.Table, StringComparison.OrdinalIgnoreCase) || string.Equals(from.Table, operand.Table, StringComparison.OrdinalIgnoreCase))))
+        {
+            table = from?.Table;
+        }
+        else
+        {
+            var join = body.OfType<JoinInstruction>().FirstOrDefault(j => string.Equals(j.RightTableAlias ?? j.RightTable, operand.Table, StringComparison.OrdinalIgnoreCase));
+            if (join is null || join.Kind != JoinKind.Inner)
+            {
+                return true;
+            }
+
+            table = join.RightTable;
+        }
+
+        var map = entityMaps?.FirstOrDefault(m => m.Table is { } mapped && (string.Equals(mapped, table, StringComparison.OrdinalIgnoreCase)
+                                                                             || string.Equals(Qualify(m, mapped), table, StringComparison.OrdinalIgnoreCase))
+                                                  || string.Equals(m.Entity?.Name, table, StringComparison.OrdinalIgnoreCase));
+        var mapped = map?.PropertyMaps.FirstOrDefault(p => string.Equals(p.ColumnName ?? p.Property.Name, operand.Property, StringComparison.OrdinalIgnoreCase)
+                                                           || string.Equals(p.Property.Name, operand.Property, StringComparison.OrdinalIgnoreCase));
+        return mapped is null || (mapped.IsNullable ?? mapped.Property.Type?.IsNullable) != false;
     }
 
     private ConditionNode? ParseCondition(ExpressionSyntax expression)
@@ -3958,7 +4295,17 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                         return null;
                     }
 
-                    right ??= QueryOperand.Nested(ReadSubQueryOperand(root!, steps, elementParameter: defaultAlias, afterSource: correlate));
+                    if (right is null)
+                    {
+                        var sub = ReadSubQueryOperand(root!, steps, elementParameter: defaultAlias, afterSource: correlate);
+                        if (ProviderMatchesNullInContains && ProjectedValueMayBeNull(sub))
+                        {
+                            return MatchingExists(value, sub);
+                        }
+
+                        right = QueryOperand.Nested(sub);
+                    }
+
                     return new ComparisonCondition(value, ComparisonOperator.In, right);
                 }
 
@@ -3969,7 +4316,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             // quantifier in SQL's logic, so the shape is named and refused rather than guessed.
             case "All":
                 return TryDecomposeNested(member.Expression, out var allRoot, out var allSteps, out var allCorrelate, out var allAlias)
-                    ? ReadQuantifiedCondition(invocation, member, allRoot!, allSteps, allCorrelate, allAlias, Quantifier.All, refuseOtherShapes: true)
+                    ? ReadQuantifiedCondition(invocation, member, allRoot!, allSteps, allCorrelate, allAlias, Quantifier.All, refuseOtherShapes: true, out _)
                     : null;
 
             case "Any":
@@ -3983,10 +4330,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     // quantified comparison outer op ANY (SELECT …) (decision 119). Over an
                     // unprojected chain Any(predicate) keeps the reading of decision 061,
                     // Where(predicate).Any(), which selects the same rows.
-                    if (steps.Count > 0 && steps[^1].Name == "Select"
-                        && ReadQuantifiedCondition(invocation, member, root!, steps, correlate, defaultAlias, Quantifier.Any, refuseOtherShapes: false) is { } quantified)
+                    if (steps.Count > 0 && steps[^1].Name == "Select")
                     {
-                        return quantified;
+                        if (ReadQuantifiedCondition(invocation, member, root!, steps, correlate, defaultAlias, Quantifier.Any, refuseOtherShapes: false, out var overNull) is { } quantified)
+                        {
+                            return quantified;
+                        }
+
+                        // A comparison of that shape that pairs a NULL with a NULL is refused,
+                        // not read again as an EXISTS over the projection (decision 156).
+                        if (overNull)
+                        {
+                            return null;
+                        }
                     }
 
                     if (invocation.ArgumentList.Arguments.Count == 1)
@@ -4024,8 +4380,10 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         Action? correlate,
         string? defaultAlias,
         Quantifier quantifier,
-        bool refuseOtherShapes)
+        bool refuseOtherShapes,
+        out bool overNull)
     {
+        overNull = false;
         var method = member.Name.Identifier.Text;
         if (invocation.ArgumentList.Arguments.Count != 1
             || invocation.ArgumentList.Arguments[0].Expression is not SimpleLambdaExpressionSyntax lambda)
@@ -4101,6 +4459,17 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         var subQuery = QueryOperand.Nested(ReadSubQueryOperand(root, steps, elementParameter: defaultAlias, afterSource: correlate));
+
+        // == and != under the lambda pair a NULL with a NULL as C# does - both providers write
+        // them so (decision 156) - and no quantifier of SQL does.
+        if (oriented is ComparisonOperator.Equal or ComparisonOperator.NotEqual
+            && (MayBeNull(outer) || ProjectedValueMayBeNull(subQuery.SubQuery!)))
+        {
+            unread ??= ($"'{binary}' under {method}() over a value that may be NULL, where the provider pairs a NULL with a NULL and no quantifier of SQL does", QueryFeature.Subquery);
+            overNull = true;
+            return null;
+        }
+
         if (QuantifiedComparisons.RewriteNote(oriented, quantifier) is { } note)
         {
             Report(ConversionRecordKind.Convention, note, QueryFeature.Subquery);
@@ -4489,9 +4858,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return ReadConditional(conditional);
 
             case InvocationExpressionSyntax invocation:
-                if (ReadListSubQuery(invocation) is { } listSubQuery)
+                if (ReadOneGroupSubQuery(invocation) is { } oneGroupSubQuery)
                 {
-                    return listSubQuery;
+                    return oneGroupSubQuery;
                 }
 
                 if (ReadScalarSubQuery(invocation) is { } scalarSubQuery)
@@ -5142,6 +5511,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private QueryOperand? ReadConditional(ConditionalExpressionSyntax conditional)
     {
+        if (ReadSumOverValues(conditional) is { } sum)
+        {
+            return sum;
+        }
+
         if (NullGuard(conditional) is { } guard)
         {
             return ReadNullGuarded(conditional, guard);
@@ -5152,7 +5526,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         while (current is ConditionalExpressionSyntax ternary)
         {
-            var when = ParseCondition(ternary.Condition);
+            var when = ReadCondition(ternary.Condition);
             var then = ReadLeaf(ternary.WhenTrue);
             if (when is null || then is null)
             {
@@ -5229,6 +5603,72 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     }
 
     /// <summary>
+    /// SQL's SUM in the spelling the LINQ writer gives it over a group where the value may be
+    /// NULL, for a provider whose Sum is 0 over no values (decision 155):
+    /// <c>count &gt; 0 ? (T?)g.Sum(…) : null</c>, whose count is of the values the sum ranges
+    /// over, or of the row they are members of (<see cref="CountsTheValuesOf"/>). It is NULL
+    /// where the group has no value, as SQL's SUM is, and is read back as that SUM. Null for
+    /// any other conditional, which is the CASE it is.
+    /// </summary>
+    private QueryOperand? ReadSumOverValues(ConditionalExpressionSyntax conditional)
+    {
+        if (!IsNullLiteral(Unparenthesized(conditional.WhenFalse))
+            || Unparenthesized(conditional.Condition) is not BinaryExpressionSyntax test
+            || !test.IsKind(SyntaxKind.GreaterThanExpression)
+            || Unparenthesized(test.Right) is not LiteralExpressionSyntax { Token.Value: 0 }
+            || LiftedSum(conditional.WhenTrue) is not { } sum
+            || !CountsTheValuesOf(Unparenthesized(test.Left), sum))
+        {
+            return null;
+        }
+
+        return TryReadGroupAggregate(sum, out var read) && read is { Function: "SUM" } ? read : null;
+    }
+
+    /// <summary>A Sum call under a cast into a nullable type, <c>(T?)g.Sum(…)</c>, as the call; null for anything else.</summary>
+    private static InvocationExpressionSyntax? LiftedSum(ExpressionSyntax expression)
+        => Unparenthesized(expression) is CastExpressionSyntax { Type: NullableTypeSyntax } cast
+           && Unparenthesized(cast.Expression) is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Sum" } } sum
+            ? sum
+            : null;
+
+    /// <summary>
+    /// Whether <paramref name="count"/> is <c>g.Count(e =&gt; tested != null)</c> over the receiver
+    /// of <paramref name="sum"/> and with the parameter of its lambda, where the tested value is
+    /// the value summed - <c>g.Sum(e =&gt; v)</c>, or <c>g.Select(e =&gt; v).Distinct().Sum()</c> -
+    /// or the row it is a member of, which the writer tests on the side of an outer join.
+    /// </summary>
+    private static bool CountsTheValuesOf(ExpressionSyntax count, InvocationExpressionSyntax sum)
+    {
+        if (count is not InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Count", Expression: IdentifierNameSyntax counted } } countCall
+            || countCall.ArgumentList.Arguments is not [{ Expression: SimpleLambdaExpressionSyntax { Body: BinaryExpressionSyntax notNull } countLambda }]
+            || !notNull.IsKind(SyntaxKind.NotEqualsExpression)
+            || !IsNullLiteral(notNull.Right))
+        {
+            return false;
+        }
+
+        var member = (MemberAccessExpressionSyntax)sum.Expression;
+        SimpleLambdaExpressionSyntax? summed = sum.ArgumentList.Arguments is [{ Expression: SimpleLambdaExpressionSyntax lambda }] ? lambda : null;
+        var receiver = member.Expression;
+        if (summed is null
+            && receiver is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Distinct" } collapse }
+            && collapse.Expression is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Select" } select } selection
+            && selection.ArgumentList.Arguments is [{ Expression: SimpleLambdaExpressionSyntax selected }])
+        {
+            summed = selected;
+            receiver = select.Expression;
+        }
+
+        return summed is { Body: ExpressionSyntax value }
+            && receiver is IdentifierNameSyntax group
+            && group.Identifier.Text == counted.Identifier.Text
+            && summed.Parameter.Identifier.Text == countLambda.Parameter.Identifier.Text
+            && (SyntaxFactory.AreEquivalent(notNull.Left, value, topLevel: false)
+                || (Unparenthesized(value) is MemberAccessExpressionSyntax ofRow && SyntaxFactory.AreEquivalent(ofRow.Expression, notNull.Left, topLevel: false)));
+    }
+
+    /// <summary>
     /// A conditional in the shape of a null guard. When its else is a concatenation, every
     /// tested value is one a NULL in which makes that concatenation NULL, and every such value
     /// it does not test holds no NULL - a literal, a parameter, a column the mapping declares
@@ -5241,7 +5681,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private QueryOperand? ReadNullGuarded(ConditionalExpressionSyntax conditional, List<ExpressionSyntax> guard)
     {
-        var when = ParseCondition(conditional.Condition);
+        var when = ReadCondition(conditional.Condition);
         var mark = concatenatedUnderGuard.Count;
         nullGuards++;
         var otherwise = ReadLeaf(conditional.WhenFalse);
@@ -5591,7 +6031,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// NULL the representation, which carries STRING_AGG, does not carry the difference, and
     /// the record says so. Over anything but the elements of a group - a chain over a query
     /// root, which EF Core 10 does not translate at all - it is not read; the one group of a
-    /// correlated subquery grouped by a constant is a group (<see cref="ReadListSubQuery"/>).
+    /// correlated subquery grouped by a constant is a group (<see cref="ReadOneGroupSubQuery"/>).
     /// </summary>
     private QueryOperand? ReadListAggregate(InvocationExpressionSyntax invocation)
     {
@@ -5618,9 +6058,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         // The group is the scope's own, or the one group of a list over a correlated subquery
-        // (ReadListSubQuery), whose grouping by a constant records no key.
+        // (ReadOneGroupSubQuery), whose grouping by a constant records no key.
         if (receiver is not IdentifierNameSyntax group
-            || (groupingKeys.Count == 0 && !string.Equals(group.Identifier.Text, listGroup, StringComparison.Ordinal))
+            || (groupingKeys.Count == 0 && !string.Equals(group.Identifier.Text, oneGroup, StringComparison.Ordinal))
             || aliasSubstitutions.ContainsKey(group.Identifier.Text))
         {
             unread ??= ($"'{invocation}', a string.Join over something other than the elements of a group", QueryFeature.ListAggregation);
@@ -5798,25 +6238,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         => QueryOperand.Bound(QueryParameter.Named(identifier.Identifier.Text));
 
     /// <summary>
-    /// Reads a terminal aggregate over a query root - <c>ctx.Set&lt;T&gt;().Max(x =&gt;
-    /// x.Total)</c> - as a scalar subquery operand (decision 061): the aggregate becomes the
-    /// subquery's own projection, recorded just before the nested scope closes so that it
-    /// carries the nested source's alias. Count(predicate) folds its predicate into a Where
-    /// the way Any(predicate) does. The aggregate's own lambda names the nested scope when
-    /// the chain before it has no lambda step - <c>ctx.Products.Average(x =&gt;
-    /// x.ListPrice)</c> ranges over x, and the table initial would shadow an outer alias
-    /// that happens to be the same letter.
+    /// Reads a value over the one group of a correlated subquery back from the form the LINQ
+    /// builder writes it in: <c>root.Where(…).GroupBy(x =&gt; 1).Select(g =&gt; value).FirstOrDefault()</c>,
+    /// the chain grouped by a constant so that the value ranges over the one group, and the
+    /// one row taken. The value is a list, <c>string.Join(…, g.OrderBy(…).Select(x =&gt; v))</c>
+    /// (decision 113), or a SUM spelled to be NULL over no values (decision 155): lifted,
+    /// <c>(T?)g.Sum(…)</c>, or guarded by the count of its values (<see cref="ReadSumOverValues"/>);
+    /// a Sum that is not nullable the provider coalesces with the whole subquery, and it is not
+    /// this shape. The grouping is the form's, not the query's: the subquery is the aggregate
+    /// over the rows the chain selects, without a GROUP BY, and that is what is recorded. A
+    /// chain of another tail, or a FirstOrDefault() with a predicate, is not this shape either.
     /// </summary>
-    /// <summary>
-    /// Reads a list over a correlated subquery back from the form the LINQ builder writes it
-    /// in (decision 113): <c>root.Where(…).GroupBy(x =&gt; 1).Select(g =&gt; string.Join(…,
-    /// g.OrderBy(…).Select(x =&gt; value))).FirstOrDefault()</c>, the chain grouped by a
-    /// constant so that the list ranges over the one group, and the one row taken. The
-    /// grouping is the form's, not the query's: the subquery is the list over the rows the
-    /// chain selects, STRING_AGG without a GROUP BY, and that is what is recorded. A chain
-    /// of another tail, or a FirstOrDefault() with a predicate, is not this shape.
-    /// </summary>
-    private QueryOperand? ReadListSubQuery(InvocationExpressionSyntax invocation)
+    private QueryOperand? ReadOneGroupSubQuery(InvocationExpressionSyntax invocation)
     {
         if (invocation.Expression is not MemberAccessExpressionSyntax { Name.Identifier.Text: "FirstOrDefault" } member
             || invocation.ArgumentList.Arguments.Count != 0
@@ -5826,51 +6259,75 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             || steps[^1] is not { Name: "Select" } select
             || steps[^2] is not { Name: "GroupBy" } groupBy
             || groupBy.Node.ArgumentList.Arguments is not [{ Expression: SimpleLambdaExpressionSyntax { Body: LiteralExpressionSyntax } groupLambda }]
-            || select.Node.ArgumentList.Arguments is not [{ Expression: SimpleLambdaExpressionSyntax { Body: InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Join" } joinMember } joined } selectLambda }]
-            || WrittenName(joinMember.Expression) is not ("string" or "String" or "System.String"))
+            || select.Node.ArgumentList.Arguments is not [{ Expression: SimpleLambdaExpressionSyntax { Body: ExpressionSyntax body } selectLambda }])
+        {
+            return null;
+        }
+
+        var joined = body is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Join" } joinMember } join
+                     && WrittenName(joinMember.Expression) is "string" or "String" or "System.String"
+            ? join
+            : null;
+        var guarded = Unparenthesized(body) as ConditionalExpressionSyntax;
+        var lifted = LiftedSum(body);
+        if (joined is null && guarded is null && lifted is null)
         {
             return null;
         }
 
         steps.RemoveRange(steps.Count - 2, 2);
 
-        var enclosingListGroup = listGroup;
-        QueryOperand? list = null;
+        var enclosingOneGroup = oneGroup;
+        QueryOperand? value = null;
         var sub = ReadSubQueryOperand(
             root!,
             steps,
             () =>
             {
-                listGroup = selectLambda.Parameter.Identifier.Text;
+                oneGroup = selectLambda.Parameter.Identifier.Text;
                 try
                 {
-                    list = ReadListAggregate(joined);
+                    value = joined is not null
+                        ? ReadListAggregate(joined)
+                        : guarded is not null
+                            ? ReadSumOverValues(guarded)
+                            : TryReadGroupAggregate(lifted!, out var sum) && sum is { Function: "SUM" } ? sum : null;
                 }
                 finally
                 {
-                    listGroup = enclosingListGroup;
+                    oneGroup = enclosingOneGroup;
                 }
 
-                if (list is not null)
+                if (value is not null)
                 {
-                    queryBuilder.Project(list);
+                    queryBuilder.Project(value);
                 }
             },
             groupLambda.Parameter.Identifier.Text,
             correlate);
 
-        // What the list could not be read as is in <see cref="unread"/>; the caller reports it
+        // What the value could not be read as is in <see cref="unread"/>; the caller reports it
         // as it reports any operand outside the vocabulary.
-        return list is null ? null : QueryOperand.Nested(sub);
+        return value is null ? null : QueryOperand.Nested(sub);
     }
 
     /// <summary>
-    /// The parameter standing for the one group of a list over a correlated subquery while its
-    /// string.Join is read (<see cref="ReadListSubQuery"/>): the nested scope groups by the
-    /// form's constant, which is no key, so the list's receiver is admitted by this name.
+    /// The parameter standing for the one group of a correlated subquery while its value is
+    /// read (<see cref="ReadOneGroupSubQuery"/>): the nested scope groups by the form's
+    /// constant, which is no key, so the receiver of a list is admitted by this name.
     /// </summary>
-    private string? listGroup;
+    private string? oneGroup;
 
+    /// <summary>
+    /// Reads a terminal aggregate over a query root - <c>ctx.Set&lt;T&gt;().Max(x =&gt;
+    /// x.Total)</c> - as a scalar subquery operand (decision 061): the aggregate becomes the
+    /// subquery's own projection, recorded just before the nested scope closes so that it
+    /// carries the nested source's alias. Count(predicate) folds its predicate into a Where
+    /// the way Any(predicate) does. The aggregate's own lambda names the nested scope when
+    /// the chain before it has no lambda step - <c>ctx.Products.Average(x =&gt;
+    /// x.ListPrice)</c> ranges over x, and the table initial would shadow an outer alias
+    /// that happens to be the same letter.
+    /// </summary>
     private QueryOperand? ReadScalarSubQuery(InvocationExpressionSyntax invocation)
     {
         if (invocation.Expression is not MemberAccessExpressionSyntax member)
@@ -5973,7 +6430,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             elementParameter ?? defaultAlias,
             correlate);
 
-        return QueryOperand.Nested(sub);
+        // The Sum of a provider whose Sum is 0 over no rows is COALESCE((SELECT SUM(x) …), 0)
+        // (decision 155): a subquery may select nothing.
+        return function == "SUM" && ProviderCoalescesSum
+            ? CoalescedToZero(QueryOperand.Nested(sub))
+            : QueryOperand.Nested(sub);
     }
 
     /// <summary>
