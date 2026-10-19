@@ -93,3 +93,4 @@ Každý výstup nese záznamy o převodu, identifikátor běhu a verze (S6).
 - **Nepíše dotazy** — co mezireprezentace neunese, hlásí, nenahrazuje.
 - **Nenahrazuje běhovou vrstvu** — překlad je jednorázový.
 - **Nezkoumá repozitář** — soubory vybírá uživatel.
+- **Nezobrazuje mezireprezentaci** — žádný aktér ji nečte; co z ní potřebuje, říká kniha tvrzení a záznamy (rozh. [154](./decisions/154-the-intermediate-representation-is-not-shown-to-the-user.md)).

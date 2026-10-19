@@ -203,7 +203,8 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | jednotka deklarovaná rolí (`CSharpEntity`, `JavaQuery` …), v jazyce, který zdroj nečte, nebo z níž nic nevzešlo | jednotka deklaruje jen jazyk | `Failure` o jednotce (orchestrace) | VM | [045], [066], [111] |
 | aplikační kód, který dotaz nepředává (služba volající repozitář, DTO projekce) | od entity se nerozezná | čte se jako entita | Z F14 | [111] |
 | pojmenovaný dotaz JPA na entitě, kterou `orm.xml` označí `metadata-complete`; jméno definované v anotaci i v `orm.xml` | čtení dotazů nedostává kontext mapování, z něhož pravidlo přednosti `orm.xml` plyne | čte se každá definice tam, kde stojí; dvě definice jednoho jména dají dva artefakty (č) | VM | [143] |
-| procházení repozitáře; archiv jiný než ZIP; jméno jednotky na artefaktu; zobrazení mezireprezentace | vstup vybírá uživatel; sloučená entita nepatří jedné jednotce | nenárokuje se | Z F14 | [066], [094], [111], [136] |
+| procházení repozitáře; archiv jiný než ZIP; jméno jednotky na artefaktu | vstup vybírá uživatel; sloučená entita nepatří jedné jednotce | nenárokuje se | Z F14 | [066], [094], [111], [136] |
+| zobrazení mezireprezentace | uživateli je zbytečná a ruší: co z ní potřebuje, nese kniha tvrzení a záznamy slovy vstupu a výstupu | `/convert` ji nevrací, obrazovka ji nemá; nenárokuje se ani neplánuje | Z F14 | [154] |
 | soubor archivu ZIP, jehož přípona nejmenuje jazyk, který zdroj čte; prázdný soubor, `__MACOSX/`, šifrovaná položka, komprese jiná než *stored* a deflate; archiv rozdělený do více souborů | jazyk určuje přípona a zdroj; prohlížeč rozbaluje jen deflate | jednotkou se nestane, obrazovka ho jmenuje s důvodem v seznamu nad okny | VM | [136] |
 | příkaz, který není čtecí `SELECT` (`INSERT`, `UPDATE`, `DELETE`, `DECLARE`, `SET`, `USE`, `SELECT … INTO`, `SELECT @x = …`) | mění stav, ze kterého čtou ostatní dotazy | `Failure` celé holé jednotky, u vloženého textu toho dotazu | VM | [108] |
 | druhý `SELECT` v textu vloženém do hostitele (Dapper mimo `QueryMultiple`, `<select>`, `<sql-query>`) | hostitel pošle jeden příkaz s jedním výsledkem | `Failure` dotazu | VM | [108], [109] |
@@ -506,6 +507,7 @@ Známé je jedno, a je to vada: `SUM` nad prázdnou množinou je v SQL, HQL a JP
 [148]: ./decisions/148-a-reference-in-a-linq-operand-is-an-implicit-join-whose-kind-the-provider-takes-from-the-nullability-of-the-foreign-key.md
 [149]: ./decisions/149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md
 [151]: ./decisions/151-a-reference-in-a-linq-operand-joins-left-where-its-row-may-be-absent-under-both-providers.md
+[154]: ./decisions/154-the-intermediate-representation-is-not-shown-to-the-user.md
 [152]: ./decisions/152-an-association-path-that-cannot-be-derived-refuses-the-query-in-every-clause.md
 [§1v]: ./architecture.md#zafixované-verze
 [§4.1]: ./architecture.md#41-entity-a-mapování

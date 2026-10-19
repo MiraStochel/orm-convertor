@@ -14,7 +14,7 @@ Schválená [specifikace](./specifikace.tex) (kap. *Milníky* a *Harmonogram*) a
 | 2 — specifikace a analýza | specifikace, rozhodnutí o javové straně, analýza běhového prostředí pro Javu | září | hotovo |
 | 3 — Java a cross-language | Hibernate, MyBatis, EclipseLink, překlad .NET ↔ Java | září–říjen | hotovo, `2.0.0`; dotazy dokončené v `2.1.0`; katalog LDBC přeložený celý v `2.2.0` a doložený celou validační sadou SF 1 ve všech šesti frameworcích nad texty dotazů na cesty s mezí |
 | 4 — testy a experimenty | javová sada s diferenčním ověřením (F12–F13) | říjen–listopad | hotovo |
-| | zobrazení mezireprezentace (F14) | | **chybí** |
+| | zobrazení mezireprezentace (F14) | | vyňato rozh. [154](./decisions/154-the-intermediate-representation-is-not-shown-to-the-user.md) |
 | | cross-language matice T2 s metrikami T3 | | **chybí** pipeline a metriky; matice existuje v testech |
 | | příprava infrastruktury pro navazující LLM experimenty (T4–T6) | | **chybí** |
 | | základní srovnání Advisoru (T7), *podle časových možností* | | sekundární |
@@ -38,8 +38,8 @@ Rejstřík, ne pořadí.
 | [Vlastnost sady kontextu EF Core jako dotaz](#vlastnost-sady-kontextu-ef-core-zapsaná-výrazem-se-čte-jako-dotaz-celé-tabulky) | Dotazy | rozhodnutí | F14, F11 |
 | [Soudce FIBEN a podmínky jeho vzniku](#soudce-fiben-vznikl-z-běhu-který-první-podmínku-rozh-149-nesplnil) | Dotazy | rozhodnutí | T2, T3, F13 |
 | [Podíl kritéria F4](#podíl-ověřovacího-kritéria-f4-se-nevykazuje) | Ověření | práce | F4 |
+| [Čtení S4 a S7](#čtení-s4-a-s7-log-zdroj-harnessu-advisoru-a-průběžný-stav) | Ověření | rozhodnutí | S4, S7 |
 | [Co katalog FIBEN odmítá](#co-katalog-fiben-odmítá-okenní-agregát-a-stínovaný-alias-odvozené-tabulky) | Dotazy | rozhodnutí | T2, T3 |
-| [Zobrazení mezireprezentace](#mezireprezentace-se-nezobrazuje-ačkoli-f14-ji-jmenuje) | Třetí cíl | rozhodnutí | F11, F14 |
 | [Artefakt, který nevyrobil nástroj, ve stupních ověření](#ověřovací-stupně-nad-artefaktem-který-nevyrobil-nástroj) | Třetí cíl | rozhodnutí | T3–T6 |
 | [Metodika srovnání s LLM](#metodika-srovnání-s-llm-a-vymezení-proti-souběžným-pracím) | Třetí cíl | rozhodnutí | T4–T6 |
 | [Advisor nad všemi frameworky](#advisor-měří-jen-dapper-a-ef-core) | Advisor | práce | F15, T7 |
@@ -96,9 +96,14 @@ Kontext EF Core, který deklaruje sady výrazem — `public DbSet<Order> Orders 
 
 Kritérium F4 žádá „správně získáno ≥ 95 % sledovaných metadat" a F4 je nárokovaný v plném rozsahu; testy katalogu tvrdí jednotlivé fakty schématu fixture, podíl ale nespočítá nikdo. Spočítat ho nad `Tests/Database/TestSchema.sql` — každý sledovaný druh faktu (tabulka, sloupec, typ, nullabilita, primární a cizí klíč, unikátní omezení, délka, přesnost, měřítko) z očekávané odpovědi proti tomu, co vrátí `SqlServerCatalogReader` — a vykázat ho tam, kde ho traceability cituje; nevyjde-li, F4 zúžit.
 
+#### Čtení S4 a S7: log, zdroj harnessu Advisoru a průběžný stav
+*Rozhodnutí. Ke kontrole: rozh. [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md) (připojení je fakt projektu spotřebitele), [033](./decisions/033-shape-of-the-static-frontend-screens.md) (tvar obrazovek); [`traceability.md`](./traceability.md), S4 a S7; [`threat-model.md`](./threat-model.md), aktiva. Požadavky S4, S7.*
+
+Druhá věta S4 zakazuje přihlašovací údaje k databázi „v generovaných zdrojových souborech ani v lozích"; §9 a traceability ji nárokují celou, obsahem nároku je ale jen předávaný artefakt překladu, který hlídá `ArtifactCarriesNoCredentialsTest`. Log nehlídá nic: model hrozeb o něm říká, že nese počty a časy, `BenchmarkExecutor` do něj ale zapisuje i výjimku spuštěného kódu se zprávou, jejíž obsah nástroj neurčuje. Generovaný zdroj vzniká i mimo překlad: harness Advisoru (`DapperBenchmarkHarnessBuilder`, `EFCoreBenchmarkHarnessBuilder`) vloží připojovací řetězec jako konstantu do zdroje, který zkompiluje a spustí v procesu — soubor nevznikne a Advisor je vyňatá oblast 1, nárok to ale neříká. S7 jmenuje „průběžný stav zpracování", o kterém README, §9 ani traceability nemluví; obrazovka překladu ukazuje během požadavku značku zaneprázdnění a větu „Converting…", Advisor uplynulý čas, stav po jednotkách ani po fázích nevzniká. Rozhodnout, zda druhá věta S4 platí pro artefakt i log — pak log potřebuje test nebo pravidlo, co do něj smí —, nebo se nárok zúží na artefakt, a zda zúžení jmenuje i harness Advisoru; a zda průběžný stav S7 splní značka zaneprázdnění nad požadavkem, který podle měření S3 trvá pod sekundu (pak to §9 a traceability řeknou a doloží projitím scénáře S7), nebo se S7 v té části zúží.
+
 ## Třetí cíl: experimenty
 
-Matice T2 s metrikami T3, příprava T4–T6 a zobrazení mezireprezentace (F14) jsou milník 4, experimenty T2, T3 a T7 milník 5 a T1 žádá kapitola *Experimentální požadavky*. Oblast je ze záruk vyňatá (§9, oblast 6) a je látkou na `3.0.0`. Značku nese jen první položka, protože na ní stojí ostatní.
+Matice T2 s metrikami T3 a příprava T4–T6 jsou milník 4, experimenty T2, T3 a T7 milník 5 a T1 žádá kapitola *Experimentální požadavky*. Oblast je ze záruk vyňatá (§9, oblast 6) a je látkou na `3.0.0`. Značku nese jen první položka, protože na ní stojí ostatní.
 
 #### Co zavírá třetí cíl: schválený záměr Advisor nejmenuje
 *Potom. Ke kontrole: rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md) („příští MAJOR je `3.0.0` za Advisor nad všemi frameworky a za experimentální část"); stojí na něm věta §9 o příštím MAJOR a sekce *Beyond this version* kořenového [`README.md`](../README.md). Požadavky F15, T1–T7.*
@@ -146,11 +151,6 @@ Známé jsou dva body: S3 jedním měřením (100 entit a 100 dotazů EF Core �
 - velikost převodu: počet entit, jednotek a dotazů v jednom požadavku, bez katalogu i s ním (čtení katalogu zvlášť, S3).
 
 U každého bodu řady čas, paměť a výsledek na čtyřech stupních rozh. [016](./decisions/016-generated-artifact-verification-levels.md) (metriky T3). **Výsledky je třeba poměřit s překladem pomocí LLM a dalšími přístupy nad týmiž řadami:** zero-shot a few-shot (T4), varianta s RAG a agentní (T5) a přístupy souběžných prací M. Čorovčáka a I. Oboňové — na které ose a kde který přístup selže, a vedle správnosti čas, cena (tokeny) a stálost výsledku mezi pokusy, protože nedeterminismus a náklady jsou to, čím specifikace přístup s LLM od deterministického odlišuje. Projekt podle T4 připraví řady a měření tak, aby srovnání šlo provést; plné srovnání nese navazující diplomová práce. Rozhodnout osy a generátor řad (syntetické, nebo škálované dotazy katalogu LDBC a příkladů), co se počítá za mez a zda řady běží v [experimentální pipeline](#experimentální-pipeline-kterou-záměr-žádá-neexistuje).
-
-#### Mezireprezentace se nezobrazuje, ačkoli F14 ji jmenuje
-*Milník 4 specifikace. Zúžení F14 v §9. Souvisí s rozh. [010](./decisions/010-diagnostics-as-returned-data.md), [033](./decisions/033-shape-of-the-static-frontend-screens.md) a [098](./decisions/098-the-number-is-decided-once-per-release.md). Požadavky F11, F14.*
-
-F14 žádá zobrazit vstup, mezireprezentaci, výstup a diagnostiku; `/convert` mezireprezentaci nevrací, takže ji obrazovka nemá odkud vzít. Cena není ve vykreslení: serializovaný tvar `EntityMap`, klíčů, vztahů a dotazových instrukcí se stane součástí REST kontraktu i s verzováním podle rozh. 098. Rozhodnout, zda bude plnohodnotnou částí odpovědi, nebo výslovně nestabilním náhledem — i ten je součástí kontraktu.
 
 #### Ověřovací stupně nad artefaktem, který nevyrobil nástroj
 *Příprava T4 podle milníku 4. Blokuje to rozh. [078](./decisions/078-java-suite-as-a-client-of-a-running-instance.md) („klient, ne čtenář souborů") — ke kontrole proti záměru. Souvisí s [016](./decisions/016-generated-artifact-verification-levels.md), [027](./decisions/027-query-artifact-verification.md), [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md). Požadavky T3–T6.*

@@ -155,6 +155,8 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 150 | [Část rozhodnutí nahrazuje nové rozhodnutí a stav obou souborů to vyslovuje; staré se cituje dál pro to, co z něj platí](150-a-part-of-a-decision-is-replaced-by-a-new-file-and-both-statuses-say-so.md) | platí | žádné |
 | 151 | [Navigace přes referenci v operandu LINQ je levý join, smí-li řádek reference chybět, u obou providerů stejně; řádek za volitelným řádkem je volitelný](151-a-reference-in-a-linq-operand-joins-left-where-its-row-may-be-absent-under-both-providers.md) | platí; nahrazuje odstavec *Každá jiná jednohodnotová asociace na cestě je join odvozený ze vztahu, jehož druh dá provider* a důsledek *Jiný provider, jiný join nad týmž textem* rozh. 148 | F10, F11, S1, S2, T1, T2 |
 | 152 | [Cesta přes asociaci v HQL a JPQL, kterou nelze odvodit, odmítne dotaz v každé klauzuli, v projekci a řazení také](152-an-association-path-that-cannot-be-derived-refuses-the-query-in-every-clause.md) | platí; nahrazuje větu „filtr, seskupení a řazení `Failure`, projekce `Loss`" odstavce *Co se odmítá, se odmítá jmenovitě* rozh. 144 | F7, F9, F11, T1, T2 |
+| 153 | [Sdílenou entitní bázi nerozdělujeme a její velikost nehlídáme; strážcem S1 zůstává pravidlo, že nový framework `AbstractWrappers` nemění](153-the-shared-entity-base-is-neither-split-nor-watched.md) | platí | S1 |
+| 154 | [Mezireprezentaci uživateli nezobrazujeme: je pro něj zbytečná a ruší; co z ní potřebuje, říká kniha tvrzení a záznamy](154-the-intermediate-representation-is-not-shown-to-the-user.md) | platí | F14, F11, T3 |
 
 ## Formát
 
