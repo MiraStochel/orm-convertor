@@ -1,8 +1,8 @@
 # The judge of the FIBEN catalog (decision 149): the rows of every query in the canonical form of decision 089,
-# as the catalog's own text returned them over fiben-benchmark-96eaffc through Dapper on 2026-10-18 14:59 UTC.
+# as the catalog's own text returned them over fiben-benchmark-96eaffc through Dapper on 2026-10-20 00:46 UTC.
 # key<TAB>position<TAB>rendered row; position 0 is the digest of the whole result (row count and SHA-256 of the rows joined by LF),
 # the rows follow it where the result has at most 1000 of them. A query without a line was not run. Made by the .NET suite's FibenRunTest.
-# Frozen as the judge after the first documented run (decision 149): tree 8e1cdd7 + the next commit, the run of 2026-10-18 recorded in ORMConvertor/README.md, The FIBEN run. A new judge is a decision with a date and a reason.
+# Made again as the judge from the run of both suites of 2026-10-20 (decisions 149, 157): tree 9f6082d + the next commit, recorded in ORMConvertor/README.md, The FIBEN run; every target agreed with the source but q63 in EclipseLink, which differs by the stated limit of docs/subset.md 2.2. A new judge is a decision with a date and a reason.
 q1	0	rows=2 sha256=e6fb8521b60fe38beed481bee51dd837a2e04feb21f28cef28ebd57075b814b9
 q1	1	"GOOG"	"Alphabet Inc."	39.92
 q1	2	"GOOGL"	"Alphabet Inc."	21.53

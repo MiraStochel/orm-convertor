@@ -77,8 +77,8 @@ internal sealed class FibenCell
 /// with the judge where the database holds one, and finally every cell measured by the policy
 /// of decision 145. The run happens once per test run, for the first test that asks for it,
 /// and writes its files into the directory the environment names: the cells, the source rows
-/// in the form of <c>database/fiben/judge.tsv</c>, from which the judge is made after the
-/// first documented run, and the summary.
+/// in the form of <c>database/fiben/judge.tsv</c>, from which the judge is made after a
+/// documented run, and the summary.
 ///
 /// The Java suite runs the three Java frameworks the same way against an instance whose
 /// catalog is the Fiben database, with the text itself over JDBC as its source.
@@ -111,7 +111,7 @@ internal sealed class FibenRun
     /// <summary>The data set the database holds, as the loader named it in <c>fiben.dataset</c>.</summary>
     public string? DataSet { get; private set; }
 
-    /// <summary>Whether the database holds a judge; the first documented run has none and makes it.</summary>
+    /// <summary>Whether the database holds a judge; a run over a database without one can make it.</summary>
     public bool HasJudge { get; private set; }
 
     public TimeSpan Elapsed { get; private set; }

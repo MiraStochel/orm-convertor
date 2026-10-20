@@ -73,7 +73,7 @@
         <li><a href="#data-set">The data set</a></li>
         <li><a href="#using-it">Using it</a></li>
         <li><a href="#what-translates">What translates and what does not</a></li>
-        <li><a href="#run">The first documented run</a></li>
+        <li><a href="#run">The documented run</a></li>
         <li><a href="#by-target">Every query in every target</a></li>
         <li><a href="#queries">The queries</a></li>
       </ul>
@@ -230,15 +230,16 @@
     </section>
 
     <section id="run">
-      <h2>The first documented run</h2>
+      <h2>The documented run</h2>
       <p>
-        On 2026-10-18 the catalog ran for the first time in both suites, one after the other,
-        against the container's <code>Fiben</code> database in the fixed environment of the
-        measurements (four processors, the server on two of them and the clients on the other
-        two, one-threaded plans, turbo on). The .NET suite took 112 minutes for the 237 queries
-        in Dapper, EF&nbsp;Core and NHibernate; the judge was made from the rows the catalog's
-        own text returned in it. The record with every number is in the README of the solution;
-        this is what it says.
+        On 2026-10-20 the catalog ran in both suites, one after the other, against the
+        container's <code>Fiben</code> database in the fixed environment of the measurements
+        (four processors, the server on two of them and the clients on the other two,
+        one-threaded plans, turbo on): 129 minutes for the 237 queries in Dapper, EF&nbsp;Core
+        and NHibernate, 156 in Hibernate, EclipseLink and MyBatis. The judge was made from the
+        rows the catalog's own text returned in it, which are the rows of the first run, of
+        2026-10-18. The record with every number, the first run's too, is in the README of the
+        solution; this is what it says.
       </p>
 
       <div class="table-scroll">
@@ -247,12 +248,12 @@
             <tr><th>Framework</th><th>In its own language</th><th>In native SQL</th><th>Refused</th><th>Rows agree with the source</th><th>Median of a cell's medians</th><th>All medians summed</th></tr>
           </thead>
           <tbody>
-            <tr><td>Dapper (the catalog's text)</td><td>229</td><td>&mdash;</td><td>8</td><td>is the source</td><td>45.0 ms</td><td>327 s</td></tr>
-            <tr><td>EF Core</td><td>170</td><td>59</td><td>8</td><td>224 of 229</td><td>40.9 ms</td><td>329 s</td></tr>
-            <tr><td>NHibernate</td><td>208</td><td>21</td><td>8</td><td>229 of 229</td><td>48.4 ms</td><td>323 s</td></tr>
-            <tr><td>Hibernate</td><td>204</td><td>14</td><td>8</td><td>218 of 218 that ran</td><td>62.2 ms</td><td>322 s</td></tr>
-            <tr><td>EclipseLink</td><td>194</td><td>14</td><td>8</td><td>203 of 208 that ran</td><td>53.6 ms</td><td>353 s</td></tr>
-            <tr><td>MyBatis</td><td>226</td><td>&mdash;</td><td>8</td><td>226 of 226 that ran</td><td>57.5 ms</td><td>334 s</td></tr>
+            <tr><td>Dapper (the catalog's text)</td><td>229</td><td>&mdash;</td><td>8</td><td>is the source</td><td>60.4 ms</td><td>350 s</td></tr>
+            <tr><td>EF Core</td><td>170</td><td>59</td><td>8</td><td>229 of 229</td><td>57.7 ms</td><td>476 s</td></tr>
+            <tr><td>NHibernate</td><td>208</td><td>21</td><td>8</td><td>229 of 229</td><td>58.7 ms</td><td>350 s</td></tr>
+            <tr><td>Hibernate</td><td>215</td><td>14</td><td>8</td><td>229 of 229</td><td>64.6 ms</td><td>428 s</td></tr>
+            <tr><td>EclipseLink</td><td>190</td><td>39</td><td>8</td><td>228 of 229</td><td>55.2 ms</td><td>353 s</td></tr>
+            <tr><td>MyBatis</td><td>229</td><td>&mdash;</td><td>8</td><td>229 of 229</td><td>62.9 ms</td><td>346 s</td></tr>
           </tbody>
         </table>
       </div>
@@ -274,20 +275,26 @@
           for 80 of the 106 single-block queries but for only 9 of the 27 correlated queries
           without an aggregate (type J). NHibernate writes 21 in native SQL: 14 for
           <code>TOP</code> inside a subquery, which HQL&nbsp;5.7 cannot say, and 7 for
-          <code>UNION</code>.
+          <code>UNION</code>. Hibernate writes the same 14 that way; EclipseLink 39: those 14,
+          the 18 that open their <code>HAVING</code> with an aggregate over a joined entity and
+          the 7 unions whose members join other entities.
         </li>
         <li>
-          <strong>One semantic difference between SQL and LINQ.</strong> <code>SUM</code> over
-          an empty set is <code>NULL</code> in SQL and <code>0</code> in LINQ, because EF Core
+          <strong>Two semantic differences between SQL and LINQ.</strong> <code>SUM</code> over
+          no values is <code>NULL</code> in SQL and <code>0</code> in LINQ, because EF Core
           keeps the meaning of <code>Enumerable.Sum</code> and writes
-          <code>COALESCE(SUM(x), 0)</code>. A query of type JA that compares a sum with the
-          sum of a correlated subquery therefore keeps rows in EF Core that SQL drops: query
-          207 (<em>who holds IBM stocks more than he holds Alphabet</em>) returns one person
-          from the text, from Dapper and from NHibernate, and 211 from EF Core &mdash; everyone
-          who holds IBM and no Alphabet at all. Five queries differ this way (150, 155, 207,
-          211, 213) - the only cells of the .NET run where a target disagrees with the source.
-          A query that returns other rows than its source is a defect of the translation,
-          open as one, and not a fix in the comparison.
+          <code>COALESCE(SUM(x), 0)</code>; and an equality of two values that may be
+          <code>NULL</code> is unknown in SQL where both are, but true in LINQ, which EF Core
+          writes as <code>a = b OR (a IS NULL AND b IS NULL)</code>. In the first run five
+          queries returned other rows in EF Core for these reasons (150, 155, 207, 211, 213):
+          query 207 (<em>who holds IBM stocks more than he holds Alphabet</em>) returned one
+          person from the text and 211 from EF Core &mdash; everyone who holds IBM and no
+          Alphabet at all. The translation now carries SQL's meaning into LINQ and back - a sum
+          under a guard of the count of its values, an equality that holds only where the
+          values are not <code>NULL</code> - and every cell of EF Core agrees with the source.
+          The guard has a price still open: the six queries whose <code>HAVING</code> compares
+          a sum with a correlated subquery (207, 211, 213, 215, 216, 225) take 7.7&ndash;35&nbsp;s
+          in EF Core against 0.1&nbsp;s from the text.
         </li>
         <li>
           <strong>Three things the Java frameworks taught the tool.</strong> Hibernate reads
@@ -296,7 +303,7 @@
           such an entity by its fully qualified class name (nine queries ran after the fix).
           EclipseLink leaves the joins of a <code>UNION</code> member out of its SQL and answered
           49&nbsp;870 rows where the text answers 189, so a set operation with a joined member
-          goes out in native SQL for EclipseLink (four queries). And EclipseLink refuses an
+          goes out in native SQL for EclipseLink (seven queries, four of which had differed). And EclipseLink refuses an
           aggregate in <code>HAVING</code> over a column of an entity it joined
           (<em>Invalid query key</em>, eighteen cells): measured afterwards, it rebuilds the
           <code>HAVING</code> on the root of the block when the clause opens with a path over
@@ -325,21 +332,23 @@
           thousand.
         </li>
         <li>
-          <strong>The frameworks cost the same, the queries do not.</strong> Summed over the
-          catalog, the medians of the three .NET frameworks are within two percent of each other
-          (323&ndash;329&nbsp;s). Two queries set the length of the run: 205 (<em>which companies
-          reported year over year revenue loss for 2019</em>) at 182&nbsp;s and 233 at 97&nbsp;s
-          per execution, correlated scalar subqueries with five joins evaluated for every outer
-          row over tables without an index beyond their keys. Most queries run in under
-          50&nbsp;ms. Where the frameworks differ, EF Core's SQL does: queries 120 and 121 run
-          fifteen times faster in EF Core than from the text (its rewritten subquery gets another
-          plan), 164 and 181 four to five times slower.
+          <strong>The frameworks mostly cost the same, the queries do not.</strong> Summed over
+          the catalog, the medians of Dapper and NHibernate are 350&nbsp;s each and of EF Core
+          476&nbsp;s, 122&nbsp;s of it the six queries above; of MyBatis and EclipseLink
+          346&ndash;353&nbsp;s and of Hibernate 428&nbsp;s, which runs query 205 in 281&nbsp;s
+          against the text's 191&nbsp;s. Two queries set the length of the run: 205 (<em>which
+          companies reported year over year revenue loss for 2019</em>) at about 190&nbsp;s and
+          233 at about 98&nbsp;s per execution, correlated scalar subqueries with five joins
+          evaluated for every outer row over tables without an index beyond their keys. Two
+          thirds of the queries run in under 100&nbsp;ms. Where the frameworks differ otherwise,
+          the target's SQL does: 164 and 181 run about five times slower in EF Core than from
+          the text, 234&ndash;236 up to three times faster in EclipseLink.
         </li>
         <li>
           <strong>The catalog completion scales.</strong> Reading the catalog of 152 tables and
-          159 foreign keys for the first query took 408&nbsp;ms; translating a query with the
-          entities of its tables takes a few milliseconds after that, and compiling an artifact
-          15&ndash;30&nbsp;ms.
+          159 foreign keys for the first query took 764&nbsp;ms (408&nbsp;ms in the first run);
+          translating a query with the entities of its tables takes 3&ndash;16&nbsp;ms after
+          that, and compiling an artifact 10&ndash;40&nbsp;ms.
         </li>
       </ul>
     </section>

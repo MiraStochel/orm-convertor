@@ -2,13 +2,13 @@
 -- judges. Run by sqlcmd after constraints.sql with one variable, JudgeFile: database/fiben/
 -- judge.tsv as a path the database server itself can read, since BULK INSERT runs there.
 --
--- The file is the result of the first documented run of the catalog, frozen: for every query
+-- The file is the result of a documented run of the catalog, frozen: for every query
 -- its rows in the canonical form of decision 089, one row per line as
 -- "key<TAB>position<TAB>rendered row", the rendered row itself tab-separated as the form
 -- writes it, and lines beginning with # the record of when and over which commit it was made.
 -- Every query the run translated has its digest at position 0, one that returned no rows the
 -- digest of none; a query with no line was refused by that run and is not judged. The judge
--- is a regression judge: it says that a version returns what the first documented version
+-- is a regression judge: it says that a version returns what the version of that run
 -- returned, not what is true elsewhere, and it changes only by a decision with a date and a
 -- reason.
 --

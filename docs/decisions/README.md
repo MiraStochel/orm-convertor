@@ -160,6 +160,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 155 | [`SUM` jazyka SQL píše cíl EF Core jako projekci nad jedinou skupinou a nad skupinou bez hodnoty jako `NULL`; `Sum` EF Core je `COALESCE(SUM(x), 0)` a tak se píše i čte](155-sql-sum-in-ef-core-linq-is-the-projection-of-one-group-and-ef-core-sum-is-coalesce.md) | platí | F7, F10, F13, T2, T3, S1 |
 | 156 | [Predikát LINQ nese trojhodnotovou logiku SQL v obou směrech: zapisovač píše, kde podmínka platí, a negaci tlačí k porovnáním; čtečka čte, co z predikátu udělá jeho provider](156-a-linq-predicate-carries-sql-three-valued-logic-in-both-directions.md) | platí | F7, F10, F13, T2, T3, S1 |
 | 157 | [Buňka cíle, která se od zdroje liší vyslovenou mezí, vznik soudce FIBEN neblokuje; záznam běhu ji jmenuje](157-a-target-cell-that-differs-by-a-stated-limit-does-not-block-the-fiben-judge.md) | platí; nahrazuje první podmínku odstavce *Soudce* rozh. 149 | T2, T3, F13 |
+| 158 | [Vlastnost deklarovaná `DbSet<T>` je deklarací sady, ať její hodnotu dodá cokoli; kořen, který je její hodnotou, dotaz nepředává](158-a-property-declared-dbset-declares-a-set-whatever-supplies-its-value.md) | platí | F11, F14, S1, S2 |
 
 ## Formát
 

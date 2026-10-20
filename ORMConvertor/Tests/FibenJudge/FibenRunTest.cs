@@ -16,7 +16,7 @@ namespace Tests.FibenJudge;
 /// cell is measured. The run is not a test of a build: without a configured Fiben database
 /// every case skips with the reason, and fails where ORMCONVERTOR_REQUIRE_FIBEN_DATABASE
 /// promised one. Its record goes into the README beside the LDBC runs; the files it writes
-/// stay out of git (decision 042), except the judge made from the first documented run.
+/// stay out of git (decision 042), except the judge made from a documented run.
 /// </summary>
 public class FibenRunTest(ITestOutputHelper output)
 {
@@ -92,7 +92,7 @@ public class FibenRunTest(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// The judge: the catalog's own text returns what the first documented version returned.
+    /// The judge: the catalog's own text returns what the version of the judge's run returned.
     /// A disagreement is a change of the text or of the data that a new judge has to document,
     /// never something to be fixed in the comparison. Until a judge exists the case skips and
     /// says that this run can make one. A query the catalog marks as not translated has no

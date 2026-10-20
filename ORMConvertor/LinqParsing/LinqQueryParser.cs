@@ -297,9 +297,10 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     /// <summary>
     /// Whether the type a member is declared with is the provider's own query root - EF Core's
-    /// DbSet (decision 114). Asked only of a member the unit declares on the type of the name a
-    /// root is written as a member of; a query root that is a call never gets here. The default
-    /// knows none: which type the provider's queries start from is a fact about the provider.
+    /// DbSet. Asked of a member the unit declares on the type of the name a root is written as a
+    /// member of (decision 114), and of the property a root alone is the value of, which then
+    /// declares the set rather than hands a query over (decision 158). The default knows none:
+    /// which type the provider's queries start from is a fact about the provider.
     /// </summary>
     protected virtual bool IsProviderQuerySource(TypeSyntax declaredType) => false;
 
@@ -553,7 +554,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// is the same shape: so a root written as a member of a name is a query only where the
     /// unit does not state otherwise (<see cref="IsNavigation"/>). A root that is a call,
     /// <c>Set&lt;T&gt;()</c> or <c>Query&lt;T&gt;()</c>, names the query API whatever it is
-    /// called on and stays a root.
+    /// called on and stays a root - except as the value of a property declared with the
+    /// provider's source type (<see cref="IsSetDeclaration"/>).
     /// </summary>
     private List<QueryPlace> FindQueries(SyntaxNode root, QueryExpressionRewriter rewriter)
     {
@@ -579,7 +581,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
             if (!TryDecompose(invocation, out _, out var steps, out var rootExpression)
                 || IsNavigation(rootExpression!, out var receiver)
-                || (receiver is { QueryableMember: null } && !steps.Any(step => IsQueryStep(step.Name))))
+                || (receiver is { QueryableMember: null } && !steps.Any(step => IsQueryStep(step.Name)))
+                || (steps.Count == 0 && IsSetDeclaration(invocation)))
             {
                 continue;
             }
@@ -613,6 +616,77 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         return [.. queries.OrderBy(query => query.Position)];
+    }
+
+    /// <summary>
+    /// Whether a root alone is the value of a property declared with the provider's source type
+    /// (decision 158): the expression body of the property or of its get, a value its get
+    /// returns, or the right side of an assignment to the property, bare or through this. Such
+    /// a property declares a set of the context - EF Core reads it by its declared type and name,
+    /// whatever supplies the value -, and the value of a DbSet is the root itself, which runs
+    /// nothing; the queries are the chains the code composes over the set where it writes them.
+    /// On its way to the property the value passes unchanged through parentheses, a
+    /// null-forgiving mark, the operands of ?? and an assignment, so <c>orders ??= Set&lt;Order&gt;()</c>,
+    /// which keeps the set in a field and returns it, is the value too.
+    /// </summary>
+    private bool IsSetDeclaration(ExpressionSyntax value)
+    {
+        SyntaxNode node = value;
+
+        while (true)
+        {
+            switch (node.Parent)
+            {
+                case ExpressionSyntax passing when passing is ParenthesizedExpressionSyntax
+                    or PostfixUnaryExpressionSyntax { RawKind: (int)SyntaxKind.SuppressNullableWarningExpression }
+                    or BinaryExpressionSyntax { RawKind: (int)SyntaxKind.CoalesceExpression }:
+                    node = passing;
+                    continue;
+
+                case AssignmentExpressionSyntax assignment when assignment.Right == node:
+                    if (IsSetProperty(assignment, assignment.Left))
+                    {
+                        return true;
+                    }
+
+                    node = assignment;
+                    continue;
+
+                case ArrowExpressionClauseSyntax { Parent: PropertyDeclarationSyntax property }:
+                    return IsProviderQuerySource(property.Type);
+
+                case ArrowExpressionClauseSyntax { Parent: AccessorDeclarationSyntax accessor }:
+                    return IsGetOfSet(accessor);
+
+                case ReturnStatementSyntax returned:
+                    return returned.Ancestors().FirstOrDefault(ancestor => ancestor is AccessorDeclarationSyntax
+                        or AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or BaseMethodDeclarationSyntax)
+                        is AccessorDeclarationSyntax getter && IsGetOfSet(getter);
+
+                default:
+                    return false;
+            }
+        }
+    }
+
+    private bool IsGetOfSet(AccessorDeclarationSyntax accessor)
+        => accessor.Keyword.IsKind(SyntaxKind.GetKeyword)
+           && accessor.Parent?.Parent is PropertyDeclarationSyntax property
+           && IsProviderQuerySource(property.Type);
+
+    /// <summary>Whether the target of an assignment is a property the class around it declares with the provider's source type.</summary>
+    private bool IsSetProperty(SyntaxNode at, ExpressionSyntax target)
+    {
+        var name = target switch
+        {
+            IdentifierNameSyntax bare => bare.Identifier.Text,
+            MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax own } => own.Identifier.Text,
+            _ => null,
+        };
+
+        return name is not null
+               && at.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault() is { } type
+               && type.Members.OfType<PropertyDeclarationSyntax>().Any(property => property.Identifier.Text == name && IsProviderQuerySource(property.Type));
     }
 
     /// <summary>
