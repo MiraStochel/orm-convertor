@@ -54,6 +54,20 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <summary>The chains the variables on the way of the query being read held.</summary>
     private readonly List<ExpressionSyntax> followed = [];
 
+    /// <summary>
+    /// The names the unit declares with the provider's source type - a parameter, a local, a
+    /// field or a property declared <c>DbSet&lt;Order&gt;</c> -, the only names a chain may start
+    /// at as the set itself (<see cref="DeclaredSet"/>). Taken from the syntax with the
+    /// variables, so that a unit declaring none never builds the model for them.
+    /// </summary>
+    private HashSet<string> declaredSets = [];
+
+    /// <summary>Those of <see cref="declaredSets"/> whose type argument is a type parameter in scope (<see cref="TypeParameterOf"/>).</summary>
+    private HashSet<string> genericSets = [];
+
+    /// <summary>The roots met while the query was read whose entity is a type parameter (<see cref="TypeParameterOf"/>).</summary>
+    private readonly List<ExpressionSyntax> genericRoots = [];
+
     private string sourceAlias = "t";
 
     /// <summary>
@@ -216,6 +230,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             queryBuilder = queryBuilders();
             unread = null;
             followed.Clear();
+            genericRoots.Clear();
             implicitJoins.Clear();
 
             // Given before the reading, to every query, so that a refused one does not
@@ -285,6 +300,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         rewriter = new QueryExpressionRewriter(root);
         root = rewriter.Visit(root)!;
 
+        (declaredSets, genericSets) = DeclaredSets(root);
         variables = new QueryVariables(root, expression => TryDecompose(expression, out _, out _));
         return true;
     }
@@ -303,6 +319,24 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// which type the provider's queries start from is a fact about the provider.
     /// </summary>
     protected virtual bool IsProviderQuerySource(TypeSyntax declaredType) => false;
+
+    /// <summary>
+    /// Whether a call over the provider's source composes no query: it tracks an entity for the
+    /// provider's next save, or returns the entry that tracks it - EF Core's <c>Add</c>,
+    /// <c>Remove</c>, <c>Attach</c>, <c>Update</c>, <c>Entry</c>. A chain that starts with one
+    /// hands the provider nothing to read, so it is no place (decision 109), and read as a query
+    /// it would be one the source does not pose. The default knows none.
+    /// </summary>
+    protected virtual bool IsProviderTrackingCall(string name) => false;
+
+    /// <summary>
+    /// Whether an expression is a root of a query as the reading takes it: one the wrapper
+    /// recognizes (<see cref="TryReadQueryRoot"/>), or a name the unit declares with the
+    /// provider's source type, which is the set itself (<see cref="DeclaredSet"/>). For a
+    /// wrapper that recognizes a whole query over a root in its own API, as EF Core's FromSql.
+    /// </summary>
+    protected bool IsQueryRoot(ExpressionSyntax expression)
+        => TryReadQueryRoot(expression, out _) || DeclaredSet(expression) is not null;
 
     /// <summary>
     /// Whether the provider escapes the argument of a string method before it becomes a LIKE
@@ -564,7 +598,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// the name; one known by its position only where the unit states a query type for it. A
     /// chain over no root that starts at a query the unit declares as its own - a parameter, a
     /// field or a property declared as an IQueryable -, and such a query enumerated as it stands,
-    /// is a place refused naming it (<see cref="QueryOfItsOwn"/>).
+    /// is a place refused naming it (<see cref="QueryOfItsOwn"/>). A name declared with the
+    /// provider's source type is a root, the set itself (<see cref="DeclaredSet"/>); a chain
+    /// that starts with a call tracking an entity is no query (<see cref="IsProviderTrackingCall"/>).
     /// </summary>
     private List<QueryPlace> FindQueries(SyntaxNode root, QueryExpressionRewriter rewriter)
     {
@@ -600,6 +636,19 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             // naming it when it is read.
             RootReceiver? receiver = null;
             var rooted = TryDecompose(invocation, out _, out var steps, out var rootExpression);
+
+            // A call that tracks an entity - Add, Remove, Entry - hands the provider nothing to
+            // read, and neither does a set written in the chain before it (ctx.Set<Order>().Add(o)),
+            // which the search would meet next as a root alone.
+            if (rooted && steps.Count > 0 && IsProviderTrackingCall(steps[0].Name))
+            {
+                if (invocation.Span.Contains(rootExpression!.Span))
+                {
+                    taken.Add(rootExpression.Span);
+                }
+
+                continue;
+            }
 
             if (rooted
                     ? IsNavigation(rootExpression!, out receiver)
@@ -1014,12 +1063,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     /// <summary>
     /// The names of the members the unit declares a query starts from - of the provider's source
-    /// type or an IQueryable. A root written as a name is one the unit states anything about
-    /// (decision 114) only as a member of one of these names.
+    /// type or an IQueryable -, and every name it declares with the provider's source type, which
+    /// is the set itself (<see cref="DeclaredSet"/>). A root written as a name is one the unit
+    /// states anything about (decision 114) only as one of these names or a member of one.
     /// </summary>
     private HashSet<string> QueryMembers(SyntaxNode root)
     {
-        var names = new HashSet<string>(StringComparer.Ordinal);
+        var names = new HashSet<string>(declaredSets, StringComparer.Ordinal);
 
         foreach (var node in root.DescendantNodes())
         {
@@ -1337,8 +1387,27 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        TryDecompose(query.Chain, out var queryRoot, out var steps);
+        TryDecompose(query.Chain, out var queryRoot, out var steps, out var rootExpression);
+
+        // A root whose entity is a type parameter reads the table of whatever type the caller
+        // supplies, which the text does not state: refused naming the parameter before anything
+        // is read over it, so that no record speaks of a table T. One met inside the query - a
+        // subquery, a joined sequence - refuses it once the query is read.
+        if (TypeParameterRefusal(rootExpression!) is { } generic)
+        {
+            queryBuilder.Push();
+            Report(ConversionRecordKind.Failure, generic);
+            ReportRefusedClauses(root, rewriter, node => query.Chain.Span.Contains(node.Span));
+            queryBuilder.Pop();
+            return;
+        }
+
         EmitChain(queryRoot!, steps);
+
+        foreach (var nested in genericRoots.Distinct().OrderBy(node => node.SpanStart))
+        {
+            Report(ConversionRecordKind.Failure, TypeParameterRefusal(nested)!);
+        }
 
         var covered = followed.Prepend(query.Chain).ToList();
         ReportRefusedClauses(root, rewriter, node => covered.Any(read => read.Span.Contains(node.Span)));
@@ -1454,6 +1523,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         if (IsElementNavigation(rootExpression))
+        {
+            return true;
+        }
+
+        // A member of a name the unit declares as a set - orders.Local, the provider's view of
+        // the entities it tracks - is the API of the set over objects in memory, no set of its
+        // own (DeclaredSet).
+        if (SetDeclarationOf(name) is not null)
         {
             return true;
         }
@@ -1670,6 +1747,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             {
                 steps.Reverse();
                 rootExpression = current;
+                NoteTypeParameter(current);
                 return true;
             }
 
@@ -1709,11 +1787,176 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
+            // A name the unit declares with the provider's source type, whose value the text
+            // does not fix - a parameter DbSet<Order> orders, a field it never assigns -, is the
+            // set of the entity the type argument names, whatever supplies the value: a DbSet
+            // carries nothing composed over it, so the provider gets the tree Set<Order>() gives
+            // (decisions 114 and 158). One holding a value the text fixes was followed above.
+            if (DeclaredSet(current) is { } entity)
+            {
+                root = new LinqQueryRoot(entity);
+                steps.Reverse();
+                rootExpression = current;
+                NoteTypeParameter(current);
+                return true;
+            }
+
             root = null;
             rootExpression = null;
             return false;
         }
     }
+
+    /// <summary>Keeps a root whose entity is a type parameter, for the query being read to refuse.</summary>
+    private void NoteTypeParameter(ExpressionSyntax rootExpression)
+    {
+        if (TypeParameterOf(rootExpression) is not null)
+        {
+            genericRoots.Add(rootExpression);
+        }
+    }
+
+    /// <summary>
+    /// The names the unit declares with the provider's source type - parameters, locals,
+    /// fields, properties -, and those of them whose type argument is a type parameter in scope
+    /// at the declaration. From the syntax alone: the model binds a name only where one of
+    /// these is written.
+    /// </summary>
+    private (HashSet<string> Declared, HashSet<string> Generic) DeclaredSets(SyntaxNode root)
+    {
+        var declared = new HashSet<string>(StringComparer.Ordinal);
+        var generic = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var node in root.DescendantNodes())
+        {
+            var (type, names) = node switch
+            {
+                ParameterSyntax { Type: { } parameterType } parameter => (parameterType, new[] { parameter.Identifier.Text }),
+                VariableDeclarationSyntax declaration => (declaration.Type, declaration.Variables.Select(variable => variable.Identifier.Text).ToArray()),
+                PropertyDeclarationSyntax property => (property.Type, new[] { property.Identifier.Text }),
+                _ => ((TypeSyntax?)null, Array.Empty<string>()),
+            };
+
+            if (type is null || !IsProviderQuerySource(type))
+            {
+                continue;
+            }
+
+            declared.UnionWith(names);
+
+            if (FirstTypeArgumentOf(type) is IdentifierNameSyntax argument && DeclarerOf(argument) is not null)
+            {
+                generic.UnionWith(names);
+            }
+        }
+
+        return (declared, generic);
+    }
+
+    /// <summary>
+    /// Whether the unit declares a name - bare, or a member of the own instance through
+    /// <c>this</c> - with the provider's source type, and the declared type if so.
+    /// </summary>
+    private QueryVariables.Declaration? SetDeclarationOf(ExpressionSyntax name)
+        => HeadName(name) is { } written
+           && declaredSets.Contains(written)
+           && variables.DeclarationOf(name) is { Type: { } type } declaration
+           && IsProviderQuerySource(type)
+            ? declaration
+            : null;
+
+    /// <summary>
+    /// The entity of the set a chain starts at where its head is a name the unit declares with
+    /// the provider's source type - a parameter, a local or a field declared
+    /// <c>DbSet&lt;Order&gt;</c>, bare or through <c>this</c> - and whose value the text does not
+    /// fix: the name is the set of the entity its type argument names, as <c>Set&lt;Order&gt;()</c>
+    /// is. A local or a field the code writes more than once is a query composed at run time,
+    /// refused where its values are kept (decision 109). Null for any other head.
+    /// </summary>
+    private string? DeclaredSet(ExpressionSyntax head)
+    {
+        if (SetDeclarationOf(head) is not { } declaration
+            || (declaration.Holder is QueryVariables.Holder.Local or QueryVariables.Holder.Field
+                && (declaration.Writes.Count > 1 || declaration.Writes.Contains(null))))
+        {
+            return null;
+        }
+
+        return FirstTypeArgumentOf(declaration.Type!) is { } argument ? NameOfEntity(argument) : null;
+    }
+
+    /// <summary>
+    /// The type parameter a root names its entity by, and what declares it - <c>ctx.Set&lt;T&gt;()</c>
+    /// or <c>session.Query&lt;T&gt;()</c> in a generic repository, a name declared
+    /// <c>DbSet&lt;T&gt;</c> -; null for a root that names an entity. The provider reads the table
+    /// of the type the caller supplies, which the text does not state.
+    /// </summary>
+    private (string Name, string Declarer)? TypeParameterOf(ExpressionSyntax rootExpression)
+    {
+        var argument = rootExpression switch
+        {
+            InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name: GenericNameSyntax generic } } => generic.TypeArgumentList.Arguments.FirstOrDefault(),
+            InvocationExpressionSyntax { Expression: GenericNameSyntax generic } => generic.TypeArgumentList.Arguments.FirstOrDefault(),
+            IdentifierNameSyntax or MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax }
+                when HeadName(rootExpression) is { } written && genericSets.Contains(written) && SetDeclarationOf(rootExpression) is { } declaration
+                => FirstTypeArgumentOf(declaration.Type!),
+            _ => null,
+        };
+
+        return argument is IdentifierNameSyntax name && DeclarerOf(name) is { } declarer
+            ? (name.Identifier.Text, declarer)
+            : null;
+    }
+
+    /// <summary>The record that refuses a root whose entity is a type parameter; null for any other root.</summary>
+    private string? TypeParameterRefusal(ExpressionSyntax rootExpression)
+        => TypeParameterOf(rootExpression) is { } parameter
+            ? $"The query reads '{rootExpression}', whose entity is '{parameter.Name}', a type parameter of '{parameter.Declarer}': the provider reads the table of whatever type the caller supplies for it, which the text does not state; no artifact was generated."
+            : null;
+
+    /// <summary>
+    /// The type, method, local function or delegate whose type parameter a name is, as written
+    /// with its type parameters - the nearest that declares one of that name, as C# binds it;
+    /// null where none around the name does.
+    /// </summary>
+    private static string? DeclarerOf(IdentifierNameSyntax name)
+    {
+        foreach (var ancestor in name.Ancestors())
+        {
+            var (identifier, parameters) = ancestor switch
+            {
+                TypeDeclarationSyntax type => (type.Identifier, type.TypeParameterList),
+                MethodDeclarationSyntax method => (method.Identifier, method.TypeParameterList),
+                LocalFunctionStatementSyntax local => (local.Identifier, local.TypeParameterList),
+                DelegateDeclarationSyntax @delegate => (@delegate.Identifier, @delegate.TypeParameterList),
+                _ => (default(SyntaxToken), (TypeParameterListSyntax?)null),
+            };
+
+            if (parameters?.Parameters.Any(parameter => parameter.Identifier.Text == name.Identifier.Text) == true)
+            {
+                return identifier.Text + parameters;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The name a head is written as, bare or as a member of the own instance through <c>this</c>; null for any other expression.</summary>
+    private static string? HeadName(ExpressionSyntax name) => name switch
+    {
+        IdentifierNameSyntax identifier => identifier.Identifier.Text,
+        MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax own } => own.Identifier.Text,
+        _ => null,
+    };
+
+    /// <summary>The first type argument of a generic type as written, past a nullable mark and a qualifier; null for a type that has none.</summary>
+    private static TypeSyntax? FirstTypeArgumentOf(TypeSyntax type) => (type is NullableTypeSyntax nullable ? nullable.ElementType : type) switch
+    {
+        GenericNameSyntax generic => generic.TypeArgumentList.Arguments.FirstOrDefault(),
+        QualifiedNameSyntax { Right: GenericNameSyntax generic } => generic.TypeArgumentList.Arguments.FirstOrDefault(),
+        AliasQualifiedNameSyntax { Name: GenericNameSyntax generic } => generic.TypeArgumentList.Arguments.FirstOrDefault(),
+        _ => null,
+    };
 
     private void EmitSource(LinqQueryRoot root, string? elementParameter)
     {
@@ -2992,6 +3235,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             {
                 return;
             }
+        }
+        else if (DeclaredSet(args[0].Expression) is not null
+                 && TryDecompose(args[0].Expression, out var declaredRoot, out _))
+        {
+            // A name declared as a set is the table of its entity, whatever the name says.
+            rightName = declaredRoot!.Name;
+            rightTable = ResolveTable(rightName);
+            rightMap = MapFor(rightName);
         }
 
         var selector = args.Count > 3 ? args[3].Expression as ParenthesizedLambdaExpressionSyntax : null;
@@ -7387,14 +7638,17 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     protected static string? TypeArgumentOf(SimpleNameSyntax name)
         => name is GenericNameSyntax generic && generic.TypeArgumentList.Arguments.Count > 0
-            ? generic.TypeArgumentList.Arguments[0] switch
-            {
-                IdentifierNameSyntax identifier => identifier.Identifier.Text,
-                QualifiedNameSyntax qualified => qualified.Right.Identifier.Text,
-                GenericNameSyntax nested => nested.Identifier.Text,
-                var other => other.ToString(),
-            }
+            ? NameOfEntity(generic.TypeArgumentList.Arguments[0])
             : null;
+
+    /// <summary>The entity a type argument names: its last identifier, without a qualifier or type arguments of its own.</summary>
+    private static string NameOfEntity(TypeSyntax argument) => argument switch
+    {
+        IdentifierNameSyntax identifier => identifier.Identifier.Text,
+        QualifiedNameSyntax qualified => qualified.Right.Identifier.Text,
+        GenericNameSyntax nested => nested.Identifier.Text,
+        var other => other.ToString(),
+    };
 
     private void Report(ConversionRecordKind kind, string reason, QueryFeature? feature = null)
         => queryBuilder.Report(new ConversionRecord

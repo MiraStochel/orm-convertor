@@ -74,7 +74,7 @@ public class EFCoreLinqQueryParser(
 
             if (name is "FromSql" or "FromSqlRaw" or "FromSqlInterpolated"
                 && call.Expression is MemberAccessExpressionSyntax member
-                && TryReadQueryRoot(member.Expression, out _)
+                && IsQueryRoot(member.Expression)
                 && after.All(next => MethodNameOf(next) is { } step && Materializers.Contains(step)))
             {
                 return Native(outermost, call, after, raw: name == "FromSqlRaw", api: name);
@@ -246,6 +246,15 @@ public class EFCoreLinqQueryParser(
     /// the root the position reads, and a member of any other type is not one.
     /// </summary>
     protected override bool IsProviderQuerySource(TypeSyntax declaredType) => EFCoreContext.IsDbSet(declaredType);
+
+    /// <summary>
+    /// The methods of a DbSet that compose no query, as EF Core 10.0.10 declares them: they
+    /// begin tracking an entity for the next SaveChanges, or return its entry, and none returns
+    /// a query or an entity the provider reads - measured in <c>EFCore/EFCoreDbSetParameterProviderTest</c>.
+    /// </summary>
+    protected override bool IsProviderTrackingCall(string name) => name is
+        "Add" or "AddAsync" or "AddRange" or "AddRangeAsync" or "Attach" or "AttachRange"
+        or "Update" or "UpdateRange" or "Remove" or "RemoveRange" or "Entry";
 
     /// <summary>
     /// The static classes of EF Core's query steps, as EF Core 10.0.10 has them: the core's
