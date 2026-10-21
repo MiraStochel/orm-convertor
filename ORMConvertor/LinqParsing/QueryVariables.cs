@@ -250,6 +250,63 @@ internal sealed class QueryVariables
         return null;
     }
 
+    /// <summary>What kind of name a declaration makes, as far as the reading of a query asks it.</summary>
+    public enum Holder
+    {
+        /// <summary>A parameter, whose value the caller supplies.</summary>
+        Parameter,
+
+        /// <summary>A local, whose values the member that declares it writes.</summary>
+        Local,
+
+        /// <summary>A field, whose values the unit may write anywhere.</summary>
+        Field,
+
+        /// <summary>A property, whose value its accessor gives.</summary>
+        Property,
+    }
+
+    /// <summary>
+    /// What the unit declares a name as: the kind of the name, the type its declaration states
+    /// (null where it states none, a lambda parameter without a type), and the values the unit
+    /// writes to a local or a field, one null for each write whose value the text does not state.
+    /// </summary>
+    public sealed record Declaration(Holder Holder, TypeSyntax? Type, IReadOnlyList<ExpressionSyntax?> Writes);
+
+    /// <summary>
+    /// What the unit declares the name a chain starts at as (decision 114): a name written bare,
+    /// or a member of the own instance written through <c>this</c>, bound through the model over
+    /// the unit alone. Null for a name the unit does not declare, and for anything else.
+    /// </summary>
+    public Declaration? DeclarationOf(ExpressionSyntax name)
+    {
+        var (written, bound) = name switch
+        {
+            IdentifierNameSyntax identifier => (identifier.Identifier.Text, (ExpressionSyntax)identifier),
+            MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax own } access => (own.Identifier.Text, access),
+            _ => ((string?)null, (ExpressionSyntax?)null),
+        };
+
+        // Before the model is built: the ctx of a fragment is bound to nothing.
+        if (written is null || !declared.Contains(written))
+        {
+            return null;
+        }
+
+        var info = Model.GetSymbolInfo(bound!);
+        var symbol = info.Symbol ?? (info.CandidateSymbols.Length == 1 ? info.CandidateSymbols[0] : null);
+        var declaration = symbol?.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+
+        return (symbol, declaration) switch
+        {
+            (IParameterSymbol, ParameterSyntax parameter) => new Declaration(Holder.Parameter, parameter.Type, []),
+            (ILocalSymbol, VariableDeclaratorSyntax { Parent: VariableDeclarationSyntax local }) => new Declaration(Holder.Local, local.Type, Describe(symbol).Writes),
+            (IFieldSymbol, VariableDeclaratorSyntax { Parent: VariableDeclarationSyntax field }) => new Declaration(Holder.Field, field.Type, Describe(symbol).Writes),
+            (IPropertySymbol, PropertyDeclarationSyntax property) => new Declaration(Holder.Property, property.Type, []),
+            _ => null,
+        };
+    }
+
     /// <summary>How a chain's value is kept, as far as it decides whether the chain is a query of its own.</summary>
     public enum StorageKind
     {
@@ -289,8 +346,12 @@ internal sealed class QueryVariables
     /// than once or chosen by a condition, since which query reaches the provider is then
     /// decided at run time. In every other case - kept nowhere, run already, returned,
     /// enumerated, passed on - it is a query of its own.
+    ///
+    /// A chain that starts at a name the unit declares as a query of its own rather than at a
+    /// root (<paramref name="rooted"/> false) is no query the variable could be followed to; kept
+    /// in a variable assigned once, it is the beginning of the continuations all the same.
     /// </summary>
-    public (StorageKind Kind, string? Variable) StorageOf(ExpressionSyntax chain)
+    public (StorageKind Kind, string? Variable) StorageOf(ExpressionSyntax chain, bool rooted = true)
     {
         if (IsExecuted(chain) || ContinuedVariableOf(chain, out var direct) is not { } symbol)
         {
@@ -305,7 +366,7 @@ internal sealed class QueryVariables
             return (StorageKind.None, null);
         }
 
-        if (direct && FollowableValue(symbol) is not null)
+        if (direct && (rooted ? FollowableValue(symbol) is not null : variable.Writes is [not null]))
         {
             return continuations == variable.Reads.Count ? (StorageKind.Prefix, symbol.Name) : (StorageKind.None, null);
         }

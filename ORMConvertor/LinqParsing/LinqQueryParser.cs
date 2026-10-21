@@ -421,9 +421,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// The name a chain's root is written as a member of, as far as the reading of the place
     /// has to check it (decision 114): the root as written; the type the unit gives the name,
     /// which the conversion's mapping may know as an entity; and the type of the member, where
-    /// the unit declares it as a query of its own rather than a DbSet.
+    /// the unit declares it as a query of its own rather than a DbSet. A chain that starts at
+    /// such a query of its own without any root - a parameter, a field or a property the unit
+    /// declares as an IQueryable - has the same receiver, <paramref name="Holder"/> saying which.
     /// </summary>
-    private sealed record RootReceiver(string Written, string? StatedType, string? QueryableMember);
+    private sealed record RootReceiver(string Written, string? StatedType, string? Queryable, QueryVariables.Holder Holder = QueryVariables.Holder.Property);
 
     /// <summary>
     /// A place where the unit hands its provider a query in another language than LINQ
@@ -559,12 +561,22 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// provider's source type (<see cref="IsSetDeclaration"/>). A root written as a name with no
     /// step over it is a query where the code hands it over whole - enumerates, returns, passes
     /// it on (<see cref="HandOvers"/>) -, under the same questions of what the unit states about
-    /// the name; one known by its position only where the unit states a query type for it.
+    /// the name; one known by its position only where the unit states a query type for it. A
+    /// chain over no root that starts at a query the unit declares as its own - a parameter, a
+    /// field or a property declared as an IQueryable -, and such a query enumerated as it stands,
+    /// is a place refused naming it (<see cref="QueryOfItsOwn"/>).
     /// </summary>
     private List<QueryPlace> FindQueries(SyntaxNode root, QueryExpressionRewriter rewriter)
     {
         var queries = new List<QueryPlace>();
         var taken = new List<TextSpan>();
+
+        bool? ownQueries = null;
+        RootReceiver? OwnQueryUnder(ExpressionSyntax expression, out bool throughSteps)
+        {
+            throughSteps = false;
+            return (ownQueries ??= DeclaresAQueryOfItsOwn(root)) ? QueryOfItsOwn(expression, out throughSteps) : null;
+        }
 
         foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
@@ -583,17 +595,24 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
-            if (!TryDecompose(invocation, out _, out var steps, out var rootExpression)
-                || IsNavigation(rootExpression!, out var receiver)
-                || (receiver is { QueryableMember: null } && !steps.Any(step => IsQueryStep(step.Name)))
-                || (steps.Count == 0 && IsSetDeclaration(invocation)))
+            // A chain over no root may start at a query of its own the unit declares - a
+            // parameter, a field or a property declared as an IQueryable -, a place refused
+            // naming it when it is read.
+            RootReceiver? receiver = null;
+            var rooted = TryDecompose(invocation, out _, out var steps, out var rootExpression);
+
+            if (rooted
+                    ? IsNavigation(rootExpression!, out receiver)
+                      || (receiver is { Queryable: null } && !steps.Any(step => IsQueryStep(step.Name)))
+                      || (steps.Count == 0 && IsSetDeclaration(invocation))
+                    : (receiver = OwnQueryUnder(invocation, out _)) is null)
             {
                 continue;
             }
 
             taken.Add(invocation.Span);
 
-            var (kind, variable) = variables.StorageOf(invocation);
+            var (kind, variable) = variables.StorageOf(invocation, rooted);
             if (kind == QueryVariables.StorageKind.Prefix)
             {
                 continue;
@@ -613,17 +632,26 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         // never meets it, and the continuations do not decompose, since a variable assigned
         // more than once is not followed. A root known by its position begins such a query only
         // where a step of LINQ or of the provider is in it or continues it: items =
-        // request.Items, reassigned and continued by Add, is a list.
+        // request.Items, reassigned and continued by Add, is a list. A query of its own kept
+        // there (IQueryable<Order> q = source; if (…) q = q.Where(…);) begins one as well.
         foreach (var stored in StoredValues(root))
         {
             if (stored is InvocationExpressionSyntax
                 || taken.Any(span => span.Contains(stored.Span))
-                || variables.StorageOf(stored) is not (QueryVariables.StorageKind.RunTime, { } variable)
-                || !TryDecompose(stored, out _, out var steps, out var rootExpression)
-                || IsNavigation(rootExpression!, out var receiver)
-                || (receiver is { QueryableMember: null }
-                    && !steps.Any(step => IsQueryStep(step.Name))
-                    && !variables.ContinuationsOf(stored).Any(ContinuesWithAQueryStep)))
+                || variables.StorageOf(stored) is not (QueryVariables.StorageKind.RunTime, { } variable))
+            {
+                continue;
+            }
+
+            RootReceiver? receiver = null;
+
+            if (TryDecompose(stored, out _, out var steps, out var rootExpression)
+                    ? IsNavigation(rootExpression!, out receiver)
+                      || (receiver is { Queryable: null }
+                          && !steps.Any(step => IsQueryStep(step.Name))
+                          && !variables.ContinuationsOf(stored).Any(ContinuesWithAQueryStep))
+                    : variables.StorageOf(stored, rooted: false).Kind != QueryVariables.StorageKind.RunTime
+                      || (receiver = OwnQueryUnder(stored, out _)) is null)
             {
                 continue;
             }
@@ -665,6 +693,25 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 continue;
             }
 
+            // A query of its own enumerated as it stands runs what the caller passed or the
+            // member holds, and is refused naming it as a chain over it is. Returned or passed on
+            // as it stands, it goes on unchanged to where it is composed and run, which is no
+            // place of this unit; one a variable holds with steps over it was met above.
+            if (handover.Enumerates)
+            {
+                foreach (var leaf in Branches(handover.Value))
+                {
+                    if (leaf is IdentifierNameSyntax or MemberAccessExpressionSyntax
+                        && !taken.Any(span => span.Contains(leaf.Span))
+                        && OwnQueryUnder(leaf, out var throughSteps) is { } own
+                        && !throughSteps)
+                    {
+                        taken.Add(leaf.Span);
+                        queries.Add(new QueryPlace(leaf, leaf, null, Receiver: own));
+                    }
+                }
+            }
+
             // Before anything that builds the model: a value that is no name cannot be a root
             // alone; and without the statement of a query type, a root alone is one only as a
             // member the unit declares a query starts from - a set, or an IQueryable -, so where
@@ -683,7 +730,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     || (held is MemberAccessExpressionSyntax { Name.Identifier.Text: var member } && !queryMembers.Contains(member) && !handover.Stated())
                     || IsSetDeclaration(held)
                     || IsNavigation(held, out var receiver)
-                    || (receiver is { QueryableMember: null } && !handover.Stated()))
+                    || (receiver is { Queryable: null } && !handover.Stated()))
                 {
                     continue;
                 }
@@ -779,16 +826,20 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// A value the code hands over whole, and whether the unit states it is a query - the
     /// type it gives the place the value goes to is the provider's source or an IQueryable,
     /// which a collection in memory does not convert to. An enumeration states it by itself: it
-    /// is the step that runs the query, as ToList is. Asked lazily, since for an argument the
-    /// answer takes the model.
+    /// is the step that runs the query, as ToList is; so does the body of a query the provider
+    /// compiles (<see cref="IsCompiledQuery"/>). Asked lazily, since for an argument the answer
+    /// takes the model.
     /// </summary>
-    private sealed class HandOver(ExpressionSyntax value, Func<bool> stated, CommonForEachStatementSyntax? loop = null)
+    private sealed class HandOver(ExpressionSyntax value, Func<bool> stated, CommonForEachStatementSyntax? loop = null, bool spread = false)
     {
         private bool? isStated;
 
         public ExpressionSyntax Value => value;
 
         public CommonForEachStatementSyntax? Loop => loop;
+
+        /// <summary>Whether the hand-over runs the value: a foreach, an await foreach or a spread enumerates it.</summary>
+        public bool Enumerates => loop is not null || spread;
 
         public bool Stated() => isStated ??= stated();
     }
@@ -815,7 +866,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     break;
 
                 case SpreadElementSyntax spread:
-                    yield return new HandOver(spread.Expression, () => true);
+                    yield return new HandOver(spread.Expression, () => true, spread: true);
                     break;
 
                 case ReturnStatementSyntax { Expression: { } returned } statement:
@@ -827,7 +878,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     break;
 
                 case LambdaExpressionSyntax { ExpressionBody: { } body } lambda:
-                    yield return new HandOver(body, () => IsQueryType(TypeOfValue(lambda)));
+                    yield return new HandOver(body, () => IsCompiledQuery(lambda) || IsQueryType(TypeOfValue(lambda)));
                     break;
 
                 case PropertyDeclarationSyntax { Initializer.Value: { } initial } property when !IsProviderQuerySource(property.Type):
@@ -1000,10 +1051,125 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             type = nullable.ElementType;
         }
 
+        return type is not null && (IsProviderQuerySource(type) || IsQueryable(type));
+    }
+
+    /// <summary>
+    /// Whether a declared type is IQueryable of System.Linq, generic or not, ordered or not: a
+    /// query of its own rather than the provider's source (decision 114).
+    /// </summary>
+    private static bool IsQueryable(TypeSyntax? type)
+    {
+        if (type is NullableTypeSyntax nullable)
+        {
+            type = nullable.ElementType;
+        }
+
         return type is not null
-               && (IsProviderQuerySource(type)
-                   || GenericNameOf(type) is "IQueryable" or "IOrderedQueryable"
+               && (GenericNameOf(type) is "IQueryable" or "IOrderedQueryable"
                    || type is IdentifierNameSyntax { Identifier.Text: "IQueryable" } or QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier.Text: "IQueryable" } });
+    }
+
+    /// <summary>
+    /// Whether the unit declares any name as an IQueryable - a parameter, a local, a field or a
+    /// property -, the only names a chain over no root may start at as a query of its own.
+    /// Asked before anything that builds the model.
+    /// </summary>
+    private static bool DeclaresAQueryOfItsOwn(SyntaxNode root)
+        => root.DescendantNodes().Any(node => node switch
+        {
+            ParameterSyntax parameter => IsQueryable(parameter.Type),
+            VariableDeclarationSyntax declaration => IsQueryable(declaration.Type),
+            PropertyDeclarationSyntax property => IsQueryable(property.Type),
+            _ => false,
+        });
+
+    /// <summary>
+    /// The query of its own a chain over no root starts at (decision 114): a parameter, a field
+    /// or a property the unit declares as an IQueryable - written bare or through this -, or a
+    /// local declared so whose value the reading does not follow, reached through the locals
+    /// and fields assigned once on the way and through the steps of LINQ, as the reading follows
+    /// a variable to the chain it holds. The provider gets a tree that begins with what the
+    /// caller passes or the name holds, which the text does not state, so the place is refused
+    /// naming it, as a member of a name declared so is. A step of no LINQ - <c>repo.Query()</c>
+    /// - returns what the reading does not know, so a query of its own met before it is the one
+    /// the chain starts at; a name declared otherwise is objects in memory
+    /// (<c>orders.AsQueryable()</c> over a list), and a local or field the code writes more than
+    /// once, or gives a value a condition chooses, is a query composed at run time, refused where
+    /// its values are kept. Null for those and for a chain that starts at anything the unit does
+    /// not declare.
+    /// <paramref name="throughSteps"/> says whether the way passed a step.
+    /// </summary>
+    private RootReceiver? QueryOfItsOwn(ExpressionSyntax expression, out bool throughSteps)
+    {
+        throughSteps = false;
+        RootReceiver? met = null;
+        var visited = new HashSet<SyntaxNode>();
+        var current = expression;
+
+        while (true)
+        {
+            switch (current)
+            {
+                case ParenthesizedExpressionSyntax parenthesized:
+                    current = parenthesized.Expression;
+                    continue;
+
+                case CastExpressionSyntax cast:
+                    current = cast.Expression;
+                    continue;
+
+                case BinaryExpressionSyntax asExpression when asExpression.IsKind(SyntaxKind.AsExpression):
+                    current = asExpression.Left;
+                    continue;
+
+                // A value chosen by a condition is a query composed at run time, refused where
+                // each of its values is kept.
+                case ConditionalExpressionSyntax:
+                case BinaryExpressionSyntax coalesce when coalesce.IsKind(SyntaxKind.CoalesceExpression):
+                    return null;
+
+                case InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax step }:
+                    if (!IsQueryStep(step.Name.Identifier.Text))
+                    {
+                        return met;
+                    }
+
+                    throughSteps = true;
+                    current = step.Expression;
+                    continue;
+
+                case IdentifierNameSyntax or MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax }:
+                    if (variables.DeclarationOf(current) is not { } declaration)
+                    {
+                        return met;
+                    }
+
+                    var own = IsQueryable(declaration.Type)
+                        ? new RootReceiver(current.ToString(), null, declaration.Type!.ToString(), declaration.Holder)
+                        : null;
+
+                    if (declaration.Holder is QueryVariables.Holder.Local or QueryVariables.Holder.Field)
+                    {
+                        if (declaration.Writes.Count > 1 || declaration.Writes.Contains(null))
+                        {
+                            return null;
+                        }
+
+                        if (declaration.Writes is [{ } value] && !QueryVariables.IsExecuted(value) && visited.Add(value))
+                        {
+                            met = own ?? met;
+                            current = value;
+                            continue;
+                        }
+                    }
+
+                    return own;
+
+                default:
+                    return met;
+            }
+        }
     }
 
     /// <summary>The type of what a return statement returns, from the member, local function or lambda it stands in; null where none is declared.</summary>
@@ -1221,6 +1387,24 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     protected virtual bool IsProviderStaticQueryClass(string name) => false;
 
+    /// <summary>
+    /// Whether a lambda is a query the provider compiles - EF Core's <c>EF.CompileQuery</c>,
+    /// whose lambda gets the context as its first parameter and is the query itself. Its body is
+    /// a place where the unit hands the provider a query, and a member of that first parameter is
+    /// a root, not the navigation a member of a lambda parameter is (decision 109). The default
+    /// knows none: which API compiles a query is the wrapper's statement about its framework.
+    /// </summary>
+    protected virtual bool IsCompiledQuery(AnonymousFunctionExpressionSyntax lambda) => false;
+
+    /// <summary>The name of the first parameter of a lambda or an anonymous method; null where it has none.</summary>
+    private static string? FirstParameterOf(AnonymousFunctionExpressionSyntax function) => function switch
+    {
+        SimpleLambdaExpressionSyntax simple => simple.Parameter.Identifier.Text,
+        ParenthesizedLambdaExpressionSyntax parenthesized => parenthesized.ParameterList.Parameters.FirstOrDefault()?.Identifier.Text,
+        AnonymousMethodExpressionSyntax anonymous => anonymous.ParameterList?.Parameters.FirstOrDefault()?.Identifier.Text,
+        _ => null,
+    };
+
     private void ReportRefusedClauses(SyntaxNode root, QueryExpressionRewriter rewriter, Func<SyntaxNode, bool> belongs)
     {
         foreach (var (reason, feature, anchor) in rewriter.Refusals)
@@ -1288,7 +1472,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 return false;
             }
 
-            if (GenericNameOf(memberType) is "IQueryable" or "IOrderedQueryable")
+            if (IsQueryable(memberType))
             {
                 receiver = new RootReceiver(rootExpression.ToString(), statement.TypeName, memberType.ToString());
                 return false;
@@ -1350,9 +1534,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private string? RefusalOf(RootReceiver receiver)
     {
-        if (receiver.QueryableMember is { } declared)
+        if (receiver.Queryable is { } declared)
         {
-            return $"The chain starts at '{receiver.Written}', a member the unit declares as {declared}: the query that reaches the provider begins with what the member returns, which the reading does not follow; no artifact was generated.";
+            return receiver.Holder switch
+            {
+                QueryVariables.Holder.Parameter => $"The chain starts at '{receiver.Written}', a parameter the unit declares as {declared}: the query that reaches the provider begins with what the caller passes, which the text does not state; no artifact was generated.",
+                QueryVariables.Holder.Local => $"The chain starts at '{receiver.Written}', a local the unit declares as {declared}: the query that reaches the provider begins with the value the local is given, which the reading does not follow; no artifact was generated.",
+                _ => $"The chain starts at '{receiver.Written}', a member the unit declares as {declared}: the query that reaches the provider begins with what the member returns, which the reading does not follow; no artifact was generated.",
+            };
         }
 
         if (receiver.StatedType is { } type
@@ -1376,9 +1565,10 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <summary>
     /// Whether the root of a chain is a member of an element variable - a lambda parameter or a
     /// foreach variable - rather than of the context: <c>o.Lines</c> on an order the code
-    /// loaded (decision 109).
+    /// loaded (decision 109). The first parameter of a query the provider compiles is its
+    /// context, not an element (<see cref="IsCompiledQuery"/>).
     /// </summary>
-    private static bool IsElementNavigation(ExpressionSyntax rootExpression)
+    private bool IsElementNavigation(ExpressionSyntax rootExpression)
     {
         if (rootExpression is not MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax head })
         {
@@ -1391,6 +1581,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         {
             switch (ancestor)
             {
+                case AnonymousFunctionExpressionSyntax compiled when IsCompiledQuery(compiled) && FirstParameterOf(compiled) == name:
+                    return false;
+
                 case SimpleLambdaExpressionSyntax lambda when lambda.Parameter.Identifier.Text == name:
                 case ParenthesizedLambdaExpressionSyntax parenthesized when parenthesized.ParameterList.Parameters.Any(p => p.Identifier.Text == name):
                 case AnonymousMethodExpressionSyntax anonymous when anonymous.ParameterList?.Parameters.Any(p => p.Identifier.Text == name) == true:

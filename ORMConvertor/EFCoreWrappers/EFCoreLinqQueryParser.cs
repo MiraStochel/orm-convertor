@@ -257,6 +257,23 @@ public class EFCoreLinqQueryParser(
         => name is "EntityFrameworkQueryableExtensions" or "RelationalQueryableExtensions";
 
     /// <summary>
+    /// The lambda of a compiled query - <c>EF.CompileQuery((ShopContext c, int id) =&gt; c.Orders…)</c>
+    /// or <c>EF.CompileAsyncQuery</c>, the type arguments written or not -, whose body EF Core
+    /// 10.0.10 sends as the query it composes over the context it gets as the first parameter,
+    /// measured in <c>EFCore/EFCoreCompiledQueryProviderTest</c>.
+    /// </summary>
+    protected override bool IsCompiledQuery(AnonymousFunctionExpressionSyntax lambda)
+        => lambda.Parent is ArgumentSyntax
+        {
+            Parent: ArgumentListSyntax
+            {
+                Arguments.Count: 1,
+                Parent: InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "CompileQuery" or "CompileAsyncQuery" } compile },
+            },
+        }
+           && LastIdentifier(compile.Expression) == "EF";
+
+    /// <summary>
     /// The steps of EF Core's own query API: loading related rows, tracking, query tags and
     /// filters, splitting, and the calls that run a query - a chain of them alone over a root
     /// is a query of EF Core as much as one with an operator of System.Linq.
