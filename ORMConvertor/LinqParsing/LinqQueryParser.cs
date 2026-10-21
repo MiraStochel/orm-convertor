@@ -405,13 +405,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         "\n}\n");
 
     /// <summary>
-    /// One query of the unit (decision 109): a chain over a query root, a chain whose query
-    /// the code composes at run time and which is refused naming the variable, a query
-    /// expression the rewrite refused before it became a chain over a root, or a hand-over in
-    /// another language than LINQ (decision 113). The node is the place itself - the chain,
-    /// the call, or what the refused expression left behind.
+    /// One query of the unit (decision 109): a chain over a query root, a root a foreach
+    /// enumerates, a chain whose query the code composes at run time and which is refused
+    /// naming the variable, a query expression the rewrite refused before it became a chain
+    /// over a root, or a hand-over in another language than LINQ (decision 113). The node is
+    /// the place itself - the chain, the root, the call, or what the refused expression left
+    /// behind.
     /// </summary>
-    private sealed record QueryPlace(SyntaxNode Node, InvocationExpressionSyntax? Chain, string? ComposedIn, ForeignQuery? Foreign = null, RootReceiver? Receiver = null)
+    private sealed record QueryPlace(SyntaxNode Node, ExpressionSyntax? Chain, string? ComposedIn, ForeignQuery? Foreign = null, RootReceiver? Receiver = null)
     {
         public int Position => Node.SpanStart;
     }
@@ -555,7 +556,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// unit does not state otherwise (<see cref="IsNavigation"/>). A root that is a call,
     /// <c>Set&lt;T&gt;()</c> or <c>Query&lt;T&gt;()</c>, names the query API whatever it is
     /// called on and stays a root - except as the value of a property declared with the
-    /// provider's source type (<see cref="IsSetDeclaration"/>).
+    /// provider's source type (<see cref="IsSetDeclaration"/>). A root written as a name and
+    /// enumerated by a foreach is a query too, under the same questions of what the unit
+    /// states about the name.
     /// </summary>
     private List<QueryPlace> FindQueries(SyntaxNode root, QueryExpressionRewriter rewriter)
     {
@@ -602,6 +605,33 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 Receiver: receiver));
         }
 
+        // A root a foreach enumerates with no step over it - ctx.Orders, the context's own
+        // Orders, a variable holding either - hands the provider the whole table, as a chain
+        // run by ToList does; the enumeration is the step. No call is in it, so the search
+        // above never meets it, and neither does it meet an await foreach whose only calls
+        // configure the await, WithCancellation or ConfigureAwait, which a root known by its
+        // position does not begin a query with. A root that is a call was met there, and so was
+        // a chain a variable holds; a variable enumerated twice holds one root, and one place.
+        foreach (var loop in root.DescendantNodes().OfType<CommonForEachStatementSyntax>())
+        {
+            if (taken.Any(span => span.Contains(loop.Expression.Span))
+                || !TryDecompose(loop.Expression, out _, out var steps, out var rootExpression)
+                || !steps.All(step => ConfiguresTheAwait(loop, step.Name))
+                || IsNavigation(rootExpression!, out var receiver))
+            {
+                continue;
+            }
+
+            var place = steps.Count > 0 ? loop.Expression : rootExpression!;
+            if (taken.Any(span => span.Contains(place.Span)))
+            {
+                continue;
+            }
+
+            taken.Add(place.Span);
+            queries.Add(new QueryPlace(place, place, null, Receiver: receiver));
+        }
+
         // A query expression refused before it became a chain over a root - a let right after
         // the from clause leaves the bare DbSet - is a query of the unit all the same, refused.
         foreach (var (_, _, anchor) in rewriter.Refusals)
@@ -617,6 +647,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         return [.. queries.OrderBy(query => query.Position)];
     }
+
+    /// <summary>
+    /// Whether a call over what an await foreach enumerates configures the await rather than the
+    /// query: the cancellation token, or the context the loop continues on.
+    /// </summary>
+    private static bool ConfiguresTheAwait(CommonForEachStatementSyntax loop, string step)
+        => loop.AwaitKeyword.IsKind(SyntaxKind.AwaitKeyword) && step is "WithCancellation" or "ConfigureAwait";
 
     /// <summary>
     /// Whether a root alone is the value of a property declared with the provider's source type
@@ -826,7 +863,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <c>scope.ServiceProvider.GetRequiredService&lt;T&gt;()</c> have the position and no LINQ
     /// at all, and read as queries they claimed tables named Shared, TotalHours and
     /// ServiceProvider. A root the unit declares as the provider's source, and a root that is
-    /// a call, stay roots without one.
+    /// a call, stay roots without one; so does a root a foreach enumerates, the enumeration
+    /// being the step that runs it.
     /// </summary>
     private bool IsQueryStep(string name)
     {
