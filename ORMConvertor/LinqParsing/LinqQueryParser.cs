@@ -6313,19 +6313,21 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     /// <summary>
     /// Reads a value over the one group of a correlated subquery back from the form the LINQ
-    /// builder writes it in: <c>root.Where(…).GroupBy(x =&gt; 1).Select(g =&gt; value).FirstOrDefault()</c>,
+    /// builder writes it in: <c>root.Where(…).GroupBy(x =&gt; 1).Select(g =&gt; value).Max()</c>,
     /// the chain grouped by a constant so that the value ranges over the one group, and the
-    /// one row taken. The value is a list, <c>string.Join(…, g.OrderBy(…).Select(x =&gt; v))</c>
+    /// maximum over its at most one value taken (decision 159) - or its one row taken by
+    /// FirstOrDefault(), the form of the same value before that decision, which returns the
+    /// same rows. The value is a list, <c>string.Join(…, g.OrderBy(…).Select(x =&gt; v))</c>
     /// (decision 113), or a SUM spelled to be NULL over no values (decision 155): lifted,
     /// <c>(T?)g.Sum(…)</c>, or guarded by the count of its values (<see cref="ReadSumOverValues"/>);
-    /// a Sum that is not nullable the provider coalesces with the whole subquery, and it is not
-    /// this shape. The grouping is the form's, not the query's: the subquery is the aggregate
-    /// over the rows the chain selects, without a GROUP BY, and that is what is recorded. A
-    /// chain of another tail, or a FirstOrDefault() with a predicate, is not this shape either.
+    /// a Sum that is not lifted is not this shape. The grouping is the form's, not the query's:
+    /// the subquery is the aggregate over the rows the chain selects, without a GROUP BY, and
+    /// that is what is recorded. A chain of another tail, or a terminal with an argument, is
+    /// not this shape either.
     /// </summary>
     private QueryOperand? ReadOneGroupSubQuery(InvocationExpressionSyntax invocation)
     {
-        if (invocation.Expression is not MemberAccessExpressionSyntax { Name.Identifier.Text: "FirstOrDefault" } member
+        if (invocation.Expression is not MemberAccessExpressionSyntax { Name.Identifier.Text: "Max" or "FirstOrDefault" } member
             || invocation.ArgumentList.Arguments.Count != 0
             || (member.Expression is IdentifierNameSyntax head && aliasSubstitutions.ContainsKey(head.Identifier.Text))
             || !TryDecomposeNested(member.Expression, out var root, out var steps, out var correlate, out _)

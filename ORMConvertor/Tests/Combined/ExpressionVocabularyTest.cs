@@ -833,31 +833,60 @@ public class ExpressionVocabularyTest
     /// A list over a correlated subquery: EF Core 10 does not translate string.Join over a
     /// chain from a query root - it fetches the rows and joins them on the client -, but it
     /// does over the elements of a group, so LINQ writes the subquery as the chain grouped by a
-    /// constant, the list over that one group and FirstOrDefault(); over no rows there is no
-    /// group and the subquery yields NULL, as STRING_AGG over nothing does (verified against
-    /// 10.0.10, run at the fourth level by the category ListAggregationOverACorrelatedSubquery).
-    /// HQL 7.4 writes listagg inside the subquery, and the LINQ form reads back as the
-    /// subquery it stands for: a grouping that is the form's, not the query's.
+    /// constant, the list over that one group and Max() over its at most one value (decision
+    /// 159); over no rows there is no group and the subquery yields NULL, as STRING_AGG over
+    /// nothing does (verified against 10.0.10, run at the fourth level by the category
+    /// ListAggregationOverACorrelatedSubquery). HQL 7.4 writes listagg inside the subquery, and
+    /// the LINQ form reads back as the subquery it stands for: a grouping that is the form's,
+    /// not the query's - the form before decision 159, with FirstOrDefault(), as well.
     /// </summary>
     [Fact]
     public void AListOverACorrelatedSubqueryIsOneGroupInLinq()
     {
         const string correlated = "SELECT s.SaleId AS SaleId, (SELECT STRING_AGG(o.Code, ', ') FROM Sales AS o WHERE o.CustomerId = s.CustomerId) AS Codes FROM Sales AS s";
-        const string linq = "Codes = ctx.Set<Sale>().Where(o => o.CustomerId == s.CustomerId).GroupBy(o => 1).Select(g => string.Join(\", \", g.Select(o => o.Code))).FirstOrDefault()";
+        const string linq = "Codes = ctx.Set<Sale>().Where(o => o.CustomerId == s.CustomerId).GroupBy(o => 1).Select(g => string.Join(\", \", g.Select(o => o.Code))).Max()";
 
         var written = Sql(ORMEnum.EFCore, correlated);
         Assert.Contains(linq, Text(written), StringComparison.Ordinal);
         Assert.DoesNotContain(written.Records, r => r.Kind == ConversionRecordKind.Fallback);
         Assert.Contains("(select listagg(o.Code, ', ') from Sale o where o.CustomerId = s.CustomerId) as Codes", Text(Sql(ORMEnum.Hibernate, correlated)), StringComparison.Ordinal);
 
-        var read = Linq(ORMEnum.Dapper, $"Select(s => new {{ SaleId = s.SaleId, {linq} }})");
-        Assert.Equal(correlated, Text(read));
-        Assert.DoesNotContain(read.Records, r => r.Kind is ConversionRecordKind.Failure or ConversionRecordKind.Loss);
+        foreach (var form in new[] { linq, linq.Replace(".Max()", ".FirstOrDefault()", StringComparison.Ordinal) })
+        {
+            var read = Linq(ORMEnum.Dapper, $"Select(s => new {{ SaleId = s.SaleId, {form} }})");
+            Assert.Equal(correlated, Text(read));
+            Assert.DoesNotContain(read.Records, r => r.Kind is ConversionRecordKind.Failure or ConversionRecordKind.Loss);
+        }
 
         // A list the subquery may not join on the server - over a column that may hold NULL -
         // sends the query to native SQL from inside the one group as from any group.
         const string nullable = "SELECT s.SaleId AS SaleId, (SELECT STRING_AGG(o.Notes, ', ') FROM Sales AS o WHERE o.CustomerId = s.CustomerId) AS Notes FROM Sales AS s";
         Assert.Contains("(SELECT STRING_AGG(o.Notes, ', ') FROM Sales AS o WHERE o.CustomerId = s.CustomerId) AS Notes", FellBack(Sql(ORMEnum.EFCore, nullable), QueryFeature.ListAggregation), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The third level of the list over one group (decision 159): EF Core 10.0.10 writes the
+    /// Max() over the one group as a MAX over the derived table that holds the STRING_AGG,
+    /// without the TOP(1) it makes of FirstOrDefault(), past which SQL Server does not
+    /// decorrelate a subquery.
+    /// </summary>
+    [Fact]
+    public void EFCoreTranslatesTheListOverOneGroupWithoutTop()
+    {
+        var shape = QueryShapeInputs.Categories.Single(s => s.Name == "ListAggregationOverACorrelatedSubquery");
+        var result = QueryShapeMatrixTest.Convert(shape, ORMEnum.Dapper, ORMEnum.EFCore);
+
+        var compiled = GeneratedQueryCompiler.CompileOrFail(
+            "ExpressionVocabulary_ListOverOneGroup",
+            result.Sources.Single(s => s.ContentType == ConversionContentType.CSharpQuery).Content,
+            result.Sources.Where(s => s.ContentType == ConversionContentType.CSharpEntity).Select(s => s.Content),
+            GeneratedQueryCompiler.EFCoreConsumerReferences,
+            "using System;\nusing Microsoft.EntityFrameworkCore;\nusing Shop;");
+
+        var sql = OneLine(EFCoreQueryAcceptance.Translate(compiled));
+
+        Assert.Matches(@"\( SELECT MAX\(\[\w+\]\.\[c\]\) FROM \( SELECT COALESCE\(STRING_AGG\(", sql);
+        Assert.DoesNotContain("TOP", sql, StringComparison.Ordinal);
     }
 
     /// <summary>A list is an aggregate: nothing aggregates over it, it aggregates over nothing that aggregates, and a recursive member does not hold it.</summary>

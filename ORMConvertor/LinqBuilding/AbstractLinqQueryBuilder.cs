@@ -768,8 +768,12 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
     /// a provider that coalesces Sum (decision 155), whose subquery is NULL over no rows only
     /// where there is no group. The clauses composed as usual, then grouped by a constant, so
     /// that the value ranges over the elements of the one group, projected as the group's value
-    /// and taken by FirstOrDefault(). Null when the value has no form the provider translates
-    /// faithfully, which the visitor has reported.
+    /// and taken by Max() (decision 159): the maximum over at most one group is its value, and
+    /// NULL where there is none, as FirstOrDefault() would give - but EF Core writes
+    /// FirstOrDefault() as TOP(1), past which SQL Server does not decorrelate the subquery and
+    /// runs its joins once per outer row, while Max() is an aggregate it does decorrelate. Null
+    /// when the value has no form the provider translates faithfully, which the visitor has
+    /// reported.
     /// </summary>
     private string? OverOneGroup(QueryClauses clauses)
     {
@@ -789,7 +793,7 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         }
 
         artifact.Projection.Append($"\n        .Select({scope.Param} => {value})");
-        return Chain(artifact) + ".FirstOrDefault()";
+        return Chain(artifact) + ".Max()";
     }
 
     protected override void BuildPostFilter(QueryClauses clauses, QueryArtifact artifact)
@@ -1113,8 +1117,8 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         // translate string.Join over a chain from a query root - it fetches the rows and joins
         // them on the client -, but it does over the elements of a group, and a scalar
         // subquery has a form with exactly one group: the chain grouped by a constant, the
-        // list over that group, and FirstOrDefault() to take its one row. Over no rows there
-        // is no group and the subquery yields NULL, as STRING_AGG over nothing does - the
+        // list over that group, and Max() over its at most one value (decision 159). Over no
+        // rows there is no group and the subquery yields NULL, as STRING_AGG over nothing does - the
         // reason a grouping by a constant is no form for an aggregate over a whole result,
         // which must yield its one row, does not hold for a scalar operand (verified against
         // 10.0.10). What the list may join - a value of text that holds no NULL - the visitor

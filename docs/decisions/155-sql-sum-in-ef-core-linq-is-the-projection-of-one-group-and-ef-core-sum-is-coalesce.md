@@ -1,7 +1,7 @@
 # 155 — `SUM` jazyka SQL píše cíl EF Core jako projekci nad jedinou skupinou a nad skupinou bez hodnoty jako `NULL`; `Sum` EF Core je `COALESCE(SUM(x), 0)` a tak se píše i čte
 
 Datum: 2026-10-19
-Stav: platí
+Stav: platí; zakončení `FirstOrDefault()` první odrážky *Rozhodnutí* a `TOP(1)` důsledku *Cena* nahrazuje 159
 Požadavky: F7, F10, F13, T2, T3, S1
 Podklad: rozhodnutí [053](053-a-query-that-would-return-other-rows-is-not-emitted.md), [089](089-differential-verification-as-the-fourth-level-over-a-query.md), [107](107-an-expression-is-the-sixth-operand-shape-and-stands-wherever-an-operand-stands.md), [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md) (seznam nad korelovaným poddotazem jako řetěz seskupený konstantou), [118](118-nhibernate-writes-a-linq-form-beside-its-hql.md), [149](149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md); běh katalogu FIBEN z 2026-10-18 (záznam *The FIBEN run* v `ORMConvertor/README.md`); měření 2026-10-19 proti zafixovaným verzím: EF Core 10.0.10 přes `ToQueryString()` (`EFCore/EFCoreSumProviderTest`) a provider LINQ NHibernate 5.7.0 jeho vlastním plánem dotazu (`NHibernate/NHibernateLinqProviderTest`)
 

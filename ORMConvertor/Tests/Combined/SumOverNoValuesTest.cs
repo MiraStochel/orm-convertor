@@ -22,7 +22,7 @@ namespace Tests.Combined;
 /// <c>EFCore/EFCoreSumProviderTest</c>). A comparison with such a sum selected other rows: the
 /// FIBEN catalog's HAVING SUM(a) &gt; (SELECT SUM(b) … correlated) kept the groups without inner
 /// rows. The EF Core target writes a SUM in a scalar subquery as the projection of one group,
-/// absent over no rows, and a SUM over a value that may be NULL guarded by the count of the
+/// absent over no rows, taken by Max() (decision 159), and a SUM over a value that may be NULL guarded by the count of the
 /// values; COALESCE(SUM(x), 0) is its plain Sum. The LINQ reader reads both shapes back as the
 /// SUM. NHibernate's provider writes the bare sum, so its second form keeps the plain Sum. The
 /// fourth level runs the shapes over the fixture of the differential matrix, where product 5
@@ -90,15 +90,22 @@ public class SumOverNoValuesTest(TestSchemaFixture fixture)
         "SELECT s.SaleId AS SaleId FROM Sales AS s WHERE s.Total > (SELECT SUM(o.Total) FROM Sales AS o WHERE o.CustomerId = s.CustomerId)";
 
     private const string OneGroup =
-        "ctx.Set<Sale>().Where(o => o.CustomerId == s.CustomerId).GroupBy(o => 1).Select(g => (decimal?)g.Sum(o => o.Total)).FirstOrDefault()";
+        "ctx.Set<Sale>().Where(o => o.CustomerId == s.CustomerId).GroupBy(o => 1).Select(g => (decimal?)g.Sum(o => o.Total)).Max()";
 
-    /// <summary>A SUM in a correlated subquery is the projection of one group, lifted, and reads back as the subquery it stands for.</summary>
+    /// <summary>
+    /// A SUM in a correlated subquery is the projection of one group, lifted, taken by Max()
+    /// (decision 159), and reads back as the subquery it stands for - so does the form before
+    /// that decision, which took the one row by FirstOrDefault().
+    /// </summary>
     [Fact]
     public void ASumInACorrelatedSubqueryIsTheProjectionOfOneGroup()
     {
         Assert.Contains($".Where(s => s.Total > {OneGroup})", Text(Sql(new EFCoreLinqQueryBuilder(), CorrelatedSum)), StringComparison.Ordinal);
 
         Assert.Equal(CorrelatedSum, Text(Linq($"Where(s => s.Total > {OneGroup}).Select(s => new {{ SaleId = s.SaleId }})")));
+
+        var firstRow = OneGroup.Replace(".Max()", ".FirstOrDefault()", StringComparison.Ordinal);
+        Assert.Equal(CorrelatedSum, Text(Linq($"Where(s => s.Total > {firstRow}).Select(s => new {{ SaleId = s.SaleId }})")));
     }
 
     /// <summary>NHibernate's provider writes the bare sum, NULL over no rows already, so its second form keeps the plain Sum.</summary>
@@ -186,6 +193,21 @@ public class SumOverNoValuesTest(TestSchemaFixture fixture)
         var expected = Direct(sql);
         Assert.Equal(new[] { "1", "2", "6" }, expected);
         Assert.Equal(expected, Translated(ShopLinks, sql, "SumOverNoValues_EmptySubquery", ".GroupBy(l => 1)"));
+    }
+
+    /// <summary>
+    /// Projected, the sum over no rows is NULL as well: product 5 has none, and the lifted value
+    /// Max() takes over the absent group holds the NULL (decision 159).
+    /// </summary>
+    [Fact]
+    public void AProjectedCorrelatedSubqueryWithoutRowsIsNull()
+    {
+        const string sql = "SELECT p.ProductId AS ProductId, (SELECT SUM(l.LinkId) FROM {{schema}}.ShopProductLinks AS l WHERE l.FromProductId = p.ProductId) AS Links "
+            + "FROM {{schema}}.ShopProducts AS p";
+
+        var expected = Direct(sql);
+        Assert.Contains("5|NULL", expected);
+        Assert.Equal(expected, Translated(ShopLinks, sql, "SumOverNoValues_Projected", ".Max()"));
     }
 
     /// <summary>The same comparison under COALESCE(…, 0) keeps product 5, and is the plain Sum.</summary>

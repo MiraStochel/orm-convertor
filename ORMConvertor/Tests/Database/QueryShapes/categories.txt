@@ -592,10 +592,11 @@ fallbackWithoutCatalog = MyBatis>EFCore:ListAggregation
 # pieces as one list - a correlated scalar subquery with STRING_AGG, which is how the LDBC
 # catalog returns a list beside the row (IC 1). EF Core 10 joins string.Join over a chain
 # from a query root on the client, so LINQ writes the subquery as the chain grouped by a
-# constant, the list over that one group and FirstOrDefault(); over no lines there is no
-# group and the subquery yields NULL, as STRING_AGG over nothing does. HQL 7.4 writes listagg
-# inside the subquery; HQL 5.7 and JPQL have no list. Without a catalog a MyBatis source says
-# nothing of NULL, as above.
+# constant, the list over that one group and Max() over its at most one value; over no lines
+# there is no group and the subquery yields NULL, as STRING_AGG over nothing does. The EF Core
+# source below takes the one row by FirstOrDefault(), the form before decision 159, which the
+# reader reads as the same subquery. HQL 7.4 writes listagg inside the subquery; HQL 5.7 and
+# JPQL have no list. Without a catalog a MyBatis source says nothing of NULL, as above.
 [ListAggregationOverACorrelatedSubquery]
 Dapper = dapper/FindListAggregationOverACorrelatedSubquery.sql
 EFCore = efcore/FindListAggregationOverACorrelatedSubquery.query.cs

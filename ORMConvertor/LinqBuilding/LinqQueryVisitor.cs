@@ -1156,7 +1156,8 @@ public abstract class LinqQueryVisitor(
     /// that holds no NULL -, otherwise lifted into its nullable type, and over a value that may
     /// be NULL guarded by the count of the values, so that it is NULL where there is none, as
     /// SQL's SUM is. The one group of a scalar subquery may be absent, and its sum is lifted
-    /// whatever it ranges over, or the provider coalesces the subquery as well. Without a C#
+    /// whatever it ranges over, so that the value Max() takes over that group has a type that
+    /// holds the NULL where there is none (decision 159). Without a C#
     /// type of the sum there is no nullable to lift it into, and the query goes out in native
     /// SQL (decision 113).
     /// </summary>

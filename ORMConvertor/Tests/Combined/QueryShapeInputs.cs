@@ -659,10 +659,10 @@ public static class QueryShapeInputs
             jpa: ["listagg(ol.Description, '; ') within group (order by ol.LineNumber asc) as Descriptions", "where ol.Quantity > 1", "group by ol.ProductId"]),
 
         // The list over a correlated subquery: LINQ as the chain grouped by a constant, the
-        // list over its one group and FirstOrDefault() (decision 113).
+        // list over its one group and Max() over its at most one value (decisions 113 and 159).
         ["ListAggregationOverACorrelatedSubquery"] = Hallmarks(
             sql: ["(SELECT STRING_AGG(ol.Description, '; ') WITHIN GROUP (ORDER BY ol.LineNumber ASC) FROM", "WHERE ol.ProductId = p.ProductId AND ol.Quantity > 2) AS Descriptions", "WHERE p.UnitPrice > 20"],
-            linq: [".Where(ol => ol.ProductId == p.ProductId && ol.Quantity > 2).GroupBy(ol => 1).Select(g => string.Join(\"; \", g.OrderBy(ol => ol.LineNumber).Select(ol => ol.Description))).FirstOrDefault()", ".Where(p => p.UnitPrice > 20)"],
+            linq: [".Where(ol => ol.ProductId == p.ProductId && ol.Quantity > 2).GroupBy(ol => 1).Select(g => string.Join(\"; \", g.OrderBy(ol => ol.LineNumber).Select(ol => ol.Description))).Max()", ".Where(p => p.UnitPrice > 20)"],
             jpa: ["(select listagg(ol.Description, '; ') within group (order by ol.LineNumber asc) from ShopOrderLine ol where ol.ProductId = p.ProductId and ol.Quantity > 2) as Descriptions", "where p.UnitPrice > 20"]),
 
         // ---- the rows of decision 113, joins in LINQ ----
