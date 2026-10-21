@@ -556,9 +556,10 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// unit does not state otherwise (<see cref="IsNavigation"/>). A root that is a call,
     /// <c>Set&lt;T&gt;()</c> or <c>Query&lt;T&gt;()</c>, names the query API whatever it is
     /// called on and stays a root - except as the value of a property declared with the
-    /// provider's source type (<see cref="IsSetDeclaration"/>). A root written as a name and
-    /// enumerated by a foreach is a query too, under the same questions of what the unit
-    /// states about the name.
+    /// provider's source type (<see cref="IsSetDeclaration"/>). A root written as a name with no
+    /// step over it is a query where the code hands it over whole - enumerates, returns, passes
+    /// it on (<see cref="HandOvers"/>) -, under the same questions of what the unit states about
+    /// the name; one known by its position only where the unit states a query type for it.
     /// </summary>
     private List<QueryPlace> FindQueries(SyntaxNode root, QueryExpressionRewriter rewriter)
     {
@@ -605,32 +606,102 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 Receiver: receiver));
         }
 
-        // A root a foreach enumerates with no step over it - ctx.Orders, the context's own
-        // Orders, a variable holding either - hands the provider the whole table, as a chain
-        // run by ToList does; the enumeration is the step. No call is in it, so the search
-        // above never meets it, and neither does it meet an await foreach whose only calls
-        // configure the await, WithCancellation or ConfigureAwait, which a root known by its
-        // position does not begin a query with. A root that is a call was met there, and so was
-        // a chain a variable holds; a variable enumerated twice holds one root, and one place.
-        foreach (var loop in root.DescendantNodes().OfType<CommonForEachStatementSyntax>())
+        // A query with no call in it - a root alone, or a variable holding a query - kept in a
+        // variable the code continues and whose value the text does not fix
+        // (IQueryable<Order> q = ctx.Orders; if (…) q = q.Where(…);) begins a query composed at
+        // run time, refused naming the variable as a chain kept there is. The search above
+        // never meets it, and the continuations do not decompose, since a variable assigned
+        // more than once is not followed. A root known by its position begins such a query only
+        // where a step of LINQ or of the provider is in it or continues it: items =
+        // request.Items, reassigned and continued by Add, is a list.
+        foreach (var stored in StoredValues(root))
         {
-            if (taken.Any(span => span.Contains(loop.Expression.Span))
-                || !TryDecompose(loop.Expression, out _, out var steps, out var rootExpression)
-                || !steps.All(step => ConfiguresTheAwait(loop, step.Name))
-                || IsNavigation(rootExpression!, out var receiver))
+            if (stored is InvocationExpressionSyntax
+                || taken.Any(span => span.Contains(stored.Span))
+                || variables.StorageOf(stored) is not (QueryVariables.StorageKind.RunTime, { } variable)
+                || !TryDecompose(stored, out _, out var steps, out var rootExpression)
+                || IsNavigation(rootExpression!, out var receiver)
+                || (receiver is { QueryableMember: null }
+                    && !steps.Any(step => IsQueryStep(step.Name))
+                    && !variables.ContinuationsOf(stored).Any(ContinuesWithAQueryStep)))
             {
                 continue;
             }
 
-            var place = steps.Count > 0 ? loop.Expression : rootExpression!;
-            if (taken.Any(span => span.Contains(place.Span)))
-            {
-                continue;
-            }
-
-            taken.Add(place.Span);
-            queries.Add(new QueryPlace(place, place, null, Receiver: receiver));
+            taken.Add(stored.Span);
+            queries.Add(new QueryPlace(stored, stored, variable, Receiver: receiver));
         }
+
+        // A root alone - ctx.Orders, the context's own Orders, a variable holding either - that
+        // the code hands over whole (HandOvers: a foreach or a spread enumerates it, a member
+        // returns it, a property is given it, a call gets it as an argument) sends the provider
+        // the whole table, as Set<T>() handed over the same way does. No call is in it, so the
+        // search above never meets it. A root that is a call was met there, and so was a chain a
+        // variable holds; a variable handed over twice holds one root, and one place.
+        HashSet<string>? queryMembers = null;
+        HashSet<string>? holders = null;
+
+        foreach (var handover in HandOvers(root))
+        {
+            if (taken.Any(span => span.Contains(handover.Value.Span)))
+            {
+                continue;
+            }
+
+            // An await foreach whose only calls configure the await, WithCancellation or
+            // ConfigureAwait, over a root alone, which a root known by its position does not
+            // begin a query with in the search above.
+            if (handover.Loop is { } loop
+                && loop.Expression is InvocationExpressionSyntax
+                && TryDecompose(loop.Expression, out _, out var configuring, out var configured)
+                && configuring.Count > 0)
+            {
+                if (configuring.All(step => ConfiguresTheAwait(loop, step.Name)) && !IsNavigation(configured!, out var configuredReceiver))
+                {
+                    taken.Add(loop.Expression.Span);
+                    queries.Add(new QueryPlace(loop.Expression, loop.Expression, null, Receiver: configuredReceiver));
+                }
+
+                continue;
+            }
+
+            // Before anything that builds the model: a value that is no name cannot be a root
+            // alone; and without the statement of a query type, a root alone is one only as a
+            // member the unit declares a query starts from - a set, or an IQueryable -, so where
+            // it declares none, or none of that name, there is nothing to ask the model.
+            queryMembers ??= QueryMembers(root);
+
+            if (!Branches(handover.Value).Any(leaf => leaf is IdentifierNameSyntax or MemberAccessExpressionSyntax)
+                || (queryMembers.Count == 0 && !handover.Stated()))
+            {
+                continue;
+            }
+
+            foreach (var held in RootsHeld(handover.Value, handover.Stated() ? null : MayBeDeclared, []))
+            {
+                if (taken.Any(span => span.Contains(held.Span))
+                    || (held is MemberAccessExpressionSyntax { Name.Identifier.Text: var member } && !queryMembers.Contains(member) && !handover.Stated())
+                    || IsSetDeclaration(held)
+                    || IsNavigation(held, out var receiver)
+                    || (receiver is { QueryableMember: null } && !handover.Stated()))
+                {
+                    continue;
+                }
+
+                taken.Add(held.Span);
+                queries.Add(new QueryPlace(held, held, null, Receiver: receiver));
+            }
+        }
+
+        // Where no query type is stated, a name is followed only where it may lead to a member a
+        // query starts from: the member itself, or a variable the unit gives a value that names
+        // one or another variable.
+        bool MayBeDeclared(ExpressionSyntax leaf) => leaf switch
+        {
+            MemberAccessExpressionSyntax { Name.Identifier.Text: var name } => queryMembers!.Contains(name),
+            IdentifierNameSyntax { Identifier.Text: var name } => queryMembers!.Contains(name) || (holders ??= Holders(root, queryMembers!)).Contains(name),
+            _ => true,
+        };
 
         // A query expression refused before it became a chain over a root - a let right after
         // the from clause leaves the bare DbSet - is a query of the unit all the same, refused.
@@ -646,6 +717,339 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         }
 
         return [.. queries.OrderBy(query => query.Position)];
+    }
+
+    /// <summary>
+    /// The values the unit keeps in a variable - an initializer, the right side of a simple
+    /// assignment to a name -, through the branches of <c>?:</c> and the operands of <c>??</c>
+    /// and past parentheses, casts and <c>as</c>, the way <see cref="QueryVariables.StorageOf"/>
+    /// walks back from them.
+    /// </summary>
+    private static IEnumerable<ExpressionSyntax> StoredValues(SyntaxNode root)
+        => root.DescendantNodes()
+            .Select(node => node switch
+            {
+                EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax } clause => clause.Value,
+                AssignmentExpressionSyntax { Left: IdentifierNameSyntax } assignment
+                    when assignment.IsKind(SyntaxKind.SimpleAssignmentExpression) => assignment.Right,
+                _ => null,
+            })
+            .OfType<ExpressionSyntax>()
+            .SelectMany(Branches);
+
+    private static IEnumerable<ExpressionSyntax> Branches(ExpressionSyntax value) => value switch
+    {
+        ParenthesizedExpressionSyntax parenthesized => Branches(parenthesized.Expression),
+        CastExpressionSyntax cast => Branches(cast.Expression),
+        BinaryExpressionSyntax asExpression when asExpression.IsKind(SyntaxKind.AsExpression) => Branches(asExpression.Left),
+        BinaryExpressionSyntax coalesce when coalesce.IsKind(SyntaxKind.CoalesceExpression) => Branches(coalesce.Left).Concat(Branches(coalesce.Right)),
+        ConditionalExpressionSyntax conditional => Branches(conditional.WhenTrue).Concat(Branches(conditional.WhenFalse)),
+        _ => [value],
+    };
+
+    /// <summary>
+    /// Whether a read that continues a variable continues it with a step of a LINQ query: one in
+    /// the chain the read heads, or the join it is the inner sequence of.
+    /// </summary>
+    private bool ContinuesWithAQueryStep(IdentifierNameSyntax read)
+    {
+        if (read.Parent is ArgumentSyntax)
+        {
+            return true;
+        }
+
+        SyntaxNode node = read;
+
+        while (node.Parent is MemberAccessExpressionSyntax member
+               && member.Expression == node
+               && member.Parent is InvocationExpressionSyntax call)
+        {
+            if (IsQueryStep(member.Name.Identifier.Text))
+            {
+                return true;
+            }
+
+            node = call;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A value the code hands over whole, and whether the unit states it is a query - the
+    /// type it gives the place the value goes to is the provider's source or an IQueryable,
+    /// which a collection in memory does not convert to. An enumeration states it by itself: it
+    /// is the step that runs the query, as ToList is. Asked lazily, since for an argument the
+    /// answer takes the model.
+    /// </summary>
+    private sealed class HandOver(ExpressionSyntax value, Func<bool> stated, CommonForEachStatementSyntax? loop = null)
+    {
+        private bool? isStated;
+
+        public ExpressionSyntax Value => value;
+
+        public CommonForEachStatementSyntax? Loop => loop;
+
+        public bool Stated() => isStated ??= stated();
+    }
+
+    /// <summary>
+    /// The places where the code hands a value over whole (decision 109): a foreach or a
+    /// spread enumerates it; a return, an expression body or a lambda body returns it; a
+    /// property is initialized or assigned with it; a call or a constructor gets it as an
+    /// argument - but not nameof, which names. A property declared with the provider's source
+    /// type declares a set rather than hands one over (decision 158), and an assignment in an
+    /// object initializer gives a member of another type, which the unit's own declarations
+    /// do not say.
+    /// </summary>
+    private IEnumerable<HandOver> HandOvers(SyntaxNode root)
+    {
+        HashSet<string>? queryCallables = null;
+
+        foreach (var node in root.DescendantNodes())
+        {
+            switch (node)
+            {
+                case CommonForEachStatementSyntax loop:
+                    yield return new HandOver(loop.Expression, () => true, loop);
+                    break;
+
+                case SpreadElementSyntax spread:
+                    yield return new HandOver(spread.Expression, () => true);
+                    break;
+
+                case ReturnStatementSyntax { Expression: { } returned } statement:
+                    yield return new HandOver(returned, () => IsQueryType(ReturnTypeAround(statement)));
+                    break;
+
+                case ArrowExpressionClauseSyntax arrow:
+                    yield return new HandOver(arrow.Expression, () => IsQueryType(TypeOfValue(arrow.Parent)));
+                    break;
+
+                case LambdaExpressionSyntax { ExpressionBody: { } body } lambda:
+                    yield return new HandOver(body, () => IsQueryType(TypeOfValue(lambda)));
+                    break;
+
+                case PropertyDeclarationSyntax { Initializer.Value: { } initial } property when !IsProviderQuerySource(property.Type):
+                    yield return new HandOver(initial, () => IsQueryType(property.Type));
+                    break;
+
+                case AssignmentExpressionSyntax { Parent: not InitializerExpressionSyntax } assignment
+                    when assignment.IsKind(SyntaxKind.SimpleAssignmentExpression)
+                         && OwnProperty(assignment, assignment.Left) is { } assigned
+                         && !IsProviderQuerySource(assigned.Type):
+                    yield return new HandOver(assignment.Right, () => IsQueryType(assigned.Type));
+                    break;
+
+                case ArgumentSyntax { Parent: ArgumentListSyntax { Parent: (InvocationExpressionSyntax or ObjectCreationExpressionSyntax) and ExpressionSyntax call } } argument
+                    when call is not InvocationExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.Text: "nameof" } }:
+                    yield return new HandOver(argument.Expression, () =>
+                        CalleeName(call) is { } callee
+                        && (queryCallables ??= QueryCallables(root)).Contains(callee)
+                        && variables.ParameterTypesOf(argument) is { Count: > 0 } types
+                        && types.All(IsQueryType));
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The roots alone a value handed over holds: the value itself, through the branches of
+    /// <c>?:</c> and <c>??</c>; the root a variable assigned once holds; and the roots of
+    /// every value the unit gives a variable it assigns more than once, each of which may be
+    /// what reaches the hand-over. A chain is none of them - the search for calls met it. A leaf
+    /// <paramref name="follows"/> turns down is not read at all.
+    /// </summary>
+    private IEnumerable<ExpressionSyntax> RootsHeld(ExpressionSyntax value, Func<ExpressionSyntax, bool>? follows, HashSet<SyntaxNode> visited)
+    {
+        foreach (var leaf in Branches(value))
+        {
+            if (leaf is InvocationExpressionSyntax || follows?.Invoke(leaf) == false)
+            {
+                continue;
+            }
+
+            if (TryDecompose(leaf, out _, out var steps, out var rootExpression))
+            {
+                if (steps.Count == 0)
+                {
+                    yield return rootExpression!;
+                }
+
+                continue;
+            }
+
+            if (leaf is IdentifierNameSyntax name)
+            {
+                foreach (var written in variables.WritesOf(name).Where(visited.Add))
+                {
+                    foreach (var held in RootsHeld(written, follows, visited))
+                    {
+                        yield return held;
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The names of the variables the unit gives a value that names a member a query starts
+    /// from, or another variable which may hold one - the only variables through which a set
+    /// the unit declares can reach a hand-over.
+    /// </summary>
+    private static HashSet<string> Holders(SyntaxNode root, HashSet<string> queryMembers)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var node in root.DescendantNodes())
+        {
+            var (name, value) = node switch
+            {
+                EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax declarator } clause => (declarator.Identifier.Text, clause.Value),
+                AssignmentExpressionSyntax { Left: IdentifierNameSyntax left } assignment
+                    when assignment.IsKind(SyntaxKind.SimpleAssignmentExpression) => (left.Identifier.Text, assignment.Right),
+                _ => ((string?)null, (ExpressionSyntax?)null),
+            };
+
+            if (name is not null
+                && Branches(value!).Any(leaf => leaf is IdentifierNameSyntax
+                    || (leaf is MemberAccessExpressionSyntax { Name.Identifier.Text: var member } && queryMembers.Contains(member))))
+            {
+                names.Add(name);
+            }
+        }
+
+        return names;
+    }
+
+    /// <summary>The name of what a call or a constructor binds to as written; null where the text does not name it.</summary>
+    private static string? CalleeName(ExpressionSyntax call) => call switch
+    {
+        InvocationExpressionSyntax { Expression: SimpleNameSyntax name } => name.Identifier.Text,
+        InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax member } => member.Name.Identifier.Text,
+        ObjectCreationExpressionSyntax { Type: SimpleNameSyntax name } => name.Identifier.Text,
+        ObjectCreationExpressionSyntax { Type: QualifiedNameSyntax qualified } => qualified.Right.Identifier.Text,
+        _ => null,
+    };
+
+    /// <summary>
+    /// The names under which the unit declares a method, a local function or a type whose
+    /// constructor takes a parameter of a query type - the only callees whose parameter can
+    /// state that an argument is a query, and the only ones the model is asked about.
+    /// </summary>
+    private HashSet<string> QueryCallables(SyntaxNode root)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var node in root.DescendantNodes())
+        {
+            var (name, parameters) = node switch
+            {
+                MethodDeclarationSyntax method => (method.Identifier.Text, method.ParameterList),
+                LocalFunctionStatementSyntax local => (local.Identifier.Text, local.ParameterList),
+                ConstructorDeclarationSyntax constructor => (constructor.Identifier.Text, constructor.ParameterList),
+                TypeDeclarationSyntax { ParameterList: { } primary } type => (type.Identifier.Text, primary),
+                _ => ((string?)null, (ParameterListSyntax?)null),
+            };
+
+            if (name is not null && parameters!.Parameters.Any(parameter => IsQueryType(parameter.Type)))
+            {
+                names.Add(name);
+            }
+        }
+
+        return names;
+    }
+
+    /// <summary>
+    /// The names of the members the unit declares a query starts from - of the provider's source
+    /// type or an IQueryable. A root written as a name is one the unit states anything about
+    /// (decision 114) only as a member of one of these names.
+    /// </summary>
+    private HashSet<string> QueryMembers(SyntaxNode root)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var node in root.DescendantNodes())
+        {
+            switch (node)
+            {
+                case PropertyDeclarationSyntax property when IsQueryType(property.Type):
+                    names.Add(property.Identifier.Text);
+                    break;
+
+                case FieldDeclarationSyntax field when IsQueryType(field.Declaration.Type):
+                    names.UnionWith(field.Declaration.Variables.Select(variable => variable.Identifier.Text));
+                    break;
+            }
+        }
+
+        return names;
+    }
+
+    /// <summary>
+    /// Whether a declared type states a query: the provider's source type, or IQueryable of
+    /// System.Linq, generic or not, ordered or not. A collection in memory converts to neither,
+    /// so a value given such a type is no navigation (<c>EFCore/EFCoreSetHandedOverProviderTest</c>);
+    /// IEnumerable, which a list converts to, states nothing.
+    /// </summary>
+    private bool IsQueryType(TypeSyntax? type)
+    {
+        if (type is NullableTypeSyntax nullable)
+        {
+            type = nullable.ElementType;
+        }
+
+        return type is not null
+               && (IsProviderQuerySource(type)
+                   || GenericNameOf(type) is "IQueryable" or "IOrderedQueryable"
+                   || type is IdentifierNameSyntax { Identifier.Text: "IQueryable" } or QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier.Text: "IQueryable" } });
+    }
+
+    /// <summary>The type of what a return statement returns, from the member, local function or lambda it stands in; null where none is declared.</summary>
+    private static TypeSyntax? ReturnTypeAround(ReturnStatementSyntax statement)
+        => TypeOfValue(statement.Ancestors().FirstOrDefault(ancestor => ancestor is AnonymousFunctionExpressionSyntax
+            or LocalFunctionStatementSyntax or BaseMethodDeclarationSyntax or AccessorDeclarationSyntax));
+
+    /// <summary>
+    /// The type the value of a member is declared with: the return type of a method, local
+    /// function, operator or lambda, the task's result of an async one, and the type of a
+    /// property or indexer, of whose get the value is.
+    /// </summary>
+    private static TypeSyntax? TypeOfValue(SyntaxNode? member) => member switch
+    {
+        MethodDeclarationSyntax method => Awaited(method.ReturnType, method.Modifiers),
+        LocalFunctionStatementSyntax local => Awaited(local.ReturnType, local.Modifiers),
+        ParenthesizedLambdaExpressionSyntax lambda => lambda.ReturnType is { } returned ? Awaited(returned, lambda.Modifiers) : null,
+        OperatorDeclarationSyntax op => op.ReturnType,
+        ConversionOperatorDeclarationSyntax conversion => conversion.Type,
+        BasePropertyDeclarationSyntax property => property.Type,
+        AccessorDeclarationSyntax { Parent.Parent: BasePropertyDeclarationSyntax property } accessor when accessor.Keyword.IsKind(SyntaxKind.GetKeyword) => property.Type,
+        _ => null,
+    };
+
+    /// <summary>The result of the task an async member returns; the type itself for any other.</summary>
+    private static TypeSyntax Awaited(TypeSyntax type, SyntaxTokenList modifiers)
+        => modifiers.Any(SyntaxKind.AsyncKeyword)
+           && type is GenericNameSyntax { Identifier.Text: "Task" or "ValueTask", TypeArgumentList.Arguments: [var result] }
+            ? result
+            : type;
+
+    /// <summary>The property the class around an assignment declares under the name its target writes, bare or through this; null for any other target.</summary>
+    private static PropertyDeclarationSyntax? OwnProperty(SyntaxNode at, ExpressionSyntax target)
+    {
+        var name = target switch
+        {
+            IdentifierNameSyntax bare => bare.Identifier.Text,
+            MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax own } => own.Identifier.Text,
+            _ => null,
+        };
+
+        return name is null
+            ? null
+            : at.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()?.Members
+                .OfType<PropertyDeclarationSyntax>()
+                .FirstOrDefault(property => property.Identifier.Text == name);
     }
 
     /// <summary>
@@ -713,18 +1117,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     /// <summary>Whether the target of an assignment is a property the class around it declares with the provider's source type.</summary>
     private bool IsSetProperty(SyntaxNode at, ExpressionSyntax target)
-    {
-        var name = target switch
-        {
-            IdentifierNameSyntax bare => bare.Identifier.Text,
-            MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax own } => own.Identifier.Text,
-            _ => null,
-        };
-
-        return name is not null
-               && at.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault() is { } type
-               && type.Members.OfType<PropertyDeclarationSyntax>().Any(property => property.Identifier.Text == name && IsProviderQuerySource(property.Type));
-    }
+        => OwnProperty(at, target) is { } property && IsProviderQuerySource(property.Type);
 
     /// <summary>
     /// Reads one query into the builder of the moment, and reports on it every clause the
@@ -767,12 +1160,66 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
+        if (StaticStepOver(query.Chain) is { } step)
+        {
+            queryBuilder.Push();
+            Report(
+                ConversionRecordKind.Failure,
+                $"The query is handed to {step}(), a step of LINQ called in its static form, which the reading does not read; the query that reaches the provider is composed by that call, so no artifact was generated.");
+            ReportRefusedClauses(root, rewriter, node => query.Chain.Span.Contains(node.Span));
+            queryBuilder.Pop();
+            return;
+        }
+
         TryDecompose(query.Chain, out var queryRoot, out var steps);
         EmitChain(queryRoot!, steps);
 
         var covered = followed.Prepend(query.Chain).ToList();
         ReportRefusedClauses(root, rewriter, node => covered.Any(read => read.Span.Contains(node.Span)));
     }
+
+    /// <summary>
+    /// The static call of a LINQ step a query is handed to - <c>Queryable.Where(q, f)</c>,
+    /// <c>Enumerable.ToList(q)</c>, the provider's own static form of its steps -, as an argument
+    /// written directly or through the variable the query is kept in; null where it is handed to
+    /// none. Such a call composes the query the provider gets, the way the step written as an
+    /// extension does, and a query read without it would answer something else (decision 070):
+    /// the whole table for a filter, rows for a count.
+    /// </summary>
+    private string? StaticStepOver(ExpressionSyntax place)
+    {
+        return StepAt(place) ?? variables.ReadsOf(place).Select(StepAt).FirstOrDefault(step => step is not null);
+
+        string? StepAt(ExpressionSyntax value)
+        {
+            SyntaxNode node = value;
+
+            while (node.Parent is ParenthesizedExpressionSyntax or CastExpressionSyntax)
+            {
+                node = node.Parent;
+            }
+
+            return node.Parent is ArgumentSyntax { Parent: ArgumentListSyntax { Parent: InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax call } } }
+                   && (call.Expression switch
+                   {
+                       IdentifierNameSyntax type => type.Identifier.Text,
+                       MemberAccessExpressionSyntax qualified => qualified.Name.Identifier.Text,
+                       AliasQualifiedNameSyntax alias => alias.Name.Identifier.Text,
+                       _ => null,
+                   }) is { } owner
+                   && (owner is "Queryable" or "Enumerable" or "AsyncEnumerable" || IsProviderStaticQueryClass(owner))
+                ? $"{owner}.{call.Name.Identifier.Text}"
+                : null;
+        }
+    }
+
+    /// <summary>
+    /// Whether a static class of the provider's API holds the static form of its query steps -
+    /// EF Core's <c>EntityFrameworkQueryableExtensions</c>, whose <c>ToListAsync</c> and
+    /// <c>Include</c> may be called as <c>EntityFrameworkQueryableExtensions.ToListAsync(q)</c>.
+    /// The default knows none.
+    /// </summary>
+    protected virtual bool IsProviderStaticQueryClass(string name) => false;
 
     private void ReportRefusedClauses(SyntaxNode root, QueryExpressionRewriter rewriter, Func<SyntaxNode, bool> belongs)
     {
@@ -864,7 +1311,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// at all, and read as queries they claimed tables named Shared, TotalHours and
     /// ServiceProvider. A root the unit declares as the provider's source, and a root that is
     /// a call, stay roots without one; so does a root a foreach enumerates, the enumeration
-    /// being the step that runs it.
+    /// being the step that runs it, and one handed over where the unit states a query type.
     /// </summary>
     private bool IsQueryStep(string name)
     {

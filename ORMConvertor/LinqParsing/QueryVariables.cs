@@ -292,13 +292,105 @@ internal sealed class QueryVariables
     /// </summary>
     public (StorageKind Kind, string? Variable) StorageOf(ExpressionSyntax chain)
     {
-        if (IsExecuted(chain))
+        if (IsExecuted(chain) || ContinuedVariableOf(chain, out var direct) is not { } symbol)
         {
             return (StorageKind.None, null);
         }
 
-        SyntaxNode node = chain;
-        var direct = true;
+        var variable = Describe(symbol);
+        var continuations = variable.Reads.Count(read => IsContinuation(read) || IsJoinedSequence(read));
+
+        if (continuations == 0)
+        {
+            return (StorageKind.None, null);
+        }
+
+        if (direct && FollowableValue(symbol) is not null)
+        {
+            return continuations == variable.Reads.Count ? (StorageKind.Prefix, symbol.Name) : (StorageKind.None, null);
+        }
+
+        return (StorageKind.RunTime, symbol.Name);
+    }
+
+    /// <summary>
+    /// The reads that continue the variable a value is kept in - <c>name.Step(…)</c>, or the
+    /// inner sequence of a join -; none where the value is kept in no variable the code
+    /// continues.
+    /// </summary>
+    public IReadOnlyList<IdentifierNameSyntax> ContinuationsOf(ExpressionSyntax value)
+        => ContinuedVariableOf(value, out _) is { } symbol
+            ? [.. Describe(symbol).Reads.Where(read => IsContinuation(read) || IsJoinedSequence(read))]
+            : [];
+
+    /// <summary>
+    /// The values the unit gives the local or field a name is bound to - its initializer and
+    /// every simple assignment -, whose value the text states; none for a name the unit assigns
+    /// nothing.
+    /// </summary>
+    public IReadOnlyList<ExpressionSyntax> WritesOf(IdentifierNameSyntax name)
+        => assigned.Contains(name.Identifier.Text) && SymbolOf(name) is { } symbol
+            ? [.. Describe(symbol).Writes.OfType<ExpressionSyntax>()]
+            : [];
+
+    /// <summary>
+    /// The types the methods and constructors the unit declares, which a call could bind to,
+    /// give the parameter an argument stands for, matched by name or by position, a params
+    /// array taking the rest; empty where the unit declares no such callee. Without references
+    /// overload resolution never succeeds - not even int is known -, so the model's candidates
+    /// are what it has, every one of them; a candidate with no parameter for the argument is
+    /// not one the call could bind to.
+    /// </summary>
+    public IReadOnlyList<TypeSyntax?> ParameterTypesOf(ArgumentSyntax argument)
+    {
+        if (argument.Parent is not ArgumentListSyntax { Parent: ExpressionSyntax call } list)
+        {
+            return [];
+        }
+
+        var info = Model.GetSymbolInfo(call);
+        IEnumerable<IMethodSymbol> candidates = info.Symbol is IMethodSymbol bound ? [bound] : info.CandidateSymbols.OfType<IMethodSymbol>();
+        var index = list.Arguments.IndexOf(argument);
+        var types = new List<TypeSyntax?>();
+
+        foreach (var method in candidates)
+        {
+            var parameter = argument.NameColon is { } named
+                ? method.Parameters.FirstOrDefault(p => p.Name == named.Name.Identifier.ValueText)
+                : index < method.Parameters.Length
+                    ? method.Parameters[index]
+                    : method.Parameters.LastOrDefault(p => p.IsParams);
+
+            if (parameter is not null)
+            {
+                types.Add(parameter.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() is ParameterSyntax { Type: { } type } ? type : null);
+            }
+        }
+
+        return types;
+    }
+
+    /// <summary>
+    /// The reads of the local or field a value is kept in, whatever the code does with them;
+    /// none where the value is kept in no variable.
+    /// </summary>
+    public IReadOnlyList<IdentifierNameSyntax> ReadsOf(ExpressionSyntax value)
+        => VariableOf(value, out _, continuedOnly: false) is { } symbol ? Describe(symbol).Reads : [];
+
+    private ISymbol? ContinuedVariableOf(ExpressionSyntax value, out bool direct)
+        => VariableOf(value, out direct, continuedOnly: true);
+
+    /// <summary>
+    /// The variable a value is kept in - the declarator it initializes, or the name a simple
+    /// assignment writes it to, past parentheses, casts and <c>as</c> -, with
+    /// <paramref name="continuedOnly"/> only where the code continues that name somewhere; null
+    /// otherwise. <paramref name="direct"/> is false where the value reaches the variable as a
+    /// branch of <c>?:</c> or an operand of <c>??</c>.
+    /// </summary>
+    private ISymbol? VariableOf(ExpressionSyntax value, out bool direct, bool continuedOnly)
+    {
+        SyntaxNode node = value;
+        direct = true;
 
         while (true)
         {
@@ -327,38 +419,19 @@ internal sealed class QueryVariables
             _ => null,
         };
 
-        // Before the model is built: a name nothing continues keeps no query that goes on.
-        if (name is null || !continued.Contains(name))
+        // Before the model is built: a name nothing continues keeps no query that goes on, and
+        // one the unit never assigns keeps nothing at all.
+        if (name is null || !(continuedOnly ? continued : assigned).Contains(name))
         {
-            return (StorageKind.None, null);
+            return null;
         }
 
-        var symbol = node.Parent switch
+        return node.Parent switch
         {
             EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax declarator } => SymbolOf(declarator),
             AssignmentExpressionSyntax { Left: IdentifierNameSyntax left } => SymbolOf(left),
             _ => null,
         };
-
-        if (symbol is null)
-        {
-            return (StorageKind.None, null);
-        }
-
-        var variable = Describe(symbol);
-        var continuations = variable.Reads.Count(read => IsContinuation(read) || IsJoinedSequence(read));
-
-        if (continuations == 0)
-        {
-            return (StorageKind.None, null);
-        }
-
-        if (direct && FollowableValue(symbol) is not null)
-        {
-            return continuations == variable.Reads.Count ? (StorageKind.Prefix, name) : (StorageKind.None, null);
-        }
-
-        return (StorageKind.RunTime, name);
     }
 
     /// <summary>Whether the expression runs its query: it ends in a step that does, or it is awaited.</summary>
@@ -447,7 +520,10 @@ internal sealed class QueryVariables
     /// <summary>
     /// Every write and every read of a variable in the unit. A write whose value the text does
     /// not state - a compound assignment, an increment, a ref or out argument - counts as a
-    /// write without a value, so the variable is never taken for one assigned once.
+    /// write without a value, so the variable is never taken for one assigned once. A local is
+    /// looked for only in the member that declares it, the one place C# lets it be named: a
+    /// unit whose methods each keep a local of the same name would otherwise bind every one of
+    /// them for every one.
     /// </summary>
     private Variable Describe(ISymbol symbol)
     {
@@ -458,16 +534,25 @@ internal sealed class QueryVariables
 
         var writes = new List<ExpressionSyntax?>();
         var reads = new List<IdentifierNameSyntax>();
+        var scope = root;
 
         foreach (var reference in symbol.DeclaringSyntaxReferences)
         {
-            if (reference.GetSyntax() is VariableDeclaratorSyntax { Initializer: { } initializer })
+            var declaration = reference.GetSyntax();
+
+            if (declaration is VariableDeclaratorSyntax { Initializer: { } initializer })
             {
                 writes.Add(initializer.Value);
             }
+
+            if (symbol is ILocalSymbol)
+            {
+                scope = declaration.Ancestors().FirstOrDefault(ancestor => ancestor is MemberDeclarationSyntax
+                    and not (GlobalStatementSyntax or BaseTypeDeclarationSyntax or BaseNamespaceDeclarationSyntax)) ?? root;
+            }
         }
 
-        foreach (var identifier in root.DescendantNodes().OfType<IdentifierNameSyntax>())
+        foreach (var identifier in scope.DescendantNodes().OfType<IdentifierNameSyntax>())
         {
             if (identifier.Identifier.Text != symbol.Name
                 || !SymbolEqualityComparer.Default.Equals(SymbolOf(identifier), symbol))

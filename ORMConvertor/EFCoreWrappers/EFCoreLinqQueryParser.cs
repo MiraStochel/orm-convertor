@@ -248,6 +248,15 @@ public class EFCoreLinqQueryParser(
     protected override bool IsProviderQuerySource(TypeSyntax declaredType) => EFCoreContext.IsDbSet(declaredType);
 
     /// <summary>
+    /// The static classes of EF Core's query steps, as EF Core 10.0.10 has them: the core's
+    /// (<c>ToListAsync</c>, <c>CountAsync</c>, <c>Include</c>, <c>AsNoTracking</c>,
+    /// <c>ExecuteDelete</c> …) and the relational layer's (<c>FromSql…</c>, <c>AsSplitQuery</c> …),
+    /// measured in <c>EFCore/EFCoreSetHandedOverProviderTest</c>.
+    /// </summary>
+    protected override bool IsProviderStaticQueryClass(string name)
+        => name is "EntityFrameworkQueryableExtensions" or "RelationalQueryableExtensions";
+
+    /// <summary>
     /// The steps of EF Core's own query API: loading related rows, tracking, query tags and
     /// filters, splitting, and the calls that run a query - a chain of them alone over a root
     /// is a query of EF Core as much as one with an operator of System.Linq.

@@ -62,6 +62,15 @@ public class NHibernateLinqQueryParser(
     /// <summary>NHibernate 5.7.0 writes Sum as the bare sum, NULL over no values as SQL's (decision 155).</summary>
     protected override bool ProviderCoalescesSum => false;
 
+    /// <summary>
+    /// The static classes of NHibernate 5.7.0's query steps: <c>LinqExtensionMethods</c>
+    /// (<c>ToListAsync</c>, <c>CountAsync</c>, <c>WithLock</c> …) and
+    /// <c>EagerFetchingExtensionMethods</c> (<c>Fetch</c> …), measured in
+    /// <c>NHibernate/NHibernateStaticQueryClassTest</c>.
+    /// </summary>
+    protected override bool IsProviderStaticQueryClass(string name)
+        => name is "LinqExtensionMethods" or "EagerFetchingExtensionMethods";
+
     protected override bool TryReadQueryRoot(ExpressionSyntax expression, out LinqQueryRoot? root)
     {
         root = null;

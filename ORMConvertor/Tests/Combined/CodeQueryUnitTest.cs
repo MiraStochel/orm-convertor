@@ -334,6 +334,68 @@ public class CodeQueryUnitTest
         Assert.All(failures, f => Assert.Contains("variable 'q'", f.Reason, StringComparison.Ordinal));
     }
 
+    private static ConversionResult ConvertClass(string content) =>
+        ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.Dapper, [new() { ContentType = ConversionContentType.CSharp, Content = content, Name = Unit }]);
+
+    /// <summary>
+    /// A query with no call in it - a root alone, or a variable holding one - kept in such a
+    /// variable begins the same query composed at run time and is refused the same way, once
+    /// for every value the variable is given. It used to be no place at all: the query vanished
+    /// without a word and the class around it came out as an entity.
+    /// </summary>
+    [Theory]
+    [InlineData("IQueryable<Customer> q = ctx.Customers; if (onlyRich) q = q.Where(c => c.CreditLimit > 2000); return q.ToList();", 1)]
+    [InlineData("IQueryable<Customer> q = (IQueryable<Customer>)ctx.Customers; if (onlyRich) q = q.Where(c => c.CreditLimit > 2000); return q.ToList();", 1)]
+    [InlineData("IQueryable<Customer> q = onlyRich ? ctx.Customers.Where(c => c.CreditLimit > 2000) : ctx.Customers; return q.OrderBy(c => c.CustomerName).ToList();", 2)]
+    [InlineData("var all = ctx.Customers; IQueryable<Customer> q = all; if (onlyRich) q = q.Where(c => c.CreditLimit > 2000); return q.ToList();", 1)]
+    public void ARootAloneComposedAtRunTimeIsRefusedNamingTheVariable(string body, int refusals)
+    {
+        var result = ConvertClass($$"""
+            public class Report(ShopContext ctx)
+            {
+                public List<Customer> Filtered(bool onlyRich)
+                {
+                    {{body}}
+                }
+            }
+            """);
+
+        Assert.Empty(Methods(result, ConversionContentType.CSharpQuery));
+        Assert.Empty(Methods(result, ConversionContentType.CSharpEntity));
+
+        var failures = Failures(result);
+        Assert.Equal(refusals, failures.Count);
+        Assert.All(failures, f => Assert.Contains("variable 'q'", f.Reason, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A member of a name the unit says nothing of, kept in a variable the code reassigns and
+    /// continues by a call that is no step of LINQ, is a list in memory as far as the text
+    /// says: no place, no record, and the class around it stays an entity.
+    /// </summary>
+    [Fact]
+    public void ARootKnownByItsPositionContinuedByNoQueryStepIsNoPlace()
+    {
+        var result = ConvertClass("""
+            public class Basket
+            {
+                public int BasketID { get; set; }
+
+                public List<string> Merge(Request request, List<string> other, bool flag)
+                {
+                    var items = request.Items;
+                    if (flag) items = other;
+                    items.Add("x");
+                    return items;
+                }
+            }
+            """);
+
+        Assert.Empty(Methods(result, ConversionContentType.CSharpQuery));
+        Assert.Contains("class Basket", Assert.Single(Methods(result, ConversionContentType.CSharpEntity)), StringComparison.Ordinal);
+        Assert.Empty(Failures(result));
+    }
+
     /// <summary>
     /// A query expression refused for its let clause refuses itself alone, whether the rewrite
     /// stopped inside a chain that is a query of the unit or before the chain began.
