@@ -6,10 +6,15 @@ using Model;
 
 namespace AdvisorBenchmarking;
 
-internal static class BenchmarkHarnessBuilder
+/// <summary>
+/// Writes the source of a benchmark harness. It never sees a connection string: the harness
+/// takes one in <c>Setup(string)</c> at run time, so neither its source nor the assembly
+/// compiled from it carries a credential (decision 160).
+/// </summary>
+public static class BenchmarkHarnessBuilder
 {
-    private static readonly IReadOnlyDictionary<ORMEnum, Func<IReadOnlyList<ConversionSource>, string, ICatalogReader, BenchmarkSource>> Generators =
-        new Dictionary<ORMEnum, Func<IReadOnlyList<ConversionSource>, string, ICatalogReader, BenchmarkSource>>
+    private static readonly IReadOnlyDictionary<ORMEnum, Func<IReadOnlyList<ConversionSource>, ICatalogReader, BenchmarkSource>> Generators =
+        new Dictionary<ORMEnum, Func<IReadOnlyList<ConversionSource>, ICatalogReader, BenchmarkSource>>
         {
             [ORMEnum.Dapper] = DapperBenchmarkHarnessBuilder.Build,
             [ORMEnum.EFCore] = EFCoreBenchmarkHarnessBuilder.Build
@@ -18,7 +23,6 @@ internal static class BenchmarkHarnessBuilder
     public static BenchmarkSource Build(
         ORMEnum framework,
         IReadOnlyList<ConversionSource> sources,
-        string connectionString,
         ICatalogReader catalogReader)
     {
         if (!Generators.TryGetValue(framework, out var generator))
@@ -26,7 +30,7 @@ internal static class BenchmarkHarnessBuilder
             throw new NotSupportedException($"Benchmark harness for framework {framework} is not implemented yet.");
         }
 
-        return generator(sources, WithExecutionTimeout(connectionString), catalogReader);
+        return generator(sources, catalogReader);
     }
 
     /// <summary>
@@ -38,4 +42,3 @@ internal static class BenchmarkHarnessBuilder
     internal static string WithExecutionTimeout(string connectionString)
         => new SqlConnectionStringBuilder(connectionString) { CommandTimeout = BenchmarkPolicy.ExecutionTimeoutSeconds }.ConnectionString;
 }
-

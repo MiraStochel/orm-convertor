@@ -1,7 +1,7 @@
 # 029 — Připojení do databáze je fakt konzumentského projektu
 
 Datum: 2026-08-20
-Stav: platí
+Stav: platí; výklad zákazu S4 jen na předávaný artefakt, harness mimo něj, nahrazuje 160
 Požadavky: F5, F11, S4
 Podklad: rozhodnutí [028](028-assembly-name-is-not-ours-to-invent.md) a [004](004-unexpressible-facts-as-warnings.md); `EFCoreLinqQueryBuilder`, `DapperBenchmarkHarnessBuilder`, `EfCoreBenchmarkHarnessBuilder`, `AdvisorRunCoordinator`, `RoslynBenchmarkCompiler`
 

@@ -1,13 +1,16 @@
+using System.Text.Json;
 using Model;
 using OrmConvertor;
 
 namespace Tests.Combined;
 
 /// <summary>
-/// Decision 029: a database connection is the consumer project's fact, and the S4 ban on
-/// credentials binds the handed-over artifact. Until now that held by construction only -
-/// no builder writes a connection - so a builder that started emitting a configuration
-/// file (hibernate.cfg.xml, persistence.xml) would break it without a test noticing.
+/// Decision 029: a database connection is the consumer project's fact, so no builder writes
+/// one. The S4 ban on credentials binds every generated source and every text about a run
+/// (decision 160); this class holds the translation's output, the harness and the log have
+/// tests of their own. Without it the artifact half held by construction only, so a builder
+/// that started emitting a configuration file (hibernate.cfg.xml, persistence.xml) would
+/// break it without a test noticing.
 /// Directions and inputs come from <see cref="CrossFrameworkInputs"/>.
 /// </summary>
 public class ArtifactCarriesNoCredentialsTest
@@ -56,7 +59,9 @@ public class ArtifactCarriesNoCredentialsTest
     /// The stronger half of decision 029: connection code in the input is application code,
     /// not a mapping fact, so parsers do not read it and no target writes it back. The
     /// embedded DbContext is read as the framework's API, not as an entity (decisions 111
-    /// and 132), and whichever reading takes it, the secret must not survive into any artifact.
+    /// and 132), and whichever reading takes it, the secret must not survive into any artifact -
+    /// nor, since decision 160 reads a record as a log, into a record or the ledger, which is
+    /// why the whole result is searched rather than its artifacts.
     /// </summary>
     [Theory]
     [MemberData(nameof(CrossFrameworkInputs.Frameworks), MemberType = typeof(CrossFrameworkInputs))]
@@ -83,8 +88,7 @@ public class ArtifactCarriesNoCredentialsTest
 
         var result = ConversionHandler.Convert(ORMEnum.EFCore, target, sources);
 
-        Assert.All(result.Sources, artifact =>
-            Assert.DoesNotContain("TopSecret1", artifact.Content, StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain("TopSecret1", JsonSerializer.Serialize(result), StringComparison.OrdinalIgnoreCase);
         AssertConnectionFree(result);
     }
 }

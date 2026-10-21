@@ -28,7 +28,7 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
     {
         logger?.LogInformation("Benchmark start for framework {Framework} with {SourceCount} sources.", framework, sources.Count);
 
-        var benchmarkSource = BenchmarkHarnessBuilder.Build(framework, sources, connectionString, catalogReader);
+        var benchmarkSource = BenchmarkHarnessBuilder.Build(framework, sources, catalogReader);
 
         var assemblyName = $"DynamicBenchmarks_{Guid.NewGuid():N}";
 
@@ -38,7 +38,8 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
         var benchmarkType = compilation.Assembly.GetType($"{benchmarkSource.Namespace}.{benchmarkSource.TypeName}")
             ?? throw new InvalidOperationException("Generated benchmark type could not be located.");
 
-        var setup = benchmarkType.GetMethod("Setup");
+        var setup = benchmarkType.GetMethod("Setup", [typeof(string)])
+            ?? throw new InvalidOperationException("Benchmark harness does not expose Setup(string).");
         var cleanup = benchmarkType.GetMethod("Cleanup");
         var execute = benchmarkType.GetMethod("Query") ?? benchmarkType.GetMethod("Execute");
 
@@ -57,7 +58,8 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
 
         try
         {
-            setup?.Invoke(instance, null);
+            // The connection reaches the harness as a value, never as text of its source (decision 160).
+            setup.Invoke(instance, [BenchmarkHarnessBuilder.WithExecutionTimeout(connectionString)]);
             logger?.LogDebug("Setup invoked.");
 
             // Warm-up (decision 145): until two consecutive executions agree, at most

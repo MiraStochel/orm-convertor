@@ -10,7 +10,7 @@
 
 | Aktivum | Kde je | Ochrana dnes |
 |---|---|---|
-| Připojovací řetězce (katalog, Advisor) | proměnné prostředí, v Development user secrets; nikdy v repozitáři | nejdou do artefaktu (rozh. [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md), `ArtifactCarriesNoCredentialsTest`) ani do logu (ten nese počty a časy) |
+| Připojovací řetězce (katalog, Advisor) | proměnné prostředí, v Development user secrets; nikdy v repozitáři | nejdou do žádného generovaného zdroje — artefaktu (rozh. [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md)) ani harnessu Advisoru, který řetězec bere za běhu — ani do textu o běhu: záznam o nečitelném katalogu, chybová odpověď a log (jen konzole) nesou text výjimky přes začernění hesla, jména, celého řetězce a při integrovaném přihlášení účtu procesu (rozh. [160](./decisions/160-credentials-are-in-no-generated-source-and-no-text-about-a-run-and-progress-has-the-grain-of-the-processing.md)). Co si cizí kód Advisoru zakóduje sám, začernění nechytí — hrozba 1 |
 | Databáze za nimi | vně procesu | jen řetězce; oprávnění účtu určuje prostředí |
 | Vložený kód | paměť po dobu požadavku; rozpracovaný vstup v `localStorage` prohlížeče (rozh. [056](./decisions/056-work-in-progress-input-stays-in-the-browser.md)) | neukládá se, nikam nejde, do logu ne; kopii maže *Clear*, na sdíleném profilu prohlížeče ji vidí další uživatel |
 | CPU a paměť hostitele | proces | nic — hrozby 1 a 2 |
@@ -34,7 +34,7 @@
 | **1. Spuštění cizího kódu Advisorem** (jediné místo, kde se cizí kód spouští) | `/advisor/run` | proces s jeho právy a připojením do Advisor databáze | mez jednoho spuštění dotazu (146); zužuje ji jen potřeba připojení a `libadvisor.so` (jen v Dockeru) | první větu S4 — §9, oblast 1 |
 | **2. Vyčerpání zdrojů překladem** | `/convert` | CPU, paměť; hluboké zanoření **shodí proces** (`0xC00000FD`, v .NET nezachytitelné) | strop zanoření → záznam `Failure` s řádkem a sloupcem | limit počtu a velikosti jednotek; odolnost parserů proti nepřátelskému vstupu (neanalyzovaná, neměřená); S3 platí jen pro běžnou zátěž |
 | **3. Jména položek v archivu** | `/archive` | soubory uživatele při rozbalení (`../`, absolutní cesta) | nic; jediné místo, kde nástroj vydá soubor se jménem, které neurčil (jinde je jméno popiskem klienta, rozh. [033](./decisions/033-shape-of-the-static-frontend-screens.md)) | chování rozbalovače |
-| **4. Text chyby z infrastruktury** | všechny (`400` s textem výjimky); katalog záznamem s `ex.Message` | název serveru či instance (údaje ne) | předpoklad důvěryhodné sítě | veřejnou instanci — tam je to únik |
+| **4. Text chyby z infrastruktury** | všechny (`400` s textem výjimky); katalog záznamem s textem výjimky | název serveru či instance (přihlašovací údaje ne — začernění, rozh. [160](./decisions/160-credentials-are-in-no-generated-source-and-no-text-about-a-run-and-progress-has-the-grain-of-the-processing.md)) | předpoklad důvěryhodné sítě | veřejnou instanci — tam je to únik |
 | **5. Neomezený počet požadavků** | všechny | stroj; s hrozbou 2 stačí běžný klient | nic | omezení frekvence |
 
 **Strop zanoření (hrozba 2)** má výchozí hodnotu 128; provozovatel ho mění klíčem `Parsing__MaxNestingDepth`, `0` ho vypíná a hrozba pak platí tak, jak je změřená níž. Tělo požadavku ho měnit nemůže. Účinnou hodnotu vrací každá odpověď `/convert` (`maxNestingDepth`).

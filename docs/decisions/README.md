@@ -32,7 +32,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 026 | [Kde bydlí sdílené čtení dotazů](026-home-of-shared-query-reading.md) | revidováno | F7–F10, S1, S2 |
 | 027 | [Ověření generovaných dotazů](027-query-artifact-verification.md) | platí | F11, F13, T2, T3, S2 |
 | 028 | [Název sestavení není náš, abychom ho vymýšleli](028-assembly-name-is-not-ours-to-invent.md) | platí | F2, F11, S2 |
-| 029 | [Připojení do databáze je fakt konzumentského projektu](029-database-connection-is-the-consumer-projects-fact.md) | platí | F5, F11, S4 |
+| 029 | [Připojení do databáze je fakt konzumentského projektu](029-database-connection-is-the-consumer-projects-fact.md) | platí; výklad zákazu S4 jen na předávaný artefakt, harness mimo něj, nahrazuje 160 | F5, F11, S4 |
 | 030 | [Rozsah verze 1.0](030-scope-of-version-1-0.md) | revidováno | F1–F15, S1–S7, T1–T7 |
 | 031 | [Klíčová třída je deklarací částí klíče, ne entitou převodu](031-key-class-as-declaration-of-key-parts.md) | platí | F1, F2, F5, F7–F10, F11, F14, S1, S2 |
 | 032 | [Frontend jako statické stránky bez buildu](032-frontend-as-static-pages-without-a-build.md) | platí | F11, F14, S5, S7 |
@@ -162,6 +162,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 157 | [Buňka cíle, která se od zdroje liší vyslovenou mezí, vznik soudce FIBEN neblokuje; záznam běhu ji jmenuje](157-a-target-cell-that-differs-by-a-stated-limit-does-not-block-the-fiben-judge.md) | platí; nahrazuje první podmínku odstavce *Soudce* rozh. 149 | T2, T3, F13 |
 | 158 | [Vlastnost deklarovaná `DbSet<T>` je deklarací sady, ať její hodnotu dodá cokoli; kořen, který je její hodnotou, dotaz nepředává](158-a-property-declared-dbset-declares-a-set-whatever-supplies-its-value.md) | platí | F11, F14, S1, S2 |
 | 159 | [Hodnotu jediné skupiny korelovaného poddotazu bere cíl EF Core voláním `Max()`, ne `FirstOrDefault()`: přes `TOP(1)` SQL Server poddotaz nerozplete a jeho joiny opakuje pro každý vnější řádek](159-ef-core-takes-the-value-of-one-group-by-max-not-first-or-default.md) | platí; nahrazuje zakončení `FirstOrDefault()` první odrážky *Rozhodnutí* a `TOP(1)` důsledku *Cena* rozh. 155 | F15, T7, T3, F13, S1 |
+| 160 | [Druhá věta S4 platí pro každý zdroj, který nástroj vygeneruje, a pro každý text o běhu, Advisor včetně; cizí text odchází jedním začerněním. Průběžný stav S7 má zrnitost zpracování](160-credentials-are-in-no-generated-source-and-no-text-about-a-run-and-progress-has-the-grain-of-the-processing.md) | platí; nahrazuje výklad zákazu S4 rozh. 029 (zákaz jen na předávaný artefakt, harness mimo něj) | S4, S7, S6, S3 |
 
 ## Formát
 

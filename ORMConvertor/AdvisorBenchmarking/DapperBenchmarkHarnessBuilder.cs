@@ -14,7 +14,6 @@ internal static class DapperBenchmarkHarnessBuilder
 {
     public static BenchmarkSource Build(
         IReadOnlyList<ConversionSource> sources,
-        string connectionString,
         ICatalogReader catalogReader)
     {
         // Parse entity definitions up front so the generated harness can compile them alongside the benchmark.
@@ -64,12 +63,12 @@ internal static class DapperBenchmarkHarnessBuilder
         sb.AppendLine("{");
         sb.AppendLine($"    public class {typeName}");
         sb.AppendLine("    {");
-        sb.AppendLine($"        private const string ConnectionString = @\"{EscapeVerbatim(connectionString)}\";");
         sb.AppendLine("        private SqlConnection connection = default!;");
         sb.AppendLine();
-        sb.AppendLine("        public void Setup()");
+        // The connection string is a value at run time, never text of the harness (decision 160).
+        sb.AppendLine("        public void Setup(string connectionString)");
         sb.AppendLine("        {");
-        sb.AppendLine("            connection = new SqlConnection(ConnectionString);");
+        sb.AppendLine("            connection = new SqlConnection(connectionString);");
         sb.AppendLine("            connection.Open();");
         sb.AppendLine("        }");
         sb.AppendLine();

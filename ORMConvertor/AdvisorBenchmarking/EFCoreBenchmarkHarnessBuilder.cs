@@ -17,7 +17,6 @@ internal static class EFCoreBenchmarkHarnessBuilder
 {
     public static BenchmarkSource Build(
         IReadOnlyList<ConversionSource> sources,
-        string connectionString,
         ICatalogReader catalogReader)
     {
         // Entities are shared across translated outputs. We load them once so the DbContext can register each type.
@@ -101,15 +100,15 @@ internal static class EFCoreBenchmarkHarnessBuilder
         sb.AppendLine("{");
         sb.AppendLine($"    public class {typeName}");
         sb.AppendLine("    {");
-        sb.AppendLine($"        private const string ConnectionString = @\"{EscapeVerbatim(connectionString)}\";");
         sb.AppendLine("        private BenchmarkDbContext context = default!;");
         // Cache resolver output so we only reflect once per harness instance.
         sb.AppendLine("        private static readonly QueryBinding CachedQuery = ResolveQueryBinding();");
         sb.AppendLine();
-        sb.AppendLine("        public void Setup()");
+        // The connection string is a value at run time, never text of the harness (decision 160).
+        sb.AppendLine("        public void Setup(string connectionString)");
         sb.AppendLine("        {");
         sb.AppendLine("            var options = new DbContextOptionsBuilder<BenchmarkDbContext>()");
-        sb.AppendLine("                .UseSqlServer(ConnectionString)");
+        sb.AppendLine("                .UseSqlServer(connectionString)");
         sb.AppendLine("                .EnableThreadSafetyChecks(false)");
         sb.AppendLine("                .Options;");
         sb.AppendLine("            context = new BenchmarkDbContext(options);");
@@ -276,14 +275,6 @@ internal static class EFCoreBenchmarkHarnessBuilder
         sb.AppendLine("            // Thin dynamic DbContext that maps translated entity types to the right table/schema.");
         sb.AppendLine("            public BenchmarkDbContext(DbContextOptions<BenchmarkDbContext> options) : base(options)");
         sb.AppendLine("            {");
-        sb.AppendLine("            }");
-        sb.AppendLine();
-        sb.AppendLine("            protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)");
-        sb.AppendLine("            {");
-        sb.AppendLine("                if (!optionsBuilder.IsConfigured)");
-        sb.AppendLine("                {");
-        sb.AppendLine("                    optionsBuilder.UseSqlServer(ConnectionString);");
-        sb.AppendLine("                }");
         sb.AppendLine("            }");
         sb.AppendLine();
         sb.AppendLine("            protected override void OnModelCreating(ModelBuilder modelBuilder)");

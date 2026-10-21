@@ -1,5 +1,8 @@
 using AdvisorBenchmarking;
+using DatabaseCatalog;
+using Microsoft.Extensions.Logging.Console;
 using OrmConvertor;
+using ORMConvertorAPI.Logging;
 using ORMConvertorAPI.Services;
 
 namespace ORMConvertorAPI;
@@ -17,6 +20,16 @@ public class Program
         // nothing, which read as protection where there was none.
         builder.Services.AddSingleton<IBenchmarkExecutor, BenchmarkExecutor>();
         builder.Services.AddSingleton<IAdvisorRunCoordinator, AdvisorRunCoordinator>();
+
+        // Decision 160: the credentials of every connection the instance holds never leave it
+        // in a text it did not compose. One redaction built from them serves the log and the
+        // detail of a failure response; the log goes to the console only, through the
+        // redacting formatter, since any other provider would write past it.
+        builder.Services.AddSingleton(services => CredentialRedaction.For(
+            services.GetRequiredService<IConfiguration>().GetSection("ConnectionStrings").GetChildren().Select(c => c.Value)));
+        builder.Logging.ClearProviders();
+        builder.Logging.AddConsole(options => options.FormatterName = RedactingConsoleFormatter.FormatterName);
+        builder.Logging.AddConsoleFormatter<RedactingConsoleFormatter, ConsoleFormatterOptions>();
 
         // The parse limits of decision 092, read here and nowhere else: they are a fact of
         // the instance, so they are resolved once at startup rather than per request, and

@@ -16,9 +16,35 @@ namespace DatabaseCatalog;
 /// </summary>
 public sealed class SqlServerCatalogReader(string connectionString) : ICatalogReader, IDisposable
 {
+    private readonly CredentialRedaction redaction = CredentialRedaction.For([connectionString]);
+
     private SqlConnection? connection;
 
     public IReadOnlyDictionary<string, TableLookup> ReadTables(IReadOnlyList<TableRequest> requests)
+        => Guarded(() => ReadTablesCore(requests));
+
+    public IReadOnlyList<TableImage> FindJunctionTables(IReadOnlyCollection<TableImage> referencedTables)
+        => Guarded(() => FindJunctionTablesCore(referencedTables));
+
+    /// <summary>
+    /// A failure leaves the reader with its message redacted against the reader's own
+    /// connection string (decision 160): the completion phase writes that message into the
+    /// reason of a record, and SqlClient names the login a refused connection tried. The
+    /// original stays the inner exception for whoever logs it, and the log is redacted too.
+    /// </summary>
+    private T Guarded<T>(Func<T> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(redaction.Redact(ex.Message), ex);
+        }
+    }
+
+    private Dictionary<string, TableLookup> ReadTablesCore(IReadOnlyList<TableRequest> requests)
     {
         var results = new Dictionary<string, TableLookup>();
 
@@ -42,7 +68,7 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
         return results;
     }
 
-    public IReadOnlyList<TableImage> FindJunctionTables(IReadOnlyCollection<TableImage> referencedTables)
+    private IReadOnlyList<TableImage> FindJunctionTablesCore(IReadOnlyCollection<TableImage> referencedTables)
     {
         if (referencedTables.Count == 0)
         {

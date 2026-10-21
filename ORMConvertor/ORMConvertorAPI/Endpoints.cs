@@ -1,5 +1,6 @@
 ﻿using System.IO.Compression;
 using AbstractWrappers;
+using DatabaseCatalog;
 using OrmConvertor;
 using ORMConvertorAPI.Data;
 using ORMConvertorAPI.Dtos;
@@ -73,14 +74,16 @@ public static class Endpoints
     /// which is what every endpoint's <c>.ProducesProblem(400)</c> has described all along
     /// (decision 044). The message travels in <c>detail</c>; it is the same text the handlers
     /// used to return as a bare string, so threat 4 of the threat model - a server or instance
-    /// name can appear in it - is unchanged and this is not its fix.
+    /// name can appear in it - is unchanged and this is not its fix. The credentials of the
+    /// instance do not: the message is text the tool did not compose, so it leaves through
+    /// the redaction (decision 160).
     /// </summary>
-    private static IResult Failure(Exception e) =>
-        Results.Problem(detail: e.Message, statusCode: StatusCodes.Status400BadRequest);
+    private static IResult Failure(Exception e, CredentialRedaction redaction) =>
+        Results.Problem(detail: redaction.Redact(e.Message), statusCode: StatusCodes.Status400BadRequest);
 
     // Packs client-named files into a ZIP for the complete-output download of S7
     // (decision 033); translates nothing.
-    private static IResult ArchiveHandler(ArchiveRequest req)
+    private static IResult ArchiveHandler(ArchiveRequest req, CredentialRedaction redaction)
     {
         try
         {
@@ -98,11 +101,12 @@ public static class Endpoints
         }
         catch (Exception e)
         {
-            return Failure(e);
+            return Failure(e, redaction);
         }
     }
 
-    private static IResult ConvertHandler(ConvertRequest req, IConfiguration configuration, ParseLimits limits)
+    private static IResult ConvertHandler(
+        ConvertRequest req, IConfiguration configuration, ParseLimits limits, CredentialRedaction redaction)
     {
         try
         {
@@ -133,11 +137,11 @@ public static class Endpoints
         }
         catch (Exception e)
         {
-            return Failure(e);
+            return Failure(e, redaction);
         }
     }
 
-    private static IResult AdvisorTestHandler(AdvisorSolveRequest req)
+    private static IResult AdvisorTestHandler(AdvisorSolveRequest req, CredentialRedaction redaction)
     {
         try
         {
@@ -154,13 +158,14 @@ public static class Endpoints
         }
         catch (Exception e)
         {
-            return Failure(e);
+            return Failure(e, redaction);
         }
     }
 
     private static async Task<IResult> AdvisorRunHandler(
         AdvisorRunRequest req,
         IAdvisorRunCoordinator coordinator,
+        CredentialRedaction redaction,
         CancellationToken cancellationToken)
     {
         try
@@ -170,7 +175,7 @@ public static class Endpoints
         }
         catch (Exception e)
         {
-            return Failure(e);
+            return Failure(e, redaction);
         }
     }
 }
