@@ -127,6 +127,7 @@ public class NHibernateHqlQueryParser(
         try
         {
             tokens = Lex(source);
+            position = 0;
 
             // Before the descent, because the descent is what the cap protects: from here on
             // the depth of the input is the depth of the recursion, and an overflow is not a
@@ -136,9 +137,15 @@ public class NHibernateHqlQueryParser(
             {
                 Report(ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep, Limits));
             }
+            else if (AtKeyword("update") || AtKeyword("delete") || AtKeyword("insert"))
+            {
+                // A bulk statement of HQL, named as the shared JPQL reading names one rather
+                // than left to fail on its first token (decisions 053, 108 and 143).
+                Report(ConversionRecordKind.Failure,
+                    $"The query is a bulk {Current.Text.ToLowerInvariant()} statement, which changes the rows other queries read rather than reading them; the tool translates read-only queries, so no artifact was generated.");
+            }
             else
             {
-                position = 0;
                 ParseQueryBody();
 
                 if (Current.Kind != TokenKind.End)

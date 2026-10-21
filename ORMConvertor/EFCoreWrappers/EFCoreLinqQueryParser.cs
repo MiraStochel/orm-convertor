@@ -290,8 +290,20 @@ public class EFCoreLinqQueryParser(
     protected override bool IsProviderQueryStep(string name) => name is
         "Include" or "ThenInclude" or "AsNoTracking" or "AsNoTrackingWithIdentityResolution" or "AsTracking"
         or "AsSplitQuery" or "AsSingleQuery" or "IgnoreQueryFilters" or "IgnoreAutoIncludes"
-        or "TagWith" or "TagWithCallSite" or "AsAsyncEnumerable" or "Load" or "Find"
-        or "ExecuteDelete" or "ExecuteUpdate" or "ForEach";
+        or "TagWith" or "TagWithCallSite" or "AsAsyncEnumerable" or "Load" or "Find" or "ForEach";
+
+    /// <summary>
+    /// The bulk commands of EF Core 10.0.10, which send a DELETE or an UPDATE of the rows the
+    /// chain selects and answer the number of rows written - the only steps of its query classes
+    /// over a query that answer one and are no operator of System.Linq, measured in
+    /// <c>EFCore/EFCoreBulkCommandProviderTest</c>.
+    /// </summary>
+    protected override string? ProviderCommandOf(string method) => method switch
+    {
+        "ExecuteDelete" => "DELETE",
+        "ExecuteUpdate" => "UPDATE",
+        _ => null,
+    };
 
     /// <summary>
     /// The navigation entry of EF Core's explicit loading (decision 115): <c>X.Entry(e)</c>, or

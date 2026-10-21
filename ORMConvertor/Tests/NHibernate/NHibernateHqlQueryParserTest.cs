@@ -352,6 +352,24 @@ public class NHibernateHqlQueryParserTest
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains(reason, StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// A bulk statement of HQL writes the rows other queries read, and is refused naming the
+    /// statement, as the shared JPQL reading refuses one (decision 143) - not as a text that
+    /// could not be parsed, which NHibernate parses.
+    /// </summary>
+    [Theory]
+    [InlineData("delete from Order o where o.Total < 1", "delete")]
+    [InlineData("update Order o set o.Total = 0 where o.Total < 1", "update")]
+    [InlineData("insert into Order (CustomerID, Total) select o.CustomerID, o.Total from Order o", "insert")]
+    public void ABulkStatementIsRefusedNamingIt(string hql, string statement)
+    {
+        var builder = Parse(new DapperSqlQueryBuilder(), hql, Orders());
+
+        Assert.Empty(builder.Build());
+        var refused = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.Contains($"bulk {statement} statement", refused.Reason, StringComparison.Ordinal);
+    }
+
     /* ---- a reference compared with the row it points at ------------------------------ */
 
     /// <summary>

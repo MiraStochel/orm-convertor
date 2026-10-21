@@ -64,12 +64,27 @@ public class NHibernateLinqQueryParser(
 
     /// <summary>
     /// The static classes of NHibernate 5.7.0's query steps: <c>LinqExtensionMethods</c>
-    /// (<c>ToListAsync</c>, <c>CountAsync</c>, <c>WithLock</c> …) and
-    /// <c>EagerFetchingExtensionMethods</c> (<c>Fetch</c> …), measured in
+    /// (<c>ToListAsync</c>, <c>CountAsync</c>, <c>WithLock</c> …),
+    /// <c>EagerFetchingExtensionMethods</c> (<c>Fetch</c> …) and <c>DmlExtensionMethods</c>, the
+    /// bulk commands (<see cref="ProviderCommandOf"/>), measured in
     /// <c>NHibernate/NHibernateStaticQueryClassTest</c>.
     /// </summary>
     protected override bool IsProviderStaticQueryClass(string name)
-        => name is "LinqExtensionMethods" or "EagerFetchingExtensionMethods";
+        => name is "LinqExtensionMethods" or "EagerFetchingExtensionMethods" or "DmlExtensionMethods";
+
+    /// <summary>
+    /// The bulk commands of NHibernate 5.7.0, the methods of its <c>DmlExtensionMethods</c>: each
+    /// sends a DELETE, an UPDATE or an INSERT … SELECT of the rows the chain selects and answers
+    /// the number of rows written - <c>UpdateBuilder</c> and <c>InsertBuilder</c> the builder of
+    /// one, whose last call sends it -, measured in <c>NHibernate/NHibernateBulkCommandProviderTest</c>.
+    /// </summary>
+    protected override string? ProviderCommandOf(string method) => method switch
+    {
+        "Delete" => "DELETE",
+        "Update" or "UpdateVersioned" or "UpdateBuilder" => "UPDATE",
+        "InsertInto" or "InsertBuilder" => "INSERT … SELECT",
+        _ => null,
+    };
 
     protected override bool TryReadQueryRoot(ExpressionSyntax expression, out LinqQueryRoot? root)
     {

@@ -29,7 +29,8 @@ internal sealed class QueryVariables
 {
     /// <summary>
     /// The steps that run a query rather than add to it: materialization, a single row, an
-    /// aggregate, a bulk operation, and EF Core's Find, which loads one entity by its key
+    /// aggregate, a bulk command - EF Core's ExecuteDelete, NHibernate's Delete, and the last call
+    /// of NHibernate's builders of one -, and EF Core's Find, which loads one entity by its key
     /// (decision 114). After one of them the variable holds rows or a value, and what the code
     /// does with it is C# over objects in memory, not a query.
     /// </summary>
@@ -39,6 +40,7 @@ internal sealed class QueryVariables
         "First", "FirstOrDefault", "Single", "SingleOrDefault", "Last", "LastOrDefault", "ElementAt", "ElementAtOrDefault",
         "Count", "LongCount", "Sum", "Average", "Min", "Max", "MinBy", "MaxBy", "Aggregate", "Any", "All", "Contains",
         "Load", "ForEach", "ExecuteDelete", "ExecuteUpdate", "Find",
+        "Delete", "Update", "UpdateVersioned", "InsertInto", "Insert",
     };
 
     private readonly SyntaxNode root;

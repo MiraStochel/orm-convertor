@@ -413,6 +413,16 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     protected virtual QueryFeature? ProviderStepChangesTheRowSet(string method) => null;
 
     /// <summary>
+    /// The statement a step of the provider's API runs the chain as, where the step makes the
+    /// chain a bulk command - <c>DELETE</c>, <c>UPDATE</c>, <c>INSERT</c> of the rows it selects,
+    /// answering the number of rows written rather than rows: EF Core's <c>ExecuteDelete</c>,
+    /// NHibernate's <c>Delete</c>. Read as an unknown step, it left with a loss record and the
+    /// chain came out as the SELECT of the rows the command writes (decision 053). The name comes
+    /// without its Async suffix. Null where the step is none; the default knows none.
+    /// </summary>
+    protected virtual string? ProviderCommandOf(string method) => null;
+
+    /// <summary>
     /// The C# text as the shared nesting guard reads it (decision 092): Roslyn's own lexer,
     /// which is a loop, projected onto text and position. Each reading layer writes this for
     /// its own lexer rather than sharing one - a token type is exactly what the five languages
@@ -1376,18 +1386,33 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        if (StaticStepOver(query.Chain) is { } step)
+        if (StaticStepOver(query.Chain) is (var owner, var step))
         {
             queryBuilder.Push();
             Report(
                 ConversionRecordKind.Failure,
-                $"The query is handed to {step}(), a step of LINQ called in its static form, which the reading does not read; the query that reaches the provider is composed by that call, so no artifact was generated.");
+                ProviderCommandOf(WithoutAsync(step)) is { } statement
+                    ? CommandRefusal($"{owner}.{step}", statement)
+                    : $"The query is handed to {owner}.{step}(), a step of LINQ called in its static form, which the reading does not read; the query that reaches the provider is composed by that call, so no artifact was generated.");
             ReportRefusedClauses(root, rewriter, node => query.Chain.Span.Contains(node.Span));
             queryBuilder.Pop();
             return;
         }
 
         TryDecompose(query.Chain, out var queryRoot, out var steps, out var rootExpression);
+
+        // A chain that ends in a bulk command hands the provider no query but a statement that
+        // writes, which is refused naming the call before anything is read over it, as a SQL
+        // statement that is not a SELECT that reads is (decision 108) and EF Core's
+        // Database.ExecuteSql… (decision 113).
+        if (steps.FirstOrDefault(chainStep => ProviderCommandOf(WithoutAsync(chainStep.Name)) is not null) is { } command)
+        {
+            queryBuilder.Push();
+            Report(ConversionRecordKind.Failure, CommandRefusal(command.Name, ProviderCommandOf(WithoutAsync(command.Name))!));
+            ReportRefusedClauses(root, rewriter, node => query.Chain.Span.Contains(node.Span));
+            queryBuilder.Pop();
+            return;
+        }
 
         // A root whose entity is a type parameter reads the table of whatever type the caller
         // supplies, which the text does not state: refused naming the parameter before anything
@@ -1421,11 +1446,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// extension does, and a query read without it would answer something else (decision 070):
     /// the whole table for a filter, rows for a count.
     /// </summary>
-    private string? StaticStepOver(ExpressionSyntax place)
+    private (string Owner, string Step)? StaticStepOver(ExpressionSyntax place)
     {
         return StepAt(place) ?? variables.ReadsOf(place).Select(StepAt).FirstOrDefault(step => step is not null);
 
-        string? StepAt(ExpressionSyntax value)
+        (string Owner, string Step)? StepAt(ExpressionSyntax value)
         {
             SyntaxNode node = value;
 
@@ -1443,10 +1468,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                        _ => null,
                    }) is { } owner
                    && (owner is "Queryable" or "Enumerable" or "AsyncEnumerable" || IsProviderStaticQueryClass(owner))
-                ? $"{owner}.{call.Name.Identifier.Text}"
+                ? (owner, call.Name.Identifier.Text)
                 : null;
         }
     }
+
+    /// <summary>
+    /// The refusal of a bulk command (<see cref="ProviderCommandOf"/>), worded as the refusal of a
+    /// SQL statement that is not a SELECT that reads (decision 108): the call is named as written,
+    /// with the class of its static form where it is called so.
+    /// </summary>
+    private static string CommandRefusal(string call, string statement)
+        => $"{call}() runs the query it is given as {statement}, which is not a SELECT that reads: it writes, and answers with the number of rows it wrote rather than with rows; the tool translates queries that read, so no artifact was generated.";
 
     /// <summary>
     /// Whether a static class of the provider's API holds the static form of its query steps -
@@ -1564,10 +1597,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     /// <summary>
     /// Whether a link of a chain is a step of a LINQ query: an operator of System.Linq, one of
-    /// the executing terminals and their asynchronous forms, or a step of the provider's own
-    /// query API. A root known only by its position - <c>x.M</c>, where the unit says nothing of
-    /// what <c>x</c> is - begins a query only in a chain that has such a step (decision 109
-    /// reads a LINQ chain): <c>Random.Shared.Next()</c>, <c>span.TotalHours.ToString()</c> and
+    /// the executing terminals and their asynchronous forms, a step of the provider's own query
+    /// API, or one of its bulk commands, which the reading refuses. A root known only by its
+    /// position - <c>x.M</c>, where the unit says nothing of what <c>x</c> is - begins a query
+    /// only in a chain that has such a step (decision 109 reads a LINQ chain):
+    /// <c>Random.Shared.Next()</c>, <c>span.TotalHours.ToString()</c> and
     /// <c>scope.ServiceProvider.GetRequiredService&lt;T&gt;()</c> have the position and no LINQ
     /// at all, and read as queries they claimed tables named Shared, TotalHours and
     /// ServiceProvider. A root the unit declares as the provider's source, and a root that is
@@ -1577,7 +1611,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     private bool IsQueryStep(string name)
     {
         var bare = name.EndsWith("Async", StringComparison.Ordinal) ? name[..^"Async".Length] : name;
-        return LinqOperators.Contains(bare) || IsProviderQueryStep(bare);
+        return LinqOperators.Contains(bare) || IsProviderQueryStep(bare) || ProviderCommandOf(bare) is not null;
     }
 
     private static readonly HashSet<string> LinqOperators = new(StringComparer.Ordinal)
