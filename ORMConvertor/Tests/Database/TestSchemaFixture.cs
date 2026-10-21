@@ -26,11 +26,11 @@ namespace Tests.Database;
 /// </summary>
 public sealed class TestSchemaFixture : IAsyncLifetime
 {
-    private const string ScriptResourceName = "Tests.Database.TestSchema.sql";
+    internal const string ScriptResourceName = "Tests.Database.TestSchema.sql";
     private const string DataResourceName = "Tests.Database.Differential.FixtureData.sql";
     private const string ShapesDataResourceName = "Tests.Database.QueryShapes.FixtureData.sql";
-    private const string LdbcSchemaResourceName = "Tests.Database.Ldbc.schema.sql";
-    private const string LdbcConstraintsResourceName = "Tests.Database.Ldbc.constraints.sql";
+    internal const string LdbcSchemaResourceName = "Tests.Database.Ldbc.schema.sql";
+    internal const string LdbcConstraintsResourceName = "Tests.Database.Ldbc.constraints.sql";
     private const string LdbcIndexesResourceName = "Tests.Database.Ldbc.indexes.sql";
     private const string SchemaPlaceholder = "{{schema}}";
 
@@ -232,11 +232,7 @@ public sealed class TestSchemaFixture : IAsyncLifetime
 
     private static IEnumerable<string> Batches(string resourceName, string schema)
     {
-        using var stream = typeof(TestSchemaFixture).Assembly.GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException(
-                $"Embedded resource \"{resourceName}\" is missing from the test assembly.");
-        using var reader = new StreamReader(stream);
-        var script = reader.ReadToEnd().Replace(SchemaPlaceholder, schema, StringComparison.Ordinal);
+        var script = ReadScript(resourceName, schema);
 
         // CREATE SCHEMA has to start its own batch, so the script is split on GO - which
         // is a client-side separator, not a T-SQL statement, and SqlCommand does not know it.
@@ -244,5 +240,19 @@ public sealed class TestSchemaFixture : IAsyncLifetime
             .Select(batch => batch.Trim())
             .Where(batch => batch.Length > 0)
             .ToList();
+    }
+
+    /// <summary>
+    /// The text of an embedded script with the schema filled in: what the fixture runs, and
+    /// what the share of F4 reads as the expected answer.
+    /// </summary>
+    internal static string ReadScript(string resourceName, string schema)
+    {
+        using var stream = typeof(TestSchemaFixture).Assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException(
+                $"Embedded resource \"{resourceName}\" is missing from the test assembly.");
+        using var reader = new StreamReader(stream);
+
+        return reader.ReadToEnd().Replace(SchemaPlaceholder, schema, StringComparison.Ordinal);
     }
 }

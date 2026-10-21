@@ -34,7 +34,6 @@ Rejstřík, ne pořadí.
 | [Referenční databáze experimentů a případová studie T1](#referenční-databáze-experimentů-a-případová-studie-t1) | Třetí cíl | rozhodnutí | T1, T2, T7, F4 |
 | [Schémata převzatých projektů v katalogu](#schémata-převzatých-projektů-v-katalogu-instance) | Třetí cíl | rozhodnutí | F6, T1 |
 | [Meze složitosti a velikosti vstupu](#meze-složitosti-dotazu-hloubky-zanoření-a-velikosti-tříd-nikdo-nehledal) | Třetí cíl | rozhodnutí | S3, T3–T5 |
-| [Podíl kritéria F4](#podíl-ověřovacího-kritéria-f4-se-nevykazuje) | Ověření | práce | F4 |
 | [Čtení S4 a S7](#čtení-s4-a-s7-log-zdroj-harnessu-advisoru-a-průběžný-stav) | Ověření | rozhodnutí | S4, S7 |
 | [Co katalog FIBEN odmítá](#co-katalog-fiben-odmítá-okenní-agregát-a-stínovaný-alias-odvozené-tabulky) | Dotazy | rozhodnutí | T2, T3 |
 | [Artefakt, který nevyrobil nástroj, ve stupních ověření](#ověřovací-stupně-nad-artefaktem-který-nevyrobil-nástroj) | Třetí cíl | rozhodnutí | T3–T6 |
@@ -77,11 +76,6 @@ Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.
 Pět dotazů na cesty je `AsSpecified` a soudce je posuzuje verdiktem, ne mírou; celou sadou SF 1 prošly jen texty s mezí (záznamy *Whole-set runs*), dnešní texty prefixem. Zbývá celá sada nad dnešními texty, .NET a javová sada po sobě, se záznamem do *Whole-set runs*. V zafixovaném prostředí rozh. [145](./decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md) potrvá .NET sada podle prefixů 2,5–5 dní a javová 2,5–3 dny (záznam *Time by step* v [`ORMConvertor/README.md`](../ORMConvertor/README.md)), takže pozastavení Windows Update musí přesáhnout konec. Je třeba zodpovědět, zda soudce, který není měřením, poběží s `max degree of parallelism` 1, nebo si ho na dobu běhu vypne: čtení IC 14 v EF Core pod ním trvají desítky sekund (vnořené poddotazy jeho SQL), v ostatních frameworcích dvě. Neshoda IC 13 nebo IC 14 by byla chybou textu nebo překladu, ne vlastností sady; čtení IC 14 v EF Core nad mezí 600 s (rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md)) vlastností jeho SQL, kterou by řešilo nové rozhodnutí.
 
 ## Ověření
-
-#### Podíl ověřovacího kritéria F4 se nevykazuje
-*Práce. [`traceability.md`](./traceability.md), F4 a *Kritéria ověření, která zatím nikdo nespočítal*; očekávaná odpověď je skript schématu fixture (rozh. [016](./decisions/016-generated-artifact-verification-levels.md)). Požadavek F4.*
-
-Kritérium F4 žádá „správně získáno ≥ 95 % sledovaných metadat" a F4 je nárokovaný v plném rozsahu; testy katalogu tvrdí jednotlivé fakty schématu fixture, podíl ale nespočítá nikdo. Spočítat ho nad `Tests/Database/TestSchema.sql` — každý sledovaný druh faktu (tabulka, sloupec, typ, nullabilita, primární a cizí klíč, unikátní omezení, délka, přesnost, měřítko) z očekávané odpovědi proti tomu, co vrátí `SqlServerCatalogReader` — a vykázat ho tam, kde ho traceability cituje; nevyjde-li, F4 zúžit.
 
 #### Čtení S4 a S7: log, zdroj harnessu Advisoru a průběžný stav
 *Rozhodnutí. Ke kontrole: rozh. [029](./decisions/029-database-connection-is-the-consumer-projects-fact.md) (připojení je fakt projektu spotřebitele), [033](./decisions/033-shape-of-the-static-frontend-screens.md) (tvar obrazovek); [`traceability.md`](./traceability.md), S4 a S7; [`threat-model.md`](./threat-model.md), aktiva. Požadavky S4, S7.*

@@ -855,6 +855,7 @@ flowchart TD
 
 - **`SqlServerCatalogReader`** obslouží dávku jedním připojením a čtyřmi dotazy do `sys.*` (sloupce, primární a cizí klíče, unikátní omezení); připojení otevírá líně a drží po dobu života. Jména tabulek jdou jako `nvarchar(128)`; každá velikost dávky stojí ~1,2–1,4 MB plan cache (měřeno 2026-08-26).
 - **`TableImage`**: sloupce (rodina, unicode faceta, délka ve znacích, precision/scale, nullabilita, IDENTITY, rowversion, default constraint), části PK v pořadí, cizí klíče s páry, `UniqueConstraintImage`. Hrubší rodina nese i `SourceSqlType` (rozh. [019](./decisions/019-neutral-database-type-vocabulary.md)).
+- **Podíl F4** (`Catalog/CatalogMetadataShareTest`): fakty obou schémat testovací databáze (`TestSchema.sql` a LDBC) vyčte ScriptDom ze skriptů fixtury a porovná s `TableImage`. Fakt je tabulka, sloupec, typ (rodina a unicode), nullabilita, délka, přesnost, měřítko a celý primární klíč, cizí klíč či unikátní omezení v pořadí; mez 95 % a odchylky zapsané v testu, výsledek v [README](../ORMConvertor/README.md#the-f4-share).
 - **Kandidáti**: uvedená tabulka, jinak jméno entity s/bez `s` (`EntityTableNaming.TableCandidatesFor`, rozh. [050](./decisions/050-one-home-for-the-singular-plural-heuristic.md)); víc schémat → `dbo`, jiná víceznačnost se hlásí.
 - **`CachingCatalogReader`** pamatuje odpovědi (i záporné) po dobu života, kterou volí vlastník (běh Advisoru, testovací kolekce).
 
