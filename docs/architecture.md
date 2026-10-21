@@ -1288,7 +1288,7 @@ Bez `libadvisor.so` oba vracejí hlášku z P/Invoke.
 - Parametrizovaný dotaz se nezměří: `EFCoreBenchmarkHarnessBuilder` hledá metodu s jediným parametrem `DbContext` („EF Core query method not found").
 - Z jednotky s více dotazy se změří jediný (Dapper první `SqlQuery`, EF Core první metoda).
 - Neřešitelná úloha (strop `MEM` pod nejúspornějším přiřazením, `N = 0`) i porucha GLPK vracejí `ilp_solve` = −1, kód GLPK se ztrácí. Obrazovka drží `N` ≥ 1, `/advisor-test` meze nekontroluje. Hláška `No feasible solution found.` se hned vyprázdní (`fflush(stdout)`), takže v `docker compose logs` stojí včas vedle logu GLPK `PROBLEM HAS NO PRIMAL FEASIBLE SOLUTION`.
-- Celý Advisor je vyňatý ze záruk (§9, oblast 1) a nemá test.
+- Celý Advisor je vyňatý ze záruk (§9, oblast 1); jeho funkci žádný test nedrží.
 
 ## 9. Co tahle verze nárokuje a co je vyňaté ze záruk
 
