@@ -69,6 +69,58 @@ internal sealed class FibenCell
 }
 
 /// <summary>
+/// The settings of the server a run reads before it starts (decision 164): the MAXDOP the Fiben
+/// database runs its plans with - its own database-scoped value where that is not zero, the
+/// server's otherwise -, the server's memory, and the processors it sees, which the cpuset of the
+/// container limits. Only the first decides whether the run measures, because it is the one that
+/// changes the shape of a plan; the processors need VIEW SERVER STATE and are null without it.
+/// </summary>
+internal sealed record FibenServer(int Maxdop, int MaxServerMemoryMegabytes, int? Processors)
+{
+    public static FibenServer Read(SqlConnection connection)
+    {
+        int maxdop, memory;
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText =
+                "SELECT COALESCE(NULLIF((SELECT CAST(value AS INT) FROM sys.database_scoped_configurations WHERE name = N'MAXDOP'), 0), "
+                + "(SELECT CAST(value_in_use AS INT) FROM sys.configurations WHERE name = N'max degree of parallelism')), "
+                + "(SELECT CAST(value_in_use AS INT) FROM sys.configurations WHERE name = N'max server memory (MB)')";
+            using var reader = command.ExecuteReader();
+            reader.Read();
+            (maxdop, memory) = (reader.GetInt32(0), reader.GetInt32(1));
+        }
+
+        int? processors;
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT cpu_count FROM sys.dm_os_sys_info";
+            processors = (int)command.ExecuteScalar()!;
+        }
+        catch (SqlException)
+        {
+            processors = null;
+        }
+
+        return new FibenServer(maxdop, memory, processors);
+    }
+
+    /// <summary>
+    /// Why a run leaves its measurement out, or null when it measures: the environment may leave
+    /// it out, and a server whose plans may be parallel - the judge's mode, or any server not set
+    /// up for measurement - leaves it out by itself, so that no number comes from it.
+    /// </summary>
+    public static string? MeasurementLeftOut(bool configured, int maxdop)
+        => !configured ? "left out"
+            : maxdop != 1 ? $"left out: the server runs its plans with MAXDOP {maxdop}, not in the measurement mode (decision 164)"
+            : null;
+
+    public string Describe()
+        => FormattableString.Invariant($"MAXDOP {Maxdop}, max server memory {MaxServerMemoryMegabytes} MB, {Processors?.ToString(CultureInfo.InvariantCulture) ?? "unknown"} processors");
+}
+
+/// <summary>
 /// The on-demand run of the FIBEN catalog in the .NET suite (decision 149): every query of the
 /// catalog translated from Dapper into the three .NET frameworks with the Fiben database as the
 /// catalog and only the entities of the tables it reads, the artifacts compiled, each run once
@@ -110,6 +162,12 @@ internal sealed class FibenRun
 
     /// <summary>The data set the database holds, as the loader named it in <c>fiben.dataset</c>.</summary>
     public string? DataSet { get; private set; }
+
+    /// <summary>The settings of the server the run read before it started (decision 164).</summary>
+    public FibenServer? Server { get; private set; }
+
+    /// <summary>Why the run leaves its measurement out, or null when it measures (decisions 145 and 164).</summary>
+    public string? MeasurementLeftOut => Server is null ? "left out" : FibenServer.MeasurementLeftOut(FibenDatabase.Measures, Server.Maxdop);
 
     /// <summary>Whether the database holds a judge; a run over a database without one can make it.</summary>
     public bool HasJudge { get; private set; }
@@ -167,12 +225,14 @@ internal sealed class FibenRun
         var connectionString = FibenDatabase.ConnectionString!;
         SqlConnection control;
         string? dataSet;
+        FibenServer server;
 
         try
         {
             control = new SqlConnection(connectionString);
             control.Open();
             dataSet = Scalar<string>(control, "SELECT CAST(value AS NVARCHAR(200)) FROM sys.extended_properties WHERE class = 0 AND name = N'fiben.dataset'");
+            server = FibenServer.Read(control);
         }
         catch (Exception exception)
         {
@@ -181,7 +241,7 @@ internal sealed class FibenRun
 
         using (control)
         {
-            var run = new FibenRun(null) { DataSet = dataSet };
+            var run = new FibenRun(null) { DataSet = dataSet, Server = server };
             run.Execute(control, connectionString);
             return run;
         }
@@ -266,7 +326,7 @@ internal sealed class FibenRun
                     }
                 }
 
-                if (FibenDatabase.Measures)
+                if (MeasurementLeftOut is null)
                 {
                     foreach (var (framework, artifact) in prepared)
                     {
@@ -399,7 +459,7 @@ internal sealed class FibenRun
             CultureInfo.InvariantCulture,
             $"FIBEN run over {DataSet ?? "an unnamed data set"}: {Queries.Count} queries in {Frameworks.Length} frameworks in {Elapsed.TotalMinutes:F1} min; "
             + $"first catalog read {CatalogRead.TotalMilliseconds:F0} ms; judge {(HasJudge ? "present" : "absent - this run can make one")}; "
-            + $"measurement {(FibenDatabase.Measures ? "by the policy of decision 145" : "left out")}.");
+            + $"server {Server?.Describe() ?? "not read"}; measurement {MeasurementLeftOut ?? "by the policy of decision 145"}.");
 
         foreach (var framework in Frameworks)
         {

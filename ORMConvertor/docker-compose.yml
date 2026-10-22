@@ -19,7 +19,18 @@
 # 2-3, so that a measuring process and the server never share a core. The host gives the
 # Docker VM at least four processors (on WSL2, .wslconfig); with fewer, Docker refuses the
 # service rather than running it on a shared core. The server's memory and parallelism are
-# fixed by the database image itself (database/init-db.sh).
+# set by the database image itself (database/init-db.sh).
+#
+# That is the default mode of both databases. The judge's mode (decision 164) is the file
+# judge.env beside this one - every processor of the VM and parallel plans:
+#
+#   docker compose --env-file judge.env up -d mssql_db       into the judge's mode
+#   docker compose up -d mssql_db                            back into the measurement mode
+#
+# The databases take DATABASE_CPUSET (empty for every processor), DATABASE_MAXDOP and
+# DATABASE_MAX_SERVER_MEMORY_MB from it. While mssql_db runs in the judge's mode, every compose
+# command that touches it carries the same --env-file: `up` of a service that depends on it,
+# without the file, recreates the database in the measurement mode and cuts a running replay.
 services:
   ormconvertor:
     build:
@@ -57,11 +68,13 @@ services:
         FIBEN_DATASET: ${FIBEN_DATASET:-96eaffc60cc824b8f545cd29adffc2a170e08d04}
     ports:
       - "1444:1433"
-    cpuset: "0,1"
+    cpuset: "${DATABASE_CPUSET-0,1}"
     environment:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=Testingorms123
       - MSSQL_PID=Developer
+      - DATABASE_MAXDOP=${DATABASE_MAXDOP-}
+      - DATABASE_MAX_SERVER_MEMORY_MB=${DATABASE_MAX_SERVER_MEMORY_MB-}
     restart: unless-stopped
     volumes:
       - mssql_data:/var/opt/mssql
@@ -82,11 +95,13 @@ services:
       args:
         LDBC_SCALE_FACTOR: ${LDBC_TEST_SCALE_FACTOR:-0.1}
         FIBEN_DATASET: none
-    cpuset: "0,1"
+    cpuset: "${DATABASE_CPUSET-0,1}"
     environment:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=Testingorms123
       - MSSQL_PID=Developer
+      - DATABASE_MAXDOP=${DATABASE_MAXDOP-}
+      - DATABASE_MAX_SERVER_MEMORY_MB=${DATABASE_MAX_SERVER_MEMORY_MB-}
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1'"]
       interval: 5s

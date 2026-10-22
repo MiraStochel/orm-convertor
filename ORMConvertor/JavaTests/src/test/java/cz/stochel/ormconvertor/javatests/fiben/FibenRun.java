@@ -78,6 +78,7 @@ public final class FibenRun {
 
     private FibenCatalog catalog;
     private String dataSet;
+    private Server server;
     private boolean hasJudge;
     private Duration elapsed = Duration.ZERO;
     private List<FibenCatalog.Query> queries = List.of();
@@ -211,9 +212,10 @@ public final class FibenRun {
     public List<String> describe() {
         List<String> lines = new ArrayList<>();
         lines.add(String.format(Locale.ROOT,
-                "FIBEN run (Java) over %s: %d queries in %d frameworks in %.1f min; judge %s; measurement %s.",
+                "FIBEN run (Java) over %s: %d queries in %d frameworks in %.1f min; judge %s; server %s; measurement %s.",
                 dataSet, queries.size(), FRAMEWORKS.length, elapsed.toMillis() / 60000.0,
-                hasJudge ? "present" : "absent", FibenDatabase.measures() ? "by the policy of decision 145" : "left out"));
+                hasJudge ? "present" : "absent", server == null ? "not read" : server.describe(),
+                measurementLeftOut() == null ? "by the policy of decision 145" : measurementLeftOut()));
 
         long sourceFailures = sources.values().stream().filter(source -> source.rows == null).count();
         lines.add(String.format(Locale.ROOT, "source (the text over JDBC): %d of %d ran, %.1f s of first reads.",
@@ -295,9 +297,11 @@ public final class FibenRun {
         String jdbcUrl = FibenDatabase.jdbcUrl();
         Connection control;
         String dataSet;
+        Server server;
         try {
             control = DriverManager.getConnection(jdbcUrl);
             dataSet = scalar(control, "SELECT CAST(value AS NVARCHAR(200)) FROM sys.extended_properties WHERE class = 0 AND name = N'fiben.dataset'");
+            server = Server.read(control);
         } catch (SQLException e) {
             return new FibenRun("The FIBEN database " + FibenDatabase.JDBC_URL_VARIABLE + " names cannot be reached: " + e.getMessage());
         }
@@ -305,6 +309,7 @@ public final class FibenRun {
         try (control) {
             FibenRun run = new FibenRun(null);
             run.dataSet = dataSet;
+            run.server = server;
             ToolApi.awaitReady(FibenDatabase.apiUrl());
             run.catalog = ToolApi.get(FibenDatabase.apiUrl(), "/fiben", FibenCatalog.class);
             run.execute(control, jdbcUrl);
@@ -379,7 +384,7 @@ public final class FibenRun {
                     }
                 }
 
-                if (FibenDatabase.measures()) {
+                if (measurementLeftOut() == null) {
                     if (source.rows != null) {
                         measure(source, () -> text(control, query));
                     }
@@ -570,6 +575,64 @@ public final class FibenRun {
 
     private static String clean(String text) {
         return text.replace('\t', ' ').replace("\r", "").replace('\n', ' ');
+    }
+
+    /** Why the run leaves its measurement out, or null when it measures (decisions 145 and 164). */
+    private String measurementLeftOut() {
+        return server == null ? "left out" : Server.measurementLeftOut(FibenDatabase.measures(), server.maxdop());
+    }
+
+    /**
+     * The settings of the server a run reads before it starts (decision 164), as {@code FibenServer}
+     * in {@code FibenRun.cs} reads them: the MAXDOP the Fiben database runs its plans with - its
+     * own database-scoped value where that is not zero, the server's otherwise -, the server's
+     * memory, and the processors it sees, which need VIEW SERVER STATE and are null without it.
+     * Only the first decides whether the run measures.
+     */
+    record Server(int maxdop, int maxServerMemoryMegabytes, Integer processors) {
+
+        static Server read(Connection connection) throws SQLException {
+            int maxdop;
+            int memory;
+            try (Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery(
+                         "SELECT COALESCE(NULLIF((SELECT CAST(value AS INT) FROM sys.database_scoped_configurations WHERE name = N'MAXDOP'), 0), "
+                         + "(SELECT CAST(value_in_use AS INT) FROM sys.configurations WHERE name = N'max degree of parallelism')), "
+                         + "(SELECT CAST(value_in_use AS INT) FROM sys.configurations WHERE name = N'max server memory (MB)')")) {
+                rows.next();
+                maxdop = rows.getInt(1);
+                memory = rows.getInt(2);
+            }
+
+            Integer processors;
+            try (Statement statement = connection.createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT cpu_count FROM sys.dm_os_sys_info")) {
+                processors = rows.next() ? rows.getInt(1) : null;
+            } catch (SQLException e) {
+                processors = null;
+            }
+
+            return new Server(maxdop, memory, processors);
+        }
+
+        /**
+         * Why a run leaves its measurement out, or null when it measures: the environment may
+         * leave it out, and a server whose plans may be parallel - the judge's mode, or any server
+         * not set up for measurement - leaves it out by itself, so that no number comes from it.
+         */
+        static String measurementLeftOut(boolean configured, int maxdop) {
+            if (!configured) {
+                return "left out";
+            }
+            return maxdop != 1
+                    ? "left out: the server runs its plans with MAXDOP " + maxdop + ", not in the measurement mode (decision 164)"
+                    : null;
+        }
+
+        String describe() {
+            return String.format(Locale.ROOT, "MAXDOP %d, max server memory %d MB, %s processors",
+                    maxdop, maxServerMemoryMegabytes, processors == null ? "unknown" : processors.toString());
+        }
     }
 
     private static String scalar(Connection connection, String sql) throws SQLException {

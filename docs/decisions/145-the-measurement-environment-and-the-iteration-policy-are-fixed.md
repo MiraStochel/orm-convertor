@@ -1,7 +1,7 @@
 # 145 — Měření stojí na zafixovaném prostředí a vyslovené iterační politice: SQL Server s pevnou pamětí a bez paralelismu, databáze a klienti na oddělených procesorech, virtuální stroj s pevnými procesory a pamětí; krátký dotaz se neprodlužuje, opakuje se do meze a vykazuje se medián
 
 Datum: 2026-10-17
-Stav: platí
+Stav: platí; větu o prostředí soudce LDBC v odstavci *Prostředí* a důsledek *Obraz databáze* nahrazuje 164
 Požadavky: T2, T3, T7, S5, S6
 Podklad: rozhodnutí [140](140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) (okno 0,2–300 s), [141](141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) (spodní mez drží opakování), [121](121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md) (indexy `LdbcSnb`), [039](039-container-configuration-of-the-environment.md) (compose), [095](095-a-dated-run-record-names-its-commit.md) (záznam běhu); položka *Iterační politika benchmarku je konstanta v kódu* (specifikace, kap. *Rizika*: politiku vyslovit a odůvodnit); měření nad `LdbcSnb` SF 1 na MIS3 z 2026-10-17 nad `6f2c1a2` (níž, záznam v `ORMConvertor/README.md`, *Catalog query times*)
 

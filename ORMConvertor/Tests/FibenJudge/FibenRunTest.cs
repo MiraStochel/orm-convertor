@@ -166,6 +166,31 @@ public class FibenRunTest(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// The run measures only over a server whose plans are single-threaded (decision 164): the
+    /// judge's mode, MAXDOP 0, and any other parallel server leave the measurement out by
+    /// themselves, and the environment can leave it out over any server.
+    /// </summary>
+    [Theory]
+    [InlineData(true, 1, null)]
+    [InlineData(true, 0, "MAXDOP 0")]
+    [InlineData(true, 4, "MAXDOP 4")]
+    [InlineData(false, 1, "left out")]
+    [InlineData(false, 0, "left out")]
+    public void TheRunMeasuresOnlyOverAServerWithoutParallelism(bool configured, int maxdop, string? reason)
+    {
+        var leftOut = FibenServer.MeasurementLeftOut(configured, maxdop);
+
+        if (reason is null)
+        {
+            Assert.Null(leftOut);
+        }
+        else
+        {
+            Assert.Contains(reason, leftOut, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
     /// The Java run measures with the same policy (decision 145) and the same limit (decision
     /// 146): its constants are read from its source, as the LDBC judge's limit is.
     /// </summary>
