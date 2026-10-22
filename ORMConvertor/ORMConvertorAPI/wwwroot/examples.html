@@ -214,7 +214,7 @@
       <article>
         <h3>Real projects</h3>
         <ul>
-          <li><a href="#keycloak-identity">Keycloak: Hibernate &rarr; NHibernate</a> &mdash; 21 entities, ten composite keys, 47 named queries</li>
+          <li><a href="#keycloak-identity">Keycloak: Hibernate &rarr; NHibernate</a> &mdash; 21 entities, eleven composite keys, 47 named queries</li>
           <li><a href="#ambari-alerts">Apache Ambari: EclipseLink &rarr; EF Core</a> &mdash; alerts, two many-to-many, 35 named queries</li>
           <li><a href="#chinook-dapper">Chinook: Dapper &rarr; EF Core</a> &mdash; a repository layer in literal SQL</li>
           <li><a href="#chinook-efcore">Chinook: EF Core &rarr; Hibernate</a> &mdash; the same layer as the project wrote it in LINQ</li>
@@ -427,8 +427,8 @@
         <code>Take</code> move to the query object, a <code>GroupBy</code> followed by
         <code>Where</code> becomes <code>having</code>, <code>Any</code> and
         <code>Contains</code> over another set become <code>exists</code> and
-        <code>in</code> subqueries, <code>Average</code> becomes a scalar subquery,
-        and <code>Union</code> stays a union.
+        <code>in</code> subqueries, <code>Average</code> becomes a scalar subquery cast to
+        the decimal SQL averages a decimal in, and <code>Union</code> stays a union.
       </p>
       <div class="toolbar">
         <button type="button" class="example-run secondary">Run again</button>
@@ -493,7 +493,7 @@
     <p>
       A query in the intermediate representation can say more than the part all six
       query languages share: a result that another query reads (a common table
-      expression or a derived table), recursion, a ranking over a window, a list joined
+      expression or a derived table), recursion, a ranking or an aggregate over a window, a list joined
       from the values of a group, arithmetic over dates. A target whose query language
       has the construct writes it there. A target whose language lacks it writes the
       whole query in the native SQL of its database, through its framework's own API,
@@ -518,7 +518,8 @@
         hands a query of HQL&nbsp;7.4 to the framework; the last one walks a sixth
         entity, a hierarchy of genres. Three of them EF Core says in LINQ. The common
         table expression becomes a variable of the method, which the query reads twice
-        &mdash; in the join and in the subquery that averages it. The list of titles
+        &mdash; in the join and in the subquery that averages it, in floating point, as HQL
+        of Hibernate averages a whole number. The list of titles
         becomes <code>string.Join</code> over the ordered titles of each group, and the
         days a book was out become <code>EF.Functions.DateDiffDay</code>. The other two
         LINQ cannot say: it has no ranking over a window, and a variable cannot name
@@ -749,8 +750,10 @@
         the ranking and the category tree go out as native SQL through
         <code>Database.SqlQuery</code>, each with a row class and a Fallback record that
         names why. Load it on the Translation page and switch the target: towards
-        NHibernate seven of the fourteen go out as native SQL, towards EclipseLink five,
-        towards Hibernate none.
+        NHibernate seven of the fourteen go out as native SQL, towards EclipseLink six,
+        towards Hibernate none. One of EclipseLink's six is the average rating: HQL of
+        Hibernate averages a whole number in floating point, and JPQL of EclipseLink has no
+        conversion to say that with.
       </p>
       <div class="toolbar">
         <button type="button" class="example-run secondary">Run again</button>
@@ -790,8 +793,10 @@
         chains ending in <code>Any</code>, <code>Contains</code>, <code>Average</code>
         and <code>Max</code>, a <code>GroupBy</code> over an anonymous key, the filter
         over the groups as a second <code>Where</code>, a projection with
-        <code>Distinct().Count()</code> and a coalesced <code>Sum</code>, then the
-        ordering, <code>Skip</code> and <code>Take</code>. Nothing falls back and
+        <code>Distinct().Count()</code>, the coalesced sum as EF Core&rsquo;s own
+        <code>Sum</code>, which coalesces, and the sum over the <code>CASE</code> under a
+        guard of its count, which keeps SQL&rsquo;s <code>NULL</code> over no values, then
+        the ordering, <code>Skip</code> and <code>Take</code>. Nothing falls back and
         nothing is lost; beside the records of the entities the query adds two
         Conventions &mdash; the class is read as the code around its query, and the range
         became two comparisons. Load it on the Translation page and switch the target to
@@ -951,10 +956,10 @@
         and the ten entities that put <code>@Id</code> on a <code>@ManyToOne</code> stand as
         the project wrote them; the tool reads such a key part as its join column beside
         the relation, and says so. Out of it come 21 NHibernate
-        classes with their mappings &mdash; ten composite keys as
+        classes with their mappings &mdash; eleven composite keys as
         <code>&lt;composite-id&gt;</code> with the <code>Equals</code>,
         <code>GetHashCode</code> and <code>[Serializable]</code> NHibernate requires, the
-        relation over each key part as a <code>many-to-one</code> with
+        relation over a key part as a <code>many-to-one</code> with
         <code>insert="false"</code> &mdash; and the 47 queries in HQL, 46 of them with the
         LINQ form beside it: the count of the members of a set of groups has none, and an
         Omitted record says why. The other records name what NHibernate has no place for:

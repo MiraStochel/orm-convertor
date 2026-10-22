@@ -155,8 +155,9 @@
       <h3>Start the database</h3>
       <p>
         From the <code>ORMConvertor</code> directory, <code>docker compose up --build</code>
-        starts the application and a SQL Server with two databases: the WideWorldImporters
-        sample, and <code>LdbcSnb</code>. The archive (222&nbsp;MB) is downloaded while the
+        starts the application and a SQL Server with three databases: the WideWorldImporters
+        sample, <code>LdbcSnb</code>, and <code>Fiben</code> of the
+        <a href="fiben.html">FIBEN page</a>. The archive (222&nbsp;MB) is downloaded while the
         image is built; the first start unpacks it and loads it, which takes a minute or two
         while the server already answers. The volume keeps the data, so later starts skip
         the load. Connect with:
@@ -230,10 +231,14 @@
             over the data set from every person and stated in the note of each query: 5 for
             <code>knows</code>, its diameter (IC&nbsp;13, IC&nbsp;14), 5 for BI&nbsp;19, 7 for
             BI&nbsp;20 and 11 for BI&nbsp;15 with its example timeframe, where the cost of an
-            edge depends on the parameters. Over scale factor&nbsp;1 the five run between
-            0.13&nbsp;s and 6.6&nbsp;s; the bounded texts ran from 0.12&nbsp;s to over
-            500&nbsp;s (BI&nbsp;19), whose cheapest path the planner recomputed for every key
-            the recursion reached. A test runs the same search itself over the same data and
+            edge depends on the parameters. Over scale factor&nbsp;1 the five ran between
+            0.13&nbsp;s and 6.6&nbsp;s on 2026-10-15, with turbo on, before the environment
+            of the measurements was fixed;
+            the bounded texts ran from 0.12&nbsp;s to over 500&nbsp;s (BI&nbsp;19), whose
+            cheapest path the planner recomputed for every key the recursion reached. In that
+            environment &mdash; one-threaded plans, no turbo &mdash; the five take 0.27&nbsp;s
+            to 118&nbsp;s, BI&nbsp;19 the longest. A test runs the
+            same search itself over the same data and
             compares, and measures that the data set lies within the stated depth.
           </p>
         </article>
@@ -304,8 +309,9 @@
         query below names the operation of the validation set that judges it. Both suites
         replayed the whole set of scale factor&nbsp;1 &mdash; 138,747 lines &mdash; on
         2026-10-12 (.NET) and 2026-10-14 (Java) with every read agreeing in all six frameworks,
-        over the bounded texts of the path queries; over the level chains, the first 2,000
-        lines so far, and the whole set is the next run. LDBC publishes no such set for the
+        over the bounded texts of the path queries; over the level chains, so far the first
+        500 lines of the same set in both suites on 2026-10-18, every read agreeing in all six
+        frameworks, and the whole set is the next run. LDBC publishes no such set for the
         Business Intelligence queries over this data, so their status is the author's claim,
         checked for the three BI path queries against a search the test runs itself. Every
         text below does run, against the LDBC tables, in the test suite.

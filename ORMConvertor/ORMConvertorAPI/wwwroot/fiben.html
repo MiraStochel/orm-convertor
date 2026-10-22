@@ -49,8 +49,8 @@
     <h1>Testing on the FIBEN finance benchmark</h1>
     <p class="lede">
       FIBEN is IBM Research's benchmark for asking a financial data mart questions in plain
-      English: 300 questions over 152 tables built on the FIBO and FRO ontologies, and for
-      each one the SQL that answers it &mdash; 237 distinct queries, 170 of them nested. Here
+      English: 300 questions over 152 tables built on the FIBO and FRO ontologies, 170 of
+      them nested, and for each one the SQL that answers it &mdash; 237 distinct queries. Here
       it is the third domain for the translator, and the second it did not choose: a
       population of queries written by somebody else, each with its intent stated in a
       sentence, deep in nesting where LDBC is wide in joins. The tool does not answer
@@ -189,23 +189,28 @@
             with <code>HAVING</code>, subqueries in <code>IN</code> and <code>NOT IN</code>,
             correlated scalar subqueries compared with an aggregate, <code>UNION</code>, the
             first <em>n</em> rows, <code>BETWEEN</code>, <code>YEAR</code> and <code>MONTH</code>,
-            and a common table expression.
+            a common table expression, derived tables nested three deep with an aggregate or a
+            ranking over a window inside them &mdash; <code>AVG</code>, <code>MAX</code>,
+            <code>MIN</code> or <code>DENSE_RANK</code> <code>OVER (PARTITION BY …)</code>
+            &mdash;, and a subquery in the <code>ON</code> condition of a join. An average comes
+            back from every target as SQL computes it: over whole numbers with the quotient cut
+            off, over decimals as a decimal.
           </p>
         </article>
         <article>
           <h3><span class="fiben-count" data-translation="20"></span> simplified</h3>
           <p>
-            The text returns less or other than the benchmark's query and its note says what.
+            None. A text that returned less or other than the benchmark's query would say what
+            in its note.
           </p>
         </article>
         <article>
           <h3><span class="fiben-count" data-translation="30"></span> not translated</h3>
           <p>
-            Two shapes the representation does not carry, each refused in every target
-            with its reason in the note: an aggregate over a window &mdash; <code>AVG</code>,
-            <code>MAX</code> or <code>MIN</code> <code>OVER (PARTITION BY …)</code> &mdash;
-            inside a derived table, where it is a column the query around it reads; and a
-            scalar subquery inside the <code>ON</code> condition of a <code>LEFT JOIN</code>.
+            None, since an aggregate over a window inside a derived table and a subquery in the
+            <code>ON</code> condition of a join can be said; the documented run below still
+            refused the eight queries that need them. The status stays, so that a query the
+            tool cannot say would be shown as one rather than left out.
           </p>
         </article>
       </div>
@@ -239,7 +244,9 @@
         and NHibernate, 156 in Hibernate, EclipseLink and MyBatis. The judge was made from the
         rows the catalog's own text returned in it, which are the rows of the first run, of
         2026-10-18. The record with every number, the first run's too, is in the README of the
-        solution; this is what it says.
+        solution; this is what it says. The numbers are that version's: the tool has changed
+        since &mdash; it translates the eight queries the run refused and returns every average
+        as SQL does &mdash;, and the next documented run replaces them.
       </p>
 
       <div class="table-scroll">
@@ -261,21 +268,23 @@
       <h3>What the run found</h3>
       <ul>
         <li>
-          <strong>Eight queries the tool refuses</strong>, in every target and for two reasons
+          <strong>Eight queries the tool refused</strong>, in every target and for two reasons
           only: an aggregate over a window inside a derived table (queries 99 and 237) and a
-          scalar subquery inside the <code>ON</code> condition of a <code>LEFT JOIN</code>
-          (124&ndash;126, 200&ndash;202). Everything else &mdash; 229 queries, 124 of them
-          nested &mdash; the tool translates into all five targets.
+          subquery inside the <code>ON</code> condition of an inner join (124&ndash;126,
+          200&ndash;202). Everything else &mdash; 229 queries, 124 of them nested &mdash; the
+          tool translated into all five targets. The eight translate now, but the judge was made
+          before they did and holds no rows for them, so until a documented run takes them in, a
+          run says so: their verdict is empty, not negative.
         </li>
         <li>
-          <strong>Where a target leaves its language.</strong> EF Core writes 59 queries in
+          <strong>Where a target left its language.</strong> EF Core wrote 59 queries in
           native SQL: 36 for an aggregation LINQ does not form, such as an aggregate compared
           with a subquery in <code>HAVING</code> or an average over a <code>BIGINT</code>, and
-          23 for a scalar subquery with its own joins as a comparison operand. It stays in LINQ
+          23 for a scalar subquery with its own joins as a comparison operand. It stayed in LINQ
           for 80 of the 106 single-block queries but for only 9 of the 27 correlated queries
-          without an aggregate (type J). NHibernate writes 21 in native SQL: 14 for
+          without an aggregate (type J). NHibernate wrote 21 in native SQL: 14 for
           <code>TOP</code> inside a subquery, which HQL&nbsp;5.7 cannot say, and 7 for
-          <code>UNION</code>. Hibernate writes the same 14 that way; EclipseLink 39: those 14,
+          <code>UNION</code>. Hibernate wrote the same 14 that way; EclipseLink 39: those 14,
           the 18 that open their <code>HAVING</code> with an aggregate over a joined entity and
           the 7 unions whose members join other entities.
         </li>
@@ -292,9 +301,12 @@
           Alphabet at all. The translation now carries SQL's meaning into LINQ and back - a sum
           under a guard of the count of its values, an equality that holds only where the
           values are not <code>NULL</code> - and every cell of EF Core agrees with the source.
-          The guard has a price still open: the six queries whose <code>HAVING</code> compares
-          a sum with a correlated subquery (207, 211, 213, 215, 216, 225) take 7.7&ndash;35&nbsp;s
-          in EF Core against 0.1&nbsp;s from the text.
+          The guard had a price in that run: the six queries whose <code>HAVING</code> compares
+          a sum with a correlated subquery (207, 211, 213, 215, 216, 225) took 7.7&ndash;35&nbsp;s
+          in EF Core against 0.1&nbsp;s from the text, because SQL Server does not unnest a
+          subquery that ends in <code>TOP(1)</code>. The value of the one group is now taken
+          by <code>Max()</code>, whose subquery it does unnest: 0.11&ndash;0.13&nbsp;s for the
+          six in a check outside the measurement environment, with the same rows.
         </li>
         <li>
           <strong>Three things the Java frameworks taught the tool.</strong> Hibernate reads
