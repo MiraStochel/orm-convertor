@@ -1,7 +1,7 @@
 # 157 — Buňka cíle, která se od zdroje liší vyslovenou mezí, vznik soudce FIBEN neblokuje; záznam běhu ji jmenuje
 
 Datum: 2026-10-19
-Stav: platí; nahrazuje první podmínku odstavce *Soudce* rozh. 149
+Stav: platí; nahrazuje první podmínku odstavce *Soudce* rozh. 149; pro q99, q124–126, q200–202 a q237 ji nahrazuje 163
 Požadavky: T2, T3, F13
 Podklad: rozhodnutí [149](149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md) (odstavec *Soudce*), [150](150-a-part-of-a-decision-is-replaced-by-a-new-file-and-both-statuses-say-so.md), [040](040-boundary-of-the-handed-over-artifact.md), [089](089-differential-verification-as-the-fourth-level-over-a-query.md); [`subset.md`](../subset.md) 2.2 (ořez `CHAR` v EclipseLinku); záznam *The FIBEN run* v `ORMConvertor/README.md` (běh z 2026-10-18, q63)
 

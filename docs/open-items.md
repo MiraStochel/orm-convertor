@@ -29,7 +29,6 @@ Rejstřík, ne pořadí.
 | Položka | Oblast | Druh | Pož. |
 |---|---|---|---|
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | T2, T3, F13 |
-| [Soudce FIBEN pro osm nově přeložených dotazů](#soudce-fiben-pro-osm-dotazů-přeložených-od-rozh-161-a-162) | Dotazy | rozhodnutí | T2, T3 |
 | [Co zavírá třetí cíl](#co-zavírá-třetí-cíl-schválený-záměr-advisor-nejmenuje) | Třetí cíl | rozhodnutí | F15, T1–T7 |
 | [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Třetí cíl | rozhodnutí | S5, T1–T3 |
 | [Referenční databáze experimentů a případová studie T1](#referenční-databáze-experimentů-a-případová-studie-t1) | Třetí cíl | rozhodnutí | T1, T2, T7, F4 |
@@ -74,11 +73,6 @@ Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.
 *Na řadě. Práce podle rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) a [141](./decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md); samostatný běh obou sad, který spouští Míra jménem ([`ORMConvertor/README.md`](../ORMConvertor/README.md), *The LDBC judge*). Požadavky T2, T3, F13.*
 
 IC 13 a IC 14 — ty z pěti dotazů na cesty, které soudí validační sada — jsou `AsSpecified` a soudce je posuzuje verdiktem, ne mírou; celou sadou SF 1 prošly jen jejich texty s mezí (záznamy *Whole-set runs*), dnešní texty prefixem. Zbývá celá sada nad dnešními texty, .NET a javová sada po sobě, se záznamem do *Whole-set runs*. V zafixovaném prostředí rozh. [145](./decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md) potrvá každá sada podle prefixů několik dní ([*Time by step*](../ORMConvertor/README.md#time-by-step)), takže pozastavení Windows Update musí přesáhnout konec. Je třeba zodpovědět, zda soudce, který není měřením, poběží s `max degree of parallelism` 1, nebo si ho na dobu běhu vypne: čtení IC 14 v EF Core pod ním trvají desítky sekund (vnořené poddotazy jeho SQL), v ostatních frameworcích dvě. Neshoda IC 13 nebo IC 14 by byla chybou textu nebo překladu, ne vlastností sady; čtení IC 14 v EF Core nad mezí 600 s (rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md)) vlastností jeho SQL, kterou by řešilo nové rozhodnutí.
-
-#### Soudce FIBEN pro osm dotazů přeložených od rozh. 161 a 162
-*Potom. Rozhodnutí. Ke kontrole: rozh. [149](./decisions/149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md) (soudce vzniká z doloženého běhu, nový soudce je rozhodnutí), [157](./decisions/157-a-target-cell-that-differs-by-a-stated-limit-does-not-block-the-fiben-judge.md); zdroj: rozh. [161](./decisions/161-a-window-aggregate-is-a-window-of-the-vocabulary-and-the-whole-row-of-a-definition-beside-columns-is-its-columns.md), [162](./decisions/162-a-subquery-stands-in-a-join-condition-as-in-any-condition.md). Požadavky T2, T3.*
-
-Soudce `database/fiben/judge.tsv` vznikl z běhu, který q99, q237, q124–126 a q200–202 neběžel, protože je katalog tehdy odmítal; od rozh. 161 a 162 se překládají, a běh na vyžádání u nich hlásí, že soudce záznam nemá. Kontrola z hosta 2026-10-22 je prošla ve třech cílech .NET se shodou cíle a zdroje, řádky zdroje jsou v jejím `judge-candidate.tsv`. Rozhodnout, zda osm řádků do soudce vstoupí z příštího doloženého běhu obou sad za verzi (rozh. 149 jmenuje tři podmínky), nebo zda nový soudce vznikne už z kontroly; do té doby je verdikt soudce nad nimi prázdný, ne záporný.
 
 ## Třetí cíl: experimenty
 
