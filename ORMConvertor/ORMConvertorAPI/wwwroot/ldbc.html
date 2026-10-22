@@ -47,19 +47,15 @@
 
   <main>
     <h1>Testing on the LDBC social network</h1>
-    <p class="muted-note">
-      <strong>Version 1</strong> of this page: the text as it stood before the path queries were
-      rewritten on 2026-10-15. <a href="ldbc-v2.html">Version 2</a> describes the catalog as it
-      stands; the two are kept side by side for comparison.
-    </p>
     <p class="lede">
       The LDBC Social Network Benchmark is the data set and the query workload that graph
       and relational database systems are compared on. Here it is a second domain for the
       translator, and one it did not choose: 41 read queries written by somebody else, over
-      a social network of seventeen tables. Most of them the tool translates into every
-      framework as the specification defines them, some only after a simplification it
-      states &mdash; this page says which, and why, and the test suite holds every one of
-      those claims.
+      a social network of seventeen tables. All of them the tool translates into every
+      framework as the specification defines them; where a text has a shape the specification
+      does not dictate &mdash; the five searches over the graph above all &mdash; this page
+      says which shape and why, the test suite holds every one of those claims, and LDBC's own
+      validation set judges the Interactive ones.
     </p>
 
     <p class="muted-note">
@@ -75,7 +71,9 @@
       <ul class="page-index">
         <li><a href="#data-set">The data set</a></li>
         <li><a href="#using-it">Using it</a></li>
-        <li><a href="#what-translates">What translates and what does not</a></li>
+        <li><a href="#what-translates">What translates, and how</a></li>
+        <li><a href="#recursion">Recursion and the searches over the graph</a></li>
+        <li><a href="#depth">How deep a search goes</a></li>
         <li><a href="#by-target">Every query in every target</a></li>
         <li><a href="#queries">The queries</a></li>
       </ul>
@@ -90,7 +88,10 @@
         It is the part of the network the benchmark loads in bulk, 90&nbsp;% of it; the update
         streams that replay the rest are not loaded. Interactive v1 is the workload the most
         systems have been measured on, and LDBC publishes validation sets for it &mdash;
-        parameters with their expected results &mdash; from scale factor 0.1 to 10.
+        parameters with their expected results, interleaved with the inserts of the update
+        stream &mdash; from scale factor 0.1 to 10. The set of the loaded scale factor is loaded
+        beside the data, in the table <code>ValidationOperation</code>; the test suite replays
+        it in order and removes its inserts again, so the data set stays as loaded.
       </p>
 
       <div class="table-scroll">
@@ -151,8 +152,9 @@
       <h3>Start the database</h3>
       <p>
         From the <code>ORMConvertor</code> directory, <code>docker compose up --build</code>
-        starts the application and a SQL Server with two databases: the WideWorldImporters
-        sample, and <code>LdbcSnb</code>. The archive (222&nbsp;MB) is downloaded while the
+        starts the application and a SQL Server with three databases: the WideWorldImporters
+        sample, <code>LdbcSnb</code>, and <code>Fiben</code> of the
+        <a href="fiben.html">FIBEN page</a>. The archive (222&nbsp;MB) is downloaded while the
         image is built; the first start unpacks it and loads it, which takes a minute or two
         while the server already answers. The volume keeps the data, so later starts skip
         the load. Connect with:
@@ -189,45 +191,113 @@
     </section>
 
     <section id="what-translates">
-      <h2>What translates and what does not</h2>
-      <div class="card-grid ldbc-summary">
-        <article>
-          <h3><span class="ldbc-count" data-translation="10"></span> as specified</h3>
-          <p>
-            The text returns what the specification defines. Joins along foreign keys and
-            along edge tables, paths of a fixed length written as <code>IN</code> subqueries
-            over the walks of that length, negative edges as <code>NOT EXISTS</code>, grouped
-            counts with <code>HAVING</code>, <code>CASE</code>, scalar subqueries and the
-            first <em>k</em> rows, a query over the result of another, written as a common
-            table expression or a derived table (BI&nbsp;4, BI&nbsp;8, BI&nbsp;12, BI&nbsp;13),
-            a hierarchy of any depth as a recursive one (IC&nbsp;12), results that are lists
-            (IC&nbsp;1, IC&nbsp;12), grouping by an expression (BI&nbsp;1), the best row of
-            every group by a row number over a window (BI&nbsp;14) and arithmetic over dates
-            (BI&nbsp;17). Where the specification adds days to a parameter, the caller passes
-            the end of the window.
-          </p>
-        </article>
-        <article>
-          <h3><span class="ldbc-count" data-translation="20"></span> simplified</h3>
-          <p>
-            The text leaves out one part and says which. The searches over the graph &mdash;
-            shortest and cheapest paths (IC&nbsp;13, IC&nbsp;14, BI&nbsp;15, BI&nbsp;19,
-            BI&nbsp;20) &mdash; are recursive and bounded: the recursion of SQL Server keeps
-            no record of the persons it has reached, so an unbounded walk multiplies at every
-            step. IC&nbsp;13, BI&nbsp;15, BI&nbsp;19 and BI&nbsp;20 walk two steps from each
-            end and meet in the middle, so they reach four steps; IC&nbsp;14 carries whole
-            paths and walks three steps from one end.
-          </p>
-        </article>
-        <article>
-          <h3><span class="ldbc-count" data-translation="30"></span> not translated</h3>
-          <p>
-            None, since recursion, grouping by an expression, arithmetic over dates, windows
-            and lists can be said. The status stays, so that a query the tool cannot say would
-            be shown as one rather than left out.
-          </p>
-        </article>
+      <h2>What translates, and how</h2>
+      <p>
+        <strong>All <span class="ldbc-count" data-translation="10"></span> queries are
+        translated as specified</strong>: the text returns what the specification defines, and
+        every framework receives it. The constructs the catalog needs are joins along foreign
+        keys and along edge tables, paths of a fixed length written as <code>IN</code>
+        subqueries over the walks of that length, negative edges as <code>NOT EXISTS</code>,
+        grouped counts with <code>HAVING</code>, <code>CASE</code>, scalar subqueries and the
+        first <em>k</em> rows, a query over the result of another, written as a common table
+        expression or a derived table (BI&nbsp;4, BI&nbsp;8, BI&nbsp;12, BI&nbsp;13), a
+        hierarchy of any depth as a recursive one (IC&nbsp;12), results that are lists
+        (IC&nbsp;1, IC&nbsp;12), grouping by an expression (BI&nbsp;1), the best row of every
+        group by a row number over a window (BI&nbsp;14), arithmetic over dates (BI&nbsp;17),
+        and the shortest and cheapest paths over the graph (IC&nbsp;13, IC&nbsp;14, BI&nbsp;15,
+        BI&nbsp;19, BI&nbsp;20) as a breadth-first search written as a chain of non-recursive
+        definitions &mdash; the two headings below say why and how deep. Where the specification
+        adds days to a parameter, the caller passes the end of the window. Every query carries
+        its status in the list below and in the table: a query the tool could say only after a
+        simplification, or not at all, would be shown with that status rather than left out.
+      </p>
+
+      <h3 id="recursion">Recursion and the searches over the graph</h3>
+      <p>
+        The catalog has two kinds of recursion, and they are written differently. The
+        hierarchy of tag classes (IC&nbsp;12) is a tree, and a recursive common table
+        expression descends it as the specification reads it. The five searches over the graph
+        &mdash; the shortest path along <code>knows</code> (IC&nbsp;13), every shortest path
+        with its weight (IC&nbsp;14), and the cheapest path where an edge costs what the replies
+        between its ends, the shared universities or the forums of a timeframe make it
+        (BI&nbsp;19, BI&nbsp;20, BI&nbsp;15) &mdash; run over a graph with cycles, and there a
+        recursive definition of SQL Server cannot say them: its recursive member may neither
+        merge rows nor look at an earlier level, so it enumerates walks rather than persons.
+        At an average degree of 39 over scale factor&nbsp;1 that is 910 thousand walks three
+        steps from the example person and 95 million at four, for 26 new persons. No data set
+        with cycles lets such a text run unbounded, and a text bounded at a few steps misses a
+        pair that lies further apart &mdash; it answers a simpler question than the
+        specification asks. With the weights of BI&nbsp;19 the planner also recomputes the
+        weight definition for every key the recursion reaches, and the query does not finish
+        in 500&nbsp;s.
+      </p>
+      <p>
+        So the five are written as a breadth-first search in a chain of non-recursive
+        definitions, one shape for the unweighted and the weighted searches alike.
+        <code>Step</code> is every edge of the query at its cost, beside every person as its
+        own neighbour at no cost; level&nbsp;0 is the person the search starts from at no cost
+        &mdash; for BI&nbsp;19 every person of the first city at once &mdash;, and level
+        <em>k</em>+1 holds, for every person, the cheapest cost over level <em>k</em> plus one
+        edge &mdash; the person itself at no cost keeping what the previous level found. A
+        level therefore holds persons, not walks, each level reads the previous one exactly
+        once, and the work grows linearly with the edges and with the number of levels: it is
+        Bellman&ndash;Ford, which with a unit cost is a breadth-first search. The answer is
+        read off the last level &mdash; the second person joined to it, or the persons of the
+        second city at the cheapest cost of all. IC&nbsp;14 adds a second chain from the other
+        end that reconstructs the paths: it extends a path only to a neighbour one step nearer
+        to the goal, as the levels of the search say, and sums the weight once over every
+        finished path. Dapper, MyBatis and Hibernate write the chain in their own query
+        language and EF&nbsp;Core in LINQ; NHibernate and EclipseLink write it in native SQL,
+        because a named intermediate result is what HQL of NHibernate&nbsp;5.7 and JPQL do not
+        have.
+      </p>
+
+      <h3 id="depth">How deep a search goes</h3>
+      <p>
+        A chain of <em>d</em> levels reaches every person within <em>d</em> edges, so it is
+        exact over a data set once <em>d</em> is as large as the data need &mdash; and that
+        number is measured, not guessed. For a search by the number of steps it is the
+        diameter of the graph, the longest of all shortest paths. For a search by cost it is
+        the most edges a cheapest path has, the fewest among equally cheap ones, because after
+        that many rounds every pair has its cost. Both are measured over scale factor&nbsp;1
+        from every person, not from a sample, over the edges the query itself defines, since
+        the edges differ from query to query:
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Queries</th><th>Edges</th><th>Persons with an edge</th><th>Average degree</th><th>Components</th><th>Depth</th><th>Ordered pairs at that depth</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>IC&nbsp;13, IC&nbsp;14</td><td><code>knows</code>, one step each</td><td>9,163</td><td>39.4</td><td>1</td><td><strong>5</strong></td><td>2,172 of 83.95 million</td></tr>
+            <tr><td>BI&nbsp;19</td><td><code>knows</code> between persons who replied to each other, weighed by the replies</td><td>8,674</td><td>32.4</td><td>1</td><td><strong>5</strong></td><td>21,056 of 75.2 million</td></tr>
+            <tr><td>BI&nbsp;20</td><td><code>knows</code> with a shared university, weighed by the class years</td><td>3,038</td><td>4.9</td><td>443</td><td><strong>7</strong></td><td>12 of 70,146</td></tr>
+            <tr><td>BI&nbsp;15</td><td><code>knows</code>, costed by the replies in the forums of the example timeframe</td><td>9,163</td><td>39.4</td><td>1</td><td><strong>11</strong></td><td>4 of 83.95 million</td></tr>
+          </tbody>
+        </table>
       </div>
+      <p>
+        Where the cost of an edge depends on the parameters (BI&nbsp;15), the depth holds for
+        the example timeframe and another timeframe may need another; the note of the query
+        says so. The text of each query has exactly that many levels, and the depth stands
+        beside the query with what it measures &mdash; the list below shows it. Three tests
+        hold the claim: one counts the levels of the text against the stated depth; one runs
+        the same search in its own code over the same data &mdash; Bellman&ndash;Ford to the
+        stated depth over edges read by the test's own SQL, from the example parameters and
+        from persons, cities and companies drawn from the data &mdash; and compares the rows;
+        and one measures the depth of the data set from every person and asserts that it is
+        not larger than the text's. The last holds only over the data set the catalog names,
+        which the database records in its <code>ldbc.dataset</code> property; over another the
+        test says so. A data set deeper than the text would turn the chain into a bound again:
+        then the text grows by levels, at a linear cost, and the data are never cut down.
+      </p>
+      <p>
+        Over scale factor&nbsp;1 the five read in 0.13&nbsp;s to 6.6&nbsp;s with turbo on
+        (2026-10-15), and in the environment of the measurements &mdash; one-threaded plans,
+        no turbo &mdash; in 0.27&nbsp;s to 118&nbsp;s (2026-10-17), BI&nbsp;19 the longest,
+        every level reading the definition of its weights once.
+      </p>
+
       <p>
         A target whose query language cannot say a query writes it in the native SQL of its
         database instead, through its framework's own API &mdash; <code>SqlQuery</code> in
@@ -244,7 +314,8 @@
         that meet the whole condition, row by row. <strong>NHibernate writes
         <span class="ldbc-fallback-count" data-target="20"></span> and EclipseLink
         <span class="ldbc-fallback-count" data-target="50"></span> in native SQL</strong>: the
-        queries over the result of another or over themselves, arithmetic over dates and
+        queries over the result of another or over themselves &mdash; the five path queries
+        among them, since a level is an intermediate result &mdash;, arithmetic over dates and
         lists, which HQL of NHibernate 5.7 and JPQL do not have, and for EclipseLink a
         conversion of a type (BI&nbsp;1), whose JPQL hands the Java type name to SQL Server.
         A list parameter in that native SQL (BI&nbsp;12) the generated EclipseLink method
@@ -281,10 +352,16 @@
         accept them. Whether it returns the right rows is judged for the 21
         Interactive queries by LDBC's own validation set, replayed against the generated
         artifact of every framework: a query translated as specified has to agree with it on
-        every read, a simplified one reports how many reads agree. Each query below names the
-        operation of the validation set that judges it. LDBC publishes no such set for the
-        Business Intelligence queries over this data, so their status is the author's claim.
-        Every text below does run, against the LDBC tables, in the test suite.
+        every read. Each query below names the operation of the validation set that judges it.
+        Both suites replayed the whole set of scale factor&nbsp;1 &mdash; 138,747 lines &mdash;
+        on 2026-10-12 (.NET) and 2026-10-14 (Java) with every read agreeing in all six
+        frameworks, the five path queries then in an earlier text bounded at a few steps; the
+        present texts have so far been judged over the first 500 lines of the same set in both
+        suites on 2026-10-18, every read agreeing in all six frameworks, and the whole set is
+        the next run. LDBC publishes no such set for the
+        Business Intelligence queries over this data, so their status is the author's claim,
+        checked for the three BI path queries against a search the test runs itself. Every
+        text below does run, against the LDBC tables, in the test suite.
       </p>
     </section>
 
