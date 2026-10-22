@@ -16,13 +16,12 @@ public record AdvisorRunResult(
 );
 
 /// <summary>
-/// The iteration policy the run measured under (decision 145), for the record of the run:
-/// the values are constants of the methodology, not of the request; the time limit of one
+/// The iteration policy the run measured under (decisions 145 and 165), for the record of the
+/// run: the values are constants of the methodology, not of the request; the time limit of one
 /// execution among them (decision 146).
 /// </summary>
 public sealed record BenchmarkPolicyDto(
-    double WarmupTolerance,
-    int MaxWarmupIterations,
+    int WarmupIterations,
     int MinIterations,
     double TargetMilliseconds,
     int ExecutionTimeoutSeconds);

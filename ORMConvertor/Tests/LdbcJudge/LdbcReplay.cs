@@ -156,9 +156,11 @@ internal sealed class LdbcPhases
 /// <c>database/ldbc/updates</c> and stays committed, so that every artifact sees it from its
 /// own connection; a read runs the generated artifact of every framework this suite owns -
 /// Dapper from the catalog's own text, which judges the text, then EF Core and NHibernate,
-/// which judge the translation - and compares the rows with the expected result. Before the
-/// replay and after it the compensation returns the database to its loaded state, and an
-/// application lock keeps a replay of the other suite from changing the state meanwhile.
+/// which judge the translation - and compares the rows with the expected result. The reads
+/// between two inserts see the same state, so the frameworks read them at once, each in a
+/// thread of its own (decision 166). Before the replay and after it the compensation returns
+/// the database to its loaded state, and an application lock keeps a replay of the other suite
+/// from changing the state meanwhile.
 ///
 /// Every artifact is translated with LdbcSnb as the catalog - the database it runs on -, and
 /// compiled once; the replay then runs it for every read of its operation. The replay happens
@@ -442,6 +444,7 @@ internal sealed class LdbcReplay
         var queries = Judged().ToDictionary(query => query.Validation!.Operation);
         var last = LdbcDatabase.Rows ?? int.MaxValue;
         var after = 0;
+        var segment = new List<LdbcRead>();
 
         while (true)
         {
@@ -450,6 +453,7 @@ internal sealed class LdbcReplay
             Phases.Paging += Stopwatch.GetElapsedTime(started);
             if (page.Count == 0)
             {
+                ReadSegment(segment, prepared, mutated);
                 return;
             }
 
@@ -460,6 +464,8 @@ internal sealed class LdbcReplay
 
                 if (operation.StartsWith("INS", StringComparison.Ordinal))
                 {
+                    // The reads before an insert see the state without it, so they are all read before it runs.
+                    ReadSegment(segment, prepared, mutated);
                     started = Stopwatch.GetTimestamp();
                     LdbcUpdates.Insert(control, operation, parameters);
                     Phases.Inserts += Stopwatch.GetElapsedTime(started);
@@ -469,26 +475,54 @@ internal sealed class LdbcReplay
 
                 var query = queries[operation];
                 started = Stopwatch.GetTimestamp();
-                var expected = LdbcCanonicalForm.Expected(query.Validation!, result);
+                segment.Add(new LdbcRead(position, query, parameters, LdbcCanonicalForm.Expected(query.Validation!, result)));
                 Phases.Expected += Stopwatch.GetElapsedTime(started);
-
-                foreach (var (framework, artifact) in prepared[operation])
-                {
-                    if (artifact is not null)
-                    {
-                        Judge(tallies[(query.Key, framework)], query, artifact, position, parameters, expected);
-                    }
-                }
-
-                if (query.Key == MutatedQuery)
-                {
-                    started = Stopwatch.GetTimestamp();
-                    Catch(mutated, query, position, parameters, expected);
-                    Phases.MutationReads += Stopwatch.GetElapsedTime(started);
-                }
             }
         }
     }
+
+    /// <summary>
+    /// The reads between two inserts (decision 166): every read of the segment sees the same
+    /// state, so the frameworks read it at once, each in a thread of its own and in the order of
+    /// the lines - an artifact is never run by two threads, and what a framework's tallies record
+    /// first is what it read first. The next insert waits until every framework has finished.
+    /// </summary>
+    private void ReadSegment(
+        List<LdbcRead> segment,
+        Dictionary<string, Dictionary<ORMEnum, PreparedQuery?>> prepared,
+        Dictionary<(string Mutation, ORMEnum Framework), PreparedQuery?> mutated)
+    {
+        if (segment.Count == 0)
+        {
+            return;
+        }
+
+        var mutationReads = new TimeSpan[Frameworks.Length];
+        Parallel.For(0, Frameworks.Length, new ParallelOptions { MaxDegreeOfParallelism = Frameworks.Length }, index =>
+        {
+            var framework = Frameworks[index];
+            foreach (var read in segment)
+            {
+                if (prepared[read.Query.Validation!.Operation][framework] is { } artifact)
+                {
+                    Judge(tallies[(read.Query.Key, framework)], read.Query, artifact, read.Position, read.Parameters, read.Expected);
+                }
+
+                if (read.Query.Key == MutatedQuery)
+                {
+                    var started = Stopwatch.GetTimestamp();
+                    Catch(mutated, framework, read.Query, read.Position, read.Parameters, read.Expected);
+                    mutationReads[index] += Stopwatch.GetElapsedTime(started);
+                }
+            }
+        });
+
+        Phases.MutationReads += mutationReads.Aggregate(TimeSpan.Zero, (sum, time) => sum + time);
+        segment.Clear();
+    }
+
+    /// <summary>A read of the validation set with its expected result in the canonical form.</summary>
+    private sealed record LdbcRead(int Position, LdbcQuery Query, string Parameters, List<string> Expected);
 
     private static void Judge(LdbcTally tally, LdbcQuery query, PreparedQuery artifact, int position, string parameters, List<string> expected)
     {
@@ -520,16 +554,22 @@ internal sealed class LdbcReplay
         }
     }
 
-    /// <summary>Runs every mutation not caught yet on this read; the first read that tells it apart catches it.</summary>
+    /// <summary>Runs every mutation of one framework not caught yet on this read; the first read that tells it apart catches it.</summary>
     private void Catch(
         Dictionary<(string Mutation, ORMEnum Framework), PreparedQuery?> mutated,
+        ORMEnum framework,
         LdbcQuery query,
         int position,
         string parameters,
         List<string> expected)
     {
-        foreach (var ((mutation, framework), artifact) in mutated)
+        foreach (var ((mutation, mutatedFramework), artifact) in mutated)
         {
+            if (mutatedFramework != framework)
+            {
+                continue;
+            }
+
             var tally = mutations[(mutation, framework)];
             if (artifact is null || tally.Detection is not null)
             {

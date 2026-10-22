@@ -1,7 +1,7 @@
 # 147 — Buňka měření běží v novém procesu a vedle ustáleného stavu vykazuje cenu prvního výsledku: start frameworku a první spuštění na klientovi, překlad plánu a počet plánů na serveru; ILP zůstává nad ustáleným stavem
 
 Datum: 2026-10-17
-Stav: platí
+Stav: platí; počet zahřívacích spuštění v mezi čekání rodiče nahrazuje 165
 Požadavky: F15, T7, S4, S6
 Podklad: rozhodnutí [145](145-the-measurement-environment-and-the-iteration-policy-are-fixed.md) (iterační politika: zahřátí do shody, medián měřených spuštění, první spuštění se zahazuje), [146](146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md) (javová větev jako služba, nová jednotka práce na spuštění, mez času na spojení), [076](076-java-wrappers-in-csharp-jvm-in-containers.md) (JVM v kontejneru), [140](140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) a [141](141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) (okno 0,2–300 s); položky *Izolace spouštění cizího kódu Advisorem* a *Javová větev Advisoru podle rozh. 146 nestojí*; článek *A Unified Framework for Object-Relational Mapping Translation and Performance-Aware Selection* (kap. o Advisoru: `cost(q, f)` jako průměrná doba spuštění, `mem(q, f)` jako špička; chování při spuštění — cache, sezení — mimo rozsah překladu); měření celého katalogu LDBC v zafixovaném prostředí z 2026-10-17 nad `d3d1a9a` (`ORMConvertor/README.md`, *Catalog query times*)
 

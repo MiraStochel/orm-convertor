@@ -4,9 +4,9 @@ set -euo pipefail
 # The mode of the server (decision 164). Without the variables it is the measurement mode of
 # decision 145: a fixed buffer pool, large enough to hold the LDBC data set at scale factor 1
 # after warm-up, and single-threaded plans whose time does not depend on how many cores happen
-# to be idle. The judge's mode (judge.env) sets DATABASE_MAXDOP to 0, parallel plans over every
-# processor the container has. A value that is not a whole number stops the container before
-# the server starts, rather than running it in a mode nobody chose.
+# to be idle. The judge's mode (judge.env) keeps these and gives the container every processor
+# of the VM instead. A value that is not a whole number stops the container before the server
+# starts, rather than running it in a mode nobody chose.
 maxdop="${DATABASE_MAXDOP:-1}"
 max_server_memory="${DATABASE_MAX_SERVER_MEMORY_MB:-4096}"
 for setting in "DATABASE_MAXDOP=${maxdop}" "DATABASE_MAX_SERVER_MEMORY_MB=${max_server_memory}"; do

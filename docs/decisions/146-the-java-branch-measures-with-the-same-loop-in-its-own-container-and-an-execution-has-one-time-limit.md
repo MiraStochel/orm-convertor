@@ -1,7 +1,7 @@
 # 146 — Javovou větev Advisoru měří tatáž smyčka jako .NET větev, ve vlastním kontejneru s JVM jako služba vedle aplikace; spuštění dotazu má jednu mez času, ve smyčce obou větví i u soudce, nastavenou na spojení ovladače
 
 Datum: 2026-10-17
-Stav: platí
+Stav: platí; zahřátí do shody v odstavci *Smyčka* nahrazuje 165
 Požadavky: F15, T7, S4, S5, T2, T3, F13
 Podklad: rozhodnutí [145](145-the-measurement-environment-and-the-iteration-policy-are-fixed.md) (iterační politika a zafixované prostředí), [076](076-java-wrappers-in-csharp-jvm-in-containers.md) (JVM zůstává v kontejneru, javová větev mimo proces aplikace), [078](078-java-suite-as-a-client-of-a-running-instance.md) (javová sada jako klient instance), [117](117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md) (soudce), [140](140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) a [141](141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) (okno 0,2–300 s); položky *Čím Advisor měří javové frameworky* a *Izolace spouštění cizího kódu Advisorem*; riziko *Metodologie měření pro Javu* ve specifikaci (kap. *Rizika*); záznam z 2026-10-15 (jedno čtení IC 14 v EF Core vypršelo na výchozích 30 s příkazu, ručně týž příkaz 2,2 s) a měření z 2026-10-17 v zafixovaném prostředí (`ORMConvertor/README.md`, *Catalog query times*)
 

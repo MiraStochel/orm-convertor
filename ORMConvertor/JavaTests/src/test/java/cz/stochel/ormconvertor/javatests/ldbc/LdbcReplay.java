@@ -21,6 +21,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * The replay of the validation set of LDBC Interactive v1 over LdbcSnb (decision 117) for the
@@ -28,10 +32,11 @@ import java.util.Map;
  * their order: an insert runs its script from {@code database/ldbc/updates} and stays
  * committed, so that every artifact sees it from its own connection; a read runs the
  * generated artifact of Hibernate, EclipseLink and MyBatis and compares the rows with the
- * expected result. The compensation returns the database to its loaded state before the
- * replay and after it, and an application lock keeps a replay of the .NET suite from changing
- * the state meanwhile. The source run - the catalog's own text - is the .NET suite's, as the
- * Dapper runs of the differential matrix are.
+ * expected result. The reads between two inserts see the same state, so the targets read them
+ * at once, each in a thread of its own (decision 166). The compensation returns the database
+ * to its loaded state before the replay and after it, and an application lock keeps a replay
+ * of the .NET suite from changing the state meanwhile. The source run - the catalog's own
+ * text - is the .NET suite's, as the Dapper runs of the differential matrix are.
  *
  * <p>The artifacts come from an instance whose catalog is LdbcSnb, the database they run on
  * (decision 078): the completion writes the schema of the tables into the mapping. The catalog
@@ -361,45 +366,97 @@ final class LdbcReplay {
 
         int last = LdbcDatabase.rows() != null ? LdbcDatabase.rows() : Integer.MAX_VALUE;
         int after = 0;
+        List<Read> segment = new ArrayList<>();
+        ExecutorService readers = Executors.newFixedThreadPool(FRAMEWORKS.length);
 
-        while (true) {
-            long started = System.nanoTime();
-            List<Line> page = page(control, after, last);
-            phases.pagingNanos += System.nanoTime() - started;
-            if (page.isEmpty()) {
-                return;
-            }
-
-            for (Line line : page) {
-                after = line.position();
-                lines++;
-
-                if (line.operation().startsWith("INS")) {
-                    started = System.nanoTime();
-                    LdbcUpdates.insert(control, line.operation(), line.parameters());
-                    phases.insertsNanos += System.nanoTime() - started;
-                    inserts++;
-                    continue;
+        try {
+            while (true) {
+                long started = System.nanoTime();
+                List<Line> page = page(control, after, last);
+                phases.pagingNanos += System.nanoTime() - started;
+                if (page.isEmpty()) {
+                    readSegment(readers, segment, prepared, mutated);
+                    return;
                 }
 
-                LdbcCatalog.Query query = queries.get(line.operation());
-                started = System.nanoTime();
-                List<String> expected = LdbcCanonicalForm.expected(query.validation(), line.result());
-                phases.expectedNanos += System.nanoTime() - started;
+                for (Line line : page) {
+                    after = line.position();
+                    lines++;
 
-                for (Map.Entry<Integer, PreparedJavaQuery> cell : prepared.get(line.operation()).entrySet()) {
-                    if (cell.getValue() != null) {
-                        judge(tallies.get(query.key() + "|" + cell.getKey()), query, cell.getValue(), line, expected);
+                    if (line.operation().startsWith("INS")) {
+                        // The reads before an insert see the state without it, so they are all read before it runs.
+                        readSegment(readers, segment, prepared, mutated);
+                        started = System.nanoTime();
+                        LdbcUpdates.insert(control, line.operation(), line.parameters());
+                        phases.insertsNanos += System.nanoTime() - started;
+                        inserts++;
+                        continue;
+                    }
+
+                    LdbcCatalog.Query query = queries.get(line.operation());
+                    started = System.nanoTime();
+                    segment.add(new Read(line, query, LdbcCanonicalForm.expected(query.validation(), line.result())));
+                    phases.expectedNanos += System.nanoTime() - started;
+                }
+            }
+        } finally {
+            readers.shutdownNow();
+        }
+    }
+
+    /**
+     * The reads between two inserts (decision 166), as {@code LdbcReplay.cs} reads them: every
+     * read of the segment sees the same state, so the targets read it at once, each in a thread
+     * of its own and in the order of the lines - an artifact is never run by two threads, and
+     * what a target's tallies record first is what it read first. The next insert waits until
+     * every target has finished; the futures also hand the tallies back to this thread.
+     */
+    private void readSegment(
+            ExecutorService readers,
+            List<Read> segment,
+            Map<String, Map<Integer, PreparedJavaQuery>> prepared,
+            Map<String, PreparedJavaQuery> mutated) {
+
+        if (segment.isEmpty()) {
+            return;
+        }
+
+        List<Future<Long>> reading = new ArrayList<>();
+        for (int framework : FRAMEWORKS) {
+            reading.add(readers.submit(() -> {
+                long mutationNanos = 0;
+                for (Read read : segment) {
+                    PreparedJavaQuery artifact = prepared.get(read.line().operation()).get(framework);
+                    if (artifact != null) {
+                        judge(tallies.get(read.query().key() + "|" + framework), read.query(), artifact, read.line(), read.expected());
+                    }
+
+                    if (read.query().key().equals(MUTATED_QUERY)) {
+                        long started = System.nanoTime();
+                        catchMutations(mutated, framework, read.query(), read.line(), read.expected());
+                        mutationNanos += System.nanoTime() - started;
                     }
                 }
-
-                if (query.key().equals(MUTATED_QUERY)) {
-                    started = System.nanoTime();
-                    catchMutations(mutated, query, line, expected);
-                    phases.mutationReadsNanos += System.nanoTime() - started;
-                }
-            }
+                return mutationNanos;
+            }));
         }
+
+        try {
+            for (Future<Long> future : reading) {
+                phases.mutationReadsNanos += future.get();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("The replay was interrupted while the targets read a segment.", e);
+        } catch (ExecutionException e) {
+            throw new IllegalStateException("A target failed outside its cells while it read a segment.", e.getCause());
+        }
+
+        segment.clear();
+    }
+
+    /** A read of the validation set with its expected result in the canonical form. */
+    private record Read(Line line, LdbcCatalog.Query query, List<String> expected) {
     }
 
     private static void judge(Tally tally, LdbcCatalog.Query query, PreparedJavaQuery artifact, Line line, List<String> expected) {
@@ -424,9 +481,13 @@ final class LdbcReplay {
         }
     }
 
-    /** Runs every mutation not caught yet on this read; the first read that tells it apart catches it. */
-    private void catchMutations(Map<String, PreparedJavaQuery> mutated, LdbcCatalog.Query query, Line line, List<String> expected) {
+    /** Runs every mutation of one target not caught yet on this read; the first read that tells it apart catches it. */
+    private void catchMutations(Map<String, PreparedJavaQuery> mutated, int framework, LdbcCatalog.Query query, Line line, List<String> expected) {
         for (Map.Entry<String, PreparedJavaQuery> cell : mutated.entrySet()) {
+            if (!cell.getKey().endsWith("|" + framework)) {
+                continue;
+            }
+
             MutationTally tally = mutations.get(cell.getKey());
             if (cell.getValue() == null || tally.detection != null) {
                 continue;

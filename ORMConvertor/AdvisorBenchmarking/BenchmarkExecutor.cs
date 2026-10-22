@@ -62,15 +62,13 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
             setup.Invoke(instance, [BenchmarkHarnessBuilder.WithExecutionTimeout(connectionString)]);
             logger?.LogDebug("Setup invoked.");
 
-            // Warm-up (decision 145): until two consecutive executions agree, at most
-            // MaxWarmupIterations. The first execution of a query after a start of the
-            // server also reads its pages from disk; later cells of the same query find them.
-            do
+            // Warm-up (decision 165): the cold execution, left out of the median. The first
+            // execution of a query after a start of the server also reads its pages from disk;
+            // later cells of the same query find them.
+            while (warmups.Count < BenchmarkPolicy.WarmupIterations)
             {
                 warmups.Add(TimeOne(execute, instance));
             }
-            while (warmups.Count < 2
-                || (warmups.Count < BenchmarkPolicy.MaxWarmupIterations && !Agree(warmups[^2], warmups[^1])));
 
             GC.Collect();
             GC.WaitForPendingFinalizers();
@@ -129,12 +127,6 @@ public sealed class BenchmarkExecutor : IBenchmarkExecutor
         execute.Invoke(instance, null);
         watch.Stop();
         return watch.Elapsed.TotalMilliseconds;
-    }
-
-    private static bool Agree(double previous, double current)
-    {
-        var slower = Math.Max(previous, current);
-        return slower <= 0 || Math.Abs(previous - current) <= BenchmarkPolicy.WarmupTolerance * slower;
     }
 
     private static double Median(List<double> values)

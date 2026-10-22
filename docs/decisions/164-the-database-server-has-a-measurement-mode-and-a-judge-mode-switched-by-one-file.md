@@ -1,7 +1,7 @@
 # 164 — Server databáze má dva režimy: měřicí, výchozí v obrazu i v compose, a režim soudce, do něhož ho přepne jeden soubor proměnných; paralelismus, paměť a procesory databáze bere obraz z proměnných a běh FIBEN měří jen nad serverem bez paralelismu
 
 Datum: 2026-10-22
-Stav: platí; nahrazuje větu o prostředí soudce LDBC v odstavci *Prostředí* a důsledek *Obraz databáze* rozh. 145
+Stav: platí; nahrazuje větu o prostředí soudce LDBC v odstavci *Prostředí* a důsledek *Obraz databáze* rozh. 145; `MAXDOP` 0 režimu soudce a poznání měřicího režimu samotným `MAXDOP` v běhu FIBEN nahrazuje 166
 Požadavky: T2, T3, T7, F13, S5, S6
 Podklad: rozhodnutí [145](145-the-measurement-environment-and-the-iteration-policy-are-fixed.md) (zafixované prostředí ve třech vrstvách), [117](117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md) (soudce LDBC), [149](149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md) (běh FIBEN měří politikou 145), [039](039-container-configuration-of-the-environment.md) (jeden compose, jeden obraz databáze), [150](150-a-part-of-a-decision-is-replaced-by-a-new-file-and-both-statuses-say-so.md); záznamy *Whole-set runs* (2026-10-12 a 2026-10-14, mimo zafixované prostředí: 20 h a 25 h, obě sady bez neshody) a projekce *Time by step* z 2026-10-18 (v zafixovaném prostředí s turbem 2,5–5 dní pro .NET, 2,5–3 pro Javu) v `ORMConvertor/README.md`; běh FIBEN z 2026-10-22 nad `a2f498a` (103 min, z toho 18 min první čtení a zbytek měření); měření na MIS3 z 2026-10-22 (níž)
 

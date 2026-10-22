@@ -688,23 +688,14 @@
       },
       "BenchmarkPolicyDto": {
         "required": [
-          "warmupTolerance",
-          "maxWarmupIterations",
+          "warmupIterations",
           "minIterations",
           "targetMilliseconds",
           "executionTimeoutSeconds"
         ],
         "type": "object",
         "properties": {
-          "warmupTolerance": {
-            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
-            "type": [
-              "number",
-              "string"
-            ],
-            "format": "double"
-          },
-          "maxWarmupIterations": {
+          "warmupIterations": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
               "integer",

@@ -72,11 +72,19 @@ internal sealed class FibenCell
 /// The settings of the server a run reads before it starts (decision 164): the MAXDOP the Fiben
 /// database runs its plans with - its own database-scoped value where that is not zero, the
 /// server's otherwise -, the server's memory, and the processors it sees, which the cpuset of the
-/// container limits. Only the first decides whether the run measures, because it is the one that
-/// changes the shape of a plan; the processors need VIEW SERVER STATE and are null without it.
+/// container limits. The first two decide whether the run measures (decision 166): the
+/// measurement mode runs single-threaded plans on processors of the server's own, and the
+/// judge's mode, whose plans are single-threaded too, gives the server every processor of the
+/// VM. The processors need VIEW SERVER STATE and are null without it.
 /// </summary>
 internal sealed record FibenServer(int Maxdop, int MaxServerMemoryMegabytes, int? Processors)
 {
+    /// <summary>
+    /// The processors of the database in the measurement mode: the default cpuset of the
+    /// databases in <c>docker-compose.yml</c>, which <c>FibenRunTest</c> holds equal.
+    /// </summary>
+    public const int MeasurementProcessors = 2;
+
     public static FibenServer Read(SqlConnection connection)
     {
         int maxdop, memory;
@@ -108,12 +116,15 @@ internal sealed record FibenServer(int Maxdop, int MaxServerMemoryMegabytes, int
 
     /// <summary>
     /// Why a run leaves its measurement out, or null when it measures: the environment may leave
-    /// it out, and a server whose plans may be parallel - the judge's mode, or any server not set
-    /// up for measurement - leaves it out by itself, so that no number comes from it.
+    /// it out, and a server outside the measurement mode - parallel plans, or processors other
+    /// than its own two, as in the judge's mode - leaves it out by itself, so that no number
+    /// comes from it.
     /// </summary>
-    public static string? MeasurementLeftOut(bool configured, int maxdop)
+    public static string? MeasurementLeftOut(bool configured, int maxdop, int? processors)
         => !configured ? "left out"
             : maxdop != 1 ? $"left out: the server runs its plans with MAXDOP {maxdop}, not in the measurement mode (decision 164)"
+            : processors != MeasurementProcessors
+                ? $"left out: the server has {processors?.ToString(CultureInfo.InvariantCulture) ?? "an unknown number of"} processors, not the {MeasurementProcessors} of its own the measurement mode gives it (decision 166)"
             : null;
 
     public string Describe()
@@ -167,7 +178,7 @@ internal sealed class FibenRun
     public FibenServer? Server { get; private set; }
 
     /// <summary>Why the run leaves its measurement out, or null when it measures (decisions 145 and 164).</summary>
-    public string? MeasurementLeftOut => Server is null ? "left out" : FibenServer.MeasurementLeftOut(FibenDatabase.Measures, Server.Maxdop);
+    public string? MeasurementLeftOut => Server is null ? "left out" : FibenServer.MeasurementLeftOut(FibenDatabase.Measures, Server.Maxdop, Server.Processors);
 
     /// <summary>Whether the database holds a judge; a run over a database without one can make it.</summary>
     public bool HasJudge { get; private set; }
@@ -354,21 +365,19 @@ internal sealed class FibenRun
     }
 
     /// <summary>
-    /// The policy of decision 145 over one cell: warm-up until two consecutive executions agree
-    /// within the tolerance, at most the maximum; then executions until the accumulated time
-    /// reaches the target and at least the minimum; the median of one execution is the number.
+    /// The policy of decision 165 over one cell: the read that produced the cell's rows was its
+    /// first, cold execution and is its warm-up, and the policy's further warm-ups, if any, follow
+    /// it; then executions until the accumulated time reaches the target and at least the
+    /// minimum; the median of one execution is the number.
     /// </summary>
     private static void Measure(FibenCell cell, Action execute)
     {
         try
         {
-            var warmups = new List<double>();
-            do
+            for (var warmup = 1; warmup < BenchmarkPolicy.WarmupIterations; warmup++)
             {
-                warmups.Add(TimeOne(execute));
+                execute();
             }
-            while (warmups.Count < 2
-                || (warmups.Count < BenchmarkPolicy.MaxWarmupIterations && !Agree(warmups[^2], warmups[^1])));
 
             var measured = new List<double>();
             double total = 0;
@@ -381,7 +390,7 @@ internal sealed class FibenRun
 
             var sorted = measured.Order().ToList();
             cell.MedianMilliseconds = sorted.Count % 2 == 1 ? sorted[sorted.Count / 2] : (sorted[sorted.Count / 2 - 1] + sorted[sorted.Count / 2]) / 2;
-            cell.WarmupIterations = warmups.Count;
+            cell.WarmupIterations = BenchmarkPolicy.WarmupIterations;
             cell.Iterations = measured.Count;
         }
         catch (Exception exception)
@@ -395,12 +404,6 @@ internal sealed class FibenRun
         var watch = Stopwatch.StartNew();
         execute();
         return watch.Elapsed.TotalMilliseconds;
-    }
-
-    private static bool Agree(double previous, double current)
-    {
-        var slower = Math.Max(previous, current);
-        return slower <= 0 || Math.Abs(previous - current) <= BenchmarkPolicy.WarmupTolerance * slower;
     }
 
     private static List<string> Canonical(FibenQuery query, List<object?[]> rows)
@@ -459,7 +462,7 @@ internal sealed class FibenRun
             CultureInfo.InvariantCulture,
             $"FIBEN run over {DataSet ?? "an unnamed data set"}: {Queries.Count} queries in {Frameworks.Length} frameworks in {Elapsed.TotalMinutes:F1} min; "
             + $"first catalog read {CatalogRead.TotalMilliseconds:F0} ms; judge {(HasJudge ? "present" : "absent - this run can make one")}; "
-            + $"server {Server?.Describe() ?? "not read"}; measurement {MeasurementLeftOut ?? "by the policy of decision 145"}.");
+            + $"server {Server?.Describe() ?? "not read"}; measurement {MeasurementLeftOut ?? "by the policy of decisions 145 and 165"}.");
 
         foreach (var framework in Frameworks)
         {

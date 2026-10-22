@@ -52,9 +52,8 @@ public final class FibenRun {
     /** The frameworks whose artifacts this suite runs. */
     public static final int[] FRAMEWORKS = {Orm.HIBERNATE, Orm.ECLIPSELINK, Orm.MYBATIS};
 
-    /** The policy of decision 145, as the .NET BenchmarkPolicy states it; FibenRunTest.cs holds the values equal. */
-    public static final double WARMUP_TOLERANCE = 0.10;
-    public static final int MAX_WARMUP_ITERATIONS = 5;
+    /** The policy of decisions 145 and 165, as the .NET BenchmarkPolicy states it; FibenRunTest.cs holds the values equal. */
+    public static final int WARMUP_ITERATIONS = 1;
     public static final int MIN_ITERATIONS = 3;
     public static final double TARGET_MILLISECONDS = 1000;
 
@@ -215,7 +214,7 @@ public final class FibenRun {
                 "FIBEN run (Java) over %s: %d queries in %d frameworks in %.1f min; judge %s; server %s; measurement %s.",
                 dataSet, queries.size(), FRAMEWORKS.length, elapsed.toMillis() / 60000.0,
                 hasJudge ? "present" : "absent", server == null ? "not read" : server.describe(),
-                measurementLeftOut() == null ? "by the policy of decision 145" : measurementLeftOut()));
+                measurementLeftOut() == null ? "by the policy of decisions 145 and 165" : measurementLeftOut()));
 
         long sourceFailures = sources.values().stream().filter(source -> source.rows == null).count();
         lines.add(String.format(Locale.ROOT, "source (the text over JDBC): %d of %d ran, %.1f s of first reads.",
@@ -413,15 +412,16 @@ public final class FibenRun {
         void run() throws Exception;
     }
 
-    /** The policy of decision 145 over one cell, as the .NET run applies it. */
+    /**
+     * The policy of decision 165 over one cell, as the .NET run applies it: the read that
+     * produced the rows was the cell's first, cold execution and is its warm-up, and the
+     * policy's further warm-ups, if any, follow it.
+     */
     private static void measure(Measured measured, Execution execution) {
         try {
-            List<Double> warmups = new ArrayList<>();
-            do {
-                warmups.add(timeOne(execution));
+            for (int warmup = 1; warmup < WARMUP_ITERATIONS; warmup++) {
+                execution.run();
             }
-            while (warmups.size() < 2
-                    || (warmups.size() < MAX_WARMUP_ITERATIONS && !agree(warmups.get(warmups.size() - 2), warmups.get(warmups.size() - 1))));
 
             List<Double> times = new ArrayList<>();
             double total = 0;
@@ -431,7 +431,7 @@ public final class FibenRun {
                 total += milliseconds;
             }
 
-            measured.setMeasurement(median(times), warmups.size(), times.size());
+            measured.setMeasurement(median(times), WARMUP_ITERATIONS, times.size());
         } catch (Exception e) {
             measured.setMeasurementFailed(innermost(e).toString());
         }
@@ -441,11 +441,6 @@ public final class FibenRun {
         long started = System.nanoTime();
         execution.run();
         return (System.nanoTime() - started) / 1e6;
-    }
-
-    private static boolean agree(double previous, double current) {
-        double slower = Math.max(previous, current);
-        return slower <= 0 || Math.abs(previous - current) <= WARMUP_TOLERANCE * slower;
     }
 
     private static double median(List<Double> values) {
@@ -577,9 +572,9 @@ public final class FibenRun {
         return text.replace('\t', ' ').replace("\r", "").replace('\n', ' ');
     }
 
-    /** Why the run leaves its measurement out, or null when it measures (decisions 145 and 164). */
+    /** Why the run leaves its measurement out, or null when it measures (decisions 145, 164 and 166). */
     private String measurementLeftOut() {
-        return server == null ? "left out" : Server.measurementLeftOut(FibenDatabase.measures(), server.maxdop());
+        return server == null ? "left out" : Server.measurementLeftOut(FibenDatabase.measures(), server.maxdop(), server.processors());
     }
 
     /**
@@ -587,9 +582,14 @@ public final class FibenRun {
      * in {@code FibenRun.cs} reads them: the MAXDOP the Fiben database runs its plans with - its
      * own database-scoped value where that is not zero, the server's otherwise -, the server's
      * memory, and the processors it sees, which need VIEW SERVER STATE and are null without it.
-     * Only the first decides whether the run measures.
+     * The first two decide whether the run measures (decision 166): the measurement mode runs
+     * single-threaded plans on processors of the server's own, and the judge's mode, whose plans
+     * are single-threaded too, gives the server every processor of the VM.
      */
     record Server(int maxdop, int maxServerMemoryMegabytes, Integer processors) {
+
+        /** The processors of the database in the measurement mode, as {@code FibenServer} states them; FibenRunTest.cs holds the values equal. */
+        static final int MEASUREMENT_PROCESSORS = 2;
 
         static Server read(Connection connection) throws SQLException {
             int maxdop;
@@ -617,16 +617,22 @@ public final class FibenRun {
 
         /**
          * Why a run leaves its measurement out, or null when it measures: the environment may
-         * leave it out, and a server whose plans may be parallel - the judge's mode, or any server
-         * not set up for measurement - leaves it out by itself, so that no number comes from it.
+         * leave it out, and a server outside the measurement mode - parallel plans, or processors
+         * other than its own two, as in the judge's mode - leaves it out by itself, so that no
+         * number comes from it.
          */
-        static String measurementLeftOut(boolean configured, int maxdop) {
+        static String measurementLeftOut(boolean configured, int maxdop, Integer processors) {
             if (!configured) {
                 return "left out";
             }
-            return maxdop != 1
-                    ? "left out: the server runs its plans with MAXDOP " + maxdop + ", not in the measurement mode (decision 164)"
-                    : null;
+            if (maxdop != 1) {
+                return "left out: the server runs its plans with MAXDOP " + maxdop + ", not in the measurement mode (decision 164)";
+            }
+            if (processors == null || processors != MEASUREMENT_PROCESSORS) {
+                return "left out: the server has " + (processors == null ? "an unknown number of" : processors.toString())
+                        + " processors, not the " + MEASUREMENT_PROCESSORS + " of its own the measurement mode gives it (decision 166)";
+            }
+            return null;
         }
 
         String describe() {

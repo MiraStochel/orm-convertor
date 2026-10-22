@@ -21,8 +21,8 @@
 # service rather than running it on a shared core. The server's memory and parallelism are
 # set by the database image itself (database/init-db.sh).
 #
-# That is the default mode of both databases. The judge's mode (decision 164) is the file
-# judge.env beside this one - every processor of the VM and parallel plans:
+# That is the default mode of both databases. The judge's mode (decisions 164 and 166) is the
+# file judge.env beside this one - every processor of the VM for the judge's concurrent reads:
 #
 #   docker compose --env-file judge.env up -d mssql_db       into the judge's mode
 #   docker compose up -d mssql_db                            back into the measurement mode

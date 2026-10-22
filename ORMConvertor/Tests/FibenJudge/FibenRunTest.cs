@@ -166,19 +166,21 @@ public class FibenRunTest(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// The run measures only over a server whose plans are single-threaded (decision 164): the
-    /// judge's mode, MAXDOP 0, and any other parallel server leave the measurement out by
-    /// themselves, and the environment can leave it out over any server.
+    /// The run measures only over a server in the measurement mode (decisions 164 and 166):
+    /// single-threaded plans on the two processors of its own. A parallel server, the judge's
+    /// mode with every processor of the VM, and a server that does not say how many it has leave
+    /// the measurement out by themselves, and the environment can leave it out over any server.
     /// </summary>
     [Theory]
-    [InlineData(true, 1, null)]
-    [InlineData(true, 0, "MAXDOP 0")]
-    [InlineData(true, 4, "MAXDOP 4")]
-    [InlineData(false, 1, "left out")]
-    [InlineData(false, 0, "left out")]
-    public void TheRunMeasuresOnlyOverAServerWithoutParallelism(bool configured, int maxdop, string? reason)
+    [InlineData(true, 1, 2, null)]
+    [InlineData(true, 0, 2, "MAXDOP 0")]
+    [InlineData(true, 4, 4, "MAXDOP 4")]
+    [InlineData(true, 1, 4, "4 processors")]
+    [InlineData(true, 1, null, "unknown number")]
+    [InlineData(false, 1, 2, "left out")]
+    public void TheRunMeasuresOnlyOverAServerInTheMeasurementMode(bool configured, int maxdop, int? processors, string? reason)
     {
-        var leftOut = FibenServer.MeasurementLeftOut(configured, maxdop);
+        var leftOut = FibenServer.MeasurementLeftOut(configured, maxdop, processors);
 
         if (reason is null)
         {
@@ -201,12 +203,29 @@ public class FibenRunTest(ITestOutputHelper output)
             TargetFrameworkDescriptorTest.SolutionDirectory(),
             "JavaTests", "src", "test", "java", "cz", "stochel", "ormconvertor", "javatests", "fiben", "FibenRun.java"));
 
-        Assert.Equal(AdvisorBenchmarking.BenchmarkPolicy.WarmupTolerance, Declared(source, "WARMUP_TOLERANCE"));
-        Assert.Equal(AdvisorBenchmarking.BenchmarkPolicy.MaxWarmupIterations, Declared(source, "MAX_WARMUP_ITERATIONS"));
+        Assert.Equal(AdvisorBenchmarking.BenchmarkPolicy.WarmupIterations, Declared(source, "WARMUP_ITERATIONS"));
+        Assert.Equal(FibenServer.MeasurementProcessors, Declared(source, "MEASUREMENT_PROCESSORS"));
         Assert.Equal(AdvisorBenchmarking.BenchmarkPolicy.MinIterations, Declared(source, "MIN_ITERATIONS"));
         Assert.Equal(AdvisorBenchmarking.BenchmarkPolicy.TargetMilliseconds, Declared(source, "TARGET_MILLISECONDS"));
         Assert.Equal(AdvisorBenchmarking.BenchmarkPolicy.ExecutionTimeoutSeconds, Declared(source, "QUERY_TIMEOUT_SECONDS"));
     }
+
+    /// <summary>
+    /// The processors the run expects of a server in the measurement mode are the ones the
+    /// compose file gives both databases by default (decisions 145 and 166).
+    /// </summary>
+    [Fact]
+    public void TheMeasurementProcessorsAreTheDefaultCpusetOfTheDatabases()
+    {
+        var compose = File.ReadAllText(Path.Combine(TargetFrameworkDescriptorTest.SolutionDirectory(), "docker-compose.yml"));
+        var defaults = Regex.Matches(compose, @"cpuset: ""\$\{DATABASE_CPUSET-([0-9,\-]+)\}""").Select(match => match.Groups[1].Value).ToList();
+
+        Assert.Equal(2, defaults.Count);
+        Assert.All(defaults, cpuset => Assert.Equal(FibenServer.MeasurementProcessors, Processors(cpuset)));
+    }
+
+    private static int Processors(string cpuset)
+        => cpuset.Split(',').Sum(part => part.Split('-') is [var first, var last] ? int.Parse(last, CultureInfo.InvariantCulture) - int.Parse(first, CultureInfo.InvariantCulture) + 1 : 1);
 
     private static double Declared(string source, string constant)
     {

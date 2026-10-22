@@ -330,8 +330,7 @@ public class AdvisorRunCoordinator : IAdvisorRunCoordinator
         }
 
         var policy = new BenchmarkPolicyDto(
-            BenchmarkPolicy.WarmupTolerance,
-            BenchmarkPolicy.MaxWarmupIterations,
+            BenchmarkPolicy.WarmupIterations,
             BenchmarkPolicy.MinIterations,
             BenchmarkPolicy.TargetMilliseconds,
             BenchmarkPolicy.ExecutionTimeoutSeconds);

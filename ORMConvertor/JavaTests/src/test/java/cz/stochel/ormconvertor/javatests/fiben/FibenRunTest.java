@@ -130,13 +130,15 @@ class FibenRunTest {
                 FibenDatabase.withQueryTimeout("jdbc:sqlserver://db:1433;databaseName=Fiben;queryTimeout=30;user=sa;password=p;encrypt=true;trustServerCertificate=true"));
     }
 
-    /** The run measures only over a server whose plans are single-threaded (decision 164), as the .NET run does. */
+    /** The run measures only over a server in the measurement mode (decisions 164 and 166), as the .NET run does. */
     @Test
-    void theRunMeasuresOnlyOverAServerWithoutParallelism() {
-        assertNull(FibenRun.Server.measurementLeftOut(true, 1));
-        assertTrue(FibenRun.Server.measurementLeftOut(true, 0).contains("MAXDOP 0"));
-        assertTrue(FibenRun.Server.measurementLeftOut(true, 4).contains("MAXDOP 4"));
-        assertEquals("left out", FibenRun.Server.measurementLeftOut(false, 1));
+    void theRunMeasuresOnlyOverAServerInTheMeasurementMode() {
+        assertNull(FibenRun.Server.measurementLeftOut(true, 1, 2));
+        assertTrue(FibenRun.Server.measurementLeftOut(true, 0, 2).contains("MAXDOP 0"));
+        assertTrue(FibenRun.Server.measurementLeftOut(true, 4, 4).contains("MAXDOP 4"));
+        assertTrue(FibenRun.Server.measurementLeftOut(true, 1, 4).contains("4 processors"));
+        assertTrue(FibenRun.Server.measurementLeftOut(true, 1, null).contains("unknown number"));
+        assertEquals("left out", FibenRun.Server.measurementLeftOut(false, 1, 2));
     }
 
     /** The digest of a result is the same in both suites; this value is held by the .NET suite over the same rows. */
