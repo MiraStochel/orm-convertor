@@ -1,8 +1,8 @@
 # The judge of the FIBEN catalog (decision 149): the rows of every query in the canonical form of decision 089,
-# as the catalog's own text returned them over fiben-benchmark-96eaffc through Dapper on 2026-10-20 00:46 UTC.
+# as the catalog's own text returned them over fiben-benchmark-96eaffc through Dapper on 2026-10-22 13:41 UTC.
 # key<TAB>position<TAB>rendered row; position 0 is the digest of the whole result (row count and SHA-256 of the rows joined by LF),
 # the rows follow it where the result has at most 1000 of them. A query without a line was not run. Made by the .NET suite's FibenRunTest.
-# Made again as the judge from the run of both suites of 2026-10-20 (decisions 149, 157): tree 9f6082d + the next commit, recorded in ORMConvertor/README.md, The FIBEN run; every target agreed with the source but q63 in EclipseLink, which differs by the stated limit of docs/subset.md 2.2. A new judge is a decision with a date and a reason.
+# Made again as the judge from the .NET half of the run of 2026-10-22 (decision 163): tree a2f498a, recorded in ORMConvertor/README.md, The FIBEN run; every cell agreed with the source. The rows of the 229 queries of the judge of 2026-10-20 are unchanged; added are the eight queries decisions 161 and 162 translate, which that run did not run: q99, q124, q125, q126, q200, q201, q202, q237. A new judge is a decision with a date and a reason.
 q1	0	rows=2 sha256=e6fb8521b60fe38beed481bee51dd837a2e04feb21f28cef28ebd57075b814b9
 q1	1	"GOOG"	"Alphabet Inc."	39.92
 q1	2	"GOOGL"	"Alphabet Inc."	21.53
@@ -1403,6 +1403,7 @@ q97	3	79139000000	"0001047469-18-001117"	"International Business Machines Corpor
 q97	4	79591000000	"0001047469-19-000712"	"International Business Machines Corporation"	2018
 q98	0	rows=1 sha256=160c998108a14b67ecc6ee07b5ccaf70f7e60963e84aea42eec6e1f50ac69e0c
 q98	1	150000027578	24779.52
+q99	0	rows=32655 sha256=121d461e89da9af6396f23617af40ed2f44ef83aac2b911f19f3e308bec79e6e
 q100	0	rows=3221 sha256=69a2727cbea9b3ddf362338ef04ade3955c576a0568ed944716fccb09c2b7eb6
 q101	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 q102	0	rows=5995 sha256=e6117df8ce0294aa48d4d9eb9e7c7e77b25e079cf88a0e7f90c5ee83fb269eeb
@@ -2259,6 +2260,9 @@ q121	15	"Mac Eliens"	"TLP"	"Transmontaigne Partners L.P."	"1"	2015-09-25T09:46:2
 q121	16	"Mac Eliens"	"TMK.PRB"	"Torchmark Corporation"	"1"	2016-05-30T10:52:06.000	4265
 q122	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 q123	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+q124	0	rows=97044 sha256=7db2bf4e503eb26ca5ead3a4c223cd4faf2e35fa5abc98e7078577f72489dd10
+q125	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+q126	0	rows=97270 sha256=88b4c36438f4724d84ef72c10dc3fc75ac27cdb2ef9d944f9eb5b8cbb51c8a74
 q127	0	rows=189 sha256=fcfbc96e5382b6537992c84146e9bc008da6a88c0c4e3f07e1c8780265e3a880
 q127	1	"Adel Baalen"
 q127	2	"Adenauer Hebisch"
@@ -4609,6 +4613,27 @@ q196	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b785
 q197	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 q198	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 q199	0	rows=49825 sha256=a13806bf5b0efa97a0e4ec26dc12eca8f406a4d7ecb15cc22a08b4c4f77c94b8
+q200	0	rows=13 sha256=deca60a7aa5e011eb6c31fb996b1ec8f1ca8e9bdfd026a6c89feb164c13788d7
+q200	1	"Asanobu Kheradpir"	"BAC.PRL"	"Bank of America Corporation"	32.69	"Stock BAC.PRL"
+q200	2	"Donia Kontos"	"EXP"	"Eagle Materials Inc."	1607.961	"Stock EXP"
+q200	3	"Gale Reznick"	"CYTR"	"CytRx"	1690.926	"Stock CYTR"
+q200	4	"Harwood Cooley"	"QMCO"	"Quantum Corporation"	2699.427	"Stock QMCO"
+q200	5	"Ilona Weicker"	"NRF.PRC"	"Northstar Realty Finance Corp."	956.87	"Stock NRF.PRC"
+q200	6	"Jooseok Junping"	"JCP"	"J.C. Penney Company Inc."	369.083	"Stock JCP"
+q200	7	"Luomin Hallman"	"SPCHA"	"Sport Chalet"	427.291	"Stock SPCHA"
+q200	8	"Novak Tambouris"	"BEL"	"Belmond Ltd."	1107.308	"Stock BEL"
+q200	9	"Rei Desprez"	"SQI"	"SciQuest"	1818.197	"Stock SQI"
+q200	10	"Sarnath Bang"	"MAS"	"Masco Corporation"	154.103	"Stock MAS"
+q200	11	"Sixto Monarch"	"PIKE"	"Pike Corporation"	2039.867	"Stock PIKE"
+q200	12	"Sriram Bozinovic"	"YDKN"	"Yadkin Financial Corporation"	755.873	"Stock YDKN"
+q200	13	"Zhihong Garidis"	"NSH"	"NuStar GP Holdings, LLC"	2274.183	"Stock NSH"
+q201	0	rows=534460 sha256=1a27e1de41f8f32f1120023f3d751678384bcee90aa01ddb4cbedd2d35ade24f
+q202	0	rows=5 sha256=ffb54a85f2d814f7b0c73def79f03004a064d9c2a09868e4ee12e3f9750021ec
+q202	1	"Donia Kontos"	"EXP"	"Eagle Materials Inc."	1607.961	"Stock EXP"
+q202	2	"Ilona Weicker"	"NRF.PRC"	"Northstar Realty Finance Corp."	956.87	"Stock NRF.PRC"
+q202	3	"Luomin Hallman"	"SPCHA"	"Sport Chalet"	427.291	"Stock SPCHA"
+q202	4	"Sarnath Bang"	"MAS"	"Masco Corporation"	154.103	"Stock MAS"
+q202	5	"Sriram Bozinovic"	"YDKN"	"Yadkin Financial Corporation"	755.873	"Stock YDKN"
 q203	0	rows=13 sha256=4464f265b85dfd674d434c3ec02415758b27751a7b199db18c3bc1fbdffd9514
 q203	1	2020	10241000	"Cinedigm"	"Q2"
 q203	2	2020	17324000000	"FedEx Corporation"	"Q2"
@@ -5615,3 +5640,320 @@ q236	33	2019	85626000	"Q1"	"Meridian Bioscience"
 q236	34	2019	8903000000	"Q1"	"Seagate Technology"
 q236	35	2019	910501000	"Q1"	"Nuance Communications"
 q236	36	2019	944175000	"Q1"	"Coherent, Inc."
+q237	0	rows=316 sha256=6a9a283f91554d565a5bbf64076ec2b8cbf9bf387c7e02be2f7d0d9551d83737
+q237	1	"1st Constitution Bancorp"	2	6035	1
+q237	2	"AMAG Pharmaceuticals"	2	2834	1
+q237	3	"ARIAD Pharmaceuticals"	2	2836	1
+q237	4	"Adept Technology"	2	3559	1
+q237	5	"Advanced Micro Devices"	2	3674	1
+q237	6	"Aerohive Networks, Inc."	2	7373	1
+q237	7	"Agilent Technologies Inc."	2	3825	1
+q237	8	"Air Methods"	2	4522	1
+q237	9	"Air Products and Chemicals, Inc."	2	2810	1
+q237	10	"Alere Inc."	2	2835	1
+q237	11	"AllianceBernstein Holding L.P."	2	6282	1
+q237	12	"Allstate Corporation"	2	6331	1
+q237	13	"Ambassadors Group"	2	8200	1
+q237	14	"Amber Road, Inc."	2	7372	1
+q237	15	"Ambit Biosciences"	2	2834	1
+q237	16	"American Express Company"	2	6199	1
+q237	17	"American International Group Inc"	2	6331	1
+q237	18	"American Public Education, Inc."	2	8200	1
+q237	19	"American Tower Corporation"	2	6798	1
+q237	20	"American Water Works Company, Inc."	2	4941	1
+q237	21	"Anworth Mortgage Asset Corporation"	2	6798	1
+q237	22	"Apollo Commercial Real Estate Finance, Inc."	2	6798	1
+q237	23	"Apple Inc."	2	3571	1
+q237	24	"Applied Micro Circuits Corporation"	2	3674	1
+q237	25	"Aqua America, Inc."	2	4941	1
+q237	26	"Arena Pharmaceuticals"	2	2834	1
+q237	27	"Armour Residential REIT, Inc."	2	6798	1
+q237	28	"Arris Group"	2	3663	1
+q237	29	"Atmel"	2	3674	1
+q237	30	"Aware, Inc."	2	7372	1
+q237	31	"BPZ Resources, Inc."	2	1311	1
+q237	32	"Bally Technologies, Inc."	2	7372	1
+q237	33	"Baltic Trading Limited"	2	4412	1
+q237	34	"Banc of California, Inc."	2	6021	1
+q237	35	"BancorpSouth Inc"	2	6022	1
+q237	36	"Beazer Homes USA, Inc."	2	1531	1
+q237	37	"Becton, Dickinson and Company"	2	3841	1
+q237	38	"BioCryst Pharmaceuticals"	2	2836	1
+q237	39	"BioMed Realty Trust, Inc."	2	6798	1
+q237	40	"Blucora"	2	7374	1
+q237	41	"Blue Nile Inc."	2	5944	1
+q237	42	"Blyth, Inc."	2	3990	1
+q237	43	"Bonanza Creek Energy, Inc."	2	1311	1
+q237	44	"Buckeye Partners Lp."	2	4610	1
+q237	45	"CBS Corporation"	2	4833	1
+q237	46	"CDI Corporation"	2	7363	1
+q237	47	"CF Industries Holdings, Inc."	2	2870	1
+q237	48	"CLARCOR Inc."	2	3714	1
+q237	49	"Cabela's Incorporated"	2	5940	1
+q237	50	"CafePress"	2	5900	1
+q237	51	"Cal Dive International, Inc."	2	1389	1
+q237	52	"California First National Bancorp"	2	6021	1
+q237	53	"Cameron International Corporation"	2	3533	1
+q237	54	"Canadian Pacific Railway Limited"	2	4011	1
+q237	55	"Cantel Medical Corporation"	2	3841	1
+q237	56	"Capital One Financial Corporation"	2	6021	1
+q237	57	"Carefusion Corporation"	2	3841	1
+q237	58	"Carmike Cinemas"	2	7830	1
+q237	59	"Carnival Corporation"	2	4400	1
+q237	60	"Cascade Microtech"	2	3825	1
+q237	61	"Casey's General Stores"	2	5500	1
+q237	62	"Cash America International, Inc."	2	5900	1
+q237	63	"Ceres, Inc."	2	100	1
+q237	64	"Checkpoint Systems Inc."	2	3669	1
+q237	65	"Chegg, Inc."	2	8200	1
+q237	66	"Christopher & Banks Corporation"	2	5621	1
+q237	67	"Cimarex Energy Co."	2	1311	1
+q237	68	"City National Corporation"	2	6021	1
+q237	69	"Clayton Williams Energy, Inc."	2	1311	1
+q237	70	"ClubCorp Holdings, Inc."	2	7997	1
+q237	71	"Coca-Cola Enterprises Inc."	2	2086	1
+q237	72	"Cognex Corporation"	2	3823	1
+q237	73	"Comcast Corporation"	2	4841	1
+q237	74	"Computer Sciences Corporation"	2	7373	1
+q237	75	"Con-way Inc."	2	4213	1
+q237	76	"Covance Inc."	2	8731	1
+q237	77	"Crown Media Holdings"	2	4841	1
+q237	78	"Cvent, Inc."	2	7372	1
+q237	79	"Cytec Industries Inc."	2	2890	1
+q237	80	"DCT Industrial Trust Inc."	2	6798	1
+q237	81	"DaVita Inc."	2	8090	1
+q237	82	"Dave & Buster's"	2	5812	1
+q237	83	"Deckers Outdoor Corporation"	2	3021	1
+q237	84	"Demandware, Inc."	2	7371	1
+q237	85	"Diamond Resorts International, Inc."	2	7011	1
+q237	86	"Domino's Pizza, Inc."	2	5140	1
+q237	87	"Drew Industries Incorporated"	2	3714	1
+q237	88	"Duke Realty Corporation"	2	6798	1
+q237	89	"El Paso Pipeline Partners, L.P."	2	4922	1
+q237	90	"Electro Rent"	2	7359	1
+q237	91	"Elizabeth Arden, Inc."	2	2844	1
+q237	92	"EnerSys"	2	5063	1
+q237	93	"Envision Healthcare Holdings, Inc."	2	8062	1
+q237	94	"Equifax Inc."	2	7320	1
+q237	95	"Erickson Inc."	2	3720	1
+q237	96	"Essent Group Ltd."	2	6351	1
+q237	97	"Essex Property Trust, Inc."	2	6798	1
+q237	98	"Exa Corporation"	2	7372	1
+q237	99	"Exelis Inc."	2	3669	1
+q237	100	"F5 Networks"	2	3576	1
+q237	101	"FEI Company"	2	3826	1
+q237	102	"FMC Technologies, Inc."	2	3533	1
+q237	103	"Fairchild Semiconductor"	2	3674	1
+q237	104	"FelCor Lodging Trust"	2	6798	1
+q237	105	"First Horizon National Corporation"	2	6021	1
+q237	106	"First Midwest Bancorp"	2	6021	1
+q237	107	"First Niagara Financial Group, Inc."	2	6021	1
+q237	108	"Fluidigm"	2	3826	1
+q237	109	"Forest City Enterprises, Inc."	2	6512	1
+q237	110	"Fortegra Financial Corporation"	2	6411	1
+q237	111	"Freescale Semiconductor, Ltd."	2	3674	1
+q237	112	"Fusion-io, Inc."	2	3572	1
+q237	113	"G&K Services"	2	7200	1
+q237	114	"GTx Incorporated"	2	3663	1
+q237	115	"GenVec"	2	2834	1
+q237	116	"General Electric Capital Company"	2	6141	1
+q237	117	"General Electric Company"	2	3600	1
+q237	118	"Glimcher Realty Trust"	2	6798	1
+q237	119	"GlobeImmune"	2	2834	1
+q237	120	"Gold Fields Limited"	2	1400	1
+q237	121	"Government Properties Income Trust"	2	6500	1
+q237	122	"Graco Inc."	2	3561	1
+q237	123	"Great Northern Iron Ore Properties"	2	6795	1
+q237	124	"HCC Insurance Holdings, Inc."	2	6331	1
+q237	125	"Hansen Medical"	2	3842	1
+q237	126	"Harris Corporation"	2	3812	1
+q237	127	"Health Net, Inc."	2	6324	1
+q237	128	"Heidrick & Struggles"	2	7361	1
+q237	129	"Hill-Rom Holdings, Inc."	2	3841	1
+q237	130	"HomeAway"	2	7374	1
+q237	131	"Hospira, Inc."	2	2834	1
+q237	132	"Hudson City Bancorp"	2	6036	1
+q237	133	"Hudson Pacific Properties, Inc."	2	6500	1
+q237	134	"Humana Inc."	2	6324	1
+q237	135	"Hutchinson Technology"	2	3679	1
+q237	136	"IPC Healthcare"	2	8090	1
+q237	137	"ITT Educational Services Inc."	2	8200	1
+q237	138	"Infinera"	2	3661	1
+q237	139	"Informatica"	2	7372	1
+q237	140	"Inland Real Estate Corporation"	2	6798	1
+q237	141	"Installed Building Products, Inc."	2	1520	1
+q237	142	"International Game Technology"	2	3990	1
+q237	143	"Intersil"	2	3674	1
+q237	144	"Isle of Capri Casinos"	2	7011	1
+q237	145	"Ixia"	2	3825	1
+q237	146	"Janus Capital Group Inc."	2	6282	1
+q237	147	"KCG Holdings, Inc."	2	6211	1
+q237	148	"KKR Financial Holdings LLC"	2	6199	1
+q237	149	"Kate Spade & Company"	2	2330	1
+q237	150	"KeyCorp"	2	6021	1
+q237	151	"Kinder Morgan Management, LLC"	2	4610	1
+q237	152	"Kite Pharma"	2	2836	1
+q237	153	"Krispy Kreme Doughnuts, Inc."	2	5400	1
+q237	154	"LIN Media LLC"	2	4833	1
+q237	155	"LRR Energy, L.P."	2	1311	1
+q237	156	"Landauer, Inc."	2	3829	1
+q237	157	"LeapFrog Enterprises Inc."	2	3944	1
+q237	158	"Life Time Fitness, Inc."	2	7997	1
+q237	159	"Linear Technology"	2	3674	1
+q237	160	"LivePerson"	2	7372	1
+q237	161	"LoJack"	2	3669	1
+q237	162	"Logitech"	2	3577	1
+q237	163	"Lorillard, Inc."	2	2111	1
+q237	164	"MAXIMUS, Inc."	2	7389	1
+q237	165	"MINDBODY"	2	7374	1
+q237	166	"MTS Systems Corporation"	2	3829	1
+q237	167	"Magnetek"	2	3679	1
+q237	168	"Marine Products Corporation"	2	3730	1
+q237	169	"Marvell Technology Group"	2	3674	1
+q237	170	"Masco Corporation"	2	2430	1
+q237	171	"Mavenir Systems, Inc."	2	3576	1
+q237	172	"McGraw Hill Financial, Inc."	2	7320	1
+q237	173	"McKesson Corporation"	2	5122	1
+q237	174	"Mead Johnson Nutrition Company"	2	2000	1
+q237	175	"MeadWestvaco Corporation"	2	2621	1
+q237	176	"Media General"	2	4833	1
+q237	177	"Midcoast Energy Partners, L.P."	2	4923	1
+q237	178	"Middleby Corporation"	2	3580	1
+q237	179	"Millennial Media, Inc."	2	7311	1
+q237	180	"Miller Energy Resources, Inc."	2	1311	1
+q237	181	"Molycorp, Inc."	2	1000	1
+q237	182	"Monster Worldwide, Inc."	2	7363	1
+q237	183	"Montpelier Re Holdings Ltd."	2	6331	1
+q237	184	"Murphy Oil Corporation"	2	2911	1
+q237	185	"NVR, Inc."	2	1531	1
+q237	186	"Natural Resource Partners LP"	2	1221	1
+q237	187	"NetSuite Inc."	2	7372	1
+q237	188	"New York & Company, Inc."	2	5621	1
+q237	189	"New York Community Bancorp, Inc."	2	6036	1
+q237	190	"New York REIT, Inc."	2	6798	1
+q237	191	"Nimble Storage, Inc."	2	3572	1
+q237	192	"Niska Gas Storage Partners LLC"	2	4922	1
+q237	193	"North Valley Bancorp"	2	6022	1
+q237	194	"Northern Trust"	2	6022	1
+q237	195	"Northstar Realty Finance Corp."	2	6798	1
+q237	196	"Nutanix"	2	7372	1
+q237	197	"Nuverra Environmental Solutions, Inc."	2	1389	1
+q237	198	"OM Group, Inc."	2	3990	1
+q237	199	"Oil States International, Inc"	2	3533	1
+q237	200	"Oiltanking Partners, L.P."	2	4610	1
+q237	201	"Omega Healthcare Investors, Inc"	2	6798	1
+q237	202	"OmniVision Technologies"	2	3674	1
+q237	203	"Omnicare Inc."	2	5912	1
+q237	204	"OneBeacon Insurance Group, LTD"	2	6331	1
+q237	205	"Oppenheimer Holdings Inc."	2	6211	1
+q237	206	"Orbitz Worldwide, Inc."	2	4700	1
+q237	207	"Otter Tail Corporation"	2	4911	1
+q237	208	"Owens & Minor Inc."	2	5047	1
+q237	209	"PAREXEL"	2	8731	1
+q237	210	"Panera Bread"	2	5812	1
+q237	211	"Patterson Companies"	2	5047	1
+q237	212	"Pep Boys Manny Moe & Jack"	2	5531	1
+q237	213	"Performance Sports Group Ltd."	2	3949	1
+q237	214	"PetMed Express"	2	5912	1
+q237	215	"Pharmacyclics"	2	2834	1
+q237	216	"Planar Systems"	2	3679	1
+q237	217	"Platinum Underwriters Holdings, Ltd."	2	6331	1
+q237	218	"Plum Creek Timber Company, Inc."	2	6798	1
+q237	219	"PolyOne Corporation"	2	2821	1
+q237	220	"Polypore International, Inc."	2	2890	1
+q237	221	"PowerSecure International, Inc."	2	7389	1
+q237	222	"Premier Exhibitions"	2	7900	1
+q237	223	"PrivateBancorp, Inc."	2	6022	1
+q237	224	"Protective Life Corporation"	2	6311	1
+q237	225	"Providence and Worcester Railroad"	2	4011	1
+q237	226	"Prudential Financial, Inc."	2	6311	1
+q237	227	"Pulse Electronics Corporation"	2	3679	1
+q237	228	"QAD Inc"	2	7372	1
+q237	229	"QLogic"	2	3576	1
+q237	230	"Quanta Services Inc."	2	1731	1
+q237	231	"Quiksilver, Inc."	2	2320	1
+q237	232	"RCS Capital Corporation"	2	6211	1
+q237	233	"RE/MAX Holdings, Inc."	2	6531	1
+q237	234	"RLI Corp"	2	6331	1
+q237	235	"RPC Inc."	2	1389	1
+q237	236	"Rally Software Development Corp."	2	7372	1
+q237	237	"RealD Inc."	2	3663	1
+q237	238	"Red Lion Hotels Corporation"	2	7011	1
+q237	239	"Redwood Trust Inc"	2	6798	1
+q237	240	"Rentech Nitrogen Partners, L.P."	2	2870	1
+q237	241	"Rentrak"	2	7389	1
+q237	242	"RetailMeNot"	2	7310	1
+q237	243	"Reynolds American, Inc."	2	2111	1
+q237	244	"Rightside Group"	2	7389	1
+q237	245	"Riverbed Technology"	2	3576	1
+q237	246	"Rock Tenn Co."	2	2650	1
+q237	247	"Rocket Fuel Inc."	2	7370	1
+q237	248	"Rollins Inc."	2	7340	1
+q237	249	"Rose Rock Midstream, L.P."	2	4610	1
+q237	250	"Ruckus Wireless, Inc."	2	3577	1
+q237	251	"STAG Industrial, Inc."	2	6798	1
+q237	252	"Safeway Inc."	2	5411	1
+q237	253	"Salix Pharmaceuticals"	2	2834	1
+q237	254	"SanDisk"	2	3572	1
+q237	255	"Sapient Corporation"	2	7373	1
+q237	256	"Select Income REIT"	2	6798	1
+q237	257	"Senior Housing Properties Trust"	2	6798	1
+q237	258	"ShoreTel"	2	3661	1
+q237	259	"Silver Bay Realty Trust Corp."	2	6798	1
+q237	260	"Simpson Manufacturing Co., Inc."	2	3420	1
+q237	261	"Sirona Dental Systems"	2	3843	1
+q237	262	"Skullcandy"	2	3651	1
+q237	263	"SolarCity"	2	1700	1
+q237	264	"Southcross Energy Partners, L.P."	2	4922	1
+q237	265	"Southwest Gas Corporation"	2	4923	1
+q237	266	"Spectra Energy Corp"	2	4923	1
+q237	267	"Spectrum Pharmaceuticals"	2	2834	1
+q237	268	"Sport Chalet"	2	5940	1
+q237	269	"Stamps.com"	2	7389	1
+q237	270	"Staples Inc."	2	5940	1
+q237	271	"Stone Energy Corporation"	2	1311	1
+q237	272	"SunCoke Energy, Inc."	2	3312	1
+q237	273	"Superior Energy Services, Inc."	2	1389	1
+q237	274	"Supervalu Inc."	2	5411	1
+q237	275	"Swisher Hygiene"	2	2840	1
+q237	276	"Symetra Financial Corporation"	2	6311	1
+q237	277	"Symmetry Medical Inc."	2	3842	1
+q237	278	"TAL International Group"	2	7359	1
+q237	279	"TCF Financial Corporation"	2	6021	1
+q237	280	"TD Ameritrade Holding Corporation"	2	6211	1
+q237	281	"TECO Energy, Inc."	2	4911	1
+q237	282	"Taminco Corporation"	2	2860	1
+q237	283	"Tecumseh Products"	2	3585	1
+q237	284	"Tesoro Corporation"	2	2911	1
+q237	285	"Tetra Tech"	2	8711	1
+q237	286	"Textura Corporation"	2	7372	1
+q237	287	"The Bank of New York Mellon Corporation"	2	6022	1
+q237	288	"The First Marblehead Corporation"	2	6141	1
+q237	289	"The PNC Financial Services Group, Inc."	2	6021	1
+q237	290	"The Pantry"	2	5500	1
+q237	291	"Thompson Creek Metals Company Inc."	2	1000	1
+q237	292	"Time Warner Cable Inc."	2	4841	1
+q237	293	"Towers Watson & Co."	2	8742	1
+q237	294	"Trevena Inc"	2	2834	1
+q237	295	"Trinet Group, Inc."	2	7389	1
+q237	296	"TubeMogul"	2	7372	1
+q237	297	"UNS Energy Corporation"	2	4911	1
+q237	298	"Unisys Corporation"	2	7373	1
+q237	299	"Universal American Corporation"	2	6324	1
+q237	300	"VAALCO Energy, Inc."	2	1311	1
+q237	301	"VF Corp"	2	2320	1
+q237	302	"Valley National Bancorp"	2	6021	1
+q237	303	"Value Line"	2	6282	1
+q237	304	"Verizon Communications Inc."	2	4813	1
+q237	305	"Vision Sciences Inc."	2	3845	1
+q237	306	"Vitesse Semiconductor"	2	3674	1
+q237	307	"WGL Holdings, Inc."	2	4924	1
+q237	308	"Western Digital"	2	3572	1
+q237	309	"Western Refining, Inc."	2	2911	1
+q237	310	"White Mountains Insurance Group, Ltd."	2	6331	1
+q237	311	"Willbros Group, Inc."	2	1389	1
+q237	312	"Williams Partners L.P."	2	4922	1
+q237	313	"Wynn Resorts"	2	7011	1
+q237	314	"XPO Logistics, Inc."	2	4700	1
+q237	315	"Xoom Corporation"	2	6099	1
+q237	316	"Zep Inc."	2	2842	1

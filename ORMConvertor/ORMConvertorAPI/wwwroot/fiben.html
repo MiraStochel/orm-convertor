@@ -244,9 +244,12 @@
         and NHibernate, 156 in Hibernate, EclipseLink and MyBatis. The judge was made from the
         rows the catalog's own text returned in it, which are the rows of the first run, of
         2026-10-18. The record with every number, the first run's too, is in the README of the
-        solution; this is what it says. The numbers are that version's: the tool has changed
-        since &mdash; it translates the eight queries the run refused and returns every average
-        as SQL does &mdash;, and the next documented run replaces them.
+        solution; this is what it says. The numbers are that version's. On 2026-10-22 the .NET
+        suite ran again over the version that translates the eight queries this run refused and
+        returns every average as SQL does: Dapper, EF Core and NHibernate reached all 237
+        queries, every cell agreed with the source, and EF Core wrote 61 of them in native SQL,
+        NHibernate 23. The Java half of that run was stopped and is not recorded, so the table
+        stays the last run of both suites.
       </p>
 
       <div class="table-scroll">
@@ -272,9 +275,9 @@
           only: an aggregate over a window inside a derived table (queries 99 and 237) and a
           subquery inside the <code>ON</code> condition of an inner join (124&ndash;126,
           200&ndash;202). Everything else &mdash; 229 queries, 124 of them nested &mdash; the
-          tool translated into all five targets. The eight translate now, but the judge was made
-          before they did and holds no rows for them, so until a documented run takes them in, a
-          run says so: their verdict is empty, not negative.
+          tool translated into all five targets. The eight translate now, and the judge took
+          their rows from the .NET run of 2026-10-22, where EF Core and NHibernate agreed with
+          the source on them.
         </li>
         <li>
           <strong>Where a target left its language.</strong> EF Core wrote 59 queries in
@@ -305,8 +308,8 @@
           a sum with a correlated subquery (207, 211, 213, 215, 216, 225) took 7.7&ndash;35&nbsp;s
           in EF Core against 0.1&nbsp;s from the text, because SQL Server does not unnest a
           subquery that ends in <code>TOP(1)</code>. The value of the one group is now taken
-          by <code>Max()</code>, whose subquery it does unnest: 0.11&ndash;0.13&nbsp;s for the
-          six in a check outside the measurement environment, with the same rows.
+          by <code>Max()</code>, whose subquery it does unnest: in the .NET run of 2026-10-22
+          the six ran 63&ndash;122&nbsp;ms in EF Core, as the text does.
         </li>
         <li>
           <strong>Three things the Java frameworks taught the tool.</strong> Hibernate reads
