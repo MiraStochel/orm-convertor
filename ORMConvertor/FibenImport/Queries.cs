@@ -94,17 +94,10 @@ public static class Queries
     /// </summary>
     private static readonly IReadOnlyDictionary<int, (string Translation, string Note)> Statuses = new Dictionary<int, (string, string)>
     {
-        [99] = ("NotTranslated", "An aggregate over a window (MAX, MIN and DENSE_RANK OVER a partition) inside derived tables is outside the vocabulary of expressions (decision 113), and a column of an intermediate result cannot be dropped; the tool refuses the query in every target."),
-        [237] = ("NotTranslated", "An aggregate over a window (AVG OVER a partition) inside a derived table is outside the vocabulary of expressions (decision 113), and a column of an intermediate result cannot be dropped; the tool refuses the query in every target."),
-        [124] = ("NotTranslated", OnSubquery),
-        [125] = ("NotTranslated", OnSubquery),
-        [126] = ("NotTranslated", OnSubquery),
-        [200] = ("NotTranslated", OnSubquery),
-        [201] = ("NotTranslated", OnSubquery),
-        [202] = ("NotTranslated", OnSubquery),
+        // Every query is translated as specified: the aggregates over a window of q99 and q237
+        // entered the vocabulary with decision 161, the subqueries in the ON condition of an
+        // inner join of q124-126 and q200-202 with decision 162.
     };
-
-    private const string OnSubquery = "The LEFT JOIN compares a column with a scalar subquery in its ON condition; the join condition of the query representation carries no subquery, so the tool refuses the query in every target.";
 
     private static readonly Regex SchemaQualified = new(@"FIBEN\.""(\w+)""", RegexOptions.Compiled);
     private static readonly Regex Quoted = new(@"""(\w+)""", RegexOptions.Compiled);

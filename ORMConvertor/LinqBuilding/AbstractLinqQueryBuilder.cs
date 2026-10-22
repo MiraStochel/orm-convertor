@@ -1158,7 +1158,17 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         return InNestedFrame(op, () =>
         {
             var chain = Chain(Compose(clauses));
-            return scalar ? chain + TerminalAggregate(clauses.Projections[0]) : chain;
+            if (!scalar)
+            {
+                return chain;
+            }
+
+            // SQL's average is the provider's cast back where it averages a whole number in
+            // floating point, nullable because the subquery may select nothing (decision 161).
+            var terminated = chain + TerminalAggregate(clauses.Projections[0]);
+            return SqlAverage.IsAverage(clauses.Projections[0].Operand)
+                ? visitor.AverageOverValues(clauses.Projections[0].Operand.Bare(), terminated, mayBeNull: true)
+                : terminated;
         });
     }
 

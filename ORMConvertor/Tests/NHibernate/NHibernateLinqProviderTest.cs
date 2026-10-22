@@ -10,7 +10,8 @@ namespace Tests.NHibernate;
 /// where an ordering under DISTINCT may stand, how a COUNT over a column that may hold NULL
 /// is spelled, which aggregates it takes over distinct values, that its Sum is the bare sum
 /// (decision 155), that it compensates == and != for NULL but writes a negation as SQL's NOT
-/// and Contains over a subquery as IN (decision 156). A fact the provider stops
+/// and Contains over a subquery as IN (decision 156), that its Average over a whole number is
+/// the average in floating point and cast into int SQL's AVG again (decision 161). A fact the provider stops
 /// holding on an upgrade shows up here, beside the hook that assumes it.
 /// </summary>
 public class NHibernateLinqProviderTest
@@ -69,6 +70,9 @@ public class NHibernateLinqProviderTest
         { "filtered joined sequence", "session.Query<Customer>().Join(session.Query<Order>().Where(o => o.Total > 5m), c => c.CustomerId, o => o.CustomerId, (c, o) => new { c, o }).Select(t => new { t.c.CustomerName })", "inner join (select" },
         { "correlated SelectMany", "session.Query<Customer>().SelectMany(c => session.Query<Order>().Where(o => o.CustomerId == c.CustomerId && o.Total > c.CreditLimit), (c, o) => new { c, o }).Select(t => new { t.c.CustomerName })", "cross join Sales.Orders" },
         { "correlated SelectMany with DefaultIfEmpty", "session.Query<Customer>().SelectMany(c => session.Query<Order>().Where(o => o.CustomerId == c.CustomerId && o.Total > c.CreditLimit).DefaultIfEmpty(), (c, o) => new { c, o }).Select(t => new { t.c.CustomerName })", "left outer join Sales.Orders" },
+        // A subquery in the condition of a join, as the correlated SelectMany carries it (decision 162).
+        { "correlated SelectMany with a subquery in its predicate", "session.Query<Customer>().SelectMany(c => session.Query<Order>().Where(o => o.CustomerId == c.CustomerId && session.Query<Order>().Where(i => i.Rating > 3).Select(i => i.CustomerId).Contains(c.CustomerId)), (c, o) => new { c, o }).Select(t => new { t.c.CustomerName })", "in (select" },
+        { "correlated SelectMany with DefaultIfEmpty and Any in its predicate", "session.Query<Customer>().SelectMany(c => session.Query<Order>().Where(o => o.CustomerId == c.CustomerId && session.Query<Order>().Where(i => i.CustomerId == c.CustomerId && i.Rating > 3).Any()).DefaultIfEmpty(), (c, o) => new { c, o }).Select(t => new { t.c.CustomerName })", "exists (select" },
         { "ordering before Distinct", "session.Query<Customer>().OrderBy(c => c.CustomerName).Select(c => new { c.CustomerName }).Distinct()", "select distinct customer0_.CustomerName as col_0_0_ from Sales.Customers customer0_ order by customer0_.CustomerName asc" },
         { "ordering before Distinct with a slice", "session.Query<Customer>().OrderBy(c => c.CustomerName).Select(c => new { c.CustomerName }).Distinct().Skip(1).Take(2)", "order by customer0_.CustomerName asc OFFSET" },
         { "ordering by an alias after the projection", "session.Query<Order>().GroupBy(o => o.CustomerId).Select(g => new { Id = g.Key, Count = g.Count() }).OrderByDescending(p => p.Count)", "order by (count(*)) desc" },
@@ -93,6 +97,16 @@ public class NHibernateLinqProviderTest
         { "modulo", "session.Query<Order>().Where(o => o.OrderId % 2 == 0)", "% (?)" },
         { "a nullable member through Value", "session.Query<Customer>().Where(c => c.Score.Value > 3)", "customer0_.Score>?" },
         { "an anonymous grouping key", InnerJoin + ".GroupBy(t => new { t.c.CustomerName, t.o.Rating }).Select(g => new { g.Key.CustomerName, g.Key.Rating, Count = g.Count() })", "group by customer0_.CustomerName , order1_.Rating" },
+
+        // Average over a whole number is the average in floating point, which does not cut the
+        // quotient off as SQL's AVG does; cast into int it is cut off again; over a decimal it
+        // is a decimal (decision 161).
+        { "Average over a whole number in floating point", "session.Query<Order>().GroupBy(o => o.CustomerId).Select(g => new { g.Key, A = g.Average(e => e.OrderId) })", "cast(avg(cast(order0_.OrderId as FLOAT(53))) as FLOAT(53)) as col_1_0_" },
+        { "Average over a nullable whole number in floating point", "session.Query<Order>().GroupBy(o => o.CustomerId).Select(g => new { g.Key, A = g.Average(e => e.Rating) })", "cast(avg(cast(order0_.Rating as FLOAT(53))) as FLOAT(53)) as col_1_0_" },
+        { "Average cast into int as SQL's AVG", "session.Query<Order>().GroupBy(o => o.CustomerId).Select(g => new { g.Key, A = (int)g.Average(e => e.OrderId) })", "cast(cast(avg(cast(order0_.OrderId as FLOAT(53))) as FLOAT(53)) as INT) as col_1_0_" },
+        { "Average cast into a nullable int as SQL's AVG", "session.Query<Order>().GroupBy(o => o.CustomerId).Select(g => new { g.Key, A = (int?)g.Average(e => e.Rating) })", "cast(cast(avg(cast(order0_.Rating as FLOAT(53))) as FLOAT(53)) as INT) as col_1_0_" },
+        { "Average over a decimal as a decimal", "session.Query<Order>().GroupBy(o => o.CustomerId).Select(g => new { g.Key, A = g.Average(e => e.Total) })", "cast(avg(order0_.Total) as DECIMAL(29, 10)) as col_1_0_" },
+        { "Average in a subquery cast into int as SQL's AVG", "session.Query<Customer>().Where(c => c.Score > (int?)session.Query<Order>().Where(o => o.CustomerId == c.CustomerId).Average(o => o.OrderId))", "as INT)" },
     };
 
     [Theory]

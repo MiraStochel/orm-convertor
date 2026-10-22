@@ -373,6 +373,10 @@ public class QueryShapeMatrixTest
     [InlineData("BestRowPerGroup")]
     [InlineData("ListAggregation")]
     [InlineData("JoinBeyondEqualities")]
+    [InlineData("SubqueryInAJoinCondition")]
+    [InlineData("WindowAggregate")]
+    [InlineData("AverageInAProjection")]
+    [InlineData("AverageInFloatingPoint")]
     [InlineData("NestedInUnderADisjunctionAsTheRightSideOfIn")]
     public void EverySourceLanguageReadsTheCategoryIntoTheSameSql(string name)
     {

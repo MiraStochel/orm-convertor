@@ -288,6 +288,44 @@ public sealed class JpqlQueryVisitor(
     }
 
     private string Operand(QueryOperand operand)
+        => SqlAverage.IsAverage(operand) ? Average(Written(operand), operand.Bare()) : Written(operand);
+
+    /// <summary>
+    /// SQL's average in JPQL (decision 161): the implementation's own average converted into the
+    /// scalar SQL answers in - its avg hands every average over as a Double, and Hibernate's
+    /// averages a whole number in floating point besides -, in the type names the profile says
+    /// the implementation converts into. Over a floating-point number it is the average itself;
+    /// where the argument has no scalar, no conversion can be chosen and the query goes out in
+    /// native SQL.
+    /// </summary>
+    private string Average(string average, QueryOperand argument)
+    {
+        var restoration = SqlAverage.RestorationOf(LeafScalar(argument));
+        if (restoration == AverageRestoration.None)
+        {
+            return average;
+        }
+
+        if (restoration == AverageRestoration.Unknown || profile?.AverageCasts is not { } casts)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"JPQL hands the average '{average}' over as a Double, and the scalar of '{argument}' that SQL's AVG answers in does not follow from the mapping, so no conversion restores it",
+                QueryFeature.Aggregation);
+            return average;
+        }
+
+        var type = restoration switch
+        {
+            AverageRestoration.IntoInt => casts.Int,
+            AverageRestoration.IntoLong => casts.Long,
+            _ => string.Format(System.Globalization.CultureInfo.InvariantCulture, casts.Decimal, SqlAverage.DecimalPrecision, SqlAverage.DecimalScale(LeafScale(argument))),
+        };
+
+        return $"cast({average} as {type})";
+    }
+
+    private string Written(QueryOperand operand)
     {
         if (operand.IsValueList)
         {
@@ -412,7 +450,20 @@ public sealed class JpqlQueryVisitor(
         {
             var partitions = expression.Partitions!.Count == 0
                 ? string.Empty
-                : $"partition by {string.Join(", ", expression.Partitions.Select(Operand))} ";
+                : $"partition by {string.Join(", ", expression.Partitions.Select(Operand))}";
+            var ordering = expression.Ordering!.Count == 0 ? string.Empty : $"order by {Ordered(expression.Ordering)}";
+            var window = string.Join(" ", new[] { partitions, ordering }.Where(c => c.Length > 0));
+
+            // An aggregate over the window, which HQL 7.4 writes as SQL does (decision 161,
+            // verified against 7.4.5 over SQL Server) - an average converted into SQL's scalar,
+            // as without a window -, or a ranking function (decision 113).
+            if (expression.IsWindowAggregate)
+            {
+                var argument = expression.Argument!.Property == "*" ? "*" : Operand(expression.Argument);
+                var aggregate = $"{expression.WindowAggregate!.ToLowerInvariant()}({argument}) over ({window})";
+                return SqlAverage.IsAverage(expression) ? Average(aggregate, expression.Argument) : aggregate;
+            }
+
             var function = expression.Ranking switch
             {
                 RankingFunction.RowNumber => "row_number",
@@ -421,7 +472,7 @@ public sealed class JpqlQueryVisitor(
                 _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Ranking, null),
             };
 
-            return $"{function}() over ({partitions}order by {Ordered(expression.Ordering!)})";
+            return $"{function}() over ({window})";
         }
 
         if (expression.IsListAggregate)
@@ -542,6 +593,12 @@ public sealed class JpqlQueryVisitor(
 
         return null;
     }
+
+    /// <summary>The scale of a column as the mapping behind its alias states it; null for anything else.</summary>
+    private int? LeafScale(QueryOperand operand)
+        => operand is { IsColumn: true, IsAggregate: false, Table: { } alias } && entities.TryGetValue(alias, out var map)
+            ? ColumnMember.TypedBy(map, operand.Property!)?.Scale
+            : null;
 
     /// <summary>The keys of a window or of a list aggregate, each with its direction (decision 113).</summary>
     private string Ordered(IReadOnlyList<OrderingKey> ordering)

@@ -1,0 +1,7 @@
+with Averaged as (
+    select ol.ProductId as ProductId, ol.LineNumber as LineNumber, ol.UnitPrice as UnitPrice,
+           cast(avg(ol.UnitPrice) over (partition by ol.ProductId) as BigDecimal(38,6)) as AveragePrice
+    from ShopOrderLine ol)
+select a.ProductId as ProductId, a.LineNumber as LineNumber, a.UnitPrice as UnitPrice, a.AveragePrice as AveragePrice
+from Averaged a
+where a.UnitPrice > a.AveragePrice

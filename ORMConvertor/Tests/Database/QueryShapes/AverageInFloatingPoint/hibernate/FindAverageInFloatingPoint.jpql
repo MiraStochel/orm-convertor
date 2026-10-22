@@ -1,0 +1,3 @@
+select ol.ProductId as ProductId, avg(ol.Quantity) as AverageQuantity
+from ShopOrderLine ol
+group by ol.ProductId

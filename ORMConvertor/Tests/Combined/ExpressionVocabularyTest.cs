@@ -587,30 +587,104 @@ public class ExpressionVocabularyTest
         Refused(Sql(ORMEnum.Dapper, "SELECT MAX(ROW_NUMBER() OVER (ORDER BY s.SoldAt)) AS Last FROM Sales AS s"), QueryFeature.WindowFunction);
     }
 
-    /// <summary>An aggregate over a window and a frame of rows compute something the vocabulary does not carry: refused by name.</summary>
+    // ---- aggregates over a window (decision 161) ----------------------------------------
+
+    private const string Windowed =
+        "SELECT s.SaleId AS SaleId, AVG(s.Total) OVER (PARTITION BY s.CustomerId) AS Average, SUM(s.Quantity) OVER (PARTITION BY s.CustomerId ORDER BY s.SoldAt ASC) AS Running, COUNT(*) OVER () AS Sales, MIN(s.Total) OVER (ORDER BY s.SoldAt DESC) AS Lowest FROM Sales AS s";
+
+    /// <summary>T-SQL reads and writes the five aggregates over a window, the ordering optional, COUNT over the whole row included.</summary>
     [Fact]
-    public void AnAggregateOverAWindowIsNotRead()
+    public void TheWindowAggregatesRoundTripInTSql()
     {
-        var read = Sql(ORMEnum.Dapper, "SELECT s.SaleId AS SaleId, SUM(s.Total) OVER (PARTITION BY s.CustomerId) AS Running FROM Sales AS s");
-        Assert.NotEmpty(read.Build());
-        Assert.Contains(read.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.WindowFunction);
+        Assert.Equal(Windowed, Text(Sql(ORMEnum.Dapper, Windowed)));
+
     }
 
     /// <summary>
-    /// The same column inside a derived table or a definition is a column the query around it
-    /// reads by name: dropped, it would leave an artifact that names a column no intermediate
-    /// result has, so there the loss is a refusal (decision 070; found over the FIBEN catalog,
-    /// decision 149).
+    /// HQL 7.4 writes them as SQL does (verified against 7.4.5 over SQL Server) - the average
+    /// converted into the decimal SQL answers in, as without a window (decision 161) -, and what
+    /// it writes reads back.
     /// </summary>
     [Fact]
-    public void AnAggregateOverAWindowInsideAnIntermediateResultIsRefused()
+    public void HibernateWritesTheWindowAggregates()
     {
+        const string hql = "select s.SaleId as SaleId, cast(avg(s.Total) over (partition by s.CustomerId) as BigDecimal(38,6)) as Average, sum(s.Quantity) over (partition by s.CustomerId order by s.SoldAt asc) as Running, count(*) over () as Sales, min(s.Total) over (order by s.SoldAt desc) as Lowest from Sale s";
+
+        Assert.Equal(hql, Text(Sql(ORMEnum.Hibernate, Windowed)));
+        Assert.Equal(Windowed, Text(Jpql(ORMEnum.Dapper, hql)));
+    }
+
+    /// <summary>LINQ, HQL 5.7 and JPQL have no window, so the three targets write the query in native SQL, as for a ranking function.</summary>
+    [Theory]
+    [InlineData(ORMEnum.EFCore)]
+    [InlineData(ORMEnum.NHibernate)]
+    [InlineData(ORMEnum.EclipseLink)]
+    public void ATargetWithoutAWindowFallsBackOnAWindowAggregate(ORMEnum target)
+    {
+        Assert.Equal(Windowed, FellBack(Sql(target, Windowed), QueryFeature.WindowFunction));
+    }
+
+    /// <summary>
+    /// The average of a partition beside every row, in an intermediate result, with the filter
+    /// over it outside - the shape of FIBEN q237 -, in T-SQL and HQL 7.4, and in native SQL
+    /// elsewhere; the column of the definition is typed from the aggregate's argument.
+    /// </summary>
+    [Fact]
+    public void AWindowAggregateInsideAnIntermediateResultIsReadByTheQueryAroundIt()
+    {
+        const string sql = """
+            WITH Averaged AS (
+                SELECT s.SaleId AS SaleId, s.Total AS Total, AVG(s.Total) OVER (PARTITION BY s.CustomerId) AS Average
+                FROM Sales AS s)
+            SELECT a.SaleId AS SaleId, a.Total AS Total, a.Average AS Average FROM Averaged AS a WHERE a.Total > a.Average
+            """;
+
+        Assert.Contains("AVG(s.Total) OVER (PARTITION BY s.CustomerId) AS Average", Text(Sql(ORMEnum.Dapper, sql)), StringComparison.Ordinal);
+        Assert.Contains("cast(avg(s.Total) over (partition by s.CustomerId) as BigDecimal(38,6)) as Average", Text(Sql(ORMEnum.Hibernate, sql)), StringComparison.Ordinal);
+        Assert.Contains("WHERE a.Total > a.Average", FellBack(Sql(ORMEnum.EFCore, sql), QueryFeature.WindowFunction), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// What a window aggregate does not carry, refused by name: a frame of rows, which would
+    /// make the aggregate another value; DISTINCT inside the window, which SQL Server does not
+    /// compute; an aggregate over an aggregate, which no target writes; and a function that is
+    /// neither a ranking nor an aggregate. In a projection the refusal is a loss, inside an
+    /// intermediate result a failure, because the query around it reads the column by name.
+    /// </summary>
+    [Theory]
+    [InlineData("SUM(s.Total) OVER (PARTITION BY s.CustomerId ORDER BY s.SoldAt ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)")]
+
+    [InlineData("LAG(s.Total) OVER (ORDER BY s.SoldAt)")]
+    public void AWindowOutsideTheVocabularyIsNotRead(string window)
+    {
+        var read = Sql(ORMEnum.Dapper, $"SELECT s.SaleId AS SaleId, {window} AS W FROM Sales AS s");
+        Assert.NotEmpty(read.Build());
+        Assert.Contains(read.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.WindowFunction);
+
         Refused(
-            Sql(ORMEnum.Dapper, "SELECT d.Running AS Running FROM (SELECT s.SaleId AS SaleId, SUM(s.Total) OVER (PARTITION BY s.CustomerId) AS Running FROM Sales AS s) AS d"),
+            Sql(ORMEnum.Dapper, $"SELECT d.W AS W FROM (SELECT s.SaleId AS SaleId, {window} AS W FROM Sales AS s) AS d"),
             QueryFeature.WindowFunction);
-        Refused(
-            Sql(ORMEnum.Dapper, "WITH Running AS (SELECT s.SaleId AS SaleId, AVG(s.Total) OVER (PARTITION BY s.CustomerId) AS Average FROM Sales AS s) SELECT r.Average AS Average FROM Running AS r"),
-            QueryFeature.WindowFunction);
+    }
+
+    /// <summary>DISTINCT inside a window aggregate SQL Server does not compute; T-SQL's grammar refuses it before the reader, HQL's reader by name.</summary>
+    [Fact]
+    public void DistinctInsideAWindowAggregateIsNotRead()
+    {
+        var read = Jpql(ORMEnum.Dapper, "select s.SaleId as SaleId, count(distinct s.Code) over (partition by s.CustomerId) as Codes from Sale s");
+        read.Build();
+        Assert.True(
+            read.Records.Any(r => r.Feature == QueryFeature.WindowFunction && r.Reason.Contains("distinct values inside a window", StringComparison.Ordinal)),
+            string.Join("\n", read.Records.Select(r => $"[{r.Kind}/{r.Feature}] {r.Reason}")));
+    }
+
+    /// <summary>An aggregate over an aggregate inside a window is the refusal of decision 107, in its words.</summary>
+    [Fact]
+    public void AnAggregateUnderAWindowAggregateIsRefused()
+    {
+        var record = Refused(
+            Sql(ORMEnum.Dapper, "SELECT s.CustomerId AS CustomerId, AVG(COUNT(*)) OVER () AS Average FROM Sales AS s GROUP BY s.CustomerId"),
+            QueryFeature.Expression);
+        Assert.Contains("aggregate over an aggregate", record.Reason, StringComparison.Ordinal);
     }
 
     /// <summary>

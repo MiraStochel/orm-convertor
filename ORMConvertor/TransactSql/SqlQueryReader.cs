@@ -1319,8 +1319,8 @@ public class SqlQueryReader(
     /// is a COALESCE of two, <c>CONCAT</c> of several arguments is nested, <c>GETDATE()</c>
     /// and <c>CURRENT_TIMESTAMP</c> are the same moment, and since decision 113
     /// <c>DATEADD</c>, <c>DATEDIFF</c>, <c>ROUND</c>, <c>SQRT</c>, <c>STRING_AGG</c> and the
-    /// three ranking functions over a window; anything else - <c>REPLACE</c>,
-    /// <c>SYSDATETIME()</c>, an aggregate over a window - is outside the vocabulary and named.
+    /// three ranking functions and the five aggregates over a window; anything else -
+    /// <c>REPLACE</c>, <c>SYSDATETIME()</c>, a window with a frame - is outside the vocabulary and named.
     /// </summary>
     private QueryOperand? ReadFunctionCall(FunctionCall call)
     {
@@ -1368,11 +1368,14 @@ public class SqlQueryReader(
     }
 
     /// <summary>
-    /// A ranking function over a window (decision 113): <c>ROW_NUMBER</c>, <c>RANK</c> or
-    /// <c>DENSE_RANK</c>, without an argument, with the partitions and the ordering of its
-    /// OVER clause. An aggregate over a window and a frame of rows compute something the
-    /// vocabulary has no place for - carried as a plain aggregate it would hold another value -
-    /// and are refused by name; where the window stands is the builder template's to judge.
+    /// A function over a window: a ranking function (decision 113) - <c>ROW_NUMBER</c>,
+    /// <c>RANK</c> or <c>DENSE_RANK</c>, without an argument, with the partitions and the
+    /// ordering of its OVER clause - or one of the five aggregates over one argument (decision
+    /// 161), whose ordering is optional. A frame of rows, DISTINCT inside a window aggregate
+    /// and any other function compute something the vocabulary has no place for - carried
+    /// otherwise they would hold another value - and are refused by name; an aggregate over
+    /// an aggregate is refused as the plain aggregate refuses it; where the window stands is
+    /// the builder template's to judge.
     /// </summary>
     private QueryOperand? ReadWindow(FunctionCall call, string name)
     {
@@ -1383,12 +1386,72 @@ public class SqlQueryReader(
             "DENSE_RANK" => RankingFunction.DenseRank,
             _ => null,
         };
+        var aggregate = ModelExpression.WindowAggregates.Contains(name) ? name : null;
 
         var over = call.OverClause;
-        if (ranking is null || call.Parameters.Count > 0 || over.WindowFrameClause is not null || over.OrderByClause is null)
+        if (over.WindowFrameClause is not null)
         {
-            unread ??= ($"the windowed function '{Print(call)}' - an aggregate over a window, a frame of rows, or a ranking without an ordering - which the vocabulary of expressions does not carry", QueryFeature.WindowFunction);
+            unread ??= ($"the windowed function '{Print(call)}' with a frame of rows, which the vocabulary of expressions does not carry", QueryFeature.WindowFunction);
             return null;
+        }
+
+        if (ranking is null && aggregate is null)
+        {
+            unread ??= ($"the windowed function '{Print(call)}', which is neither a ranking function nor an aggregate the vocabulary of expressions carries over a window", QueryFeature.WindowFunction);
+            return null;
+        }
+
+        QueryOperand? argument = null;
+        if (ranking is not null)
+        {
+            if (call.Parameters.Count > 0 || over.OrderByClause is null)
+            {
+                unread ??= ($"the windowed function '{Print(call)}' - a ranking with an argument, or without an ordering - which the vocabulary of expressions does not carry", QueryFeature.WindowFunction);
+                return null;
+            }
+        }
+        else
+        {
+            if (call.UniqueRowFilter == UniqueRowFilter.Distinct)
+            {
+                unread ??= ($"'{Print(call)}', an aggregate over distinct values inside a window, which SQL Server does not compute", QueryFeature.WindowFunction);
+                return null;
+            }
+
+            var parameter = call.Parameters.FirstOrDefault();
+            if (parameter is ColumnReferenceExpression { ColumnType: ColumnType.Wildcard })
+            {
+                if (aggregate != "COUNT")
+                {
+                    unread ??= ($"'{Print(call)}', an aggregate over the whole row that is not COUNT", QueryFeature.Aggregation);
+                    return null;
+                }
+
+                argument = QueryOperand.Column(sourceAlias, "*");
+            }
+            else
+            {
+                if (parameter is null || call.Parameters.Count != 1)
+                {
+                    unread ??= ($"'{Print(call)}', an aggregate without exactly one argument", QueryFeature.Aggregation);
+                    return null;
+                }
+
+                argument = ReadOperand(parameter);
+                if (argument is null || !IsLeaf(argument, parameter))
+                {
+                    return null;
+                }
+
+                if (argument.IsAggregate)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"The aggregate {aggregate} stands over '{argument}', which is an aggregate itself, and no target writes an aggregate over an aggregate; no artifact was generated.",
+                        QueryFeature.Expression);
+                    return argument;
+                }
+            }
         }
 
         var partitions = new List<QueryOperand>(over.Partitions.Count);
@@ -1402,9 +1465,15 @@ public class SqlQueryReader(
             partitions.Add(partition);
         }
 
-        return ReadOrdering(over.OrderByClause.OrderByElements) is { } ordering
-            ? QueryOperand.Computed(ModelExpression.Window(ranking.Value, partitions, ordering))
-            : null;
+        var ordering = over.OrderByClause is null ? [] : ReadOrdering(over.OrderByClause.OrderByElements);
+        if (ordering is null)
+        {
+            return null;
+        }
+
+        return QueryOperand.Computed(ranking is not null
+            ? ModelExpression.Window(ranking.Value, partitions, ordering)
+            : ModelExpression.Window(aggregate!, argument!, partitions, ordering));
     }
 
     /// <summary>The keys of an ordering inside a window or a list aggregate (decision 113); null when one of them is not carried.</summary>

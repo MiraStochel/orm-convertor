@@ -52,6 +52,8 @@ public sealed class QueryExpression
         IReadOnlyList<CaseBranch>? branches = null,
         QueryOperand? otherwise = null,
         RankingFunction? ranking = null,
+        string? windowAggregate = null,
+        QueryOperand? argument = null,
         IReadOnlyList<QueryOperand>? partitions = null,
         IReadOnlyList<OrderingKey>? ordering = null,
         QueryOperand? listed = null,
@@ -67,11 +69,19 @@ public sealed class QueryExpression
         Branches = branches;
         Else = otherwise;
         Ranking = ranking;
+        WindowAggregate = windowAggregate;
+        Argument = argument;
         Partitions = partitions;
         Ordering = ordering;
         Listed = listed;
         Separator = separator;
     }
+
+    /// <summary>The five aggregates a window of the vocabulary computes over its partition (decision 161).</summary>
+    public static IReadOnlySet<string> WindowAggregates { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "COUNT", "SUM", "MIN", "MAX", "AVG",
+    };
 
     /// <summary>The operator of a binary expression; null for the other shapes.</summary>
     public ExpressionOperator? Operator { get; }
@@ -101,15 +111,29 @@ public sealed class QueryExpression
     /// </summary>
     public QueryOperand? Else { get; }
 
-    /// <summary>The ranking function of a window (decision 113); null for the other shapes.</summary>
+    /// <summary>The ranking function of a window (decision 113); null for the other shapes, and for a window that aggregates.</summary>
     public RankingFunction? Ranking { get; }
+
+    /// <summary>
+    /// The aggregate a window computes over its partition - one of <see cref="WindowAggregates"/>,
+    /// in upper case (decision 161); null for the other shapes, and for a window that ranks.
+    /// </summary>
+    public string? WindowAggregate { get; }
+
+    /// <summary>
+    /// What a window aggregate aggregates: a leaf operand, or the whole row as the column
+    /// <c>*</c> under <c>COUNT</c>, as an aggregate without a window takes it (decision 161);
+    /// null for the other shapes, and for a window that ranks.
+    /// </summary>
+    public QueryOperand? Argument { get; }
 
     /// <summary>The partitions of a window, possibly none (decision 113); null for the other shapes.</summary>
     public IReadOnlyList<QueryOperand>? Partitions { get; }
 
     /// <summary>
-    /// The ordering of a window, never empty, or of a list aggregate, possibly empty
-    /// (decision 113); null for the other shapes.
+    /// The ordering of a window - never empty under a ranking function, possibly empty under an
+    /// aggregate, where it makes the aggregate a running one (decisions 113 and 161) - or of a
+    /// list aggregate, possibly empty; null for the other shapes.
     /// </summary>
     public IReadOnlyList<OrderingKey>? Ordering { get; }
 
@@ -125,7 +149,11 @@ public sealed class QueryExpression
 
     public bool IsCase => Branches is not null;
 
-    public bool IsWindow => Ranking is not null;
+    /// <summary>A function over a window: a ranking function (decision 113) or an aggregate (decision 161).</summary>
+    public bool IsWindow => Ranking is not null || WindowAggregate is not null;
+
+    /// <summary>A window that aggregates its partition rather than ranking it (decision 161).</summary>
+    public bool IsWindowAggregate => WindowAggregate is not null;
 
     public bool IsListAggregate => Separator is not null;
 
@@ -265,6 +293,54 @@ public sealed class QueryExpression
     }
 
     /// <summary>
+    /// An aggregate over a window (decision 161): <c>AVG(x) OVER (PARTITION BY … ORDER BY …)</c>,
+    /// one of <see cref="WindowAggregates"/> over a leaf operand - or over the whole row as
+    /// the column <c>*</c>, under <c>COUNT</c> alone, as an aggregate without a window takes
+    /// it. The ordering may be empty; with keys the window is a running aggregate over the
+    /// default frame of the dialect. An argument that aggregates itself is refused, as the
+    /// factory of an aggregate refuses an aggregate over an aggregate: no target writes one.
+    /// Where it may stand - only in a projection - and whether it counts as an aggregate of
+    /// the grouping rule - it does not - is the builder template's, which the model does not
+    /// validate.
+    /// </summary>
+    public static QueryExpression Window(string aggregate, QueryOperand argument, IReadOnlyList<QueryOperand> partitions, IReadOnlyList<OrderingKey> ordering)
+    {
+        ArgumentNullException.ThrowIfNull(aggregate);
+        ArgumentNullException.ThrowIfNull(argument);
+        ArgumentNullException.ThrowIfNull(partitions);
+        ArgumentNullException.ThrowIfNull(ordering);
+
+        if (!WindowAggregates.Contains(aggregate))
+        {
+            throw new ArgumentException($"'{aggregate}' is not an aggregate a window of the vocabulary computes.", nameof(aggregate));
+        }
+
+        Leaf(argument, nameof(argument));
+        if (argument.IsAggregate)
+        {
+            throw new ArgumentException("No target writes an aggregate over an aggregate; the argument of a window aggregate aggregates nothing itself.", nameof(argument));
+        }
+
+        if (argument is { IsColumn: true, Property: "*" } && !string.Equals(aggregate, "COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Only COUNT stands over the whole row; the other aggregates take a value.", nameof(argument));
+        }
+
+        foreach (var partition in partitions)
+        {
+            Leaf(partition, nameof(partitions));
+        }
+
+        foreach (var key in ordering)
+        {
+            ArgumentNullException.ThrowIfNull(key, nameof(ordering));
+            Leaf(key.Operand, nameof(ordering));
+        }
+
+        return new QueryExpression(windowAggregate: aggregate.ToUpperInvariant(), argument: argument, partitions: partitions, ordering: ordering);
+    }
+
+    /// <summary>
     /// An aggregate that joins the values of a group into one text, the separator between two
     /// of them, in the order the ordering states - T-SQL's <c>STRING_AGG(x, ', ') WITHIN GROUP
     /// (ORDER BY …)</c> (decision 113). An aggregate as much as COUNT is, so the builder
@@ -333,6 +409,12 @@ public sealed class QueryExpression
         }
         else if (IsWindow)
         {
+            // The whole row under COUNT is no value anything types or resolves (decision 161).
+            if (Argument is { } argument && argument.Property != "*")
+            {
+                yield return argument;
+            }
+
             foreach (var partition in Partitions!)
             {
                 yield return partition;
@@ -412,9 +494,12 @@ public sealed class QueryExpression
 
         if (IsWindow)
         {
-            var partitions = leaves.Take(Partitions!.Count).ToList();
-            var ordering = Ordering!.Select((k, i) => k with { Operand = leaves[Partitions.Count + i] }).ToList();
-            return Window(Ranking!.Value, partitions, ordering);
+            var argumentLeaves = Argument is { } argument && argument.Property != "*" ? 1 : 0;
+            var partitions = leaves.Skip(argumentLeaves).Take(Partitions!.Count).ToList();
+            var ordering = Ordering!.Select((k, i) => k with { Operand = leaves[argumentLeaves + Partitions.Count + i] }).ToList();
+            return IsWindowAggregate
+                ? Window(WindowAggregate!, argumentLeaves == 1 ? leaves[0] : Argument!, partitions, ordering)
+                : Window(Ranking!.Value, partitions, ordering);
         }
 
         return ListAggregate(leaves[0], Separator!, Ordering!.Select((k, i) => k with { Operand = leaves[1 + i] }).ToList());
@@ -457,8 +542,10 @@ public sealed class QueryExpression
 
         if (IsWindow)
         {
-            var partitioned = Partitions!.Count == 0 ? string.Empty : $"partition by {string.Join(", ", Partitions.Select(p => p.ToString()))} ";
-            return $"{Ranking}() over ({partitioned}order by {ordered})";
+            var partitioned = Partitions!.Count == 0 ? string.Empty : $"partition by {string.Join(", ", Partitions.Select(p => p.ToString()))}";
+            var function = IsWindowAggregate ? $"{WindowAggregate}({(Argument!.Property == "*" ? "*" : Argument.ToString())})" : $"{Ranking}()";
+            var clauses = string.Join(" ", new[] { partitioned, Ordering!.Count == 0 ? string.Empty : $"order by {ordered}" }.Where(c => c.Length > 0));
+            return $"{function} over ({clauses})";
         }
 
         return Ordering!.Count == 0

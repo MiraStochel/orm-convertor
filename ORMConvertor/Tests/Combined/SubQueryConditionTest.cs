@@ -256,7 +256,8 @@ public class SubQueryConditionTest
         }
         """;
 
-        var products = new EntityMap { Entity = new() { Name = "Product" }, Table = "Products", Schema = "Sales" };
+        // C#'s Average is read by the type of what it averages (decision 161), so the mapping states it.
+        var products = Typed("Product", "Products", ("ListPrice", ScalarType.Decimal));
         var builder = ParseLinq(new DapperSqlQueryBuilder { EntityMaps = [products] }, linq, products);
         var sql = Artifact(builder, ConversionContentType.SqlQuery);
 
@@ -275,8 +276,9 @@ public class SubQueryConditionTest
 
         var builder = ParseSql(new NHibernateHqlQueryBuilder { EntityMaps = [Orders()] }, sql);
 
+        // NHibernate's avg is a Double; the decimal SQL's AVG answers in is restored (decision 161).
         Assert.Contains(
-            "where o.Total > (select avg(o2.Total) from Order o2)",
+            "where o.Total > (select cast(avg(o2.Total) as decimal) from Order o2)",
             Artifact(builder, ConversionContentType.HqlQuery));
     }
 
@@ -466,8 +468,9 @@ public class SubQueryConditionTest
         Assert.Contains(outputs, s => s.ContentType == ConversionContentType.SqlQuery);
     }
 
+    /// <summary>A subquery in a join's ON condition is an operand there as in a WHERE (decision 162); the shapes per target are in <c>JoinConditionSubqueryTest</c>.</summary>
     [Fact]
-    public void SubQueryInAJoinOnConditionRefuses()
+    public void SubQueryInAJoinOnConditionIsCarried()
     {
         const string sql = """
         SELECT *
@@ -475,9 +478,10 @@ public class SubQueryConditionTest
         INNER JOIN Sales.Orders AS o ON o.CustomerID = c.CustomerID AND EXISTS (SELECT x.OrderID FROM Sales.Orders AS x)
         """;
 
-        AssertRefused(
-            ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql),
-            QueryFeature.Subquery);
+        var builder = ParseSql(new DapperSqlQueryBuilder { EntityMaps = [Customers(), Orders()] }, sql);
+        var outputs = builder.Build();
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.Contains("ON o.CustomerID = c.CustomerID AND EXISTS (SELECT x.OrderID FROM Sales.Orders AS x)", outputs.Single(s => s.ContentType == ConversionContentType.SqlQuery).Content, StringComparison.Ordinal);
     }
 
     /// <summary>

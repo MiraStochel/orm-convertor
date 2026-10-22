@@ -68,6 +68,8 @@ public sealed class HibernateJpqlQueryParser(
 
     protected override bool ReadsHqlFunctions => true;
 
+    protected override bool AveragesWholeNumbersInFloatingPoint => true;
+
     protected override bool TryReadDialectClause()
     {
         RowCount? limit = null, offset = null;

@@ -158,6 +158,43 @@ public class IntermediateResultTest
             OneLine(sql));
     }
 
+    /// <summary>
+    /// The whole row of a definition beside other columns is the definition's columns, in its
+    /// order, under the alias the scope reads it by (decision 161): exact by construction,
+    /// because the columns of a definition are its projections. Three nested derived tables,
+    /// each adding a column to the star of the one inside it - the shape of FIBEN q99 -, in
+    /// T-SQL and in HQL 7.4, and the star of the outermost read by the query around it.
+    /// </summary>
+    [Fact]
+    public void TheWholeRowOfADefinitionBesideColumnsIsItsColumns()
+    {
+        const string sql = """
+            SELECT runs.CustomerId AS CustomerId, runs.Orders AS Orders, runs.Rank AS Rank
+            FROM (SELECT counted.*, ROW_NUMBER() OVER (ORDER BY counted.Orders DESC) AS Rank
+                  FROM (SELECT o.CustomerId AS CustomerId, COUNT(*) AS Orders FROM Orders AS o GROUP BY o.CustomerId) AS counted) AS runs
+            WHERE runs.Rank <= 3
+            """;
+
+        var text = OneLine(Sql(FromSql(new DapperSqlQueryBuilder(), sql)));
+        Assert.Equal(
+            "WITH counted AS ( SELECT o.CustomerId AS CustomerId, COUNT(*) AS Orders FROM Orders AS o GROUP BY o.CustomerId ), "
+            + "runs AS ( SELECT counted.CustomerId AS CustomerId, counted.Orders AS Orders, ROW_NUMBER() OVER (ORDER BY counted.Orders DESC) AS Rank FROM counted AS counted ) "
+            + "SELECT runs.CustomerId AS CustomerId, runs.Orders AS Orders, runs.Rank AS Rank FROM runs AS runs WHERE runs.Rank <= 3",
+            text);
+
+        var hql = OneLine(Artifact(FromSql(new HibernateJpqlQueryBuilder(), sql), ConversionContentType.JpqlQuery));
+        Assert.True(hql.Contains("runs as ( select counted.CustomerId as CustomerId, counted.Orders as Orders, row_number() over (order by counted.Orders desc) as Rank from counted counted )", StringComparison.Ordinal), hql);
+    }
+
+    /// <summary>The whole row of a table beside columns stays the loss of decision 070: only the schema knows its columns.</summary>
+    [Fact]
+    public void TheWholeRowOfATableBesideColumnsStaysALoss()
+    {
+        var builder = FromSql(new DapperSqlQueryBuilder(), "SELECT o.*, c.Name AS Name FROM Orders AS o JOIN Customers AS c ON c.CustomerId = o.CustomerId");
+        Assert.Equal("SELECT c.Name AS Name FROM Orders AS o INNER JOIN Customers c ON c.CustomerId = o.CustomerId", OneLine(Sql(builder)));
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Feature == QueryFeature.Projection);
+    }
+
     [Fact]
     public void ADerivedTableAfterAJoinIsJoinedByItsAlias()
     {
@@ -406,7 +443,9 @@ public class IntermediateResultTest
 
         Assert.StartsWith("WITH oc AS ( SELECT o.CustomerId AS CustomerId, COUNT(*) AS Orders FROM Orders AS o GROUP BY o.CustomerId ), d AS (", text);
         Assert.Contains("INNER JOIN oc x ON x.CustomerId = c.CustomerId", text);
-        Assert.Contains("(SELECT AVG(d.Orders) FROM d AS d)", text);
+
+        // Hibernate averages the count of the definition in floating point (decision 161).
+        Assert.Contains("(SELECT AVG(CAST(d.Orders AS FLOAT)) FROM d AS d)", text);
     }
 
     [Fact]

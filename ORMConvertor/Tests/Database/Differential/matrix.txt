@@ -584,6 +584,48 @@ shape = projection
 ordered = false
 mutations = operator, projection
 
+# Every product with its lines, for the four products of which some line was ordered in
+# bulk - the subquery in the ON of a left join; the two others keep a row of nulls. Flipped,
+# the subquery names the products ordered in small numbers, two of them, and the other four
+# keep nulls. There is no WHERE for the filter mutation to drop.
+[SubqueryInAJoinCondition]
+category = SubqueryInAJoinCondition
+fields = ProductName, Description
+shape = projection
+ordered = false
+mutations = operator, projection
+
+# The three lines priced above the average of their product's lines, by the average over a
+# window in an intermediate result. Dropped, the filter returns every line; flipped, it
+# returns the three priced below.
+[WindowAggregate]
+category = WindowAggregate
+fields = ProductId, LineNumber, UnitPrice, AveragePrice
+shape = projection
+ordered = false
+decimalScale = 4
+mutations = filter, operator
+
+# The averages of products 1, 4 and 6 are 5.5, 1.5 and 6.5 in floating point: a target whose
+# average did not cut the quotient off would answer them, and one that handed the price over as
+# a Double would answer 119 for 119.0000 (decision 161).
+[AverageInAProjection]
+category = AverageInAProjection
+fields = ProductId, AverageQuantity, AveragePrice
+shape = projection
+ordered = false
+decimalScale = 4
+mutations =
+
+# The same quantities in floating point, which every target keeps: a target that cut the
+# quotient off would answer 5, 1 and 6.
+[AverageInFloatingPoint]
+category = AverageInFloatingPoint
+fields = ProductId, AverageQuantity
+shape = projection
+ordered = false
+mutations =
+
 # The label of every customer over the one nullable column: NULL for the three without
 # notes, as SQL concatenates, and the name with the notes for the one with them. A target
 # whose provider turned the NULL into the empty string would answer "Alice ()" instead.

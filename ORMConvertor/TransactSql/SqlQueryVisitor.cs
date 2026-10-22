@@ -293,7 +293,17 @@ public class SqlQueryVisitor(
         {
             var partitions = expression.Partitions!.Count == 0
                 ? string.Empty
-                : $"PARTITION BY {string.Join(", ", expression.Partitions.Select(BuildOperand))} ";
+                : $"PARTITION BY {string.Join(", ", expression.Partitions.Select(BuildOperand))}";
+            var ordering = expression.Ordering!.Count == 0 ? string.Empty : $"ORDER BY {Ordered(expression.Ordering)}";
+            var window = string.Join(" ", new[] { partitions, ordering }.Where(c => c.Length > 0));
+
+            // An aggregate over the window (decision 161), or a ranking function (decision 113).
+            if (expression.IsWindowAggregate)
+            {
+                var argument = expression.Argument!.Property == "*" ? "*" : BuildOperand(expression.Argument);
+                return $"{expression.WindowAggregate}({argument}) OVER ({window})";
+            }
+
             var function = expression.Ranking switch
             {
                 RankingFunction.RowNumber => "ROW_NUMBER",
@@ -302,7 +312,7 @@ public class SqlQueryVisitor(
                 _ => throw new ArgumentOutOfRangeException(nameof(expression), expression.Ranking, null),
             };
 
-            return $"{function}() OVER ({partitions}ORDER BY {Ordered(expression.Ordering!)})";
+            return $"{function}() OVER ({window})";
         }
 
         if (expression.IsListAggregate)

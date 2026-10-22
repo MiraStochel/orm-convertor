@@ -258,6 +258,39 @@ public sealed class NHibernateHqlQueryVisitor(
     }
 
     private string Operand(QueryOperand operand)
+        => SqlAverage.IsAverage(operand) ? Average(Written(operand), operand.Bare()) : Written(operand);
+
+    /// <summary>
+    /// SQL's average in HQL 5.7 (decision 161): NHibernate's avg is SQL's AVG handed over as a
+    /// Double, so it is converted into the scalar SQL answers in - an integer into int or long,
+    /// a decimal into decimal, which NHibernate 5.7.0 writes as DECIMAL(29,10) and hands over as
+    /// a decimal (measured). Over a floating-point number it is the average itself; where the
+    /// argument has no scalar, no conversion can be chosen and the query goes out in native SQL.
+    /// </summary>
+    private string Average(string average, QueryOperand argument)
+    {
+        var type = SqlAverage.RestorationOf(LeafScalar(argument)) switch
+        {
+            AverageRestoration.IntoInt => "int",
+            AverageRestoration.IntoLong => "long",
+            AverageRestoration.IntoDecimal => "decimal",
+            AverageRestoration.None => null,
+            _ => string.Empty,
+        };
+
+        if (type == string.Empty)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"HQL in NHibernate 5.7.0 hands the average '{average}' over as a Double, and the scalar of '{argument}' that SQL's AVG answers in does not follow from the mapping, so no conversion restores it",
+                QueryFeature.Aggregation);
+            return average;
+        }
+
+        return type is null ? average : $"cast({average} as {type})";
+    }
+
+    private string Written(QueryOperand operand)
     {
         // The values IN enumerates (decision 074), each spelled as a lone constant is,
         // a parameter among them (decision 102) as a lone parameter is.
@@ -361,14 +394,14 @@ public sealed class NHibernateHqlQueryVisitor(
     /// </summary>
     private string Expression(QueryExpression expression)
     {
-        // HQL 5.7 has neither a ranking function over a window nor an aggregate into a list;
-        // the descriptor says so and the template sends the query to native SQL before any
-        // step runs, so this is the point of emission saying the same (decision 113).
+        // HQL 5.7 has neither a function over a window nor an aggregate into a list; the
+        // descriptor says so and the template sends the query to native SQL before any step
+        // runs, so this is the point of emission saying the same (decisions 113 and 161).
         if (expression.IsWindow || expression.IsListAggregate)
         {
             report(
                 ConversionRecordKind.Fallback,
-                $"HQL in NHibernate 5.7.0 has no {(expression.IsWindow ? "ranking function over a window" : "aggregate into a list")}",
+                $"HQL in NHibernate 5.7.0 has no {(expression.IsWindow ? "function over a window" : "aggregate into a list")}",
                 expression.IsWindow ? QueryFeature.WindowFunction : QueryFeature.ListAggregation);
             return string.Empty;
         }

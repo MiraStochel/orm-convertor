@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindAverageInFloatingPointMapper">
+  <select id="findAverageInFloatingPoint" resultType="ShopOrderLine">
+    SELECT ol.ProductId AS ProductId, AVG(CAST(ol.Quantity AS FLOAT)) AS AverageQuantity
+    FROM {{schema}}.ShopOrderLines AS ol
+    GROUP BY ol.ProductId
+  </select>
+</mapper>

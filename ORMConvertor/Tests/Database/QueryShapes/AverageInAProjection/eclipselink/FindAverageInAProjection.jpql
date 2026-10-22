@@ -1,0 +1,3 @@
+select ol.ProductId as ProductId, cast(avg(ol.Quantity) as INTEGER) as AverageQuantity, cast(avg(ol.UnitPrice) as DECIMAL(38,6)) as AveragePrice
+from ShopOrderLine ol
+group by ol.ProductId

@@ -1114,7 +1114,43 @@ public abstract class LinqQueryVisitor(
             aggregate = $"{Scope.Param}.{method}({element})";
         }
 
-        return function == "SUM" && !coalesced ? SumOverValues(bare, aggregate) : aggregate;
+        return function switch
+        {
+            "SUM" when !coalesced => SumOverValues(bare, aggregate),
+            "AVG" => AverageOverValues(bare, aggregate, mayBeNull: !IsNeverNull(bare) || Scope.OneGroup),
+            _ => aggregate,
+        };
+    }
+
+    /// <summary>
+    /// SQL's AVG as LINQ says it (decision 161): Average over a whole number is the average in
+    /// floating point - EF Core 10.0.10 and NHibernate 5.7.0 write AVG(CAST(x AS float)) -, so it
+    /// is cast back into the integer SQL answers in, which both providers translate to a CAST
+    /// that cuts the quotient off as SQL does (measured); nullable where the average may be NULL
+    /// - over a value that may be, or over the one group a scalar subquery may not have. Over a
+    /// decimal or a floating-point number Average answers what AVG does. Where the argument has
+    /// no scalar, no cast can be chosen and the query goes out in native SQL (decision 113).
+    /// </summary>
+    protected internal string AverageOverValues(QueryOperand bare, string average, bool mayBeNull)
+    {
+        var type = SqlAverage.RestorationOf(ScalarOf(bare)) switch
+        {
+            AverageRestoration.IntoInt => "int",
+            AverageRestoration.IntoLong => "long",
+            AverageRestoration.Unknown => null,
+            _ => string.Empty,
+        };
+
+        if (type is null)
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"Average over a whole number is the average in floating point in {Provider}, where SQL's AVG cuts the quotient off, and the scalar of '{bare}' does not follow from the mapping, so no cast restores it",
+                QueryFeature.Aggregation);
+            return string.Empty;
+        }
+
+        return type.Length == 0 ? average : $"({type}{(mayBeNull ? "?" : string.Empty)}){average}";
     }
 
     /// <summary>
@@ -1241,11 +1277,12 @@ public abstract class LinqQueryVisitor(
     /// </summary>
     private string Expression(QueryExpression expression)
     {
-        // LINQ has no ranking function over a window; the descriptor says so and the template
-        // sends the query to native SQL before any step runs (decision 113).
+        // LINQ has no function over a window - neither a ranking nor an aggregate -; the
+        // descriptor says so and the template sends the query to native SQL before any step
+        // runs (decisions 113 and 161).
         if (expression.IsWindow)
         {
-            report(ConversionRecordKind.Fallback, "LINQ has no ranking function over a window", QueryFeature.WindowFunction);
+            report(ConversionRecordKind.Fallback, "LINQ has no function over a window", QueryFeature.WindowFunction);
             return string.Empty;
         }
 

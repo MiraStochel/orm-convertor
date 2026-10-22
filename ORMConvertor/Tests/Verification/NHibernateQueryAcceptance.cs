@@ -35,6 +35,17 @@ internal static class NHibernateQueryAcceptance
     /// included.
     /// </summary>
     public static string Sql(byte[] compiledEntities, IEnumerable<string> mappingXmls, string hql)
+        => Plan(compiledEntities, mappingXmls, hql).Sql;
+
+    /// <summary>
+    /// The types of the values the query hands over, from the same plan and still without a
+    /// connection: what a select of an average returns is NHibernate's type, not the
+    /// database's (decision 161).
+    /// </summary>
+    public static IReadOnlyList<Type> ReturnTypes(byte[] compiledEntities, IEnumerable<string> mappingXmls, string hql)
+        => Plan(compiledEntities, mappingXmls, hql).ReturnTypes;
+
+    private static (string Sql, IReadOnlyList<Type> ReturnTypes) Plan(byte[] compiledEntities, IEnumerable<string> mappingXmls, string hql)
     {
         var entities = Assembly.Load(compiledEntities);
         var assemblyName = entities.GetName().Name!;
@@ -66,7 +77,9 @@ internal static class NHibernateQueryAcceptance
 
             var plan = ((ISessionFactoryImplementor)sessionFactory).QueryPlanCache
                 .GetHQLQueryPlan(new StringQueryExpression(hql), false, new Dictionary<string, IFilter>());
-            return string.Join(System.Environment.NewLine, plan.Translators.Select(translator => translator.SQLString));
+            return (
+                string.Join(System.Environment.NewLine, plan.Translators.Select(translator => translator.SQLString)),
+                plan.ReturnMetadata.ReturnTypes.Select(type => type.ReturnedClass).ToList());
         }
         finally
         {

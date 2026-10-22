@@ -149,5 +149,12 @@ public static class EclipseLinkDescriptor
             "and", "between", "case", "current_date", "current_time", "current_timestamp", "date", "datetime", "delete",
             "false", "is", "like", "local", "member", "new", "not", "null", "on", "or", "regexp", "select", "time", "true",
             "update", "when",
-        });
+        },
+
+        // Measured against 5.0.0 over SQL Server (decision 161, eclipselink/AverageClaimsTest):
+        // AVG(x) is SQL's AVG handed over as a Double. The type name of cast(… as T) reaches
+        // SQL Server as written, so the names SQL Server knows convert it back - INTEGER and
+        // BIGINT into Integer and Long, DECIMAL(38,6) into a BigDecimal of six places -, in the
+        // select list, a subquery and having alike; LONG and DOUBLE it refuses.
+        AverageCasts: new JpaAverageCasts("INTEGER", "BIGINT", "DECIMAL({0},{1})"));
 }

@@ -105,8 +105,9 @@ public enum DateUnit
 
 /// <summary>
 /// The ranking functions a window of the vocabulary computes (decision 113): the number of
-/// the row within its partition, and the two ranks that tie equal rows. Window aggregates and
-/// frames are no part of the vocabulary.
+/// the row within its partition, and the two ranks that tie equal rows. A window computes an
+/// aggregate as well (<see cref="QueryExpression.WindowAggregates"/>, decision 161); frames
+/// are no part of the vocabulary.
 /// </summary>
 public enum RankingFunction
 {

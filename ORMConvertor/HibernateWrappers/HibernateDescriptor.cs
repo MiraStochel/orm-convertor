@@ -100,5 +100,12 @@ public static class HibernateDescriptor
         // keywords of HQL as an entity name - at the head of a from clause, as the target of
         // an inner and a left entity join and in a subquery: the parser takes every one of
         // them for a name but the three literals, which it refuses wherever they stand.
-        EntityNamesRefused: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "true", "false", "null" });
+        EntityNamesRefused: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "true", "false", "null" },
+
+        // Measured against 7.4.5.Final over SQL Server (decision 161, hibernate/AverageClaimsTest):
+        // avg(x) is a Double, over a whole number avg(cast(x as float(53))), which does not cut
+        // the quotient off as SQL does. cast(… as Integer) and Long cut it off again; a decimal
+        // takes its precision and scale - BigDecimal alone is numeric(38,2), which rounds the
+        // average -, over a window and inside with as well.
+        AverageCasts: new JpaAverageCasts("Integer", "Long", "BigDecimal({0},{1})"));
 }

@@ -785,6 +785,10 @@ public abstract partial class AbstractQueryBuilder
             return [];
         }
 
+        // The whole row of an intermediate result beside columns is its columns (decision
+        // 161), before any gate reads a select list or describes a row.
+        ExpandWholeRowsOfDefinitions();
+
         var body = Unwrap(instructions);
 
         // The intermediate results first (decision 112): whether the target writes them at
@@ -981,18 +985,10 @@ public abstract partial class AbstractQueryBuilder
             return null;
         }
 
-        // The only position a subquery renders in is a WHERE or HAVING operand
-        // (decision 061). A join's ON clause is not one: LINQ joins take two key selectors
-        // with no room for a subquery, and dropping the join instead would change which
-        // rows come back.
-        if (body.OfType<JoinInstruction>().Any(j => ContainsSubQuery(j.OnCondition)))
-        {
-            Report(
-                ConversionRecordKind.Failure,
-                "A subquery inside a join's ON condition has no position the representation renders; no artifact was generated.",
-                QueryFeature.Subquery);
-            return null;
-        }
+        // A subquery renders as an operand of a WHERE or HAVING condition (decision 061) and
+        // of a join's ON condition alike (decision 162): every target writes it there in its
+        // own language, LINQ as the correlated SelectMany a condition beyond key equalities
+        // takes anyway.
 
         // At most one pagination per (sub)query scope (decision 060). Parsers emit one;
         // a second one has no defined composition, so it is refused rather than merged.
@@ -1598,6 +1594,15 @@ public abstract partial class AbstractQueryBuilder
             return true;
         }
 
+        // An aggregate over a window answers as the aggregate does (decision 161): COUNT with
+        // an int, the four others with the type of their argument.
+        if (operand is { IsExpression: true, IsAggregate: false, Expression.IsWindowAggregate: true })
+        {
+            var window = operand.Expression;
+            return string.Equals(window.WindowAggregate, "COUNT", StringComparison.OrdinalIgnoreCase)
+                   || (KeepsTheIntOfACount.Contains(window.WindowAggregate!) && CountsRows(window.Argument, aliases));
+        }
+
         if (!operand.IsColumn || operand.Property is null)
         {
             return false;
@@ -1655,6 +1660,109 @@ public abstract partial class AbstractQueryBuilder
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// The whole row of an intermediate result projected beside other columns is the columns
+    /// of its definition - one per projection of its leftmost SELECT, under the alias the
+    /// scope reads the definition by, in the definition's order (decision 161). Exact by
+    /// construction, because the columns of a definition are its projections, where the
+    /// whole row of a table beside columns stays the loss of decision 070: its columns only
+    /// the schema knows. Rewritten before any gate, the definitions in their order and the
+    /// body after them, so that an outer definition's row is described over the columns the
+    /// inner one's star already stands for. A star that is the only projection stays the
+    /// whole-row projection decision 112 holds it to.
+    /// </summary>
+    private void ExpandWholeRowsOfDefinitions()
+    {
+        for (var i = 0; i < definitions.Count; i++)
+        {
+            var definition = definitions[i];
+            var earlier = definitions.Take(i).ToList();
+            var expanded = ExpandWholeRows(definition.Body.Instructions, earlier);
+            if (!ReferenceEquals(expanded, definition.Body.Instructions))
+            {
+                definitions[i] = definition with { Body = definition.Body with { Instructions = [.. expanded] } };
+            }
+        }
+
+        var body = ExpandWholeRows(instructions, definitions);
+        if (!ReferenceEquals(body, instructions))
+        {
+            instructions.Clear();
+            instructions.AddRange(body);
+        }
+    }
+
+    /// <summary>One scope and the scopes its body holds (<see cref="ExpandWholeRowsOfDefinitions"/>); the same list where nothing changes.</summary>
+    private IReadOnlyList<QueryInstruction> ExpandWholeRows(IReadOnlyList<QueryInstruction> body, IReadOnlyList<WithInstruction> earlier)
+    {
+        if (earlier.Count == 0)
+        {
+            return body;
+        }
+
+        // The definition each alias of the scope reads, where it reads one.
+        var sources = new Dictionary<string, WithInstruction>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (alias, table) in body.OfType<FromInstruction>().Select(f => (f.Alias ?? f.Table, f.Table))
+                     .Concat(body.OfType<JoinInstruction>().Select(j => (j.RightTableAlias ?? j.RightTable, j.RightTable))))
+        {
+            if (earlier.FirstOrDefault(d => SameName(d.Name, table)) is { } definition)
+            {
+                sources.TryAdd(alias, definition);
+            }
+        }
+
+        var projections = body.Count(i => i is ProjectInstruction);
+        var changed = false;
+        var result = new List<QueryInstruction>(body.Count);
+
+        foreach (var instruction in body)
+        {
+            switch (instruction)
+            {
+                case ProjectInstruction { IsWholeRow: true } whole when projections > 1 && sources.TryGetValue(whole.Operand.Table!, out var definition):
+                    foreach (var projection in LeftmostSelect(Unwrap(definition.Body.Instructions)).OfType<ProjectInstruction>())
+                    {
+                        if (ColumnNameOf(projection) is { } column)
+                        {
+                            result.Add(new ProjectInstruction(QueryOperand.Column(whole.Operand.Table, column)));
+                        }
+                    }
+
+                    changed = true;
+                    break;
+
+                case SubQueryInstruction nested:
+                    var inner = ExpandWholeRows(nested.Instructions, earlier);
+                    changed |= !ReferenceEquals(inner, nested.Instructions);
+                    result.Add(ReferenceEquals(inner, nested.Instructions) ? nested : nested with { Instructions = [.. inner] });
+                    break;
+
+                case SetOperationInstruction operation:
+                    var left = ExpandWholeRows(operation.Left.Instructions, earlier);
+                    var right = ExpandWholeRows(operation.Right.Instructions, earlier);
+                    if (ReferenceEquals(left, operation.Left.Instructions) && ReferenceEquals(right, operation.Right.Instructions))
+                    {
+                        result.Add(operation);
+                        break;
+                    }
+
+                    changed = true;
+                    result.Add(operation with
+                    {
+                        Left = operation.Left with { Instructions = [.. left] },
+                        Right = operation.Right with { Instructions = [.. right] },
+                    });
+                    break;
+
+                default:
+                    result.Add(instruction);
+                    break;
+            }
+        }
+
+        return changed ? result : body;
     }
 
     private EntityMap RowOf(string name, IReadOnlyList<QueryInstruction> select, Dictionary<string, EntityMap> aliases)
@@ -3093,7 +3201,9 @@ public abstract partial class AbstractQueryBuilder
 
         // The rows of the intermediate results resolve a reference to one as a stated
         // mapping, so that nobody asks the catalog for a table named after a definition, and
-        // their bodies are walked like any scope (decision 112).
+        // their bodies are walked like any scope (decision 112), with the whole row of one
+        // beside columns already its columns (decision 161), as the build sees them.
+        ExpandWholeRowsOfDefinitions();
         DescribeDefinitions();
         foreach (var definition in definitions)
         {
@@ -3552,10 +3662,14 @@ public abstract partial class AbstractQueryBuilder
             };
         }
 
-        // ROW_NUMBER, RANK and DENSE_RANK count in bigint, and a list is text (decision 113).
+        // ROW_NUMBER, RANK and DENSE_RANK count in bigint, and a list is text (decision 113);
+        // an aggregate over a window answers as the aggregate does - COUNT with a count, the
+        // others in the scalar of their argument (decision 161).
         if (expression.IsWindow)
         {
-            return ScalarType.Long;
+            return !expression.IsWindowAggregate || string.Equals(expression.WindowAggregate, "COUNT", StringComparison.OrdinalIgnoreCase)
+                ? ScalarType.Long
+                : ScalarOf(expression.Argument!, aliases);
         }
 
         if (expression.IsListAggregate)
@@ -3829,23 +3943,24 @@ public abstract partial class AbstractQueryBuilder
                 QueryFeature.Expression);
         }
 
-        // A ranking function over a window stands in a projection - the one place SQL computes
-        // it - and outside every aggregate and every other window (decision 113); a filter over
-        // it is a filter over an intermediate result that projects it, as anyone writes one.
+        // A function over a window - a ranking or an aggregate - stands in a projection - the
+        // one place SQL computes it - and outside every aggregate and every other window
+        // (decisions 113 and 161); a filter over it is a filter over an intermediate result
+        // that projects it, as anyone writes one.
         if (expression.IsWindow)
         {
             if (!inProjection)
             {
                 Report(
                     ConversionRecordKind.Failure,
-                    $"The ranking function '{expression}' stands outside a projection, or inside an aggregate or another window, where SQL does not compute it; no artifact was generated.",
+                    $"The window '{expression}' stands outside a projection, or inside an aggregate or another window, where SQL does not compute it; no artifact was generated.",
                     QueryFeature.WindowFunction);
                 admitted = false;
             }
             else if (!writesNativeSql && Descriptor.SupportOf(QueryFeature.WindowFunction) == FactSupport.NotExpressible)
             {
                 ReportUnspoken(
-                    $"The query ranks rows over a window ('{expression}'), which the query language of {Descriptor.Framework} cannot express",
+                    $"The query computes '{expression}' over a window, which the query language of {Descriptor.Framework} cannot express",
                     QueryFeature.WindowFunction);
             }
         }
@@ -4558,7 +4673,7 @@ public abstract partial class AbstractQueryBuilder
         Check(QueryFeature.PostAggregationFiltering, clauses.PostFilter is not null);
         Check(QueryFeature.Ordering, clauses.OrderBys.Count > 0);
         Check(QueryFeature.Pagination, clauses.Offset is not null || clauses.Limit is not null);
-        Check(QueryFeature.Subquery, ContainsSubQuery(clauses.Filter) || ContainsSubQuery(clauses.PostFilter));
+        Check(QueryFeature.Subquery, ContainsSubQuery(clauses.Filter) || ContainsSubQuery(clauses.PostFilter) || clauses.Joins.Any(j => ContainsSubQuery(j.OnCondition)));
         Check(
             QueryFeature.Expression,
             clauses.Projections.Any(p => p.Operand.IsExpression)

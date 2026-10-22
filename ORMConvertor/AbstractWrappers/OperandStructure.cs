@@ -68,6 +68,8 @@ public static class OperandStructure
             || left.Unit != right.Unit
             || left.CastTo != right.CastTo
             || left.Ranking != right.Ranking
+            || !string.Equals(left.WindowAggregate, right.WindowAggregate, StringComparison.OrdinalIgnoreCase)
+            || left.Argument?.Property == "*" != (right.Argument?.Property == "*")
             || left.IsCase != right.IsCase
             || !string.Equals(left.Separator, right.Separator, StringComparison.Ordinal))
         {
@@ -120,7 +122,7 @@ public static class OperandStructure
     public static bool ContainsAggregate(QueryOperand operand)
         => Aggregates(operand) || (operand.IsExpression && Inside(operand.Expression!).Any(ContainsAggregate));
 
-    /// <summary>Whether a ranking function over a window stands anywhere in the operand short of a subquery (decision 113).</summary>
+    /// <summary>Whether a function over a window - a ranking or an aggregate - stands anywhere in the operand short of a subquery (decisions 113 and 161).</summary>
     public static bool ContainsWindow(QueryOperand operand)
         => operand.IsExpression && (operand.Expression!.IsWindow || Inside(operand.Expression).Any(ContainsWindow));
 

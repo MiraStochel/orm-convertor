@@ -209,6 +209,8 @@ public abstract class JpqlQueryParser(
     private void ReadQuery(string jpql, QueryObjectSlice? slice = null)
     {
         aliases = new Dictionary<string, EntityMap?>(StringComparer.OrdinalIgnoreCase);
+        definitionOfAlias.Clear();
+        definitionColumns.Clear();
         unread = null;
         var composed = false;
 
@@ -1552,8 +1554,9 @@ public abstract class JpqlQueryParser(
             }
 
             ConsumeSymbol("(");
-            var body = ParseDefinitionBody();
+            var body = ParseDefinitionBody(out var columns);
             ConsumeSymbol(")");
+            definitionColumns.TryAdd(name, columns);
 
             if (AtKeyword("search") || AtKeyword("cycle"))
             {
@@ -1580,7 +1583,7 @@ public abstract class JpqlQueryParser(
     /// 112), and a column it qualifies by an outer alias stays unresolved for the template
     /// to refuse as the lateral reference it is.
     /// </summary>
-    private SubQueryInstruction ParseDefinitionBody()
+    private SubQueryInstruction ParseDefinitionBody(out Dictionary<string, ScalarType?> columns)
     {
         var enclosingAlias = sourceAlias;
         var enclosing = aliases;
@@ -1599,11 +1602,15 @@ public abstract class JpqlQueryParser(
         }
 
         queryBuilder.Pop();
+        var body = queryBuilder.PopOperand();
+
+        // Typed while the body's aliases still stand (decision 161).
+        columns = ColumnsOf(body);
 
         sourceAlias = enclosingAlias;
         aliases = enclosing;
 
-        return queryBuilder.PopOperand();
+        return body;
     }
 
     /// <summary>
@@ -1615,10 +1622,11 @@ public abstract class JpqlQueryParser(
     private (string Table, string Alias) ParseDerivedTable()
     {
         ConsumeSymbol("(");
-        var body = ParseDefinitionBody();
+        var body = ParseDefinitionBody(out var columns);
         ConsumeSymbol(")");
 
         var alias = ParseOptionalAlias() ?? throw Error("expected an alias after a subquery in the from clause");
+        definitionColumns.TryAdd(alias, columns);
 
         if (queryBuilder.Defines(alias)
             || maps?.Any(m => string.Equals(m.Entity.Name, alias, StringComparison.OrdinalIgnoreCase)
@@ -1634,6 +1642,7 @@ public abstract class JpqlQueryParser(
         }
 
         aliases[alias] = null;
+        BindDefinition(alias, alias);
         return (alias, alias);
     }
 
@@ -1997,6 +2006,7 @@ public abstract class JpqlQueryParser(
         var map = MapFor(entity);
         var alias = ParseOptionalAlias() ?? entity;
         aliases[alias] = map;
+        BindDefinition(alias, entity);
 
         return (TableFor(map, entity), alias);
     }
@@ -2079,6 +2089,7 @@ public abstract class JpqlQueryParser(
         var map = MapFor(entity);
         var alias = ParseOptionalAlias() ?? entity;
         aliases[alias] = map;
+        BindDefinition(alias, entity);
 
         if (!TryConsumeKeyword("on") && !TryConsumeKeyword("with"))
         {
@@ -3278,6 +3289,20 @@ public abstract class JpqlQueryParser(
         }
 
         ConsumeSymbol(")");
+
+        // An average of an implementation that averages a whole number in floating point is
+        // read as the SQL it writes (decision 161), over a window too.
+        if (aggregated is not null && AveragesWholeNumbersInFloatingPoint && SqlAverage.IsAverage(aggregated))
+        {
+            aggregated = InFloatingPoint(aggregated);
+        }
+
+        // An aggregate over a window is HQL's (decision 161); JPQL has no window.
+        if (aggregated is not null && ReadsHqlFunctions && AtKeyword("over"))
+        {
+            return aggregated.IsAggregate ? ParseWindowAggregate(aggregated) : null;
+        }
+
         return aggregated;
     }
 
@@ -3446,9 +3471,101 @@ public abstract class JpqlQueryParser(
     protected virtual bool ReadsHqlFunctions => false;
 
     /// <summary>
+    /// Whether the implementation averages a whole number in floating point (decision 161):
+    /// Hibernate 7.4.5 writes avg(x) over one as avg(cast(x as float(53))), which does not cut
+    /// the quotient off as SQL's AVG does, so its average over a whole number is read as SQL's
+    /// AVG over the value converted into a double. EclipseLink writes SQL's AVG.
+    /// </summary>
+    protected virtual bool AveragesWholeNumbersInFloatingPoint => false;
+
+    /// <summary>
+    /// An average as the implementation computes it, which over a whole number differs from
+    /// SQL's (<see cref="AveragesWholeNumbersInFloatingPoint"/>), so the scalar of what it
+    /// averages decides how it is read; where the mapping states none, the average is refused
+    /// by name rather than read as a value it may not be (decision 053).
+    /// </summary>
+    private QueryOperand InFloatingPoint(QueryOperand average)
+    {
+        var scalar = SqlAverage.ScalarOf(average.Bare(), ColumnMapping);
+        if (scalar is null)
+        {
+            Report(ConversionRecordKind.Failure,
+                $"The average '{average}' ranges over a value whose number neither the mapping nor a definition states, and HQL averages a whole number in floating point and any other number as SQL does; no artifact was generated.",
+                QueryFeature.Aggregation);
+            return average;
+        }
+
+        return SqlAverage.InFloatingPoint(average, scalar);
+    }
+
+    /// <summary>
+    /// The number a column holds: through the entity behind its alias - the source's where it
+    /// has none -, or, behind the alias of a definition, the scalar of the value the definition
+    /// projects under the column's name (decision 161).
+    /// </summary>
+    private ColumnNumber? ColumnMapping(QueryOperand column)
+    {
+        var alias = column.Table ?? sourceAlias;
+        if (aliases.TryGetValue(alias, out var map) && map is not null)
+        {
+            return ColumnNumber.Of(ColumnMember.TypedBy(map, column.Property!));
+        }
+
+        return definitionOfAlias.TryGetValue(alias, out var definition)
+               && definitionColumns.TryGetValue(definition, out var columns)
+               && columns.TryGetValue(column.Property!, out var scalar)
+            ? new ColumnNumber(scalar, null)
+            : null;
+    }
+
+    /// <summary>The definition an alias names, where it names one (decision 112).</summary>
+    private readonly Dictionary<string, string> definitionOfAlias = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The scalar of every column of every definition, as its leftmost select projects it - what an average over such a column needs (decision 161).</summary>
+    private readonly Dictionary<string, Dictionary<string, ScalarType?>> definitionColumns = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Records which definition, if any, the alias of a row source names.</summary>
+    private void BindDefinition(string alias, string source)
+    {
+        if (aliases.GetValueOrDefault(alias) is null && queryBuilder.Defines(source))
+        {
+            definitionOfAlias[alias] = source;
+        }
+        else
+        {
+            definitionOfAlias.Remove(alias);
+        }
+    }
+
+    /// <summary>The scalar of each column the body of a definition projects, typed in the body's own scope.</summary>
+    private Dictionary<string, ScalarType?> ColumnsOf(SubQueryInstruction body)
+    {
+        IReadOnlyList<QueryInstruction> select = body.Instructions;
+        while (select is [SubQueryInstruction or SetOperationInstruction])
+        {
+            select = select[0] is SetOperationInstruction set ? set.Left.Instructions : ((SubQueryInstruction)select[0]).Instructions;
+        }
+
+        var columns = new Dictionary<string, ScalarType?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var projection in select.OfType<ProjectInstruction>())
+        {
+            if ((projection.Alias ?? (projection.Operand.IsColumn ? projection.Operand.Property : null)) is { } name)
+            {
+                columns[name] = SqlAverage.ScalarOf(projection.Operand, ColumnMapping);
+            }
+        }
+
+        return columns;
+    }
+
+    /// <summary>
     /// <c>cast(x as type)</c> of Jakarta Persistence 3.2 (decision 113): the five types the
     /// specification names - Integer, Long, Float, Double and String - in any case, which are
-    /// the five scalars the vocabulary converts into. Any other type is refused by name.
+    /// the five scalars the vocabulary converts into. Over an average, the conversions the JPQL
+    /// writers write to restore SQL's average are read back as that average (decision 161):
+    /// Hibernate's Integer, Long and BigDecimal(p,s), EclipseLink's INTEGER, BIGINT and
+    /// DECIMAL(p,s), the last two names of SQL Server's types, which EclipseLink hands through.
+    /// Any other type is refused by name.
     /// </summary>
     private QueryOperand? ParseCast()
     {
@@ -3464,9 +3581,27 @@ public abstract class JpqlQueryParser(
 
         var type = Current.Text;
         Advance();
+
+        // A size - BigDecimal(38,6), DECIMAL(38,6) -, the scale none where it is left out.
+        long? decimalScale = null;
+        var sized = TryConsumeSymbol("(");
+        if (sized)
+        {
+            var precision = ConsumeInteger();
+            long? scale = TryConsumeSymbol(",") ? ConsumeInteger() : null;
+            ConsumeSymbol(")");
+            decimalScale = scale ?? 0;
+            type = scale is null ? $"{type}({precision})" : $"{type}({precision},{scale})";
+        }
+
         ConsumeSymbol(")");
 
-        ScalarType? scalar = type.ToLowerInvariant() switch
+        if (value is not null && RestoredAverage(value, type, (int?)decimalScale) is { } restored)
+        {
+            return restored;
+        }
+
+        ScalarType? scalar = sized ? null : type.ToLowerInvariant() switch
         {
             "integer" => ScalarType.Int,
             "long" => ScalarType.Long,
@@ -3483,6 +3618,34 @@ public abstract class JpqlQueryParser(
         }
 
         return value is null || !IsLeaf(value) ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Cast, [value], castTo: scalar));
+    }
+
+    /// <summary>
+    /// A conversion over an average - with a window or without - that restores SQL's average,
+    /// read back as that average (decision 161); null where the value is no average or the
+    /// conversion restores nothing, and the conversion is then read as any other.
+    /// </summary>
+    private QueryOperand? RestoredAverage(QueryOperand value, string type, int? decimalScale)
+    {
+        var into = type.Split('(')[0].ToLowerInvariant() switch
+        {
+            "integer" => AverageRestoration.IntoInt,
+            "long" or "bigint" => AverageRestoration.IntoLong,
+            "bigdecimal" or "decimal" when decimalScale is not null => AverageRestoration.IntoDecimal,
+            _ => AverageRestoration.None,
+        };
+
+        if (into == AverageRestoration.None)
+        {
+            return null;
+        }
+
+        if (value is { IsAggregate: false, Expression: { IsWindowAggregate: true } window })
+        {
+            return SqlAverage.Restored(window, into, decimalScale, ColumnMapping) is { } restored ? QueryOperand.Computed(restored) : null;
+        }
+
+        return SqlAverage.Restored(value, into, decimalScale, ColumnMapping);
     }
 
     /// <summary>
@@ -3541,11 +3704,71 @@ public abstract class JpqlQueryParser(
         Advance();
         ConsumeSymbol("(");
         ConsumeSymbol(")");
+
+        if (ParseOverClause(out var partitions, out var ordering) is not true)
+        {
+            return null;
+        }
+
+        if (ordering is null)
+        {
+            unread ??= ($"{name}() over a window without an ordering, which the vocabulary of expressions does not carry", QueryFeature.WindowFunction);
+            return null;
+        }
+
+        var function = name switch
+        {
+            "row_number" => RankingFunction.RowNumber,
+            "rank" => RankingFunction.Rank,
+            _ => RankingFunction.DenseRank,
+        };
+
+        return ordering.Count > 0 ? QueryOperand.Computed(QueryExpression.Window(function, partitions, ordering)) : null;
+    }
+
+    /// <summary>
+    /// An aggregate over a window in HQL (decision 161): the aggregate just read, over a leaf,
+    /// and its <c>over (partition by … order by …)</c>, the ordering optional. DISTINCT inside
+    /// the window SQL Server does not compute, and is refused by name.
+    /// </summary>
+    private QueryOperand? ParseWindowAggregate(QueryOperand aggregated)
+    {
+        var carried = ParseOverClause(out var partitions, out var ordering);
+
+        if (aggregated.Distinct)
+        {
+            unread ??= ($"'{aggregated}' over a window - an aggregate over distinct values inside a window, which SQL Server does not compute", QueryFeature.WindowFunction);
+            return null;
+        }
+
+        if (!carried)
+        {
+            return null;
+        }
+
+        var argument = aggregated switch
+        {
+            { IsColumn: true } => QueryOperand.Column(aggregated.Table, aggregated.Property!),
+            { IsConstant: true } => QueryOperand.Value(aggregated.Constant!),
+            { IsParameter: true } => QueryOperand.Bound(aggregated.Parameter!),
+            _ => QueryOperand.Computed(aggregated.Expression!),
+        };
+
+        return QueryOperand.Computed(QueryExpression.Window(aggregated.Function!, argument, partitions, ordering ?? []));
+    }
+
+    /// <summary>
+    /// The <c>over (…)</c> of a window: its partitions and, where written, its ordering (null
+    /// where the clause has none). False where a key is not carried or the clause names a
+    /// frame, which the vocabulary does not carry.
+    /// </summary>
+    private bool ParseOverClause(out List<QueryOperand> partitions, out List<OrderingKey>? ordering)
+    {
         ConsumeKeyword("over");
         ConsumeSymbol("(");
 
         var carried = true;
-        var partitions = new List<QueryOperand>();
+        partitions = new List<QueryOperand>();
         if (TryConsumeKeyword("partition"))
         {
             ConsumeKeyword("by");
@@ -3561,10 +3784,11 @@ public abstract class JpqlQueryParser(
             while (TryConsumeSymbol(","));
         }
 
-        List<OrderingKey>? ordering = null;
+        ordering = null;
         if (AtKeyword("order"))
         {
             ordering = ParseOrdering();
+            carried &= ordering is not null && ordering.Count > 0;
         }
 
         if (AtKeyword("rows") || AtKeyword("range") || AtKeyword("groups"))
@@ -3573,21 +3797,7 @@ public abstract class JpqlQueryParser(
         }
 
         ConsumeSymbol(")");
-
-        if (ordering is null)
-        {
-            unread ??= ($"{name}() over a window without an ordering, which the vocabulary of expressions does not carry", QueryFeature.WindowFunction);
-            return null;
-        }
-
-        var function = name switch
-        {
-            "row_number" => RankingFunction.RowNumber,
-            "rank" => RankingFunction.Rank,
-            _ => RankingFunction.DenseRank,
-        };
-
-        return carried && ordering.Count > 0 ? QueryOperand.Computed(QueryExpression.Window(function, partitions, ordering)) : null;
+        return carried;
     }
 
     /// <summary>

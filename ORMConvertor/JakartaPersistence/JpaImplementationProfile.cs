@@ -32,6 +32,7 @@ namespace JakartaPersistence;
 /// <param name="EntityNamesRefusedAsJoinTarget">The entity names the parser refuses as the target of an entity join only, measured the same way.</param>
 /// <param name="DropsJoinsInSetOperations">Whether the implementation leaves the entity joins of a member of a set operation out of the SQL it writes, as <paramref name="DropsJoinsInSubqueries"/> says of a subquery, where a run measured that it does: the member then answers the rows of its own entity alone, without an error. A member has no range-variable spelling the builder trusts there, so a set operation with a joined member goes out in native SQL (decision 113). EclipseLink 5.0.0 drops them (measured over the FIBEN catalog, decision 149: a union of two joined members returned 49 870 rows for 189), Hibernate 7.4.5 writes them.</param>
 /// <param name="ResolvesNamesAsAttributesBeforeEntities">Whether the implementation's query language resolves an unqualified name in a join against the attributes of the entities already in the from clause before it tries the entity names, where a run measured that it does: an entity join onto an entity whose name is also an attribute of a joined entity (<c>join POSTALADDRESS p</c> beside an entity with a column <c>POSTALADDRESS</c>) then joins the attribute, and a path through the alias fails. The builder names such an entity by its fully qualified class name, which the implementation resolves as the entity (measured over the FIBEN catalog, decision 149). Hibernate 7.4.5 resolves attributes first; EclipseLink 5.0.0 reads the entity name.</param>
+/// <param name="AverageCasts">The conversions under which the implementation's average answers what SQL's AVG answers, where a run measured them (decision 161): the language hands every average over as a Double, and Hibernate averages a whole number in floating point besides, so the builder converts the average into the integer or the decimal SQL answers in. Null where none is measured, and a query with such an average then goes to native SQL.</param>
 /// <param name="RebuildsHavingOnTheRoot">Whether the implementation rebuilds the having clause on the root of the block - the first variable of its from clause - when the first operand of the clause that carries a variable, read from the left, is a path over another one, where a run measured that it does: a path, bare or under an aggregate, an operation or a call, over an entity join, a further range variable or the enclosing block; constants and parameters carry none, and a CASE or a subquery met first leaves the clause as written. Rebuilt, every path of the clause names the root's attribute of that name, so the query is refused when it runs where the root has none (an invalid query key) and answers other rows without an error where it has one. The builder writes such a query in native SQL (decision 113). EclipseLink 5.0.0 rebuilds it (measured over the FIBEN catalog, decision 149, and pinned by the Java suite), Hibernate 7.4.5 reads every path as it stands.</param>
 public sealed record JpaImplementationProfile(
     ORMEnum Implementation,
@@ -56,7 +57,19 @@ public sealed record JpaImplementationProfile(
     IReadOnlySet<string>? EntityNamesRefusedAsJoinTarget = null,
     bool DropsJoinsInSetOperations = false,
     bool ResolvesNamesAsAttributesBeforeEntities = false,
-    bool RebuildsHavingOnTheRoot = false);
+    bool RebuildsHavingOnTheRoot = false,
+    JpaAverageCasts? AverageCasts = null);
+
+/// <summary>
+/// The type names a Jakarta Persistence implementation converts an average into so that it
+/// answers what SQL's AVG answers (decision 161), each measured against SQL Server: an
+/// integer, a long, and a decimal of SQL's precision and scale, the last a format with the
+/// precision as <c>{0}</c> and the scale as <c>{1}</c>.
+/// </summary>
+/// <param name="Int">The integer: Hibernate 7.4.5 <c>Integer</c>, EclipseLink 5.0.0 <c>INTEGER</c>.</param>
+/// <param name="Long">The long: Hibernate <c>Long</c>, EclipseLink <c>BIGINT</c>.</param>
+/// <param name="Decimal">The decimal: Hibernate <c>BigDecimal({0},{1})</c>, EclipseLink <c>DECIMAL({0},{1})</c>.</param>
+public sealed record JpaAverageCasts(string Int, string Long, string Decimal);
 
 /// <summary>
 /// The table behind a TABLE generator, as the implementation would create it from its own

@@ -393,8 +393,9 @@ public static class QueryShapeInputs
         ["ScalarSubquery"] = Hallmarks(
             sql: ["(SELECT AVG(p.UnitPrice)"],
             linq: [".Average(p => p.UnitPrice)"],
-            hql: ["(select avg(p.UnitPrice)"],
-            jpa: ["(select avg(p.UnitPrice)"]),
+            // HQL and JPQL restore the decimal SQL's AVG answers in (decision 161).
+            hql: ["(select cast(avg(p.UnitPrice) as decimal)"],
+            jpa: ["(select cast(avg(p.UnitPrice) as "]),
 
         ["SetOperation"] = Hallmarks(
             sql: ["UNION", "p.ProductName AS Text"],
@@ -653,6 +654,28 @@ public static class QueryShapeInputs
             sql: ["WITH Ranked AS (", "ROW_NUMBER() OVER (PARTITION BY ol.ProductId ORDER BY ol.Quantity DESC, ol.LineNumber ASC) AS RowNumber", "WHERE r.RowNumber = 1"],
             jpa: ["with Ranked as (", "row_number() over (partition by ol.ProductId order by ol.Quantity desc, ol.LineNumber asc) as RowNumber", "where r.RowNumber = 1"]),
 
+        // The aggregate over a window (decision 161), in the same two languages.
+        ["WindowAggregate"] = Hallmarks(
+            sql: ["WITH Averaged AS (", "AVG(ol.UnitPrice) OVER (PARTITION BY ol.ProductId) AS AveragePrice", "WHERE a.UnitPrice > a.AveragePrice"],
+            jpa: ["with Averaged as (", "cast(avg(ol.UnitPrice) over (partition by ol.ProductId) as BigDecimal(38,6)) as AveragePrice", "where a.UnitPrice > a.AveragePrice"]),
+
+        // SQL's average in every language (decision 161): LINQ and HQL cast it back into int,
+        // HQL and JPQL into the decimal, each implementation in its own type names.
+        ["AverageInAProjection"] = Hallmarks(
+            sql: ["AVG(ol.Quantity) AS AverageQuantity", "AVG(ol.UnitPrice) AS AveragePrice", "GROUP BY ol.ProductId"],
+            linq: ["AverageQuantity = (int)g.Average(", "AveragePrice = g.Average("],
+            hql: ["cast(avg(ol.Quantity) as int) as AverageQuantity", "cast(avg(ol.UnitPrice) as decimal) as AveragePrice"],
+            jpa: ["cast(avg(ol.Quantity) as Integer) as AverageQuantity", "cast(avg(ol.UnitPrice) as BigDecimal(38,6)) as AveragePrice"],
+            eclipseLink: ["cast(avg(ol.Quantity) as INTEGER) as AverageQuantity", "cast(avg(ol.UnitPrice) as DECIMAL(38,6)) as AveragePrice"]),
+
+        // The average of a whole number in floating point: the value converted first, which C#
+        // writes as a cast inside the lambda.
+        ["AverageInFloatingPoint"] = Hallmarks(
+            sql: ["AVG(CAST(ol.Quantity AS FLOAT)) AS AverageQuantity"],
+            linq: ["AverageQuantity = g.Average(", "(double)"],
+            hql: ["avg(cast(ol.Quantity as double)) as AverageQuantity"],
+            jpa: ["avg(cast(ol.Quantity as Double)) as AverageQuantity"]),
+
         ["ListAggregation"] = Hallmarks(
             sql: ["STRING_AGG(ol.Description, '; ') WITHIN GROUP (ORDER BY ol.LineNumber ASC) AS Descriptions", "WHERE ol.Quantity > 1", "GROUP BY ol.ProductId"],
             linq: ["Descriptions = string.Join(\"; \", g.OrderBy(ol => ol.LineNumber).Select(ol => ol.Description))", ".Where(ol => ol.Quantity > 1)"],
@@ -683,6 +706,15 @@ public static class QueryShapeInputs
             linq: [".SelectMany(p => ctx.Set<ShopOrderLine>().Where(ol => ol.ProductId == p.ProductId && ", "ol.UnitPrice < p.UnitPrice).DefaultIfEmpty(), (p, ol) => new { p, ol })", "ProductName = t.p.ProductName", "Description = t.ol.Description"],
             hql: ["left join ShopOrderLine ol with ol.ProductId = p.ProductId and ol.UnitPrice < p.UnitPrice", "p.ProductName as ProductName"],
             jpa: ["left join ShopOrderLine ol on (ol.ProductId = p.ProductId and ol.UnitPrice < p.UnitPrice)", "p.ProductName as ProductName"]),
+
+        // A subquery in the ON condition (decision 162): the conjunct names the row of the
+        // chain, so LINQ writes the correlated SelectMany with Contains in its predicate.
+        ["SubqueryInAJoinCondition"] = Hallmarks(
+            sql: [$"LEFT JOIN {Schema}.ShopOrderLines ol ON ol.ProductId = p.ProductId AND p.ProductId IN (SELECT l.ProductId", "l.Quantity > 5", "p.ProductName AS ProductName"],
+            linq: [".SelectMany(p => ctx.Set<ShopOrderLine>().Where(ol => ol.ProductId == p.ProductId && ", "ctx.Set<ShopOrderLine>().Where(l => l.Quantity > 5).Select(l => l.ProductId).Contains(p.ProductId", ".DefaultIfEmpty(), (p, ol) => new { p, ol })", "ProductName = t.p.ProductName"],
+            // A LINQ source names the value its Select projects, so the subquery's column may carry an alias.
+            hql: ["left join ShopOrderLine ol with ol.ProductId = p.ProductId and p.ProductId in (select l.ProductId", "from ShopOrderLine l where l.Quantity > 5)", "p.ProductName as ProductName"],
+            jpa: ["left join ShopOrderLine ol on (ol.ProductId = p.ProductId and p.ProductId in (select l.ProductId", "from ShopOrderLine l where l.Quantity > 5))", "p.ProductName as ProductName"]),
     };
 
     // ---- the deliberately bad query ------------------------------------------------------

@@ -2115,7 +2115,9 @@ public class NHibernateHqlQueryParser(
     /// <c>long</c>/<c>Int64</c>, <c>float</c>/<c>single</c>, <c>double</c> and <c>string</c>,
     /// in any case. NHibernate writes the last as NVARCHAR(4000), which is the same text as
     /// the model's NVARCHAR(MAX) wherever the value converted is no text longer than that.
-    /// Any other type is refused by name.
+    /// Over an average, the conversions the HQL writer writes to restore SQL's average - into
+    /// int, long or decimal, which NHibernate 5.7.0 writes as DECIMAL(29,10) - are read back as
+    /// that average (decision 161). Any other type is refused by name.
     /// </summary>
     private QueryOperand? ParseCast()
     {
@@ -2132,6 +2134,21 @@ public class NHibernateHqlQueryParser(
         var type = Current.Text;
         Advance();
         ConsumeSymbol(")");
+
+        var restoration = type.ToLowerInvariant() switch
+        {
+            "int" or "int32" or "integer" => AverageRestoration.IntoInt,
+            "long" or "int64" => AverageRestoration.IntoLong,
+            "decimal" => AverageRestoration.IntoDecimal,
+            _ => AverageRestoration.None,
+        };
+
+        if (value is not null
+            && restoration != AverageRestoration.None
+            && SqlAverage.Restored(value, restoration, NHibernateDecimalScale, ColumnMapping) is { } restored)
+        {
+            return restored;
+        }
 
         ScalarType? scalar = type.ToLowerInvariant() switch
         {
@@ -2302,6 +2319,13 @@ public class NHibernateHqlQueryParser(
     /// column-to-property lookup, with the same fallback: a name the maps do not know
     /// passes through verbatim.
     /// </summary>
+    /// <summary>The scale of NHibernate 5.7.0's decimal in a conversion: cast(x as decimal) is DECIMAL(29,10) (measured, decision 161).</summary>
+    private const int NHibernateDecimalScale = 10;
+
+    /// <summary>The number a column holds, through the entity behind its alias - the source's where it has none.</summary>
+    private ColumnNumber? ColumnMapping(QueryOperand column)
+        => aliases.TryGetValue(column.Table ?? sourceAlias, out var map) ? ColumnNumber.Of(ColumnMember.TypedBy(map, column.Property!)) : null;
+
     private string ColumnFor(string? qualifier, string property)
     {
         aliases.TryGetValue(qualifier ?? sourceAlias, out var map);

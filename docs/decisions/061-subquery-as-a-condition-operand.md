@@ -1,7 +1,7 @@
 # 061 — Poddotaz jako operand podmínky
 
 Datum: 2026-08-25
-Stav: platí; odrážku o těle poddotazu tvořeném množinovou operací nahrazuje 120
+Stav: platí; odrážku o těle poddotazu tvořeném množinovou operací nahrazuje 120; odrážku o klauzuli `ON` joinu nahrazuje 162
 Požadavky: F7–F10, F11, T2, T3, S1, S2
 Podklad: rozhodnutí [002](002-is-null-as-comparison-operator.md), [010](010-diagnostics-as-returned-data.md), [022](022-native-query-syntax-in-builders.md), [023](023-query-builder-template-method.md), [024](024-typed-query-operand.md), [053](053-a-query-that-would-return-other-rows-is-not-emitted.md) a [060](060-pagination-as-a-query-instruction.md); JSS §5.3, pravidla Q1, Q5, Q11, Q13, Q14; audit 2026-08-02, kap. 8
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="Shop.FindSubqueryInAJoinConditionMapper">
+  <select id="findSubqueryInAJoinCondition" resultType="ShopProduct">
+    SELECT p.ProductName AS ProductName, ol.Description AS Description
+    FROM {{schema}}.ShopProducts AS p
+    LEFT JOIN {{schema}}.ShopOrderLines AS ol ON ol.ProductId = p.ProductId AND p.ProductId IN (SELECT l.ProductId FROM {{schema}}.ShopOrderLines AS l WHERE l.Quantity &gt; 5)
+  </select>
+</mapper>

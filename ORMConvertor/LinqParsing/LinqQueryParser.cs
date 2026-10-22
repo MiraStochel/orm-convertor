@@ -4549,6 +4549,82 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private bool TryReadGroupAggregate(ExpressionSyntax expression, out QueryOperand? aggregate)
     {
+        // The cast around this Average, where one is being read, is this call's alone: an
+        // Average inside its lambda is no average the cast stands over.
+        var castInto = IsAverageCall(expression) ? TakeAverageCast() : null;
+        if (!TryReadGroupAggregateAsWritten(expression, out aggregate))
+        {
+            averageCastInto = castInto;
+            return false;
+        }
+
+        if (aggregate is not null && SqlAverage.IsAverage(aggregate))
+        {
+            aggregate = Average(aggregate, castInto);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The integer the cast being read converts an Average into (decision 161), until the
+    /// Average it stands over takes it - <c>(int)g.Average(…)</c>, <c>(long?)ctx.Set&lt;T&gt;()
+    /// .Average(…)</c> -; null where no such cast is being read.
+    /// </summary>
+    private ScalarType? averageCastInto;
+
+    /// <summary>Whether the Average that took the cast was SQL's average under it, so that the cast is no conversion of its own.</summary>
+    private bool averageCastRestores;
+
+    private ScalarType? TakeAverageCast()
+    {
+        var into = averageCastInto;
+        averageCastInto = null;
+        return into;
+    }
+
+    private static bool IsAverageCall(ExpressionSyntax expression)
+        => Unparenthesized(expression) is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Average" } };
+
+    /// <summary>
+    /// C#'s Average as the SQL the provider writes for it (decision 161): over a whole number
+    /// the average in floating point - EF Core 10.0.10 and NHibernate 5.7.0 write
+    /// AVG(CAST(x AS float)) -, read as SQL's AVG over the value converted into a double; over
+    /// anything else SQL's AVG. Under a cast into the integer SQL's AVG answers in over the value,
+    /// which cuts the quotient off as SQL does, it is SQL's AVG itself, and the cast is spent.
+    /// Where the mapping states no number for the value, the average is refused by name rather
+    /// than read as a value it may not be (decision 053).
+    /// </summary>
+    private QueryOperand Average(QueryOperand average, ScalarType? castInto)
+    {
+        var scalar = SqlAverage.ScalarOf(average.Bare(), ColumnMapping);
+        var restoration = SqlAverage.RestorationOf(scalar);
+        if (castInto is { } into
+            && (restoration, into) is (AverageRestoration.IntoInt, ScalarType.Int) or (AverageRestoration.IntoLong, ScalarType.Long))
+        {
+            averageCastRestores = true;
+            return average;
+        }
+
+        if (scalar is null)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The average '{average}' ranges over a value whose number the mapping does not state, and C#'s Average is the average in floating point over a whole number and SQL's AVG over any other; no artifact was generated.",
+                QueryFeature.Aggregation);
+            return average;
+        }
+
+        return SqlAverage.InFloatingPoint(average, scalar);
+    }
+
+    /// <summary>The number a column holds, through the entity of the row its alias names - the source's where it has none.</summary>
+    private ColumnNumber? ColumnMapping(QueryOperand column)
+        => EntityRowOf(column.Table ?? sourceAlias) is { Map: { } map } ? ColumnNumber.Of(ColumnMember.TypedBy(map, column.Property!)) : null;
+
+    /// <summary>The aggregate as the chain writes it, an Average not yet read as the SQL it computes.</summary>
+    private bool TryReadGroupAggregateAsWritten(ExpressionSyntax expression, out QueryOperand? aggregate)
+    {
         aggregate = null;
 
         if (expression is not InvocationExpressionSyntax invocation
@@ -4557,7 +4633,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return false;
         }
 
-        var name = member.Name.Identifier.Text.ToUpperInvariant();
+        // C# names the average Average, the model AVG, as the terminal aggregate reads it.
+        var name = member.Name.Identifier.Text == "Average" ? "AVG" : member.Name.Identifier.Text.ToUpperInvariant();
         if (name is not ("COUNT" or "SUM" or "MIN" or "MAX" or "AVG"))
         {
             return false;
@@ -7054,8 +7131,30 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return null;
         }
 
-        var value = ReadLeaf(cast.Expression);
-        return value is null ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Cast, [value], castTo: scalar));
+        // A cast into an integer over an Average may be the one the LINQ writer writes to
+        // restore SQL's average (decision 161): the Average it stands over decides, knowing what
+        // it averages, and where it is, the cast is spent.
+        var (savedInto, savedRestores) = (averageCastInto, averageCastRestores);
+        averageCastInto = scalar is ScalarType.Int or ScalarType.Long && IsAverageCall(cast.Expression) ? scalar : null;
+        averageCastRestores = false;
+        QueryOperand? value;
+        bool restores;
+        try
+        {
+            value = ReadLeaf(cast.Expression);
+            restores = averageCastRestores;
+        }
+        finally
+        {
+            (averageCastInto, averageCastRestores) = (savedInto, savedRestores);
+        }
+
+        if (value is null || restores)
+        {
+            return value;
+        }
+
+        return QueryOperand.Computed(QueryExpression.Call(QueryFunction.Cast, [value], castTo: scalar));
     }
 
     /// <summary>
@@ -7462,10 +7561,24 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             steps.RemoveAll(s => s.Name == "Distinct");
         }
 
+        // The cast around this Average, where one is being read, is this call's alone; the
+        // average is projected as the provider computes it, in the nested scope that types it
+        // (decision 161).
+        var castInto = function == "AVG" ? TakeAverageCast() : null;
         var sub = ReadSubQueryOperand(
             root!,
             steps,
-            () => queryBuilder.Project(sourceAlias, attribute == "*" ? attribute : ColumnOf(sourceAlias, attribute), null, function, distinct),
+            () =>
+            {
+                var column = attribute == "*" ? attribute : ColumnOf(sourceAlias, attribute);
+                if (function == "AVG")
+                {
+                    queryBuilder.Project(Average(QueryOperand.Column(sourceAlias, column, function, distinct), castInto));
+                    return;
+                }
+
+                queryBuilder.Project(sourceAlias, column, null, function, distinct);
+            },
             elementParameter ?? defaultAlias,
             correlate);
 

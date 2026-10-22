@@ -574,6 +574,41 @@ Hibernate = hibernate/FindBestRowPerGroup.jpql
 MyBatis = mybatis/FindBestRowPerGroupMapper.xml
 fallbackBy = EFCore:WindowFunction, NHibernate:IntermediateResult, EclipseLink:IntermediateResult
 
+# Every line priced above the average of its product's lines: the average over a window in
+# an intermediate result and the filter over it outside (decision 161) - the shape of FIBEN
+# q237. The same languages state it as the row number above, and the same three targets write
+# it in native SQL under the first construct their language lacks.
+[WindowAggregate]
+Dapper = dapper/FindWindowAggregate.sql
+Hibernate = hibernate/FindWindowAggregate.jpql
+MyBatis = mybatis/FindWindowAggregateMapper.xml
+fallbackBy = EFCore:WindowFunction, NHibernate:IntermediateResult, EclipseLink:IntermediateResult
+
+# The average quantity and the average price of every product's lines as SQL computes them
+# (decision 161): over the whole number the quotient cut off, over the decimal a decimal. Every
+# language states it; the five that average otherwise cast their average back - LINQ and HQL
+# into int, HQL and JPQL into the decimal -, which is what each of them writes as a target.
+[AverageInAProjection]
+Dapper = dapper/FindAverageInAProjection.sql
+EFCore = efcore/FindAverageInAProjection.query.cs
+NHibernate = nhibernate/FindAverageInAProjection.hql
+Hibernate = hibernate/FindAverageInAProjection.jpql
+EclipseLink = eclipselink/FindAverageInAProjection.jpql
+MyBatis = mybatis/FindAverageInAProjectionMapper.xml
+
+# The average quantity of every product's lines in floating point - what C#'s Average and
+# Hibernate's avg compute over a whole number, and what T-SQL and HQL 5.7 say by converting
+# the value first (decision 161). JPQL's AVG cuts the quotient off and EclipseLink 5.0 passes
+# a cast's type through to SQL Server, which knows no Double, so EclipseLink is no source and
+# writes the query in native SQL.
+[AverageInFloatingPoint]
+Dapper = dapper/FindAverageInFloatingPoint.sql
+EFCore = efcore/FindAverageInFloatingPoint.query.cs
+NHibernate = nhibernate/FindAverageInFloatingPoint.hql
+Hibernate = hibernate/FindAverageInFloatingPoint.jpql
+MyBatis = mybatis/FindAverageInFloatingPointMapper.xml
+fallbackBy = EclipseLink:Expression
+
 # The descriptions of the lines of every product as one list, in the order of their line
 # numbers. LINQ joins the elements of the group with string.Join, which EF Core translates to
 # STRING_AGG over a column that holds no NULL; HQL 7.4 writes listagg. HQL 5.7 and JPQL have
@@ -630,6 +665,18 @@ NHibernate = nhibernate/FindJoinBeyondEqualities.hql
 Hibernate = hibernate/FindJoinBeyondEqualities.jpql
 EclipseLink = eclipselink/FindJoinBeyondEqualities.jpql
 MyBatis = mybatis/FindJoinBeyondEqualitiesMapper.xml
+
+# Every product with its lines, for the products of which some line was ordered in bulk: a
+# subquery in the ON condition of a left join (decision 162). Every language states it - HQL
+# 7.4 and JPQL after on, HQL 5.7 after with, LINQ as the correlated SelectMany with Contains in
+# its predicate, which EF Core 10 translates to an OUTER APPLY with the subquery inside.
+[SubqueryInAJoinCondition]
+Dapper = dapper/FindSubqueryInAJoinCondition.sql
+EFCore = efcore/FindSubqueryInAJoinCondition.query.cs
+NHibernate = nhibernate/FindSubqueryInAJoinCondition.hql
+Hibernate = hibernate/FindSubqueryInAJoinCondition.jpql
+EclipseLink = eclipselink/FindSubqueryInAJoinCondition.jpql
+MyBatis = mybatis/FindSubqueryInAJoinConditionMapper.xml
 
 # A label concatenated over the one nullable column of the domain. SQL, HQL and JPQL yield
 # NULL for a customer without notes; C# takes a null in + as the empty string and EF Core 10
