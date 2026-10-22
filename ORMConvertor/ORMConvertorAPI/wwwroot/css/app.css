@@ -771,10 +771,6 @@ ul.page-index li {
 .badge-ldbc-simplified     { background: #a05a00; }
 .badge-ldbc-not-translated { background: #b3261e; }
 
-.ldbc-summary h3 {
-  margin-bottom: 0.5rem;
-}
-
 /* Where a query lands in a target (decision 113). Its own language is plain text; native SQL
    and a refusal are badges in the colours of the Fallback and Failure records they come with. */
 table.ldbc-matrix .ldbc-language {

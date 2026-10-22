@@ -72,7 +72,8 @@
       <ul class="page-index">
         <li><a href="#data-set">The data set</a></li>
         <li><a href="#using-it">Using it</a></li>
-        <li><a href="#what-translates">What translates and what does not</a></li>
+        <li><a href="#what-translates">What translates, and how</a></li>
+        <li><a href="#nesting">Nesting, by Kim's taxonomy</a></li>
         <li><a href="#run">The documented run</a></li>
         <li><a href="#by-target">Every query in every target</a></li>
         <li><a href="#queries">The queries</a></li>
@@ -179,50 +180,62 @@
     </section>
 
     <section id="what-translates">
-      <h2>What translates and what does not</h2>
-      <div class="card-grid ldbc-summary">
-        <article>
-          <h3><span class="fiben-count" data-translation="10"></span> as the benchmark states them</h3>
-          <p>
-            The text states the benchmark's query, and the run holds every target to it.
-            Inner joins along foreign keys, grouped sums, averages, counts, minima and maxima
-            with <code>HAVING</code>, subqueries in <code>IN</code> and <code>NOT IN</code>,
-            correlated scalar subqueries compared with an aggregate, <code>UNION</code>, the
-            first <em>n</em> rows, <code>BETWEEN</code>, <code>YEAR</code> and <code>MONTH</code>,
-            a common table expression, derived tables nested three deep with an aggregate or a
-            ranking over a window inside them &mdash; <code>AVG</code>, <code>MAX</code>,
-            <code>MIN</code> or <code>DENSE_RANK</code> <code>OVER (PARTITION BY …)</code>
-            &mdash;, and a subquery in the <code>ON</code> condition of a join. An average comes
-            back from every target as SQL computes it: over whole numbers with the quotient cut
-            off, over decimals as a decimal.
-          </p>
-        </article>
-        <article>
-          <h3><span class="fiben-count" data-translation="20"></span> simplified</h3>
-          <p>
-            None. A text that returned less or other than the benchmark's query would say what
-            in its note.
-          </p>
-        </article>
-        <article>
-          <h3><span class="fiben-count" data-translation="30"></span> not translated</h3>
-          <p>
-            None, since an aggregate over a window inside a derived table and a subquery in the
-            <code>ON</code> condition of a join can be said; the documented run below still
-            refused the eight queries that need them. The status stays, so that a query the
-            tool cannot say would be shown as one rather than left out.
-          </p>
-        </article>
-      </div>
+      <h2>What translates, and how</h2>
       <p>
-        By Kim's taxonomy the catalog holds
+        <strong>All <span class="fiben-count" data-translation="10"></span> queries are
+        translated as the benchmark states them</strong>: the text states the benchmark's
+        query, every framework receives it, and the run holds every target to its rows. The
+        constructs the catalog needs are inner joins along foreign keys, grouped sums,
+        averages, counts, minima and maxima with <code>HAVING</code>, subqueries in
+        <code>IN</code> and <code>NOT IN</code>, correlated scalar subqueries compared with an
+        aggregate, <code>UNION</code>, the first <em>n</em> rows, <code>BETWEEN</code>,
+        <code>YEAR</code> and <code>MONTH</code>, a common table expression, derived tables
+        nested three deep with an aggregate or a ranking over a window inside them &mdash;
+        <code>AVG</code>, <code>MAX</code>, <code>MIN</code> or <code>DENSE_RANK</code>
+        <code>OVER (PARTITION BY …)</code> &mdash;, and a subquery in the <code>ON</code>
+        condition of a join. An average comes back from every target as SQL computes it: over
+        whole numbers with the quotient cut off, over decimals as a decimal. Every query
+        carries its status in the list below and in the table: a query the tool could say only
+        after a simplification, or not at all, would be shown with that status rather than left
+        out, and a text that returned less or other than the benchmark's query would say what
+        in its note.
+      </p>
+
+      <h3 id="nesting">Nesting, by Kim's taxonomy</h3>
+      <p>
+        What makes FIBEN a test of its own is nesting: where LDBC is wide in joins, FIBEN
+        answers a question with a query inside a query. The catalog sorts every query by Kim's
+        taxonomy of nested SQL, by what the inner block does and whether it refers to the
+        outer one: <strong>type&nbsp;N</strong> is a subquery in <code>IN</code> that neither
+        aggregates nor refers outward; <strong>type&nbsp;A</strong> a subquery that returns
+        one aggregate, compared with a column of the outer block; <strong>type&nbsp;J</strong>
+        a subquery that refers to the outer block and does not aggregate; and
+        <strong>type&nbsp;JA</strong> one that does both, an aggregate over the rows the outer
+        block's row selects. The catalog holds
         <span class="fiben-nesting-count" data-nesting="10"></span> single-block queries,
         <span class="fiben-nesting-count" data-nesting="20"></span> of type N,
         <span class="fiben-nesting-count" data-nesting="30"></span> of type A,
         <span class="fiben-nesting-count" data-nesting="40"></span> of type J and
         <span class="fiben-nesting-count" data-nesting="50"></span> of type JA, answering
         <span class="fiben-question-count"></span> questions over
-        <span class="fiben-table-count"></span> of the tables.
+        <span class="fiben-table-count"></span> of the tables; each query names its type
+        below, and the table of every query in every target is grouped by it.
+      </p>
+      <p>
+        The tool reads a nested query as the tree it is. A subquery that stands where a value
+        or a set of values stands &mdash; in <code>IN</code>, beside a comparison, in
+        <code>EXISTS</code> &mdash; is an operand of the condition that holds it, and a
+        condition is a tree, so a subquery may stand in <code>WHERE</code>, in
+        <code>HAVING</code> and in the <code>ON</code> condition of a join alike, correlated
+        or not. A subquery that stands where a table stands &mdash; a derived table or a common
+        table expression &mdash; is a named intermediate result, which may hold a derived table
+        of its own, so the three levels of the benchmark's deepest queries are three
+        definitions, and a window inside one is a column of it like any other. Where a
+        target's language stops short of the tree, the query goes out in native SQL, as the
+        next paragraph says: LINQ has no scalar subquery with joins of its own as a comparison
+        operand and forms no aggregate compared with a subquery in <code>HAVING</code>, HQL of
+        NHibernate&nbsp;5.7 no <code>TOP</code> inside a subquery and no <code>UNION</code>
+        &mdash; and the documented run below counts what that came to in each target.
       </p>
       <p>
         A target whose query language cannot say a query writes it in the native SQL of its
