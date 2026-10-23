@@ -11,6 +11,7 @@ Autoritativní popis projektu, **členěný podle žánru, ne podle času** (roz
 | [`open-items.md`](open-items.md) | Co **zbývá**; `Na řadě` říká, kde se pokračuje. | živé; hotové mizí |
 | [`decisions/`](decisions/README.md) | **Proč** je nástroj takový; jedno rozhodnutí = jeden soubor. | neměnné kromě `Stav` (a `revidováno` před implementací) |
 | [`audits/`](audits/README.md) | Co jsme **kdy věděli**. | neměnné |
+| [`runs/`](runs/README.md) | Co se **kdy naměřilo**: záznamy běhů sad a měření s commitem (rozh. [167](decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md)). | záznamy neměnné, přehled přibývá |
 | [`analysis/`](analysis/README.md) | Jak se chovají **frameworky samotné** a jaký **veřejný kód** na nich stojí. | přibývá |
 | [`threat-model.md`](threat-model.md) | Čemu je nástroj **vystavený**. | živé |
 | [`use-cases.md`](use-cases.md) | **Kdo** nástroj používá a proč. | živé |
@@ -36,9 +37,9 @@ flowchart LR
 
 - **Volba se nejdřív zapíše** do `decisions/` (a rejstříku), pak se programuje. Provedení rozhodnutého, oprava ani test volbou nejsou — zkouška: zeptá se čtenář *proč tohle a ne jiné*?
 - **Rozhodnutí se nepřepisují:** změna = nový soubor a `nahrazeno NNN`, změna části = nový soubor a stav `platí; <část> nahrazuje NNN` na obou stranách (rozh. [150](decisions/150-a-part-of-a-decision-is-replaced-by-a-new-file-and-both-statuses-say-so.md)); `revidováno` jen pro nepředvídaný případ před implementací ([`decisions/README.md`](decisions/README.md)).
-- **Změna chování končí v `architecture.md`**; běh a testy v `ORMConvertor/README.md`, posun hranice v `subset.md`, změna nároku či důkazu v `traceability.md`; hotová položka mizí z `open-items.md`.
-- **Zmražené se nepřepisuje:** `requirements.md`, `baseline.md`, audity, schválený záměr a specifikace.
+- **Změna chování končí v `architecture.md`**; běh a testy v `ORMConvertor/README.md`, záznam běhu v `runs/`, posun hranice v `subset.md`, změna nároku či důkazu v `traceability.md`; hotová položka mizí z `open-items.md`.
+- **Zmražené se nepřepisuje:** `requirements.md`, `baseline.md`, audity, záznamy běhů, schválený záměr a specifikace.
 - **Živé dokumenty popisují jen současnost, stručně:** žádná historie („od data", „do té doby", jak se co našlo — to nese git a anotace značek), žádné odůvodnění (odkaz na rozhodnutí), každý fakt na jednom místě; žádné počty, které další změna posune (kolik je testů, položek, vad, příkladů, dotazů, záznamů) — pojmenuj množinu a odkaž, kde se počítá; číslo zůstává jen tam, kde je samo faktem (zafixovaná verze, změřená hodnota s datem, číslo požadavku, údaj zmrazeného dokumentu nebo datované analýzy); tabulky a schémata (`mermaid`) mají přednost před odstavci.
-- **Obě README nesou návod a nárok, ne stav vývoje:** do `open-items.md` neodkazují a vývoj nevyprávějí; záznam běhu v `ORMConvertor/README.md` je řádek tabulky s commitem a krátkou poznámkou — co běh našel a jak se to opravilo, nese rozhodnutí a git.
+- **Obě README nesou návod a nárok, ne stav vývoje:** do `open-items.md` neodkazují, vývoj nevyprávějí a záznamy běhů nenesou. Záznam běhu je v `runs/` (rozh. [167](decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md)): popsaný běh vlastním souborem, krátký záznam řádkem přehledu; co běh našel a jak se to opravilo, nese rozhodnutí a git.
 - **Žánr se nemíchá:** odůvodnění jen v `decisions/`, stav v `architecture.md` a `subset.md`, zbývající práce jen v `open-items.md` (nálezy auditu tím seznamem nejsou). Mezera v kódu není automaticky chyba.
 - **`docs/` je česky**, zbytek repozitáře anglicky; zafixované verze kanonicky v `architecture.md`, „Zafixované verze".

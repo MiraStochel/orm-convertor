@@ -1,4 +1,4 @@
-A web-based tool for translating between ORM frameworks. This operating manual says how it is run, deployed, configured and tested, and how each path was verified — the operational half of the deployment view (decision [058](../docs/decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)); the tool itself is described in [`docs/architecture.md`](../docs/architecture.md). **Last verified against the code: 2026-10-18.**
+A web-based tool for translating between ORM frameworks. This operating manual says how it is run, deployed, configured and tested, and how each path was verified — the operational half of the deployment view (decision [058](../docs/decisions/058-only-the-operational-half-of-the-deployment-view-moves.md)); the tool itself is described in [`docs/architecture.md`](../docs/architecture.md), and what each run of the suites and each measurement found is recorded in [`docs/runs/`](../docs/runs/README.md) (decision [167](../docs/decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md)). **Last verified against the code: 2026-10-18.**
 
 # Deployment
 
@@ -131,7 +131,7 @@ docker compose --profile test run --rm java_tests    # the Java suite
 
 S5's "one main command" per suite: the host needs only Docker. Each `run` starts SQL Server, creates the database once it is healthy and runs the whole suite in its own schema (decision [076](../docs/decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)). `test_app` is the tool the Java suite translates against (decision [078](../docs/decisions/078-java-suite-as-a-client-of-a-running-instance.md)), its catalog on the test database, aliased `testapp` because the JDK's `HttpClient` refuses `_` in a host name. The SQL Server of the profile is the image of `mssql_db` at scale factor 0.1 (`LDBC_TEST_SCALE_FACTOR`), so its first start restores WideWorldImporters and loads `LdbcSnb` with its validation set before `test_db_init` lets the suites run; both suites then run [the LDBC judge](#the-ldbc-judge) as well, `test_app_ldbc` serving the Java one.
 
-> **`run` does not rebuild.** Without `build` it measures the tree the images were built from — green, with nothing to say so. **The only tell is the test count** against [the size of the suite](#how-large-the-suite-is-and-what-it-covers).
+> **`run` does not rebuild.** Without `build` it measures the tree the images were built from — green, with nothing to say so. **The only tell is the test count** against [the size of the suite](../docs/runs/README.md#velikost-sady-a-pokrytí).
 
 ## On the host
 
@@ -152,11 +152,7 @@ The tests **create their schema themselves** in any reachable SQL Server (decisi
 
 ### The F4 share
 
-`Catalog/CatalogMetadataShareTest` counts the criterion of F4 — at least 95 % of the tracked metadata read correctly against the test database, deviations recorded — over both schemas above, the expected facts read out of their scripts. It prints the share per schema and kind; a deviation the test does not record fails it, even above 95 %. A record names the commit it measured (decision [095](../docs/decisions/095-a-dated-run-record-names-its-commit.md)).
-
-| Date | Tree | `TestSchema.sql` | LDBC | Test database | Deviations |
-|---|---|---|---|---|---|
-| 2026-10-21 | `223e791` + next commit, host | 163 / 163 | 299 / 299 | 462 / 462 = 100 % | none |
+`Catalog/CatalogMetadataShareTest` counts the criterion of F4 — at least 95 % of the tracked metadata read correctly against the test database, deviations recorded — over both schemas above, the expected facts read out of their scripts. It prints the share per schema and kind; a deviation the test does not record fails it, even above 95 %. The measured shares are [recorded in `docs/runs/`](../docs/runs/README.md#podíl-f4).
 
 ## The LDBC judge
 
@@ -171,7 +167,7 @@ The validation set of LDBC Interactive v1 judges the Interactive queries of the 
 
 - **Without the settings** the judge skips with the reason; the rest of the suite does not need `LdbcSnb`.
 - **The compose profile** sets everything and replays the first 1000 lines of the SF 0.1 set - a check.
-- **The whole set over SF 1 is a run of its own**, the two suites one after the other because they share the lock, in the judge's mode of decision [164](../docs/decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md) (in the measurement mode it projects to several days per suite, [the projection](#time-by-step)). It runs against `mssql_db` of the system profile and, for the Java suite, an instance over the LDBC catalog, every command with `--env-file judge.env`. Build the suites first — days spent on a stale image is the trap above at its most expensive — and start each detached, named and without `--rm`, so that `docker logs <name>` keeps the result whatever happens to the shell that started it; afterwards `docker compose up -d mssql_db` returns the database to the measurement mode:
+- **The whole set over SF 1 is a run of its own**, the two suites one after the other because they share the lock, in the judge's mode of decision [164](../docs/decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md) (in the measurement mode it projects to several days per suite, [the projection](../docs/runs/2026-10-18-ldbc-judge-time-by-step.md)). It runs against `mssql_db` of the system profile and, for the Java suite, an instance over the LDBC catalog, every command with `--env-file judge.env`. Build the suites first — days spent on a stale image is the trap above at its most expensive — and start each detached, named and without `--rm`, so that `docker logs <name>` keeps the result whatever happens to the shell that started it; afterwards `docker compose up -d mssql_db` returns the database to the measurement mode:
 
   ```sh
   docker compose --env-file judge.env up -d --build mssql_db
@@ -188,106 +184,11 @@ The validation set of LDBC Interactive v1 judges the Interactive queries of the 
   ```
 
   A run stopped in the middle leaves the inserts of the lines it replayed in `LdbcSnb`; the next replay removes them first, and `database/ldbc/updates/undo.sql` does the same by hand.
+- **The record** of a whole-set run goes into [`docs/runs/`](../docs/runs/README.md) as a file of its own: the commit, the mode of the server, the tests, the verdict of each framework and the replay time.
 - **Loading the set elsewhere:** take `validation_params-sf<N>.csv` of the scale factor the data has from `validation_params-interactive-v1.0.0-sf0.1-to-sf10.tar.zst` at `datasets.ldbcouncil.org/interactive-v1/`, run `database/ldbc/validation.sql` with `{{schema}}` replaced by `dbo` and `-v ValidationFile=<path the server can read>`, then add the extended property `ldbc.validation` with the file's name. After a change to `database/ldbc/indexes.sql` (decision [121](../docs/decisions/121-the-text-of-a-catalog-query-takes-the-shape-its-planner-needs-and-ldbcsnb-carries-the-indexes-its-reads-need.md)) run that script the same way; it is rerunnable, and the container does it by itself on the next start.
 - **One replay at a time:** a replay holds the application lock `ldbc.validation` on its connection, so the other suite waits; the lock dies with the connection.
 - **The frameworks of a suite read at once** (decision [166](../docs/decisions/166-the-judge-reads-a-segment-between-inserts-in-every-framework-at-once.md)): the reads between two inserts see the same state, so each framework reads them in a thread of its own and in the order of the lines, and the next insert waits for all of them. The select times a replay prints are therefore taken under the others' load; the replay is as long as its slowest framework in each segment.
 - **Every command of a replay has the same time limit** (decision [146](../docs/decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md)), the reads of the cells included: each suite puts it into the connection string (`Command Timeout`) or the JDBC URL (`queryTimeout`) it hands the frameworks, whatever the configured one said, so the driver applies it to every statement without any framework being told. It is the limit of one execution in the Advisor's policy as well, and `LdbcValidationTest` holds the three equal. A read over it fails its cell.
-
-### Whole-set runs
-
-The verdict of decision [117](../docs/decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md): the whole `validation_params-sf1` (138 747 lines, 7 041 of them inserts) over `mssql_db` on MIS3, the image built by `build` right before. A record names the commit it measured (decision [095](../docs/decisions/095-a-dated-run-record-names-its-commit.md)) and the mode of the server (decision [164](../docs/decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md)); the two below predate both modes and ran on all eight threads of the host without a limit of parallelism.
-
-| Started | Tree | Suite | Tests | As specified (19 queries) | IC 13, IC 14 (measured) | Replay |
-|---|---|---|---|---|---|---|
-| 2026-10-12 | `580ab90` | .NET: Dapper, EF Core, NHibernate | 86 passed, 0 skipped | every read agrees in all three | 6 818 of 6 818 reads (100.0 %) each, in all three | 1226 min, 113 lines a minute |
-| 2026-10-14 | `5656945` | Java: Hibernate, EclipseLink, MyBatis | 81 passed, 0 skipped | every read agrees in all three | 6 818 of 6 818 reads (100.0 %) each, in all three | 1518 min, 91 lines a minute |
-
-Both runs also rejected the five mutations of IC 2 in every framework and returned `LdbcSnb` to its loaded state. They judged IC 13 and IC 14 in their texts with a depth bound, not in the texts of decisions [140](../docs/decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) and [141](../docs/decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md).
-
-### Time by step
-
-The compensation test of each suite prints the time of the replay split by step: the steps outside the cells, per framework the translation and compilation of its cells and the select and comparison summed over its reads, and per query the mean select of a read in each framework; the per-query lines are in the test output of a run.
-
-Measured 2026-10-18 over `32f0949`: both suites in their containers (`tests`, and `java_tests` against the rebuilt `ormconvertor` over `LdbcSnb`), one after the other against `mssql_db` in the fixed environment of decision [145](../docs/decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md) with turbo on, as the judge runs (the maximum processor state read `0x63`, the minimum `0x05`); the first 500 lines of SF 1 (476 reads of all 21 judged queries, 24 inserts), then the first 250 (233 reads, 17 inserts), each suite twice. Every cell agreed with the judge in all four runs. The projection to the whole set multiplies the per-query mean of each framework by the count of that query in the set (6 818 reads of each IC query, 7 162 of IS 1–3, 3 692 of IS 4–7).
-
-| | Dapper | EF Core | NHibernate | Hibernate | EclipseLink | MyBatis |
-|---|---|---|---|---|---|---|
-| translation of 21 cells, 500-line run / 250-line run | 2.4 s / 2.3 s | 2.3 s / 1.6 s | 1.5 s / 1.3 s | 3.9 s / 1.5 s | 1.6 s / 1.2 s | 1.4 s / 1.1 s |
-| compilation of 21 cells, 500 / 250 | 6.2 s / 5.0 s | 12.1 s / 12.1 s | 6.3 s / 6.2 s | 9.8 s (6.4 s bootstrap) / 8.9 s (5.8 s) | 5.8 s (1.9 s) / 4.4 s (1.6 s) | 7.8 s (0.7 s) / 6.1 s (0.6 s) |
-| select, 476 reads of lines 1–500 | 316.2 s | 866.9 s | 276.4 s | 284.2 s | 271.2 s | 283.4 s |
-| select, mean of a read, lines 1–500 | 664 ms | 1 821 ms | 581 ms | 597 ms | 570 ms | 596 ms |
-| select, 233 reads of lines 1–250 | 119.0 s | 131.5 s | 117.2 s | 120.7 s | 117.4 s | 122.2 s |
-| select, mean of a read, lines 1–250 | 511 ms | 564 ms | 503 ms | 518 ms | 504 ms | 525 ms |
-| whole set of selects projected from lines 1–500 | 23.0 h | 63.2 h | 20.1 h | 20.7 h | 19.8 h | 20.7 h |
-| the same projected from lines 1–250 | 18.8 h | 20.7 h | 18.5 h | 19.0 h | 18.5 h | 19.3 h |
-
-The replay took 25.5 min (.NET) and 14.9 min (Java) over 500 lines and 7.2 and 6.7 min over 250, the steps outside the cells under 45 s in all four runs. The projection holds within about 15 % for every cell but IC 14 in EF Core, whose reads of lines 251–500 average about 43 s where Dapper and NHibernate read the same parameters in 1.6–2.0 s, so EF Core projects anywhere between 21 and 63 h. **The whole set in the fixed environment is to be expected at 2.5–5 days for the .NET suite and 2.5–3 for the Java one**; the runs of 2026-10-12 and 2026-10-14, outside it, took 20 h and 25 h. The judge runs in the judge's mode instead, below.
-
-**The judge's mode** (decisions [164](../docs/decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md) and [166](../docs/decisions/166-the-judge-reads-a-segment-between-inserts-in-every-framework-at-once.md)), measured 2026-10-22 over `1bc69c3` and the change of decisions 165 and 166: the first 250 lines of SF 1 against `mssql_db` with every processor of the VM (four), the plan cache emptied and the data in the buffer pool before each run, turbo on (the maximum processor state `0x64`, the minimum `0x05`). *Sequential* is the replay before decision 166, *concurrent* the replay of it; every run passed all 90 .NET and 82 Java tests.
-
-| Suite | Replay | MAXDOP | Replay time | Select of one framework over 233 reads |
-|---|---|---|---|---|
-| .NET | sequential | 0 | 3.6 min | 58–60 s |
-| .NET | sequential | 1 | 6.8 min | 71–74 s; EF Core 225 s (IC 14 in a bad plan) |
-| .NET | concurrent | 0 | 2.9 and 3.2 min | 130–150 s |
-| .NET | concurrent | 1 | 2.8 and 2.6 min | 118–128 s |
-| .NET | concurrent | 2 | 3.1 and 3.1 min | 131–147 s |
-| Java | sequential | 0 | 3.4 min | 58–62 s |
-| Java | concurrent | 1 | 2.6 min | 120–123 s |
-| Java | concurrent | 0 | 2.8 min | 135–141 s |
-
-Three sequential .NET runs of MAXDOP 0 outside that protocol are left out of the table: right after the switch, with the buffer pool cold, 4.2 min; the next one, over the plans the first left in the cache, 9.4 min, IC 14 in EF Core at 27.6 s a read; and one taken while the host downloaded in the background, 5.6 min. Against the 7.2 and 6.7 min of the measurement mode the judge's mode is 2.6–2.8 times faster; the whole set is to be expected at about a day per suite, longer where IC 14 in EF Core keeps a bad plan over a long stretch (1.0–2.5 s a read in some runs, 13.7–27.6 s in others).
-
-### Catalog query times
-
-The window of decision [140](../docs/decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md): every query of the catalog runs over `LdbcSnb` on MIS3 between 0.2 s and 300 s, the upper bound met by scale factor 1, the lower one by repetitions in a measurement (decision [141](../docs/decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md)). Measured 2026-10-15 over `86a102b` + the next commit (the five path queries in their new texts, the rest unchanged): each text with its example parameters through Dapper against `mssql_db` (SF 1), four runs, the smallest of the three warm ones; Intel Core i7-1065G7 with turbo on, SQL Server 2022 in Docker Desktop, before the fixed environment of decision [145](../docs/decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md), whose numbers are not comparable with these.
-
-| Query | ms | Query | ms | Query | ms | Query | ms |
-|---|---|---|---|---|---|---|---|
-| IS 1 | 2 | IC 1 | 58 | IC 12 | 1 001 | BI 9 | 341 |
-| IS 2 | 2 | IC 2 | 85 | IC 13 | 170 | BI 10 | 1 004 |
-| IS 3 | 3 | IC 3 | 1 446 | IC 14 | 2 243 | BI 11 | 5 205 (2.5–14 s between runs) |
-| IS 4 | 2 | IC 4 | 61 | BI 1 | 235 | BI 12 | 603 |
-| IS 5 | 2 | IC 5 | 210 | BI 2 | 305 | BI 13 | 257 |
-| IS 6 | 2 | IC 6 | 266 | BI 3 | 479 | BI 14 | 38 469 |
-| IS 7 | 3 | IC 7 | 68 | BI 4 | 412 | BI 15 | 5 259 |
-| | | IC 8 | 8 | BI 5 | 2 820 | BI 16 | 3 959 |
-| | | IC 9 | 237 | BI 6 | 26 785 | BI 17 | 1 488 |
-| | | IC 10 | 173 | BI 7 | 130 | BI 18 | 11 807 |
-| | | IC 11 | 19 | BI 8 | 835 | BI 19 | 6 623 |
-| | | | | | | BI 20 | 128 |
-
-Below 0.2 s are index lookups and small joins (IS 1–7, IC 1, IC 2, IC 4, IC 7, IC 8, IC 10, IC 11, IC 13, IC 14, BI 7, BI 20), which no scale factor lifts over the bound.
-
-**Noise** (decision [145](../docs/decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md)), measured 2026-10-17 over `6f2c1a2` + the next commit the same way over 21 of the queries, three passes each: before the fixed environment, with turbo on, the medians of IC 5 and IC 9 differed 2–4× between passes (IC 5: 936, 214 and 608 ms); in it, turbo off, by under 5 % (IC 5: 1 810, 1 790 and 1 782 ms), at absolute times 4–9× higher, about half of that MAXDOP 1. Without the indexes of `indexes.sql` no short query rose over the bound.
-
-**The whole catalog in the fixed environment**, measured 2026-10-17 over `d3d1a9a` the same way from the host (SF 1, MAXDOP 1, 4096 MB, processors 0–1, the VM at four processors and 8 GB; the maximum and minimum processor state both `0x63`): the median of the warm runs after one cold run, four runs for queries below 5 s, three for the longer ones, two for BI 6. BI 14 was not run: its time put it anywhere between 90 s and over the window.
-
-| Query | ms | Query | ms | Query | ms | Query | ms |
-|---|---|---|---|---|---|---|---|
-| IS 1 | 3 | IC 1 | 121 | IC 12 | 2 331 | BI 9 | 1 272 |
-| IS 2 | 3 | IC 2 | 274 | IC 13 | 269 | BI 10 | 2 199 |
-| IS 3 | 4 | IC 3 | 2 804 | IC 14 | 4 927 | BI 11 | 3 141 |
-| IS 4 | 3 | IC 4 | 124 | BI 1 | 2 200 | BI 12 | 1 358 |
-| IS 5 | 3 | IC 5 | 1 737 | BI 2 | 1 071 | BI 13 | 245 |
-| IS 6 | 3 | IC 6 | 625 | BI 3 | 1 035 | BI 14 | not run |
-| IS 7 | 4 | IC 7 | 334 | BI 4 | 3 591 | BI 15 | 12 406 |
-| | | IC 8 | 16 | BI 5 | 6 702 | BI 16 | 912 |
-| | | IC 9 | 1 259 | BI 6 | 60 507 | BI 17 | 3 304 |
-| | | IC 10 | 977 | BI 7 | 273 | BI 18 | 36 310 (26.6–36.3 s between runs) |
-| | | IC 11 | 35 | BI 8 | 3 320 | BI 19 | 117 773 |
-| | | | | | | BI 20 | 290 |
-
-Every query that ran is under the upper bound. Below 0.2 s remain IS 1–7, IC 1, IC 4, IC 8 and IC 11, which the policy of decision 145 repeats up to its 1 000 ms target.
-
-The depths of the path queries, measured from every person over the same data set (`LdbcJudge/LdbcPathQueryTest` holds them):
-
-| Edges | Persons with an edge | Average degree | Components | Depth | Pairs at the depth |
-|---|---|---|---|---|---|
-| `knows` (IC 13, IC 14) | 9 163 | 39.4 | 1 | 5, the diameter | 2 172 of 83 951 406 |
-| `knows` between persons who replied to each other (BI 19) | 8 674 | 32.4 | 1 | 5, the most edges on a cheapest path | 21 056 of 75 229 602 |
-| `knows` through a shared university (BI 20) | 3 038 | 4.9 | 443 | 7 | 12 of 70 146 |
-| `knows` priced by the forums of the example timeframe (BI 15) | 9 163 | 39.4 | 1 | 11 | 4 of 83 951 406 |
 
 ## The FIBEN run
 
@@ -303,7 +204,7 @@ The FIBEN catalog (decision [149](../docs/decisions/149-fiben-as-a-third-referen
 | leave the measurement out | `ORMCONVERTOR_FIBEN_MEASURE=0` | the same |
 
 - **Without the settings** every case skips with the reason; nothing else in either suite needs `Fiben`.
-- **The record of a run** goes below, beside the LDBC runs: the commit, the environment, the stage each query reached in each framework, the agreement with the source and with the judge, the medians, and a line of notes. The files of a run - `cells.tsv` (one line per cell with its outcome, times, rows and agreement), `judge-candidate.tsv` (the source rows in the form of the judge) and `summary.txt`, and their `java-` counterparts - stay out of git (decision [042](../docs/decisions/042-measured-benchmark-output-out-of-git.md)), except the judge made from a documented run, `database/fiben/judge.tsv`.
+- **The record of a run** goes into [`docs/runs/`](../docs/runs/README.md) as a file of its own, beside the LDBC runs: the commit, the environment, the stage each query reached in each framework, the agreement with the source and with the judge, the medians, and a line of notes. The files of a run - `cells.tsv` (one line per cell with its outcome, times, rows and agreement), `judge-candidate.tsv` (the source rows in the form of the judge) and `summary.txt`, and their `java-` counterparts - stay out of git (decision [042](../docs/decisions/042-measured-benchmark-output-out-of-git.md)), except the judge made from a documented run, `database/fiben/judge.tsv`.
 - **Start it detached and named**, as the LDBC judge, after rebuilding what it runs - the suites, the database image and, for the Java suite, an instance over the FIBEN catalog:
 
   ```sh
@@ -322,51 +223,14 @@ The FIBEN catalog (decision [149](../docs/decisions/149-fiben-as-a-third-referen
   ```
 
   The two run one after the other, not at once: the measurement of one would be the noise of the other. With `--env-file judge.env` on every command the same run is a check of correctness in the judge's mode, without medians. `docker cp fiben_run_dotnet:/app/fiben-results <dir>` takes the files out before the container is removed. From the host the .NET run works the same against `localhost,1444`. From Git Bash prefix the `run` commands with `MSYS_NO_PATHCONV=1`: without it the shell rewrites the `/app/…` and `/src/…` values of the `-e` arguments into Windows paths and the files land in a directory of that name under the test output.
-- **The judge** is the `judge-candidate.tsv` of a documented run that meets the conditions of decision 149 (the first as decision [157](../docs/decisions/157-a-target-cell-that-differs-by-a-stated-limit-does-not-block-the-fiben-judge.md) reads it), copied to `database/fiben/judge.tsv` with a header line naming the run and loaded by the next start of the container (the loader reloads it whenever the file's checksum changes); the present one is from the .NET half of the run of 2026-10-22, which kept the rows of the judge of 2026-10-20 and added the eight queries of decisions 161 and 162 (decision [163](../docs/decisions/163-the-fiben-judge-takes-the-eight-queries-of-decisions-161-and-162-from-the-dotnet-half-of-the-run-of-2026-10-22.md)). A new judge is a decision with a date and a reason, never a fix in the comparison.
-
-### Runs
-
-The record names the commit it measured (decision [095](../docs/decisions/095-a-dated-run-record-names-its-commit.md)). *Translated* is the target's own language, *native SQL* the escape path of decision 113, *refused* a `Failure` in the translation; *agree* is the fourth level against the source rows of the same run; *median* is the median of the per-cell medians of the policy of decision 145 and *sum* their sum over the catalog.
-
-| Started | Tree | Suite | Framework | Translated / native SQL / refused | Agree with the source | Measured cells, median / sum of medians | Run |
-|---|---|---|---|---|---|---|---|
-| 2026-10-18 13:08 UTC | `8e1cdd7` + the next commit | .NET, container `tests` | Dapper (the catalog's text) | 229 / — / 8 | source | 229, 45.0 ms / 327 s | 112 min, 1 401 passed, 5 failed, 261 skipped |
-| | | | EF Core | 170 / 59 / 8 | 224 of 229 | 229, 40.9 ms / 329 s | |
-| | | | NHibernate | 208 / 21 / 8 | 229 of 229 | 229, 48.4 ms / 323 s | |
-| 2026-10-18 15:01 UTC | the same | Java, container `java_tests` against `ormconvertor` over `Fiben` | the text over JDBC | 237 ran | source | 237, 55.7 ms / 347 s | 155 min, 1 364 passed, 40 failed, 261 skipped |
-| | | | Hibernate | 204 / 14 / 8, 11 failed to run | 218 of 218 | 218, 62.2 ms / 322 s | |
-| | | | EclipseLink | 194 / 14 / 8, 21 failed to run | 203 of 208 | 208, 53.6 ms / 353 s | |
-| | | | MyBatis | 226 / — / 8, 3 failed to run | 226 of 226 | 226, 57.5 ms / 334 s | |
-| 2026-10-19 22:36 UTC | `9f6082d` + the next commit | .NET, container `tests` | Dapper (the catalog's text) | 229 / — / 8 | source | 229, 60.4 ms / 350 s | 129 min, 1 635 passed, 0 failed, 32 skipped |
-| | | | EF Core | 170 / 59 / 8 | 229 of 229 | 229, 57.7 ms / 476 s | |
-| | | | NHibernate | 208 / 21 / 8 | 229 of 229 | 229, 58.7 ms / 350 s | |
-| 2026-10-20 00:46 UTC | the same | Java, container `java_tests` against `ormconvertor` over `Fiben` | the text over JDBC | 237 ran | source | 237, 53.7 ms / 339 s | 156 min, 1 631 passed, 1 failed (q63 in EclipseLink), 32 skipped |
-| | | | Hibernate | 215 / 14 / 8 | 229 of 229 | 229, 64.6 ms / 428 s | |
-| | | | EclipseLink | 190 / 39 / 8 | 228 of 229 | 229, 55.2 ms / 353 s | |
-| | | | MyBatis | 229 / — / 8 | 229 of 229 | 229, 62.9 ms / 346 s | |
-| 2026-10-22 11:57 UTC | `a2f498a` | .NET, container `tests` | Dapper (the catalog's text) | 237 / — / 0 | source | 237, 51.2 ms / 303 s | 103 min, 1 659 passed, 8 failed (the source of the eight queries the judge did not hold), 0 skipped |
-| | | | EF Core | 176 / 61 / 0 | 237 of 237 | 237, 49.7 ms / 305 s | |
-| | | | NHibernate | 214 / 23 / 0 | 237 of 237 | 237, 50.9 ms / 305 s | |
-| 2026-10-22 22:06 UTC | `ee29333` | .NET, container `tests` | Dapper (the catalog's text) | 237 / — / 0 | source | 237, 96.4 ms / 642 s | 138 min, 1 674 passed, 0 failed, 0 skipped |
-| | | | EF Core | 176 / 61 / 0 | 237 of 237 | 237, 84.6 ms / 644 s | |
-| | | | NHibernate | 214 / 23 / 0 | 237 of 237 | 237, 92.5 ms / 637 s | |
-| 2026-10-23 00:24 UTC | the same | Java, container `java_tests` against `ormconvertor` over `Fiben` | the text over JDBC | 237 ran | source | 237, 89.4 ms / 632 s | 187 min, 1 664 passed, 1 failed (q63 in EclipseLink), 0 skipped |
-| | | | Hibernate | 223 / 14 / 0 | 237 of 237 | 237, 122.8 ms / 640 s | |
-| | | | EclipseLink | 196 / 41 / 0 | 236 of 237 | 237, 105.2 ms / 663 s | |
-| | | | MyBatis | 237 / — / 0 | 237 of 237 | 237, 117.0 ms / 649 s | |
-
-- **2026-10-18**, the first documented run: `Fiben` loaded by the image (`fiben-benchmark-96eaffc`), the environment of decision 145 but with turbo on (the maximum processor state 100 % and the minimum 5 %). The first judge was made from its .NET run. The five EF Core cells that disagreed with the source (q150, q155, q207, q211, q213) are those of decisions [155](../docs/decisions/155-sql-sum-in-ef-core-linq-is-the-projection-of-one-group-and-ef-core-sum-is-coalesce.md) and [156](../docs/decisions/156-a-linq-predicate-carries-sql-three-valued-logic-in-both-directions.md).
-- **2026-10-19 and 2026-10-20**, over `9f6082d` and the change of decision [158](../docs/decisions/158-a-property-declared-dbset-declares-a-set-whatever-supplies-its-value.md): the same database and environment, Windows Update paused. Every cell agreed with the source but q63 in EclipseLink, which trims a `CHAR(5)` ([`subset.md`](../docs/subset.md) 2.2), and the judge was made again from the .NET run (decision [157](../docs/decisions/157-a-target-cell-that-differs-by-a-stated-limit-does-not-block-the-fiben-judge.md)); its rows equal those of the first judge. Six EF Core cells ran 7.7–35 s against 0.07–0.1 s from the text (q207, q211, q213, q215, q216, q225; decision [159](../docs/decisions/159-ef-core-takes-the-value-of-one-group-by-max-not-first-or-default.md)).
-- **The 8 refused queries** of the runs of 2026-10-18 to 2026-10-20 were the catalog's `NotTranslated` ones, refused in every target: q99 and q237 (an aggregate over a window inside a derived table) and q124–126, q200–202 (a subquery inside the `ON` condition of an inner join), both shapes then outside the vocabulary. Decisions [161](../docs/decisions/161-a-window-aggregate-is-a-window-of-the-vocabulary-and-the-whole-row-of-a-definition-beside-columns-is-its-columns.md) and [162](../docs/decisions/162-a-subquery-stands-in-a-join-condition-as-in-any-condition.md) translate them.
-- **2026-10-22**, over `a2f498a` (decisions 161 and 162, and SQL's average in every target): the same database and environment as before, turbo on. The database still held the judge of 2026-10-20 under the header of 2026-10-18 (identical rows), as its image predates `6f141a6`. Every cell agreed with the source; the eight failures are the source of the eight newly translated queries against a judge without an entry for them, and the judge was extended with them from this run (decision [163](../docs/decisions/163-the-fiben-judge-takes-the-eight-queries-of-decisions-161-and-162-from-the-dotnet-half-of-the-run-of-2026-10-22.md)). The six EF Core cells of decision 159 ran 63–122 ms, as the text does. The Java half was stopped after seven minutes and is not recorded.
-- **2026-10-22 and 2026-10-23**, over `ee29333`: every image rebuilt right before, both suites run in their containers first, then `mssql_db` recreated from the new image over the same volume (its judge that of decision 163); the environment of decision 145 with turbo off (the maximum and minimum processor state both `0x63`), the policy of decisions 145 and [165](../docs/decisions/165-a-cell-warms-up-by-one-cold-execution.md). The source agreed with the judge in all 237 queries in both suites, and every cell agreed with the source but q63 in EclipseLink, which trims a `CHAR(5)` ([`subset.md`](../docs/subset.md) 2.2). The medians are about twice those of the run of 2026-10-22 11:57 UTC, which had turbo on.
-- **In every run** q205 (about 170–190 s a run) and q233 (about 90–98 s) set the length; most queries run in under 50 ms.
+- **The judge** is the `judge-candidate.tsv` of a documented run that meets the conditions of decision 149 (the first as decision [157](../docs/decisions/157-a-target-cell-that-differs-by-a-stated-limit-does-not-block-the-fiben-judge.md) reads it), copied to `database/fiben/judge.tsv` with a header line naming the run and loaded by the next start of the container (the loader reloads it whenever the file's checksum changes); the present one is from the .NET half of [the run of 2026-10-22](../docs/runs/2026-10-22-fiben.md), which kept the rows of the judge of 2026-10-20 and added the eight queries of decisions 161 and 162 (decision [163](../docs/decisions/163-the-fiben-judge-takes-the-eight-queries-of-decisions-161-and-162-from-the-dotnet-half-of-the-run-of-2026-10-22.md)). A new judge is a decision with a date and a reason, never a fix in the comparison.
 
 ## The Java test suite
 
 `JavaTests/`, Maven and JUnit outside `ORMConvertor.sln`, the suite of F12 (decision [076](../docs/decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)); what each test verifies is in [`architecture.md`](../docs/architecture.md) §6.2.
 
 - **Verdict** only from the `java-tests` stage and the `java-test` job. A host with JDK 25 and Maven (e.g. those bundled with IntelliJ) can `mvn test-compile`, or run the suite against its own database and an instance whose catalog names that same database, as a check.
+- **Size:** the suite counts itself — `SuiteSizeTest` fails below F12's 60 tests or 20 integration tests and reports what it cannot count as *uncountable* (decision [087](../docs/decisions/087-an-integration-test-is-a-run-against-the-database.md)).
 - **Versions** of Hibernate, EclipseLink, MyBatis, `mssql-jdbc` and JUnit live only in `JavaTests/pom.xml`; `TargetFrameworkDescriptorTest.JavaSuiteDependenciesMatchTheJavaDescriptors` binds the three framework versions to the descriptors.
 - **Inputs:** `ORMCONVERTOR_TEST_JDBC_URL`, e.g. `jdbc:sqlserver://localhost:1433;databaseName=ORMConvertorTests;user=sa;password=...;encrypt=true;trustServerCertificate=true`, the schema built from the same `TestSchema.sql`; `ORMCONVERTOR_API_URL`, polled at `/required-content`.
 - **No skip**: where it runs, a database and an instance were started for it - but for [the LDBC judge](#the-ldbc-judge) and [the FIBEN run](#the-fiben-run), which need `LdbcSnb` or `Fiben` and an instance over it and skip without them. `mvn test -Dgroups=integration` runs the integration tests alone (decision [087](../docs/decisions/087-an-integration-test-is-a-run-against-the-database.md)).
@@ -399,37 +263,7 @@ flowchart LR
 | `java-test` | Temurin 25; starts the published app on `http://localhost:5072` in `Production`, not waited for; `mvn -B test` | `java-test-results`; `java-test-app-log` on failure |
 | `dependencies` | `dotnet list ORMConvertor.sln package --vulnerable --include-transitive`, judged by `grep` (it exits 0 either way) under `set -o pipefail` | — |
 
-`dependencies` alone also runs weekly (decision [098](../docs/decisions/098-the-number-is-decided-once-per-release.md)). CI proves the suites against SQL Server of the stated version, compose that they run where nothing is installed. Coverage is never gated; `dotnet test Tests/Tests.csproj --collect:"XPlat Code Coverage"` writes `coverage.cobertura.xml` under `Tests/TestResults/`.
-
-## How large the suite is, and what it covers
-
-The only place that records it; a record names the commit it measured (decision [095](../docs/decisions/095-a-dated-run-record-names-its-commit.md)), and the table keeps the releases and the latest runs. All runs 0 failed. A skip is one of three groups, each with its reason: the differential cells of the LINQ form of NHibernate its provider cannot speak (an `Omitted` record, decision [118](../docs/decisions/118-nhibernate-writes-a-linq-form-beside-its-hql.md); in every environment), [the LDBC judge](#the-ldbc-judge) without `LdbcSnb` and the depths of its path queries over any data set but SF 1, and [the FIBEN run](#the-fiben-run) without `Fiben`. *Pinned* = the `build` + `run` pairs; *host* = `dotnet test` on MIS3 with LocalDB only; integration counted by `-Dgroups=integration`.
-
-| Date | Tree | .NET | Java (integration) | Note |
-|---|---|---|---|---|
-| 2026-09-21 | `3e8a286` | 1551, pinned | 146 (97), pinned | **release `2.0.0`** |
-| 2026-10-03 | `c32948b` + next commit | 7746, pinned | 2082 (1527), pinned | **release `2.1.0`** |
-| 2026-10-12 | `fcb4ccb` + next commit ([133](../docs/decisions/133-an-add-on-package-over-a-framework-is-not-that-framework.md)) | 9936, pinned (46 skipped: the `Omitted` LINQ forms) | 2757 (2023), pinned | **release `2.2.0`**; the judge over 1000 lines of SF 0.1 in both |
-| 2026-10-15 | `86a102b` + next commit ([140](../docs/decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md), [141](../docs/decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md)) | 9931, host (137 skipped: the 46 `Omitted` LINQ forms, the judge and the path queries without `LdbcSnb`) | 2765 (not recounted), pinned | on the host the judge and `LdbcPathQueryTest` ran separately over `mssql_db` (SF 1) |
-| 2026-10-18 | `6ac5690` + next commit ([150](../docs/decisions/150-a-part-of-a-decision-is-replaced-by-a-new-file-and-both-statuses-say-so.md)–[152](../docs/decisions/152-an-association-path-that-cannot-be-derived-refuses-the-query-in-every-clause.md)) | 12021, host (1802 skipped: the FIBEN run 1660, the LDBC judge 90, the `Omitted` LINQ forms 52) | not run | the pinned run stopped for want of host memory |
-
-**Coverage** is measured, never a threshold. Over `36d688d`, the same 1551 tests: **80.0 % of lines** (12 650 / 15 801), **69.1 % of branches** (8 047 / 11 642); `Advisor` and `AdvisorBenchmarking` **0.0 %**, the measured basis of area 1 in [`architecture.md`](../docs/architecture.md) §9. No coverage is measured for the Java suite.
-
-**The Java suite counts itself:** `SuiteSizeTest` fails below F12's 60 tests or 20 integration tests and reports what it cannot count as *uncountable* (decision [087](../docs/decisions/087-an-integration-test-is-a-run-against-the-database.md)).
-
-**A count belongs to the tree**, not the machine. A different total means a different tree, usually a stale image; the environment moves only the split into passed and skipped, and skipped tests prove nothing about F4 and F6.
-
-## Translation performance (S3)
-
-Bound: 30 s for 100 entities and 100 queries through `ConversionHandler.Convert`, EF Core → NHibernate; artifact counts are asserted. Release builds, 16 GB RAM:
-
-| Test | Machine | Measured |
-|---|---|---|
-| `TranslationPerformanceTest`, no catalog | Intel Core i9-9900 (8 cores), Windows 10 Pro | ~0.2 s (2026-08-21) |
-| `TranslationPerformanceTest`, no catalog | Intel Core i7-1065G7 (4 cores), Windows 11 Pro | 0.4–0.7 s (2026-08-24) |
-| `CatalogTranslationPerformanceTest`, local SQL Server | Intel Core i9-9900 (8 cores), Windows 10 Pro | 0.4–0.5 s, catalog read (`CatalogReadMilliseconds`) 210–330 ms (2026-08-26) |
-
-The margin is at least fortyfold. In the catalog variant three entities match the test schema and `OrderLine` exists only through the key the catalog supplies.
+`dependencies` alone also runs weekly (decision [098](../docs/decisions/098-the-number-is-decided-once-per-release.md)). CI proves the suites against SQL Server of the stated version, compose that they run where nothing is installed. Coverage is never gated; `dotnet test Tests/Tests.csproj --collect:"XPlat Code Coverage"` writes `coverage.cobertura.xml` under `Tests/TestResults/`; the measured coverage is [recorded in `docs/runs/`](../docs/runs/README.md#velikost-sady-a-pokrytí).
 
 # API
 

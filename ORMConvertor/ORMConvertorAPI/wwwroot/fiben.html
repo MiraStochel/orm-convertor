@@ -174,8 +174,8 @@
         substantial change, in both suites one after the other, in five stages: the catalog
         is complete; every query reaches every target; the artifacts compile; every target
         returns the rows the catalog's own text returns, and the text returns the rows the
-        frozen judge holds; and every cell is measured. The commands and the record of each
-        run are in the README of the solution.
+        frozen judge holds; and every cell is measured. The commands are in the README of the
+        solution, the record of each run in the run records of its documentation.
       </p>
     </section>
 
@@ -232,10 +232,11 @@
         of its own, so the three levels of the benchmark's deepest queries are three
         definitions, and a window inside one is a column of it like any other. Where a
         target's language stops short of the tree, the query goes out in native SQL, as the
-        next paragraph says: LINQ has no scalar subquery with joins of its own as a comparison
-        operand and forms no aggregate compared with a subquery in <code>HAVING</code>, HQL of
-        NHibernate&nbsp;5.7 no <code>TOP</code> inside a subquery and no <code>UNION</code>
-        &mdash; and the documented run below counts what that came to in each target.
+        next paragraph says: LINQ has no form for a scalar subquery that is not a single
+        ungrouped aggregate and queries no aggregate projected without a grouping, HQL of
+        NHibernate&nbsp;5.7 has no <code>TOP</code> inside a subquery, no <code>UNION</code>
+        and no intermediate result &mdash; and the documented run below counts what that came
+        to in each target.
       </p>
       <p>
         A target whose query language cannot say a query writes it in the native SQL of its
@@ -250,19 +251,14 @@
     <section id="run">
       <h2>The documented run</h2>
       <p>
-        On 2026-10-20 the catalog ran in both suites, one after the other, against the
-        container's <code>Fiben</code> database in the fixed environment of the measurements
-        (four processors, the server on two of them and the clients on the other two,
-        one-threaded plans, turbo on): 129 minutes for the 237 queries in Dapper, EF&nbsp;Core
-        and NHibernate, 156 in Hibernate, EclipseLink and MyBatis. The judge was made from the
-        rows the catalog's own text returned in it, which are the rows of the first run, of
-        2026-10-18. The record with every number, the first run's too, is in the README of the
-        solution; this is what it says. The numbers are that version's. On 2026-10-22 the .NET
-        suite ran again over the version that translates the eight queries this run refused and
-        returns every average as SQL does: Dapper, EF Core and NHibernate reached all 237
-        queries, every cell agreed with the source, and EF Core wrote 61 of them in native SQL,
-        NHibernate 23. The Java half of that run was stopped and is not recorded, so the table
-        stays the last run of both suites.
+        On 2026-10-22 and 2026-10-23 the catalog ran in both suites, one after the other,
+        against the container's <code>Fiben</code> database in the fixed environment of the
+        measurements (four processors, the server on two of them and the clients on the other
+        two, one-threaded plans, turbo off): 138 minutes for the 237 queries in Dapper,
+        EF&nbsp;Core and NHibernate, 187 in Hibernate, EclipseLink and MyBatis. In every query
+        and in both suites the catalog's own text returned the rows the judge holds. The record
+        with every number is in the run records of the documentation; this is what it says, and
+        the numbers are that version's.
       </p>
 
       <div class="table-scroll">
@@ -271,12 +267,12 @@
             <tr><th>Framework</th><th>In its own language</th><th>In native SQL</th><th>Refused</th><th>Rows agree with the source</th><th>Median of a cell's medians</th><th>All medians summed</th></tr>
           </thead>
           <tbody>
-            <tr><td>Dapper (the catalog's text)</td><td>229</td><td>&mdash;</td><td>8</td><td>is the source</td><td>60.4 ms</td><td>350 s</td></tr>
-            <tr><td>EF Core</td><td>170</td><td>59</td><td>8</td><td>229 of 229</td><td>57.7 ms</td><td>476 s</td></tr>
-            <tr><td>NHibernate</td><td>208</td><td>21</td><td>8</td><td>229 of 229</td><td>58.7 ms</td><td>350 s</td></tr>
-            <tr><td>Hibernate</td><td>215</td><td>14</td><td>8</td><td>229 of 229</td><td>64.6 ms</td><td>428 s</td></tr>
-            <tr><td>EclipseLink</td><td>190</td><td>39</td><td>8</td><td>228 of 229</td><td>55.2 ms</td><td>353 s</td></tr>
-            <tr><td>MyBatis</td><td>229</td><td>&mdash;</td><td>8</td><td>229 of 229</td><td>62.9 ms</td><td>346 s</td></tr>
+            <tr><td>Dapper (the catalog's text)</td><td>237</td><td>&mdash;</td><td>0</td><td>is the source</td><td>96.4 ms</td><td>642 s</td></tr>
+            <tr><td>EF Core</td><td>176</td><td>61</td><td>0</td><td>237 of 237</td><td>84.6 ms</td><td>644 s</td></tr>
+            <tr><td>NHibernate</td><td>214</td><td>23</td><td>0</td><td>237 of 237</td><td>92.5 ms</td><td>637 s</td></tr>
+            <tr><td>Hibernate</td><td>223</td><td>14</td><td>0</td><td>237 of 237</td><td>122.8 ms</td><td>640 s</td></tr>
+            <tr><td>EclipseLink</td><td>196</td><td>41</td><td>0</td><td>236 of 237</td><td>105.2 ms</td><td>663 s</td></tr>
+            <tr><td>MyBatis</td><td>237</td><td>&mdash;</td><td>0</td><td>237 of 237</td><td>117.0 ms</td><td>649 s</td></tr>
           </tbody>
         </table>
       </div>
@@ -284,25 +280,19 @@
       <h3>What the run found</h3>
       <ul>
         <li>
-          <strong>Eight queries the tool refused</strong>, in every target and for two reasons
-          only: an aggregate over a window inside a derived table (queries 99 and 237) and a
-          subquery inside the <code>ON</code> condition of an inner join (124&ndash;126,
-          200&ndash;202). Everything else &mdash; 229 queries, 124 of them nested &mdash; the
-          tool translated into all five targets. The eight translate now, and the judge took
-          their rows from the .NET run of 2026-10-22, where EF Core and NHibernate agreed with
-          the source on them.
-        </li>
-        <li>
-          <strong>Where a target left its language.</strong> EF Core wrote 59 queries in
-          native SQL: 36 for an aggregation LINQ does not form, such as an aggregate compared
-          with a subquery in <code>HAVING</code> or an average over a <code>BIGINT</code>, and
-          23 for a scalar subquery with its own joins as a comparison operand. It stayed in LINQ
-          for 80 of the 106 single-block queries but for only 9 of the 27 correlated queries
-          without an aggregate (type J). NHibernate wrote 21 in native SQL: 14 for
-          <code>TOP</code> inside a subquery, which HQL&nbsp;5.7 cannot say, and 7 for
-          <code>UNION</code>. Hibernate wrote the same 14 that way; EclipseLink 39: those 14,
-          the 18 that open their <code>HAVING</code> with an aggregate over a joined entity and
-          the 7 unions whose members join other entities.
+          <strong>Where a target left its language.</strong> No query was refused: all 237,
+          131 of them nested, reached all five targets. EF Core wrote 61 of them in native SQL:
+          36 that project an aggregate without a grouping, which a LINQ chain can only end in,
+          not query; 23 for a scalar subquery that is not a single ungrouped aggregate, where
+          <code>First()</code> would silently pick one of several rows that SQL refuses; and 2
+          for an aggregate or a ranking over a window (queries 99 and 237). It stayed in LINQ
+          for 80 of the 106 single-block queries but for only 12 of the 27 correlated queries
+          without an aggregate (type J). NHibernate wrote 23 in native SQL: 14 for
+          <code>TOP</code> inside a subquery, which HQL&nbsp;5.7 cannot say, 7 for
+          <code>UNION</code> and 2 for an intermediate result (99 and 237). Hibernate wrote the
+          same 14 that way; EclipseLink 41: those 14, the 18 that open their
+          <code>HAVING</code> with an aggregate over a joined entity, the 7 unions whose members
+          join other entities and the same 2 intermediate results.
         </li>
         <li>
           <strong>Two semantic differences between SQL and LINQ.</strong> <code>SUM</code> over
@@ -310,35 +300,27 @@
           keeps the meaning of <code>Enumerable.Sum</code> and writes
           <code>COALESCE(SUM(x), 0)</code>; and an equality of two values that may be
           <code>NULL</code> is unknown in SQL where both are, but true in LINQ, which EF Core
-          writes as <code>a = b OR (a IS NULL AND b IS NULL)</code>. In the first run five
-          queries returned other rows in EF Core for these reasons (150, 155, 207, 211, 213):
-          query 207 (<em>who holds IBM stocks more than he holds Alphabet</em>) returned one
-          person from the text and 211 from EF Core &mdash; everyone who holds IBM and no
-          Alphabet at all. The translation now carries SQL's meaning into LINQ and back - a sum
-          under a guard of the count of its values, an equality that holds only where the
-          values are not <code>NULL</code> - and every cell of EF Core agrees with the source.
-          The guard had a price in that run: the six queries whose <code>HAVING</code> compares
-          a sum with a correlated subquery (207, 211, 213, 215, 216, 225) took 7.7&ndash;35&nbsp;s
-          in EF Core against 0.1&nbsp;s from the text, because SQL Server does not unnest a
-          subquery that ends in <code>TOP(1)</code>. The value of the one group is now taken
-          by <code>Max()</code>, whose subquery it does unnest: in the .NET run of 2026-10-22
-          the six ran 63&ndash;122&nbsp;ms in EF Core, as the text does.
+          writes as <code>a = b OR (a IS NULL AND b IS NULL)</code>. Translated word for word,
+          query 207 (<em>who holds IBM stocks more than he holds Alphabet</em>) would return
+          besides the text's answer everyone who holds IBM and no Alphabet at all. The
+          translation carries SQL's meaning into LINQ and back - a sum under a guard of the count
+          of its values, an equality that holds only where the values are not
+          <code>NULL</code> - and takes the value of one group by <code>Max()</code>, whose
+          subquery SQL Server unnests, not by a subquery that ends in <code>TOP(1)</code>, which
+          it does not. Every cell of EF Core agrees with the source.
         </li>
         <li>
-          <strong>Three things the Java frameworks taught the tool.</strong> Hibernate reads
+          <strong>What the Java frameworks need.</strong> Hibernate reads
           <code>join POSTALADDRESS p</code> beside a joined entity whose column is also called
-          <code>POSTALADDRESS</code> as a join of that column, so the JPQL for Hibernate now names
-          such an entity by its fully qualified class name (nine queries ran after the fix).
-          EclipseLink leaves the joins of a <code>UNION</code> member out of its SQL and answered
-          49&nbsp;870 rows where the text answers 189, so a set operation with a joined member
-          goes out in native SQL for EclipseLink (seven queries, four of which had differed). And EclipseLink refuses an
-          aggregate in <code>HAVING</code> over a column of an entity it joined
-          (<em>Invalid query key</em>, eighteen cells): measured afterwards, it rebuilds the
+          <code>POSTALADDRESS</code> as a join of that column, so the JPQL for Hibernate names
+          such an entity by its fully qualified class name. EclipseLink leaves the joins of a
+          <code>UNION</code> member out of its SQL and answers other rows, so a set operation
+          with a joined member goes out in native SQL for EclipseLink; and it rebuilds the
           <code>HAVING</code> on the root of the block when the clause opens with a path over
-          another variable, so such a query now goes out in native SQL. It also trims the
+          another variable, so such a query goes out in native SQL too. It also trims the
           trailing spaces of a <code>CHAR(5)</code> value (query 63) - a setting of the
-          consumer's session, which the artifact does not make, and a stated limit of the
-          target.
+          consumer's session, which the artifact does not make, a stated limit of the target, and
+          the one cell of the run that differs from the source.
         </li>
         <li>
           <strong>The benchmark's own texts needed care.</strong> Two of the published queries
@@ -351,32 +333,22 @@
           checked to equal the benchmark's.
         </li>
         <li>
-          <strong>Ninety-five of the 229 translated queries return no rows</strong> over the
-          benchmark's own data: the questions name dates, companies and investors the published
-          data does not hold. Thirty return more than a thousand rows, three more than a hundred
+          <strong>Ninety-six of the 237 queries return no rows</strong> over the benchmark's
+          own data: the questions name dates, companies and investors the published data does
+          not hold. Thirty-four return more than a thousand rows, three more than a hundred
           thousand (query 32, the e-mail addresses of account holders in California with their
           accounts and addresses, 610&nbsp;907 rows), which is
           why the judge keeps a digest of every result and the rows themselves only up to a
           thousand.
         </li>
         <li>
-          <strong>The frameworks mostly cost the same, the queries do not.</strong> Summed over
-          the catalog, the medians of Dapper and NHibernate are 350&nbsp;s each and of EF Core
-          476&nbsp;s, 122&nbsp;s of it the six queries above; of MyBatis and EclipseLink
-          346&ndash;353&nbsp;s and of Hibernate 428&nbsp;s, which runs query 205 in 281&nbsp;s
-          against the text's 191&nbsp;s. Two queries set the length of the run: 205 (<em>which
-          companies reported year over year revenue loss for 2019</em>) at about 190&nbsp;s and
-          233 at about 98&nbsp;s per execution, correlated scalar subqueries with five joins
-          evaluated for every outer row over tables without an index beyond their keys. Two
-          thirds of the queries run in under 100&nbsp;ms. Where the frameworks differ otherwise,
-          the target's SQL does: 164 and 181 run about five times slower in EF Core than from
-          the text, 234&ndash;236 up to three times faster in EclipseLink.
-        </li>
-        <li>
-          <strong>The catalog completion scales.</strong> Reading the catalog of 152 tables and
-          159 foreign keys for the first query took 764&nbsp;ms (408&nbsp;ms in the first run);
-          translating a query with the entities of its tables takes 3&ndash;16&nbsp;ms after
-          that, and compiling an artifact 10&ndash;40&nbsp;ms.
+          <strong>The frameworks cost the same, the queries do not.</strong> Summed over the
+          catalog, the medians of the six frameworks lie between 637&nbsp;s (NHibernate) and
+          663&nbsp;s (EclipseLink). Two queries set the length of the run: 205 (<em>which
+          companies reported year over year revenue loss for 2019</em>) at about
+          170&ndash;190&nbsp;s and 233 at about 90&ndash;98&nbsp;s per execution, correlated
+          scalar subqueries with five joins evaluated for every outer row over tables without an
+          index beyond their keys.
         </li>
       </ul>
     </section>

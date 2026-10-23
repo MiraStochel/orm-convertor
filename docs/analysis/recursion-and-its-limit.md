@@ -445,7 +445,7 @@ Cíl pro katalog: **každý dotaz má na MIS3 běžet mezi 0,2 s a 300 s**, a do
 
 ### 6.1 Co s časem udělají větší data
 
-Časy všech dotazů nad SF 1 nese [`ORMConvertor/README.md`](../../ORMConvertor/README.md), *Catalog query times* (2026-10-15): všech 41 pod 300 s, dvanáct pod 0,2 s. Rozhodnutí [141](../decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) z toho volí jeden data set.
+Časy všech dotazů nad SF 1 nese [záznam z 2026-10-15](../runs/2026-10-15-ldbc-catalog-times.md): všech 41 pod 300 s, dvanáct pod 0,2 s. Rozhodnutí [141](../decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) z toho volí jeden data set.
 
 Dva tvary dotazu reagují na větší data opačně:
 

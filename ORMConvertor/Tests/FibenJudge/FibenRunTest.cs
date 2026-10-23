@@ -15,7 +15,7 @@ namespace Tests.FibenJudge;
 /// returns the rows the source returns, the source returns the rows the judge holds, and every
 /// cell is measured. The run is not a test of a build: without a configured Fiben database
 /// every case skips with the reason, and fails where ORMCONVERTOR_REQUIRE_FIBEN_DATABASE
-/// promised one. Its record goes into the README beside the LDBC runs; the files it writes
+/// promised one. Its record goes into docs/runs beside the LDBC runs; the files it writes
 /// stay out of git (decision 042), except the judge made from a documented run.
 /// </summary>
 public class FibenRunTest(ITestOutputHelper output)

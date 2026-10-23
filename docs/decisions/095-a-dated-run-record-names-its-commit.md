@@ -1,7 +1,7 @@
 # 095 — Datovaný záznam o běhu jmenuje commit; velikost sady tvrdí jediné místo
 
 Datum: 2026-09-21
-Stav: platí
+Stav: platí; odstavec *Místem záznamů zůstává `ORMConvertor/README.md`* nahrazuje 167
 Požadavky: S2, S5, S6
 Podklad: revize [2026-09-21](../audits/2026-09-21-pre-release-2-0-0-audit.md), nálezy 2.2 a 2.3; rozhodnutí [058](058-only-the-operational-half-of-the-deployment-view-moves.md) a [069](069-major-marks-a-milestone-not-a-break.md)
 

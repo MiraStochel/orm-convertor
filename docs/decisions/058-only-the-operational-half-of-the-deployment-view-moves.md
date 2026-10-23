@@ -1,7 +1,7 @@
 # 058 — Do provozní příručky patří jen provozní polovina nasazovacího pohledu
 
 Datum: 2026-08-24
-Stav: platí
+Stav: platí; místo naměřených čísel sad nahrazuje 167
 Požadavky: žádné
 Podklad: rozhodnutí [057](057-deployment-view-in-the-operating-manual.md), rozhodnutí [007](007-documentation-structure.md)
 
