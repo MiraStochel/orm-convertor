@@ -69,15 +69,18 @@ public record ForeignArtifact(
         public static final String FIBEN = "fiben";
         public static final String LDBC = "ldbc";
 
+        /** The scenario of {@code CrossFrameworkInputs} of one source framework; measured up to the third level. */
+        public static final String CROSS = "cross";
+
         public static Key parse(String answers) {
             int colon = answers.indexOf(':');
             if (colon <= 0 || colon == answers.length() - 1) {
-                throw new IllegalStateException("The key \"" + answers + "\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>).");
+                throw new IllegalStateException("The key \"" + answers + "\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>, cross:<source framework>).");
             }
 
             String kind = answers.substring(0, colon).strip().toLowerCase(Locale.ROOT);
-            if (!kind.equals(MATRIX) && !kind.equals(FIBEN) && !kind.equals(LDBC)) {
-                throw new IllegalStateException("The key \"" + answers + "\" names the kind \"" + kind + "\", which no suite measures; the kinds are matrix, fiben and ldbc.");
+            if (!kind.equals(MATRIX) && !kind.equals(FIBEN) && !kind.equals(LDBC) && !kind.equals(CROSS)) {
+                throw new IllegalStateException("The key \"" + answers + "\" names the kind \"" + kind + "\", which no suite measures; the kinds are matrix, fiben, ldbc and cross.");
             }
 
             return new Key(kind, answers.substring(colon + 1).strip());

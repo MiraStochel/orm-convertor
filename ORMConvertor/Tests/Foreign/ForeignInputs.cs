@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Model;
 using SampleData;
+using Tests.Combined;
 using Tests.Database;
 using Tests.Differential;
 using Tests.FibenJudge;
@@ -43,6 +44,12 @@ internal static class ForeignInputs
         foreach (var query in FibenSample.Queries)
         {
             Write(root, new ForeignKey(ForeignKey.Fiben, query.Key), ORMEnum.Dapper, FibenRun.Units(query), query.Questions);
+            count++;
+        }
+
+        foreach (var framework in Enum.GetValues<ORMEnum>())
+        {
+            Write(root, new ForeignKey(ForeignKey.Cross, framework.ToString()), framework, CrossFrameworkInputs.Units(framework), questions: null);
             count++;
         }
 

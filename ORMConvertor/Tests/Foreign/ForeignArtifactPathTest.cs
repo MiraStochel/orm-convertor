@@ -154,6 +154,44 @@ public class ForeignArtifactPathTest(TestSchemaFixture fixture, ITestOutputHelpe
         }
     }
 
+    /// <summary>
+    /// The scenario of <c>CrossFrameworkInputs</c> as a key (decision 172): its inputs are
+    /// written, read back and translated, and the artifact goes through the path up to the
+    /// third level - the scenario has no measure at the fourth, and the row says so rather
+    /// than failing.
+    /// </summary>
+    [Fact]
+    public void AScenarioArtifactEndsAtTheThirdLevel()
+    {
+        fixture.SkipIfUnavailable();
+
+        var temp = Directory.CreateTempSubdirectory("ormconvertor-foreign-");
+        try
+        {
+            var inputs = Path.Combine(temp.FullName, "inputs");
+            var key = new ForeignKey(ForeignKey.Cross, ORMEnum.EFCore.ToString());
+            ForeignInputs.WriteOne(inputs, key, ORMEnum.EFCore, CrossFrameworkInputs.Units(ORMEnum.EFCore), questions: null);
+
+            var (readKey, source, units) = ForeignInputs.Read(ForeignInputs.DirectoryOf(inputs, key, ORMEnum.EFCore), TestDatabase.SchemaName);
+            var conversion = ConversionHandler.Convert(source, ORMEnum.NHibernate, units, fixture.CatalogReader);
+            Assert.DoesNotContain(conversion.Records, record => record.Kind == ConversionRecordKind.Failure);
+
+            var directory = Path.Combine(temp.FullName, "cross-efcore-nhibernate-tool");
+            ForeignArtifact.Write(directory, readKey, source, ORMEnum.NHibernate, "tool",
+                conversion.Sources.Select((artifact, index) => new ForeignUnit($"{artifact.ContentType}-{index + 1}{ForeignInputs.Extension(artifact.ContentType)}", artifact.ContentType, artifact.Content)));
+
+            var verdict = ForeignArtifactRun.Run(ForeignArtifact.Read(directory, TestDatabase.SchemaName));
+            output.WriteLine(verdict.Describe());
+
+            Assert.Equal(ForeignLevel.Accepted, verdict.Reached);
+            Assert.Equal(ForeignVerdict.Accepted, verdict.Outcome);
+        }
+        finally
+        {
+            temp.Delete(recursive: true);
+        }
+    }
+
     [Fact]
     public void AManifestWithoutAKeyFailsByName()
     {

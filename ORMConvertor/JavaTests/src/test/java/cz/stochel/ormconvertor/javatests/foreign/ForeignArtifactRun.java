@@ -475,6 +475,17 @@ public final class ForeignArtifactRun {
                             "a query of the LDBC catalog is judged by a replay of the validation set, not by one reading, so a foreign artifact of it ends at the third level (decision 172)");
                 }
 
+                case ForeignArtifact.Key.CROSS -> {
+                    try {
+                        Orm.forName(key.id());
+                    } catch (IllegalArgumentException e) {
+                        throw new IllegalStateException(artifact.id() + ": the scenario key names the source \"" + key.id() + "\", which is no framework of the tool; the scenarios of CrossFrameworkInputs are one per source framework.");
+                    }
+
+                    return new Measure(null, null, null, false, List.of(), ResultRow.Settings.defaults(), new Object[0], rows -> null,
+                            "the scenario of CrossFrameworkInputs has no measure at the fourth level - its entity stands over no table of the fixture and its row is stored and read by a scenario written per entity -, so a foreign artifact of it ends at the third level (decision 172)");
+                }
+
                 default -> throw new IllegalStateException(artifact.id() + ": the kind " + key.kind() + " has no measure.");
             }
         }

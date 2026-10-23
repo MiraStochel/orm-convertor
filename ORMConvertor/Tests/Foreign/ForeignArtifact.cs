@@ -18,18 +18,21 @@ internal sealed record ForeignKey(string Kind, string Id)
     public const string Fiben = "fiben";
     public const string Ldbc = "ldbc";
 
+    /// <summary>The scenario of <c>CrossFrameworkInputs</c> of one source framework: entities, their mapping and one query; measured up to the third level.</summary>
+    public const string Cross = "cross";
+
     public static ForeignKey Parse(string answers)
     {
         var colon = answers.IndexOf(':');
         if (colon <= 0 || colon == answers.Length - 1)
         {
-            throw new InvalidOperationException($"The key \"{answers}\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>).");
+            throw new InvalidOperationException($"The key \"{answers}\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>, cross:<source framework>).");
         }
 
         var kind = answers[..colon].Trim().ToLowerInvariant();
-        if (kind is not (Matrix or Fiben or Ldbc))
+        if (kind is not (Matrix or Fiben or Ldbc or Cross))
         {
-            throw new InvalidOperationException($"The key \"{answers}\" names the kind \"{kind}\", which no suite measures; the kinds are matrix, fiben and ldbc.");
+            throw new InvalidOperationException($"The key \"{answers}\" names the kind \"{kind}\", which no suite measures; the kinds are matrix, fiben, ldbc and cross.");
         }
 
         return new ForeignKey(kind, answers[(colon + 1)..].Trim());

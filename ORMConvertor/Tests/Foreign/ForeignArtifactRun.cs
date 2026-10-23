@@ -337,6 +337,20 @@ internal static class ForeignArtifactRun
                         "a query of the LDBC catalog is judged by a replay of the validation set, not by one reading, so a foreign artifact of it ends at the third level (decision 172)");
                 }
 
+                case ForeignKey.Cross:
+                {
+                    if (!Enum.TryParse<ORMEnum>(key.Id, ignoreCase: true, out _))
+                    {
+                        throw new InvalidOperationException($"{artifact.Id}: the scenario key names the source \"{key.Id}\", which is no framework of the tool; the scenarios of CrossFrameworkInputs are one per source framework.");
+                    }
+
+                    return new Measure(
+                        TestDatabase.ConnectionString ?? Unopened,
+                        null,
+                        null,
+                        "the scenario of CrossFrameworkInputs has no measure at the fourth level - its entity stands over no table of the fixture and its row is stored and read by a scenario written per entity -, so a foreign artifact of it ends at the third level (decision 172)");
+                }
+
                 default:
                     throw new InvalidOperationException($"{artifact.Id}: the kind {key.Kind} has no measure.");
             }

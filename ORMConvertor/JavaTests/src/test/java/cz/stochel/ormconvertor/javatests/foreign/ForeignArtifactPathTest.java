@@ -169,6 +169,36 @@ class ForeignArtifactPathTest {
         }
     }
 
+    /**
+     * A scenario key (decision 172): the entity of the tool's own translation alone, under
+     * {@code cross:<source>}, goes through the path up to the third level and the row says the
+     * scenario has no fourth - never a failure.
+     */
+    @Test
+    void aScenarioArtifactEndsAtTheThirdLevel() throws Exception {
+        DifferentialQuery query = DifferentialMatrix.query("q1-entity-filter-ordered");
+        ConversionResponse response = JavaQueryRunner.translate(query, Orm.DAPPER, Orm.HIBERNATE);
+
+        Path temp = Files.createTempDirectory("ormconvertor-foreign-");
+        try {
+            List<ForeignArtifact.Unit> units = new ArrayList<>();
+            for (ConversionUnit unit : response.artifactsOf(ContentType.JAVA_ENTITY)) {
+                units.add(new ForeignArtifact.Unit(JavaSources.publicClassOf(unit.content()) + ".java", unit.contentType(), unit.content()));
+            }
+
+            Path directory = temp.resolve("cross-dapper-hibernate-tool");
+            ForeignArtifact.write(directory, new ForeignArtifact.Key(ForeignArtifact.Key.CROSS, "Dapper"), Orm.DAPPER, Orm.HIBERNATE, "tool", units, null);
+
+            ForeignVerdict verdict = ForeignArtifactRun.run(ForeignArtifact.read(directory, TestDatabase.schemaName()), null);
+            System.out.println(verdict.describe());
+
+            assertEquals(ForeignVerdict.LEVEL_ACCEPTED, verdict.reached(), verdict.describe());
+            assertEquals(ForeignVerdict.ACCEPTED, verdict.outcome(), verdict.describe());
+        } finally {
+            delete(temp);
+        }
+    }
+
     @Test
     void aManifestWithoutAKeyFailsByName() throws Exception {
         IllegalStateException error = assertThrows(IllegalStateException.class,

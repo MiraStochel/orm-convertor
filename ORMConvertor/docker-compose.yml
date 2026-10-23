@@ -40,6 +40,9 @@ services:
     ports:
       - "5072:5072"
     cpuset: "2,3"
+    networks:
+      - default
+      - edge
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       # The Advisor benchmarks against the sample database, and the catalog completion
@@ -69,6 +72,9 @@ services:
     ports:
       - "1444:1433"
     cpuset: "${DATABASE_CPUSET-0,1}"
+    networks:
+      - default
+      - edge
     environment:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=Testingorms123
@@ -244,3 +250,13 @@ services:
 
 volumes:
   mssql_data:
+
+# The network of the project reaches nothing outside it (decision 172): the suites run code
+# the tool made and, on demand, code it did not, and nothing here needs a network beyond the
+# services - the images carry their packages and the data sets are loaded while they are
+# built. The two services that publish a port sit on the second network as well; that is
+# the one through which the host reaches them.
+networks:
+  default:
+    internal: true
+  edge: {}
