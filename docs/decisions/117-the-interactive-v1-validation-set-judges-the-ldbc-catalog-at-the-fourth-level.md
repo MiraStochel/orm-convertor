@@ -1,7 +1,7 @@
 # 117 — Validační sada LDBC Interactive v1 je soudcem čtvrtého stupně nad katalogem LDBC: přehrává se v pořadí, vkládání nese loader, čtení generovaný artefakt a databáze se vrací kompenzací
 
 Datum: 2026-10-03
-Stav: revidováno
+Stav: revidováno; porovnání IC 14 jako množiny nahrazuje 170
 Požadavky: F13, T2, T3, S2, S5
 Podklad: rozhodnutí [016](016-generated-artifact-verification-levels.md), [027](027-query-artifact-verification.md), [039](039-container-configuration-of-the-environment.md), [078](078-java-suite-as-a-client-of-a-running-instance.md), [087](087-an-integration-test-is-a-run-against-the-database.md), [089](089-differential-verification-as-the-fourth-level-over-a-query.md), [099](099-examples-are-content-not-a-choice.md), [110](110-ldbc-snb-as-a-second-reference-domain.md) a [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md); specifikace *The LDBC Social Network Benchmark*, verze 2.2.4, kapitola 6 (zátěž Interactive) a příloha A (definice čtení IS 1–7, IC 1–14 a vkládání INS 1–8); README referenčních implementací `ldbc_snb_interactive_v1_impls` (oddíl o validačních parametrech) a dokumentace driveru `ldbc_snb_interactive_v1_driver` (*Validating a Database Connector*); archiv `validation_params-interactive-v1.0.0-sf0.1-to-sf10.tar.zst` na `datasets.ldbcouncil.org/interactive-v1/`; [`architecture.md`](../architecture.md) §6.2 a §9
 

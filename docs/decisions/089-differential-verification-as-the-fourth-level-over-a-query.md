@@ -1,7 +1,7 @@
 # 089 — Diferenční ověření je čtvrtý stupeň nad dotazem a porovnává se proti zapsanému výsledku
 
 Datum: 2026-09-21
-Stav: revidováno
+Stav: revidováno; porovnání seřazeného dotazu v pořadí v odstavci *Pořadí rozhoduje mezireprezentace* nahrazuje 170
 Požadavky: F12, F13, T2, T3, S2, S5
 Podklad: rozhodnutí [014](014-language-type-model.md), [016](016-generated-artifact-verification-levels.md), [019](019-neutral-database-type-vocabulary.md), [027](027-query-artifact-verification.md), [053](053-a-query-that-would-return-other-rows-is-not-emitted.md), [060](060-pagination-as-a-query-instruction.md), [076](076-java-wrappers-in-csharp-jvm-in-containers.md), [078](078-java-suite-as-a-client-of-a-running-instance.md), [083](083-parameter-as-the-fifth-operand-shape.md) a [087](087-an-integration-test-is-a-run-against-the-database.md); JSS článek, §3 (vymezení rozsahu), pravidlo Q15 a tabulka příbuzných prací (řádek *ORM differential testing*); [`threat-model.md`](../threat-model.md), hrozba 1; [`architecture.md`](../architecture.md) §6.2 a §9, vyňatá oblast 6
 

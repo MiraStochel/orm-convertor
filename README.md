@@ -113,8 +113,8 @@ From `ORMConvertor/`, run `dotnet run --configuration Release --launch-profile h
 
 ## Beyond this version
 
-- **The experiments** — the translation matrix across ecosystems with its correctness metrics (T2, T3) as a pipeline run from the container configuration, the reference data behind it (T1) and the groundwork for comparing the tool with translation by a large language model (T4–T6); exempt above. Together with the Advisor below, the milestone reserved for the next MAJOR, `3.0.0`; what exactly closes it is an open decision.
-- **The Advisor** — across every framework and compared with simple baselines (F15, T7); by the approved specification a secondary goal pursued as time allows; exempt above.
+- **The experiments** — the translation matrix across ecosystems with its correctness metrics (T2, T3) as a pipeline run from the container configuration, the reference data behind it (T1) and the groundwork for comparing the tool with translation by a large language model (T4–T6); exempt above. Together with the Advisor below, the milestone reserved for the next MAJOR, `3.0.0`.
+- **The Advisor** — across every framework and compared with simple baselines (F15, T7); by the approved specification a secondary goal pursued as time allows, taken up after the experiments if time remains ([decision 171](docs/decisions/171-the-advisor-comes-after-the-experiments-if-time-remains.md)); exempt above.
 - **Useful, not required** — a reproducible build (dependency lock file, base images and CI actions pinned by digest, style rules enforced by CI); a persistent identifier for a release.
 
 ## License

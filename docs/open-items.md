@@ -6,35 +6,34 @@ Jediný seznam toho, co zbývá. **Rozhodnutí** končí novým souborem v [`dec
 
 ## Přehled
 
-Rejstřík, ne pořadí.
+Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.tex): `projekt` — bez položky projekt nejde dokončit; `experimenty` — potřebují ji experimenty projektu (T1–T3) nebo příprava navazujících (T4–T6); prázdný — nepotřebuje ji ani jedno, tedy ani Advisor, který přijde až po experimentech, zbude-li čas (rozh. [171](./decisions/171-the-advisor-comes-after-the-experiments-if-time-remains.md)).
 
-| Položka | Oblast | Druh | Pož. |
-|---|---|---|---|
-| [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | T2, T3, F13 |
-| [Pořadí řádků se shodným klíčem řazení](#pořadí-řádků-se-shodným-klíčem-řazení-se-porovnává-ačkoli-ho-dotaz-neurčuje) | Dotazy | práce | F13, T2, T3 |
-| [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Experimenty | rozhodnutí | S5, T1–T3 |
-| [Referenční databáze experimentů a případová studie T1](#referenční-databáze-experimentů-a-případová-studie-t1) | Experimenty | rozhodnutí | T1, T2, T7, F4 |
-| [Schémata převzatých projektů v katalogu](#schémata-převzatých-projektů-v-katalogu-instance) | Experimenty | rozhodnutí | F6, T1 |
-| [Meze složitosti a velikosti vstupu](#meze-složitosti-dotazu-hloubky-zanoření-a-velikosti-tříd-nikdo-nehledal) | Experimenty | rozhodnutí | S3, T3–T5 |
-| [Artefakt, který nevyrobil nástroj, ve stupních ověření](#ověřovací-stupně-nad-artefaktem-který-nevyrobil-nástroj) | Experimenty | rozhodnutí | T3–T6 |
-| [Metodika srovnání s LLM](#metodika-srovnání-s-llm-a-vymezení-proti-souběžným-pracím) | Experimenty | rozhodnutí | T4–T6 |
-| [BI 14 v zafixovaném prostředí](#bi-14-se-v-zafixovaném-prostředí-nezměřil) | Experimenty | práce | T2, T3 |
-| [Advisor v odevzdání](#advisor-v-odevzdání-schválený-záměr-ho-nejmenuje) | Advisor | rozhodnutí | F15, T1–T7 |
-| [Advisor nad všemi frameworky](#advisor-měří-jen-dapper-a-ef-core) | Advisor | práce | F15, T7 |
-| [Srovnání s variantami a heuristikou](#srovnání-advisoru-s-jednotlivými-frameworky-a-heuristikou-chybí) | Advisor | práce | T7, F15 |
-| [Izolace spouštění cizího kódu](#izolace-spouštění-cizího-kódu-advisorem) | Advisor | rozhodnutí | S4, F15, T7 |
-| [Javová větev Advisoru](#javová-větev-advisoru-podle-rozh-146-nestojí) | Advisor | práce | F15, T7, S4 |
-| [Buňka jako proces a cena prvního výsledku](#buňka-měření-jako-proces-a-cena-prvního-výsledku-podle-rozh-147-nestojí) | Advisor | práce | F15, T7, S4, S6 |
-| [Parametrizovaný dotaz](#parametrizovaný-dotaz-advisor-nezměří) | Advisor | rozhodnutí | F15, T4, T7 |
-| [Nedoplněný překlad](#advisor-měří-nedoplněný-překlad) | Advisor | rozhodnutí | F15, T7 |
-| [Jednotka s víc dotazy](#jednotka-s-víc-dotazy-vstupuje-do-advisoru-jako-jeden-dotaz) | Advisor | rozhodnutí | F15, T7 |
-| [ADO.NET provider v benchmarcích](#sjednocení-adonet-provideru-v-benchmarcích) | Advisor | rozhodnutí | T7 |
-| [Testy Advisoru a benchmarkingu](#advisor-a-benchmarking-nemají-testy-chování) | Advisor | práce | T7, S6 |
-| [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | F15, S7 |
-| [Průběžný stav běhu Advisoru](#průběžný-stav-běhu-advisoru-po-buňkách) | Advisor | rozhodnutí | S7, F15 |
-| [Odevzdání do položek](#odevzdání-není-rozepsané-do-položek) | Odevzdání | práce | — |
-| [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | S2, S5 |
-| [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | — |
+| Položka | Oblast | Druh | Nutné pro | Pož. |
+|---|---|---|---|---|
+| [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | projekt | T2, T3, F13 |
+| [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Experimenty | rozhodnutí | experimenty | S5, T1–T3 |
+| [Referenční databáze experimentů a případová studie T1](#referenční-databáze-experimentů-a-případová-studie-t1) | Experimenty | rozhodnutí | experimenty | T1, T2, T7, F4 |
+| [Schémata převzatých projektů v katalogu](#schémata-převzatých-projektů-v-katalogu-instance) | Experimenty | rozhodnutí | | F6, T1 |
+| [Meze složitosti a velikosti vstupu](#meze-složitosti-dotazu-hloubky-zanoření-a-velikosti-tříd-nikdo-nehledal) | Experimenty | rozhodnutí | | S3, T3–T5 |
+| [Artefakt, který nevyrobil nástroj, ve stupních ověření](#ověřovací-stupně-nad-artefaktem-který-nevyrobil-nástroj) | Experimenty | rozhodnutí | experimenty | T3–T6 |
+| [Metodika srovnání s LLM](#metodika-srovnání-s-llm-a-vymezení-proti-souběžným-pracím) | Experimenty | rozhodnutí | experimenty | T4–T6 |
+| [BI 14 v zafixovaném prostředí](#bi-14-se-v-zafixovaném-prostředí-nezměřil) | Experimenty | práce | experimenty | T2, T3 |
+| [Advisor nad všemi frameworky](#advisor-měří-jen-dapper-a-ef-core) | Advisor | práce | | F15, T7 |
+| [Srovnání s variantami a heuristikou](#srovnání-advisoru-s-jednotlivými-frameworky-a-heuristikou-chybí) | Advisor | práce | | T7, F15 |
+| [Izolace spouštění cizího kódu](#izolace-spouštění-cizího-kódu-advisorem) | Advisor | rozhodnutí | | S4, F15, T7 |
+| [Javová větev Advisoru](#javová-větev-advisoru-podle-rozh-146-nestojí) | Advisor | práce | | F15, T7, S4 |
+| [Buňka jako proces a cena prvního výsledku](#buňka-měření-jako-proces-a-cena-prvního-výsledku-podle-rozh-147-nestojí) | Advisor | práce | | F15, T7, S4, S6 |
+| [Parametrizovaný dotaz](#parametrizovaný-dotaz-advisor-nezměří) | Advisor | rozhodnutí | | F15, T4, T7 |
+| [Nedoplněný překlad](#advisor-měří-nedoplněný-překlad) | Advisor | rozhodnutí | | F15, T7 |
+| [Jednotka s víc dotazy](#jednotka-s-víc-dotazy-vstupuje-do-advisoru-jako-jeden-dotaz) | Advisor | rozhodnutí | | F15, T7 |
+| [ADO.NET provider v benchmarcích](#sjednocení-adonet-provideru-v-benchmarcích) | Advisor | rozhodnutí | | T7 |
+| [Testy Advisoru a benchmarkingu](#advisor-a-benchmarking-nemají-testy-chování) | Advisor | práce | | T7, S6 |
+| [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | | F15, S7 |
+| [Průběžný stav běhu Advisoru](#průběžný-stav-běhu-advisoru-po-buňkách) | Advisor | rozhodnutí | | S7, F15 |
+| [Odevzdání do položek](#odevzdání-není-rozepsané-do-položek) | Odevzdání | práce | projekt | — |
+| [Pořadí řádků se shodným klíčem a neurčený výřez](#pořadí-řádků-se-shodným-klíčem-řazení-a-výřez-který-dotaz-neurčuje) | Užitečné | práce | | F13, T2, T3 |
+| [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | | S2, S5 |
+| [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | | — |
 
 ---
 
@@ -46,11 +45,6 @@ Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.
 *Na řadě. Práce podle rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) a [141](./decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md), v režimu serveru rozh. [164](./decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md) a [166](./decisions/166-the-judge-reads-a-segment-between-inserts-in-every-framework-at-once.md); samostatný běh obou sad, který spouští Míra jménem ([`ORMConvertor/README.md`](../ORMConvertor/README.md), *The LDBC judge*). Požadavky T2, T3, F13.*
 
 IC 13 a IC 14 — ty z pěti dotazů na cesty, které soudí validační sada — jsou `AsSpecified` a soudce je posuzuje verdiktem, ne mírou; celou sadou SF 1 prošly jen jejich texty s mezí ([záznam](./runs/2026-10-12-ldbc-judge.md)), dnešní texty prefixem. Zbývá celá sada nad dnešními texty, .NET a javová sada po sobě, se záznamem do [`runs/`](./runs/README.md). Soudce běží v režimu soudce rozh. [164](./decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md) a [166](./decisions/166-the-judge-reads-a-segment-between-inserts-in-every-framework-at-once.md) (`--env-file judge.env`); podle prefixu se dá čekat zhruba den na sadu ([záznam režimu soudce](./runs/2026-10-22-ldbc-judge-mode.md)), a pozastavení Windows Update musí přesáhnout konec. Čtení IC 14 v EF Core trvají podle plánu, který server z parametrů přeloží, 1–2,5 s nebo desítky sekund (vnořené poddotazy jeho SQL), v ostatních frameworcích dvě; souběžné přehrání na takové čtení čeká. Neshoda IC 13 nebo IC 14 by byla chybou textu nebo překladu, ne vlastností sady; čtení IC 14 v EF Core nad mezí 600 s (rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md)) vlastností jeho SQL, kterou by řešilo nové rozhodnutí.
-
-#### Pořadí řádků se shodným klíčem řazení se porovnává, ačkoli ho dotaz neurčuje
-*Ke kontrole. Porovnání běhu FIBEN podle rozh. [149](./decisions/149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md) a čtvrtého stupně rozh. [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md); kód `Tests/FibenJudge/FibenRun.cs` a javový `fiben/FibenRun.java` (řazený dotaz se porovnává v pořadí, ostatní seřazené). Požadavky F13, T2, T3.*
-
-Dotaz katalogu FIBEN, který katalog vede jako řazený (`ordered`), běh porovnává se zdrojem řádek po řádku v pořadí, v jakém přišly. Řazení ale určuje jen pořadí různých klíčů; řádky se shodným klíčem smí databáze vrátit v libovolném pořadí a to závisí na plánu, který se mezi frameworky i servery liší. F13 přitom žádá zohlednit pořadí, jen je-li dané dotazem. Případ, na kterém je to vidět: q31 (`SELECT TOP (3) COUNT(…) AS AggResult1, …` s `ORDER BY AggResult1 DESC`) má na druhém a třetím místě dvě osoby se shodnou hodnotou 53. Na MIS3 se běhy shodly, na SQL Server 2025 Express (MIS2) vrátí EF Core i NHibernate tyto dva řádky v opačném pořadí než zdroj a buňka je neshoda, ačkoli jde o tytéž řádky (i nad `f49d65f`). Je třeba zkontrolovat, kolik řazených dotazů katalogu FIBEN (a dotazů LDBC a diferenčních kategorií s `Ordering`) má ve výsledku shodné klíče řazení, a zodpovědět, jak je porovnávat: řádky se shodným klíčem jako množinu, nebo dotaz katalogu doplnit o rozhodující klíč. U `TOP` na hranici remízy se přitom může lišit i sama množina řádků, ne jen pořadí; to je otázka správnosti dotazu, ne porovnání. Soudce drží řádky zdroje v jednom pořadí, takže se ho odpověď týká také.
 
 ## Experimenty
 
@@ -104,12 +98,7 @@ Každý dotaz katalogu LDBC má na MIS3 běžet mezi 0,2 s a 300 s. V zafixovan�
 
 ## Advisor
 
-Advisor, benchmarking a T7 jsou podle specifikace sekundární, *podle časových možností*, a nesmí omezit překlad mezi ekosystémy; ze záruk je Advisor vyňatý vcelku (§9, oblast 1), popis je v [`architecture.md`](./architecture.md) §8. Značky pořadí dostanou ostatní položky, až padne první.
-
-#### Advisor v odevzdání: schválený záměr ho nejmenuje
-*Potom. Ke kontrole: rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md), které Advisor nad všemi frameworky řadí vedle experimentů; stojí na něm věta §9 a sekce *Beyond this version* kořenového [`README.md`](../README.md). Požadavky F15, T1–T7.*
-
-Zadání ([`requirements.md`](./requirements.md), F15, T7) a prototyp k Advisoru vedly. Schválený [záměr](./zamer.tex) ho mezi pěti úkoly řešitele nemá — pátým úkolem je experimentální prostředí, výzkumným využitím srovnání s metodami založenými na LLM — a [specifikace](./specifikace.tex) ho vede jako sekundární, v kapitole *Zbývající práce a postup* ho ale jmenuje spolu s experimenty. Rozhodnout, zda Advisor k odevzdání patří. Bez něj se rozh. 098 nahrazuje a přepíše se věta §9, README a úvod této oblasti; s ním je třeba odůvodnit odchylku od úkolů záměru.
+Advisor není podmínkou odevzdání: rozšíření o další frameworky a srovnání podle T7 přijde na řadu až po experimentech, zbude-li do konce projektu čas (rozh. [171](./decisions/171-the-advisor-comes-after-the-experiments-if-time-remains.md)); specifikace ho vede jako sekundární, *podle časových možností*. Ze záruk je vyňatý vcelku (§9, oblast 1), popis je v [`architecture.md`](./architecture.md) §8. Značky pořadí položky oblasti nedostanou, dokud nejsou experimenty hotové.
 
 #### Advisor měří jen Dapper a EF Core
 *Práce. [Specifikace](./specifikace.tex) F15 a T7 („rozšířen o nové frameworky"), maketa obrazovky Advisoru se šesti kandidáty (kap. *Uživatelské rozhraní*). Javové frameworky nese [položka javové větve](#javová-větev-advisoru-podle-rozh-146-nestojí). Požadavky F15, T7.*
@@ -182,12 +171,24 @@ Finální dokumentace, odevzdání a příprava obhajoby tu položky nemají; ex
 
 Prospělo by to, ale žádná věta záruk na tom nestojí a nic tím není blokované; značky pořadí položky nedostávají.
 
+#### Pořadí řádků se shodným klíčem řazení a výřez, který dotaz neurčuje
+*Práce podle rozh. [170](./decisions/170-rows-tied-on-the-ordering-key-compare-as-a-set-and-a-fiben-slice-gets-a-deciding-key.md); kód `Tests/Differential/`, `Tests/LdbcJudge/LdbcCanonicalForm.cs`, `Tests/FibenJudge/FibenRun.cs`, javové protějšky a `FibenImport/Queries.cs`. Požadavky F13, T2, T3.*
+
+Všechna tři porovnání čtvrtého stupně (matice, soudce LDBC, běh FIBEN) porovnávají seřazený dotaz v pořadí, v jakém řádky přišly, takže řádky se shodným klíčem řazení v jiném pořadí jsou neshodou: q31 katalogu FIBEN na MIS2 v EF Core a NHibernatu. Výřez, který řeže remízu nebo nemá řazení, navíc neurčuje ani množinu řádků. Podle rozh. 170 se seřazený výsledek porovná v pořadí klíče a úsek shodného klíče jako množina, klíč místo příznaku `ordered` ponesou matice, vazby LDBC a katalog FIBEN, převod FIBEN doplní výřezu, který své řádky neurčuje, rozhodující klíč (dotčené dotazy vede rozh. 170, *Kontext*), `FibenCatalogTest` to drží a soudce FIBEN se obnoví z prvního běhu po implementaci. Taková neshoda v kontrole mimo MIS3 je vlastností dotazu, ne překladu. Změna může mít vliv na:
+
+- **stavy překladu a podíly T2 a T3 katalogu FIBEN** — zjemněné texty jsou nové; podle [`subset.md`](./subset.md) 2.7 a 2.9 změnu stavu nečekáme, potvrdí ji první běh;
+- **časy běhu FIBEN** — doplněné řazení přidá třídění a může změnit plány; časy dotčených dotazů nejsou srovnatelné se záznamy v [`runs/`](./runs/README.md) před změnou;
+- **soudce FIBEN** — obnoví se; dotaz, jehož výřez v datech řeže remízu, v něm může mít jiné řádky než dosud;
+- **soudce LDBC** — IC 14 se porovná v pořadí vah, ne jako množina; jiné pořadí vah ve validační sadě by byl nález;
+- **matici** — výsledky se nemění, fixtura drží klíče jedinečné; mutace vypuštěného řazení musí dál končit rozdílem;
+- **obě sady a rozhraní** — kanonická forma v .NET i Javě s případem v `renderer-conformance.txt`; `ordered` na `/ldbc` a `/fiben` zůstává odvozený z klíče a `/fiben` ukáže zjemněný text.
+
 #### Vynucení stylu a reprodukovatelnost sestavení
 *Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.4. Souvisí s rozh. [034](./decisions/034-central-version-management.md) a [039](./decisions/039-container-configuration-of-the-environment.md). Požadavky S2, S5.*
 
 „Reprodukovatelné prostředí" dnes znamená „jedním příkazem", ne „bajtově stejně": chybí zámek závislostí, základní obrazy i akce CI (`actions/checkout@v5` a spol.) visí na pohyblivých značkách a pravidla stylu build nevynucuje. Rozhodnout, zda se S2 rozšíří z výstupu překladu i na sestavení (zámek, digesty, styl v CI), nebo jde o údržbu, která počká.
 
 #### Trvalý identifikátor vydání
-*Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.1, a [fair-software.eu](https://fair-software.eu/). Souvisí s rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md). Až úplně na konci vývoje.*
+*Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.1, a [fair-software.eu](https://fair-software.eu/). Souvisí s rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md) a s položkou [Vynucení stylu a reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení). Záznam v registru až úplně na konci vývoje.*
 
-Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele).
+Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele). Vedle registru, nebo místo něj, lze vydání označit hašem SHA-256 celého balíčku: identifikátor odvozený z obsahu ověří kdokoli bez registru a bez otázky autorství a může ho nést už příští vydání, sám ale nikam nevede, takže dohledatelnost registru nenahradí. Vydání dnes balíček nemá (rozh. 098 vydává jen značku), takže je třeba určit, co se hašuje — archiv stromu značky je ze značky odvozený, vydávaný artefakt jako obraz aplikace by byl publikováním, při kterém se 098 nahrazuje — a zda má stejný haš vyjít i z nového sestavení, což předpokládá bajtově stejné sestavení z položky o reprodukovatelnosti.
