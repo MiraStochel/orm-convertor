@@ -1,8 +1,8 @@
 # 147 — Buňka měření běží v novém procesu a vedle ustáleného stavu vykazuje cenu prvního výsledku: start frameworku a první spuštění na klientovi, překlad plánu a počet plánů na serveru; ILP zůstává nad ustáleným stavem
 
 Datum: 2026-10-17
-Stav: platí; počet zahřívacích spuštění v mezi čekání rodiče nahrazuje 165
-Požadavky: F15, T7, S4, S6
+Stav: revidováno; počet zahřívacích spuštění v mezi čekání rodiče nahrazuje 165
+Požadavky: F15, T7, S4, S5, S6
 Podklad: rozhodnutí [145](145-the-measurement-environment-and-the-iteration-policy-are-fixed.md) (iterační politika: zahřátí do shody, medián měřených spuštění, první spuštění se zahazuje), [146](146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md) (javová větev jako služba, nová jednotka práce na spuštění, mez času na spojení), [076](076-java-wrappers-in-csharp-jvm-in-containers.md) (JVM v kontejneru), [140](140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) a [141](141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md) (okno 0,2–300 s); položky *Izolace spouštění cizího kódu Advisorem* a *Javová větev Advisoru podle rozh. 146 nestojí*; článek *A Unified Framework for Object-Relational Mapping Translation and Performance-Aware Selection* (kap. o Advisoru: `cost(q, f)` jako průměrná doba spuštění, `mem(q, f)` jako špička; chování při spuštění — cache, sezení — mimo rozsah překladu); měření celého katalogu LDBC v zafixovaném prostředí z 2026-10-17 nad `d3d1a9a` (`ORMConvertor/README.md`, *Catalog query times*)
 
 ## Kontext
@@ -87,6 +87,17 @@ Smyčka rozh. 145 první spuštění provádí a jen ho zahazuje; uchovat ho nic
 
 Překlad plánu je práce serveru nad textem, a server ji eviduje s plánem; číst ji z pohledů je totéž, co rozh. 146 udělalo s mezí času: jedno místo pro šest frameworků, žádný artefakt se nemění, žádné rozhraní frameworku se nevolá. Alternativa — `SET STATISTICS TIME` a zprávy spojení — by šla přes spojení každého frameworku, v Javě přes `SQLWarning`, a vrátila text k parsování. Počet plánů se z klienta nedá zjistit vůbec.
 
+### Proč harness a pohledy serveru, a ne monitorovací služba
+
+Měření by mohla nést i obecná monitorovací infrastruktura, jak se nasazuje u provozovaných služeb: Prometheus s exportérem SQL Serveru a databází časových řad. Zamítáme ji ze čtyř důvodů.
+
+- **Měří jinou veličinu.** Prometheus v pevném intervalu stahuje metriky ze sledovaných cílů (výchozí je minuta, běžně se nastavuje 15 s) a ukládá je jako časové řady; dobu spuštění nese jen agregovaně, jako počty v přihrádkách histogramu nebo kvantily souhrnu spočtené klientem. Buňka potřebuje dobu každého jednotlivého spuštění — u IS 1 tři milisekundy — a medián z nich přiřazený k dotazu, frameworku a commitu; to je `cost(q, f)` článku. Měří ho `Stopwatch` a `System.nanoTime()` přímo v harnessu (rozh. 145). Prometheus by jen přenášel, co harness už změřil, s přesností danou hranicemi přihrádek.
+- **Nepřiřadí serverové veličiny buňce.** `CompileMilliseconds`, `Plans` a `PhysicalReads` mají smysl jen ohraničené buňkou: cache plánů se před ní vyprázdní a pohledy se čtou hned po ní. Exportér, který se serveru ptá v intervalu, buňku nezná — buňku o několika milisekundách by jeho vzorek vůbec nezachytil a dlouhou by rozdělil mezi dva vzorky spolu s buňkou sousední.
+- **Přidává šum, který rozh. 145 odstranilo.** Prometheus a exportér jsou další procesy ve virtuálním stroji se čtyřmi pevně rozdělenými procesory, a exportér klade měřené databázi vlastní dotazy nad týmiž pohledy právě během měření: souběžnou zátěž serveru, kterou zafixované prostředí vyloučilo oddělením databáze od klientů.
+- **Nepřidá nic k reprodukovatelnosti.** Záznam běhu váže čísla na commit a prostředí (rozh. 095, záznamy v `docs/runs/`), výstup po buňkách zůstává v souborech běhu mimo git (rozh. 042). Databáze časových řad je váže na čas hodin a je další službou, kterou je třeba spustit, nastavit a verzovat, aby šel běh zopakovat (S5, S6).
+
+Smysl by služba dávala nanejvýš jako dohled nad hostitelem při vícedenním běhu soudce LDBC — paměť, restarty. Dvěma věcem, které takový běh skutečně ukončí, restartu stroje aktualizací Windows a novému vytvoření `mssql_db`, by ale nezabránila, a výsledek běhu drží `docker logs` pojmenovaného kontejneru.
+
 ## Důsledky
 
 - **Kód (práce, položka v `open-items.md`):** projekt `AdvisorBenchmarking.Runner` (konzole; do seznamu `.csproj` ve stage `dotnet-build` obrazu aplikace); `RoslynBenchmarkCompiler` zapisuje sestavení do souboru; `BenchmarkExecutor` spouští proces, čte JSON, hlídá nejdelší přípustnou dobu; `BenchmarkMeasurement` a `BenchmarkMeasurementDto` nesou `SetupMilliseconds`, `FirstExecutionMilliseconds`, `CompileMilliseconds`, `Plans`, `PhysicalReads`; `AdvisorRunCoordinator` před buňkou vyprázdní cache plánů, po buňce čte pohledy a opakuje buňku s fyzickým čtením; `advisor.js` ukazuje nové sloupce. Javová větev dostává dětský proces na buňku jako součást položky *Javová větev Advisoru podle rozh. 146 nestojí*.
@@ -94,3 +105,7 @@ Překlad plánu je práce serveru nad textem, a server ji eviduje s plánem; č�
 - **Rozh. 146** platí beze změny; věta o asymetrii umístění obou větví přestává platit tímto rozhodnutím.
 - **Záznam běhu** (rozh. 095) vykazuje vedle mediánu i pět nových veličin a říká, které buňky se opakovaly pro fyzické čtení. Čísla změřená před tímto rozhodnutím jsou jen ustáleného stavu; cena prvního výsledku se s nimi nesrovnává, protože vznikala v procesu zahřátém jinými buňkami.
 - **Dokumentace:** `architecture.md` §8 po implementaci (buňka jako proces, nové veličiny, pravidlo opakování), `ORMConvertor/README.md` (*Catalog query times*: tvar záznamu), `threat-model.md` (hrozba 1: hranice procesu u .NET větve).
+
+## Historie
+
+- **2026-10-23** — revidováno: doplněn odstavec *Proč harness a pohledy serveru, a ne monitorovací služba* (Prometheus s exportérem SQL Serveru jako zamítnutá cesta měření) a k požadavkům S5. Volba se nemění; rozhodnutí ještě není implementované.

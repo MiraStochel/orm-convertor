@@ -1,7 +1,7 @@
 # 167 — Záznamy běhů a měření mají vlastní složku `docs/runs/`: přehled a jeden neměnný soubor na každý popsaný běh
 
 Datum: 2026-10-23
-Stav: platí; nahrazuje místo naměřených čísel sad v rozh. 058, odstavec *Místem záznamů zůstává `ORMConvertor/README.md`* rozh. 095 a místo záznamu v odstavci *Co se měří* a v důsledku *Záznam ke každé verzi* rozh. 149
+Stav: platí; nahrazuje místo naměřených čísel sad v rozh. 058, odstavec *Místem záznamů zůstává `ORMConvertor/README.md`* rozh. 095 a místo záznamu v odstavci *Co se měří* a v důsledku *Záznam ke každé verzi* rozh. 149; výčet obsahu přehledu ve větě *Její `README.md` je přehled …* odstavce *Rozhodnutí* nahrazuje [168](168-the-overview-of-runs-carries-the-method-of-runs.md)
 Požadavky: žádné
 Podklad: rozhodnutí [007](007-documentation-structure.md) (dokumentace podle žánru), [058](058-only-the-operational-half-of-the-deployment-view-moves.md) (provozní polovina nasazovacího pohledu v příručce), [095](095-a-dated-run-record-names-its-commit.md) (záznam běhu jmenuje commit), [149](149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md) (záznam ke každé verzi), [150](150-a-part-of-a-decision-is-replaced-by-a-new-file-and-both-statuses-say-so.md) (nahrazení části); [`ORMConvertor/README.md`](../../ORMConvertor/README.md) ke dni rozhodnutí (strom `cefff1d`)
 

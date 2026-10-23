@@ -121,6 +121,8 @@ Translation works anywhere. The Advisor also needs SQL Server with WideWorldImpo
 
 # Tests
 
+Which runs exist, when each is started, what to check on the host before a long one and in which order a full run goes: [`docs/runs/`](../docs/runs/README.md#metodika).
+
 ## In a container
 
 ```sh

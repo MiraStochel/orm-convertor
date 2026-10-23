@@ -1,6 +1,43 @@
 # Záznamy běhů
 
-Datované záznamy běhů obou sad a měření (rozh. [167](../decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md)): **co se kdy naměřilo nad kterým stromem**. Záznam je událost — nezastarává, protože o dnešku nic netvrdí (rozh. [095](../decisions/095-a-dated-run-record-names-its-commit.md)) —, a proto se po zapsání nemění. Jak se běhy spouštějí, říká [`ORMConvertor/README.md`](../../ORMConvertor/README.md); co který z nich dokazuje, [`traceability.md`](../traceability.md) a `architecture.md` §9.
+Datované záznamy běhů obou sad a měření (rozh. [167](../decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md)): **co se kdy naměřilo nad kterým stromem**. Záznam je událost — nezastarává, protože o dnešku nic netvrdí (rozh. [095](../decisions/095-a-dated-run-record-names-its-commit.md)) —, a proto se po zapsání nemění. Jaké běhy jsou, kdy a v jakém prostředí se spouštějí, říká oddíl [Metodika](#metodika) (rozh. [168](../decisions/168-the-overview-of-runs-carries-the-method-of-runs.md)), jediná živá část přehledu; příkazy nese [`ORMConvertor/README.md`](../../ORMConvertor/README.md), co který běh dokazuje, [`traceability.md`](../traceability.md) a `architecture.md` §9.
+
+## Metodika
+
+### Druhy běhů
+
+| Běh | Kdy | Server | Turbo | Záznam | Doba |
+|---|---|---|---|---|---|
+| CI, obě sady | push a pull request do `main`, který mění `ORMConvertor/**` nebo `.github/workflows/**` | služba SQL Server 2022 jobu, bez `LdbcSnb` a `Fiben` | — | žádný | — |
+| obě sady v kontejnerech (`build` + `run`) | první krok úplného běhu; k vydání | `test_db` (SF 0,1); soudce LDBC nad prvními 1000 řádky sady jako kontrola | lhostejné | řádek [velikosti sady](#velikost-sady-a-pokrytí) | — |
+| běh FIBEN | na vyžádání, za verzi nebo zásadní změnu (rozh. [149](../decisions/149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md)) | `mssql_db` v měřicím režimu (rozh. [164](../decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md)) | vypnuté | soubor | [2026-10-22](2026-10-22-fiben-2.md) |
+| soudce LDBC nad celou sadou SF 1 | na vyžádání, spouští ho Míra jménem, v sezení, které nic jiného nedělá | `mssql_db` v režimu soudce (rozh. 164, [166](../decisions/166-the-judge-reads-a-segment-between-inserts-in-every-framework-at-once.md)) | zapnuté | soubor | [2026-10-12](2026-10-12-ldbc-judge.md) před oběma režimy; [odhad](2026-10-22-ldbc-judge-mode.md) v režimu soudce |
+| měření času (katalog LDBC, přehrání soudce po krocích) | k rozhodnutí, které je potřebuje (rozh. [140](../decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md), [141](../decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md), [145](../decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md), 164, 166) | `mssql_db`, v režimu, o kterém měření je | podle účelu, v záznamu | soubor | v záznamu |
+
+Kontrola (oddíl [Záznam](#záznam)) se pouští kdykoli. Měřicí prostředí a oba režimy serveru, jak je nastavuje obraz a compose, popisuje `architecture.md` §8; výstupy běhu po buňkách a logy zůstávají mimo git (rozh. [042](../decisions/042-measured-benchmark-output-out-of-git.md)).
+
+### Před dlouhým během
+
+Na MIS3, kde se měří; platí pro běh FIBEN, soudce LDBC a měření času.
+
+- **Obrazy z dnešního stromu.** Strom čistý a každý obraz, který běh spouští, sestavený z něj. `run` bez `build` běží nad stromem, ze kterého obraz vznikl, a jediným signálem je počet testů proti [velikosti sady](#velikost-sady-a-pokrytí).
+- **Stav procesoru.** Pro měření nejvyšší i nejnižší stav procesoru `0x63`, tedy 99 % bez turba a bez náběhu z klidu (`powercfg /query SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX` a `PROCTHROTTLEMIN`); soudce LDBC není měření a běží s turbem. Záznam říká, co platilo.
+- **Virtuální stroj** WSL2 se čtyřmi procesory, 8 GB a bez swapu (`%USERPROFILE%\.wslconfig`, §8), jak je hlásí `docker info`.
+- **Windows Update pozastavené** přes očekávaný konec běhu, jinak restartuje stroj kolem 04:00 a po restartu nikdo není přihlášený, takže Docker Desktop neběží. Uspání a hibernace vypnuté.
+- **Nic vedle.** Jeden běh po druhém; dlouhý běh nechává hostiteli málo paměti. Kontejnery předchozích běhů se odstraní, až jsou jejich výsledky venku.
+- **Server v režimu, který běh žádá.** Dokud `mssql_db` běží v režimu soudce, nese každý příkaz compose nad ním `--env-file judge.env`, jinak ho compose vytvoří znovu v měřicím režimu; každé nové vytvoření `mssql_db` přehrání soudce přeruší.
+- **Kontejner běhu** odpojený, pojmenovaný a bez `--rm`, aby výsledek držel `docker logs`.
+
+### Pořadí úplného běhu
+
+1. Sestavit všechny obrazy: `tests`, `java_tests`, `test_app`, `test_app_ldbc`, `test_db`, `mssql_db`, `ormconvertor`.
+2. .NET sada, pak javová sada v kontejnerech.
+3. `mssql_db` v měřicím režimu a instance nad `Fiben`; počkat na poslední řádek loaderu.
+4. Běh FIBEN: .NET sada, pak javová.
+5. Je-li vyžádán soudce LDBC: `mssql_db` v režimu soudce a instance nad `LdbcSnb`, soudce .NET sady, pak javové.
+6. `mssql_db` zpět v měřicím režimu, instance zpět nad WideWorldImporters.
+
+Proč v tomto pořadí a nikdy dva běhy najednou, říká rozh. 168.
 
 ## Záznam
 
@@ -37,6 +74,7 @@ Jediné místo, kde se velikost sady zapisuje (rozh. 095); každý řádek jmenu
 | 2026-10-12 | `fcb4ccb` + následující commit ([133](../decisions/133-an-add-on-package-over-a-framework-is-not-that-framework.md)) | 9936, zafixované (46 přeskočeno: tvary LINQ `Omitted`) | 2757 (2023), zafixované | **vydání `2.2.0`**; soudce nad 1000 řádky SF 0,1 v obou |
 | 2026-10-15 | `86a102b` + následující commit ([140](../decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md), [141](../decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md)) | 9931, host (137 přeskočeno: 46 tvarů LINQ `Omitted`, soudce a dotazy na cesty bez `LdbcSnb`) | 2765 (nepřepočteno), zafixované | na hostu běžely soudce a `LdbcPathQueryTest` zvlášť nad `mssql_db` (SF 1) |
 | 2026-10-18 | `6ac5690` + následující commit ([150](../decisions/150-a-part-of-a-decision-is-replaced-by-a-new-file-and-both-statuses-say-so.md)–[152](../decisions/152-an-association-path-that-cannot-be-derived-refuses-the-query-in-every-clause.md)) | 12021, host (1802 přeskočeno: běh FIBEN 1660, soudce LDBC 90, tvary LINQ `Omitted` 52) | nespuštěno | zafixovaný běh se zastavil pro nedostatek paměti hostitele |
+| 2026-10-22 | `ee29333` | 12889, zafixované (1720 přeskočeno) | 4660 (nepřepočteno), zafixované (1660 přeskočeno) | první krok úplného běhu před [během FIBEN](2026-10-22-fiben-2.md); soudce nad 1000 řádky SF 0,1 v obou |
 
 **Počet patří stromu**, ne stroji. Jiný součet znamená jiný strom, obvykle zastaralý obraz; prostředí posune jen rozdělení na prošlé a přeskočené, a přeskočené testy o F4 a F6 nic nedokazují.
 

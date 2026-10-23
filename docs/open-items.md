@@ -17,6 +17,7 @@ Rejstřík, ne pořadí.
 | [Meze složitosti a velikosti vstupu](#meze-složitosti-dotazu-hloubky-zanoření-a-velikosti-tříd-nikdo-nehledal) | Experimenty | rozhodnutí | S3, T3–T5 |
 | [Artefakt, který nevyrobil nástroj, ve stupních ověření](#ověřovací-stupně-nad-artefaktem-který-nevyrobil-nástroj) | Experimenty | rozhodnutí | T3–T6 |
 | [Metodika srovnání s LLM](#metodika-srovnání-s-llm-a-vymezení-proti-souběžným-pracím) | Experimenty | rozhodnutí | T4–T6 |
+| [BI 14 v zafixovaném prostředí](#bi-14-se-v-zafixovaném-prostředí-nezměřil) | Experimenty | práce | T2, T3 |
 | [Advisor v odevzdání](#advisor-v-odevzdání-schválený-záměr-ho-nejmenuje) | Advisor | rozhodnutí | F15, T1–T7 |
 | [Advisor nad všemi frameworky](#advisor-měří-jen-dapper-a-ef-core) | Advisor | práce | F15, T7 |
 | [Srovnání s variantami a heuristikou](#srovnání-advisoru-s-jednotlivými-frameworky-a-heuristikou-chybí) | Advisor | práce | T7, F15 |
@@ -89,6 +90,11 @@ Všechny čtyři stupně posoudí jen výstup nástroje: javová sada si artefak
 *Stojí na položce výš. Záměr jmenuje souběžné práce M. Čorovčáka (univerzální objektový model, LLM) a I. Oboňové (migrace dotazů s LLM); řádky T5 a T6 v [`traceability.md`](./traceability.md) jsou prázdné, T4 nese jen vstup z katalogu FIBEN. Požadavky T4, T5, T6.*
 
 Podle specifikace projekt jen *připraví* data, rozhraní a měřicí infrastrukturu; plné zero-shot, few-shot, RAG, agentní a ablační experimenty nese navazující práce. Zadání předepisuje, co uvést (model a verze, prompt, teplota, počet pokusů, tokeny, čas, náklady), ne vstup, pravdu a míru shody: vstupem je táž množina jednotek jako u matic, se záměrem dotazu jen katalog FIBEN (ke každému dotazu otázka v přirozeném jazyce a parafráze, rozh. [149](./decisions/149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md)), pravdou kanonický výsledek (rozh. 089), u FIBEN jeho soudce, shodou metriky T3 nad čtyřmi stupni (016). Rozhodnout rozsah (kolik z 36 směrů, které kategorie, zda katalog FIBEN, zda i entity a mapování a [řady hledání mezí](#meze-složitosti-dotazu-hloubky-zanoření-a-velikosti-tříd-nikdo-nehledal)), počet pokusů a zacházení s nedeterminismem vůči bajtově shodnému výstupu nástroje (S2), co dostane varianta RAG (T5), co vypíná ablace (T6) a vymezení proti oběma souběžným pracím.
+
+#### BI 14 se v zafixovaném prostředí nezměřil
+*Práce. Okno 0,2–300 s dalo rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md), prostředí rozh. [145](./decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md), mez jednoho spuštění rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md). Požadavky T2, T3.*
+
+Každý dotaz katalogu LDBC má na MIS3 běžet mezi 0,2 s a 300 s. V zafixovaném prostředí se změřil každý kromě BI 14 ([záznam](./runs/2026-10-17-ldbc-catalog-times.md)): před zafixováním trval 38 s ([záznam](./runs/2026-10-15-ldbc-catalog-times.md)), prostředí prodloužilo průchody 4–9× ([záznam](./runs/2026-10-17-ldbc-catalog-noise.md)), a může tedy ležet kdekoli od 90 s po horní mez okna i nad ní. Změřit ho v měřicím režimu se záznamem do [`runs/`](./runs/README.md). Nad mezí 600 s by buňka selhala v každém měření; text kvůli času upravit nelze (rozh. 140) a prostředí je pro všechny dotazy jedno (rozh. 145).
 
 ## Advisor
 
