@@ -81,8 +81,19 @@ internal static class GeneratedQueryCompiler
         IEnumerable<string> entitySources,
         IReadOnlyList<MetadataReference> consumerReferences,
         string extraUsings = "")
-    {
-        var holder = $$"""
+        => CSharpSourceCompiler.Compile(
+            assemblyName,
+            entitySources.Prepend(Holder(queryMethod, extraUsings)).Prepend(ConsumerPreamble),
+            consumerReferences);
+
+    /// <summary>
+    /// The class a consumer project puts around the bare method, with the usings in front of
+    /// it - the text the compiler is given, and therefore the text a reading of the method
+    /// by the language alone has to be given too (decision 172, the first level of a
+    /// foreign artifact).
+    /// </summary>
+    public static string Holder(string queryMethod, string extraUsings = "")
+        => $$"""
             {{extraUsings}}
 
             public static class GeneratedQueries
@@ -90,12 +101,6 @@ internal static class GeneratedQueryCompiler
             {{queryMethod}}
             }
             """;
-
-        return CSharpSourceCompiler.Compile(
-            assemblyName,
-            entitySources.Prepend(holder).Prepend(ConsumerPreamble),
-            consumerReferences);
-    }
 
     public static byte[] CompileOrFail(
         string assemblyName,

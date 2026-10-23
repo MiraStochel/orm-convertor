@@ -85,6 +85,7 @@ Každý výstup nese záznamy o převodu, identifikátor běhu a verze (S6).
 *Autor experimentu i vývojář; rozh. [087](./decisions/087-an-integration-test-is-a-run-against-the-database.md), [089](./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md).*
 - Javová sada vezme artefakty z běžící instance (rozh. [078](./decisions/078-java-suite-as-a-client-of-a-running-instance.md)), přeloží `javac`em, předloží Hibernate, EclipseLinku a MyBatisu a spustí proti SQL Serveru; výsledky obou variant dotazu porovná s kanonickým výsledkem v repozitáři. Zmutovaný artefakt **musí** skončit rozdílem nebo selháním.
 - Pořadí se porovnává jen tam, kde ho dotaz určuje; měřítko desetinných čísel volí matice u dotazu, null je vždy holé `NULL` (§9). Sada běží jedním příkazem nad Dockerem a sama tvrdí svou velikost (087).
+- Artefakt, který nevyrobil nástroj — překlad od modelu nebo od člověka —, vstupuje touž cestou stupňů z adresáře souborů s manifestem a proti témuž měřítku; sada ho zapíše jako řádek s původem, který manifest vyslovil, a instanci nástroje k tomu nepotřebuje (rozh. [172](./decisions/172-a-foreign-artifact-enters-the-verification-levels-as-a-directory-with-a-manifest-beside-the-client.md)).
 
 ## Co nástroj nedělá
 

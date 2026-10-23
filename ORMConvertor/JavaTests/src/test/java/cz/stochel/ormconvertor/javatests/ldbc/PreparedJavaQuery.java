@@ -177,8 +177,8 @@ public final class PreparedJavaQuery implements AutoCloseable {
         }
     }
 
-    /** A value of the parameter's declared type; a collection takes one element of its element type. */
-    private static Object sample(Type type) {
+    /** A value of the parameter's declared type; a collection takes one element of its element type. Public for the path of a foreign artifact (decision 172), which accepts a query the same way. */
+    public static Object sample(Type type) {
         if (type instanceof ParameterizedType parameterized && parameterized.getRawType() instanceof Class<?> raw
                 && Collection.class.isAssignableFrom(raw)) {
             return List.of(sample(parameterized.getActualTypeArguments()[0]));
@@ -226,7 +226,7 @@ public final class PreparedJavaQuery implements AutoCloseable {
      * columns the text projects, which the catalog's own test holds, so such a column is NULL
      * here rather than missing.
      */
-    private static List<?> withEveryColumn(List<?> rows, List<String> fields) {
+    public static List<?> withEveryColumn(List<?> rows, List<String> fields) {
         List<Object> completed = new ArrayList<>(rows.size());
         for (Object row : rows) {
             if (row instanceof Map<?, ?> map) {

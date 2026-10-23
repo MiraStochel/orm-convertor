@@ -62,6 +62,23 @@ public final class ContentType {
                 "No content type is defined for the extension of \"" + fileName + "\".");
     }
 
+    /**
+     * The value a name stands for, spelled as {@code ConversionContentType} spells it - what
+     * the manifest of a foreign artifact states for every unit (decision 172). A name nobody
+     * knows stops the run rather than picking a type by accident.
+     */
+    public static int forName(String name) {
+        for (int contentType : new int[] {
+                CSHARP_ENTITY, CSHARP_QUERY, XML, SQL_QUERY, HQL_QUERY, JAVA_ENTITY, JAVA_QUERY, JPQL_QUERY,
+                CSHARP, JAVA, CSHARP_LINQ_QUERY}) {
+            if (nameOf(contentType).equalsIgnoreCase(name.strip())) {
+                return contentType;
+            }
+        }
+
+        throw new IllegalArgumentException("No content type is named \"" + name + "\"; the names are those of ConversionContentType.");
+    }
+
     public static String nameOf(int contentType) {
         return switch (contentType) {
             case CSHARP_ENTITY -> "CSharpEntity";

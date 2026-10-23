@@ -1,0 +1,159 @@
+package cz.stochel.ormconvertor.javatests.foreign;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collection;
+import java.util.Locale;
+import java.util.TreeMap;
+
+/**
+ * What became of one foreign artifact (decision 172) - the counterpart of
+ * {@code ForeignVerdict.cs}: the highest level it reached, the outcome at the level it stopped
+ * at, the diagnostic of that level, and the provenance the manifest stated, copied. One line of
+ * the file of rows; both suites write the same columns, which the .NET suite holds equal to
+ * {@link #HEADER} by reading this source.
+ */
+public final class ForeignVerdict {
+
+    public static final String HEADER = "artifact\tanswers\tsource\ttarget\tproducer\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tmetadata";
+
+    /** The levels of decision 016 as the row counts them. */
+    public static final int LEVEL_NONE = 0;
+    public static final int LEVEL_READ = 1;
+    public static final int LEVEL_COMPILED = 2;
+    public static final int LEVEL_ACCEPTED = 3;
+    public static final int LEVEL_RAN = 4;
+
+    public static final String IN_PROGRESS = "in progress";
+    public static final String UNREADABLE = "unreadable";
+    public static final String NOT_COMPILED = "not compiled";
+    public static final String NOT_ACCEPTED = "not accepted";
+    public static final String FAILED = "failed";
+    public static final String DIFFERS = "differs";
+    public static final String AGREES = "agrees";
+
+    /** The outcome of an artifact that has no fourth level: no query to run, or a key whose measure is a replay (LDBC). */
+    public static final String ACCEPTED = "accepted";
+
+    private final String artifact;
+    private final String answers;
+    private final String source;
+    private final String target;
+    private final String producer;
+    private final String metadata;
+
+    private int reached = LEVEL_NONE;
+    private String outcome = IN_PROGRESS;
+    private String detail = "";
+    private Integer rows;
+    private Boolean agrees;
+    private double readMs;
+    private double compileMs;
+    private double acceptMs;
+    private double runMs;
+
+    public ForeignVerdict(String artifact, String answers, String source, String target, String producer, String metadata) {
+        this.artifact = artifact;
+        this.answers = answers;
+        this.source = source;
+        this.target = target;
+        this.producer = producer;
+        this.metadata = metadata;
+    }
+
+    public String artifact() {
+        return artifact;
+    }
+
+    public int reached() {
+        return reached;
+    }
+
+    public String outcome() {
+        return outcome;
+    }
+
+    public String detail() {
+        return detail;
+    }
+
+    public Integer rows() {
+        return rows;
+    }
+
+    public Boolean agrees() {
+        return agrees;
+    }
+
+    void reached(int level) {
+        this.reached = level;
+    }
+
+    void stop(String outcome, String detail) {
+        this.outcome = outcome;
+        this.detail = detail == null ? "" : detail;
+    }
+
+    void ran(int rowCount, boolean agreed, String difference) {
+        this.reached = LEVEL_RAN;
+        this.rows = rowCount;
+        this.agrees = agreed;
+        this.outcome = agreed ? AGREES : DIFFERS;
+        this.detail = agreed ? "" : difference;
+    }
+
+    void times(double read, double compile, double accept, double run) {
+        this.readMs = read;
+        this.compileMs = compile;
+        this.acceptMs = accept;
+        this.runMs = run;
+    }
+
+    public String row() {
+        return String.join("\t",
+                artifact, answers, source, target, producer,
+                String.valueOf(reached),
+                outcome,
+                clean(detail),
+                rows == null ? "" : String.valueOf(rows),
+                agrees == null ? "" : agrees ? "1" : "0",
+                String.format(Locale.ROOT, "%.0f", readMs),
+                String.format(Locale.ROOT, "%.0f", compileMs),
+                String.format(Locale.ROOT, "%.0f", acceptMs),
+                String.format(Locale.ROOT, "%.0f", runMs),
+                clean(metadata));
+    }
+
+    public String describe() {
+        return artifact + " (" + answers + ", " + source + " -> " + target + ", " + producer + "): level " + reached + ", " + outcome
+                + (rows != null ? ", " + rows + " rows" : "")
+                + (detail.isEmpty() ? "" : ": " + detail);
+    }
+
+    private static String clean(String text) {
+        return text.replace('\t', ' ').replace("\r", "").replace('\n', ' ');
+    }
+
+    /** The file of rows: one line per artifact under the header, rewritten whole on every change so that a run stopped from outside leaves the rows it had. */
+    public static void write(Path directory, String fileName, Collection<ForeignVerdict> verdicts) {
+        TreeMap<String, ForeignVerdict> ordered = new TreeMap<>();
+        for (ForeignVerdict verdict : verdicts) {
+            ordered.put(verdict.artifact, verdict);
+        }
+
+        StringBuilder text = new StringBuilder(HEADER).append('\n');
+        for (ForeignVerdict verdict : ordered.values()) {
+            text.append(verdict.row()).append('\n');
+        }
+
+        try {
+            Files.createDirectories(directory);
+            Files.writeString(directory.resolve(fileName), text.toString(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("The rows could not be written into " + directory + ".", e);
+        }
+    }
+}

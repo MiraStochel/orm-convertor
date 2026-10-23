@@ -1,0 +1,14 @@
+{
+  "answers": "matrix:q1-entity-filter-ordered",
+  "source": "Dapper",
+  "target": "MyBatis",
+  "producer": "human",
+  "units": [
+    { "path": "DifferentialProduct.java", "contentType": "JavaEntity" },
+    { "path": "ExpensiveProductsMapper.java", "contentType": "JavaQuery" },
+    { "path": "ExpensiveProductsMapper.xml", "contentType": "XML" }
+  ],
+  "metadata": {
+    "note": "written by hand for the test of the path (decision 172); reaches the fourth level and agrees"
+  }
+}

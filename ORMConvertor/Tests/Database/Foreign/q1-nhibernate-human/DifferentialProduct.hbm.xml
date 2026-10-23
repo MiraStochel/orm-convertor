@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="Shop">
+  <class name="DifferentialProduct" table="DifferentialProducts" schema="{{schema}}">
+    <id name="ProductId" column="ProductId" type="Int32">
+      <generator class="assigned" />
+    </id>
+    <property name="ProductName" column="ProductName" type="String" length="100" not-null="true" />
+    <property name="Sku" column="Sku" type="AnsiString" length="32" not-null="true" />
+    <property name="UnitPrice" column="UnitPrice" type="Decimal" precision="18" scale="4" not-null="true" />
+    <property name="Weight" column="Weight" type="Double" />
+    <property name="IsDiscontinued" column="IsDiscontinued" type="Boolean" not-null="true" />
+  </class>
+</hibernate-mapping>

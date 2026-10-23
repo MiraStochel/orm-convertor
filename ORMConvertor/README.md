@@ -112,6 +112,7 @@ No connection string has a value in the repository, except the disposable creden
 | `FIBEN_DATASET` | compose, build of the database image | Commit of `IBM/fiben-benchmark` whose `data.zip` the image downloads, or `none` (no `Fiben`; the profile `test` sets it). | shell, `docker-compose.yml` |
 | `ConnectionStrings:LdbcDatabase`, `ORMCONVERTOR_REQUIRE_LDBC_DATABASE`, `ORMCONVERTOR_LDBC_VALIDATION_ROWS`, `ORMCONVERTOR_TEST_LDBC_JDBC_URL`, `ORMCONVERTOR_LDBC_API_URL` | both suites | The LDBC judge: [its table](#the-ldbc-judge). Unset: the judge skips with the reason. | secret, env; compose `tests`, `java_tests` |
 | `ConnectionStrings:FibenDatabase`, `ORMCONVERTOR_REQUIRE_FIBEN_DATABASE`, `ORMCONVERTOR_FIBEN_QUERIES`, `ORMCONVERTOR_FIBEN_RESULTS`, `ORMCONVERTOR_FIBEN_MEASURE`, `ORMCONVERTOR_TEST_FIBEN_JDBC_URL`, `ORMCONVERTOR_FIBEN_API_URL` | both suites | The FIBEN run: [its table](#the-fiben-run). Unset: every case skips with the reason. | secret, env, by hand |
+| `ORMCONVERTOR_FOREIGN_ARTIFACTS`, `ORMCONVERTOR_FOREIGN_RESULTS`, `ORMCONVERTOR_FOREIGN_INPUTS` | both suites (the inputs: .NET) | [Foreign artifacts](#foreign-artifacts): the directory judged, the directory of rows, the directory the inputs are written into. Unset: the one case skips with the reason. | env, by hand; `foreign-run.sh` |
 
 **The nesting cap is the operator's alone**: read at startup, absent from `/convert`. Deeper input overflows the stack, which .NET cannot catch, and kills the process ([`threat-model.md`](../docs/threat-model.md), threat 2). Each response reports it in `maxNestingDepth`.
 
@@ -226,6 +227,40 @@ The FIBEN catalog (decision [149](../docs/decisions/149-fiben-as-a-third-referen
 
   The two run one after the other, not at once: the measurement of one would be the noise of the other. With `--env-file judge.env` on every command the same run is a check of correctness in the judge's mode, without medians. `docker cp fiben_run_dotnet:/app/fiben-results <dir>` takes the files out before the container is removed. From the host the .NET run works the same against `localhost,1444`. From Git Bash prefix the `run` commands with `MSYS_NO_PATHCONV=1`: without it the shell rewrites the `/app/…` and `/src/…` values of the `-e` arguments into Windows paths and the files land in a directory of that name under the test output.
 - **The judge** is the `judge-candidate.tsv` of a documented run that meets the conditions of decision 149 (the first as decision [157](../docs/decisions/157-a-target-cell-that-differs-by-a-stated-limit-does-not-block-the-fiben-judge.md) reads it), copied to `database/fiben/judge.tsv` with a header line naming the run and loaded by the next start of the container (the loader reloads it whenever the file's checksum changes); the present one is from the .NET half of [the run of 2026-10-22](../docs/runs/2026-10-22-fiben.md), which kept the rows of the judge of 2026-10-20 and added the eight queries of decisions 161 and 162 (decision [163](../docs/decisions/163-the-fiben-judge-takes-the-eight-queries-of-decisions-161-and-162-from-the-dotnet-half-of-the-run-of-2026-10-22.md)). A new judge is a decision with a date and a reason, never a fix in the comparison.
+
+## Foreign artifacts
+
+An artifact the tool did not make - a translation by a language model, by hand, by another tool - enters the verification levels beside the client (decision [172](../docs/decisions/172-a-foreign-artifact-enters-the-verification-levels-as-a-directory-with-a-manifest-beside-the-client.md)): a directory of files with a manifest, which either suite reads from a variable, puts through the levels of decision 016 in the suite that owns its target, and writes down as one row. A run on demand, never part of a build, and no instance of the tool is needed. The format, the levels and the measures: [`architecture.md`](../docs/architecture.md) §6.2, *Cizí artefakt*.
+
+- **An artifact is a directory**: the units of the target as files - every file a consumer would get from `/convert` for the same input, the query as the bare method the tool writes - and `artifact.json`:
+
+  ```json
+  {
+    "answers": "matrix:q1-entity-filter-ordered",
+    "source": "Dapper",
+    "target": "Hibernate",
+    "producer": "llm",
+    "units": [
+      { "path": "DifferentialProduct.java", "contentType": "JavaEntity" },
+      { "path": "ExpensiveProducts.java", "contentType": "JavaQuery" },
+      { "path": "ExpensiveProducts.jpql" }
+    ],
+    "metadata": { "model": "...", "prompt": "p1", "temperature": 0, "attempt": 3 }
+  }
+  ```
+
+  `answers` names the input: `matrix:<section of matrix.txt>`, `fiben:<key>`, `ldbc:<key>`. `contentType` is a name of `ConversionContentType`; a `.sql`, `.hql`, `.jpql` or `.xml` file may leave it out, a `.cs` or `.java` file says whether it is an entity or a query. `metadata` is copied into the row unread: the place for what T4 asks a record to carry - model and version, prompt, temperature, attempt, tokens, time, cost, variant. `{{schema}}` in a file is replaced by the suite's schema, as in the inputs; keep it where the input had it. The artifacts under `Tests/Database/Foreign` are examples for every target.
+- **The inputs** the suites send, as files to hand to whoever makes artifacts: `ORMCONVERTOR_FOREIGN_INPUTS=<dir> dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~TheInputsAreWrittenWhereAsked"` writes one directory per key and source with the units and an `input.json`; the FIBEN ones carry the questions of the query.
+- **One run** over a directory of artifacts, or over one artifact, in one process of each suite:
+
+  ```sh
+  ORMCONVERTOR_FOREIGN_ARTIFACTS=<dir> ORMCONVERTOR_FOREIGN_RESULTS=<out> dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ForeignArtifactRunTest"
+  cd JavaTests && ORMCONVERTOR_FOREIGN_ARTIFACTS=<dir> ORMCONVERTOR_FOREIGN_RESULTS=<out> mvn -B test -Dtest=ForeignArtifactRunTest
+  ```
+
+  Each suite takes the artifacts whose target it owns and leaves the rest; the rows go to `foreign-rows.tsv` and `java-foreign-rows.tsv` under `<out>`, rewritten after every level. A `matrix:` key runs over the fixture of the test database, a `fiben:` key over `Fiben` with its judge (`ConnectionStrings:FibenDatabase`, `ORMCONVERTOR_TEST_FIBEN_JDBC_URL`), an `ldbc:` key ends at the third level. This is a check, what a look at a few artifacts does.
+- **The run that is recorded** is one process per artifact with a time limit: `./foreign-run.sh <dir> <out> [seconds per artifact]` from `ORMConvertor/`, on a host with both toolchains, builds both suites once, runs every artifact in a process of its own, kills one that outlives the limit and writes it down at the level it had reached as `timed out`, and gathers `<out>/foreign-rows.tsv`; the log of each artifact is `<out>/<artifact>/log.txt`. In the containers the same loop is one `docker compose --profile test run` per artifact with the two variables. The record goes into [`docs/runs/`](../docs/runs/README.md) with the provenance the manifests carried (decision [167](../docs/decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md)).
+- **A red level is a row, not a failure**: an artifact that the language does not read, that does not compile, that the factory refuses, that fails to run or that returns other rows is written down as that. What fails the run is the path itself: a manifest without a key, a key no measure answers, a target the other suite owns, a measure whose database is not configured.
 
 ## The Java test suite
 

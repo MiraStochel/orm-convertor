@@ -424,30 +424,14 @@ internal sealed class FibenRun
 
     private void ReadJudge(SqlConnection control)
     {
-        if (Scalar<int?>(control, $"SELECT OBJECT_ID(N'[{FibenDatabase.Schema}].[Judge]', N'U')") is null)
+        if (FibenJudgeTable.Read(control) is not { } entries)
         {
             return;
         }
 
-        using var command = control.CreateCommand();
-        command.CommandText = $"SELECT [QueryKey], [Position], [Rendered] FROM [{FibenDatabase.Schema}].[Judge] ORDER BY [QueryKey], [Position];";
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        foreach (var (key, entry) in entries)
         {
-            var key = reader.GetString(0);
-            if (!judge.TryGetValue(key, out var entry))
-            {
-                judge[key] = entry = (string.Empty, []);
-            }
-
-            if (reader.GetInt32(1) == 0)
-            {
-                judge[key] = (reader.GetString(2), entry.Rows);
-            }
-            else
-            {
-                entry.Rows.Add(reader.GetString(2));
-            }
+            judge[key] = entry;
         }
 
         HasJudge = true;

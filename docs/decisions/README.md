@@ -174,6 +174,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 169 | [Hodnota sloupce pevné šířky je hodnota, kterou vrátí SQL: cíl EclipseLink ji vrací konkatenací s prázdným textem a konvertorem doplnění, zdroj EclipseLink se čte bez koncových mezer](169-a-fixed-width-value-is-the-value-sql-returns-in-every-target.md) | platí | F9, F10, F13, T2, T3, S1 |
 | 170 | [Seřazený výsledek se porovnává v pořadí klíče řazení a řádky se shodným klíčem jako množina; výřez katalogu FIBEN, který dotaz neurčuje, doplní převod o rozhodující klíč](170-rows-tied-on-the-ordering-key-compare-as-a-set-and-a-fiben-slice-gets-a-deciding-key.md) | platí; nahrazuje porovnání seřazeného dotazu v pořadí v odstavci *Pořadí rozhoduje mezireprezentace* rozh. 089 a porovnání IC 14 jako množiny rozh. 117 | F13, T2, T3 |
 | 171 | [Advisor není podmínkou odevzdání a přijde na řadu až po experimentech, zbude-li čas](171-the-advisor-comes-after-the-experiments-if-time-remains.md) | platí | F15, T1–T7, S4 |
+| 172 | [Artefakt, který nevyrobil nástroj, vstupuje do stupňů ověření jako adresář souborů s manifestem vedle klienta, ne místo něj; sada ho soudí stupeň po stupni v procesu na artefakt a záznam běhu nese jeho původ](172-a-foreign-artifact-enters-the-verification-levels-as-a-directory-with-a-manifest-beside-the-client.md) | platí | T3–T6, F12, F13, S2, S4, S5, S6 |
 
 ## Formát
 

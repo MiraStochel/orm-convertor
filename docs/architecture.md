@@ -1078,6 +1078,32 @@ flowchart LR
 - **Konfigurace** — `ConnectionStrings:FibenDatabase` (.NET), `ORMCONVERTOR_TEST_FIBEN_JDBC_URL` a `ORMCONVERTOR_FIBEN_API_URL` (Java); `ORMCONVERTOR_FIBEN_QUERIES` omezí běh na klíče (kontrola, ne záznam verze), `ORMCONVERTOR_FIBEN_RESULTS` adresář výstupu, `ORMCONVERTOR_FIBEN_MEASURE=0` vynechá měření. Příkazy nese [README](../ORMConvertor/README.md#the-fiben-run), záznamy běhů [`runs/`](./runs/README.md).
 - **Co běh měří a co ne** — stav každého dotazu v každém cíli, shodu řádků, časy překladu, kompilace a čtení a medián spuštění; neshodu cíle, kterou vysvětluje vyslovená mez, záznam běhu jmenuje (rozh. [157](./decisions/157-a-target-cell-that-differs-by-a-stated-limit-does-not-block-the-fiben-judge.md)). Stav každého dotazu říká katalog (`FibenSample`), ne tento text; co z něj katalog nenese, je mezí [`subset.md`](./subset.md) a stavem dotazu s poznámkou.
 
+#### Cizí artefakt
+
+Artefakt, který nevyrobil nástroj (rozh. [172](./decisions/172-a-foreign-artifact-enters-the-verification-levels-as-a-directory-with-a-manifest-beside-the-client.md)), vstupuje do stupňů vedle klienta: adresář se soubory jednotek cíle a manifestem `artifact.json` — `answers` (`matrix:<sekce matrix.txt>`, `fiben:<klíč>`, `ldbc:<klíč>`), `source`, `target`, `producer` (`llm`, `human`, `tool`), `units` s `path` a `contentType` ve jménech `ConversionContentType` (u `.sql`, `.hql`, `.jpql` a `.xml` smí chybět), `metadata` libovolný objekt opsaný beze změny. `{{schema}}` v souborech se nahradí schématem sady jako u vstupů. Obě sady čtou touž podobu (`Tests/Foreign/`, javové `foreign/`); artefakt vezme sada, které patří cíl, a instanci nástroje nepotřebuje.
+
+```mermaid
+flowchart LR
+  D["adresář artefaktů<br/>ORMCONVERTOR_FOREIGN_ARTIFACTS"] --> R["ForeignArtifactRun<br/>.NET / Java"]
+  R --> L1["1. čtení jazykem"] --> L2["2. překlad"] --> L3["3. továrna"] --> L4["4. běh"]
+  L4 --> C{"porovnání"}
+  M["Differential/results/<br/>Judge v Fiben"] --> C
+  R -. "řádek po každém stupni" .-> T["foreign-rows.tsv<br/>ORMCONVERTOR_FOREIGN_RESULTS"]
+```
+
+| Stupeň | Co se posoudí | .NET cíle | Java cíle |
+|---|---|---|---|
+| 1. čtení | jazyk cíle jednotku přečte (T3 *parsovatelný*): jen syntaktická diagnostika | Roslyn (dotazová metoda uvnitř třídy, kterou kolem ní dává i překlad), `XDocument`, `TSql160Parser`; HQL čte až 3. stupeň | `JavacTask.parse()` (dotaz uvnitř třídy, u MyBatisu rozhraní mapperu), DOM bez stažení DTD; JPQL čte až 3. stupeň |
+| 2. překlad | jednotky se přeloží pod referencemi konzumenta | `PreparedQuery.Compile` (`GeneratedQueryCompiler`), bez dotazu `GeneratedEntityCompiler` | `JavaProject` entit a nad ním projekt dotazu |
+| 3. přijetí | továrna cíle artefakt přijme | `PreparedQuery.Open`: model EF Core (validovaný hned, ne až prvním dotazem), továrna NHibernate a `CreateQuery` nad holým HQL, Dapper nic | továrna Hibernate / EclipseLink a dotaz vytvořený s hodnotou typu každého parametru (`PreparedJavaQuery.sample`); u MyBatisu továrna nad mappery s loaderem rozhraní |
+| 4. běh | dotaz vrátí řádky; shoda s měřítkem je výsledek | `PreparedQuery.Run` → `ResultRow.Canonical` | běh jako `JavaQueryRunner` → `ResultRow.canonical` |
+
+- **Měřítko podle klíče** — `matrix:` kanonický výsledek dotazu, argumenty, pole, klíč řazení a nastavení z `matrix.txt`, databáze fixture; `fiben:` soudce z tabulky `Judge` databáze `Fiben` (`FibenJudgeTable`; javová sada čte sloupce a klíč řazení dotazu z `SampleData/Fiben/queries.json`, `ForeignFibenCatalog`); `ldbc:` jen do 3. stupně — validační sada je přehrání, ne jedno čtení. Klíč bez měřítka, cíl druhé sady, nečitelný manifest a nenastavená databáze měřítka jsou selhání sady; všechno ostatní je řádek.
+- **Řádek** (`ForeignVerdict`; shodu sloupců obou sad drží `ForeignArtifactPathTest.TheRowsHaveTheColumnsTheJavaSuiteWrites`) — `artifact`, `answers`, `source`, `target`, `producer`, `reached` (0–4), `outcome` (`unreadable`, `not compiled`, `not accepted`, `failed`, `differs`, `agrees`; `accepted` bez dotazu nebo bez 4. stupně; `timed out` doplní smyčka), `detail`, `rows`, `agrees`, časy stupňů, `metadata`. Soubory `foreign-rows.tsv` a `java-foreign-rows.tsv` v `ORMCONVERTOR_FOREIGN_RESULTS` se přepisují po každém stupni, takže běh ukončený zvenčí nechá dosažený stupeň.
+- **Běh** — `ForeignArtifactRunTest` v obou sadách (theory nad artefakty z proměnné; bez ní jeden případ přeskočí s důvodem), na vyžádání, nikdy součást sestavení; proces na artefakt s mezí času dává `foreign-run.sh` ([README](../ORMConvertor/README.md#foreign-artifacts)).
+- **Vstupy ven** — `ORMCONVERTOR_FOREIGN_INPUTS` (`ForeignInputs.Export`, .NET sada): složka `<druh>-<klíč>-<zdroj>` s jednotkami a `input.json` (`answers`, `source`, `units`, u FIBEN `questions`), schéma zpět jako `{{schema}}`; artefakt k vypsanému vstupu odpovídá klíči složky.
+- **Cesta se hlídá sama** — `Tests/Database/Foreign/` s `expected.txt`: na každý cíl artefakt `producer: human`, který projde a shodne se, a po jednom, který skončí na každém stupni; artefakt nástroje (`producer: tool`) projde cestou na 4. stupeň se shodou, jako přes klienta (`ForeignArtifactPathTest` v obou sadách, javový nad artefakty z instance). Klíč scénáře `CrossFrameworkInputs` cesta nezná ([`open-items.md`](./open-items.md)).
+
 **Nárok** F7–F10, F12 a F13 stojí na stupních 2–4 javové sady a na maticích (§9, [`traceability.md`](./traceability.md)). Záznamy běhů s počty a commitem nese jen [`runs/`](./runs/README.md#velikost-sady-a-pokrytí) (rozh. [095](./decisions/095-a-dated-run-record-names-its-commit.md), [167](./decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md)).
 
 ### 6.3 Frontend

@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Reflection;
+using Common.Compilation;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Model;
@@ -157,53 +158,80 @@ internal sealed class PreparedQuery : IDisposable
     {
         var entities = EntitySources(conversion).ToList();
         var queryMethod = DotNetQueryRunner.QueryMethod(conversion, mutated, form);
+        var mappings = Mappings(conversion);
 
+        var result = Compile(assemblyName, target, queryMethod, entities, form);
+
+        Assert.True(result.Success, "Generated query does not compile:"
+            + Environment.NewLine
+            + string.Join(Environment.NewLine, result.Errors.Select(e => e.ToString())));
+
+        return Open(target, result.Assembly!, mappings, connectionString, form);
+    }
+
+    /// <summary>
+    /// The second level alone (decision 016): the query method compiled with the entities
+    /// under the consumer references of the target, the result returned rather than asserted.
+    /// A foreign artifact goes through here as the tool's own does (decision 172), and its
+    /// row names this level when the compiler refuses it.
+    /// </summary>
+    internal static CSharpCompilationResult Compile(
+        string assemblyName,
+        ORMEnum target,
+        string queryMethod,
+        IReadOnlyList<string> entities,
+        ConversionContentType form = ConversionContentType.CSharpQuery)
+        => target switch
+        {
+            ORMEnum.Dapper => GeneratedQueryCompiler.Compile(
+                assemblyName, queryMethod, entities, GeneratedQueryCompiler.DapperConsumerReferences,
+                Usings(entities, "using Dapper;" + Environment.NewLine + "using System.Data;")),
+            ORMEnum.EFCore => GeneratedQueryCompiler.Compile(
+                assemblyName, queryMethod, entities, GeneratedQueryCompiler.EFCoreConsumerReferences,
+                Usings(entities, "using Microsoft.EntityFrameworkCore;")),
+            ORMEnum.NHibernate => GeneratedQueryCompiler.Compile(
+                assemblyName, queryMethod, entities, GeneratedQueryCompiler.NHibernateConsumerReferences,
+                Usings(entities, form == ConversionContentType.CSharpLinqQuery
+                    ? "using NHibernate;" + Environment.NewLine + "using NHibernate.Linq;"
+                    : "using NHibernate;")),
+            _ => throw new NotSupportedException(
+                $"{target} is not a framework this suite runs; its half of the matrix is the Java suite's."),
+        };
+
+    /// <summary>
+    /// The third level alone: the compiled image loaded and the framework's handle built over
+    /// it - the model of a context for EF Core, validated here rather than at the first query,
+    /// the session factory for NHibernate, nothing for Dapper, which has no factory to refuse
+    /// anything. Throws whatever the framework throws when it refuses the artifact.
+    /// </summary>
+    internal static PreparedQuery Open(
+        ORMEnum target,
+        byte[] compiled,
+        IReadOnlyList<string> mappings,
+        string connectionString,
+        ConversionContentType form = ConversionContentType.CSharpQuery)
+    {
         switch (target)
         {
             case ORMEnum.Dapper:
-            {
-                var compiled = GeneratedQueryCompiler.CompileOrFail(
-                    assemblyName,
-                    queryMethod,
-                    entities,
-                    GeneratedQueryCompiler.DapperConsumerReferences,
-                    Usings(conversion, "using Dapper;" + Environment.NewLine + "using System.Data;"));
-
                 return new PreparedQuery(target, connectionString, GeneratedMethod(Assembly.Load(compiled)));
-            }
 
             case ORMEnum.EFCore:
             {
-                var compiled = GeneratedQueryCompiler.CompileOrFail(
-                    assemblyName,
-                    queryMethod,
-                    entities,
-                    GeneratedQueryCompiler.EFCoreConsumerReferences,
-                    Usings(conversion, "using Microsoft.EntityFrameworkCore;"));
-
                 var assembly = Assembly.Load(compiled);
                 var connection = new SqlConnection(connectionString);
+                var context = EFCoreAcceptance.OpenContext(assembly, connection);
 
-                return new PreparedQuery(
-                    target, connectionString, GeneratedMethod(assembly), connection, EFCoreAcceptance.OpenContext(assembly, connection));
+                // Building the model runs EF Core's validation without a connection; a
+                // mapping it cannot accept is refused here, at the third level, and not
+                // inside the first run of the query.
+                _ = context.Model;
+
+                return new PreparedQuery(target, connectionString, GeneratedMethod(assembly), connection, context);
             }
 
             case ORMEnum.NHibernate:
             {
-                var mappings = conversion.Sources
-                    .Where(source => source.ContentType == ConversionContentType.XML)
-                    .Select(source => source.Content)
-                    .ToList();
-
-                var compiled = GeneratedQueryCompiler.CompileOrFail(
-                    assemblyName,
-                    queryMethod,
-                    entities,
-                    GeneratedQueryCompiler.NHibernateConsumerReferences,
-                    Usings(conversion, form == ConversionContentType.CSharpLinqQuery
-                        ? "using NHibernate;" + Environment.NewLine + "using NHibernate.Linq;"
-                        : "using NHibernate;"));
-
                 var (factory, assembly) = NHibernateAcceptance.OpenSessionFactory(compiled, mappings);
 
                 // The provider of the LINQ form registers the entity types it meets once per
@@ -222,6 +250,13 @@ internal sealed class PreparedQuery : IDisposable
                     $"{target} is not a framework this suite runs; its half of the matrix is the Java suite's.");
         }
     }
+
+    /// <summary>The mapping documents of a conversion - the hbm.xml of NHibernate; none for the other two.</summary>
+    internal static List<string> Mappings(ConversionResult conversion)
+        => conversion.Sources
+            .Where(source => source.ContentType == ConversionContentType.XML)
+            .Select(source => source.Content)
+            .ToList();
 
     /// <summary>
     /// Runs the query with the arguments in the order of its parameters and returns the rows,
@@ -282,8 +317,12 @@ internal sealed class PreparedQuery : IDisposable
     /// compilation fails on the type the query is about.
     /// </summary>
     internal static string Usings(ConversionResult conversion, string frameworkUsings)
+        => Usings(EntitySources(conversion), frameworkUsings);
+
+    /// <summary>The same over the entity sources themselves, for an artifact that came from no conversion (decision 172).</summary>
+    internal static string Usings(IEnumerable<string> entitySources, string frameworkUsings)
     {
-        var declarations = EntitySources(conversion)
+        var declarations = entitySources
             .Select(source => System.Text.RegularExpressions.Regex.Match(source, @"^\s*namespace\s+([\w.]+)\s*;", System.Text.RegularExpressions.RegexOptions.Multiline))
             .Where(match => match.Success)
             .Select(match => $"using {match.Groups[1].Value};")

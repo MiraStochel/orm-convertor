@@ -1,0 +1,13 @@
+{
+  "answers": "matrix:q1-entity-filter-ordered",
+  "source": "Dapper",
+  "target": "EFCore",
+  "producer": "human",
+  "units": [
+    { "path": "DifferentialProduct.cs", "contentType": "CSharpEntity" },
+    { "path": "ExpensiveProducts.cs", "contentType": "CSharpQuery" }
+  ],
+  "metadata": {
+    "note": "written by hand for the test of the path (decision 172); the entity misses its closing brace, so the language does not read it"
+  }
+}

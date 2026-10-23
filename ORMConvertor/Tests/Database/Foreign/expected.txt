@@ -1,0 +1,56 @@
+# The artifacts of this directory hold the path of a foreign artifact (decision 172): each
+# one is written by hand to end at a stated level with a stated outcome, and the test of
+# the path in the suite that owns its target asserts exactly that row - never a failure.
+# One artifact per target reaches the fourth level and agrees with the measure; the others
+# stop at one level each, so that the path is seen refusing at every level once.
+#
+#   reached   the highest level passed: 0 the language does not read a unit, 1 read,
+#             2 compiled, 3 accepted by the framework, 4 ran
+#   outcome   unreadable, not compiled, not accepted, failed, differs, agrees, accepted
+#
+# Both suites read this file; the .NET suite takes the artifacts whose target is Dapper,
+# EF Core or NHibernate, the Java suite the rest.
+
+[q1-efcore-human]
+reached = 4
+outcome = agrees
+
+[q2-dapper-human]
+reached = 4
+outcome = agrees
+
+[q1-nhibernate-human]
+reached = 4
+outcome = agrees
+
+[q1-hibernate-human]
+reached = 4
+outcome = agrees
+
+[q1-eclipselink-human]
+reached = 4
+outcome = agrees
+
+[q1-mybatis-human]
+reached = 4
+outcome = agrees
+
+[q1-efcore-unreadable]
+reached = 0
+outcome = unreadable
+
+[q1-hibernate-not-compiled]
+reached = 1
+outcome = not compiled
+
+[q1-nhibernate-not-accepted]
+reached = 2
+outcome = not accepted
+
+[q1-eclipselink-failed]
+reached = 3
+outcome = failed
+
+[q1-mybatis-differs]
+reached = 4
+outcome = differs

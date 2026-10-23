@@ -142,6 +142,9 @@ services:
       dockerfile: ORMConvertorAPI/Dockerfile
       target: tests
     cpuset: "2,3"
+    # The suites run code the tool made and, on demand, code it did not (decision 172); the
+    # memory of the VM is the one thing of the host such code could take. One suite at a time.
+    mem_limit: 6g
     environment:
       - ConnectionStrings__TestDatabase=Server=test_db,1433;Database=ORMConvertorTests;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
       # Here the configuration promises a database, so its absence is a failure rather
@@ -222,6 +225,7 @@ services:
       dockerfile: ORMConvertorAPI/Dockerfile
       target: java-tests
     cpuset: "2,3"
+    mem_limit: 6g
     environment:
       - ORMCONVERTOR_TEST_JDBC_URL=jdbc:sqlserver://test_db:1433;databaseName=ORMConvertorTests;user=sa;password=Testingorms123;encrypt=true;trustServerCertificate=true
       - ORMCONVERTOR_API_URL=http://testapp:5072/orm

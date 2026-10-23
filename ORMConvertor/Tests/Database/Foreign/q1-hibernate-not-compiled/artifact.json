@@ -1,0 +1,13 @@
+{
+  "answers": "matrix:q1-entity-filter-ordered",
+  "source": "Dapper",
+  "target": "Hibernate",
+  "producer": "human",
+  "units": [
+    { "path": "DifferentialProduct.java", "contentType": "JavaEntity" },
+    { "path": "ExpensiveProducts.java", "contentType": "JavaQuery" }
+  ],
+  "metadata": {
+    "note": "written by hand for the test of the path (decision 172); the entity names a type that does not exist, so javac reads it and refuses it"
+  }
+}

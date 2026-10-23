@@ -1,0 +1,14 @@
+{
+  "answers": "matrix:q1-entity-filter-ordered",
+  "source": "Dapper",
+  "target": "NHibernate",
+  "producer": "human",
+  "units": [
+    { "path": "DifferentialProduct.cs", "contentType": "CSharpEntity" },
+    { "path": "DifferentialProduct.hbm.xml", "contentType": "XML" },
+    { "path": "ExpensiveProducts.cs", "contentType": "CSharpQuery" }
+  ],
+  "metadata": {
+    "note": "written by hand for the test of the path (decision 172); the mapping names a property the class does not have, so the session factory refuses it"
+  }
+}

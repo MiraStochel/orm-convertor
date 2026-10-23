@@ -34,6 +34,13 @@
          SDK's default glob would hand them to the compiler. -->
     <Compile Remove="Database\Differential\**\*.cs" />
     <Compile Remove="Database\QueryShapes\**\*.cs" />
+    <!-- The foreign artifacts of decision 172 that hold the path: copied, not embedded,
+         because the path reads a directory of files - that is the shape a foreign artifact
+         has - and the Java suite reads the same directory as a test resource. The C# ones are
+         artifacts of a target, not source of this project. -->
+    <Compile Remove="Database\Foreign\**\*.cs" />
+    <None Include="Database\Foreign\**\*.cs" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Database\Foreign\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

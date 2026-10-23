@@ -113,7 +113,22 @@
                          frameworks: the .NET matrices run them dry, this suite has each Java
                          framework compile and parse what the tool makes of them. -->
                     <include>QueryShapes/**</include>
+                    <!-- The foreign artifacts that hold the path of decision 172, read as the
+                         directory of files they are; the .NET suite copies the same directory
+                         beside its binaries. -->
+                    <include>Foreign/**</include>
                 </includes>
+            </testResource>
+            <!-- The FIBEN catalog as the repository carries it (decision 149): the path of a
+                 foreign artifact that answers a FIBEN query needs the columns and the ordering
+                 key of the query without an instance of the tool (decision 172), so the file the
+                 instance serves is read here directly. -->
+            <testResource>
+                <directory>${project.basedir}/../SampleData/Fiben</directory>
+                <includes>
+                    <include>queries.json</include>
+                </includes>
+                <targetPath>Fiben</targetPath>
             </testResource>
             <!-- The inserts INS 1-8 of the LDBC validation set and their compensation (decision
                  117), read from where the database image and the .NET suite read them; the

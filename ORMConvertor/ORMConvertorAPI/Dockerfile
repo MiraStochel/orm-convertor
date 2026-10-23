@@ -91,6 +91,9 @@ COPY Tests/Database/ /src/Tests/Database/
 # The scripts of the LDBC inserts and their compensation (decision 117), likewise to the
 # place the pom reads them from.
 COPY database/ldbc/updates/ /src/database/ldbc/updates/
+# The FIBEN catalog (decision 149), for the path of a foreign artifact that answers one of
+# its queries without an instance of the tool (decision 172); likewise.
+COPY SampleData/Fiben/queries.json /src/SampleData/Fiben/queries.json
 RUN mvn -B -o test-compile
 ENTRYPOINT ["mvn", "-B", "-o", "test"]
 
