@@ -162,6 +162,17 @@ public sealed class TargetFrameworkDescriptor
     public bool Speaks(QueryFunction function) => Functions.Contains(function);
 
     /// <summary>
+    /// Whether the framework hands a value whose result column is fixed-width text - a
+    /// <c>CHAR(n)</c> or <c>NCHAR(n)</c> column, a MIN, MAX, COALESCE or CASE over one -
+    /// over without its trailing characters up to U+0020, where a run measured that it does
+    /// (decision 169). The value of the model is the padded one SQL returns, so the builder
+    /// template writes such a projection as a concatenation with empty text, which reaches
+    /// the framework as variable-width text and keeps the padding. EclipseLink 5.0.0 trims
+    /// under its default session; the other five hand the value over as it is.
+    /// </summary>
+    public bool TrimsFixedWidthOnRead { get; init; }
+
+    /// <summary>
     /// The framework's own API for a query written whole in the SQL of <see cref="Dialect"/>,
     /// on which its query builder falls back where the query language does not speak a
     /// construct of the query (decision 113) - named, so that the record of the fallback says

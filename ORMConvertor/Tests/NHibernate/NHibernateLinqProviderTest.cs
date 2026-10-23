@@ -11,7 +11,8 @@ namespace Tests.NHibernate;
 /// is spelled, which aggregates it takes over distinct values, that its Sum is the bare sum
 /// (decision 155), that it compensates == and != for NULL but writes a negation as SQL's NOT
 /// and Contains over a subquery as IN (decision 156), that its Average over a whole number is
-/// the average in floating point and cast into int SQL's AVG again (decision 161). A fact the provider stops
+/// the average in floating point and cast into int SQL's AVG again (decision 161), that TrimEnd() is
+/// RTRIM (decision 169). A fact the provider stops
 /// holding on an upgrade shows up here, beside the hook that assumes it.
 /// </summary>
 public class NHibernateLinqProviderTest
@@ -106,6 +107,11 @@ public class NHibernateLinqProviderTest
         { "Average cast into int as SQL's AVG", "session.Query<Order>().GroupBy(o => o.CustomerId).Select(g => new { g.Key, A = (int)g.Average(e => e.OrderId) })", "cast(cast(avg(cast(order0_.OrderId as FLOAT(53))) as FLOAT(53)) as INT) as col_1_0_" },
         { "Average cast into a nullable int as SQL's AVG", "session.Query<Order>().GroupBy(o => o.CustomerId).Select(g => new { g.Key, A = (int?)g.Average(e => e.Rating) })", "cast(cast(avg(cast(order0_.Rating as FLOAT(53))) as FLOAT(53)) as INT) as col_1_0_" },
         { "Average over a decimal as a decimal", "session.Query<Order>().GroupBy(o => o.CustomerId).Select(g => new { g.Key, A = g.Average(e => e.Total) })", "cast(avg(order0_.Total) as DECIMAL(29, 10)) as col_1_0_" },
+
+        // TrimEnd() without an argument is RTRIM, over a column and over its maximum alike - the
+        // spelling of TrimEnd the LINQ writer gives NHibernate (decision 169).
+        { "TrimEnd as rtrim", "session.Query<Customer>().Select(c => new { Name = c.CustomerName.TrimEnd() })", "select rtrim( customer0_.CustomerName ) as col_0_0_" },
+        { "TrimEnd over a maximum as rtrim", "session.Query<Customer>().GroupBy(c => 1).Select(g => g.Max(e => e.CustomerName).TrimEnd())", "rtrim( max(customer0_.CustomerName) )" },
         { "Average in a subquery cast into int as SQL's AVG", "session.Query<Customer>().Where(c => c.Score > (int?)session.Query<Order>().Where(o => o.CustomerId == c.CustomerId).Average(o => o.OrderId))", "as INT)" },
     };
 

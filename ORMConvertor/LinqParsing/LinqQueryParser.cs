@@ -6612,7 +6612,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         return operand.IsExpression
                && (operand.Expression!.Operator == ExpressionOperator.Concat
-                   || operand.Expression.Function is QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim
+                   || operand.Expression.Function is QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim or QueryFunction.TrimEnd
                        or QueryFunction.Substring or QueryFunction.EscapePattern
                    || operand.Expression.CastTo == ScalarType.String
                    || operand.Expression.IsListAggregate);
@@ -6991,7 +6991,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     return receiver is null ? null : QueryOperand.Computed(QueryExpression.Call(QueryFunction.Cast, [receiver], castTo: ScalarType.String));
                 }
 
-            case "ToUpper" or "ToLower" or "Trim" when arguments.Count == 0:
+            case "ToUpper" or "ToLower" or "Trim" or "TrimEnd" when arguments.Count == 0:
                 {
                     var receiver = ReadLeaf(member.Expression);
                     if (receiver is null)
@@ -7003,6 +7003,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                     {
                         "ToUpper" => QueryFunction.Upper,
                         "ToLower" => QueryFunction.Lower,
+                        "TrimEnd" => QueryFunction.TrimEnd,
                         _ => QueryFunction.Trim,
                     };
 

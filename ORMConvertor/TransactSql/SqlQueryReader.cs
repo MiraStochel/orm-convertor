@@ -1292,7 +1292,7 @@ public class SqlQueryReader(
 
         return operand.IsExpression
                && (operand.Expression!.Operator == ExpressionOperator.Concat
-                   || operand.Expression.Function is QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim
+                   || operand.Expression.Function is QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim or QueryFunction.TrimEnd
                        or QueryFunction.Substring or QueryFunction.EscapePattern
                    || operand.Expression.CastTo == ScalarType.String
                    || operand.Expression.IsListAggregate);
@@ -1349,6 +1349,7 @@ public class SqlQueryReader(
             case "UPPER": return ReadCall(QueryFunction.Upper, call.Parameters, Print(call));
             case "LOWER": return ReadCall(QueryFunction.Lower, call.Parameters, Print(call));
             case "TRIM": return ReadCall(QueryFunction.Trim, call.Parameters, Print(call));
+            case "RTRIM" when call.Parameters.Count == 1: return ReadCall(QueryFunction.TrimEnd, call.Parameters, Print(call));
             case "SUBSTRING": return ReadCall(QueryFunction.Substring, call.Parameters, Print(call));
             case "LEN": return ReadCall(QueryFunction.Length, call.Parameters, Print(call));
             case "ISNULL": return ReadCall(QueryFunction.Coalesce, call.Parameters, Print(call));

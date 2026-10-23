@@ -8,8 +8,9 @@ namespace Tests.NHibernate;
 /// 027): a subquery after <c>with</c> - <c>in (select …)</c>, <c>not in</c>, a correlated
 /// one - in an inner and in a left join. These are the facts the HQL visitor's join rests
 /// on (decision 162). Beside them, what avg hands over, which the visitor's conversion of an
-/// average rests on (decision 161). A fact the release stops holding on an upgrade shows up
-/// here.
+/// average rests on (decision 161), and what the trimming of a fixed-width value is written as
+/// (decision 169): <c>trim(trailing from x)</c> is <c>rtrim(x)</c>, while <c>rtrim(x)</c>
+/// written directly is refused. A fact the release stops holding on an upgrade shows up here.
 /// </summary>
 public class NHibernateHqlProviderTest
 {
@@ -70,7 +71,18 @@ public class NHibernateHqlProviderTest
             "select c.CustomerName from Customer c inner join Purchase o with o.CustomerId = c.CustomerId and exists (select o2.OrderId from Purchase o2 where o2.CustomerId = c.CustomerId and o2.Rating > 3)",
             "and (exists (select purchase2_.OrderId from Sales.Orders purchase2_ where purchase2_.CustomerId=customer0_.CustomerId and purchase2_.Rating>3)))"
         },
+
+        // The HQL spelling of TrimEnd (decision 169).
+        { "a trailing trim as rtrim", "select trim(trailing from c.CustomerName) from Customer c", "select rtrim( customer0_.CustomerName ) as col_0_0_" },
+        { "a trailing trim over a maximum", "select trim(trailing from max(c.CustomerName)) from Customer c", "select rtrim( max(customer0_.CustomerName) ) as col_0_0_" },
     };
+
+    /// <summary>Why the HQL writer spells TrimEnd as trim(trailing from …): rtrim written directly has no type in the HQL parser (decision 169).</summary>
+    [Fact]
+    public void TheProviderRefusesRtrimWrittenDirectly()
+    {
+        Assert.ThrowsAny<Exception>(() => Sql("rtrim", "select rtrim(c.CustomerName) from Customer c"));
+    }
 
     [Theory]
     [MemberData(nameof(Translated))]

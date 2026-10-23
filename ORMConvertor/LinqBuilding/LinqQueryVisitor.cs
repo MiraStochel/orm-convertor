@@ -1325,6 +1325,7 @@ public abstract class LinqQueryVisitor(
                 QueryFunction.Upper => $"{Receiver(arguments[0])}.ToUpper()",
                 QueryFunction.Lower => $"{Receiver(arguments[0])}.ToLower()",
                 QueryFunction.Trim => $"{Receiver(arguments[0])}.Trim()",
+                QueryFunction.TrimEnd => $"{Receiver(arguments[0])}.TrimEnd()",
                 QueryFunction.Substring => $"{Receiver(arguments[0])}.Substring({ZeroBased(arguments[1])}, {Operand(arguments[2])})",
                 QueryFunction.Length => $"{Receiver(arguments[0])}.Length",
                 QueryFunction.Coalesce => Afresh(() => Coalesce(arguments)),

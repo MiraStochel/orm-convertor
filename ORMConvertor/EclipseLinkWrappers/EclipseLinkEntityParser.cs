@@ -1,6 +1,7 @@
 using AbstractWrappers;
 using JakartaPersistence;
 using JavaEntityParsing;
+using Model.AbstractRepresentation.Enums;
 
 namespace EclipseLinkWrappers;
 
@@ -12,10 +13,31 @@ namespace EclipseLinkWrappers;
 /// @BatchFetch are about the cache and about loading, @PrivateOwned is cascading - so the
 /// reader recognizes none and the shared reading reports each as dropped, exactly as it
 /// does for a Hibernate annotation on the way to EclipseLink (decision 080). What it does
-/// add is the one warning no artifact can show: a lazy reference under this implementation.
+/// add is the one warning no artifact can show: a lazy reference under this implementation,
+/// and the one fact of reading no annotation states: the value of a fixed-width column comes
+/// to the program without its trailing spaces (decision 169).
 /// </summary>
 public sealed class EclipseLinkEntityParser(AbstractEntityBuilder entityBuilder, JpaReadingContext context)
-    : JpaEntityParser(entityBuilder, context, new EclipseLinkAnnotationReader());
+    : JpaEntityParser(entityBuilder, context, new EclipseLinkAnnotationReader())
+{
+    /// <summary>
+    /// Under its default session EclipseLink 5.0.0 hands the value of every CHAR and NCHAR
+    /// column over without its trailing characters up to U+0020 (decision 169, measured by the
+    /// Java suite's CharTrimmingClaimsTest). The session is the consumer's (decision 040), so
+    /// the default is what the program was written against; whether a column is fixed-width
+    /// is often known only after the catalog phase, so every text property carries the fact
+    /// and the builders ask for it together with the type.
+    /// </summary>
+    protected override void ParseClassBody(JavaClass cls)
+    {
+        base.ParseClassBody(cls);
+
+        foreach (var propertyMap in entityBuilder.EntityMap.PropertyMaps.Where(p => p.Property.Type?.ScalarType == ScalarType.String))
+        {
+            propertyMap.TrimmedOnRead = true;
+        }
+    }
+}
 
 public sealed class EclipseLinkAnnotationReader : JpaAnnotationReader
 {

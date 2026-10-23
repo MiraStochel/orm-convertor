@@ -65,4 +65,15 @@ public class PropertyMap
     /// and the target builders decide what such a combination means.
     /// </summary>
     public bool IsTransient { get; set; }
+
+    /// <summary>
+    /// Whether the source's program receives the values of the column without their
+    /// trailing characters up to U+0020 where the column is fixed-width (decision 169):
+    /// EclipseLink trims them under its default session, the other frameworks hand over the
+    /// value padded to the width as SQL returns it. Stated for every text property of a
+    /// source whose framework trims, because whether the column is fixed-width is often
+    /// known only after the catalog phase; a builder asks for it together with the type.
+    /// Positive-only like <see cref="IsVersion"/>: false means the padded value SQL returns.
+    /// </summary>
+    public bool TrimmedOnRead { get; set; }
 }

@@ -86,6 +86,15 @@ public enum QueryFunction
     /// writes without a length or a precision that could change the value.
     /// </summary>
     Cast = 17,
+
+    /// <summary>
+    /// The text without its trailing spaces (decision 169): T-SQL <c>RTRIM(x)</c>, JPQL and
+    /// HQL <c>trim(trailing from x)</c>, LINQ <c>x.TrimEnd()</c>, each measured to reach SQL
+    /// Server as <c>RTRIM</c>. Besides what a source writes, it is how a target that does not
+    /// trim a fixed-width value returns what a source that trims it - EclipseLink - handed
+    /// its program.
+    /// </summary>
+    TrimEnd = 18,
 }
 
 /// <summary>

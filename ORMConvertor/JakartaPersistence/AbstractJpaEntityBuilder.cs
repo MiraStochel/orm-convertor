@@ -1,5 +1,6 @@
 using System.Text;
 using AbstractWrappers;
+using Common.Sql;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using JavaEntityParsing;
@@ -29,6 +30,15 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
     private readonly SortedSet<string> imports = new(StringComparer.Ordinal);
 
     private readonly List<(string Type, string Name, LangType LangType)> accessors = [];
+
+    /// <summary>The widths whose padding converter the entity being built nests (decision 169).</summary>
+    private readonly SortedSet<int> paddedWidths = [];
+
+    /// <summary>Whether the entity being built nests the converter that trims a fixed-width value (decision 169).</summary>
+    private bool trimsFixedWidth;
+
+    /// <summary>A Jakarta Persistence target states how a fixed-width value is read, with a converter (decision 169).</summary>
+    protected override bool StatesFixedWidthReads => true;
 
     /// <summary>The profile of the target implementation: the key to its defaults (decision 077).</summary>
     protected abstract JpaImplementationProfile Profile { get; }
@@ -70,6 +80,8 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         // emitting and rendered ahead of the class in FinalizeBuild.
         imports.Clear();
         accessors.Clear();
+        paddedWidths.Clear();
+        trimsFixedWidth = false;
         current = artifact;
     }
 
@@ -1207,6 +1219,18 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             categories.AddRange(arguments.Skip(beforeNationalization).Select(a => (a, MappingFactCategory.DatabaseType)));
         }
 
+        // A fixed-width column states its literal type (decisions 086 and 169): @Column has no
+        // word for a fixed width, and without it the artifact would claim a variable-width
+        // column and its reading would no longer know the value comes padded. A national one
+        // the EclipseLink profile has already spelled inside its nationalization.
+        if (propertyMap is { SourceSqlType: null, Type: DatabaseType.Char, Length: { } width }
+            && !arguments.Any(a => a.StartsWith("columnDefinition", StringComparison.Ordinal))
+            && SqlTypeSpelling.Literal(Descriptor.Dialect, DatabaseType.Char, isUnicode: propertyMap.IsUnicode == true, length: width) is { } literal)
+        {
+            arguments.Add($"columnDefinition = \"{literal}\"");
+            categories.Add((arguments[^1], MappingFactCategory.DatabaseType));
+        }
+
         code.AppendLine($"    @Column({string.Join(", ", arguments)})");
 
         foreach (var (argument, category) in categories)
@@ -1218,6 +1242,138 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         {
             code.AppendLine(annotation);
             Mark(code, annotation.Trim(), property, MappingFactCategory.DatabaseType);
+        }
+
+        AppendFixedWidthRead(entityMap, propertyMap, code, isKey);
+    }
+
+    /// <summary>
+    /// The converter that makes the target read a fixed-width value as the source's program
+    /// did (decision 169). A profile that trims it - EclipseLink - gets the padding back where
+    /// the source's framework kept it; a profile that keeps it - Hibernate - cuts the trailing
+    /// characters up to U+0020 where the source's framework cut them. Both converters are
+    /// nested in the entity, as its key class is; EclipseLink finds one only where the
+    /// persistence unit lists it, Hibernate without that (measured, the Java suite's
+    /// CharTrimmingClaimsTest). Jakarta Persistence applies no converter to an identifier.
+    /// </summary>
+    private void AppendFixedWidthRead(EntityMap entityMap, PropertyMap propertyMap, StringBuilder code, bool isKey)
+    {
+        if (propertyMap.Type != DatabaseType.Char || propertyMap.Property.Type?.ScalarType != ScalarType.String)
+        {
+            return;
+        }
+
+        var column = ColumnOf(propertyMap);
+        var trims = Descriptor.TrimsFixedWidthOnRead;
+        if (trims == propertyMap.TrimmedOnRead)
+        {
+            return;
+        }
+
+        if (isKey)
+        {
+            ReportFixedWidthRead(entityMap, propertyMap, ConversionRecordKind.Loss,
+                $"The key column '{column}' is fixed-width and Jakarta Persistence applies no converter to an identifier, so "
+                + (trims
+                    ? $"{Profile.Implementation} hands the key over without the trailing spaces SQL pads it with (decision 169)."
+                    : $"{Profile.Implementation} hands the key over padded, where the source's framework trimmed it (decision 169)."));
+            return;
+        }
+
+        if (!trims)
+        {
+            Import($"{Jakarta}.Convert");
+            trimsFixedWidth = true;
+            code.AppendLine($"    @Convert(converter = {entityMap.Entity.Name}.TrimmedFixedWidth.class)");
+            ReportFixedWidthRead(entityMap, propertyMap, ConversionRecordKind.Convention,
+                $"The source's framework hands the value of the fixed-width column '{column}' to its program without trailing characters up to U+0020; "
+                + $"the artifact cuts them the same way with the nested converter {entityMap.Entity.Name}.TrimmedFixedWidth (decision 169).");
+            return;
+        }
+
+        if (propertyMap.Length is not { } width)
+        {
+            ReportFixedWidthRead(entityMap, propertyMap, ConversionRecordKind.Loss,
+                $"The fixed-width column '{column}' states no length, so the padding {Profile.Implementation} cuts off the value cannot be restored; "
+                + "reading the entity hands the value over without the trailing spaces SQL pads it with (decision 169).");
+            return;
+        }
+
+        Import($"{Jakarta}.Convert");
+        paddedWidths.Add(width);
+        code.AppendLine($"    @Convert(converter = {entityMap.Entity.Name}.FixedWidth{width}.class)");
+        ReportFixedWidthRead(entityMap, propertyMap, ConversionRecordKind.Convention,
+            $"{Profile.Implementation} hands the value of the fixed-width column '{column}' over without the trailing spaces SQL pads it with; the artifact "
+            + $"restores them with the nested converter {entityMap.Entity.Name}.FixedWidth{width}, which the persistence unit lists beside the entity. "
+            + "A value whose last character before the padding is a control character comes back with a space in its place, and under a collation "
+            + "with a multi-byte code page the width counts bytes, not characters; a session with shouldTrimStrings switched off "
+            + "(eclipselink.target-database-properties) leaves the converter nothing to do and the value exact (decision 169).");
+    }
+
+    private void ReportFixedWidthRead(EntityMap entityMap, PropertyMap propertyMap, ConversionRecordKind kind, string reason)
+        => Report(new ConversionRecord
+        {
+            Kind = kind,
+            Framework = Descriptor.Framework,
+            Artifact = ConversionContentType.JavaEntity,
+            Entity = entityMap.Entity.Name,
+            Property = propertyMap.Property.Name,
+            Category = MappingFactCategory.DatabaseType,
+            Reason = reason,
+        });
+
+    /// <summary>The converters of decision 169 the entity nests, after its members and before the accessors.</summary>
+    private void AppendFixedWidthConverters(StringBuilder code)
+    {
+        if (paddedWidths.Count == 0 && !trimsFixedWidth)
+        {
+            return;
+        }
+
+        Import($"{Jakarta}.AttributeConverter");
+        Import($"{Jakarta}.Converter");
+
+        foreach (var width in paddedWidths)
+        {
+            code.AppendLine();
+            code.AppendLine("    @Converter");
+            code.AppendLine($"    public static class FixedWidth{width} implements AttributeConverter<String, String> {{");
+            code.AppendLine("        @Override");
+            code.AppendLine("        public String convertToDatabaseColumn(String value) {");
+            code.AppendLine("            return value;");
+            code.AppendLine("        }");
+            code.AppendLine();
+            code.AppendLine("        @Override");
+            code.AppendLine("        public String convertToEntityAttribute(String value) {");
+            code.AppendLine($"            return value == null ? null : String.format(\"%-{width}s\", value);");
+            code.AppendLine("        }");
+            code.AppendLine("    }");
+        }
+
+        if (trimsFixedWidth)
+        {
+            code.AppendLine();
+            code.AppendLine("    @Converter");
+            code.AppendLine("    public static class TrimmedFixedWidth implements AttributeConverter<String, String> {");
+            code.AppendLine("        @Override");
+            code.AppendLine("        public String convertToDatabaseColumn(String value) {");
+            code.AppendLine("            return value;");
+            code.AppendLine("        }");
+            code.AppendLine();
+            code.AppendLine("        @Override");
+            code.AppendLine("        public String convertToEntityAttribute(String value) {");
+            code.AppendLine("            if (value == null) {");
+            code.AppendLine("                return null;");
+            code.AppendLine("            }");
+            code.AppendLine();
+            code.AppendLine("            int end = value.length();");
+            code.AppendLine("            while (end > 0 && value.charAt(end - 1) <= ' ') {");
+            code.AppendLine("                end--;");
+            code.AppendLine("            }");
+            code.AppendLine();
+            code.AppendLine("            return value.substring(0, end);");
+            code.AppendLine("        }");
+            code.AppendLine("    }");
         }
     }
 
@@ -1493,6 +1649,8 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
     protected override IEnumerable<ConversionSource> FinalizeBuild(EntityMap entityMap, EntityArtifact artifact)
     {
         var code = artifact.Code;
+
+        AppendFixedWidthConverters(code);
 
         // The accessors: Java's spelling of a property, written for every field after the
         // last member. What the model states about them is honored, and a field nobody

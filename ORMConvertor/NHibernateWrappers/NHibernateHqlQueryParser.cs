@@ -2002,6 +2002,51 @@ public class NHibernateHqlQueryParser(
     }
 
     /// <summary>
+    /// The ANSI <c>trim([leading | trailing | both] [char] from x)</c> HQL reads, where the
+    /// character is a space or left out: <c>trailing</c> is <see cref="QueryFunction.TrimEnd"/>
+    /// (decision 169), <c>both</c> or no specification the plain <see cref="QueryFunction.Trim"/>.
+    /// Another character, and <c>leading</c>, the vocabulary does not carry, so the call is
+    /// refused by name. NHibernate 5.7.0 refuses <c>rtrim(x)</c> in HQL (measured,
+    /// <c>NHibernateHqlProviderTest</c>), so that name is not read either.
+    /// </summary>
+    private QueryOperand? ParseTrim()
+    {
+        Advance();
+        ConsumeSymbol("(");
+
+        var specification = "both";
+        if (Current.Kind == TokenKind.Identifier && Current.Text.ToLowerInvariant() is "leading" or "trailing" or "both")
+        {
+            specification = Current.Text.ToLowerInvariant();
+            Advance();
+        }
+
+        string? character = null;
+        if (Current.Kind == TokenKind.String)
+        {
+            character = Current.Text;
+            Advance();
+        }
+
+        ConsumeKeyword("from");
+        var argument = ParseOperand();
+        ConsumeSymbol(")");
+
+        if (argument is null || !IsLeaf(argument))
+        {
+            return null;
+        }
+
+        if (specification == "leading" || character is not null && character != " ")
+        {
+            unread ??= ($"trim({specification}{(character is null ? string.Empty : $" '{character}'")} from …), a trimming the vocabulary of expressions does not carry", QueryFeature.Expression);
+            return null;
+        }
+
+        return QueryOperand.Computed(QueryExpression.Call(specification == "trailing" ? QueryFunction.TrimEnd : QueryFunction.Trim, [argument]));
+    }
+
+    /// <summary>
     /// A call of a function under its HQL name (decision 107): the vocabulary in lower case,
     /// <c>concat</c> of any number of arguments nested, <c>mod</c> as the modulo,
     /// <c>current_timestamp()</c> with its parentheses. A name outside the vocabulary is
@@ -2016,6 +2061,13 @@ public class NHibernateHqlQueryParser(
         if (name == "cast")
         {
             return ParseCast();
+        }
+
+        if (name == "trim"
+            && (Ahead(2) is { Kind: TokenKind.Identifier } specification && specification.Text.ToLowerInvariant() is "leading" or "trailing" or "both"
+                || Ahead(3) is { Kind: TokenKind.Identifier, Text: var from } && from.Equals("from", StringComparison.OrdinalIgnoreCase)))
+        {
+            return ParseTrim();
         }
 
         Advance();

@@ -366,7 +366,7 @@ public sealed class QueryExpression
     /// <summary>The smallest and largest number of arguments a function of the vocabulary takes.</summary>
     public static (int Least, int Most) Arity(QueryFunction function) => function switch
     {
-        QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim or QueryFunction.Length
+        QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim or QueryFunction.TrimEnd or QueryFunction.Length
             or QueryFunction.Abs or QueryFunction.Year or QueryFunction.Month or QueryFunction.Day
             or QueryFunction.EscapePattern or QueryFunction.Sqrt or QueryFunction.Cast => (1, 1),
         QueryFunction.DateAdd or QueryFunction.DateDiff or QueryFunction.Round => (2, 2),

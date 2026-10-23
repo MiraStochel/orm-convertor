@@ -3307,6 +3307,50 @@ public abstract class JpqlQueryParser(
     }
 
     /// <summary>
+    /// The standard <c>trim([leading | trailing | both] [char] from x)</c> of Jakarta
+    /// Persistence 3.2 where the character is a space or left out: <c>trailing</c> is
+    /// <see cref="QueryFunction.TrimEnd"/> (decision 169), <c>both</c> or no specification
+    /// the plain <see cref="QueryFunction.Trim"/>. Another character, and <c>leading</c>,
+    /// the vocabulary does not carry, so the call is refused by name.
+    /// </summary>
+    private QueryOperand? ParseTrim()
+    {
+        Advance();
+        ConsumeSymbol("(");
+
+        var specification = "both";
+        if (Current.Kind == TokenKind.Identifier && Current.Text.ToLowerInvariant() is "leading" or "trailing" or "both")
+        {
+            specification = Current.Text.ToLowerInvariant();
+            Advance();
+        }
+
+        string? character = null;
+        if (Current.Kind == TokenKind.String)
+        {
+            character = Current.Text;
+            Advance();
+        }
+
+        ConsumeKeyword("from");
+        var argument = ParseOperand();
+        ConsumeSymbol(")");
+
+        if (argument is null || !IsLeaf(argument))
+        {
+            return null;
+        }
+
+        if (specification == "leading" || character is not null && character != " ")
+        {
+            unread ??= ($"trim({specification}{(character is null ? string.Empty : $" '{character}'")} from …), a trimming the vocabulary of expressions does not carry", QueryFeature.Expression);
+            return null;
+        }
+
+        return QueryOperand.Computed(QueryExpression.Call(specification == "trailing" ? QueryFunction.TrimEnd : QueryFunction.Trim, [argument]));
+    }
+
+    /// <summary>
     /// The standard <c>extract(year from x)</c> of Jakarta Persistence 3.2 for the parts of
     /// a date the vocabulary names; Hibernate's own <c>year(x)</c> is not read in a JPQL
     /// unit, because EclipseLink does not know it (decision 107).
@@ -3365,6 +3409,10 @@ public abstract class JpqlQueryParser(
         {
             case "cast":
                 return ParseCast();
+            case "trim" when Ahead(2) is { Kind: TokenKind.Identifier } specification
+                             && specification.Text.ToLowerInvariant() is "leading" or "trailing" or "both"
+                             || Ahead(3) is { Kind: TokenKind.Identifier, Text: var from } && from.Equals("from", StringComparison.OrdinalIgnoreCase):
+                return ParseTrim();
             case "row_number" or "rank" or "dense_rank" when ReadsHqlFunctions:
                 return ParseWindow(name);
             case "listagg" when ReadsHqlFunctions:

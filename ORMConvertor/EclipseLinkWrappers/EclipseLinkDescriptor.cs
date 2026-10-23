@@ -46,6 +46,11 @@ public static class EclipseLinkDescriptor
         // String and refuses the query (decision 113, measured).
         Functions = QueryFunctionVocabulary.AllBut(QueryFunction.DateAdd, QueryFunction.DateDiff, QueryFunction.Cast),
         NativeSqlApi = JakartaPersistenceDescriptor.NativeSqlApi,
+
+        // Under its default session EclipseLink 5.0.0 cuts the trailing characters up to
+        // U+0020 off every result column of type CHAR or NCHAR, in JPQL and native SQL alike
+        // (decision 169, measured by the Java suite's CharTrimmingClaimsTest).
+        TrimsFixedWidthOnRead = true,
     };
 
     /// <summary>

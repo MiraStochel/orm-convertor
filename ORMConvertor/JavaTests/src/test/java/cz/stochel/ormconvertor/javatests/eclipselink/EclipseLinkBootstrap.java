@@ -80,11 +80,21 @@ public final class EclipseLinkBootstrap {
         new PersistenceProvider().generateSchema(unit(loader, null, entities), properties);
     }
 
-    /** The unit the provider would otherwise read from a persistence.xml. */
+    /**
+     * The unit the provider would otherwise read from a persistence.xml. A converter an entity
+     * nests is listed beside it, as the consumer project lists it: EclipseLink 5.0.0 finds a
+     * converter only among the classes of the unit, and the artifact nests the one that pads a
+     * fixed-width value back (decision 169, measured by {@code CharTrimmingClaimsTest}).
+     */
     private static PersistenceUnitInfo unit(ClassLoader loader, URL root, List<Class<?>> entities) {
         List<String> names = new ArrayList<>();
         for (Class<?> entity : entities) {
             names.add(entity.getName());
+            for (Class<?> nested : entity.getDeclaredClasses()) {
+                if (nested.isAnnotationPresent(jakarta.persistence.Converter.class) && !entities.contains(nested)) {
+                    names.add(nested.getName());
+                }
+            }
         }
 
         return new Unit(loader, rootOrOwn(root), names);

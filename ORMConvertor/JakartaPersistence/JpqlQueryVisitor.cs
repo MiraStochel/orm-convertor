@@ -513,6 +513,7 @@ public sealed class JpqlQueryVisitor(
                 QueryFunction.Upper => $"upper({arguments[0]})",
                 QueryFunction.Lower => $"lower({arguments[0]})",
                 QueryFunction.Trim => $"trim({arguments[0]})",
+                QueryFunction.TrimEnd => $"trim(trailing from {arguments[0]})",
                 QueryFunction.Substring => $"substring({arguments[0]}, {arguments[1]}, {arguments[2]})",
                 QueryFunction.Length => $"length({arguments[0]})",
                 QueryFunction.Coalesce => $"coalesce({string.Join(", ", arguments)})",

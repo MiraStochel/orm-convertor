@@ -3435,6 +3435,7 @@ public abstract class AbstractEntityBuilder
             }
 
             ReportLosses(entityMap);
+            ReportTrimmedReads(entityMap);
 
             var artifact = new EntityArtifact();
 
@@ -3565,6 +3566,43 @@ public abstract class AbstractEntityBuilder
     /// builder does not write these by hand - they follow from the descriptor, which is
     /// what makes the list impossible to forget.
     /// </summary>
+    /// <summary>
+    /// Whether the target's entity artifact states, beside the column, how the value of a
+    /// fixed-width column is read (decision 169): a Jakarta Persistence target does, with a
+    /// converter. A target that cannot is told by <see cref="ReportTrimmedReads"/>.
+    /// </summary>
+    protected virtual bool StatesFixedWidthReads => false;
+
+    /// <summary>
+    /// The value of a fixed-width column the source's framework trimmed and a target that
+    /// hands it over padded has no place to trim when it reads the entity (decision 169): EF
+    /// Core has no data annotation for a value conversion, the column of an NHibernate mapping
+    /// no read expression, and Dapper and MyBatis read the whole row without a place for a
+    /// function. A query that projects the column trims it in every target.
+    /// </summary>
+    private void ReportTrimmedReads(EntityMap entityMap)
+    {
+        if (Descriptor.TrimsFixedWidthOnRead || StatesFixedWidthReads)
+        {
+            return;
+        }
+
+        foreach (var propertyMap in entityMap.PropertyMaps.Where(p => p is { TrimmedOnRead: true, Type: DatabaseType.Char, IsTransient: false }))
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Property = propertyMap.Property.Name,
+                Category = MappingFactCategory.DatabaseType,
+                Reason = $"The source's framework hands the value of the fixed-width column '{propertyMap.ColumnName ?? propertyMap.Property.Name}' to its program "
+                    + $"without trailing spaces, and {Descriptor.Framework} has no place in the entity artifact to trim it: reading the entity whole hands the "
+                    + "value over padded to the width of the column. A query that projects the column trims it (decision 169).",
+            });
+        }
+    }
+
     private void ReportLosses(EntityMap entityMap)
     {
         foreach (var category in Enum.GetValues<MappingFactCategory>())

@@ -344,6 +344,7 @@ public class SqlQueryVisitor(
                 QueryFunction.Upper => $"UPPER({arguments[0]})",
                 QueryFunction.Lower => $"LOWER({arguments[0]})",
                 QueryFunction.Trim => $"TRIM({arguments[0]})",
+                QueryFunction.TrimEnd => $"RTRIM({arguments[0]})",
                 QueryFunction.Substring => $"SUBSTRING({arguments[0]}, {arguments[1]}, {arguments[2]})",
                 QueryFunction.Length => $"LEN({arguments[0]})",
                 QueryFunction.Coalesce => $"COALESCE({string.Join(", ", arguments)})",

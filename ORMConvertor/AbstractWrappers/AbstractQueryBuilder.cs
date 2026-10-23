@@ -837,6 +837,11 @@ public abstract partial class AbstractQueryBuilder
             return [];
         }
 
+        // What the program receives of a fixed-width column is what the source's program
+        // received (decision 169): once every column has its row and before the expressions
+        // are typed, so that the rewritten projections are typed and gated like any other.
+        body = ReadFixedWidthAsTheSource(body);
+
         // The expressions of the whole query, typed once from the mapping representation
         // and held to the four rules of decision 107 - before the parameters, because a
         // parameter inside an expression takes its scalar from the position it stands in,
@@ -1091,7 +1096,7 @@ public abstract partial class AbstractQueryBuilder
         // nothing in T-SQL either (decision 113).
         var nameless = operand
             ? null
-            : projections.FirstOrDefault(p => (p.Operand.IsExpression || p.Operand is { IsConstant: true, IsAggregate: false }) && p.Alias is null);
+            : projections.FirstOrDefault(p => (p.Operand.IsExpression || p.Operand is { IsConstant: true, IsAggregate: false }) && p.Alias is null && !namelessReads.Contains(p));
         if (nameless is not null)
         {
             Report(
@@ -3073,6 +3078,7 @@ public abstract partial class AbstractQueryBuilder
                 case QueryFunction.Upper:
                 case QueryFunction.Lower:
                 case QueryFunction.Trim:
+                case QueryFunction.TrimEnd:
                 case QueryFunction.Length:
                 case QueryFunction.EscapePattern:
                     Leaf(arguments[0], ScalarType.String);
@@ -3643,7 +3649,7 @@ public abstract partial class AbstractQueryBuilder
             var arguments = expression.Arguments!;
             return expression.Function!.Value switch
             {
-                QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim or QueryFunction.Substring
+                QueryFunction.Upper or QueryFunction.Lower or QueryFunction.Trim or QueryFunction.TrimEnd or QueryFunction.Substring
                     or QueryFunction.EscapePattern => ScalarType.String,
                 QueryFunction.Length or QueryFunction.Year or QueryFunction.Month or QueryFunction.Day => ScalarType.Int,
                 QueryFunction.Abs => ScalarOf(arguments[0], aliases),
