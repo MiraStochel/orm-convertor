@@ -43,6 +43,7 @@ internal sealed record DifferentialArgument(string Name, string TypeName, string
 /// <param name="Category">The category of the manifest this query is, or null for a query of the matrix's own.</param>
 /// <param name="Sources">The frameworks that state the query, in the order the file lists them.</param>
 /// <param name="UnitPaths">The input units of a query of the matrix's own, under <c>inputs/</c>; empty for a category.</param>
+/// <param name="OrderingKey">The fields the ordering of the query falls on, in the order of the ordering (decision 170): the key the canonical form of a result keeps the order of. Empty for a query without an ordering, every field for an ordering by a key the result does not show.</param>
 /// <param name="RefusedBy">Targets that refuse the query, with the feature the refusal names (decision 053).</param>
 /// <param name="FallbackBy">Targets that write the query in native SQL because their query language does not speak it, with the feature the record of kind Fallback names (decision 113). They are pairs like any other: the escape path is measured at the fourth level as a translation is.</param>
 internal sealed record DifferentialQuery(
@@ -52,7 +53,7 @@ internal sealed record DifferentialQuery(
     IReadOnlyList<string> UnitPaths,
     IReadOnlyList<string> Fields,
     bool Projection,
-    bool Ordered,
+    IReadOnlyList<string> OrderingKey,
     ResultRow.RenderSettings Settings,
     IReadOnlyList<DifferentialArgument> Arguments,
     IReadOnlyList<string> Mutations,
@@ -61,6 +62,9 @@ internal sealed record DifferentialQuery(
 {
     /// <summary>The canonical result of this query, as the file beside the matrix states it.</summary>
     public List<string> CanonicalResult() => DifferentialData.ReadLines($"results/{Id}.txt");
+
+    /// <summary>Whether the query carries an ordering: a reading of the key, never a fact of its own (decision 170).</summary>
+    public bool Ordered => OrderingKey.Count > 0;
 
     /// <summary>
     /// The frameworks a source of this query is paired against: every one but the source
@@ -220,7 +224,7 @@ internal static class DifferentialMatrix
             unitPaths,
             SharedInputs.List(Required("fields")),
             shape == "projection",
-            bool.Parse(Required("ordered")),
+            OrderingKey(id, Required("orderingKey"), SharedInputs.List(Required("fields"))),
             new ResultRow.RenderSettings(
                 Number("decimalScale", 6),
                 Number("floatDigits", 12),
@@ -229,6 +233,36 @@ internal static class DifferentialMatrix
             SharedInputs.List(Required("mutations")),
             refusedBy,
             fallbackBy);
+    }
+
+    /// <summary>
+    /// The ordering key as the file writes it (decision 170): the word <c>none</c> for a query
+    /// without an ordering, otherwise fields of the row, each of them one the row has. The
+    /// word rather than an empty value, so that a key left out by mistake does not read as a
+    /// query that does not order.
+    /// </summary>
+    private static IReadOnlyList<string> OrderingKey(string id, string value, IReadOnlyList<string> fields)
+    {
+        if (value == "none")
+        {
+            return [];
+        }
+
+        var key = SharedInputs.List(value);
+        if (key.Count == 0)
+        {
+            throw new InvalidOperationException($"matrix.txt: [{id}] states an empty orderingKey; a query without an ordering writes \"none\".");
+        }
+
+        foreach (var name in key)
+        {
+            if (!fields.Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"matrix.txt: [{id}] orders by \"{name}\", which is not among its fields.");
+            }
+        }
+
+        return key;
     }
 
     private static List<DifferentialArgument> Arguments(string value)

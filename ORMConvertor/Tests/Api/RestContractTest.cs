@@ -195,6 +195,7 @@ public class RestContractTest(ApiTestHost host)
 
             Assert.Equal(query.Validation.Operation, validation.GetProperty("operation").GetString());
             Assert.Equal(query.Validation.Ordered, validation.GetProperty("ordered").GetBoolean());
+            Assert.Equal(query.Validation.OrderingKey, validation.GetProperty("orderingKey").EnumerateArray().Select(key => key.GetString()!));
             Assert.Equal(
                 query.Validation.Arguments.Select(argument => (argument.Parameter, argument.Field, (int)argument.Derivation, argument.Operand)),
                 validation.GetProperty("arguments").EnumerateArray().Select(argument => (
@@ -238,6 +239,29 @@ public class RestContractTest(ApiTestHost host)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    /// <summary>
+    /// The FIBEN catalog (decision 149) arrives with what the Java suite's run compares rows by:
+    /// the columns of every query and the ordering key of decision 170, beside the flag that is
+    /// read off the key and stays on the wire for the page.
+    /// </summary>
+    [Fact]
+    public async Task TheFibenCatalogArrivesWithTheKeyOfEveryQuery()
+    {
+        using var wire = await ReadAsync("/fiben");
+
+        var expected = Fiben.GetCatalog;
+        var queries = wire.RootElement.GetProperty("queries").EnumerateArray().ToList();
+        Assert.Equal(expected.Queries.Count, queries.Count);
+
+        foreach (var (query, serialized) in expected.Queries.Zip(queries))
+        {
+            Assert.Equal(query.Key, serialized.GetProperty("key").GetString());
+            Assert.Equal(query.Columns, serialized.GetProperty("columns").EnumerateArray().Select(column => column.GetString()!));
+            Assert.Equal(query.OrderingKey.Count > 0, serialized.GetProperty("ordered").GetBoolean());
+            Assert.Equal(query.OrderingKey, serialized.GetProperty("orderingKey").EnumerateArray().Select(key => key.GetString()!));
+        }
     }
 
     private async Task<JsonDocument> ReadAsync(string path) =>

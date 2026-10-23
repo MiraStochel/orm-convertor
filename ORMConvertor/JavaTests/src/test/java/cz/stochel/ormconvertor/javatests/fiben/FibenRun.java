@@ -474,12 +474,9 @@ public final class FibenRun {
         return rows;
     }
 
+    /** The rows in the canonical form of decision 170: in the order of the query's key, the rows of one key value as a set. */
     private static List<String> canonical(FibenCatalog.Query query, List<List<Object>> rows) {
-        List<String> rendered = new ArrayList<>(rows.size());
-        for (List<Object> row : rows) {
-            rendered.add(ResultRow.render(row, ResultRow.Settings.defaults()));
-        }
-        return query.ordered() ? rendered : ResultRow.sorted(rendered);
+        return ResultRow.canonical(rows, ResultRow.Settings.defaults(), query.columns(), query.orderingKey());
     }
 
     private void readJudge(Connection control) throws SQLException {
@@ -542,7 +539,7 @@ public final class FibenRun {
 
             // The source rows in the form of database/fiben/judge.tsv, so that the two suites' sources can be set beside each other.
             StringBuilder judgeFile = new StringBuilder();
-            judgeFile.append("# The rows of every FIBEN query in the canonical form of decision 089, as the catalog's own text returned them over ")
+            judgeFile.append("# The rows of every FIBEN query in the canonical form of decisions 089 and 170, as the catalog's own text returned them over ")
                     .append(dataSet).append(" through JDBC on ")
                     .append(ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'"))).append(".\n");
             judgeFile.append("# key<TAB>position<TAB>rendered row; position 0 is the digest of the whole result, the rows follow where there are at most ")

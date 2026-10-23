@@ -68,13 +68,14 @@ internal static class RendererConformance
     public static IEnumerable<string> LdbcRows()
     {
         // One object is one row; a moment and a date from milliseconds since the epoch in UTC.
+        // The key of the bindings here is the whole row, so the rows stay as they came.
         LdbcValidation single = new("IS1", [],
         [
             new("CreationDate", "creationDate", LdbcValueKind.Moment),
             new("Birthday", "birthday", LdbcValueKind.Date),
             new("CityId", "cityId"),
             new("FirstName", "firstName"),
-        ]);
+        ], ["CreationDate", "Birthday", "CityId", "FirstName"]);
 
         // A flag as a number; a set in ordinal order, of texts and of objects; a sequence in
         // its own order; a weight written with and without a fraction; an empty list as NULL.
@@ -85,10 +86,10 @@ internal static class RendererConformance
             new("Companies", "companies", LdbcValueKind.Set, ";", ["organizationName", "year", "placeName"], ","),
             new("Path", "path", LdbcValueKind.Sequence, ","),
             new("Weight", "weight"),
-        ]);
+        ], ["IsNew", "Emails", "Companies", "Path", "Weight"]);
 
-        // Rows of a query the specification does not order completely are compared sorted.
-        LdbcValidation unordered = new("IC0", [], [new("Name", "name")], Ordered: false);
+        // Rows of a query the specification does not order are compared sorted: an empty key.
+        LdbcValidation unordered = new("IC0", [], [new("Name", "name")], []);
 
         // What an artifact hands back: a date as a moment at midnight, a flag as a truth value,
         // a set joined in no particular order.
@@ -97,7 +98,7 @@ internal static class RendererConformance
             new("Birthday", "birthday", LdbcValueKind.Date),
             new("IsNew", "isNew", LdbcValueKind.Flag),
             new("Emails", "emails", LdbcValueKind.Set, ";"),
-        ]);
+        ], ["Birthday", "IsNew", "Emails"]);
 
         return
         [
@@ -108,6 +109,28 @@ internal static class RendererConformance
                 """),
             .. LdbcCanonicalForm.Expected(unordered, """[{"name":"b"},{"name":"a"}]"""),
             .. LdbcCanonicalForm.Actual(actual, [[new DateTime(1988, 3, 27), true, "c;a;b"]]),
+        ];
+    }
+
+    /// <summary>
+    /// The canonical form of a whole result (decision 170), which both suites compute before
+    /// they compare and which follows the conversions in the conformance text: the rows of one
+    /// key value sorted by the rendered line while the sequence of key values stays; a key of
+    /// two fields; the whole row as the key, which keeps the rows as they came; no key, which
+    /// sorts the whole result.
+    /// </summary>
+    public static IEnumerable<string> CanonicalRows()
+    {
+        IReadOnlyList<object?>[] byScore = [[60, "A"], [53, "C"], [53, "B"], [7, "Z"], [7, "Y"], [7, "Y"]];
+        IReadOnlyList<object?>[] byTwo = [[1, "x", 3], [1, "x", 2], [1, "y", 1], [2, "x", 0]];
+        IReadOnlyList<object?>[] pair = [[2, "b"], [1, "a"]];
+
+        return
+        [
+            .. ResultRow.Canonical(byScore, Settings, ["Score", "Name"], ["Score"]),
+            .. ResultRow.Canonical(byTwo, Settings, ["A", "B", "C"], ["A", "B"]),
+            .. ResultRow.Canonical(pair, Settings, ["A", "B"], ["A", "B"]),
+            .. ResultRow.Canonical(pair, Settings, ["A", "B"], []),
         ];
     }
 }

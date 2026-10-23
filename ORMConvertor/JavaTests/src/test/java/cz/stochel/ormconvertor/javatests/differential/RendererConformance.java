@@ -4,6 +4,7 @@ import cz.stochel.ormconvertor.javatests.ldbc.LdbcConformance;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -68,6 +69,29 @@ public final class RendererConformance {
      */
     public static List<String> ldbcRows() {
         return LdbcConformance.rows();
+    }
+
+    /**
+     * The canonical form of a whole result (decision 170), which both suites compute before
+     * they compare and which follows the conversions in the conformance text: the rows of one
+     * key value sorted by the rendered line while the sequence of key values stays; a key of
+     * two fields; the whole row as the key, which keeps the rows as they came; no key, which
+     * sorts the whole result.
+     */
+    public static List<String> canonicalRows() {
+        List<List<Object>> byScore = List.of(
+                Arrays.asList(60, "A"), Arrays.asList(53, "C"), Arrays.asList(53, "B"),
+                Arrays.asList(7, "Z"), Arrays.asList(7, "Y"), Arrays.asList(7, "Y"));
+        List<List<Object>> byTwo = List.of(
+                Arrays.asList(1, "x", 3), Arrays.asList(1, "x", 2), Arrays.asList(1, "y", 1), Arrays.asList(2, "x", 0));
+        List<List<Object>> pair = List.of(Arrays.asList(2, "b"), Arrays.asList(1, "a"));
+
+        List<String> rows = new ArrayList<>();
+        rows.addAll(ResultRow.canonical(byScore, settings(), List.of("Score", "Name"), List.of("Score")));
+        rows.addAll(ResultRow.canonical(byTwo, settings(), List.of("A", "B", "C"), List.of("A", "B")));
+        rows.addAll(ResultRow.canonical(pair, settings(), List.of("A", "B"), List.of("A", "B")));
+        rows.addAll(ResultRow.canonical(pair, settings(), List.of("A", "B"), List.of()));
+        return rows;
     }
 
     private static List<Object> row(Object value) {

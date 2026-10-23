@@ -272,6 +272,38 @@ public class LdbcCatalogTest(TestSchemaFixture fixture)
     }
 
     /// <summary>
+    /// The ordering key of a binding is the ordering of the text (decision 170): the columns
+    /// the keys of the text's ordering fall on, in their order, every column where a key falls
+    /// on none, nothing where the text does not order. The one binding allowed to state less is
+    /// the one whose judge orders less than the text, which says so and states a proper prefix
+    /// of the text's key - IC 14, whose specification orders the paths by their weight alone.
+    /// </summary>
+    [Fact]
+    public void EveryBindingStatesTheKeyOfTheTextItJudges()
+    {
+        foreach (var query in LdbcSnbSample.Queries.Where(query => query.Validation is not null))
+        {
+            var binding = query.Validation!;
+            var text = OrderingKeys.Of(SourceQueries.ReadSingle(ORMEnum.Dapper, Units(query)), [.. binding.Fields.Select(field => field.Column)]);
+
+            if (binding.JudgeOrdersLess)
+            {
+                Assert.True(
+                    binding.OrderingKey.Count > 0 && binding.OrderingKey.Count < text.Count
+                        && text.Take(binding.OrderingKey.Count).SequenceEqual(binding.OrderingKey, StringComparer.OrdinalIgnoreCase),
+                    $"{query.Key}: the judge orders by {Key(binding.OrderingKey)}, which is not a proper prefix of the text's {Key(text)}.");
+                continue;
+            }
+
+            Assert.True(
+                text.SequenceEqual(binding.OrderingKey, StringComparer.OrdinalIgnoreCase),
+                $"{query.Key}: the text orders by {Key(text)} and the binding states {Key(binding.OrderingKey)}.");
+        }
+
+        static string Key(IReadOnlyList<string> key) => key.Count == 0 ? "nothing" : string.Join(", ", key);
+    }
+
+    /// <summary>
     /// A query that searches for a path states the depth of its search (decision 140), and its
     /// text has exactly that many levels - definitions L1 … Ld or T1 … Td -, so that the depth
     /// the page claims and <c>LdbcJudge/LdbcPathQueryTest</c> measures is the depth the text

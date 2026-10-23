@@ -13,4 +13,10 @@
     <ProjectReference Include="..\NHibernateWrappers\NHibernateWrappers.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The suite reads a source's queries through the same parser factory the orchestration
+         uses, so that what it holds about the intermediate representation is what a conversion sees. -->
+    <InternalsVisibleTo Include="Tests" />
+  </ItemGroup>
+
 </Project>

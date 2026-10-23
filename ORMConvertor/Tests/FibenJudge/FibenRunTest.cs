@@ -65,8 +65,9 @@ public class FibenRunTest(ITestOutputHelper output)
 
     /// <summary>
     /// The fourth level between the frameworks (decision 089): the artifact of the target
-    /// returns the rows the catalog's own text returns through Dapper, in the canonical form,
-    /// as ordered rows where the query orders and as a set where it does not. A disagreement
+    /// returns the rows the catalog's own text returns through Dapper, in the canonical form
+    /// of decision 170: in the order of the query's ordering key, the rows of one key value as
+    /// a set, the whole result as a set where the query does not order. A disagreement
     /// is a wrong translation, or a difference the frameworks make that the text does not.
     /// </summary>
     [Theory]

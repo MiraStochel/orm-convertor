@@ -21,7 +21,7 @@ public sealed record CatalogQuery(
     IReadOnlyList<string> Questions,
     IReadOnlyList<string> Tables,
     IReadOnlyList<string> Columns,
-    bool Ordered,
+    IReadOnlyList<string> OrderingKey,
     string Sql,
     string BenchmarkSql,
     string Translation,
@@ -140,7 +140,7 @@ public static class Queries
                 }
             }
 
-            var converted = ConvertText(sql, ddl, group.Key, log, ref unquoted, out var columns, out var ordered);
+            var converted = ConvertText(sql, ddl, group.Key, log, ref unquoted, out var columns, out var orderingKey);
             var tables = Tables(converted, ddl);
 
             queries.Add(new CatalogQuery(
@@ -150,7 +150,7 @@ public static class Queries
                 questions,
                 tables,
                 columns,
-                ordered,
+                orderingKey,
                 converted,
                 Whitespace.Replace(primary.Sql, " ").Trim(),
                 Statuses.TryGetValue(group.Key, out var status) ? status.Translation : "AsSpecified",
@@ -175,7 +175,7 @@ public static class Queries
         var other => throw new InvalidDataException($"The query type \"{other}\" is not one of Kim's."),
     };
 
-    private static string ConvertText(string sql, Ddl ddl, int number, TextWriter log, ref int unquoted, out IReadOnlyList<string> columns, out bool ordered)
+    private static string ConvertText(string sql, Ddl ddl, int number, TextWriter log, ref int unquoted, out IReadOnlyList<string> columns, out IReadOnlyList<string> orderingKey)
     {
         // 1. The schema and the quotes: FIBEN."X" is X, "COL" is COL. Three queries of the
         //    benchmark are written without either; they come through the same.
@@ -213,18 +213,316 @@ public static class Queries
 
         // 5. Every projected column has a name: an aggregate without one is named AggResult<n>,
         //    as the benchmark names its own, because a typed target materializes a row by name.
-        //    The names of the outermost projection and whether it is ordered go into the catalog
-        //    for the run that compares rows.
-        sql = NameProjection(sql, number, log, out columns, out ordered);
+        //    The names of the outermost projection go into the catalog for the run that
+        //    compares rows.
+        sql = NameProjection(sql, number, log, out columns);
+
+        // 6. A slice that does not determine the rows it returns gets the deciding key
+        //    (decision 170): the keys of its grouping or the expressions of its projection the
+        //    ordering lacks, appended ascending, so that every result of the text is a result
+        //    the benchmark's text admits and only one of them.
+        sql = DecideSlices(sql, number, log);
+
+        // The ordering key of the outermost query over the names of its projection goes into
+        // the catalog beside the columns: what the run keeps the order of (decision 170).
+        orderingKey = OrderingKeyOf(sql, number, columns);
 
         return Format(sql);
+    }
+
+    private static readonly Regex Direction = new(@"\s+(ASC|DESC)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex WholeRow = new(@"^(?:\w+\.)?\*$", RegexOptions.Compiled);
+    private static readonly Regex AggregateCall = new(@"^(?:COUNT|SUM|AVG|MIN|MAX)\(", RegexOptions.Compiled);
+
+    /// <summary>One item of a select list: its expression without the alias, and the name the row carries it under, if it has one.</summary>
+    private sealed record ProjectedItem(string Expression, string? Name);
+
+    /// <summary>The clauses of one scope that the rule of decision 170 reads: its select list, its grouping, its ordering, and where the scope ends.</summary>
+    private sealed record ScopeClauses(List<ProjectedItem> Projection, List<string> GroupBy, List<string> OrderBy, int End);
+
+    /// <summary>
+    /// The sixth rule of the conversion (decision 170). A scope sliced by TOP determines its rows
+    /// when (a) it is an aggregate without a grouping, (b) its ordering contains every key of its
+    /// grouping, or (c) its ordering contains every expression of its projection - read from the
+    /// text alone, as <c>FibenCatalogTest</c> reads the same condition from the intermediate
+    /// representation. A scope that meets none gets the missing keys of its grouping, or the
+    /// missing expressions of its projection, appended to its ordering ascending as the clause
+    /// writes them; a scope without an ordering gets one. The keys of the benchmark's text stay
+    /// in front, so every result of the refined text is one the benchmark's text admits.
+    /// </summary>
+    private static string DecideSlices(string sql, int number, TextWriter log)
+    {
+        var edits = new List<(int Position, string Text)>();
+
+        for (var at = IndexOfSlicedSelect(sql, 0); at >= 0; at = IndexOfSlicedSelect(sql, at + 1))
+        {
+            var scope = ReadScope(sql, number, at, ScopeEnd(sql, number, at));
+            var ordering = scope.OrderBy
+                .Select(item => Resolved(Direction.Replace(item, string.Empty), scope.Projection))
+                .ToHashSet(StringComparer.Ordinal);
+
+            List<string> missing;
+            if (scope.GroupBy.Count == 0 && scope.Projection.All(item => AggregateCall.IsMatch(Normalized(item.Expression))))
+            {
+                missing = [];
+            }
+            else if (scope.GroupBy.Count > 0)
+            {
+                missing = scope.GroupBy.Where(key => !ordering.Contains(Normalized(key))).ToList();
+            }
+            else
+            {
+                missing = scope.Projection.Where(item => !ordering.Contains(Normalized(item.Expression))).Select(item => item.Expression).ToList();
+            }
+
+            if (missing.Count == 0)
+            {
+                continue;
+            }
+
+            edits.Add((scope.End, (scope.OrderBy.Count > 0 ? ", " : " ORDER BY ") + string.Join(", ", missing)));
+            log.WriteLine($"q{number}: a slice that did not determine its rows got the deciding key {string.Join(", ", missing)}.");
+        }
+
+        var text = new StringBuilder(sql);
+        foreach (var (position, insertion) in edits.OrderByDescending(edit => edit.Position))
+        {
+            text.Insert(position, insertion);
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// The ordering key of the outermost query over the names of its projection (decision 170):
+    /// for every key of its ordering the name of the projected item it falls on - an alias, or an
+    /// item of the same expression -, each once; every column where some key falls on no item,
+    /// because the segments of equal key are then not visible in the result; nothing without an
+    /// ordering.
+    /// </summary>
+    private static IReadOnlyList<string> OrderingKeyOf(string sql, int number, IReadOnlyList<string> columns)
+    {
+        var scope = ReadScope(sql, number, MainSelect(sql), sql.Length);
+
+        if (!scope.Projection.Select(item => item.Name).SequenceEqual(columns, StringComparer.Ordinal))
+        {
+            throw new InvalidDataException($"Query {number}: the projection reads as {string.Join(", ", scope.Projection.Select(item => item.Name))} and was named {string.Join(", ", columns)}.");
+        }
+
+        var key = new List<string>();
+        foreach (var item in scope.OrderBy)
+        {
+            var expression = Direction.Replace(item, string.Empty);
+            var named = scope.Projection.FirstOrDefault(candidate => candidate.Name is not null && candidate.Name.Equals(expression, StringComparison.OrdinalIgnoreCase))
+                ?? scope.Projection.FirstOrDefault(candidate => Normalized(candidate.Expression) == Normalized(expression));
+
+            if (named?.Name is null)
+            {
+                return columns;
+            }
+
+            if (!key.Contains(named.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                key.Add(named.Name);
+            }
+        }
+
+        return key;
+    }
+
+    /// <summary>The SELECT that starts the main query: after the definitions of a WITH, the first SELECT at depth 0.</summary>
+    private static int MainSelect(string sql)
+    {
+        if (!sql.StartsWith("WITH ", StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        var depth = 0;
+        for (var index = 0; index < sql.Length; index++)
+        {
+            if (sql[index] == '(') depth++;
+            else if (sql[index] == ')') depth--;
+            else if (depth == 0 && IsWord(sql, index, "SELECT")) return index;
+        }
+
+        throw new InvalidDataException("A WITH without a main query.");
+    }
+
+    private static int IndexOfSlicedSelect(string sql, int from)
+    {
+        for (var index = from; index < sql.Length; index++)
+        {
+            if (IsWordAt(sql, index, "SELECT TOP") && sql.AsSpan(index + "SELECT TOP".Length).StartsWith(" ("))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>Where the scope of a SELECT ends: at the parenthesis that closes it, or at the end of the text. A set operation inside a sliced scope is not read.</summary>
+    private static int ScopeEnd(string sql, int number, int start)
+    {
+        var depth = 0;
+        for (var index = start; index < sql.Length; index++)
+        {
+            switch (sql[index])
+            {
+                case '\'':
+                    index = ClosingQuote(sql, number, index);
+                    continue;
+                case '(':
+                    depth++;
+                    continue;
+                case ')':
+                    if (depth == 0) return index;
+                    depth--;
+                    continue;
+            }
+
+            if (depth == 0 && IsWordAt(sql, index, "UNION"))
+            {
+                throw new InvalidDataException($"Query {number}: a sliced SELECT is a member of a set operation, which the rule of decision 170 does not read.");
+            }
+        }
+
+        return sql.Length;
+    }
+
+    /// <summary>The clauses of the scope of one SELECT, read at its own depth of parentheses.</summary>
+    private static ScopeClauses ReadScope(string sql, int number, int start, int end)
+    {
+        var listStart = start + "SELECT ".Length;
+        if (IsWordAt(sql, listStart, "TOP"))
+        {
+            listStart = sql.IndexOf(')', listStart) + 2;
+        }
+
+        if (IsWordAt(sql, listStart, "DISTINCT"))
+        {
+            listStart += "DISTINCT ".Length;
+        }
+
+        int from = -1, groupBy = -1, having = -1, orderBy = -1, where = -1;
+        var depth = 0;
+        for (var index = listStart; index < end; index++)
+        {
+            switch (sql[index])
+            {
+                case '\'':
+                    index = ClosingQuote(sql, number, index);
+                    continue;
+                case '(':
+                    depth++;
+                    continue;
+                case ')':
+                    depth--;
+                    continue;
+            }
+
+            if (depth != 0)
+            {
+                continue;
+            }
+
+            if (from < 0 && IsWordAt(sql, index, "FROM")) from = index;
+            else if (IsWordAt(sql, index, "WHERE")) where = index;
+            else if (IsWordAt(sql, index, "GROUP BY")) groupBy = index;
+            else if (IsWordAt(sql, index, "HAVING")) having = index;
+            else if (IsWordAt(sql, index, "ORDER BY")) orderBy = index;
+        }
+
+        if (from < 0)
+        {
+            throw new InvalidDataException($"Query {number}: the projection has no FROM.");
+        }
+
+        var projection = SplitItems(sql, number, listStart, from).Select(ProjectedItemOf).ToList();
+        if (projection.Any(item => WholeRow.IsMatch(item.Expression)))
+        {
+            throw new InvalidDataException($"Query {number}: a sliced scope projects the whole row, which no ordering written from the text could determine.");
+        }
+
+        var groupEnd = having >= 0 ? having : orderBy >= 0 ? orderBy : end;
+        var group = groupBy < 0 ? [] : SplitItems(sql, number, groupBy + "GROUP BY".Length, groupEnd);
+        var order = orderBy < 0 ? [] : SplitItems(sql, number, orderBy + "ORDER BY".Length, end);
+
+        return new ScopeClauses(projection, group, order, end);
+    }
+
+    private static ProjectedItem ProjectedItemOf(string item)
+    {
+        if (Alias.Match(item) is { Success: true } alias)
+        {
+            return new ProjectedItem(item[..alias.Index].TrimEnd(), alias.Groups[1].Value);
+        }
+
+        if (Reference.Match(item) is { Success: true } reference)
+        {
+            return new ProjectedItem(item, reference.Groups[1].Value);
+        }
+
+        if (!item.EndsWith(')') && TrailingName.Match(item) is { Success: true } trailing)
+        {
+            return new ProjectedItem(item[..(trailing.Index + 1)].TrimEnd(), trailing.Groups[1].Value);
+        }
+
+        return new ProjectedItem(item, null);
+    }
+
+    /// <summary>An ordering key that names a projected item stands for the item's expression; any other key is its own expression.</summary>
+    private static string Resolved(string key, List<ProjectedItem> projection)
+    {
+        var named = projection.FirstOrDefault(item => item.Name is not null && item.Name.Equals(key, StringComparison.OrdinalIgnoreCase) && Regex.IsMatch(key, @"^\w+$"));
+        return Normalized(named?.Expression ?? key);
+    }
+
+    /// <summary>Two expressions are the same when they read alike: case and whitespace aside.</summary>
+    private static string Normalized(string expression) => Whitespace.Replace(expression, string.Empty).ToUpperInvariant();
+
+    /// <summary>The items of a comma-separated list between two positions, split at the depth of the list.</summary>
+    private static List<string> SplitItems(string sql, int number, int start, int end)
+    {
+        var items = new List<string>();
+        var itemStart = start;
+        var depth = 0;
+        for (var index = start; index < end; index++)
+        {
+            switch (sql[index])
+            {
+                case '\'':
+                    index = ClosingQuote(sql, number, index);
+                    continue;
+                case '(':
+                    depth++;
+                    continue;
+                case ')':
+                    depth--;
+                    continue;
+                case ',' when depth == 0:
+                    items.Add(sql[itemStart..index].Trim());
+                    itemStart = index + 1;
+                    continue;
+            }
+        }
+
+        items.Add(sql[itemStart..end].Trim());
+        return items;
+    }
+
+    private static int ClosingQuote(string sql, int number, int opening)
+    {
+        var closing = sql.IndexOf('\'', opening + 1);
+        return closing < 0 ? throw new InvalidDataException($"Query {number}: an unclosed string literal.") : closing;
     }
 
     private static readonly Regex Alias = new(@"\s+AS\s+(\w+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex Reference = new(@"^(?:\w+\.)?(\w+)$", RegexOptions.Compiled);
     private static readonly Regex TrailingName = new(@"\)\s+(\w+)$", RegexOptions.Compiled);
 
-    private static string NameProjection(string sql, int number, TextWriter log, out IReadOnlyList<string> columns, out bool ordered)
+    private static string NameProjection(string sql, int number, TextWriter log, out IReadOnlyList<string> columns)
     {
         // The main query starts after the definitions of a WITH: at the SELECT that follows the
         // last closing parenthesis at depth 0 before any SELECT at depth 0.
@@ -254,7 +552,6 @@ public static class Queries
         var items = new List<(int Start, int End)>();
         var itemStart = listStart;
         var level = 0;
-        var orderedAtTop = false;
         for (var index = listStart; index < sql.Length; index++)
         {
             var character = sql[index];
@@ -276,10 +573,7 @@ public static class Queries
             {
                 items.Add((itemStart, index));
                 listEnd = index;
-            }
-            else if (level == 0 && IsWordAt(sql, index, "ORDER BY"))
-            {
-                orderedAtTop = true;
+                break;
             }
         }
 
@@ -330,7 +624,6 @@ public static class Queries
         }
 
         columns = names;
-        ordered = orderedAtTop;
         return text.ToString();
     }
 

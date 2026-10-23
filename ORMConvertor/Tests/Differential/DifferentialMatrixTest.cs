@@ -1,6 +1,7 @@
 using AbstractWrappers.Descriptors;
 using Model;
 using Tests.Combined;
+using Tests.Verification;
 
 namespace Tests.Differential;
 
@@ -101,6 +102,31 @@ public class DifferentialMatrixTest
                 query.Fields.Count,
                 row.Split(ResultRow.Separator).Length));
         });
+    }
+
+    /// <summary>
+    /// The ordering key a query states is the ordering of its source (decision 170): for every
+    /// source variant, the keys of the ordering of the query the source reads into, over the
+    /// fields of the row - the alias or the expression of a projection, the column of a whole
+    /// row -, and every field where a key falls on no field of the row. The order decides what
+    /// the comparison keeps, so it is the source's and never a target's, and never a guess.
+    /// </summary>
+    [Fact]
+    public void EveryQueryStatesTheKeyOfItsSourcesOrdering()
+    {
+        foreach (var query in DifferentialMatrix.Queries)
+        {
+            foreach (var source in query.Sources)
+            {
+                var read = OrderingKeys.Of(SourceQueries.ReadSingle(source, query.Units(source)), query.Fields);
+
+                Assert.True(
+                    read.SequenceEqual(query.OrderingKey, StringComparer.OrdinalIgnoreCase),
+                    $"{query.Id}: the query {source} states orders by {Key(read)} and the matrix states {Key(query.OrderingKey)}.");
+            }
+        }
+
+        static string Key(IReadOnlyList<string> key) => key.Count == 0 ? "nothing" : string.Join(", ", key);
     }
 
     /// <summary>

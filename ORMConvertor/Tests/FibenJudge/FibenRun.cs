@@ -406,11 +406,9 @@ internal sealed class FibenRun
         return watch.Elapsed.TotalMilliseconds;
     }
 
+    /// <summary>The rows in the canonical form of decision 170: in the order of the query's key, the rows of one key value as a set.</summary>
     private static List<string> Canonical(FibenQuery query, List<object?[]> rows)
-    {
-        var rendered = rows.Select(row => ResultRow.Render(row, Settings));
-        return query.Ordered ? [.. rendered] : ResultRow.Sorted(rendered);
-    }
+        => ResultRow.Canonical(rows, Settings, query.Columns, query.OrderingKey);
 
     /// <summary>The units of a conversion: the entities of the tables the query reads, then the query as one more unit.</summary>
     internal static List<ConversionSource> Units(FibenQuery query) =>
@@ -591,7 +589,7 @@ internal sealed class FibenRun
         // The source rows in the form of database/fiben/judge.tsv: what the judge is made from
         // once a run is documented. Only the source's rows, and only where the source ran.
         var judgeFile = new StringBuilder();
-        judgeFile.Append("# The judge of the FIBEN catalog (decision 149): the rows of every query in the canonical form of decision 089,\n");
+        judgeFile.Append("# The judge of the FIBEN catalog (decision 149): the rows of every query in the canonical form of decisions 089 and 170,\n");
         judgeFile.Append($"# as the catalog's own text returned them over {DataSet} through Dapper on {stamp}.\n");
         judgeFile.Append($"# key<TAB>position<TAB>rendered row; position 0 is the digest of the whole result (row count and SHA-256 of the rows joined by LF),\n");
         judgeFile.Append($"# the rows follow it where the result has at most {RowsKeptByTheJudge} of them. A query without a line was not run. Made by the .NET suite's FibenRunTest.\n");

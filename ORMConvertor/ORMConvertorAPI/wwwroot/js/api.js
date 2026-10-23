@@ -329,7 +329,7 @@ export const getLdbc = () => getJson("ldbc");
 /**
  * GET /fiben - the FIBEN query catalog (decision 149): { sourceOrm, dataSet, entities, queries },
  * the entities as /convert units and every query as { key, number, nesting, questions, tables,
- * columns, ordered, sql, benchmarkSql, translation, note }. A query is run by sending the
+ * columns, ordered, orderingKey, sql, benchmarkSql, translation, note }. A query is run by sending the
  * entities of the tables it names plus its text.
  */
 export const getFiben = () => getJson("fiben");

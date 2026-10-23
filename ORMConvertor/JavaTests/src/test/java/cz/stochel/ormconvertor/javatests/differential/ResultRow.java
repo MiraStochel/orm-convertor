@@ -74,6 +74,93 @@ public final class ResultRow {
         return ordered;
     }
 
+    /**
+     * The canonical form of a whole result (decision 170), the counterpart of
+     * {@code ResultRow.Canonical}: the rows stay in the order they came, and every contiguous
+     * run of rows that agree on the ordering key is sorted by the rendered line - the query
+     * fixes the sequence of key values and nothing inside one value. A query without an
+     * ordering has an empty key, every row agrees on it, and the whole result is sorted; a
+     * key that is the whole row leaves the order as it came. Two rows agree on the key when
+     * its fields render alike.
+     *
+     * @param rows        the rows as read, each with its fields in the order of {@code fields}
+     * @param fields      the names of the fields of a row, in their order
+     * @param orderingKey the fields the ordering of the query falls on, in the order of the ordering; empty for a query that does not order
+     */
+    public static List<String> canonical(List<List<Object>> rows, Settings settings, List<String> fields, List<String> orderingKey) {
+        List<Integer> key = keyIndices(fields, orderingKey);
+
+        List<List<String>> rendered = new ArrayList<>(rows.size());
+        for (List<Object> row : rows) {
+            List<String> line = new ArrayList<>(row.size());
+            for (Object field : row) {
+                line.add(renderField(field, settings));
+            }
+            rendered.add(line);
+        }
+
+        if (key.isEmpty()) {
+            List<String> lines = new ArrayList<>(rendered.size());
+            for (List<String> row : rendered) {
+                lines.add(String.join(String.valueOf(SEPARATOR), row));
+            }
+            return sorted(lines);
+        }
+
+        List<String> result = new ArrayList<>(rendered.size());
+        int start = 0;
+        while (start < rendered.size()) {
+            int end = start + 1;
+            while (end < rendered.size() && sameKey(rendered.get(start), rendered.get(end), key)) {
+                end++;
+            }
+
+            List<String> segment = new ArrayList<>(end - start);
+            for (List<String> row : rendered.subList(start, end)) {
+                segment.add(String.join(String.valueOf(SEPARATOR), row));
+            }
+            result.addAll(sorted(segment));
+            start = end;
+        }
+
+        return result;
+    }
+
+    /** The positions of the key's fields among the fields, each named once; a key that names no field stops the run. */
+    public static List<Integer> keyIndices(List<String> fields, List<String> orderingKey) {
+        List<Integer> indices = new ArrayList<>(orderingKey.size());
+        for (String name : orderingKey) {
+            int index = -1;
+            for (int candidate = 0; candidate < fields.size(); candidate++) {
+                if (fields.get(candidate).equalsIgnoreCase(name)) {
+                    index = candidate;
+                    break;
+                }
+            }
+
+            if (index < 0) {
+                throw new IllegalStateException(
+                        "The ordering key names the field \"" + name + "\", which the result has no field of; it has "
+                                + String.join(", ", fields) + " (decision 170).");
+            }
+
+            if (!indices.contains(index)) {
+                indices.add(index);
+            }
+        }
+
+        return indices;
+    }
+
+    private static boolean sameKey(List<String> first, List<String> second, List<Integer> key) {
+        for (int index : key) {
+            if (!first.get(index).equals(second.get(index))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public static String renderField(Object value, Settings settings) {
         if (value == null) {
             return NULL;

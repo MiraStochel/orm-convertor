@@ -24,6 +24,8 @@ import java.util.Map;
  * @param category the category of the manifest this query is, or null for a query of the matrix's own
  * @param sources  the frameworks that state the query, in the order the file lists them
  * @param unitPaths the input units of a query of the matrix's own, under {@code inputs/}; empty for a category
+ * @param orderingKey the fields the ordering of the query falls on, in the order of the ordering (decision 170):
+ *                    the key the canonical form of a result keeps the order of; empty for a query without an ordering
  * @param refusedBy targets that refuse the query, with the feature the refusal names (decision 053)
  * @param fallbackBy targets that write the query in native SQL because their query language does not speak it,
  *                   with the feature the record of kind Fallback names (decision 113) - pairs like any other
@@ -35,7 +37,7 @@ public record DifferentialQuery(
         List<String> unitPaths,
         List<String> fields,
         boolean projection,
-        boolean ordered,
+        List<String> orderingKey,
         ResultRow.Settings settings,
         List<Argument> arguments,
         List<String> mutations,
@@ -75,6 +77,11 @@ public record DifferentialQuery(
     /** The canonical result of this query, as the file beside the matrix states it. */
     public List<String> canonicalResult() {
         return DifferentialData.readLines("results/" + id + ".txt");
+    }
+
+    /** Whether the query carries an ordering: a reading of the key, never a fact of its own (decision 170). */
+    public boolean ordered() {
+        return !orderingKey.isEmpty();
     }
 
     /**

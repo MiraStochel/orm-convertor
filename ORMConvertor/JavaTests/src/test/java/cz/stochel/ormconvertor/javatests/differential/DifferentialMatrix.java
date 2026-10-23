@@ -195,7 +195,7 @@ public final class DifferentialMatrix {
                 unitPaths,
                 list(required(id, values, "fields")),
                 shape.equals("projection"),
-                Boolean.parseBoolean(required(id, values, "ordered")),
+                orderingKey(id, required(id, values, "orderingKey"), list(required(id, values, "fields"))),
                 new ResultRow.Settings(
                         number(values, "decimalScale", 6),
                         number(values, "floatDigits", 12),
@@ -213,6 +213,31 @@ public final class DifferentialMatrix {
         }
 
         return value;
+    }
+
+    /**
+     * The ordering key as the file writes it (decision 170): the word {@code none} for a query
+     * without an ordering, otherwise fields of the row, each of them one the row has. The word
+     * rather than an empty value, so that a key left out by mistake does not read as a query
+     * that does not order.
+     */
+    private static List<String> orderingKey(String id, String value, List<String> fields) {
+        if (value.equals("none")) {
+            return List.of();
+        }
+
+        List<String> key = list(value);
+        if (key.isEmpty()) {
+            throw new IllegalStateException("matrix.txt: [" + id + "] states an empty orderingKey; a query without an ordering writes \"none\".");
+        }
+
+        for (String name : key) {
+            if (fields.stream().noneMatch(field -> field.equalsIgnoreCase(name))) {
+                throw new IllegalStateException("matrix.txt: [" + id + "] orders by \"" + name + "\", which is not among its fields.");
+            }
+        }
+
+        return key;
     }
 
     private static int number(Map<String, String> values, String key, int fallback) {

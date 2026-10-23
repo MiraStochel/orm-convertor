@@ -29,6 +29,7 @@ public static class Fiben
                 [.. query.Tables],
                 [.. query.Columns],
                 query.Ordered,
+                [.. query.OrderingKey],
                 query.Sql,
                 query.BenchmarkSql,
                 query.Translation,

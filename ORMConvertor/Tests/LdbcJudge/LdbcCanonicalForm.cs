@@ -47,22 +47,24 @@ internal static class LdbcCanonicalForm
                 $"{binding.Operation}: the expected result is a JSON {root.ValueKind}, neither a row nor a list of rows."),
         };
 
-        var rendered = rows.Select(row => ResultRow.Render(
-            [.. binding.Fields.Select(field => Expected(field, Member(binding, row, field.Field)))],
-            Settings));
-
-        return binding.Ordered ? [.. rendered] : ResultRow.Sorted(rendered);
+        // In the canonical form of decision 170: the order of the binding's key kept, the rows
+        // of one key value as a set.
+        return ResultRow.Canonical(
+            rows.Select(row => (IReadOnlyList<object?>)[.. binding.Fields.Select(field => Expected(field, Member(binding, row, field.Field)))]),
+            Settings,
+            Columns(binding),
+            binding.OrderingKey);
     }
 
     /// <summary>The rows a generated artifact returned, with each column read as the binding's kind says.</summary>
     public static List<string> Actual(LdbcValidation binding, IEnumerable<object?[]> rows)
-    {
-        var rendered = rows.Select(row => ResultRow.Render(
-            [.. binding.Fields.Select((field, index) => Actual(field, row[index]))],
-            Settings));
+        => ResultRow.Canonical(
+            rows.Select(row => (IReadOnlyList<object?>)[.. binding.Fields.Select((field, index) => Actual(field, row[index]))]),
+            Settings,
+            Columns(binding),
+            binding.OrderingKey);
 
-        return binding.Ordered ? [.. rendered] : ResultRow.Sorted(rendered);
-    }
+    private static List<string> Columns(LdbcValidation binding) => [.. binding.Fields.Select(field => field.Column)];
 
     /// <summary>One field of the expected result as the value the renderer states.</summary>
     public static object? Expected(LdbcResultField field, JsonElement value)

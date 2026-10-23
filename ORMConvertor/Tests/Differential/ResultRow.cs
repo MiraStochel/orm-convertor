@@ -60,6 +60,81 @@ internal static class ResultRow
     public static List<string> Sorted(IEnumerable<string> rows)
         => [.. rows.OrderBy(row => row, StringComparer.Ordinal)];
 
+    /// <summary>
+    /// The canonical form of a whole result (decision 170): exactly what the query determines
+    /// and nothing more. The rows stay in the order they came, and every contiguous run of
+    /// rows that agree on the ordering key is sorted by the rendered line - the query fixes
+    /// the sequence of key values and nothing inside one value, so that is what is compared.
+    /// A query without an ordering has an empty key, every row agrees on it, and the whole
+    /// result is sorted, as before; a key that is the whole row leaves the order as it came.
+    /// Two rows agree on the key when its fields render alike, at the precision the settings
+    /// state, as everything else in decision 089 is compared.
+    /// </summary>
+    /// <param name="rows">The rows as read, each with its fields in the order of <paramref name="fields"/>.</param>
+    /// <param name="fields">The names of the fields of a row, in their order.</param>
+    /// <param name="orderingKey">The fields the ordering of the query falls on, in the order of the ordering; empty for a query that does not order.</param>
+    public static List<string> Canonical(
+        IEnumerable<IReadOnlyList<object?>> rows,
+        RenderSettings settings,
+        IReadOnlyList<string> fields,
+        IReadOnlyList<string> orderingKey)
+    {
+        var key = KeyIndices(fields, orderingKey);
+        var rendered = rows.Select(row => row.Select(field => RenderField(field, settings)).ToList()).ToList();
+
+        if (key.Count == 0)
+        {
+            return Sorted(rendered.Select(row => string.Join(Separator, row)));
+        }
+
+        var result = new List<string>(rendered.Count);
+        var start = 0;
+        while (start < rendered.Count)
+        {
+            var end = start + 1;
+            while (end < rendered.Count && key.All(index => rendered[start][index] == rendered[end][index]))
+            {
+                end++;
+            }
+
+            result.AddRange(Sorted(rendered.Skip(start).Take(end - start).Select(row => string.Join(Separator, row))));
+            start = end;
+        }
+
+        return result;
+    }
+
+    /// <summary>The positions of the key's fields among the fields, each named once; a key that names no field stops the run.</summary>
+    public static List<int> KeyIndices(IReadOnlyList<string> fields, IReadOnlyList<string> orderingKey)
+    {
+        var indices = new List<int>(orderingKey.Count);
+        foreach (var name in orderingKey)
+        {
+            var index = -1;
+            for (var candidate = 0; candidate < fields.Count; candidate++)
+            {
+                if (string.Equals(fields[candidate], name, StringComparison.OrdinalIgnoreCase))
+                {
+                    index = candidate;
+                    break;
+                }
+            }
+
+            if (index < 0)
+            {
+                throw new InvalidOperationException(
+                    $"The ordering key names the field \"{name}\", which the result has no field of; it has {string.Join(", ", fields)} (decision 170).");
+            }
+
+            if (!indices.Contains(index))
+            {
+                indices.Add(index);
+            }
+        }
+
+        return indices;
+    }
+
     public static string RenderField(object? value, RenderSettings settings) => value switch
     {
         null or DBNull => Null,

@@ -18,11 +18,13 @@ public final class LdbcConformance {
 
     public static List<String> rows() {
         // One object is one row; a moment and a date from milliseconds since the epoch in UTC.
+        // The key of the bindings here is the whole row, so the rows stay as they came.
         LdbcCatalog.Validation single = new LdbcCatalog.Validation("IS1", List.of(), List.of(
                 LdbcCatalog.Field.of("CreationDate", "creationDate", LdbcCatalog.Field.MOMENT),
                 LdbcCatalog.Field.of("Birthday", "birthday", LdbcCatalog.Field.DATE),
                 LdbcCatalog.Field.of("CityId", "cityId", LdbcCatalog.Field.VALUE),
-                LdbcCatalog.Field.of("FirstName", "firstName", LdbcCatalog.Field.VALUE)), true);
+                LdbcCatalog.Field.of("FirstName", "firstName", LdbcCatalog.Field.VALUE)),
+                true, List.of("CreationDate", "Birthday", "CityId", "FirstName"));
 
         // A flag as a number; a set in ordinal order, of texts and of objects; a sequence in
         // its own order; a weight written with and without a fraction; an empty list as NULL.
@@ -32,18 +34,20 @@ public final class LdbcConformance {
                 new LdbcCatalog.Field("Companies", "companies", LdbcCatalog.Field.SET, ";",
                         List.of("organizationName", "year", "placeName"), ","),
                 new LdbcCatalog.Field("Path", "path", LdbcCatalog.Field.SEQUENCE, ",", null, null),
-                LdbcCatalog.Field.of("Weight", "weight", LdbcCatalog.Field.VALUE)), true);
+                LdbcCatalog.Field.of("Weight", "weight", LdbcCatalog.Field.VALUE)),
+                true, List.of("IsNew", "Emails", "Companies", "Path", "Weight"));
 
-        // Rows of a query the specification does not order completely are compared sorted.
+        // Rows of a query the specification does not order are compared sorted: an empty key.
         LdbcCatalog.Validation unordered = new LdbcCatalog.Validation("IC0", List.of(), List.of(
-                LdbcCatalog.Field.of("Name", "name", LdbcCatalog.Field.VALUE)), false);
+                LdbcCatalog.Field.of("Name", "name", LdbcCatalog.Field.VALUE)), false, List.of());
 
         // What an artifact hands back: a date as a moment at midnight, a flag as a truth value,
         // a set joined in no particular order.
         LdbcCatalog.Validation actual = new LdbcCatalog.Validation("IC0", List.of(), List.of(
                 LdbcCatalog.Field.of("Birthday", "birthday", LdbcCatalog.Field.DATE),
                 LdbcCatalog.Field.of("IsNew", "isNew", LdbcCatalog.Field.FLAG),
-                new LdbcCatalog.Field("Emails", "emails", LdbcCatalog.Field.SET, ";", null, null)), true);
+                new LdbcCatalog.Field("Emails", "emails", LdbcCatalog.Field.SET, ";", null, null)),
+                true, List.of("Birthday", "IsNew", "Emails"));
 
         List<String> rows = new ArrayList<>();
         rows.addAll(LdbcCanonicalForm.expected(single,

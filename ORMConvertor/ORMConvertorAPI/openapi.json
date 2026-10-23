@@ -1105,6 +1105,7 @@
           "tables",
           "columns",
           "ordered",
+          "orderingKey",
           "sql",
           "benchmarkSql",
           "translation",
@@ -1146,6 +1147,12 @@
           },
           "ordered": {
             "type": "boolean"
+          },
+          "orderingKey": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "sql": {
             "type": "string"
@@ -1382,7 +1389,8 @@
           "operation",
           "arguments",
           "fields",
-          "ordered"
+          "ordered",
+          "orderingKey"
         ],
         "type": "object",
         "properties": {
@@ -1403,6 +1411,12 @@
           },
           "ordered": {
             "type": "boolean"
+          },
+          "orderingKey": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

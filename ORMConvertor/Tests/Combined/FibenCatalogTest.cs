@@ -3,6 +3,8 @@ using AbstractWrappers.Diagnostics;
 using Model;
 using OrmConvertor;
 using SampleData;
+using Tests.FibenJudge;
+using Tests.Verification;
 
 namespace Tests.Combined;
 
@@ -58,6 +60,48 @@ public class FibenCatalogTest
             Assert.True(
                 query.Translation == FibenTranslation.AsSpecified || !string.IsNullOrWhiteSpace(query.Note),
                 $"{query.Key} is {query.Translation} without a note.");
+        }
+    }
+
+    /// <summary>
+    /// The ordering key of every query is the ordering of its text (decision 170): the columns
+    /// the keys of the outermost ordering fall on, in their order, every column where a key falls
+    /// on none, nothing where the text does not order. The import derives the key from the text
+    /// and this holds it against the intermediate representation the text reads into, so that
+    /// what the run keeps the order of is what the source orders by.
+    /// </summary>
+    [Fact]
+    public void EveryQueryStatesTheKeyOfItsOrdering()
+    {
+        foreach (var query in FibenSample.Queries)
+        {
+            var text = OrderingKeys.Of(SourceQueries.ReadSingle(ORMEnum.Dapper, FibenRun.Units(query)), query.Columns);
+
+            Assert.True(
+                text.SequenceEqual(query.OrderingKey, StringComparer.OrdinalIgnoreCase),
+                $"{query.Key}: the text orders by {Key(text)} and the catalog states {Key(query.OrderingKey)}.");
+        }
+
+        static string Key(IReadOnlyList<string> key) => key.Count == 0 ? "nothing" : string.Join(", ", key);
+    }
+
+    /// <summary>
+    /// Every slice of the catalog - a TOP in the query or in a subquery of it - determines the
+    /// rows it returns (decision 170): its scope is an aggregate without a grouping, or its
+    /// ordering contains every key of its grouping, or every expression of its projection. Read
+    /// from the representation, without data, so that the next query whose slice cuts through a
+    /// tie fails here on any machine and not in a run over another server.
+    /// </summary>
+    [Fact]
+    public void EverySliceDeterminesItsRows()
+    {
+        foreach (var query in FibenSample.Queries)
+        {
+            var scopes = OrderingKeys.Scopes(SourceQueries.ReadSingle(ORMEnum.Dapper, FibenRun.Units(query))).ToList();
+
+            Assert.True(
+                scopes.All(OrderingKeys.SliceDeterminesItsRows),
+                $"{query.Key}: a slice of the text does not determine the rows it returns; the deciding key of decision 170 is missing.");
         }
     }
 

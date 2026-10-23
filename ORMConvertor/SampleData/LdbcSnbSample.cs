@@ -414,7 +414,7 @@ public static class LdbcSnbSample
                 Column("Birthday", "birthday", LdbcValueKind.Date), Column("LocationIp", "locationIp"),
                 Column("BrowserUsed", "browserUsed"), Column("CityId", "cityId"), Column("Gender", "gender"),
                 Moment("CreationDate", "creationDate"),
-            ])),
+            ], OrderingKey: [])),
 
         new("is2", LdbcWorkload.InteractiveShort, 2, "Recent messages of a person", LdbcTranslation.AsSpecified,
             "The last ten messages with the post that started each thread and its author. Walking replyOf up to the root "
@@ -439,7 +439,7 @@ public static class LdbcSnbSample
                 Column("OriginalPostAuthorId", "originalPostAuthorId"),
                 Column("OriginalPostAuthorFirstName", "originalPostAuthorFirstName"),
                 Column("OriginalPostAuthorLastName", "originalPostAuthorLastName"),
-            ])),
+            ], OrderingKey: ["MessageCreationDate", "MessageId"])),
 
         new("is3", LdbcWorkload.InteractiveShort, 3, "Friends of a person", LdbcTranslation.AsSpecified,
             "One step along knows, ordered by an attribute of the edge itself.",
@@ -455,7 +455,7 @@ public static class LdbcSnbSample
             [
                 Column("PersonId", "personId"), Column("FirstName", "firstName"), Column("LastName", "lastName"),
                 Moment("FriendshipCreationDate", "friendshipCreationDate"),
-            ])),
+            ], OrderingKey: ["FriendshipCreationDate", "PersonId"])),
 
         new("is4", LdbcWorkload.InteractiveShort, 4, "Content of a message", LdbcTranslation.AsSpecified,
             "A lookup by key. A post carries either content or an image file, so the text is the first of the two that is set.",
@@ -466,7 +466,7 @@ public static class LdbcSnbSample
             """,
             [MessageId],
             Validation: new("IS4", [Bind("messageId", "messageIdContent")],
-                [Moment("MessageCreationDate", "messageCreationDate"), Column("MessageContent", "messageContent")])),
+                [Moment("MessageCreationDate", "messageCreationDate"), Column("MessageContent", "messageContent")], OrderingKey: [])),
 
         new("is5", LdbcWorkload.InteractiveShort, 5, "Creator of a message", LdbcTranslation.AsSpecified,
             "A lookup by key and one join along a foreign key.",
@@ -478,7 +478,7 @@ public static class LdbcSnbSample
             """,
             [MessageId],
             Validation: new("IS5", [Bind("messageId", "messageIdCreator")],
-                [Column("PersonId", "personId"), Column("FirstName", "firstName"), Column("LastName", "lastName")])),
+                [Column("PersonId", "personId"), Column("FirstName", "firstName"), Column("LastName", "lastName")], OrderingKey: [])),
 
         new("is6", LdbcWorkload.InteractiveShort, 6, "Forum of a message", LdbcTranslation.AsSpecified,
             "The forum that contains the thread of a message and its moderator. A comment reaches its forum through the "
@@ -496,7 +496,7 @@ public static class LdbcSnbSample
             [
                 Column("ForumId", "forumId"), Column("ForumTitle", "forumTitle"), Column("ModeratorId", "moderatorId"),
                 Column("ModeratorFirstName", "moderatorFirstName"), Column("ModeratorLastName", "moderatorLastName"),
-            ])),
+            ], OrderingKey: [])),
 
         new("is7", LdbcWorkload.InteractiveShort, 7, "Replies of a message", LdbcTranslation.AsSpecified,
             "Direct replies with their authors and whether the author of the reply knows the author of the message: a "
@@ -522,7 +522,7 @@ public static class LdbcSnbSample
                 Moment("CommentCreationDate", "commentCreationDate"), Column("ReplyAuthorId", "replyAuthorId"),
                 Column("ReplyAuthorFirstName", "replyAuthorFirstName"), Column("ReplyAuthorLastName", "replyAuthorLastName"),
                 Column("ReplyAuthorKnowsOriginalMessageAuthor", "isReplyAuthorKnowsOriginalMessageAuthor", LdbcValueKind.Flag),
-            ])),
+            ], OrderingKey: ["CommentCreationDate", "ReplyAuthorId"])),
 
         // Interactive complex reads (specification section 6.1).
 
@@ -579,7 +579,7 @@ public static class LdbcSnbSample
                 Column("FriendCityName", "friendCityName"), Names("FriendEmails", "friendEmails"),
                 Names("FriendLanguages", "friendLanguages"), Organisations("FriendUniversities", "friendUniversities"),
                 Organisations("FriendCompanies", "friendCompanies"),
-            ])),
+            ], OrderingKey: ["DistanceFromPerson", "FriendLastName", "FriendId"])),
 
         new("ic2", LdbcWorkload.InteractiveComplex, 2, "Recent messages by your friends", LdbcTranslation.AsSpecified,
             "One step along knows, then the messages of the friends before a date, newest first.",
@@ -599,7 +599,7 @@ public static class LdbcSnbSample
                 Column("PersonId", "personId"), Column("PersonFirstName", "personFirstName"),
                 Column("PersonLastName", "personLastName"), Column("MessageId", "messageId"),
                 Column("MessageContent", "messageContent"), Moment("MessageCreationDate", "messageCreationDate"),
-            ])),
+            ], OrderingKey: ["MessageCreationDate", "MessageId"])),
 
         new("ic3", LdbcWorkload.InteractiveComplex, 3, "Friends and friends of friends that have been to given countries", LdbcTranslation.AsSpecified,
             "Friends and friends of friends living outside two countries who wrote messages in both: two counts over "
@@ -638,7 +638,7 @@ public static class LdbcSnbSample
                 Column("OtherPersonId", "personId"), Column("OtherPersonFirstName", "personFirstName"),
                 Column("OtherPersonLastName", "personLastName"), Column("XCount", "xCount"), Column("YCount", "yCount"),
                 Column("MessageCount", "count"),
-            ])),
+            ], OrderingKey: ["MessageCount", "OtherPersonId"])),
 
         new("ic4", LdbcWorkload.InteractiveComplex, 4, "New topics", LdbcTranslation.AsSpecified,
             "Tags on the friends' posts inside a window that no friend's post carried before it: a correlated NOT EXISTS "
@@ -667,7 +667,7 @@ public static class LdbcSnbSample
             [PersonId, new("startDate", "DATE", "2011-06-01"), new("endDate", "DATE", "2011-07-01")],
             Validation: new("IC4",
                 [Bind("personId", "personIdQ4"), Bind("startDate", "startDate"), new("endDate", "startDate", LdbcDerivation.PlusDays, "durationDays")],
-                [Column("TagName", "tagName"), Column("PostCount", "postCount")])),
+                [Column("TagName", "tagName"), Column("PostCount", "postCount")], OrderingKey: ["PostCount", "TagName"])),
 
         new("ic5", LdbcWorkload.InteractiveComplex, 5, "New groups", LdbcTranslation.AsSpecified,
             "Forums that friends and friends of friends joined after a date, with the posts they wrote there; an outer "
@@ -694,7 +694,7 @@ public static class LdbcSnbSample
             """,
             [PersonId, new("minDate", "DATE", "2012-06-01")],
             Validation: new("IC5", [Bind("personId", "personIdQ5"), Bind("minDate", "minDate")],
-                [Column("ForumTitle", "forumTitle"), Column("PostCount", "postCount")])),
+                [Column("ForumTitle", "forumTitle"), Column("PostCount", "postCount")], OrderingKey: ["ForumTitle", "PostCount"])),
 
         new("ic6", LdbcWorkload.InteractiveComplex, 6, "Tag co-occurrence", LdbcTranslation.AsSpecified,
             "The tags that appear beside a given tag on posts of friends and friends of friends: two joins over the same "
@@ -719,7 +719,7 @@ public static class LdbcSnbSample
             """,
             [PersonId, new("tagName", "NVARCHAR(256)", "Augustine_of_Hippo")],
             Validation: new("IC6", [Bind("personId", "personIdQ6"), Bind("tagName", "tagName")],
-                [Column("OtherTagName", "tagName"), Column("PostCount", "postCount")])),
+                [Column("OtherTagName", "tagName"), Column("PostCount", "postCount")], OrderingKey: ["PostCount", "OtherTagName"])),
 
         new("ic7", LdbcWorkload.InteractiveComplex, 7, "Recent likers", LdbcTranslation.AsSpecified,
             "The most recent like of every person who liked the start person's messages - an arg-max per person, written "
@@ -760,7 +760,7 @@ public static class LdbcSnbSample
                 Column("PersonLastName", "personLastName"), Moment("LikeCreationDate", "likeCreationDate"),
                 Column("MessageId", "messageId"), Column("MessageContent", "messageContent"),
                 Column("MinutesLatency", "minutesLatency"), Column("IsNew", "isNew", LdbcValueKind.Flag),
-            ])),
+            ], OrderingKey: ["LikeCreationDate", "PersonId"])),
 
         new("ic8", LdbcWorkload.InteractiveComplex, 8, "Recent replies", LdbcTranslation.AsSpecified,
             "The newest direct replies to the start person's messages: a self-join of Message over ParentMessageId.",
@@ -780,7 +780,7 @@ public static class LdbcSnbSample
                 Column("CommentAuthorId", "personId"), Column("CommentAuthorFirstName", "personFirstName"),
                 Column("CommentAuthorLastName", "personLastName"), Moment("CommentCreationDate", "commentCreationDate"),
                 Column("CommentId", "commentId"), Column("CommentContent", "commentContent"),
-            ])),
+            ], OrderingKey: ["CommentCreationDate", "CommentId"])),
 
         new("ic9", LdbcWorkload.InteractiveComplex, 9, "Recent messages by friends or friends of friends", LdbcTranslation.AsSpecified,
             "The newest messages of persons one or two steps away, before a date.",
@@ -804,7 +804,7 @@ public static class LdbcSnbSample
                 Column("OtherPersonId", "personId"), Column("OtherPersonFirstName", "personFirstName"),
                 Column("OtherPersonLastName", "personLastName"), Column("MessageId", "messageId"),
                 Column("MessageContent", "messageContent"), Moment("MessageCreationDate", "messageCreationDate"),
-            ])),
+            ], OrderingKey: ["MessageCreationDate", "MessageId"])),
 
         new("ic10", LdbcWorkload.InteractiveComplex, 10, "Friend recommendation", LdbcTranslation.AsSpecified,
             "Friends of friends who are not friends, born around a given month, ranked by the posts that do and do not carry "
@@ -836,7 +836,7 @@ public static class LdbcSnbSample
                 Column("PersonId", "personId"), Column("PersonFirstName", "personFirstName"),
                 Column("PersonLastName", "personLastName"), Column("CommonInterestScore", "commonInterestScore"),
                 Column("PersonGender", "personGender"), Column("PersonCityName", "personCityName"),
-            ])),
+            ], OrderingKey: ["CommonInterestScore", "PersonId"])),
 
         new("ic11", LdbcWorkload.InteractiveComplex, 11, "Job referral", LdbcTranslation.AsSpecified,
             "Friends and friends of friends who started at a company in a given country before a year; three sort keys "
@@ -864,7 +864,7 @@ public static class LdbcSnbSample
                 Column("OtherPersonId", "personId"), Column("OtherPersonFirstName", "personFirstName"),
                 Column("OtherPersonLastName", "personLastName"), Column("CompanyName", "organizationName"),
                 Column("WorkFrom", "organizationWorkFromYear"),
-            ])),
+            ], OrderingKey: ["WorkFrom", "OtherPersonId", "CompanyName"])),
 
         new("ic12", LdbcWorkload.InteractiveComplex, 12, "Expert search", LdbcTranslation.AsSpecified,
             "Friends' direct replies to posts whose tag belongs to a tag class or any class below it, with the names of "
@@ -915,7 +915,7 @@ public static class LdbcSnbSample
             [
                 Column("PersonId", "personId"), Column("PersonFirstName", "personFirstName"),
                 Column("PersonLastName", "personLastName"), Names("TagNames", "tagNames"), Column("ReplyCount", "replyCount"),
-            ])),
+            ], OrderingKey: ["ReplyCount", "PersonId"])),
 
         new("ic13", LdbcWorkload.InteractiveComplex, 13, "Single shortest path", LdbcTranslation.AsSpecified,
             "The length of the shortest path along knows between two persons: 0 for one person, -1 where there is no "
@@ -972,7 +972,7 @@ public static class LdbcSnbSample
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "96")],
             FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate],
             Validation: new("IC13", [Bind("person1Id", "person1IdQ13StartNode"), Bind("person2Id", "person2IdQ13EndNode")],
-                [Column("ShortestPathLength", "shortestPathLength")]),
+                [Column("ShortestPathLength", "shortestPathLength")], OrderingKey: []),
             SearchDepth: new(5, "the diameter of knows over scale factor 1, from every person")),
 
         new("ic14", LdbcWorkload.InteractiveComplex, 14, "Trusted connection paths", LdbcTranslation.AsSpecified,
@@ -1102,10 +1102,11 @@ public static class LdbcSnbSample
             [new("person1Id", "BIGINT", "4398046513938"), new("person2Id", "BIGINT", "96")],
             FallbackBy: [NHibernateIntermediate, EclipseLinkIntermediate],
             // The specification orders the paths by their weight alone, so two paths of one
-            // weight come in either order: the rows are compared as a set.
+            // weight come in either order: the key is the weight, and the paths of one weight
+            // are compared as a set (decision 170).
             Validation: new("IC14", [Bind("person1Id", "person1IdQ14StartNode"), Bind("person2Id", "person2IdQ14EndNode")],
                 [new("PersonIdsInPath", "personIdsInPath", LdbcValueKind.Sequence, ","), Column("PathWeight", "pathWeight")],
-                Ordered: false),
+                OrderingKey: ["PathWeight"], JudgeOrdersLess: true),
             SearchDepth: new(5, "the diameter of knows over scale factor 1, from every person")),
 
         // Business Intelligence reads (specification section 8.4).

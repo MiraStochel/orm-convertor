@@ -28,8 +28,9 @@ internal static class DotNetQueryRunner
 
     /// <summary>
     /// Translates the query from the source into the target and runs it, returning the
-    /// rendered rows in the order the comparison wants them: as they came for a query that
-    /// carries an ordering, sorted by the rendered line for one that does not.
+    /// rendered rows in the canonical form of the result (decision 170): in the order of the
+    /// ordering key where the query carries one, rows of one key value sorted by the rendered
+    /// line, the whole result sorted where it does not.
     /// </summary>
     /// <param name="form">The artifact run: the binding method of the query, or the LINQ form NHibernate writes beside its HQL (decision 118).</param>
     public static List<string> Run(
@@ -52,9 +53,8 @@ internal static class DotNetQueryRunner
 
         // The matrix states the arguments in the order of the method's parameters.
         var rows = prepared.Run(query.Id, [.. query.Arguments.Select(argument => argument.Materialize())], query.Fields, query.Projection);
-        var rendered = rows.Select(row => ResultRow.Render(row, query.Settings));
 
-        return query.Ordered ? [.. rendered] : ResultRow.Sorted(rendered);
+        return ResultRow.Canonical(rows, query.Settings, query.Fields, query.OrderingKey);
     }
 
     /// <summary>

@@ -11,6 +11,7 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | Položka | Oblast | Druh | Nutné pro | Pož. |
 |---|---|---|---|---|
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | projekt | T2, T3, F13 |
+| [Soudce FIBEN po rozh. 170](#soudce-fiben-po-rozh-170) | Dotazy | práce | experimenty | T2, T3, F13 |
 | [Experimentální pipeline T2 × T3](#experimentální-pipeline-kterou-záměr-žádá-neexistuje) | Experimenty | rozhodnutí | experimenty | S5, T1–T3 |
 | [Referenční databáze experimentů a případová studie T1](#referenční-databáze-experimentů-a-případová-studie-t1) | Experimenty | rozhodnutí | experimenty | T1, T2, T7, F4 |
 | [Schémata převzatých projektů v katalogu](#schémata-převzatých-projektů-v-katalogu-instance) | Experimenty | rozhodnutí | | F6, T1 |
@@ -31,7 +32,6 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | | F15, S7 |
 | [Průběžný stav běhu Advisoru](#průběžný-stav-běhu-advisoru-po-buňkách) | Advisor | rozhodnutí | | S7, F15 |
 | [Odevzdání do položek](#odevzdání-není-rozepsané-do-položek) | Odevzdání | práce | projekt | — |
-| [Pořadí řádků se shodným klíčem a neurčený výřez](#pořadí-řádků-se-shodným-klíčem-řazení-a-výřez-který-dotaz-neurčuje) | Užitečné | práce | | F13, T2, T3 |
 | [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | | S2, S5 |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | | — |
 
@@ -45,6 +45,11 @@ Katalog LDBC (rozh. [110](./decisions/110-ldbc-snb-as-a-second-reference-domain.
 *Na řadě. Práce podle rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md) a [141](./decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md), v režimu serveru rozh. [164](./decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md) a [166](./decisions/166-the-judge-reads-a-segment-between-inserts-in-every-framework-at-once.md); samostatný běh obou sad, který spouští Míra jménem ([`ORMConvertor/README.md`](../ORMConvertor/README.md), *The LDBC judge*). Požadavky T2, T3, F13.*
 
 IC 13 a IC 14 — ty z pěti dotazů na cesty, které soudí validační sada — jsou `AsSpecified` a soudce je posuzuje verdiktem, ne mírou; celou sadou SF 1 prošly jen jejich texty s mezí ([záznam](./runs/2026-10-12-ldbc-judge.md)), dnešní texty prefixem. Zbývá celá sada nad dnešními texty, .NET a javová sada po sobě, se záznamem do [`runs/`](./runs/README.md). Soudce běží v režimu soudce rozh. [164](./decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md) a [166](./decisions/166-the-judge-reads-a-segment-between-inserts-in-every-framework-at-once.md) (`--env-file judge.env`); podle prefixu se dá čekat zhruba den na sadu ([záznam režimu soudce](./runs/2026-10-22-ldbc-judge-mode.md)), a pozastavení Windows Update musí přesáhnout konec. Čtení IC 14 v EF Core trvají podle plánu, který server z parametrů přeloží, 1–2,5 s nebo desítky sekund (vnořené poddotazy jeho SQL), v ostatních frameworcích dvě; souběžné přehrání na takové čtení čeká. Neshoda IC 13 nebo IC 14 by byla chybou textu nebo překladu, ne vlastností sady; čtení IC 14 v EF Core nad mezí 600 s (rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md)) vlastností jeho SQL, kterou by řešilo nové rozhodnutí.
+
+#### Soudce FIBEN po rozh. 170
+*Práce podle rozh. [170](./decisions/170-rows-tied-on-the-ordering-key-compare-as-a-set-and-a-fiben-slice-gets-a-deciding-key.md), oddíl *Soudce FIBEN*; běh FIBEN spouští Míra jménem ([`ORMConvertor/README.md`](../ORMConvertor/README.md), *The FIBEN run*). Požadavky T2, T3, F13.*
+
+Soudce v `database/fiben/judge.tsv` je z běhu před rozh. 170: porovnání dnes užívá kanonickou formu rozh. 170 a 29 textů katalogu nese doplněný klíč řazení (dotazy vede rozh. 170, *Kontext*), takže první běh FIBEN po implementaci vydá nového soudce z `judge-candidate.tsv` své .NET půlky za podmínek rozh. 149 ve znění 157, s hlavičkou jmenující rozh. 170. Záznam dotazu s nezměněným textem se smí od dosavadního lišit jen pořadím uvnitř úseku shodného klíče, jiný rozdíl je nález a pro ten dotaz nový soudce nevzniká; stav buněk 29 dotazů a jejich časy záznam běhu uvede jako nové, nesrovnatelné s dřívějšími záznamy v [`runs/`](./runs/README.md). Soudce LDBC porovnává IC 14 nově v pořadí vah; jiné pořadí vah ve validační sadě by byl nález o sadě nebo o textu.
 
 ## Experimenty
 
@@ -170,18 +175,6 @@ Finální dokumentace, odevzdání a příprava obhajoby tu položky nemají; ex
 ## Užitečné, ne nutné
 
 Prospělo by to, ale žádná věta záruk na tom nestojí a nic tím není blokované; značky pořadí položky nedostávají.
-
-#### Pořadí řádků se shodným klíčem řazení a výřez, který dotaz neurčuje
-*Práce podle rozh. [170](./decisions/170-rows-tied-on-the-ordering-key-compare-as-a-set-and-a-fiben-slice-gets-a-deciding-key.md); kód `Tests/Differential/`, `Tests/LdbcJudge/LdbcCanonicalForm.cs`, `Tests/FibenJudge/FibenRun.cs`, javové protějšky a `FibenImport/Queries.cs`. Požadavky F13, T2, T3.*
-
-Všechna tři porovnání čtvrtého stupně (matice, soudce LDBC, běh FIBEN) porovnávají seřazený dotaz v pořadí, v jakém řádky přišly, takže řádky se shodným klíčem řazení v jiném pořadí jsou neshodou: q31 katalogu FIBEN na MIS2 v EF Core a NHibernatu. Výřez, který řeže remízu nebo nemá řazení, navíc neurčuje ani množinu řádků. Podle rozh. 170 se seřazený výsledek porovná v pořadí klíče a úsek shodného klíče jako množina, klíč místo příznaku `ordered` ponesou matice, vazby LDBC a katalog FIBEN, převod FIBEN doplní výřezu, který své řádky neurčuje, rozhodující klíč (dotčené dotazy vede rozh. 170, *Kontext*), `FibenCatalogTest` to drží a soudce FIBEN se obnoví z prvního běhu po implementaci. Taková neshoda v kontrole mimo MIS3 je vlastností dotazu, ne překladu. Změna může mít vliv na:
-
-- **stavy překladu a podíly T2 a T3 katalogu FIBEN** — zjemněné texty jsou nové; podle [`subset.md`](./subset.md) 2.7 a 2.9 změnu stavu nečekáme, potvrdí ji první běh;
-- **časy běhu FIBEN** — doplněné řazení přidá třídění a může změnit plány; časy dotčených dotazů nejsou srovnatelné se záznamy v [`runs/`](./runs/README.md) před změnou;
-- **soudce FIBEN** — obnoví se; dotaz, jehož výřez v datech řeže remízu, v něm může mít jiné řádky než dosud;
-- **soudce LDBC** — IC 14 se porovná v pořadí vah, ne jako množina; jiné pořadí vah ve validační sadě by byl nález;
-- **matici** — výsledky se nemění, fixtura drží klíče jedinečné; mutace vypuštěného řazení musí dál končit rozdílem;
-- **obě sady a rozhraní** — kanonická forma v .NET i Javě s případem v `renderer-conformance.txt`; `ordered` na `/ldbc` a `/fiben` zůstává odvozený z klíče a `/fiben` ukáže zjemněný text.
 
 #### Vynucení stylu a reprodukovatelnost sestavení
 *Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.4. Souvisí s rozh. [034](./decisions/034-central-version-management.md) a [039](./decisions/039-container-configuration-of-the-environment.md). Požadavky S2, S5.*

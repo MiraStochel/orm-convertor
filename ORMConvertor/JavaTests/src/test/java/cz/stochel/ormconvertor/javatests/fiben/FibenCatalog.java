@@ -57,6 +57,7 @@ public record FibenCatalog(int sourceOrm, String dataSet, List<Unit> entities, L
             List<String> tables,
             List<String> columns,
             boolean ordered,
+            List<String> orderingKey,
             String sql,
             String benchmarkSql,
             int translation,

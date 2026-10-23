@@ -48,14 +48,16 @@ public record LdbcRefusalDefinition(ORMEnum Target, string Reason);
 /// <summary>
 /// The binding of a query to the validation set of LDBC Interactive v1 (decision 117): the
 /// driver's operation, the parameters of the text made from its fields, the columns of the text
-/// in the order it projects them with the fields of the expected result, and whether the rows
-/// are compared in their order.
+/// in the order it projects them with the fields of the expected result, whether the rows are
+/// compared in an order at all, and the ordering key they are compared by (decision 170): the
+/// columns whose order the canonical form keeps, the rows of one key value compared as a set.
 /// </summary>
 public record LdbcValidationDefinition(
     string Operation,
     List<LdbcArgumentDefinition> Arguments,
     List<LdbcResultFieldDefinition> Fields,
-    bool Ordered
+    bool Ordered,
+    List<string> OrderingKey
 );
 
 /// <summary>A parameter of the text and the field of the operation it is made from; the derivation as the number of its enum.</summary>

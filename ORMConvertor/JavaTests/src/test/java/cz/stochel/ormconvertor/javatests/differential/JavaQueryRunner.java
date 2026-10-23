@@ -61,8 +61,9 @@ public final class JavaQueryRunner {
 
     /**
      * Translates the query from the source into the target and runs it, returning the
-     * rendered rows in the order the comparison wants them: as they came for a query that
-     * carries an ordering, sorted by the rendered line for one that does not.
+     * rendered rows in the canonical form of the result (decision 170): in the order of the
+     * ordering key where the query carries one, rows of one key value sorted by the rendered
+     * line, the whole result sorted where it does not.
      */
     public static List<String> run(DifferentialQuery query, int source, int target) throws Exception {
         return run(query, source, target, null);
@@ -73,12 +74,7 @@ public final class JavaQueryRunner {
         ConversionResponse response = translate(query, source, target);
         List<List<Object>> rows = execute(query, target, response, mutated);
 
-        List<String> rendered = new ArrayList<>();
-        for (List<Object> row : rows) {
-            rendered.add(ResultRow.render(row, query.settings()));
-        }
-
-        return query.ordered() ? rendered : ResultRow.sorted(rendered);
+        return ResultRow.canonical(rows, query.settings(), query.fields(), query.orderingKey());
     }
 
     /** The conversion behind a run, refusals and all. */

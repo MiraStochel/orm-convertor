@@ -20,8 +20,9 @@ public record FibenCatalogDefinition(
 /// One query of the benchmark: its number, Kim's type and how much of it the tool translates
 /// as numbers of their enums, the questions it answers - the benchmark's own first -, the
 /// tables it reads (which are the names of its entity units without the extension), the
-/// columns it projects and whether it orders its rows - what the Java suite's run compares rows
-/// by -, its text in T-SQL, the benchmark's text in the Db2 dialect, and the note of its status.
+/// columns it projects, whether it orders its rows and the ordering key the Java suite's run
+/// compares rows by (decision 170: the columns the ordering falls on, in its order), its text
+/// in T-SQL, the benchmark's text in the Db2 dialect, and the note of its status.
 /// </summary>
 public record FibenQueryDefinition(
     string Key,
@@ -31,6 +32,7 @@ public record FibenQueryDefinition(
     List<string> Tables,
     List<string> Columns,
     bool Ordered,
+    List<string> OrderingKey,
     string Sql,
     string BenchmarkSql,
     FibenTranslation Translation,

@@ -38,8 +38,9 @@ public enum FibenTranslation
 /// One of the 237 distinct SQL queries of the FIBEN benchmark (decision 149), as
 /// <c>SampleData/Fiben/queries.json</c> carries it: its number in the benchmark, Kim's type,
 /// the natural-language questions it answers - the first the benchmark's own, the rest its
-/// paraphrases -, the tables it reads, the columns it projects in their order and whether it
-/// orders its rows (what the run compares rows by), its text in T-SQL over the tables of
+/// paraphrases -, the tables it reads, the columns it projects in their order and the ordering
+/// key the run compares its rows by (decision 170: the columns its ordering falls on, in its
+/// order; empty for a query without one), its text in T-SQL over the tables of
 /// <c>database/fiben/schema.sql</c>, written for Dapper, the benchmark's own text in the Db2
 /// dialect it was converted from, and how much of it the tool translates with a note. A query
 /// has no parameter: the benchmark writes every value into the text.
@@ -51,7 +52,7 @@ public sealed record FibenQuery(
     IReadOnlyList<string> Questions,
     IReadOnlyList<string> Tables,
     IReadOnlyList<string> Columns,
-    bool Ordered,
+    IReadOnlyList<string> OrderingKey,
     string Sql,
     string BenchmarkSql,
     FibenTranslation Translation,
@@ -59,4 +60,7 @@ public sealed record FibenQuery(
 {
     /// <summary>The benchmark's own question; the paraphrases follow it in <see cref="Questions"/>.</summary>
     public string Question => Questions[0];
+
+    /// <summary>Whether the query orders its rows: a reading of the key, never a fact of its own.</summary>
+    public bool Ordered => OrderingKey.Count > 0;
 }

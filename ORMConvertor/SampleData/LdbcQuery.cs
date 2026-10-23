@@ -132,15 +132,25 @@ public sealed record LdbcResultField(
 /// judge at the fourth verification level (decision 117): the operation of the driver the
 /// query answers, the parameters of the text made from the fields of the operation, and the
 /// columns of the text, in the order it projects them, each with the field of the expected
-/// result it is compared with. The rows are compared in their order, because the
-/// specification orders every query of the workload completely - but for the one it does not,
-/// which says so and is compared as a set.
+/// result it is compared with, and the ordering key the rows are compared by (decision 170):
+/// the columns the ordering of the text falls on, in its order, which the canonical form keeps
+/// the order of while the rows of one key value are compared as a set. The key is the text's,
+/// held by <c>LdbcCatalogTest</c> - but for IC 14, whose judge orders by less than the text:
+/// the specification orders its paths by their weight alone, so the key is the weight and the
+/// binding says that the judge orders less.
 /// </summary>
+/// <param name="OrderingKey">Columns of <paramref name="Fields"/>, in the order of the ordering; empty for a text without one, every column for an ordering by a key the text does not project.</param>
+/// <param name="JudgeOrdersLess">Whether the judge orders the rows by fewer keys than the text, so that the key is a proper prefix of the text's.</param>
 public sealed record LdbcValidation(
     string Operation,
     IReadOnlyList<LdbcArgument> Arguments,
     IReadOnlyList<LdbcResultField> Fields,
-    bool Ordered = true);
+    IReadOnlyList<string> OrderingKey,
+    bool JudgeOrdersLess = false)
+{
+    /// <summary>Whether the rows are compared in an order at all: a reading of the key, never a fact of its own.</summary>
+    public bool Ordered => OrderingKey.Count > 0;
+}
 
 /// <summary>
 /// The depth of a path query's search (decision 140): the number of levels its text is

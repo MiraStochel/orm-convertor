@@ -45,5 +45,6 @@ public static class Ldbc
                 [.. validation.Fields.Select(field => new LdbcResultFieldDefinition(
                     field.Column, field.Field, field.Kind, field.Separator,
                     field.Elements is null ? null : [.. field.Elements], field.ElementSeparator))],
-                validation.Ordered);
+                validation.Ordered,
+                [.. validation.OrderingKey]);
 }

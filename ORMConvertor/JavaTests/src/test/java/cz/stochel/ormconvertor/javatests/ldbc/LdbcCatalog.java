@@ -64,9 +64,18 @@ public record LdbcCatalog(int sourceOrm, List<Unit> entities, List<Query> querie
     public record Parameter(String name, String sqlType) {
     }
 
-    /** The binding to the judge; {@link LdbcCanonicalForm} reads it. */
+    /**
+     * The binding to the judge; {@link LdbcCanonicalForm} reads it. The ordering key is the
+     * columns the comparison keeps the order of (decision 170), empty for a text without an
+     * ordering; the flag is read off it on the server and travels for the page.
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Validation(String operation, List<Argument> arguments, List<Field> fields, boolean ordered) {
+    public record Validation(String operation, List<Argument> arguments, List<Field> fields, boolean ordered, List<String> orderingKey) {
+
+        /** The columns of the text, in the order it projects them: the fields of a canonical row. */
+        public List<String> columns() {
+            return fields.stream().map(Field::column).toList();
+        }
     }
 
     /** A parameter of the text and the field of the operation it is made from, by the numbers of {@code LdbcDerivation}. */

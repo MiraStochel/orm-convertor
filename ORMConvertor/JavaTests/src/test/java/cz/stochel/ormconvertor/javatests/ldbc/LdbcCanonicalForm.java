@@ -54,30 +54,32 @@ public final class LdbcCanonicalForm {
                     binding.operation() + ": the expected result is a JSON " + root.getNodeType() + ", neither a row nor a list of rows.");
         }
 
-        List<String> rendered = new ArrayList<>();
+        // In the canonical form of decision 170: the order of the binding's key kept, the rows
+        // of one key value as a set.
+        List<List<Object>> converted = new ArrayList<>();
         for (JsonNode row : rows) {
             List<Object> values = new ArrayList<>();
             for (LdbcCatalog.Field field : binding.fields()) {
                 values.add(expected(field, member(binding, row, field.field())));
             }
-            rendered.add(ResultRow.render(values, SETTINGS));
+            converted.add(values);
         }
 
-        return binding.ordered() ? rendered : ResultRow.sorted(rendered);
+        return ResultRow.canonical(converted, SETTINGS, binding.columns(), binding.orderingKey());
     }
 
     /** The rows a generated artifact returned, with each column read as the binding's kind says. */
     public static List<String> actual(LdbcCatalog.Validation binding, List<List<Object>> rows) {
-        List<String> rendered = new ArrayList<>();
+        List<List<Object>> converted = new ArrayList<>();
         for (List<Object> row : rows) {
             List<Object> values = new ArrayList<>();
             for (int index = 0; index < binding.fields().size(); index++) {
                 values.add(actual(binding.fields().get(index), row.get(index)));
             }
-            rendered.add(ResultRow.render(values, SETTINGS));
+            converted.add(values);
         }
 
-        return binding.ordered() ? rendered : ResultRow.sorted(rendered);
+        return ResultRow.canonical(converted, SETTINGS, binding.columns(), binding.orderingKey());
     }
 
     /** One field of the expected result as the value the renderer states. */
