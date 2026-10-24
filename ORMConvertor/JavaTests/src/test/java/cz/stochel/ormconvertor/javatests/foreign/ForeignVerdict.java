@@ -18,7 +18,7 @@ import java.util.TreeMap;
  */
 public final class ForeignVerdict {
 
-    public static final String HEADER = "artifact\tanswers\tsource\ttarget\tproducer\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tmetadata";
+    public static final String HEADER = "artifact\tanswers\tsource\ttarget\tproducer\tlanguage\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tmetadata";
 
     /** The levels of decision 016 as the row counts them. */
     public static final int LEVEL_NONE = 0;
@@ -28,6 +28,10 @@ public final class ForeignVerdict {
     public static final int LEVEL_RAN = 4;
 
     public static final String IN_PROGRESS = "in progress";
+
+    /** The outcome of a translation the tool refused with a Failure record, so that there is no artifact to judge (decision 173); the row of the experiment run alone. */
+    public static final String REFUSED = "refused";
+
     public static final String UNREADABLE = "unreadable";
     public static final String NOT_COMPILED = "not compiled";
     public static final String NOT_ACCEPTED = "not accepted";
@@ -43,6 +47,7 @@ public final class ForeignVerdict {
     private final String source;
     private final String target;
     private final String producer;
+    private final String language;
     private final String metadata;
 
     private int reached = LEVEL_NONE;
@@ -55,13 +60,25 @@ public final class ForeignVerdict {
     private double acceptMs;
     private double runMs;
 
-    public ForeignVerdict(String artifact, String answers, String source, String target, String producer, String metadata) {
+    public ForeignVerdict(String artifact, String answers, String source, String target, String producer, String language, String metadata) {
         this.artifact = artifact;
         this.answers = answers;
         this.source = source;
         this.target = target;
         this.producer = producer;
+        this.language = language;
         this.metadata = metadata;
+    }
+
+    /** The row of a translation the tool refused (decision 173): level 0, outcome refused, the reasons as the detail. */
+    public static ForeignVerdict refused(String artifact, String answers, String source, String target, String producer, String reasons, String metadata) {
+        ForeignVerdict verdict = new ForeignVerdict(artifact, answers, source, target, producer, ForeignArtifact.LANGUAGE_REFUSED, metadata);
+        verdict.stop(REFUSED, reasons);
+        return verdict;
+    }
+
+    public String language() {
+        return language;
     }
 
     public String artifact() {
@@ -114,7 +131,7 @@ public final class ForeignVerdict {
 
     public String row() {
         return String.join("\t",
-                artifact, answers, source, target, producer,
+                artifact, answers, source, target, producer, language,
                 String.valueOf(reached),
                 outcome,
                 clean(detail),
@@ -128,7 +145,7 @@ public final class ForeignVerdict {
     }
 
     public String describe() {
-        return artifact + " (" + answers + ", " + source + " -> " + target + ", " + producer + "): level " + reached + ", " + outcome
+        return artifact + " (" + answers + ", " + source + " -> " + target + ", " + producer + ", " + language + "): level " + reached + ", " + outcome
                 + (rows != null ? ", " + rows + " rows" : "")
                 + (detail.isEmpty() ? "" : ": " + detail);
     }

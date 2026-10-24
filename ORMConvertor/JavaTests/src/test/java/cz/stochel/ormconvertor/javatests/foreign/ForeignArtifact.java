@@ -72,15 +72,18 @@ public record ForeignArtifact(
         /** The scenario of {@code CrossFrameworkInputs} of one source framework; measured up to the third level. */
         public static final String CROSS = "cross";
 
+        /** An example of the explanatory page by its key, the excerpts of real projects - the case study of T1 - among them (decision 174); measured up to the third level. */
+        public static final String EXAMPLE = "example";
+
         public static Key parse(String answers) {
             int colon = answers.indexOf(':');
             if (colon <= 0 || colon == answers.length() - 1) {
-                throw new IllegalStateException("The key \"" + answers + "\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>, cross:<source framework>).");
+                throw new IllegalStateException("The key \"" + answers + "\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>, cross:<source framework>, example:<key>).");
             }
 
             String kind = answers.substring(0, colon).strip().toLowerCase(Locale.ROOT);
-            if (!kind.equals(MATRIX) && !kind.equals(FIBEN) && !kind.equals(LDBC) && !kind.equals(CROSS)) {
-                throw new IllegalStateException("The key \"" + answers + "\" names the kind \"" + kind + "\", which no suite measures; the kinds are matrix, fiben, ldbc and cross.");
+            if (!kind.equals(MATRIX) && !kind.equals(FIBEN) && !kind.equals(LDBC) && !kind.equals(CROSS) && !kind.equals(EXAMPLE)) {
+                throw new IllegalStateException("The key \"" + answers + "\" names the kind \"" + kind + "\", which no suite measures; the kinds are matrix, fiben, ldbc, cross and example.");
             }
 
             return new Key(kind, answers.substring(colon + 1).strip());
@@ -102,13 +105,56 @@ public record ForeignArtifact(
         return units.stream().filter(unit -> unit.contentType() == ContentType.XML).toList();
     }
 
-    /** The unit that carries the query as the consumer calls it - the method, or a mapper's declaration -, or null for an artifact of entities alone. */
-    public Unit queryMethod() {
-        List<Unit> matching = units.stream().filter(unit -> unit.contentType() == ContentType.JAVA_QUERY).toList();
-        if (matching.size() > 1) {
-            throw new IllegalStateException(id + ": the manifest states " + matching.size() + " units of JavaQuery, and a query artifact has one.");
+    public static final String LANGUAGE_TARGET = "target";
+    public static final String LANGUAGE_NATIVE_SQL = "native SQL";
+    public static final String LANGUAGE_NONE = "none";
+
+    /** The language value of a row whose translation the tool refused, so that no artifact exists (decision 173). */
+    public static final String LANGUAGE_REFUSED = "refused";
+
+    /**
+     * The language the query of the artifact is written in, as the row of the T2 matrix reads a
+     * cell (decision 173): {@code target} - the target's own language -, {@code native SQL} where a
+     * target whose language is not SQL carries the query as a SQL statement beside its method (the
+     * escape path of decision 113), or {@code none} for an artifact of entities and mappings alone.
+     * SQL is the language of MyBatis, so its artifacts are never native SQL.
+     */
+    public static final String LANGUAGE_MIXED = "mixed";
+
+    public String language() {
+        boolean query = units.stream().anyMatch(unit -> ContentType.isQuery(unit.contentType()));
+        if (!query) {
+            return LANGUAGE_NONE;
         }
-        return matching.isEmpty() ? null : matching.get(0);
+
+        if (target == Orm.DAPPER || target == Orm.MYBATIS) {
+            return LANGUAGE_TARGET;
+        }
+
+        long methods = Math.max(1, queryMethods().size());
+        long statements = units.stream().filter(unit -> unit.contentType() == ContentType.SQL_QUERY).count();
+        return statements == 0 ? LANGUAGE_TARGET : statements >= methods ? LANGUAGE_NATIVE_SQL : LANGUAGE_MIXED;
+    }
+
+    /**
+     * The units that carry the queries as the consumer calls them - the methods, or a mapper's
+     * declarations. One for an artifact that answers a query; several for an artifact of a whole
+     * project (an example, the case study of T1 - decision 174), judged up to the third level as
+     * one; none for an artifact of entities alone.
+     */
+    public List<Unit> queryMethods() {
+        return units.stream().filter(unit -> unit.contentType() == ContentType.JAVA_QUERY).toList();
+    }
+
+    /** The one query method of an artifact that answers a query; null for an artifact of entities alone or of a whole project. */
+    public Unit queryMethod() {
+        List<Unit> matching = queryMethods();
+        return matching.size() == 1 ? matching.get(0) : null;
+    }
+
+    /** Whether the artifact is a whole project - several queries -, judged up to the third level as one. */
+    public boolean isProject() {
+        return queryMethods().size() > 1;
     }
 
     /**

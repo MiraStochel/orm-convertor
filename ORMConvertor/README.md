@@ -249,7 +249,7 @@ An artifact the tool did not make - a translation by a language model, by hand, 
   }
   ```
 
-  `answers` names the input: `matrix:<section of matrix.txt>`, `fiben:<key>`, `ldbc:<key>`, `cross:<source framework>` (the scenario of `CrossFrameworkInputs`; the last two end at the third level). `contentType` is a name of `ConversionContentType`; a `.sql`, `.hql`, `.jpql` or `.xml` file may leave it out, a `.cs` or `.java` file says whether it is an entity or a query. `metadata` is copied into the row unread: the place for what T4 asks a record to carry - model and version, prompt, temperature, attempt, tokens, time, cost, variant. `{{schema}}` in a file is replaced by the suite's schema, as in the inputs; keep it where the input had it. The artifacts under `Tests/Database/Foreign` are examples for every target.
+  `answers` names the input: `matrix:<section of matrix.txt>`, `fiben:<key>`, `ldbc:<key>`, `cross:<source framework>` (the scenario of `CrossFrameworkInputs`), `example:<key of GET /examples>` (a whole project, the excerpts of real projects among them - decision [174](../docs/decisions/174-the-reference-databases-of-the-experiments-are-three-by-role-and-the-case-study-of-t1-is-the-keycloak-excerpt-judged-to-the-third-level.md)); the last three end at the third level. An artifact with several queries is a project and is judged to the third level as one: the entities compiled once, every query compiled on top of them, the factory and every query accepted. `contentType` is a name of `ConversionContentType`; a `.sql`, `.hql`, `.jpql` or `.xml` file may leave it out, a `.cs` or `.java` file says whether it is an entity or a query. `metadata` is copied into the row unread; for an artifact of a language model the protocol of decision [175](../docs/decisions/175-the-comparison-with-a-language-model-is-a-protocol-over-the-foreign-path.md) names the fields the record needs - `model`, `version`, `prompt` (an identifier of the template), `temperature`, `attempt`, `variant` (`zero-shot`, `few-shot`, `rag`, `repair`, or an ablation `rag-no-schema`, `rag-no-docs`, `rag-no-examples`, `repair-no-verdict`), `round`, `tokensIn`, `tokensOut`, `seconds`, `costUsd` - and the summary of the experiment run groups the rows by `model` and `variant`. `{{schema}}` in a file is replaced by the suite's schema, as in the inputs; keep it where the input had it. The artifacts under `Tests/Database/Foreign` are examples for every target.
 - **The inputs** the suites send, as files to hand to whoever makes artifacts: `ORMCONVERTOR_FOREIGN_INPUTS=<dir> dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~TheInputsAreWrittenWhereAsked"` writes one directory per key and source with the units and an `input.json`; the FIBEN ones carry the questions of the query.
 - **One run** over a directory of artifacts, or over one artifact, in one process of each suite:
 
@@ -258,9 +258,34 @@ An artifact the tool did not make - a translation by a language model, by hand, 
   cd JavaTests && ORMCONVERTOR_FOREIGN_ARTIFACTS=<dir> ORMCONVERTOR_FOREIGN_RESULTS=<out> mvn -B test -Dtest=ForeignArtifactRunTest
   ```
 
-  Each suite takes the artifacts whose target it owns and leaves the rest; the rows go to `foreign-rows.tsv` and `java-foreign-rows.tsv` under `<out>`, rewritten after every level. A `matrix:` key runs over the fixture of the test database, a `fiben:` key over `Fiben` with its judge (`ConnectionStrings:FibenDatabase`, `ORMCONVERTOR_TEST_FIBEN_JDBC_URL`), an `ldbc:` or `cross:` key ends at the third level. This is a check, what a look at a few artifacts does.
+  Each suite takes the artifacts whose target it owns and leaves the rest; the rows go to `foreign-rows.tsv` and `java-foreign-rows.tsv` under `<out>`, rewritten after every level. A `matrix:` key runs over the fixture of the test database, a `fiben:` key over `Fiben` with its judge (`ConnectionStrings:FibenDatabase`, `ORMCONVERTOR_TEST_FIBEN_JDBC_URL`), an `ldbc:`, `cross:` or `example:` key ends at the third level. The row carries the `language` of the artifact's query - `target`, `native SQL`, `mixed`, `none` - beside the level it reached. This is a check, what a look at a few artifacts does.
 - **The run that is recorded** is one process per artifact with a time limit: `./foreign-run.sh <dir> <out> [seconds per artifact]` from `ORMConvertor/`, on a host with both toolchains, builds both suites once, runs every artifact in a process of its own, kills one that outlives the limit and writes it down at the level it had reached as `timed out`, and gathers `<out>/foreign-rows.tsv`; the log of each artifact is `<out>/<artifact>/log.txt`. In the containers the same loop is one `docker compose --profile test run` per artifact with the two variables. The record goes into [`docs/runs/`](../docs/runs/README.md) with the provenance the manifests carried (decision [167](../docs/decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md)).
 - **A red level is a row, not a failure**: an artifact that the language does not read, that does not compile, that the factory refuses, that fails to run or that returns other rows is written down as that. What fails the run is the path itself: a manifest without a key, a key no measure answers, a target the other suite owns, a measure whose database is not configured.
+
+## The experiment run
+
+The table of T2 × T3 (decision [173](../docs/decisions/173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md); [`architecture.md`](../docs/architecture.md) §6.2, *Experimentální běh*): the tool translates every input the suites know into every target and the artifact goes through the levels of the foreign-artifact path into the same row, producer `tool`. It runs **on demand, for a version or a substantial change**, never as part of a build, in the containers of the `test` profile as the FIBEN run does; its record goes into [`docs/runs/`](../docs/runs/README.md).
+
+| Setting | .NET suite | Java suite |
+|---|---|---|
+| the directory of the run; the rows, the mapping rows and the summary go there | `ORMCONVERTOR_EXPERIMENT_RESULTS` | the same |
+| the inputs (default `inputs/` under the directory of the run; the .NET suite writes them there when missing) | `ORMCONVERTOR_EXPERIMENT_INPUTS` | the same |
+| the kinds of keys to take (`matrix,cross,example,ldbc,fiben`; default every kind the environment can measure) | `ORMCONVERTOR_EXPERIMENT_KINDS` | the same |
+| a `fiben:` key needs the database with the judge | `ConnectionStrings:FibenDatabase` | `ORMCONVERTOR_TEST_FIBEN_JDBC_URL` and an instance over `Fiben`, `ORMCONVERTOR_FIBEN_API_URL` |
+| an `ldbc:` key needs, in the Java suite, an instance over `LdbcSnb` | — (the empty LDBC tables of the fixture are the catalog) | `ORMCONVERTOR_LDBC_API_URL` |
+
+- **Three steps, in this order**: the .NET half (exports the inputs, judges the three .NET targets into `tool-rows.tsv`, measures the completeness of the transferred mapping facts for all six targets into `mapping-rows.tsv`), the Java half over the same inputs against an instance (`java-tool-rows.tsv`), then the summary (`summary.md`: the shares of T3 by pair of ecosystems, direction, category of T2 and kind of input, and the rows of foreign artifacts by producer, model and variant). On a host with both toolchains and a test database:
+
+  ```sh
+  export ORMCONVERTOR_EXPERIMENT_RESULTS=<dir>
+  dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~Tests.Experiment.ExperimentRunTest"
+  (cd JavaTests && mvn -B test -Dtest=ExperimentRunTest)      # ORMCONVERTOR_API_URL of an instance whose catalog is the test database
+  dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~ExperimentSummaryTest"
+  ```
+
+  In the containers the same three commands are `docker compose --profile test run` of `tests` and `java_tests` with the variable, the directory a volume or taken out with `docker cp`, and for the `fiben:` keys the `Fiben` settings of [the FIBEN run](#the-fiben-run). Without `ORMCONVERTOR_EXPERIMENT_RESULTS` every case skips with the reason.
+- **No row fails the run.** A refused translation is the row `refused` at level 0, a red level is a row; what fails is the path - an input without a manifest, a key no measure answers, a database a kind needs that is not configured. The numbers are the record of the version, not a claim ([`architecture.md`](../docs/architecture.md) §9, area 6).
+- **A check from the host** - a few kinds, `ORMCONVERTOR_EXPERIMENT_KINDS=matrix,cross,example,ldbc` on a machine without the `Fiben` judge - is never recorded.
 
 ## The Java test suite
 

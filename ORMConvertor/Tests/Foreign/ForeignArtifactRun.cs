@@ -54,6 +54,7 @@ internal static class ForeignArtifactRun
             Source = artifact.Source.ToString(),
             Target = artifact.Target.ToString(),
             Producer = artifact.Producer,
+            Language = artifact.Language,
             Metadata = artifact.Metadata,
         };
 
@@ -77,7 +78,9 @@ internal static class ForeignArtifactRun
         verdict.Reached = ForeignLevel.Read;
         Report();
 
-        // Level 2: the units compile under the consumer references of the target.
+        // Level 2: the units compile under the consumer references of the target. An artifact of a
+        // whole project - several queries - compiles its entities once and every query method on
+        // top of them, one by one, so that the detail names the query that does not compile.
         var entities = artifact.Entities.Select(unit => unit.Content).ToList();
         var mappings = artifact.Mappings.Select(unit => unit.Content).ToList();
         var method = artifact.QueryMethod;
@@ -87,12 +90,23 @@ internal static class ForeignArtifactRun
         var compilation = method is null
             ? GeneratedEntityCompiler.Compile(assemblyName, entities, EntityReferences(artifact.Target))
             : PreparedQuery.Compile(assemblyName, artifact.Target, method.Content, entities, artifact.Form);
+
+        string? uncompiled = compilation.Success ? null : string.Join("; ", compilation.Errors.Select(error => error.ToString()));
+        if (uncompiled is null && artifact.IsProject)
+        {
+            uncompiled = artifact.QueryMethods
+                .Select((query, index) => (query, result: PreparedQuery.Compile($"{assemblyName}_q{index + 1}", artifact.Target, query.Content, entities, artifact.Form)))
+                .Where(pair => !pair.result.Success)
+                .Select(pair => $"{pair.query.Path}: {string.Join("; ", pair.result.Errors.Select(error => error.ToString()))}")
+                .FirstOrDefault();
+        }
+
         verdict.CompileMs = clock.Elapsed.TotalMilliseconds;
 
-        if (!compilation.Success)
+        if (uncompiled is not null)
         {
             verdict.Outcome = ForeignVerdict.NotCompiled;
-            verdict.Detail = string.Join("; ", compilation.Errors.Select(error => error.ToString()));
+            verdict.Detail = uncompiled;
             Report();
             return verdict;
         }
@@ -100,7 +114,8 @@ internal static class ForeignArtifactRun
         verdict.Reached = ForeignLevel.Compiled;
         Report();
 
-        // Level 3: the framework accepts the artifact.
+        // Level 3: the framework accepts the artifact. For a project: the model or the session
+        // factory over the entities and mappings, and in NHibernate every HQL text against it.
         PreparedQuery? prepared = null;
         clock.Restart();
         try
@@ -114,16 +129,26 @@ internal static class ForeignArtifactRun
                 prepared = PreparedQuery.Open(artifact.Target, compilation.Assembly!, mappings, measure.ConnectionString, artifact.Form);
             }
 
-            if (artifact.Target == ORMEnum.NHibernate && artifact.HqlText is { } hql)
+            if (artifact.Target == ORMEnum.NHibernate)
             {
-                NHibernateQueryAcceptance.CompileQuery(compilation.Assembly!, mappings, hql.Content);
+                foreach (var hql in artifact.HqlTexts)
+                {
+                    try
+                    {
+                        NHibernateQueryAcceptance.CompileQuery(compilation.Assembly!, mappings, hql.Content);
+                    }
+                    catch (Exception exception)
+                    {
+                        throw new InvalidOperationException($"{hql.Path}: {Innermost(exception).Message}", exception);
+                    }
+                }
             }
         }
         catch (Exception exception)
         {
             verdict.AcceptMs = clock.Elapsed.TotalMilliseconds;
             verdict.Outcome = ForeignVerdict.NotAccepted;
-            verdict.Detail = Innermost(exception).Message;
+            verdict.Detail = exception is InvalidOperationException { InnerException: not null } named ? named.Message : Innermost(exception).Message;
             prepared?.Dispose();
             Report();
             return verdict;
@@ -138,7 +163,11 @@ internal static class ForeignArtifactRun
             if (prepared is null || measure.Run is null)
             {
                 verdict.Outcome = ForeignVerdict.Accepted;
-                verdict.Detail = prepared is null ? "the artifact carries no query, so there is nothing to run" : measure.NoFourthLevel!;
+                verdict.Detail = prepared is null
+                    ? artifact.IsProject
+                        ? $"the artifact is a project of {artifact.QueryMethods.Count} queries, judged to the third level as one; a project has no measure at the fourth"
+                        : "the artifact carries no query, so there is nothing to run"
+                    : measure.NoFourthLevel!;
                 Report();
                 return verdict;
             }
@@ -223,10 +252,16 @@ internal static class ForeignArtifactRun
         }
     }
 
+    /// <summary>
+    /// The T-SQL parser over a statement, with Dapper's own spelling of a collection parameter -
+    /// <c>IN @ids</c>, which Dapper expands into a list at run time - read as the parenthesized
+    /// variable T-SQL carries, as <c>Combined/QueryShapeMatrixTest</c> reads it at the second
+    /// level: the spelling is the framework's, not a syntax error of the artifact.
+    /// </summary>
     private static string? SqlSyntax(string text)
     {
         var parser = new TSql160Parser(initialQuotedIdentifiers: true);
-        using var reader = new StringReader(text);
+        using var reader = new StringReader(System.Text.RegularExpressions.Regex.Replace(text, @"\bIN @(\w+)", "IN (@$1)"));
         parser.Parse(reader, out var errors);
 
         return errors.Count == 0 ? null : string.Join("; ", errors.Select(error => $"{error.Message} ({error.Line})"));
@@ -349,6 +384,18 @@ internal static class ForeignArtifactRun
                         null,
                         null,
                         "the scenario of CrossFrameworkInputs has no measure at the fourth level - its entity stands over no table of the fixture and its row is stored and read by a scenario written per entity -, so a foreign artifact of it ends at the third level (decision 172)");
+                }
+
+                case ForeignKey.Example:
+                {
+                    _ = ORMConvertorAPI.Data.Examples.GetExamples.SingleOrDefault(candidate => candidate.Key.Equals(key.Id, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new InvalidOperationException($"{artifact.Id}: the examples have no key {key.Id}; the keys are those of GET /examples.");
+
+                    return new Measure(
+                        TestDatabase.ConnectionString ?? Unopened,
+                        null,
+                        null,
+                        "an example runs over no database of the tool - its tables are the project's, not the fixture's -, so an artifact of it ends at the third level (decision 174)");
                 }
 
                 default:

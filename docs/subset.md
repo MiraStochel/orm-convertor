@@ -424,6 +424,8 @@ Známé není žádné.
 
 **F8: „dynamicky parametrizované read-only dotazy" čteme jako parametr, ne jako dynamické SQL** ([084]). Parametr je hodnota od volajícího za běhu (`#{}`, kanonický `<foreach>`) a má protějšek ve všech šesti frameworcích ([083]). Dynamický příkaz (`<select>` s `<if>`, `<choose>`, `<bind>`) je **rodina příkazů** s různými množinami řádků: překlad jednoho člena by vydal jiné řádky ([053]), nést rodinu v IR by znamenalo pojem, který pět cílů zahodí, a artefakt za každého člena dává exponenciální počet se jmény, která zdroj neřekl ([028]); MyBatis → MyBatis by přestal být převodem (S2). Opačné čtení je jazykově možné, proto ho vedeme jako zúžení **Z F8** ([§9, *Co verze nárokuje*][§9n]); k úkolům záměru ho vztahuje [`traceability.md`, *Úkoly záměru*](./traceability.md#úkoly-záměru).
 
+**T1 čteme v obou zněních najednou** ([174]): zmrazené zadání žádá open-source *aplikaci*, schválená specifikace „případovou studii **nebo testovací sadu**". Testovací sadou jsou katalogy LDBC a FIBEN nad svými databázemi se soudci ([110], [149]), případovou studií výňatek Keycloaku ([138]), který do experimentálního běhu ([173]) vstupuje jako příklad celého projektu do třetího stupně s měřením úplnosti mapování; čtvrtý stupeň nad ním se nenárokuje, dokud jeho schéma není v žádné databázi nástroje. WideWorldImporters, kterou záměr jmenuje jako referenční databázi, je databází systému a ukázek, ne experimentů.
+
 **„Společnou podmnožinu" čteme jako to, co zachytí mezireprezentace a co jde ověřit napříč ekosystémy, ne jako průnik šesti dotazových jazyků.** Specifikace ji vymezuje dvěma podmínkami („kterou dokáže zachytit mezireprezentace a pro kterou lze ověřit odpovídající chování"). Slovník nese i konstrukce, které vyjádří jen část cílů — množinovou operaci, mezivýsledek, rekurzi, okenní funkci, agregaci do seznamu ([113]); cíl bez nich píše `Fallback` a směr se měří 4. stupněm proti témuž kanonickému výsledku, takže platí i druhá podmínka. Průnik by podmnožinu stáhl na HQL 5.7 (bez množinových operací, mezivýsledků a výřezu v textu) a katalog LDBC ([110]) by zůstal z větší části nepřeložený. Cenou je vazba artefaktu únikové cesty na SQL Server 2022 (VO 5).
 
 ---
@@ -540,6 +542,8 @@ Známé není žádné.
 [162]: ./decisions/162-a-subquery-stands-in-a-join-condition-as-in-any-condition.md
 [169]: ./decisions/169-a-fixed-width-value-is-the-value-sql-returns-in-every-target.md
 [170]: ./decisions/170-rows-tied-on-the-ordering-key-compare-as-a-set-and-a-fiben-slice-gets-a-deciding-key.md
+[173]: ./decisions/173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md
+[174]: ./decisions/174-the-reference-databases-of-the-experiments-are-three-by-role-and-the-case-study-of-t1-is-the-keycloak-excerpt-judged-to-the-third-level.md
 [§1v]: ./architecture.md#zafixované-verze
 [§4.1]: ./architecture.md#41-entity-a-mapování
 [§4.2]: ./architecture.md#42-primární-klíč

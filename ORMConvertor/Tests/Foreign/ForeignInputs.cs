@@ -55,18 +55,27 @@ internal static class ForeignInputs
 
         foreach (var query in LdbcSnbSample.Queries.Where(query => query.Sql is not null))
         {
-            List<ConversionSource> units =
-            [
-                .. LdbcSnbSample.Entities.Select(entity => new ConversionSource { Name = entity.FileName, ContentType = ConversionContentType.CSharp, Content = entity.Content }),
-                new ConversionSource { Name = $"{query.Key}.sql", ContentType = ConversionContentType.SqlQuery, Content = query.Sql! },
-            ];
+            Write(root, new ForeignKey(ForeignKey.Ldbc, query.Key), ORMEnum.Dapper, LdbcUnits(query), questions: null);
+            count++;
+        }
 
-            Write(root, new ForeignKey(ForeignKey.Ldbc, query.Key), ORMEnum.Dapper, units, questions: null);
+        // The examples of the explanatory page, the excerpts of real projects among them - the
+        // case study of T1 (decision 174): one input per example, in the language of its source.
+        foreach (var example in ORMConvertorAPI.Data.Examples.GetExamples)
+        {
+            Write(root, new ForeignKey(ForeignKey.Example, example.Key), example.SourceOrm, example.Units, questions: null);
             count++;
         }
 
         return count;
     }
+
+    /// <summary>The units of a query of the LDBC catalog: every entity of the catalog and the query as one more unit, as <c>Combined/LdbcCatalogTest</c> sends them.</summary>
+    internal static List<ConversionSource> LdbcUnits(LdbcQuery query) =>
+    [
+        .. LdbcSnbSample.Entities.Select(entity => new ConversionSource { Name = entity.FileName, ContentType = ConversionContentType.CSharp, Content = entity.Content }),
+        new ConversionSource { Name = $"{query.Key}.sql", ContentType = ConversionContentType.SqlQuery, Content = query.Sql! },
+    ];
 
     /// <summary>The directory of one input under the root: the kind, the key and the source.</summary>
     public static string DirectoryOf(string root, ForeignKey key, ORMEnum source)

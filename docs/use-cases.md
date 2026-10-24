@@ -36,7 +36,7 @@ Uživatel má projekt, nástroj ho nevidí. Jednotka = **obsah jednoho souboru v
 | UC2 | NHibernate + EF Core → jeden | entity a `.hbm.xml` | entity cíle, složené klíče | F1, F2, F3, F5, F11, F14, S2 |
 | UC3 | výběr podle výkonu | entity, dotazy, kandidáti, omezení | přiřazení dotazů frameworkům | F15, T7 |
 | UC4 | sonda jednoho dotazu | entita a dotaz | dotaz v syntaxi cíle | F11, S7, S3 |
-| UC5 | dávka pro experiment | skript nad `/convert` | tabulka měření | F14, S2, S6, T1, T2, T3 |
+| UC5 | dávka pro experiment | experimentální běh obou sad nad vypsanými vstupy | tabulka T2 × T3 | F14, S2, S6, T1, T2, T3 |
 | UC6 | přes hranici ekosystémů | entity, mapování, dotazy | artefakty druhého ekosystému | F7, F8, F9, F10, F11, F14 |
 | UC7 | kód běží a vrací totéž | artefakty z běžící instance | citovatelné číslo, vady | F12, F13, F11, S5 |
 
@@ -70,8 +70,8 @@ Každý výstup nese záznamy o převodu, identifikátor běhu a verze (S6).
 ## UC5 — Dávka pro experiment
 
 *Autor experimentu; případová studie (T1), matice kategorií (T2).*
-- Skript volá `/convert` přes všechny dvojice a kategorie dotazů a počítá podíly parsovatelných, kompilovatelných a spustitelných výstupů (T3).
-- Rozhraní je připravené (víc souborů, výstup po souborech, `/archive`); pipeline, která by dávku spouštěla, v repozitáři není (zúžení S5, §9), T1–T7 se nenárokují.
+- Experimentální běh obou sad (rozh. [173](./decisions/173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md)): nástroj přeloží každý vstup, který sada sama vypíše — kategorie T2 z každého zdroje, scénáře, příklady s případovou studií (rozh. [174](./decisions/174-the-reference-databases-of-the-experiments-are-three-by-role-and-the-case-study-of-t1-is-the-keycloak-excerpt-judged-to-the-third-level.md)), katalogy LDBC a FIBEN —, artefakt projde stupni cesty cizího artefaktu a souhrn dá podíly parsovatelných, kompilovatelných, přijatých, spustitelných a ekvivalentních výstupů a úplnost přenesených mapovacích vlastností (T3) po směrech a kategoriích.
+- Běží na vyžádání v kontejnerech profilu `test`, nikdy při sestavení; záznam jde do [`runs/`](./runs/README.md). T1–T7 se nenárokují, dokud záznam v zafixovaném prostředí nedá čísla (§9).
 
 ## UC6 — Migrace přes hranici ekosystémů
 

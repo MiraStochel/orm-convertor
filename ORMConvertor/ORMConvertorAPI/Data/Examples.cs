@@ -161,6 +161,16 @@ public static class Examples
     ];
 
     /// <summary>
+    /// The keys of the examples that are excerpts of real projects (decision 138) - the group
+    /// *Real projects* of the explanatory page, and the case study of T1 in the experiment run
+    /// (decision 174), which reads them apart from the examples written for the tool.
+    /// </summary>
+    public static readonly IReadOnlySet<string> RealProjectKeys = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "keycloak-identity", "ambari-alerts", "chinook-dapper", "chinook-efcore", "jpetstore-mybatis",
+    };
+
+    /// <summary>
     /// The code files of the given folders of a vendored project (decision 138), folder by
     /// folder in the order given and by name within one, one unit each, named by the file and in
     /// the language its extension names; the licence and the README stay out.

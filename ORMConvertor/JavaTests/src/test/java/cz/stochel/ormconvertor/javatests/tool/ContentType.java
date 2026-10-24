@@ -79,6 +79,12 @@ public final class ContentType {
         throw new IllegalArgumentException("No content type is named \"" + name + "\"; the names are those of ConversionContentType.");
     }
 
+    /** Whether the value names a query, in any of the languages - the predicate {@code IsQuery} of the tool's {@code ConversionContentType}. */
+    public static boolean isQuery(int contentType) {
+        return contentType == CSHARP_QUERY || contentType == CSHARP_LINQ_QUERY || contentType == SQL_QUERY
+                || contentType == HQL_QUERY || contentType == JAVA_QUERY || contentType == JPQL_QUERY;
+    }
+
     public static String nameOf(int contentType) {
         return switch (contentType) {
             case CSHARP_ENTITY -> "CSharpEntity";

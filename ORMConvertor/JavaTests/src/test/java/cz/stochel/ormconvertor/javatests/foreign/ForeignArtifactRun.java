@@ -78,7 +78,7 @@ public final class ForeignArtifactRun {
         Measure measure = Measure.of(artifact);
         ForeignVerdict verdict = new ForeignVerdict(
                 artifact.id(), artifact.key().toString(), Orm.nameOf(artifact.source()), Orm.nameOf(artifact.target()),
-                artifact.producer(), artifact.metadata());
+                artifact.producer(), artifact.language(), artifact.metadata());
 
         double[] times = new double[4];
         Runnable report = () -> {
@@ -142,8 +142,12 @@ public final class ForeignArtifactRun {
                             : EclipseLinkBootstrap.build("none", compiled.loader(), entities.rootUrl(), compiled.mapped(), connectionOf(measure.jdbcUrl()));
                 }
 
-                if (jpa != null && compiled.method() != null) {
-                    accept(jpa, compiled.method());
+                // Every query of the artifact is created against the model - the one of a query
+                // artifact, each of a project's -, nothing executed.
+                if (jpa != null) {
+                    for (Method method : compiled.projectMethods()) {
+                        accept(jpa, method);
+                    }
                 }
             } catch (Throwable e) {
                 times[2] = (System.nanoTime() - started) / 1e6;
@@ -156,9 +160,11 @@ public final class ForeignArtifactRun {
             report.run();
 
             if (compiled.method() == null || measure.fields() == null) {
-                verdict.stop(ForeignVerdict.ACCEPTED, compiled.method() == null
-                        ? "the artifact carries no query, so there is nothing to run"
-                        : measure.noFourthLevel());
+                verdict.stop(ForeignVerdict.ACCEPTED, compiled.method() != null
+                        ? measure.noFourthLevel()
+                        : artifact.isProject()
+                                ? "the artifact is a project of " + artifact.queryMethods().size() + " queries, judged to the third level as one; a project has no measure at the fourth"
+                                : "the artifact carries no query, so there is nothing to run");
                 report.run();
                 return verdict;
             }
@@ -270,8 +276,12 @@ public final class ForeignArtifactRun {
         }
     }
 
-    /** The compiled artifact: the entity classes under the scenario's loader and, where there is a query, its method or its mapper interface. */
-    private record Compiled(ClassLoader loader, List<Class<?>> mapped, JavaProject queries, Method method, Class<?> mapper) {
+    /**
+     * The compiled artifact: the entity classes under the scenario's loader and, where there is a
+     * query, its method or its mapper interface; for a project, every query's method, each in a
+     * class of its own, and no single method.
+     */
+    private record Compiled(ClassLoader loader, List<Class<?>> mapped, JavaProject queries, Method method, Class<?> mapper, List<Method> projectMethods) {
     }
 
     private static Compiled compile(ForeignArtifact artifact, JavaProject entities) {
@@ -286,9 +296,30 @@ public final class ForeignArtifactRun {
         List<Class<?>> mapped = entities.loadAll();
         String entityPackage = JavaSources.packageOf(artifact.entities().get(0).content());
 
+        if (artifact.isProject()) {
+            // A project: every query in a class or interface of its own, compiled together over
+            // the entities; the compiler names the file of a query that does not compile.
+            JavaProject queries = JavaProject.create("foreign-project", entities);
+            List<String> wrappers = new ArrayList<>();
+            int index = 0;
+            for (ForeignArtifact.Unit query : artifact.queryMethods()) {
+                index++;
+                wrappers.add(queries.add(artifact.target() == Orm.MYBATIS
+                        ? JavaSources.wrapMapperInterface(entityPackage, "GeneratedMapper" + index, query.content())
+                        : JavaSources.wrapQuery(entityPackage, "GeneratedQueries" + index, query.content())));
+            }
+            queries.compileAndLoad();
+
+            List<Method> methods = new ArrayList<>();
+            for (String wrapper : wrappers) {
+                methods.addAll(Arrays.asList(queries.load(wrapper).getDeclaredMethods()));
+            }
+            return new Compiled(loader, mapped, queries, null, null, methods);
+        }
+
         ForeignArtifact.Unit query = artifact.queryMethod();
         if (query == null) {
-            return new Compiled(loader, mapped, null, null, null);
+            return new Compiled(loader, mapped, null, null, null, List.of());
         }
 
         JavaProject queries = JavaProject.create("foreign-query", entities);
@@ -302,7 +333,7 @@ public final class ForeignArtifactRun {
             String wrapper = queries.add(JavaSources.wrapMapperInterface(entityPackage, MyBatisBootstrap.interfaceNameOf(statementMapper), query.content()));
             queries.compileAndLoad();
             Class<?> mapper = queries.load(wrapper);
-            return new Compiled(loader, mapped, queries, mapper.getDeclaredMethods()[0], mapper);
+            return new Compiled(loader, mapped, queries, mapper.getDeclaredMethods()[0], mapper, List.of(mapper.getDeclaredMethods()[0]));
         }
 
         String wrapper = queries.add(JavaSources.wrapQuery(entityPackage, "GeneratedQueries", query.content()));
@@ -310,7 +341,7 @@ public final class ForeignArtifactRun {
         Method method = Arrays.stream(queries.load(wrapper).getDeclaredMethods())
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("the generated class declares no method"));
-        return new Compiled(loader, mapped, queries, method, null);
+        return new Compiled(loader, mapped, queries, method, null, List.of(method));
     }
 
     /** The third level of a JPA query: created with a value of the declared type for every parameter, nothing executed - as {@link PreparedJavaQuery#accept()} does. */
@@ -484,6 +515,14 @@ public final class ForeignArtifactRun {
 
                     return new Measure(null, null, null, false, List.of(), ResultRow.Settings.defaults(), new Object[0], rows -> null,
                             "the scenario of CrossFrameworkInputs has no measure at the fourth level - its entity stands over no table of the fixture and its row is stored and read by a scenario written per entity -, so a foreign artifact of it ends at the third level (decision 172)");
+                }
+
+                case ForeignArtifact.Key.EXAMPLE -> {
+                    // The keys are those of GET /examples; this suite has no instance at hand
+                    // when it judges a foreign artifact, so the key is taken as written and the
+                    // .NET suite holds it against the catalog.
+                    return new Measure(null, null, null, false, List.of(), ResultRow.Settings.defaults(), new Object[0], rows -> null,
+                            "an example runs over no database of the tool - its tables are the project's, not the fixture's -, so an artifact of it ends at the third level (decision 174)");
                 }
 
                 default -> throw new IllegalStateException(artifact.id() + ": the kind " + key.kind() + " has no measure.");

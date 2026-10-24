@@ -3119,6 +3119,16 @@ public abstract class AbstractEntityBuilder
     private readonly record struct FactInstance(string? Property, MappingFactCategory Category, string? Value);
 
     /// <summary>
+    /// The mapping facts an entity map holds, in the vocabulary and the spelling of the ledger
+    /// (decision 124): the subject property or null for the entity itself, the category and the
+    /// value. The same enumeration the ledger rows are written from, exposed so that an artifact
+    /// read back by the parser of its target can be compared with the ledger of the conversion
+    /// that made it - the measure of the completeness of transferred mapping facts (decision 173).
+    /// </summary>
+    public static IEnumerable<(string? Property, MappingFactCategory Category, string? Value)> MappingFactsOf(EntityMap entityMap)
+        => FactsOf(entityMap).Select(fact => (fact.Property, fact.Category, fact.Value));
+
+    /// <summary>
     /// Every mapping fact the representation holds for an entity, one instance per subject.
     /// The instance-level reading of the same predicates <see cref="Carries"/> answers per
     /// category; the two must agree on whether a category is present at all.

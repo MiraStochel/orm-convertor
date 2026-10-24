@@ -70,11 +70,11 @@ for dir in "$root"/*/; do
 
   # 124 is timeout's own status, 137 the one of a process killed by it.
   if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
-    row=$(printf '%s' "$row" | awk -F'\t' -v OFS='\t' -v limit="$limit" '{ $7 = "timed out"; $8 = "the process was ended after " limit " s"; print }')
+    row=$(printf '%s' "$row" | awk -F'\t' -v OFS='\t' -v limit="$limit" '{ $8 = "timed out"; $9 = "the process was ended after " limit " s"; print }')
   fi
 
   printf '%s\n' "$row" >> "$rows"
-  echo "$name: $(printf '%s' "$row" | cut -f6,7 | tr '\t' ' ')"
+  echo "$name: $(printf '%s' "$row" | cut -f7,8 | tr '\t' ' ')"
 done
 
 echo "rows in $rows"

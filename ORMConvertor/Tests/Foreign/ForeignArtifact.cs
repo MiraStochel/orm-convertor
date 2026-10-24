@@ -21,18 +21,26 @@ internal sealed record ForeignKey(string Kind, string Id)
     /// <summary>The scenario of <c>CrossFrameworkInputs</c> of one source framework: entities, their mapping and one query; measured up to the third level.</summary>
     public const string Cross = "cross";
 
+    /// <summary>
+    /// An example of the explanatory page by its key (decision 099) - the excerpts of real
+    /// projects among them, the case study of T1 (decision 174): a whole input of entities and
+    /// queries as a project keeps them, measured up to the third level because no database of
+    /// the tool holds its tables.
+    /// </summary>
+    public const string Example = "example";
+
     public static ForeignKey Parse(string answers)
     {
         var colon = answers.IndexOf(':');
         if (colon <= 0 || colon == answers.Length - 1)
         {
-            throw new InvalidOperationException($"The key \"{answers}\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>, cross:<source framework>).");
+            throw new InvalidOperationException($"The key \"{answers}\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>, cross:<source framework>, example:<key>).");
         }
 
         var kind = answers[..colon].Trim().ToLowerInvariant();
-        if (kind is not (Matrix or Fiben or Ldbc or Cross))
+        if (kind is not (Matrix or Fiben or Ldbc or Cross or Example))
         {
-            throw new InvalidOperationException($"The key \"{answers}\" names the kind \"{kind}\", which no suite measures; the kinds are matrix, fiben, ldbc and cross.");
+            throw new InvalidOperationException($"The key \"{answers}\" names the kind \"{kind}\", which no suite measures; the kinds are matrix, fiben, ldbc, cross and example.");
         }
 
         return new ForeignKey(kind, answers[(colon + 1)..].Trim());
@@ -84,30 +92,70 @@ internal sealed record ForeignArtifact(
     public IEnumerable<ForeignUnit> Mappings => Units.Where(unit => unit.ContentType == ConversionContentType.XML);
 
     /// <summary>
-    /// The unit that carries the query as the consumer calls it: the binding method, or the
-    /// LINQ form where an NHibernate artifact carries that alone (decision 118); null for an
-    /// artifact of entities and mappings only, which ends at the third level.
+    /// The units that carry the queries as the consumer calls them: the binding methods, or the
+    /// LINQ forms where an NHibernate artifact carries those alone (decision 118). One for an
+    /// artifact that answers a query; several for an artifact of a whole project (an example, the
+    /// case study of T1 - decision 174), which the path judges up to the third level as a project;
+    /// none for an artifact of entities and mappings only, which ends at the third level too.
     /// </summary>
-    public ForeignUnit? QueryMethod
-        => Single(ConversionContentType.CSharpQuery) ?? Single(ConversionContentType.JavaQuery) ?? Single(ConversionContentType.CSharpLinqQuery);
+    public IReadOnlyList<ForeignUnit> QueryMethods
+    {
+        get
+        {
+            var binding = Units.Where(unit => unit.ContentType is ConversionContentType.CSharpQuery or ConversionContentType.JavaQuery).ToList();
+            return binding.Count > 0 ? binding : [.. Units.Where(unit => unit.ContentType == ConversionContentType.CSharpLinqQuery)];
+        }
+    }
 
-    /// <summary>The bare HQL beside an NHibernate method, which the third level compiles against the mapping; null where the artifact carries none.</summary>
-    public ForeignUnit? HqlText => Single(ConversionContentType.HqlQuery);
+    /// <summary>The one query method of an artifact that answers a query; null for an artifact of entities alone or of a whole project.</summary>
+    public ForeignUnit? QueryMethod => QueryMethods is [var single] ? single : null;
+
+    /// <summary>Whether the artifact is a whole project - several queries -, judged up to the third level as one.</summary>
+    public bool IsProject => QueryMethods.Count > 1;
+
+    /// <summary>The bare HQL texts beside the NHibernate methods, which the third level compiles against the mapping; empty where the artifact carries none.</summary>
+    public IReadOnlyList<ForeignUnit> HqlTexts => [.. Units.Where(unit => unit.ContentType == ConversionContentType.HqlQuery)];
 
     /// <summary>The form the query method is in: the binding method, or the LINQ form (decision 118).</summary>
     public ConversionContentType Form
-        => QueryMethod?.ContentType == ConversionContentType.CSharpLinqQuery ? ConversionContentType.CSharpLinqQuery : ConversionContentType.CSharpQuery;
+        => QueryMethods.Count > 0 && QueryMethods.All(method => method.ContentType == ConversionContentType.CSharpLinqQuery) ? ConversionContentType.CSharpLinqQuery : ConversionContentType.CSharpQuery;
 
-    private ForeignUnit? Single(ConversionContentType contentType)
+    /// <summary>
+    /// The language the queries of the artifact are written in, as the row of the T2 matrix reads
+    /// a cell (decision 173): <c>target</c> - the target's own query language -, <c>native SQL</c>
+    /// where a target whose language is not SQL carries every query as a SQL statement beside its
+    /// method (the escape path of decision 113, or a model that took it), <c>mixed</c> where a
+    /// project carries some queries so and the rest in the target's language, or <c>none</c> for
+    /// an artifact of entities and mappings alone. SQL is the language of Dapper and MyBatis, so
+    /// their artifacts are never native SQL.
+    /// </summary>
+    public string Language
     {
-        var matching = Units.Where(unit => unit.ContentType == contentType).ToList();
-        if (matching.Count > 1)
+        get
         {
-            throw new InvalidOperationException($"{Id}: the manifest states {matching.Count} units of {contentType}, and a query artifact has one.");
-        }
+            if (!Units.Any(unit => unit.ContentType.IsQuery()))
+            {
+                return LanguageNone;
+            }
 
-        return matching.SingleOrDefault();
+            if (Target is ORMEnum.Dapper or ORMEnum.MyBatis)
+            {
+                return LanguageTarget;
+            }
+
+            var methods = Math.Max(1, QueryMethods.Count);
+            var statements = Units.Count(unit => unit.ContentType == ConversionContentType.SqlQuery);
+            return statements == 0 ? LanguageTarget : statements >= methods ? LanguageNativeSql : LanguageMixed;
+        }
     }
+
+    public const string LanguageTarget = "target";
+    public const string LanguageNativeSql = "native SQL";
+    public const string LanguageMixed = "mixed";
+    public const string LanguageNone = "none";
+
+    /// <summary>The language value of a row whose translation the tool refused, so that no artifact exists (decision 173).</summary>
+    public const string LanguageRefused = "refused";
 
     /// <summary>
     /// The artifacts under a root: the root itself where it holds a manifest, otherwise every

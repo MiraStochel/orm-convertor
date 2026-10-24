@@ -30,9 +30,12 @@ internal static class ForeignLevel
 /// </summary>
 internal sealed class ForeignVerdict
 {
-    public const string Header = "artifact\tanswers\tsource\ttarget\tproducer\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tmetadata";
+    public const string Header = "artifact\tanswers\tsource\ttarget\tproducer\tlanguage\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tmetadata";
 
     public const string InProgress = "in progress";
+
+    /// <summary>The outcome of a translation the tool refused with a Failure record, so that there is no artifact to judge (decision 173); the row of the experiment run alone.</summary>
+    public const string Refused = "refused";
     public const string Unreadable = "unreadable";
     public const string NotCompiled = "not compiled";
     public const string NotAccepted = "not accepted";
@@ -52,6 +55,9 @@ internal sealed class ForeignVerdict
     public required string Target { get; init; }
 
     public required string Producer { get; init; }
+
+    /// <summary>The language of the artifact's query (<see cref="ForeignArtifact.Language"/>), or <c>refused</c> where the tool made none.</summary>
+    public required string Language { get; init; }
 
     public required string Metadata { get; init; }
 
@@ -75,7 +81,7 @@ internal sealed class ForeignVerdict
 
     public string Row()
         => string.Join('\t',
-            Artifact, Answers, Source, Target, Producer,
+            Artifact, Answers, Source, Target, Producer, Language,
             Reached.ToString(CultureInfo.InvariantCulture),
             Outcome,
             Clean(Detail),
@@ -88,7 +94,7 @@ internal sealed class ForeignVerdict
             Clean(Metadata));
 
     public string Describe()
-        => $"{Artifact} ({Answers}, {Source} -> {Target}, {Producer}): level {Reached}, {Outcome}"
+        => $"{Artifact} ({Answers}, {Source} -> {Target}, {Producer}, {Language}): level {Reached}, {Outcome}"
            + (Rows is { } rows ? $", {rows} rows" : string.Empty)
            + (Detail.Length > 0 ? ": " + Detail : string.Empty);
 
