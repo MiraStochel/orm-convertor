@@ -94,9 +94,9 @@ public class ExperimentRunTest(TestSchemaFixture fixture, ITestOutputHelper outp
     public void TheToolsArtifactIsJudgedAndRecorded(string directory, ORMEnum target)
     {
         var input = Input(directory);
-        if (input.Key.Kind is ForeignKey.Matrix or ForeignKey.Cross or ForeignKey.Ldbc && !fixture.IsAvailable)
+        if (ExperimentRun.Unavailable(input.Key, fixture) is { } unavailable)
         {
-            Assert.Fail($"{input.Id} needs the fixture as its catalog or its database, and the fixture is not available: {fixture.SkipReason}");
+            Assert.Fail($"{input.Id} needs a database as its catalog or to run over, and it is not available: {unavailable}");
         }
 
         var (verdict, _) = ExperimentRun.Judge(input, target, fixture, RecordVerdict);

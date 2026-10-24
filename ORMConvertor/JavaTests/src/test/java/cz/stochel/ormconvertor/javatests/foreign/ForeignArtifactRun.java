@@ -1,7 +1,9 @@
 package cz.stochel.ormconvertor.javatests.foreign;
 
 import com.sun.source.util.JavacTask;
+import cz.stochel.ormconvertor.javatests.CaseStudyDatabase;
 import cz.stochel.ormconvertor.javatests.TestDatabase;
+import cz.stochel.ormconvertor.javatests.TestSchema;
 import cz.stochel.ormconvertor.javatests.differential.DifferentialMatrix;
 import cz.stochel.ormconvertor.javatests.differential.DifferentialQuery;
 import cz.stochel.ormconvertor.javatests.differential.JavaQueryRunner;
@@ -18,9 +20,11 @@ import cz.stochel.ormconvertor.javatests.tool.JavaSources;
 import cz.stochel.ormconvertor.javatests.tool.Orm;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.Query;
 import java.io.StringReader;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.lang.reflect.Type;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -41,6 +45,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
 import javax.tools.ToolProvider;
 import javax.xml.parsers.DocumentBuilderFactory;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.xml.sax.InputSource;
@@ -53,7 +58,8 @@ import org.xml.sax.InputSource;
  * consumer project of {@link JavaProject}, the framework's factory, one run and the canonical
  * form, compared with the same measure the tool's artifact is - the canonical result of the
  * matrix query, or the judge of the FIBEN catalog. A query of the LDBC catalog ends at the
- * third level.
+ * third level; a project of a case study runs every query over the empty tables of its
+ * schema (decision 176).
  *
  * <p>Nothing here asserts: a red level is a row. What throws is the path itself - a key no
  * measure answers, a target the other suite owns, a measure whose database is not configured.
@@ -159,11 +165,23 @@ public final class ForeignArtifactRun {
             verdict.reached(ForeignVerdict.LEVEL_ACCEPTED);
             report.run();
 
+            // Level 4 of a project whose tables stand in the fixture (decision 176): every query
+            // runs over the empty tables of the project's schema. Runnable is what is measured;
+            // there is no measure of equivalence, so the outcome is "ran" and agrees stays empty.
+            if (compiled.method() == null && artifact.isProject() && measure.runsProject()) {
+                started = System.nanoTime();
+                runProject(artifact, compiled, jpa, myBatis, verdict);
+                times[3] = (System.nanoTime() - started) / 1e6;
+                report.run();
+                return verdict;
+            }
+
             if (compiled.method() == null || measure.fields() == null) {
                 verdict.stop(ForeignVerdict.ACCEPTED, compiled.method() != null
                         ? measure.noFourthLevel()
                         : artifact.isProject()
-                                ? "the artifact is a project of " + artifact.queryMethods().size() + " queries, judged to the third level as one; a project has no measure at the fourth"
+                                ? "the artifact is a project of " + artifact.queryMethods().size() + " queries, judged to the third level as one; "
+                                        + (measure.noFourthLevel() != null ? measure.noFourthLevel() : "a project of this key has no measure at the fourth")
                                 : "the artifact carries no query, so there is nothing to run");
                 report.run();
                 return verdict;
@@ -279,9 +297,102 @@ public final class ForeignArtifactRun {
     /**
      * The compiled artifact: the entity classes under the scenario's loader and, where there is a
      * query, its method or its mapper interface; for a project, every query's method, each in a
-     * class of its own, and no single method.
+     * class of its own, with the path of the unit it came from beside it, and no single method.
      */
-    private record Compiled(ClassLoader loader, List<Class<?>> mapped, JavaProject queries, Method method, Class<?> mapper, List<Method> projectMethods) {
+    private record Compiled(ClassLoader loader, List<Class<?>> mapped, JavaProject queries, Method method, Class<?> mapper, List<Method> projectMethods, List<String> projectPaths) {
+    }
+
+    /**
+     * The fourth level of a project (decision 176): every query of the project run with a value of
+     * the declared type for every parameter - as the third level creates it -, a JPA query through
+     * {@code getResultList}, a MyBatis statement by its id in the document that declares it. The
+     * first query that fails stops the project at {@code failed} and the detail names it; otherwise
+     * the project {@code ran}, the row carries the rows of all its queries - over empty tables that
+     * is the aggregates' one row each, and a row from anywhere else would say the catalog bound an
+     * entity to a table that holds data.
+     */
+    private static void runProject(ForeignArtifact artifact, Compiled compiled, EntityManagerFactory jpa, SqlSessionFactory myBatis, ForeignVerdict verdict) {
+        int rows = 0;
+        List<String> returning = new ArrayList<>();
+        List<String> mappers = artifact.mappings().stream().map(ForeignArtifact.Unit::content).toList();
+
+        for (int index = 0; index < compiled.projectMethods().size(); index++) {
+            Method method = compiled.projectMethods().get(index);
+            String path = compiled.projectPaths().get(index);
+            try {
+                int count = artifact.target() == Orm.MYBATIS
+                        ? countMyBatis(myBatis, mappers, method)
+                        : countJpa(jpa, method);
+                rows += count;
+                if (count > 0) {
+                    returning.add(path + " (" + count + ")");
+                }
+            } catch (Throwable e) {
+                verdict.stop(ForeignVerdict.FAILED, path + ": " + innermost(e).getMessage());
+                return;
+            }
+        }
+
+        verdict.ran(rows, compiled.projectMethods().size() + " queries ran over the empty tables of the project's schema"
+                + (returning.isEmpty() ? "" : "; rows came back from " + String.join(", ", returning)));
+    }
+
+    private static int countJpa(EntityManagerFactory jpa, Method method) throws Exception {
+        try (EntityManager manager = jpa.createEntityManager()) {
+            Type[] types = method.getGenericParameterTypes();
+            Object[] values = new Object[types.length];
+            values[0] = manager;
+            for (int index = 1; index < types.length; index++) {
+                values[index] = PreparedJavaQuery.sample(types[index]);
+            }
+
+            Object query = method.invoke(null, values);
+            if (!(query instanceof Query typed)) {
+                throw new IllegalStateException(method.getName() + " returned no query.");
+            }
+            return typed.getResultList().size();
+        } catch (InvocationTargetException e) {
+            throw e.getCause() instanceof Exception cause ? cause : e;
+        }
+    }
+
+    /**
+     * A statement of a project's mapper, run by its id: the document whose select carries the
+     * method's name gives the namespace (the tool writes one document per statement), and the
+     * parameter is what MyBatis would bind for the method - the one value of a single unnamed
+     * parameter, otherwise a map by the names of {@code @Param}.
+     */
+    private static int countMyBatis(SqlSessionFactory myBatis, List<String> mappers, Method method) {
+        String id = method.getName();
+        String document = mappers.stream()
+                .filter(mapper -> mapper.contains("id=\"" + id + "\""))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no mapper document declares a statement " + id));
+        String statement = MyBatisBootstrap.namespaceOf(document) + "." + id;
+
+        Parameter[] parameters = method.getParameters();
+        Object argument;
+        if (parameters.length == 0) {
+            argument = null;
+        } else if (parameters.length == 1 && parameters[0].getAnnotation(Param.class) == null) {
+            argument = PreparedJavaQuery.sample(parameters[0].getParameterizedType());
+        } else {
+            Map<String, Object> named = new HashMap<>();
+            for (int index = 0; index < parameters.length; index++) {
+                Object value = PreparedJavaQuery.sample(parameters[index].getParameterizedType());
+                Param param = parameters[index].getAnnotation(Param.class);
+                if (param != null) {
+                    named.put(param.value(), value);
+                }
+                named.put("param" + (index + 1), value);
+                named.put("arg" + index, value);
+            }
+            argument = named;
+        }
+
+        try (SqlSession session = myBatis.openSession()) {
+            return session.selectList(statement, argument).size();
+        }
     }
 
     private static Compiled compile(ForeignArtifact artifact, JavaProject entities) {
@@ -311,15 +422,19 @@ public final class ForeignArtifactRun {
             queries.compileAndLoad();
 
             List<Method> methods = new ArrayList<>();
-            for (String wrapper : wrappers) {
-                methods.addAll(Arrays.asList(queries.load(wrapper).getDeclaredMethods()));
+            List<String> paths = new ArrayList<>();
+            for (int position = 0; position < wrappers.size(); position++) {
+                for (Method method : queries.load(wrappers.get(position)).getDeclaredMethods()) {
+                    methods.add(method);
+                    paths.add(artifact.queryMethods().get(position).path());
+                }
             }
-            return new Compiled(loader, mapped, queries, null, null, methods);
+            return new Compiled(loader, mapped, queries, null, null, methods, paths);
         }
 
         ForeignArtifact.Unit query = artifact.queryMethod();
         if (query == null) {
-            return new Compiled(loader, mapped, null, null, null, List.of());
+            return new Compiled(loader, mapped, null, null, null, List.of(), List.of());
         }
 
         JavaProject queries = JavaProject.create("foreign-query", entities);
@@ -333,7 +448,7 @@ public final class ForeignArtifactRun {
             String wrapper = queries.add(JavaSources.wrapMapperInterface(entityPackage, MyBatisBootstrap.interfaceNameOf(statementMapper), query.content()));
             queries.compileAndLoad();
             Class<?> mapper = queries.load(wrapper);
-            return new Compiled(loader, mapped, queries, mapper.getDeclaredMethods()[0], mapper, List.of(mapper.getDeclaredMethods()[0]));
+            return new Compiled(loader, mapped, queries, mapper.getDeclaredMethods()[0], mapper, List.of(mapper.getDeclaredMethods()[0]), List.of(query.path()));
         }
 
         String wrapper = queries.add(JavaSources.wrapQuery(entityPackage, "GeneratedQueries", query.content()));
@@ -341,7 +456,7 @@ public final class ForeignArtifactRun {
         Method method = Arrays.stream(queries.load(wrapper).getDeclaredMethods())
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("the generated class declares no method"));
-        return new Compiled(loader, mapped, queries, method, null, List.of(method));
+        return new Compiled(loader, mapped, queries, method, null, List.of(method), List.of(query.path()));
     }
 
     /** The third level of a JPA query: created with a value of the declared type for every parameter, nothing executed - as {@link PreparedJavaQuery#accept()} does. */
@@ -424,7 +539,9 @@ public final class ForeignArtifactRun {
     /**
      * What an artifact is measured against: the database its query runs in - null for the
      * suite's own -, the fields of a row, the key of the ordering and the settings of the
-     * canonical form, the arguments of the query, and what the rows are compared with.
+     * canonical form, the arguments of the query, and what the rows are compared with; or,
+     * for the project of a case study, that it runs over the empty tables of its schema in
+     * the suite's own database (decision 176).
      */
     private record Measure(
             String jdbcUrl,
@@ -435,7 +552,13 @@ public final class ForeignArtifactRun {
             ResultRow.Settings settings,
             Object[] arguments,
             java.util.function.Function<List<String>, String> comparison,
-            String noFourthLevel) {
+            String noFourthLevel,
+            boolean runsProject) {
+
+        Measure(String jdbcUrl, String schema, List<String> fields, boolean projection, List<String> orderingKey,
+                ResultRow.Settings settings, Object[] arguments, java.util.function.Function<List<String>, String> comparison, String noFourthLevel) {
+            this(jdbcUrl, schema, fields, projection, orderingKey, settings, arguments, comparison, noFourthLevel, false);
+        }
 
         /** The difference from the measure, or null where the rows agree. */
         String compare(List<String> rows) {
@@ -520,9 +643,30 @@ public final class ForeignArtifactRun {
                 case ForeignArtifact.Key.EXAMPLE -> {
                     // The keys are those of GET /examples; this suite has no instance at hand
                     // when it judges a foreign artifact, so the key is taken as written and the
-                    // .NET suite holds it against the catalog.
+                    // .NET suite holds it against the catalog. The excerpt of a real project -
+                    // the case study of T1 - has its tables in the case-study database (decision
+                    // 176), empty, so its project runs there at the fourth level - in the targets
+                    // whose mapping carries the schema the catalog supplied. MyBatis writes the
+                    // table as the source named it, and a source that names no schema gives SQL
+                    // that runs in the default schema of its connection, which is not the
+                    // project's; its project ends at the third level and says so.
+                    if (TestSchema.isCaseStudy(key.id())) {
+                        if (!CaseStudyDatabase.isConfigured()) {
+                            throw new IllegalStateException(artifact.id() + ": a case study runs over the tables of its project in the case-study database, and none is configured. " + CaseStudyDatabase.notConfigured());
+                        }
+
+                        // The mapping carries the schema the catalog supplied, so the default
+                        // schema of the connection is nobody's concern; dbo is what the FIBEN run
+                        // passes, and a null setting is what Hibernate's bootstrap refuses.
+                        String jdbcUrl = CaseStudyDatabase.jdbcUrl();
+                        return artifact.target() == Orm.MYBATIS
+                                ? new Measure(jdbcUrl, "dbo", null, false, List.of(), ResultRow.Settings.defaults(), new Object[0], rows -> null,
+                                        "the SQL of a MyBatis artifact names the tables as the source did, without a schema, and the tables of the project stand in a schema of their own in the case-study database (decision 176); the project is not run")
+                                : new Measure(jdbcUrl, "dbo", null, false, List.of(), ResultRow.Settings.defaults(), new Object[0], rows -> null, null, true);
+                    }
+
                     return new Measure(null, null, null, false, List.of(), ResultRow.Settings.defaults(), new Object[0], rows -> null,
-                            "an example runs over no database of the tool - its tables are the project's, not the fixture's -, so an artifact of it ends at the third level (decision 174)");
+                            "an example written for the tool runs over no database of it (decision 099), so an artifact of it ends at the third level (decision 174)");
                 }
 
                 default -> throw new IllegalStateException(artifact.id() + ": the kind " + key.kind() + " has no measure.");

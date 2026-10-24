@@ -125,7 +125,7 @@ Co se změnilo, vypisuje README složky výňatku a poznámka na začátku každ
 
 **T1:** výňatek Keycloaku jako jediný splní všechna čísla zadání (22 entit, vztahy, 10 složených klíčů, 47 čtecích dotazů); bitwarden/server by je splnil v .NET, ale licence převzetí nedovolí.
 
-**Katalog:** u zdrojů Dapper a MyBatis rozhoduje o cílech NHibernate, Hibernate a EclipseLink, které klíč vyžadují. Schéma zveřejňují všechny převzaté projekty — Keycloak migracemi pro SQL Server, Ambari skriptem pro SQL Server, Chinook autorovou databází pro SQL Server, JPetStore skriptem HSQLDB, který T-SQL přečte beze změny —, v databázi katalogu instance ale není žádné z nich (otevřená položka *Schémata převzatých projektů v katalogu instance*).
+**Katalog:** u zdrojů Dapper a MyBatis rozhoduje o cílech NHibernate, Hibernate a EclipseLink, které klíč vyžadují. Schéma zveřejňují všechny převzaté projekty — Keycloak migracemi Liquibase, Ambari skriptem pro SQL Server, Chinook autorovou databází pro SQL Server, JPetStore skriptem HSQLDB, který T-SQL přečte beze změny — a každý výňatek nese jeho výňatek `schema.sql` (rozh. [176](../decisions/176-the-schema-of-an-excerpted-project-is-an-excerpt-created-empty-in-the-case-study-database-and-the-case-study-runs-over-it-at-the-fourth-level.md)): tabulky, které výňatek jmenuje, s vyznačenou změnou (Chinook klíče `Id`, Keycloak přehraný řetěz migrací). Obě testovací sady je vytvářejí prázdné v databázi případových studií, každý projekt ve vlastním schématu, a experimentální běh překládá výňatky s touto databází jako katalogem a jejich dotazy nad ní spouští; výkladová stránka běží dál bez katalogu (rozh. [099](../decisions/099-examples-are-content-not-a-choice.md)).
 
 ## Nálezy
 

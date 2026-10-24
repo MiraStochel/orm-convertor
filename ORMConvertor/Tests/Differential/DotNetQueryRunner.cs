@@ -298,6 +298,55 @@ internal sealed class PreparedQuery : IDisposable
         }
     }
 
+    /// <summary>
+    /// Runs the query with the arguments and returns how many rows came back, reading none of
+    /// them: the fourth level of a project over the empty tables of its schema (decision 176),
+    /// where the shape of a row is nobody's claim and only that the query ran counts.
+    /// </summary>
+    public int Count(string id, IReadOnlyList<object?> arguments)
+    {
+        object? returned;
+        switch (target)
+        {
+            case ORMEnum.Dapper:
+            {
+                using var connection = new SqlConnection(connectionString);
+                connection.Open();
+                return CountOf(Invoke(id, connection, arguments), id);
+            }
+
+            case ORMEnum.EFCore:
+                return CountOf(Invoke(id, context!, arguments), id);
+
+            default:
+            {
+                using var connection = new SqlConnection(connectionString);
+                connection.Open();
+                using var session = sessionFactory!.WithOptions().Connection(connection).OpenSession();
+                returned = Invoke(id, session, arguments);
+                return CountOf(returned is IQuery query ? query.List() : returned, id);
+            }
+        }
+    }
+
+    private static int CountOf(object? returned, string id)
+    {
+        if (returned is not IEnumerable sequence)
+        {
+            throw new InvalidOperationException(
+                $"{id}: the generated method returned {returned?.GetType().Name ?? "null"}, "
+                + "which is not a sequence of rows.");
+        }
+
+        var count = 0;
+        foreach (var _ in sequence)
+        {
+            count++;
+        }
+
+        return count;
+    }
+
     public void Dispose()
     {
         context?.Dispose();

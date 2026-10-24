@@ -202,6 +202,9 @@ public final class PreparedJavaQuery implements AutoCloseable {
         if (type == String.class) {
             return "x";
         }
+        if (type == byte[].class) {
+            return new byte[] {1};
+        }
         if (type == BigDecimal.class) {
             return BigDecimal.ONE;
         }

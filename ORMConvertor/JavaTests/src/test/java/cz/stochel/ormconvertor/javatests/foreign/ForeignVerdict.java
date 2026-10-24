@@ -39,6 +39,13 @@ public final class ForeignVerdict {
     public static final String DIFFERS = "differs";
     public static final String AGREES = "agrees";
 
+    /**
+     * The outcome of a project whose every query ran over the empty tables of its schema
+     * (decision 176): runnable (T3), with no measure of equivalence to agree with, so
+     * {@code agrees} stays empty.
+     */
+    public static final String RAN = "ran";
+
     /** The outcome of an artifact that has no fourth level: no query to run, or a key whose measure is a replay (LDBC). */
     public static final String ACCEPTED = "accepted";
 
@@ -120,6 +127,15 @@ public final class ForeignVerdict {
         this.agrees = agreed;
         this.outcome = agreed ? AGREES : DIFFERS;
         this.detail = agreed ? "" : difference;
+    }
+
+    /** A project ran every query over the empty tables of its schema (decision 176): the fourth level without a measure. */
+    void ran(int rowCount, String detail) {
+        this.reached = LEVEL_RAN;
+        this.rows = rowCount;
+        this.agrees = null;
+        this.outcome = RAN;
+        this.detail = detail == null ? "" : detail;
     }
 
     void times(double read, double compile, double accept, double run) {

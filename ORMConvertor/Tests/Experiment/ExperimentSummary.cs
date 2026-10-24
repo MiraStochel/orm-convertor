@@ -105,8 +105,12 @@ internal static class ExperimentSummary
         };
     }
 
-    /// <summary>Whether the key's measure is one reading, so that its translations have a fourth level (decision 172): the matrix and the FIBEN catalog.</summary>
+    /// <summary>Whether the key's translations have a fourth level: a measure of one reading (decision 172) - the matrix and the FIBEN catalog -, or the empty tables of a case study's schema in the fixture (decision 176).</summary>
     public static bool HasFourthLevel(string answers)
+        => HasEquivalenceMeasure(answers) || KindOf(answers) == "case study";
+
+    /// <summary>Whether the key has a measure the rows are compared with (decision 172): the matrix and the FIBEN catalog; a case study runs and has none.</summary>
+    public static bool HasEquivalenceMeasure(string answers)
         => ForeignKey.Parse(answers).Kind is ForeignKey.Matrix or ForeignKey.Fiben;
 
     public static string EcosystemOf(ORMEnum framework)
@@ -138,8 +142,8 @@ internal static class ExperimentSummary
             $"Tool version in the rows: {string.Join(", ", tool.Select(row => row.Metadata("toolVersion")).Where(version => version.Length > 0).Distinct().Order(StringComparer.Ordinal).DefaultIfEmpty("-"))}.",
             string.Empty,
             "Columns: n = translations; refused = no artifact (a Failure record); native SQL = the query went out in the dialect's SQL through the framework's API (decision 113);",
-            "read, compiled, accepted = the artifact reached that level (T3: parsable, compilable; the framework accepts it); n4 = translations of a key with a fourth level (the matrix, the FIBEN catalog), refusals included;",
-            "ran, agrees = of n4, the artifact returned rows, and the rows agree with the measure (T3: runnable, functionally equivalent);",
+            "read, compiled, accepted = the artifact reached that level (T3: parsable, compilable; the framework accepts it); n4 = translations of a key with a fourth level (the matrix, the FIBEN catalog, a case study over the empty tables of its schema), refusals included;",
+            "ran = of n4, the artifact ran - the query returned rows, every query of a case study ran (T3: runnable); agrees = of the translations of n4 with a measure of equivalence (the matrix, the FIBEN catalog), the rows agree with it (T3: functionally equivalent);",
             "mapping = the facts the parser of the target reads back out of the artifact, of the facts the reference holds that the target can express (T3: completeness of transferred mapping facts), pooled over the group.",
             string.Empty,
         };
@@ -213,19 +217,22 @@ internal static class ExperimentSummary
             var accepted = grouped.Count(row => row.Reached >= ForeignLevel.Accepted);
 
             // The fourth level exists for a key whose measure is one reading - the matrix and the
-            // FIBEN catalog -, and for every translation of such a key, a refusal included, so
-            // that the share of runnable translations has the denominator the share of readable
-            // ones has; only an artifact that carries no query (the outcome "accepted" under such
-            // a key) has nothing to run and stands outside.
+            // FIBEN catalog - and for a case study over its schema (decision 176), and for every
+            // translation of such a key, a refusal included, so that the share of runnable
+            // translations has the denominator the share of readable ones has; only an artifact
+            // that carries no query (the outcome "accepted" under such a key) has nothing to run
+            // and stands outside. Agreement is counted over the keys that have a measure to agree
+            // with: a case study ran, and over empty tables nobody states its rows.
             var fourth = grouped.Where(row => HasFourthLevel(row.Answers) && row.Outcome != ForeignVerdict.Accepted).ToList();
             var ran = fourth.Count(row => row.Reached >= ForeignLevel.Ran);
-            var agrees = fourth.Count(row => row.Outcome == ForeignVerdict.Agrees);
+            var measured = fourth.Where(row => HasEquivalenceMeasure(row.Answers)).ToList();
+            var agrees = measured.Count(row => row.Outcome == ForeignVerdict.Agrees);
 
             var mappingRows = mappingByGroup.GetValueOrDefault(grouped.Key, []);
             var expressible = mappingRows.Sum(row => Number(row["expressible"]));
             var readBack = mappingRows.Sum(row => Number(row["readBack"]));
 
-            yield return $"| {grouped.Key} | {n} | {refused} | {nativeSql} | {Share(read, n)} | {Share(compiled, n)} | {Share(accepted, n)} | {fourth.Count} | {Share(ran, fourth.Count)} | {Share(agrees, fourth.Count)} | {Share(readBack, expressible)} |";
+            yield return $"| {grouped.Key} | {n} | {refused} | {nativeSql} | {Share(read, n)} | {Share(compiled, n)} | {Share(accepted, n)} | {fourth.Count} | {Share(ran, fourth.Count)} | {Share(agrees, measured.Count)} | {Share(readBack, expressible)} |";
         }
 
         yield return string.Empty;

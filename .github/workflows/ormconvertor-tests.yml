@@ -60,12 +60,14 @@ jobs:
           dotnet-version: "10.0.x"
 
       # The fixture creates a schema, not a database (decision 016), so the database is
-      # the environment's job here exactly as it is in docker-compose.yml.
-      - name: Create the test database
+      # the environment's job here exactly as it is in docker-compose.yml - the test
+      # database and, beside it, the case-study database for the schemas of the excerpted
+      # projects (decision 176).
+      - name: Create the test databases
         run: >-
           docker exec ${{ job.services.sqlserver.id }}
           /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Testingorms123 -C
-          -Q "IF DB_ID('ORMConvertorTests') IS NULL CREATE DATABASE ORMConvertorTests;"
+          -Q "IF DB_ID('ORMConvertorTests') IS NULL CREATE DATABASE ORMConvertorTests; IF DB_ID('ORMConvertorCaseStudies') IS NULL CREATE DATABASE ORMConvertorCaseStudies;"
 
       - name: Restore
         run: dotnet restore ORMConvertor.sln

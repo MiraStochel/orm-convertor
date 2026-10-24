@@ -12,6 +12,17 @@
 The project runs against its author's variant of the Chinook schema, in which every primary key
 column is called `Id`; `PlaylistTrack` keeps its composite key.
 
+## Schema
+
+`schema.sql` is `Scripts/Chinook_SqlServer.sql` of
+[cwoodruff/ChinookDatabase](https://github.com/cwoodruff/ChinookDatabase) at `8065767`, the
+database the project's README points at: the eleven tables and their foreign keys, without the
+database creation, the indexes and the rows, every table qualified with `{{schema}}`. The
+single-column primary keys are renamed from `<Table>Id` to `Id`, because that is the variant the
+project runs against - every entity declares `[Key] public int Id`, the fluent configuration maps
+it so and the Dapper statements say `Album.Id`; `PlaylistTrack` keeps its two foreign-key columns
+(decision 176).
+
 ## What was changed
 
 1. **Entities and the context are unchanged** apart from the provenance note.

@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using DatabaseCatalog;
 using Microsoft.Data.SqlClient;
+using SampleData;
 
 namespace Tests.Database;
 
@@ -76,6 +77,66 @@ public sealed class TestSchemaFixture : IAsyncLifetime
     public string LdbcSchemaName => TestDatabase.LdbcSchemaName;
 
     /// <summary>
+    /// The schemas of the excerpted projects (decision 176), one per project with a
+    /// <c>schema.sql</c> under <c>SampleData/ThirdParty/</c>, in the case-study database beside
+    /// the test database (<see cref="TestDatabase.CaseStudyDatabaseName"/>): the tables the
+    /// excerpt maps, empty, from the schema the project publishes. The case study of T1 is
+    /// translated with that database as its catalog, so the key a Dapper or MyBatis source cannot
+    /// state comes from the project's own schema, and its queries run over the tables at the
+    /// fourth level. No table name is shared between any two of these schemas, which
+    /// <c>Combined/CaseStudySchemaTest</c> holds, so a lookup that states no schema finds one
+    /// table; the fixture's own tables stand in another database and never collide.
+    /// </summary>
+    public static IReadOnlyList<string> CaseStudyProjects => ThirdPartySources.ProjectsWithSchema;
+
+    /// <summary>The schema of one excerpted project's tables in the case-study database.</summary>
+    public string CaseStudySchemaName(string project) => TestDatabase.CaseStudySchemaName(project);
+
+    /// <summary>Whether the case-study database stands with the schemas of the projects, so a case study may be translated with it and run over it.</summary>
+    public bool IsCaseStudyAvailable { get; private set; }
+
+    /// <summary>Why it does not, when it does not. Empty while <see cref="IsCaseStudyAvailable"/>.</summary>
+    public string CaseStudySkipReason { get; private set; } = string.Empty;
+
+    /// <summary>The connection string of the case-study database, for the queries of a case study to run over (decision 176).</summary>
+    public string CaseStudyConnectionString
+        => IsCaseStudyAvailable ? TestDatabase.CaseStudyConnectionString! : throw new InvalidOperationException(CaseStudySkipReason);
+
+    /// <summary>One caching reader over the case-study database for the whole collection, as <see cref="CatalogReader"/> is over the fixture.</summary>
+    public ICatalogReader CaseStudyCatalogReader
+    {
+        get
+        {
+            if (!IsCaseStudyAvailable)
+            {
+                throw new InvalidOperationException(CaseStudySkipReason);
+            }
+
+            return caseStudyCatalogReader ??= new CachingCatalogReader(new SqlServerCatalogReader(TestDatabase.CaseStudyConnectionString!));
+        }
+    }
+
+    /// <summary>Skips the current test when the case-study database is not there, or fails where the environment promised a database (decision 039), as <see cref="SkipIfUnavailable"/> does.</summary>
+    public void SkipIfCaseStudyUnavailable()
+    {
+        if (IsCaseStudyAvailable)
+        {
+            return;
+        }
+
+        if (TestDatabase.IsRequired)
+        {
+            Assert.Fail(TestDatabase.RequiredButMissingReason(CaseStudySkipReason));
+        }
+        else
+        {
+            Assert.Skip(CaseStudySkipReason);
+        }
+    }
+
+    private CachingCatalogReader? caseStudyCatalogReader;
+
+    /// <summary>
     /// One caching reader for the whole collection. The schema is written once by the
     /// fixture and only read afterwards, so every test re-reading the same images would
     /// pay the same catalog statements again; the cache's lifetime is the collection's,
@@ -136,11 +197,65 @@ public sealed class TestSchemaFixture : IAsyncLifetime
                 $"Test database \"{TestDatabase.ConnectionStringName}\" is configured but the schema "
                 + $"\"{SchemaName}\" could not be prepared: {ex.Message}";
         }
+
+        if (!IsAvailable)
+        {
+            CaseStudySkipReason = SkipReason;
+            return;
+        }
+
+        // The case-study database (decision 176) stands or falls on its own: a test database
+        // without it runs everything but the case studies, and says why they skipped.
+        try
+        {
+            await using var connection = new SqlConnection(TestDatabase.CaseStudyConnectionString);
+            await connection.OpenAsync();
+
+            foreach (var project in CaseStudyProjects)
+            {
+                await DropSchemaAsync(connection, CaseStudySchemaName(project));
+            }
+
+            foreach (var batch in CaseStudyScriptBatches())
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = batch;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            IsCaseStudyAvailable = true;
+        }
+        catch (Exception ex)
+        {
+            IsCaseStudyAvailable = false;
+            CaseStudySkipReason =
+                $"The case-study database could not be prepared: {ex.Message} Create the database "
+                + $"\"{TestDatabase.CaseStudyDatabaseName}\" on the server of the test database, or set "
+                + $"\"ConnectionStrings:{TestDatabase.CaseStudyConnectionStringName}\" to another one (decision 176).";
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         catalogReader?.Dispose();
+        caseStudyCatalogReader?.Dispose();
+
+        if (IsCaseStudyAvailable)
+        {
+            try
+            {
+                await using var connection = new SqlConnection(TestDatabase.CaseStudyConnectionString);
+                await connection.OpenAsync();
+                foreach (var project in CaseStudyProjects)
+                {
+                    await DropSchemaAsync(connection, CaseStudySchemaName(project));
+                }
+            }
+            catch (Exception)
+            {
+                // As below: the next run drops whatever is left.
+            }
+        }
 
         if (!IsAvailable)
         {
@@ -230,17 +345,27 @@ public sealed class TestSchemaFixture : IAsyncLifetime
             .. Batches(LdbcIndexesResourceName, LdbcSchemaName),
         ];
 
-    private static IEnumerable<string> Batches(string resourceName, string schema)
-    {
-        var script = ReadScript(resourceName, schema);
+    /// <summary>The tables of every excerpted project (decision 176), each project in a schema of its own, from the schema script beside the excerpt; run in the case-study database.</summary>
+    private IEnumerable<string> CaseStudyScriptBatches()
+        => CaseStudyProjects.SelectMany(project => (IEnumerable<string>)
+        [
+            $"CREATE SCHEMA [{CaseStudySchemaName(project)}];",
+            .. Split(ThirdPartySources.Schema(project).Replace(SchemaPlaceholder, CaseStudySchemaName(project), StringComparison.Ordinal)),
+        ]);
 
-        // CREATE SCHEMA has to start its own batch, so the script is split on GO - which
-        // is a client-side separator, not a T-SQL statement, and SqlCommand does not know it.
-        return Regex.Split(script, @"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)
+    private static IEnumerable<string> Batches(string resourceName, string schema)
+        => Split(ReadScript(resourceName, schema));
+
+    /// <summary>
+    /// The batches of a script. CREATE SCHEMA has to start its own batch, so the script is
+    /// split on GO - which is a client-side separator, not a T-SQL statement, and SqlCommand
+    /// does not know it.
+    /// </summary>
+    internal static List<string> Split(string script)
+        => Regex.Split(script, @"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)
             .Select(batch => batch.Trim())
             .Where(batch => batch.Length > 0)
             .ToList();
-    }
 
     /// <summary>
     /// The text of an embedded script with the schema filled in: what the fixture runs, and

@@ -18,7 +18,7 @@ internal static class ForeignLevel
     /// <summary>The framework's factory accepts the artifact; HQL and JPQL compile against the model.</summary>
     public const int Accepted = 3;
 
-    /// <summary>The query ran and returned rows (T3: runnable); whether they agree with the measure is the outcome.</summary>
+    /// <summary>The query ran and returned rows (T3: runnable); whether they agree with the measure is the outcome. A project (decision 176): every query ran over the empty tables of its schema.</summary>
     public const int Ran = 4;
 }
 
@@ -42,6 +42,13 @@ internal sealed class ForeignVerdict
     public const string Failed = "failed";
     public const string Differs = "differs";
     public const string Agrees = "agrees";
+
+    /// <summary>
+    /// The outcome of a project whose every query ran over the empty tables of its schema
+    /// (decision 176): runnable (T3), with no measure of equivalence to agree with - the rows of
+    /// an empty schema are nobody's answer -, so <c>agrees</c> stays empty.
+    /// </summary>
+    public const string Ran = "ran";
 
     /// <summary>The outcome of an artifact that has no fourth level: no query to run, or a key whose measure is a replay (LDBC).</summary>
     public const string Accepted = "accepted";

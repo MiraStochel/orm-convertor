@@ -94,6 +94,9 @@ COPY database/ldbc/updates/ /src/database/ldbc/updates/
 # The FIBEN catalog (decision 149), for the path of a foreign artifact that answers one of
 # its queries without an instance of the tool (decision 172); likewise.
 COPY SampleData/Fiben/queries.json /src/SampleData/Fiben/queries.json
+# The schemas of the excerpted projects (decision 176), which the suite creates in the case-study
+# database; the pom reads them from beside the excerpts, as the .NET suite embeds them.
+COPY SampleData/ThirdParty/ /src/SampleData/ThirdParty/
 RUN mvn -B -o test-compile
 ENTRYPOINT ["mvn", "-B", "-o", "test"]
 

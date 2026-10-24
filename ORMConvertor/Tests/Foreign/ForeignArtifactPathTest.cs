@@ -77,7 +77,7 @@ public class ForeignArtifactPathTest(TestSchemaFixture fixture, ITestOutputHelpe
         Assert.All(Expected(), expected => Assert.Contains(expected.Outcome, new[]
         {
             ForeignVerdict.Unreadable, ForeignVerdict.NotCompiled, ForeignVerdict.NotAccepted,
-            ForeignVerdict.Failed, ForeignVerdict.Differs, ForeignVerdict.Agrees, ForeignVerdict.Accepted,
+            ForeignVerdict.Failed, ForeignVerdict.Differs, ForeignVerdict.Agrees, ForeignVerdict.Accepted, ForeignVerdict.Ran,
         }));
     }
 

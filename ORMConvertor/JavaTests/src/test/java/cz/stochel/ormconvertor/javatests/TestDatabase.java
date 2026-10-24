@@ -93,6 +93,17 @@ public final class TestDatabase {
     }
 
     /**
+     * The schema of the tables of one excerpted project in the case-study database (decision 176) -
+     * {@code ormconvertor_java_test_keycloak} for {@code keycloak} -, named after the suite's own
+     * as the .NET fixture names its {@code CaseStudySchemaName}, so that both suites may stand in
+     * that database at once and the schema the catalog supplies into an artifact names the project
+     * it came from.
+     */
+    public static String caseStudySchemaName(String project) {
+        return schemaName() + "_" + project;
+    }
+
+    /**
      * Opens a connection. Callers own their data: a test that writes rows wraps them in
      * a transaction and rolls it back, exactly as the .NET fixture's rule says.
      */

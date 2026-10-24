@@ -22,6 +22,23 @@ public static class ThirdPartySources
         .Where(name => name.StartsWith(Root, StringComparison.Ordinal))
         .ToDictionary(name => name.Replace('\\', '/'), name => name, StringComparer.Ordinal);
 
+    /// <summary>
+    /// The schema of a project's tables, <c>&lt;project&gt;/schema.sql</c> (decision 176): the
+    /// tables the excerpt maps, taken from the schema the project publishes, with <c>{{schema}}</c>
+    /// for the schema the caller creates. Both test suites create it, empty, as the catalog of
+    /// the excerpt; nothing else reads it.
+    /// </summary>
+    public const string SchemaFileName = "schema.sql";
+
+    /// <summary>Whether the project carries a schema of its tables.</summary>
+    public static bool HasSchema(string project) => Resources.ContainsKey(Root + project + "/" + SchemaFileName);
+
+    /// <summary>The projects whose tables the suites create (decision 176), in ordinal order.</summary>
+    public static IReadOnlyList<string> ProjectsWithSchema => [.. Projects.Where(HasSchema)];
+
+    /// <summary>The text of a project's schema script.</summary>
+    public static string Schema(string project) => Read(project + "/" + SchemaFileName);
+
     /// <summary>The projects, by the name of their folder; the README beside them is none.</summary>
     public static IReadOnlyList<string> Projects =>
         [.. Resources.Keys

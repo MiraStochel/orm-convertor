@@ -53,6 +53,55 @@ public static class TestDatabase
     /// </summary>
     public static string LdbcSchemaName => $"{SchemaName}_ldbc";
 
+    /// <summary>
+    /// Configuration key of the connection string of the case-study database (decision 176):
+    /// user secrets key <c>ConnectionStrings:CaseStudyDatabase</c>, environment variable
+    /// <c>ConnectionStrings__CaseStudyDatabase</c>. Optional: without it the database is
+    /// <see cref="CaseStudyDatabaseName"/> on the server of the test database.
+    /// </summary>
+    public const string CaseStudyConnectionStringName = "CaseStudyDatabase";
+
+    /// <summary>
+    /// The database that holds the tables of the excerpted projects, empty, one schema per
+    /// project (decision 176) - beside the test database, never inside it: the fixture's own
+    /// tables are the expected answer of F4 and a project's table may bear the same name
+    /// (JPetStore's <c>orders</c>, the fixture's <c>Orders</c>), which a lookup that states no
+    /// schema would find twice. The environment creates the database as it creates the test
+    /// database; the suites create and drop their schemas in it.
+    /// </summary>
+    public const string CaseStudyDatabaseName = "ORMConvertorCaseStudies";
+
+    /// <summary>
+    /// Connection string of the case-study database: the configured one, otherwise the test
+    /// database's with <see cref="CaseStudyDatabaseName"/> as its database; <c>null</c> where no
+    /// test database is configured either.
+    /// </summary>
+    public static string? CaseStudyConnectionString { get; } = ResolveCaseStudyConnectionString();
+
+    /// <summary>
+    /// Schema of the tables of one excerpted project in the case-study database (decision 176) -
+    /// <c>ormconvertor_test_keycloak</c> for <c>keycloak</c> -, named after the fixture's own like
+    /// the LDBC schema, so that both suites may stand in the database at once and the schema the
+    /// catalog supplies into an artifact names the project it came from.
+    /// </summary>
+    public static string CaseStudySchemaName(string project) => $"{SchemaName}_{project}";
+
+    private static string? ResolveCaseStudyConnectionString()
+    {
+        var configured = Configuration.GetConnectionString(CaseStudyConnectionStringName);
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured.Trim();
+        }
+
+        if (ConnectionString is null)
+        {
+            return null;
+        }
+
+        return new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = CaseStudyDatabaseName }.ConnectionString;
+    }
+
     /// <summary>Whether a connection string was found at all.</summary>
     public static bool IsConfigured => !string.IsNullOrWhiteSpace(ConnectionString);
 

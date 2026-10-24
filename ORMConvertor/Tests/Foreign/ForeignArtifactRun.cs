@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Diagnostics;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
@@ -21,7 +22,8 @@ namespace Tests.Foreign;
 /// harness the tool's own artifact goes through (<see cref="PreparedQuery"/>), and the
 /// fourth level compares with the same measure: the canonical result of the matrix query, or
 /// the judge of the FIBEN catalog. An artifact that answers a query of the LDBC catalog ends
-/// at the third level, its measure being a replay rather than one reading.
+/// at the third level, its measure being a replay rather than one reading; a project of a case
+/// study runs every query over the empty tables of its schema in the fixture (decision 176).
 ///
 /// Nothing here asserts: a red level is a row, not a failure of the suite. What does throw
 /// is the path itself - a key no measure answers, a target this suite does not own, a measure
@@ -92,13 +94,22 @@ internal static class ForeignArtifactRun
             : PreparedQuery.Compile(assemblyName, artifact.Target, method.Content, entities, artifact.Form);
 
         string? uncompiled = compilation.Success ? null : string.Join("; ", compilation.Errors.Select(error => error.ToString()));
+
+        // The compiled queries of a project, kept for the fourth level where the project has one.
+        var projectQueries = new List<(ForeignUnit Query, byte[] Assembly)>();
         if (uncompiled is null && artifact.IsProject)
         {
-            uncompiled = artifact.QueryMethods
-                .Select((query, index) => (query, result: PreparedQuery.Compile($"{assemblyName}_q{index + 1}", artifact.Target, query.Content, entities, artifact.Form)))
-                .Where(pair => !pair.result.Success)
-                .Select(pair => $"{pair.query.Path}: {string.Join("; ", pair.result.Errors.Select(error => error.ToString()))}")
-                .FirstOrDefault();
+            foreach (var (query, index) in artifact.QueryMethods.Select((query, index) => (query, index)))
+            {
+                var result = PreparedQuery.Compile($"{assemblyName}_q{index + 1}", artifact.Target, query.Content, entities, artifact.Form);
+                if (!result.Success)
+                {
+                    uncompiled = $"{query.Path}: {string.Join("; ", result.Errors.Select(error => error.ToString()))}";
+                    break;
+                }
+
+                projectQueries.Add((query, result.Assembly!));
+            }
         }
 
         verdict.CompileMs = clock.Elapsed.TotalMilliseconds;
@@ -158,6 +169,16 @@ internal static class ForeignArtifactRun
         verdict.Reached = ForeignLevel.Accepted;
         Report();
 
+        // Level 4 of a project whose tables stand in the fixture (decision 176): every query runs
+        // over the empty tables of the project's schema. Runnable is what is measured; there is no
+        // measure of equivalence, so the outcome is "ran" and agrees stays empty.
+        if (prepared is null && artifact.IsProject && measure.RunsProject)
+        {
+            RunProject(artifact, projectQueries, mappings, measure.ConnectionString, verdict);
+            Report();
+            return verdict;
+        }
+
         using (prepared)
         {
             if (prepared is null || measure.Run is null)
@@ -165,7 +186,7 @@ internal static class ForeignArtifactRun
                 verdict.Outcome = ForeignVerdict.Accepted;
                 verdict.Detail = prepared is null
                     ? artifact.IsProject
-                        ? $"the artifact is a project of {artifact.QueryMethods.Count} queries, judged to the third level as one; a project has no measure at the fourth"
+                        ? $"the artifact is a project of {artifact.QueryMethods.Count} queries, judged to the third level as one; " + (measure.NoFourthLevel ?? "a project of this key has no measure at the fourth")
                         : "the artifact carries no query, so there is nothing to run"
                     : measure.NoFourthLevel!;
                 Report();
@@ -199,6 +220,110 @@ internal static class ForeignArtifactRun
             Report();
             return verdict;
         }
+    }
+
+    /// <summary>
+    /// The fourth level of a project (decision 176): every query opened over the fixture - the
+    /// context or the session factory built over the query's own compilation, as the single query
+    /// of a matrix key is - and run with a value of the declared type for every parameter, as the
+    /// Java suite accepts a query at the third level. The first query that fails stops the project
+    /// at <c>failed</c> and the detail names it; otherwise the project <c>ran</c>, the row carries
+    /// the rows of all its queries - over empty tables that is the aggregates' one row each, and a
+    /// row from anywhere else would say the catalog bound an entity to a table that holds data.
+    /// </summary>
+    private static void RunProject(ForeignArtifact artifact, List<(ForeignUnit Query, byte[] Assembly)> queries, List<string> mappings, string connectionString, ForeignVerdict verdict)
+    {
+        var clock = Stopwatch.StartNew();
+        var rows = 0;
+        var returning = new List<string>();
+
+        foreach (var (query, compiled) in queries)
+        {
+            try
+            {
+                using var one = PreparedQuery.Open(artifact.Target, compiled, mappings, connectionString, artifact.Form);
+                var count = one.Count(query.Path, [.. one.Parameters.Select(parameter => Sample(parameter.ParameterType))]);
+                rows += count;
+                if (count > 0)
+                {
+                    returning.Add($"{query.Path} ({count})");
+                }
+            }
+            catch (Exception exception)
+            {
+                verdict.RunMs = clock.Elapsed.TotalMilliseconds;
+                verdict.Outcome = ForeignVerdict.Failed;
+                verdict.Detail = $"{query.Path}: {Innermost(exception).Message}";
+                return;
+            }
+        }
+
+        verdict.RunMs = clock.Elapsed.TotalMilliseconds;
+        verdict.Reached = ForeignLevel.Ran;
+        verdict.Rows = rows;
+        verdict.Outcome = ForeignVerdict.Ran;
+        verdict.Detail = $"{queries.Count} queries ran over the empty tables of the project's schema"
+            + (returning.Count > 0 ? $"; rows came back from {string.Join(", ", returning)}" : string.Empty);
+    }
+
+    /// <summary>
+    /// A value of the declared type of a parameter, for a query run without a measure that would
+    /// state its arguments: one element in a collection, because an empty parameter list is a
+    /// query NHibernate refuses; a moment, a day, a text, a number, a flag, otherwise.
+    /// </summary>
+    internal static object Sample(Type type)
+    {
+        var underlying = Nullable.GetUnderlyingType(type) ?? type;
+
+        if (underlying == typeof(string))
+        {
+            return "x";
+        }
+
+        if (underlying.IsArray)
+        {
+            var element = underlying.GetElementType()!;
+            var array = Array.CreateInstance(element, 1);
+            array.SetValue(Sample(element), 0);
+            return array;
+        }
+
+        if (underlying.IsGenericType && underlying.GetGenericArguments() is [var itemType]
+            && typeof(IEnumerable<>).MakeGenericType(itemType).IsAssignableFrom(underlying))
+        {
+            var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(itemType))!;
+            list.Add(Sample(itemType));
+            return list;
+        }
+
+        if (underlying.IsEnum)
+        {
+            return Enum.GetValues(underlying).GetValue(0)!;
+        }
+
+        return Type.GetTypeCode(underlying) switch
+        {
+            TypeCode.Boolean => true,
+            TypeCode.Byte => (byte)1,
+            TypeCode.SByte => (sbyte)1,
+            TypeCode.Int16 => (short)1,
+            TypeCode.UInt16 => (ushort)1,
+            TypeCode.Int32 => 1,
+            TypeCode.UInt32 => 1u,
+            TypeCode.Int64 => 1L,
+            TypeCode.UInt64 => 1ul,
+            TypeCode.Single => 1f,
+            TypeCode.Double => 1.0,
+            TypeCode.Decimal => 1m,
+            TypeCode.Char => 'x',
+            TypeCode.DateTime => new DateTime(2011, 1, 1),
+            _ when underlying == typeof(DateOnly) => new DateOnly(2011, 1, 1),
+            _ when underlying == typeof(TimeOnly) => new TimeOnly(0, 0),
+            _ when underlying == typeof(TimeSpan) => TimeSpan.Zero,
+            _ when underlying == typeof(DateTimeOffset) => new DateTimeOffset(2011, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            _ when underlying == typeof(Guid) => new Guid("11111111-1111-1111-1111-111111111111"),
+            _ => throw new InvalidOperationException($"No sample value for a parameter of type {type.Name}."),
+        };
     }
 
     /// <summary>
@@ -300,7 +425,8 @@ internal static class ForeignArtifactRun
         string ConnectionString,
         Func<PreparedQuery, List<string>>? Run,
         Func<List<string>, (bool Agrees, string Detail)>? Compare,
-        string? NoFourthLevel)
+        string? NoFourthLevel,
+        bool RunsProject = false)
     {
         /// <summary>A connection string for a handle that is never opened: the third level of a key without a fourth.</summary>
         private const string Unopened = "Server=localhost;Database=ORMConvertorTests;Trusted_Connection=True;TrustServerCertificate=True;";
@@ -391,11 +517,28 @@ internal static class ForeignArtifactRun
                     _ = ORMConvertorAPI.Data.Examples.GetExamples.SingleOrDefault(candidate => candidate.Key.Equals(key.Id, StringComparison.OrdinalIgnoreCase))
                         ?? throw new InvalidOperationException($"{artifact.Id}: the examples have no key {key.Id}; the keys are those of GET /examples.");
 
+                    // The excerpt of a real project - the case study of T1 - has its tables in the
+                    // case-study database (decision 176), empty, so its project runs there at the
+                    // fourth level - in the targets whose mapping carries the schema the catalog
+                    // supplied. Dapper writes the table as the source named it, and a source that
+                    // names no schema gives SQL that runs in the default schema of its connection,
+                    // which is not the project's; its project ends at the third level and says so.
+                    if (ORMConvertorAPI.Data.Examples.RealProjectKeys.Contains(key.Id))
+                    {
+                        var connectionString = TestDatabase.CaseStudyConnectionString
+                            ?? throw new InvalidOperationException($"{artifact.Id}: a case study runs over the tables of its project in the case-study database, and no test database is configured. {TestDatabase.NotConfiguredReason}");
+
+                        return artifact.Target == ORMEnum.Dapper
+                            ? new Measure(connectionString, null, null,
+                                "the SQL of a Dapper artifact names the tables as the source did, without a schema, and the tables of the project stand in a schema of their own in the case-study database (decision 176); the project is not run")
+                            : new Measure(connectionString, null, null, null, RunsProject: true);
+                    }
+
                     return new Measure(
                         TestDatabase.ConnectionString ?? Unopened,
                         null,
                         null,
-                        "an example runs over no database of the tool - its tables are the project's, not the fixture's -, so an artifact of it ends at the third level (decision 174)");
+                        "an example written for the tool runs over no database of it (decision 099), so an artifact of it ends at the third level (decision 174)");
                 }
 
                 default:

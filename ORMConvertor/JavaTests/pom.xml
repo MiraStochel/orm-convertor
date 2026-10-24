@@ -137,6 +137,16 @@
                 <directory>${project.basedir}/../database/ldbc/updates</directory>
                 <targetPath>ldbc/updates</targetPath>
             </testResource>
+            <!-- The schemas of the excerpted projects (decision 176), one schema.sql beside each
+                 excerpt, which TestSchema creates empty as the catalog of the case study - read
+                 from where the .NET suite embeds them, so the schema stays one. -->
+            <testResource>
+                <directory>${project.basedir}/../SampleData/ThirdParty</directory>
+                <includes>
+                    <include>*/schema.sql</include>
+                </includes>
+                <targetPath>thirdparty</targetPath>
+            </testResource>
         </testResources>
 
         <pluginManagement>

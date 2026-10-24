@@ -9,6 +9,18 @@
   required actions; roles with their attributes and composites; groups with their attributes and
   role mappings; clients and client scopes with their attributes, mappings and protocol mappers.
 
+## Schema
+
+`schema.sql` is the schema of the 22 tables the entities map and of the three collection tables
+the entities name (`REDIRECT_URIS`, `WEB_ORIGINS`, `SCOPE_MAPPING`), transcribed into T-SQL from
+the project's Liquibase changelogs at the same commit (`model/jpa/src/main/resources/META-INF/`),
+replayed in the order of `jpa-changelog-master.xml` for the target `mssql` - Keycloak publishes no
+DDL script. Types are those Liquibase renders for SQL Server, constraint names the changelogs'
+own; the two foreign keys that lead out of the excerpt (`KEYCLOAK_ROLE.REALM`,
+`KEYCLOAK_GROUP.ORG_ID`) and the indexes are left out. The default
+`'sybase-needs-something-here'` on two key columns and the missing foreign keys from the mapping
+tables to `KEYCLOAK_ROLE` are the project's schema as it stands (decision 176).
+
 ## What was changed
 
 Keycloak keeps its queries in `@NamedQuery` annotations on the entities and runs them with

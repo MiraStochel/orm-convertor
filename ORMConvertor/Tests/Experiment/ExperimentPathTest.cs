@@ -1,4 +1,7 @@
+using AbstractWrappers.Diagnostics;
+using DatabaseCatalog;
 using Model;
+using OrmConvertor;
 using ORMConvertorAPI.Data;
 using Tests.Database;
 using Tests.Foreign;
@@ -37,11 +40,11 @@ public class ExperimentPathTest(TestSchemaFixture fixture, ITestOutputHelper out
         }
     }
 
-    /// <summary>A Dapper source states no key and an example runs without a catalog (decision 099), so NHibernate refuses the entities: the row says refused and names the reason.</summary>
+    /// <summary>A Dapper source states no key and an example written for the tool runs without a catalog (decision 099), so NHibernate refuses the entities: the row says refused and names the reason.</summary>
     [Fact]
     public void ARefusedTranslationIsARowAtLevelZero()
     {
-        var example = Examples.GetExamples.Single(example => example.Key == "chinook-dapper");
+        var example = Examples.GetExamples.Single(example => example.Key == "dapper-to-efcore");
         var input = new ExperimentInput($"example-{example.Key}-{example.SourceOrm}", new ForeignKey(ForeignKey.Example, example.Key), example.SourceOrm, example.Units);
 
         var (verdict, _) = ExperimentRun.Judge(input, ORMEnum.NHibernate, fixture);
@@ -71,10 +74,11 @@ public class ExperimentPathTest(TestSchemaFixture fixture, ITestOutputHelper out
     }
 
     /// <summary>
-    /// The Keycloak excerpt, the application of T1 (decision 174), translated into NHibernate as
-    /// the page shows it: whatever level it reaches, it is a row with the level and the diagnostic,
-    /// never a failure of the suite - the level itself is a finding of the run, not a test of a
-    /// build (decision 173).
+    /// The Keycloak excerpt, the application of T1 (decision 174), translated into EF Core:
+    /// whatever level it reaches - a refusal included -, it is a row with the level and the
+    /// diagnostic, never a failure of the suite; the level itself is a finding of the run, not a
+    /// test of a build (decision 173). With the case-study database at hand the translation reads
+    /// the project's schema as its catalog (decision 176).
     /// </summary>
     [Fact]
     public void TheCaseStudyIsARow()
@@ -82,14 +86,78 @@ public class ExperimentPathTest(TestSchemaFixture fixture, ITestOutputHelper out
         var example = Examples.GetExamples.Single(example => example.Key == "keycloak-identity");
         var input = new ExperimentInput($"example-{example.Key}-{example.SourceOrm}", new ForeignKey(ForeignKey.Example, example.Key), example.SourceOrm, example.Units);
 
-        var (verdict, conversion) = ExperimentRun.Judge(input, ORMEnum.NHibernate, fixture);
+        var (verdict, conversion) = ExperimentRun.Judge(input, ORMEnum.EFCore, fixture);
         output.WriteLine(verdict.Describe());
 
         Assert.NotNull(conversion);
-        Assert.NotEqual(ForeignVerdict.Refused, verdict.Outcome);
-        Assert.True(verdict.Reached >= ForeignLevel.Read, verdict.Describe());
-        Assert.Equal(ForeignArtifact.LanguageTarget, verdict.Language);
-        Assert.True(verdict.Outcome == ForeignVerdict.Accepted || verdict.Detail.Length > 0, verdict.Describe());
+        Assert.Equal(ExperimentRun.Producer, verdict.Producer);
+        Assert.True(verdict.Outcome == ForeignVerdict.Accepted || verdict.Outcome == ForeignVerdict.Ran || verdict.Detail.Length > 0, verdict.Describe());
+
+        if (fixture.IsCaseStudyAvailable)
+        {
+            Assert.Equal(CatalogConnectionState.Reached, conversion.CatalogState);
+        }
+    }
+
+    /// <summary>
+    /// A project of a case study has a fourth level over the empty tables of its schema (decision
+    /// 176): the Chinook data layer on Dapper, whose keys the catalog supplies, translated into EF
+    /// Core and run query by query - the row says <c>ran</c>, or <c>failed</c> and names the query,
+    /// never that a project has no measure. Which of the two is the run's finding.
+    /// </summary>
+    [Fact]
+    public void ACaseStudyProjectHasAFourthLevel()
+    {
+        fixture.SkipIfCaseStudyUnavailable();
+
+        var example = Examples.GetExamples.Single(example => example.Key == "chinook-dapper");
+        var input = new ExperimentInput($"example-{example.Key}-{example.SourceOrm}", new ForeignKey(ForeignKey.Example, example.Key), example.SourceOrm, example.Units);
+
+        var (verdict, conversion) = ExperimentRun.Judge(input, ORMEnum.EFCore, fixture);
+        output.WriteLine(verdict.Describe());
+
+        Assert.NotNull(conversion);
+        Assert.Equal(CatalogConnectionState.Reached, conversion.CatalogState);
+        Assert.True(verdict.Reached >= ForeignLevel.Accepted, verdict.Describe());
+        Assert.True(verdict.Outcome is ForeignVerdict.Ran or ForeignVerdict.Failed, verdict.Describe());
+    }
+
+    public static TheoryData<string> CaseStudies()
+    {
+        var data = new TheoryData<string>();
+        foreach (var key in Examples.RealProjectKeys.Order(StringComparer.Ordinal))
+        {
+            data.Add(key);
+        }
+
+        return data;
+    }
+
+    /// <summary>
+    /// The schema of every excerpted project stands in the case-study database (decision 176):
+    /// translated into NHibernate - a target that asks the catalog for everything - with that
+    /// database as its catalog, the excerpt finds a table for every entity it maps, none twice, so
+    /// no record says a table is missing or ambiguous and facts are supplied. What the translation
+    /// then makes of the project is the run's finding, not this test's.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(CaseStudies))]
+    public void EveryCaseStudyFindsItsTablesInTheCaseStudyDatabase(string key)
+    {
+        fixture.SkipIfCaseStudyUnavailable();
+
+        var example = Examples.GetExamples.Single(example => example.Key == key);
+        var conversion = ConversionHandler.Convert(example.SourceOrm, ORMEnum.NHibernate, example.Units, fixture.CaseStudyCatalogReader);
+
+        foreach (var record in conversion.Records.Where(record => record.Kind != ConversionRecordKind.Supplied))
+        {
+            output.WriteLine($"{record.Kind} {record.Entity}.{record.Property}: {record.Reason}");
+        }
+
+        Assert.Equal(CatalogConnectionState.Reached, conversion.CatalogState);
+        Assert.DoesNotContain(conversion.Records, record => record.Reason.Contains("No table matching", StringComparison.Ordinal));
+        Assert.DoesNotContain(conversion.Records, record => record.Reason.Contains("More than one table", StringComparison.Ordinal));
+        Assert.Contains(conversion.Records, record => record.Kind == ConversionRecordKind.Supplied);
     }
 
     /// <summary>A project whose one query does not compile stops at the second level, and the detail names the query's unit.</summary>

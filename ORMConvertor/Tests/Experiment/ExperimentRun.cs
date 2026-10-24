@@ -3,6 +3,7 @@ using AbstractWrappers.Diagnostics;
 using DatabaseCatalog;
 using Model;
 using OrmConvertor;
+using ORMConvertorAPI.Data;
 using Tests.Database;
 using Tests.FibenJudge;
 using Tests.Foreign;
@@ -112,12 +113,30 @@ internal static class ExperimentRun
         }
     }
 
-    /// <summary>The catalog a translation of the key reads (decision 015): the fixture for the matrix, the scenarios and the LDBC catalog over its empty tables, the Fiben database for FIBEN, none for an example (decision 099).</summary>
+    /// <summary>
+    /// The catalog a translation of the key reads (decision 015): the fixture for the matrix, the
+    /// scenarios and the LDBC catalog over its empty tables; the case-study database for a case
+    /// study, over the empty tables of its project's schema (decision 176); the Fiben database
+    /// for FIBEN; none for an example written for the tool (decision 099).
+    /// </summary>
     public static ICatalogReader? CatalogFor(ForeignKey key, TestSchemaFixture fixture) => key.Kind switch
     {
         ForeignKey.Fiben => FibenCatalog.Value,
+        ForeignKey.Example when IsCaseStudy(key) => fixture.IsCaseStudyAvailable ? fixture.CaseStudyCatalogReader : null,
         ForeignKey.Example => null,
         _ => fixture.IsAvailable ? fixture.CatalogReader : null,
+    };
+
+    /// <summary>Whether the key is an excerpt of a real project - the case study of T1 (decision 174) -, whose tables stand in the case-study database (decision 176).</summary>
+    public static bool IsCaseStudy(ForeignKey key) => key.Kind == ForeignKey.Example && Examples.RealProjectKeys.Contains(key.Id);
+
+    /// <summary>Why a translation of the key cannot be made here, or null where its database stands: the fixture for every kind but FIBEN and the examples, the case-study database for a case study.</summary>
+    public static string? Unavailable(ForeignKey key, TestSchemaFixture fixture) => key.Kind switch
+    {
+        ForeignKey.Fiben => null,
+        ForeignKey.Example when IsCaseStudy(key) => fixture.IsCaseStudyAvailable ? null : fixture.CaseStudySkipReason,
+        ForeignKey.Example => null,
+        _ => fixture.IsAvailable ? null : fixture.SkipReason,
     };
 
     private static readonly Lazy<ICatalogReader?> FibenCatalog = new(() =>

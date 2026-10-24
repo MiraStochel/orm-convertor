@@ -10,6 +10,14 @@
   alert entities of its 98 - definitions, groups, targets, the current alert, its history and
   the notices sent for it, with two many-to-many relations through join tables.
 
+## Schema
+
+`schema.sql` is the project's `ambari-server/src/main/resources/Ambari-DDL-SQLServer-CREATE.sql`
+at the same commit, cut down to the six alert tables, the two join tables (`alert_grouping`,
+`alert_group_target`), `alert_target_states` and `ambari_sequences`, which the `@TableGenerator`
+of every entity names; the foreign keys to `clusters`, the indexes and the inserted data are left
+out, and every table is qualified with `{{schema}}` (decision 176).
+
 ## What was changed
 
 Ambari keeps its queries in `@NamedQuery` annotations on the entities and runs them with

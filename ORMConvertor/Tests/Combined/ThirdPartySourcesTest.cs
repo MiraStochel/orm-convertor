@@ -12,7 +12,7 @@ namespace Tests.Combined;
 /// </summary>
 public class ThirdPartySourcesTest
 {
-    private static readonly string[] CodeExtensions = [".cs", ".java", ".xml"];
+    private static readonly string[] CodeExtensions = [".cs", ".java", ".xml", ".sql"];
 
     public static TheoryData<string> Projects()
     {

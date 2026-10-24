@@ -20,6 +20,15 @@ folder is one project at one commit, with the project's licence beside the files
   out what the tool does not translate (statements that write, code that only serves them), or
   corrects an upstream mistake that keeps the code from running; the tables, the rows and the
   results stay those of the project. The `README.md` of each folder lists every change and why.
+- **Every project carries the schema of its tables** as `schema.sql` (decision 176): the tables
+  the excerpt names, taken from the schema the project publishes - its DDL script, or its
+  migrations replayed - with `{{schema}}` for the schema the caller creates, foreign keys only
+  between those tables, no indexes, and the same `ORMConvertor:` note as the code. Both test
+  suites create it, empty, in the case-study database (`ORMConvertorCaseStudies`, one schema per
+  project) as the catalog the experiment run translates the excerpt with and the database its
+  queries run over; the explanatory page runs the excerpts without a catalog, as it runs every
+  example. No table name may be shared between two schemas, which `Combined/CaseStudySchemaTest`
+  holds.
 - **Nothing here is compiled.** `SampleData.csproj` removes the folder from compilation and
   embeds every file, licences included, in the assembly; `ThirdPartySources` reads them and
   `ORMConvertorAPI/Data/Examples.cs` composes the examples from them.

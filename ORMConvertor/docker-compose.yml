@@ -1,7 +1,7 @@
 # Container configuration of the environment (decision 039, requirement S5).
 #
 #   docker compose up --build                            the system: application + sample databases
-#   docker compose --profile test build tests java_tests test_app test_app_ldbc test_db
+#   docker compose --profile test build tests java_tests test_app test_app_ldbc test_app_cases test_db
 #   docker compose --profile test run --rm tests         the .NET test suite, in a clean environment
 #   docker compose --profile test run --rm java_tests    the Java test suite, likewise
 #
@@ -116,10 +116,12 @@ services:
       start_period: 15s
 
   # The fixture creates a schema, not a database, so the database is the configuration's
-  # job. Ordering by the health check is also what keeps the suite from skipping merely
-  # because the server was still starting. The server answers before LdbcSnb is loaded, so
-  # this also waits for the extended property the loader writes last, ldbc.validation - and
-  # gives up after half an hour, which is a failed load and not a slow one.
+  # job - the test database and, beside it, the case-study database in which both suites
+  # create the schemas of the excerpted projects (decision 176). Ordering by the health check
+  # is also what keeps the suite from skipping merely because the server was still starting.
+  # The server answers before LdbcSnb is loaded, so this also waits for the extended property
+  # the loader writes last, ldbc.validation - and gives up after half an hour, which is a
+  # failed load and not a slow one.
   test_db_init:
     profiles: ["test"]
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -133,6 +135,7 @@ services:
         set -e
         sqlcmd="/opt/mssql-tools18/bin/sqlcmd -S test_db,1433 -U sa -P Testingorms123 -C -b"
         $$sqlcmd -Q "IF DB_ID('ORMConvertorTests') IS NULL CREATE DATABASE ORMConvertorTests;"
+        $$sqlcmd -Q "IF DB_ID('ORMConvertorCaseStudies') IS NULL CREATE DATABASE ORMConvertorCaseStudies;"
         for attempt in $$(seq 1 360); do
           loaded=$$($$sqlcmd -h -1 -W -Q "SET NOCOUNT ON; IF DB_ID('LdbcSnb') IS NOT NULL EXEC (N'SELECT CAST(value AS NVARCHAR(200)) FROM LdbcSnb.sys.extended_properties WHERE class = 0 AND name = N''ldbc.validation''');")
           if [ -n "$$loaded" ]; then echo "LdbcSnb holds $$loaded."; exit 0; fi
@@ -216,6 +219,29 @@ services:
       test_db_init:
         condition: service_completed_successfully
 
+  # The third instance the Java suite translates against: the same image with the case-study
+  # database as the catalog (decision 176), for the case studies of the experiment run - the
+  # excerpts of real projects, whose tables the suite creates there, empty, so that the keys a
+  # Dapper or MyBatis source cannot state come from the project's own schema. The alias exists
+  # for the reason test_app's does.
+  test_app_cases:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: ORMConvertorAPI/Dockerfile
+      target: runtime
+    cpuset: "2,3"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__CatalogDatabase=Server=test_db,1433;Database=ORMConvertorCaseStudies;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
+    networks:
+      default:
+        aliases:
+          - testappcases
+    depends_on:
+      test_db_init:
+        condition: service_completed_successfully
+
   # The Java suite (decisions 076 and 078): the java-tests stage of the same Dockerfile,
   # against the same SQL Server, in a schema of its own so that both suites may run at
   # once, and against the instance above for the generated artifacts. The JDBC URL carries
@@ -240,12 +266,18 @@ services:
       - ORMCONVERTOR_LDBC_API_URL=http://testappldbc:5072/orm
       - ORMCONVERTOR_REQUIRE_LDBC_DATABASE=1
       - ORMCONVERTOR_LDBC_VALIDATION_ROWS=${ORMCONVERTOR_LDBC_VALIDATION_ROWS-1000}
+      # The case studies of the experiment run (decision 176): the instance over the case-study
+      # database; the database itself is the test database's server with that name, so the
+      # suite derives its JDBC URL from ORMCONVERTOR_TEST_JDBC_URL.
+      - ORMCONVERTOR_CASESTUDY_API_URL=http://testappcases:5072/orm
     depends_on:
       test_db_init:
         condition: service_completed_successfully
       test_app:
         condition: service_started
       test_app_ldbc:
+        condition: service_started
+      test_app_cases:
         condition: service_started
 
 volumes:

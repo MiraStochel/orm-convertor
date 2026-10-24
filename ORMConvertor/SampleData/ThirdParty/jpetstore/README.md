@@ -8,6 +8,13 @@
   `Cart` and `CartItem` live in the session and are left out), `…/mapper/*.java` and
   `src/main/resources/org/mybatis/jpetstore/mapper/*.xml` (all seven mappers).
 
+## Schema
+
+`schema.sql` is the project's `src/main/resources/database/jpetstore-hsqldb-schema.sql` at the
+same commit: the thirteen tables as the HSQLDB script writes them - its types are T-SQL as they
+stand -, every table qualified with `{{schema}}`, the column `timestamp` of `orderstatus`
+bracketed and the four indexes left out (decision 176).
+
 ## What was changed
 
 1. **Domain classes and six mapper interfaces are unchanged** apart from the provenance note.

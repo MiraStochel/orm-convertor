@@ -1,5 +1,6 @@
 package cz.stochel.ormconvertor.javatests.experiment;
 
+import cz.stochel.ormconvertor.javatests.CaseStudyDatabase;
 import cz.stochel.ormconvertor.javatests.TestDatabase;
 import cz.stochel.ormconvertor.javatests.TestSchema;
 import cz.stochel.ormconvertor.javatests.differential.JavaQueryRunner;
@@ -66,6 +67,11 @@ class ExperimentRunTest {
         List<Arguments> arguments = new ArrayList<>();
         for (ExperimentInput input : ExperimentInput.discover(inputs, TestDatabase.schemaName())) {
             if (!kinds.contains(input.key().kind())) {
+                continue;
+            }
+            // A case study needs the instance over the case-study database (decision 176); without
+            // it the input is left out, as an LDBC key is without the LDBC instance.
+            if (isCaseStudy(input.key()) && !CaseStudyDatabase.isConfigured()) {
                 continue;
             }
             for (int target : new int[] {Orm.HIBERNATE, Orm.ECLIPSELINK, Orm.MYBATIS}) {
@@ -136,13 +142,18 @@ class ExperimentRunTest {
         return kinds;
     }
 
-    /** The instance a key is translated by (decision 078): the one whose catalog holds the tables the key reads. */
+    /** The instance a key is translated by (decision 078): the one whose catalog holds the tables the key reads - for a case study the case-study database (decision 176). */
     private static String instanceOf(ForeignArtifact.Key key) {
         return switch (key.kind()) {
             case ForeignArtifact.Key.LDBC -> LdbcDatabase.apiUrl();
             case ForeignArtifact.Key.FIBEN -> FibenDatabase.apiUrl();
+            case ForeignArtifact.Key.EXAMPLE -> isCaseStudy(key) ? CaseStudyDatabase.apiUrl() : ToolApi.baseUrl();
             default -> ToolApi.baseUrl();
         };
+    }
+
+    private static boolean isCaseStudy(ForeignArtifact.Key key) {
+        return ForeignArtifact.Key.EXAMPLE.equals(key.kind()) && TestSchema.isCaseStudy(key.id());
     }
 
     /**
