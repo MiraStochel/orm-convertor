@@ -470,6 +470,27 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
+            if (pm.Property.Type is { Category: LangTypeCategory.Reference } reference)
+            {
+                // A reference to an entity of the conversion with no relation behind it - no
+                // source stated one and the catalog found none - has no column to name: a
+                // <property> would claim a column named after the navigation that no source
+                // stated and no table has. The class keeps the member, the mapping leaves it
+                // out, and the gap is on record - the answer the collection gets two lines
+                // above (decision 178).
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.XML,
+                    Entity = entityMap.Entity.Name,
+                    Property = pm.Property.Name,
+                    Reason = $"The reference to '{reference.TargetEntity}' has no relation behind it, so there is nothing to build "
+                        + "its mapping from; the property stays on the class and the mapping leaves it unmapped.",
+                });
+                continue;
+            }
+
             AppendPropertyToXml(artifact.Mapping, entityMap, pm);
         }
     }

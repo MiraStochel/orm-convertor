@@ -543,4 +543,90 @@ public class UnreadMappingFactsTest
         Assert.Equal(target, gap.Framework);
         Assert.Contains("written @Transient", gap.Reason);
     }
+
+    /* ---- The mapping targets: a reference with no relation behind it ----------------- */
+
+    private static readonly ConversionSource[] AlbumWithBareArtist =
+    [
+        Source(ConversionContentType.Java, """
+            package shop;
+
+            import jakarta.persistence.*;
+
+            @Entity
+            public class Album {
+                @Id
+                private Integer id;
+
+                private String title;
+
+                private Artist artist;
+            }
+            """, "Album.java"),
+        Source(ConversionContentType.Java, """
+            package shop;
+
+            import jakarta.persistence.*;
+
+            @Entity
+            public class Artist {
+                @Id
+                private Integer id;
+
+                private String name;
+            }
+            """, "Artist.java"),
+    ];
+
+    /// <summary>
+    /// The sibling of the collection above (decision 178): a field typed by another entity
+    /// of the conversion with no relation behind it - no annotation, no catalog - used to be
+    /// written as a plain column named after the navigation, a column no source stated and no
+    /// table has. The member now stays on the class as @Transient with the record the
+    /// collection gets; the same shape in the MyBatis target made MyBatis refuse the mapper.
+    /// </summary>
+    [Theory]
+    [InlineData(ORMEnum.Hibernate)]
+    [InlineData(ORMEnum.EclipseLink)]
+    public void AReferenceWithoutARelationIsTransientInTheJpaTarget(ORMEnum target)
+    {
+        var result = ConversionHandler.Convert(ORMEnum.Hibernate, target, [.. AlbumWithBareArtist]);
+
+        var album = result.Sources.Single(s => s.ContentType == ConversionContentType.JavaEntity && s.Content.Contains("class Album"));
+        var code = album.Content.Replace("\r\n", "\n");
+
+        Assert.Contains("@Transient\n    private Artist artist", code);
+        Assert.DoesNotContain("@Column(name = \"artist\"", code);
+        Assert.Contains("@Column(name = \"title\"", code);
+
+        var gap = Assert.Single(result.Records, r =>
+            r.Kind == ConversionRecordKind.Incompleteness && r.Entity == "Album" && r.Property == "artist");
+
+        Assert.Equal(target, gap.Framework);
+        Assert.Contains("reference to 'Artist' has no relation behind it", gap.Reason);
+        Assert.Contains("written @Transient", gap.Reason);
+    }
+
+    /// <summary>
+    /// The same shape into NHibernate: no &lt;property&gt; over the navigation, the class
+    /// keeps the member, the gap is on record (decision 178).
+    /// </summary>
+    [Fact]
+    public void AReferenceWithoutARelationStaysUnmappedInTheNHibernateTarget()
+    {
+        var result = ConversionHandler.Convert(ORMEnum.Hibernate, ORMEnum.NHibernate, [.. AlbumWithBareArtist]);
+
+        var mapping = result.Sources.Single(s => s.ContentType == ConversionContentType.XML && s.Content.Contains("<class name=\"Album\"")).Content;
+        var code = result.Sources.Single(s => s.ContentType == ConversionContentType.CSharpEntity && s.Content.Contains("class Album")).Content;
+
+        Assert.DoesNotContain("name=\"artist\"", mapping);
+        Assert.Contains("name=\"title\"", mapping);
+        Assert.Contains("Artist? artist", code);
+
+        var gap = Assert.Single(result.Records, r =>
+            r.Kind == ConversionRecordKind.Incompleteness && r.Entity == "Album" && r.Property == "artist");
+
+        Assert.Equal(ORMEnum.NHibernate, gap.Framework);
+        Assert.Contains("reference to 'Artist' has no relation behind it", gap.Reason);
+    }
 }

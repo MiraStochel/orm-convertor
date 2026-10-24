@@ -390,6 +390,31 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
+            if (propertyMap.Property.Type is { Category: LangTypeCategory.Reference } reference)
+            {
+                // A reference to an entity of the conversion with no relation behind it - no
+                // source stated one and the catalog found none - has no column to name, and
+                // a bare entity-typed field under @Column claims a basic attribute over a
+                // column named after the navigation that no source stated and no table has.
+                // The member stays on the class as @Transient and the gap is reported, as
+                // for the collection above (decision 178).
+                Import($"{Jakarta}.Transient");
+                code.AppendLine("    @Transient");
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.JavaEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = propertyMap.Property.Name,
+                    Reason = $"The reference to '{reference.TargetEntity}' has no relation behind it, so there is nothing to build "
+                        + "its mapping from; a bare entity-typed field would claim a basic column named after the navigation, so the "
+                        + "member is written @Transient and the mapping leaves it unmapped.",
+                });
+                AppendField(entityMap, propertyMap.Property, code);
+                continue;
+            }
+
             // A scalar over a column a relation of the entity also maps is read-only here,
             // so that the column is written once, by the relation - the rule NHibernate
             // has for the same shape (decision 012).

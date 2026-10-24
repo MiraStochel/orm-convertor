@@ -149,6 +149,53 @@ public class MyBatisBuilderTest
     }
 
     /// <summary>
+    /// A reference to an entity of the conversion with no relation behind it gets no
+    /// &lt;result&gt; either (decision 178): a Dapper source states no relation, the descriptor
+    /// states no foreign key, so the catalog never founds one, and a &lt;result&gt; over the
+    /// navigation made MyBatis 3.5.19 refuse the mapper of the Chinook excerpt ("No typehandler
+    /// found for property Artist", measured by the Java suite). The scalar foreign key column
+    /// beside it is mapped as before; the member stays on the class; the gap is on record.
+    /// </summary>
+    [Fact]
+    public void AReferenceWithoutARelationIsLeftOutOfTheMappingAndReported()
+    {
+        var result = ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.MyBatis,
+        [
+            new() { Name = "Album.cs", Content = """
+                namespace Music;
+
+                public class Album
+                {
+                    public int Id { get; set; }
+                    public string Title { get; set; }
+                    public int ArtistId { get; set; }
+                    public virtual Artist Artist { get; set; }
+                }
+                """, ContentType = ConversionContentType.CSharp },
+            new() { Name = "Artist.cs", Content = """
+                namespace Music;
+
+                public class Artist
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                }
+                """, ContentType = ConversionContentType.CSharp },
+        ]);
+
+        var mapper = result.Sources.Single(s => s.ContentType == ConversionContentType.XML && s.Content.Contains("id=\"Album\"")).Content;
+        var java = result.Sources.Single(s => s.ContentType == ConversionContentType.JavaEntity && s.Content.Contains("class Album")).Content;
+
+        Assert.DoesNotContain("property=\"Artist\"", mapper);
+        Assert.Contains("<result column=\"ArtistId\" property=\"ArtistId\" />", mapper);
+        Assert.Contains("private Artist Artist;", java);
+
+        var gap = Assert.Single(result.Records, r =>
+            r.Kind == ConversionRecordKind.Incompleteness && r.Entity == "Album" && r.Property == "Artist");
+        Assert.Contains("reference to 'Artist' has no relation behind it", gap.Reason);
+    }
+
+    /// <summary>
     /// What a mapper has nowhere to put is a loss the descriptor produces mechanically
     /// (decision 010), so the list cannot be forgotten: the table and its schema, the length,
     /// the precision, the nullability, the key mechanism and the version column.
