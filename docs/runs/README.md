@@ -63,6 +63,7 @@ Proč v tomto pořadí a nikdy dva běhy najednou, říká rozh. 168.
 | [2026-10-22](2026-10-22-fiben-2.md) | běh FIBEN | `ee29333` | první běh s vypnutým turbem; každá buňka ve shodě se zdrojem kromě q63 v EclipseLinku |
 | [2026-10-22](2026-10-22-ldbc-judge-mode.md) | doba přehrání soudce LDBC v režimu soudce | `1bc69c3` + změna rozh. 165 a 166 | režim soudce proti měřicímu, přehrání postupné a souběžné |
 | [2026-10-24](2026-10-24-experiment-examples.md) | kontrola experimentálního běhu nad příklady, .NET půlka na MIS2 | `0b6c875` + úprava vstupů | příklady a výňatky se v cílech .NET nekompilovaly kvůli typům mimo vstup, výčtům a mapám; vstupy upraveny a po úpravě každý řádek mimo odmítnutí podle rozhodnutí do třetího stupně, až na Chinook bez klíče do EF Core |
+| [2026-10-24](2026-10-24-ldbc-catalog-times.md) | čas BI 14 v zafixovaném prostředí | `07fc101` | BI 14 pod horní mezí okna; se záznamem z 2026-10-17 změřen celý katalog |
 
 **Sloupce běhu FIBEN:** *přeloženo* je vlastní jazyk cíle, *nativní SQL* úniková cesta rozh. [113](../decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md), *odmítnuto* `Failure` v překladu; *shoda se zdrojem* je čtvrtý stupeň proti řádkům zdroje téhož běhu; *medián* je medián mediánů buněk podle politiky rozh. 145 a *součet* jejich součet přes katalog.
 

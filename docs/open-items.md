@@ -16,7 +16,6 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | [Vlastnost vyňaté konstrukce v artefaktu](#vlastnost-vyňaté-konstrukce-a-navigace-bez-klíče-vycházejí-do-artefaktu-který-cíl-nepřijme) | Experimenty | rozhodnutí | | F11, T3 |
 | [Mapper MyBatisu s referenční navigací](#mapper-mybatisu-s-referenční-navigací-mybatis-odmítne) | Experimenty | práce | | F10, F11 |
 | [Meze složitosti a velikosti vstupu](#meze-složitosti-dotazu-hloubky-zanoření-a-velikosti-tříd-nikdo-nehledal) | Experimenty | rozhodnutí | | S3, T3–T5 |
-| [BI 14 v zafixovaném prostředí](#bi-14-se-v-zafixovaném-prostředí-nezměřil) | Experimenty | práce | experimenty | T2, T3 |
 | [Advisor nad všemi frameworky](#advisor-měří-jen-dapper-a-ef-core) | Advisor | práce | | F15, T7 |
 | [Srovnání s variantami a heuristikou](#srovnání-advisoru-s-jednotlivými-frameworky-a-heuristikou-chybí) | Advisor | práce | | T7, F15 |
 | [Izolace spouštění cizího kódu](#izolace-spouštění-cizího-kódu-advisorem) | Advisor | rozhodnutí | | S4, F15, T7 |
@@ -79,11 +78,6 @@ Známé jsou dva body: S3 jedním měřením (100 entit a 100 dotazů EF Core �
 - velikost převodu: počet entit, jednotek a dotazů v jednom požadavku, bez katalogu i s ním (čtení katalogu zvlášť, S3).
 
 U každého bodu řady čas, paměť a výsledek na čtyřech stupních rozh. [016](./decisions/016-generated-artifact-verification-levels.md) (metriky T3). **Nad týmiž řadami se výsledky poměří s překladem pomocí LLM** (T4, T5) a s přístupy souběžných prací — na které ose a kde který přístup selže; metodiku dává rozh. [175](./decisions/175-the-comparison-with-a-language-model-is-a-protocol-over-the-foreign-path.md). Rozhodnout osy a generátor řad (syntetické, nebo škálované dotazy katalogů LDBC, FIBEN a příkladů), co se počítá za mez a zda řady vstupují do experimentálního běhu (rozh. [173](./decisions/173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md)) jako další druh klíče.
-
-#### BI 14 se v zafixovaném prostředí nezměřil
-*Práce. Okno 0,2–300 s dalo rozh. [140](./decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md), prostředí rozh. [145](./decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md), mez jednoho spuštění rozh. [146](./decisions/146-the-java-branch-measures-with-the-same-loop-in-its-own-container-and-an-execution-has-one-time-limit.md). Požadavky T2, T3.*
-
-Každý dotaz katalogu LDBC má na MIS3 běžet mezi 0,2 s a 300 s. V zafixovaném prostředí se změřil každý kromě BI 14 ([záznam](./runs/2026-10-17-ldbc-catalog-times.md)): před zafixováním trval 38 s ([záznam](./runs/2026-10-15-ldbc-catalog-times.md)), prostředí prodloužilo průchody 4–9× ([záznam](./runs/2026-10-17-ldbc-catalog-noise.md)), a může tedy ležet kdekoli od 90 s po horní mez okna i nad ní. Změřit ho v měřicím režimu se záznamem do [`runs/`](./runs/README.md). Nad mezí 600 s by buňka selhala v každém měření; text kvůli času upravit nelze (rozh. 140) a prostředí je pro všechny dotazy jedno (rozh. 145).
 
 ## Advisor
 
