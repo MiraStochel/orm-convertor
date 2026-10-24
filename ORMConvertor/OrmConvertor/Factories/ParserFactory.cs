@@ -136,10 +136,13 @@ internal class ParserFactory
             // are the only place the type of a MyBatis query parameter lives (decision 084).
             case ORMEnum.MyBatis:
             {
+                // The two mapping parsers take the declared dialect as well: a statement whose
+                // result type is an entity states columns by its aliases (decision 181), read on
+                // the entity pass by the same T-SQL reading the query pass uses.
                 var context = MyBatisReadingContext.For(eb);
                 return qb is null
-                    ? [new MyBatisEntityParser(eb), new MyBatisMapperInterfaceParser(eb, context), new MyBatisXmlMappingParser(eb, context)]
-                    : [new MyBatisEntityParser(eb), new MyBatisMapperInterfaceParser(eb, context), new MyBatisXmlMappingParser(eb, context), new MyBatisAnnotationQueryParser(qb, context, declaredSourceDialect), new MyBatisXmlQueryParser(qb, context, declaredSourceDialect)];
+                    ? [new MyBatisEntityParser(eb), new MyBatisMapperInterfaceParser(eb, context, declaredSourceDialect), new MyBatisXmlMappingParser(eb, context, declaredSourceDialect)]
+                    : [new MyBatisEntityParser(eb), new MyBatisMapperInterfaceParser(eb, context, declaredSourceDialect), new MyBatisXmlMappingParser(eb, context, declaredSourceDialect), new MyBatisAnnotationQueryParser(qb, context, declaredSourceDialect), new MyBatisXmlQueryParser(qb, context, declaredSourceDialect)];
             }
 
             // Symmetric with the target side, which refuses an unsupported framework rather

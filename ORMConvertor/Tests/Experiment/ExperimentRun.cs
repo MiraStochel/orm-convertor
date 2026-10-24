@@ -192,7 +192,13 @@ internal static class ExperimentRun
             return (null, null, "the conversion threw: " + exception.GetBaseException().Message);
         }
 
-        var failures = conversion.Records.Where(record => record.Kind == ConversionRecordKind.Failure).Select(record => record.Reason).Distinct().ToList();
+        // The row names the entity of each refusal, where the record has one: a project refused
+        // for a key the catalog did not supply is read from the row alone (decision 181).
+        var failures = conversion.Records
+            .Where(record => record.Kind == ConversionRecordKind.Failure)
+            .Select(record => record.Entity is { } entity ? $"{entity}: {record.Reason}" : record.Reason)
+            .Distinct()
+            .ToList();
         if (failures.Count > 0)
         {
             return (conversion, null, string.Join("; ", failures));

@@ -161,5 +161,18 @@ public static class EclipseLinkDescriptor
         // SQL Server as written, so the names SQL Server knows convert it back - INTEGER and
         // BIGINT into Integer and Long, DECIMAL(38,6) into a BigDecimal of six places -, in the
         // select list, a subquery and having alike; LONG and DOUBLE it refuses.
-        AverageCasts: new JpaAverageCasts("INTEGER", "BIGINT", "DECIMAL({0},{1})"));
+        AverageCasts: new JpaAverageCasts("INTEGER", "BIGINT", "DECIMAL({0},{1})"),
+
+        // Measured against 5.0.0 by the experiment run of 2026-10-24 (decision 179) and pinned
+        // by eclipselink/BinaryVersionClaimsTest: a unit with @Version over byte[] - what
+        // EF Core's [Timestamp] becomes - is refused at deployment with EclipseLink-7168, the
+        // version may be int, Integer, short, Short, long, Long or Timestamp only. The builder
+        // writes such a column read-only, without @Version, and reports the loss.
+        RefusesBinaryVersion: true,
+
+        // Measured the same way (decision 180) and pinned by eclipselink/FullJoinClaimsTest: the
+        // Hermes parser of 5.0.0 refuses "full join" with a syntax error - Jakarta Persistence
+        // has the inner and the left join only -, so the query goes out in native SQL
+        // (decision 113). The right join, the other extension, no run has measured.
+        RefusesFullJoin: true);
 }

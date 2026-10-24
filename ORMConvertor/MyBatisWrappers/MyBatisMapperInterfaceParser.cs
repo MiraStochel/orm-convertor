@@ -17,8 +17,16 @@ namespace MyBatisWrappers;
 /// query parameter lives - a mapper writes #{id} and states nothing about it - and the
 /// entity pass runs whole before the query pass, so the signature is there whichever order
 /// the units arrived in.
+///
+/// A @Select without @Results or @ResultMap on a method whose return type materializes an
+/// entity of the conversion maps its rows by auto-mapping, so a column renamed in its
+/// projection is the column of that property (decision 181) - the annotated spelling of what
+/// a &lt;select resultType&gt; states in the XML mapper.
 /// </summary>
-public sealed class MyBatisMapperInterfaceParser(AbstractEntityBuilder entityBuilder, MyBatisReadingContext context)
+public sealed class MyBatisMapperInterfaceParser(
+    AbstractEntityBuilder entityBuilder,
+    MyBatisReadingContext context,
+    SourceSqlDialect? declaredSourceDialect = null)
     : MyBatisMappingParser(entityBuilder)
 {
     /// <summary>The annotations that declare a statement, whose ids share one collection.</summary>
@@ -80,6 +88,8 @@ public sealed class MyBatisMapperInterfaceParser(AbstractEntityBuilder entityBui
                     read.Add(entityMap);
                 }
 
+                ReadRenamedColumns(method, namespaceName);
+
                 // A mapper interface that carries no @Results still says something about the
                 // conversion: it names the entity its statements materialize and it types
                 // their parameters, which is the one fact a MyBatis mapper never states
@@ -99,6 +109,36 @@ public sealed class MyBatisMapperInterfaceParser(AbstractEntityBuilder entityBui
         }
 
         return read;
+    }
+
+    /// <summary>
+    /// The aliases of a @Select that maps its rows onto an entity by auto-mapping (decision
+    /// 181): the method carries no @Results and no @ResultMap - either would be the explicit
+    /// map -, and its return type materializes an entity some unit declared. The statement is
+    /// prepared the way the query pass prepares it, which reports what it refuses.
+    /// </summary>
+    private void ReadRenamedColumns(JavaMethod method, string namespaceName)
+    {
+        if (method.Annotations.FirstOrDefault(a => a.SimpleName == "Select") is not { } select
+            || method.Annotations.Any(a => a.SimpleName is "Results" or "ResultMap")
+            || DeclaredEntity(MyBatisTypeNames.MaterializedClass(method.ReturnType)) is not { } entityMap)
+        {
+            return;
+        }
+
+        var statement = string.Join(
+            " ",
+            (select["value"]?.AsList ?? [])
+                .Where(v => v.Kind == JavaAnnotationValueKind.String)
+                .Select(v => v.Text));
+
+        if (string.IsNullOrWhiteSpace(statement))
+        {
+            return;
+        }
+
+        var text = new MyBatisStatementText(context, namespaceName, (_, _, _) => { });
+        ReadRenamedColumns(entityMap, text.FromAnnotationText(statement), declaredSourceDialect, at: null);
     }
 
     private static MyBatisMethodSignature SignatureOf(JavaMethod method)

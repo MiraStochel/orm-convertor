@@ -107,5 +107,11 @@ public static class HibernateDescriptor
         // the quotient off as SQL does. cast(… as Integer) and Long cut it off again; a decimal
         // takes its precision and scale - BigDecimal alone is numeric(38,2), which rounds the
         // average -, over a window and inside with as well.
-        AverageCasts: new JpaAverageCasts("Integer", "Long", "BigDecimal({0},{1})"));
+        AverageCasts: new JpaAverageCasts("Integer", "Long", "BigDecimal({0},{1})"),
+
+        // Measured against 7.4.5.Final by the experiment run of 2026-10-24 (decisions 179 and
+        // 180) and pinned by hibernate/BinaryVersionClaimsTest and hibernate/FullJoinClaimsTest:
+        // a unit with @Version over byte[] deploys, and HQL reads "full join".
+        RefusesBinaryVersion: false,
+        RefusesFullJoin: false);
 }

@@ -321,6 +321,40 @@ public class EclipseLinkQueryTest
         Assert.Contains("having sum(ol.Quantity) > 10", Jpql(result));
     }
 
+    /// <summary>
+    /// Jakarta Persistence has the inner and the left join only, and of the two extensions
+    /// EclipseLink 5.0.0 reads the right join and refuses "full join" with a syntax error
+    /// (measured by the Java suite's FullJoinClaimsTest), where HQL has it; an inner join in
+    /// its place would return fewer rows (decision 065). So the query goes out in native SQL,
+    /// which has the join, with the record that says so (decisions 113 and 180).
+    /// </summary>
+    [Fact]
+    public void AFullOuterJoinSendsTheQueryToNativeSql()
+    {
+        var result = Convert(ORMEnum.Dapper, """
+            SELECT c.CustomerName FROM Sales.Customers AS c
+            FULL JOIN Sales.Orders AS o ON o.CustomerId = c.CustomerId
+            """, ConversionContentType.SqlQuery);
+
+        var record = Assert.Single(result.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        Assert.Equal(QueryFeature.JoinKind, record.Feature);
+        Assert.Contains("no full outer join", record.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Failure && r.Artifact?.IsQuery() == true);
+        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.JpqlQuery);
+
+        var method = Method(result);
+        Assert.Contains("em.createNativeQuery(", method);
+        Assert.Contains("FULL JOIN", method);
+
+        var leftJoin = Convert(ORMEnum.Dapper, """
+            SELECT c.CustomerName FROM Sales.Customers AS c
+            LEFT JOIN Sales.Orders AS o ON o.CustomerId = c.CustomerId
+            """, ConversionContentType.SqlQuery);
+
+        Assert.Contains("left join Order o on o.CustomerId = c.CustomerId", Jpql(leftJoin));
+        Assert.DoesNotContain(leftJoin.Records, r => r.Kind == ConversionRecordKind.Fallback);
+    }
+
     /// <summary>A Dapper query over the shop domain of the matrices, into EclipseLink.</summary>
     private static ConversionResult ConvertShop(string sql)
         => ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.EclipseLink,

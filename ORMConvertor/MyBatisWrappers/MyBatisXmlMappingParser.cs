@@ -19,8 +19,15 @@ namespace MyBatisWrappers;
 /// same id in an annotation and in XML is recognized; the bodies of its &lt;sql&gt;
 /// fragments, so that an &lt;include&gt; can be expanded; and nothing else - the signatures
 /// come from the interface.
+///
+/// After the result maps it reads the one mapping a statement states on its own (decision
+/// 181): a &lt;select resultType&gt; naming an entity of the conversion maps its rows by
+/// auto-mapping, so a column renamed in its projection is the column of that property.
 /// </summary>
-public sealed class MyBatisXmlMappingParser(AbstractEntityBuilder entityBuilder, MyBatisReadingContext context)
+public sealed class MyBatisXmlMappingParser(
+    AbstractEntityBuilder entityBuilder,
+    MyBatisReadingContext context,
+    SourceSqlDialect? declaredSourceDialect = null)
     : MyBatisMappingParser(entityBuilder)
 {
     protected override ConversionContentType Artifact => ConversionContentType.XML;
@@ -110,6 +117,25 @@ public sealed class MyBatisXmlMappingParser(AbstractEntityBuilder entityBuilder,
         foreach (var resultMap in root.Elements().Where(e => e.Name.LocalName == "resultMap"))
         {
             if (ReadResultMap(resultMap, byId, closed, []) is { } entityMap && !read.Contains(entityMap))
+            {
+                read.Add(entityMap);
+            }
+        }
+
+        // The result maps first, as the explicit map of the document, then the statements that
+        // map by auto-mapping (decision 181): a statement with a resultMap is the explicit map's
+        // and states nothing by its aliases, one with a resultType naming a declared entity does.
+        foreach (var select in root.Elements().Where(e => e.Name.LocalName == "select" && e.Attribute("resultMap") is null))
+        {
+            if (DeclaredEntity(select.Attribute("resultType")?.Value) is not { } entityMap)
+            {
+                continue;
+            }
+
+            var text = new MyBatisStatementText(context, namespaceName, (_, _, _) => { });
+            ReadRenamedColumns(entityMap, text.FromElement(select), declaredSourceDialect, XmlSource.RangeOf(select));
+
+            if (!read.Contains(entityMap))
             {
                 read.Add(entityMap);
             }

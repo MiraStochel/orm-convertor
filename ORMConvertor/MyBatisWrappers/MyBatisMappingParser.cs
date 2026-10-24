@@ -1,10 +1,12 @@
 using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
+using Common.Naming;
 using JavaEntityParsing;
 using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
+using TransactSql;
 
 namespace MyBatisWrappers;
 
@@ -114,6 +116,90 @@ public abstract class MyBatisMappingParser(AbstractEntityBuilder entityBuilder) 
         {
             WriteJavaType(entityMap, property, javaType);
         }
+    }
+
+    /// <summary>
+    /// The other spelling of a column-to-property pair MyBatis has (decision 181): a statement
+    /// whose result type is an entity of the conversion maps its rows by auto-mapping - every
+    /// column of the result into the property of the same name, regardless of case - so
+    /// <c>CATID AS categoryId</c> in such a statement states that the property categoryId
+    /// holds the column CATID, the same fact a &lt;result column property&gt; states. Read
+    /// here on the entity pass, before the catalog, so that the completion pairs by the stated
+    /// column; the query pass reads the same statement for its query (decision 081).
+    ///
+    /// What the text says about its columns is <see cref="SqlRenamedColumns"/>'s, with the
+    /// conditions of decision 131: a bare column under an alias in the outer projection, of the
+    /// entity's own table - the stated one, else a candidate of decision 050 -, whose alias
+    /// names a scalar property the way MyBatis matches it. Refusals of the text are the query
+    /// pass's to report, so this reading says nothing.
+    /// </summary>
+    /// <param name="entityMap">The entity the statement materializes.</param>
+    /// <param name="sql">The T-SQL of the statement as <see cref="MyBatisStatementText"/> prepared it; null where a step refused it.</param>
+    /// <param name="declaredSourceDialect">The dialect the source declared for the text (decision 088); null where it declared none.</param>
+    /// <param name="at">Where the statement stands in the unit, for the ledger; null where the reader has no position.</param>
+    protected void ReadRenamedColumns(EntityMap entityMap, string? sql, SourceSqlDialect? declaredSourceDialect, TextRange? at)
+    {
+        if (sql is null || SqlText.Selects(sql, (_, _, _) => { }, declaredSourceDialect, Limits) is not [var select])
+        {
+            return;
+        }
+
+        var tables = entityMap.Table is { } stated ? [stated] : EntityTableNaming.TableCandidatesFor(entityMap.Entity.Name);
+
+        foreach (var renamed in SqlRenamedColumns.Of(select))
+        {
+            if (!tables.Contains(renamed.Table, StringComparer.OrdinalIgnoreCase)
+                || PropertyOf(entityMap, renamed.Name) is not { } property)
+            {
+                continue;
+            }
+
+            entityBuilder.EntityMap = entityMap;
+
+            using (entityBuilder.At(at))
+            {
+                entityBuilder.SetPropertyDatabaseMapping(property.Name, new Dictionary<string, string> { ["columnname"] = renamed.Column });
+            }
+        }
+    }
+
+    /// <summary>
+    /// The entity of the conversion a result type names - by its simple name, and by the
+    /// package where the name carries one -, or null: a type no unit declared (naming a class
+    /// is not declaring one), a scalar, <c>map</c>, or two entities of the name with no package
+    /// to tell them apart. Unlike <see cref="Entity"/>, which a &lt;resultMap&gt; uses, this
+    /// creates nothing.
+    /// </summary>
+    protected EntityMap? DeclaredEntity(string? typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            return null;
+        }
+
+        var simple = MyBatisTypeNames.SimpleName(typeName);
+        var package = MyBatisTypeNames.PackageOf(typeName);
+
+        var named = entityBuilder.EntityMaps.Where(em => string.Equals(em.Entity.Name, simple, StringComparison.Ordinal)).ToList();
+        var placed = package is null
+            ? named
+            : named.Where(em => string.IsNullOrEmpty(em.Entity.Namespace) || em.Entity.Namespace == package).ToList();
+
+        return placed.Count == 1 ? placed[0] : null;
+    }
+
+    /// <summary>
+    /// The property MyBatis auto-maps a result column of the given name into: the same name
+    /// first, then the name regardless of case (MyBatis 3.5, <c>MetaClass.findProperty</c>). A
+    /// navigation takes no column of a row, so only a property of a scalar or an unknown type
+    /// is one; a dotted alias names a nested property, which no property of the class is.
+    /// </summary>
+    private static Property? PropertyOf(EntityMap entityMap, string name)
+    {
+        var property = entityMap.Entity.Properties.FirstOrDefault(p => p.Name == name)
+            ?? entityMap.Entity.Properties.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+
+        return property?.Type?.Category is LangTypeCategory.Reference or LangTypeCategory.Collection ? null : property;
     }
 
     /// <summary>

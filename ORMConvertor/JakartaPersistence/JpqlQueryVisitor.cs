@@ -70,6 +70,20 @@ public sealed class JpqlQueryVisitor(
             _ => throw new ArgumentOutOfRangeException(nameof(instr), instr.Kind, null),
         };
 
+        // Jakarta Persistence has the inner and the left join only; an implementation that
+        // refuses the full join with a syntax error (EclipseLink 5.0.0, measured) cannot take an
+        // inner join in its place, which would return fewer rows (decision 065) - so the query
+        // goes out in native SQL, which has the join (decisions 113 and 180). HQL has the full
+        // join and keeps it.
+        if (instr.Kind == JoinKind.Full && profile is { RefusesFullJoin: true })
+        {
+            report(
+                ConversionRecordKind.Fallback,
+                $"JPQL in {profile.Implementation} has no full outer join",
+                QueryFeature.JoinKind);
+            return string.Empty;
+        }
+
         var (entity, alias) = JoinTarget(instr);
 
         // JPQL has no other spelling of an entity name than the name itself, so a name the

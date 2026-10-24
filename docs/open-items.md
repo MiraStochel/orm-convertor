@@ -12,10 +12,7 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 |---|---|---|---|---|
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | projekt | T2, T3, F13 |
 | [Soudce FIBEN po rozh. 170](#soudce-fiben-po-rozh-170) | Dotazy | práce | experimenty | T2, T3, F13 |
-| [Verze nad `byte[]` v EclipseLinku](#eclipselink-odmítne-verzi-nad-byte-kterou-dává-timestamp-ef-core) | Překlad | rozhodnutí | experimenty | F9, F10 |
-| [`full join` v JPQL pro EclipseLink](#full-join-v-jpql-pro-eclipselink) | Překlad | rozhodnutí | experimenty | F9, F10 |
 | [Nárok T2 a T3 po prvním záznamu](#nárok-t2-a-t3-po-prvním-záznamu-experimentálního-běhu) | Experimenty | rozhodnutí | experimenty | T2, T3 |
-| [Klíč JPetStore z katalogu studie](#katalog-případové-studie-nedodá-klíč-jpetstore) | Experimenty | práce | experimenty | T1, F4 |
 | [Meze složitosti a velikosti vstupu](#meze-složitosti-dotazu-hloubky-zanoření-a-velikosti-tříd-nikdo-nehledal) | Experimenty | rozhodnutí | | S3, T3–T5 |
 | [Advisor nad všemi frameworky](#advisor-měří-jen-dapper-a-ef-core) | Advisor | práce | | F15, T7 |
 | [Srovnání s variantami a heuristikou](#srovnání-advisoru-s-jednotlivými-frameworky-a-heuristikou-chybí) | Advisor | práce | | T7, F15 |
@@ -34,20 +31,6 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | | — |
 
 ---
-
-## Překlad
-
-Dvě vady, které našel [první záznam experimentálního běhu](./runs/2026-10-24-experiment.md) na straně EclipseLinku; Hibernate tytéž artefakty v témže běhu přijal.
-
-#### EclipseLink odmítne verzi nad `byte[]`, kterou dává `[Timestamp]` EF Core
-*Vada; rozhodnutí. Zdroj [záznam z 2026-10-24](./runs/2026-10-24-experiment.md); souvisí s rozh. [116](./decisions/116-concurrency-check-is-the-version-the-application-keeps.md) a [080](./decisions/080-eclipselink-as-the-second-profile-over-the-jpa-layer.md) a s řádky o verzi v [`subset.md`](./subset.md). Požadavky F9, F10.*
-
-Entitu EF Core s `[Timestamp] byte[] RowVersion` (příklady `helpdesk-application`, `marketplace-fluent`, `order-book`, `order-repository`) píše vrstva JPA pro oba profily jako `@Version byte[]`. EclipseLink 5.0.0 takovou jednotku odmítne už při nasazení (`EclipseLink-7168`: verze smí být jen `int`, `Integer`, `short`, `Short`, `long`, `Long` nebo `Timestamp`), Hibernate ji přijme; deskriptor ani profil EclipseLinku typ verze neomezují. Je třeba rozhodnout, co profil EclipseLinku s verzí nad binárním typem dělá — nejblíž tomu, jak `subset.md` zachází s `[ConcurrencyCheck]` nad typem, který cíl jako verzi neunese, je obyčejný sloupec bez `@Version` se záznamem `Loss` kategorie `VersionColumn` — a měření držet testem vedle hooku. Do opravy platí nárok F9 pro verzi `[Timestamp]` jen s výhradou.
-
-#### `full join` v JPQL pro EclipseLink
-*Vada; rozhodnutí. Zdroj [záznam z 2026-10-24](./runs/2026-10-24-experiment.md); souvisí s rozh. [065](./decisions/065-row-set-as-the-boundary-of-rule-053.md) a [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md). Požadavky F9, F10.*
-
-Dotaz s `full join` ze zdroje Hibernate (příklad `marketplace-query-tour`) vyjde do EclipseLinku jako JPQL s `full join`; Jakarta Persistence úplné vnější spojení nemá a EclipseLink 5.0.0 dotaz při vytvoření odmítne syntaktickou chybou, zatímco Hibernate ho jako HQL přijme (round-trip Hibernate → Hibernate téhož běhu). Deskriptor JPA hlásí `JoinKind` jako vyjádřitelný pro oba profily a `AbstractJpaQueryBuilder` má pro konstrukce, které jedna implementace nevysloví, cestu `ReportUnspoken` do nativního SQL (rozh. 113). Je třeba rozhodnout, zda profil EclipseLinku pošle `full join` touto cestou, nebo zda ho odmítne, jak u NHibernatu rozhodlo 065; měření drží test vedle hooku.
 
 ## Dotazy
 
@@ -70,12 +53,7 @@ Oblast je ze záruk vyňatá (§9, oblast 6). Experimentální běh, referenčn�
 #### Nárok T2 a T3 po prvním záznamu experimentálního běhu
 *Potom. Rozhodnutí nad [záznamem z 2026-10-24](./runs/2026-10-24-experiment.md); mění §9 (oblast 6), sekci *Guarantees* kořenového [`README.md`](../README.md) a řádky T2 a T3 v [`traceability.md`](./traceability.md). Požadavky T2, T3.*
 
-Záznam dává tabulku T2 × T3 nad maticí, katalogy, příklady a případovými studiemi v zafixovaném prostředí, a tím je splněná podmínka, za níž se mělo posoudit, zda T2 a T3 vystoupí z vyňaté oblasti 6 v užším rozsahu (tabulka bez měření času a bez experimentů T4–T6). Doporučujeme zatím ne: záznam nese buňky šesti dotazů FIBEN proti soudci z doby před rozh. 170 (položka *Soudce FIBEN po rozh. 170*), dvě vady EclipseLinku (oblast *Překlad*) a klíč JPetStore (níže); nárok v užším rozsahu stojí za to vyslovit až nad záznamem, v němž je každá červená buňka odmítnutím podle rozhodnutí nebo vyslovenou mezí. Rozhodnutí pak řekne, co přesně se nárokuje, a §9, *Guarantees* a traceability to převezmou.
-
-#### Katalog případové studie nedodá klíč JPetStore
-*Práce. Zdroj [záznam z 2026-10-24](./runs/2026-10-24-experiment.md); rozh. [176](./decisions/176-the-schema-of-an-excerpted-project-is-an-excerpt-created-empty-in-the-case-study-database-and-the-case-study-runs-over-it-at-the-fourth-level.md) a [015](./decisions/015-mapping-fact-completion-from-the-catalog.md). Požadavky T1, F4.*
-
-Výňatek JPetStore (zdroj MyBatis) do NHibernatu, Hibernatu a EclipseLinku odmítá klíč, který „nedodal zdroj ani katalog", i když schéma studie v databázi případových studií má primární klíč na každé tabulce a Chinook ze zdroje Dapper týmž katalogem klíče dostal. Záznam `Failure` nejmenuje entitu; podezřelá je doménová třída, jejíž jméno se od tabulky liší (`Order` nad `orders`, `Account` nad `account`, `profile` a `signon`), kde se jméno tabulky čte z SQL mapperu a párování s katalogem může minout. Zjistit, které entitě klíč chybí a proč; je-li to pravidlo párování, je to rozhodnutí, je-li to chyba, oprava s testem nad schématem JPetStore.
+Záznam dává tabulku T2 × T3 nad maticí, katalogy, příklady a případovými studiemi v zafixovaném prostředí, a tím je splněná podmínka, za níž se mělo posoudit, zda T2 a T3 vystoupí z vyňaté oblasti 6 v užším rozsahu (tabulka bez měření času a bez experimentů T4–T6). Doporučujeme zatím ne: záznam nese buňky šesti dotazů FIBEN proti soudci z doby před rozh. 170 (položka *Soudce FIBEN po rozh. 170*) a tři nálezy, které od té doby vyřešila rozh. [179](./decisions/179-eclipselink-carries-no-version-over-a-binary-column-so-the-store-generated-version-is-a-read-only-column-with-a-loss.md), [180](./decisions/180-a-full-outer-join-into-eclipselink-goes-out-in-native-sql.md) a [181](./decisions/181-an-alias-in-a-mybatis-select-with-a-result-type-states-the-column-of-the-property.md), ale žádný záznam je ještě nepřeměřil; nárok v užším rozsahu stojí za to vyslovit až nad záznamem, v němž je každá červená buňka odmítnutím podle rozhodnutí nebo vyslovenou mezí. Rozhodnutí pak řekne, co přesně se nárokuje, a §9, *Guarantees* a traceability to převezmou.
 
 #### Meze složitosti dotazu, hloubky zanoření a velikosti tříd nikdo nehledal
 *[Záměr](./zamer.tex) (*Využití pro výzkumnou činnost*: posoudit „praktickou použitelnost navrženého přístupu a jeho omezení"); [specifikace](./specifikace.tex) S3 („konkrétní výkonnostní výsledky budou součástí vyhodnocení") a kap. *Vyhodnocení*. Souvisí s rozh. [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md) a [`threat-model.md`](./threat-model.md), hrozba 2; srovnání s LLM nad řadami vede protokol rozh. [175](./decisions/175-the-comparison-with-a-language-model-is-a-protocol-over-the-foreign-path.md). Požadavky S3, T3, T4, T5.*

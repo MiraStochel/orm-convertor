@@ -337,7 +337,30 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
-            if (propertyMap.IsVersion)
+            // A binary version - the row version of SQL Server, which the database produces on
+            // every write - has no carrier in an implementation that admits the specification's
+            // version types alone (decision 179): @Version over byte[] is refused at deployment.
+            // The column stays, read-only because the database writes it, and the loss is
+            // reported; the other profile writes @Version as it always did.
+            var binaryVersionRefused = propertyMap.IsVersion && Profile.RefusesBinaryVersion && IsBinaryVersion(propertyMap);
+
+            if (binaryVersionRefused)
+            {
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.JavaEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = propertyMap.Property.Name,
+                    Category = MappingFactCategory.VersionColumn,
+                    Reason = $"The source states a version over a binary column, which the database produces on every write; "
+                        + $"{Profile.Implementation} {Descriptor.Version} carries a version only over an integral or a timestamp type "
+                        + "(EclipseLink-7168, measured), so the column is written read-only without @Version and optimistic "
+                        + "concurrency over it is not carried (decision 179).",
+                });
+            }
+            else if (propertyMap.IsVersion)
             {
                 Import($"{Jakarta}.Version");
                 code.AppendLine("    @Version");
@@ -418,10 +441,21 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             // A scalar over a column a relation of the entity also maps is read-only here,
             // so that the column is written once, by the relation - the rule NHibernate
             // has for the same shape (decision 012).
-            AppendColumn(entityMap, propertyMap, code, isKey: false, readOnly: IsForeignKeyColumn(entityMap, propertyMap));
+            AppendColumn(entityMap, propertyMap, code, isKey: false, readOnly: binaryVersionRefused || IsForeignKeyColumn(entityMap, propertyMap));
             AppendField(entityMap, propertyMap.Property, code);
         }
     }
+
+    /// <summary>
+    /// Whether the version is the shape of a SQL Server rowversion column, which the store
+    /// fills on every write: a binary family, or no family and a byte array as the only
+    /// language type such a column has - the reading the EF Core builder has for
+    /// [Timestamp] and the NHibernate builder for generated="always" (decision 179).
+    /// </summary>
+    private static bool IsBinaryVersion(PropertyMap propertyMap)
+        => propertyMap.Type is DatabaseType.Binary or DatabaseType.VarBinary or DatabaseType.Blob
+           || (propertyMap.Type is null
+               && propertyMap.Property.Type is { Category: LangTypeCategory.Scalar, ScalarType: ScalarType.ByteArray });
 
     private static bool IsForeignKeyColumn(EntityMap entityMap, PropertyMap propertyMap)
         => entityMap.Relations.Any(r =>

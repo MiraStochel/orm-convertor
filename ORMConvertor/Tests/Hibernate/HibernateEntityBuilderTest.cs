@@ -521,4 +521,23 @@ public class HibernateEntityBuilderTest
         Assert.Empty(artifacts);
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Category == MappingFactCategory.PrimaryKey);
     }
+
+    /// <summary>
+    /// Hibernate 7.4.5 deploys @Version over byte[] (the Java suite's BinaryVersionClaimsTest),
+    /// so the binary version EF Core's [Timestamp] becomes keeps its @Version here, where the
+    /// EclipseLink profile writes the column read-only without it (decision 179).
+    /// </summary>
+    [Fact]
+    public void ABinaryVersionKeepsItsVersionAnnotation()
+    {
+        var (code, records) = Build(b =>
+        {
+            Customer(b);
+            b.AddProperty("byte[]", "RowVersion", "public", hasGetter: true, hasSetter: true);
+            b.SetPropertyDatabaseMapping("RowVersion", new() { ["version"] = "true" });
+        });
+
+        Assert.Contains("@Version\n    @Column(name = \"RowVersion\")\n    private byte[] RowVersion;", code.Replace("\r\n", "\n"));
+        Assert.DoesNotContain(records, r => r.Kind == ConversionRecordKind.Loss && r.Category == MappingFactCategory.VersionColumn);
+    }
 }

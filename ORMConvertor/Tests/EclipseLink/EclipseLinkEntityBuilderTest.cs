@@ -288,4 +288,41 @@ public class EclipseLinkEntityBuilderTest
         Assert.Equal(ORMEnum.EclipseLink, builder.Descriptor.Framework);
         Assert.Equal("5.0.0", builder.Descriptor.Version);
     }
+
+    /// <summary>
+    /// A version over a binary column - EF Core's [Timestamp] byte[], the row version SQL
+    /// Server produces - has no carrier in EclipseLink 5.0.0, which refuses @Version over
+    /// byte[] at deployment (EclipseLink-7168, measured by the Java suite's
+    /// BinaryVersionClaimsTest). The column stays, read-only, without @Version, and the loss is
+    /// reported (decision 179); a version over an integer is written as always.
+    /// </summary>
+    [Fact]
+    public void ABinaryVersionIsAReadOnlyColumnWithoutVersionAndALoss()
+    {
+        var (code, records) = Build(b =>
+        {
+            Customer(b);
+            b.AddProperty("byte[]", "RowVersion", "public", hasGetter: true, hasSetter: true);
+            b.SetPropertyDatabaseMapping("RowVersion", new() { ["version"] = "true" });
+        });
+
+        Assert.DoesNotContain("@Version", code);
+        Assert.DoesNotContain("import jakarta.persistence.Version;", code);
+        Assert.Contains("@Column(name = \"RowVersion\", insertable = false, updatable = false)", code);
+        Assert.Contains("private byte[] RowVersion;", code);
+
+        var loss = Assert.Single(records, r => r.Kind == ConversionRecordKind.Loss && r.Category == MappingFactCategory.VersionColumn);
+        Assert.Equal("RowVersion", loss.Property);
+        Assert.Contains("EclipseLink-7168", loss.Reason);
+
+        var (numeric, numericRecords) = Build(b =>
+        {
+            Customer(b);
+            b.AddProperty("int", "Revision", "public", hasGetter: true, hasSetter: true);
+            b.SetPropertyDatabaseMapping("Revision", new() { ["version"] = "true" });
+        });
+
+        Assert.Contains("@Version", numeric);
+        Assert.DoesNotContain(numericRecords, r => r.Kind == ConversionRecordKind.Loss && r.Category == MappingFactCategory.VersionColumn);
+    }
 }
