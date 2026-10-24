@@ -181,6 +181,17 @@ internal static class ForeignArtifactRun
 
         using (prepared)
         {
+            // Level 4 of a point of a series (decision 182): the one query runs over the fixture's
+            // data with a value of the declared type for every parameter, as a project's queries do.
+            // Runnable is what is measured; no canonical result states its rows, so the outcome is
+            // "ran" and agrees stays empty.
+            if (prepared is not null && measure.Run is null && measure.RunsProject)
+            {
+                RunOne(prepared, method!, verdict);
+                Report();
+                return verdict;
+            }
+
             if (prepared is null || measure.Run is null)
             {
                 verdict.Outcome = ForeignVerdict.Accepted;
@@ -264,6 +275,27 @@ internal static class ForeignArtifactRun
         verdict.Outcome = ForeignVerdict.Ran;
         verdict.Detail = $"{queries.Count} queries ran over the empty tables of the project's schema"
             + (returning.Count > 0 ? $"; rows came back from {string.Join(", ", returning)}" : string.Empty);
+    }
+
+    /// <summary>The fourth level of one query without a measure (decision 182): it runs over the database of the measure, and the row carries how many rows it returned.</summary>
+    private static void RunOne(PreparedQuery prepared, ForeignUnit query, ForeignVerdict verdict)
+    {
+        var clock = Stopwatch.StartNew();
+        try
+        {
+            var count = prepared.Count(query.Path, [.. prepared.Parameters.Select(parameter => Sample(parameter.ParameterType))]);
+            verdict.RunMs = clock.Elapsed.TotalMilliseconds;
+            verdict.Reached = ForeignLevel.Ran;
+            verdict.Rows = count;
+            verdict.Outcome = ForeignVerdict.Ran;
+            verdict.Detail = "the query ran over the fixture; a point of a series has no measure of equivalence (decision 182)";
+        }
+        catch (Exception exception)
+        {
+            verdict.RunMs = clock.Elapsed.TotalMilliseconds;
+            verdict.Outcome = ForeignVerdict.Failed;
+            verdict.Detail = Innermost(exception).Message;
+        }
     }
 
     /// <summary>
@@ -539,6 +571,30 @@ internal static class ForeignArtifactRun
                         null,
                         null,
                         "an example written for the tool runs over no database of it (decision 099), so an artifact of it ends at the third level (decision 174)");
+                }
+
+                case ForeignKey.Series:
+                {
+                    // A point of the search for limits (decision 182): a query over the domain of
+                    // the query-shape matrices runs over the fixture's data - runnable is the
+                    // measure, no canonical result states the rows of a synthetic query -; a series
+                    // of entities, or of a project over no table of the fixture, ends at the third.
+                    var point = Experiment.LimitSeries.Parse(key.Id)
+                        ?? throw new InvalidOperationException($"{artifact.Id}: no series has the point {key.Id}; the keys are <axis>-<point> over the axes of Experiment/LimitSeries.");
+
+                    if (!point.Axis.OverTheFixture)
+                    {
+                        return new Measure(
+                            TestDatabase.ConnectionString ?? Unopened,
+                            null,
+                            null,
+                            $"the series {point.Axis.Id} grows {point.Axis.Grows}, over no table of the fixture, so a point of it ends at the third level (decision 182)");
+                    }
+
+                    var connectionString = TestDatabase.ConnectionString
+                        ?? throw new InvalidOperationException($"{artifact.Id}: a point of a query series runs over the fixture, and no test database is configured. {TestDatabase.NotConfiguredReason}");
+
+                    return new Measure(connectionString, null, null, null, RunsProject: true);
                 }
 
                 default:

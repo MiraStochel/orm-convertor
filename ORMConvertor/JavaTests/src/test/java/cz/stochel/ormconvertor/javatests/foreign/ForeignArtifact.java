@@ -75,15 +75,23 @@ public record ForeignArtifact(
         /** An example of the explanatory page by its key, the excerpts of real projects - the case study of T1 - among them (decision 174); measured up to the third level. */
         public static final String EXAMPLE = "example";
 
+        /**
+         * One point of a series of the search for limits (decision 182), {@code <axis>-<point>}: a
+         * query over the domain of the query-shape matrices, which runs over the fixture at the
+         * fourth level without a measure of equivalence, or entities alone, which end at the third.
+         * The .NET suite writes the points; this suite judges the Java targets over the same input.
+         */
+        public static final String SERIES = "series";
+
         public static Key parse(String answers) {
             int colon = answers.indexOf(':');
             if (colon <= 0 || colon == answers.length() - 1) {
-                throw new IllegalStateException("The key \"" + answers + "\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>, cross:<source framework>, example:<key>).");
+                throw new IllegalStateException("The key \"" + answers + "\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>, cross:<source framework>, example:<key>, series:<axis>-<point>).");
             }
 
             String kind = answers.substring(0, colon).strip().toLowerCase(Locale.ROOT);
-            if (!kind.equals(MATRIX) && !kind.equals(FIBEN) && !kind.equals(LDBC) && !kind.equals(CROSS) && !kind.equals(EXAMPLE)) {
-                throw new IllegalStateException("The key \"" + answers + "\" names the kind \"" + kind + "\", which no suite measures; the kinds are matrix, fiben, ldbc, cross and example.");
+            if (!kind.equals(MATRIX) && !kind.equals(FIBEN) && !kind.equals(LDBC) && !kind.equals(CROSS) && !kind.equals(EXAMPLE) && !kind.equals(SERIES)) {
+                throw new IllegalStateException("The key \"" + answers + "\" names the kind \"" + kind + "\", which no suite measures; the kinds are matrix, fiben, ldbc, cross, example and series.");
             }
 
             return new Key(kind, answers.substring(colon + 1).strip());

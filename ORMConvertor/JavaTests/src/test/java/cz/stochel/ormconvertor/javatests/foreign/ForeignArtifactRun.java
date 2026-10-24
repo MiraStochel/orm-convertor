@@ -68,6 +68,15 @@ public final class ForeignArtifactRun {
 
     private static final Pattern LDBC_KEY = Pattern.compile("(?i)^(is|ic|bi)\\d+$");
 
+    /**
+     * The series of the search for limits (decision 182) whose points stand over no table of the
+     * fixture - entities alone, or the project of S3 -, so that a point of them ends at the third
+     * level; every other series is one query over the domain of the query-shape matrices and runs
+     * over the fixture. The list is the .NET suite's ({@code Experiment/LimitSeries}), which holds
+     * this copy equal to its own.
+     */
+    static final java.util.Set<String> SERIES_WITHOUT_A_FOURTH_LEVEL = java.util.Set.of("entities", "key-parts", "properties", "relations", "unit-size");
+
     private ForeignArtifactRun() {
     }
 
@@ -171,6 +180,17 @@ public final class ForeignArtifactRun {
             if (compiled.method() == null && artifact.isProject() && measure.runsProject()) {
                 started = System.nanoTime();
                 runProject(artifact, compiled, jpa, myBatis, verdict);
+                times[3] = (System.nanoTime() - started) / 1e6;
+                report.run();
+                return verdict;
+            }
+
+            // Level 4 of a point of a series (decision 182): the one query runs over the fixture with
+            // a value of the declared type for every parameter, as a project's queries do; runnable
+            // is what is measured, and agrees stays empty.
+            if (compiled.method() != null && measure.fields() == null && measure.runsProject()) {
+                started = System.nanoTime();
+                runOne(artifact, compiled, jpa, myBatis, verdict);
                 times[3] = (System.nanoTime() - started) / 1e6;
                 report.run();
                 return verdict;
@@ -335,6 +355,19 @@ public final class ForeignArtifactRun {
 
         verdict.ran(rows, compiled.projectMethods().size() + " queries ran over the empty tables of the project's schema"
                 + (returning.isEmpty() ? "" : "; rows came back from " + String.join(", ", returning)));
+    }
+
+    /** The fourth level of one query without a measure (decision 182): it runs over the suite's database, and the row carries how many rows it returned. */
+    private static void runOne(ForeignArtifact artifact, Compiled compiled, EntityManagerFactory jpa, SqlSessionFactory myBatis, ForeignVerdict verdict) {
+        List<String> mappers = artifact.mappings().stream().map(ForeignArtifact.Unit::content).toList();
+        try {
+            int count = artifact.target() == Orm.MYBATIS
+                    ? countMyBatis(myBatis, mappers, compiled.method())
+                    : countJpa(jpa, compiled.method());
+            verdict.ran(count, "the query ran over the fixture; a point of a series has no measure of equivalence (decision 182)");
+        } catch (Throwable e) {
+            verdict.stop(ForeignVerdict.FAILED, String.valueOf(innermost(e).getMessage()));
+        }
     }
 
     private static int countJpa(EntityManagerFactory jpa, Method method) throws Exception {
@@ -667,6 +700,22 @@ public final class ForeignArtifactRun {
 
                     return new Measure(null, null, null, false, List.of(), ResultRow.Settings.defaults(), new Object[0], rows -> null,
                             "an example written for the tool runs over no database of it (decision 099), so an artifact of it ends at the third level (decision 174)");
+                }
+
+                case ForeignArtifact.Key.SERIES -> {
+                    // A point of the search for limits (decision 182): the .NET suite made the
+                    // point and holds the key against its axes; this suite judges the Java targets
+                    // over the exported input. A query series runs over the fixture - runnable is
+                    // the measure, no canonical result states the rows of a synthetic query -; a
+                    // series over no table of the fixture ends at the third level.
+                    int dash = key.id().lastIndexOf('-');
+                    String axis = dash > 0 ? key.id().substring(0, dash) : key.id();
+                    if (SERIES_WITHOUT_A_FOURTH_LEVEL.contains(axis)) {
+                        return new Measure(null, null, null, false, List.of(), ResultRow.Settings.defaults(), new Object[0], rows -> null,
+                                "the series " + axis + " stands over no table of the fixture, so a point of it ends at the third level (decision 182)");
+                    }
+
+                    return new Measure(null, null, null, false, List.of(), ResultRow.Settings.defaults(), new Object[0], rows -> null, null, true);
                 }
 
                 default -> throw new IllegalStateException(artifact.id() + ": the kind " + key.kind() + " has no measure.");

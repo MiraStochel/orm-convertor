@@ -295,6 +295,27 @@ The table of T2 × T3 (decision [173](../docs/decisions/173-the-experiment-run-j
 - **No row fails the run.** A refused translation is the row `refused` at level 0, a red level is a row; what fails is the path - an input without a manifest, a key no measure answers, a database a kind needs that is not configured. The numbers are the record of the version, not a claim ([`architecture.md`](../docs/architecture.md) §9, area 6).
 - **A check from the host** - a few kinds, `ORMCONVERTOR_EXPERIMENT_KINDS=matrix,cross,example,ldbc` on a machine without the `Fiben` judge - is never recorded.
 
+### The limits run
+
+Where the tool stops along one axis (decision [182](../docs/decisions/182-the-limits-of-the-tool-are-searched-by-synthetic-series-growing-along-one-axis-as-a-run-on-demand-over-the-foreign-path.md)): synthetic series over the domain of the query-shape matrices - one more join, one more level of nesting, one more property, one more entity in the request - walked point by point from every source into every target until the first point that fails, in a child process per axis and source, because the two series with the cap of decision 092 switched off end where a parser overflows the stack. It runs **on demand, for a version or a change of a parser or builder**, never as part of a build, over the `test_db` of the `test` profile; it measures the time and the memory of the translation, so the processor states of a measured run apply ([`docs/runs/README.md`](../docs/runs/README.md), *Před dlouhým během*).
+
+| Setting | Meaning |
+|---|---|
+| `ORMCONVERTOR_EXPERIMENT_RESULTS` | the directory of the run: `series-points.tsv` (the rows of the path with `axis`, `point`, `catalog`, `step`, the translation time and memory beside them) and the inputs of the points reached under `inputs/`, keys `series:<axis>-<point>` |
+| `ORMCONVERTOR_SERIES_AXES` | the axes to walk, comma-separated (`joins`, `conditions`, `nesting`, `subqueries`, `exists`, `ctes`, `unions`, `expression`, `properties`, `relations`, `key-parts`, `unit-size`, `entities`); every axis without it |
+| `ORMCONVERTOR_SERIES_CATALOG` | `fixture` (default): the fixture's schema is the catalog, which the Dapper and MyBatis sources need for their keys; `none`: dry, the other half of what S3 separates. A record of a version runs both |
+| `ORMCONVERTOR_EXPERIMENT_KINDS=series` | the Java half: `experiment/ExperimentRunTest` judges the exported points into the three Java targets; `series` is in no half's default kinds |
+
+```sh
+export ORMCONVERTOR_EXPERIMENT_RESULTS=<dir>
+dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~Tests.Experiment.LimitSearchTest"
+ORMCONVERTOR_SERIES_CATALOG=none dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~Tests.Experiment.LimitSearchTest"
+(cd JavaTests && ORMCONVERTOR_EXPERIMENT_KINDS=series mvn -B test -Dtest=ExperimentRunTest)
+dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~ExperimentSummaryTest"   # the section "Limits" of summary.md
+```
+
+In the containers the same four commands are `docker compose --profile test run` of `tests` and `java_tests` with the variables and the directory a volume, as for the experiment run; the child processes run inside the `tests` container. A walk stopped from outside continues where it was: a point already in the file is not walked again. No point fails the run - a refusal, a crash, a point over the 30 s of S3 are rows -; only a walk that makes no progress fails, by name. A check from the host - one axis, `ORMCONVERTOR_SERIES_AXES=key-parts` - is never recorded.
+
 ## The Java test suite
 
 `JavaTests/`, Maven and JUnit outside `ORMConvertor.sln`, the suite of F12 (decision [076](../docs/decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)); what each test verifies is in [`architecture.md`](../docs/architecture.md) §6.2.

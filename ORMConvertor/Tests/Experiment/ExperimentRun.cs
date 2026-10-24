@@ -75,7 +75,12 @@ internal static class ExperimentRun
     /// <summary>The directory the rows, the mapping rows and the summary of a run are written into; without it the run skips.</summary>
     public const string ResultsVariable = "ORMCONVERTOR_EXPERIMENT_RESULTS";
 
-    /// <summary>The kinds of keys a run takes, as a comma-separated list of <c>matrix</c>, <c>cross</c>, <c>example</c>, <c>ldbc</c>, <c>fiben</c>; every kind the environment can measure without it.</summary>
+    /// <summary>
+    /// The kinds of keys a run takes, as a comma-separated list of <c>matrix</c>, <c>cross</c>,
+    /// <c>example</c>, <c>ldbc</c>, <c>fiben</c>, <c>series</c>; every kind the environment can
+    /// measure without it, except <c>series</c> - the points of the search for limits (decision
+    /// 182), which the walk of <see cref="LimitSearch"/> writes and which enter a run only by name.
+    /// </summary>
     public const string KindsVariable = "ORMCONVERTOR_EXPERIMENT_KINDS";
 
     public const string RowsFileName = "tool-rows.tsv";
@@ -192,18 +197,30 @@ internal static class ExperimentRun
             return (null, null, "the conversion threw: " + exception.GetBaseException().Message);
         }
 
-        // The row names the entity of each refusal, where the record has one: a project refused
-        // for a key the catalog did not supply is read from the row alone (decision 181).
-        var failures = conversion.Records
-            .Where(record => record.Kind == ConversionRecordKind.Failure)
-            .Select(record => record.Entity is { } entity ? $"{entity}: {record.Reason}" : record.Reason)
-            .Distinct()
-            .ToList();
+        var failures = Failures(conversion);
         if (failures.Count > 0)
         {
             return (conversion, null, string.Join("; ", failures));
         }
 
+        return (conversion, ArtifactOf(conversion, input.RowId(target), input.Directory, input.Key, input.Source, target), null);
+    }
+
+    /// <summary>
+    /// The reasons of the Failure records of a conversion, each naming the entity of the refusal
+    /// where the record has one: a project refused for a key the catalog did not supply is read
+    /// from the row alone (decision 181). Empty where the tool refused nothing.
+    /// </summary>
+    public static List<string> Failures(ConversionResult conversion)
+        => conversion.Records
+            .Where(record => record.Kind == ConversionRecordKind.Failure)
+            .Select(record => record.Entity is { } entity ? $"{entity}: {record.Reason}" : record.Reason)
+            .Distinct()
+            .ToList();
+
+    /// <summary>The tool's artifact as an artifact of the path: the sources of the conversion as units under their names, producer <c>tool</c>, the metadata of the run record.</summary>
+    public static ForeignArtifact ArtifactOf(ConversionResult conversion, string id, string directory, ForeignKey key, ORMEnum source, ORMEnum target)
+    {
         var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var units = conversion.Sources
             .Select((artifact, index) => new ForeignUnit(
@@ -212,12 +229,11 @@ internal static class ExperimentRun
                 artifact.Content))
             .ToList();
 
-        var foreign = new ForeignArtifact(input.RowId(target), input.Directory, input.Key, input.Source, target, Producer, units, Metadata(conversion));
-        return (conversion, foreign, null);
+        return new ForeignArtifact(id, directory, key, source, target, Producer, units, Metadata(conversion));
     }
 
     /// <summary>What the row of a tool artifact carries as metadata: the versions the run record of S6 names, and whether the query went out in native SQL.</summary>
-    private static string Metadata(ConversionResult? conversion)
+    public static string Metadata(ConversionResult? conversion)
     {
         if (conversion is null)
         {

@@ -128,10 +128,16 @@ internal static class ExperimentSummary
 
     public static List<string> Summarize(string directory)
     {
-        var tool = ToolRowFiles.Select(file => Path.Combine(directory, file)).Where(File.Exists).SelectMany(SummaryRow.Read).ToList();
+        var allTool = ToolRowFiles.Select(file => Path.Combine(directory, file)).Where(File.Exists).SelectMany(SummaryRow.Read).ToList();
         var foreign = ForeignRowFiles.Select(file => Path.Combine(directory, file)).Where(File.Exists).SelectMany(SummaryRow.Read).ToList();
         var mappingFile = Path.Combine(directory, ExperimentRun.MappingRowsFileName);
-        var mapping = File.Exists(mappingFile) ? SummaryRow.Read(mappingFile) : [];
+        var allMapping = File.Exists(mappingFile) ? SummaryRow.Read(mappingFile) : [];
+
+        // The points of the search for limits are another population of the same path (decision
+        // 182) and not the baseline of T2 × T3 (decision 175): they are read apart, below.
+        var tool = allTool.Where(row => ForeignKey.Parse(row.Answers).Kind != ForeignKey.Series).ToList();
+        var mapping = allMapping.Where(row => ForeignKey.Parse(row.Answers).Kind != ForeignKey.Series).ToList();
+        var javaSeries = allTool.Where(row => ForeignKey.Parse(row.Answers).Kind == ForeignKey.Series && EcosystemOf(row.Target) == "Java").ToList();
 
         var lines = new List<string>
         {
@@ -182,7 +188,75 @@ internal static class ExperimentSummary
                 "producer | model | variant | kind"));
         }
 
+        lines.AddRange(Limits(directory, javaSeries));
+
         return lines;
+    }
+
+    /// <summary>
+    /// The section on limits (decision 182), over the points the search for limits wrote: per
+    /// axis and direction, the last point the tool translated within the bound of S3 without a
+    /// refusal, an exception or a crash; the last point whose artifact the target accepted (the
+    /// third level - for a Java target from the rows the Java suite wrote over the same input);
+    /// the last point whose query ran over the fixture; the first point that failed and why, or
+    /// the ceiling; and the time and the memory of the translation at the last point translated.
+    /// </summary>
+    private static IEnumerable<string> Limits(string directory, List<SummaryRow> javaSeries)
+    {
+        var file = Path.Combine(directory, LimitSearch.FileName);
+        var points = SeriesPoint.Read(file);
+        if (points.Count == 0)
+        {
+            yield break;
+        }
+
+        yield return "## Limits (decision 182)";
+        yield return string.Empty;
+        yield return $"Points of the search for limits: {points.Count} ({LimitSearch.FileName}); rows of the Java suite over series points: {javaSeries.Count}.";
+        yield return "Columns: last translated = the largest point the tool translated within the bound of S3 (30 s) without a refusal, an exception or a crash; last accepted = the largest point whose artifact the target framework accepted (level 3; for a Java target from the rows of the Java suite);";
+        yield return "last ran = the largest point whose query ran over the fixture (level 4; a series over no table of the fixture has none); stopped at = the first point that failed and why, or \"ceiling\" where the series ended without a failure; s / MB = the time and the memory of the translation at the last point translated.";
+        yield return string.Empty;
+
+        var javaReached = javaSeries
+            .GroupBy(row => row["artifact"], StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Max(row => row.Reached), StringComparer.Ordinal);
+        var catalogs = points.Select(point => point.Catalog).Distinct().Count();
+
+        foreach (var axis in LimitSeries.Axes)
+        {
+            var ofAxis = points.Where(point => point.Axis == axis.Id).ToList();
+            if (ofAxis.Count == 0)
+            {
+                continue;
+            }
+
+            yield return $"### {axis.Id} — {axis.Grows} (points {axis.Points[0]} … {axis.Points[^1]}{(axis.Uncapped ? ", cap off" : string.Empty)})";
+            yield return string.Empty;
+            yield return "| direction | last translated | last accepted | last ran | stopped at | s | MB |";
+            yield return "|---|---|---|---|---|---|---|";
+
+            foreach (var direction in ofAxis.GroupBy(point => (point.Verdict.Source, point.Verdict.Target, point.Catalog)).OrderBy(group => group.Key.Source, StringComparer.Ordinal).ThenBy(group => group.Key.Target, StringComparer.Ordinal).ThenBy(group => group.Key.Catalog, StringComparer.Ordinal))
+            {
+                var walked = direction.OrderBy(point => point.Point).ToList();
+                var passed = walked.Where(point => point.Step == SeriesPoint.Pass).ToList();
+                var last = passed.LastOrDefault();
+                var stop = walked.FirstOrDefault(point => point.Step != SeriesPoint.Pass);
+
+                int Reached(SeriesPoint point) => EcosystemOf(Enum.Parse<ORMEnum>(point.Verdict.Target)) == "Java"
+                    ? javaReached.GetValueOrDefault(point.Id, -1)
+                    : point.Verdict.Reached;
+
+                var accepted = passed.Where(point => Reached(point) >= ForeignLevel.Accepted).Select(point => (int?)point.Point).LastOrDefault();
+                var ran = passed.Where(point => Reached(point) >= ForeignLevel.Ran).Select(point => (int?)point.Point).LastOrDefault();
+
+                var label = $"{direction.Key.Source} → {direction.Key.Target}" + (catalogs > 1 ? $" ({direction.Key.Catalog})" : string.Empty);
+                yield return $"| {label} | {last?.Point.ToString(CultureInfo.InvariantCulture) ?? "—"} | {accepted?.ToString(CultureInfo.InvariantCulture) ?? "—"} | {(axis.OverTheFixture ? ran?.ToString(CultureInfo.InvariantCulture) ?? "—" : "n/a")} | "
+                    + (stop is null ? "ceiling" : $"{stop.Point.ToString(CultureInfo.InvariantCulture)}: {stop.Verdict.Outcome}")
+                    + $" | {(last is null ? "—" : (last.TranslateMs / 1000).ToString("F2", CultureInfo.InvariantCulture))} | {(last is null ? "—" : (last.AllocatedKb / 1024.0).ToString("F1", CultureInfo.InvariantCulture))} |";
+            }
+
+            yield return string.Empty;
+        }
     }
 
     private static string Present(string directory, string[] files)

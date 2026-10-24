@@ -29,18 +29,26 @@ internal sealed record ForeignKey(string Kind, string Id)
     /// </summary>
     public const string Example = "example";
 
+    /// <summary>
+    /// One point of a series of the search for limits (decision 182), <c>&lt;axis&gt;-&lt;point&gt;</c>
+    /// over the axes of <c>Experiment/LimitSeries</c>: a query over the domain of the query-shape
+    /// matrices, which runs over the fixture at the fourth level without a measure of
+    /// equivalence, or entities alone, which end at the third.
+    /// </summary>
+    public const string Series = "series";
+
     public static ForeignKey Parse(string answers)
     {
         var colon = answers.IndexOf(':');
         if (colon <= 0 || colon == answers.Length - 1)
         {
-            throw new InvalidOperationException($"The key \"{answers}\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>, cross:<source framework>, example:<key>).");
+            throw new InvalidOperationException($"The key \"{answers}\" is not written as kind:id (matrix:<query>, fiben:<key>, ldbc:<key>, cross:<source framework>, example:<key>, series:<axis>-<point>).");
         }
 
         var kind = answers[..colon].Trim().ToLowerInvariant();
-        if (kind is not (Matrix or Fiben or Ldbc or Cross or Example))
+        if (kind is not (Matrix or Fiben or Ldbc or Cross or Example or Series))
         {
-            throw new InvalidOperationException($"The key \"{answers}\" names the kind \"{kind}\", which no suite measures; the kinds are matrix, fiben, ldbc, cross and example.");
+            throw new InvalidOperationException($"The key \"{answers}\" names the kind \"{kind}\", which no suite measures; the kinds are matrix, fiben, ldbc, cross, example and series.");
         }
 
         return new ForeignKey(kind, answers[(colon + 1)..].Trim());

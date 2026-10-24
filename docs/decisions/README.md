@@ -184,6 +184,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 179 | [EclipseLink nenese verzi nad binárním sloupcem: verzi, kterou vyrábí databáze, píše profil EclipseLinku jako sloupec jen pro čtení bez `@Version` a se ztrátou](179-eclipselink-carries-no-version-over-a-binary-column-so-the-store-generated-version-is-a-read-only-column-with-a-loss.md) | platí | F9, F10, F11, T3 |
 | 180 | [Plný vnější join do EclipseLinku jde nativním SQL: JPQL ho nemá a EclipseLink 5.0.0 ho odmítne, HQL Hibernatu ho má](180-a-full-outer-join-into-eclipselink-goes-out-in-native-sql.md) | platí | F9, F10, F11, T2, T3 |
 | 181 | [Alias sloupce ve výběru MyBatisu, který `resultType` mapuje na entitu, tvrdí sloupec její vlastnosti](181-an-alias-in-a-mybatis-select-with-a-result-type-states-the-column-of-the-property.md) | platí | F4, F6, F11, T1, S1, S2 |
+| 182 | [Meze nástroje se hledají řadami syntetických vstupů nad doménou matic, které rostou po jedné ose geometricky: běh na vyžádání cestou cizího artefaktu s časem a pamětí překladu v řádku, procesem na řadu, mez je poslední bod, který prošel; body řad jsou druh `series` výpisu vstupů mimo výchozí rozsah experimentálního běhu](182-the-limits-of-the-tool-are-searched-by-synthetic-series-growing-along-one-axis-as-a-run-on-demand-over-the-foreign-path.md) | platí | S3, T3, T4, T5, F11, S7 |
 
 ## Formát
 
