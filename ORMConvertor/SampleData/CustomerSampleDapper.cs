@@ -21,8 +21,31 @@ public class CustomerSampleDapper
             public List<CustomerTransaction> Transactions { get; set; } = [];
 
         }
-        
+
         """;
+
+    /// <summary>
+    /// The transaction the collection of the customer refers to, as a second unit of the
+    /// example (decision 099): without it the generated classes name a type nobody declares
+    /// and do not compile (the experiment run of 2026-10-24). Like the customer, it states
+    /// nothing a Dapper class could not - no key, no table, no column.
+    /// </summary>
+    public const string Transaction = """
+        namespace DapperEntities;
+
+        public class CustomerTransaction
+        {
+            public int CustomerTransactionID { get; set; }
+
+            public int CustomerID { get; set; }
+
+            public DateTime TransactionDate { get; set; }
+
+            public decimal TransactionAmount { get; set; }
+        }
+
+        """;
+
     /// <summary>
     /// A Dapper query is T-SQL. It names the table outright, because a Dapper source
     /// carries no mapping metadata of its own to resolve it from.

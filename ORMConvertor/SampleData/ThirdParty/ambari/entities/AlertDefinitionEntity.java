@@ -18,7 +18,8 @@
 
 /*
  * ORMConvertor: taken from apache/ambari at a01b674, ambari-server/src/main/java/org/apache/ambari/server/orm/entities/AlertDefinitionEntity.java.
- * Changed: of its 9 named queries, 2 the tool reads in no form are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
+ * Changed: of its 9 named queries, 1 the tool reads in no form is left out, with a note above it; the rest stand as the project wrote them.
+ * The two enum-typed columns (scope, sourceType) are rewritten as String with their accessors, each with the original text above it; the association "clusterEntity" to ClusterEntity, which is outside the excerpt and only shadows the column clusterId, is left out with its accessors. See README.md.
  */
 package org.apache.ambari.server.orm.entities;
 
@@ -76,10 +77,9 @@ import org.apache.ambari.server.state.alert.SourceType;
     }),
   @NamedQuery(name = "AlertDefinitionEntity.findByService", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.serviceName = :serviceName AND ad.clusterId = :clusterId"),
   @NamedQuery(name = "AlertDefinitionEntity.findByServiceAndComponent", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.serviceName = :serviceName AND ad.componentName = :componentName AND ad.clusterId = :clusterId"),
-  // ORMConvertor: "AlertDefinitionEntity.findByServiceMaster" is left out: it compares a parameter with an attribute of an enum type the conversion does not hold, so the generated method could not type it; it also names the enum constant by its Java path.
-  @NamedQuery(name = "AlertDefinitionEntity.findByIds", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.definitionId IN :definitionIds")
-  // ORMConvertor: "AlertDefinitionEntity.findBySourceType" is left out: it compares a parameter with an attribute of an enum type the conversion does not hold, so the generated method could not type it.
-})
+  // ORMConvertor: "AlertDefinitionEntity.findByServiceMaster" is left out: it names an enum constant by its Java path (ad.sourceType <> org.apache.ambari.server.state.alert.SourceType.AGGREGATE), which the tool does not read as a value.
+  @NamedQuery(name = "AlertDefinitionEntity.findByIds", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.definitionId IN :definitionIds"),
+  @NamedQuery(name = "AlertDefinitionEntity.findBySourceType", query = "SELECT ad FROM AlertDefinitionEntity ad WHERE ad.clusterId = :clusterId AND ad.sourceType = :sourceType")})
 public class AlertDefinitionEntity {
 
   @Id
@@ -95,9 +95,7 @@ public class AlertDefinitionEntity {
   @Column(name = "cluster_id", nullable = false)
   private Long clusterId;
 
-  @ManyToOne(fetch = FetchType.EAGER)
-  @JoinColumn(name = "cluster_id", referencedColumnName = "cluster_id", insertable = false, updatable = false)
-  private ClusterEntity clusterEntity;
+  // ORMConvertor: the association "clusterEntity" (@ManyToOne over cluster_id, insertable = false, updatable = false) is left out: ClusterEntity is not part of the excerpt, and the column it stands on is already read as clusterId above.
 
   @Column(name = "component_name", length = 255)
   private String componentName;
@@ -116,9 +114,12 @@ public class AlertDefinitionEntity {
   @Column(name = "description", nullable = true, length = 32672)
   private String description;
 
+  // ORMConvertor: rewritten. The enum Scope is not part of the excerpt and the tool reads no enum; the column holds the constant's name (EnumType.STRING), so a String reads the same rows; the project wrote:
+  //   @Column(name = "scope", length = 255)
+  //   @Enumerated(value = EnumType.STRING)
+  //   private Scope scope;
   @Column(name = "scope", length = 255)
-  @Enumerated(value = EnumType.STRING)
-  private Scope scope;
+  private String scope;
 
   @Column(nullable = false)
   private Integer enabled = Integer.valueOf(1);
@@ -132,9 +133,12 @@ public class AlertDefinitionEntity {
   @Column(name = "service_name", nullable = false, length = 255)
   private String serviceName;
 
+  // ORMConvertor: rewritten. The enum SourceType is not part of the excerpt and the tool reads no enum; the column holds the constant's name (EnumType.STRING), so a String reads the same rows; the project wrote:
+  //   @Column(name = "source_type", nullable = false, length = 255)
+  //   @Enumerated(value = EnumType.STRING)
+  //   private SourceType sourceType;
   @Column(name = "source_type", nullable = false, length = 255)
-  @Enumerated(value = EnumType.STRING)
-  private SourceType sourceType;
+  private String sourceType;
 
   @Column(name = "ignore_host", nullable = false)
   private Integer ignoreHost = Integer.valueOf(0);
@@ -228,23 +232,7 @@ public class AlertDefinitionEntity {
     this.clusterId = clusterId;
   }
 
-  /**
-   * Gets the cluster that this alert definition is a member of.
-   *
-   * @return
-   */
-  public ClusterEntity getCluster() {
-    return clusterEntity;
-  }
-
-  /**
-   * Sets the cluster that the alert definition is a member of.
-   *
-   * @param clusterEntity
-   */
-  public void setCluster(ClusterEntity clusterEntity) {
-    this.clusterEntity = clusterEntity;
-  }
+  // ORMConvertor: getCluster and setCluster are left out with the association they access.
 
   /**
    * Gets the component name that this alert is associated with, if any. Some
@@ -272,7 +260,8 @@ public class AlertDefinitionEntity {
    *
    * @return the scope, or {@code null} if not defined.
    */
-  public Scope getScope() {
+  // ORMConvertor: rewritten with the column; the project typed the accessors Scope.
+  public String getScope() {
     return scope;
   }
 
@@ -282,7 +271,7 @@ public class AlertDefinitionEntity {
    *
    * @param scope the scope to set, or {@code null} for none.
    */
-  public void setScope(Scope scope) {
+  public void setScope(String scope) {
     this.scope = scope;
   }
 
@@ -413,14 +402,15 @@ public class AlertDefinitionEntity {
   /**
    * @return
    */
-  public SourceType getSourceType() {
+  // ORMConvertor: rewritten with the column; the project typed the accessors SourceType.
+  public String getSourceType() {
     return sourceType;
   }
 
   /**
    * @param sourceType
    */
-  public void setSourceType(SourceType sourceType) {
+  public void setSourceType(String sourceType) {
     this.sourceType = sourceType;
   }
 

@@ -4,10 +4,10 @@
   management server; JPA entities on Hibernate, `jakarta.persistence` annotations.
 - **Commit:** `5cbbdebe021e67ca834ed074dc59e13b3c224cfa` (2026-10-13).
 - **Licence:** Apache License 2.0, [`LICENSE.txt`](LICENSE.txt); the project has no NOTICE file.
-- **Taken from:** `model/jpa/src/main/java/org/keycloak/models/jpa/entities/`, 21 of the 47
+- **Taken from:** `model/jpa/src/main/java/org/keycloak/models/jpa/entities/`, 22 of the 47
   entity classes there - the user, its attributes, credentials, federated identities, consents and
   required actions; roles with their attributes and composites; groups with their attributes and
-  role mappings; clients and client scopes with their attributes and mappings.
+  role mappings; clients and client scopes with their attributes, mappings and protocol mappers.
 
 ## What was changed
 
@@ -36,6 +36,20 @@ query, and the opening note of each file counts the changes it carries.
    key column or as an implicit join, and the projection of one side of a join.
 3. **One query is left out:** `getAllRedirectUrisOfEnabledClients` joins the element collection
    `client.redirectUris` and builds a `map`, neither of which the tool reads.
+4. **Three element collections of maps are left out** with their accessors, each with a note in
+   its place: `authFlowBindings` and `registeredNodes` of `ClientEntity` and `config` of
+   `ProtocolMapperEntity` (`@ElementCollection Map<String, …>` over a collection table). A
+   collection table is not a column of the entity's table and the tool does not translate it,
+   while the property itself went into the generated classes with a Java type (`Map<,>`,
+   `Integer`) that no .NET target compiles - the first check of the experiment run found the
+   NHibernate and Dapper translations of the excerpt not compilable for it (2026-10-24).
+5. **One association to an entity outside the excerpt is rewritten as its column**, with the
+   original text above it: `GroupEntity.organization` (`@ManyToOne` over `ORG_ID` to
+   `OrganizationEntity`) became `@Column(name = "ORG_ID") String organizationId`. The same
+   check found the generated classes naming `OrganizationEntity`, a type nobody declares;
+   taking the entity in would have pulled in its domains, identity providers and realm.
+   `ProtocolMapperEntity`, the other type the check named, is taken in instead (change 4),
+   because it refers to nothing outside the excerpt.
 
 Apart from these notes the entities are the project's text. Where Keycloak puts `@Id` on a `@ManyToOne` (JPA derived
 identity, for example `@Id @ManyToOne @JoinColumn(name = "USER_ID") UserEntity user` in

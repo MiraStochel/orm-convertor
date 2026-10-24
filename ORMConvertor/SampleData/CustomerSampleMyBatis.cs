@@ -78,6 +78,49 @@ public static class CustomerSampleMyBatis
         """;
 
     /// <summary>
+    /// The transaction the collection of the customer and the statement findTransactions
+    /// refer to, as a fourth unit of the example (decision 099): without it the generated
+    /// classes name a type nobody declares and do not compile (the experiment run of
+    /// 2026-10-24). Its fields are the columns the statement selects.
+    /// </summary>
+    public const string Transaction = """
+        package MyBatisEntities;
+
+        import java.math.BigDecimal;
+
+        public class CustomerTransaction {
+
+            private Integer TransactionID;
+            private Integer CustomerID;
+            private BigDecimal Amount;
+
+            public Integer getTransactionID() {
+                return TransactionID;
+            }
+
+            public void setTransactionID(Integer value) {
+                this.TransactionID = value;
+            }
+
+            public Integer getCustomerID() {
+                return CustomerID;
+            }
+
+            public void setCustomerID(Integer value) {
+                this.CustomerID = value;
+            }
+
+            public BigDecimal getAmount() {
+                return Amount;
+            }
+
+            public void setAmount(BigDecimal value) {
+                this.Amount = value;
+            }
+        }
+        """;
+
+    /// <summary>
     /// The mapper interface. It carries no statement of its own here, which is the ordinary
     /// shape of a MyBatis project - the statements live in the XML mapper beside it - and it
     /// is read all the same: @Param and the declared types are where the parameters of those

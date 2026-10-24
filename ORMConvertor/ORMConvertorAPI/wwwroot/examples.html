@@ -214,8 +214,8 @@
       <article>
         <h3>Real projects</h3>
         <ul>
-          <li><a href="#keycloak-identity">Keycloak: Hibernate &rarr; NHibernate</a> &mdash; 21 entities, eleven composite keys, 47 named queries</li>
-          <li><a href="#ambari-alerts">Apache Ambari: EclipseLink &rarr; EF Core</a> &mdash; alerts, two many-to-many, 35 named queries</li>
+          <li><a href="#keycloak-identity">Keycloak: Hibernate &rarr; NHibernate</a> &mdash; 22 entities, eleven composite keys, 47 named queries</li>
+          <li><a href="#ambari-alerts">Apache Ambari: EclipseLink &rarr; EF Core</a> &mdash; alerts, two many-to-many, 39 named queries</li>
           <li><a href="#chinook-dapper">Chinook: Dapper &rarr; EF Core</a> &mdash; a repository layer in literal SQL</li>
           <li><a href="#chinook-efcore">Chinook: EF Core &rarr; Hibernate</a> &mdash; the same layer as the project wrote it in LINQ</li>
           <li><a href="#jpetstore-mybatis">JPetStore: MyBatis &rarr; Dapper</a> &mdash; the MyBatis team&rsquo;s reference shop</li>
@@ -947,7 +947,7 @@
       <p>
         <a href="https://github.com/keycloak/keycloak">Keycloak</a>, the identity and
         access management server, keeps its users, roles, groups and clients in JPA
-        entities on Hibernate. The input is 21 of them, with the queries where Keycloak
+        entities on Hibernate. The input is 22 of them, with the queries where Keycloak
         defines them: the tool reads a <code>@NamedQuery</code> on its entity, so the
         read-only ones stay in their annotations. Those that write are left out, and a
         few are written in the form the tool reads, each marked where it is made: a
@@ -955,7 +955,11 @@
         association asks a correlated <code>exists</code>. Paths through an association
         and the ten entities that put <code>@Id</code> on a <code>@ManyToOne</code> stand as
         the project wrote them; the tool reads such a key part as its join column beside
-        the relation, and says so. Out of it come 21 NHibernate
+        the relation, and says so. The input stops at the boundary of the excerpt: the three
+        element collections of maps are left out, because a collection table is no column
+        of the entity and their Java type compiles in no .NET target, and the one
+        association to an entity outside the excerpt is read as the column it stands on,
+        so that what comes out compiles. Out of it come 22 NHibernate
         classes with their mappings &mdash; eleven composite keys as
         <code>&lt;composite-id&gt;</code> with the <code>Equals</code>,
         <code>GetHashCode</code> and <code>[Serializable]</code> NHibernate requires, the
@@ -994,16 +998,20 @@
         clusters, maps its tables with EclipseLink. The input is its six alert entities &mdash;
         definitions, groups, targets, the current alert, its history, the notices sent
         &mdash; with their named queries where Ambari defines them. The queries that delete
-        are left out, and six of the read-only ones with a note, five of them because they
-        compare a parameter with an enum attribute whose type lies outside the excerpt; no
+        are left out, and two of the read-only ones with a note: one names an enum constant by
+        its Java path, one asks <code>MEMBER OF</code> with a whole entity. The six columns
+        Ambari types with its enums (<code>@Enumerated(EnumType.STRING)</code>) are read as
+        the <code>String</code> the column holds, because the enums lie outside the excerpt
+        and a class typed with them compiles in no .NET target; the one association to an
+        entity outside the excerpt and the element collection of enums are left out. No
         read-only query is rewritten, and the paths through an association
         (<code>alert.alertHistory.clusterId</code>) stand as written: the tool reads a path
         to the referenced key as the foreign key column and any other path as a join. EF Core receives the six classes and two junction
         entities for the two many-to-many relations Ambari declares with
-        <code>@JoinTable</code>, a Convention record beside each, and 35 LINQ queries: a path through an
+        <code>@JoinTable</code>, a Convention record beside each, and 39 LINQ queries: a path through an
         association becomes a join, the <code>BETWEEN</code> two comparisons. Most of the records are what EF Core&rsquo;s
         annotations cannot say: Ambari&rsquo;s <code>TABLE</code> generators,
-        <code>@Enumerated</code>, <code>@Lob</code>, and the columns Ambari maps twice, once
+        <code>@Lob</code>, and the columns Ambari maps twice, once
         through the relation and once read-only beside it.
       </p>
       <div class="toolbar">

@@ -17,7 +17,8 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/ClientEntity.java.
- * Changed: of its 5 named queries, 1 the tool reads in no form is left out, each with a note above it; the rest stand as the project wrote them. See README.md.
+ * Changed: of its 5 named queries, 1 the tool reads in no form is left out, each with a note above it; the rest stand as the project wrote them.
+ * The two element collections of maps (authFlowBindings, registeredNodes) are left out with their accessors, each with a note in its place. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -123,11 +124,7 @@ public class ClientEntity {
     @OneToMany(cascade ={CascadeType.REMOVE}, orphanRemoval = true, mappedBy = "client")
     protected Collection<ClientAttributeEntity> attributes = new LinkedList<>();
 
-    @ElementCollection
-    @MapKeyColumn(name="BINDING_NAME")
-    @Column(name="FLOW_ID", length = 4000)
-    @CollectionTable(name="CLIENT_AUTH_FLOW_BINDINGS", joinColumns={ @JoinColumn(name="CLIENT_ID") })
-    protected Map<String, String> authFlowBindings;
+    // ORMConvertor: the element collection "authFlowBindings" (@ElementCollection Map<String, String> over CLIENT_AUTH_FLOW_BINDINGS) is left out: a collection table is not a column of this entity's table and the tool does not translate it; its Java type has no counterpart in the targets.
 
     @OneToMany(cascade ={CascadeType.REMOVE}, orphanRemoval = true, mappedBy = "client")
     Collection<ProtocolMapperEntity> protocolMappers = new LinkedList<>();
@@ -170,11 +167,7 @@ public class ClientEntity {
     @CollectionTable(name="SCOPE_MAPPING", joinColumns = { @JoinColumn(name="CLIENT_ID")})
     private Set<String> scopeMappingIds;
 
-    @ElementCollection
-    @MapKeyColumn(name="NAME")
-    @Column(name="VALUE")
-    @CollectionTable(name="CLIENT_NODE_REGISTRATIONS", joinColumns={ @JoinColumn(name="CLIENT_ID") })
-    Map<String, Integer> registeredNodes;
+    // ORMConvertor: the element collection "registeredNodes" (@ElementCollection Map<String, Integer> over CLIENT_NODE_REGISTRATIONS) is left out: a collection table is not a column of this entity's table and the tool does not translate it; its Java type has no counterpart in the targets.
 
     public String getRealmId() {
         return realmId;
@@ -337,16 +330,7 @@ public class ClientEntity {
         this.attributes = attributes;
     }
 
-    public Map<String, String> getAuthFlowBindings() {
-        if (authFlowBindings == null) {
-            authFlowBindings = new HashMap<>();
-        }
-        return authFlowBindings;
-    }
-
-    public void setAuthFlowBindings(Map<String, String> authFlowBindings) {
-        this.authFlowBindings = authFlowBindings;
-    }
+    // ORMConvertor: getAuthFlowBindings and setAuthFlowBindings are left out with the element collection they access.
 
     public String getProtocol() {
         return protocol;
@@ -463,16 +447,7 @@ public class ClientEntity {
         this.nodeReRegistrationTimeout = nodeReRegistrationTimeout;
     }
 
-    public Map<String, Integer> getRegisteredNodes() {
-        if (registeredNodes == null) {
-            registeredNodes = new HashMap<>();
-        }
-        return registeredNodes;
-    }
-
-    public void setRegisteredNodes(Map<String, Integer> registeredNodes) {
-        this.registeredNodes = registeredNodes;
-    }
+    // ORMConvertor: getRegisteredNodes and setRegisteredNodes are left out with the element collection they access.
 
     public Set<String> getScopeMappingIds() {
         if (scopeMappingIds == null) {

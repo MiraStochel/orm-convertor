@@ -35,6 +35,41 @@ public static class CustomerSampleEFCore
         
         """;
 
+    /// <summary>
+    /// The transaction the collection of the customer refers to, as a second unit of the
+    /// example (decision 099): without it the generated classes name a type nobody declares
+    /// and do not compile (the experiment run of 2026-10-24). It is the owning side of the
+    /// relation, with the key column named on the navigation.
+    /// </summary>
+    public const string Transaction = """
+        namespace EFCoreEntities;
+
+        using Microsoft.EntityFrameworkCore;
+        using System.ComponentModel.DataAnnotations;
+        using System.ComponentModel.DataAnnotations.Schema;
+
+        [Table("CustomerTransactions", Schema = "Sales")]
+        public class CustomerTransaction
+        {
+            [Key]
+            public required int CustomerTransactionID { get; set; }
+
+            public required int CustomerID { get; set; }
+
+            [ForeignKey(nameof(CustomerID))]
+            public Customer? Customer { get; set; }
+
+            [Column(TypeName="datetime2")]
+            [Precision(7)]
+            public required DateTime TransactionDate { get; set; }
+
+            [Column(TypeName="decimal")]
+            [Precision(18, 2)]
+            public required decimal TransactionAmount { get; set; }
+        }
+
+        """;
+
     public const string Query = """
         public List<Customer> Query()
         {

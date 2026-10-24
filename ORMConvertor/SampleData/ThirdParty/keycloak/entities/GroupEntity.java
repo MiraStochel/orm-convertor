@@ -17,7 +17,8 @@
 
 /*
  * ORMConvertor: taken from keycloak/keycloak at 5cbbdeb, model/jpa/src/main/java/org/keycloak/models/jpa/entities/GroupEntity.java.
- * Changed: of its 3 named queries, 1 that write is left out, each with a note above it; the rest stand as the project wrote them. See README.md.
+ * Changed: of its 3 named queries, 1 that write is left out, each with a note above it; the rest stand as the project wrote them.
+ * The association "organization" to OrganizationEntity, which is outside the excerpt, is rewritten as the column it stands on, with the original text above it. See README.md.
  */
 
 package org.keycloak.models.jpa.entities;
@@ -94,9 +95,12 @@ public class GroupEntity {
      * In case of {@link org.keycloak.models.GroupModel.Type#ORGANIZATION},
      * this points to the Organization that owns this group
      */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "ORG_ID")
-    private OrganizationEntity organization;
+    // ORMConvertor: rewritten. OrganizationEntity is not part of the excerpt, so the association is read as the column it stands on; the project wrote:
+    //     @ManyToOne(fetch = FetchType.LAZY)
+    //     @JoinColumn(name = "ORG_ID")
+    //     private OrganizationEntity organization;
+    @Column(name = "ORG_ID")
+    private String organizationId;
 
     @OneToMany(
             cascade = CascadeType.REMOVE,
@@ -162,12 +166,13 @@ public class GroupEntity {
         this.type = type;
     }
 
-    public OrganizationEntity getOrganization() {
-        return organization;
+    // ORMConvertor: rewritten with the association above; the project wrote getOrganization and setOrganization over OrganizationEntity.
+    public String getOrganizationId() {
+        return organizationId;
     }
 
-    public void setOrganization(OrganizationEntity organization) {
-        this.organization = organization;
+    public void setOrganizationId(String organizationId) {
+        this.organizationId = organizationId;
     }
 
     public Long getCreatedTimestamp() {

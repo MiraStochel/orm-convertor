@@ -18,7 +18,8 @@
 
 /*
  * ORMConvertor: taken from apache/ambari at a01b674, ambari-server/src/main/java/org/apache/ambari/server/orm/entities/AlertCurrentEntity.java.
- * Changed: of its 13 named queries, 3 that write and 1 the tool reads in no form are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
+ * Changed: of its 13 named queries, 3 that write are left out, each with a note above it; the rest stand as the project wrote them.
+ * The two enum-typed columns (maintenanceState, firmness) are rewritten as String with their accessors, each with the original text above it. See README.md.
  */
 package org.apache.ambari.server.orm.entities;
 
@@ -60,7 +61,7 @@ import org.apache.commons.lang3.builder.EqualsBuilder;
   @NamedQuery(name = "AlertCurrentEntity.findAll", query = "SELECT alert FROM AlertCurrentEntity alert"),
   @NamedQuery(name = "AlertCurrentEntity.findByCluster", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.clusterId = :clusterId"),
   @NamedQuery(name = "AlertCurrentEntity.findByDefinitionId", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertDefinition.definitionId = :definitionId"),
-  // ORMConvertor: "AlertCurrentEntity.findByService" is left out: it compares a parameter with an attribute of an enum type the conversion does not hold, so the generated method could not type it.
+  @NamedQuery(name = "AlertCurrentEntity.findByService", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.clusterId = :clusterId AND alert.alertHistory.serviceName = :serviceName AND alert.alertHistory.alertDefinition.scope IN :inlist"),
   @NamedQuery(name = "AlertCurrentEntity.findByHostAndName", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.clusterId = :clusterId AND alert.alertHistory.alertDefinition.definitionName = :definitionName AND alert.alertHistory.hostName = :hostName"),
   @NamedQuery(name = "AlertCurrentEntity.findByNameAndNoHost", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.clusterId = :clusterId AND alert.alertHistory.alertDefinition.definitionName = :definitionName AND alert.alertHistory.hostName IS NULL"),
   @NamedQuery(name = "AlertCurrentEntity.findByHostComponent", query = "SELECT alert FROM AlertCurrentEntity alert WHERE alert.alertHistory.serviceName = :serviceName AND alert.alertHistory.componentName = :componentName AND alert.alertHistory.hostName = :hostName"),
@@ -90,9 +91,12 @@ public class AlertCurrentEntity {
   @Column(name = "latest_timestamp", nullable = false)
   private Long latestTimestamp;
 
+  // ORMConvertor: rewritten. The enum MaintenanceState is not part of the excerpt and the tool reads no enum; the column holds the constant's name (EnumType.STRING), so a String reads the same rows; the project wrote:
+  //   @Column(name = "maintenance_state", length = 255)
+  //   @Enumerated(value = EnumType.STRING)
+  //   private MaintenanceState maintenanceState = MaintenanceState.OFF;
   @Column(name = "maintenance_state", length = 255)
-  @Enumerated(value = EnumType.STRING)
-  private MaintenanceState maintenanceState = MaintenanceState.OFF;
+  private String maintenanceState = "OFF";
 
   @Column(name = "original_timestamp", nullable = false)
   private Long originalTimestamp;
@@ -112,9 +116,12 @@ public class AlertCurrentEntity {
   @Column(name="occurrences", nullable=false)
   private Long occurrences = Long.valueOf(1);
 
+  // ORMConvertor: rewritten. The enum AlertFirmness is not part of the excerpt and the tool reads no enum; the column holds the constant's name (EnumType.STRING), so a String reads the same rows; the project wrote:
+  //   @Column(name = "firmness", nullable = false)
+  //   @Enumerated(value = EnumType.STRING)
+  //   private AlertFirmness firmness = AlertFirmness.HARD;
   @Column(name = "firmness", nullable = false)
-  @Enumerated(value = EnumType.STRING)
-  private AlertFirmness firmness = AlertFirmness.HARD;
+  private String firmness = "HARD";
 
   /**
    * Unidirectional one-to-one association to {@link AlertHistoryEntity}
@@ -215,7 +222,8 @@ public class AlertCurrentEntity {
    *
    * @return the current maintenance state (never {@code null}).
    */
-  public MaintenanceState getMaintenanceState() {
+  // ORMConvertor: rewritten with the column; the project typed the accessors MaintenanceState.
+  public String getMaintenanceState() {
     return maintenanceState;
   }
 
@@ -225,7 +233,7 @@ public class AlertCurrentEntity {
    * @param maintenanceState
    *          the state to set (not {@code null}).
    */
-  public void setMaintenanceState(MaintenanceState maintenanceState) {
+  public void setMaintenanceState(String maintenanceState) {
     this.maintenanceState = maintenanceState;
   }
 
@@ -297,7 +305,8 @@ public class AlertCurrentEntity {
    *
    * @return the alert firmness.
    */
-  public AlertFirmness getFirmness() {
+  // ORMConvertor: rewritten with the column; the project typed the accessors AlertFirmness.
+  public String getFirmness() {
     return firmness;
   }
 
@@ -308,7 +317,7 @@ public class AlertCurrentEntity {
    * @param firmness
    *          the firmness (not {@code null}).
    */
-  public void setFirmness(AlertFirmness firmness) {
+  public void setFirmness(String firmness) {
     this.firmness = firmness;
   }
 

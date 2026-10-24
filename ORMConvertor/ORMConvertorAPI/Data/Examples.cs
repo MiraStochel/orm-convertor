@@ -32,11 +32,13 @@ public static class Examples
         new("efcore-to-nhibernate", "Attributes become an XML mapping", ORMEnum.EFCore, ORMEnum.NHibernate,
         [
             Unit("Customer.cs", ConversionContentType.CSharp, CustomerSampleEFCore.Entity),
+            Unit("CustomerTransaction.cs", ConversionContentType.CSharp, CustomerSampleEFCore.Transaction),
             Unit("CustomerQuery.cs", ConversionContentType.CSharp, CustomerSampleEFCore.Query),
         ]),
         new("dapper-to-efcore", "A source that states little", ORMEnum.Dapper, ORMEnum.EFCore,
         [
             Unit("Customer.cs", ConversionContentType.CSharp, CustomerSampleDapper.Entity),
+            Unit("CustomerTransaction.cs", ConversionContentType.CSharp, CustomerSampleDapper.Transaction),
             Unit("CustomerQuery.sql", ConversionContentType.SqlQuery, CustomerSampleDapper.Query),
         ]),
 
@@ -50,6 +52,7 @@ public static class Examples
         new("mybatis-to-dapper", "SQL stays SQL, the parameter keeps its type", ORMEnum.MyBatis, ORMEnum.Dapper,
         [
             Unit("Customer.java", ConversionContentType.Java, CustomerSampleMyBatis.Entity),
+            Unit("CustomerTransaction.java", ConversionContentType.Java, CustomerSampleMyBatis.Transaction),
             Unit("CustomerMapper.java", ConversionContentType.Java, CustomerSampleMyBatis.MapperInterface),
             Unit("CustomerMapper.xml", ConversionContentType.XML, CustomerSampleMyBatis.XmlMapper),
         ]),
@@ -148,9 +151,9 @@ public static class Examples
         // changed only where the tool reads a construct in another form or does not translate
         // it at all; every file says so in its opening note, and the folder's README lists the
         // changes (decision 138).
-        new("keycloak-identity", "Keycloak: users, roles and groups in 21 entities and 47 named queries", ORMEnum.Hibernate, ORMEnum.NHibernate,
+        new("keycloak-identity", "Keycloak: users, roles and groups in 22 entities and 47 named queries", ORMEnum.Hibernate, ORMEnum.NHibernate,
             ThirdParty("keycloak", "entities", "")),
-        new("ambari-alerts", "Apache Ambari: alerts in six entities and 35 named queries", ORMEnum.EclipseLink, ORMEnum.EFCore,
+        new("ambari-alerts", "Apache Ambari: alerts in six entities and 39 named queries", ORMEnum.EclipseLink, ORMEnum.EFCore,
             ThirdParty("ambari", "entities", "")),
         new("chinook-dapper", "Chinook: a Dapper data layer of eleven repositories", ORMEnum.Dapper, ORMEnum.EFCore,
             ThirdParty("chinook", "Entities", "DataDapper")),

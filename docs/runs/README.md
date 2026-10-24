@@ -43,7 +43,7 @@ Proč v tomto pořadí a nikdy dva běhy najednou, říká rozh. 168.
 
 ## Záznam
 
-- **Co se zapisuje:** verdikt soudce LDBC nad celou sadou, běh FIBEN, měření časů, velikost sady a pokrytí, podíl F4. Kontrola — prefix sady, výběr dotazů FIBEN (`ORMCONVERTOR_FIBEN_QUERIES`), běh z hosta mimo zafixované prostředí — se nezapisuje.
+- **Co se zapisuje:** verdikt soudce LDBC nad celou sadou, běh FIBEN, měření časů, velikost sady a pokrytí, podíl F4. Kontrola — prefix sady, výběr dotazů FIBEN (`ORMCONVERTOR_FIBEN_QUERIES`), běh z hosta mimo zafixované prostředí — se nezapisuje, s jedinou výjimkou: kontrola, jejíž zjištění **změnilo vstupy experimentu** (příklad, výňatek), se zapíše jako popsaný běh s výsledkem před změnou a po ní a s důvodem změny, protože záznam verze by jinak stál nad jinými vstupy a nic by to nevysvětlovalo.
 - **Popsaný běh** má soubor `RRRR-MM-DD-<druh>.md` podle dne, kdy začal; druhý běh téhož druhu téhož dne dostane příponu `-2`. Obě půlky běhu .NET a javové sady nad týmž stromem jsou jeden soubor. Hlavička: začátek, strom (commit), stroj a prostředí — režim serveru (rozh. [164](../decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md)) a nejvyšší a nejnižší stav procesoru (rozh. [145](../decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md)) —, pak výsledek a poznámky. V rejstříku dostane řádek s jednou větou výsledku; čísla stojí jen v souboru.
 - **Krátký záznam** — řádek s commitem a poznámkou — je řádkem tabulky v tomto souboru a vlastní soubor nemá.
 - **Omyl** zjištěný později se v záznamu neopravuje; uvede se v oddílu [Nesrovnalosti](#nesrovnalosti).
@@ -62,6 +62,7 @@ Proč v tomto pořadí a nikdy dva běhy najednou, říká rozh. 168.
 | [2026-10-22](2026-10-22-fiben.md) | běh FIBEN, jen .NET půlka | `a2f498a` | všechny dotazy katalogu ve třech cílech .NET; z běhu soudce osmi dotazů rozh. 163 |
 | [2026-10-22](2026-10-22-fiben-2.md) | běh FIBEN | `ee29333` | první běh s vypnutým turbem; každá buňka ve shodě se zdrojem kromě q63 v EclipseLinku |
 | [2026-10-22](2026-10-22-ldbc-judge-mode.md) | doba přehrání soudce LDBC v režimu soudce | `1bc69c3` + změna rozh. 165 a 166 | režim soudce proti měřicímu, přehrání postupné a souběžné |
+| [2026-10-24](2026-10-24-experiment-examples.md) | kontrola experimentálního běhu nad příklady, .NET půlka na MIS2 | `0b6c875` + úprava vstupů | příklady a výňatky se v cílech .NET nekompilovaly kvůli typům mimo vstup, výčtům a mapám; vstupy upraveny a po úpravě každý řádek mimo odmítnutí podle rozhodnutí do třetího stupně, až na Chinook bez klíče do EF Core |
 
 **Sloupce běhu FIBEN:** *přeloženo* je vlastní jazyk cíle, *nativní SQL* úniková cesta rozh. [113](../decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md), *odmítnuto* `Failure` v překladu; *shoda se zdrojem* je čtvrtý stupeň proti řádkům zdroje téhož běhu; *medián* je medián mediánů buněk podle politiky rozh. 145 a *součet* jejich součet přes katalog.
 

@@ -18,7 +18,8 @@
 
 /*
  * ORMConvertor: taken from apache/ambari at a01b674, ambari-server/src/main/java/org/apache/ambari/server/orm/entities/AlertNoticeEntity.java.
- * Changed: of its 5 named queries, 1 that write and 1 the tool reads in no form are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
+ * Changed: of its 5 named queries, 1 that write is left out, with a note above it; the rest stand as the project wrote them.
+ * The enum-typed column notifyState is rewritten as String with its accessors, with the original text above it. See README.md.
  */
 package org.apache.ambari.server.orm.entities;
 
@@ -53,7 +54,7 @@ import org.apache.commons.lang3.builder.EqualsBuilder;
 @TableGenerator(name = "alert_notice_id_generator", table = "ambari_sequences", pkColumnName = "sequence_name", valueColumnName = "sequence_value", pkColumnValue = "alert_notice_id_seq", initialValue = 0)
 @NamedQueries({
   @NamedQuery(name = "AlertNoticeEntity.findAll", query = "SELECT notice FROM AlertNoticeEntity notice"),
-  // ORMConvertor: "AlertNoticeEntity.findByState" is left out: it compares a parameter with an attribute of an enum type the conversion does not hold, so the generated method could not type it.
+  @NamedQuery(name = "AlertNoticeEntity.findByState", query = "SELECT notice FROM AlertNoticeEntity notice WHERE notice.notifyState = :notifyState  ORDER BY  notice.notificationId"),
   @NamedQuery(name = "AlertNoticeEntity.findByUuid", query = "SELECT notice FROM AlertNoticeEntity notice WHERE notice.uuid = :uuid"),
   @NamedQuery(name = "AlertNoticeEntity.findByHistoryIds", query = "SELECT notice FROM AlertNoticeEntity notice WHERE notice.historyId IN :historyIds")
   // The remove query can be handled by a simpler JPQL query,
@@ -68,9 +69,12 @@ public class AlertNoticeEntity {
   @Column(name = "notification_id", nullable = false, updatable = false)
   private Long notificationId;
 
-  @Enumerated(value = EnumType.STRING)
+  // ORMConvertor: rewritten. The enum NotificationState is not part of the excerpt and the tool reads no enum; the column holds the constant's name (EnumType.STRING), so a String reads the same rows; the project wrote:
+  //   @Enumerated(value = EnumType.STRING)
+  //   @Column(name = "notify_state", nullable = false, length = 255)
+  //   private NotificationState notifyState;
   @Column(name = "notify_state", nullable = false, length = 255)
-  private NotificationState notifyState;
+  private String notifyState;
 
   @Basic
   @Column(nullable = false, length = 64, unique = true)
@@ -125,7 +129,8 @@ public class AlertNoticeEntity {
    *
    * @return the notification state (never {@code null}).
    */
-  public NotificationState getNotifyState() {
+  // ORMConvertor: rewritten with the column; the project typed the accessors NotificationState.
+  public String getNotifyState() {
     return notifyState;
   }
 
@@ -135,7 +140,7 @@ public class AlertNoticeEntity {
    * @param notifyState
    *          the notification state (not {@code null}).
    */
-  public void setNotifyState(NotificationState notifyState) {
+  public void setNotifyState(String notifyState) {
     this.notifyState = notifyState;
   }
 

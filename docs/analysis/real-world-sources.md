@@ -113,17 +113,17 @@ Kód aplikace nemají, ale dávají katalogu schéma a zdrojům Dapper a MyBatis
 
 ## Převzaté výňatky
 
-Co se změnilo, vypisuje README složky výňatku a poznámka na začátku každého souboru; tady je, co výňatek dává a jak dopadne v cílech. Převod bez katalogu, jako na výkladové stránce.
+Co se změnilo, vypisuje README složky výňatku a poznámka na začátku každého souboru; tady je, co výňatek dává a jak dopadne v cílech. Převod bez katalogu, jako na výkladové stránce. Co z toho se v cílech .NET zkompiluje a co cíl přijme, měří experimentální běh; první kontrola a úpravy vstupů, které z ní plynou, jsou v [záznamech běhů](../runs/README.md).
 
 | Výňatek | Vstup | Ukázaný směr | Ostatní cíle |
 |---|---|---|---|
-| `keycloak/` | 21 entit, 10 složených klíčů, 47 čtecích dotazů v jedné třídě (18 přepsaných, 1 vypuštěný) | Hibernate → NHibernate, bez `Failure`; 46 dotazů i s tvarem LINQ | Dapper, MyBatis, Hibernate bez `Failure`; EclipseLink 4× `Fallback`; EF Core odmítne 1 dotaz (`COUNT` bez seskupení s kolekčním parametrem nemá nativní tvar) |
-| `ambari/` | 6 entit beze změny, 2 N:M přes `@JoinTable`, 35 dotazů (8 přepsaných, 6 vypuštěných) | EclipseLink → EF Core, bez `Failure`; N:M jako spojovací entity | všech šest cílů bez `Failure` |
+| `keycloak/` | 22 entit, 10 složených klíčů, 47 čtecích dotazů v jedné třídě (18 přepsaných, 1 vypuštěný); 3 kolekce prvků typu mapa vypuštěné, 1 asociace mimo výňatek přepsaná na sloupec | Hibernate → NHibernate, bez `Failure`; 46 dotazů i s tvarem LINQ | Dapper, MyBatis, Hibernate bez `Failure`; EclipseLink 4× `Fallback`; EF Core odmítne 1 dotaz (`COUNT` bez seskupení s kolekčním parametrem nemá nativní tvar) |
+| `ambari/` | 6 entit, 2 N:M přes `@JoinTable`, 39 dotazů (8 přepsaných, 2 vypuštěné); 6 výčtových sloupců přepsaných na `String`, 1 asociace mimo výňatek vypuštěná | EclipseLink → EF Core, bez `Failure`; N:M jako spojovací entity | všech šest cílů bez `Failure` |
 | `chinook/` vrstva Dapper | 11 entit beze změny, 11 repozitářů jen se čtením, 38 dotazů | Dapper → EF Core, bez `Failure`; entity `[Keyless]` | MyBatis, Dapper bez `Failure`; NHibernate, Hibernate, EclipseLink odmítnou 11 entit pro chybějící klíč — doplní ho katalog |
 | `chinook/` vrstva EF Core | tytéž entity, kontext s fluent konfigurací, 35 dotazů | EF Core → Hibernate, bez `Failure`; klíče a vztahy z fluent řetězů | všech šest cílů bez `Failure` |
 | `jpetstore/` | 7 tříd, 7 rozhraní, 7 dokumentů mapperu, 14 selectů | MyBatis → Dapper, bez `Failure` | MyBatis bez `Failure`; EF Core odmítne 4 dotazy (holé sloupce joinu, které žádná třída nemapuje — `SUPPLIER`, `BILLADDR1` —, nemají v řádku `SqlQuery` typ) a entity odvozuje z tabulek bez třídy; NHibernate, Hibernate, EclipseLink píšou tytéž 4 dotazy nativním SQL (`Fallback`) a odmítnou 7 entit pro chybějící klíč — doplní ho katalog |
 
-**T1:** výňatek Keycloaku jako jediný splní všechna čísla zadání (21 entit, vztahy, 10 složených klíčů, 47 čtecích dotazů); bitwarden/server by je splnil v .NET, ale licence převzetí nedovolí.
+**T1:** výňatek Keycloaku jako jediný splní všechna čísla zadání (22 entit, vztahy, 10 složených klíčů, 47 čtecích dotazů); bitwarden/server by je splnil v .NET, ale licence převzetí nedovolí.
 
 **Katalog:** u zdrojů Dapper a MyBatis rozhoduje o cílech NHibernate, Hibernate a EclipseLink, které klíč vyžadují. Schéma zveřejňují všechny převzaté projekty — Keycloak migracemi pro SQL Server, Ambari skriptem pro SQL Server, Chinook autorovou databází pro SQL Server, JPetStore skriptem HSQLDB, který T-SQL přečte beze změny —, v databázi katalogu instance ale není žádné z nich (otevřená položka *Schémata převzatých projektů v katalogu instance*).
 

@@ -18,7 +18,7 @@
 
 /*
  * ORMConvertor: taken from apache/ambari at a01b674, ambari-server/src/main/java/org/apache/ambari/server/orm/entities/AlertTargetEntity.java.
- * Unchanged apart from this note.
+ * Changed: the element collection of enums (alertStates) is left out with its accessors, each with a note in its place; its named queries stand as the project wrote them. See README.md.
  */
 package org.apache.ambari.server.orm.entities;
 
@@ -126,11 +126,7 @@ public class AlertTargetEntity {
    * of interest to the target. A target without an alert states does not make
    * sense which is why the absence of states implies all states.
    */
-  @Enumerated(value = EnumType.STRING)
-  @ElementCollection(targetClass = AlertState.class)
-  @CollectionTable(name = "alert_target_states", joinColumns = @JoinColumn(name = "target_id"))
-  @Column(name = "alert_state")
-  private Set<AlertState> alertStates = EnumSet.allOf(AlertState.class);
+  // ORMConvertor: the element collection "alertStates" (@ElementCollection Set<AlertState> over alert_target_states) is left out: a collection table is not a column of this entity's table and the tool does not translate it, and its element is an enum outside the excerpt.
 
   /**
    * Bi-directional one-to-many association to {@link AlertNoticeEntity}.
@@ -263,9 +259,7 @@ public class AlertTargetEntity {
    *
    * @return the set of alert states or {@code null} or empty to imply all.
    */
-  public Set<AlertState> getAlertStates() {
-    return alertStates;
-  }
+  // ORMConvertor: getAlertStates is left out with the element collection it accesses.
 
   /**
    * Sets the alert states that will cause a triggered alert to be sent to this
@@ -276,9 +270,7 @@ public class AlertTargetEntity {
    * @param alertStates
    *          the set of alert states or {@code null} or empty to imply all.
    */
-  public void setAlertStates(Set<AlertState> alertStates) {
-    this.alertStates = alertStates;
-  }
+  // ORMConvertor: setAlertStates is left out with the element collection it accesses.
 
   /**
    * Sets the name of this alert target.

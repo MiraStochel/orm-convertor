@@ -18,7 +18,8 @@
 
 /*
  * ORMConvertor: taken from apache/ambari at a01b674, ambari-server/src/main/java/org/apache/ambari/server/orm/entities/AlertHistoryEntity.java.
- * Changed: of its 10 named queries, 2 that write and 1 the tool reads in no form are left out, each with a note above it; the rest stand as the project wrote them. See README.md.
+ * Changed: of its 10 named queries, 2 that write are left out, each with a note above it; the rest stand as the project wrote them.
+ * The enum-typed column alertState is rewritten as String with its accessors, with the original text above it. See README.md.
  */
 package org.apache.ambari.server.orm.entities;
 
@@ -54,7 +55,7 @@ import org.apache.ambari.server.state.AlertState;
 @NamedQueries({
   @NamedQuery(name = "AlertHistoryEntity.findAll", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory"),
   @NamedQuery(name = "AlertHistoryEntity.findAllInCluster", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId"),
-  // ORMConvertor: "AlertHistoryEntity.findAllInClusterWithState" is left out: it compares a parameter with an attribute of an enum type the conversion does not hold, so the generated method could not type it.
+  @NamedQuery(name = "AlertHistoryEntity.findAllInClusterWithState", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId AND alertHistory.alertState IN :alertStates"),
   @NamedQuery(name = "AlertHistoryEntity.findAllInClusterBetweenDates", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId AND alertHistory.alertTimestamp BETWEEN :startDate AND :endDate"),
   @NamedQuery(name = "AlertHistoryEntity.findAllInClusterBeforeDate", query = "SELECT alertHistory FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId AND alertHistory.alertTimestamp <= :beforeDate"),
   @NamedQuery(name = "AlertHistoryEntity.findAllIdsInClusterBeforeDate", query = "SELECT alertHistory.alertId FROM AlertHistoryEntity alertHistory WHERE alertHistory.clusterId = :clusterId AND alertHistory.alertTimestamp <= :beforeDate"),
@@ -76,9 +77,12 @@ public class AlertHistoryEntity {
   @Column(name = "alert_label", length = 1024)
   private String alertLabel;
 
-  @Enumerated(value = EnumType.STRING)
+  // ORMConvertor: rewritten. The enum AlertState is not part of the excerpt and the tool reads no enum; the column holds the constant's name (EnumType.STRING), so a String reads the same rows; the project wrote:
+  //   @Enumerated(value = EnumType.STRING)
+  //   @Column(name = "alert_state", nullable = false, length = 255)
+  //   private AlertState alertState;
   @Column(name = "alert_state", nullable = false, length = 255)
-  private AlertState alertState;
+  private String alertState;
 
   @Lob
   @Column(name = "alert_text")
@@ -179,7 +183,8 @@ public class AlertHistoryEntity {
    *
    * @return the alert state (never {@code null}).
    */
-  public AlertState getAlertState() {
+  // ORMConvertor: rewritten with the column; the project typed the accessors AlertState.
+  public String getAlertState() {
     return alertState;
   }
 
@@ -189,7 +194,7 @@ public class AlertHistoryEntity {
    * @param alertState
    *          the alert state (not {@code null}).
    */
-  public void setAlertState(AlertState alertState) {
+  public void setAlertState(String alertState) {
     this.alertState = alertState;
   }
 
