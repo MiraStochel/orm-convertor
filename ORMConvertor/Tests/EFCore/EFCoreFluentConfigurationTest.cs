@@ -528,7 +528,7 @@ public class EFCoreFluentConfigurationTest
                 protected override void OnModelCreating(ModelBuilder modelBuilder)
                 {
                     modelBuilder.Entity<Customer>().Property(c => c.Name).HasDefaultValue("n/a").HasColumnName("customer_name");
-                    modelBuilder.Entity<Customer>().OwnsOne(c => c.Address).Property(a => a.Name).HasColumnName("street");
+                    modelBuilder.Entity<Customer>().HasDiscriminator<string>("Kind").HasValue("customer");
                 }
             }
             """);
@@ -536,8 +536,45 @@ public class EFCoreFluentConfigurationTest
         Assert.Equal("customer_name", Property(builder, "Customer", "Name").ColumnName);
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("HasDefaultValue(…)", StringComparison.Ordinal));
         Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss
-            && r.Reason.Contains("OwnsOne(…)", StringComparison.Ordinal)
-            && r.Reason.Contains("HasColumnName(…)", StringComparison.Ordinal));
+            && r.Reason.Contains("HasDiscriminator(…)", StringComparison.Ordinal)
+            && r.Reason.Contains("HasValue(…)", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The fluent spelling of an owned type is excluded area 2 like [Owned] (decision 177): the
+    /// member leaves the model with one record, and the rest of the chain, which configures the
+    /// owned type, goes with it without a record of its own.
+    /// </summary>
+    [Fact]
+    public void AnOwnedTypeTakesItsMemberAndTheRestOfTheChainOutOfTheModel()
+    {
+        var builder = Parsed("""
+            public class Customer
+            {
+                public int Id { get; set; }
+
+                public Address Address { get; set; } = new();
+            }
+
+            public class ShopContext : DbContext
+            {
+                protected override void OnModelCreating(ModelBuilder modelBuilder)
+                {
+                    modelBuilder.Entity<Customer>().OwnsOne(c => c.Address).Property(a => a.Street).HasColumnName("street");
+                }
+            }
+            """);
+
+        builder.Build();
+
+        var customer = builder.EntityMaps.Single(em => em.Entity.Name == "Customer");
+        Assert.DoesNotContain(customer.Entity.Properties, p => p.Name == "Address");
+        Assert.Empty(customer.Relations);
+
+        var record = Assert.Single(builder.Records, r => r.Property == "Address");
+        Assert.Equal(ConversionRecordKind.Loss, record.Kind);
+        Assert.Contains("OwnsOne(…)", record.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(builder.Records, r => r.Reason.Contains("HasColumnName(…)", StringComparison.Ordinal));
     }
 
     [Fact]

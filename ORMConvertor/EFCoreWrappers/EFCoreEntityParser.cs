@@ -153,6 +153,16 @@ public class EFCoreEntityParser : CSharpEntityParser
                 continue;
             }
 
+            if (name.Equals("Owned", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("ComplexType", StringComparison.OrdinalIgnoreCase))
+            {
+                // A value type of the entities holding it, not an entity: excluded area 2. The
+                // class and the properties typed by it leave the conversion, and the builder
+                // says so once the whole conversion is read (decision 177).
+                entityBuilder.ExcludeValueType($"[{name}]");
+                continue;
+            }
+
             entityBuilder.Report(new ConversionRecord
             {
                 Kind = ConversionRecordKind.Loss,
@@ -699,34 +709,13 @@ public class EFCoreEntityParser : CSharpEntityParser
                 // A collection of primitive values is not a navigation: EF Core maps it as a
                 // primitive collection, one column holding the values as JSON. Unlike an
                 // unknown element, a scalar of the vocabulary or a C# keyword type can never
-                // name an entity, so the answer does not wait for the entity set. The language
-                // fact travels - a collection of the scalar, with no relation behind it - and
-                // the storage in one column, which the model has no place for, is a loss
-                // (decision 048).
-                entityBuilder.Report(new ConversionRecord
-                {
-                    Kind = ConversionRecordKind.Loss,
-                    Framework = ORMEnum.EFCore,
-                    Artifact = ConversionContentType.CSharpEntity,
-                    Entity = classDeclaration.Identifier.Text,
-                    Property = name,
-                    Reason = $"The collection of '{target}' is EF Core's primitive collection - one column holding the "
-                        + "values as JSON - and not a navigation; the intermediate representation has no place for a "
-                        + "collection stored in a column, so the property travels as a collection with no relation "
-                        + "behind it and how it is stored is dropped.",
-                });
-
-                if (foreignKeyNames is not null)
-                {
-                    entityBuilder.Report(RelationshipAnnotationDropped(
-                        classDeclaration.Identifier.Text, name, $"[ForeignKey(\"{string.Join(",", foreignKeyNames)}\")]"));
-                }
-
-                if (inverseNavigation is not null)
-                {
-                    entityBuilder.Report(RelationshipAnnotationDropped(
-                        classDeclaration.Identifier.Text, name, $"[InverseProperty(\"{inverseNavigation}\")]"));
-                }
+                // name an entity, so the answer does not wait for the entity set. The model
+                // has no place for a collection stored in a column - excluded area 2 - so the
+                // property leaves it whole, with the annotations on it (decision 177).
+                entityBuilder.ExcludeProperty(
+                    name,
+                    $"EF Core's primitive collection of '{target}', one column holding the values as JSON",
+                    artifact: ConversionContentType.CSharpEntity);
             }
             else if ((isCollection || !IsScalarTypeName(type))
                 && context.RelationshipFor(entityName, name, SimpleName(isCollection ? target : type)) is var (configured, mirrored))

@@ -81,11 +81,15 @@ public class JpaAnnotationReader
         switch (annotation.SimpleName)
         {
             case "Entity":
-            case "Embeddable":
             case "Access":
                 // @Entity names the entity for JPQL only and the IR names entities by class;
-                // @Embeddable marks a class the key dissolution takes care of; @Access is
-                // read by the parser before the attributes are collected.
+                // @Access is read by the parser before the attributes are collected.
+                break;
+
+            case "Embeddable":
+                // A key class the key dissolution takes care of, or a value type that leaves
+                // the conversion - which of the two only the whole conversion says (decision 177).
+                facts.IsEmbeddable = true;
                 break;
 
             case "Table":
@@ -234,11 +238,12 @@ public class JpaAnnotationReader
                 facts.Unique |= annotation.Boolean("unique") == true;
                 facts.ColumnDefinition = annotation.String("columnDefinition") ?? facts.ColumnDefinition;
 
-                // A column in a secondary table is excluded area 2; the two write flags are
-                // judged by the writer against the relations of the class (ReadOnlyFlags).
-                if (annotation.String("table") is not null)
+                // A column in a secondary table is excluded area 2 and takes the attribute out
+                // of the model (decision 177); the two write flags are judged by the writer
+                // against the relations of the class (ReadOnlyFlags).
+                if (annotation.String("table") is { } table)
                 {
-                    facts.Unread.Add("Column(table)");
+                    facts.ExcludedConstruct ??= $"@Column(table = \"{table}\"), a column of a secondary table";
                 }
 
                 if (annotation.Boolean("insertable") == false)
@@ -329,6 +334,15 @@ public class JpaAnnotationReader
             case "MapsId":
             case "PrimaryKeyJoinColumn":
                 facts.MapsId = true;
+                break;
+
+            case "ElementCollection":
+            case "Embedded":
+                // Excluded area 2: a collection table, the columns of an embeddable class. The
+                // attribute leaves the model whole, and the annotations beside it - the
+                // collection table, the map key, the column of the element - with it (decision 177).
+                facts.ExcludedConstruct = Spelling(annotation);
+                facts.HoldsValue = true;
                 break;
 
             default:

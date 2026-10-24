@@ -30,6 +30,20 @@ public sealed class JpaMappingWriter(
     {
         ArgumentNullException.ThrowIfNull(facts);
 
+        // What a construct of excluded area 2 maps leaves the model with the one record the
+        // builder writes for it (decision 177), so no step below writes a fact of it or
+        // reports another annotation beside it.
+        foreach (var attribute in facts.Attributes.Where(a => a.ExcludedConstruct is not null).ToList())
+        {
+            entityBuilder.ExcludeProperty(attribute.Name, attribute.ExcludedConstruct!, attribute.HoldsValue, artifact: artifact);
+            facts.Attributes.Remove(attribute);
+        }
+
+        if (facts.IsEmbeddable)
+        {
+            entityBuilder.ExcludeValueType(artifact == ConversionContentType.XML ? "<embeddable>" : "@Embeddable");
+        }
+
         // Every write below opens the builder's reading scope at the annotation or element
         // that stated the fact (decision 125), through the positions both readers recorded
         // under the annotation's name; where a reader recorded none, the scope is no scope.

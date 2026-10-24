@@ -310,6 +310,24 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 continue;
             }
 
+            if (KeylessEndOf(entityMap, propertyMap, relation: null) is { } keyless)
+            {
+                // A navigation nobody stated a relation for, which EF Core's convention would
+                // make one of - over an entity without a key, where it cannot (decision 177).
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Incompleteness,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.CSharpEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = propertyMap.Property.Name,
+                    Reason = KeylessReason(keyless),
+                });
+                artifact.Code.AppendLine("    [NotMapped]");
+                AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property));
+                continue;
+            }
+
             ReportNullableColumnLoss(entityMap, propertyMap);
             ReportVersionIncrementLoss(entityMap, propertyMap);
 
@@ -334,6 +352,31 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             // The generated key property's nullability follows the navigation's stated
             // nullability (decision 012): an unstated one counts as optional.
             bool nullable = propertyMap.IsNullable ?? true;
+
+            if (KeylessEndOf(entityMap, propertyMap, relation) is { } keyless)
+            {
+                // EF Core maps no relationship without a principal key (decision 177): the
+                // foreign key columns stay properties, the navigation is ignored, and the
+                // relation is a fact of the model the artifact does not carry.
+                if (relation.Role == RelationRole.Owning)
+                {
+                    AppendForeignKeyProperties(artifact, entityMap, relation, propertyMap.Property.Name, nullable);
+                }
+
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.CSharpEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = propertyMap.Property.Name,
+                    Category = MappingFactCategory.ForeignKeyColumns,
+                    Reason = KeylessReason(keyless),
+                });
+                artifact.Code.AppendLine("    [NotMapped]");
+                AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property));
+                continue;
+            }
 
             ReportNullableColumnLoss(entityMap, propertyMap);
             ReportVersionIncrementLoss(entityMap, propertyMap);
@@ -444,6 +487,45 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
         return names;
     }
+
+    /// <summary>
+    /// The entity without a key that keeps EF Core from mapping the navigation, or null where
+    /// it maps it (decision 177, measured in EFCoreKeylessNavigationProviderTest): a relationship
+    /// needs a principal key, so EF Core 10 refuses the whole model over a navigation to a
+    /// keyless entity, ignores a collection on one and invents a foreign key column on it for
+    /// an inverse reference. What it maps is a reference the keyless entity holds as the
+    /// dependent - the owning side, or a reference nobody stated a relation for, which its
+    /// convention reads the same way. "Without a key" is the condition [Keyless] is written
+    /// under. A member that names no entity of the conversion is no navigation here.
+    /// </summary>
+    private string? KeylessEndOf(EntityMap entityMap, PropertyMap propertyMap, Relation? relation)
+    {
+        var type = propertyMap.Property.Type;
+        var isCollection = type?.Category == LangTypeCategory.Collection;
+        var element = isCollection ? type!.ElementType : type;
+
+        var targetName = relation?.TargetEntity
+            ?? (element is { Category: LangTypeCategory.Reference } reference ? reference.TargetEntity : null);
+
+        if (targetName is null || FindEntityMap(targetName) is not { } target)
+        {
+            return null;
+        }
+
+        if (target.PrimaryKey is null)
+        {
+            return target.Entity.Name;
+        }
+
+        var heldAsDependent = !isCollection && relation?.Role != RelationRole.Inverse;
+
+        return entityMap.PrimaryKey is null && !heldAsDependent ? entityMap.Entity.Name : null;
+    }
+
+    private static string KeylessReason(string keyless)
+        => $"'{keyless}' has no key, and EF Core maps no relationship without the key of its principal: over this "
+            + "navigation it would refuse the model, ignore the navigation or invent a foreign key column. The navigation is "
+            + "written [NotMapped]; the key, and with it the navigation, is what the catalog supplies (decisions 015 and 177).";
 
     /// <summary>
     /// EF Core forces nothing onto the body of the class; its only enforced element is the

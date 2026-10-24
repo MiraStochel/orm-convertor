@@ -433,6 +433,76 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
+    /// Records that the source maps the property by a construct of excluded area 2 (decision
+    /// 177) - an element collection, a component, a column of a joined table, EF Core's
+    /// primitive collection. The model carries only the flat class, and writing the member
+    /// anyway would state a column, a non-persisted member or a relation the source never
+    /// had, so the property leaves the model in <see cref="DropExcludedMembers"/> with
+    /// everything any source stated about it. The loss written here is the only record of
+    /// it: the annotations or elements under the construct get none of their own. A mark
+    /// rather than an immediate removal, so that the class may declare the property before
+    /// or after the mapping artifact excludes it, like <see cref="MarkTransient"/>.
+    /// </summary>
+    /// <param name="construct">The construct as the source spells it, for the record.</param>
+    /// <param name="holdsValue">The construct holds a value type - a component, an
+    /// embedded class, the element of a collection of values - whose class is then no
+    /// entity of the conversion either; it is the class <paramref name="valueClass"/>
+    /// names, or else the one the property's type or element type names.</param>
+    public void ExcludeProperty(
+        string propertyName,
+        string construct,
+        bool holdsValue = false,
+        string? valueClass = null,
+        ConversionContentType? artifact = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(propertyName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(construct);
+
+        if (excludedProperties.Any(e => ReferenceEquals(e.Entity, EntityMap) && e.PropertyName == propertyName))
+        {
+            return; // the same statement twice is not an event
+        }
+
+        excludedProperties.Add(new ExcludedProperty(EntityMap, propertyName, holdsValue, valueClass));
+        Report(new ConversionRecord
+        {
+            Kind = ConversionRecordKind.Loss,
+            Framework = Descriptor.Framework,
+            Artifact = artifact,
+            Entity = EntityMap.Entity.Name,
+            Property = propertyName,
+            Reason = $"The property is mapped by {construct}, which the intermediate representation does not carry "
+                + "(excluded area 2); it is left out of the entity with everything stated about it (decision 177).",
+        });
+    }
+
+    /// <summary>
+    /// Records that the source states the class being read is a value type of the entities
+    /// holding it, not an entity (decision 177) - EF Core's [Owned] and [ComplexType], JPA's
+    /// @Embeddable. Whether it leaves the conversion is known only once every unit is read:
+    /// an @Embeddable class may be a key class, which <see cref="DissolveKeyClasses"/> takes
+    /// care of first (decision 031), so the record is written by
+    /// <see cref="DropExcludedMembers"/>, for the class it actually takes out.
+    /// </summary>
+    public void ExcludeValueType(string construct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(construct);
+
+        if (!statedValueTypes.Any(v => ReferenceEquals(v.Entity, EntityMap)))
+        {
+            statedValueTypes.Add((EntityMap, construct));
+        }
+    }
+
+    private sealed record ExcludedProperty(EntityMap Entity, string PropertyName, bool HoldsValue, string? ValueClass);
+
+    /// <summary>Properties waiting for <see cref="DropExcludedMembers"/>; builder state like the pending key classes.</summary>
+    private readonly List<ExcludedProperty> excludedProperties = [];
+
+    /// <summary>Classes the source states as value types, waiting for <see cref="DropExcludedMembers"/>.</summary>
+    private readonly List<(EntityMap Entity, string Construct)> statedValueTypes = [];
+
+    /// <summary>
     /// Whether some source has stated that the property is persisted: any column fact, the
     /// version flag, a place in the key or an association behind it. The opposite of the
     /// transient claim, read from what was written rather than tracked as a fact of its
@@ -1427,6 +1497,152 @@ public abstract class AbstractEntityBuilder
                 currentEntityMap = entityMap;
             }
         }
+    }
+
+    /// <summary>
+    /// Takes out of the model what a construct of excluded area 2 maps (decision 177): every
+    /// property a reader excluded, every value-type class - stated by the class itself, or
+    /// held by such a property and carrying no mapping of its own, the test decision 031
+    /// applies to a key class - and every property whose type or element type names one.
+    /// Runs after <see cref="DissolveKeyClasses"/>, so that an @Embeddable key class is a key
+    /// before anything here could take it for a value, and before convention navigations,
+    /// name resolution and the catalog, so that none of them reads what is leaving. The
+    /// catalog completion phase calls it as its second step and <see cref="Build"/> calls it
+    /// for conversions that never meet a catalog; the marks are consumed, so the double run
+    /// changes nothing (S2).
+    /// </summary>
+    public void DropExcludedMembers()
+    {
+        var excluded = excludedProperties.ToList();
+        var stated = statedValueTypes.ToList();
+        excludedProperties.Clear();
+        statedValueTypes.Clear();
+
+        var removed = new List<(EntityMap Entity, string Property)>();
+        var held = new List<(string ClassName, EntityMap Holder, string Property)>();
+
+        foreach (var mark in excluded)
+        {
+            if (mark.HoldsValue && (mark.ValueClass ?? NamedClass(PropertyType(mark.Entity, mark.PropertyName))) is { } valueClass)
+            {
+                held.Add((SimpleEntityName(valueClass), mark.Entity, mark.PropertyName));
+            }
+
+            RemoveProperty(mark.Entity, mark.PropertyName);
+            removed.Add((mark.Entity, mark.PropertyName));
+        }
+
+        var valueTypes = new List<EntityMap>();
+
+        foreach (var (entityMap, construct) in stated)
+        {
+            // A key class with a mapping of its own stays an entity (decision 031); the
+            // statement that it is a value does not outrank that.
+            if (!EntityMaps.Contains(entityMap)
+                || EntityMaps.Any(em => em.PrimaryKey?.SourceKeyClass is { } key && SimpleEntityName(key.ClassName) == entityMap.Entity.Name))
+            {
+                continue;
+            }
+
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Reason = $"{construct} makes {entityMap.Entity.Name} a value type of the entities holding it, not an entity; "
+                    + "the intermediate representation carries only flat classes (excluded area 2), so the class is not "
+                    + "translated and the properties typed by it leave with it (decision 177).",
+            });
+            valueTypes.Add(entityMap);
+        }
+
+        foreach (var (className, holder, property) in held)
+        {
+            var entityMap = FindEntityMap(className);
+
+            if (entityMap is null || ReferenceEquals(entityMap, holder) || valueTypes.Contains(entityMap)
+                || entityMap.Table is not null || entityMap.Schema is not null
+                || entityMap.PrimaryKey is not null || entityMap.Relations.Count > 0)
+            {
+                continue;
+            }
+
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Entity = entityMap.Entity.Name,
+                Reason = $"'{holder.Entity.Name}.{property}' holds {entityMap.Entity.Name} as a value; the intermediate "
+                    + "representation carries only flat classes (excluded area 2), so the class is not translated "
+                    + "(decision 177).",
+            });
+            valueTypes.Add(entityMap);
+        }
+
+        foreach (var valueType in valueTypes)
+        {
+            EntityMaps.Remove(valueType);
+        }
+
+        if (currentEntityMap is not null && valueTypes.Contains(currentEntityMap))
+        {
+            // Not null: the getter would found a new, empty entity on the next access.
+            currentEntityMap = EntityMaps.FirstOrDefault();
+        }
+
+        var valueTypeNames = valueTypes.Select(v => v.Entity.Name).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var entityMap in valueTypeNames.Count == 0 ? [] : EntityMaps)
+        {
+            foreach (var property in entityMap.Entity.Properties.ToList())
+            {
+                if (NamedClass(property.Type) is not { } named || !valueTypeNames.Contains(SimpleEntityName(named)))
+                {
+                    continue;
+                }
+
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Loss,
+                    Framework = Descriptor.Framework,
+                    Entity = entityMap.Entity.Name,
+                    Property = property.Name,
+                    Reason = $"The type '{SimpleEntityName(named)}' of the property is a value type of the source, which the "
+                        + "intermediate representation does not carry (excluded area 2); the property is left out of the "
+                        + "entity (decision 177).",
+                });
+                RemoveProperty(entityMap, property.Name);
+                removed.Add((entityMap, property.Name));
+            }
+        }
+
+        // A convention navigation claimed over a property that left, or by a class that is no
+        // entity any more, would found the property again or a relation of nothing.
+        conventionNavigations.RemoveAll(c => !EntityMaps.Contains(c.Entity)
+            || removed.Any(r => ReferenceEquals(r.Entity, c.Entity) && r.Property == c.PropertyName));
+    }
+
+    private static LangType? PropertyType(EntityMap entityMap, string propertyName)
+        => entityMap.Entity.Properties.FirstOrDefault(p => p.Name == propertyName)?.Type;
+
+    /// <summary>
+    /// The class a type names - an unresolved name, a reference, or either as the element of
+    /// a collection, innermost first like decision 075 reports it - or null for a scalar.
+    /// </summary>
+    private static string? NamedClass(LangType? type) => type?.Category switch
+    {
+        LangTypeCategory.Unknown => type.SourceName,
+        LangTypeCategory.Reference => type.TargetEntity,
+        LangTypeCategory.Collection => NamedClass(type.ElementType),
+        _ => null,
+    };
+
+    /// <summary>The property and everything stated about it: its mapping and a relation it navigates.</summary>
+    private static void RemoveProperty(EntityMap entityMap, string propertyName)
+    {
+        entityMap.Entity.Properties.RemoveAll(p => p.Name == propertyName);
+        entityMap.PropertyMaps.RemoveAll(pm => pm.Property.Name == propertyName);
+        entityMap.Relations.RemoveAll(r => r.SourceNavigationProperty == propertyName);
     }
 
     /// <summary>
@@ -3407,10 +3623,12 @@ public abstract class AbstractEntityBuilder
     public List<ConversionSource> Build()
     {
         // Key classes dissolve before anything else reads the entity list, so that no
-        // later phase takes one for an entity; convention navigations follow for the
-        // same reason. A conversion that never met the catalog completion phase runs
-        // both here; after one that did, both find everything handled already.
+        // later phase takes one for an entity; what excluded area 2 maps leaves next and
+        // convention navigations follow, for the same reason. A conversion that never met
+        // the catalog completion phase runs all three here; after one that did, they find
+        // everything handled already.
         DissolveKeyClasses();
+        DropExcludedMembers();
         ResolveConventionNavigations();
 
         // The two steps here that change nothing in the model: a base type naming another

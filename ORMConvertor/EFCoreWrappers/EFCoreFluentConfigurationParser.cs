@@ -461,6 +461,23 @@ public sealed class EFCoreFluentConfigurationParser(
                     ReadRelationshipChain(entity, calls, i);
                     return;
 
+                case "OwnsOne":
+                case "OwnsMany":
+                case "ComplexProperty":
+                case "ComplexCollection":
+                    // The fluent spelling of [Owned] and [ComplexType]: the member holds a value
+                    // type, excluded area 2, and leaves the model with it; the rest of the chain
+                    // configures the value type and goes with it (decision 177).
+                    if (call.Arguments.Count > 0 && Members(SyntaxFactory.SeparatedList([call.Arguments[0]])) is [var owned])
+                    {
+                        Write(entity, call, () => entityBuilder.ExcludeProperty(
+                            owned, $"{call.Name}(…), a value type of the entity", holdsValue: true, artifact: ConversionContentType.CSharp));
+                        return;
+                    }
+
+                    ReportEndOfChain(calls, i, entity.Name, null);
+                    return;
+
                 default:
                     if (UnreadEntityCalls.Contains(call.Name))
                     {

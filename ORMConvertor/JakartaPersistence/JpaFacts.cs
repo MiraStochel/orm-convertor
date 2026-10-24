@@ -38,6 +38,13 @@ public sealed class JpaEntityFacts
     public bool IsMappedSuperclass { get; set; }
 
     /// <summary>
+    /// The source declared the class @Embeddable (or &lt;embeddable&gt;): a key class, which
+    /// the key dissolution takes care of, or else a value type of the entities holding it,
+    /// which leaves the conversion (decision 177).
+    /// </summary>
+    public bool IsEmbeddable { get; set; }
+
+    /// <summary>
     /// Where the class-level statements stand in the source (decision 125), keyed by the
     /// annotation's simple name - "Table", "IdClass" - whether the reader took them from an
     /// annotation or from the orm.xml element that spells the same statement. The writer
@@ -129,6 +136,17 @@ public sealed class JpaAttributeFacts
 
     /// <summary>Annotations or elements on the attribute the model has no place for, for the loss records.</summary>
     public List<string> Unread { get; } = [];
+
+    /// <summary>
+    /// The construct of excluded area 2 that maps the attribute - @ElementCollection,
+    /// @Embedded, @Column(table) or their orm.xml elements - as the source spelled it, or
+    /// null. Such an attribute leaves the model whole (decision 177): the writer writes none
+    /// of its other facts and reports none of its other annotations.
+    /// </summary>
+    public string? ExcludedConstruct { get; set; }
+
+    /// <summary>The excluded construct holds a value type: an embedded class or the element of an element collection.</summary>
+    public bool HoldsValue { get; set; }
 
     /// <summary>
     /// insertable = false and updatable = false on the column, as the source spelled them.

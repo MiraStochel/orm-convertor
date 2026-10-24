@@ -215,8 +215,11 @@ public class UnreadMappingFactsTest
         Assert.Single(Losses(result, "The class annotation Table(catalog)"));
         Assert.Single(Losses(result, "The class annotation Table(indexes)"));
 
-        var table = Assert.Single(Losses(result, "The annotation Column(table)"));
+        // A column of a secondary table is excluded area 2: the attribute leaves the model
+        // with the one record (decision 177).
+        var table = Assert.Single(Losses(result, "The property is mapped by @Column(table = \"CustomerDetails\")"));
         Assert.Equal("customerName", table.Property);
+        Assert.DoesNotContain("customerName", Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.CSharpEntity).Content);
 
         var insertable = Assert.Single(Losses(result, "Column(insertable = false)"));
         Assert.Equal("note", insertable.Property);
@@ -281,6 +284,9 @@ public class UnreadMappingFactsTest
                             <basic name="customerName">
                                 <column name="CustomerName" table="CustomerDetails" insertable="false" updatable="false"/>
                             </basic>
+                            <basic name="note">
+                                <column name="Note" insertable="false" updatable="false"/>
+                            </basic>
                         </attributes>
                     </entity>
                 </entity-mappings>
@@ -291,15 +297,22 @@ public class UnreadMappingFactsTest
                 public class Customer {
                     private Integer customerId;
                     private String customerName;
+                    private String note;
                 }
                 """, "Customer.java"),
         ]);
 
         Assert.Single(Losses(result, "The class annotation <table catalog>"));
         Assert.Single(Losses(result, "The class annotation <index>"));
-        Assert.Single(Losses(result, "The annotation <column table>"));
-        Assert.Single(Losses(result, "<column insertable=\"false\">"));
-        Assert.Single(Losses(result, "<column updatable=\"false\">"));
+
+        // The column of a secondary table takes the attribute out whole, the write flags beside
+        // it with it; the same flags on a column of the entity's own table are reported (decision 177).
+        var table = Assert.Single(result.Records, r => r.Property == "customerName");
+        Assert.Equal(ConversionRecordKind.Loss, table.Kind);
+        Assert.Contains("<column table=\"CustomerDetails\">", table.Reason);
+
+        Assert.Equal("note", Assert.Single(Losses(result, "<column insertable=\"false\">")).Property);
+        Assert.Equal("note", Assert.Single(Losses(result, "<column updatable=\"false\">")).Property);
     }
 
     /// <summary>
@@ -491,29 +504,31 @@ public class UnreadMappingFactsTest
     /// basic attribute over an xml column, EclipseLink as a serialized image - a column the
     /// source never claimed, written with a plain @Column and no record. The member now stays
     /// on the class as @Transient with the record the NHibernate and MyBatis builders write
-    /// for the same shape.
+    /// for the same shape. The source is a JPA attribute of a collection type with no
+    /// annotation at all, so no relation stands behind it; EF Core's primitive collection
+    /// never gets this far, being excluded area 2 (decision 177).
     /// </summary>
     [Theory]
     [InlineData(ORMEnum.Hibernate)]
     [InlineData(ORMEnum.EclipseLink)]
     public void ACollectionWithoutARelationIsTransientInTheJpaTarget(ORMEnum target)
     {
-        var result = ConversionHandler.Convert(ORMEnum.EFCore, target,
+        var result = ConversionHandler.Convert(ORMEnum.Hibernate, target,
         [
-            Source(ConversionContentType.CSharp, """
-                using System.Collections.Generic;
-                using System.ComponentModel.DataAnnotations;
+            Source(ConversionContentType.Java, """
+                package shop;
 
-                namespace Shop;
+                import jakarta.persistence.*;
+                import java.util.List;
 
-                public class Customer
-                {
-                    [Key]
-                    public int CustomerId { get; set; }
+                @Entity
+                public class Customer {
+                    @Id
+                    private Integer customerId;
 
-                    public List<string> Tags { get; set; } = new();
+                    private List<String> Tags;
                 }
-                """, "Customer.cs"),
+                """, "Customer.java"),
         ]);
 
         var entity = Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.JavaEntity);

@@ -151,15 +151,16 @@ public class NHibernateUnreadElementTest
         Assert.Single(builder.EntityMap.PropertyMaps);
 
         var losses = builder.Records.Where(r => r.Kind == ConversionRecordKind.Loss).ToList();
-        Assert.Equal(3, losses.Count);
+        Assert.Equal(4, losses.Count);
         Assert.All(losses, r => Assert.Equal("Product", r.Entity));
 
-        Assert.Contains(losses, r => r.Reason.Contains("<natural-id>"));
-        Assert.Contains(losses, r => r.Reason.Contains("<join>"));
+        Assert.Contains(losses, r => r.Property is null && r.Reason.Contains("<natural-id>"));
+        Assert.Contains(losses, r => r.Property is null && r.Reason.Contains("<join>"));
 
-        // The component's name attribute names a property of the entity, so the record
-        // can point at it.
-        Assert.Contains(losses, r => r.Property == "Address" && r.Reason.Contains("component"));
+        // The component maps a property of the entity, and so does <join> for each it moves
+        // into its table: each property leaves the model with one record (decision 177).
+        Assert.Contains(losses, r => r.Property == "Address" && r.Reason.Contains("<component name=\"Address\">"));
+        Assert.Contains(losses, r => r.Property == "Extra" && r.Reason.Contains("<join table=\"ProductExtras\">"));
     }
 
     [Fact]

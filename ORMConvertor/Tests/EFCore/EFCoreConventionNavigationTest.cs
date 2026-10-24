@@ -159,7 +159,7 @@ public class EFCoreConventionNavigationTest
         """;
 
     [Fact]
-    public void ACollectionOfScalarsIsAPrimitiveCollectionAndNotANavigation()
+    public void ACollectionOfScalarsIsAPrimitiveCollectionThatLeavesTheModel()
     {
         var builder = new EFCoreEntityBuilder();
         new EFCoreEntityParser(builder).Parse(PostSource);
@@ -168,54 +168,47 @@ public class EFCoreConventionNavigationTest
         var post = builder.EntityMaps.Single();
 
         // EF Core maps each of the three to one JSON column. They used to be read as
-        // one-to-many navigations towards entities named 'string', 'int?' and 'uint'.
+        // one-to-many navigations towards entities named 'string', 'int?' and 'uint'; a
+        // collection stored in a column is excluded area 2, so none of them stays (decision 177).
         Assert.Empty(post.Relations);
-        var tags = post.Entity.Properties.Single(p => p.Name == "Tags").Type!;
-        Assert.Equal(LangTypeCategory.Collection, tags.Category);
-        Assert.Equal(ScalarType.String, tags.ElementType!.ScalarType);
-        var ratings = post.Entity.Properties.Single(p => p.Name == "Ratings").Type!;
-        Assert.Equal(ScalarType.Int, ratings.ElementType!.ScalarType);
-        Assert.True(ratings.ElementType.IsNullable);
+        Assert.Equal(["PostId"], post.Entity.Properties.Select(p => p.Name));
+        Assert.Equal(["PostId"], post.PropertyMaps.Select(pm => pm.Property.Name));
 
-        // The storage in one column has no place in the model: one loss per property, with
-        // no category (decision 048), and no claim of a missing target entity.
+        // One loss per property, with no category, and no claim of a missing target entity.
         foreach (var property in new[] { "Tags", "Ratings", "Counts" })
         {
-            var loss = Assert.Single(builder.Records, r => r.Kind == ConversionRecordKind.Loss && r.Property == property);
-            Assert.Null(loss.Category);
-            Assert.Equal("Post", loss.Entity);
+            var record = Assert.Single(builder.Records, r => r.Property == property);
+            Assert.Equal(ConversionRecordKind.Loss, record.Kind);
+            Assert.Null(record.Category);
+            Assert.Equal("Post", record.Entity);
+            Assert.Contains("primitive collection", record.Reason);
         }
 
         Assert.DoesNotContain(builder.Records, r => r.Reason.Contains("Target entity"));
-
-        // uint is a keyword outside the vocabulary: the collection is primitive all the same,
-        // and its element type gets the record of decision 075 as any unknown type does.
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Incompleteness
-            && r.Property == "Counts" && r.Reason.Contains("'uint'"));
-
-        Assert.Contains("public List<string> Tags { get; set; } = [];", code);
+        Assert.DoesNotContain("Tags", code);
     }
 
     [Fact]
-    public void APrimitiveCollectionBecomesNoAssociationInTheTargets()
+    public void APrimitiveCollectionIsInNoTarget()
     {
         var nhibernate = new NHibernateEntityBuilder();
         new EFCoreEntityParser(nhibernate).Parse(PostSource);
-        var mapping = nhibernate.Build().Single(o => o.ContentType == Model.ConversionContentType.XML).Content;
+        var outputs = nhibernate.Build();
 
-        Assert.DoesNotContain("one-to-many", mapping);
-        Assert.DoesNotContain("name=\"Tags\"", mapping);
+        Assert.All(outputs, o => Assert.DoesNotContain("Tags", o.Content));
+        Assert.DoesNotContain("one-to-many", outputs.Single(o => o.ContentType == Model.ConversionContentType.XML).Content);
 
         var hibernate = new HibernateWrappers.HibernateEntityBuilder();
         new EFCoreEntityParser(hibernate).Parse(PostSource);
         var java = hibernate.Build().Single().Content;
 
         Assert.DoesNotContain("@OneToMany", java);
-        Assert.Contains("List<String> Tags", java);
+        Assert.DoesNotContain("Tags", java);
+        Assert.DoesNotContain("@Transient", java);
     }
 
     [Fact]
-    public void ARelationshipAnnotationOnAPrimitiveCollectionIsDropped()
+    public void ARelationshipAnnotationOnAPrimitiveCollectionLeavesWithIt()
     {
         var builder = new EFCoreEntityBuilder();
         new EFCoreEntityParser(builder).Parse("""
@@ -234,10 +227,12 @@ public class EFCoreConventionNavigationTest
 
         builder.Build();
 
+        // The property leaves with everything stated on it, and its one loss says so: the
+        // annotations get no record of their own (decision 177).
         Assert.Empty(builder.EntityMaps.Single().Relations);
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss
-            && r.Property == "Tags" && r.Reason.Contains("[InverseProperty(\"Posts\")]"));
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Loss
-            && r.Property == "BlogIds" && r.Reason.Contains("[ForeignKey(\"BlogId\")]"));
+        Assert.Equal(ConversionRecordKind.Loss, Assert.Single(builder.Records, r => r.Property == "Tags").Kind);
+        Assert.Equal(ConversionRecordKind.Loss, Assert.Single(builder.Records, r => r.Property == "BlogIds").Kind);
+        Assert.DoesNotContain(builder.Records, r => r.Reason.Contains("[InverseProperty(\"Posts\")]")
+            || r.Reason.Contains("[ForeignKey(\"BlogId\")]"));
     }
 }

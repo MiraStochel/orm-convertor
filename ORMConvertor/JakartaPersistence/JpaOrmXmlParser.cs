@@ -171,7 +171,7 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
             context.MarkMetadataComplete(className);
         }
 
-        var facts = new JpaEntityFacts { ClassName = className };
+        var facts = new JpaEntityFacts { ClassName = className, IsEmbeddable = entity.Name.LocalName == "embeddable" };
         foreach (var generator in rootGenerators)
         {
             facts.Generators[generator.Key] = generator.Value;
@@ -255,6 +255,19 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
             var name = element.Attribute("name")?.Value;
             if (element.Name.LocalName == "description")
             {
+                continue;
+            }
+
+            if (element.Name.LocalName is "element-collection" or "embedded" && !string.IsNullOrWhiteSpace(name))
+            {
+                // The XSD spellings of @ElementCollection and @Embedded: the attribute leaves
+                // the model whole (decision 177).
+                facts.Attributes.Add(new JpaAttributeFacts
+                {
+                    Name = name,
+                    ExcludedConstruct = $"<{element.Name.LocalName} name=\"{name}\">",
+                    HoldsValue = true,
+                });
                 continue;
             }
 
@@ -403,10 +416,11 @@ public sealed class JpaOrmXmlParser(AbstractEntityBuilder entityBuilder, JpaRead
         attribute.Unique |= IsTrue(column.Attribute("unique")?.Value);
         attribute.ColumnDefinition = column.Attribute("column-definition")?.Value;
 
-        // The XSD spellings of @Column(table), @Column(insertable) and @Column(updatable).
-        if (column.Attribute("table") is not null)
+        // The XSD spellings of @Column(table), @Column(insertable) and @Column(updatable); a
+        // column of a secondary table takes the attribute out of the model (decision 177).
+        if (column.Attribute("table")?.Value is { } table)
         {
-            attribute.Unread.Add("<column table>");
+            attribute.ExcludedConstruct ??= $"<column table=\"{table}\">, a column of a secondary table";
         }
 
         if (ReadBoolean(column.Attribute("insertable")?.Value) == false)

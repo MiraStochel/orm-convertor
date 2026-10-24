@@ -287,12 +287,40 @@ public class NHibernateXMLMappingParser(
     /// the natural key and the special collections are not read, and stay outside the
     /// guarantees of version 1.0 as a whole - the record is how that boundary reaches the
     /// user of this one input instead of the output being silently poorer than it.
+    ///
+    /// An element that maps a property takes the property out of the model with it
+    /// (decision 177), and so does &lt;join&gt; with every property it maps into its table:
+    /// the member left in the model would come out as a column of the entity's own table.
+    /// A component holds a value type, whose class leaves the conversion too where nothing
+    /// maps it as an entity.
     /// </summary>
     private void ReportUnreadClassChildren(XElement classElement)
     {
         foreach (var element in classElement.Elements().Where(e => !ReadClassChildren.Contains(e.Name.LocalName)))
         {
+            if (PropertyNamedElements.Contains(element.Name.LocalName) && element.Attribute("name")?.Value is { Length: > 0 } name)
+            {
+                entityBuilder.ExcludeProperty(
+                    name,
+                    Opening(element),
+                    holdsValue: element.Name.LocalName == "component",
+                    valueClass: element.Attribute("class")?.Value);
+                continue;
+            }
+
             ReportUnreadElement(element, entityBuilder.EntityMap.Entity.Name);
+
+            if (element.Name.LocalName == "join")
+            {
+                foreach (var mapped in element.Elements().Where(e => e.Attribute("name")?.Value is { Length: > 0 }))
+                {
+                    entityBuilder.ExcludeProperty(
+                        mapped.Attribute("name")!.Value,
+                        $"{Opening(mapped)} under <join table=\"{element.Attribute("table")?.Value}\">, in the joined table",
+                        holdsValue: mapped.Name.LocalName == "component",
+                        valueClass: mapped.Attribute("class")?.Value);
+                }
+            }
         }
     }
 
@@ -1670,12 +1698,15 @@ public class NHibernateXMLMappingParser(
                 // the model has no place for - values (<element>), a component, a nested
                 // collection. The four collection names are on the read list, so the
                 // boundary reporter never sees them and this is the only place that can
-                // say so (decision 030).
-                ReportCollectionShapeLoss(
+                // say so (decision 030); the property leaves the model with it (decision 177),
+                // and the class of a composite element with the property.
+                var compositeElement = collection.Elements().FirstOrDefault(e => e.Name.LocalName == "composite-element");
+                entityBuilder.ExcludeProperty(
                     propName,
-                    $"The <{collection.Name.LocalName}> of '{propName}' holds no <one-to-many> or "
-                    + "<many-to-many>, so it is not an association between entities and the "
-                    + "representation has nowhere to keep it; the collection is dropped.");
+                    $"<{collection.Name.LocalName} name=\"{propName}\"> without <one-to-many> or <many-to-many>, "
+                    + "a collection of values rather than an association between entities",
+                    holdsValue: compositeElement is not null,
+                    valueClass: compositeElement?.Attribute("class")?.Value);
                 continue;
             }
 

@@ -45,7 +45,10 @@ public static class CatalogCompletion
         // up (decision 031). Only then the source's conventional claims stand up before
         // the catalog is compared against them - a navigation the source states by
         // convention is a first-degree fact and outranks anything read below (decision 015).
+        // Between the two, what a construct of excluded area 2 maps leaves the model, so that
+        // the catalog never looks for its column (decision 177).
         builder.DissolveKeyClasses();
+        builder.DropExcludedMembers();
         builder.ResolveConventionNavigations();
 
         var demand = Enum.GetValues<MappingFactCategory>()
