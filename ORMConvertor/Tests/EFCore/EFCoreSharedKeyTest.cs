@@ -118,6 +118,36 @@ public class EFCoreSharedKeyTest
             }
             """
         },
+        {
+            "[ForeignKey] naming a key renamed by [Column]", Person, "Passport", """
+            public class Passport
+            {
+                [Key, Column("person_id")]
+                public int PersonId { get; set; }
+
+                [ForeignKey(nameof(PersonId))]
+                public Person Person { get; set; }
+            }
+            """
+        },
+        {
+            "a lone reference answering back to a key renamed by [Column]", """
+            public class Citizen
+            {
+                public int Id { get; set; }
+
+                public IdCard Card { get; set; }
+            }
+            """, "IdCard", """
+            public class IdCard
+            {
+                [Key, Column("citizen_id")]
+                public int CitizenId { get; set; }
+
+                public Citizen Citizen { get; set; }
+            }
+            """
+        },
     };
 
     /// <summary>
@@ -141,7 +171,7 @@ public class EFCoreSharedKeyTest
         Assert.Null(part.SourceStrategyName);
 
         var relation = Assert.Single(entity.Relations);
-        Assert.Equal([part.PropertyMap.Property.Name], builder.StatedForeignKeyColumns(relation));
+        Assert.Equal([part.PropertyMap.ColumnName ?? part.PropertyMap.Property.Name], builder.StatedForeignKeyColumns(relation));
     }
 
     /// <summary>

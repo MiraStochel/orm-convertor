@@ -315,6 +315,7 @@ flowchart LR
 | Případ | Výsledek |
 |---|---|
 | cíl vztahu je v převodu | sloupce z `AddForeignKey` se spárují s klíčem cíle; mimo převod je věc katalogu (rozh. [015](./decisions/015-mapping-fact-completion-from-the-catalog.md)) |
+| jméno ze zdroje | EF Core jmenuje vlastnosti (`[ForeignKey]`, `HasForeignKey`, konvence; `namesProperties`, `EFCoreForeignKeyColumnProviderTest`): pár dostane vlastnost toho jména a její sloupec (`[Column]`, `HasColumnName`, katalog), týž sloupec čte katalog i kontrola sdíleného klíče (`EFCoreRenamedForeignKeyTest`). Ostatní zdroje a katalog jmenují sloupce: vlastnost s tím sloupcem, jinak vlastnost bez sloupce s tím jménem |
 | sloupec bez vlastnosti | odpojená `PropertyMap` jen v páru |
 | nesouhlasí počet sloupců, cíl chybí, N:M bez spojovací entity | `Incompleteness` (rozh. [010](./decisions/010-diagnostics-as-returned-data.md)); N:M se nepáruje nikdy |
 | netypovaná vlastnost FK (`<key-many-to-one>`) | typ a sloupcová fakta z odkazované části klíče — `Convention` |
@@ -1221,7 +1222,7 @@ Dotazový parser builder nevyrábí: dostává `Func<AbstractQueryBuilder>` od o
 | `AddKeyAssignedUnderForeignKey` | jednodílný klíč, který zdroj přestane generovat, ukáže-li se jediným sloupcem cizího klíče vlastněného N:1 či 1:1 (sdílený klíč, rozh. 012); rozhodne `ResolveConventionNavigations` po konvenčních sloupcích, před katalogem: `Assigned` bez jména a parametrů (EF Core, §5) |
 | `SetKeyStrategyDetails` | název strategie a parametry generátoru části klíče |
 | `SetCollectionKind` | druh kolekce, jen prázdný fakt |
-| `AddForeignKey` | registrace vztahu, povýší typ navigace; sloupce zdroje páruje fáze rozresolvování (§4.3) |
+| `AddForeignKey` | registrace vztahu, povýší typ navigace; sloupce zdroje (s `namesProperties` vlastnosti) páruje fáze rozresolvování (§4.3) |
 | `AddRelation` | najdi-nebo-přidej podle navigace, vrací vztah |
 | `AddStatedBaseType`, `AddStatedReferencedColumns` | tvrzení bez místa v modelu, která lze posoudit až nad celou sadou entit (bázový typ, sloupce odkazované cizím klíčem); `Build()` je rozsoudí a vydá `Loss` (rozh. [048](./decisions/048-a-fact-with-no-place-in-the-model-is-a-loss.md), §5) |
 

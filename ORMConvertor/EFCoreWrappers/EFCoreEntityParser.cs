@@ -744,7 +744,7 @@ public class EFCoreEntityParser : CSharpEntityParser
                     // the dependent holds the columns, so nothing waits for the far side.
                     entityBuilder.AddForeignKey(
                         Cardinality.OneToMany, name, target,
-                        foreignKeyColumns: foreignKeyNames, inverseNavigation: inverseNavigation);
+                        foreignKeyColumns: foreignKeyNames, inverseNavigation: inverseNavigation, namesProperties: true);
                 }
                 else
                 {
@@ -770,7 +770,7 @@ public class EFCoreEntityParser : CSharpEntityParser
                 // whose claim points the opposite way and has no place in the model yet.
                 entityBuilder.AddForeignKey(
                     Cardinality.ManyToOne, name, type, RelationRole.Owning, foreignKeyNames,
-                    inverseNavigation: inverseNavigation);
+                    inverseNavigation: inverseNavigation, namesProperties: true);
             }
             else
             {
@@ -791,7 +791,8 @@ public class EFCoreEntityParser : CSharpEntityParser
                             ? [annotated]
                             : ConventionForeignKeyProperties(ownerMap, targetMap, name,
                                 PairsOneToOne(ownerMap, targetMap, name, inverseNavigation)),
-                        inverseNavigation);
+                        inverseNavigation,
+                        namesProperties: true);
                 }
                 else if (inverseNavigation is not null)
                 {
@@ -1108,12 +1109,14 @@ public class EFCoreEntityParser : CSharpEntityParser
             inverseNavigation: inverse,
             conventionalColumns: cardinality == Cardinality.ManyToOne && relationship.ForeignKey is null
                 ? (owner, targetMap) => ConventionForeignKeyProperties(owner, targetMap, navigation, pairsOneToOne: false)
-                : null);
+                : null,
+            namesProperties: true);
 
         if (annotatedForeignKey is not null || annotatedInverse is not null)
         {
             entityBuilder.AddForeignKey(
-                cardinality, navigation, target, role, annotatedForeignKey, inverseNavigation: annotatedInverse);
+                cardinality, navigation, target, role, annotatedForeignKey, inverseNavigation: annotatedInverse,
+                namesProperties: true);
         }
     }
 

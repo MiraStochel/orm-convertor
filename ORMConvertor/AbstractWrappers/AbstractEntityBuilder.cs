@@ -779,10 +779,11 @@ public abstract class AbstractEntityBuilder
     /// <param name="propertyName">Navigation property name on the source entity</param>
     /// <param name="target">Target entity name</param>
     /// <param name="role">Which side holds the foreign key; derived from the cardinality when omitted.</param>
-    /// <param name="foreignKeyColumns">Columns (or properties) of the foreign key as the source
-    /// stated them, in the source's order. They belong to whichever side holds the key: the
-    /// source entity of an owning relation, the target entity of an inverse one - and to the
-    /// junction table for a many-to-many, where they reference this entity's key.</param>
+    /// <param name="foreignKeyColumns">Columns (or properties, see the last parameter) of the
+    /// foreign key as the source stated them, in the source's order. They belong to whichever
+    /// side holds the key: the source entity of an owning relation, the target entity of an
+    /// inverse one - and to the junction table for a many-to-many, where they reference this
+    /// entity's key.</param>
     /// <param name="junction">Many-to-many only: what the source stated about the junction
     /// table, waiting for the synthesis of the junction entity (decision 005).</param>
     /// <param name="inverseNavigation">The navigation on the target entity that is the other
@@ -796,6 +797,11 @@ public abstract class AbstractEntityBuilder
     /// the source had written it; returning null leaves the fact empty for whoever speaks
     /// later. Resolved with the convention navigations, and a column any source states
     /// outranks it.</param>
+    /// <param name="namesProperties">Whether the names - stated or derived by the convention -
+    /// are properties of the side holding the key rather than its columns. EF Core's
+    /// [ForeignKey], HasForeignKey and convention all name properties, and the column is
+    /// whatever the property maps to - [Column], HasColumnName, the catalog -, so the pairing
+    /// finds the property by its name; the other sources state columns.</param>
     public void AddForeignKey(
         Cardinality cardinality,
         string propertyName,
@@ -804,7 +810,8 @@ public abstract class AbstractEntityBuilder
         IReadOnlyList<string>? foreignKeyColumns = null,
         JunctionFacts? junction = null,
         string? inverseNavigation = null,
-        Func<EntityMap, EntityMap, IReadOnlyList<string>?>? conventionalColumns = null)
+        Func<EntityMap, EntityMap, IReadOnlyList<string>?>? conventionalColumns = null,
+        bool namesProperties = false)
     {
         var propertyMap = GetOrCreatePropertyMap(propertyName); // the navigation property must exist in the model
 
@@ -836,22 +843,22 @@ public abstract class AbstractEntityBuilder
         {
             if (!pendingForeignKeyColumns.TryGetValue(standing, out var stated))
             {
-                pendingForeignKeyColumns[standing] = foreignKeyColumns;
+                pendingForeignKeyColumns[standing] = new StatedForeignKey(foreignKeyColumns, namesProperties);
             }
-            else if (!stated.SequenceEqual(foreignKeyColumns, StringComparer.Ordinal))
+            else if (!stated.Names.SequenceEqual(foreignKeyColumns, StringComparer.Ordinal))
             {
                 // Two sources naming the columns of one navigation differently - EF Core's
                 // fluent HasForeignKey beside [ForeignKey] - keep the first, as every other
                 // fact does (decision 017).
                 ReportInputConflict(propertyName, MappingFactCategory.ForeignKeyColumns,
-                    $"An earlier source states the foreign key ({string.Join(", ", stated)}), "
+                    $"An earlier source states the foreign key ({string.Join(", ", stated.Names)}), "
                     + $"a later one ({string.Join(", ", foreignKeyColumns)}).");
             }
         }
 
         if (conventionalColumns is not null && !conventionalForeignKeys.Any(c => ReferenceEquals(c.Relation, standing)))
         {
-            conventionalForeignKeys.Add(new ConventionalForeignKey(EntityMap, standing, conventionalColumns));
+            conventionalForeignKeys.Add(new ConventionalForeignKey(EntityMap, standing, conventionalColumns, namesProperties));
         }
 
         if (cardinality == Cardinality.ManyToMany && junction is not null && !pendingJunctionFacts.ContainsKey(standing))
@@ -1004,6 +1011,8 @@ public abstract class AbstractEntityBuilder
     /// own, the callback is asked even where the name resolves to no entity of the
     /// conversion - a claim may hold without the far class at hand - and receives null for
     /// it then.</param>
+    /// <param name="namesProperties">Whether the derived names are properties rather than
+    /// columns, as in <see cref="AddForeignKey"/>.</param>
     public void AddConventionNavigation(
         Cardinality cardinality,
         string propertyName,
@@ -1011,10 +1020,11 @@ public abstract class AbstractEntityBuilder
         RelationRole? role = null,
         Func<EntityMap, EntityMap, IReadOnlyList<string>?>? foreignKeyColumns = null,
         string? inverseNavigation = null,
-        Func<EntityMap, EntityMap?, Cardinality?>? shape = null)
+        Func<EntityMap, EntityMap?, Cardinality?>? shape = null,
+        bool namesProperties = false)
     {
         conventionNavigations.Add(new ConventionNavigation(
-            EntityMap, cardinality, propertyName, targetTypeName, role, foreignKeyColumns, inverseNavigation, shape));
+            EntityMap, cardinality, propertyName, targetTypeName, role, foreignKeyColumns, inverseNavigation, shape, namesProperties));
     }
 
     /// <summary>
@@ -1066,7 +1076,8 @@ public abstract class AbstractEntityBuilder
                 target?.Entity.Name ?? candidate.TargetTypeName,
                 candidate.Role,
                 target is null ? null : candidate.ForeignKeyColumns?.Invoke(candidate.Entity, target),
-                inverseNavigation: candidate.InverseNavigation);
+                inverseNavigation: candidate.InverseNavigation,
+                namesProperties: candidate.NamesProperties);
         }
 
         ResolveConventionalForeignKeys();
@@ -1128,8 +1139,8 @@ public abstract class AbstractEntityBuilder
     private List<PropertyMap> ForeignKeyColumnsOf(EntityMap entity, Relation relation)
         => relation.ColumnPairs.Count > 0
             ? [.. relation.ColumnPairs.Select(pair => pair.Source)]
-            : pendingForeignKeyColumns.TryGetValue(relation, out var columns)
-                ? [.. columns.Select(column => ForeignKeyColumnMap(entity, column))]
+            : pendingForeignKeyColumns.TryGetValue(relation, out var stated)
+                ? [.. stated.Names.Select(name => ForeignKeyColumnMap(entity, name, stated.NamesProperties))]
                 : [];
 
     /// <summary>Key parts waiting for the foreign keys of their entity; see <see cref="AddKeyAssignedUnderForeignKey"/>.</summary>
@@ -1160,19 +1171,20 @@ public abstract class AbstractEntityBuilder
 
             if (target is not null && claim.Derive(claim.Entity, target) is { Count: > 0 } columns)
             {
-                pendingForeignKeyColumns[claim.Relation] = columns;
+                pendingForeignKeyColumns[claim.Relation] = new StatedForeignKey(columns, claim.NamesProperties);
             }
         }
     }
 
     /// <summary>
-    /// One pending conventional derivation of a stated relation's columns; see the last
-    /// parameter of <see cref="AddForeignKey"/>.
+    /// One pending conventional derivation of a stated relation's columns; see the
+    /// parameter conventionalColumns of <see cref="AddForeignKey"/>.
     /// </summary>
     private sealed record ConventionalForeignKey(
         EntityMap Entity,
         Relation Relation,
-        Func<EntityMap, EntityMap, IReadOnlyList<string>?> Derive);
+        Func<EntityMap, EntityMap, IReadOnlyList<string>?> Derive,
+        bool NamesProperties);
 
     /// <summary>
     /// Conventional derivations waiting for the entities of the conversion to be known.
@@ -1803,7 +1815,8 @@ public abstract class AbstractEntityBuilder
         RelationRole? Role,
         Func<EntityMap, EntityMap, IReadOnlyList<string>?>? ForeignKeyColumns,
         string? InverseNavigation = null,
-        Func<EntityMap, EntityMap?, Cardinality?>? Shape = null);
+        Func<EntityMap, EntityMap?, Cardinality?>? Shape = null,
+        bool NamesProperties = false);
 
     /// <summary>
     /// Convention navigations waiting for the entities of the conversion to be known.
@@ -1842,7 +1855,13 @@ public abstract class AbstractEntityBuilder
     /// paired they live in <see cref="Relation.ColumnPairs"/>, and an entry whose target never
     /// arrives simply stays unconsumed.
     /// </summary>
-    private readonly Dictionary<Relation, IReadOnlyList<string>> pendingForeignKeyColumns = [];
+    private readonly Dictionary<Relation, StatedForeignKey> pendingForeignKeyColumns = [];
+
+    /// <summary>
+    /// A foreign key as the source stated it: the names in the source's order, and whether
+    /// they are properties of the side holding the key (EF Core) rather than its columns.
+    /// </summary>
+    private sealed record StatedForeignKey(IReadOnlyList<string> Names, bool NamesProperties);
 
     /// <summary>
     /// Junction table facts of many-to-many relations, waiting for
@@ -1853,10 +1872,27 @@ public abstract class AbstractEntityBuilder
     /// <summary>
     /// Foreign key columns the source stated for a relation whose pairs are not resolved
     /// yet, or null when it stated none. Read by the catalog completion phase (decision
-    /// 015) to compare the source's claim with the catalog without consuming it.
+    /// 015) to compare the source's claim with the catalog without consuming it. Names the
+    /// source stated as properties come back as the columns those properties map to, as far
+    /// as the side holding the key is an entity of the conversion.
     /// </summary>
     public IReadOnlyList<string>? StatedForeignKeyColumns(Relation relation)
-        => pendingForeignKeyColumns.TryGetValue(relation, out var columns) ? columns : null;
+    {
+        if (!pendingForeignKeyColumns.TryGetValue(relation, out var stated))
+        {
+            return null;
+        }
+
+        var keyHolder = stated.NamesProperties && relation.Cardinality != Cardinality.ManyToMany
+            ? FindEntityMap(relation.Role == RelationRole.Owning ? relation.SourceEntity : relation.TargetEntity)
+            : null;
+
+        return keyHolder is null
+            ? stated.Names
+            : [.. stated.Names
+                .Select(name => ForeignKeyColumnMap(keyHolder, name, namesProperty: true))
+                .Select(map => map.ColumnName ?? map.Property.Name)];
+    }
 
     /// <summary>
     /// Junction facts waiting on a many-to-many relation, or null when there are none.
@@ -2357,10 +2393,12 @@ public abstract class AbstractEntityBuilder
             return;
         }
 
-        if (!pendingForeignKeyColumns.TryGetValue(relation, out var columns))
+        if (!pendingForeignKeyColumns.TryGetValue(relation, out var stated))
         {
             return;
         }
+
+        var columns = stated.Names;
 
         if (referencedKey is null || referencedKey.Parts.Count != columns.Count)
         {
@@ -2386,7 +2424,7 @@ public abstract class AbstractEntityBuilder
         {
             pairs.Add(new ColumnPair
             {
-                Source = ForeignKeyColumnMap(keyHolder, columns[i]),
+                Source = ForeignKeyColumnMap(keyHolder, columns[i], stated.NamesProperties),
                 Target = referencedKey.Parts[i].PropertyMap,
             });
         }
@@ -2491,21 +2529,26 @@ public abstract class AbstractEntityBuilder
     }
 
     /// <summary>
-    /// The property map behind one stated foreign key column: an existing one of the entity
-    /// holding the key, found by column and then by property name (EF Core states properties,
-    /// NHibernate columns). A column nobody declared a property for gets a detached map -
-    /// a column is not a property until it has a language type, so it must not enter the
-    /// entity's PropertyMaps, where builders would emit it as one.
+    /// The property map behind one stated foreign key name: an existing one of the entity
+    /// holding the key. A property name (EF Core) finds the property of that name whatever
+    /// column it maps to; a column name (NHibernate, JPA, MyBatis, the catalog) finds the
+    /// property mapped to that column, and then one without a column of its own whose name
+    /// is the column. A name nobody declared a property for gets a detached map - a column
+    /// is not a property until it has a language type, so it must not enter the entity's
+    /// PropertyMaps, where builders would emit it as one.
     /// </summary>
-    private static PropertyMap ForeignKeyColumnMap(EntityMap keyHolder, string column)
+    private static PropertyMap ForeignKeyColumnMap(EntityMap keyHolder, string name, bool namesProperty)
     {
-        return keyHolder.PropertyMaps.FirstOrDefault(pm => pm.ColumnName == column)
-            ?? keyHolder.PropertyMaps.FirstOrDefault(pm => pm.ColumnName is null && pm.Property.Name == column)
-            ?? new PropertyMap
-            {
-                Property = new Property { Name = column },
-                ColumnName = column,
-            };
+        var declared = namesProperty
+            ? keyHolder.PropertyMaps.FirstOrDefault(pm => pm.Property.Name == name)
+            : keyHolder.PropertyMaps.FirstOrDefault(pm => pm.ColumnName == name)
+                ?? keyHolder.PropertyMaps.FirstOrDefault(pm => pm.ColumnName is null && pm.Property.Name == name);
+
+        return declared ?? new PropertyMap
+        {
+            Property = new Property { Name = name },
+            ColumnName = name,
+        };
     }
 
     /// <summary>
