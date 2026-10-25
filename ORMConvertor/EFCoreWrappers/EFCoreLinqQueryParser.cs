@@ -22,12 +22,24 @@ namespace EFCoreWrappers;
 /// that is the whole query -, read by the shared T-SQL reader in the dialect the source
 /// declared (decision 088), and since decision 115 the explicit loading of a navigation -
 /// <c>Entry(…).Collection(…).Query()</c> or <c>.Load()</c> -, recognized here as a root and
-/// read by the shared parser as the query the provider composes out of it.
+/// read by the shared parser as the query the provider composes out of it. A root written
+/// by the name of a set - <c>ctx.PageDirectories</c> - is the query over the entity the
+/// context of the conversion declares under that name, <c>Set&lt;PageDirectory&gt;()</c>, read
+/// from the context the entity pass filled (decision 185); a name no context of the
+/// conversion declares goes to the shared reading as the name it is (rule Q2).
 /// </summary>
 public class EFCoreLinqQueryParser(
     Func<AbstractQueryBuilder> queryBuilders,
-    SourceSqlDialect? declaredSourceDialect = null) : LinqQueryParser(queryBuilders)
+    SourceSqlDialect? declaredSourceDialect = null,
+    EFCoreReadingContext? context = null) : LinqQueryParser(queryBuilders)
 {
+    /// <summary>
+    /// The entity the set of this name exposes in a context the conversion read, or the name
+    /// itself where none does (decision 185). The name of the root the shared reading gets:
+    /// an entity name resolves by the mapping outright, like the type argument of Set&lt;T&gt;().
+    /// </summary>
+    private string SetOf(string name) => context?.EntityExposedBy(name) ?? name;
+
     /// <summary>
     /// The calls on the result of a native query that say nothing about its rows: they
     /// materialize it, or they say how it is tracked. Anything else after it composes LINQ
@@ -401,14 +413,14 @@ public class EFCoreLinqQueryParser(
             // its position at the head of the chain, not by being called "ctx": a hard-coded
             // identifier made every other name silently unreadable.
             case MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax:
-                root = new LinqQueryRoot(member.Name.Identifier.Text);
+                root = new LinqQueryRoot(SetOf(member.Name.Identifier.Text));
                 return true;
 
             // this._ctx.Customers - the same name as _ctx.Customers, written through this
             // (decision 114). Read by the bare name alone, it was no root, and the query
             // vanished without a word.
             case MemberAccessExpressionSyntax { Expression: MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax } } member:
-                root = new LinqQueryRoot(member.Name.Identifier.Text);
+                root = new LinqQueryRoot(SetOf(member.Name.Identifier.Text));
                 return true;
 
             // Inside the context, its own DbSet is the root the same way ctx.Customers is from
@@ -417,12 +429,12 @@ public class EFCoreLinqQueryParser(
             // loaded, which no provider translates: Lines.Sum(…) in an entity is LINQ over
             // objects in memory, not a query.
             case IdentifierNameSyntax own when EFCoreContext.IsOwnDbSet(own, own.Identifier.Text):
-                root = new LinqQueryRoot(own.Identifier.Text);
+                root = new LinqQueryRoot(SetOf(own.Identifier.Text));
                 return true;
 
             case MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax } own
                 when EFCoreContext.IsOwnDbSet(own, own.Name.Identifier.Text):
-                root = new LinqQueryRoot(own.Name.Identifier.Text);
+                root = new LinqQueryRoot(SetOf(own.Name.Identifier.Text));
                 return true;
 
             case InvocationExpressionSyntax { Expression: GenericNameSyntax { Identifier.Text: "Set" } set } bare

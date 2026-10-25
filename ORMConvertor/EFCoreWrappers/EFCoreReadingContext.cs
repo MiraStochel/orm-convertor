@@ -1,24 +1,49 @@
+using System.Runtime.CompilerServices;
+using AbstractWrappers;
 using Model.AbstractRepresentation.Enums;
 
 namespace EFCoreWrappers;
 
 /// <summary>
-/// What the two entity parsers of an EF Core source share within one conversion
-/// (decision 132): the fluent configuration is read first, and the class parser reading
-/// after it takes from here what the configuration states but cannot write on its own.
-/// A relationship names its navigations by lambda and not their type, so it waits for the
-/// class that declares them; the table a DbSet gives and the default schema are a
-/// convention and a default, which stand below the annotations (decision 068); a
-/// concurrency token is the version only under conditions the class decides (decision 116);
-/// and a member the configuration names is mapped even where the class gives it no setter
-/// (decision 134).
-/// Created by the wrapper's factory row and handed to both parsers; the orchestration and
-/// the abstract wrappers never see it - the same shape as the JPA reading context
+/// What the parsers of an EF Core source share within one conversion (decision 132): the
+/// fluent configuration is read first, and the class parser reading after it takes from
+/// here what the configuration states but cannot write on its own. A relationship names
+/// its navigations by lambda and not their type, so it waits for the class that declares
+/// them; the table a DbSet gives and the default schema are a convention and a default,
+/// which stand below the annotations (decision 068); a concurrency token is the version
+/// only under conditions the class decides (decision 116); and a member the configuration
+/// names is mapped even where the class gives it no setter (decision 134).
+/// The query pass reads from it too (decision 185): the entity a DbSet of a given name
+/// exposes, which is how a root written by the set's name becomes the query over that
+/// entity when the name is not the entity's with an "s" - PageDirectories over
+/// DbSet&lt;PageDirectory&gt;. One context per conversion, found through the entity builder
+/// the orchestration creates once and hands to both calls of the parser factory, the same
+/// shape as the MyBatis reading context (decision 084); the table is weak on the key, so a
+/// finished conversion takes its context with it. The orchestration and the abstract
+/// wrappers never see the context itself - the same shape as the JPA reading context
 /// (decision 077).
 /// </summary>
 public sealed class EFCoreReadingContext
 {
+    private static readonly ConditionalWeakTable<AbstractEntityBuilder, EFCoreReadingContext> Contexts = [];
+
+    /// <summary>
+    /// The context of the conversion the entity builder belongs to. Called by the parser
+    /// factory, once per parser list, and the same instance comes back both times.
+    /// </summary>
+    public static EFCoreReadingContext For(AbstractEntityBuilder entityBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(entityBuilder);
+        return Contexts.GetValue(entityBuilder, _ => new EFCoreReadingContext());
+    }
+
     private readonly Dictionary<string, string> dbSets = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The entity each DbSet name exposes; null where two contexts of the conversion expose
+    /// different entities under one name, which no model of EF Core has and no name decides.
+    /// </summary>
+    private readonly Dictionary<string, string?> exposed = new(StringComparer.Ordinal);
 
     private readonly List<FluentRelationship> relationships = [];
 
@@ -39,6 +64,11 @@ public sealed class EFCoreReadingContext
     /// </summary>
     public string? AddDbSet(string entity, string property)
     {
+        if (!exposed.TryAdd(property, entity) && exposed[property] != entity)
+        {
+            exposed[property] = null;
+        }
+
         if (dbSets.TryAdd(entity, property) || dbSets[entity] == property)
         {
             return null;
@@ -49,6 +79,13 @@ public sealed class EFCoreReadingContext
 
     /// <summary>The name of the DbSet property that exposes the entity, or null.</summary>
     public string? DbSetOf(string entity) => dbSets.GetValueOrDefault(entity);
+
+    /// <summary>
+    /// The entity the DbSet property of this name exposes, in any context the conversion
+    /// read (decision 185); null where no context declares the name, or where two declare it
+    /// over different entities.
+    /// </summary>
+    public string? EntityExposedBy(string property) => exposed.GetValueOrDefault(property);
 
     /// <summary>
     /// Records HasDefaultSchema. The first one read stands; a differing later one is

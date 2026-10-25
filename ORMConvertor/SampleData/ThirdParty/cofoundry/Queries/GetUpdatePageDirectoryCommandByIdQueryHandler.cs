@@ -22,7 +22,7 @@ public class GetUpdatePageDirectoryCommandByIdQueryHandler
     public async Task<UpdatePageDirectoryCommand?> ExecuteAsync(GetPatchableCommandByIdQuery<UpdatePageDirectoryCommand> query, IExecutionContext executionContext)
     {
         var dbResult = await _dbContext
-            .Set<PageDirectory>() // ORMConvertor: was .PageDirectories
+            .PageDirectories
             .AsNoTracking()
             .Where(i => i.PageDirectoryId == query.Id) // ORMConvertor: was .FilterById(query.Id)
             .SingleOrDefaultAsync();

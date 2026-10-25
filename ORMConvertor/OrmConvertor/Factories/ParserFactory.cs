@@ -93,13 +93,16 @@ internal class ParserFactory
             // annotations (decisions 068 and 132), and the conventions the class parser
             // materializes stand below both. What the configuration states but can write only
             // once the class is read - a relationship, the table of a DbSet - waits in a
-            // context the two parsers share.
+            // context the two parsers share. The query pass reads through the same context,
+            // found through the entity builder as MyBatis's is (decision 185): the entity a
+            // DbSet of a given name exposes is what the query parser needs to read a root
+            // written by the set's name, and the entity pass is the one that read the context.
             case ORMEnum.EFCore:
             {
-                var context = new EFCoreReadingContext();
+                var context = EFCoreReadingContext.For(eb);
                 return qb is null
                     ? [new EFCoreFluentConfigurationParser(eb, context, declaredSourceDialect), new EFCoreEntityParser(eb, declaredSourceDialect, context)]
-                    : [new EFCoreFluentConfigurationParser(eb, context, declaredSourceDialect), new EFCoreEntityParser(eb, declaredSourceDialect, context), new EFCoreLinqQueryParser(qb, declaredSourceDialect)];
+                    : [new EFCoreFluentConfigurationParser(eb, context, declaredSourceDialect), new EFCoreEntityParser(eb, declaredSourceDialect, context), new EFCoreLinqQueryParser(qb, declaredSourceDialect, context)];
             }
 
             // orm.xml before the class: the specification's precedence (Jakarta Persistence

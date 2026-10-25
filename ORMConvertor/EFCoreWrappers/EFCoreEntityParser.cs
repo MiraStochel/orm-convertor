@@ -55,7 +55,7 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// queries by.
     /// </summary>
     protected override IEnumerable<SyntaxNode> FindHandovers(string source)
-        => new EFCoreLinqQueryParser(() => throw new InvalidOperationException("The search for handovers builds no query."))
+        => new EFCoreLinqQueryParser(() => throw new InvalidOperationException("The search for handovers builds no query."), context: context)
         {
             Limits = Limits,
         }.FindHandovers(source);

@@ -3227,7 +3227,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        string rightName = NameOfSource(args[0].Expression);
+        // The inner sequence is a root the wrapper recognizes before it is a name, as the head
+        // of a chain is (decision 185): ctx.Categories is the set the context declares, whatever
+        // the name says, and only a sequence no wrapper reads as a root is taken by its name.
+        string rightName = TryReadQueryRoot(args[0].Expression, out var innerRoot) && innerRoot!.Load is null
+            ? innerRoot.Name
+            : NameOfSource(args[0].Expression);
         string rightTable = ResolveTable(rightName);
         var rightMap = MapFor(rightName);
 

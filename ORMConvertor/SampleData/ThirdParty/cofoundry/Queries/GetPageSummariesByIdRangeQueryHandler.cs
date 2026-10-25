@@ -39,11 +39,9 @@ public class GetPageSummariesByIdRangeQueryHandler
 
     private async Task<IReadOnlyCollection<Page>> QueryPages(GetPageSummariesByIdRangeQuery query, IExecutionContext executionContext)
     {
-        // ORMConvertor: rewritten - the set PagePublishStatusQueries as Set<PagePublishStatusQuery>(), because the
-        // tool resolves a set's name to its entity only by the plural with an s (see README.md); FilterByStatus with
-        // the constant Latest as the Where of its branch for every status but Published, the status evaluated before
-        // the query, as the call evaluates it; FilterActive as its Where (PagePublishStatusQueryExtensions).
-        // The project's text:
+        // ORMConvertor: rewritten - FilterByStatus with the constant Latest as the Where of its branch for every
+        // status but Published, the status evaluated before the query, as the call evaluates it; FilterActive as
+        // its Where (PagePublishStatusQueryExtensions). The project's text:
         // var results = await _dbContext
             // .PagePublishStatusQueries
             // .AsNoTracking()
@@ -56,7 +54,7 @@ public class GetPageSummariesByIdRangeQueryHandler
             // .ToArrayAsync();
         var publishStatusQueryId = (short)PublishStatusQuery.Latest;
         var results = await _dbContext
-            .Set<PagePublishStatusQuery>()
+            .PagePublishStatusQueries
             .AsNoTracking()
             .Include(p => p.Page)
             .ThenInclude(p => p.Creator)

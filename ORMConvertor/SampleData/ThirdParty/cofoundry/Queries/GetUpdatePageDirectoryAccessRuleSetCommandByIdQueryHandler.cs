@@ -22,7 +22,7 @@ public class GetUpdatePageDirectoryAccessRuleSetCommandByIdQueryHandler
     public async Task<UpdatePageDirectoryAccessRuleSetCommand?> ExecuteAsync(GetPatchableCommandByIdQuery<UpdatePageDirectoryAccessRuleSetCommand> query, IExecutionContext executionContext)
     {
         var dbPageDirectory = await _dbContext
-            .Set<PageDirectory>() // ORMConvertor: was .PageDirectories
+            .PageDirectories
             .AsNoTracking()
             .Include(r => r.AccessRules)
             .Where(i => i.PageDirectoryId == query.Id) // ORMConvertor: was .FilterById(query.Id)

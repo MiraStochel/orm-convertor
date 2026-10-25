@@ -27,7 +27,7 @@ public class GetPageDirectoryEntityMicroSummariesByIdRangeQueryHandler
         var definition = _entityDefinitionRepository.GetRequiredByCode(PageDirectoryEntityDefinition.DefinitionCode);
 
         var results = await _dbContext
-            .Set<PageDirectory>() // ORMConvertor: was .PageDirectories
+            .PageDirectories
             .AsNoTracking()
             .Where(d => query.PageDirectoryIds.Contains(d.PageDirectoryId))
             .Select(d => new RootEntityMicroSummary()

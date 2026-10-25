@@ -29,7 +29,7 @@ public class GetAllPageDirectoryRoutesQueryHandler
     public async Task<IReadOnlyCollection<PageDirectoryRoute>> ExecuteAsync(GetAllPageDirectoryRoutesQuery query, IExecutionContext executionContext)
     {
         var dbPageDirectories = await _dbContext
-            .Set<PageDirectory>() // ORMConvertor: was .PageDirectories
+            .PageDirectories
             .AsNoTracking()
             .Include(d => d.AccessRules)
             .Include(d => d.PageDirectoryLocales)

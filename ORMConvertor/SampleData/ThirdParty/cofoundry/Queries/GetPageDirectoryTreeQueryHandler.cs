@@ -29,7 +29,7 @@ public class GetPageDirectoryTreeQueryHandler
     public async Task<PageDirectoryNode> ExecuteAsync(GetPageDirectoryTreeQuery query, IExecutionContext executionContext)
     {
         var dbResults = await _dbContext
-               .Set<PageDirectory>() // ORMConvertor: was .PageDirectories
+               .PageDirectories
                .AsNoTracking()
                .Include(w => w.Creator)
                .Select(d => new PageDirectoryTreeNodeQueryModel()

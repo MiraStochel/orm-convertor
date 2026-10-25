@@ -75,18 +75,10 @@ it; the opening note of each file says whether the file was changed.
    as entities.
 8. **The write is left out**: `AuthenticateUserCredentials` rehashes a password and saves the
    user; the method, its call and the helper it uses go.
-9. **Two sets are named by their entity**: `_dbContext.PageDirectories` and
-   `_dbContext.PagePublishStatusQueries` are written `Set<PageDirectory>()` and
-   `Set<PagePublishStatusQuery>()`. The tool resolves the name of a set to its entity only through
-   the table name or the plural with an `s`, and the configuration names the tables
-   `PageDirectory` and `PagePublishStatusQuery`; the query would go out over a type and a table
-   that do not exist (`PageDirectorie`, `PageDirectories`). That is a defect of the tool
-   (finding V7 in `docs/analysis/real-world-sources.md`); the excerpt goes back to the project's
-   text once it is fixed.
-10. **An upstream mistake is corrected**: `PageGroup.ParentGroupId` maps by convention to a
-    column `ParentGroupId`, while the project's installation script creates `ParentPageGroupId`,
-    so no query over page groups runs against the project's own schema; `PageGroupMap` names the
-    column. The project marks its page groups obsolete.
+9. **An upstream mistake is corrected**: `PageGroup.ParentGroupId` maps by convention to a
+   column `ParentGroupId`, while the project's installation script creates `ParentPageGroupId`,
+   so no query over page groups runs against the project's own schema; `PageGroupMap` names the
+   column. The project marks its page groups obsolete.
 
 Named projections (`new PageGroupMicroSummary { … }`), `Include`, `ThenInclude` and
 `ToDictionaryAsync` stay as the project wrote them: the tool materializes the entity instead of a

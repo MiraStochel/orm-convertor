@@ -33,7 +33,7 @@ public class GetPageDirectoryAccessDetailsByPageDirectoryIdQueryHandler
     public async Task<PageDirectoryAccessRuleSetDetails?> ExecuteAsync(GetPageDirectoryAccessDetailsByPageDirectoryIdQuery query, IExecutionContext executionContext)
     {
         var dbDirectory = await _dbContext
-            .Set<PageDirectory>() // ORMConvertor: was .PageDirectories
+            .PageDirectories
             .AsNoTracking()
             .Include(d => d.AccessRules)
             .Where(i => i.PageDirectoryId == query.PageDirectoryId) // ORMConvertor: was .FilterById(query.PageDirectoryId)
