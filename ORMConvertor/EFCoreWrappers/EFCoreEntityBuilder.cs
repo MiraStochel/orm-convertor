@@ -830,26 +830,33 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     /// silence itself makes a claim: nothing is written, yet the output behaves as generated.
     /// That claim is reported as a convention of the target - the mirror of the record
     /// NHibernate emits for its written 'assigned' fallback (decision 064).
+    ///
+    /// A single key that is also the foreign key the artifact names on a navigation takes the
+    /// principal's value: EF Core generates nothing for it, by convention or under the
+    /// attribute, so no mechanism the model carries reaches it.
     /// </summary>
     private void AppendKeyStrategyAttribute(EntityArtifact artifact, EntityMap entityMap, PrimaryKeyPart part, bool composite)
     {
         var code = artifact.Code;
         var type = part.PropertyMap.Property.Type;
-        bool generatedByConvention = IsGeneratedByConvention(part, composite);
+        var navigationOverKey = composite ? null : NavigationOverKey(entityMap, part);
+        bool generatedByConvention = navigationOverKey is null && IsGeneratedByConvention(part, composite);
 
         // What the key does in the artifact as it stands without an attribute of ours.
-        var standing = generatedByConvention
-            ? type is { ScalarType: ScalarType.Guid }
-                ? "EF Core's convention has the client generate a GUID for it"
-                : "EF Core's convention makes it an IDENTITY column under the provider's default strategy"
-            : "the application assigns it";
+        var standing = navigationOverKey is not null
+            ? $"it takes the value of the principal's key through the navigation '{navigationOverKey}'"
+            : generatedByConvention
+                ? type is { ScalarType: ScalarType.Guid }
+                    ? "EF Core's convention has the client generate a GUID for it"
+                    : "EF Core's convention makes it an IDENTITY column under the provider's default strategy"
+                : "the application assigns it";
 
         // Which mechanism the attribute would give this key, and whether it is the one the model carries.
         bool identityByAttribute = type is { Category: LangTypeCategory.Scalar, ScalarType: ScalarType.Byte or ScalarType.Short
             or ScalarType.Int or ScalarType.Long or ScalarType.Decimal };
         bool guidByAttribute = type is { Category: LangTypeCategory.Scalar, ScalarType: ScalarType.Guid or ScalarType.String };
 
-        var carried = part.Strategy switch
+        var carried = navigationOverKey is null && part.Strategy switch
         {
             PrimaryKeyStrategy.Auto or PrimaryKeyStrategy.Identity => identityByAttribute,
             PrimaryKeyStrategy.Uuid => guidByAttribute,
@@ -858,6 +865,13 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
 
         switch (part.Strategy)
         {
+            case PrimaryKeyStrategy.Auto or PrimaryKeyStrategy.Identity or PrimaryKeyStrategy.Uuid when navigationOverKey is not null:
+                Report(Record(ConversionRecordKind.Loss,
+                    $"The key is also the foreign key of the navigation '{navigationOverKey}', and EF Core takes the principal's "
+                    + "value for such a key and generates none, with [DatabaseGenerated] or without, so the artifact cannot state "
+                    + $"the {part.Strategy} mechanism (decision 187)."));
+                break;
+
             case PrimaryKeyStrategy.Unspecified when generatedByConvention:
                 Report(Record(ConversionRecordKind.Convention,
                     "No generation strategy was stated; EF Core generates the value of a single-property "
@@ -919,4 +933,15 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             Category: LangTypeCategory.Scalar,
             ScalarType: ScalarType.Short or ScalarType.Int or ScalarType.Long or ScalarType.Guid,
         };
+
+    /// <summary>
+    /// The navigation whose foreign key is the entity's single key - the dependent of the shared
+    /// key of decision 012 -, which the artifact names in [ForeignKey] on it, or null where
+    /// none is. EF Core generates no value for such a key (decision 187).
+    /// </summary>
+    private static string? NavigationOverKey(EntityMap entityMap, PrimaryKeyPart part)
+        => entityMap.Relations.FirstOrDefault(r => r.Role == RelationRole.Owning
+            && r.Cardinality is Cardinality.ManyToOne or Cardinality.OneToOne
+            && r.ColumnPairs is [var pair]
+            && pair.Source.Property.Name == part.PropertyMap.Property.Name)?.SourceNavigationProperty;
 }

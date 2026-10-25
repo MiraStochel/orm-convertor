@@ -1030,7 +1030,9 @@ public abstract class AbstractEntityBuilder
     /// The conventional columns of relations the source stated (the last parameter of
     /// <see cref="AddForeignKey"/>) wait for the same moment and for the same reason - the
     /// column they derive names the key of an entity that may lie in another unit - so they
-    /// are materialized here as well, after the navigations, before the catalog compares.
+    /// are materialized here as well, after the navigations, before the catalog compares;
+    /// and once every foreign key column stands, so are the keys that may be one of them
+    /// (<see cref="AddKeyAssignedUnderForeignKey"/>).
     /// </summary>
     public void ResolveConventionNavigations()
     {
@@ -1068,7 +1070,70 @@ public abstract class AbstractEntityBuilder
         }
 
         ResolveConventionalForeignKeys();
+        ResolveKeysAssignedUnderForeignKeys();
     }
+
+    /// <summary>
+    /// A single key part the source framework stops generating once it turns out to be the
+    /// foreign key of a relation its entity owns - the dependent of the shared primary key of
+    /// decision 012, which takes the principal's value before it is inserted, so nothing in
+    /// the database generates it. Whether the part is that column is decidable
+    /// no sooner than the conventional navigations and their columns are materialized, because
+    /// a convention finds the foreign key property by the target's key, which may lie in
+    /// another unit; so the claim waits here and <see cref="ResolveConventionNavigations"/>
+    /// applies it, before the catalog compares the strategy. The part then becomes Assigned
+    /// without what the source said about a mechanism, which was said of a key the framework
+    /// does not generate after all; a part no such foreign key covers keeps its strategy.
+    /// Which framework does this, and for which strategies, the source parser says by calling.
+    /// </summary>
+    public void AddKeyAssignedUnderForeignKey(string propertyName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(propertyName);
+
+        keysAssignedUnderForeignKeys.Add((EntityMap, propertyName));
+    }
+
+    /// <summary>
+    /// Applies the claims of <see cref="AddKeyAssignedUnderForeignKey"/>: a single key part
+    /// that is the one column of an owning many-to-one or one-to-one - stated and waiting to
+    /// be paired, or paired already - becomes Assigned.
+    /// </summary>
+    private void ResolveKeysAssignedUnderForeignKeys()
+    {
+        var pending = keysAssignedUnderForeignKeys.ToList();
+        keysAssignedUnderForeignKeys.Clear();
+
+        foreach (var (entity, propertyName) in pending)
+        {
+            if (entity.PrimaryKey is not { Parts: [var part] } key
+                || part.PropertyMap.Property.Name != propertyName
+                || part.Strategy == PrimaryKeyStrategy.Assigned
+                || !entity.Relations.Any(r => r.Role == RelationRole.Owning
+                    && r.Cardinality is Cardinality.ManyToOne or Cardinality.OneToOne
+                    && ForeignKeyColumnsOf(entity, r) is [var column]
+                    && column == part.PropertyMap))
+            {
+                continue;
+            }
+
+            entity.PrimaryKey = new PrimaryKey
+            {
+                Parts = [new PrimaryKeyPart { PropertyMap = part.PropertyMap, Order = part.Order, Strategy = PrimaryKeyStrategy.Assigned }],
+                SourceKeyClass = key.SourceKeyClass,
+            };
+        }
+    }
+
+    /// <summary>The property maps a relation's foreign key holds, paired or still waiting for its pairs.</summary>
+    private List<PropertyMap> ForeignKeyColumnsOf(EntityMap entity, Relation relation)
+        => relation.ColumnPairs.Count > 0
+            ? [.. relation.ColumnPairs.Select(pair => pair.Source)]
+            : pendingForeignKeyColumns.TryGetValue(relation, out var columns)
+                ? [.. columns.Select(column => ForeignKeyColumnMap(entity, column))]
+                : [];
+
+    /// <summary>Key parts waiting for the foreign keys of their entity; see <see cref="AddKeyAssignedUnderForeignKey"/>.</summary>
+    private readonly List<(EntityMap Entity, string PropertyName)> keysAssignedUnderForeignKeys = [];
 
     /// <summary>
     /// Turns every pending conventional derivation into the columns the source states, the

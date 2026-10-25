@@ -19,7 +19,9 @@ namespace Tests.EFCore;
 /// <c>UseHiLo()</c>, a sequence default under <c>UseKeySequences()</c>.</item>
 /// <item>The convention generates a single key of an integer type other than <c>byte</c> as an
 /// IDENTITY column and a single <c>Guid</c> key on the client; a composite key, a <c>byte</c>
-/// key and a key that is also a foreign key it leaves to the application.</item>
+/// key and a key that is also a foreign key it leaves to the application. It makes a whole key
+/// the foreign key only where the source states it or a one-to-one pairs it; for a
+/// many-to-one it takes a shadow property instead.</item>
 /// <item>The attribute makes an IDENTITY column of any integer or decimal key it stands on -
 /// a part of a composite key and a <c>byte</c> key too -, and on a <c>Guid</c> or a string
 /// key it has the client generate a GUID, with nothing in the database.</item>
@@ -58,7 +60,7 @@ public class EFCoreValueGenerationProviderTest
         }
         else
         {
-            Assert.Equal(ValueGenerated.Never, key.Generated);
+            Assert.True(key.Generated == ValueGenerated.Never, $"{entity.Name}: {key}");
             Assert.False(key.IsIdentity, $"{type}: {key}");
         }
     }
@@ -174,25 +176,85 @@ public class EFCoreValueGenerationProviderTest
     }
 
     /// <summary>
-    /// The key of the dependent of a one-to-one that is also its foreign key takes the
-    /// principal's value: the convention generates nothing for it, and even the attribute
-    /// makes no IDENTITY column of it.
+    /// A key that is also the foreign key takes the principal's value: nothing generates it,
+    /// neither the convention nor the model's UseHiLo(), and a Guid key gets no GUID either -
+    /// adding an instance gives it only a temporary value the principal's key replaces. That
+    /// holds wherever the source states the foreign key - [ForeignKey] on the key or on the
+    /// navigation, HasForeignKey of a one-to-one or a many-to-one - and where the convention
+    /// pairs a one-to-one: a lone reference navigation answering back, or one [InverseProperty]
+    /// names. Even the attribute makes no IDENTITY column of such a key; it marks the key
+    /// generated on add and the value the client adds is a temporary one again.
     /// </summary>
     [Fact]
     public void AKeyThatIsAForeignKeyIsNoIdentityColumn()
     {
-        var bare = Read(typeof(Passport), nameof(Passport.PersonId), others: typeof(Person));
-        Assert.Equal(ValueGenerated.Never, bare.Generated);
-        Assert.False(bare.IsIdentity, bare.ToString());
+        foreach (var (entity, property, principal, configure) in new (Type, string, Type, Action<ModelBuilder>?)[]
+        {
+            (typeof(Passport), nameof(Passport.PersonId), typeof(Person), null),
+            (typeof(NavigationPassport), nameof(NavigationPassport.PersonId), typeof(Person), null),
+            (typeof(ConfiguredPassport), nameof(ConfiguredPassport.Id), typeof(Person),
+                b => b.Entity<ConfiguredPassport>().HasOne(p => p.Person).WithOne().HasForeignKey<ConfiguredPassport>(p => p.Id)),
+            (typeof(ConfiguredVisa), nameof(ConfiguredVisa.PersonId), typeof(Person),
+                b => b.Entity<ConfiguredVisa>().HasOne(p => p.Person).WithMany().HasForeignKey(p => p.PersonId)),
+            (typeof(IdCard), nameof(IdCard.CitizenId), typeof(Citizen), null),
+            (typeof(Licence), nameof(Licence.PilotId), typeof(Pilot), null),
+            (typeof(Warrant), nameof(Warrant.CaptainId), typeof(Captain), null),
+            (typeof(HiLoPassport), nameof(HiLoPassport.PersonId), typeof(Person), b => b.UseHiLo()),
+            (typeof(GuidBadge), nameof(GuidBadge.HolderId), typeof(Holder), null),
+        })
+        {
+            var key = Read(entity, property, configure, others: principal);
+            Assert.True(key.Generated == ValueGenerated.Never, $"{entity.Name}: {key}");
+            Assert.False(key.IsIdentity, $"{entity.Name}: {key}");
+            Assert.Equal(property, key.ForeignKey);
+        }
 
-        var attributed = Read(typeof(AttributedPassport), nameof(AttributedPassport.PersonId), others: typeof(Person));
+        var guid = Read(typeof(GuidBadge), nameof(GuidBadge.HolderId), add: true, others: typeof(Holder));
+        Assert.True(guid.Temporary, guid.ToString());
+
+        var attributed = Read(typeof(AttributedPassport), nameof(AttributedPassport.PersonId), add: true, others: typeof(Person));
+        Assert.Equal(ValueGenerated.OnAdd, attributed.Generated);
         Assert.False(attributed.IsIdentity, attributed.ToString());
+        Assert.True(attributed.Temporary, attributed.ToString());
+    }
+
+    /// <summary>
+    /// Where nothing states the foreign key and nothing pairs a one-to-one, the convention takes
+    /// no property for it that is the dependent's whole key: the relationship is a many-to-one,
+    /// a key column cannot hold it, and EF Core adds a shadow property instead, leaving the key
+    /// an IDENTITY column. That is so with no navigation answering back, with a collection
+    /// answering, under a configured HasOne().WithMany() without HasForeignKey, and when a
+    /// later candidate name would match - the first name that matches decides. A part of a
+    /// composite key the convention does take.
+    /// </summary>
+    [Fact]
+    public void TheConventionTakesNoWholeKeyForTheForeignKeyOfAManyToOne()
+    {
+        foreach (var (entity, property, principal, configure) in new (Type, string, Type, Action<ModelBuilder>?)[]
+        {
+            (typeof(ConventionPassport), nameof(ConventionPassport.PersonId), typeof(Person), null),
+            (typeof(Member), nameof(Member.ClubId), typeof(Club), null),
+            (typeof(UnkeyedVisa), nameof(UnkeyedVisa.PersonId), typeof(Person), b => b.Entity<UnkeyedVisa>().HasOne(p => p.Person).WithMany()),
+            (typeof(OwnedPassport), nameof(OwnedPassport.OwnerId), typeof(Person), null),
+        })
+        {
+            var key = Read(entity, property, configure, others: principal);
+            Assert.True(key.IsIdentity, $"{entity.Name}: {key}");
+            Assert.Equal($"{property}1 (shadow)", key.ForeignKey);
+        }
+
+        var part = Read(typeof(StampedVisa), nameof(StampedVisa.PersonId), others: typeof(Person));
+        Assert.Equal(ValueGenerated.Never, part.Generated);
+        Assert.Equal(nameof(StampedVisa.PersonId), part.ForeignKey);
     }
 
     // ---- the probe --------------------------------------------------------------------------
 
-    /// <summary>One key property as the model and the script have it, and what adding an instance does to it.</summary>
-    private sealed record Reading(ValueGenerated Generated, SqlServerValueGenerationStrategy Strategy, string Column, string Script, object? Added, bool Temporary)
+    /// <summary>
+    /// One key property as the model and the script have it, what adding an instance does to it,
+    /// and the properties of the entity's foreign keys, a shadow one marked.
+    /// </summary>
+    private sealed record Reading(ValueGenerated Generated, SqlServerValueGenerationStrategy Strategy, string Column, string Script, object? Added, bool Temporary, string ForeignKey)
     {
         /// <summary>The provider's own judgement and the script's: both say IDENTITY, or neither.</summary>
         public bool IsIdentity
@@ -205,7 +267,7 @@ public class EFCoreValueGenerationProviderTest
             }
         }
 
-        public override string ToString() => $"{Generated}, {Strategy}, column '{Column}', added {Added ?? "null"}{(Temporary ? " (temporary)" : string.Empty)}";
+        public override string ToString() => $"{Generated}, {Strategy}, column '{Column}', added {Added ?? "null"}{(Temporary ? " (temporary)" : string.Empty)}, foreign key '{ForeignKey}'";
     }
 
     private static Reading Read(Type entity, string property, Action<ModelBuilder>? configure = null, bool add = false, params Type[] others)
@@ -227,7 +289,9 @@ public class EFCoreValueGenerationProviderTest
             ColumnOf(script, entityType.GetTableName()!, key.GetColumnName()),
             script,
             entry?.CurrentValue,
-            entry?.IsTemporary ?? false);
+            entry?.IsTemporary ?? false,
+            string.Join("; ", entityType.GetForeignKeys().Select(fk => string.Join(", ",
+                fk.Properties.Select(p => p.IsShadowProperty() ? $"{p.Name} (shadow)" : p.Name)))));
     }
 
     /// <summary>The line of the create script that defines the column, without its trailing comma.</summary>
@@ -338,6 +402,131 @@ public class EFCoreValueGenerationProviderTest
     public class AttributedPassport
     {
         [Key, ForeignKey(nameof(Person)), DatabaseGenerated(DatabaseGeneratedOption.Identity)] public int PersonId { get; set; }
+        public Person Person { get; set; } = null!;
+    }
+
+    [Table(nameof(NavigationPassport))]
+    public class NavigationPassport
+    {
+        [Key] public int PersonId { get; set; }
+        [ForeignKey(nameof(PersonId))] public Person Person { get; set; } = null!;
+    }
+
+    [Table(nameof(ConfiguredPassport))]
+    public class ConfiguredPassport
+    {
+        public int Id { get; set; }
+        public Person Person { get; set; } = null!;
+    }
+
+    [Table(nameof(ConfiguredVisa))]
+    public class ConfiguredVisa
+    {
+        [Key] public int PersonId { get; set; }
+        public Person Person { get; set; } = null!;
+    }
+
+    [Table(nameof(Citizen))]
+    public class Citizen
+    {
+        public int Id { get; set; }
+        public IdCard Card { get; set; } = null!;
+    }
+
+    [Table(nameof(IdCard))]
+    public class IdCard
+    {
+        [Key] public int CitizenId { get; set; }
+        public Citizen Citizen { get; set; } = null!;
+    }
+
+    [Table(nameof(Pilot))]
+    public class Pilot
+    {
+        public int Id { get; set; }
+        [InverseProperty(nameof(EFCoreValueGenerationProviderTest.Licence.Pilot))] public Licence Licence { get; set; } = null!;
+    }
+
+    [Table(nameof(Licence))]
+    public class Licence
+    {
+        [Key] public int PilotId { get; set; }
+        public Pilot Pilot { get; set; } = null!;
+    }
+
+    [Table(nameof(Captain))]
+    public class Captain
+    {
+        public int Id { get; set; }
+        public Warrant Warrant { get; set; } = null!;
+        public Warrant Spare { get; set; } = null!;
+    }
+
+    [Table(nameof(Warrant))]
+    public class Warrant
+    {
+        [Key] public int CaptainId { get; set; }
+        [InverseProperty(nameof(EFCoreValueGenerationProviderTest.Captain.Warrant))] public Captain Captain { get; set; } = null!;
+    }
+
+    [Table(nameof(HiLoPassport))]
+    public class HiLoPassport
+    {
+        [Key] public int PersonId { get; set; }
+        [ForeignKey(nameof(PersonId))] public Person Person { get; set; } = null!;
+    }
+
+    [Table(nameof(Holder))] public class Holder { public Guid Id { get; set; } }
+
+    [Table(nameof(GuidBadge))]
+    public class GuidBadge
+    {
+        [Key] public Guid HolderId { get; set; }
+        [ForeignKey(nameof(HolderId))] public Holder Holder { get; set; } = null!;
+    }
+
+    [Table(nameof(ConventionPassport))]
+    public class ConventionPassport
+    {
+        [Key] public int PersonId { get; set; }
+        public Person Person { get; set; } = null!;
+    }
+
+    [Table(nameof(Club))]
+    public class Club
+    {
+        public int Id { get; set; }
+        public List<Member> Members { get; set; } = [];
+    }
+
+    [Table(nameof(Member))]
+    public class Member
+    {
+        [Key] public int ClubId { get; set; }
+        public Club Club { get; set; } = null!;
+    }
+
+    [Table(nameof(UnkeyedVisa))]
+    public class UnkeyedVisa
+    {
+        [Key] public int PersonId { get; set; }
+        public Person Person { get; set; } = null!;
+    }
+
+    [Table(nameof(OwnedPassport))]
+    public class OwnedPassport
+    {
+        [Key] public int OwnerId { get; set; }
+        public int PersonId { get; set; }
+        public Person Owner { get; set; } = null!;
+    }
+
+    [Table(nameof(StampedVisa))]
+    [PrimaryKey(nameof(PersonId), nameof(Stamp))]
+    public class StampedVisa
+    {
+        public int PersonId { get; set; }
+        public int Stamp { get; set; }
         public Person Person { get; set; } = null!;
     }
 }

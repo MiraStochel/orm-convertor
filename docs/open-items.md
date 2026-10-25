@@ -29,7 +29,6 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | | — |
 | [Úplnost mapování po kategoriích faktů](#úplnost-mapování-po-kategoriích-faktů) | Užitečné | práce | | T2, T3 |
 | [Odchylky zpětného čtení](#odchylky-zpětného-čtení-v-úplnosti-mapování) | Užitečné | rozhodnutí | | T3 |
-| [Sdílený klíč EF Core](#sdílený-klíč-ef-core-se-čte-jako-generovaný) | Užitečné | práce | | F2, F11 |
 
 ---
 
@@ -146,11 +145,6 @@ Souhrn experimentálního běhu dává úplnost přenesených mapovacích vlastn
 *Rozhodnutí. Měřidlo a odchylky rozh. [173](./decisions/173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md), zúžení T3 rozh. [183](./decisions/183-t2-and-t3-leave-the-exempt-area-in-a-narrower-sense-the-build-holds-the-category-matrix-and-the-run-measures-the-metrics-without-promising-numbers.md); souvisí s rozh. [063](./decisions/063-stated-keylessness-as-a-carried-fact.md), [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) a [084](./decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md). Požadavek T3.*
 
 Parser cíle nečte z artefaktu nástroje fakta, která builder napsal: `<id>` MyBatisu jako klíč, nullabilitu klíčového sloupce, strategii `Auto`, kterou builder JPA píše jako `IDENTITY` (rozh. [187](./decisions/187-auto-is-the-mechanism-native-to-the-dialect-the-jpa-parser-resolves-auto-by-the-source-implementation-and-ef-core-is-read-and-written-by-what-its-provider-does.md)), a databázový typ, který JPA vysloví javovým typem; jménem je drží `Experiment/MappingCompletenessTest`. Úplnost mapování javových cílů a MyBatisu je o ně nižší, než co artefakt nese, u obou implementací JPA skoro o celý rozdíl proti cílům .NET. Je třeba rozhodnout po odchylce, zda ji má číst parser (u `<id>` proti rozh. 063 a 084, u typu z javového typu proti 067), zda ji má měřidlo uznat za přečtenou, nebo zda zůstane vyslovenou mezí míry.
-
-#### Sdílený klíč EF Core se čte jako generovaný
-*Práce. Mez rozh. [187](./decisions/187-auto-is-the-mechanism-native-to-the-dialect-the-jpa-parser-resolves-auto-by-the-source-implementation-and-ef-core-is-read-and-written-by-what-its-provider-does.md), tiché místo [`subset.md`](./subset.md#213-tichá-místa) 2.13; souvisí s rozh. [012](./decisions/012-foreign-key-rendering.md). Požadavky F2, F11.*
-
-Klíč závislé strany 1:1, který je zároveň jejím cizím klíčem (`[Key] PersonId` vedle navigace `Person`), EF Core negeneruje — hodnotu převezme od hlavní strany —, jak měří `EFCore/EFCoreValueGenerationProviderTest`. Parser EF Core ho přesto čte jako `Auto` beze záznamu: že je klíč cizím klíčem, se dozví až z konvenční navigace, kterou materializuje odloženě po přečtení všech jednotek, kdy je strategie části klíče už zapsaná a `PrimaryKeyPart` ji nemění. Do NHibernatu takový klíč vyjde jako `native`, do JPA jako `IDENTITY`, oboje nad sloupcem bez IDENTITY. Oprava potřebuje cestu zápisu, kterou odložená materializace vztahu přepíše strategii klíče pod cizím klíčem na `Assigned`, nebo na `foreign` s navigací podle rozh. 012, a test nad oběma podobami — konvenční navigací i `[ForeignKey]` na navigaci.
 
 ## Mimo rozsah
 

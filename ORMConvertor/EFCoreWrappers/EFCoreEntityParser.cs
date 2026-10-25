@@ -396,6 +396,14 @@ public class EFCoreEntityParser : CSharpEntityParser
         // Unspecified once the key stands (decisions 011 and 187).
         var strategyNames = new Dictionary<string, string>(StringComparer.Ordinal);
 
+        // Single keys whose strategy is a mechanism the provider would run - unless the key
+        // turns out to be the foreign key too, which only the materialized relations tell.
+        var generatedKeys = new HashSet<string>(StringComparer.Ordinal);
+
+        // [ForeignKey("Navigation")] on a scalar named {Navigation}Id: the property the
+        // navigation's foreign key is, by navigation, for the navigation's deferred claim.
+        var annotatedForeignKeys = new Dictionary<string, string>(StringComparer.Ordinal);
+
         // [ConcurrencyCheck] is read per class, not per property (decision 116): it is the
         // version the application keeps only where it is the one token of the class and no
         // [Timestamp] already names the version.
@@ -775,10 +783,14 @@ public class EFCoreEntityParser : CSharpEntityParser
                     // the claim waits and materializes against the entities of the
                     // conversion. The shape is what the annotation would have stated: N:1
                     // with the key on this side; the callback finds the foreign key
-                    // property by EF Core's naming convention once the target's key stands.
+                    // property by EF Core's naming convention once the target's key stands,
+                    // or takes the one a [ForeignKey] on the scalar names.
                     entityBuilder.AddConventionNavigation(
                         Cardinality.ManyToOne, name, type, RelationRole.Owning,
-                        (ownerMap, targetMap) => ConventionForeignKeyProperties(ownerMap, targetMap, name),
+                        (ownerMap, targetMap) => annotatedForeignKeys.TryGetValue(name, out var annotated)
+                            ? [annotated]
+                            : ConventionForeignKeyProperties(ownerMap, targetMap, name,
+                                PairsOneToOne(ownerMap, targetMap, name, inverseNavigation)),
                         inverseNavigation);
                 }
                 else if (inverseNavigation is not null)
@@ -788,16 +800,22 @@ public class EFCoreEntityParser : CSharpEntityParser
                         classDeclaration.Identifier.Text, name, $"[InverseProperty(\"{inverseNavigation}\")]"));
                 }
 
-                if (foreignKeyNames is not null && IsScalarTypeName(type)
-                    && !(foreignKeyNames.Count == 1 && name.Equals(foreignKeyNames[0] + "Id", StringComparison.OrdinalIgnoreCase)))
+                if (foreignKeyNames is [var annotatedNavigation] && IsScalarTypeName(type)
+                    && name.Equals(annotatedNavigation + "Id", StringComparison.OrdinalIgnoreCase))
+                {
+                    // [ForeignKey("Navigation")] on a scalar named {Navigation}Id names the
+                    // property the convention looks for, and the navigation's claim takes it as
+                    // stated: on a key the convention would not take it (EFCoreValueGenerationProviderTest).
+                    annotatedForeignKeys[annotatedNavigation] = name;
+                }
+                else if (foreignKeyNames is not null && IsScalarTypeName(type))
                 {
                     // The other legal form of the attribute: [ForeignKey("Navigation")] on the
                     // key property, naming the navigation whose column this is. The reading
                     // pairs a column with its navigation from the navigation's side only, so
                     // the claim has no place to land and is dropped (decision 048) - unless
-                    // the property is named as the convention would find it anyway
-                    // ({Navigation}Id), where the annotation states nothing the convention
-                    // does not derive.
+                    // the property is named as the convention would find it ({Navigation}Id),
+                    // which the branch above takes as the navigation's foreign key.
                     entityBuilder.Report(new ConversionRecord
                     {
                         Kind = ConversionRecordKind.Loss,
@@ -912,6 +930,15 @@ public class EFCoreEntityParser : CSharpEntityParser
                     entityBuilder.SetKeyStrategyDetails(part.PropertyMap.Property.Name, sourceName);
                 }
             }
+
+            // A key that is also the foreign key takes the principal's value: EF Core generates
+            // nothing for it, by convention, under the attribute or under the model's UseHiLo()
+            // alike (EFCoreValueGenerationProviderTest). Which property a navigation's foreign
+            // key is, the convention says only once the target's key stands, so the claim waits.
+            if (key.Parts is [var single] && generatedKeys.Contains(single.PropertyMap.Property.Name))
+            {
+                entityBuilder.AddKeyAssignedUnderForeignKey(single.PropertyMap.Property.Name);
+            }
         }
 
         // A relationship the configuration states on a navigation the class does not declare
@@ -948,6 +975,11 @@ public class EFCoreEntityParser : CSharpEntityParser
             }
 
             var strategy = StatedStrategy(propertyName, composite);
+
+            if (!composite && strategy is PrimaryKeyStrategy.Auto or PrimaryKeyStrategy.Uuid)
+            {
+                generatedKeys.Add(propertyName);
+            }
 
             if (strategy == PrimaryKeyStrategy.Auto && context.ModelGenerationCall is { } modelCall)
             {
@@ -1075,7 +1107,7 @@ public class EFCoreEntityParser : CSharpEntityParser
             cardinality, navigation, target, role, relationship.ForeignKey,
             inverseNavigation: inverse,
             conventionalColumns: cardinality == Cardinality.ManyToOne && relationship.ForeignKey is null
-                ? (owner, targetMap) => ConventionForeignKeyProperties(owner, targetMap, navigation)
+                ? (owner, targetMap) => ConventionForeignKeyProperties(owner, targetMap, navigation, pairsOneToOne: false)
                 : null);
 
         if (annotatedForeignKey is not null || annotatedInverse is not null)
@@ -1267,13 +1299,16 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// {Navigation}Id, {TargetType}{KeyName} or {TargetType}Id - in that order, compared
     /// case-insensitively like the key convention - whose scalar type matches the key
     /// part's. The convention pairs single-part keys only; a composite foreign key exists
-    /// in EF Core solely through explicit configuration. Null means EF Core would fall
+    /// in EF Core solely through explicit configuration. The first name that matches
+    /// decides, and where it is the owner's whole key only a one-to-one may take it - the
+    /// shared key of decision 012 -; a many-to-one gets a shadow property beside the key
+    /// instead (EFCoreValueGenerationProviderTest). Null means EF Core would fall
     /// back to a shadow property, a column no class member carries: the model cannot state
     /// that, so the relation goes without columns and the target reports the omission
     /// where it emits (decision 012).
     /// </summary>
     private static IReadOnlyList<string>? ConventionForeignKeyProperties(
-        EntityMap owner, EntityMap target, string navigationName)
+        EntityMap owner, EntityMap target, string navigationName, bool pairsOneToOne)
     {
         if (target.PrimaryKey is not { Parts: [var keyPart] }
             || keyPart.PropertyMap.Property.Type is not { Category: LangTypeCategory.Scalar } keyType)
@@ -1298,11 +1333,33 @@ public class EFCoreEntityParser : CSharpEntityParser
 
             if (match is not null)
             {
-                return [match.Name];
+                return !pairsOneToOne && owner.PrimaryKey is { Parts: [var ownKey] } && ownKey.PropertyMap.Property.Name == match.Name
+                    ? null
+                    : [match.Name];
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Whether EF Core's convention pairs a reference navigation into a one-to-one: the far
+    /// entity answers with a reference - the one [InverseProperty] names, or the only
+    /// navigation towards the owner while the owner has only this one towards it. A
+    /// collection answering makes a many-to-one, and so does a reference navigation of an
+    /// entity to itself that nothing else answers.
+    /// </summary>
+    private static bool PairsOneToOne(EntityMap owner, EntityMap target, string navigationName, string? inverseNavigation)
+    {
+        var farSide = NavigationsTowards(target, owner.Entity.Name)
+            .Where(p => !(ReferenceEquals(owner, target) && p.Name == navigationName))
+            .ToList();
+
+        var answer = inverseNavigation is not null
+            ? farSide.FirstOrDefault(p => p.Name.Equals(inverseNavigation, StringComparison.Ordinal))
+            : farSide is [var only] && NavigationsTowards(owner, target.Entity.Name).Count == 1 ? only : null;
+
+        return answer is { Type: not { Category: LangTypeCategory.Collection } };
     }
 
     /// <summary>
