@@ -1,0 +1,31 @@
+// ORMConvertor: taken from cofoundry-cms/cofoundry at d3b30b1, src/Cofoundry.Domain/Data/DbContext/Pages/PageGroupItemMap.cs.
+// Unchanged apart from this note.
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Cofoundry.Domain.Data;
+
+[Obsolete("The page grouping system will be revised in an upcomming release.")]
+public class PageGroupItemMap : IEntityTypeConfiguration<PageGroupItem>
+{
+    public void Configure(EntityTypeBuilder<PageGroupItem> builder)
+    {
+        builder.ToTable(nameof(PageGroupItem), DbConstants.CofoundrySchema);
+        builder.HasKey(s => new { s.PageId, s.PageGroupId });
+
+        builder.Property(s => s.PageId)
+            .ValueGeneratedNever();
+
+        builder.Property(s => s.PageGroupId)
+            .ValueGeneratedNever();
+
+        builder.HasOne(s => s.PageGroup)
+            .WithMany(s => s.PageGroupItems)
+            .HasForeignKey(d => d.PageGroupId);
+
+        builder.HasOne(s => s.Page)
+            .WithMany(s => s.PageGroupItems)
+            .HasForeignKey(d => d.PageId);
+
+        CreateAuditableMappingHelper.Map(builder);
+    }
+}

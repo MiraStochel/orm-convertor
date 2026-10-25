@@ -1,0 +1,69 @@
+﻿// ORMConvertor: taken from cofoundry-cms/cofoundry at d3b30b1, src/Cofoundry.Domain/Domain/Users/Queries/GetUserMicroSummaryByEmailQueryHandler.cs.
+// Changed: the project's query extensions are written as the Where (OrderBy, Include) each one wraps,
+// and what the tool does not read is rewritten or left out, each change marked where it stands.
+// See README.md in the folder.
+using Cofoundry.Domain.Data;
+
+namespace Cofoundry.Domain.Internal;
+
+/// <summary>
+/// Finds a user with a specific email address returning <see langword="null"/> 
+/// if the user could not be found. Note that if the user area does not use email 
+/// addresses as the username then the email field is optional and may be empty.
+/// </summary>
+public class GetUserMicroSummaryByEmailQueryHandler
+    : IQueryHandler<GetUserMicroSummaryByEmailQuery, UserMicroSummary?>
+    , IPermissionRestrictedQueryHandler<GetUserMicroSummaryByEmailQuery, UserMicroSummary?>
+{
+    private readonly CofoundryDbContext _dbContext;
+    private readonly IUserMicroSummaryMapper _userMicroSummaryMapper;
+    private readonly IUserDataFormatter _userDataFormatter;
+
+    public GetUserMicroSummaryByEmailQueryHandler(
+        CofoundryDbContext dbContext,
+        IUserMicroSummaryMapper userMicroSummaryMapper,
+        IUserDataFormatter userDataFormatter
+        )
+    {
+        _dbContext = dbContext;
+        _userMicroSummaryMapper = userMicroSummaryMapper;
+        _userDataFormatter = userDataFormatter;
+    }
+
+    public async Task<UserMicroSummary?> ExecuteAsync(GetUserMicroSummaryByEmailQuery query, IExecutionContext executionContext)
+    {
+        if (string.IsNullOrWhiteSpace(query.Email))
+        {
+            return null;
+        }
+
+        var email = _userDataFormatter.NormalizeEmail(query.UserAreaCode, query.Email);
+        if (email == null)
+        {
+            return null;
+        }
+
+        var dbResult = await _dbContext
+            .Users
+            .AsNoTracking()
+            .Where(u => u.UserAreaCode == query.UserAreaCode) // ORMConvertor: was .FilterByUserArea(query.UserAreaCode)
+            .Where(u => u.Email == email)
+            .SingleOrDefaultAsync();
+
+        var user = _userMicroSummaryMapper.Map(dbResult);
+
+        return user;
+    }
+
+    public IEnumerable<IPermissionApplication> GetPermissions(GetUserMicroSummaryByEmailQuery query)
+    {
+        if (query.UserAreaCode == CofoundryAdminUserArea.Code)
+        {
+            yield return new CofoundryUserReadPermission();
+        }
+        else
+        {
+            yield return new NonCofoundryUserReadPermission();
+        }
+    }
+}

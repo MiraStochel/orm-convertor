@@ -161,6 +161,8 @@ public static class Examples
             ThirdParty("chinook", "Entities", "DataEF")),
         new("jpetstore-mybatis", "JPetStore: the MyBatis reference shop", ORMEnum.MyBatis, ORMEnum.Dapper,
             ThirdParty("jpetstore", "domain", "mapper")),
+        new("cofoundry-pages", "Cofoundry: pages, directories, templates, users and roles in 29 entities", ORMEnum.EFCore, ORMEnum.MyBatis,
+            ThirdParty("cofoundry", "Data", "Queries")),
     ];
 
     /// <summary>
@@ -170,7 +172,7 @@ public static class Examples
     /// </summary>
     public static readonly IReadOnlySet<string> RealProjectKeys = new HashSet<string>(StringComparer.Ordinal)
     {
-        "keycloak-identity", "ambari-alerts", "chinook-dapper", "chinook-efcore", "jpetstore-mybatis",
+        "keycloak-identity", "ambari-alerts", "chinook-dapper", "chinook-efcore", "jpetstore-mybatis", "cofoundry-pages",
     };
 
     /// <summary>

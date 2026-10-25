@@ -9,6 +9,7 @@ folder is one project at one commit, with the project's licence beside the files
 | `ambari/` | [apache/ambari](https://github.com/apache/ambari) | `a01b6745cf618b20accde2e670b7c78115c21367` | Apache-2.0 | EclipseLink | `ambari-alerts` |
 | `chinook/` | [cwoodruff/ChinookASPNETWebAPI](https://github.com/cwoodruff/ChinookASPNETWebAPI) | `82c89e0e5f6d650b6d6ec30e3499bf895ab4dad8` | MIT | Dapper, EF Core | `chinook-dapper`, `chinook-efcore` |
 | `jpetstore/` | [mybatis/jpetstore-6](https://github.com/mybatis/jpetstore-6) | `344ef63ddf05dd83cd5bfc325a9e8ef7b143f860` | Apache-2.0 | MyBatis | `jpetstore-mybatis` |
+| `cofoundry/` | [cofoundry-cms/cofoundry](https://github.com/cofoundry-cms/cofoundry) | `d3b30b1016c509c077ed1518d8a30864dcd799ed` | MIT | EF Core | `cofoundry-pages` |
 
 - **Only permissive licences.** A project under MIT, Apache-2.0 or BSD can be taken; a project
   under a copyleft licence is catalogued, never copied here, so the repository's own MIT terms

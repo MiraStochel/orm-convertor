@@ -33,7 +33,7 @@ public final class TestSchema {
      * their folder under {@code SampleData/ThirdParty}; the .NET suite holds this list equal to
      * the excerpts that carry a {@code schema.sql} ({@code Combined/CaseStudySchemaTest}).
      */
-    public static final List<String> CASE_STUDIES = List.of("ambari", "chinook", "jpetstore", "keycloak");
+    public static final List<String> CASE_STUDIES = List.of("ambari", "chinook", "cofoundry", "jpetstore", "keycloak");
 
     /**
      * Whether the key of an example is an excerpt of a real project - the case study of T1

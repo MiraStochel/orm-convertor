@@ -17,9 +17,9 @@ public class CaseStudySchemaTest
 {
     private static readonly Regex CreateTable = new(@"CREATE\s+TABLE\s+\[?\{\{schema\}\}\]?\.\[?(\w+)\]?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    /// <summary>The tables a Java or C# excerpt maps: the annotations of JPA, the fluent configuration of EF Core, the generator table of JPA.</summary>
+    /// <summary>The tables a Java or C# excerpt maps: the annotations of JPA, the fluent configuration of EF Core - by literal or by nameof -, the generator table of JPA.</summary>
     private static readonly Regex NamedTable = new(
-        @"@(?:Table|JoinTable|CollectionTable)\s*\(\s*name\s*=\s*""(\w+)""|@TableGenerator\s*\([^)]*?\btable\s*=\s*""(\w+)""|ToTable\s*\(\s*""(\w+)""",
+        @"@(?:Table|JoinTable|CollectionTable)\s*\(\s*name\s*=\s*""(\w+)""|@TableGenerator\s*\([^)]*?\btable\s*=\s*""(\w+)""|ToTable\s*\(\s*""(\w+)""|ToTable\s*\(\s*nameof\((\w+)\)",
         RegexOptions.Compiled | RegexOptions.Singleline);
 
     /// <summary>The tables a mapper document reads: what follows FROM and JOIN inside a select, a subquery excluded.</summary>

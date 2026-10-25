@@ -1,0 +1,66 @@
+﻿// ORMConvertor: taken from cofoundry-cms/cofoundry at d3b30b1, src/Cofoundry.Domain/Domain/Pages/Queries/AccessRules/GetUpdatePageAccessRuleSetCommandByIdQueryHandler.cs.
+// Changed: the project's query extensions are written as the Where (OrderBy, Include) each one wraps,
+// and what the tool does not read is rewritten or left out, each change marked where it stands.
+// See README.md in the folder.
+using Cofoundry.Domain.Data;
+
+namespace Cofoundry.Domain.Internal;
+
+public class GetUpdatePageAccessRuleSetCommandByIdQueryHandler
+    : IQueryHandler<GetPatchableCommandByIdQuery<UpdatePageAccessRuleSetCommand>, UpdatePageAccessRuleSetCommand?>
+    , IPermissionRestrictedQueryHandler<GetPatchableCommandByIdQuery<UpdatePageAccessRuleSetCommand>, UpdatePageAccessRuleSetCommand?>
+{
+    private readonly CofoundryDbContext _dbContext;
+
+    public GetUpdatePageAccessRuleSetCommandByIdQueryHandler(
+        CofoundryDbContext dbContext
+        )
+    {
+        _dbContext = dbContext;
+    }
+
+    public async Task<UpdatePageAccessRuleSetCommand?> ExecuteAsync(GetPatchableCommandByIdQuery<UpdatePageAccessRuleSetCommand> query, IExecutionContext executionContext)
+    {
+        var dbPage = await _dbContext
+            .Pages
+            .AsNoTracking()
+            .Include(r => r.AccessRules)
+            .Where(i => i.PageId == query.Id) // ORMConvertor: was .FilterById(query.Id)
+            .SingleOrDefaultAsync();
+
+        if (dbPage == null)
+        {
+            return null;
+        }
+
+        var violationAction = EnumParser.ParseOrNull<AccessRuleViolationAction>(dbPage.AccessRuleViolationActionId);
+        if (!violationAction.HasValue)
+        {
+            throw new InvalidOperationException($"{nameof(AccessRuleViolationAction)} of value {dbPage.AccessRuleViolationActionId} could not be parsed on a page with an id of {dbPage.PageId}.");
+        }
+
+        var command = new UpdatePageAccessRuleSetCommand()
+        {
+            PageId = dbPage.PageId,
+            UserAreaCodeForSignInRedirect = dbPage.UserAreaCodeForSignInRedirect,
+            ViolationAction = violationAction.Value
+        };
+
+        command.AccessRules = dbPage
+            .AccessRules
+            .Select(r => new UpdatePageAccessRuleSetCommand.AddOrUpdatePageAccessRuleCommand()
+            {
+                PageAccessRuleId = r.PageAccessRuleId,
+                UserAreaCode = r.UserAreaCode,
+                RoleId = r.RoleId
+            })
+            .ToArray();
+
+        return command;
+    }
+
+    public IEnumerable<IPermissionApplication> GetPermissions(GetPatchableCommandByIdQuery<UpdatePageAccessRuleSetCommand> query)
+    {
+        yield return new PageReadPermission();
+    }
+}

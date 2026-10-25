@@ -29,7 +29,7 @@ public class CaseStudyCriteriaTest(ITestOutputHelper output)
     private const int MinimumQueries = 20;
 
     /// <summary>The examples that are the applications of the case study of T1 (decision 184); the other real projects are secondary case studies, measured by the run and not counted here.</summary>
-    public static TheoryData<string> Applications() => new("keycloak-identity");
+    public static TheoryData<string> Applications() => new("keycloak-identity", "cofoundry-pages");
 
     [Theory]
     [MemberData(nameof(Applications))]
