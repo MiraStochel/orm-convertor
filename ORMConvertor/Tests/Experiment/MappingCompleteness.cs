@@ -4,6 +4,7 @@ using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Model;
+using Model.AbstractRepresentation.Enums;
 using OrmConvertor;
 using OrmConvertor.Factories;
 using Tests.Foreign;
@@ -76,10 +77,15 @@ internal sealed record MappingMeasure(
 /// reference: the ledger of the tool's conversion of the same input into the same target
 /// (decision 124), which lists every fact the representation held at generation time, with its
 /// value. A fact counts as transferred when the read-back holds the same subject and category
-/// with the same value; the denominator is the reference facts whose category the target's
-/// descriptor can express, so that a target that cannot state a fact is not charged with it
-/// (decision 009). The ledger's own verdict - carried or dropped - is written beside, so that
-/// what the tool claims and what the artifact states are two columns and not one.
+/// with the same value, or with a value that states it (<see cref="Transferred"/>, decision
+/// 188); the denominator is the reference facts whose category the target's descriptor can
+/// express, so that a target that cannot state a fact is not charged with it (decision 009).
+/// The ledger's own verdict - carried or dropped - is written beside, so that what the tool
+/// claims and what the artifact states are two columns and not one. A fact the artifact states
+/// only in a form the representation has no place for - the result identity of a MyBatis
+/// <c>&lt;id&gt;</c>, the database type a JPA artifact leaves to its Java type - is not read
+/// back: the measure reads the artifact through the parser alone and states that limit
+/// instead of reading the framework a second time (decision 188).
 ///
 /// For a foreign artifact the reference is the same: the tool's conversion of the input the
 /// artifact answers, because the facts the tool had are the facts a translation of that input
@@ -115,13 +121,13 @@ internal static class MappingCompleteness
         foreach (var fact in expressible)
         {
             var subject = new FactSubject(fact.Entity, fact.Property, fact.Category);
-            if (readBack.TryGetValue(subject, out var value) && SameValue(fact.Category, fact.Value, value))
+            if (Transferred(subject, fact.Value, readBack))
             {
                 transferred++;
             }
             else
             {
-                missing.Add($"{subject}: expected {Quote(fact.Value)}, read {(readBack.ContainsKey(subject) ? Quote(value) : "nothing")}{(fact.Outcome == FactOutcome.Dropped ? " (dropped by the ledger)" : string.Empty)}");
+                missing.Add($"{subject}: expected {Quote(fact.Value)}, read {(readBack.TryGetValue(subject, out var value) ? Quote(value) : "nothing")}{(fact.Outcome == FactOutcome.Dropped ? " (dropped by the ledger)" : string.Empty)}");
             }
         }
 
@@ -168,12 +174,40 @@ internal static class MappingCompleteness
     }
 
     /// <summary>
+    /// Whether the read-back states the reference's fact: the subject read back with a value
+    /// <see cref="SameValue"/> accepts - or, for the NOT NULL of a key column, nothing read of
+    /// the column's nullability where the read-back holds the property as a part of the key
+    /// (decision 188). Every target that expresses a key makes its columns NOT NULL whether or
+    /// not the mapping says so, over a type that is nullable by itself as well (measured,
+    /// <c>KeyColumnNullabilityProviderTest</c> and the Java suite's
+    /// <c>KeyColumnNullabilityClaimsTest</c>), which is why both builders leave the claim off a
+    /// key column. A nullability the read-back does state stays its statement, even on a key.
+    /// </summary>
+    internal static bool Transferred(FactSubject subject, string? expected, IReadOnlyDictionary<FactSubject, string?> readBack)
+    {
+        if (readBack.TryGetValue(subject, out var value))
+        {
+            return SameValue(subject.Category, expected, value);
+        }
+
+        // The ledger's spelling of a NOT NULL column (AbstractEntityBuilder.MappingFactsOf).
+        return subject.Category == MappingFactCategory.Nullability
+            && expected == "not null"
+            && readBack.ContainsKey(subject with { Category = MappingFactCategory.PrimaryKey });
+    }
+
+    /// <summary>
     /// Whether the value read back states the fact the reference states. Values are compared as
-    /// the ledger spells them, with one allowance: a database type is compared by its family
+    /// the ledger spells them, with three allowances. A database type is compared by its family
     /// and facets only where the reference spells a literal type of the source's dialect that
     /// the target writes in its own vocabulary - the reading of the target's spelling is the
     /// target's statement of the same type (decision 019), and the literal spelling is kept
-    /// beside it where the target carries it (decision 086).
+    /// beside it where the target carries it (decision 086). The columns of a foreign key and
+    /// of a unique constraint compare as a set. And a key strategy read back as
+    /// <c>Identity</c> states the reference's <c>Auto</c> (decision 188): on the one dialect
+    /// (decision 129) <c>Auto</c> is the identity column the source left unpinned and
+    /// <c>Identity</c> the same column pinned (decision 187), so the artifact says what the
+    /// reference says and more; the converse loses the pin and stays a fact not transferred.
     /// </summary>
     internal static bool SameValue(MappingFactCategory category, string? expected, string? actual)
     {
@@ -191,6 +225,7 @@ internal static class MappingCompleteness
         {
             MappingFactCategory.DatabaseType => string.Equals(Normalize(expected), Normalize(actual), StringComparison.OrdinalIgnoreCase),
             MappingFactCategory.ForeignKeyColumns or MappingFactCategory.UniqueConstraint => SameSet(expected, actual),
+            MappingFactCategory.PrimaryKeyStrategy => expected == nameof(PrimaryKeyStrategy.Auto) && actual == nameof(PrimaryKeyStrategy.Identity),
             _ => false,
         };
     }
