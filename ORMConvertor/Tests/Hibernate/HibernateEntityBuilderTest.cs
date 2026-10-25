@@ -87,15 +87,34 @@ public class HibernateEntityBuilderTest
         Assert.Contains("import java.time.LocalDate;", code);
     }
 
+    /// <summary>
+    /// Auto is the mechanism native to the dialect, an identity column on SQL Server, and
+    /// IDENTITY is the one GenerationType that names it; AUTO would mean Hibernate's own
+    /// sequence (decision 187).
+    /// </summary>
     [Fact]
-    public void AutoResolvesThroughTheProfileToAnExplicitSequence()
+    public void AutoIsWrittenAsIdentity()
     {
         var (code, records) = Build(b => Customer(b, PrimaryKeyStrategy.Auto));
 
-        Assert.Contains("@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = \"Customer_CustomerId_gen\")", code);
-        Assert.Contains("@SequenceGenerator(name = \"Customer_CustomerId_gen\", sequenceName = \"Customer_SEQ\", allocationSize = 50)", code);
+        Assert.Contains("@GeneratedValue(strategy = GenerationType.IDENTITY)", code);
+        Assert.DoesNotContain("@SequenceGenerator", code);
         Assert.DoesNotContain("AUTO", code);
-        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Convention && r.Category == MappingFactCategory.PrimaryKeyStrategy && r.Reason.Contains("Hibernate resolves it to SEQUENCE"));
+        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Convention && r.Category == MappingFactCategory.PrimaryKeyStrategy && r.Reason.Contains("writes IDENTITY"));
+    }
+
+    /// <summary>
+    /// A sequence the model names none for is the one Hibernate takes: after the table the
+    /// artifact writes, not after the entity (measured by the Java suite's
+    /// hibernate/KeyGenerationClaimsTest).
+    /// </summary>
+    [Fact]
+    public void AnUnnamedSequenceIsHibernatesSequenceAfterTheTable()
+    {
+        var (code, records) = Build(b => Customer(b, PrimaryKeyStrategy.Sequence));
+
+        Assert.Contains("@SequenceGenerator(name = \"Customer_CustomerId_gen\", sequenceName = \"Customers_SEQ\", allocationSize = 50)", code);
+        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Convention && r.Reason.Contains("'Customers_SEQ'"));
     }
 
     [Fact]

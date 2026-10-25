@@ -38,9 +38,9 @@ public class MappingCompletenessTest(ITestOutputHelper output)
         // not-null attribute, and no parser derives the nullability of a key from its being one.
         [(ORMEnum.EFCore, ORMEnum.NHibernate)] = ["Customer.CustomerId Nullability"],
 
-        // The same, and the strategy: a source's Auto goes out as the concrete strategy the
-        // profile picks - a sequence in Hibernate, a table in EclipseLink (decisions 076, 080) -,
-        // so the read-back states Sequence or TABLE where the reference states Auto.
+        // The same, and the strategy: a source's Auto - the mechanism native to the dialect -
+        // goes out as IDENTITY, the one GenerationType that names it on SQL Server (decision 187),
+        // so the read-back states Identity where the reference states Auto.
         [(ORMEnum.EFCore, ORMEnum.Hibernate)] = ["Customer.CustomerId Nullability", "Customer.CustomerId PrimaryKeyStrategy"],
         [(ORMEnum.EFCore, ORMEnum.EclipseLink)] = ["Customer.CustomerId Nullability", "Customer.CustomerId PrimaryKeyStrategy"],
 

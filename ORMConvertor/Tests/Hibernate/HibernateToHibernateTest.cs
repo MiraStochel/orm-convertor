@@ -17,7 +17,7 @@ public class HibernateToHibernateTest
     private static string Rebuild(string java)
     {
         var builder = new HibernateEntityBuilder();
-        new HibernateEntityParser(builder, new JpaReadingContext()).Parse(java);
+        new HibernateEntityParser(builder, new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile)).Parse(java);
         var artifacts = builder.Build();
 
         Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
@@ -130,12 +130,12 @@ public class HibernateToHibernateTest
             """;
 
         var builder = new HibernateEntityBuilder();
-        new HibernateEntityParser(builder, new JpaReadingContext()).Parse(java);
+        new HibernateEntityParser(builder, new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile)).Parse(java);
         var artifacts = builder.Build();
 
         // Each artifact is a Java file of its own, so each is read back as its own unit.
         var rebuilt = new HibernateEntityBuilder();
-        var parser = new HibernateEntityParser(rebuilt, new JpaReadingContext());
+        var parser = new HibernateEntityParser(rebuilt, new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile));
         foreach (var artifact in artifacts)
         {
             parser.Parse(artifact.Content);

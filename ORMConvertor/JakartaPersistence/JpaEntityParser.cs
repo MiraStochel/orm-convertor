@@ -21,7 +21,7 @@ public abstract class JpaEntityParser(
     JpaReadingContext context,
     JpaAnnotationReader reader) : JavaEntityParser(entityBuilder)
 {
-    private readonly JpaMappingWriter writer = new(entityBuilder, ConversionContentType.JavaEntity, context.DeclaredSourceDialect);
+    private readonly JpaMappingWriter writer = new(entityBuilder, ConversionContentType.JavaEntity, context);
 
     /// <summary>
     /// A class whose own members call createQuery is the code around queries, not an entity
@@ -52,6 +52,8 @@ public abstract class JpaEntityParser(
                 {
                     entityBuilder.AddEmbeddedPrimaryKey(reading.Name, JavaTypeConvertor.StripPackage(reading.Type));
                 }
+
+                writer.ResolveDeferredAuto(cls.Name, reading.Name, reading.Type);
             }
 
             return;
@@ -90,6 +92,10 @@ public abstract class JpaEntityParser(
             {
                 attribute.Nullable = false;
             }
+
+            // Before the annotations: orm.xml outranks them (decision 068), so its AUTO is
+            // resolved first and an annotation can only agree with it or conflict.
+            writer.ResolveDeferredAuto(cls.Name, reading.Name, reading.Type);
         }
 
         writer.Write(facts);

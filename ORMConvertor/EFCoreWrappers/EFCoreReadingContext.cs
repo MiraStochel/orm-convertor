@@ -146,6 +146,27 @@ public sealed class EFCoreReadingContext
 
     public string? GeneratedOptionOf(string entity, string property) => generatedOptions.GetValueOrDefault((entity, property));
 
+    private readonly Dictionary<(string Entity, string Property), string> generationCalls = [];
+
+    /// <summary>
+    /// Records a call of the configuration on a property that names how its value is generated
+    /// - UseHiLo, UseSequence, UseIdentityColumn, a default, a generator - which the subset of
+    /// decision 132 does not read: a key under it claims no strategy (decision 187). The first
+    /// call stands.
+    /// </summary>
+    public void MarkGenerationCall(string entity, string property, string call) => generationCalls.TryAdd((entity, property), call);
+
+    public string? GenerationCallOf(string entity, string property) => generationCalls.GetValueOrDefault((entity, property));
+
+    /// <summary>
+    /// The model's UseHiLo() or UseKeySequences(), which the subset does not read either: under
+    /// it a key the convention or the annotation would make an IDENTITY column is fed from a
+    /// sequence instead, and claims no strategy (decision 187). The first call stands.
+    /// </summary>
+    public string? ModelGenerationCall { get; private set; }
+
+    public void SetModelGenerationCall(string call) => ModelGenerationCall ??= call;
+
     /// <summary>
     /// Records a member the configuration names on the entity it configures - in Property,
     /// HasKey, HasIndex, HasAlternateKey, HasOne or HasMany. EF Core maps a member so named

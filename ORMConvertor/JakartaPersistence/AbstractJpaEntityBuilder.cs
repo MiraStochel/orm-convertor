@@ -872,17 +872,24 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             : null;
 
     /// <summary>
-    /// The strategy, always concrete (decision 076). Auto resolves through the profile of
-    /// the implementation with its default generator written out; an unstated strategy is
-    /// the JPA reading of a bare @Id - the application assigns - and is reported as the
-    /// target's convention, like NHibernate's assigned; the named mechanisms map onto
-    /// GenerationType with the generator's canonical parameters (decision 020).
+    /// The strategy, always concrete (decision 076). Auto - the mechanism native to the
+    /// dialect - is IDENTITY on SQL Server, the one GenerationType that names it (decision
+    /// 187); an unstated strategy is the JPA reading of a bare @Id - the application
+    /// assigns - and is reported as the target's convention, like NHibernate's assigned;
+    /// the named mechanisms map onto GenerationType with the generator's canonical
+    /// parameters (decision 020).
     /// </summary>
     private void AppendGeneration(EntityMap entityMap, PrimaryKeyPart part, StringBuilder code)
     {
         var property = part.PropertyMap.Property.Name;
 
-        if (part.SourceStrategyName is not null && !IsForeign(part))
+        // TABLE is the JPA source's own word for the hi/lo over a counter table, and the
+        // artifact writes it back; only a name the annotations cannot say is dropped.
+        var writtenBack = part.SourceStrategyName == "TABLE"
+            && part.Strategy == PrimaryKeyStrategy.HiLo
+            && !part.StrategyParameters.ContainsKey(GeneratorParameter.SequenceName);
+
+        if (part.SourceStrategyName is not null && !IsForeign(part) && !writtenBack)
         {
             Report(new ConversionRecord
             {
@@ -944,7 +951,19 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                 return;
 
             case PrimaryKeyStrategy.Auto:
-                AppendResolvedAuto(entityMap, part, code);
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Convention,
+                    Framework = Descriptor.Framework,
+                    Artifact = ConversionContentType.JavaEntity,
+                    Entity = entityMap.Entity.Name,
+                    Property = property,
+                    Category = MappingFactCategory.PrimaryKeyStrategy,
+                    Reason = "The source leaves the mechanism to the dialect (Auto), which is an identity column on SQL Server; "
+                        + "the artifact writes IDENTITY, because AUTO would mean the implementation's own default - a sequence or "
+                        + "a counter table the database does not have (decision 187).",
+                });
+                AppendGeneratedValue(code, "IDENTITY", null, property);
                 return;
 
             case PrimaryKeyStrategy.Sequence:
@@ -981,55 +1000,14 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         Mark(code, rendered, property, MappingFactCategory.PrimaryKeyStrategy);
     }
 
-    private void AppendResolvedAuto(EntityMap entityMap, PrimaryKeyPart part, StringBuilder code)
-    {
-        var mechanism = Profile.AutoStrategy;
-
-        Report(new ConversionRecord
-        {
-            Kind = ConversionRecordKind.Convention,
-            Framework = Descriptor.Framework,
-            Artifact = ConversionContentType.JavaEntity,
-            Entity = entityMap.Entity.Name,
-            Property = part.PropertyMap.Property.Name,
-            Category = MappingFactCategory.PrimaryKeyStrategy,
-            Reason = $"The source leaves the mechanism to the framework (Auto); {Profile.Implementation} resolves it to "
-                + $"{JpaSpelling(mechanism)} on the pinned dialect, and the artifact writes that mechanism out, because AUTO "
-                + "means something else under the other implementation (decisions 076, 077 and 080).",
-        });
-
-        switch (mechanism)
-        {
-            case PrimaryKeyStrategy.Sequence:
-                AppendSequence(entityMap, part, code, convention: null, silent: true);
-                break;
-            case PrimaryKeyStrategy.Identity:
-                AppendGeneratedValue(code, "IDENTITY", null, part.PropertyMap.Property.Name);
-                break;
-            default:
-                AppendTable(entityMap, part, code, silent: true);
-                break;
-        }
-    }
-
-    /// <summary>
-    /// The mechanism under the name GenerationType gives it, so that a record about AUTO
-    /// names what the reader will see in the artifact rather than the model's own word.
-    /// </summary>
-    private static string JpaSpelling(PrimaryKeyStrategy mechanism) => mechanism switch
-    {
-        PrimaryKeyStrategy.Sequence => "SEQUENCE",
-        PrimaryKeyStrategy.Identity => "IDENTITY",
-        PrimaryKeyStrategy.Uuid => "UUID",
-        _ => "TABLE",
-    };
-
     /// <summary>
     /// SEQUENCE with its generator written out: the sequence name from the canonical
-    /// parameters, or the implementation's default name made explicit with a record, and
-    /// the allocation size likewise (decisions 020 and 076).
+    /// parameters, or the implementation's default name made explicit with a record - the
+    /// sequence the profile measured it takes where no generator names one, after the table
+    /// the artifact writes (decision 187) -, and the allocation size likewise (decisions 020
+    /// and 076).
     /// </summary>
-    private void AppendSequence(EntityMap entityMap, PrimaryKeyPart part, StringBuilder code, string? convention, bool silent = false)
+    private void AppendSequence(EntityMap entityMap, PrimaryKeyPart part, StringBuilder code, string? convention)
     {
         var property = part.PropertyMap.Property.Name;
         var parameters = part.StrategyParameters;
@@ -1037,38 +1015,33 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
         if (!parameters.TryGetValue(GeneratorParameter.SequenceName, out var sequence))
         {
-            sequence = $"{entityMap.Entity.Name}_SEQ";
-            if (!silent)
+            sequence = string.Format(
+                System.Globalization.CultureInfo.InvariantCulture, Profile.DefaultSequenceName, entityMap.Table ?? entityMap.Entity.Name);
+            Report(new ConversionRecord
             {
-                Report(new ConversionRecord
-                {
-                    Kind = ConversionRecordKind.Convention,
-                    Framework = Descriptor.Framework,
-                    Artifact = ConversionContentType.JavaEntity,
-                    Entity = entityMap.Entity.Name,
-                    Property = property,
-                    Category = MappingFactCategory.PrimaryKeyStrategy,
-                    Reason = $"No sequence name was stated; the artifact writes '{sequence}', the implementation's default made explicit.",
-                });
-            }
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.JavaEntity,
+                Entity = entityMap.Entity.Name,
+                Property = property,
+                Category = MappingFactCategory.PrimaryKeyStrategy,
+                Reason = $"No sequence name was stated; the artifact writes '{sequence}', the implementation's default made explicit.",
+            });
         }
 
         if (!parameters.TryGetValue(GeneratorParameter.BlockSize, out var blockSize))
         {
             blockSize = Profile.DefaultAllocationSize.ToString();
-            if (!silent)
+            Report(new ConversionRecord
             {
-                Report(new ConversionRecord
-                {
-                    Kind = ConversionRecordKind.Convention,
-                    Framework = Descriptor.Framework,
-                    Artifact = ConversionContentType.JavaEntity,
-                    Entity = entityMap.Entity.Name,
-                    Property = property,
-                    Category = MappingFactCategory.PrimaryKeyStrategy,
-                    Reason = $"No block size was stated; the artifact writes allocationSize = {blockSize}, the implementation's default made explicit.",
-                });
-            }
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.JavaEntity,
+                Entity = entityMap.Entity.Name,
+                Property = property,
+                Category = MappingFactCategory.PrimaryKeyStrategy,
+                Reason = $"No block size was stated; the artifact writes allocationSize = {blockSize}, the implementation's default made explicit.",
+            });
         }
 
         if (convention is not null)
@@ -1116,7 +1089,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
     /// object, because each implementation reaches for a counter table of its own - and
     /// where it did not, it stays with the target's default and is reported.
     /// </summary>
-    private void AppendTable(EntityMap entityMap, PrimaryKeyPart part, StringBuilder code, bool silent = false)
+    private void AppendTable(EntityMap entityMap, PrimaryKeyPart part, StringBuilder code)
     {
         var property = part.PropertyMap.Property.Name;
         var parameters = part.StrategyParameters;
@@ -1161,23 +1134,20 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
         arguments.Add($"allocationSize = {blockSize}");
 
-        if (!silent)
+        Report(new ConversionRecord
         {
-            Report(new ConversionRecord
-            {
-                Kind = ConversionRecordKind.Convention,
-                Framework = Descriptor.Framework,
-                Artifact = ConversionContentType.JavaEntity,
-                Entity = entityMap.Entity.Name,
-                Property = property,
-                Category = MappingFactCategory.PrimaryKeyStrategy,
-                Reason = "The hi/lo mechanism over a counter table is written as TABLE with the block size as allocationSize; "
-                    + (counter is null
-                        ? "parameters the source did not state stay with the implementation's default."
-                        : $"parameters the source did not state are written out from the default of {Profile.Implementation} "
-                          + $"('{counter.Table}'), so that the artifact names the counter rather than leaving it to the provider."),
-            });
-        }
+            Kind = ConversionRecordKind.Convention,
+            Framework = Descriptor.Framework,
+            Artifact = ConversionContentType.JavaEntity,
+            Entity = entityMap.Entity.Name,
+            Property = property,
+            Category = MappingFactCategory.PrimaryKeyStrategy,
+            Reason = "The hi/lo mechanism over a counter table is written as TABLE with the block size as allocationSize; "
+                + (counter is null
+                    ? "parameters the source did not state stay with the implementation's default."
+                    : $"parameters the source did not state are written out from the default of {Profile.Implementation} "
+                      + $"('{counter.Table}'), so that the artifact names the counter rather than leaving it to the provider."),
+        });
 
         ReportUnusableParameters(entityMap, part, GeneratorParameter.SequenceName);
 

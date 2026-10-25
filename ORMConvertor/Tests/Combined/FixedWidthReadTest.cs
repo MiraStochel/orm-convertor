@@ -387,7 +387,7 @@ public class FixedWidthReadTest
     public void TheEclipseLinkReaderMarksTextAsReadTrimmed()
     {
         var builder = new HibernateEntityBuilder();
-        var context = new JakartaPersistence.JpaReadingContext();
+        var context = new JakartaPersistence.JpaReadingContext(EclipseLinkWrappers.EclipseLinkDescriptor.Profile);
         new EclipseLinkEntityParser(builder, context).Parse("""
             package Shop;
 

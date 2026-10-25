@@ -53,16 +53,19 @@ public static class HibernateDescriptor
     };
 
     /// <summary>
-    /// Verified in the Hibernate tutorial and the comparison of the Java frameworks: AUTO
-    /// is a sequence named after the entity with a step of 50, implicit names follow the
-    /// JPA-compliant strategy with no physical transformation (Spring Boot's snake_case is
-    /// its own doing), and a String is varchar unless @Nationalized says otherwise.
+    /// Verified in the Hibernate tutorial and the comparison of the Java frameworks: implicit
+    /// names follow the JPA-compliant strategy with no physical transformation (Spring Boot's
+    /// snake_case is its own doing), and a String is varchar unless @Nationalized says
+    /// otherwise. AUTO, and SEQUENCE without a generator, is a sequence named after the table
+    /// - not the entity, as the tutorial had it - with a step of 50, measured by the Java
+    /// suite's hibernate/KeyGenerationClaimsTest (decision 187).
     /// </summary>
     public static JpaImplementationProfile Profile { get; } = new(
         Implementation: ORMEnum.Hibernate,
         SpecificationLevel: JakartaPersistenceDescriptor.SpecificationLevel,
         AutoStrategy: PrimaryKeyStrategy.Sequence,
         DefaultAllocationSize: 50,
+        DefaultSequenceName: "{0}_SEQ",
         NamingStrategy: "ImplicitNamingStrategyJpaCompliantImpl, PhysicalNamingStrategyStandardImpl",
         NationalizedByDefault: false,
         UppercaseImplicitNames: false,

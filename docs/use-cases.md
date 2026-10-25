@@ -77,7 +77,7 @@ Každý výstup nese záznamy o převodu, identifikátor běhu a verze (S6).
 
 *Migrující vývojář; důvod javového ekosystému (rozh. [076](./decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)).*
 - Mění se jazyk; obě strany čte i píše překladový proces, **bez JVM**. SQL Dapperu vyjde jako doménová třída, mapper MyBatisu a rozhraní metody.
-- Profil cíle: nullabilita v Javě jednou osou; `AUTO` = sekvence (Hibernate) / tabulka čítače (EclipseLink); nationalizace = anotace / doslovný typ sloupce.
+- Profil implementace: nullabilita v Javě jednou osou; `AUTO` zdroje = sekvence `<tabulka>_SEQ` (Hibernate) / tabulka čítače (EclipseLink), do cíle mechanismus nativní dialektu jako `IDENTITY` (rozh. [187](./decisions/187-auto-is-the-mechanism-native-to-the-dialect-the-jpa-parser-resolves-auto-by-the-source-implementation-and-ef-core-is-read-and-written-by-what-its-provider-does.md)); nationalizace = anotace / doslovný typ sloupce.
 - Nárokované jsou Hibernate, EclipseLink a MyBatis **samy za sebe**; hranici (dědičnost, dynamický příkaz MyBatisu, líné načtení v EclipseLinku…) vede `subset.md` 1.5, 1.6 a část 2.
 
 ## UC7 — Doklad, že přeložený kód opravdu běží a vrací totéž

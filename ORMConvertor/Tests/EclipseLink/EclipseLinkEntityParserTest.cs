@@ -21,7 +21,7 @@ public class EclipseLinkEntityParserTest
     private static (DummyEntityBuilder Builder, IReadOnlyCollection<EntityMap> Read) Parse(string java)
     {
         var builder = new DummyEntityBuilder();
-        var read = new EclipseLinkEntityParser(builder, new JpaReadingContext()).Parse(java);
+        var read = new EclipseLinkEntityParser(builder, new JpaReadingContext(EclipseLinkWrappers.EclipseLinkDescriptor.Profile)).Parse(java);
         return (builder, read);
     }
 
@@ -65,13 +65,15 @@ public class EclipseLinkEntityParserTest
     }
 
     /// <summary>
-    /// Decision 067 from the sharper side: the profile knows that this implementation would
-    /// call the table CUSTOMER and resolve AUTO to a counter table, and the parser
-    /// materializes neither. An absent default is not a statement of the source, and the
-    /// catalog is where the silence is filled (F6).
+    /// Decision 067 from both sides. The profile knows that this implementation would call
+    /// the table CUSTOMER, and the parser does not materialize it: an absent default is not a
+    /// statement of the source, and the catalog is where the silence is filled (F6). AUTO is
+    /// another matter (decision 187): what EclipseLink derives from the integer key is its
+    /// counter table, every other reader would land elsewhere, and the source's database has
+    /// that table - so it is read as the counter table, written out whole.
     /// </summary>
     [Fact]
-    public void NoDefaultOfTheImplementationIsMaterializedWhileReading()
+    public void AutoIsReadAsTheCounterTableAndTheTableNameIsNotMaterialized()
     {
         var map = Single("""
             import jakarta.persistence.*;
@@ -88,8 +90,15 @@ public class EclipseLinkEntityParserTest
 
         Assert.Null(map.Table);
         Assert.Null(Map(map, "CustomerName").ColumnName);
-        Assert.Equal(PrimaryKeyStrategy.Auto, map.PrimaryKey!.Parts.Single().Strategy);
-        Assert.Empty(map.PrimaryKey.Parts.Single().StrategyParameters);
+
+        var part = map.PrimaryKey!.Parts.Single();
+        Assert.Equal(PrimaryKeyStrategy.HiLo, part.Strategy);
+        Assert.Equal("TABLE", part.SourceStrategyName);
+        Assert.Equal("SEQUENCE", part.StrategyParameters[GeneratorParameter.CounterTable]);
+        Assert.Equal("SEQ_NAME", part.StrategyParameters[GeneratorParameter.CounterKeyColumn]);
+        Assert.Equal("SEQ_COUNT", part.StrategyParameters[GeneratorParameter.CounterValueColumn]);
+        Assert.Equal("SEQ_GEN", part.StrategyParameters[GeneratorParameter.CounterKeyValue]);
+        Assert.Equal("50", part.StrategyParameters[GeneratorParameter.BlockSize]);
     }
 
     /// <summary>
@@ -169,7 +178,7 @@ public class EclipseLinkEntityParserTest
             """;
 
         var builder = new DummyEntityBuilder();
-        new HibernateEntityParser(builder, new JpaReadingContext()).Parse(source);
+        new HibernateEntityParser(builder, new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile)).Parse(source);
 
         Assert.DoesNotContain(builder.Records, r => r.Reason.Contains("weaving") || r.Reason.Contains("weaves"));
     }
@@ -230,7 +239,7 @@ public class EclipseLinkEntityParserTest
     public void TheStandardOrmXmlIsReadBeforeTheClass()
     {
         var builder = new DummyEntityBuilder();
-        var context = new JpaReadingContext();
+        var context = new JpaReadingContext(EclipseLinkWrappers.EclipseLinkDescriptor.Profile);
 
         new JpaOrmXmlParser(builder, context).Parse("""
             <?xml version="1.0" encoding="UTF-8"?>

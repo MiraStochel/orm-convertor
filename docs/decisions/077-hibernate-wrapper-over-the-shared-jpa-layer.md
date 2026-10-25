@@ -1,7 +1,7 @@
 # 077 — Hibernate wrapper nad sdílenou JPA vrstvou
 
 Datum: 2026-09-17
-Stav: platí
+Stav: platí; čtení a zápis `AUTO` a výchozí jméno sekvence v oddílu *Strategie generování* nahrazuje 187
 Požadavky: F1, F2, F3, F7, F9, F10, F11, F12, S1, S2
 Podklad: rozhodnutí [006](006-flat-composite-key-rendering.md), [009](009-target-framework-descriptor.md), [011](011-key-generation-strategy-vocabulary.md), [012](012-foreign-key-rendering.md), [013](013-target-framework-versions.md), [014](014-language-type-model.md), [020](020-canonical-generator-parameter-vocabulary.md), [025](025-query-language-as-content-type.md), [031](031-key-class-as-declaration-of-key-parts.md), [035](035-nhibernate-collections-declared-by-interface.md), [040](040-boundary-of-the-handed-over-artifact.md), [054](054-nullable-key-part-is-a-reported-loss.md), [062](062-hql-read-by-a-hand-written-parser.md), [067](067-a-derived-convention-is-a-statement-a-default-is-not.md), [068](068-source-framework-precedence-orders-the-reading.md), [072](072-a-transient-property-is-a-carried-mapping-fact.md) a [076](076-java-wrappers-in-csharp-jvm-in-containers.md); JSS §4.3, §5.2, §6.1 (pravidla E1–E10) a §7; [tutoriál k Hibernate](../analysis/tutorials/hibernate-getting-started.md), kroky 3, 4 a *Co z toho plyne pro převodník*; [srovnání javových frameworků](../analysis/java-orm-frameworks-comparison.md), §3–§9, §15, §20 a §22; Jakarta Persistence 3.2, kap. 2 (entity), 11 (anotace) a 4 (JPQL); Hibernate ORM 7.4.5 User Guide, kap. *Domain Model* a *HQL*; otevřená položka „Hibernate wrapper nad sdílenou JPA vrstvou"
 

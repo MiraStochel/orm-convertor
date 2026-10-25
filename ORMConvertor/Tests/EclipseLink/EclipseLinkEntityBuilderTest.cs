@@ -65,24 +65,45 @@ public class EclipseLinkEntityBuilderTest
     }
 
     /// <summary>
-    /// The heart of the profile (decision 080): the same silence that is a sequence under
-    /// Hibernate is a counter table here, and the artifact says which one. Writing AUTO
-    /// would have swapped one generator for another without a word.
+    /// Auto is the mechanism native to the dialect, an identity column on SQL Server, which
+    /// EclipseLink writes for IDENTITY as Hibernate does; AUTO would be its counter table, a
+    /// table the source's database does not have (decision 187).
     /// </summary>
     [Fact]
-    public void AutoResolvesThroughTheProfileToTheCounterTableWrittenOut()
+    public void AutoIsWrittenAsIdentity()
     {
         var (code, records) = Build(b => Customer(b, PrimaryKeyStrategy.Auto));
 
-        Assert.Contains("@GeneratedValue(strategy = GenerationType.TABLE, generator = \"Customer_CustomerId_gen\")", code);
+        Assert.Contains("@GeneratedValue(strategy = GenerationType.IDENTITY)", code);
+        Assert.DoesNotContain("@TableGenerator", code);
+        Assert.DoesNotContain("AUTO", code);
+        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Convention
+            && r.Category == MappingFactCategory.PrimaryKeyStrategy
+            && r.Reason.Contains("writes IDENTITY"));
+    }
+
+    /// <summary>
+    /// The hi/lo over a counter table with nothing stated is the counter table the profile
+    /// measured (decision 080): the generator names one whole counter.
+    /// </summary>
+    [Fact]
+    public void AnUnstatedCounterTableIsTheProfilesWrittenOut()
+    {
+        var (code, _) = Build(b => Customer(b, PrimaryKeyStrategy.HiLo));
+
         Assert.Contains(
             "@TableGenerator(name = \"Customer_CustomerId_gen\", table = \"SEQUENCE\", pkColumnName = \"SEQ_NAME\", "
             + "valueColumnName = \"SEQ_COUNT\", pkColumnValue = \"SEQ_GEN\", allocationSize = 50)",
             code);
-        Assert.DoesNotContain("AUTO", code);
-        Assert.Contains(records, r => r.Kind == ConversionRecordKind.Convention
-            && r.Category == MappingFactCategory.PrimaryKeyStrategy
-            && r.Reason.Contains("EclipseLink resolves it to TABLE"));
+    }
+
+    /// <summary>A sequence the model names none for is the one EclipseLink takes over a connection to SQL Server (decision 187).</summary>
+    [Fact]
+    public void AnUnnamedSequenceIsEclipseLinksDefaultSequence()
+    {
+        var (code, _) = Build(b => Customer(b, PrimaryKeyStrategy.Sequence));
+
+        Assert.Contains("sequenceName = \"SEQ_GEN_SEQUENCE\", allocationSize = 50)", code);
     }
 
     /// <summary>What the source states about the counter beats the implementation's default.</summary>

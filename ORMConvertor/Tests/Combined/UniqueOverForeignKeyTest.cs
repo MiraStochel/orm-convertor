@@ -102,7 +102,7 @@ public class UniqueOverForeignKeyTest
     public void JpaReadsTheJoinColumnAsTheNavigation()
     {
         var builder = new EFCoreEntityBuilder();
-        var context = new JpaReadingContext();
+        var context = new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile);
 
         foreach (var unit in new[] { Customer, Purchase, Address })
         {
@@ -265,7 +265,7 @@ public class UniqueOverForeignKeyTest
             """;
 
         var builder = new EFCoreEntityBuilder();
-        new HibernateEntityParser(builder, new JpaReadingContext()).Parse(header);
+        new HibernateEntityParser(builder, new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile)).Parse(header);
 
         Assert.Empty(builder.EntityMaps.Single().UniqueConstraints);
 

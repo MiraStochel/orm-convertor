@@ -59,13 +59,18 @@ public static class EclipseLinkDescriptor
     /// SEQ_GEN, an implicit name is written in upper case, and a String is VARCHAR with no
     /// switch anywhere to make it national - only a literal columnDefinition will. To that
     /// the ninth step of the same tutorial added the fact no artifact shows: fetch = LAZY on
-    /// a reference is honoured only where the consumer project weaves its bytecode.
+    /// a reference is honoured only where the consumer project weaves its bytecode. SEQUENCE
+    /// without a generator is the sequence SEQ_GEN_SEQUENCE with a step of 50 - over a
+    /// connection only: without one EclipseLink cannot read the server's version and writes
+    /// an identity column instead, so the Java suite's eclipselink/KeyGenerationClaimsTest
+    /// measures it connected, and AUTO there once more (decision 187).
     /// </summary>
     public static JpaImplementationProfile Profile { get; } = new(
         Implementation: ORMEnum.EclipseLink,
         SpecificationLevel: JakartaPersistenceDescriptor.SpecificationLevel,
         AutoStrategy: PrimaryKeyStrategy.HiLo,
         DefaultAllocationSize: 50,
+        DefaultSequenceName: "SEQ_GEN_SEQUENCE",
         NamingStrategy: "JPA-compliant implicit names, written upper case (eclipselink.jpa.uppercase-column-names)",
         NationalizedByDefault: false,
         UppercaseImplicitNames: true,

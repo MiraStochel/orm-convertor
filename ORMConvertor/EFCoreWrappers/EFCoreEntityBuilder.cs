@@ -811,14 +811,20 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
         => propMap.IsUnicode == false && TypeNameFor(propMap) is null;
 
     /// <summary>
-    /// The strategy as an annotation. [DatabaseGenerated] can say two things: that the store
-    /// produces the value on insert, and that nothing generates it. The named mechanisms -
-    /// identity column, sequence, hi/lo - are fluent-only, so the model holds them and the
-    /// annotation cannot; that narrowing is reported as a loss (decisions 010 and 011).
+    /// The strategy as an annotation, chosen by what EF Core with the SQL Server provider does
+    /// with the artifact (decision 187, measured by EFCoreValueGenerationProviderTest).
+    /// [DatabaseGenerated] can say two things: that the value is generated on add, and that
+    /// nothing generates it. Generated on add, an integer or decimal key becomes an IDENTITY
+    /// column under the provider's default strategy - the mechanism of Auto and Identity -,
+    /// and a Guid or string key a GUID the client generates - the mechanism of Uuid. The
+    /// pinned identity column, the sequence and hi/lo are fluent-only, so the model holds them
+    /// and the annotation cannot; that narrowing is reported as a loss, saying what the
+    /// artifact will do instead (decisions 010 and 011).
     ///
     /// It is emitted only where it changes what EF Core would do anyway. Restating the target's
     /// own convention adds noise, while leaving it out where the convention disagrees flips the
-    /// claim - a string key marked Auto would silently stop being generated.
+    /// claim - a composite or byte key marked Identity would silently be assigned by the
+    /// application over an IDENTITY column.
     ///
     /// An unspecified strategy over a key the convention generates is the one case where the
     /// silence itself makes a claim: nothing is written, yet the output behaves as generated.
@@ -828,42 +834,58 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
     private void AppendKeyStrategyAttribute(EntityArtifact artifact, EntityMap entityMap, PrimaryKeyPart part, bool composite)
     {
         var code = artifact.Code;
-        if (part.Strategy is PrimaryKeyStrategy.Identity or PrimaryKeyStrategy.Sequence
-            or PrimaryKeyStrategy.HiLo or PrimaryKeyStrategy.Uuid or PrimaryKeyStrategy.Increment)
-        {
-            Report(new ConversionRecord
-            {
-                Kind = ConversionRecordKind.Loss,
-                Framework = Descriptor.Framework,
-                Artifact = ConversionContentType.CSharpEntity,
-                Entity = entityMap.Entity.Name,
-                Property = part.PropertyMap.Property.Name,
-                Category = MappingFactCategory.PrimaryKeyStrategy,
-                Reason = $"The {part.Strategy} mechanism is fluent-only in EF Core; the annotation form cannot express it, so the strategy is dropped (decision 011).",
-            });
-        }
-
+        var type = part.PropertyMap.Property.Type;
         bool generatedByConvention = IsGeneratedByConvention(part, composite);
 
-        if (part.Strategy is PrimaryKeyStrategy.Unspecified && generatedByConvention)
+        // What the key does in the artifact as it stands without an attribute of ours.
+        var standing = generatedByConvention
+            ? type is { ScalarType: ScalarType.Guid }
+                ? "EF Core's convention has the client generate a GUID for it"
+                : "EF Core's convention makes it an IDENTITY column under the provider's default strategy"
+            : "the application assigns it";
+
+        // Which mechanism the attribute would give this key, and whether it is the one the model carries.
+        bool identityByAttribute = type is { Category: LangTypeCategory.Scalar, ScalarType: ScalarType.Byte or ScalarType.Short
+            or ScalarType.Int or ScalarType.Long or ScalarType.Decimal };
+        bool guidByAttribute = type is { Category: LangTypeCategory.Scalar, ScalarType: ScalarType.Guid or ScalarType.String };
+
+        var carried = part.Strategy switch
         {
-            Report(new ConversionRecord
-            {
-                Kind = ConversionRecordKind.Convention,
-                Framework = Descriptor.Framework,
-                Artifact = ConversionContentType.CSharpEntity,
-                Entity = entityMap.Entity.Name,
-                Property = part.PropertyMap.Property.Name,
-                Category = MappingFactCategory.PrimaryKeyStrategy,
-                Reason = "No generation strategy was stated; EF Core generates the value of a single-property "
-                    + "integer or Guid key on its own, which is a convention of the target, not a fact of the source.",
-            });
+            PrimaryKeyStrategy.Auto or PrimaryKeyStrategy.Identity => identityByAttribute,
+            PrimaryKeyStrategy.Uuid => guidByAttribute,
+            _ => false,
+        };
+
+        switch (part.Strategy)
+        {
+            case PrimaryKeyStrategy.Unspecified when generatedByConvention:
+                Report(Record(ConversionRecordKind.Convention,
+                    "No generation strategy was stated; EF Core generates the value of a single-property "
+                    + "integer or Guid key on its own, which is a convention of the target, not a fact of the source."));
+                break;
+
+            case PrimaryKeyStrategy.Identity when carried:
+                Report(Record(ConversionRecordKind.Loss,
+                    "EF Core pins an IDENTITY column only through the fluent UseIdentityColumn, which the artifact does not use; "
+                    + "the key is generated on add and the provider's default strategy makes the column IDENTITY, but a model-level "
+                    + "UseHiLo() or UseKeySequences() would change that"
+                    + (part.StrategyParameters.Count > 0 ? ", and the generator's parameters are dropped" : string.Empty)
+                    + " (decision 187)."));
+                break;
+
+            case PrimaryKeyStrategy.Auto or PrimaryKeyStrategy.Identity or PrimaryKeyStrategy.Uuid when !carried:
+            case PrimaryKeyStrategy.Sequence or PrimaryKeyStrategy.HiLo or PrimaryKeyStrategy.Increment:
+                Report(Record(ConversionRecordKind.Loss,
+                    $"EF Core's annotations cannot state the {part.Strategy} mechanism for this key - a sequence and hi/lo are "
+                    + "fluent-only, an IDENTITY column needs an integer or decimal key and a GUID the client generates a Guid or "
+                    + $"string one -, so the artifact does not state it and {standing} (decision 187)."));
+                break;
         }
 
         var option = part.Strategy switch
         {
             PrimaryKeyStrategy.Assigned when generatedByConvention => "None",
-            PrimaryKeyStrategy.Auto when !generatedByConvention => "Identity",
+            PrimaryKeyStrategy.Auto or PrimaryKeyStrategy.Identity or PrimaryKeyStrategy.Uuid when carried && !generatedByConvention => "Identity",
             _ => null,
         };
 
@@ -873,18 +895,28 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
             code.AppendLine($"    {rendered}");
             artifact.Mark(code, MappingFactCategory.PrimaryKeyStrategy, part.PropertyMap.Property.Name, rendered);
         }
+
+        ConversionRecord Record(ConversionRecordKind kind, string reason) => new()
+        {
+            Kind = kind,
+            Framework = Descriptor.Framework,
+            Artifact = ConversionContentType.CSharpEntity,
+            Entity = entityMap.Entity.Name,
+            Property = part.PropertyMap.Property.Name,
+            Category = MappingFactCategory.PrimaryKeyStrategy,
+            Reason = reason,
+        };
     }
 
     /// <summary>
     /// EF Core generates a value on its own for a single-property key of an integer type
-    /// or of Guid.
+    /// other than byte - an IDENTITY column - or of Guid - on the client (decision 187).
     /// </summary>
     private static bool IsGeneratedByConvention(PrimaryKeyPart part, bool composite)
         => !composite
         && part.PropertyMap.Property.Type is
         {
             Category: LangTypeCategory.Scalar,
-            ScalarType: ScalarType.Byte or ScalarType.Short or ScalarType.Int
-                or ScalarType.Long or ScalarType.Guid,
+            ScalarType: ScalarType.Short or ScalarType.Int or ScalarType.Long or ScalarType.Guid,
         };
 }

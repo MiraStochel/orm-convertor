@@ -15,16 +15,22 @@ namespace JakartaPersistence;
 /// fill-only paths, so the precedence between orm.xml and the annotations is the
 /// builder's rule (decisions 017 and 068), not this writer's.
 /// </summary>
-/// <param name="declaredSourceDialect">
-/// What the source declared about the dialect of its literal SQL (decision 088), taken from
-/// the reading context both parsers share. It governs one attribute of one annotation -
-/// columnDefinition, the only place a JPA source spells a database system's own type.
+/// <param name="context">
+/// The reading context both parsers share. It carries what the source declared about the
+/// dialect of its literal SQL (decision 088), which governs one attribute of one annotation -
+/// columnDefinition, the only place a JPA source spells a database system's own type -, and
+/// the profile of the source's implementation, whose derivation of a key's generation the
+/// writer materializes (decision 187).
 /// </param>
 public sealed class JpaMappingWriter(
     AbstractEntityBuilder entityBuilder,
     ConversionContentType artifact,
-    SourceSqlDialect? declaredSourceDialect = null)
+    JpaReadingContext context)
 {
+    private readonly JpaImplementationProfile profile = context.Profile;
+
+    private readonly SourceSqlDialect? declaredSourceDialect = context.DeclaredSourceDialect;
+
     /// <summary>Writes the facts of the current entity of the builder.</summary>
     public void Write(JpaEntityFacts facts)
     {
@@ -350,11 +356,14 @@ public sealed class JpaMappingWriter(
         // Each @Id in declaration order; a derived identity contributes its join columns,
         // each as a part of its own, or nothing (DerivedIdentityParts).
         var parts = new List<(string PropertyName, int Order, PrimaryKeyStrategy Strategy, JpaAttributeFacts Source)>();
+        var generations = new Dictionary<JpaAttributeFacts, Generation>();
         foreach (var id in ids)
         {
             if (id.Kind == JpaAttributeKind.Id)
             {
-                parts.Add((id.Name, parts.Count + 1, StrategyOf(id), id));
+                var generation = GenerationOf(facts, id);
+                generations[id] = generation;
+                parts.Add((id.Name, parts.Count + 1, generation.Strategy, id));
                 continue;
             }
 
@@ -388,10 +397,15 @@ public sealed class JpaMappingWriter(
                 composite && facts.IdClass is not null ? new SourceKeyClass(facts.IdClass, KeyClassForm.Mirrored) : null);
         }
 
-        foreach (var id in ids.Where(id => id.Kind == JpaAttributeKind.Id))
+        foreach (var (id, generation) in generations)
         {
+            if (generation.SourceName is null && generation.Parameters.Count == 0)
+            {
+                continue;
+            }
+
             using var scope = At(id.Positions, "GeneratedValue", "SequenceGenerator", "TableGenerator", "Id", "member");
-            WriteStrategyDetails(facts, id);
+            entityBuilder.SetKeyStrategyDetails(id.Name, generation.SourceName, generation.Parameters);
         }
     }
 
@@ -444,42 +458,164 @@ public sealed class JpaMappingWriter(
         return columns;
     }
 
+    /// <summary>A key part's generation as the source's implementation derives it: the mechanism, the source's own name where the vocabulary narrowed it, the canonical parameters.</summary>
+    private sealed record Generation(PrimaryKeyStrategy Strategy, string? SourceName, Dictionary<GeneratorParameter, string> Parameters);
+
+    /// <summary>The Java types of a key AUTO resolves to the implementation's own mechanism over, as the runs measured it (decision 187).</summary>
+    private static readonly HashSet<string> IntegerKeyTypes = new(StringComparer.Ordinal) { "short", "int", "long", "Short", "Integer", "Long" };
+
     /// <summary>
-    /// @GeneratedValue as the vocabulary of decision 011 reads it: AUTO - and the bare
-    /// annotation, which means AUTO - is the framework's choice for the dialect, and what
-    /// Hibernate or EclipseLink make of it is their default, not the source's claim
-    /// (decision 067). No @GeneratedValue is nobody saying how the value arises.
+    /// @GeneratedValue as the source's implementation resolves it on SQL Server (decision 187).
+    /// AUTO - and the bare annotation, which means AUTO - leaves the mechanism to the
+    /// implementation, and what it derives from the type of the key is the source's claim
+    /// (decision 067): over an integer key Hibernate takes a sequence named after the table,
+    /// EclipseLink its counter table, both with the step of 50; a named generator decides
+    /// for itself. A sequence nobody named is the one the implementation takes, a generator
+    /// that names no sequence names it after itself. Over a key of another type, or under a
+    /// generator this reading does not see, AUTO is kept as the source's name with nothing
+    /// claimed. No @GeneratedValue is nobody saying how the value arises.
     /// </summary>
-    private static PrimaryKeyStrategy StrategyOf(JpaAttributeFacts id) => id.Generated
-        ? id.GenerationStrategy switch
+    private Generation GenerationOf(JpaEntityFacts facts, JpaAttributeFacts id)
+    {
+        if (!id.Generated)
         {
-            null or "AUTO" => PrimaryKeyStrategy.Auto,
-            "IDENTITY" => PrimaryKeyStrategy.Identity,
-            "SEQUENCE" => PrimaryKeyStrategy.Sequence,
-            "TABLE" => PrimaryKeyStrategy.HiLo,
-            "UUID" => PrimaryKeyStrategy.Uuid,
-            _ => PrimaryKeyStrategy.Unspecified,
+            return new Generation(PrimaryKeyStrategy.Unspecified, null, []);
         }
-        : PrimaryKeyStrategy.Unspecified;
+
+        var generator = id.Generator
+            ?? (id.GeneratorName is not null && facts.Generators.TryGetValue(id.GeneratorName, out var named) ? named : null);
+        var parameters = ParametersOf(generator);
+        var table = facts.Table ?? facts.ClassName.Split('.').Last();
+
+        switch (id.GenerationStrategy)
+        {
+            case "IDENTITY":
+                return new Generation(PrimaryKeyStrategy.Identity, null, parameters);
+
+            case "UUID":
+                return new Generation(PrimaryKeyStrategy.Uuid, null, parameters);
+
+            case "TABLE":
+                return new Generation(PrimaryKeyStrategy.HiLo, "TABLE", parameters);
+
+            case "SEQUENCE":
+                return Sequence(generator, id.GeneratorName, table, parameters);
+
+            case null or "AUTO":
+                if (generator is not null)
+                {
+                    return generator.IsTable
+                        ? new Generation(PrimaryKeyStrategy.HiLo, "TABLE", parameters)
+                        : Sequence(generator, id.GeneratorName, table, parameters);
+                }
+
+                if (id.GeneratorName is not null)
+                {
+                    return new Generation(PrimaryKeyStrategy.Unspecified, "AUTO", parameters);
+                }
+
+                // orm.xml states no Java type: the class reading resolves the AUTO once it has
+                // read the attribute's type (ResolveDeferredAuto), and until then nothing is claimed.
+                if (id.TypeText is null)
+                {
+                    context.DeferAuto(facts.ClassName, id.Name);
+                    return new Generation(PrimaryKeyStrategy.Unspecified, null, parameters);
+                }
+
+                return AutoOver(id.TypeText, table, parameters);
+
+            default:
+                return new Generation(PrimaryKeyStrategy.Unspecified, id.GenerationStrategy, parameters);
+        }
+    }
+
+    /// <summary>AUTO without a generator over a key of the Java type: the implementation's own mechanism over an integer key, nothing claimed over another.</summary>
+    private Generation AutoOver(string typeText, string table, Dictionary<GeneratorParameter, string> parameters)
+    {
+        if (!IntegerKeyTypes.Contains(typeText.Trim().Split('.').Last()))
+        {
+            return new Generation(PrimaryKeyStrategy.Unspecified, "AUTO", parameters);
+        }
+
+        return profile.AutoStrategy switch
+        {
+            PrimaryKeyStrategy.Sequence => Sequence(null, null, table, parameters),
+            PrimaryKeyStrategy.HiLo when profile.DefaultCounterTable is { } counter => CounterTable(counter, parameters),
+            var mechanism => new Generation(mechanism, null, parameters),
+        };
+    }
+
+    /// <summary>
+    /// Resolves the AUTO orm.xml stated on a key attribute without a generator, now that the
+    /// class declaration names the attribute's type (decision 187): the strategy fills the
+    /// key part orm.xml left Unspecified - the fill-only path of decision 036 - and the
+    /// parameters follow. Does nothing where orm.xml left no such AUTO.
+    /// </summary>
+    public void ResolveDeferredAuto(string className, string attributeName, string typeText)
+    {
+        if (!context.TakeDeferredAuto(className, attributeName)
+            || entityBuilder.EntityMap.PrimaryKey is not { } key
+            || !key.Parts.Any(p => p.PropertyMap.Property.Name == attributeName && p.Strategy == PrimaryKeyStrategy.Unspecified))
+        {
+            return;
+        }
+
+        var generation = AutoOver(typeText, entityBuilder.EntityMap.Table ?? className.Split('.').Last(), []);
+
+        entityBuilder.AddPrimaryKey(
+            [.. key.Parts.OrderBy(p => p.Order).Select(p => (p.PropertyMap.Property.Name, p.Order,
+                p.PropertyMap.Property.Name == attributeName ? generation.Strategy : p.Strategy))],
+            key.SourceKeyClass);
+
+        if (generation.SourceName is not null || generation.Parameters.Count > 0)
+        {
+            entityBuilder.SetKeyStrategyDetails(attributeName, generation.SourceName, generation.Parameters);
+        }
+    }
+
+    /// <summary>
+    /// SEQUENCE with the names the implementation takes where the source states none: the
+    /// generator's own name for its sequence, the implementation's default sequence where no
+    /// generator is named, the default step either way. A generator named but not seen by
+    /// this reading keeps its sequence unknown.
+    /// </summary>
+    private Generation Sequence(JpaGeneratorFacts? generator, string? generatorName, string table, Dictionary<GeneratorParameter, string> parameters)
+    {
+        var known = generator is not null || generatorName is null;
+
+        if (known && !parameters.ContainsKey(GeneratorParameter.SequenceName))
+        {
+            parameters[GeneratorParameter.SequenceName] = generator?.Name
+                ?? string.Format(System.Globalization.CultureInfo.InvariantCulture, profile.DefaultSequenceName, table);
+        }
+
+        if (known && !parameters.ContainsKey(GeneratorParameter.BlockSize))
+        {
+            parameters[GeneratorParameter.BlockSize] = profile.DefaultAllocationSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new Generation(PrimaryKeyStrategy.Sequence, null, parameters);
+    }
+
+    /// <summary>The implementation's counter table, written into the canonical parameters the way a stated TABLE generator is.</summary>
+    private Generation CounterTable(JpaCounterTable counter, Dictionary<GeneratorParameter, string> parameters)
+    {
+        parameters.TryAdd(GeneratorParameter.CounterTable, counter.Table);
+        parameters.TryAdd(GeneratorParameter.CounterKeyColumn, counter.KeyColumn);
+        parameters.TryAdd(GeneratorParameter.CounterValueColumn, counter.ValueColumn);
+        parameters.TryAdd(GeneratorParameter.CounterKeyValue, counter.KeyValue);
+        parameters.TryAdd(GeneratorParameter.BlockSize, profile.DefaultAllocationSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        return new Generation(PrimaryKeyStrategy.HiLo, "TABLE", parameters);
+    }
 
     /// <summary>
     /// The generator's parameters in the canonical vocabulary (decision 020): allocationSize
     /// is the block size unchanged, the table generator's four names are the counter's
-    /// table, value column, key column and key value. A strategy the vocabulary narrowed
-    /// keeps its own name beside the value.
+    /// table, value column, key column and key value.
     /// </summary>
-    private void WriteStrategyDetails(JpaEntityFacts facts, JpaAttributeFacts id)
+    private static Dictionary<GeneratorParameter, string> ParametersOf(JpaGeneratorFacts? generator)
     {
-        var generator = id.Generator
-            ?? (id.GeneratorName is not null && facts.Generators.TryGetValue(id.GeneratorName, out var named) ? named : null);
-
-        string? sourceName = id.GenerationStrategy switch
-        {
-            "TABLE" => "TABLE",
-            not null and not ("AUTO" or "IDENTITY" or "SEQUENCE" or "UUID") => id.GenerationStrategy,
-            _ => null,
-        };
-
         var parameters = new Dictionary<GeneratorParameter, string>();
         if (generator is not null)
         {
@@ -524,10 +660,7 @@ public sealed class JpaMappingWriter(
             }
         }
 
-        if (sourceName is not null || parameters.Count > 0)
-        {
-            entityBuilder.SetKeyStrategyDetails(id.Name, sourceName, parameters);
-        }
+        return parameters;
     }
 
     private void WriteRelation(JpaEntityFacts facts, JpaAttributeFacts attribute)

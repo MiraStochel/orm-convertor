@@ -392,6 +392,10 @@ public class EFCoreEntityParser : CSharpEntityParser
         var propertyTypes = new Dictionary<string, string>();
         var generatedOptions = new Dictionary<string, string>();
 
+        // The source's own word for a key strategy the vocabulary could not read, kept beside
+        // Unspecified once the key stands (decisions 011 and 187).
+        var strategyNames = new Dictionary<string, string>(StringComparer.Ordinal);
+
         // [ConcurrencyCheck] is read per class, not per property (decision 116): it is the
         // version the application keeps only where it is the one token of the class and no
         // [Timestamp] already names the version.
@@ -899,6 +903,17 @@ public class EFCoreEntityParser : CSharpEntityParser
                 parts.Select((n, i) => (n, i + 1, StrategyFor(n, composite: parts.Count > 1))).ToList());
         }
 
+        if (entityBuilder.EntityMap.PrimaryKey is { } key)
+        {
+            foreach (var part in key.Parts.Where(p => p.Strategy == PrimaryKeyStrategy.Unspecified))
+            {
+                if (strategyNames.TryGetValue(part.PropertyMap.Property.Name, out var sourceName))
+                {
+                    entityBuilder.SetKeyStrategyDetails(part.PropertyMap.Property.Name, sourceName);
+                }
+            }
+        }
+
         // A relationship the configuration states on a navigation the class does not declare
         // has nothing to stand on; EF Core refuses such a model, and the claim is dropped out loud.
         foreach (var relationship in context.RelationshipsOf(entityName)
@@ -917,24 +932,79 @@ public class EFCoreEntityParser : CSharpEntityParser
             });
         }
 
-        // Local because it reads what the loop above collected. The annotation wins where it is
-        // present; otherwise EF Core's convention is what the source claims, and that convention
-        // depends both on the type of the key and on whether the key is composite.
+        // Local because it reads what the loop above collected. A strategy is what the SQL
+        // Server provider makes of the key (decision 187): the configuration's call naming a
+        // mechanism the subset does not read leaves nothing claimed; otherwise the annotation
+        // wins where it is present, and EF Core's convention is what the source claims, which
+        // depends both on the type of the key and on whether the key is composite; and the
+        // model's UseHiLo() or UseKeySequences() turns what would be an IDENTITY column into
+        // its own mechanism.
         PrimaryKeyStrategy StrategyFor(string propertyName, bool composite)
         {
+            if (context.GenerationCallOf(entityName, propertyName) is { } call)
+            {
+                strategyNames[propertyName] = call;
+                return PrimaryKeyStrategy.Unspecified;
+            }
+
+            var strategy = StatedStrategy(propertyName, composite);
+
+            if (strategy == PrimaryKeyStrategy.Auto && context.ModelGenerationCall is { } modelCall)
+            {
+                strategyNames[propertyName] = modelCall;
+                return PrimaryKeyStrategy.Unspecified;
+            }
+
+            return strategy;
+        }
+
+        PrimaryKeyStrategy StatedStrategy(string propertyName, bool composite)
+        {
+            var type = propertyTypes.GetValueOrDefault(propertyName);
+
             if (generatedOptions.TryGetValue(propertyName, out var option))
             {
-                return option switch
+                switch (option)
                 {
-                    "None" => PrimaryKeyStrategy.Assigned,
+                    case "None":
+                        return PrimaryKeyStrategy.Assigned;
 
-                    // The annotation says the store produces the value on insert; which
-                    // mechanism it uses is the provider's choice, so this is Auto rather than
-                    // Identity. Computed adds regeneration on update, a fact about the column
-                    // that has no place in the key vocabulary (decision 011).
-                    "Identity" or "Computed" => PrimaryKeyStrategy.Auto,
-                    _ => PrimaryKeyStrategy.Unspecified,
-                };
+                    // The annotation says the value is generated on add and names no mechanism:
+                    // the provider makes an IDENTITY column of an integer or decimal key, the
+                    // client a GUID of a Guid or string key, and of another type nothing the
+                    // vocabulary knows (decision 187).
+                    case "Identity":
+                        if (GeneratedOnAdd(type) is { } generated)
+                        {
+                            return generated;
+                        }
+
+                        strategyNames[propertyName] = "Identity";
+                        return PrimaryKeyStrategy.Unspecified;
+
+                    // Generation on add and on update, which EF Core refuses on a key: the value
+                    // of a key may not change once stored, so no valid model carries it.
+                    case "Computed":
+                        if (strategyNames.TryAdd(propertyName, "Computed"))
+                        {
+                            entityBuilder.Report(new ConversionRecord
+                            {
+                                Kind = ConversionRecordKind.Loss,
+                                Framework = ORMEnum.EFCore,
+                                Artifact = ConversionContentType.CSharpEntity,
+                                Entity = entityName,
+                                Property = propertyName,
+                                Category = MappingFactCategory.PrimaryKeyStrategy,
+                                Reason = "[DatabaseGenerated(DatabaseGeneratedOption.Computed)] stands on a key, which EF Core refuses - "
+                                    + "the value of a key may not change once stored -, so the key's strategy is not read (decision 187).",
+                            });
+                        }
+
+                        return PrimaryKeyStrategy.Unspecified;
+
+                    default:
+                        return PrimaryKeyStrategy.Unspecified;
+                }
             }
 
             // EF Core generates no value for the parts of a composite key.
@@ -943,9 +1013,25 @@ public class EFCoreEntityParser : CSharpEntityParser
                 return PrimaryKeyStrategy.Assigned;
             }
 
-            return StrategyFromKeyType(propertyTypes.GetValueOrDefault(propertyName));
+            return StrategyFromKeyType(type);
         }
     }
+
+    /// <summary>
+    /// What [DatabaseGenerated(Identity)] makes of a key of the type under the SQL Server
+    /// provider, as EFCoreValueGenerationProviderTest measures it: an IDENTITY column of every
+    /// integer type and of decimal, a GUID the client generates for a Guid or a string, and
+    /// nothing the vocabulary names for another type.
+    /// </summary>
+    private static PrimaryKeyStrategy? GeneratedOnAdd(string? typeText)
+        => typeText?.Trim().TrimEnd('?').Split('.').Last() switch
+        {
+            "byte" or "sbyte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong" or "decimal"
+                or "Byte" or "SByte" or "Int16" or "UInt16" or "Int32" or "UInt32" or "Int64" or "UInt64" or "Decimal"
+                => PrimaryKeyStrategy.Auto,
+            "Guid" or "string" or "String" => PrimaryKeyStrategy.Uuid,
+            _ => null,
+        };
 
     /// <summary>
     /// Writes the relationship the fluent configuration states for a navigation, now that the
@@ -1239,9 +1325,10 @@ public class EFCoreEntityParser : CSharpEntityParser
     /// the parser wherever its absence would change the meaning (decision 015), and it does here
     /// - assuming generation for a string key produces a target mapping the database rejects.
     ///
-    /// The list describes EF Core: the unsigned types have no value in the neutral type model
-    /// and survive as Unknown, but EF Core's convention treats them as generated all the same,
-    /// so they are matched here by name.
+    /// The list describes EF Core with the SQL Server provider, as EFCoreValueGenerationProviderTest
+    /// measures it: every integer type but byte becomes an IDENTITY column - the core convention
+    /// leaves byte out by name (decision 187) -, the unsigned ones included, which have no value
+    /// in the neutral type model and survive as Unknown, so they are matched here by name.
     /// </summary>
     private static PrimaryKeyStrategy StrategyFromKeyType(string? typeText)
     {
@@ -1250,8 +1337,8 @@ public class EFCoreEntityParser : CSharpEntityParser
         return type switch
         {
             null => PrimaryKeyStrategy.Unspecified,
-            "byte" or "sbyte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong"
-                or "Byte" or "SByte" or "Int16" or "UInt16" or "Int32" or "UInt32" or "Int64" or "UInt64"
+            "sbyte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong"
+                or "SByte" or "Int16" or "UInt16" or "Int32" or "UInt32" or "Int64" or "UInt64"
                 => PrimaryKeyStrategy.Auto,
             "Guid" => PrimaryKeyStrategy.Uuid,
             _ => PrimaryKeyStrategy.Assigned,

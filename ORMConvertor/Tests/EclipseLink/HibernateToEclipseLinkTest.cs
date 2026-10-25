@@ -48,36 +48,35 @@ public class HibernateToEclipseLinkTest
 
     /// <summary>
     /// The translation the two implementations make dangerous: one line of the source means
-    /// a sequence on one side and a counter table on the other, so copying it over would
-    /// have swapped the generator without a word. The artifact names the mechanism instead.
+    /// a sequence on one side and a counter table on the other. The database is the source's,
+    /// so the artifact names the mechanism the source's implementation created there
+    /// (decision 187): Hibernate's sequence after the table, with its step.
     /// </summary>
     [Fact]
-    public void AutoFromHibernateBecomesTheCounterTableOfEclipseLink()
+    public void AutoFromHibernateIsTheSequenceHibernateCreated()
     {
         var result = Convert(ORMEnum.Hibernate, ORMEnum.EclipseLink, CustomerWithAuto);
         var code = Entity(result);
 
-        Assert.Contains("@GeneratedValue(strategy = GenerationType.TABLE", code);
-        Assert.Contains("table = \"SEQUENCE\"", code);
-        Assert.Contains("pkColumnValue = \"SEQ_GEN\"", code);
+        Assert.Contains("@GeneratedValue(strategy = GenerationType.SEQUENCE", code);
+        Assert.Contains("@SequenceGenerator(name = \"Customer_CustomerId_gen\", sequenceName = \"Customers_SEQ\", allocationSize = 50)", code);
+        Assert.DoesNotContain("@TableGenerator", code);
         Assert.DoesNotContain("@GeneratedValue\n", code.Replace("\r\n", "\n"));
-        Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Convention
-            && r.Category == MappingFactCategory.PrimaryKeyStrategy
-            && r.Reason.Contains("EclipseLink resolves it to TABLE"));
     }
 
-    /// <summary>And back: the same silence is a sequence over there, written out just as explicitly.</summary>
+    /// <summary>And back: the same silence is EclipseLink's counter table, written out just as explicitly.</summary>
     [Fact]
-    public void AutoFromEclipseLinkBecomesTheSequenceOfHibernate()
+    public void AutoFromEclipseLinkIsTheCounterTableEclipseLinkCreated()
     {
         var result = Convert(ORMEnum.EclipseLink, ORMEnum.Hibernate, CustomerWithAuto);
         var code = Entity(result);
 
-        Assert.Contains("@GeneratedValue(strategy = GenerationType.SEQUENCE", code);
-        Assert.Contains("@SequenceGenerator(name = \"Customer_CustomerId_gen\", sequenceName = \"Customer_SEQ\", allocationSize = 50)", code);
-        Assert.DoesNotContain("@TableGenerator", code);
-        Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Convention
-            && r.Reason.Contains("Hibernate resolves it to SEQUENCE"));
+        Assert.Contains("@GeneratedValue(strategy = GenerationType.TABLE", code);
+        Assert.Contains(
+            "table = \"SEQUENCE\", pkColumnName = \"SEQ_NAME\", valueColumnName = \"SEQ_COUNT\", pkColumnValue = \"SEQ_GEN\", allocationSize = 50",
+            code);
+        Assert.DoesNotContain("@SequenceGenerator", code);
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Loss && r.Reason.Contains("'TABLE'"));
     }
 
     /// <summary>

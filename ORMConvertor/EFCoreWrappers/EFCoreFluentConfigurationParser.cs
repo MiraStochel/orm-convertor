@@ -334,6 +334,15 @@ public sealed class EFCoreFluentConfigurationParser(
                 case "ApplyConfigurationsFromAssembly":
                     break;
 
+                // The model's default mechanism, which the subset does not read: a key that
+                // would be an IDENTITY column is fed from a sequence under it, so it claims no
+                // strategy (decision 187), and the call is dropped out loud as any other.
+                case "UseHiLo":
+                case "UseKeySequences":
+                    context.SetModelGenerationCall(call.Name);
+                    ReportUnread(call, null, null);
+                    break;
+
                 default:
                     ReportEndOfChain(calls, i, null, null);
                     return;
@@ -371,6 +380,17 @@ public sealed class EFCoreFluentConfigurationParser(
         "IsFixedLength", "UseCollation", "HasField", "UsePropertyAccessMode", "ValueGeneratedOnAddOrUpdate",
         "ValueGeneratedOnUpdate", "ValueGeneratedOnUpdateSometimes", "HasSentinel", "IsSparse", "UseIdentityColumn",
         "UseHiLo", "UseSequence", "HasValueGenerator", "HasColumnOrder",
+    ];
+
+    /// <summary>
+    /// The unread calls of PropertyBuilder that name how the value is generated, each measured
+    /// by EFCoreValueGenerationProviderTest or decided by EF Core outright: on a key they take
+    /// the reading of [DatabaseGenerated] and of the convention with them (decision 187).
+    /// </summary>
+    private static readonly HashSet<string> GenerationCalls =
+    [
+        "UseIdentityColumn", "UseHiLo", "UseSequence", "HasDefaultValue", "HasDefaultValueSql", "HasComputedColumnSql",
+        "HasValueGenerator", "ValueGeneratedOnAddOrUpdate",
     ];
 
     /// <summary>The calls of a relationship builder that return it unchanged and state nothing the model carries.</summary>
@@ -733,6 +753,11 @@ public sealed class EFCoreFluentConfigurationParser(
                 default:
                     if (UnreadPropertyCalls.Contains(call.Name))
                     {
+                        if (GenerationCalls.Contains(call.Name))
+                        {
+                            context.MarkGenerationCall(entity.Name, property, call.Name);
+                        }
+
                         ReportUnread(call, entity.Name, property);
                         break;
                     }

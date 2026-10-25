@@ -1,7 +1,7 @@
 # 080 — EclipseLink jako druhý profil nad JPA vrstvou
 
 Datum: 2026-09-18
-Stav: revidováno
+Stav: revidováno; oddíl *`AUTO` jako tabulka, vypsaná celá* nahrazuje 187
 Požadavky: F9, F10, F12, S1, S2
 Podklad: rozhodnutí [004](004-unexpressible-facts-as-warnings.md), [006](006-flat-composite-key-rendering.md), [009](009-target-framework-descriptor.md), [013](013-target-framework-versions.md), [016](016-generated-artifact-verification-levels.md), [019](019-neutral-database-type-vocabulary.md), [020](020-canonical-generator-parameter-vocabulary.md), [040](040-boundary-of-the-handed-over-artifact.md), [052](052-literal-sql-type-reaches-the-ef-core-annotation.md), [067](067-a-derived-convention-is-a-statement-a-default-is-not.md), [068](068-source-framework-precedence-orders-the-reading.md), [069](069-major-marks-a-milestone-not-a-break.md), [076](076-java-wrappers-in-csharp-jvm-in-containers.md), [077](077-hibernate-wrapper-over-the-shared-jpa-layer.md), [078](078-java-suite-as-a-client-of-a-running-instance.md) a [079](079-fractional-second-precision-as-second-precision.md); JSS §4.3, §5.2, §5.4 a §6.1; [tutoriál k EclipseLinku](../analysis/tutorials/eclipselink-getting-started.md), kroky 3, 4, 6 a 9, sekce *Rozdíl DDL* a *Co z toho plyne pro převodník*; [srovnání javových frameworků](../analysis/java-orm-frameworks-comparison.md), §4, §5, §6, §15, §16 a §20; Jakarta Persistence 3.2, kap. 2 a 11; EclipseLink 5.0.0; otevřená položka „EclipseLink wrapper nad JPA vrstvou"
 

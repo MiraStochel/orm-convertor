@@ -1,7 +1,7 @@
 # 011 — Slovník strategií generování klíče
 
 Datum: 2026-08-13
-Stav: revidováno
+Stav: revidováno; řádek `Auto` (jeho význam a člen JPA `AUTO`) nahrazuje 187
 Požadavky: F1, F2, F7–F10, F11, S2
 Podklad: NHibernate 5.7.0 — `src/NHibernate/Id/IdentifierGeneratorFactory.cs`; `analysis/orm-frameworks-comparison.md`; audit 2026-08-02, nálezy 3.1 a 4.7
 

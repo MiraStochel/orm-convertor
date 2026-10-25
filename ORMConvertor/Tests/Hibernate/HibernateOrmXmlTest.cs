@@ -30,13 +30,54 @@ public class HibernateOrmXmlTest
     private static (DummyEntityBuilder Builder, JpaReadingContext Context) Read(string xml, string java)
     {
         var builder = new DummyEntityBuilder();
-        var context = new JpaReadingContext();
+        var context = new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile);
 
         // The wrapper's order: the descriptor before the class (decision 068).
         new JpaOrmXmlParser(builder, context).Parse(xml);
         new HibernateEntityParser(builder, context).Parse(java);
 
         return (builder, context);
+    }
+
+    /// <summary>
+    /// AUTO in orm.xml: what Hibernate derives from it depends on the key's Java type, which
+    /// only the class states, so the class reading resolves it (decision 187) - the sequence
+    /// after the table over an integer key, with annotations on or switched off, and nothing
+    /// claimed over another type.
+    /// </summary>
+    [Theory]
+    [InlineData("Long", "", PrimaryKeyStrategy.Sequence, "Customers_SEQ", null)]
+    [InlineData("Long", " metadata-complete=\"true\"", PrimaryKeyStrategy.Sequence, "Customers_SEQ", null)]
+    [InlineData("java.util.UUID", "", PrimaryKeyStrategy.Unspecified, null, "AUTO")]
+    public void AutoInTheDescriptorIsResolvedByTheTypeTheClassStates(string type, string complete, PrimaryKeyStrategy strategy, string? sequence, string? sourceName)
+    {
+        var (builder, _) = Read($$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <entity-mappings xmlns="https://jakarta.ee/xml/ns/persistence/orm" version="3.2">
+                <entity class="Shop.Customer"{{complete}}>
+                    <table name="Customers"/>
+                    <attributes>
+                        <id name="id">
+                            <generated-value/>
+                        </id>
+                    </attributes>
+                </entity>
+            </entity-mappings>
+            """, $$"""
+            package Shop;
+
+            import jakarta.persistence.Entity;
+
+            @Entity
+            public class Customer {
+                private {{type}} id;
+            }
+            """);
+
+        var part = Assert.Single(builder.EntityMaps).PrimaryKey!.Parts.Single();
+        Assert.Equal(strategy, part.Strategy);
+        Assert.Equal(sequence, part.StrategyParameters.GetValueOrDefault(GeneratorParameter.SequenceName));
+        Assert.Equal(sourceName, part.SourceStrategyName);
     }
 
     [Fact]

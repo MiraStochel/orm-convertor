@@ -12,8 +12,9 @@ namespace JakartaPersistence;
 /// </summary>
 /// <param name="Implementation">The framework the profile belongs to; the key to its defaults.</param>
 /// <param name="SpecificationLevel">The Jakarta Persistence level the shared layer is written against.</param>
-/// <param name="AutoStrategy">The mechanism the implementation resolves GenerationType.AUTO to on the pinned dialect.</param>
+/// <param name="AutoStrategy">The mechanism the implementation resolves GenerationType.AUTO over an integer key to on the pinned dialect, as a run measured it - what the JPA parser reads a source's AUTO as (decision 187): Hibernate 7.4.5 a sequence of <paramref name="DefaultSequenceName"/>, EclipseLink 5.0.0 the counter table of <paramref name="DefaultCounterTable"/>.</param>
 /// <param name="DefaultAllocationSize">The allocation size the implementation assumes when none is stated.</param>
+/// <param name="DefaultSequenceName">The sequence the implementation takes for SEQUENCE - and Hibernate for AUTO - where no generator names one, <c>{0}</c> standing for the table, measured over a connection (decision 187): Hibernate 7.4.5 <c>{0}_SEQ</c>, after the table and not the entity; EclipseLink 5.0.0 <c>SEQ_GEN_SEQUENCE</c>. The parser reads a source's unnamed sequence by it, and the builder writes it for a sequence the model names none for.</param>
 /// <param name="NamingStrategy">The naming the artifact is correct under, in words - a fact of the consumer's configuration (decision 040).</param>
 /// <param name="NationalizedByDefault">Whether a plain String maps to national character data without an annotation.</param>
 /// <param name="UppercaseImplicitNames">Whether the implementation writes implicit names in upper case (EclipseLink).</param>
@@ -41,6 +42,7 @@ public sealed record JpaImplementationProfile(
     string SpecificationLevel,
     PrimaryKeyStrategy AutoStrategy,
     int DefaultAllocationSize,
+    string DefaultSequenceName,
     string NamingStrategy,
     bool NationalizedByDefault,
     bool UppercaseImplicitNames,

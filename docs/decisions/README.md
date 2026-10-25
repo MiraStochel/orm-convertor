@@ -14,7 +14,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 008 | [Databáze jako autoritativní doplněk chybějících mapovacích faktů](008-database-as-metadata-source.md) | nahrazeno [015](015-mapping-fact-completion-from-the-catalog.md) | F2, F4, F5, F6, F11, S1, S3 |
 | 009 | [Deskriptor cílového frameworku místo vlastností rozptýlených v builderech](009-target-framework-descriptor.md) | revidováno | F2, F4, F7–F10, F11, S1 |
 | 010 | [Diagnostika jako vrácená data, ne výjimka](010-diagnostics-as-returned-data.md) | revidováno | F5, F11, F14, T3, S6 |
-| 011 | [Slovník strategií generování klíče](011-key-generation-strategy-vocabulary.md) | revidováno | F1, F2, F7–F10, F11, S2 |
+| 011 | [Slovník strategií generování klíče](011-key-generation-strategy-vocabulary.md) | revidováno; řádek `Auto` (jeho význam a člen JPA `AUTO`) nahrazuje 187 | F1, F2, F7–F10, F11, S2 |
 | 012 | [Vykreslení cizího klíče v cílových frameworcích](012-foreign-key-rendering.md) | platí | F2, F3, F11, S2 |
 | 013 | [Zafixované verze cílových frameworků](013-target-framework-versions.md) | platí | S2, S6, F7–F10 |
 | 014 | [Jazykový typový model](014-language-type-model.md) | platí | F1, F2, F3, F7–F10, F11 |
@@ -79,10 +79,10 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 074 | [Výčet hodnot jako čtvrtý tvar operandu podmínky](074-a-list-of-values-as-the-fourth-operand-shape.md) | platí | F7–F10, F11, T2, T3, S1, S2 |
 | 075 | [Neznámý jazykový typ je po rozresolvování jmen hlášená neúplnost](075-unknown-language-type-is-a-reported-incompleteness.md) | platí | F10, F11, S1, S2, T3 |
 | 076 | [Javová strana vstupuje jako wrappery v C#, JVM zůstává v kontejneru](076-java-wrappers-in-csharp-jvm-in-containers.md) | platí | F7–F10, F12, F13, F15, S1, S2, S4, S5, T7 |
-| 077 | [Hibernate wrapper nad sdílenou JPA vrstvou](077-hibernate-wrapper-over-the-shared-jpa-layer.md) | platí | F1, F2, F3, F7, F9, F10, F11, F12, S1, S2 |
+| 077 | [Hibernate wrapper nad sdílenou JPA vrstvou](077-hibernate-wrapper-over-the-shared-jpa-layer.md) | platí; čtení a zápis `AUTO` a výchozí jméno sekvence v oddílu *Strategie generování* nahrazuje 187 | F1, F2, F3, F7, F9, F10, F11, F12, S1, S2 |
 | 078 | [Javová sada je klientem běžící instance nástroje](078-java-suite-as-a-client-of-a-running-instance.md) | revidováno | F7, F9, F10, F12, F13, S2, S4, S5 |
 | 079 | [Přesnost zlomků sekundy nese `secondPrecision`, ne `precision`](079-fractional-second-precision-as-second-precision.md) | platí | F7, F9, F10, F11, F12, S1, S2 |
-| 080 | [EclipseLink jako druhý profil nad JPA vrstvou](080-eclipselink-as-the-second-profile-over-the-jpa-layer.md) | revidováno | F9, F10, F12, S1, S2 |
+| 080 | [EclipseLink jako druhý profil nad JPA vrstvou](080-eclipselink-as-the-second-profile-over-the-jpa-layer.md) | revidováno; oddíl *`AUTO` jako tabulka, vypsaná celá* nahrazuje 187 | F9, F10, F12, S1, S2 |
 | 081 | [Jednotka smí být mapováním i dotazem zároveň](081-a-unit-may-be-a-mapping-and-a-query-at-once.md) | platí | F8, F10, F11, F14, S1, S2, S7 |
 | 082 | [Čtení i zápis T-SQL bydlí ve sdíleném projektu](082-t-sql-read-and-written-by-a-shared-project.md) | platí | F8, F10, F11, S1, S2 |
 | 083 | [Parametr jako pátý tvar operandu podmínky](083-parameter-as-the-fifth-operand-shape.md) | platí | F7–F10, F11, T2, T3, S1, S2 |
@@ -189,6 +189,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 184 | [T1 vystupuje z vyňaté oblasti 6 v užším rozsahu: nárokuje se vstup experimentu, ne výsledek nad ním — aplikace případové studie splní čísla zadání, jak ji přečte převod, a drží to test, který je z výňatku spočítá; druhou aplikací bude výňatek Cofoundry nad EF Core](184-t1-leaves-the-exempt-area-in-a-narrower-sense-the-case-study-meets-the-criteria-counted-from-the-excerpt-and-cofoundry-becomes-its-second-application.md) | revidováno | T1, T2, T3 |
 | 185 | [Jméno sady EF Core jmenuje entitu, kterou kontext převodu deklaruje: oba průchody čtou přes jeden kontext čtení nalezený přes builder entit, a jméno sady faktem mezireprezentace není](185-the-name-of-an-ef-core-set-names-the-entity-the-context-of-the-conversion-declares-through-one-reading-context-of-both-passes.md) | platí | F10, F11, F14, S1, S2 |
 | 186 | [Prostředí sestavení je připnuté na obsah: zámek balíčků u každého projektu, základní obrazy digestem, akce CI commitem, posun navrhuje Dependabot; nárok S2 na sestavení nevstupuje a vynucení stylu je mimo rozsah](186-the-build-environment-is-pinned-on-content-lock-files-image-digests-and-action-commits-moved-by-dependabot.md) | platí | S5, S2, S4 |
+| 187 | [`Auto` je mechanismus nativní dialektu: `AUTO` JPA rozkládá parser profilem zdrojové implementace, builder JPA píše `Auto` jako `IDENTITY` a strategie klíče EF Core se čte i píše podle toho, co z modelu udělá provider](187-auto-is-the-mechanism-native-to-the-dialect-the-jpa-parser-resolves-auto-by-the-source-implementation-and-ef-core-is-read-and-written-by-what-its-provider-does.md) | platí; nahrazuje řádek `Auto` rozh. 011, čtení a zápis `AUTO` a výchozí jméno sekvence rozh. 077 a oddíl *`AUTO` jako tabulka, vypsaná celá* rozh. 080 | F1, F2, F7–F10, F11, S1, S2 |
 
 ## Formát
 

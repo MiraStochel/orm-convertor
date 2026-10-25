@@ -56,7 +56,7 @@ class EclipseLinkClaimsTest {
 
     /**
      * And the other half of the same claim: this really is a table, not a sequence. The
-     * same annotation gives Hibernate {@code CREATE SEQUENCE Widget_SEQ}, which is the
+     * same annotation gives Hibernate {@code CREATE SEQUENCE Widgets_SEQ}, which is the
      * swap decision 076 refused to let happen silently.
      */
     @Test

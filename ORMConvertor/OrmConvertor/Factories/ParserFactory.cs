@@ -110,7 +110,7 @@ internal class ParserFactory
             // them off), read through one context the two parsers share (decision 077).
             case ORMEnum.Hibernate:
             {
-                var context = new JpaReadingContext(declaredSourceDialect);
+                var context = new JpaReadingContext(HibernateDescriptor.Profile, declaredSourceDialect);
                 return qb is null
                     ? [new JpaOrmXmlParser(eb, context), new HibernateEntityParser(eb, context)]
                     : [new JpaOrmXmlParser(eb, context), new HibernateEntityParser(eb, context), new HibernateJpqlQueryParser(qb, declaredSourceDialect)];
@@ -121,7 +121,7 @@ internal class ParserFactory
             // and what differs between the two is inside the wrapper's own parsers.
             case ORMEnum.EclipseLink:
             {
-                var context = new JpaReadingContext(declaredSourceDialect);
+                var context = new JpaReadingContext(EclipseLinkDescriptor.Profile, declaredSourceDialect);
                 return qb is null
                     ? [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context)]
                     : [new JpaOrmXmlParser(eb, context), new EclipseLinkEntityParser(eb, context), new EclipseLinkJpqlQueryParser(qb, declaredSourceDialect)];

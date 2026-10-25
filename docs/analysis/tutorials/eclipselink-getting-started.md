@@ -34,7 +34,7 @@ Obě implementace stojí na Jakarta Persistence 3.2, takže shod je drtivá vět
 | | Hibernate 7.4.5 | EclipseLink 5.0.0 |
 |---|---|---|
 | Bootstrap | typicky v kódu (`StandardServiceRegistryBuilder`) | typicky `META-INF/persistence.xml` |
-| `@GeneratedValue` bez strategie | sekvence `<Entita>_SEQ`, krok 50 | tabulka `SEQUENCE` se sloupci `SEQ_NAME`, `SEQ_COUNT` |
+| `@GeneratedValue` bez strategie | sekvence `<tabulka>_SEQ`, krok 50 (entity tutoriálu nemají `@Table`, tabulka se jmenuje jako entita) | tabulka `SEQUENCE` se sloupci `SEQ_NAME`, `SEQ_COUNT` |
 | Název tabulky a sloupce bez `@Table`/`@Column` | název entity a atributu, velikost písmen zachovaná | **velkými písmeny** |
 | Duplicitní rodiče z `join fetch` kolekce | odfiltruje framework | **musí odfiltrovat autor** přes `distinct` |
 | `fetch = LAZY` na `@ManyToOne` | proxy, funguje samo | **funguje jen s weavingem**, jinak se tiše načte eager |

@@ -18,7 +18,7 @@ public class HibernateEntityParserTest
     private static (DummyEntityBuilder Builder, IReadOnlyCollection<EntityMap> Read) Parse(string java)
     {
         var builder = new DummyEntityBuilder();
-        var read = new HibernateEntityParser(builder, new JpaReadingContext()).Parse(java);
+        var read = new HibernateEntityParser(builder, new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile)).Parse(java);
         return (builder, read);
     }
 
@@ -121,8 +121,8 @@ public class HibernateEntityParserTest
     }
 
     [Theory]
-    [InlineData("@GeneratedValue", PrimaryKeyStrategy.Auto)]
-    [InlineData("@GeneratedValue(strategy = GenerationType.AUTO)", PrimaryKeyStrategy.Auto)]
+    [InlineData("@GeneratedValue", PrimaryKeyStrategy.Sequence)]
+    [InlineData("@GeneratedValue(strategy = GenerationType.AUTO)", PrimaryKeyStrategy.Sequence)]
     [InlineData("@GeneratedValue(strategy = GenerationType.IDENTITY)", PrimaryKeyStrategy.Identity)]
     [InlineData("@GeneratedValue(strategy = GenerationType.SEQUENCE)", PrimaryKeyStrategy.Sequence)]
     [InlineData("@GeneratedValue(strategy = GenerationType.TABLE)", PrimaryKeyStrategy.HiLo)]
@@ -144,6 +144,43 @@ public class HibernateEntityParserTest
         var part = Assert.Single(map.PrimaryKey!.Parts);
         Assert.Equal(expected, part.Strategy);
         Assert.Equal("id", part.PropertyMap.Property.Name);
+    }
+
+    /// <summary>
+    /// What Hibernate derives where the source names nothing is the source's claim, and the
+    /// parser writes it down (decision 187, measured by the Java suite's
+    /// hibernate/KeyGenerationClaimsTest): AUTO and an unnamed SEQUENCE are the sequence after
+    /// the table, a generator without sequenceName names the sequence after itself, the step is
+    /// 50; AUTO naming a generator is that generator. AUTO over a key of another type is
+    /// measured nowhere and stays the source's word, claiming nothing.
+    /// </summary>
+    [Theory]
+    [InlineData("@GeneratedValue", "Long", PrimaryKeyStrategy.Sequence, "Customers_SEQ", "50", null)]
+    [InlineData("@GeneratedValue(strategy = GenerationType.SEQUENCE)", "Long", PrimaryKeyStrategy.Sequence, "Customers_SEQ", "50", null)]
+    [InlineData("@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = \"c_gen\") @SequenceGenerator(name = \"c_gen\")", "Long", PrimaryKeyStrategy.Sequence, "c_gen", "50", null)]
+    [InlineData("@GeneratedValue(generator = \"c_gen\") @SequenceGenerator(name = \"c_gen\", sequenceName = \"c_seq\", allocationSize = 20)", "Long", PrimaryKeyStrategy.Sequence, "c_seq", "20", null)]
+    [InlineData("@GeneratedValue(generator = \"c_table\") @TableGenerator(name = \"c_table\", table = \"Counters\")", "Long", PrimaryKeyStrategy.HiLo, null, null, "TABLE")]
+    [InlineData("@GeneratedValue", "java.util.UUID", PrimaryKeyStrategy.Unspecified, null, null, "AUTO")]
+    public void HibernatesDerivationOfTheGeneratorIsRead(
+        string annotation, string type, PrimaryKeyStrategy strategy, string? sequence, string? step, string? sourceName)
+    {
+        var map = Single($$"""
+            import jakarta.persistence.*;
+
+            @Entity
+            @Table(name = "Customers")
+            public class Customer {
+                @Id
+                {{annotation}}
+                private {{type}} id;
+            }
+            """);
+
+        var part = Assert.Single(map.PrimaryKey!.Parts);
+        Assert.Equal(strategy, part.Strategy);
+        Assert.Equal(sequence, part.StrategyParameters.GetValueOrDefault(GeneratorParameter.SequenceName));
+        Assert.Equal(step, part.StrategyParameters.GetValueOrDefault(GeneratorParameter.BlockSize));
+        Assert.Equal(sourceName, part.SourceStrategyName);
     }
 
     /// <summary>
@@ -285,7 +322,7 @@ public class HibernateEntityParserTest
             """;
 
         var builder = new DummyEntityBuilder();
-        var parser = new HibernateEntityParser(builder, new JpaReadingContext());
+        var parser = new HibernateEntityParser(builder, new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile));
         foreach (var unit in keyClassFirst ? new[] { keyClass, entity } : [entity, keyClass])
         {
             parser.Parse(unit);
@@ -383,7 +420,7 @@ public class HibernateEntityParserTest
     public void ManyToManyWithJoinTableSynthesizesTheJunctionEntity()
     {
         var builder = new DummyEntityBuilder();
-        new HibernateEntityParser(builder, new JpaReadingContext()).Parse("""
+        new HibernateEntityParser(builder, new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile)).Parse("""
             import jakarta.persistence.*;
             import java.util.List;
 
@@ -410,7 +447,7 @@ public class HibernateEntityParserTest
         // The synthesis runs inside Build; the dummy builder cannot generate, so the
         // relation is checked through the real one.
         var hibernate = new HibernateEntityBuilder();
-        new HibernateEntityParser(hibernate, new JpaReadingContext()).Parse("""
+        new HibernateEntityParser(hibernate, new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile)).Parse("""
             import jakarta.persistence.*;
             import java.util.List;
 
@@ -877,7 +914,7 @@ public class HibernateEntityParserTest
     [Fact]
     public void TheParserClaimsOnlyTheJavaLanguage()
     {
-        var parser = new HibernateEntityParser(new DummyEntityBuilder(), new JpaReadingContext());
+        var parser = new HibernateEntityParser(new DummyEntityBuilder(), new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile));
 
         Assert.True(parser.CanParse(ConversionContentType.Java));
         Assert.False(parser.CanParse(ConversionContentType.JavaEntity));

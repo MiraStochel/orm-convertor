@@ -60,7 +60,7 @@ public class HibernateDerivedIdentityTest
     private static HibernateEntityBuilder Read(params string[] units)
     {
         var builder = new HibernateEntityBuilder();
-        var parser = new HibernateEntityParser(builder, new JpaReadingContext());
+        var parser = new HibernateEntityParser(builder, new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile));
 
         foreach (var unit in units)
         {
@@ -121,7 +121,7 @@ public class HibernateDerivedIdentityTest
     public void TheDescriptorSpellsTheSameWithIdTrue()
     {
         var builder = new HibernateEntityBuilder();
-        var context = new JpaReadingContext();
+        var context = new JpaReadingContext(HibernateWrappers.HibernateDescriptor.Profile);
 
         new JpaOrmXmlParser(builder, context).Parse("""
             <?xml version="1.0" encoding="UTF-8"?>

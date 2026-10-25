@@ -16,14 +16,23 @@ namespace JakartaPersistence;
 /// it rides here for the reason this type exists at all: both readers of a JPA source need
 /// it, both get it from the factory row that builds them, and a columnDefinition is read the
 /// same way whichever of the two documents states it.
+///
+/// Since decision 187 it carries the profile of the source's implementation as well: what
+/// GenerationType.AUTO and an unnamed sequence mean is Hibernate's or EclipseLink's own
+/// derivation, both readers materialize it the same way, and only the factory row knows
+/// which implementation the source is.
 /// </summary>
+/// <param name="profile">The implementation the source is written for.</param>
 /// <param name="declaredSourceDialect">
 /// The dialect the source declared for its literal SQL, or null where it declared nothing -
 /// which reads exactly as it did before (decisions 067 and 088).
 /// </param>
-public sealed class JpaReadingContext(SourceSqlDialect? declaredSourceDialect = null)
+public sealed class JpaReadingContext(JpaImplementationProfile profile, SourceSqlDialect? declaredSourceDialect = null)
 {
     private readonly HashSet<string> metadataCompleteClasses = new(StringComparer.Ordinal);
+
+    /// <summary>The implementation the source is written for, whose defaults the reading materializes (decision 187).</summary>
+    public JpaImplementationProfile Profile { get; } = profile;
 
     /// <summary>What the source declared about the dialect of its literal SQL (decision 088).</summary>
     public SourceSqlDialect? DeclaredSourceDialect { get; } = declaredSourceDialect;
@@ -43,6 +52,18 @@ public sealed class JpaReadingContext(SourceSqlDialect? declaredSourceDialect = 
 
     public string? EmbeddedIdOf(string className)
         => embeddedIds.TryGetValue(className, out var attribute) ? attribute : null;
+
+    private readonly HashSet<(string Class, string Attribute)> deferredAutos = [];
+
+    /// <summary>
+    /// orm.xml stated AUTO on the key attribute without a generator, and what the
+    /// implementation derives from it depends on the attribute's Java type, which only the
+    /// class declaration states (decision 187): the class reading resolves it.
+    /// </summary>
+    public void DeferAuto(string className, string attributeName) => deferredAutos.Add((className, attributeName));
+
+    /// <summary>Takes the deferred AUTO of the attribute, if orm.xml left one.</summary>
+    public bool TakeDeferredAuto(string className, string attributeName) => deferredAutos.Remove((className, attributeName));
 
     private readonly HashSet<(string Class, string Attribute)> derivedIdentities = [];
 
