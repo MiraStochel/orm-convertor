@@ -1,8 +1,8 @@
-# The judge of the FIBEN catalog (decision 149): the rows of every query in the canonical form of decision 089,
-# as the catalog's own text returned them over fiben-benchmark-96eaffc through Dapper on 2026-10-22 13:41 UTC.
+# The judge of the FIBEN catalog (decision 149): the rows of every query in the canonical form of decisions 089 and 170,
+# as the catalog's own text returned them over fiben-benchmark-96eaffc through Dapper on 2026-10-24 22:30 UTC.
 # key<TAB>position<TAB>rendered row; position 0 is the digest of the whole result (row count and SHA-256 of the rows joined by LF),
 # the rows follow it where the result has at most 1000 of them. A query without a line was not run. Made by the .NET suite's FibenRunTest.
-# Made again as the judge from the .NET half of the run of 2026-10-22 (decision 163): tree a2f498a, recorded in ORMConvertor/README.md, The FIBEN run; every cell agreed with the source. The rows of the 229 queries of the judge of 2026-10-20 are unchanged; added are the eight queries decisions 161 and 162 translate, which that run did not run: q99, q124, q125, q126, q200, q201, q202, q237. A new judge is a decision with a date and a reason.
+# Made again as the judge from the .NET half of the run of 2026-10-24 (decision 170): tree b5b4106, recorded in docs/runs/2026-10-24-fiben.md; every cell agreed with the source. 231 queries hold the rows of the judge of 2026-10-22 (decision 163) unchanged. q38 holds the same rows in another order inside a tie of the ordering key, which the canonical form of decision 170 sorts; q24 and q36, kept as digests, differ the same way: the digest of 2026-10-22 is the server's rows in arrival order and this one the same rows with the ties sorted, both reproduced from the rows the text returns. q31, q178 and q179 carry the deciding key of decision 170 and hold the rows of the new text: q31 the same three rows in the key's order, q178 none instead of 13, q179 six instead of 2. A new judge is a decision with a date and a reason.
 q1	0	rows=2 sha256=e6fb8521b60fe38beed481bee51dd837a2e04feb21f28cef28ebd57075b814b9
 q1	1	"GOOG"	"Alphabet Inc."	39.92
 q1	2	"GOOGL"	"Alphabet Inc."	21.53
@@ -431,7 +431,7 @@ q21	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852
 q22	0	rows=1 sha256=8cc29d41b8eadd69cb61b135f768ecce5c061d86982ba8d87a9352553b749b3d
 q22	1	7	"Aamod Zyryanov"
 q23	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-q24	0	rows=2363 sha256=0e12dc0f831548a39f5ed6bd26aa81f791faec6715c1c29186aed4088eec7061
+q24	0	rows=2363 sha256=43d2929f82a8dc03e81cefd72c820ff92ca51da20d142d6e6c0fa7aaf1fa8833
 q25	0	rows=1 sha256=593108da3e6c466ca37c3e0c5928e9e8b068c04b3c02ba4d050060bf2dc7da69
 q25	1	99.99
 q26	0	rows=2 sha256=bbcd96a0019494a047fb862dfdbc43c8d596390bbf691eb45a3d9b5fdb0c5257
@@ -443,10 +443,10 @@ q28	0	rows=2324 sha256=708d0b3db25d268d7728309f53943cc3e903cb7a233d0c4be9e1577ff
 q29	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 q30	0	rows=1 sha256=c0858edffff1443f085da4f2ec3d636b7039555ad4b40047bd85637221ed76f7
 q30	1	214177	"MSFT"	"Microsoft"
-q31	0	rows=3 sha256=54e27d9e77dd5e6011014e9d601932d45682590e68ac856e88a2854e0ceaaef6
+q31	0	rows=3 sha256=59f72b9cf75231c29ed891576835c148b8a530f7e7c0ffd81e69acbec0cb505b
 q31	1	57	"Pauline Motoki"
-q31	2	53	"Owen Tagansky"
-q31	3	53	"Klichiro Koide"
+q31	2	53	"Klichiro Koide"
+q31	3	53	"Owen Tagansky"
 q32	0	rows=610907 sha256=34487875714e0e215c2e96fb93a73c9c2536038b177f4531109233c38d749d2c
 q33	0	rows=1 sha256=5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9
 q33	1	0
@@ -454,15 +454,15 @@ q34	0	rows=1 sha256=259dd4d062e12fd220e41235a29d5ba5de9f7f0f70025b9668e191dc400a
 q34	1	71111	"IBM"	"International Business Machines Corporation"
 q35	0	rows=1 sha256=39efa91109b2ea3f8a40fed9a1e62c4fa9f6e5e222f50d1e381babd832c3ddde
 q35	1	"ADBE"	"Adobe"	2015-06-20T12:47:13.000
-q36	0	rows=2363 sha256=75f6b8ed1b2696819de75fd83cbc9c09cc1e499aef4b5746950e25bed4420858
+q36	0	rows=2363 sha256=80ea77cb0027f889cf6396c0b2f62ee376c0564c278239093e71148e1e1572aa
 q37	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-q38	0	rows=818 sha256=b00c9225171a95bdfbcdbf864f529aae8747d739e91348541bc83e727005b81a
+q38	0	rows=818 sha256=e4d917082d262ddb9c28934ce5f905b4c73d8d47e2fcc96eda4eb16bc12b8fb8
 q38	1	199.73	"SPAR"
 q38	2	199.72	"DIOD"
 q38	3	199.7	"TSRA"
 q38	4	199.44	"ABCO"
-q38	5	199.39	"XRAY"
-q38	6	199.39	"GTXI"
+q38	5	199.39	"GTXI"
+q38	6	199.39	"XRAY"
 q38	7	199.3	"CAR"
 q38	8	199.22	"SRPT"
 q38	9	198.69	"RNWK"
@@ -533,8 +533,8 @@ q38	73	183.76	"ATHX"
 q38	74	183.12	"AEGN"
 q38	75	182.98	"IKAN"
 q38	76	182.97	"VIRT"
-q38	77	182.86	"STIM"
-q38	78	182.86	"PTEN"
+q38	77	182.86	"PTEN"
+q38	78	182.86	"STIM"
 q38	79	182.83	"ZBRA"
 q38	80	182.62	"ANSS"
 q38	81	182.58	"MNKD"
@@ -553,8 +553,8 @@ q38	93	178.56	"ZNGA"
 q38	94	178.22	"CG"
 q38	95	178.12	"RGR"
 q38	96	178.1	"CSGP"
-q38	97	177.98	"ZIGO"
-q38	98	177.98	"MERU"
+q38	97	177.98	"MERU"
+q38	98	177.98	"ZIGO"
 q38	99	177.85	"CMCSA"
 q38	100	177.75	"EWBC"
 q38	101	177.56	"TSLA"
@@ -659,13 +659,13 @@ q38	199	152.27	"NXPI"
 q38	200	152.01	"DXM"
 q38	201	151.68	"DXCM"
 q38	202	151.66	"PACW"
-q38	203	151.57	"NOVB"
-q38	204	151.57	"CAAS"
+q38	203	151.57	"CAAS"
+q38	204	151.57	"NOVB"
 q38	205	150.92	"TWOU"
 q38	206	150.82	"CRUS"
 q38	207	150.76	"AROW"
-q38	208	150.1	"ODP"
-q38	209	150.1	"ACOR"
+q38	208	150.1	"ACOR"
+q38	209	150.1	"ODP"
 q38	210	150.03	"MCHX"
 q38	211	149.91	"MORN"
 q38	212	149.89	"MELA"
@@ -972,8 +972,8 @@ q38	512	77.67	"CROX"
 q38	513	76.35	"VRNS"
 q38	514	76.21	"NCMI"
 q38	515	76.1	"SWSH"
-q38	516	75.85	"RENT"
-q38	517	75.85	"ACLS"
+q38	516	75.85	"ACLS"
+q38	517	75.85	"RENT"
 q38	518	75.72	"SYNT"
 q38	519	75.65	"BVSN"
 q38	520	75.55	"QRVO"
@@ -997,8 +997,8 @@ q38	537	70.41	"RGLD"
 q38	538	70.19	"DXLG"
 q38	539	70.14	"SEAC"
 q38	540	70.11	"DGII"
-q38	541	69.9	"SCHL"
-q38	542	69.9	"ACAT"
+q38	541	69.9	"ACAT"
+q38	542	69.9	"SCHL"
 q38	543	69.84	"NUVA"
 q38	544	69.5	"EFII"
 q38	545	69.35	"HTCH"
@@ -1248,8 +1248,8 @@ q38	788	9.04	"NBS"
 q38	789	8.94	"MYGN"
 q38	790	8.6	"LOGI"
 q38	791	7.43	"WDC"
-q38	792	7.1	"WBA"
-q38	793	7.1	"ATOS"
+q38	792	7.1	"ATOS"
+q38	793	7.1	"WBA"
 q38	794	6.96	"CBLI"
 q38	795	6.89	"AMBI"
 q38	796	6.87	"AWRE"
@@ -3701,23 +3701,14 @@ q177	21	90272000000	"Alphabet Inc."
 q177	22	94571000000	"The Boeing Company"
 q177	23	94595000000	"Home Depot, Inc."
 q177	24	95668000000	"JPMorgan Chase & Co."
-q178	0	rows=13 sha256=7c0952441fd439c7dafae3a25b5bc28df52332b55d4e2bfa87f31e2b62b3311e
-q178	1	"Achille Broggi"	"GOOG"	"Alphabet Inc."	2016-01-05T21:45:00.000	"2"	4122
-q178	2	"Aurora Giggi"	"GOOGL"	"Alphabet Inc."	2016-01-26T03:20:39.000	"2"	922
-q178	3	"Chengqi Duwairi"	"GOOG"	"Alphabet Inc."	2016-01-01T02:13:58.000	"2"	2411
-q178	4	"Gitanjali Kraiman"	"GOOGL"	"Alphabet Inc."	2016-01-29T08:12:42.000	"2"	3585
-q178	5	"Loic Sabbagh"	"GOOGL"	"Alphabet Inc."	2016-01-02T03:07:33.000	"2"	4817
-q178	6	"Maxwell Perin"	"GOOG"	"Alphabet Inc."	2016-01-10T11:32:20.000	"2"	3780
-q178	7	"Michalis Dundas"	"GOOG"	"Alphabet Inc."	2016-01-30T21:06:20.000	"2"	2893
-q178	8	"Naveena Aghbari"	"GOOG"	"Alphabet Inc."	2016-01-07T17:04:14.000	"2"	4651
-q178	9	"Phokion Ashley"	"GOOG"	"Alphabet Inc."	2016-01-15T12:00:10.000	"2"	4511
-q178	10	"Ronit Tarabout"	"GOOGL"	"Alphabet Inc."	2016-01-27T14:19:04.000	"2"	4320
-q178	11	"Routo Beilin"	"GOOG"	"Alphabet Inc."	2016-01-23T09:43:57.000	"2"	2297
-q178	12	"Thirumalai Farrow"	"GOOGL"	"Alphabet Inc."	2016-01-06T18:59:02.000	"2"	2045
-q178	13	"Zhongwei Zweizig"	"GOOG"	"Alphabet Inc."	2016-01-29T11:55:01.000	"2"	2909
-q179	0	rows=2 sha256=1d2466a29e42dd463a7242daaf275e4583c46794979a9a746fa8539f3912828b
-q179	1	"Eugenia Craske"	"IBM"	"International Business Machines Corporation"	2016-06-09T21:37:55.000	"2"	3287
-q179	2	"Lipo Beregi"	"IBM"	"International Business Machines Corporation"	2016-06-08T03:02:17.000	"2"	4086
+q178	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+q179	0	rows=6 sha256=4e82f75b5d89199efce1fdb337767a14d9e5dda237930b95e0ef7e79c6769ac3
+q179	1	"Georges Sandrasegaran"	"IBM"	"International Business Machines Corporation"	2016-02-27T01:55:07.000	"2"	561
+q179	2	"Jess Bark"	"IBM"	"International Business Machines Corporation"	2016-02-22T12:35:19.000	"2"	485
+q179	3	"Justinian Orcutt"	"IBM"	"International Business Machines Corporation"	2016-02-28T14:10:41.000	"2"	3018
+q179	4	"Luk Hertweck"	"IBM"	"International Business Machines Corporation"	2016-02-23T21:22:26.000	"2"	1074
+q179	5	"Ramkrishna Nguifo"	"IBM"	"International Business Machines Corporation"	2016-02-02T20:38:53.000	"2"	1656
+q179	6	"Ulrike Bofinger"	"IBM"	"International Business Machines Corporation"	2016-02-26T19:25:52.000	"2"	4225
 q180	0	rows=0 sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 q181	0	rows=639 sha256=e0fd8974c8444b41411c76d10db4a834ac684e2b94a7fa7e8f5a62f91a44aba9
 q181	1	"Aamer Gentleman"	"CRWN"	"Crown Media Holdings"	"1"	2016-04-13T03:15:54.000
