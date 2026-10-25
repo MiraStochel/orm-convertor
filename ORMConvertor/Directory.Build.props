@@ -10,6 +10,13 @@
          `Version` environment variable would override it, which is why ecosystem.config.js
          blanks that variable before `dotnet run`. -->
     <Version>2.2.0</Version>
+    <!-- Every project keeps a packages.lock.json beside its .csproj (decision 186): the
+         direct versions are pinned in Directory.Packages.props, the lock file pins the
+         transitive graph they resolve to. A plain `dotnet restore` rewrites the lock
+         file when a version moved - commit it with the move. CI and the image restore
+         in locked mode (RestoreLockedMode), so a lock file that disagrees with the pins fails there
+         instead of being rewritten silently. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
 </Project>

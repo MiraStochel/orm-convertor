@@ -37,7 +37,7 @@ jobs:
       # of a throwaway instance that lives only inside this job - S4 bans credentials in
       # generated artifacts and in logs, not in the description of an environment.
       sqlserver:
-        image: mcr.microsoft.com/mssql/server:2022-latest
+        image: mcr.microsoft.com/mssql/server:2022-CU27-GDR1-ubuntu-22.04@sha256:cf8f0ab2ebe61feec2eed2629061a07d247f791c2a8ddda74a4ac9f06a291718
         env:
           ACCEPT_EULA: "Y"
           MSSQL_SA_PASSWORD: Testingorms123
@@ -52,10 +52,10 @@ jobs:
           --health-start-period 15s
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Install .NET 10 SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: "10.0.x"
 
@@ -70,7 +70,7 @@ jobs:
           -Q "IF DB_ID('ORMConvertorTests') IS NULL CREATE DATABASE ORMConvertorTests; IF DB_ID('ORMConvertorCaseStudies') IS NULL CREATE DATABASE ORMConvertorCaseStudies;"
 
       - name: Restore
-        run: dotnet restore ORMConvertor.sln
+        run: dotnet restore ORMConvertor.sln --locked-mode
 
       - name: Build
         run: dotnet build ORMConvertor.sln --configuration Release --no-restore
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload test results and coverage
         if: always() # the coverage of a failed run is the interesting one
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results
           path: ORMConvertor/Tests/TestResults/
@@ -114,7 +114,7 @@ jobs:
 
     services:
       sqlserver:
-        image: mcr.microsoft.com/mssql/server:2022-latest
+        image: mcr.microsoft.com/mssql/server:2022-CU27-GDR1-ubuntu-22.04@sha256:cf8f0ab2ebe61feec2eed2629061a07d247f791c2a8ddda74a4ac9f06a291718
         env:
           ACCEPT_EULA: "Y"
           MSSQL_SA_PASSWORD: Testingorms123
@@ -129,12 +129,12 @@ jobs:
           --health-start-period 15s
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       # Temurin 25 is the JDK of the pinned image maven:3.9.11-eclipse-temurin-25-noble;
       # Maven itself is preinstalled on the runner.
       - name: Install JDK 25
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "25"
@@ -142,7 +142,7 @@ jobs:
           cache-dependency-path: ORMConvertor/JavaTests/pom.xml
 
       - name: Install .NET 10 SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: "10.0.x"
 
@@ -158,7 +158,7 @@ jobs:
         working-directory: ORMConvertor
         run: >-
           dotnet publish ORMConvertorAPI/ORMConvertorAPI.csproj
-          --configuration Release -o "${{ runner.temp }}/app"
+          --configuration Release -o "${{ runner.temp }}/app" -p:RestoreLockedMode=true
 
       # Started in the background and not waited for here: the suite polls
       # /required-content itself, which is the one readiness mechanism that works both
@@ -184,7 +184,7 @@ jobs:
 
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: java-test-results
           path: ORMConvertor/JavaTests/target/surefire-reports/
@@ -194,7 +194,7 @@ jobs:
       # log and nowhere else.
       - name: Upload the application log
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: java-test-app-log
           path: ${{ runner.temp }}/app.log
@@ -210,15 +210,15 @@ jobs:
         working-directory: ORMConvertor
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Install .NET 10 SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: "10.0.x"
 
       - name: Restore
-        run: dotnet restore ORMConvertor.sln
+        run: dotnet restore ORMConvertor.sln --locked-mode
 
       - name: Check pinned packages against known advisories
         run: |

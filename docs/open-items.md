@@ -25,7 +25,6 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | | F15, S7 |
 | [Průběžný stav běhu Advisoru](#průběžný-stav-běhu-advisoru-po-buňkách) | Advisor | rozhodnutí | | S7, F15 |
 | [Odevzdání do položek](#odevzdání-není-rozepsané-do-položek) | Odevzdání | práce | projekt | — |
-| [Reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení) | Užitečné | rozhodnutí | | S2, S5 |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | | — |
 | [Úplnost mapování po kategoriích faktů](#úplnost-mapování-po-kategoriích-faktů) | Užitečné | práce | | T2, T3 |
 | [Odchylky zpětného čtení](#odchylky-zpětného-čtení-v-úplnosti-mapování) | Užitečné | rozhodnutí | | T3 |
@@ -126,15 +125,10 @@ Finální dokumentace, odevzdání a příprava obhajoby tu položky nemají; ex
 
 Prospělo by to, ale žádná věta záruk na tom nestojí a nic tím není blokované; značky pořadí položky nedostávají.
 
-#### Vynucení stylu a reprodukovatelnost sestavení
-*Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.4. Souvisí s rozh. [034](./decisions/034-central-version-management.md) a [039](./decisions/039-container-configuration-of-the-environment.md). Požadavky S2, S5.*
-
-„Reprodukovatelné prostředí" dnes znamená „jedním příkazem", ne „bajtově stejně": chybí zámek závislostí, základní obrazy i akce CI (`actions/checkout@v5` a spol.) visí na pohyblivých značkách a pravidla stylu build nevynucuje. Rozhodnout, zda se S2 rozšíří z výstupu překladu i na sestavení (zámek, digesty, styl v CI), nebo jde o údržbu, která počká.
-
 #### Trvalý identifikátor vydání
-*Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.1, a [fair-software.eu](https://fair-software.eu/). Souvisí s rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md) a s položkou [Vynucení stylu a reprodukovatelnost sestavení](#vynucení-stylu-a-reprodukovatelnost-sestavení). Záznam v registru až úplně na konci vývoje.*
+*Podklad: audit [2026-08-23](./audits/2026-08-23-post-release-1-1-0-audit.md), kap. 8.1, a [fair-software.eu](https://fair-software.eu/). Souvisí s rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md) a [186](./decisions/186-the-build-environment-is-pinned-on-content-lock-files-image-digests-and-action-commits-moved-by-dependabot.md). Záznam v registru až úplně na konci vývoje.*
 
-Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele). Vedle registru, nebo místo něj, lze vydání označit hašem SHA-256 celého balíčku: identifikátor odvozený z obsahu ověří kdokoli bez registru a bez otázky autorství a může ho nést už příští vydání, sám ale nikam nevede, takže dohledatelnost registru nenahradí. Vydání dnes balíček nemá (rozh. 098 vydává jen značku), takže je třeba určit, co se hašuje — archiv stromu značky je ze značky odvozený, vydávaný artefakt jako obraz aplikace by byl publikováním, při kterém se 098 nahrazuje — a zda má stejný haš vyjít i z nového sestavení, což předpokládá bajtově stejné sestavení z položky o reprodukovatelnosti.
+Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-software.eu chybí záznam v registru. Rozhodnout, zda se fork cizího prototypu archivuje pod vlastním identifikátorem (kde a s jakým autorstvím — `LICENSE` nese dva držitele). Vedle registru, nebo místo něj, lze vydání označit hašem SHA-256 celého balíčku: identifikátor odvozený z obsahu ověří kdokoli bez registru a bez otázky autorství a může ho nést už příští vydání, sám ale nikam nevede, takže dohledatelnost registru nenahradí. Vydání dnes balíček nemá (rozh. 098 vydává jen značku), takže je třeba určit, co se hašuje — archiv stromu značky je ze značky odvozený, vydávaný artefakt jako obraz aplikace by byl publikováním, při kterém se 098 nahrazuje — a zda má stejný haš vyjít i z nového sestavení, což předpokládá bajtově stejné sestavení, které rozh. [186](./decisions/186-the-build-environment-is-pinned-on-content-lock-files-image-digests-and-action-commits-moved-by-dependabot.md) nenárokuje: zámek a digesty připínají vstupy sestavení, ne jeho výstup.
 
 #### Úplnost mapování po kategoriích faktů
 *Práce. Zúžení T2 rozh. [183](./decisions/183-t2-and-t3-leave-the-exempt-area-in-a-narrower-sense-the-build-holds-the-category-matrix-and-the-run-measures-the-metrics-without-promising-numbers.md); měřidlo rozh. [173](./decisions/173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md). Požadavky T2, T3.*
@@ -145,3 +139,9 @@ Souhrn experimentálního běhu dává úplnost přenesených mapovacích vlastn
 *Rozhodnutí. Měřidlo a odchylky rozh. [173](./decisions/173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md), zúžení T3 rozh. [183](./decisions/183-t2-and-t3-leave-the-exempt-area-in-a-narrower-sense-the-build-holds-the-category-matrix-and-the-run-measures-the-metrics-without-promising-numbers.md); souvisí s rozh. [063](./decisions/063-stated-keylessness-as-a-carried-fact.md), [067](./decisions/067-a-derived-convention-is-a-statement-a-default-is-not.md) a [084](./decisions/084-mybatis-wrapper-over-the-shared-sql-reading.md). Požadavek T3.*
 
 Parser cíle nečte z artefaktu nástroje fakta, která builder napsal: `<id>` MyBatisu jako klíč, nullabilitu klíčového sloupce, strategii `Auto`, kterou profil JPA píše jako konkrétní, a databázový typ, který JPA vysloví javovým typem; jménem je drží `Experiment/MappingCompletenessTest`. Úplnost mapování javových cílů a MyBatisu je o ně nižší, než co artefakt nese, u obou implementací JPA skoro o celý rozdíl proti cílům .NET. Je třeba rozhodnout po odchylce, zda ji má číst parser (u `<id>` proti rozh. 063 a 084, u typu z javového typu proti 067), zda ji má měřidlo uznat za přečtenou, nebo zda zůstane vyslovenou mezí míry.
+
+## Mimo rozsah
+
+Práce, které dělat nebudeme: řádek na každou, bez značek pořadí a bez řádku v přehledu. Kde o tom padlo rozhodnutí, řádek ho cituje.
+
+- **Vynucení stylu sestavením** — pravidla `.editorconfig` zůstávají věcí editoru; `EnforceCodeStyleInBuild`, `TreatWarningsAsErrors` ani `dotnet format` v CI nezavádíme (rozh. [186](./decisions/186-the-build-environment-is-pinned-on-content-lock-files-image-digests-and-action-commits-moved-by-dependabot.md)).

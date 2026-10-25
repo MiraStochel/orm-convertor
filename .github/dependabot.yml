@@ -1,0 +1,28 @@
+# The pins of the environment move by pull request (decision 186): the digests of the base
+# images in the Dockerfiles and the compose file, and the commits of the actions in the
+# workflows. The packages of the solution and of the Java suite are deliberately not here:
+# a pinned framework version moves for a published advisory or for ongoing work, never
+# because a newer one exists (decision 098), and the `dependencies` job of the workflow is
+# what watches the advisories. The service containers of the workflow are not covered by
+# any ecosystem either; `PinnedEnvironmentTest` holds their reference equal to the one in
+# the Dockerfiles and the compose file, so a merged proposal that leaves them behind fails
+# the suite.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories:
+      - /ORMConvertor
+      - /ORMConvertor/ORMConvertorAPI
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker-compose
+    directory: /ORMConvertor
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

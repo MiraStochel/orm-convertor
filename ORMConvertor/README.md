@@ -54,7 +54,7 @@ flowchart LR
   jt -- "started, HTTP /orm" --> tappc
 ```
 
-`ORMConvertorAPI/Dockerfile`: `advisor-native` builds `libadvisor.so`, `dotnet-build` publishes, `tests` builds on it, `java-tests` on `maven:3.9.11-eclipse-temurin-25-noble`, `runtime` on `aspnet:10.0` with `libglpk40`. **`dotnet-build` copies every `.csproj` by name: a new project needs a line in that `COPY` list.** `java-tests` copies all of `Tests/Database/`, `database/ldbc/updates/` and `SampleData/ThirdParty/`; the pom's `<testResources>` selects from them.
+`ORMConvertorAPI/Dockerfile`: `advisor-native` builds `libadvisor.so`, `dotnet-build` publishes, `tests` builds on it, `java-tests` on `maven:3.9.11-eclipse-temurin-25-noble`, `runtime` on `aspnet:10.0` with `libglpk40`; every base image is pinned by digest beside its tag, and the packages restore in `--locked-mode` from the committed `packages.lock.json` files (decision [186](../docs/decisions/186-the-build-environment-is-pinned-on-content-lock-files-image-digests-and-action-commits-moved-by-dependabot.md)). **`dotnet-build` copies every `.csproj` and its `packages.lock.json` by name: a new project needs a line in that `COPY` list.** `java-tests` copies all of `Tests/Database/`, `database/ldbc/updates/` and `SampleData/ThirdParty/`; the pom's `<testResources>` selects from them.
 
 - **`ormconvertor`** — [http://localhost:5072/orm/](http://localhost:5072/orm/), Swagger UI at `/orm/swagger`; gets `ConnectionStrings__AdvisorDatabase` and `ConnectionStrings__CatalogDatabase`.
 - **`mssql_db`** — SQL Server 2022 on `localhost,1444`, `SA` / `Testingorms123` (development only), with `WideWorldImporters` and `LdbcSnb`: LDBC SNB Interactive v1 at scale factor 1 (decision [110](../docs/decisions/110-ldbc-snb-as-a-second-reference-domain.md)), downloaded at build (222 MB) and loaded by `database/ldbc/load-ldbc.sh` on the first start in about a minute, with the validation set of the same scale factor, the judge of the LDBC catalog (decision [117](../docs/decisions/117-the-interactive-v1-validation-set-judges-the-ldbc-catalog-at-the-fourth-level.md)), in the table `ValidationOperation`. A database whose extended property `ldbc.dataset` is missing or names another archive is reloaded, one lacking only `ldbc.validation` gets the set alone, and a failed load leaves the server up without it. The loader asks nothing before this start's errorlog says `Recovery is complete` and stops at a question the server does not answer, leaving the database as it was; a new container over a loaded volume (after `down`, a rebuilt image or `--force-recreate`) therefore skips the load.
@@ -147,6 +147,8 @@ S5's "one main command" per suite: the host needs only Docker. Each `run` starts
 ```sh
 dotnet test Tests/Tests.csproj --configuration Release
 ```
+
+A plain `dotnet restore` rewrites a project's `packages.lock.json` when a pinned version moved; commit the lock file with the move, because CI and the image restore with `--locked-mode` and fail on a lock that disagrees (decision [186](../docs/decisions/186-the-build-environment-is-pinned-on-content-lock-files-image-digests-and-action-commits-moved-by-dependabot.md)).
 
 Database tests need `ConnectionStrings:TestDatabase`, e.g. `Server=(localdb)\MSSQLLocalDB;Database=ORMConvertorTests;Trusted_Connection=True;TrustServerCertificate=True`.
 
@@ -354,7 +356,7 @@ flowchart LR
 | `java-test` | Temurin 25; starts the published app on `http://localhost:5072` in `Production`, not waited for; `mvn -B test` | `java-test-results`; `java-test-app-log` on failure |
 | `dependencies` | `dotnet list ORMConvertor.sln package --vulnerable --include-transitive`, judged by `grep` (it exits 0 either way) under `set -o pipefail` | — |
 
-`dependencies` alone also runs weekly (decision [098](../docs/decisions/098-the-number-is-decided-once-per-release.md)). CI proves the suites against SQL Server of the stated version, compose that they run where nothing is installed. Coverage is never gated; `dotnet test Tests/Tests.csproj --collect:"XPlat Code Coverage"` writes `coverage.cobertura.xml` under `Tests/TestResults/`; the measured coverage is [recorded in `docs/runs/`](../docs/runs/README.md#velikost-sady-a-pokrytí).
+`dependencies` alone also runs weekly (decision [098](../docs/decisions/098-the-number-is-decided-once-per-release.md)). Every restore runs in `--locked-mode` against the committed lock files, the actions are pinned by commit and the service container by digest, the same reference as in the Dockerfiles and the compose file; `.github/dependabot.yml` proposes their moves weekly (decision [186](../docs/decisions/186-the-build-environment-is-pinned-on-content-lock-files-image-digests-and-action-commits-moved-by-dependabot.md)). CI proves the suites against SQL Server of the stated version, compose that they run where nothing is installed. Coverage is never gated; `dotnet test Tests/Tests.csproj --collect:"XPlat Code Coverage"` writes `coverage.cobertura.xml` under `Tests/TestResults/`; the measured coverage is [recorded in `docs/runs/`](../docs/runs/README.md#velikost-sady-a-pokrytí).
 
 # API
 
