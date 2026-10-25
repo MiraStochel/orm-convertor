@@ -292,7 +292,7 @@ The table of T2 × T3 (decision [173](../docs/decisions/173-the-experiment-run-j
   ```
 
   In the containers the same three commands are `docker compose --profile test run` of `tests` and `java_tests` with the variable, the directory a volume or taken out with `docker cp`, and for the `fiben:` keys the `Fiben` settings of [the FIBEN run](#the-fiben-run). Without `ORMCONVERTOR_EXPERIMENT_RESULTS` every case skips with the reason.
-- **No row fails the run.** A refused translation is the row `refused` at level 0, a red level is a row; what fails is the path - an input without a manifest, a key no measure answers, a database a kind needs that is not configured. The numbers are the record of the version, not a claim ([`architecture.md`](../docs/architecture.md) §9, area 6).
+- **No row fails the run.** A refused translation is the row `refused` at level 0, a red level is a row; what fails is the path - an input without a manifest, a key no measure answers, a database a kind needs that is not configured. The numbers are the record of the version, not a claim: T3 claims that they are measured and how, not what they come to ([`architecture.md`](../docs/architecture.md) §9).
 - **A check from the host** - a few kinds, `ORMCONVERTOR_EXPERIMENT_KINDS=matrix,cross,example,ldbc` on a machine without the `Fiben` judge - is never recorded.
 
 ### The limits run

@@ -86,6 +86,45 @@ public class DifferentialMatrixTest
                 + "so the category is measured at levels 1 to 3 and not at the fourth."));
     }
 
+    /// <summary>The groups of queries requirement T2 names, each with the categories of the manifest that are of it.</summary>
+    private static readonly (string Group, string[] Categories)[] GroupsOfT2 =
+    [
+        ("projection", ["Projection", "DistinctProjection"]),
+        ("filtering", ["Filtering"]),
+        ("joins", ["JoinOverTwoColumns", "OuterJoinWithAFilterInOn", "JoinBeyondEqualities"]),
+        ("aggregation", ["AggregationGroupingAndHaving", "CountOverDistinctValues"]),
+        ("pagination", ["PaginationWithBoundCounts"]),
+        ("subqueries", ["SubqueryAsTheRightSideOfIn", "CorrelatedExistsOverThreeColumns", "ScalarSubquery"]),
+        ("set operations", ["SetOperation", "InOverASetOperation"]),
+    ];
+
+    /// <summary>
+    /// The minimum of T2 is held by the suite, not read off a run (decision 183): every group of
+    /// queries the requirement names has, among its categories, a pair of the matrix in each of
+    /// the three directions the requirement names - .NET → Java, Java → .NET and Java → Java -,
+    /// so it is measured at the fourth level in each. The tests above keep every category in the
+    /// matrix and every framework a source; neither notices a group whose categories all lost
+    /// their Java sources, which would leave two of the three directions without it.
+    /// </summary>
+    [Fact]
+    public void EveryGroupOfT2HasAPairInEveryDirectionItNames()
+    {
+        (Ecosystem Source, Ecosystem Target)[] directions =
+            [(Ecosystem.DotNet, Ecosystem.Java), (Ecosystem.Java, Ecosystem.DotNet), (Ecosystem.Java, Ecosystem.Java)];
+        var manifest = QueryShapeInputs.Categories.Select(category => category.Name).ToList();
+        var pairs = DifferentialMatrix.Pairs().Where(pair => pair.Query.Category is not null).ToList();
+
+        Assert.All(GroupsOfT2, group =>
+        {
+            Assert.All(group.Categories, category => Assert.Contains(category, manifest));
+            Assert.All(directions, direction => Assert.True(
+                pairs.Any(pair => group.Categories.Contains(pair.Query.Category!)
+                    && FrameworkDescriptors.EcosystemOf(pair.Source) == direction.Source
+                    && FrameworkDescriptors.EcosystemOf(pair.Target) == direction.Target),
+                $"T2 names {group.Group} and the matrix has no pair of it from {direction.Source} to {direction.Target}."));
+        });
+    }
+
     /// <summary>
     /// Every query has a canonical result, and it is not empty. An empty file would make
     /// every direction agree with every other about nothing at all.
