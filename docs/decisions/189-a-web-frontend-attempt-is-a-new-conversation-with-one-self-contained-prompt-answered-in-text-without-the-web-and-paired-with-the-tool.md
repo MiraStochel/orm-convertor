@@ -1,7 +1,7 @@
 # 189 — Pokus jazykového modelu ve webovém rozhraní je nová konverzace s jedním samostatným promptem a odpověď je text v pevném tvaru; přístup k webu je zakázaný, čas, tokeny a kredity měří obsluha a hlášení modelu se jen opisuje, a souhrn staví pokusy vedle nástroje nad týmiž buňkami
 
 Datum: 2026-10-26
-Stav: platí
+Stav: revidováno
 Požadavky: T4, T5, T6, T3
 Podklad: zadání ([`requirements.md`](../requirements.md), T4: „porovnat pravidlový přístup alespoň s jedním silným LLM v zero-shot a few-shot režimu; uvádět přesný model, verzi, prompt, teplotu, počet pokusů, tokeny, čas a náklady"); schválená [specifikace](../specifikace.tex) (T4–T6: projekt připraví data, rozhraní a měřicí infrastrukturu); rozhodnutí [167](167-records-of-runs-and-measurements-have-a-folder-of-their-own.md), [172](172-a-foreign-artifact-enters-the-verification-levels-as-a-directory-with-a-manifest-beside-the-client.md), [173](173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md) a [175](175-the-comparison-with-a-language-model-is-a-protocol-over-the-foreign-path.md); kontrola protokolu z hosta z 2026-10-25 (níž, *Kontext*); otevřená položka *Srovnání s jazykovým modelem nemá model, prompty ani záznam*
 
@@ -79,6 +79,8 @@ Prompt je **jeden samostatný text** v angličtině, vygenerovaný ze šablony a
 | tvar odpovědi a hlášení | níž |
 
 **Co prompt nikdy nenese:** klíč buňky (`answers`) ani jiný identifikátor výpisu, jméno nástroje či repozitáře, cestu v repozitáři, nic z artefaktu nástroje ani z kanonického výsledku. Identifikátor pokusu je jméno jeho složky a do promptu nejde; tři pokusy buňky mají prompt bajtově shodný.
+
+**Vstup, který nástroj jmenuje sám.** Výňatky reálných projektů nesou v komentářích značku výňatku `ORMConvertor:` (rozh. [138](138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md)), takže prompt případové studie by jméno nástroje nesl a věrná kopie komentáře by importér zastavil. Generátor proto značku v promptu nahradí neutrální `Excerpt note:` a nic jiného ve vstupu nemění: obsah komentáře zůstává a nástroj komentáře stejně nečte. Že hotový prompt žádné ze jmen, která importér hledá, nenese, generátor ověří a jinak selže jménem. Z téhož zákazu plyne, odkud jsou příklady varianty `few-shot`: ručně psané překlady v tvaru artefaktu cíle, ne překlady nástroje — výkladová stránka (rozh. [099](099-examples-are-content-not-a-choice.md)) ukazuje výstup nástroje a tvary v `QueryShapes/` jsou vstupy, ne artefakty —, takže sadu příkladů je třeba napsat.
 
 **Šablona je soubor s identifikátorem** (`web-zero-shot-1`, `web-few-shot-1`), který jde do pole `prompt`. Text šablony, kterou použil zapsaný běh, se nemění — změna je nová šablona s novým identifikátorem, aby záznam ukazoval na text, který platil. Do metadat jde i otisk SHA-256 vygenerovaného promptu (`promptSha256`), takže záznam dokládá přesný text, ne jen šablonu. Šablony jsou první, které projekt dává jako součást rozhraní, jak ho specifikace žádá; navazující práce přidá vlastní pod jiným identifikátorem a pole `prompt` je rozliší.
 
@@ -182,3 +184,7 @@ Rozhodnutí nevolí model ani rozpočet a nedělá korpus varianty `rag` — ty 
 - **Cesta cizího artefaktu ani javová sada se nemění.** Pokus bez artefaktu zapíše importér jako řádek na stupni 0 v témž tvaru, jaký píše cesta, a souhrn ho čte s řádky cizích artefaktů.
 - **Po implementaci:** [`architecture.md`](../architecture.md) §6.2 — v oddílu *Cizí artefakt* import odpovědi, v *Experimentální běh* oddíl souhrnu nad týmiž buňkami; `ORMConvertor/README.md`, *Foreign artifacts*, pododdíl s postupem pro obsluhu (nastavení rozhraní, příkazy kroků 3 a 5–8, tabulka pokusů); [`runs/README.md`](../runs/README.md) druh běhu *srovnání s jazykovým modelem*; [`traceability.md`](../traceability.md) řádky T4–T6 ve sloupci implementace, stav zůstává `vyňaté`.
 - **Cena.** Pokus stojí obsluhu jednu konverzaci — vložit, počkat, zkopírovat, zapsat několik čísel —, buňka se třemi pokusy ve dvou variantách šest konverzací. Vzorek desítek buněk je práce na hodiny, ne na dny; celá populace patří ovladači nad API.
+
+## Historie
+
+- **2026-10-26, revidováno před implementací:** doplněn vstup, který nástroj jmenuje sám — značka výňatku rozh. 138 jde do promptu neutrální a generátor hotový prompt ověří —, a odkud jsou příklady varianty `few-shot`.

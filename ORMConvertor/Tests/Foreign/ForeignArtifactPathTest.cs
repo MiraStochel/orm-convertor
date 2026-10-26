@@ -245,6 +245,17 @@ public class ForeignArtifactPathTest(TestSchemaFixture fixture, ITestOutputHelpe
         Assert.Equal(ForeignVerdict.Header, header.Groups[1].Value.Replace("\\t", "\t"));
     }
 
+    /// <summary>The loop of the recorded run gathers the rows of both suites under a header of its own, which the summary reads the columns by: it is the rows' header.</summary>
+    [Fact]
+    public void TheLoopGathersTheRowsUnderTheirOwnHeader()
+    {
+        var script = File.ReadAllText(Path.Combine(TargetFrameworkDescriptorTest.SolutionDirectory(), "foreign-run.sh"));
+
+        var header = Regex.Match(script, "printf '(artifact\\\\t[^']+)\\\\n' > \"\\$rows\"");
+        Assert.True(header.Success, "foreign-run.sh writes the header of foreign-rows.tsv with printf.");
+        Assert.Equal(ForeignVerdict.Header, header.Groups[1].Value.Replace("\\t", "\t"));
+    }
+
     private static ForeignArtifact ReadManifest(string manifest, params (string Path, string Content)[] files)
     {
         var temp = Directory.CreateTempSubdirectory("ormconvertor-foreign-");

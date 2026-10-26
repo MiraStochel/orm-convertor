@@ -28,7 +28,7 @@ mkdir -p "$results"
 results=$(cd "$results" && pwd)
 rows="$results/foreign-rows.tsv"
 
-printf 'artifact\tanswers\tsource\ttarget\tproducer\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tmetadata\n' > "$rows"
+printf 'artifact\tanswers\tsource\ttarget\tproducer\tlanguage\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tmetadata\n' > "$rows"
 
 # Build once, run many times: every process below runs with --no-build.
 (cd "$here" && dotnet build Tests/Tests.csproj --configuration Release > "$results/build-dotnet.log" 2>&1) || { echo "the .NET suite does not build; see $results/build-dotnet.log"; exit 1; }
@@ -65,7 +65,7 @@ for dir in "$root"/*/; do
   if [ -f "$file" ]; then
     row=$(tail -n +2 "$file" | head -n 1)
   else
-    row=$(printf '%s\t\t\t%s\t\t0\tno row\tthe suite wrote no row; see log.txt\t\t\t\t\t\t\t' "$name" "$target")
+    row=$(printf '%s\t\t\t%s\t\t\t0\tno row\tthe suite wrote no row; see log.txt\t\t\t\t\t\t\t' "$name" "$target")
   fi
 
   # 124 is timeout's own status, 137 the one of a process killed by it.

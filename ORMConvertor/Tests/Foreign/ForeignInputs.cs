@@ -27,44 +27,52 @@ internal static class ForeignInputs
 
     private const string SchemaPlaceholder = "{{schema}}";
 
-    /// <summary>Writes every input of the three kinds under the root and returns how many directories it wrote.</summary>
-    public static int Export(string root)
+    /// <summary>
+    /// Writes every input of the five kinds under the root - or those the filter takes, as the
+    /// web channel writes the inputs of its sample (decision 189) - and returns how many
+    /// directories it wrote.
+    /// </summary>
+    public static int Export(string root, Func<ForeignKey, ORMEnum, bool>? take = null)
     {
         var count = 0;
+
+        void One(ForeignKey key, ORMEnum source, Func<IReadOnlyList<ConversionSource>> units, IReadOnlyList<string>? questions)
+        {
+            if (take is null || take(key, source))
+            {
+                Write(root, key, source, units(), questions);
+                count++;
+            }
+        }
 
         foreach (var query in DifferentialMatrix.Queries)
         {
             foreach (var source in query.Sources)
             {
-                Write(root, new ForeignKey(ForeignKey.Matrix, query.Id), source, query.Units(source), questions: null);
-                count++;
+                One(new ForeignKey(ForeignKey.Matrix, query.Id), source, () => query.Units(source), questions: null);
             }
         }
 
         foreach (var query in FibenSample.Queries)
         {
-            Write(root, new ForeignKey(ForeignKey.Fiben, query.Key), ORMEnum.Dapper, FibenRun.Units(query), query.Questions);
-            count++;
+            One(new ForeignKey(ForeignKey.Fiben, query.Key), ORMEnum.Dapper, () => FibenRun.Units(query), query.Questions);
         }
 
         foreach (var framework in Enum.GetValues<ORMEnum>())
         {
-            Write(root, new ForeignKey(ForeignKey.Cross, framework.ToString()), framework, CrossFrameworkInputs.Units(framework), questions: null);
-            count++;
+            One(new ForeignKey(ForeignKey.Cross, framework.ToString()), framework, () => CrossFrameworkInputs.Units(framework), questions: null);
         }
 
         foreach (var query in LdbcSnbSample.Queries.Where(query => query.Sql is not null))
         {
-            Write(root, new ForeignKey(ForeignKey.Ldbc, query.Key), ORMEnum.Dapper, LdbcUnits(query), questions: null);
-            count++;
+            One(new ForeignKey(ForeignKey.Ldbc, query.Key), ORMEnum.Dapper, () => LdbcUnits(query), questions: null);
         }
 
         // The examples of the explanatory page, the excerpts of real projects among them - the
         // case study of T1 (decision 174): one input per example, in the language of its source.
         foreach (var example in ORMConvertorAPI.Data.Examples.GetExamples)
         {
-            Write(root, new ForeignKey(ForeignKey.Example, example.Key), example.SourceOrm, example.Units, questions: null);
-            count++;
+            One(new ForeignKey(ForeignKey.Example, example.Key), example.SourceOrm, () => example.Units, questions: null);
         }
 
         return count;

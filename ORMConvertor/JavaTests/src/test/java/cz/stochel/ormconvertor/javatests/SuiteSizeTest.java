@@ -17,6 +17,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -112,7 +113,7 @@ class SuiteSizeTest {
     /**
      * How many times JUnit runs one method: once for a {@code @Test}, once per constant for
      * a {@code @ParameterizedTest} over an enum, once per case for one over a method source,
-     * and never for anything else.
+     * once per row for one over the rows of a CSV source, and never for anything else.
      *
      * <p>A parameterization this does not know is a failure rather than a one, on purpose:
      * counting it as a single invocation would understate the suite by however many cases
@@ -130,6 +131,20 @@ class SuiteSizeTest {
         MethodSource methodSource = method.getAnnotation(MethodSource.class);
         if (methodSource != null) {
             return casesOf(testClass, method, methodSource);
+        }
+
+        // The rows of a CSV source are literals the annotation carries, one case each, so they
+        // are counted exactly. A text block would have to be split the way JUnit splits it -
+        // quoted line breaks, comment lines - and is refused rather than estimated.
+        CsvSource csvSource = method.getAnnotation(CsvSource.class);
+        if (csvSource != null) {
+            if (!csvSource.textBlock().isEmpty()) {
+                throw new AssertionError(
+                        "The parameterized test " + testClass.getName() + "#" + method.getName()
+                        + " states its CSV cases in a text block, which this counter does not split (decision 087).");
+            }
+
+            return csvSource.value().length;
         }
 
         EnumSource source = method.getAnnotation(EnumSource.class);

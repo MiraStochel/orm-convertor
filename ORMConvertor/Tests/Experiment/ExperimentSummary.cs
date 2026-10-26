@@ -83,7 +83,7 @@ internal static class ExperimentSummary
     public const string FileName = "summary.md";
 
     private static readonly string[] ToolRowFiles = [ExperimentRun.RowsFileName, ExperimentRun.JavaRowsFileName];
-    private static readonly string[] ForeignRowFiles = [ForeignRows.FileName, "java-" + ForeignRows.FileName];
+    private static readonly string[] ForeignRowFiles = [ForeignRows.FileName, "java-" + ForeignRows.FileName, WebAttempts.RowsFileName];
 
     /// <summary>The kind the key names, the excerpts of real projects read apart from the other examples (decision 174).</summary>
     public static string KindOf(string answers)
@@ -186,6 +186,7 @@ internal static class ExperimentSummary
                 foreignMapping,
                 row => $"{row.Producer} | {Or(row.Metadata("model"), "-")} | {Or(row.Metadata("variant"), "-")} | {KindOf(row.Answers)}",
                 "producer | model | variant | kind"));
+            lines.AddRange(Paired(tool, foreign));
         }
 
         lines.AddRange(Limits(directory, javaSeries));
@@ -258,6 +259,94 @@ internal static class ExperimentSummary
             yield return string.Empty;
         }
     }
+
+    /// <summary>
+    /// The foreign artifacts beside the tool over the same cells (decision 189): a sample of
+    /// attempts stands only beside the tool's share over the same sample. A cell is a key, a source
+    /// and a target; the tool has one row in it (S2), a group of attempts - producer, model,
+    /// channel, variant - has its attempts. Per measure the section gives the tool's share over the
+    /// cells, the share per attempt, and best-of-n: the cells at least one attempt reached it in
+    /// (decision 175). A cell without a row of the tool is named and left out of the shares.
+    /// </summary>
+    private static IEnumerable<string> Paired(List<SummaryRow> tool, List<SummaryRow> foreign)
+    {
+        static string CellOf(SummaryRow row) => $"{row.Answers} {row.Source} → {row.Target}";
+        static string GroupOf(SummaryRow row) => $"{row.Producer} · {Or(row.Metadata("model"), "-")} · {Or(row.Metadata("channel"), "-")} · {Or(row.Metadata("variant"), "-")}";
+        static string Verdict(SummaryRow row) => $"{row.Reached} {row.Outcome}";
+        static int Attempt(SummaryRow row) => int.TryParse(row.Metadata("attempt"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var attempt) ? attempt : 0;
+
+        var toolByCell = tool.GroupBy(CellOf, StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
+        // The measures of T3 in the order of the levels, each with the cells it is counted over.
+        (string Name, Func<SummaryRow, bool> Over, Func<SummaryRow, bool> Met)[] measures =
+        [
+            ("read", _ => true, row => row.Reached >= ForeignLevel.Read),
+            ("compiled", _ => true, row => row.Reached >= ForeignLevel.Compiled),
+            ("accepted", _ => true, row => row.Reached >= ForeignLevel.Accepted),
+            ("ran", row => HasFourthLevel(row.Answers), row => row.Reached >= ForeignLevel.Ran),
+            ("agrees", row => HasEquivalenceMeasure(row.Answers), row => row.Outcome == ForeignVerdict.Agrees),
+        ];
+
+        yield return "## Foreign artifacts beside the tool over the same cells (decision 189)";
+        yield return string.Empty;
+        yield return "A cell is a key, a source and a target. Columns: cells = the cells of the group with a row of the tool; attempts = the rows of the group over them; refused replies = replies the import refused for a trace of a search, made again;";
+        yield return "the tool = the cells its one row reached the measure in; per attempt = the attempts that reached it; best-of-n = the cells at least one attempt reached it in. ran is counted over the cells with a fourth level, agrees over those with a measure of equivalence.";
+        yield return string.Empty;
+        yield return "| group | cells | attempts | refused replies | measure | the tool | per attempt | best-of-n |";
+        yield return "|---|---|---|---|---|---|---|---|";
+
+        var unpaired = new List<string>();
+        var cellLines = new List<string>();
+
+        foreach (var group in foreign.GroupBy(GroupOf, StringComparer.Ordinal).OrderBy(group => group.Key, StringComparer.Ordinal))
+        {
+            var cells = group.GroupBy(CellOf, StringComparer.Ordinal).OrderBy(cell => cell.Key, StringComparer.Ordinal).ToList();
+            unpaired.AddRange(cells.Where(cell => !toolByCell.ContainsKey(cell.Key)).Select(cell => $"{group.Key}: {cell.Key}"));
+
+            var paired = cells.Where(cell => toolByCell.ContainsKey(cell.Key)).ToList();
+            var attempts = paired.SelectMany(cell => cell).ToList();
+            var refused = attempts.Sum(row => int.TryParse(row.Metadata("refusedBefore"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) ? count : 0);
+
+            var first = true;
+            foreach (var (name, over, met) in measures)
+            {
+                var cellsOver = paired.Where(cell => over(toolByCell[cell.Key])).ToList();
+                var attemptsOver = cellsOver.SelectMany(cell => cell).ToList();
+                var byTool = cellsOver.Count(cell => met(toolByCell[cell.Key]));
+                var best = cellsOver.Count(cell => cell.Any(met));
+
+                yield return first
+                    ? $"| {group.Key} | {paired.Count} | {attempts.Count} | {refused} | {name} | {ShareOf(byTool, cellsOver.Count)} | {ShareOf(attemptsOver.Count(met), attemptsOver.Count)} | {ShareOf(best, cellsOver.Count)} |"
+                    : $"| | | | | {name} | {ShareOf(byTool, cellsOver.Count)} | {ShareOf(attemptsOver.Count(met), attemptsOver.Count)} | {ShareOf(best, cellsOver.Count)} |";
+                first = false;
+            }
+
+            cellLines.AddRange(paired.Select(cell =>
+                $"| {cell.Key} | {group.Key} | {Verdict(toolByCell[cell.Key])} | {string.Join(" · ", cell.OrderBy(Attempt).ThenBy(row => row["artifact"], StringComparer.Ordinal).Select(Verdict))} |"));
+        }
+
+        yield return string.Empty;
+
+        if (unpaired.Count > 0)
+        {
+            yield return $"Cells without a row of the tool, left out of the shares: {string.Join("; ", unpaired)}. The experiment run over the inputs of the run writes their rows.";
+            yield return string.Empty;
+        }
+
+        yield return "### Cell by cell";
+        yield return string.Empty;
+        yield return "| cell | group | the tool | attempts |";
+        yield return "|---|---|---|---|";
+        foreach (var line in cellLines)
+        {
+            yield return line;
+        }
+
+        yield return string.Empty;
+    }
+
+    private static string ShareOf(int count, int of)
+        => of == 0 ? "—" : string.Create(CultureInfo.InvariantCulture, $"{count} of {of} ({100.0 * count / of:F0} %)");
 
     private static string Present(string directory, string[] files)
         => string.Join(", ", files.Select(file => File.Exists(Path.Combine(directory, file)) ? file : $"no {file}"));

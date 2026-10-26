@@ -41,6 +41,8 @@
     <Compile Remove="Database\Foreign\**\*.cs" />
     <None Include="Database\Foreign\**\*.cs" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Database\Foreign\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The prompt templates of the web channel (decision 189), read by their identifier. -->
+    <EmbeddedResource Include="Foreign\Prompts\*.md" LogicalName="Tests.Foreign.Prompts.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
