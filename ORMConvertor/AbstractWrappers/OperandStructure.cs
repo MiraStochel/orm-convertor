@@ -157,22 +157,28 @@ public static class OperandStructure
     /// list aggregate left whole, since each of those is NULL on a condition of its own, and
     /// an aggregate left whole, since it is NULL over what it aggregates rather than over its
     /// value. The LINQ writer guards a concatenation on these values, and the LINQ reader
-    /// takes a guard over them back as the bare concatenation.
+    /// takes a guard over them back as the bare concatenation. Collected into one list rather
+    /// than yielded through nested iterators, through which a value at depth d would pass d
+    /// times.
     /// </summary>
-    public static IEnumerable<QueryOperand> NullSources(QueryExpression expression)
+    public static IReadOnlyList<QueryOperand> NullSources(QueryExpression expression)
+    {
+        var found = new List<QueryOperand>();
+        CollectNullSources(expression, found);
+        return found;
+    }
+
+    private static void CollectNullSources(QueryExpression expression, List<QueryOperand> found)
     {
         foreach (var leaf in expression.Leaves())
         {
             if (leaf is { IsExpression: true, IsAggregate: false } && PropagatesNull(leaf.Expression!))
             {
-                foreach (var inner in NullSources(leaf.Expression!))
-                {
-                    yield return inner;
-                }
+                CollectNullSources(leaf.Expression!, found);
             }
             else
             {
-                yield return leaf;
+                found.Add(leaf);
             }
         }
     }

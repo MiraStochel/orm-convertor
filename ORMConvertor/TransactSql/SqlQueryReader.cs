@@ -1193,7 +1193,7 @@ public class SqlQueryReader(
                 return ReadFunctionCall(call);
 
             case CoalesceExpression coalesce:
-                return ReadCall(QueryFunction.Coalesce, coalesce.Expressions, Print(coalesce));
+                return ReadCall(QueryFunction.Coalesce, coalesce.Expressions, coalesce);
 
             case SearchedCaseExpression searched:
                 return ReadSearchedCase(searched);
@@ -1340,27 +1340,27 @@ public class SqlQueryReader(
         {
             case "DATEADD": return ReadDateFunction(QueryFunction.DateAdd, call);
             case "DATEDIFF": return ReadDateFunction(QueryFunction.DateDiff, call);
-            case "ROUND" when call.Parameters.Count == 2: return ReadCall(QueryFunction.Round, call.Parameters, Print(call));
+            case "ROUND" when call.Parameters.Count == 2: return ReadCall(QueryFunction.Round, call.Parameters, call);
             case "ROUND":
                 unread ??= ($"'{Print(call)}', a ROUND whose third argument truncates instead of rounding, which the vocabulary of expressions does not carry", QueryFeature.Expression);
                 return null;
-            case "SQRT": return ReadCall(QueryFunction.Sqrt, call.Parameters, Print(call));
+            case "SQRT": return ReadCall(QueryFunction.Sqrt, call.Parameters, call);
             case "STRING_AGG": return ReadListAggregate(call);
-            case "UPPER": return ReadCall(QueryFunction.Upper, call.Parameters, Print(call));
-            case "LOWER": return ReadCall(QueryFunction.Lower, call.Parameters, Print(call));
-            case "TRIM": return ReadCall(QueryFunction.Trim, call.Parameters, Print(call));
-            case "RTRIM" when call.Parameters.Count == 1: return ReadCall(QueryFunction.TrimEnd, call.Parameters, Print(call));
-            case "SUBSTRING": return ReadCall(QueryFunction.Substring, call.Parameters, Print(call));
-            case "LEN": return ReadCall(QueryFunction.Length, call.Parameters, Print(call));
-            case "ISNULL": return ReadCall(QueryFunction.Coalesce, call.Parameters, Print(call));
-            case "COALESCE": return ReadCall(QueryFunction.Coalesce, call.Parameters, Print(call));
-            case "ABS": return ReadCall(QueryFunction.Abs, call.Parameters, Print(call));
-            case "YEAR": return ReadCall(QueryFunction.Year, call.Parameters, Print(call));
-            case "MONTH": return ReadCall(QueryFunction.Month, call.Parameters, Print(call));
-            case "DAY": return ReadCall(QueryFunction.Day, call.Parameters, Print(call));
+            case "UPPER": return ReadCall(QueryFunction.Upper, call.Parameters, call);
+            case "LOWER": return ReadCall(QueryFunction.Lower, call.Parameters, call);
+            case "TRIM": return ReadCall(QueryFunction.Trim, call.Parameters, call);
+            case "RTRIM" when call.Parameters.Count == 1: return ReadCall(QueryFunction.TrimEnd, call.Parameters, call);
+            case "SUBSTRING": return ReadCall(QueryFunction.Substring, call.Parameters, call);
+            case "LEN": return ReadCall(QueryFunction.Length, call.Parameters, call);
+            case "ISNULL": return ReadCall(QueryFunction.Coalesce, call.Parameters, call);
+            case "COALESCE": return ReadCall(QueryFunction.Coalesce, call.Parameters, call);
+            case "ABS": return ReadCall(QueryFunction.Abs, call.Parameters, call);
+            case "YEAR": return ReadCall(QueryFunction.Year, call.Parameters, call);
+            case "MONTH": return ReadCall(QueryFunction.Month, call.Parameters, call);
+            case "DAY": return ReadCall(QueryFunction.Day, call.Parameters, call);
             case "GETDATE":
             case "CURRENT_TIMESTAMP":
-                return ReadCall(QueryFunction.CurrentTimestamp, call.Parameters, Print(call));
+                return ReadCall(QueryFunction.CurrentTimestamp, call.Parameters, call);
             case "CONCAT": return ReadConcat(call);
             default:
                 unread ??= ($"the function {name} in '{Print(call)}', which is outside the vocabulary of expressions the query representation carries", QueryFeature.Expression);
@@ -1660,13 +1660,17 @@ public class SqlQueryReader(
         return null;
     }
 
-    /// <summary>A call of a function of the vocabulary; an arity the function does not take is named and refused, as the factory would refuse it.</summary>
-    private QueryOperand? ReadCall(QueryFunction function, IList<ScalarExpression> written, string text)
+    /// <summary>
+    /// A call of a function of the vocabulary; an arity the function does not take is named and
+    /// refused, as the factory would refuse it. The call is printed only for the refusal: a
+    /// print at every level of a nesting would print the subtree below it again each time.
+    /// </summary>
+    private QueryOperand? ReadCall(QueryFunction function, IList<ScalarExpression> written, TSqlFragment call)
     {
         var (least, most) = ModelExpression.Arity(function);
         if (written.Count < least || written.Count > most)
         {
-            unread ??= ($"'{text}', whose number of arguments the function {function} of the vocabulary does not take", QueryFeature.Expression);
+            unread ??= ($"'{Print(call)}', whose number of arguments the function {function} of the vocabulary does not take", QueryFeature.Expression);
             return null;
         }
 
@@ -1725,7 +1729,7 @@ public class SqlQueryReader(
             branches.Add(new CaseBranch(when, then));
         }
 
-        return ReadCaseElse(searched.ElseExpression, branches, Print(searched));
+        return ReadCaseElse(searched.ElseExpression, branches, searched);
     }
 
     /// <summary>A simple CASE read as the searched form with an equality per branch - an exact rewrite (decision 107).</summary>
@@ -1751,10 +1755,11 @@ public class SqlQueryReader(
             branches.Add(new CaseBranch(new ComparisonCondition(input, ComparisonOperator.Equal, value), then));
         }
 
-        return ReadCaseElse(simple.ElseExpression, branches, Print(simple));
+        return ReadCaseElse(simple.ElseExpression, branches, simple);
     }
 
-    private QueryOperand? ReadCaseElse(ScalarExpression? written, List<CaseBranch> branches, string text)
+    /// <summary>The ELSE of a CASE; the CASE is printed only for the refusal, as a call is (<see cref="ReadCall"/>).</summary>
+    private QueryOperand? ReadCaseElse(ScalarExpression? written, List<CaseBranch> branches, TSqlFragment caseExpression)
     {
         QueryOperand? otherwise = null;
         if (written is not null and not NullLiteral)
@@ -1762,7 +1767,7 @@ public class SqlQueryReader(
             otherwise = ReadOperand(written);
             if (otherwise is null || !IsLeaf(otherwise, written))
             {
-                unread ??= ($"'{text}', a CASE whose ELSE the query representation does not carry", QueryFeature.Expression);
+                unread ??= ($"'{Print(caseExpression)}', a CASE whose ELSE the query representation does not carry", QueryFeature.Expression);
                 return null;
             }
         }

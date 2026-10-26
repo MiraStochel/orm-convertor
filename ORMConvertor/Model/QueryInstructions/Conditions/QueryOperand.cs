@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Model.QueryInstructions.Conditions;
 
 /// <summary>
@@ -203,18 +205,39 @@ public sealed class QueryOperand
 
     public override string ToString()
     {
-        var text = IsSubQuery
-            ? "(subquery)"
-            : IsValueList
-                ? $"({string.Join(", ", Values!.Select(v => v.ToString()))})"
-                : IsParameter
-                    ? Parameter!.ToString()
-                    : IsExpression
-                        ? Expression!.ToString()
+        var text = new StringBuilder();
+        AppendTo(text);
+        return text.ToString();
+    }
+
+    /// <summary>The text of <see cref="ToString"/> written into one builder, as an expression writes its leaves (<see cref="QueryExpression"/>).</summary>
+    internal void AppendTo(StringBuilder text)
+    {
+        if (Function is not null)
+        {
+            text.Append(Function).Append('(').Append(Distinct ? "DISTINCT " : string.Empty);
+        }
+
+        if (IsExpression)
+        {
+            Expression!.AppendTo(text);
+        }
+        else
+        {
+            text.Append(IsSubQuery
+                ? "(subquery)"
+                : IsValueList
+                    ? $"({string.Join(", ", Values!.Select(v => v.ToString()))})"
+                    : IsParameter
+                        ? Parameter!.ToString()
                         : IsColumn
                             ? (Table is null ? Property! : $"{Table}.{Property}")
-                            : Constant!.Text;
+                            : Constant!.Text);
+        }
 
-        return Function is null ? text : $"{Function}({(Distinct ? "DISTINCT " : string.Empty)}{text})";
+        if (Function is not null)
+        {
+            text.Append(')');
+        }
     }
 }

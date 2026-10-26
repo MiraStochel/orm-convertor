@@ -427,6 +427,22 @@ public class IntermediateResultTest
         Assert.Contains(demand, d => d.Names(QueryTableDemand.Of("Shop.Orders")));
     }
 
+    /// <summary>
+    /// A definition that reads its own column without an anchor is the build's to refuse, and
+    /// the demand that runs before the build walks that column once rather than following it
+    /// into itself, which overflowed the stack of the process.
+    /// </summary>
+    [Fact]
+    public void TheCatalogDemandWalksADefinitionThatReadsItselfOnce()
+    {
+        var builder = new DapperSqlQueryBuilder();
+        new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery, "WITH r AS (SELECT r.n + 1 AS n FROM r) SELECT r.n FROM r WHERE r.n = @p");
+
+        Assert.Empty(builder.CatalogDemand());
+        Assert.Empty(builder.Build());
+        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+    }
+
     // ---- reading HQL ------------------------------------------------------------------
 
     [Fact]

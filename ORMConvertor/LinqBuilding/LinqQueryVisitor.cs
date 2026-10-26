@@ -191,16 +191,17 @@ public abstract class LinqQueryVisitor(
             return SubQueryComparison(cond);
         }
 
-        var left = Operand(cond.Left);
-
+        // The left side is rendered by the branch that writes it: a relational comparison
+        // renders it beside the right side, and rendering it here as well would render an
+        // operand that nests another comparison twice at every level of the nesting.
         if (cond.Operator == ComparisonOperator.IsNull)
         {
-            return $"{left} == null";
+            return $"{Operand(cond.Left)} == null";
         }
 
         if (cond.Operator == ComparisonOperator.IsNotNull)
         {
-            return $"{left} != null";
+            return $"{Operand(cond.Left)} != null";
         }
 
         if (cond.Right is null)
@@ -214,11 +215,13 @@ public abstract class LinqQueryVisitor(
 
         if (cond.Operator == ComparisonOperator.Like)
         {
-            return Like(left, cond.Right, cond.Escape);
+            return Like(Operand(cond.Left), cond.Right, cond.Escape);
         }
 
         if (cond.Operator == ComparisonOperator.In)
         {
+            var left = Operand(cond.Left);
+
             // IN over enumerated values (decision 074) turns around into Contains on an
             // inline array of constants, which the provider translates back to IN (...). The
             // subquery right side went through SubQueryComparison above; anything else is

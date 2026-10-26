@@ -1,3 +1,4 @@
+using System.Text;
 using Model.AbstractRepresentation.Enums;
 
 namespace Model.QueryInstructions.Conditions;
@@ -516,28 +517,77 @@ public sealed class QueryExpression
 
     public override string ToString()
     {
+        var text = new StringBuilder();
+        AppendTo(text);
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// The text of <see cref="ToString"/> written into one builder, so that a nesting is
+    /// written once rather than copied into the text of each level above it.
+    /// </summary>
+    internal void AppendTo(StringBuilder text)
+    {
         if (IsBinary)
         {
-            return $"({Left} {Operator} {Right})";
+            text.Append('(');
+            Left!.AppendTo(text);
+            text.Append(' ').Append(Operator).Append(' ');
+            Right!.AppendTo(text);
+            text.Append(')');
+            return;
         }
 
         if (IsCall)
         {
-            var arguments = Arguments!.Select(a => a.ToString());
-            return Function switch
+            text.Append(Function).Append('(');
+            if (Function is QueryFunction.DateAdd or QueryFunction.DateDiff)
             {
-                QueryFunction.DateAdd or QueryFunction.DateDiff => $"{Function}({Unit}, {string.Join(", ", arguments)})",
-                QueryFunction.Cast => $"Cast({Arguments![0]} as {CastTo})",
-                _ => $"{Function}({string.Join(", ", arguments)})",
-            };
+                text.Append(Unit).Append(", ");
+            }
+
+            if (Function == QueryFunction.Cast)
+            {
+                Arguments![0].AppendTo(text);
+                text.Append(" as ").Append(CastTo);
+            }
+            else
+            {
+                for (var i = 0; i < Arguments!.Count; i++)
+                {
+                    text.Append(i == 0 ? string.Empty : ", ");
+                    Arguments[i].AppendTo(text);
+                }
+            }
+
+            text.Append(')');
+            return;
         }
 
         if (IsCase)
         {
-            var branches = string.Join(" ", Branches!.Select(b => $"when {b.When} then {b.Then}"));
-            return Else is null ? $"case {branches} end" : $"case {branches} else {Else} end";
+            text.Append("case ");
+            for (var i = 0; i < Branches!.Count; i++)
+            {
+                text.Append(i == 0 ? "when " : " when ").Append(Branches[i].When).Append(" then ");
+                Branches[i].Then.AppendTo(text);
+            }
+
+            if (Else is not null)
+            {
+                text.Append(" else ");
+                Else.AppendTo(text);
+            }
+
+            text.Append(" end");
+            return;
         }
 
+        text.Append(WindowOrListText());
+    }
+
+    private string WindowOrListText()
+    {
         var ordered = string.Join(", ", Ordering!.Select(k => k.ToString()));
 
         if (IsWindow)

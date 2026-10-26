@@ -200,14 +200,29 @@ internal sealed partial class MyBatisStatementText(
             return;
         }
 
+        // A fragment that includes itself, directly or through others, has no expansion: the
+        // text would never end. Held by the fragment rather than by the refid, which may name
+        // it qualified or bare.
+        if (expanding.Exists(open => ReferenceEquals(open.Fragment, fragment)))
+        {
+            var cycle = string.Join(" -> ", expanding.SkipWhile(open => !ReferenceEquals(open.Fragment, fragment)).Select(open => open.RefId).Append(refId));
+            Refuse($"The <include refid=\"{refId}\"> stands inside the fragment it inlines ({cycle}), so its expansion never ends; no artifact was generated.");
+            return;
+        }
+
         var substitutions = include.Elements()
             .Where(e => e.Name.LocalName == "property"
                 && e.Attribute("name") is not null
                 && e.Attribute("value") is not null)
             .ToDictionary(e => e.Attribute("name")!.Value, e => e.Attribute("value")!.Value, StringComparer.Ordinal);
 
+        expanding.Add((fragment, refId));
         AppendNodes(fragment.Nodes(), sql, substitutions);
+        expanding.RemoveAt(expanding.Count - 1);
     }
+
+    /// <summary>The fragments whose &lt;include&gt; is being expanded, outermost first, each with the refid that named it.</summary>
+    private readonly List<(XElement Fragment, string RefId)> expanding = [];
 
     /// <summary>
     /// &lt;where&gt;, &lt;set&gt; and &lt;trim&gt;, which are one operation with different

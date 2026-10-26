@@ -164,6 +164,46 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
         }
     }
 
+    public static TheoryData<ORMEnum> ExpressionSources()
+    {
+        var data = new TheoryData<ORMEnum>();
+        foreach (var source in LimitSeries.Axis("expression")!.Sources)
+        {
+            data.Add(source);
+        }
+
+        return data;
+    }
+
+    /// <summary>
+    /// A sum of dozens of terms in the projection translates from every source into every target
+    /// within the 30 s of S3. The typing of an expression once derived the scalar of every node
+    /// again at each level above it, which doubled the time with every term: 16 terms took a
+    /// second and 32 did not finish in two hours. A direction over the bound is left running
+    /// rather than awaited, so that the test fails at the bound instead of hanging.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ExpressionSources))]
+    public async Task ASumOfDozensOfTermsTranslatesInEveryDirectionWithinTheS3Bound(ORMEnum source)
+    {
+        fixture.SkipIfUnavailable();
+
+        const int terms = 64;
+        var units = LimitSeries.Axis("expression")!.Units(source, terms);
+
+        foreach (var target in Enum.GetValues<ORMEnum>())
+        {
+            var translation = Task.Run(() => OrmConvertor.ConversionHandler.Convert(source, target, units, fixture.CatalogReader), TestContext.Current.CancellationToken);
+            var first = await Task.WhenAny(translation, Task.Delay(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken));
+            Assert.True(first == translation, $"A sum of {terms} terms {source} -> {target} did not translate within the 30 s of S3.");
+
+            var conversion = await translation;
+            var failures = ExperimentRun.Failures(conversion);
+            Assert.True(failures.Count == 0, $"A sum of {terms} terms {source} -> {target} is refused: {string.Join("; ", failures)}");
+            Assert.Contains(conversion.Sources, artifact => artifact.ContentType.IsQuery());
+        }
+    }
+
     [Fact]
     public void APointCarriesAsManyAsItSays()
     {

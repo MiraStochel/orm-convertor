@@ -785,6 +785,8 @@ public abstract partial class AbstractQueryBuilder
             return [];
         }
 
+        derivedScalars.Clear();
+
         // The whole row of an intermediate result beside columns is its columns (decision
         // 161), before any gate reads a select list or describes a row.
         ExpandWholeRowsOfDefinitions();
@@ -1665,6 +1667,9 @@ public abstract partial class AbstractQueryBuilder
                 }
             }
         }
+
+        // A scalar derived before the rows existed resolved a definition's column to nothing.
+        derivedScalars.Clear();
     }
 
     /// <summary>
@@ -2527,15 +2532,24 @@ public abstract partial class AbstractQueryBuilder
     }
 
     /// <summary>
+    /// The columns of the intermediate results whose demand <see cref="CatalogDemand"/> has
+    /// already walked, as "definition/column". The demand behind such a column is the same
+    /// wherever the column is read - a body sees nothing of the query around it (decision
+    /// 112) -, so it is walked once: a definition that reads its own column, which the gate
+    /// refuses only later, would otherwise recurse without end, and a chain of definitions
+    /// each reading the one before twice would be walked twice per link.
+    /// </summary>
+    private readonly HashSet<string> demandedDefinitionColumns = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// The demand behind one column of an intermediate result (decision 105 over decision
     /// 112): the table behind the column of the definition's body that the column is, in the
     /// body's own scope - a COUNT asks for nothing, an expression for the tables of its
     /// columns, a column of an earlier definition for what stands behind that one.
     /// </summary>
-    private void DemandDefinitionColumn(WithInstruction definition, string column, List<QueryTableDemand> found, HashSet<string>? visited = null)
+    private void DemandDefinitionColumn(WithInstruction definition, string column, List<QueryTableDemand> found)
     {
-        visited ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (!visited.Add(definition.Name))
+        if (!demandedDefinitionColumns.Add(CountingKey(definition.Name, column)))
         {
             return;
         }
@@ -2562,7 +2576,7 @@ public abstract partial class AbstractQueryBuilder
         else if (!string.Equals(projection.Operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase)
                  && DefinitionBehind(projection.Operand, scopeAliases) is { } inner)
         {
-            DemandDefinitionColumn(inner, projection.Operand.Property!, found, visited);
+            DemandDefinitionColumn(inner, projection.Operand.Property!, found);
         }
     }
 
@@ -3204,6 +3218,7 @@ public abstract partial class AbstractQueryBuilder
     public IReadOnlyList<QueryTableDemand> CatalogDemand()
     {
         var demands = new List<QueryTableDemand>();
+        demandedDefinitionColumns.Clear();
 
         // The rows of the intermediate results resolve a reference to one as a stated
         // mapping, so that nobody asks the catalog for a table named after a definition, and
@@ -3387,15 +3402,22 @@ public abstract partial class AbstractQueryBuilder
         }
     }
 
+    /// <summary>
+    /// The demand of one expression. A parameter anywhere in it demands the columns of the
+    /// whole expression at once, so the expressions below are <paramref name="covered"/> and
+    /// walk only the scopes they hold - a subquery among their leaves, the conditions of a
+    /// CASE -, rather than walking their own leaves again at every level.
+    /// </summary>
     private void CollectDemands(
         QueryExpression expression,
         QueryOperand? other,
         ComparisonOperator op,
         Dictionary<string, EntityMap> aliases,
         Dictionary<string, string> unbound,
-        List<QueryTableDemand> found)
+        List<QueryTableDemand> found,
+        bool covered = false)
     {
-        if (ContainsParameter(expression))
+        if (!covered && ContainsParameter(expression))
         {
             DemandColumnsOf(expression, aliases, unbound, found);
 
@@ -3418,7 +3440,9 @@ public abstract partial class AbstractQueryBuilder
             }
             else if (leaf.IsExpression)
             {
-                CollectDemands(leaf.Expression!, other, op, aliases, unbound, found);
+                // Covered either way: the columns below were demanded above, or no
+                // parameter stands below.
+                CollectDemands(leaf.Expression!, other, op, aliases, unbound, found, covered: true);
             }
         }
 
@@ -3632,16 +3656,49 @@ public abstract partial class AbstractQueryBuilder
         return string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase) ? ScalarType.Long : argument;
     }
 
+    /// <summary>
+    /// What <see cref="ScalarOf(QueryExpression, Dictionary{string, EntityMap})"/> derived in
+    /// this build, per scope and per node, both by reference: the same node is typed in the
+    /// scopes of two resolutions (the typed view and the parameter gate), and two nodes of one
+    /// text may be typed differently by their surroundings. Every walk over an expression asks
+    /// for the scalars of the nodes below the one it stands at, so without it a chain of n
+    /// operators is typed again at each of its levels. A scope is a dictionary filled once
+    /// when a walk enters it (<see cref="ScopeAliases"/>, <see cref="AliasedEntities"/>) and
+    /// never changed after; the rows of the intermediate results, which a derivation also
+    /// reads, are not in the key, so the cache is emptied wherever they change
+    /// (<see cref="DescribeDefinitions"/>) as well as at the start of every build.
+    /// </summary>
+    private readonly Dictionary<Dictionary<string, EntityMap>, Dictionary<QueryExpression, ScalarType?>> derivedScalars = new(ReferenceEqualityComparer.Instance);
+
     private ScalarType? ScalarOf(QueryExpression expression, Dictionary<string, EntityMap> aliases)
+    {
+        if (!derivedScalars.TryGetValue(aliases, out var scope))
+        {
+            scope = new Dictionary<QueryExpression, ScalarType?>(ReferenceEqualityComparer.Instance);
+            derivedScalars[aliases] = scope;
+        }
+
+        if (!scope.TryGetValue(expression, out var scalar))
+        {
+            scalar = DeriveScalar(expression, aliases);
+            scope[expression] = scalar;
+        }
+
+        return scalar;
+    }
+
+    private ScalarType? DeriveScalar(QueryExpression expression, Dictionary<string, EntityMap> aliases)
     {
         if (expression.IsBinary)
         {
-            if (IsConcatenation(expression, aliases))
-            {
-                return ScalarType.String;
-            }
+            // Each side is typed once; whether the operation concatenates follows from the
+            // same two scalars as the arithmetic does.
+            var left = ScalarOf(expression.Left!, aliases);
+            var right = ScalarOf(expression.Right!, aliases);
+            var concatenates = expression.Operator == ExpressionOperator.Concat
+                || (expression.Operator == ExpressionOperator.Add && (IsText(left) || IsText(right)));
 
-            return CommonScalar([ScalarOf(expression.Left!, aliases), ScalarOf(expression.Right!, aliases)], out _);
+            return concatenates ? ScalarType.String : CommonScalar([left, right], out _);
         }
 
         if (expression.IsCall)
@@ -3735,9 +3792,10 @@ public abstract partial class AbstractQueryBuilder
             return false;
         }
 
-        return ScalarOf(expression.Left!, aliases) is ScalarType.String or ScalarType.Char
-               || ScalarOf(expression.Right!, aliases) is ScalarType.String or ScalarType.Char;
+        return IsText(ScalarOf(expression.Left!, aliases)) || IsText(ScalarOf(expression.Right!, aliases));
     }
+
+    private static bool IsText(ScalarType? scalar) => scalar is ScalarType.String or ScalarType.Char;
 
     /// <summary>
     /// The one scalar a set of scalars unifies to by the rule of decision 074 for the

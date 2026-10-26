@@ -181,6 +181,26 @@ public class MyBatisQueryTest
     }
 
     /// <summary>
+    /// A fragment that includes itself - here through a second one - has no expansion: the
+    /// text would never end, and expanding it overflowed the stack of the process. Refused,
+    /// naming the cycle.
+    /// </summary>
+    [Fact]
+    public void AnIncludeCycleIsRefusedNamingTheCycle()
+    {
+        var result = Convert(ORMEnum.Dapper, null, Mapper("""
+          <sql id="a">c.CustomerName<include refid="b"/></sql>
+          <sql id="b">, <include refid="a"/></sql>
+          <select id="findAll" resultType="Customer">
+            SELECT <include refid="a"/> FROM Sales.Customers AS c
+          </select>
+        """));
+
+        Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Failure && r.Reason.Contains("(a -> b -> a)"));
+        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery);
+    }
+
+    /// <summary>
     /// &lt;where&gt; is an operation over the condition, not a piece of text: it writes the
     /// keyword and strips the leading connective, which is exactly what the condition tree
     /// does in the representation.
