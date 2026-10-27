@@ -1,7 +1,7 @@
 # Container configuration of the environment (decision 039, requirement S5).
 #
 #   docker compose up --build                            the system: application + sample databases
-#   docker compose --profile test build tests java_tests test_app test_app_ldbc test_app_cases test_db
+#   docker compose --profile test build tests java_tests test_app test_app_ldbc test_app_cases test_app_dry test_db
 #   docker compose --profile test run --rm tests         the .NET test suite, in a clean environment
 #   docker compose --profile test run --rm java_tests    the Java test suite, likewise
 #
@@ -242,6 +242,24 @@ services:
       test_db_init:
         condition: service_completed_successfully
 
+  # The fourth instance the Java suite translates against: the same image with no catalog -
+  # the key is the default of appsettings.json, empty -, for the dry walk of the search for
+  # limits (decision 182), which the Java half translates by an instance that reads nothing.
+  # It needs no database. The alias exists for the reason test_app's does.
+  test_app_dry:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: ORMConvertorAPI/Dockerfile
+      target: runtime
+    cpuset: "2,3"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    networks:
+      default:
+        aliases:
+          - testappdry
+
   # The Java suite (decisions 076 and 078): the java-tests stage of the same Dockerfile,
   # against the same SQL Server, in a schema of its own so that both suites may run at
   # once, and against the instance above for the generated artifacts. The JDBC URL carries
@@ -270,6 +288,9 @@ services:
       # database; the database itself is the test database's server with that name, so the
       # suite derives its JDBC URL from ORMCONVERTOR_TEST_JDBC_URL.
       - ORMCONVERTOR_CASESTUDY_API_URL=http://testappcases:5072/orm
+      # The dry walk of the search for limits (decision 182): ORMCONVERTOR_SERIES_CATALOG=none
+      # translates the series by the instance with no catalog.
+      - ORMCONVERTOR_DRY_API_URL=http://testappdry:5072/orm
     depends_on:
       test_db_init:
         condition: service_completed_successfully
@@ -278,6 +299,8 @@ services:
       test_app_ldbc:
         condition: service_started
       test_app_cases:
+        condition: service_started
+      test_app_dry:
         condition: service_started
 
 volumes:

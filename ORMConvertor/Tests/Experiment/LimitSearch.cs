@@ -111,7 +111,12 @@ internal sealed class SeriesPoint
         return points;
     }
 
-    /// <summary>Writes the points whole, through a temporary file, so that a process that dies while writing leaves the previous file and not half of a new one.</summary>
+    /// <summary>
+    /// Writes the points whole, through a temporary file, so that a process that dies while
+    /// writing leaves the previous file and not half of a new one. The parent reads the file
+    /// while the child writes it (the bound on a point), and on Windows the replace fails while
+    /// a reader has the file open, whatever the reader shares; the replace is tried again.
+    /// </summary>
     public static void Write(string file, IEnumerable<SeriesPoint> points)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(file))!);
@@ -125,8 +130,22 @@ internal sealed class SeriesPoint
 
         var temporary = file + ".tmp";
         File.WriteAllText(temporary, text.ToString(), new UTF8Encoding(false));
-        File.Move(temporary, file, overwrite: true);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(temporary, file, overwrite: true);
+                return;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException && attempt < ReplaceAttempts)
+            {
+                Thread.Sleep(ReplacePause);
+            }
+        }
     }
+
+    private const int ReplaceAttempts = 50;
+    private static readonly TimeSpan ReplacePause = TimeSpan.FromMilliseconds(100);
 
     private static double Number(string value) => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) ? number : 0;
 }
@@ -170,8 +189,11 @@ internal static class LimitSearch
     /// <summary>The bound of S3 on one translation; a point the tool needs longer for has failed, whatever the artifact.</summary>
     public static readonly TimeSpan TranslationBound = TimeSpan.FromSeconds(30);
 
-    /// <summary>How long the parent waits for one child before it kills it and records the point it was on as hung.</summary>
-    public static readonly TimeSpan ChildBound = TimeSpan.FromHours(2);
+    /// <summary>How long one point may stay in progress before the parent kills the child and records the point as hung.</summary>
+    public static readonly TimeSpan PointBound = TimeSpan.FromHours(2);
+
+    /// <summary>How often the parent reads the file of a running child for the point it is on.</summary>
+    private static readonly TimeSpan Watch = TimeSpan.FromSeconds(30);
 
     public const string ChildTestClass = "Tests.Experiment.LimitSeriesChildTest";
 
@@ -199,8 +221,13 @@ internal static class LimitSearch
         }
     }
 
-    public static string PointId(LimitAxis axis, int point, ORMEnum source, ORMEnum target)
-        => $"{ForeignKey.Series}-{axis.Id}-{point.ToString(CultureInfo.InvariantCulture)}-{source}-{target}";
+    /// <summary>
+    /// The row of a point: the input's directory and the target, as the Java suite names its row
+    /// over the same input, and the catalog of the walk, so that the fixture walk and the dry walk
+    /// of one run are two points and not one the second walk would skip.
+    /// </summary>
+    public static string PointId(LimitAxis axis, int point, ORMEnum source, ORMEnum target, string catalog)
+        => $"{ForeignKey.Series}-{axis.Id}-{point.ToString(CultureInfo.InvariantCulture)}-{source}-{target}-{catalog}";
 
     // ---- the child: the walk itself ------------------------------------------------------
 
@@ -228,7 +255,7 @@ internal static class LimitSearch
         {
             foreach (var point in axis.Points)
             {
-                var id = PointId(axis, point, source, target);
+                var id = PointId(axis, point, source, target, catalog);
                 if (points.TryGetValue(id, out var known))
                 {
                     if (known.Step == SeriesPoint.Pass)
@@ -379,7 +406,9 @@ internal static class LimitSearch
     /// Drives the walk of one axis from one source in child processes until it is complete:
     /// a child that exits cleanly has walked every target to its first failure or its ceiling;
     /// a child that dies leaves a point in progress, which becomes the crash of that point, and
-    /// the next child goes on above it. Returns the points of the walk.
+    /// the next child goes on above it. A point that stays in progress longer than
+    /// <see cref="PointBound"/> is hung: the parent kills the child and the next one goes on
+    /// above it. Returns the points of the walk.
     /// </summary>
     public static List<SeriesPoint> Drive(LimitAxis axis, ORMEnum source, string results, string inputs, string catalog, Action<string> log)
     {
@@ -392,7 +421,7 @@ internal static class LimitSearch
 
         for (var attempt = 1; ; attempt++)
         {
-            var before = Snapshot(file, axis, source);
+            var before = Snapshot(file, axis, source, catalog);
 
             var start = new ProcessStartInfo("dotnet")
             {
@@ -428,10 +457,31 @@ internal static class LimitSearch
                 child.BeginOutputReadLine();
                 child.BeginErrorReadLine();
 
-                if (!child.WaitForExit((int)ChildBound.TotalMilliseconds))
+                // The bound is on a point, not on the child: a child walks every target of its
+                // source, and a walk of many slow points would otherwise end on whichever point
+                // it was on when the bound came. The file says which point is in progress, and
+                // the clock starts again whenever that changes; a child that never starts a
+                // point is held to the same bound.
+                string? current = null;
+                var since = Stopwatch.StartNew();
+                while (!child.WaitForExit(Watch))
                 {
-                    hung = true;
-                    child.Kill(entireProcessTree: true);
+                    if (!TryInProgress(file, axis, source, catalog, out var inProgress))
+                    {
+                        continue;
+                    }
+
+                    if (inProgress != current)
+                    {
+                        current = inProgress;
+                        since.Restart();
+                    }
+                    else if (since.Elapsed > PointBound)
+                    {
+                        hung = true;
+                        child.Kill(entireProcessTree: true);
+                        break;
+                    }
                 }
 
                 child.WaitForExit();
@@ -439,13 +489,13 @@ internal static class LimitSearch
             }
 
             var points = SeriesPoint.Read(file);
-            var crashed = points.Where(point => point.Axis == axis.Id && point.Verdict.Source == source.ToString() && point.Step == SeriesPoint.InProgress).ToList();
+            var crashed = OfWalk(points, axis, source, catalog).Where(point => point.Step == SeriesPoint.InProgress).ToList();
             foreach (var point in crashed)
             {
                 point.Step = SeriesPoint.Crash;
                 point.Verdict.Outcome = hung ? "hung" : "crashed";
                 point.Verdict.Detail = hung
-                    ? $"the process did not finish the point within {ChildBound.TotalHours:F0} h and was killed at level {point.Verdict.Reached}"
+                    ? $"the point was in progress for more than {PointBound.TotalHours:F0} h and the process was killed at level {point.Verdict.Reached}"
                     : $"the process died with exit code {exitCode} (0x{exitCode:X8}) at level {point.Verdict.Reached}";
                 log($"{point.Describe()}");
             }
@@ -457,10 +507,10 @@ internal static class LimitSearch
 
             if (exitCode == 0 && !hung)
             {
-                return points.Where(point => point.Axis == axis.Id && point.Verdict.Source == source.ToString()).ToList();
+                return OfWalk(points, axis, source, catalog).ToList();
             }
 
-            if (Snapshot(file, axis, source) == before)
+            if (Snapshot(file, axis, source, catalog) == before)
             {
                 var tail = output.ToString();
                 throw new InvalidOperationException(
@@ -469,8 +519,26 @@ internal static class LimitSearch
         }
     }
 
-    private static string Snapshot(string file, LimitAxis axis, ORMEnum source)
-        => string.Join("\n", SeriesPoint.Read(file)
-            .Where(point => point.Axis == axis.Id && point.Verdict.Source == source.ToString())
+    /// <summary>The points of one walk in the file of a run: an axis, a source and a catalog.</summary>
+    private static IEnumerable<SeriesPoint> OfWalk(IEnumerable<SeriesPoint> points, LimitAxis axis, ORMEnum source, string catalog)
+        => points.Where(point => point.Axis == axis.Id && point.Verdict.Source == source.ToString() && point.Catalog == catalog);
+
+    /// <summary>The point of the walk a running child is on, or none between two points; false when the read met the child replacing the file, and the next look will see it.</summary>
+    private static bool TryInProgress(string file, LimitAxis axis, ORMEnum source, string catalog, out string? inProgress)
+    {
+        try
+        {
+            inProgress = OfWalk(SeriesPoint.Read(file), axis, source, catalog).FirstOrDefault(point => point.Step == SeriesPoint.InProgress)?.Id;
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            inProgress = null;
+            return false;
+        }
+    }
+
+    private static string Snapshot(string file, LimitAxis axis, ORMEnum source, string catalog)
+        => string.Join("\n", OfWalk(SeriesPoint.Read(file), axis, source, catalog)
             .Select(point => point.Id + ":" + point.Step));
 }

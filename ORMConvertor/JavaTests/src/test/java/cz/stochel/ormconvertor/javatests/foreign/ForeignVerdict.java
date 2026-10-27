@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Locale;
+import java.util.Map;
 import java.util.TreeMap;
 
 /**
@@ -172,14 +173,19 @@ public final class ForeignVerdict {
 
     /** The file of rows: one line per artifact under the header, rewritten whole on every change so that a run stopped from outside leaves the rows it had. */
     public static void write(Path directory, String fileName, Collection<ForeignVerdict> verdicts) {
-        TreeMap<String, ForeignVerdict> ordered = new TreeMap<>();
+        write(directory, fileName, verdicts, Map.of());
+    }
+
+    /** The same, with rows of an earlier run kept beside the verdicts: lines of the file by their artifact, which a verdict of the same artifact replaces. */
+    public static void write(Path directory, String fileName, Collection<ForeignVerdict> verdicts, Map<String, String> kept) {
+        TreeMap<String, String> ordered = new TreeMap<>(kept);
         for (ForeignVerdict verdict : verdicts) {
-            ordered.put(verdict.artifact, verdict);
+            ordered.put(verdict.artifact, verdict.row());
         }
 
         StringBuilder text = new StringBuilder(HEADER).append('\n');
-        for (ForeignVerdict verdict : ordered.values()) {
-            text.append(verdict.row()).append('\n');
+        for (String row : ordered.values()) {
+            text.append(row).append('\n');
         }
 
         try {

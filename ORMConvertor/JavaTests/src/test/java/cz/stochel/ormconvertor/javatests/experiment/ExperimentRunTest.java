@@ -17,6 +17,8 @@ import cz.stochel.ormconvertor.javatests.tool.Orm;
 import cz.stochel.ormconvertor.javatests.tool.RecordKind;
 import cz.stochel.ormconvertor.javatests.tool.ToolApi;
 import cz.stochel.ormconvertor.javatests.tool.ToolResponse;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -55,6 +57,9 @@ class ExperimentRunTest {
     private static final String PRODUCER = "tool";
     private static final Map<String, ForeignVerdict> VERDICTS = new TreeMap<>();
 
+    /** Rows of the file this run does not write and keeps: the series points of the walk with the other catalog (decision 182), which shares the directory of the run. */
+    private static final Map<String, String> KEPT = new TreeMap<>();
+
     static Stream<Arguments> translations() {
         String results = results();
         if (results == null) {
@@ -86,6 +91,10 @@ class ExperimentRunTest {
     static void prepare() throws Exception {
         if (results() != null) {
             ToolApi.awaitReady();
+            if (kinds().contains(ForeignArtifact.Key.SERIES) && CATALOG_NONE.equals(seriesCatalog())) {
+                ToolApi.awaitReady(dryInstance());
+            }
+            KEPT.putAll(rowsOfTheOtherCatalog(Path.of(results(), ROWS_FILE_NAME)));
             TestSchema.create();
         }
     }
@@ -115,6 +124,18 @@ class ExperimentRunTest {
     static final String INPUTS_VARIABLE = "ORMCONVERTOR_EXPERIMENT_INPUTS";
     static final String KINDS_VARIABLE = "ORMCONVERTOR_EXPERIMENT_KINDS";
 
+    /** The catalog of the series walk (decision 182), as the .NET half takes it: {@code fixture} (the default) or {@code none}, dry. */
+    static final String SERIES_CATALOG_VARIABLE = "ORMCONVERTOR_SERIES_CATALOG";
+
+    /** The instance with no catalog configured, which translates the series of a dry walk. */
+    static final String DRY_API_URL_VARIABLE = "ORMCONVERTOR_DRY_API_URL";
+
+    private static final String CATALOG_FIXTURE = "fixture";
+    private static final String CATALOG_NONE = "none";
+
+    /** {@code CatalogConnectionState.NotConfigured}: the instance has no catalog and translated on conventions. */
+    private static final int CATALOG_NOT_CONFIGURED = 0;
+
     private static String results() {
         String results = System.getenv(RESULTS_VARIABLE);
         return results == null || results.isBlank() ? null : results.strip();
@@ -142,12 +163,51 @@ class ExperimentRunTest {
         return kinds;
     }
 
-    /** The instance a key is translated by (decision 078): the one whose catalog holds the tables the key reads - for a case study the case-study database (decision 176). */
+    /** The catalog of the series walk, read as the .NET half reads it. */
+    private static String seriesCatalog() {
+        String catalog = System.getenv(SERIES_CATALOG_VARIABLE);
+        return catalog != null && catalog.strip().equalsIgnoreCase(CATALOG_NONE) ? CATALOG_NONE : CATALOG_FIXTURE;
+    }
+
+    /** The instance of a dry walk; a dry walk without one fails by name rather than translating with the fixture as the catalog. */
+    private static String dryInstance() {
+        String url = System.getenv(DRY_API_URL_VARIABLE);
+        if (url == null || url.isBlank()) {
+            throw new IllegalStateException(SERIES_CATALOG_VARIABLE + "=" + CATALOG_NONE + " translates the series by an instance with no catalog, named by "
+                    + DRY_API_URL_VARIABLE + ", and it is not set (decision 182).");
+        }
+        return url.strip();
+    }
+
+    /**
+     * The rows of the file that belong to the series walk with the other catalog: the two walks
+     * of one run share its directory, and the rows of the one walked first stay beside those of
+     * the second. Every other row of the file is this run's to write again.
+     */
+    private static Map<String, String> rowsOfTheOtherCatalog(Path file) throws IOException {
+        Map<String, String> kept = new TreeMap<>();
+        if (!Files.exists(file)) {
+            return kept;
+        }
+
+        String other = "-" + (CATALOG_NONE.equals(seriesCatalog()) ? CATALOG_FIXTURE : CATALOG_NONE);
+        List<String> lines = Files.readAllLines(file);
+        for (String line : lines.subList(Math.min(1, lines.size()), lines.size())) {
+            String artifact = line.split("\t", 2)[0];
+            if (artifact.startsWith(ForeignArtifact.Key.SERIES + "-") && artifact.endsWith(other)) {
+                kept.put(artifact, line);
+            }
+        }
+        return kept;
+    }
+
+    /** The instance a key is translated by (decision 078): the one whose catalog holds the tables the key reads - for a case study the case-study database (decision 176), for a series point of a dry walk the instance with none. */
     private static String instanceOf(ForeignArtifact.Key key) {
         return switch (key.kind()) {
             case ForeignArtifact.Key.LDBC -> LdbcDatabase.apiUrl();
             case ForeignArtifact.Key.FIBEN -> FibenDatabase.apiUrl();
             case ForeignArtifact.Key.EXAMPLE -> isCaseStudy(key) ? CaseStudyDatabase.apiUrl() : ToolApi.baseUrl();
+            case ForeignArtifact.Key.SERIES -> CATALOG_NONE.equals(seriesCatalog()) ? dryInstance() : ToolApi.baseUrl();
             default -> ToolApi.baseUrl();
         };
     }
@@ -163,7 +223,10 @@ class ExperimentRunTest {
      * foreign artifact of producer {@code tool} is.
      */
     static ForeignVerdict judge(ExperimentInput input, int target) throws Exception {
-        String rowId = input.rowId(target);
+        // A series point carries the catalog of its walk, as the .NET half's point does, so that
+        // the summary pairs the row with the point of the same walk.
+        boolean series = ForeignArtifact.Key.SERIES.equals(input.key().kind());
+        String rowId = input.rowId(target) + (series ? "-" + seriesCatalog() : "");
         String answers = input.key().toString();
         String source = Orm.nameOf(input.source());
         String targetName = Orm.nameOf(target);
@@ -178,6 +241,12 @@ class ExperimentRunTest {
 
         ConversionResponse conversion = answer.required();
         String metadata = metadata(conversion);
+
+        boolean dry = conversion.catalogState() == CATALOG_NOT_CONFIGURED;
+        if (series && dry != CATALOG_NONE.equals(seriesCatalog())) {
+            throw new IllegalStateException(rowId + " belongs to the walk with catalog " + seriesCatalog() + ", and the instance that translated it "
+                    + (dry ? "has no catalog" : "has one") + "; the row would stand for the other walk.");
+        }
 
         List<ConversionRecord> failures = conversion.recordsOf(RecordKind.FAILURE);
         if (!failures.isEmpty()) {
@@ -260,7 +329,7 @@ class ExperimentRunTest {
 
         String results = results();
         if (results != null) {
-            ForeignVerdict.write(Path.of(results), ROWS_FILE_NAME, VERDICTS.values());
+            ForeignVerdict.write(Path.of(results), ROWS_FILE_NAME, VERDICTS.values(), KEPT);
         }
     }
 }

@@ -252,7 +252,8 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
     /// The walk in this process over a series cut to its first two points, Dapper into EF Core:
     /// two rows, both passed, both at the fourth level, with the time and the memory of the
     /// translation and the bytes of the input; the input of each point exported where the
-    /// experiment run finds it; a second walk over the same file adds nothing.
+    /// experiment run finds it; a second walk over the same file adds nothing, and the dry walk
+    /// over the same file adds its own points beside them.
     /// </summary>
     [Fact]
     public void TheWalkWritesAPointPerStepAndStopsWhereItStood()
@@ -286,6 +287,11 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
 
             LimitSearch.Walk(axis, ORMEnum.Dapper, file, inputs, LimitSearch.CatalogFixture, [ORMEnum.EFCore]);
             Assert.Equal(2, SeriesPoint.Read(file).Count);
+
+            LimitSearch.Walk(axis, ORMEnum.Dapper, file, inputs, LimitSearch.CatalogNone, [ORMEnum.EFCore]);
+            var both = SeriesPoint.Read(file);
+            Assert.Equal(2, both.Count(point => point.Catalog == LimitSearch.CatalogFixture));
+            Assert.Contains(both, point => point.Catalog == LimitSearch.CatalogNone);
         }
         finally
         {
@@ -310,7 +316,7 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
         Assert.NotNull(verdict.Rows);
     }
 
-    /// <summary>The summary reads the points of a run into its section on limits: the last point that passed per direction, where the series stopped and why.</summary>
+    /// <summary>The summary reads the points of a run into its section on limits: the last point that passed per direction and catalog, where the series stopped and why, a Java target's levels from the Java row of the same point.</summary>
     [Fact]
     public void TheSummaryReadsThePointsOfARun()
     {
@@ -325,19 +331,21 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
                 Point(axis, 4, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Fail, ForeignLevel.None, ForeignVerdict.Refused, 20),
                 Point(axis, 1, ORMEnum.Dapper, ORMEnum.Hibernate, SeriesPoint.Pass, ForeignLevel.None, SeriesPoint.Translated, 9),
                 Point(axis, 2, ORMEnum.Dapper, ORMEnum.Hibernate, SeriesPoint.Crash, ForeignLevel.None, "crashed", 0),
+                Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Pass, ForeignLevel.Ran, ForeignVerdict.Ran, 10, LimitSearch.CatalogNone),
             ];
             SeriesPoint.Write(Path.Combine(temp.FullName, LimitSearch.FileName), points);
             File.WriteAllText(
                 Path.Combine(temp.FullName, ExperimentRun.JavaRowsFileName),
-                ForeignVerdict.Header + "\n" + string.Join('\t', "series-joins-1-Dapper-Hibernate", "series:joins-1", "Dapper", "Hibernate", "tool", "target", "4", "ran", "", "3", "", "1", "2", "3", "4", "{}") + "\n");
+                ForeignVerdict.Header + "\n" + string.Join('\t', "series-joins-1-Dapper-Hibernate-fixture", "series:joins-1", "Dapper", "Hibernate", "tool", "target", "4", "ran", "", "3", "", "1", "2", "3", "4", "{}") + "\n");
 
             var lines = ExperimentSummary.Summarize(temp.FullName);
             var text = string.Join('\n', lines);
             output.WriteLine(text);
 
             Assert.Contains("## Limits", text);
-            Assert.Contains("| Dapper → EFCore | 2 | 2 | 1 | 4: refused |", text);
-            Assert.Contains("| Dapper → Hibernate | 1 | 1 | 1 | 2: crashed |", text);
+            Assert.Contains("| Dapper → EFCore (fixture) | 2 | 2 | 1 | 4: refused |", text);
+            Assert.Contains("| Dapper → EFCore (none) | 1 | 1 | 1 | ceiling |", text);
+            Assert.Contains("| Dapper → Hibernate (fixture) | 1 | 1 | 1 | 2: crashed |", text);
             Assert.DoesNotContain("series | ", text);
         }
         finally
@@ -362,11 +370,11 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
         Assert.Equal(dotnet, java);
     }
 
-    private static SeriesPoint Point(LimitAxis axis, int point, ORMEnum source, ORMEnum target, string step, int reached, string outcome, double ms) => new()
+    private static SeriesPoint Point(LimitAxis axis, int point, ORMEnum source, ORMEnum target, string step, int reached, string outcome, double ms, string catalog = LimitSearch.CatalogFixture) => new()
     {
         Verdict = new ForeignVerdict
         {
-            Artifact = LimitSearch.PointId(axis, point, source, target),
+            Artifact = LimitSearch.PointId(axis, point, source, target, catalog),
             Answers = axis.Key(point).ToString(),
             Source = source.ToString(),
             Target = target.ToString(),
@@ -378,7 +386,7 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
         },
         Axis = axis.Id,
         Point = point,
-        Catalog = LimitSearch.CatalogFixture,
+        Catalog = catalog,
         Step = step,
         TranslateMs = ms,
         AllocatedKb = 2048,

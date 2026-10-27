@@ -40,6 +40,7 @@ flowchart LR
     tapp["test_app, alias testapp<br/>stage runtime"]
     tappl["test_app_ldbc, alias testappldbc<br/>catalog LdbcSnb"]
     tappc["test_app_cases, alias testappcases<br/>catalog ORMConvertorCaseStudies"]
+    tappd["test_app_dry, alias testappdry<br/>no catalog"]
     jt["java_tests<br/>stage java-tests"]
   end
   app -- healthy --> db
@@ -52,6 +53,7 @@ flowchart LR
   jt -- "started, HTTP /orm" --> tapp
   jt -- "started, HTTP /orm" --> tappl
   jt -- "started, HTTP /orm" --> tappc
+  jt -- "started, HTTP /orm" --> tappd
 ```
 
 `ORMConvertorAPI/Dockerfile`: `advisor-native` builds `libadvisor.so`, `dotnet-build` publishes, `tests` builds on it, `java-tests` on `maven:3.9.11-eclipse-temurin-25-noble`, `runtime` on `aspnet:10.0` with `libglpk40`; every base image is pinned by digest beside its tag, and the packages restore in `--locked-mode` from the committed `packages.lock.json` files (decision [186](../docs/decisions/186-the-build-environment-is-pinned-on-content-lock-files-image-digests-and-action-commits-moved-by-dependabot.md)). **`dotnet-build` copies every `.csproj` and its `packages.lock.json` by name: a new project needs a line in that `COPY` list.** `java-tests` copies all of `Tests/Database/`, `database/ldbc/updates/` and `SampleData/ThirdParty/`; the pom's `<testResources>` selects from them.
@@ -118,6 +120,7 @@ No connection string has a value in the repository, except the disposable creden
 | `FIBEN_DATASET` | compose, build of the database image | Commit of `IBM/fiben-benchmark` whose `data.zip` the image downloads, or `none` (no `Fiben`; the profile `test` sets it). | shell, `docker-compose.yml` |
 | `ConnectionStrings:LdbcDatabase`, `ORMCONVERTOR_REQUIRE_LDBC_DATABASE`, `ORMCONVERTOR_LDBC_VALIDATION_ROWS`, `ORMCONVERTOR_TEST_LDBC_JDBC_URL`, `ORMCONVERTOR_LDBC_API_URL` | both suites | The LDBC judge: [its table](#the-ldbc-judge). Unset: the judge skips with the reason. | secret, env; compose `tests`, `java_tests` |
 | `ConnectionStrings:FibenDatabase`, `ORMCONVERTOR_REQUIRE_FIBEN_DATABASE`, `ORMCONVERTOR_FIBEN_QUERIES`, `ORMCONVERTOR_FIBEN_RESULTS`, `ORMCONVERTOR_FIBEN_MEASURE`, `ORMCONVERTOR_TEST_FIBEN_JDBC_URL`, `ORMCONVERTOR_FIBEN_API_URL` | both suites | The FIBEN run: [its table](#the-fiben-run). Unset: every case skips with the reason. | secret, env, by hand |
+| `ORMCONVERTOR_SERIES_AXES`, `ORMCONVERTOR_SERIES_CATALOG`, `ORMCONVERTOR_DRY_API_URL` | both suites (the axes: .NET) | The limits run: [its table](#the-limits-run). Unset: every axis, with the fixture as the catalog. | env, by hand; compose `java_tests` (the dry instance) |
 | `ORMCONVERTOR_FOREIGN_ARTIFACTS`, `ORMCONVERTOR_FOREIGN_RESULTS`, `ORMCONVERTOR_FOREIGN_INPUTS` | both suites (the inputs: .NET) | [Foreign artifacts](#foreign-artifacts): the directory judged, the directory of rows, the directory the inputs are written into. Unset: the one case skips with the reason. | env, by hand; `foreign-run.sh` |
 
 **The nesting cap is the operator's alone**: read at startup, absent from `/convert`. Deeper input overflows the stack, which .NET cannot catch, and kills the process ([`threat-model.md`](../docs/threat-model.md), threat 2). Each response reports it in `maxNestingDepth`.
@@ -133,12 +136,12 @@ Which runs exist, when each is started, what to check on the host before a long 
 ## In a container
 
 ```sh
-docker compose --profile test build tests java_tests test_app test_app_ldbc test_app_cases test_db
+docker compose --profile test build tests java_tests test_app test_app_ldbc test_app_cases test_app_dry test_db
 docker compose --profile test run --rm tests         # the .NET suite
 docker compose --profile test run --rm java_tests    # the Java suite
 ```
 
-S5's "one main command" per suite: the host needs only Docker. Each `run` starts SQL Server, creates the database once it is healthy and runs the whole suite in its own schema (decision [076](../docs/decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)). `test_app` is the tool the Java suite translates against (decision [078](../docs/decisions/078-java-suite-as-a-client-of-a-running-instance.md)), its catalog on the test database, aliased `testapp` because the JDK's `HttpClient` refuses `_` in a host name; `test_app_cases` is the same over the case-study database, for the case studies of the experiment run (decision [176](../docs/decisions/176-the-schema-of-an-excerpted-project-is-an-excerpt-created-empty-in-the-case-study-database-and-the-case-study-runs-over-it-at-the-fourth-level.md)). The SQL Server of the profile is the image of `mssql_db` at scale factor 0.1 (`LDBC_TEST_SCALE_FACTOR`), so its first start restores WideWorldImporters and loads `LdbcSnb` with its validation set before `test_db_init` lets the suites run; both suites then run [the LDBC judge](#the-ldbc-judge) as well, `test_app_ldbc` serving the Java one.
+S5's "one main command" per suite: the host needs only Docker. Each `run` starts SQL Server, creates the database once it is healthy and runs the whole suite in its own schema (decision [076](../docs/decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)). `test_app` is the tool the Java suite translates against (decision [078](../docs/decisions/078-java-suite-as-a-client-of-a-running-instance.md)), its catalog on the test database, aliased `testapp` because the JDK's `HttpClient` refuses `_` in a host name; `test_app_cases` is the same over the case-study database, for the case studies of the experiment run (decision [176](../docs/decisions/176-the-schema-of-an-excerpted-project-is-an-excerpt-created-empty-in-the-case-study-database-and-the-case-study-runs-over-it-at-the-fourth-level.md)), and `test_app_dry` the same with no catalog, for the dry walk of [the limits run](#the-limits-run). The SQL Server of the profile is the image of `mssql_db` at scale factor 0.1 (`LDBC_TEST_SCALE_FACTOR`), so its first start restores WideWorldImporters and loads `LdbcSnb` with its validation set before `test_db_init` lets the suites run; both suites then run [the LDBC judge](#the-ldbc-judge) as well, `test_app_ldbc` serving the Java one.
 
 > **`run` does not rebuild.** Without `build` it measures the tree the images were built from — green, with nothing to say so. **The only tell is the test count** against [the size of the suite](../docs/runs/README.md#velikost-sady-a-pokrytí).
 
@@ -328,7 +331,8 @@ Where the tool stops along one axis (decision [182](../docs/decisions/182-the-li
 |---|---|
 | `ORMCONVERTOR_EXPERIMENT_RESULTS` | the directory of the run: `series-points.tsv` (the rows of the path with `axis`, `point`, `catalog`, `step`, the translation time and memory beside them) and the inputs of the points reached under `inputs/`, keys `series:<axis>-<point>` |
 | `ORMCONVERTOR_SERIES_AXES` | the axes to walk, comma-separated (`joins`, `conditions`, `nesting`, `subqueries`, `exists`, `ctes`, `unions`, `expression`, `properties`, `relations`, `key-parts`, `unit-size`, `entities`); every axis without it |
-| `ORMCONVERTOR_SERIES_CATALOG` | `fixture` (default): the fixture's schema is the catalog, which the Dapper and MyBatis sources need for their keys; `none`: dry, the other half of what S3 separates. A record of a version runs both |
+| `ORMCONVERTOR_SERIES_CATALOG` | `fixture` (default): the fixture's schema is the catalog, which the Dapper and MyBatis sources need for their keys; `none`: dry, the other half of what S3 separates. Both halves take it. A record of a version runs both into the same directory: a point's row ends in its catalog (`series-<axis>-<point>-<source>-<target>-<catalog>`), and the summary gives each direction once per catalog |
+| `ORMCONVERTOR_DRY_API_URL` | the Java half of the dry walk: an instance with no catalog (`ConnectionStrings__CatalogDatabase` empty, the default of `appsettings.json`), in compose `test_app_dry`. A dry Java half without it fails by name, and so does a series point whose instance answers with a catalog state that does not match the walk |
 | `ORMCONVERTOR_EXPERIMENT_KINDS=series` | the Java half: `experiment/ExperimentRunTest` judges the exported points into the three Java targets; `series` is in no half's default kinds |
 
 ```sh
@@ -336,10 +340,11 @@ export ORMCONVERTOR_EXPERIMENT_RESULTS=<dir>
 dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~Tests.Experiment.LimitSearchTest"
 ORMCONVERTOR_SERIES_CATALOG=none dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~Tests.Experiment.LimitSearchTest"
 (cd JavaTests && ORMCONVERTOR_EXPERIMENT_KINDS=series mvn -B test -Dtest=ExperimentRunTest)
+(cd JavaTests && ORMCONVERTOR_EXPERIMENT_KINDS=series ORMCONVERTOR_SERIES_CATALOG=none ORMCONVERTOR_DRY_API_URL=<instance with no catalog> mvn -B test -Dtest=ExperimentRunTest)
 dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~ExperimentSummaryTest"   # the section "Limits" of summary.md
 ```
 
-In the containers the same four commands are `docker compose --profile test run` of `tests` and `java_tests` with the variables and the directory a volume, as for the experiment run; the child processes run inside the `tests` container. A walk stopped from outside continues where it was: a point already in the file is not walked again. No point fails the run - a refusal, a crash, a point over the 30 s of S3 are rows -; only a walk that makes no progress fails, by name. A check from the host - one axis, `ORMCONVERTOR_SERIES_AXES=key-parts` - is never recorded.
+In the containers the same five commands are `docker compose --profile test run` of `tests` and `java_tests` with the variables and the directory a volume, as for the experiment run; the child processes run inside the `tests` container, and `java_tests` already carries `ORMCONVERTOR_DRY_API_URL`. The Java half of one walk keeps the rows of the other walk's points in `java-tool-rows.tsv`. A walk stopped from outside continues where it was: a point already in the file is not walked again. No point fails the run - a refusal, a crash, a point over the 30 s of S3 are rows, and so is a point still in progress after two hours, which the parent kills as `hung` before the walk goes on with the next target -; only a walk that makes no progress fails, by name. A check from the host - one axis, `ORMCONVERTOR_SERIES_AXES=key-parts` - is never recorded.
 
 ## The Java test suite
 
