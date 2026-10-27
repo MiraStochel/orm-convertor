@@ -251,6 +251,8 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | volání Dapper.Contrib v jednotce, která ho importuje: `Get<T>`, `GetAll<T>`, `DeleteAll<T>`, `Insert`, `Update`, `Delete`, i `…Async`; rozhraní mapperu, které dědí `BaseMapper<T>` MyBatis-Plus | balíček mimo rozsah; SQL skládá za běhu, nebo zapisuje | volání Contribu je předání s vlastním číslem, `Failure` (č) se jménem volání, třída kolem něj je kódem kolem dotazů; `BaseMapper` jeden `Loss` u rozhraní, vlastní příkazy se čtou. Bez importu (`global using`) se volání nepozná a třída se čte podle ostatních předání | VM | [133], [109], [111] |
 | vstup zanořený hlouběji než strop (výchozí 128, nastavuje provozovatel): závorky, CASE až po END, řada prefixových operátorů | sestup by mohl shodit proces | `Failure` s řádkem a sloupcem před sestupem; XML strop nemá | VM | [092], [191] |
 | dotaz, jehož model je hlubší než týž strop: řetěz operací, CASE, negací či množinových operací bez závorek (`a + b + …`, `UNION` po `UNION`) | každý průchod po čtení by šel do hloubky řetězu | `Failure` s hloubkou hned po čtení; čtečka, které dochází zásobník, odmítne jednotku | VM | [191] |
+| do NHibernatu řetěz hlubší než 32 článků | vlastní parser HQL NHibernatu přeteče zásobník výchozího vlákna Windows od zhruba sta článků | celý dotaz nativním SQL (`ISession.CreateSQLQuery`) se záznamem `Fallback` | VM | [192] |
+| CASE vnořený hlouběji než desetkrát | SQL Server vnoří CASE nejvýš desetkrát (`Msg 125`) | artefakt vznikne a cíl ho přijme, dotaz neběží v žádném frameworku; LINQ řetěz `?:` čte jako jeden CASE, takže jeho artefakt běží | VM | [192] |
 | nečitelný text jednotky, u C# i text, který Roslyn přečte jen zotavením | co Roslyn dopsal, klient nenapsal | `Failure` s řádkem a sloupcem, kde čtení skončilo, ve všech šesti jazycích | VM | [093], [128] |
 
 ### 2.4 Parametry
@@ -500,6 +502,7 @@ Známé není žádné.
 [091]: ./decisions/091-the-catalog-completes-a-foreign-source-and-says-so.md
 [092]: ./decisions/092-input-nesting-depth-capped-before-the-descent.md
 [191]: ./decisions/191-the-depth-of-the-model-is-capped-by-the-same-number-as-the-text-and-a-reader-that-runs-out-of-stack-refuses.md
+[192]: ./decisions/192-nhibernate-is-held-to-a-chain-of-thirty-two-links-and-a-deeper-query-goes-out-in-native-sql.md
 [093]: ./decisions/093-unreadable-input-is-a-unit-failure.md
 [094]: ./decisions/094-entity-identity-inside-a-conversion.md
 [101]: ./decisions/101-a-join-along-an-association-path-is-derived-from-the-relation.md

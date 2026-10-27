@@ -45,7 +45,56 @@ internal static class NHibernateQueryAcceptance
     public static IReadOnlyList<Type> ReturnTypes(byte[] compiledEntities, IEnumerable<string> mappingXmls, string hql)
         => Plan(compiledEntities, mappingXmls, hql).ReturnTypes;
 
+    /// <summary>
+    /// Compiles every HQL text of a project as <see cref="CompileQuery"/> compiles one, against
+    /// one session factory: the entities are loaded and the factory built once, not once per
+    /// query. Per query, a project of n queries over n entities loaded n copies of the entities,
+    /// which no load context gives back, and built n factories - memory quadratic in its size,
+    /// past the 6 GiB of the suite's container at 800 entities. Throws on the first query
+    /// NHibernate refuses, naming it.
+    /// </summary>
+    public static void CompileQueries(byte[] compiledEntities, IEnumerable<string> mappingXmls, IEnumerable<(string Name, string Hql)> queries)
+        => WithSessionFactory(compiledEntities, mappingXmls, sessionFactory =>
+        {
+            using var session = sessionFactory.OpenSession();
+            foreach (var (name, hql) in queries)
+            {
+                try
+                {
+                    session.CreateQuery(hql);
+                }
+                catch (Exception exception)
+                {
+                    var innermost = exception;
+                    while (innermost is TargetInvocationException { InnerException: { } inner })
+                    {
+                        innermost = inner;
+                    }
+
+                    throw new InvalidOperationException($"{name}: {innermost.Message}", exception);
+                }
+            }
+
+            return 0;
+        });
+
     private static (string Sql, IReadOnlyList<Type> ReturnTypes) Plan(byte[] compiledEntities, IEnumerable<string> mappingXmls, string hql)
+        => WithSessionFactory(compiledEntities, mappingXmls, sessionFactory =>
+        {
+            using var session = sessionFactory.OpenSession();
+
+            // Creating the query is what compiles it; nothing is executed.
+            session.CreateQuery(hql);
+
+            var plan = ((ISessionFactoryImplementor)sessionFactory).QueryPlanCache
+                .GetHQLQueryPlan(new StringQueryExpression(hql), false, new Dictionary<string, IFilter>());
+            return (
+                string.Join(System.Environment.NewLine, plan.Translators.Select(translator => translator.SQLString)),
+                (IReadOnlyList<Type>)plan.ReturnMetadata.ReturnTypes.Select(type => type.ReturnedClass).ToList());
+        });
+
+    /// <summary>A session factory over the generated mapping, with the generated entities resolvable while it is used.</summary>
+    private static T WithSessionFactory<T>(byte[] compiledEntities, IEnumerable<string> mappingXmls, Func<ISessionFactory, T> use)
     {
         var entities = Assembly.Load(compiledEntities);
         var assemblyName = entities.GetName().Name!;
@@ -70,16 +119,7 @@ internal static class NHibernateQueryAcceptance
             }
 
             using var sessionFactory = configuration.BuildSessionFactory();
-            using var session = sessionFactory.OpenSession();
-
-            // Creating the query is what compiles it; nothing is executed.
-            session.CreateQuery(hql);
-
-            var plan = ((ISessionFactoryImplementor)sessionFactory).QueryPlanCache
-                .GetHQLQueryPlan(new StringQueryExpression(hql), false, new Dictionary<string, IFilter>());
-            return (
-                string.Join(System.Environment.NewLine, plan.Translators.Select(translator => translator.SQLString)),
-                plan.ReturnMetadata.ReturnTypes.Select(type => type.ReturnedClass).ToList());
+            return use(sessionFactory);
         }
         finally
         {

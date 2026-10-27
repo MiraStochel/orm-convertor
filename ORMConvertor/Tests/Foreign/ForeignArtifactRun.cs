@@ -142,17 +142,7 @@ internal static class ForeignArtifactRun
 
             if (artifact.Target == ORMEnum.NHibernate)
             {
-                foreach (var hql in artifact.HqlTexts)
-                {
-                    try
-                    {
-                        NHibernateQueryAcceptance.CompileQuery(compilation.Assembly!, mappings, hql.Content);
-                    }
-                    catch (Exception exception)
-                    {
-                        throw new InvalidOperationException($"{hql.Path}: {Innermost(exception).Message}", exception);
-                    }
-                }
+                NHibernateQueryAcceptance.CompileQueries(compilation.Assembly!, mappings, artifact.HqlTexts.Select(hql => (hql.Path, hql.Content)));
             }
         }
         catch (Exception exception)

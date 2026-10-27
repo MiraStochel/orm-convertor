@@ -800,6 +800,17 @@ public abstract partial class AbstractQueryBuilder
             return [];
         }
 
+        // A target whose own query parser overflows the stack on a chain shallower than the cap
+        // states how deep it reads, and a deeper query is not in its language (decision 192):
+        // it falls back to native SQL, which the dialect's server reads instead.
+        if (!writesNativeSql && Descriptor.ChainDepth is { } chainDepth && ModelDepth is var depth && depth > chainDepth)
+        {
+            ReportUnspoken(
+                $"The query nests {depth} operations, CASEs, negations or set operations inside one another, and the query parser of {Descriptor.Framework} is held to {chainDepth}, because its recursion overflows the stack of a default thread from about a hundred",
+                QueryFeature.Expression);
+            return [];
+        }
+
         derivedScalars.Clear();
 
         // The whole row of an intermediate result beside columns is its columns (decision

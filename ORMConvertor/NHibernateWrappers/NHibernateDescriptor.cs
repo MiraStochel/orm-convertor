@@ -174,5 +174,10 @@ public static class NHibernateDescriptor
         // What HQL cannot say goes out as native SQL with a scalar or the entity declared
         // per column (decision 113).
         NativeSqlApi = "ISession.CreateSQLQuery",
+
+        // NHibernate's own HQL parser recurses through every level of precedence for each link
+        // of a chain and overflows the 1.5 MB of a default thread on Windows from about a
+        // hundred links (decision 192, NHibernateChainDepthProviderTest); a third of that.
+        ChainDepth = 32,
     };
 }

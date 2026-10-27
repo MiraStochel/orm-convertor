@@ -186,6 +186,16 @@ public sealed class TargetFrameworkDescriptor
     public string? NativeSqlApi { get; init; }
 
     /// <summary>
+    /// How deep a chain of operations, CASEs, negations and set operations the target's own
+    /// query parser is held to, where it overflows the stack of a default thread below the cap
+    /// of decision 191 (decision 192): the depth of the model, counted as <see cref="ModelDepth"/>
+    /// counts it. A deeper query is a construct the language does not speak, so it goes out in
+    /// native SQL where <see cref="NativeSqlApi"/> names an API. Null where no such limit was
+    /// measured under the cap.
+    /// </summary>
+    public int? ChainDepth { get; init; }
+
+    /// <summary>
     /// Enforced members applying to a given entity map.
     /// </summary>
     public IEnumerable<EnforcedMember> EnforcedMembersFor(EntityMap entityMap)
