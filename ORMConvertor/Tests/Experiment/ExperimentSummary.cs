@@ -214,13 +214,14 @@ internal static class ExperimentSummary
         yield return "## Limits (decision 182)";
         yield return string.Empty;
         yield return $"Points of the search for limits: {points.Count} ({LimitSearch.FileName}); rows of the Java suite over series points: {javaSeries.Count}.";
-        yield return "Columns: last translated = the largest point the tool translated within the bound of S3 (30 s) without a refusal, an exception or a crash; last accepted = the largest point whose artifact the target framework accepted (level 3; for a Java target from the rows of the Java suite);";
-        yield return "last ran = the largest point whose query ran over the fixture (level 4; a series over no table of the fixture has none); stopped at = the first point that failed and why, or \"ceiling\" where the series ended without a failure; s / MB = the time and the memory of the translation at the last point translated.";
+        yield return "Columns: last translated = the largest point the tool translated within the bound of S3 (30 s) without a refusal, an exception or a crash, past the point where the path stopped and past the ceiling where the series goes on with the translation alone (decision 190); translation stopped at = the first point the translation failed at and why, or \"ceiling\";";
+        yield return "last accepted = the largest point whose artifact the target framework accepted (level 3; for a Java target from the rows of the Java suite); last ran = the largest point whose query ran over the fixture (level 4; a series over no table of the fixture has none); path stopped at = the first translated point whose artifact did not reach level 3 and why, \"ceiling\" where none, or \"—\" where the translation stopped first;";
+        yield return "s / MB = the time and the memory of the translation at the last point translated.";
         yield return string.Empty;
 
-        var javaReached = javaSeries
+        var javaRows = javaSeries
             .GroupBy(row => row["artifact"], StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Max(row => row.Reached), StringComparer.Ordinal);
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(row => row.Reached).First(), StringComparer.Ordinal);
         var catalogs = points.Select(point => point.Catalog).Distinct().Count();
 
         foreach (var axis in LimitSeries.Axes)
@@ -231,28 +232,41 @@ internal static class ExperimentSummary
                 continue;
             }
 
-            yield return $"### {axis.Id} — {axis.Grows} (points {axis.Points[0]} … {axis.Points[^1]}{(axis.Uncapped ? ", cap off" : string.Empty)})";
+            yield return $"### {axis.Id} — {axis.Grows} (points {axis.Points[0]} … {axis.Points[^1]}{(axis.Beyond is { Count: > 0 } beyond ? $", translated alone to {beyond[^1]}" : string.Empty)}{(axis.Uncapped ? ", cap off" : string.Empty)})";
             yield return string.Empty;
-            yield return "| direction | last translated | last accepted | last ran | stopped at | s | MB |";
-            yield return "|---|---|---|---|---|---|---|";
+            yield return "| direction | last translated | translation stopped at | last accepted | last ran | path stopped at | s | MB |";
+            yield return "|---|---|---|---|---|---|---|---|";
 
             foreach (var direction in ofAxis.GroupBy(point => (point.Verdict.Source, point.Verdict.Target, point.Catalog)).OrderBy(group => group.Key.Source, StringComparer.Ordinal).ThenBy(group => group.Key.Target, StringComparer.Ordinal).ThenBy(group => group.Key.Catalog, StringComparer.Ordinal))
             {
                 var walked = direction.OrderBy(point => point.Point).ToList();
-                var passed = walked.Where(point => point.Step == SeriesPoint.Pass).ToList();
-                var last = passed.LastOrDefault();
-                var stop = walked.FirstOrDefault(point => point.Step != SeriesPoint.Pass);
+                var java = EcosystemOf(Enum.Parse<ORMEnum>(direction.Key.Target)) == "Java";
+                var last = walked.LastOrDefault(point => point.Step == SeriesPoint.Pass);
+                var translationStop = walked.FirstOrDefault(LimitSearch.FailedInTranslation);
 
-                int Reached(SeriesPoint point) => EcosystemOf(Enum.Parse<ORMEnum>(point.Verdict.Target)) == "Java"
-                    ? javaReached.GetValueOrDefault(point.Id, -1)
+                // The levels of a point: the walk's own for a .NET target, the Java suite's row
+                // over the same exported input for a Java one.
+                int Reached(SeriesPoint point) => java
+                    ? javaRows.GetValueOrDefault(point.Id)?.Reached ?? -1
                     : point.Verdict.Reached;
 
-                var accepted = passed.Where(point => Reached(point) >= ForeignLevel.Accepted).Select(point => (int?)point.Point).LastOrDefault();
-                var ran = passed.Where(point => Reached(point) >= ForeignLevel.Ran).Select(point => (int?)point.Point).LastOrDefault();
+                var judged = walked.Where(point => !axis.IsBeyond(point.Point) && !LimitSearch.FailedInTranslation(point)).ToList();
+                var accepted = judged.Where(point => Reached(point) >= ForeignLevel.Accepted).Select(point => (int?)point.Point).LastOrDefault();
+                var ran = judged.Where(point => Reached(point) >= ForeignLevel.Ran).Select(point => (int?)point.Point).LastOrDefault();
+
+                var pathStop = java
+                    ? judged.Where(point => javaRows.ContainsKey(point.Id) && Reached(point) < ForeignLevel.Accepted)
+                        .Select(point => $"{point.Point.ToString(CultureInfo.InvariantCulture)}: {javaRows[point.Id].Outcome}").FirstOrDefault()
+                    : walked.Where(point => point.Step != SeriesPoint.Pass && !LimitSearch.FailedInTranslation(point))
+                        .Select(point => $"{point.Point.ToString(CultureInfo.InvariantCulture)}: {point.Verdict.Outcome}").FirstOrDefault();
+                pathStop ??= java && !judged.Any(point => javaRows.ContainsKey(point.Id))
+                    ? "no row of the Java suite"
+                    : translationStop is not null && !axis.IsBeyond(translationStop.Point) ? "—" : "ceiling";
 
                 var label = $"{direction.Key.Source} → {direction.Key.Target}" + (catalogs > 1 ? $" ({direction.Key.Catalog})" : string.Empty);
-                yield return $"| {label} | {last?.Point.ToString(CultureInfo.InvariantCulture) ?? "—"} | {accepted?.ToString(CultureInfo.InvariantCulture) ?? "—"} | {(axis.OverTheFixture ? ran?.ToString(CultureInfo.InvariantCulture) ?? "—" : "n/a")} | "
-                    + (stop is null ? "ceiling" : $"{stop.Point.ToString(CultureInfo.InvariantCulture)}: {stop.Verdict.Outcome}")
+                yield return $"| {label} | {last?.Point.ToString(CultureInfo.InvariantCulture) ?? "—"} | "
+                    + (translationStop is null ? "ceiling" : $"{translationStop.Point.ToString(CultureInfo.InvariantCulture)}: {translationStop.Verdict.Outcome}")
+                    + $" | {accepted?.ToString(CultureInfo.InvariantCulture) ?? "—"} | {(axis.OverTheFixture ? ran?.ToString(CultureInfo.InvariantCulture) ?? "—" : "n/a")} | {pathStop}"
                     + $" | {(last is null ? "—" : (last.TranslateMs / 1000).ToString("F2", CultureInfo.InvariantCulture))} | {(last is null ? "—" : (last.AllocatedKb / 1024.0).ToString("F1", CultureInfo.InvariantCulture))} |";
             }
 

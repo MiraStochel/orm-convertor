@@ -16,10 +16,17 @@ public readonly record struct SourceToken(string Text, int Line, int Column);
 /// place where one rule can hold for all of them, and a guard that asks before the descent
 /// cannot be evaded by a shape of the descent nobody foresaw.
 ///
-/// Only round and curly brackets are counted, because only those are unambiguous in all five
-/// languages. Java's <c>&lt;</c> and <c>&gt;</c> are a comparison in an initializer and a type
-/// argument in a declaration, so generic nesting is counted where the context is known - in
-/// the Java reader itself - against the same number.
+/// Round and curly brackets are counted in all five languages, because only those are
+/// unambiguous in all of them. Java's <c>&lt;</c> and <c>&gt;</c> are a comparison in an
+/// initializer and a type argument in a declaration, so generic nesting is counted where the
+/// context is known - in the Java reader itself - against the same number.
+///
+/// Since decision 191 two more nestings count that the text writes without a bracket and a
+/// grammar descends recursively all the same: a <c>CASE</c> up to its <c>END</c> in the three
+/// query languages - T-SQL's grammar overflowed on CASE nested in ELSE, past the reach of any
+/// guard of ours -, where <c>case</c> is not also a label of a switch as in C# and Java; and
+/// a run of prefix operators in all five - <c>NOT NOT …</c>, <c>!!…</c>, <c>- - …</c> -, each
+/// one level deeper than the one before, while the run lasts.
 /// </summary>
 public static class NestingDepthGuard
 {
@@ -29,7 +36,8 @@ public static class NestingDepthGuard
     /// syntactically broken input is still measured rather than made to look shallow; saying
     /// that it is broken is the parser's job, not this one's.
     /// </summary>
-    public static SourceToken? FirstBeyond(IEnumerable<SourceToken> tokens, ParseLimits limits)
+    /// <param name="caseNests">Whether <c>CASE</c> opens a level that <c>END</c> closes: true for SQL, HQL and JPQL.</param>
+    public static SourceToken? FirstBeyond(IEnumerable<SourceToken> tokens, ParseLimits limits, bool caseNests = false)
     {
         ArgumentNullException.ThrowIfNull(tokens);
         ArgumentNullException.ThrowIfNull(limits);
@@ -39,15 +47,29 @@ public static class NestingDepthGuard
             return null;
         }
 
-        var depth = 0;
+        var brackets = 0;
+        var cases = 0;
+        var run = 0;
 
         foreach (var token in tokens)
         {
+            if (IsPrefixOperator(token.Text))
+            {
+                if (brackets + cases + ++run > limits.MaxNestingDepth)
+                {
+                    return token;
+                }
+
+                continue;
+            }
+
+            run = 0;
+
             switch (token.Text)
             {
                 case "(":
                 case "{":
-                    if (++depth > limits.MaxNestingDepth)
+                    if (++brackets + cases > limits.MaxNestingDepth)
                     {
                         return token;
                     }
@@ -56,9 +78,29 @@ public static class NestingDepthGuard
 
                 case ")":
                 case "}":
-                    if (depth > 0)
+                    if (brackets > 0)
                     {
-                        depth--;
+                        brackets--;
+                    }
+
+                    break;
+
+                default:
+                    if (!caseNests)
+                    {
+                        break;
+                    }
+
+                    if (string.Equals(token.Text, "case", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (brackets + ++cases > limits.MaxNestingDepth)
+                        {
+                            return token;
+                        }
+                    }
+                    else if (string.Equals(token.Text, "end", StringComparison.OrdinalIgnoreCase) && cases > 0)
+                    {
+                        cases--;
                     }
 
                     break;
@@ -67,6 +109,10 @@ public static class NestingDepthGuard
 
         return null;
     }
+
+    /// <summary>A token that applies to the operand after it: a negation, a sign, a bitwise complement. A token without text - ScriptDom's end of file - is none.</summary>
+    private static bool IsPrefixOperator(string? text)
+        => text is "!" or "-" or "+" or "~" || string.Equals(text, "not", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The one sentence all five languages refuse with, so that the reason reads the same

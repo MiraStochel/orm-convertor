@@ -2,6 +2,7 @@ using AbstractWrappers;
 using AbstractWrappers.Diagnostics;
 using DatabaseCatalog;
 using Model;
+using Model.AbstractRepresentation;
 using OrmConvertor.Factories;
 
 namespace OrmConvertor;
@@ -83,6 +84,17 @@ public static class ConversionHandler
             .Select(s => new UnitOutcome(s, UnitReference(s, sources)))
             .ToList();
 
+        // One refusal per unit, whichever pass ran out of stack on it first (decision 191);
+        // the other pass leaves the unit alone, since the same text would end the same way.
+        void RefuseTooDeep(UnitOutcome unit)
+        {
+            if (!unit.TooDeep)
+            {
+                unit.TooDeep = true;
+                runRecords.Add(NotTranslated(targetOrm, unit.Source.ContentType, unit.Reference, ReaderStack.Reason));
+            }
+        }
+
         // 1) Build entity maps using entity parsers only
         var entityParsers = ParserFactory.Create(sourceOrm, entityBuilder, qb: null, declaredSourceDialect, parseLimits)
             .OfType<IEntityParser>()
@@ -95,13 +107,24 @@ public static class ConversionHandler
         // because its reading is their origin (decision 066).
         foreach (var parser in entityParsers)
         {
-            foreach (var unit in units.Where(u => parser.CanParse(u.Source.ContentType)))
+            foreach (var unit in units.Where(u => parser.CanParse(u.Source.ContentType) && !u.TooDeep))
             {
                 unit.Claimed = true;
 
                 var recordsBefore = entityBuilder.Records.Count;
 
-                var read = parser.Parse(unit.Source.Content);
+                IReadOnlyCollection<EntityMap> read;
+                try
+                {
+                    read = parser.Parse(unit.Source.Content);
+                }
+                catch (InsufficientExecutionStackException)
+                {
+                    // A reader that ran out of stack refuses its unit instead of ending the
+                    // process (decision 191).
+                    RefuseTooDeep(unit);
+                    continue;
+                }
 
                 entityBuilder.AttributeRecords(recordsBefore, unit.Reference);
 
@@ -163,7 +186,7 @@ public static class ConversionHandler
             // Exactly one parser per source ORM claims a given query language, so the choice
             // does not depend on the order of the list (decision 025).
             var parser = queryParsers.FirstOrDefault(p => p.CanParse(unit.Source.ContentType));
-            if (parser is null)
+            if (parser is null || unit.TooDeep)
             {
                 continue;
             }
@@ -183,7 +206,31 @@ public static class ConversionHandler
                 continue;
             }
 
-            var filled = parser.Parse(unit.Source.ContentType, unit.Source.Content, entityBuilder.EntityMaps);
+            IReadOnlyCollection<AbstractQueryBuilder> filled;
+            try
+            {
+                filled = parser.Parse(unit.Source.ContentType, unit.Source.Content, entityBuilder.EntityMaps);
+            }
+            catch (InsufficientExecutionStackException)
+            {
+                RefuseTooDeep(unit);
+                continue;
+            }
+
+            // The depth of the model (decision 191): a chain the text writes without a bracket
+            // is as deep in the model as it is long, and the cap of decision 092 counts only
+            // brackets. Measured once here, between the reading and every walk after it, for
+            // all five query languages at once and against the same number.
+            if (parseLimits.CapsNesting)
+            {
+                foreach (var builder in filled)
+                {
+                    if (builder.ModelDepth is var depth && depth > parseLimits.MaxNestingDepth)
+                    {
+                        builder.Discard(ModelDepth.Reason(depth, parseLimits));
+                    }
+                }
+            }
 
             // An empty collection is no error in itself: a mapping document that carries no
             // query is an ordinary input, and whether the unit was barren is asked of both
@@ -259,7 +306,7 @@ public static class ConversionHandler
                     unit.Reference,
                     $"{sourceOrm} has no parser for a {unit.Source.ContentType} unit, so it was not read.{hint}"));
             }
-            else if (!unit.Yielded)
+            else if (!unit.Yielded && !unit.TooDeep)
             {
                 runRecords.Add(NotTranslated(
                     targetOrm,
@@ -365,5 +412,8 @@ public static class ConversionHandler
 
         /// <summary>An entity map or a query came of it.</summary>
         public bool Yielded { get; set; }
+
+        /// <summary>Its reading ran out of stack (decision 191); the refusal says all there is to say about it.</summary>
+        public bool TooDeep { get; set; }
     }
 }

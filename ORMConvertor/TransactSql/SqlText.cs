@@ -72,7 +72,7 @@ public static class SqlText
         // the process (decision 092). The grammar has no guard of its own and no way to be
         // given one, but its lexer is separate and is a loop, so the depth is measured on the
         // token stream and the grammar never sees what would overflow it.
-        if (NestingDepthGuard.FirstBeyond(Tracked(sql), limits) is { } tooDeep)
+        if (NestingDepthGuard.FirstBeyond(Tracked(sql), limits, caseNests: true) is { } tooDeep)
         {
             report(ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep, limits), null);
             return null;

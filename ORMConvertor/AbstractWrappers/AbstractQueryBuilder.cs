@@ -183,6 +183,21 @@ public abstract partial class AbstractQueryBuilder
         }
     }
 
+    /// <summary>The depth of the model the parser left in this builder: its instructions and the definitions they read (decision 191).</summary>
+    public int ModelDepth => AbstractWrappers.ModelDepth.Of(instructions.Concat<QueryInstruction>(definitions));
+
+    /// <summary>
+    /// Refuses the query and drops what the parser read into it (decision 191), so that no walk
+    /// after the reading - the demand on the catalog, the gate, the steps, a second form -
+    /// descends into a model too deep to descend into.
+    /// </summary>
+    public void Discard(string reason)
+    {
+        Report(ConversionRecordKind.Failure, reason);
+        instructions.Clear();
+        definitions.Clear();
+    }
+
     /// <summary>
     /// The language of the runnable method the builder emits, which the records of the
     /// template name as their artifact: C# for the .NET targets, Java for the JPA ones

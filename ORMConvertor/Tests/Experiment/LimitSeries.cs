@@ -14,9 +14,10 @@ namespace Tests.Experiment;
 /// <param name="Grows">What the point counts, for the summary.</param>
 /// <param name="Points">The points of the series in the order a walk takes them; a geometric sequence up to the ceiling of the axis.</param>
 /// <param name="Sources">The source frameworks that state the series in their language.</param>
-/// <param name="Uncapped">Whether the series is read with the depth cap of decision 092 switched off - the two shapes that cap defends against, so that the walk finds what lies behind the cap and not the cap itself.</param>
+/// <param name="Uncapped">Whether the series is read with the depth cap switched off - the shapes the cap defends against, nesting in the text (decision 092) and chains the model holds as deep as they are long (decision 191) -, so that the walk finds what lies behind the cap and not the cap itself.</param>
 /// <param name="OverTheFixture">Whether a point carries one query over the domain of the query-shape matrices, which runs over the fixture at the fourth level; a series of entities, or of a project over no table of the fixture, ends at the third.</param>
 /// <param name="Units">The units of one point for one source, as the tool receives them.</param>
+/// <param name="Beyond">Points past the ceiling that the walk takes with the translation alone (decision 190): where the ceiling was set by the cost of the path rather than by the order anyone writes, the translator's own limit lies further.</param>
 internal sealed record LimitAxis(
     string Id,
     string Grows,
@@ -24,9 +25,16 @@ internal sealed record LimitAxis(
     IReadOnlyList<ORMEnum> Sources,
     bool Uncapped,
     bool OverTheFixture,
-    Func<ORMEnum, int, List<ConversionSource>> Units)
+    Func<ORMEnum, int, List<ConversionSource>> Units,
+    IReadOnlyList<int>? Beyond = null)
 {
     public ForeignKey Key(int point) => new(ForeignKey.Series, $"{Id}-{point.ToString(CultureInfo.InvariantCulture)}");
+
+    /// <summary>Every point a walk takes: the series up to its ceiling, then the points past it.</summary>
+    public IEnumerable<int> Walked => Beyond is null ? Points : Points.Concat(Beyond);
+
+    /// <summary>Whether a point lies past the ceiling, where the path does not judge and nothing is exported.</summary>
+    public bool IsBeyond(int point) => Beyond is not null && Beyond.Contains(point) && !Points.Contains(point);
 
     public override string ToString() => Id;
 }
@@ -66,16 +74,18 @@ internal static class LimitSeries
         new("subqueries", "levels of subqueries nested in the right side of IN; the cap of decision 092 is off", Geometric(1, 2048), QuerySources, Uncapped: true, OverTheFixture: true, Subqueries),
         new("exists", "correlated EXISTS subqueries side by side in one filter", Geometric(1, 512), QuerySources, Uncapped: false, OverTheFixture: true, Exists),
         new("ctes", "intermediate results chained one on the other, the query reading the last", Geometric(1, 256), IntermediateResultSources, Uncapped: false, OverTheFixture: true, Ctes),
-        new("unions", "set operations chaining selects over the product table", Geometric(1, 256), UnionSources, Uncapped: false, OverTheFixture: true, Unions),
-        new("expression", "terms of one arithmetic expression in the projection", Geometric(1, 4096), QuerySources, Uncapped: false, OverTheFixture: true, Expression),
+        new("unions", "set operations chaining selects over the product table; the cap is off", Geometric(1, 256), UnionSources, Uncapped: true, OverTheFixture: true, Unions),
+        new("expression", "terms of one arithmetic expression in the projection; the cap is off", Geometric(1, 4096), QuerySources, Uncapped: true, OverTheFixture: true, Expression),
+        new("case", "levels of CASE nested in the ELSE of the one above, in the projection; the cap is off", Geometric(1, 4096), QuerySources, Uncapped: true, OverTheFixture: true, Case),
+        new("not", "NOTs chained before the one predicate of the filter; the cap is off", Geometric(2, 4096), QuerySources, Uncapped: true, OverTheFixture: true, Not),
         new("properties", "scalar properties of one entity beside its key", Geometric(8, 4096), EntitySources, Uncapped: false, OverTheFixture: false, Properties),
         new("relations", "many-to-one references from one entity to the customer of the domain", Geometric(1, 256), EntitySources, Uncapped: false, OverTheFixture: false, Relations),
         new("key-parts", "parts of the composite key of one entity", Geometric(1, 64), EntitySources, Uncapped: false, OverTheFixture: false, KeyParts),
         new("unit-size", "kilobytes of comment in the file of the domain's entities", [64, 256, 1024, 4096, 16384, 65536], QuerySources, Uncapped: false, OverTheFixture: false, UnitSize),
         // The ceiling is low on purpose: the path compiles every query of a project with every
         // entity of it, so a point costs the square of its size, and the translation time the
-        // row carries is what S3 asks about.
-        new("entities", "entities with one query each in one request, the project of S3 scaled", [100, 200, 400, 800], [ORMEnum.EFCore, ORMEnum.Hibernate], Uncapped: false, OverTheFixture: false, Entities),
+        // row carries is what S3 asks about. The translation alone goes on past it (decision 190).
+        new("entities", "entities with one query each in one request, the project of S3 scaled", [100, 200, 400, 800], [ORMEnum.EFCore, ORMEnum.Hibernate], Uncapped: false, OverTheFixture: false, Entities, Beyond: [1600, 3200, 6400, 12800]),
     ];
 
     public static LimitAxis? Axis(string id) => Axes.FirstOrDefault(axis => axis.Id.Equals(id, StringComparison.Ordinal));
@@ -259,6 +269,42 @@ internal static class LimitSeries
             $"ctx.ShopProducts.Select(p => new {{ ProductName = p.ProductName, Total = p.UnitPrice + {terms} }})",
             $"select p.ProductName as ProductName, p.UnitPrice + {terms} as Total from ShopProduct p",
             $"select p.ProductName as ProductName, p.UnitPrice + {terms} as Total from ShopProduct p");
+    }
+
+    private static List<ConversionSource> Case(ORMEnum source, int n)
+    {
+        // Level i takes the value i where the price exceeds i and the CASE of level i + 1
+        // otherwise; the innermost ELSE is 0. No bracket anywhere, so the depth is the model's.
+        string sql = "0", jpql = "0", linq = "0";
+        for (var i = n; i >= 1; i--)
+        {
+            sql = $"CASE WHEN p.UnitPrice > {N(i)} THEN {N(i)} ELSE {sql} END";
+            jpql = $"case when p.UnitPrice > {N(i)} then {N(i)} else {jpql} end";
+            linq = $"p.UnitPrice > {N(i)} ? {N(i)} : {linq}";
+        }
+
+        return Query(
+            source,
+            "FindCase",
+            $"SELECT p.ProductName AS ProductName, {sql} AS Total FROM {Schema}.ShopProducts AS p",
+            $"ctx.ShopProducts.Select(p => new {{ ProductName = p.ProductName, Total = {linq} }})",
+            $"select p.ProductName as ProductName, {jpql} as Total from ShopProduct p",
+            $"select p.ProductName as ProductName, {jpql} as Total from ShopProduct p");
+    }
+
+    private static List<ConversionSource> Not(ORMEnum source, int n)
+    {
+        // An even number of NOTs, so that the filter is the predicate and every point returns rows.
+        var sql = string.Concat(Enumerable.Repeat("NOT ", n));
+        var jpql = string.Concat(Enumerable.Repeat("not ", n));
+
+        return Query(
+            source,
+            "FindNot",
+            $"SELECT p.ProductName AS ProductName FROM {Schema}.ShopProducts AS p WHERE {sql}p.UnitPrice > 0",
+            $"ctx.ShopProducts.Where(p => {new string('!', n)}(p.UnitPrice > 0)).Select(p => new {{ ProductName = p.ProductName }})",
+            $"select p.ProductName as ProductName from ShopProduct p where {jpql}p.UnitPrice > 0",
+            $"select p.ProductName as ProductName from ShopProduct p where {jpql}p.UnitPrice > 0");
     }
 
     /// <summary>

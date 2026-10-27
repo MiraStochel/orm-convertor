@@ -1,7 +1,7 @@
 # 092 — Strop hloubky zanoření vstupu, vynucený nad tokeny před sestupem
 
 Datum: 2026-09-21
-Stav: revidováno
+Stav: revidováno; výčet toho, co strop počítá (oddíl *Rozhodnutí*, „Počítají se kulaté a složené závorky"), a důsledek *Ohraničí se i emisní strana, aniž bychom na ni sáhli* nahrazuje 191
 Požadavky: F11, S4, S7
 Podklad: rozhodnutí [010](010-diagnostics-as-returned-data.md), [045](045-a-conversion-that-produced-nothing-says-so.md), [062](062-hql-read-by-a-hand-written-parser.md) a [076](076-java-wrappers-in-csharp-jvm-in-containers.md); [`threat-model.md`](../threat-model.md), hrozba 2; měření z 2026-09-21 uvedené níž
 

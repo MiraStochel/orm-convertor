@@ -224,7 +224,7 @@ public abstract class JpqlQueryParser(
             // the depth of the input is the depth of the recursion, and an overflow is not a
             // record but the end of the process (decision 092). Lexing is a loop, so reaching
             // this line is safe at any depth, and the tokens are already in hand.
-            if (NestingDepthGuard.FirstBeyond(Tracked(tokens), Limits) is { } tooDeep)
+            if (NestingDepthGuard.FirstBeyond(Tracked(tokens), Limits, caseNests: true) is { } tooDeep)
             {
                 Report(ConversionRecordKind.Failure, NestingDepthGuard.Reason(tooDeep, Limits));
             }
@@ -2569,6 +2569,8 @@ public abstract class JpqlQueryParser(
 
     private ConditionNode? ParseNot()
     {
+        ReaderStack.Ensure();
+
         if (TryConsumeKeyword("not"))
         {
             var operand = ParseNot();
@@ -3110,6 +3112,8 @@ public abstract class JpqlQueryParser(
 
     private QueryOperand? ParsePrimaryOperand()
     {
+        ReaderStack.Ensure();
+
         if (Current.Kind == TokenKind.String)
         {
             var text = Current.Text;

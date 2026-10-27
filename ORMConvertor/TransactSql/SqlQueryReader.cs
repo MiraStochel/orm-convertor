@@ -976,6 +976,8 @@ public class SqlQueryReader(
 
     private ConditionNode? ReadCondition(BooleanExpression? expression)
     {
+        ReaderStack.Ensure();
+
         switch (expression)
         {
             case BooleanParenthesisExpression parenthesis:
@@ -1166,6 +1168,8 @@ public class SqlQueryReader(
     /// </summary>
     private QueryOperand? ReadOperand(ScalarExpression? expression)
     {
+        ReaderStack.Ensure();
+
         switch (expression)
         {
             case ParenthesisExpression parenthesis:

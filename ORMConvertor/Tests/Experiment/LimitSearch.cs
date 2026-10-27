@@ -189,8 +189,11 @@ internal static class LimitSearch
     /// <summary>The bound of S3 on one translation; a point the tool needs longer for has failed, whatever the artifact.</summary>
     public static readonly TimeSpan TranslationBound = TimeSpan.FromSeconds(30);
 
-    /// <summary>How long one point may stay in progress before the parent kills the child and records the point as hung.</summary>
-    public static readonly TimeSpan PointBound = TimeSpan.FromHours(2);
+    /// <summary>How much longer than the bound a translation is waited for before it is cut, so that one which returns just past the bound is measured rather than cut.</summary>
+    private static readonly TimeSpan CutMargin = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long one point may stay in progress before the parent kills the child and records the point as hung (decision 190).</summary>
+    public static readonly TimeSpan PointBound = TimeSpan.FromMinutes(30);
 
     /// <summary>How often the parent reads the file of a running child for the point it is on.</summary>
     private static readonly TimeSpan Watch = TimeSpan.FromSeconds(30);
@@ -233,8 +236,13 @@ internal static class LimitSearch
 
     /// <summary>
     /// Walks the series of one axis from one source into the targets given, writing the file
-    /// after every change. A point already in the file is not walked again: passed, the walk
-    /// goes on above it; failed or crashed, the walk of that target is over.
+    /// after every change. The path judges a direction up to its first failure; from there,
+    /// and past the ceiling of the series, the translation alone goes on until it fails itself
+    /// (decision 190), so that the translator's limit is not hidden behind the path's. A point
+    /// already in the file is not walked again: passed, the walk goes on above it; failed on
+    /// the path, the translation alone goes on; failed in the translation, the walk of that
+    /// target is over. A translation that has not returned by the bound of S3 ends the process,
+    /// so a walk runs in a child of <see cref="Drive"/>.
     /// </summary>
     public static void Walk(LimitAxis axis, ORMEnum source, string file, string? inputs, string catalog, IEnumerable<ORMEnum>? targets = null, Action<string>? log = null)
     {
@@ -253,8 +261,12 @@ internal static class LimitSearch
 
         foreach (var target in targets ?? Enum.GetValues<ORMEnum>())
         {
-            foreach (var point in axis.Points)
+            // A Java target is judged by the Java suite, never here.
+            var judged = ForeignArtifactRun.Owns(target);
+
+            foreach (var point in axis.Walked)
             {
+                var beyond = axis.IsBeyond(point);
                 var id = PointId(axis, point, source, target, catalog);
                 if (points.TryGetValue(id, out var known))
                 {
@@ -263,14 +275,24 @@ internal static class LimitSearch
                         continue;
                     }
 
-                    break;
+                    if (FailedInTranslation(known))
+                    {
+                        break;
+                    }
+
+                    judged = false;
+                    continue;
                 }
 
                 var key = axis.Key(point);
                 var units = axis.Units(source, point);
-                if (inputs is not null && !Directory.Exists(ForeignInputs.DirectoryOf(inputs, key, source)))
+
+                // A point past the ceiling is the translator's question alone: the experiment run
+                // and the Java half judge only what the series holds.
+                var exported = inputs is not null && !beyond;
+                if (exported && !Directory.Exists(ForeignInputs.DirectoryOf(inputs!, key, source)))
                 {
-                    ForeignInputs.WriteOne(inputs, key, source, units, questions: null);
+                    ForeignInputs.WriteOne(inputs!, key, source, units, questions: null);
                 }
 
                 var row = new SeriesPoint
@@ -283,7 +305,7 @@ internal static class LimitSearch
                         Target = target.ToString(),
                         Producer = ExperimentRun.Producer,
                         Language = ForeignArtifact.LanguageNone,
-                        Metadata = "{}",
+                        Metadata = NoMetadata,
                     },
                     Axis = axis.Id,
                     Point = point,
@@ -293,14 +315,26 @@ internal static class LimitSearch
                 points[id] = row;
                 Save();
 
-                Translate(row, source, target, units, reader, limits);
+                if (!Translate(row, source, target, units, reader, limits))
+                {
+                    // The translation is still running on its thread and nothing in .NET stops
+                    // it; the row says why, and the process ends so that the parent can start
+                    // the next target (decision 190).
+                    Save();
+                    log?.Invoke(row.Describe());
+                    Process.GetCurrentProcess().Kill();
+                }
 
                 if (row.Step == SeriesPoint.InProgress)
                 {
-                    var artifact = ExperimentRun.ArtifactOf(row.Conversion!, id, inputs is null ? string.Empty : ForeignInputs.DirectoryOf(inputs, key, source), key, source, target);
+                    var artifact = ExperimentRun.ArtifactOf(row.Conversion!, id, exported ? ForeignInputs.DirectoryOf(inputs!, key, source) : string.Empty, key, source, target);
                     row.Verdict = Replace(row.Verdict, artifact.Language, row.Verdict.Metadata, row.Verdict.Outcome, row.Verdict.Detail);
 
-                    if (ForeignArtifactRun.Owns(target))
+                    // In the file before the path starts: the language says the translation
+                    // returned, so a process that dies from here on died on the path.
+                    Save();
+
+                    if (judged && !beyond)
                     {
                         // The verdict the path mutates is the row's own, so that every level it
                         // reaches is in the file before the next one starts.
@@ -309,12 +343,25 @@ internal static class LimitSearch
                             row.Verdict = verdict;
                             Save();
                         });
-                        row.Step = row.Verdict.Reached >= ForeignLevel.Accepted ? SeriesPoint.Pass : SeriesPoint.Fail;
+
+                        if (row.Verdict.Reached >= ForeignLevel.Accepted)
+                        {
+                            row.Step = SeriesPoint.Pass;
+                        }
+                        else
+                        {
+                            row.Step = SeriesPoint.Fail;
+                            judged = false;
+                        }
                     }
                     else
                     {
                         row.Verdict.Outcome = SeriesPoint.Translated;
-                        row.Verdict.Detail = "the levels of a Java target are the Java suite's, over the exported input";
+                        row.Verdict.Detail = !ForeignArtifactRun.Owns(target) && !beyond
+                            ? "the levels of a Java target are the Java suite's, over the exported input"
+                            : beyond
+                                ? "past the ceiling of the series, translated alone"
+                                : "the path stopped at a smaller point, translated alone";
                         row.Step = SeriesPoint.Pass;
                     }
                 }
@@ -323,7 +370,7 @@ internal static class LimitSearch
                 Save();
                 log?.Invoke(row.Describe());
 
-                if (row.Step != SeriesPoint.Pass)
+                if (row.Step != SeriesPoint.Pass && FailedInTranslation(row))
                 {
                     break;
                 }
@@ -332,25 +379,57 @@ internal static class LimitSearch
     }
 
     /// <summary>
+    /// Whether a point that did not pass failed in the translation - refused, threw, too slow,
+    /// or the process died before the translation returned - rather than on the path. A
+    /// translation that returned wrote the versions into the metadata of the row, which is in
+    /// the file before the path starts, so a row still without them never got as far as the path.
+    /// </summary>
+    public static bool FailedInTranslation(SeriesPoint point)
+        => point.Step != SeriesPoint.Pass
+           && (point.Verdict.Outcome is ForeignVerdict.Refused or SeriesPoint.Threw or SeriesPoint.TooSlow
+               || point.Verdict.Metadata == NoMetadata);
+
+    /// <summary>The metadata of a row whose translation has not returned.</summary>
+    private const string NoMetadata = "{}";
+
+    /// <summary>
     /// The translation of one point, timed and measured: the time of the call, the bytes the
     /// process allocated during it, the time the catalog took of it. A Failure record is the
     /// row <c>refused</c> (decision 173), an exception <c>threw</c>, a translation over the bound
     /// of S3 <c>too slow</c>; each of them ends the series. Otherwise the row stays in progress
     /// for the levels of the path.
+    ///
+    /// The call runs on a thread of the pool, where a deployed instance translates a request,
+    /// and is waited for no longer than the bound of S3: past it the outcome is <c>too slow</c>
+    /// whenever the call would return (decision 190). False when it has not returned; the row
+    /// then says so and the caller ends the process, which is the only way to stop the call.
     /// </summary>
-    private static void Translate(SeriesPoint row, ORMEnum source, ORMEnum target, List<ConversionSource> units, ICatalogReader? reader, ParseLimits limits)
+    private static bool Translate(SeriesPoint row, ORMEnum source, ORMEnum target, List<ConversionSource> units, ICatalogReader? reader, ParseLimits limits)
     {
         var allocatedBefore = GC.GetTotalAllocatedBytes(precise: true);
         var clock = Stopwatch.StartNew();
         ConversionResult? conversion = null;
         string? threw = null;
-        try
+        var call = Task.Run(() =>
         {
-            conversion = ConversionHandler.Convert(source, target, units, reader, declaredSourceDialect: null, limits);
-        }
-        catch (Exception exception)
+            try
+            {
+                conversion = ConversionHandler.Convert(source, target, units, reader, declaredSourceDialect: null, limits);
+            }
+            catch (Exception exception)
+            {
+                threw = exception.GetBaseException().GetType().Name + ": " + exception.GetBaseException().Message;
+            }
+        });
+
+        if (!call.Wait(TranslationBound + CutMargin))
         {
-            threw = exception.GetBaseException().GetType().Name + ": " + exception.GetBaseException().Message;
+            row.TranslateMs = clock.Elapsed.TotalMilliseconds;
+            row.AllocatedKb = Math.Max(0, GC.GetTotalAllocatedBytes(precise: true) - allocatedBefore) / 1024;
+            row.Verdict = Replace(row.Verdict, row.Verdict.Language, NoMetadata, SeriesPoint.TooSlow,
+                $"the translation had not returned after {clock.Elapsed.TotalSeconds:F0} s; S3 allows {TranslationBound.TotalSeconds:F0} s, and the process was ended to stop it");
+            row.Step = SeriesPoint.Fail;
+            return false;
         }
 
         clock.Stop();
@@ -363,7 +442,7 @@ internal static class LimitSearch
         {
             row.Verdict = Replace(row.Verdict, ForeignArtifact.LanguageRefused, metadata, SeriesPoint.Threw, threw);
             row.Step = SeriesPoint.Fail;
-            return;
+            return true;
         }
 
         var failures = ExperimentRun.Failures(conversion!);
@@ -371,18 +450,19 @@ internal static class LimitSearch
         {
             row.Verdict = Replace(row.Verdict, ForeignArtifact.LanguageRefused, metadata, ForeignVerdict.Refused, string.Join("; ", failures));
             row.Step = SeriesPoint.Fail;
-            return;
+            return true;
         }
 
         if (clock.Elapsed > TranslationBound)
         {
             row.Verdict = Replace(row.Verdict, row.Verdict.Language, metadata, SeriesPoint.TooSlow, $"the translation took {clock.Elapsed.TotalSeconds:F1} s; S3 allows {TranslationBound.TotalSeconds:F0} s");
             row.Step = SeriesPoint.Fail;
-            return;
+            return true;
         }
 
         row.Verdict = Replace(row.Verdict, row.Verdict.Language, metadata, row.Verdict.Outcome, row.Verdict.Detail);
         row.Conversion = conversion;
+        return true;
     }
 
     /// <summary>The same row of the path with its init-only fields - the language and the metadata - and its outcome replaced; the identity of the row stays.</summary>
@@ -490,13 +570,15 @@ internal static class LimitSearch
 
             var points = SeriesPoint.Read(file);
             var crashed = OfWalk(points, axis, source, catalog).Where(point => point.Step == SeriesPoint.InProgress).ToList();
+            var overflow = OverflowFrame(output.ToString());
             foreach (var point in crashed)
             {
                 point.Step = SeriesPoint.Crash;
                 point.Verdict.Outcome = hung ? "hung" : "crashed";
                 point.Verdict.Detail = hung
-                    ? $"the point was in progress for more than {PointBound.TotalHours:F0} h and the process was killed at level {point.Verdict.Reached}"
-                    : $"the process died with exit code {exitCode} (0x{exitCode:X8}) at level {point.Verdict.Reached}";
+                    ? $"the point was in progress for more than {PointBound.TotalMinutes:F0} min and the process was killed at level {point.Verdict.Reached}"
+                    : $"the process died with exit code {exitCode} (0x{exitCode:X8}) at level {point.Verdict.Reached}"
+                      + (overflow is null ? string.Empty : $", the stack overflowing in {overflow}");
                 log($"{point.Describe()}");
             }
 
@@ -517,6 +599,33 @@ internal static class LimitSearch
                     $"The walk of {axis.Id} from {source} made no progress in attempt {attempt} (exit code {exitCode}); the child said:\n{tail[Math.Max(0, tail.Length - 4000)..]}");
             }
         }
+    }
+
+    /// <summary>
+    /// The method whose recursion overflowed the stack, from what the runtime prints when it
+    /// ends a process for it: <c>Stack overflow.</c>, then the repeated frames, the deepest
+    /// first. Null where the process died otherwise - the kernel's kill for memory says nothing.
+    /// </summary>
+    public static string? OverflowFrame(string output)
+    {
+        var at = output.LastIndexOf("Stack overflow.", StringComparison.Ordinal);
+        if (at < 0)
+        {
+            return null;
+        }
+
+        foreach (var line in output[at..].Split('\n'))
+        {
+            var frame = line.Trim();
+            if (frame.StartsWith("at ", StringComparison.Ordinal))
+            {
+                var call = frame[3..];
+                var parameters = call.IndexOf('(');
+                return parameters > 0 ? call[..parameters] : call;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The points of one walk in the file of a run: an axis, a source and a catalog.</summary>

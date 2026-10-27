@@ -5073,6 +5073,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     private ConditionNode? ParseCondition(ExpressionSyntax expression)
     {
+        ReaderStack.Ensure();
+
         switch (expression)
         {
             case ParenthesizedExpressionSyntax parenthesized:
@@ -5887,6 +5889,8 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private QueryOperand? ReadOperand(ExpressionSyntax expression)
     {
+        ReaderStack.Ensure();
+
         // g.Key and g.Key.Part read back to the key they name (decision 113), wherever they
         // stand - g.Key.Year over a single key of a moment is the year of that key, read by
         // the member case below once g.Key has been read. The key object of a grouping by

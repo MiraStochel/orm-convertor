@@ -218,6 +218,8 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
         Assert.Equal(16, Occurrences(Sql("ctes", 16), " AS (SELECT "));
         Assert.Equal(16, Occurrences(Sql("unions", 16), " UNION "));
         Assert.Equal(16, Occurrences(Sql("expression", 16), " + "));
+        Assert.Equal(16, Occurrences(Sql("case", 16), "CASE WHEN "));
+        Assert.Equal(16, Occurrences(Sql("not", 16), "NOT "));
         Assert.Equal(17, Occurrences(EFCore("properties", 16), "{ get; set; }"));
         Assert.Equal(16, Occurrences(EFCore("relations", 16), "[ForeignKey("));
         Assert.Contains("nameof(K16)", EFCore("key-parts", 16));
@@ -316,7 +318,13 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
         Assert.NotNull(verdict.Rows);
     }
 
-    /// <summary>The summary reads the points of a run into its section on limits: the last point that passed per direction and catalog, where the series stopped and why, a Java target's levels from the Java row of the same point.</summary>
+    /// <summary>
+    /// The summary reads the points of a run into its section on limits: per direction and
+    /// catalog the last point translated and where the translation stopped, the last point the
+    /// path accepted and where it stopped - a point the path refused is followed by points the
+    /// translation took alone (decision 190) -, a Java target's levels from the Java row of the
+    /// same point.
+    /// </summary>
     [Fact]
     public void TheSummaryReadsThePointsOfARun()
     {
@@ -324,14 +332,16 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
         try
         {
             var axis = LimitSeries.Axis("joins")!;
+            const string translated = """{"toolVersion":"test"}""";
             List<SeriesPoint> points =
             [
-                Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Pass, ForeignLevel.Ran, ForeignVerdict.Ran, 12),
-                Point(axis, 2, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Pass, ForeignLevel.Accepted, ForeignVerdict.Failed, 15),
-                Point(axis, 4, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Fail, ForeignLevel.None, ForeignVerdict.Refused, 20),
-                Point(axis, 1, ORMEnum.Dapper, ORMEnum.Hibernate, SeriesPoint.Pass, ForeignLevel.None, SeriesPoint.Translated, 9),
+                Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Pass, ForeignLevel.Ran, ForeignVerdict.Ran, 12, metadata: translated),
+                Point(axis, 2, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Fail, ForeignLevel.Read, ForeignVerdict.NotCompiled, 15, metadata: translated),
+                Point(axis, 4, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Pass, ForeignLevel.None, SeriesPoint.Translated, 18, metadata: translated),
+                Point(axis, 8, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Fail, ForeignLevel.None, ForeignVerdict.Refused, 20, metadata: translated),
+                Point(axis, 1, ORMEnum.Dapper, ORMEnum.Hibernate, SeriesPoint.Pass, ForeignLevel.None, SeriesPoint.Translated, 9, metadata: translated),
                 Point(axis, 2, ORMEnum.Dapper, ORMEnum.Hibernate, SeriesPoint.Crash, ForeignLevel.None, "crashed", 0),
-                Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Pass, ForeignLevel.Ran, ForeignVerdict.Ran, 10, LimitSearch.CatalogNone),
+                Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Pass, ForeignLevel.Ran, ForeignVerdict.Ran, 10, LimitSearch.CatalogNone, translated),
             ];
             SeriesPoint.Write(Path.Combine(temp.FullName, LimitSearch.FileName), points);
             File.WriteAllText(
@@ -343,9 +353,9 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
             output.WriteLine(text);
 
             Assert.Contains("## Limits", text);
-            Assert.Contains("| Dapper → EFCore (fixture) | 2 | 2 | 1 | 4: refused |", text);
-            Assert.Contains("| Dapper → EFCore (none) | 1 | 1 | 1 | ceiling |", text);
-            Assert.Contains("| Dapper → Hibernate (fixture) | 1 | 1 | 1 | 2: crashed |", text);
+            Assert.Contains("| Dapper → EFCore (fixture) | 4 | 8: refused | 1 | 1 | 2: not compiled |", text);
+            Assert.Contains("| Dapper → EFCore (none) | 1 | ceiling | 1 | 1 | ceiling |", text);
+            Assert.Contains("| Dapper → Hibernate (fixture) | 1 | 2: crashed | 1 | 1 | — |", text);
             Assert.DoesNotContain("series | ", text);
         }
         finally
@@ -370,7 +380,36 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
         Assert.Equal(dotnet, java);
     }
 
-    private static SeriesPoint Point(LimitAxis axis, int point, ORMEnum source, ORMEnum target, string step, int reached, string outcome, double ms, string catalog = LimitSearch.CatalogFixture) => new()
+    /// <summary>
+    /// Where a point that did not pass failed: in the translation - refused, threw, too slow, or
+    /// the process died before the translation wrote its metadata - or on the path, where the
+    /// translation alone goes on (decision 190).
+    /// </summary>
+    [Fact]
+    public void APointFailedInTheTranslationOrOnThePath()
+    {
+        var axis = LimitSeries.Axis("joins")!;
+        const string translated = """{"toolVersion":"test"}""";
+
+        Assert.True(LimitSearch.FailedInTranslation(Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Fail, ForeignLevel.None, ForeignVerdict.Refused, 1, metadata: translated)));
+        Assert.True(LimitSearch.FailedInTranslation(Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Fail, ForeignLevel.None, SeriesPoint.TooSlow, 31000, metadata: translated)));
+        Assert.True(LimitSearch.FailedInTranslation(Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Crash, ForeignLevel.None, "crashed", 0)));
+        Assert.False(LimitSearch.FailedInTranslation(Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Crash, ForeignLevel.None, "crashed", 20, metadata: translated)));
+        Assert.False(LimitSearch.FailedInTranslation(Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Fail, ForeignLevel.Read, ForeignVerdict.NotCompiled, 20, metadata: translated)));
+        Assert.False(LimitSearch.FailedInTranslation(Point(axis, 1, ORMEnum.Dapper, ORMEnum.EFCore, SeriesPoint.Pass, ForeignLevel.Ran, ForeignVerdict.Ran, 20)));
+    }
+
+    /// <summary>A crashed point names the method whose recursion overflowed, as the runtime printed it; a process that died otherwise names none.</summary>
+    [Fact]
+    public void ACrashNamesTheMethodWhoseRecursionOverflowed()
+    {
+        const string printed = "[xUnit.net 00:00:01.23] starting\nStack overflow.\nRepeat 7280 times:\n--------------------------------\n   at TransactSql.SqlQueryVisitor.Operand(Model.QueryInstructions.Conditions.QueryOperand)\n   at TransactSql.SqlQueryVisitor.Expression(Model.QueryInstructions.Conditions.QueryExpression)\n--------------------------------\n   at OrmConvertor.ConversionHandler.Convert(Model.ORMEnum)\n";
+
+        Assert.Equal("TransactSql.SqlQueryVisitor.Operand", LimitSearch.OverflowFrame(printed));
+        Assert.Null(LimitSearch.OverflowFrame("Killed\n"));
+    }
+
+    private static SeriesPoint Point(LimitAxis axis, int point, ORMEnum source, ORMEnum target, string step, int reached, string outcome, double ms, string catalog = LimitSearch.CatalogFixture, string metadata = "{}") => new()
     {
         Verdict = new ForeignVerdict
         {
@@ -380,7 +419,7 @@ public class LimitSeriesTest(TestSchemaFixture fixture, ITestOutputHelper output
             Target = target.ToString(),
             Producer = ExperimentRun.Producer,
             Language = ForeignArtifact.LanguageTarget,
-            Metadata = "{}",
+            Metadata = metadata,
             Reached = reached,
             Outcome = outcome,
         },
