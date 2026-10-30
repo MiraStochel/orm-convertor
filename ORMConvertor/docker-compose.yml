@@ -181,6 +181,13 @@ services:
       dockerfile: ORMConvertorAPI/Dockerfile
       target: runtime
     cpuset: "2,3"
+    # A memory limit and a restart (decision 195): the instance translates whatever a suite sends
+    # it, the points of the limits run among them, so a point that needs more than this ends the
+    # instance in its container and not the VM, the restart brings it back for the next point,
+    # and the limits of everything a run starts at once still add up to less than the VM
+    # (decision 193). The three instances below carry the same two lines for the same reason.
+    mem_limit: 2g
+    restart: unless-stopped
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__CatalogDatabase=Server=test_db,1433;Database=ORMConvertorTests;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
@@ -208,6 +215,8 @@ services:
       dockerfile: ORMConvertorAPI/Dockerfile
       target: runtime
     cpuset: "2,3"
+    mem_limit: 2g
+    restart: unless-stopped
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__CatalogDatabase=Server=test_db,1433;Database=LdbcSnb;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
@@ -231,6 +240,8 @@ services:
       dockerfile: ORMConvertorAPI/Dockerfile
       target: runtime
     cpuset: "2,3"
+    mem_limit: 2g
+    restart: unless-stopped
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__CatalogDatabase=Server=test_db,1433;Database=ORMConvertorCaseStudies;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
@@ -253,6 +264,8 @@ services:
       dockerfile: ORMConvertorAPI/Dockerfile
       target: runtime
     cpuset: "2,3"
+    mem_limit: 2g
+    restart: unless-stopped
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
     networks:

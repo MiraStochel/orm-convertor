@@ -6,6 +6,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,6 +41,26 @@ public final class ToolApi {
             .build();
 
     private ToolApi() {
+    }
+
+    /**
+     * The instance gave no answer to a conversion request: none within the time waited
+     * ({@link #timedOut()}), or none at all - the connection refused or reset, which is an
+     * instance that died or is restarting. An {@link IllegalStateException}, as every failure
+     * of this client is, so that a caller that does not tell the two apart need not.
+     */
+    public static final class NoAnswer extends IllegalStateException {
+
+        private final boolean timedOut;
+
+        NoAnswer(String message, IOException cause, boolean timedOut) {
+            super(message, cause);
+            this.timedOut = timedOut;
+        }
+
+        public boolean timedOut() {
+            return timedOut;
+        }
     }
 
     public static String baseUrl() {
@@ -113,6 +134,16 @@ public final class ToolApi {
 
     /** The same, against the instance at the given address. */
     public static ToolResponse convert(String base, int sourceOrm, int targetOrm, List<InputUnit> units) {
+        return convert(base, sourceOrm, targetOrm, units, REQUEST_TIMEOUT);
+    }
+
+    /**
+     * The same, waiting for the answer at most the time given: the Java half of the limits run
+     * waits the bound of S3 and a reserve, as the .NET half's child does (decisions 190 and 195),
+     * because a translation that has not returned by then is {@code too slow} whenever it
+     * returns. No answer within the time, or no answer at all, is a {@link NoAnswer}.
+     */
+    public static ToolResponse convert(String base, int sourceOrm, int targetOrm, List<InputUnit> units, Duration timeout) {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("sourceOrm", sourceOrm);
         request.put("targetOrm", targetOrm);
@@ -122,7 +153,7 @@ public final class ToolApi {
             HttpResponse<String> response = CLIENT.send(
                     HttpRequest.newBuilder(URI.create(base + "/convert"))
                             .header("Content-Type", "application/json")
-                            .timeout(REQUEST_TIMEOUT)
+                            .timeout(timeout)
                             .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(request)))
                             .build(),
                     HttpResponse.BodyHandlers.ofString());
@@ -132,8 +163,10 @@ public final class ToolApi {
                     : null;
 
             return new ToolResponse(response.statusCode(), response.body(), conversion);
+        } catch (HttpTimeoutException e) {
+            throw new NoAnswer("The instance at " + base + " did not answer the conversion request within " + timeout.toSeconds() + " s.", e, true);
         } catch (IOException e) {
-            throw new IllegalStateException("The conversion request to " + base + "/convert failed.", e);
+            throw new NoAnswer("The conversion request to " + base + "/convert failed: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e, false);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted during the conversion request.", e);

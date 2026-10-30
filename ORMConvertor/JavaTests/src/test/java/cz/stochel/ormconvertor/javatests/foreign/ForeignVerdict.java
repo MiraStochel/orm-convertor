@@ -50,6 +50,17 @@ public final class ForeignVerdict {
     /** The outcome of an artifact that has no fourth level: no query to run, or a key whose measure is a replay (LDBC). */
     public static final String ACCEPTED = "accepted";
 
+    /**
+     * The outcomes of a point of the limits run that was not judged to its end (decisions 190
+     * and 195), the words of the .NET suite's {@code SeriesPoint}: the translation did not return
+     * within the bound of S3, the point was still in progress after the bound of a point, the
+     * instance or the suite died on it, or the path threw.
+     */
+    public static final String TOO_SLOW = "too slow";
+    public static final String HUNG = "hung";
+    public static final String CRASHED = "crashed";
+    public static final String THREW = "threw";
+
     private final String artifact;
     private final String answers;
     private final String source;
@@ -80,9 +91,50 @@ public final class ForeignVerdict {
 
     /** The row of a translation the tool refused (decision 173): level 0, outcome refused, the reasons as the detail. */
     public static ForeignVerdict refused(String artifact, String answers, String source, String target, String producer, String reasons, String metadata) {
+        return stopped(artifact, answers, source, target, producer, REFUSED, reasons, metadata);
+    }
+
+    /** The row of a translation that yielded no artifact to judge, with the outcome given (decision 195): level 0, the language of a refusal, the reason as the detail. */
+    public static ForeignVerdict stopped(String artifact, String answers, String source, String target, String producer, String outcome, String detail, String metadata) {
         ForeignVerdict verdict = new ForeignVerdict(artifact, answers, source, target, producer, ForeignArtifact.LANGUAGE_REFUSED, metadata);
-        verdict.stop(REFUSED, reasons);
+        verdict.stop(outcome, detail);
         return verdict;
+    }
+
+    /** A copy of this verdict at the level it reached, with the outcome and the detail replaced: what a point that was abandoned in progress becomes (decision 195). */
+    public ForeignVerdict stoppedAs(String outcome, String detail) {
+        ForeignVerdict copy = new ForeignVerdict(artifact, answers, source, target, producer, language, metadata);
+        copy.reached = reached;
+        copy.rows = rows;
+        copy.agrees = agrees;
+        copy.times(readMs, compileMs, acceptMs, runMs);
+        copy.stop(outcome, detail);
+        return copy;
+    }
+
+    public boolean isInProgress() {
+        return IN_PROGRESS.equals(outcome);
+    }
+
+    /** The inverse of {@link #row()}: a line of the file of rows, under its header, read back. */
+    public static ForeignVerdict parse(String line) {
+        String[] columns = line.split("\t", -1);
+        int expected = HEADER.split("\t").length;
+        if (columns.length != expected) {
+            throw new IllegalArgumentException("A row has " + columns.length + " columns, the header " + expected + ": " + line);
+        }
+
+        ForeignVerdict verdict = new ForeignVerdict(columns[0], columns[1], columns[2], columns[3], columns[4], columns[5], columns[15]);
+        verdict.reached = columns[6].isEmpty() ? LEVEL_NONE : Integer.parseInt(columns[6]);
+        verdict.stop(columns[7], columns[8]);
+        verdict.rows = columns[9].isEmpty() ? null : Integer.valueOf(columns[9]);
+        verdict.agrees = columns[10].isEmpty() ? null : "1".equals(columns[10]);
+        verdict.times(parseMs(columns[11]), parseMs(columns[12]), parseMs(columns[13]), parseMs(columns[14]));
+        return verdict;
+    }
+
+    private static double parseMs(String column) {
+        return column.isEmpty() ? 0 : Double.parseDouble(column);
     }
 
     public String language() {
