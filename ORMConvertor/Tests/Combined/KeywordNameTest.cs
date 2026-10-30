@@ -1,7 +1,13 @@
+using System.Text.RegularExpressions;
+using AbstractWrappers;
 using AbstractWrappers.Diagnostics;
+using DapperWrappers;
+using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Model;
 using OrmConvertor;
+using ORMConvertorAPI.Data;
 using Tests.Verification;
+using TransactSql;
 
 namespace Tests.Combined;
 
@@ -264,5 +270,123 @@ public class KeywordNameTest
             [Java(Owner("orders", "Order")), Java(Entity("Order", "Orders")), Jpql(query)]);
 
         Assert.Contains(expected, string.Join(" ", Text(result, ConversionContentType.JpqlQuery).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim())));
+    }
+
+    /* ---- T-SQL ------------------------------------------------------------------------- */
+
+    /// <summary>
+    /// Which words T-SQL reserves is ScriptDom's own list, read through its lexer
+    /// (<see cref="SqlNames"/>), and the lexer is a faithful proxy of the parser of the pinned
+    /// release: a name it tokenizes as a keyword the parser refuses bare as the table of a
+    /// from clause, and reads in brackets with the bare name as the identifier's value; a
+    /// name it tokenizes as an identifier it reads bare as a table, a column, a qualified
+    /// column, a table alias and a result column alike, so the tool leaves it as the source
+    /// spelled it. The one word the lexer tokenizes as an identifier and the parser still
+    /// refuses in one position is <c>Window</c> as a table alias, where it opens the WINDOW
+    /// clause of SQL Server 2022; it is not bracketed.
+    /// </summary>
+    [Theory]
+    [InlineData("User", true)]
+    [InlineData("Order", true)]
+    [InlineData("Rule", true)]
+    [InlineData("Set", true)]
+    [InlineData("Plan", true)]
+    [InlineData("Key", true)]
+    [InlineData("Index", true)]
+    [InlineData("Table", true)]
+    [InlineData("Left", true)]
+    [InlineData("Default", true)]
+    [InlineData("Transaction", true)]
+    [InlineData("Name", false)]
+    [InlineData("Count", false)]
+    [InlineData("Value", false)]
+    [InlineData("Date", false)]
+    [InlineData("Type", false)]
+    [InlineData("Role", false)]
+    [InlineData("Status", false)]
+    [InlineData("Version", false)]
+    [InlineData("Offset", false)]
+    [InlineData("Format", false)]
+    public void ATSqlNameIsBracketedWhenTheLexerOfScriptDomReadsItAsAKeyword(string name, bool reserved)
+    {
+        Assert.Equal(reserved, SqlNames.IsReserved(name));
+        Assert.Equal(reserved ? $"[{name}]" : name, SqlNames.Written(name));
+
+        var parser = new TSql160Parser(initialQuotedIdentifiers: true);
+        parser.Parse(new StringReader($"SELECT 1 FROM {name}"), out var bare);
+        Assert.Equal(reserved, bare.Count > 0);
+
+        if (!reserved)
+        {
+            foreach (var statement in new[] { $"SELECT {name} FROM T", $"SELECT T.{name} FROM T", $"SELECT 1 FROM T {name}", $"SELECT 1 AS {name} FROM T" })
+            {
+                parser.Parse(new StringReader(statement), out var errors);
+                Assert.Empty(errors);
+            }
+        }
+
+        var fragment = parser.Parse(new StringReader($"SELECT 1 FROM [{name}]"), out var bracketed);
+        Assert.Empty(bracketed);
+        var select = (SelectStatement)((TSqlScript)fragment).Batches[0].Statements[0];
+        var table = (NamedTableReference)((QuerySpecification)select.QueryExpression).FromClause.TableReferences[0];
+        Assert.Equal(name, table.SchemaObject.BaseIdentifier.Value);
+    }
+
+    /// <summary>
+    /// The defect as the whole-input run of 2026-10-30 found it: the User table of the
+    /// Cofoundry example went into the SQL of Dapper and of MyBatis bare, and USER is a
+    /// reserved word the server refuses and ScriptDom does not read back. Bracketed, every
+    /// query over it is one the tool's own reader reads.
+    /// </summary>
+    [Theory]
+    [InlineData(ORMEnum.Dapper, ConversionContentType.SqlQuery)]
+    [InlineData(ORMEnum.MyBatis, ConversionContentType.XML)]
+    public void TheUserTableOfCofoundryIsBracketedInSql(ORMEnum target, ConversionContentType type)
+    {
+        var example = Examples.GetExamples.Single(e => e.Key == "cofoundry-pages");
+        var result = ConversionHandler.Convert(example.SourceOrm, target, example.Units);
+
+        var artifacts = result.Sources.Where(s => s.ContentType == type).ToList();
+        var overUser = artifacts.Where(s => s.Content.Contains("[User]", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(overUser);
+        Assert.DoesNotContain(artifacts, s => Regex.IsMatch(s.Content, @"\b(FROM|JOIN) User\b"));
+
+        if (type == ConversionContentType.SqlQuery)
+        {
+            foreach (var sql in overUser)
+            {
+                new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(sql.Content), out var errors);
+                Assert.Empty(errors);
+            }
+        }
+    }
+
+    /// <summary>A column, a table alias and a common table expression spelled like a reserved word are bracketed by the same rule, and the statement reads back.</summary>
+    [Fact]
+    public void AColumnAnAliasAndADefinitionSpelledLikeAReservedWordAreBracketed()
+    {
+        AbstractQueryBuilder builder = new DapperSqlQueryBuilder { EntityMaps = [] };
+        new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery,
+            "WITH [Set] AS (SELECT o.[Key] AS Total FROM Orders o) SELECT [rule].Total FROM [Set] [rule] WHERE [rule].Total > 5");
+        var sql = Assert.Single(builder.Build(), s => s.ContentType == ConversionContentType.SqlQuery).Content;
+        var flat = Regex.Replace(sql, @"\s+", " ").Trim();
+
+        Assert.Contains("WITH [Set] AS (", flat, StringComparison.Ordinal);
+        Assert.Contains("o.[Key] AS Total FROM Orders AS o", flat, StringComparison.Ordinal);
+        Assert.Contains("FROM [Set] AS [rule] WHERE [rule].Total > 5", flat, StringComparison.Ordinal);
+        new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(sql), out var errors);
+        Assert.Empty(errors);
+    }
+
+    /// <summary>A result column named like a reserved word by a source that has no reserved words of its own - a LINQ projection - is bracketed as well.</summary>
+    [Fact]
+    public void AResultColumnSpelledLikeAReservedWordIsBracketed()
+    {
+        var result = ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.Dapper,
+        [
+            new() { Content = EFCoreUnit("ctx.Set<Order>().Select(o => new { Order = o.Id })"), ContentType = ConversionContentType.CSharp, Name = "Shop.cs" },
+        ]);
+
+        Assert.Contains("SELECT o.Id AS [Order]", Text(result, ConversionContentType.SqlQuery), StringComparison.Ordinal);
     }
 }

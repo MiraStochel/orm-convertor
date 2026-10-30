@@ -30,7 +30,6 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | | — |
 | [Úplnost mapování po kategoriích faktů](#úplnost-mapování-po-kategoriích-faktů) | Užitečné | práce | | T2, T3 |
 | [Artefakt EclipseLinku se vlastním parserem nepřečte](#artefakt-eclipselinku-s-čárkou-oddělenými-kořeny-vlastní-parser-jpql-odmítá) | Dotazy | rozhodnutí | | F9, F11 |
-| [Tabulka `User` v SQL bez uvozovek](#tabulka-se-jménem-vyhrazeného-slova-jde-do-sql-bez-uvozovek) | Dotazy | práce | projekt | F11 |
 
 ---
 
@@ -152,11 +151,6 @@ Souhrn experimentálního běhu dává úplnost přenesených mapovacích vlastn
 *Rozhodnutí. Zjištění [běhu celého vstupu 2026-10-30](./runs/2026-10-30-whole-input.md); builder JPQL profilu EclipseLink (rozh. [080](./decisions/080-eclipselink-as-the-second-profile-over-the-jpa-layer.md)) a parser JPQL vrstvy JPA (rozh. [077](./decisions/077-hibernate-wrapper-over-the-shared-jpa-layer.md)). Požadavky F9, F11.*
 
 Join bez asociace uvnitř poddotazu píše builder pro EclipseLink jako výčet kořenů s podmínkou ve `where` (`from Refund rf2, SalesOrder o2 where o2.OrderId = rf2.OrderId …`), protože EclipseLink `join … on` v poddotazu nepřijme; parser JPQL týž tvar odmítá záznamem `Failure` („čárkou oddělené entity jsou křížový join, který reprezentace nenese“). Nástroj tak svůj vlastní artefakt pro EclipseLink nepřečte zpět — v běhu celého vstupu 302 dotazů ze zdroje EclipseLink do každého cíle —, zatímco artefakt Hibernatu (`join … on`) čte. Je třeba zodpovědět, zda je zpětná čitelnost vlastního výstupu nárok (S2 mluví o determinismu, ne o inverzi), a pokud ano, zda parser má výčet kořenů s rovností klíčů ve `where` číst jako vnitřní join, nebo builder psát jiný tvar.
-
-#### Tabulka se jménem vyhrazeného slova jde do SQL bez uvozovek
-*Vada. Zjištění [běhu celého vstupu 2026-10-30](./runs/2026-10-30-whole-input.md); builder SQL sdíleného projektu `TransactSql` (rozh. [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md)). Požadavek F11.*
-
-Entita `User` příkladu Cofoundry jde do SQL cílů Dapper a MyBatis jako `FROM User AS u` bez uvozovek; `USER` je vyhrazené slovo T-SQL, server dotaz odmítne a ScriptDom ho nepřečte (v běhu celého vstupu devět dotazů „Incorrect syntax near 'User'“). Builder má jméno tabulky a sloupce, které je vyhrazeným slovem T-SQL, psát v hranatých závorkách; seznam vyhrazených slov nese ScriptDom. Experimentální běh vadu neukázal, protože příklad bez schématu končí na třetím stupni a SQL se nespouští.
 
 ## Mimo rozsah
 
