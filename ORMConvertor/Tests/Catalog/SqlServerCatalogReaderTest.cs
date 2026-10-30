@@ -222,7 +222,7 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
     /// <summary>
     /// SQL Server takes at most 2100 parameters in one command and every name candidate is
     /// one; a request with more candidates than that is read in batches rather than refused
-    /// as an unreachable catalog (decision 197). The only candidate that resolves sits last,
+    /// as an unreachable catalog (decision 198). The only candidate that resolves sits last,
     /// so that it lands in the second command.
     /// </summary>
     [Fact]

@@ -7,7 +7,7 @@ namespace Tests.Combined;
 
 /// <summary>
 /// A defect of the tool met while generating one entity refuses that entity with a Failure
-/// record and a <see cref="TranslationDefect"/> and leaves the others alone (decision 196).
+/// record and a <see cref="TranslationDefect"/> and leaves the others alone (decision 197).
 /// The builder under test is the suite's own <see cref="DummyEntityBuilder"/>, whose
 /// <c>FinalizeBuild</c> throws by design: it is the one builder in the solution that fails
 /// for every entity, which is exactly what a defect looks like from the outside.

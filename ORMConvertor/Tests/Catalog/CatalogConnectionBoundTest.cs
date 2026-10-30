@@ -5,7 +5,7 @@ namespace Tests.Catalog;
 
 /// <summary>
 /// The catalog connection waits a bounded time for a server that does not answer (decision
-/// 197): the reader states <c>Connect Timeout</c> and no connect retry where the operator's
+/// 198): the reader states <c>Connect Timeout</c> and no connect retry where the operator's
 /// string does not, and leaves alone whatever the string states itself.
 /// </summary>
 public class CatalogConnectionBoundTest

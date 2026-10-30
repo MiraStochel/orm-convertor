@@ -153,7 +153,8 @@ public abstract class LinqQueryVisitor(
 
     public string Visit(OrderByInstruction instr) => Operand(instr.Operand);
 
-    public string Visit(JoinInstruction instr) => instr.OnCondition.Accept(this);
+    /// <summary>The condition of a join, which the builder places itself (decision 113); a cross join has none (decision 196).</summary>
+    public string Visit(JoinInstruction instr) => instr.OnCondition?.Accept(this) ?? string.Empty;
 
     /// <summary>
     /// The set operations LINQ names, exhaustively. ExceptAll has no LINQ method and used to

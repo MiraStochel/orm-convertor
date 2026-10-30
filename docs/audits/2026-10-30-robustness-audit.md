@@ -2,7 +2,7 @@
 
 Revize jedné otázky: **co aplikace udělá se vstupem, se kterým nepočítala** — vadným, podivným, nadměrným nebo chybějícím — a s infrastrukturou, která neodpovídá. Zaměřená na překladovou cestu (`/convert`), vedle ní na ostatní koncové body a frontend; Advisor je ze záruk vyňatý vcelku a revize ho vynechala. Nic z toho revize nečetla z kódu: každý nález stojí na spuštění (kapitola 4) a kde se dalo, i na čísle.
 
-Nálezy jsou číslované po kapitolách a označené závažností jako v revizi [2026-10-18](2026-10-18-whole-repository-audit.md) — **kritické**, **závažné**, **drobné**. Co revize našla, v téže změně i opravila, kde oprava nevolí; kde volí, vzniklo rozhodnutí (196, 197, 198). U každého nálezu stojí, co se s ním stalo; kapitola 5 to shrnuje.
+Nálezy jsou číslované po kapitolách a označené závažností jako v revizi [2026-10-18](2026-10-18-whole-repository-audit.md) — **kritické**, **závažné**, **drobné**. Co revize našla, v téže změně i opravila, kde oprava nevolí; kde volí, vzniklo rozhodnutí (197, 198, 199). U každého nálezu stojí, co se s ním stalo; kapitola 5 to shrnuje.
 
 ## Zafixované verze a stav, ke kterému revize platí
 
@@ -24,7 +24,7 @@ Sonda prohnala **14 148 převodů** — 393 vstupů × 36 směrů — orchestrac
 
 Orchestrace chytala jen `InsufficientExecutionStackException` (rozh. 191). Cokoli jiného z parseru, doplnění nebo builderu zahodilo artefakty a záznamy všech jednotek požadavku, odpovědělo 400 s textem výjimky, který není o vstupu, a nezalogovalo nic — `Endpoints.Failure` text jen vracela. Chyba programu a chyba vstupu byly k nerozeznání jak pro uživatele, tak pro provozovatele.
 
-*Rozhodnuto a provedeno:* rozh. [196](../decisions/196-a-defect-of-the-tool-refuses-the-unit-entity-or-query-with-a-record-and-a-log-line-and-400-stays-for-the-request-itself.md) — záchyt po jednotce v obou průchodech, po entitě v `Build()` a po dotazu, `Failure` s větou *vada nástroje, ne vstupu*, výjimka v `ConversionResult.Defects` a v logu (`Error`), 400 jen chybě požadavku samého.
+*Rozhodnuto a provedeno:* rozh. [197](../decisions/197-a-defect-of-the-tool-refuses-the-unit-entity-or-query-with-a-record-and-a-log-line-and-400-stays-for-the-request-itself.md) — záchyt po jednotce v obou průchodech, po entitě v `Build()` a po dotazu, `Failure` s větou *vada nástroje, ne vstupu*, výjimka v `ConversionResult.Defects` a v logu (`Error`), 400 jen chybě požadavku samého.
 
 ### 1.3 Co drželo — bez nálezu
 
@@ -36,13 +36,13 @@ Všechny syntaktické chyby pěti dotazových jazyků, Javy, C# i XML jsou `Fail
 
 Instance s katalogem na adrese, která neodpovídá: převod jedné entity trval **37,5 s** (`catalogReadMilliseconds` 37 299) a skončil 200 se stavem `Unreachable`; další požadavek 0,1 s (pool SqlClientu po selhání blokuje pokusy), po uplynutí blokace zase desítky sekund. Žádná mez v řetězci, žádné zrušení, frontend čeká bez omezení.
 
-*Rozhodnuto a provedeno:* rozh. [197](../decisions/197-the-catalog-connection-waits-a-bounded-time-and-table-names-go-to-the-catalog-in-batches-under-the-parameter-limit.md) — `Connect Timeout` 5 s a bez opakování tam, kde řetězec mlčí; změřeno, že mez drží jen se zdrojem dat s portem nebo protokolem (5,0 s), bez nich 27 s (odpadlo jen opakování); README to provozovateli říká.
+*Rozhodnuto a provedeno:* rozh. [198](../decisions/198-the-catalog-connection-waits-a-bounded-time-and-table-names-go-to-the-catalog-in-batches-under-the-parameter-limit.md) — `Connect Timeout` 5 s a bez opakování tam, kde řetězec mlčí; změřeno, že mez drží jen se zdrojem dat s portem nebo protokolem (5,0 s), bez nich 27 s (odpadlo jen opakování); README to provozovateli říká.
 
 ### 2.2 Víc než 2100 jmen tabulek v jednom příkazu by shodilo čtení katalogu — závažné
 
 Čtečka posílala každé jméno jako parametr jednoho příkazu; SQL Server přijme nejvýš 2100. Projekt od zhruba tisíce entit (dva kandidáti jména na entitu) by dostal `SqlException`, čtení by selhalo vcelku a záznam by řekl *katalog nešlo přečíst* — mez velikosti vykázaná jako výpadek. Odvozeno z kódu a z dokumentované meze serveru; proti serveru změřeno až opravou.
 
-*Rozhodnuto a provedeno:* rozh. 197 — dávky nejvýš 2000 jmen v každém z pěti dotazů i v sondě junction tabulek; `SqlServerCatalogReaderTest.ReadsMoreNameCandidatesThanOneCommandTakes` (2501 kandidátů proti SQLEXPRESS).
+*Rozhodnuto a provedeno:* rozh. 198 — dávky nejvýš 2000 jmen v každém z pěti dotazů i v sondě junction tabulek; `SqlServerCatalogReaderTest.ReadsMoreNameCandidatesThanOneCommandTakes` (2501 kandidátů proti SQLEXPRESS).
 
 ### 2.3 Co drželo — bez nálezu
 
@@ -54,13 +54,13 @@ Jména tabulek jdou do `sys.*` jako parametry `nvarchar(128)`, ne spojováním t
 
 Jednotka `null` v `sources` a `files: null` v archivu odpověděly 400 s textem `Object reference not set to an instance of an object.`; log instance zůstal u řádků startu. Totéž místo jako nález 1.2.
 
-*Rozhodnuto a provedeno:* rozh. 196 — `sources` a `files` se kontrolují před prací a odmítnutí jmenuje, co klient změní (*Source unit 2 is null; a unit declares a content type and a content.*); každé odmítnutí je řádek logu `Warning`, s výjimkou, byla-li.
+*Rozhodnuto a provedeno:* rozh. 197 — `sources` a `files` se kontrolují před prací a odmítnutí jmenuje, co klient změní (*Source unit 2 is null; a unit declares a content type and a content.*); každé odmítnutí je řádek logu `Warning`, s výjimkou, byla-li.
 
 ### 3.2 Jména položek archivu šla do ZIP doslova — závažné
 
 `../../evil.txt` a `/etc/passwd` prošly beze změny (hrozba 3 modelu hrozeb, dosud s ochranou *nic*); prázdné jméno a `C:\abs\p.txt` shodily celý archiv s 400 a textem `ZipArchive`, který položku nejmenuje.
 
-*Rozhodnuto a provedeno:* rozh. [198](../decisions/198-an-archive-entry-is-a-relative-path-and-any-other-name-refuses-the-archive-by-name.md) — položka je relativní cesta bez `..` a bez znaků, které jméno souboru nesmí nést; jiné jméno odmítne celý archiv s 400, které položku jmenuje.
+*Rozhodnuto a provedeno:* rozh. [199](../decisions/199-an-archive-entry-is-a-relative-path-and-any-other-name-refuses-the-archive-by-name.md) — položka je relativní cesta bez `..` a bez znaků, které jméno souboru nesmí nést; jiné jméno odmítne celý archiv s 400, které položku jmenuje.
 
 ### 3.3 Čas překladu roste s počtem jednotek nadlineárně — drobné
 
@@ -85,7 +85,7 @@ Tělo 40 MB dostane 413 z výchozího stropu Kestrelu (30 MB); neznámý typ obs
 
 - **Sonda překladu v procesu:** throwaway test v `Tests/` (smazaný), 393 vstupů × 36 směrů, 5,3 s celkem, 3 výjimky (nález 1.1), žádný převod nad 2 s; 400 souběžných převodů vstupů matice v šestnácti vláknech bez rozdílu proti sériovému běhu; sonda byla smazaná před opravou a případ 1.1 po ní drží `Combined/OwnedKeyMemberTest`.
 - **Sonda rozhraní:** instance z kopie sestavení `Release` (`Production`, bez katalogu) na vlastním portu; `curl` s těly z kapitoly 3; druhá instance s katalogem `10.255.255.1` pro nález 2.1; třetí po opravě (27,5 s bez portu, log s řádkem odmítnutí).
-- **Sonda SqlClientu:** konzolový projekt mimo řešení s `Microsoft.Data.SqlClient` 7.0.2, `SqlConnection.Open()` nad pěti řetězci (tabulka v rozh. 197).
+- **Sonda SqlClientu:** konzolový projekt mimo řešení s `Microsoft.Data.SqlClient` 7.0.2, `SqlConnection.Open()` nad pěti řetězci (tabulka v rozh. 198).
 - **Sada po opravách:** `dotnet test` nad celým `Tests.csproj` proti SQLEXPRESS: **13 438 testů, 0 selhaných, 11 623 prošlých, 1 815 přeskočených** — soudce LDBC, běh FIBEN, buňky `Omitted` a skupiny bez databáze případových studií, jak README sady vyjmenovává. Javová sada neběžela: změny se dotýkají orchestrace a rozhraní, jejichž kontrakt drží `Tests/Api`, a žádného artefaktu, který javová sada soudí.
 
 ## 5. Co z revize plyne
@@ -97,12 +97,12 @@ Tělo 40 MB dostane 413 z výchozího stropu Kestrelu (30 MB); neznámý typ obs
 
 ### Rozhodnutí, napsaná a provedená
 
-- [196](../decisions/196-a-defect-of-the-tool-refuses-the-unit-entity-or-query-with-a-record-and-a-log-line-and-400-stays-for-the-request-itself.md) — vada nástroje jako záznam jednotky, entity či dotazu a řádek logu (1.2, 3.1).
-- [197](../decisions/197-the-catalog-connection-waits-a-bounded-time-and-table-names-go-to-the-catalog-in-batches-under-the-parameter-limit.md) — omezené čekání na katalog a dávky jmen (2.1, 2.2).
-- [198](../decisions/198-an-archive-entry-is-a-relative-path-and-any-other-name-refuses-the-archive-by-name.md) — jména položek archivu (3.2).
+- [197](../decisions/197-a-defect-of-the-tool-refuses-the-unit-entity-or-query-with-a-record-and-a-log-line-and-400-stays-for-the-request-itself.md) — vada nástroje jako záznam jednotky, entity či dotazu a řádek logu (1.2, 3.1).
+- [198](../decisions/198-the-catalog-connection-waits-a-bounded-time-and-table-names-go-to-the-catalog-in-batches-under-the-parameter-limit.md) — omezené čekání na katalog a dávky jmen (2.1, 2.2).
+- [199](../decisions/199-an-archive-entry-is-a-relative-path-and-any-other-name-refuses-the-archive-by-name.md) — jména položek archivu (3.2).
 
 ### Práce a delší horizont
 
 - Nadlineární čas s počtem jednotek a limit počtu a velikosti jednotek (3.3) — `open-items.md`, *Užitečné, ne nutné*.
-- Log vad nemá test (rozh. 196, *Co zůstává*); `Command Timeout` dotazů do katalogu zůstává výchozí (rozh. 197, *Co rozhodnutí neřeší*).
+- Log vad nemá test (rozh. 197, *Co zůstává*); `Command Timeout` dotazů do katalogu zůstává výchozí (rozh. 198, *Co rozhodnutí neřeší*).
 - Hrozba 2 modelu hrozeb drží dál to, co revize nenašla: limit počtu a velikosti jednotek a omezení frekvence požadavků (hrozba 5).

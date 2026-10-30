@@ -76,7 +76,7 @@ public static class Endpoints
     /// used to return as a bare string, so threat 4 of the threat model - a server or instance
     /// name can appear in it - is unchanged and this is not its fix. The credentials of the
     /// instance do not: the message is text the tool did not compose, so it leaves through
-    /// the redaction (decision 160). The refusal is logged with the exception (decision 196),
+    /// the redaction (decision 160). The refusal is logged with the exception (decision 197),
     /// through the same redaction, so that a defect of the tool behind a 400 leaves a trace
     /// on the instance and not only in the client's window.
     /// </summary>
@@ -88,7 +88,7 @@ public static class Endpoints
 
     /// <summary>
     /// A request refused for what it is, before any work is done on it: the sentence is the
-    /// tool's own and names what the client has to change (decision 196).
+    /// tool's own and names what the client has to change (decision 197).
     /// </summary>
     private static IResult Refused(string reason, ILogger log, string endpoint)
     {
@@ -101,7 +101,7 @@ public static class Endpoints
 
     /// <summary>
     /// Why a client-named entry may not go into the archive, or null where it may (decision
-    /// 198): an entry is a relative path under the directory the archive is unpacked into,
+    /// 199): an entry is a relative path under the directory the archive is unpacked into,
     /// so it has a name, starts with no separator, leaves no directory by <c>..</c> and
     /// carries no character a file name cannot. The only client the tool knows, the
     /// frontend, names entries after the artifacts; anything else is a client's mistake and
@@ -112,22 +112,22 @@ public static class Endpoints
     {
         if (string.IsNullOrWhiteSpace(name))
         {
-            return "A file of the archive has no name; every entry is named by the client (decision 198).";
+            return "A file of the archive has no name; every entry is named by the client (decision 199).";
         }
 
         if (name[0] is '/' or '\\')
         {
-            return $"The file name '{name}' is an absolute path; an entry of the archive is a path relative to the directory it is unpacked into (decision 198).";
+            return $"The file name '{name}' is an absolute path; an entry of the archive is a path relative to the directory it is unpacked into (decision 199).";
         }
 
         if (name.Split('/', '\\').Any(segment => segment == ".."))
         {
-            return $"The file name '{name}' leaves the directory the archive is unpacked into ('..'), which an entry may not (decision 198).";
+            return $"The file name '{name}' leaves the directory the archive is unpacked into ('..'), which an entry may not (decision 199).";
         }
 
         if (name.IndexOfAny(CharactersNoFileNameMay) >= 0)
         {
-            return $"The file name '{name}' carries a character no file name may ('<', '>', ':', '\"', '|', '?', '*' or a control character; decision 198).";
+            return $"The file name '{name}' carries a character no file name may ('<', '>', ':', '\"', '|', '?', '*' or a control character; decision 199).";
         }
 
         return null;
@@ -209,7 +209,7 @@ public static class Endpoints
                 req.SourceOrm, req.TargetOrm, req.Sources, catalogConnectionString, req.DeclaredSourceDialect, limits);
 
             // A defect of the tool met during the run is a Failure record for the caller and
-            // an exception for whoever runs the instance (decision 196): the record says what
+            // an exception for whoever runs the instance (decision 197): the record says what
             // was not translated, the log says why, with the stack, through the redaction.
             foreach (var defect in converted.Defects)
             {

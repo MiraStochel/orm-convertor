@@ -179,5 +179,11 @@ public static class EclipseLinkDescriptor
         // Hermes parser of 5.0.0 refuses "full join" with a syntax error - Jakarta Persistence
         // has the inner and the left join only -, so the query goes out in native SQL
         // (decision 113). The right join, the other extension, no run has measured.
-        RefusesFullJoin: true);
+        RefusesFullJoin: true,
+
+        // Measured against 5.0.0 by eclipselink/CrossJoinClaimsTest (decision 196): an entity
+        // join written after a comma-separated range variable may name any root of the from
+        // clause in its condition, before the comma and after it alike, and answers the rows
+        // the same T-SQL answers.
+        JoinBindsToTheLastRangeVariable: false);
 }

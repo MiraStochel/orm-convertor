@@ -1,4 +1,4 @@
-# 196 — Výjimka nástroje při čtení jednotky, generování entity nebo dotazu je záznam `Failure` té jednotky, entity či dotazu a řádek logu; 400 zůstává chybě požadavku samého
+# 197 — Výjimka nástroje při čtení jednotky, generování entity nebo dotazu je záznam `Failure` té jednotky, entity či dotazu a řádek logu; 400 zůstává chybě požadavku samého
 
 Datum: 2026-10-30
 Stav: platí

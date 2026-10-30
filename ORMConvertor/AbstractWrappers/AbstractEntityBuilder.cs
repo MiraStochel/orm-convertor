@@ -3241,7 +3241,7 @@ public abstract class AbstractEntityBuilder
     private readonly List<TranslationDefect> defects = [];
 
     /// <summary>
-    /// The defects of the tool met while generating an entity (decision 196), beside the
+    /// The defects of the tool met while generating an entity (decision 197), beside the
     /// Failure records they left: the record is for the caller, the exception for the log.
     /// </summary>
     public IReadOnlyList<TranslationDefect> Defects => defects;
@@ -3798,7 +3798,7 @@ public abstract class AbstractEntityBuilder
             catch (Exception exception)
             {
                 // A defect of the tool met while generating this one entity refuses the
-                // entity and leaves the others alone (decision 196): the record tells the
+                // entity and leaves the others alone (decision 197): the record tells the
                 // caller, the defect goes to whoever runs the instance, and the ledger says
                 // of every fact of the entity that nothing carried it.
                 Report(new ConversionRecord

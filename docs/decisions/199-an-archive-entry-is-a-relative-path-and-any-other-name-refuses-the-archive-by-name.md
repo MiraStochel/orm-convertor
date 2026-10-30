@@ -1,9 +1,9 @@
-# 198 — Položka archivu je relativní cesta bez `..` a bez znaků, které jméno souboru nesmí nést; jiné jméno odmítne celý archiv s 400, které položku jmenuje
+# 199 — Položka archivu je relativní cesta bez `..` a bez znaků, které jméno souboru nesmí nést; jiné jméno odmítne celý archiv s 400, které položku jmenuje
 
 Datum: 2026-10-30
 Stav: platí
 Požadavky: S7, F14, S4
-Podklad: rozhodnutí [033](033-shape-of-the-static-frontend-screens.md) (nahrazeno 099, část o stažení platí), [044](044-error-response-as-problem-details.md), [136](136-a-project-archive-is-unpacked-by-the-browser-with-own-code.md), [196](196-a-defect-of-the-tool-refuses-the-unit-entity-or-query-with-a-record-and-a-log-line-and-400-stays-for-the-request-itself.md); [`threat-model.md`](../threat-model.md), hrozba 3; revize odolnosti [2026-10-30](../audits/2026-10-30-robustness-audit.md), nález 3.2
+Podklad: rozhodnutí [033](033-shape-of-the-static-frontend-screens.md) (nahrazeno 099, část o stažení platí), [044](044-error-response-as-problem-details.md), [136](136-a-project-archive-is-unpacked-by-the-browser-with-own-code.md), [197](197-a-defect-of-the-tool-refuses-the-unit-entity-or-query-with-a-record-and-a-log-line-and-400-stays-for-the-request-itself.md); [`threat-model.md`](../threat-model.md), hrozba 3; revize odolnosti [2026-10-30](../audits/2026-10-30-robustness-audit.md), nález 3.2
 
 ## Kontext
 
@@ -19,7 +19,7 @@ Předpoklad důvěryhodné sítě (model hrozeb) a rozbalovače, které `..` sam
 
 ### 2 — Jména opravit (odstranit `..`, úvodní oddělovač, písmeno jednotky)
 
-Archiv by vznikl vždy. Zamítáme: tiše by změnil, oč klient žádal — soubor by přistál jinde, než klient řekl, a chyba klienta by zůstala skrytá. Nástroj nikde jinde vstup neopravuje mlčky: co nepřijme, odmítne záznamem nebo odpovědí, která to řekne (rozh. 045, 196).
+Archiv by vznikl vždy. Zamítáme: tiše by změnil, oč klient žádal — soubor by přistál jinde, než klient řekl, a chyba klienta by zůstala skrytá. Nástroj nikde jinde vstup neopravuje mlčky: co nepřijme, odmítne záznamem nebo odpovědí, která to řekne (rozh. 045, 197).
 
 ### 3 — Odmítnout celý archiv s 400, které položku jmenuje
 
@@ -27,12 +27,12 @@ Jméno je přijatelné, je-li neprázdné, nezačíná-li oddělovačem, nemá-l
 
 ## Rozhodnutí
 
-**Položka archivu je relativní cesta pod adresářem, do kterého se archiv rozbalí; jiné jméno odmítne celý archiv s 400, které položku jmenuje.** Konkrétně `Endpoints.EntryNameRefusal`: prázdné nebo bílé jméno, jméno začínající `/` či `\`, segment `..` (pod oběma oddělovači), znak z `< > : " | ? *` nebo řídicí znak — každé s vlastní větou (rozh. 044), logované jako odmítnutí požadavku (rozh. 196). `C:\…` padá na dvojtečku, takže absolutní cesta Windows nepotřebuje vlastní pravidlo. Adresáře v cestě (`src/Sales/Customer.cs`) procházejí, protože tak frontend jmenuje jednotky z archivu projektu.
+**Položka archivu je relativní cesta pod adresářem, do kterého se archiv rozbalí; jiné jméno odmítne celý archiv s 400, které položku jmenuje.** Konkrétně `Endpoints.EntryNameRefusal`: prázdné nebo bílé jméno, jméno začínající `/` či `\`, segment `..` (pod oběma oddělovači), znak z `< > : " | ? *` nebo řídicí znak — každé s vlastní větou (rozh. 044), logované jako odmítnutí požadavku (rozh. 197). `C:\…` padá na dvojtečku, takže absolutní cesta Windows nepotřebuje vlastní pravidlo. Adresáře v cestě (`src/Sales/Customer.cs`) procházejí, protože tak frontend jmenuje jednotky z archivu projektu.
 
 **Co rozhodnutí netvrdí.** Že by archiv byl bezpečný proti rozbalovači, který relativní cestu s adresáři vyloží jinak než jako podadresář; tvrdí jen, že nástroj nevydá jméno, které by z adresáře vedlo ven nebo by rozbalovač nemohl zapsat. Jména zůstávají klientova (rozh. 033): nástroj je nemění, jen některá nepřijme.
 
 ## Důsledky
 
-- **Kód:** `Endpoints.EntryNameRefusal`, `CharactersNoFileNameMay`; kontrola `files` a položek `null` před balením (196).
+- **Kód:** `Endpoints.EntryNameRefusal`, `CharactersNoFileNameMay`; kontrola `files` a položek `null` před balením (197).
 - **Testy:** `Api/ArchiveEndpointTest` — osm jmen, která archiv odmítne (každé s větou, která jméno nese), relativní cesta s adresáři, která projde, a chybějící seznam.
 - **Dokumenty:** `threat-model.md`, vstupní bod `/archive` a hrozba 3 (ochrana místo *nic*); `architecture.md` §6.5; `traceability.md` S7.

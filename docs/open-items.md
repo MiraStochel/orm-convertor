@@ -29,8 +29,6 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | [Odevzdání do položek](#odevzdání-není-rozepsané-do-položek) | Odevzdání | práce | projekt | — |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | | — |
 | [Úplnost mapování po kategoriích faktů](#úplnost-mapování-po-kategoriích-faktů) | Užitečné | práce | | T2, T3 |
-| [Artefakt EclipseLinku se vlastním parserem nepřečte](#artefakt-eclipselinku-s-čárkou-oddělenými-kořeny-vlastní-parser-jpql-odmítá) | Dotazy | rozhodnutí | | F9, F11 |
-| [Tabulka `User` v SQL bez uvozovek](#tabulka-se-jménem-vyhrazeného-slova-jde-do-sql-bez-uvozovek) | Dotazy | práce | projekt | F11 |
 | [Počet jednotek bez limitu a nadlineární čas](#počet-jednotek-nemá-limit-a-čas-s-ním-roste-nadlineárně) | Užitečné | rozhodnutí | | S3, S4 |
 
 ---
@@ -148,16 +146,6 @@ Citaci nesou jen značka v gitu a `CITATION.cff`; z pěti doporučení fair-soft
 *Práce. Zúžení T2 rozh. [183](./decisions/183-t2-and-t3-leave-the-exempt-area-in-a-narrower-sense-the-build-holds-the-category-matrix-and-the-run-measures-the-metrics-without-promising-numbers.md); měřidlo rozh. [173](./decisions/173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md). Požadavky T2, T3.*
 
 Souhrn experimentálního běhu dává úplnost přenesených mapovacích vlastností jen jako součet faktů skupiny, takže se tabulka T2 × T3 po mapovacích konstrukcích nedělí, ačkoli je specifikace u T2 jmenuje vedle kategorií dotazů; který fakt chybí, říká jen sloupec `detail` v `mapping-rows.tsv`. Rozdělení po kategorii faktu (`MappingFactCategory` — klíč, databázový typ, nullabilita, cizí klíč, verze …) a cíli potřebuje v řádku mapování počty po kategoriích místo čtyř součtů a v `Experiment/ExperimentSummary` oddíl navíc; ukáže, kterou konstrukci který cíl ztrácí, kde dnes stojí jediný podíl na cíl.
-
-#### Artefakt EclipseLinku s čárkou oddělenými kořeny vlastní parser JPQL odmítá
-*Rozhodnutí. Zjištění [běhu celého vstupu 2026-10-30](./runs/2026-10-30-whole-input.md); builder JPQL profilu EclipseLink (rozh. [080](./decisions/080-eclipselink-as-the-second-profile-over-the-jpa-layer.md)) a parser JPQL vrstvy JPA (rozh. [077](./decisions/077-hibernate-wrapper-over-the-shared-jpa-layer.md)). Požadavky F9, F11.*
-
-Join bez asociace uvnitř poddotazu píše builder pro EclipseLink jako výčet kořenů s podmínkou ve `where` (`from Refund rf2, SalesOrder o2 where o2.OrderId = rf2.OrderId …`), protože EclipseLink `join … on` v poddotazu nepřijme; parser JPQL týž tvar odmítá záznamem `Failure` („čárkou oddělené entity jsou křížový join, který reprezentace nenese“). Nástroj tak svůj vlastní artefakt pro EclipseLink nepřečte zpět — v běhu celého vstupu 302 dotazů ze zdroje EclipseLink do každého cíle —, zatímco artefakt Hibernatu (`join … on`) čte. Je třeba zodpovědět, zda je zpětná čitelnost vlastního výstupu nárok (S2 mluví o determinismu, ne o inverzi), a pokud ano, zda parser má výčet kořenů s rovností klíčů ve `where` číst jako vnitřní join, nebo builder psát jiný tvar.
-
-#### Tabulka se jménem vyhrazeného slova jde do SQL bez uvozovek
-*Vada. Zjištění [běhu celého vstupu 2026-10-30](./runs/2026-10-30-whole-input.md); builder SQL sdíleného projektu `TransactSql` (rozh. [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md)). Požadavek F11.*
-
-Entita `User` příkladu Cofoundry jde do SQL cílů Dapper a MyBatis jako `FROM User AS u` bez uvozovek; `USER` je vyhrazené slovo T-SQL, server dotaz odmítne a ScriptDom ho nepřečte (v běhu celého vstupu devět dotazů „Incorrect syntax near 'User'“). Builder má jméno tabulky a sloupce, které je vyhrazeným slovem T-SQL, psát v hranatých závorkách; seznam vyhrazených slov nese ScriptDom. Experimentální běh vadu neukázal, protože příklad bez schématu končí na třetím stupni a SQL se nespouští.
 
 #### Počet jednotek nemá limit a čas s ním roste nadlineárně
 *Rozhodnutí. Zjištění revize odolnosti [2026-10-30](./audits/2026-10-30-robustness-audit.md), nález 3.3; [`threat-model.md`](./threat-model.md), hrozba 2; strop zanoření rozh. [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md) jako vzor limitu, který je faktem instance. Požadavky S3, S4.*

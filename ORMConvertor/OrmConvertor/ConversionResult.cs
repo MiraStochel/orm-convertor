@@ -90,7 +90,7 @@ public sealed class ConversionResult
     public required List<ConversionFact> Facts { get; init; }
 
     /// <summary>
-    /// The defects of the tool met during the run (decision 196), one per Failure record
+    /// The defects of the tool met during the run (decision 197), one per Failure record
     /// written for a defect: the exception with its stack, the unit, entity or query it was
     /// met on. Not part of the response - the record is - but what the API logs.
     /// </summary>

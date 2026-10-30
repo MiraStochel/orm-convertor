@@ -1711,17 +1711,25 @@ public abstract class JpqlQueryParser(
         sourceAlias = alias;
         queryBuilder.From(table, alias);
 
-        while (TryConsumeSymbol(","))
+        // Comma-separated range variables are cross joins (decision 196): each further one is
+        // joined onto the rows so far without a condition, whatever the where clause says
+        // about the two, and the joins written after it follow in the order written.
+        while (true)
         {
-            Report(ConversionRecordKind.Failure,
-                "Comma-separated entity references are a cross join the query representation cannot carry, and a query emitted without it would return different rows; no artifact was generated.",
-                QueryFeature.Join);
-            ParseEntityReference();
-        }
+            if (TryConsumeSymbol(","))
+            {
+                var (crossed, crossedAlias) = ParseEntityReference();
+                queryBuilder.Join(JoinKind.Cross, sourceAlias, crossed, null, crossedAlias);
+                continue;
+            }
 
-        while (AtKeyword("inner") || AtKeyword("left") || AtKeyword("right") || AtKeyword("full") || AtKeyword("join"))
-        {
-            ParseJoin();
+            if (AtKeyword("inner") || AtKeyword("left") || AtKeyword("right") || AtKeyword("full") || AtKeyword("cross") || AtKeyword("join"))
+            {
+                ParseJoin();
+                continue;
+            }
+
+            break;
         }
 
         if (selectStart is { } selectAt)
@@ -2013,6 +2021,16 @@ public abstract class JpqlQueryParser(
 
     private void ParseJoin()
     {
+        // `cross join` is HQL's other spelling of the cross join the comma spells in JPQL
+        // (decision 196): an entity with no condition.
+        if (TryConsumeKeyword("cross"))
+        {
+            ConsumeKeyword("join");
+            var (crossed, crossedAlias) = ParseEntityReference();
+            queryBuilder.Join(JoinKind.Cross, sourceAlias, crossed, null, crossedAlias);
+            return;
+        }
+
         JoinKind kind;
         if (TryConsumeKeyword("inner"))
         {

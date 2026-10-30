@@ -1,4 +1,4 @@
-# 197 — Připojení ke katalogu čeká omezeně: `Connect Timeout` 5 s bez opakování, nevysloví-li řetězec jinak; jména tabulek jdou do katalogu po dávkách pod mezí parametrů příkazu
+# 198 — Připojení ke katalogu čeká omezeně: `Connect Timeout` 5 s bez opakování, nevysloví-li řetězec jinak; jména tabulek jdou do katalogu po dávkách pod mezí parametrů příkazu
 
 Datum: 2026-10-30
 Stav: platí

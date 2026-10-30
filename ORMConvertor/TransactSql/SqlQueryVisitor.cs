@@ -34,10 +34,11 @@ public class SqlQueryVisitor(
     /// </summary>
     private string? patternEscape;
 
+    /// <summary>The source with its alias; a name spelled like a reserved word of T-SQL is bracketed (<see cref="SqlNames"/>).</summary>
     public string Visit(FromInstruction instr)
     {
-        var alias = instr.Alias is null ? string.Empty : $" AS {instr.Alias}";
-        return $"{instr.Table}{alias}";
+        var alias = instr.Alias is null ? string.Empty : $" AS {SqlNames.Written(instr.Alias)}";
+        return $"{SqlNames.WrittenQualified(instr.Table)}{alias}";
     }
 
     /// <summary>
@@ -45,18 +46,16 @@ public class SqlQueryVisitor(
     /// argument is not a column, so it is the one the table alias must not qualify:
     /// `COUNT(c.*)` is not T-SQL at all, which the operand rendering below knows. An alias
     /// the source delimited - no identifier of its language - is delimited again in T-SQL's
-    /// own brackets; bare, it is text the parser refuses or reads as something else.
+    /// own brackets; bare, it is text the parser refuses or reads as something else. A bare
+    /// alias spelled like a reserved word is bracketed for the same reason (<see cref="SqlNames"/>).
     /// </summary>
     public string Visit(ProjectInstruction instr)
     {
         var alias = instr.Alias is null
             ? string.Empty
-            : instr.DelimitedAlias ? $" AS {Delimited(instr.Alias)}" : $" AS {instr.Alias}";
+            : instr.DelimitedAlias ? $" AS {SqlNames.Delimited(instr.Alias)}" : $" AS {SqlNames.Written(instr.Alias)}";
         return $"{BuildOperand(instr.Operand)}{alias}";
     }
-
-    /// <summary>A name in T-SQL's delimiters, a closing bracket inside it doubled.</summary>
-    private static string Delimited(string name) => $"[{name.Replace("]", "]]")}]";
 
     public string Visit(SelectInstruction instr) => instr.Condition.Accept(this);
 
@@ -207,10 +206,17 @@ public class SqlQueryVisitor(
         };
 
         var rightTable = instr.RightTableAlias is null
-            ? instr.RightTable
-            : $"{instr.RightTable} {instr.RightTableAlias}";
+            ? SqlNames.WrittenQualified(instr.RightTable)
+            : $"{SqlNames.WrittenQualified(instr.RightTable)} {SqlNames.Written(instr.RightTableAlias)}";
 
-        return $"{joinType} {rightTable} ON {instr.OnCondition.Accept(this)}";
+        // A cross join has no condition (decision 196); T-SQL spells it in the join chain, so
+        // it stands in any order beside the other joins.
+        if (instr.Kind == JoinKind.Cross)
+        {
+            return $"CROSS JOIN {rightTable}";
+        }
+
+        return $"{joinType} {rightTable} ON {instr.OnCondition!.Accept(this)}";
     }
 
     /// <summary>An ordering key with its direction (decision 107): a column, an aggregate, an expression or a projection alias.</summary>
@@ -248,8 +254,9 @@ public class SqlQueryVisitor(
         // COUNT(*) in operand position - a HAVING over the row count - is the same one
         // aggregate whose argument is no column, and the alias must not qualify it here any
         // more than in the projection above: `COUNT(o.*)` is not T-SQL. The whole row of one
-        // range variable under no aggregate is `t.*`. A bare name that is no identifier - an
-        // ordering by an alias the source delimited - is delimited as the source had to.
+        // range variable under no aggregate is `t.*`. A name that is no identifier - an
+        // ordering by an alias the source delimited - or that is a reserved word of T-SQL is
+        // bracketed, as the source had to (SqlNames).
         var text = operand.IsParameter
             ? $"@{QueryParameterNaming.IdentifierFor(operand.Parameter!)}"
             : operand.IsExpression
@@ -267,15 +274,15 @@ public class SqlQueryVisitor(
     {
         if (operand.Property == "*")
         {
-            return operand.Table is null || operand.Function is not null ? "*" : $"{operand.Table}.*";
+            return operand.Table is null || operand.Function is not null ? "*" : $"{SqlNames.Written(operand.Table)}.*";
         }
 
         if (operand.Table is null)
         {
-            return Identifiers.IsRegular(operand.Property!) ? operand.Property! : Delimited(operand.Property!);
+            return SqlNames.Written(operand.Property!);
         }
 
-        return $"{operand.Table}.{operand.Property}";
+        return $"{SqlNames.Written(operand.Table)}.{SqlNames.Written(operand.Property!)}";
     }
 
     /* ---- expressions (decision 107) --------------------------------------------------- */

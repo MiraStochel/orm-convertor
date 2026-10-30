@@ -1,7 +1,7 @@
 namespace AbstractWrappers.Diagnostics;
 
 /// <summary>
-/// A failure of the tool itself during one translation (decision 196): an exception that is
+/// A failure of the tool itself during one translation (decision 197): an exception that is
 /// not a refusal of the input - refusals are Failure records written on purpose - but a defect
 /// met while reading one unit, generating one entity or one query. The orchestration turns
 /// it into a Failure record for the caller and keeps the exception here for whoever runs the

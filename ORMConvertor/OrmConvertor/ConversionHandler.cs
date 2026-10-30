@@ -95,7 +95,7 @@ public static class ConversionHandler
             }
         }
 
-        // The defects of the tool met during this run (decision 196): each one is a Failure
+        // The defects of the tool met during this run (decision 197): each one is a Failure
         // record for the caller and an exception for the log. A reading that threw anything
         // but a stack exhaustion refuses its unit for both passes - the same text would be
         // read by the other pass over a model the failed reading may have left half filled -
@@ -142,7 +142,7 @@ public static class ConversionHandler
                 }
                 catch (Exception exception)
                 {
-                    // A defect of the tool refuses the unit the same way (decision 196). The
+                    // A defect of the tool refuses the unit the same way (decision 197). The
                     // maps the failed reading declared leave with it; what it stated about
                     // maps other units declared cannot be told apart and stays.
                     entityBuilder.AttributeRecords(recordsBefore, unit.Reference);
@@ -170,7 +170,7 @@ public static class ConversionHandler
         var catalogPhase = CatalogCompletion.Complete(entityBuilder, catalogReader, declaredSourceDialect);
 
         // Emit entities for target ORM. One entity that cannot be generated is the builder's
-        // own record (decision 196); a defect in the phases over the whole model refuses the
+        // own record (decision 197); a defect in the phases over the whole model refuses the
         // entity artifacts as a whole and says so about the run.
         try
         {
@@ -290,7 +290,7 @@ public static class ConversionHandler
             catch (Exception exception)
             {
                 // A defect of the tool in the reading or in the measuring of what was read
-                // refuses the unit (decision 196).
+                // refuses the unit (decision 197).
                 RefuseDefective(unit, $"reading the unit {unit.Reference}", exception);
                 continue;
             }
@@ -319,7 +319,7 @@ public static class ConversionHandler
             foreach (var queryBuilder in filled)
             {
                 // A defect of the tool met while generating this one query refuses the query
-                // and leaves the rest of the unit alone (decision 196); the builder's own
+                // and leaves the rest of the unit alone (decision 197); the builder's own
                 // records still leave with it below.
                 var built = new List<ConversionSource>();
                 try
@@ -498,7 +498,7 @@ public static class ConversionHandler
 
         /// <summary>
         /// Its reading ran out of stack (decision 191) or met a defect of the tool (decision
-        /// 196); the refusal says all there is to say about it, and the other pass leaves it alone.
+        /// 197); the refusal says all there is to say about it, and the other pass leaves it alone.
         /// </summary>
         public bool Refused { get; set; }
     }

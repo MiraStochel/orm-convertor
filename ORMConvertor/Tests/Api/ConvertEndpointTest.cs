@@ -387,7 +387,7 @@ public class ConvertEndpointTest(ApiTestHost host)
 
     /// <summary>
     /// A request without its list of units, or with a unit that is null, is refused with a
-    /// sentence of the tool's own that names what to change (decision 196) - not with the
+    /// sentence of the tool's own that names what to change (decision 197) - not with the
     /// text of the null reference it used to run into.
     /// </summary>
     [Fact]

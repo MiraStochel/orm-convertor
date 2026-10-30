@@ -100,7 +100,7 @@ No connection string has a value in the repository, except the disposable creden
 
 | Key | Used by | Purpose; when unset | Set in |
 |---|---|---|---|
-| `ConnectionStrings:CatalogDatabase` | API | Catalog completion. Unset: conventions only, reported in `CatalogState`; F4 and F6 do not hold through the interface. A host that does not answer is waited for 5 s per connection attempt, with no retry (decision 197) - but only when the data source names a port or a protocol (`localhost,1444`, `tcp:host`); a bare host name makes SqlClient look for the instance first and waits tens of seconds. A `Connect Timeout` written into the string wins over the default. | secret, env; compose `ormconvertor`, `test_app`, `test_app_ldbc`, `test_app_cases`; CI |
+| `ConnectionStrings:CatalogDatabase` | API | Catalog completion. Unset: conventions only, reported in `CatalogState`; F4 and F6 do not hold through the interface. A host that does not answer is waited for 5 s per connection attempt, with no retry (decision 198) - but only when the data source names a port or a protocol (`localhost,1444`, `tcp:host`); a bare host name makes SqlClient look for the instance first and waits tens of seconds. A `Connect Timeout` written into the string wins over the default. | secret, env; compose `ormconvertor`, `test_app`, `test_app_ldbc`, `test_app_cases`; CI |
 | `ConnectionStrings:AdvisorDatabase` | API | Advisor benchmarking. Unset: the Advisor names the key and stops. | secret, env; compose `ormconvertor` |
 | `ConnectionStrings:TestDatabase` | .NET suite | Database tests. Unset: they skip with a reason. | secret, env; compose `tests`; CI |
 | `ORMCONVERTOR_REQUIRE_TEST_DATABASE` | .NET suite | `1`: a missing database fails. | env; compose `tests`; CI |
@@ -437,7 +437,7 @@ curl http://localhost:5072/orm/openapi/v1.json -o ORMConvertorAPI/openapi.json
 | `POST` | `/advisor/run` | Advisor run with its translations ([059](../docs/decisions/059-advisor-response-carries-the-measured-translations.md)) | `AdvisorRunRequest` → `AdvisorRunResult` |
 | `POST` | `/advisor-test` | Bare ILP solver | `AdvisorSolveRequest` → `AdvisorSolveResponse` |
 
-A `POST` that cannot be acted on - an unknown framework, a missing `sources` or `files` list, a unit that is `null`, an archive entry that is not a relative path (decision 198) - answers `400` with RFC 9457 `ProblemDetails` whose `detail` names what to change. A defect of the tool met during a translation is not a `400`: it is a `Failure` record of the unit, entity or query it was met on, the response stays `200` with everything else that was translated, and the instance logs the exception at `Error` (decision 196). Types live in `ORMConvertorAPI/Dtos/`; `ConvertResponse` carries the S6 run record.
+A `POST` that cannot be acted on - an unknown framework, a missing `sources` or `files` list, a unit that is `null`, an archive entry that is not a relative path (decision 199) - answers `400` with RFC 9457 `ProblemDetails` whose `detail` names what to change. A defect of the tool met during a translation is not a `400`: it is a `Failure` record of the unit, entity or query it was met on, the response stays `200` with everything else that was translated, and the instance logs the exception at `Error` (decision 197). Types live in `ORMConvertorAPI/Dtos/`; `ConvertResponse` carries the S6 run record.
 
 # Frontend
 

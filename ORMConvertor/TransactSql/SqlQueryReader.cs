@@ -607,36 +607,72 @@ public class SqlQueryReader(
 
     private void ReadFrom(QuerySpecification query)
     {
-        var reference = query.FromClause?.TableReferences.FirstOrDefault();
-        if (reference is null)
+        var references = query.FromClause?.TableReferences;
+        if (references is null || references.Count == 0)
         {
             Report(ConversionRecordKind.Failure, "The SELECT has no FROM clause (rule Q2).");
             return;
         }
 
-        // A cross join multiplies rows, so reading the first source alone would translate a
-        // different query (decision 070). The first is still read so that the rest of the
-        // statement can report its own reasons.
-        if (query.FromClause!.TableReferences.Count > 1)
+        // Comma-separated table references are cross joins (decision 196): the first is the
+        // source of rows and each further one is joined onto the rows so far without a
+        // condition, whatever the WHERE clause says about the two. Each reference carries its
+        // own tree of joins.
+        for (var index = 0; index < references.Count; index++)
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "Comma-separated table references are a cross join the query representation cannot carry, and a query emitted without it would return different rows; no artifact was generated.",
-                QueryFeature.Join);
+            if (!ReadTableReference(references[index], crossJoined: index > 0))
+            {
+                return;
+            }
         }
+    }
 
-        var joins = new List<QualifiedJoin>();
+    /// <summary>
+    /// One table reference of the FROM clause with the joins written onto it: the first one
+    /// is the source of rows, every further one is cross-joined (decision 196). False when
+    /// the reference could not be read, the reason on the channel.
+    /// </summary>
+    private bool ReadTableReference(TableReference reference, bool crossJoined)
+    {
+        var joins = new List<TableReference>();
         var current = reference;
 
-        // A join tree leans left, so walking down the first reference reaches the base table
-        // and unwinding it emits the joins in the order they were written.
-        while (current is QualifiedJoin join)
+        // A join tree leans left, so walking down the reference reaches the base table and
+        // unwinding it emits the joins in the order they were written. CROSS JOIN is a join
+        // without a condition (decision 196); CROSS APPLY and OUTER APPLY are lateral and
+        // multiply the rows by a set computed per row, which the representation does not
+        // carry, so a query without them would return different rows (decision 070).
+        while (true)
         {
-            joins.Add(join);
-            current = join.FirstTableReference;
+            if (current is QualifiedJoin qualified)
+            {
+                joins.Add(qualified);
+                current = qualified.FirstTableReference;
+            }
+            else if (current is UnqualifiedJoin unqualified)
+            {
+                if (unqualified.UnqualifiedJoinType != UnqualifiedJoinType.CrossJoin)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"{(unqualified.UnqualifiedJoinType == UnqualifiedJoinType.CrossApply ? "CROSS APPLY" : "OUTER APPLY")} is a lateral join the query representation does not carry, and a query emitted without it would return different rows; no artifact was generated.",
+                        QueryFeature.Join);
+                    return false;
+                }
+
+                joins.Add(unqualified);
+                current = unqualified.FirstTableReference;
+            }
+            else
+            {
+                break;
+            }
         }
 
         joins.Reverse();
+
+        string name;
+        string alias;
 
         // A derived table is the source of rows a definition of the query is, named by its
         // alias (decision 112); the scope reads it by that name, as it reads a table.
@@ -644,43 +680,84 @@ public class SqlQueryReader(
         {
             if (ReadDerivedTable(derived) is not { } definition)
             {
-                return;
+                return false;
             }
 
-            sourceAlias = definition;
-            DeclareAlias(definition);
-            queryBuilder.From(definition, definition);
-
-            foreach (var join in joins)
-            {
-                ReadJoin(join);
-            }
-
-            return;
+            name = alias = definition;
         }
+        else if (current is NamedTableReference table)
+        {
+            if (!ReadTableModifiers(table))
+            {
+                return false;
+            }
 
-        if (current is not NamedTableReference table)
+            (name, alias) = NameAndAlias(table);
+        }
+        else
         {
             Report(
                 ConversionRecordKind.Failure,
                 $"The query source is a {current.GetType().Name}, which the query representation cannot carry.");
-            return;
+            return false;
         }
 
-        if (!ReadTableModifiers(table))
-        {
-            return;
-        }
-
-        var (name, alias) = NameAndAlias(table);
-        sourceAlias = alias;
         DeclareAlias(alias);
-        queryBuilder.From(name, alias);
+        if (crossJoined)
+        {
+            queryBuilder.Join(JoinKind.Cross, sourceAlias, name, null, alias);
+        }
+        else
+        {
+            sourceAlias = alias;
+            queryBuilder.From(name, alias);
+        }
 
         foreach (var join in joins)
         {
-            ReadJoin(join);
+            if (join is QualifiedJoin qualified)
+            {
+                ReadJoin(qualified);
+            }
+            else
+            {
+                ReadCrossJoin((UnqualifiedJoin)join);
+            }
         }
+
+        return true;
+    }
+
+    /// <summary>CROSS JOIN onto a table or a derived table: a join without a condition (decision 196).</summary>
+    private void ReadCrossJoin(UnqualifiedJoin join)
+    {
+        if (join.SecondTableReference is QueryDerivedTable derived)
+        {
+            if (ReadDerivedTable(derived) is { } definition)
+            {
+                queryBuilder.Join(JoinKind.Cross, sourceAlias, definition, null, definition);
+            }
+
+            return;
+        }
+
+        if (join.SecondTableReference is not NamedTableReference right)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "A join onto something other than a table or a derived table is not carried by the query representation, and a query emitted without its join would return different rows; no artifact was generated.",
+                QueryFeature.Join);
+            return;
+        }
+
+        if (!ReadTableModifiers(right))
+        {
+            return;
+        }
+
+        var (name, alias) = NameAndAlias(right);
+        DeclareAlias(alias);
+        queryBuilder.Join(JoinKind.Cross, sourceAlias, name, null, alias);
     }
 
     private void ReadJoin(QualifiedJoin join)

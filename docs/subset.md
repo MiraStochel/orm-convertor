@@ -52,7 +52,7 @@ Jak cíl konstrukci píše (*jazyk* = svým dotazovým jazykem, *SQL* = `Fallbac
 |---|---|---|---|---|---|---|
 | projekce, filtr, join, agregace, seskupení, `HAVING`, řazení, stránkování, poddotaz, parametr, výraz | jazyk | jazyk | jazyk | jazyk | jazyk | jazyk |
 | agregát přes celý výsledek bez seskupení | jazyk | jazyk | SQL | jazyk | jazyk | jazyk |
-| druh joinu (vnitřní, levý, pravý, plný) | jazyk | jazyk | jazyk; plný složením `LeftJoin`, `Concat`, `RightJoin` ([065]); pravý a plný s podmínkou nad rámec rovností SQL | jazyk; plný SQL | jazyk | jazyk; plný SQL ([180]); vnější s podmínkou na alias vnitřního joinu SQL |
+| druh joinu (vnitřní, levý, pravý, plný; křížový všude, [196]: SQL `CROSS JOIN`, HQL `cross join`, JPQL další proměnná rozsahu, LINQ `SelectMany` nad druhým kořenem; v Hibernatu entity join za čárkou s podmínkou na jiný kořen SQL) | jazyk | jazyk | jazyk; plný složením `LeftJoin`, `Concat`, `RightJoin` ([065]); pravý a plný s podmínkou nad rámec rovností SQL | jazyk; plný SQL | jazyk | jazyk; plný SQL ([180]); vnější s podmínkou na alias vnitřního joinu SQL |
 | join uvnitř poddotazu | jazyk | jazyk | jazyk | jazyk | jazyk | jazyk; vnitřní jako proměnná rozsahu s podmínkou ve `where`, vnější SQL |
 | množinová operace | jazyk | jazyk | jazyk | SQL | jazyk | jazyk; v poddotazu SQL |
 | mezivýsledek (`WITH`, odvozená tabulka) | jazyk | jazyk | jazyk (proměnná metody) | SQL | jazyk | SQL |
@@ -72,7 +72,7 @@ Kategorie T2, každá dotazem nad sdílenou doménou sedmi entit v každém zdro
 
 | Kategorie | Zdroje, které ji vysloví | `Fallback` (`fallbackBy`) |
 |---|---|---|
-| `Projection`, `Filtering`, `JoinOverTwoColumns`, `AggregationGroupingAndHaving`, `Ordering`, `SubqueryAsTheRightSideOfIn`, `CorrelatedExistsOverThreeColumns`, `SubqueryWithAJoinAsTheRightSideOfIn`, `CorrelatedExistsWithAJoin`, `NestedInUnderADisjunctionAsTheRightSideOfIn` (okruh osob IC 5, [121]), `ScalarSubquery`, `DistinctProjection`, `InOverAListOfValues`, `ConstantOfAMoment`, `LikeWithAnAnchoredPattern`, `CountOverDistinctValues`, `LikeWithAnEscapedWildcard`, `LikeWithABoundPrefix`, `ArithmeticInAProjection`, `FunctionInAFilter`, `CoalesceInAFilter`, `CaseInAProjection`, `CaseOverExistsInAProjection` (příznak IS 7, [122]), `OrderingByAnAggregate`, `ScalarSubqueryAgainstABoundValue`, `GroupingByAnExpression`, `RoundingAndSquareRoot`, `OuterJoinWithAFilterInOn`, `JoinBeyondEqualities`, `SubqueryInAJoinCondition`, `QuantifiedComparisonOverAll`, `QuantifiedComparisonOverAny`, `AverageInAProjection` ([161]) | všech šest | — |
+| `Projection`, `Filtering`, `JoinOverTwoColumns`, `CrossJoinWithTheConditionInWhere` ([196]), `AggregationGroupingAndHaving`, `Ordering`, `SubqueryAsTheRightSideOfIn`, `CorrelatedExistsOverThreeColumns`, `SubqueryWithAJoinAsTheRightSideOfIn`, `CorrelatedExistsWithAJoin`, `NestedInUnderADisjunctionAsTheRightSideOfIn` (okruh osob IC 5, [121]), `ScalarSubquery`, `DistinctProjection`, `InOverAListOfValues`, `ConstantOfAMoment`, `LikeWithAnAnchoredPattern`, `CountOverDistinctValues`, `LikeWithAnEscapedWildcard`, `LikeWithABoundPrefix`, `ArithmeticInAProjection`, `FunctionInAFilter`, `CoalesceInAFilter`, `CaseInAProjection`, `CaseOverExistsInAProjection` (příznak IS 7, [122]), `OrderingByAnAggregate`, `ScalarSubqueryAgainstABoundValue`, `GroupingByAnExpression`, `RoundingAndSquareRoot`, `OuterJoinWithAFilterInOn`, `JoinBeyondEqualities`, `SubqueryInAJoinCondition`, `QuantifiedComparisonOverAll`, `QuantifiedComparisonOverAny`, `AverageInAProjection` ([161]) | všech šest | — |
 | `ScalarParameter`, `CollectionParameter`, `InListWithABoundValue` | všech šest, Dapper jen s katalogem¹ | — |
 | `PaginationWithBoundCounts`, `OrderingByAnUnprojectedKeyUnderASlice` | bez NHibernatu a EclipseLinku | — |
 | `SetOperation` | bez NHibernatu | NHibernate |
@@ -289,7 +289,8 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 
 | Konstrukce | Proč | Co nástroj udělá | Druh | Rozh. |
 |---|---|---|---|---|
-| křížový join čárkou; LINQ `SelectMany` nad druhým zdrojem bez filtru | model ho nenese, bez něj jiné řádky | `Failure` (`Join`) (č) | VM | [070], [101], [113] |
+| LINQ `SelectMany` nad druhým kořenem s `DefaultIfEmpty()` bez filtru | vnější join bez podmínky nemá tvar; křížový join bez `DefaultIfEmpty()` se nese ([196]) | `Failure` (`Join`) (č) | VM | [196] |
+| entity join za křížovým joinem (čárkou), jehož podmínka jmenuje jiný kořen než poslední proměnnou rozsahu: cíl Hibernate | Hibernate 7.4.5 váže join k poslední proměnné rozsahu (`JoinBindsToTheLastRangeVariable`, změřeno) | nativní SQL s `Fallback` (`Join`) (z); EclipseLink čte kterýkoli kořen | VM | [196], [113] |
 | laterální join (`CROSS APPLY`, `OUTER APPLY`, HQL `join lateral`), join na tabulkovou funkci či `VALUES` | slovník laterální odkaz nemá | `Failure` (č) v každém cíli | VM | [112], [113] |
 | entity join HQL či JPQL bez `with`/`on`; nepřečtená podmínka joinu | join filtruje i násobí | `Failure` (č/b) | VM | [070], [061] |
 | poddotaz v podmínce joinu (`ON … AND x IN (SELECT …)`, `EXISTS`, korelace) | — | nese se jako operand podmínky: T-SQL jak stál, HQL 7.4 a JPQL za `on`, HQL 5.7 za `with`, LINQ korelovaný `SelectMany` s `Contains`/`Any` v predikátu (EF Core 10 `CROSS`/`OUTER APPLY`, tytéž řádky); mechanická pravidla poddotazu (2.7) platí i tu | VM | [162] |
@@ -351,7 +352,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | převod textu na text do NHibernatu (`NVARCHAR(4000)`) a Hibernatu (`varchar(max)`); do EF Core `Math.Round` nad celým číslem, hodina a menší jednotka k datu bez času, převod textu na číslo, rozdíl dat nad datem a okamžikem | jazyk cíle tvar má, ale s jinou hodnotou, nebo bez přetížení pro dva typy | `Fallback` (z) | VM | [113] |
 | `CASE` bez `ELSE` do LINQ, kde brána skalár větví neodvodí | C# nemá čím otypovat `null` | `Failure` (z) | VM | [107] |
 | konstruktor `DateTime` s počítaným argumentem či neexistujícím datem; řetězec okamžiku mimo ISO 8601 proti časovému sloupci | vyhodnotit ho = spustit program; databáze by ho odmítla až za běhu | konstruktor nečte se; řetězec `Failure` (`Filtering`) (b) | VM | [024], [070] |
-| alias projekce, který je klíčovým slovem HQL (`ascending`, `descending`); jméno mezivýsledku (`WITH`, odvozená tabulka) psané jako klíčové slovo | alias a jméno jsou slova zdroje, nepřepisují se (alias řádku, který je klíčovým slovem HQL, a v JPQL každá proměnná řádku i výsledková proměnná, která je vyhrazeným identifikátorem — např. EclipseLink `size` —, se naopak píše s podtržítkem na konci, §5) | nehlásí se; odmítne ho až framework | VM | [028] |
+| alias projekce, který je klíčovým slovem HQL (`ascending`, `descending`); jméno mezivýsledku (`WITH`, odvozená tabulka) psané jako klíčové slovo HQL či JPQL | alias a jméno jsou slova zdroje, nepřepisují se (alias řádku, který je klíčovým slovem HQL, a v JPQL každá proměnná řádku i výsledková proměnná, která je vyhrazeným identifikátorem — např. EclipseLink `size` —, se naopak píše s podtržítkem na konci; v T-SQL jde každé jméno, které lexer ScriptDomu čte jako klíčové slovo — tabulka, sloupec, alias, mezivýsledek —, do hranatých závorek, §5) | nehlásí se; odmítne ho až framework | VM | [028] |
 
 ### 2.9 Seskupení, okenní funkce a agregace do seznamu
 
@@ -566,6 +567,7 @@ Známé není žádné.
 [178]: ./decisions/178-a-reference-navigation-without-a-relation-stays-an-unmapped-member-of-the-class-and-is-reported.md
 [179]: ./decisions/179-eclipselink-carries-no-version-over-a-binary-column-so-the-store-generated-version-is-a-read-only-column-with-a-loss.md
 [180]: ./decisions/180-a-full-outer-join-into-eclipselink-goes-out-in-native-sql.md
+[196]: ./decisions/196-the-cross-join-is-carried-as-a-join-without-a-condition-and-every-artifact-the-tool-writes-reads-back.md
 [181]: ./decisions/181-an-alias-in-a-mybatis-select-with-a-result-type-states-the-column-of-the-property.md
 [184]: ./decisions/184-t1-leaves-the-exempt-area-in-a-narrower-sense-the-case-study-meets-the-criteria-counted-from-the-excerpt-and-cofoundry-becomes-its-second-application.md
 [185]: ./decisions/185-the-name-of-an-ef-core-set-names-the-entity-the-context-of-the-conversion-declares-through-one-reading-context-of-both-passes.md

@@ -72,6 +72,54 @@ public class NHibernateHqlProviderTest
             "and (exists (select purchase2_.OrderId from Sales.Orders purchase2_ where purchase2_.CustomerId=customer0_.CustomerId and purchase2_.Rating>3)))"
         },
 
+        // The cross join the representation carries (decision 196), in both spellings HQL 5.7.0
+        // reads. Comma-separated range variables come out as SQL's comma join, and every range
+        // variable is hoisted before every entity join whatever order the HQL wrote: an entity
+        // join whose condition names the first root then stands after a comma, where SQL
+        // Server cannot bind the root ("the multi-part identifier could not be bound"), so the
+        // HQL writer never spells a cross join with a comma. `cross join` comes out as SQL's
+        // CROSS JOIN in the one join chain, before and after an entity join alike.
+        {
+            "comma-separated range variables as a comma join",
+            "select c.CustomerName from Customer c, Purchase p where p.CustomerId = c.CustomerId",
+            "from Sales.Customers customer0_, Sales.Orders purchase1_ where purchase1_.CustomerId=customer0_.CustomerId"
+        },
+        {
+            "comma-separated range variables inside a subquery",
+            "select c.CustomerName from Customer c where c.CustomerId in (select p.CustomerId from Purchase p, Customer c2 where c2.CustomerId = p.CustomerId and c2.CustomerName = 'x')",
+            "(select purchase1_.CustomerId from Sales.Orders purchase1_, Sales.Customers customer2_ where customer2_.CustomerId=purchase1_.CustomerId"
+        },
+        {
+            "a range variable after an entity join is hoisted before it",
+            "select c.CustomerName from Customer c inner join Purchase o with o.CustomerId = c.CustomerId, Customer c2 where c2.CustomerId = o.CustomerId",
+            "from Sales.Customers customer0_, Sales.Customers customer2_ inner join Sales.Orders purchase1_ on  (purchase1_.CustomerId=customer0_.CustomerId)"
+        },
+        {
+            "an entity join after a range variable",
+            "select c.CustomerName from Customer c, Customer c2 inner join Purchase o with o.CustomerId = c.CustomerId where c2.CustomerId = o.CustomerId",
+            "from Sales.Customers customer0_, Sales.Customers customer1_ inner join Sales.Orders purchase2_ on  (purchase2_.CustomerId=customer0_.CustomerId)"
+        },
+        {
+            "cross join as SQL's CROSS JOIN",
+            "select c.CustomerName from Customer c cross join Purchase p where p.CustomerId = c.CustomerId",
+            "from Sales.Customers customer0_ cross join Sales.Orders purchase1_ where purchase1_.CustomerId=customer0_.CustomerId"
+        },
+        {
+            "cross join inside a subquery",
+            "select c.CustomerName from Customer c where c.CustomerId in (select p.CustomerId from Purchase p cross join Customer c2 where c2.CustomerId = p.CustomerId and c2.CustomerName = 'x')",
+            "(select purchase1_.CustomerId from Sales.Orders purchase1_ cross join Sales.Customers customer2_ where customer2_.CustomerId=purchase1_.CustomerId"
+        },
+        {
+            "cross join after an entity join",
+            "select c.CustomerName from Customer c inner join Purchase o with o.CustomerId = c.CustomerId cross join Customer c2 where c2.CustomerId = o.CustomerId",
+            "from Sales.Customers customer0_ inner join Sales.Orders purchase1_ on  (purchase1_.CustomerId=customer0_.CustomerId) cross join Sales.Customers customer2_ where customer2_.CustomerId=purchase1_.CustomerId"
+        },
+        {
+            "entity join after a cross join",
+            "select c.CustomerName from Customer c cross join Customer c2 inner join Purchase o with o.CustomerId = c.CustomerId where c2.CustomerId = o.CustomerId",
+            "from Sales.Customers customer0_ cross join Sales.Customers customer1_ inner join Sales.Orders purchase2_ on  (purchase2_.CustomerId=customer0_.CustomerId) where customer1_.CustomerId=purchase2_.CustomerId"
+        },
+
         // The HQL spelling of TrimEnd (decision 169).
         { "a trailing trim as rtrim", "select trim(trailing from c.CustomerName) from Customer c", "select rtrim( customer0_.CustomerName ) as col_0_0_" },
         { "a trailing trim over a maximum", "select trim(trailing from max(c.CustomerName)) from Customer c", "select rtrim( max(customer0_.CustomerName) ) as col_0_0_" },

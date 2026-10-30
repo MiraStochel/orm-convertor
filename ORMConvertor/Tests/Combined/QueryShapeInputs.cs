@@ -302,6 +302,15 @@ public static class QueryShapeInputs
             hql: ["inner join ShopOrder o", " with ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"],
             jpa: ["join ShopOrder o", " on ", ".CompanyId = ", ".OrderId = ", " and ", "ol.Description as Text", "where o.CustomerId > 0"]),
 
+        // The same join as a cross join under a filter (decision 196): the condition stays in
+        // the where clause of every target, no target writes an ON, and each spells the join
+        // its own way - CROSS JOIN, `cross join`, a comma, a SelectMany over the second root.
+        ["CrossJoinWithTheConditionInWhere"] = Hallmarks(
+            sql: [$"CROSS JOIN {Schema}.ShopOrders o", "WHERE ", "o.CompanyId = ol.CompanyId", "o.OrderId = ol.OrderId", "o.CustomerId > 0", "ol.Description AS Text"],
+            linq: [".SelectMany(ol => ctx.Set<ShopOrder>(), (ol, o) => new { ol, o })", ".Where(", ".o.CompanyId == ", ".ol.CompanyId", ".o.CustomerId > 0", "Text = ", ".ol.Description"],
+            hql: ["from ShopOrderLine ol", "cross join ShopOrder o", "where ", "o.CompanyId = ol.CompanyId", "o.CustomerId > 0", "ol.Description as Text"],
+            jpa: ["from ShopOrderLine ol, ShopOrder o", "where ", "o.CompanyId = ol.CompanyId", "o.CustomerId > 0", "ol.Description as Text"]),
+
         ["AggregationGroupingAndHaving"] = Hallmarks(
             sql: ["GROUP BY ol.ProductId", "HAVING SUM(ol.Quantity) > 10", "COUNT(*)"],
             linq: [".GroupBy(", "g.Sum(", "g.Count()", "g.Key"],

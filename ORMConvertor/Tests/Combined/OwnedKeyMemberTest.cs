@@ -10,7 +10,7 @@ namespace Tests.Combined;
 /// 177 took the property out of the entity, the key part over it stayed, and the Java targets
 /// wrote an accessor for a member the entity no longer had ("Sequence contains no matching
 /// element", review of 2026-10-30). The key part leaves with the property, and a defect of the
-/// tool, should one remain, is a record and not a 400 (decision 196).
+/// tool, should one remain, is a record and not a 400 (decision 197).
 /// </summary>
 public class OwnedKeyMemberTest
 {

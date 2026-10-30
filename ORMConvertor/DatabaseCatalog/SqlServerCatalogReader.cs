@@ -18,7 +18,7 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
 {
     /// <summary>
     /// How long one connection attempt waits for a server that does not answer, where the
-    /// connection string says nothing (decision 197). SqlClient's own default is 15 s, and
+    /// connection string says nothing (decision 198). SqlClient's own default is 15 s, and
     /// with its retry on top a translation against a silent host waited 37 s (measured
     /// 2026-10-30); a catalog is an optional input and the translation goes on without it.
     /// </summary>
@@ -31,7 +31,7 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
     private SqlConnection? connection;
 
     /// <summary>
-    /// The connection string with a bounded wait (decision 197): <c>Connect Timeout</c> of
+    /// The connection string with a bounded wait (decision 198): <c>Connect Timeout</c> of
     /// <see cref="DefaultConnectTimeoutSeconds"/> and no connect retry, each only where the
     /// operator's string does not state the keyword itself - what the operator wrote wins.
     /// A string SqlClient cannot parse is left as it is, so that the failure it causes is
@@ -503,7 +503,7 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
 
     /// <summary>
     /// SQL Server takes at most 2100 parameters in one command, and every name is one
-    /// (decision 197); a batch stays under that, and a project with more tables than that
+    /// (decision 198); a batch stays under that, and a project with more tables than that
     /// is read in as many commands as it takes rather than refused as an unreachable catalog.
     /// </summary>
     private const int NamesPerCommand = 2000;

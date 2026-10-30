@@ -276,7 +276,9 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
     /// common table expression only before the statement, which is exactly where the model
     /// keeps every definition, so a derived table of the source comes out as one too - the
     /// rows are the same, and the model does not keep which of the two the source wrote.
-    /// TOP and OFFSET/FETCH stand inside a common table expression as they stand anywhere.
+    /// TOP and OFFSET/FETCH stand inside a common table expression as they stand anywhere. A
+    /// name spelled like a reserved word is bracketed, as every name the statement writes
+    /// (<see cref="SqlNames"/>).
     /// </summary>
     private string? WithClause()
     {
@@ -299,7 +301,7 @@ public abstract class AbstractSqlQueryBuilder : AbstractQueryBuilder
             }
 
             var indented = string.Join("\n", body.Split('\n').Select(line => line.Length == 0 ? line : "    " + line));
-            rendered.Add($"{definition.Name} AS (\n{indented}\n)");
+            rendered.Add($"{SqlNames.Written(definition.Name)} AS (\n{indented}\n)");
         }
 
         return $"WITH {string.Join(",\n", rendered)}\n";

@@ -220,7 +220,8 @@ public class GroupedQueryTest
 
         var sql = Assert.Single(result.Sources, s => s.ContentType == ConversionContentType.SqlQuery).Content;
 
-        Assert.Contains("s.Key AS K", sql, StringComparison.Ordinal);
+        // KEY is a reserved word of T-SQL, so the column goes out in brackets (SqlNames).
+        Assert.Contains("s.[Key] AS K", sql, StringComparison.Ordinal);
         Assert.DoesNotContain(
             result.Records,
             r => r.Reason.Contains("names the grouping key", StringComparison.Ordinal));

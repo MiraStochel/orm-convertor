@@ -72,7 +72,7 @@ public class ArchiveEndpointTest(ApiTestHost host)
 
     /// <summary>
     /// An entry is a relative path under the directory the archive is unpacked into (decision
-    /// 198): a name that would land elsewhere refuses the whole archive with 400 and names the
+    /// 199): a name that would land elsewhere refuses the whole archive with 400 and names the
     /// entry, rather than being packed as sent or silently rewritten.
     /// </summary>
     [Theory]

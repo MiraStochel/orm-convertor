@@ -3514,13 +3514,13 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
         // A chain over a query root filtered by a condition over the row - what the EF Core
         // target writes for a join whose condition names both rows other than as keys - is
-        // that join (decision 113). A chain whose root is a member of the row is a navigation,
-        // and stays the association path's to read below.
-        if (collectionBody is InvocationExpressionSyntax chain
-            && TryDecompose(chain, out _, out _, out var rootExpression)
+        // that join (decision 113), and a bare query root is the cross join (decision 196). A
+        // chain whose root is a member of the row is a navigation, and stays the association
+        // path's to read below.
+        if (TryDecompose(collectionBody, out _, out _, out var rootExpression)
             && !(PathOf(rootExpression!) is [var head, ..] && head == collection.Parameter.Identifier.Text))
         {
-            HandleCorrelatedSelectMany(chain, args.Count > 1 ? args[1].Expression as ParenthesizedLambdaExpressionSyntax : null, args.Count);
+            HandleCorrelatedSelectMany(collectionBody, args.Count > 1 ? args[1].Expression as ParenthesizedLambdaExpressionSyntax : null, args.Count);
             return;
         }
 
@@ -3529,7 +3529,7 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         {
             Report(
                 ConversionRecordKind.Failure,
-                $"SelectMany() over '{collectionBody}', which is not an association path from the row, is not a join the query representation carries - over a second source it is a cross join - and {consequence}",
+                $"SelectMany() over '{collectionBody}', which is neither an association path from the row nor a query root, is not a join the query representation carries, and {consequence}",
                 QueryFeature.Join);
             return;
         }
@@ -3573,15 +3573,16 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// row that found no match. The condition is the filters of the collection read as one,
     /// the collection's parameter reaching the row of the chain as every lambda of a step
     /// does, and the result selector is read as a join's. Without a filter the collection is
-    /// a second source, a cross join, which stays refused by name as the comma join is in
-    /// T-SQL and HQL; any other step makes it a query of its own.
+    /// a second source, which is the cross join the representation carries (decision 196) -
+    /// what a second <c>from</c> over a query root rewrites to -, unless DefaultIfEmpty()
+    /// makes it an outer join without a condition, which has no shape; any other step makes
+    /// it a query of its own.
     /// </summary>
-    private void HandleCorrelatedSelectMany(InvocationExpressionSyntax chain, ParenthesizedLambdaExpressionSyntax? selector, int arguments)
+    private void HandleCorrelatedSelectMany(ExpressionSyntax chain, ParenthesizedLambdaExpressionSyntax? selector, int arguments)
     {
         var kind = JoinKind.Inner;
-        ExpressionSyntax collection = chain;
-        if (chain.Expression is MemberAccessExpressionSyntax { Name.Identifier.Text: "DefaultIfEmpty" } defaulted
-            && chain.ArgumentList.Arguments.Count == 0)
+        var collection = chain;
+        if (chain is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "DefaultIfEmpty" } defaulted, ArgumentList.Arguments.Count: 0 })
         {
             kind = JoinKind.Left;
             collection = defaulted.Expression;
@@ -3592,11 +3593,11 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return;
         }
 
-        if (filters.Count == 0)
+        if (filters.Count == 0 && kind == JoinKind.Left)
         {
             Report(
                 ConversionRecordKind.Failure,
-                $"SelectMany() over '{collection}', a second source with no condition over the row, is a cross join, which the query representation does not carry, and a query emitted without its join would return different rows; no artifact was generated.",
+                $"SelectMany() over '{collection}' with DefaultIfEmpty() is an outer join of a second source with no condition over the row, which the query representation does not carry, and a query emitted without its join would return different rows; no artifact was generated.",
                 QueryFeature.Join);
             return;
         }
@@ -3604,9 +3605,18 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
         var rightTable = ResolveTable(root!.Name);
         var rightAlias = JoinedAlias(selector, rightTable);
 
-        if (ReadFilters(filters, rightAlias, "collection of SelectMany()") is not { } condition)
+        ConditionNode? condition = null;
+        if (filters.Count > 0)
         {
-            return;
+            condition = ReadFilters(filters, rightAlias, "collection of SelectMany()");
+            if (condition is null)
+            {
+                return;
+            }
+        }
+        else
+        {
+            kind = JoinKind.Cross;
         }
 
         var joined = new EntityRow(rightAlias, MapFor(root.Name), Optional: kind == JoinKind.Left);

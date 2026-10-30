@@ -452,21 +452,25 @@ public class NHibernateHqlQueryParser(
         sourceAlias = alias;
         queryBuilder.From(table, alias);
 
-        // A cross join multiplies rows, so reading the first source alone would translate a
-        // different query (decision 070). The rest is still consumed so that the clauses
-        // after it can report their own reasons.
-        while (TryConsumeSymbol(","))
+        // Comma-separated entity references are cross joins (decision 196): each further one
+        // is joined onto the rows so far without a condition, whatever the where clause says
+        // about the two, and the entity joins written after it follow in the order written.
+        while (true)
         {
-            Report(
-                ConversionRecordKind.Failure,
-                "Comma-separated entity references are a cross join the query representation cannot carry, and a query emitted without it would return different rows; no artifact was generated.",
-                QueryFeature.Join);
-            ParseEntityReference();
-        }
+            if (TryConsumeSymbol(","))
+            {
+                var (crossed, crossedAlias) = ParseEntityReference();
+                queryBuilder.Join(JoinKind.Cross, sourceAlias, crossed, null, crossedAlias);
+                continue;
+            }
 
-        while (AtKeyword("inner") || AtKeyword("left") || AtKeyword("right") || AtKeyword("full") || AtKeyword("join"))
-        {
-            ParseJoin();
+            if (AtKeyword("inner") || AtKeyword("left") || AtKeyword("right") || AtKeyword("full") || AtKeyword("cross") || AtKeyword("join"))
+            {
+                ParseJoin();
+                continue;
+            }
+
+            break;
         }
 
         if (selectStart is { } selectAt)
@@ -727,6 +731,17 @@ public class NHibernateHqlQueryParser(
 
     private void ParseJoin()
     {
+        // `cross join` is the other spelling of the cross join (decision 196), the one HQL
+        // 5.7.0 writes as SQL's CROSS JOIN and the one the HQL builder writes: an entity with
+        // no condition.
+        if (TryConsumeKeyword("cross"))
+        {
+            ConsumeKeyword("join");
+            var (crossed, crossedAlias) = ParseEntityReference();
+            queryBuilder.Join(JoinKind.Cross, sourceAlias, crossed, null, crossedAlias);
+            return;
+        }
+
         JoinKind kind;
         if (TryConsumeKeyword("inner"))
         {
