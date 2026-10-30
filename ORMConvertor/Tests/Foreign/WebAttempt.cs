@@ -104,7 +104,7 @@ internal sealed record WebTemplate(string Id, string Prompt, IReadOnlyDictionary
     /// <summary>The template of each variant the web channel has one for.</summary>
     public static readonly IReadOnlyDictionary<string, string> ForVariant = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["zero-shot"] = "web-zero-shot-1",
+        ["zero-shot"] = "web-zero-shot-2",
     };
 
     private static readonly Regex Section = new(@"^=== (?:(prompt)|shape (\w+)) ===$", RegexOptions.CultureInvariant);
@@ -568,8 +568,9 @@ internal sealed class WebReply
 /// <summary>
 /// The fourth layer of the ban on the web (decision 189): the trace of a search a reply carries -
 /// a name of the repository, the tool or their authors anywhere, a link outside the blocks of
-/// files, a tool or a source the report declares. A link inside a file - the namespace of an XML
-/// document, the DTD of a MyBatis mapper - is no trace.
+/// files, a tool, a source or a context from outside the conversation (a memory, a custom
+/// instruction, a project, a file) the report declares. A link inside a file - the namespace of
+/// an XML document, the DTD of a MyBatis mapper - is no trace.
 /// </summary>
 internal static class WebTrace
 {
@@ -594,7 +595,7 @@ internal static class WebTrace
 
         if (reply.Report is not null && TryParse(reply.Report) is JsonObject report)
         {
-            foreach (var field in (string[])["toolsUsed", "sourcesConsulted"])
+            foreach (var field in (string[])["toolsUsed", "sourcesConsulted", "contextUsed"])
             {
                 var declared = Declared(report[field]);
                 if (declared.Count > 0)
