@@ -356,6 +356,26 @@ docker compose --profile test run -d -T --no-deps --name limits_java -v <run vol
   java_tests -Dtest=ExperimentRunTest                                                # add -e ORMCONVERTOR_SERIES_CATALOG=none for the dry walk
 ```
 
+### The whole-input run
+
+One project many times the size of any single input: every input of the experiment run translated into each of the six frameworks and the artifacts merged into one project per framework, then each of the six translated into every framework, the six into themselves included - 36 translations, timed, nothing judged. It says what a project of this size costs the tool, set against the 30 s of S3 and the series of the limits run. It runs **on demand, for a version or a substantial change**, never as part of a build, in the `tests` container over `test_db` with `mssql_db` beside it for the `Fiben` catalog; it measures time, so the processor states of a measured run apply ([`docs/runs/README.md`](../docs/runs/README.md), *Před dlouhým během*).
+
+| Setting | Meaning |
+|---|---|
+| `ORMCONVERTOR_EXPERIMENT_RESULTS` | the directory of the run; everything goes under `whole-input/` in it: the six whole inputs under `inputs/<framework>/` (the files and `whole-input.json`), the rows in `whole-input-rows.tsv` (units, entities, queries, bytes, the translation time, the catalog's time inside it, memory allocated, artifacts and records by kind), the Failure and Loss reasons by count with one example each in `whole-input-reasons.txt`, the merge log in `whole-input-merge.log`, the tables in `whole-input-summary.md` |
+| `ORMCONVERTOR_EXPERIMENT_KINDS` | the kinds of inputs merged; without it every kind the environment can measure |
+| `ConnectionStrings:FibenDatabase` | the `fiben:` inputs and the `Fiben` part of the catalog; without it both stay out |
+
+- **How the inputs merge.** An entity's class and its mapping document enter once per name: the text most inputs agree on, every other text of the same name a conflict in the merge log (the examples of the explanatory page define `Customer` a dozen ways). A query enters in the one form a consumer binds - the C# or Java method, for MyBatis the mapper document, because its method is a bare signature. A translation with a Failure record contributes nothing and is counted, as the experiment run reads a Failure. The 36 translations run over the union of the fixture (with the LDBC tables), the case-study database and `Fiben`, asked in turn with fresh readers, because the project is stitched from inputs over four databases and a client's catalog has no cache warmed by an earlier run.
+- **Resumable.** A whole input on disk is read, not built again; a row already in the file is not translated again.
+
+```sh
+export ORMCONVERTOR_EXPERIMENT_RESULTS=<dir>
+dotnet test Tests/Tests.csproj --configuration Release --filter "FullyQualifiedName~Tests.Experiment.WholeInputTest"
+```
+
+In the containers: `DATABASE_MAX_SERVER_MEMORY_MB=2048 docker compose up -d mssql_db`, then `docker compose --profile test run` of `tests` with the variable, `ConnectionStrings__FibenDatabase` aimed at `mssql_db` and the directory a volume, as for the experiment run; the two servers at 2048 MB fit beside the suite's 6 GB in the VM of decision [193](../docs/decisions/193-the-docker-vm-has-twelve-gigabytes-so-that-the-limits-inside-it-add-up-to-less-than-it.md). A check from the host - a few kinds, `ORMCONVERTOR_EXPERIMENT_KINDS=cross,example` - is never recorded.
+
 ## The Java test suite
 
 `JavaTests/`, Maven and JUnit outside `ORMConvertor.sln`, the suite of F12 (decision [076](../docs/decisions/076-java-wrappers-in-csharp-jvm-in-containers.md)); what each test verifies is in [`architecture.md`](../docs/architecture.md) §6.2.
