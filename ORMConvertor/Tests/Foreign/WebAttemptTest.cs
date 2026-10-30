@@ -70,7 +70,7 @@ public class WebAttemptTest(ITestOutputHelper output)
         using var temp = new TempDirectory();
         var directory = ExportOne(temp.Path, TrialKey, ORMEnum.Dapper);
 
-        var template = WebTemplate.Load("web-zero-shot-1");
+        var template = WebTemplate.Load(WebTemplate.ForVariant["zero-shot"]);
         var prompt = WebPrompt.Render(template, directory, ORMEnum.EFCore);
         output.WriteLine(prompt);
 
@@ -83,6 +83,11 @@ public class WebAttemptTest(ITestOutputHelper output)
         Assert.Contains("`ProductId`, `Total`, `Lines`", prompt);
         Assert.Contains("`CSharpEntity`, `CSharpQuery` and `SqlQuery`", prompt);
         Assert.Contains("REPORT:", prompt);
+        Assert.Contains("no memory of other conversations", prompt);
+        Assert.Contains("do not read or write files on any computer", prompt);
+        Assert.Contains("do not open any repository", prompt);
+        Assert.Contains("one document in the form given at the end of this message, and nothing else", prompt);
+        Assert.Contains("\"contextUsed\": []", prompt);
         Assert.DoesNotContain("{{SHAPE}}", prompt);
         Assert.DoesNotContain("\r", prompt);
         Assert.DoesNotContain(TrialKey.ToString(), prompt);
@@ -95,7 +100,7 @@ public class WebAttemptTest(ITestOutputHelper output)
         using var temp = new TempDirectory();
         var directory = ExportOne(temp.Path, new ForeignKey(ForeignKey.Matrix, "PaginationWithBoundCounts"), ORMEnum.Hibernate);
 
-        var prompt = WebPrompt.Render(WebTemplate.Load("web-zero-shot-1"), directory, ORMEnum.MyBatis);
+        var prompt = WebPrompt.Render(WebTemplate.Load(WebTemplate.ForVariant["zero-shot"]), directory, ORMEnum.MyBatis);
 
         Assert.Contains("with exactly these arguments, in this order: `skip` (a 32-bit integer) and `take` (a 32-bit integer).", prompt);
         Assert.Contains("whole entities", prompt);
@@ -104,7 +109,7 @@ public class WebAttemptTest(ITestOutputHelper output)
     [Fact]
     public void EveryTargetIsDescribedWithEveryRoleItTakes()
     {
-        var template = WebTemplate.Load("web-zero-shot-1");
+        var template = WebTemplate.Load(WebTemplate.ForVariant["zero-shot"]);
 
         Assert.All(Enum.GetValues<ORMEnum>(), target =>
         {
@@ -113,13 +118,26 @@ public class WebAttemptTest(ITestOutputHelper output)
         });
     }
 
+    /// <summary>A template a recorded run may name stays readable after a newer one took its place (decision 189).</summary>
+    [Theory]
+    [InlineData("web-zero-shot-1")]
+    [InlineData("web-zero-shot-2")]
+    public void EveryTemplateStaysReadable(string id)
+    {
+        var template = WebTemplate.Load(id);
+
+        Assert.Equal(id, template.Id);
+        Assert.Contains("{{INPUT}}", template.Prompt);
+        Assert.Equal(Enum.GetValues<ORMEnum>().Length, template.Shapes.Count);
+    }
+
     /// <summary>Every input the export writes goes into a prompt, and no prompt names the repository or the tool - the excerpts' marker included (decision 189).</summary>
     [Fact]
     public void EveryInputGoesIntoAPromptWithoutATrace()
     {
         using var temp = new TempDirectory();
         ForeignInputs.Export(temp.Path);
-        var template = WebTemplate.Load("web-zero-shot-1");
+        var template = WebTemplate.Load(WebTemplate.ForVariant["zero-shot"]);
 
         var directories = Directory.GetDirectories(temp.Path);
         Assert.NotEmpty(directories);
@@ -142,7 +160,7 @@ public class WebAttemptTest(ITestOutputHelper output)
         var directory = ExportOne(temp.Path, new ForeignKey(ForeignKey.Example, example.Key), example.SourceOrm);
         var target = example.SourceOrm == ORMEnum.EFCore ? ORMEnum.NHibernate : ORMEnum.EFCore;
 
-        var prompt = WebPrompt.Render(WebTemplate.Load("web-zero-shot-1"), directory, target);
+        var prompt = WebPrompt.Render(WebTemplate.Load(WebTemplate.ForVariant["zero-shot"]), directory, target);
 
         Assert.Contains(WebPrompt.NeutralMarker, prompt);
         Assert.DoesNotContain(WebPrompt.ExcerptMarker, prompt);
@@ -216,6 +234,7 @@ public class WebAttemptTest(ITestOutputHelper output)
     [InlineData("FILE: Shop.cs | CSharpEntity\n```csharp\n// as in github.com/MiraStochel/orm-convertor\nnamespace Shop;\n```", "names \"orm-convertor\"")]
     [InlineData("FILE: Shop.cs | CSharpEntity\n```csharp\nnamespace Shop;\n```\nREPORT:\n```json\n{ \"toolsUsed\": [\"web_search\"], \"sourcesConsulted\": [] }\n```", "toolsUsed: web_search")]
     [InlineData("FILE: Shop.cs | CSharpEntity\n```csharp\nnamespace Shop;\n```\nREPORT:\n```json\n{ \"toolsUsed\": [], \"sourcesConsulted\": \"EF Core documentation\" }\n```", "sourcesConsulted: EF Core documentation")]
+    [InlineData("FILE: Shop.cs | CSharpEntity\n```csharp\nnamespace Shop;\n```\nREPORT:\n```json\n{ \"toolsUsed\": [], \"sourcesConsulted\": [], \"contextUsed\": [\"memory: the user works on ORM translation\"] }\n```", "contextUsed: memory")]
     public void ATraceOfASearchIsFound(string text, string trace)
     {
         var found = WebTrace.Find(WebReply.Parse(text), text);
@@ -235,7 +254,7 @@ public class WebAttemptTest(ITestOutputHelper output)
             "```",
             "REPORT:",
             "```json",
-            "{ \"toolsUsed\": [\"none\"], \"sourcesConsulted\": [] }",
+            "{ \"toolsUsed\": [\"none\"], \"sourcesConsulted\": [], \"contextUsed\": [] }",
             "```");
 
         Assert.Null(WebTrace.Find(WebReply.Parse(text), text));
@@ -323,7 +342,7 @@ public class WebAttemptTest(ITestOutputHelper output)
             Assert.Equal("Model X", root.GetProperty("model").GetString());
             Assert.Equal("chat", root.GetProperty("channel").GetString());
             Assert.Equal("default", root.GetProperty("temperature").GetString());
-            Assert.Equal("web-zero-shot-1", root.GetProperty("prompt").GetString());
+            Assert.Equal(WebTemplate.ForVariant["zero-shot"], root.GetProperty("prompt").GetString());
             Assert.Equal(WebPrompt.Digest(prompts[0]), root.GetProperty("promptSha256").GetString());
             Assert.Equal("zero-shot", root.GetProperty("variant").GetString());
             Assert.Equal(1, root.GetProperty("attempt").GetInt32());
