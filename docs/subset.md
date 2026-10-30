@@ -253,6 +253,8 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | dotaz, jehož model je hlubší než týž strop: řetěz operací, CASE, negací či množinových operací bez závorek (`a + b + …`, `UNION` po `UNION`) | každý průchod po čtení by šel do hloubky řetězu | `Failure` s hloubkou hned po čtení; čtečka, které dochází zásobník, odmítne jednotku | VM | [191] |
 | do NHibernatu řetěz hlubší než 32 článků | vlastní parser HQL NHibernatu přeteče zásobník výchozího vlákna Windows od zhruba sta článků | celý dotaz nativním SQL (`ISession.CreateSQLQuery`) se záznamem `Fallback` | VM | [192] |
 | CASE vnořený hlouběji než desetkrát | SQL Server vnoří CASE nejvýš desetkrát (`Msg 125`) | artefakt vznikne a cíl ho přijme, dotaz neběží v žádném frameworku; LINQ řetěz `?:` čte jako jeden CASE, takže jeho artefakt běží | VM | [192] |
+| do EF Core poddotaz vnořený do poddotazu v desítkách úrovní | Roslyn kompiluje vnořené lambdy v čase exponenciálním v hloubce: 4 úrovně 2–3 s, 8 úrovní 31–37 s, 16 nezkompiluje ani za 30 minut ([běh mezí 2026-10-29](./runs/2026-10-29-limits.md)) | artefakt vznikne, kompilace konzumentského projektu nedoběhne; nástroj neodmítá | VM | [190] |
+| do Hibernatu a EclipseLinku text dotazu delší než 64 KB | javac nevezme řetězcovou konstantu nad 65 535 bajtů (`constant string too long`); v řadách od 4096 podmínek a 2048 úrovní CASE ([běh mezí 2026-10-29](./runs/2026-10-29-limits.md)) | artefakt vznikne, kompilace ho odmítne; nástroj neodmítá | VM | [190] |
 | nečitelný text jednotky, u C# i text, který Roslyn přečte jen zotavením | co Roslyn dopsal, klient nenapsal | `Failure` s řádkem a sloupcem, kde čtení skončilo, ve všech šesti jazycích | VM | [093], [128] |
 
 ### 2.4 Parametry
@@ -501,6 +503,7 @@ Známé není žádné.
 [089]: ./decisions/089-differential-verification-as-the-fourth-level-over-a-query.md
 [091]: ./decisions/091-the-catalog-completes-a-foreign-source-and-says-so.md
 [092]: ./decisions/092-input-nesting-depth-capped-before-the-descent.md
+[190]: ./decisions/190-a-point-of-the-limits-run-that-does-not-finish-within-thirty-minutes-is-hung.md
 [191]: ./decisions/191-the-depth-of-the-model-is-capped-by-the-same-number-as-the-text-and-a-reader-that-runs-out-of-stack-refuses.md
 [192]: ./decisions/192-nhibernate-is-held-to-a-chain-of-thirty-two-links-and-a-deeper-query-goes-out-in-native-sql.md
 [093]: ./decisions/093-unreadable-input-is-a-unit-failure.md

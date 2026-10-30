@@ -26,7 +26,7 @@ Na MIS3, kde se měří; platí pro běh FIBEN, soudce LDBC a měření času.
 
 - **Obrazy z dnešního stromu.** Strom čistý a každý obraz, který běh spouští, sestavený z něj. `run` bez `build` běží nad stromem, ze kterého obraz vznikl, a jediným signálem je počet testů proti [velikosti sady](#velikost-sady-a-pokrytí).
 - **Stav procesoru.** Pro měření nejvyšší i nejnižší stav procesoru `0x63`, tedy 99 % bez turba a bez náběhu z klidu (`powercfg /query SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX` a `PROCTHROTTLEMIN`); soudce LDBC není měření a běží s turbem. Záznam říká, co platilo.
-- **Virtuální stroj** WSL2 se čtyřmi procesory, 8 GB a bez swapu (`%USERPROFILE%\.wslconfig`, §8), jak je hlásí `docker info`.
+- **Virtuální stroj** WSL2 se čtyřmi procesory, 12 GB a bez swapu (`%USERPROFILE%\.wslconfig`, §8, rozh. [193](../decisions/193-the-docker-vm-has-twelve-gigabytes-so-that-the-limits-inside-it-add-up-to-less-than-it.md)), jak je hlásí `docker info`. Součet mezí všeho, co běh pouští současně, se do stroje musí vejít: experimentální běh se dvěma servery je proto pouští s 2048 MB.
 - **Windows Update pozastavené** přes očekávaný konec běhu, jinak restartuje stroj kolem 04:00 a po restartu nikdo není přihlášený, takže Docker Desktop neběží. Uspání a hibernace vypnuté.
 - **Nic vedle.** Jeden běh po druhém; dlouhý běh nechává hostiteli málo paměti. Kontejnery předchozích běhů se odstraní, až jsou jejich výsledky venku.
 - **Server v režimu, který běh žádá.** Dokud `mssql_db` běží v režimu soudce, nese každý příkaz compose nad ním `--env-file judge.env`, jinak ho compose vytvoří znovu v měřicím režimu; každé nové vytvoření `mssql_db` přehrání soudce přeruší.
@@ -68,6 +68,7 @@ Proč v tomto pořadí a nikdy dva běhy najednou, říká rozh. 168.
 | [2026-10-24](2026-10-24-ldbc-catalog-times.md) | čas BI 14 v zafixovaném prostředí | `07fc101` | BI 14 pod horní mezí okna; se záznamem z 2026-10-17 změřen celý katalog |
 | [2026-10-24](2026-10-24-experiment.md) | experimentální běh, obě půlky | `5caefc5` | první záznam v zafixovaném prostředí: matice, scénáře a LDBC bez červené buňky, případové studie do čtvrtého stupně; buňky šesti dotazů FIBEN proti soudci z doby před rozh. 170 a artefakty, které EclipseLink odmítne (verze nad `byte[]`, `full join`) |
 | [2026-10-24](2026-10-24-fiben.md) | běh FIBEN | `b5b4106` | první běh po rozh. 170: každá buňka ve shodě se zdrojem v obou sadách, q63 v EclipseLinku včetně; zdroj proti soudci z doby před rozh. 170 jen v dotazech, které 170 změnilo — z .NET půlky nový soudce |
+| [2026-10-29](2026-10-29-limits.md) | běh mezí, obě .NET půlky, javová přerušená | `fd27497` | překladač došel ke stropu skoro ve všech osách a mez S3 překročil jen u řetězu mezivýsledků ze zdroje EF Core, nejvíce joinů a největších projektů; javová půlka skončila pádem instance pro paměť |
 
 **Sloupce běhu FIBEN:** *přeloženo* je vlastní jazyk cíle, *nativní SQL* úniková cesta rozh. [113](../decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md), *odmítnuto* `Failure` v překladu; *shoda se zdrojem* je čtvrtý stupeň proti řádkům zdroje téhož běhu; *medián* je medián mediánů buněk podle politiky rozh. 145 a *součet* jejich součet přes katalog.
 
