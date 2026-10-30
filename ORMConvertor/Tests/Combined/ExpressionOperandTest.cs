@@ -8,6 +8,7 @@ using Model;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 using Model.QueryInstructions.Conditions;
+using MyBatisWrappers;
 using NHibernateWrappers;
 using Tests.Database;
 
@@ -356,6 +357,30 @@ public class ExpressionOperandTest
     {
         var record = AssertRefused(Sql(new DapperSqlQueryBuilder(), "SELECT p.UnitPrice * p.Quantity FROM Sales.Products p"), QueryFeature.Expression);
         Assert.Contains("alias", record.Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A sum of two scalar subqueries over a table the source states no mapping for - a Dapper
+    /// class bound to its table by the naming convention of decision 050 alone - is typed the
+    /// way the scope around it is: the typed view resolves through the convention for every
+    /// target, so a subquery inside it does too, and the + is an addition of two decimals
+    /// into every target, not an untyped + that the SQL targets refuse.
+    /// </summary>
+    [Fact]
+    public void ASumOfScalarSubqueriesOverAnUnstatedTableIsTypedThroughTheNamingConvention()
+    {
+        const string sql = "SELECT (SELECT MAX(q1.UnitPrice) FROM Products q1) + (SELECT MAX(q2.UnitPrice) FROM Products q2) AS Total FROM Products p";
+
+        foreach (var builder in new AbstractQueryBuilder[] { new DapperSqlQueryBuilder(), new MyBatisSqlQueryBuilder(), new EFCoreLinqQueryBuilder(), new NHibernateHqlQueryBuilder() })
+        {
+            var unstated = Products();
+            unstated.Table = null;
+            unstated.Schema = null;
+            builder.EntityMaps = [unstated];
+            new DapperSqlQueryParser(() => builder).Parse(ConversionContentType.SqlQuery, sql, [unstated]);
+            Assert.NotEmpty(builder.Build());
+            Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        }
     }
 
     [Fact]

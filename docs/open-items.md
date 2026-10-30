@@ -12,7 +12,6 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 |---|---|---|---|---|
 | [Verdikt soudce po přepisu dotazů na cesty](#verdikt-soudce-nad-celou-sadou-sf-1-po-přepisu-dotazů-na-cesty) | Dotazy | práce | projekt | T2, T3, F13 |
 | [Artefakt exponenciální v hloubce vstupu](#délka-artefaktu-roste-exponenciálně-s-hloubkou-vstupu) | Dotazy | rozhodnutí | | S3, S4 |
-| [Součet poddotazů ze zdroje Dapper](#součet-skalárních-poddotazů-ze-zdroje-dapper-odmítá-jen-část-cílů) | Dotazy | práce | | F4, F8 |
 | [Javová půlka běhu mezí](#javová-půlka-běhu-mezí-nemá-záznam) | Experimenty | rozhodnutí | | S3, T3–T5 |
 | [Srovnání s jazykovým modelem](#srovnání-s-jazykovým-modelem-nemá-model-prompty-ani-záznam) | Experimenty | rozhodnutí | | T4, T5, T6 |
 | [Příklady few-shot webového kanálu](#varianta-few-shot-webového-kanálu-nemá-příklady) | Experimenty | práce | | T4 |
@@ -47,11 +46,6 @@ K vydání `2.3.0` chybí už jen soudce LDBC: běh FIBEN za verzi stojí ([2026
 *Rozhodnutí; [`threat-model.md`](./threat-model.md), hrozba 2. Požadavky S3, S4.*
 
 Dva tvary dávají artefakt, jehož délka se každou úrovní vstupu zdvojí, i když každý průchod už stojí lineárně v délce výstupu. Test nenulovosti v LINQ opisuje text operandu — `<>`, `=` nad dvěma hodnotami, které smí být `NULL`, negované `LIKE` a `IN`, porovnání s poddotazem, kvantifikované porovnání, hlídaná konkatenace EF Core (`LinqQueryVisitor`) —, takže operand, který sám nese takové porovnání, se zdvojí na každé úrovni: `CASE` vnořený čtrnáctkrát v podmínce `CASE` a porovnaný `<>` dá do EF Core 1,16 milionu znaků z méně než kilobajtu vstupu (MIS2, 2026-10-26, 121 ms). `<include>` MyBatisu, jehož fragment vloží jiný fragment dvakrát, se rozvine na dvojnásobek za každou úroveň (`MyBatisStatementText`); cyklus `<include>` je `Failure`, rozvinutí bez cyklu strop nemá. Je třeba rozhodnout mezi hláskováním, které operand napíše jednou (v LINQ proměnnou `let` nebo pomocnou metodou), a stropem délky artefaktu či rozvinutí s větou, kterou nástroj vstup odmítne.
-
-#### Součet skalárních poddotazů ze zdroje Dapper odmítá jen část cílů
-*Práce; zjištěno sondou na MIS2 2026-10-26. Požadavky F4, F8.*
-
-Projekce `(SELECT MAX(q1.UnitPrice) …) + (SELECT MAX(q2.UnitPrice) …)` ze zdroje Dapper či MyBatis, s fixturou jako katalogem, je do cílů Dapper a MyBatis odmítnutá větou, že `+` stojí mezi dvěma poddotazy, z nichž žádný mapování netypuje, kdežto do EF Core, NHibernatu, Hibernatu a EclipseLinku se přeloží; tentýž součet ze zdrojů HQL a JPQL projde všude. Brána výrazů je pro všechny cíle jedna (rozh. [107](./decisions/107-an-expression-is-the-sixth-operand-shape-and-stands-wherever-an-operand-stands.md)) a skalár projekce poddotazu typuje přes uvedená mapování (`EntityFor`), ne přes konvenci pojmenování, takže rozdíl dělá něco mezi ní a cílem. Je třeba zjistit odkud a rozdíl buď odstranit, nebo ho jako mez zapsat do [`subset.md`](./subset.md).
 
 ## Experimenty
 

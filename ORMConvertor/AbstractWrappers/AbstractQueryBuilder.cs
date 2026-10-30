@@ -3775,22 +3775,19 @@ public abstract partial class AbstractQueryBuilder
     /// 061) - COUNT with a count, SUM, MIN, MAX and AVG in the scalar of what they aggregate,
     /// an expression by the table of decision 107. The projection is typed in the subquery's
     /// own scope on top of the enclosing one, so that a correlated column still finds its
-    /// entity, and that scope is resolved through stated mappings only unless the caller says
-    /// otherwise, as the parameter gate resolves (decisions 083 and 105): the typed view of
-    /// the expressions, which resolves wider, may find a subquery over a table only the naming
-    /// convention binds untyped, which leaves a scalar out and never gives another; the typing
-    /// of a literal passes its own, wider resolution. A body without exactly one projection -
-    /// a set operation, the whole entity, several columns - answers nothing, and the operand
-    /// is refused for that by its own rule (<see cref="NormalizeSubQueryOperand"/>).
+    /// entity, and that scope is resolved the way the enclosing one was (<see cref="Scope"/>):
+    /// through stated mappings only where the parameter gate asks (decisions 083 and 105),
+    /// through the naming convention as well where the typed view of the expressions or the
+    /// typing of a literal asks, so that a subquery is typed in a walk as a column of the
+    /// same table is. A body without exactly one projection - a set operation, the whole
+    /// entity, several columns - answers nothing, and the operand is refused for that by its
+    /// own rule (<see cref="NormalizeSubQueryOperand"/>).
     /// </summary>
-    private ScalarType? ScalarOf(
-        SubQueryInstruction subQuery,
-        Dictionary<string, EntityMap> aliases,
-        Func<string, EntityMap?>? resolve = null)
+    private ScalarType? ScalarOf(SubQueryInstruction subQuery, Dictionary<string, EntityMap> aliases)
     {
         var body = Unwrap(subQuery.Instructions);
         return SingleProjection(body) is { } projection
-            ? ScalarOf(projection, ScopeAliases(body, aliases, resolve ?? EntityFor))
+            ? ScalarOf(projection, ScopeAliases(body, aliases, (aliases as Scope)?.Resolve ?? EntityFor))
             : null;
     }
 
@@ -4178,17 +4175,22 @@ public abstract partial class AbstractQueryBuilder
     /// the aliases of the scopes around it, so that a column inside a subquery still finds
     /// the entity it belongs to. The resolution is the caller's, because the two walks over
     /// the query resolve differently: the scalar gate of decision 083 takes a stated mapping
-    /// only, the typing of a literal the same map the column renders from. An alias the
-    /// scope declares hides the enclosing one of the same name even where the resolution
-    /// finds no entity for it, as it does in SQL: a column of the inner table would otherwise
-    /// be typed from the outer one.
+    /// only, the typed view of the expressions and the typing of a literal the same map the
+    /// column renders from. The scope keeps the resolution it was filled with
+    /// (<see cref="Scope.Resolve"/>), so that a subquery typed inside it opens its own scope
+    /// the same way - a walk that resolves through the naming convention would otherwise type
+    /// a subquery over a table only the convention binds as nothing, and refuse a <c>+</c> of
+    /// two such subqueries as untyped for the two targets whose descriptor demands no table
+    /// name and so get none from the catalog. An alias the scope declares hides the enclosing
+    /// one of the same name even where the resolution finds no entity for it, as it does in
+    /// SQL: a column of the inner table would otherwise be typed from the outer one.
     /// </summary>
-    private static Dictionary<string, EntityMap> ScopeAliases(
+    private static Scope ScopeAliases(
         IReadOnlyList<QueryInstruction> body,
         Dictionary<string, EntityMap> enclosing,
         Func<string, EntityMap?> resolve)
     {
-        var aliases = new Dictionary<string, EntityMap>(enclosing, StringComparer.OrdinalIgnoreCase);
+        var aliases = new Scope(enclosing, resolve);
 
         void Declare(string alias, string table)
         {
@@ -4213,6 +4215,17 @@ public abstract partial class AbstractQueryBuilder
         }
 
         return aliases;
+    }
+
+    /// <summary>
+    /// The aliases of one scope together with the resolution that filled them, the one a
+    /// scope opened inside this one - a subquery operand - is filled with as well. The
+    /// derivation cache keys on the dictionary by reference, as it does on any scope.
+    /// </summary>
+    private sealed class Scope(Dictionary<string, EntityMap> enclosing, Func<string, EntityMap?> resolve)
+        : Dictionary<string, EntityMap>(enclosing, StringComparer.OrdinalIgnoreCase)
+    {
+        public Func<string, EntityMap?> Resolve { get; } = resolve;
     }
 
     // ---- Temporal literals -------------------------------------------------------------
@@ -4482,7 +4495,7 @@ public abstract partial class AbstractQueryBuilder
         ScalarType? scalar;
         if (other.IsSubQuery)
         {
-            scalar = ScalarOf(other.SubQuery!, aliases, RenderedEntityFor);
+            scalar = ScalarOf(other.SubQuery!, aliases);
         }
         else if (other.IsColumn && !string.Equals(other.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
         {
