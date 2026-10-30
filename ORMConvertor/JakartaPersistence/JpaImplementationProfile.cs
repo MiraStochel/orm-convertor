@@ -37,6 +37,7 @@ namespace JakartaPersistence;
 /// <param name="RebuildsHavingOnTheRoot">Whether the implementation rebuilds the having clause on the root of the block - the first variable of its from clause - when the first operand of the clause that carries a variable, read from the left, is a path over another one, where a run measured that it does: a path, bare or under an aggregate, an operation or a call, over an entity join, a further range variable or the enclosing block; constants and parameters carry none, and a CASE or a subquery met first leaves the clause as written. Rebuilt, every path of the clause names the root's attribute of that name, so the query is refused when it runs where the root has none (an invalid query key) and answers other rows without an error where it has one. The builder writes such a query in native SQL (decision 113). EclipseLink 5.0.0 rebuilds it (measured over the FIBEN catalog, decision 149, and pinned by the Java suite), Hibernate 7.4.5 reads every path as it stands.</param>
 /// <param name="RefusesBinaryVersion">Whether the implementation refuses a version attribute over a binary type at deployment, where a run measured that it does (decision 179): the specification admits a version of an integral or a timestamp type only (Jakarta Persistence 3.2 §11.1.54), and a binary version - the row version of SQL Server, EF Core's <c>[Timestamp] byte[]</c> - is a value the database produces. The builder then writes the column read-only without <c>@Version</c> and reports the loss. EclipseLink 5.0.0 refuses it (<c>EclipseLink-7168</c>, measured by the experiment run of 2026-10-24 and pinned by the Java suite's BinaryVersionClaimsTest), Hibernate 7.4.5 accepts it.</param>
 /// <param name="RefusesFullJoin">Whether the implementation's query language has no full outer join, where a run measured that its parser refuses one (decision 180): the specification knows the inner and the left join only (§4.4.5), the right and the full join are extensions. The visitor then reports the join as unspoken and the query goes out in native SQL (decision 113), which has the join. EclipseLink 5.0.0 refuses it with a syntax error (measured by the experiment run of 2026-10-24 and pinned by the Java suite's FullJoinClaimsTest), HQL of Hibernate 7.4.5 reads it.</param>
+/// <param name="JoinBindsToTheLastRangeVariable">Whether the implementation binds an entity join written after a comma-separated range variable to that range variable and refuses a condition that names another root, where a run measured that it does (decision 196): the comma spells the cross join the representation carries, and a join whose condition names a root the comma has left behind then has no spelling in JPQL, so the builder writes such a query in native SQL (decision 113). Hibernate 7.4.5 refuses it, EclipseLink 5.0.0 reads it.</param>
 public sealed record JpaImplementationProfile(
     ORMEnum Implementation,
     string SpecificationLevel,
@@ -64,7 +65,8 @@ public sealed record JpaImplementationProfile(
     bool RebuildsHavingOnTheRoot = false,
     JpaAverageCasts? AverageCasts = null,
     bool RefusesBinaryVersion = false,
-    bool RefusesFullJoin = false);
+    bool RefusesFullJoin = false,
+    bool JoinBindsToTheLastRangeVariable = false);
 
 /// <summary>
 /// The type names a Jakarta Persistence implementation converts an average into so that it

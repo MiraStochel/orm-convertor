@@ -1,7 +1,7 @@
 # 070 — Parser odmítá dotaz, jehož nepřečtená část by změnila množinu řádků
 
 Datum: 2026-09-14
-Stav: platí
+Stav: platí; větu o křížovém joinu čárkou nahrazuje 196
 Požadavky: F8, F11, T2, T3, S1, S2
 Podklad: rozhodnutí [004](004-unexpressible-facts-as-warnings.md), [010](010-diagnostics-as-returned-data.md), [024](024-typed-query-operand.md), [053](053-a-query-that-would-return-other-rows-is-not-emitted.md), [061](061-subquery-as-a-condition-operand.md) a [065](065-row-set-as-the-boundary-of-rule-053.md); otevřená položka „Nepřečtený filtr se zahazuje a dotaz se vydá"; [srovnání javových frameworků](../analysis/java-orm-frameworks-comparison.md), §15
 

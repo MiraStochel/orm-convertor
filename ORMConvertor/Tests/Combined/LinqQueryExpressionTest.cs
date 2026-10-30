@@ -375,20 +375,19 @@ public class LinqQueryExpressionTest
     }
 
     [Fact]
-    public void ASecondFromIsRefusedAsAJoin()
+    public void ASecondFromOverASecondSourceIsACrossJoin()
     {
         var builder = Parse(new DapperSqlQueryBuilder(), Method(
             "from c in ctx.Customers from o in ctx.CustomerOrders where o.CustomerId == c.CustomerId select o"));
 
-        // A second `from` over a second source is a cross join, which stays refused after
-        // decision 101 (a second `from` over a collection of the row is the association
-        // path, LinqAssociationPathJoinTest). The clause after it ranges over a row the
-        // refused step never composed, so it is refused too; the step itself is the reason
-        // that names what was written.
-        Assert.Empty(builder.Build());
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure
-                                              && r.Feature == QueryFeature.Join
-                                              && r.Reason.StartsWith("SelectMany()"));
+        // A second `from` over a second source is the cross join the representation carries
+        // (decision 196); a second `from` over a collection of the row is the association
+        // path (decision 101, LinqAssociationPathJoinTest). The condition stays where the
+        // source put it, in the filter.
+        var sql = string.Join("\n", builder.Build().Select(a => a.Content));
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        Assert.Contains("CROSS JOIN", sql);
+        Assert.Contains("WHERE o.CustomerId = c.CustomerId", sql);
     }
 
     // ---- the round trip through the EF Core builder -------------------------------------

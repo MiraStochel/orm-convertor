@@ -93,6 +93,18 @@ Hibernate = hibernate/FindJoinOverTwoColumns.jpql
 EclipseLink = eclipselink/FindJoinOverTwoColumns.jpql
 MyBatis = mybatis/FindJoinOverTwoColumnsMapper.xml
 
+# The same join in SQL's older spelling (decision 196): the two sources comma-separated, the
+# condition in the where clause - a cross join under a filter, which the representation
+# carries as a join without a condition. A LINQ source writes it as a second `from` over
+# a second root; the HQL target writes `cross join`, every other its own comma or CROSS JOIN.
+[CrossJoinWithTheConditionInWhere]
+Dapper = dapper/FindCrossJoinWithTheConditionInWhere.sql
+EFCore = efcore/FindCrossJoinWithTheConditionInWhere.query.cs
+NHibernate = nhibernate/FindCrossJoinWithTheConditionInWhere.hql
+Hibernate = hibernate/FindCrossJoinWithTheConditionInWhere.jpql
+EclipseLink = eclipselink/FindCrossJoinWithTheConditionInWhere.jpql
+MyBatis = mybatis/FindCrossJoinWithTheConditionInWhereMapper.xml
+
 [AggregationGroupingAndHaving]
 Dapper = dapper/FindAggregationGroupingAndHaving.sql
 EFCore = efcore/FindAggregationGroupingAndHaving.query.cs

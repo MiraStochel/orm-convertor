@@ -376,11 +376,12 @@ public class LinqJoinConditionTest
     /// <summary>
     /// A joined sequence that is a query of its own - projected, ordered, sliced - is carried
     /// only under the name of a variable (decision 112), and was taken for a table named
-    /// after the last call until now; a SelectMany over a second source with no condition is
-    /// a cross join. Both are refused by name.
+    /// after the last call until now; a SelectMany over a second source under DefaultIfEmpty()
+    /// with no condition is an outer join without one, which has no shape (a cross join has,
+    /// decision 196). Both are refused by name.
     /// </summary>
     [Fact]
-    public void ASequenceThatIsAQueryOfItsOwnOrACrossJoinIsRefused()
+    public void ASequenceThatIsAQueryOfItsOwnOrAnOuterJoinWithoutAConditionIsRefused()
     {
         var composed = Refused(
             Linq(new DapperSqlQueryBuilder(), "ctx.Customers.Join(ctx.Orders.OrderBy(o => o.Total), c => c.CustomerId, o => o.CustomerId, (c, o) => new { c, o })"),
@@ -394,7 +395,7 @@ public class LinqJoinConditionTest
         var cross = Refused(
             Linq(new DapperSqlQueryBuilder(), "ctx.Customers.SelectMany(c => ctx.Set<Order>().DefaultIfEmpty(), (c, o) => new { c, o })"),
             QueryFeature.Join);
-        Assert.Contains("cross join", cross.Reason, StringComparison.Ordinal);
+        Assert.Contains("outer join of a second source", cross.Reason, StringComparison.Ordinal);
     }
 
     /// <summary>A collection that is a navigation of the row stays the association path's (decision 101): filtered, it is not a join the reader derives, and it is refused as before.</summary>

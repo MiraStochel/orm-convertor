@@ -133,6 +133,16 @@ shape = projection
 orderingKey = none
 mutations = filter, operator, projection
 
+# The same rows as JoinOverTwoColumns from a cross join under a filter (decision 196): a
+# target that dropped the join condition with the filter would multiply the rows, which the
+# fourth level sees.
+[CrossJoinWithTheConditionInWhere]
+category = CrossJoinWithTheConditionInWhere
+fields = Text, CustomerId
+shape = projection
+orderingKey = none
+mutations = filter, operator, projection
+
 # The HAVING is the query's only condition, and it is not a WHERE: the operator inside it
 # is what a wrong translation flips.
 [AggregationGroupingAndHaving]

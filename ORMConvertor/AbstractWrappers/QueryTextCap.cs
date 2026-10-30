@@ -99,8 +99,8 @@ public static class QueryTextCap
             case HavingInstruction postFilter:
                 yield return postFilter.Condition;
                 break;
-            case JoinInstruction join:
-                yield return join.OnCondition;
+            case JoinInstruction { OnCondition: { } joinCondition }:
+                yield return joinCondition;
                 break;
             case SetOperationInstruction set:
                 yield return set.Left;

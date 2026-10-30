@@ -209,7 +209,14 @@ public class SqlQueryVisitor(
             ? SqlNames.WrittenQualified(instr.RightTable)
             : $"{SqlNames.WrittenQualified(instr.RightTable)} {SqlNames.Written(instr.RightTableAlias)}";
 
-        return $"{joinType} {rightTable} ON {instr.OnCondition.Accept(this)}";
+        // A cross join has no condition (decision 196); T-SQL spells it in the join chain, so
+        // it stands in any order beside the other joins.
+        if (instr.Kind == JoinKind.Cross)
+        {
+            return $"CROSS JOIN {rightTable}";
+        }
+
+        return $"{joinType} {rightTable} ON {instr.OnCondition!.Accept(this)}";
     }
 
     /// <summary>An ordering key with its direction (decision 107): a column, an aggregate, an expression or a projection alias.</summary>

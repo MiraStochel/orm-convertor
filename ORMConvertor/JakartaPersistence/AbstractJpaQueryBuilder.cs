@@ -147,8 +147,51 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
         var innerAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // The range variable the entity joins written after a cross join belong to, with the
+        // aliases joined onto it since (decision 196); empty until the first cross join, before
+        // which every alias of the scope belongs to the root.
+        var boundTo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var join in clauses.Joins)
         {
+            // A cross join is a further range variable of the from clause (decision 196), in the
+            // order the query wrote it: in the from clause where no entity join precedes it, else
+            // after the last entity join, where JPQL reads it as well.
+            if (join.Kind == JoinKind.Cross)
+            {
+                var written = visitor.RangeVariable(join);
+                if (artifact.Joins.Length == 0)
+                {
+                    artifact.Source.Append(", ").Append(written);
+                }
+                else
+                {
+                    artifact.Joins.Append(", ").Append(written);
+                }
+
+                boundTo.Clear();
+                boundTo.Add(join.RightTableAlias ?? join.RightTable);
+                continue;
+            }
+
+            // An implementation that binds an entity join to the last range variable before it
+            // (Hibernate 7.4.5, measured) refuses the join's condition where it names another
+            // root; the native SQL names every table in one join chain (decision 113).
+            if (Profile.JoinBindsToTheLastRangeVariable
+                && boundTo.Count > 0
+                && AliasesNamedIn(join.OnCondition).FirstOrDefault(named => !boundTo.Contains(named) && !string.Equals(named, join.RightTableAlias ?? join.RightTable, StringComparison.OrdinalIgnoreCase)) is { } elsewhere)
+            {
+                ReportUnspoken(
+                    $"{Profile.Implementation} binds the join onto '{join.RightTable}' to the range variable the comma before it declared, and its condition names '{elsewhere}', another root of the from clause",
+                    QueryFeature.Join);
+                return;
+            }
+
+            if (boundTo.Count > 0)
+            {
+                boundTo.Add(join.RightTableAlias ?? join.RightTable);
+            }
+
             // An implementation that writes the inner joins after every outer join (EclipseLink
             // 5.0.0, measured) leaves the condition of an outer join that names an inner join's
             // alias naming a table SQL Server has not met yet; the native SQL keeps the order
@@ -226,7 +269,8 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         var conjuncts = new List<string>();
         if (joinsAsRangeVariables)
         {
-            conjuncts.AddRange(clauses.Joins.Select(visitor.RangeVariableCondition));
+            // A cross join among them has no condition to write (decision 196).
+            conjuncts.AddRange(clauses.Joins.Select(visitor.RangeVariableCondition).OfType<string>());
         }
 
         if (clauses.Filter is not null)
@@ -488,7 +532,7 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         // with the condition in WHERE, the same rows; an outer join has no such spelling, so the
         // native SQL writes it (decision 113).
         var rangeVariables = Profile.DropsJoinsInSubqueries && clauses.Joins.Count > 0;
-        if (rangeVariables && clauses.Joins.FirstOrDefault(join => join.Kind != JoinKind.Inner) is { } outer)
+        if (rangeVariables && clauses.Joins.FirstOrDefault(join => join.Kind is not (JoinKind.Inner or JoinKind.Cross)) is { } outer)
         {
             ReportUnspoken(
                 $"{Profile.Implementation} leaves the outer join onto '{outer.RightTable}' inside a subquery out of the SQL it writes, and only an inner join can stand as a range variable instead, so the subquery would answer other rows",

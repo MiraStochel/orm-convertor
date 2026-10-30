@@ -72,7 +72,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 067 | [Odvozující konvence zdroje je tvrzení, absenční výchozí ne](067-a-derived-convention-is-a-statement-a-default-is-not.md) | platí | F2, F5, F6, F11, S1, S2 |
 | 068 | [Dokumentovaná precedence zdrojového frameworku řadí čtení jeho artefaktů](068-source-framework-precedence-orders-the-reading.md) | platí | F2, F5, F7–F10, F11, S1, S2 |
 | 069 | [MAJOR označuje milník zadání, ne rozbitou plochu](069-major-marks-a-milestone-not-a-break.md) | nahrazeno [098](098-the-number-is-decided-once-per-release.md) | S2, S6, F7–F10, F15, T7 |
-| 070 | [Parser odmítá dotaz, jehož nepřečtená část by změnila množinu řádků](070-a-parser-refuses-what-would-change-the-row-set.md) | platí | F8, F11, T2, T3, S1, S2 |
+| 070 | [Parser odmítá dotaz, jehož nepřečtená část by změnila množinu řádků](070-a-parser-refuses-what-would-change-the-row-set.md) | platí; větu o křížovém joinu čárkou nahrazuje 196 | F8, F11, T2, T3, S1, S2 |
 | 071 | [Uzavřený seznam skalárů se rozšiřuje o pět hodnot s protějškem v obou ekosystémech](071-five-scalars-with-a-counterpart-in-both-ecosystems.md) | platí | F1, F6, F7–F10, F11, S2 |
 | 072 | [Nepersistovaná vlastnost je nesený mapovací fakt, ne chybějící sloupec](072-a-transient-property-is-a-carried-mapping-fact.md) | platí | F5, F6, F7–F11, S1, S2 |
 | 073 | [`DISTINCT` jako příznak (pod)dotazu vykreslovaný projekčním krokem](073-distinct-as-a-flag-of-the-query-scope.md) | platí | F7–F10, F11, T2, T3, S1, S2 |
@@ -198,6 +198,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 193 | [Virtuální stroj Dockeru má 12 GB, aby se do něj vešel součet mezí všeho, co v něm běží současně](193-the-docker-vm-has-twelve-gigabytes-so-that-the-limits-inside-it-add-up-to-less-than-it.md) | platí; nahrazuje 8 GB paměti virtuálního stroje rozh. 145 | S5, S6, T3 |
 | 194 | [Text jednoho dotazu má strop délky: týmž číslem se měří model po čtení, operand LINQ při zápisu, rozvinutí `<include>` MyBatisu a hotový artefakt, a delší dotaz je odmítnut](194-the-text-of-one-query-is-capped-and-the-same-number-holds-the-model-as-written-the-linq-operand-the-mybatis-include-and-the-finished-artifact.md) | platí | S3, S4, F11 |
 | 195 | [Javová půlka běhu mezí pokračuje, kde skončila, bod, který .NET půlka do cíle nepřeložila, instanci neposílá, a překládá instancí s mezí paměti a restartem; překlad má 35 s, bod 30 minut a server javové půlky 2048 MB](195-the-java-half-of-the-limits-run-continues-where-it-was-skips-what-the-dotnet-half-could-not-translate-and-translates-by-an-instance-with-a-memory-limit.md) | platí; nahrazuje soud javové půlky nad každým vypsaným bodem rozh. 182 | S3, S5, T3 |
+| 196 | [Křížový join nese reprezentace jako join bez podmínky: čárkou oddělené zdroje, `CROSS JOIN` i `SelectMany` nad druhým kořenem se čtou jako `JoinKind.Cross` a každý cíl ho píše svým tvarem; nástroj tak přečte každý artefakt, který sám napsal](196-the-cross-join-is-carried-as-a-join-without-a-condition-and-every-artifact-the-tool-writes-reads-back.md) | platí; nahrazuje větu o křížovém joinu čárkou rozh. 070 | F7–F11, F13, T2, T3, S2 |
 
 ## Formát
 

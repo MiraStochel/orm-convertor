@@ -440,7 +440,12 @@ public abstract partial class AbstractQueryBuilder
         instructions.Add(new SelectInstruction(condition));
     }
 
-    public void Join(JoinKind kind, string left, string right, ConditionNode onCondition, string? rightTableAlias = null)
+    /// <summary>
+    /// Records a join (rule Q6). A <see cref="JoinKind.Cross"/> join has no condition and is
+    /// the one kind recorded without one (decision 196); the gate refuses any other kind that
+    /// arrives without, because a join emitted without its condition multiplies rows.
+    /// </summary>
+    public void Join(JoinKind kind, string left, string right, ConditionNode? onCondition, string? rightTableAlias = null)
     {
         instructions.Add(new JoinInstruction(kind, left, right, rightTableAlias, onCondition));
     }
@@ -1050,9 +1055,20 @@ public abstract partial class AbstractQueryBuilder
         // A malformed condition cannot be rendered without changing which rows the query
         // returns, so it is refused here rather than approximated by each target in its own
         // way (decision 053). One gate for all three, like the step order of decision 023.
+        // A cross join is the one join without a condition (decision 196); any other kind
+        // that arrives without one would multiply rows as a cross join does, so it is refused.
+        if (body.OfType<JoinInstruction>().FirstOrDefault(j => j.Kind != JoinKind.Cross && j.OnCondition is null) is { } unconditioned)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                $"The {unconditioned.Kind.ToString().ToLowerInvariant()} join onto '{unconditioned.RightTable}' has no condition, and a join emitted without one would return different rows; no artifact was generated.",
+                QueryFeature.Join);
+            return null;
+        }
+
         var conditions = body.OfType<SelectInstruction>().Select(i => i.Condition)
             .Concat(body.OfType<HavingInstruction>().Select(i => i.Condition))
-            .Concat(body.OfType<JoinInstruction>().Select(j => j.OnCondition));
+            .Concat(body.OfType<JoinInstruction>().Select(j => j.OnCondition).OfType<ConditionNode>());
 
         if (conditions.Any(condition => !ConditionIsWellFormed(condition)))
         {
@@ -2193,7 +2209,7 @@ public abstract partial class AbstractQueryBuilder
             return "names itself more than once in its recursive member";
         }
 
-        if (member.OfType<JoinInstruction>().FirstOrDefault(join => join.Kind != JoinKind.Inner) is { } outer)
+        if (member.OfType<JoinInstruction>().FirstOrDefault(join => join.Kind is not (JoinKind.Inner or JoinKind.Cross)) is { } outer)
         {
             return $"has a {outer.Kind.ToString().ToLowerInvariant()} outer join in its recursive member";
         }
@@ -2992,8 +3008,8 @@ public abstract partial class AbstractQueryBuilder
                 case HavingInstruction postFilter:
                     CollectParameters(postFilter.Condition, aliases, found);
                     break;
-                case JoinInstruction join:
-                    CollectParameters(join.OnCondition, aliases, found);
+                case JoinInstruction { OnCondition: { } joinCondition }:
+                    CollectParameters(joinCondition, aliases, found);
                     break;
                 case SubQueryInstruction nested:
                     CollectParameters(Unwrap(nested.Instructions), aliases, found);
@@ -3336,8 +3352,8 @@ public abstract partial class AbstractQueryBuilder
                 case HavingInstruction postFilter:
                     CollectDemands(postFilter.Condition, aliases, unbound, found);
                     break;
-                case JoinInstruction join:
-                    CollectDemands(join.OnCondition, aliases, unbound, found);
+                case JoinInstruction { OnCondition: { } joinCondition }:
+                    CollectDemands(joinCondition, aliases, unbound, found);
                     break;
                 case SubQueryInstruction nested:
                     CollectDemands(Unwrap(nested.Instructions), aliases, unbound, found);
@@ -4319,8 +4335,9 @@ public abstract partial class AbstractQueryBuilder
                     TypeTemporalLiterals(filter.Condition, aliases) is { } condition ? filter with { Condition = condition } : null,
                 HavingInstruction postFilter =>
                     TypeTemporalLiterals(postFilter.Condition, aliases) is { } condition ? postFilter with { Condition = condition } : null,
+                JoinInstruction { OnCondition: null } cross => cross,
                 JoinInstruction join =>
-                    TypeTemporalLiterals(join.OnCondition, aliases) is { } condition ? join with { OnCondition = condition } : null,
+                    TypeTemporalLiterals(join.OnCondition!, aliases) is { } condition ? join with { OnCondition = condition } : null,
                 SubQueryInstruction nested => TypeTemporalLiterals(nested, aliases),
                 SetOperationInstruction operation =>
                     TypeTemporalLiterals(operation.Left, aliases) is { } left && TypeTemporalLiterals(operation.Right, aliases) is { } right

@@ -109,7 +109,8 @@ public abstract partial class AbstractQueryBuilder
                 GroupByInstruction grouping => grouping with { Key = Operand(grouping.Key) },
                 SelectInstruction filter => filter with { Condition = Condition(filter.Condition) },
                 HavingInstruction postFilter => postFilter with { Condition = Condition(postFilter.Condition) },
-                JoinInstruction join => join with { OnCondition = Condition(join.OnCondition) },
+                JoinInstruction { OnCondition: null } cross => cross,
+                JoinInstruction join => join with { OnCondition = Condition(join.OnCondition!) },
                 SubQueryInstruction nested => nested with { Instructions = [.. QualifyColumns(nested.Instructions, aliases)] },
                 SetOperationInstruction operation => operation with
                 {

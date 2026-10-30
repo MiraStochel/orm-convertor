@@ -116,5 +116,13 @@ public static class HibernateDescriptor
         // 180) and pinned by hibernate/BinaryVersionClaimsTest and hibernate/FullJoinClaimsTest:
         // a unit with @Version over byte[] deploys, and HQL reads "full join".
         RefusesBinaryVersion: false,
-        RefusesFullJoin: false);
+        RefusesFullJoin: false,
+
+        // Measured against 7.4.5.Final by hibernate/CrossJoinClaimsTest (decision 196): an
+        // entity join written after a comma-separated range variable belongs to that range
+        // variable, and a condition naming another root is refused with "SqmQualifiedJoin
+        // predicate referred to SqmRoot … other than the join's root"; the same join written
+        // before the comma, or naming the range variable itself, is read. So the JPQL builder
+        // sends a query whose entity join names a root the comma has left behind to native SQL.
+        JoinBindsToTheLastRangeVariable: true);
 }

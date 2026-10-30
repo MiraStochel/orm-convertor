@@ -50,6 +50,7 @@ public sealed class NHibernateHqlQueryVisitor(
             JoinKind.Inner => "inner join",
             JoinKind.Left => "left join",
             JoinKind.Right => "right join",
+            JoinKind.Cross => "cross join",
             _ => null,
         };
 
@@ -86,9 +87,19 @@ public sealed class NHibernateHqlQueryVisitor(
             return string.Empty;
         }
 
+        // A cross join has no condition (decision 196). HQL 5.7.0 reads `cross join` and writes
+        // it as SQL's CROSS JOIN in the one join chain, before and after an entity join alike;
+        // a comma-separated range variable it hoists before every entity join, where a join
+        // naming the first root could not be bound by SQL Server, so the comma is never
+        // written (NHibernateHqlProviderTest).
+        if (instr.Kind == JoinKind.Cross)
+        {
+            return $"{keyword} {entity} {alias}";
+        }
+
         // NHibernate 5 supports entity joins, where the predicate is given with `with`
         // rather than being implied by an association.
-        return $"{keyword} {entity} {alias} with {JoinCondition(instr.OnCondition)}";
+        return $"{keyword} {entity} {alias} with {JoinCondition(instr.OnCondition!)}";
     }
 
     /// <summary>

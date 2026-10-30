@@ -626,13 +626,18 @@ public class HibernateJpqlQueryParserTest
         return artifacts.Single(s => s.ContentType == ConversionContentType.JpqlQuery).Content;
     }
 
+    /// <summary>Comma-separated range variables are the cross join the representation carries (decision 196): read as a join without a condition, written back as the comma, the filter where it stood.</summary>
     [Fact]
-    public void ACrossJoinRefuses()
+    public void ACrossJoinIsReadAndWrittenAsAFurtherRangeVariable()
     {
-        var builder = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o, Customer c", Orders(), Customers());
+        var builder = Parse(new HibernateJpqlQueryBuilder(), "select o from Order o, Customer c where c.CustomerId = o.CustomerId", Orders(), Customers());
 
-        Assert.Empty(builder.Build());
-        Assert.Contains(builder.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.Join);
+        var artifacts = builder.Build();
+        Assert.DoesNotContain(builder.Records, r => r.Kind == ConversionRecordKind.Failure);
+        var jpql = artifacts.Single(s => s.ContentType == ConversionContentType.JpqlQuery).Content;
+        Assert.Contains("from Order o, Customer c", jpql);
+        Assert.Contains("where c.Customer", jpql);
+        Assert.Contains("= o.Customer", jpql);
     }
 
     [Fact]

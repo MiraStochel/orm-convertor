@@ -174,7 +174,9 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
             // (decision 112), which the provider joins as a derived table.
             var rightSequence = IsDefinition(join.RightTable) ? Variables[join.RightTable] : Root(rightEntity);
 
-            var condition = SplitJoinCondition(join, rightAlias);
+            // A cross join has no condition to split (decision 196): it is the SelectMany over
+            // the joined sequence itself, below.
+            var condition = join.Kind == JoinKind.Cross ? new JoinCondition([], [], [], null) : SplitJoinCondition(join, rightAlias);
             if (condition.Unplaced is { } unplaced)
             {
                 ReportUnspoken(
@@ -219,6 +221,17 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
             var members = string.Join(", ", leftNamed) + $", {LinqJoinCall.Member(rightAlias, innerParam)}";
             var resultSelector = $"({leftParam}, {innerParam}) => new {{ {members} }}";
 
+            // A cross join is the SelectMany over the joined sequence itself (decision 196),
+            // which both providers translate to SQL's CROSS JOIN (EFCoreCrossJoinProviderTest,
+            // NHibernateLinqProviderTest); whatever the source said about the two rows stays in
+            // the filter.
+            if (join.Kind == JoinKind.Cross)
+            {
+                artifact.Joins.Append($"\n        .SelectMany({leftParam} => {rightSequence}, {resultSelector})");
+                AdvanceScope(join, rightAlias);
+                continue;
+            }
+
             // A condition that names both rows other than as keys, or no key at all, is the
             // correlated SelectMany (decision 113): the joined sequence filtered by the whole
             // condition for each row of the chain, which the provider translates to a join with
@@ -226,7 +239,7 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
             // chain that found no match.
             if (condition.Rest.Count > 0 || condition.Pairs.Count == 0)
             {
-                if (InnerPredicate(join, rightAlias, innerParam, join.OnCondition, correlatedTo: leftParam) is not { } correlated)
+                if (InnerPredicate(join, rightAlias, innerParam, join.OnCondition!, correlatedTo: leftParam) is not { } correlated)
                 {
                     return;
                 }
@@ -588,7 +601,7 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
     private JoinCondition SplitJoinCondition(JoinInstruction join, string rightAlias)
     {
         var conjuncts = new List<ConditionNode>();
-        Conjuncts(join.OnCondition, conjuncts);
+        Conjuncts(join.OnCondition!, conjuncts);
 
         bool IsRight(string? table)
             => table is not null

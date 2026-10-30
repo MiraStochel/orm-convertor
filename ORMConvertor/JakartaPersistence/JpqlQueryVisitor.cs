@@ -61,6 +61,9 @@ public sealed class JpqlQueryVisitor(
 
     public string Visit(JoinInstruction instr)
     {
+        // A cross join is spelled as a further range variable of the from clause (decision
+        // 196), which the JPA builder writes itself (<see cref="RangeVariable"/>); it never
+        // reaches here as a join keyword, because Jakarta Persistence has none for it.
         var keyword = instr.Kind switch
         {
             JoinKind.Inner => "join",
@@ -103,16 +106,17 @@ public sealed class JpqlQueryVisitor(
         // stopping at the next join and refuses it as "the right expression is not a valid
         // expression", whereas the parenthesized form is the same JPQL expression and
         // Hibernate reads it as well. Found by the Java suite over the deeply nested query.
-        var condition = JoinCondition(instr.OnCondition);
+        var condition = JoinCondition(instr.OnCondition!);
 
         return $"{keyword} {entity} {alias} on {condition}";
     }
 
     /// <summary>
-    /// An inner join in JPQL's original spelling: a further range variable of the from
-    /// clause, whose condition <see cref="RangeVariableCondition"/> writes into the where
-    /// clause. The JPA builder reaches for it inside a subquery under an implementation that
-    /// leaves an entity join of a subquery out of its SQL
+    /// A further range variable of the from clause: the spelling of a cross join (decision
+    /// 196), which has no condition, and JPQL's original spelling of an inner join, whose
+    /// condition <see cref="RangeVariableCondition"/> writes into the where clause. The JPA
+    /// builder reaches for the latter inside a subquery under an implementation that leaves
+    /// an entity join of a subquery out of its SQL
     /// (<see cref="JpaImplementationProfile.DropsJoinsInSubqueries"/>): the implementation
     /// writes the range variables as a cross join with the condition in WHERE, which answers
     /// the rows the entity join answers.
@@ -134,8 +138,8 @@ public sealed class JpqlQueryVisitor(
         return $"{entity} {alias}";
     }
 
-    /// <summary>The condition of a join written as a range variable, as a conjunct of the where clause - parenthesized where it has several conjuncts.</summary>
-    public string RangeVariableCondition(JoinInstruction instr) => JoinCondition(instr.OnCondition);
+    /// <summary>The condition of a join written as a range variable, as a conjunct of the where clause - parenthesized where it has several conjuncts; null for a cross join, which has none.</summary>
+    public string? RangeVariableCondition(JoinInstruction instr) => instr.OnCondition is { } condition ? JoinCondition(condition) : null;
 
     /// <summary>
     /// The entity a join reaches and the alias it stands under. A table no entity maps to

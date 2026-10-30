@@ -21,7 +21,7 @@ namespace Tests.Combined;
 /// the join reaches the builder in the shape a Join with key selectors takes - so what the
 /// join tests prove holds for the path too. What the maps do not hold is refused by the
 /// same four sentences the HQL and JPQL parsers say, and a SelectMany over a second source
-/// stays refused as the cross join it is.
+/// is the cross join the representation carries (decision 196, CrossJoinTest).
 /// </summary>
 public class LinqAssociationPathJoinTest
 {
@@ -271,8 +271,7 @@ public class LinqAssociationPathJoinTest
     [InlineData("from c in ctx.Customers from o in c.Orders select o", false, "the mapping of the entity behind 'c'")]
     [InlineData("from c in ctx.Customers from s in c.Shippers select s", true, "names no association")]
     [InlineData("from c in ctx.Customers from r in c.Orders.Lines select r", true, "crosses more than one association")]
-    [InlineData("from c in ctx.Customers from o in ctx.Orders select o", true, "cross join")]
-    [InlineData("ctx.Customers.SelectMany(c => c.Orders.Where(o => o.Total > 0))", true, "not an association path")]
+    [InlineData("ctx.Customers.SelectMany(c => c.Orders.Where(o => o.Total > 0))", true, "neither an association path")]
     public void APathTheMapsDoNotResolveRefusesByName(string query, bool withMaps, string reason)
     {
         var (orders, customers) = Linked();

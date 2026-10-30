@@ -53,8 +53,8 @@ public static class ModelDepth
                 case HavingInstruction postFilter:
                     pending.Push((postFilter.Condition, depth));
                     break;
-                case JoinInstruction join:
-                    pending.Push((join.OnCondition, depth));
+                case JoinInstruction { OnCondition: { } joinCondition }:
+                    pending.Push((joinCondition, depth));
                     break;
                 case SetOperationInstruction set:
                     pending.Push((set.Left, depth + 1));
