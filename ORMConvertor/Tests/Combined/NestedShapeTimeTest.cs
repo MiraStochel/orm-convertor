@@ -1,8 +1,10 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using AbstractWrappers;
 using DapperWrappers;
 using Model;
 using OrmConvertor;
+using Tests.Experiment;
 
 namespace Tests.Combined;
 
@@ -50,6 +52,25 @@ public class NestedShapeTimeTest
 
         Assert.Single(demand);
         Assert.Contains(demand, d => d.Names(QueryTableDemand.Of("Shop.Orders")));
+    }
+
+    /// <summary>
+    /// A chain of intermediate results from an EF Core source, each variable continuing the one
+    /// before (decision 112): what a variable holds is decided once per variable, so the reading
+    /// walks each link a bounded number of times rather than the chain below it again at every
+    /// link. The input is a point of the ctes series of the limits run.
+    /// </summary>
+    [Fact]
+    public async Task AChainOfQueryVariablesIsFollowedOncePerLink()
+    {
+        const int links = 48;
+        var units = LimitSeries.Axis("ctes")!.Units(ORMEnum.EFCore, links);
+
+        var conversion = await WithinTheBound($"A chain of {links} query variables from EF Core", () => ConversionHandler.Convert(ORMEnum.EFCore, ORMEnum.Dapper, units));
+
+        Assert.DoesNotContain(conversion.Records, r => r.Kind == AbstractWrappers.Diagnostics.ConversionRecordKind.Failure);
+        var query = Assert.Single(conversion.Sources, s => s.ContentType == ConversionContentType.SqlQuery);
+        Assert.Equal(links, Regex.Matches(query.Content, @"\bc\d+ AS \(").Count);
     }
 
     /// <summary>

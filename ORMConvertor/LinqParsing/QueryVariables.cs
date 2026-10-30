@@ -60,6 +60,7 @@ internal sealed class QueryVariables
     private readonly HashSet<string> continued;
 
     private readonly Dictionary<ISymbol, Variable> described = new(SymbolEqualityComparer.Default);
+    private readonly Dictionary<ISymbol, ExpressionSyntax?> followable = new(SymbolEqualityComparer.Default);
     private readonly HashSet<ISymbol> following = new(SymbolEqualityComparer.Default);
     private SemanticModel? model;
 
@@ -553,26 +554,44 @@ internal sealed class QueryVariables
     /// The value of a variable assigned once, when that value is a query not yet run; null
     /// otherwise. A variable met again while its own value is being followed is a cycle the
     /// compiler would reject, and it follows nothing.
+    ///
+    /// Whether the value is a query is decided once per variable and kept: deciding it
+    /// decomposes the value, which follows the variable at its own head in turn, and the chain
+    /// that asked then walks the same value on - a chain of variables each continuing the one
+    /// before (<c>var c2 = c1.Where(…)</c>) would otherwise be walked below every link again,
+    /// doubling the reading with each link (S3).
     /// </summary>
     private ExpressionSyntax? FollowableValue(ISymbol symbol)
     {
+        if (followable.TryGetValue(symbol, out var known))
+        {
+            return known;
+        }
+
         var variable = Describe(symbol);
 
         if (variable.Writes.Count != 1 || variable.Writes[0] is not { } written)
         {
-            return null;
+            return followable[symbol] = null;
         }
 
         var value = Stripped(written);
 
-        if (IsExecuted(value) || !following.Add(symbol))
+        if (IsExecuted(value))
+        {
+            return followable[symbol] = null;
+        }
+
+        // Inside the cycle the answer is not kept: it is what the cycle makes of it, not what
+        // the variable holds.
+        if (!following.Add(symbol))
         {
             return null;
         }
 
         try
         {
-            return isQuery(value) ? value : null;
+            return followable[symbol] = isQuery(value) ? value : null;
         }
         finally
         {
