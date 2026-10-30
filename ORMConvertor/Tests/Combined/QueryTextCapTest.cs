@@ -313,4 +313,35 @@ public class QueryTextCapTest
 
         Assert.Equal(ParseLimits.Default, ParseLimitsConfiguration.Read(new ConfigurationBuilder().Build()));
     }
+
+    /// <summary>
+    /// The measurement decision 200 stands on: compose hands the instances of the Java half
+    /// <c>Parsing__MaxNestingDepth</c> from a variable of the host with the pattern
+    /// <c>${VARIABLE-}</c>, so an instance started without the variable has the environment
+    /// variable, empty. The provider of environment variables carries an empty value into the
+    /// configuration, and the reader takes it as "nothing said" - the default cap - while
+    /// <c>0</c> by the same way switches the cap off.
+    /// </summary>
+    [Fact]
+    public void TheConfigurationReadsAnEmptyVariableAsTheDefault()
+    {
+        const string prefix = "ORMCONVERTOR_CAPTEST_";
+        const string variable = prefix + "Parsing__MaxNestingDepth";
+        try
+        {
+            Environment.SetEnvironmentVariable(variable, "");
+            var empty = ParseLimitsConfiguration.Read(new ConfigurationBuilder().AddEnvironmentVariables(prefix).Build());
+            Assert.Equal(ParseLimits.DefaultMaxNestingDepth, empty.MaxNestingDepth);
+            Assert.True(empty.CapsNesting);
+
+            Environment.SetEnvironmentVariable(variable, "0");
+            var off = ParseLimitsConfiguration.Read(new ConfigurationBuilder().AddEnvironmentVariables(prefix).Build());
+            Assert.False(off.CapsNesting);
+            Assert.Equal(ParseLimits.DefaultMaxQueryTextLength, off.MaxQueryTextLength);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+        }
+    }
 }

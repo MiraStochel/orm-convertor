@@ -191,6 +191,11 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ConnectionStrings__CatalogDatabase=Server=test_db,1433;Database=ORMConvertorTests;User ID=sa;Password=Testingorms123;TrustServerCertificate=true;
+      # The nesting cap of the instance (decision 200): unset, the variable leaves the key empty
+      # and the instance holds the default cap of a deployment; the limits run sets it to 0, so
+      # that the Java half reads the series with the cap off as the .NET half does. test_app_dry
+      # carries the same line; the two other instances translate no series and keep the default.
+      - Parsing__MaxNestingDepth=${ORMCONVERTOR_TEST_APP_MAX_NESTING_DEPTH-}
     # The service name is the one the sibling services use, with an underscore; the alias
     # exists because the client is a JVM. An underscore is not a legal character in a
     # host name, so java.net.URI parses "http://test_app:5072/orm" as having no host and
@@ -268,6 +273,7 @@ services:
     restart: unless-stopped
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
+      - Parsing__MaxNestingDepth=${ORMCONVERTOR_TEST_APP_MAX_NESTING_DEPTH-}
     networks:
       default:
         aliases:
