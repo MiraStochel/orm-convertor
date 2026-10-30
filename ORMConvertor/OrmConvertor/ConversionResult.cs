@@ -90,6 +90,13 @@ public sealed class ConversionResult
     public required List<ConversionFact> Facts { get; init; }
 
     /// <summary>
+    /// The defects of the tool met during the run (decision 196), one per Failure record
+    /// written for a defect: the exception with its stack, the unit, entity or query it was
+    /// met on. Not part of the response - the record is - but what the API logs.
+    /// </summary>
+    public IReadOnlyList<TranslationDefect> Defects { get; init; } = [];
+
+    /// <summary>
     /// State of the catalog connection during the run - the completion phase over the
     /// target's demand and the one over the queries' (decisions 015 and 105), folded into
     /// the strongest thing that happened to the connection. The connection lives in server

@@ -385,6 +385,39 @@ public class ConvertEndpointTest(ApiTestHost host)
             record => record.GetProperty("reason").GetString()!.Contains("another database system"));
     }
 
+    /// <summary>
+    /// A request without its list of units, or with a unit that is null, is refused with a
+    /// sentence of the tool's own that names what to change (decision 196) - not with the
+    /// text of the null reference it used to run into.
+    /// </summary>
+    [Fact]
+    public async Task AMissingUnitIsRefusedByItsPosition()
+    {
+        var response = await client.PostAsJsonAsync(
+            ApiTestHost.BasePath + "/convert",
+            new { sourceOrm = (int)ORMEnum.EFCore, targetOrm = (int)ORMEnum.NHibernate, sources = new object?[] { new { contentType = 90, content = "public class A { }" }, null } },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Contains("Source unit 2 is null", body.RootElement.GetProperty("detail").GetString()!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AMissingSourcesListIsRefusedWithASentence()
+    {
+        var response = await client.PostAsJsonAsync(
+            ApiTestHost.BasePath + "/convert",
+            new { sourceOrm = (int)ORMEnum.EFCore, targetOrm = (int)ORMEnum.NHibernate, sources = (object?)null },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Contains("no 'sources' list", body.RootElement.GetProperty("detail").GetString()!, StringComparison.Ordinal);
+    }
+
     private async Task<JsonDocument> ConvertAsync(object request)
     {
         var response = await client.PostAsJsonAsync(

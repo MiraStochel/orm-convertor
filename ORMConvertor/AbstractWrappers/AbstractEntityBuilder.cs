@@ -1720,6 +1720,19 @@ public abstract class AbstractEntityBuilder
         entityMap.Entity.Properties.RemoveAll(p => p.Name == propertyName);
         entityMap.PropertyMaps.RemoveAll(pm => pm.Property.Name == propertyName);
         entityMap.Relations.RemoveAll(r => r.SourceNavigationProperty == propertyName);
+
+        // A key part over the property leaves with it. A key naming a member the entity no
+        // longer has would be written as a field nobody declared and an accessor of nothing:
+        // the source that owns its key member (OwnsOne over the key) is EF Core's own error,
+        // and the model does not have to agree with it to stay consistent.
+        if (entityMap.PrimaryKey is { } key && key.Parts.Any(p => p.PropertyMap.Property.Name == propertyName))
+        {
+            var remaining = key.Parts.Where(p => p.PropertyMap.Property.Name != propertyName).ToList();
+
+            entityMap.PrimaryKey = remaining.Count == 0
+                ? null
+                : new PrimaryKey { Parts = remaining, SourceKeyClass = key.SourceKeyClass };
+        }
     }
 
     /// <summary>
@@ -3225,6 +3238,14 @@ public abstract class AbstractEntityBuilder
     /// the only place that knows which unit a parser was fed; a record born during that
     /// reading came from that unit. Parsers and builders never call this.
     /// </summary>
+    private readonly List<TranslationDefect> defects = [];
+
+    /// <summary>
+    /// The defects of the tool met while generating an entity (decision 196), beside the
+    /// Failure records they left: the record is for the caller, the exception for the log.
+    /// </summary>
+    public IReadOnlyList<TranslationDefect> Defects => defects;
+
     public void AttributeRecords(int fromIndex, string unit)
     {
         for (var i = fromIndex; i < records.Count; i++)
@@ -3770,34 +3791,59 @@ public abstract class AbstractEntityBuilder
                 continue;
             }
 
-            ReportLosses(entityMap);
-            ReportTrimmedReads(entityMap);
-
-            var artifact = new EntityArtifact();
-
-            BuildImports(entityMap, artifact);
-            BuildTableSchema(entityMap, artifact);
-            BuildPrimaryKey(entityMap, artifact);
-            BuildProperties(entityMap, artifact);
-            BuildForeignKey(entityMap, artifact);
-            BuildEnforcedMembers(entityMap, artifact);
-
-            // The artifacts leave with the entity and its declaring units on them, and the
-            // ledger is written after the emission so that a loss a framework reported while
-            // emitting counts as dropped (decision 124). The marks the builder left while
-            // writing become positions in the finished artifacts first (decision 125).
-            var finished = FinalizeBuild(entityMap, artifact).ToList();
-            var targets = TargetPositionsOf(entityMap, artifact, finished);
-
-            foreach (var output in finished)
+            try
             {
-                outputs.Add(Attributed(output, entityMap));
+                BuildOne(entityMap, outputs);
             }
-
-            RecordFacts(entityMap, generated: true, targets);
+            catch (Exception exception)
+            {
+                // A defect of the tool met while generating this one entity refuses the
+                // entity and leaves the others alone (decision 196): the record tells the
+                // caller, the defect goes to whoever runs the instance, and the ledger says
+                // of every fact of the entity that nothing carried it.
+                Report(new ConversionRecord
+                {
+                    Kind = ConversionRecordKind.Failure,
+                    Framework = Descriptor.Framework,
+                    Entity = entityMap.Entity.Name,
+                    Reason = TranslationDefect.Reason($"generating the entity {entityMap.Entity.Name}", exception),
+                });
+                defects.Add(new TranslationDefect(exception, Entity: entityMap.Entity.Name));
+                RecordFacts(entityMap, generated: false);
+            }
         }
 
         return outputs;
+    }
+
+    /// <summary>The seven steps over one entity, in the fixed order of <see cref="Build"/>.</summary>
+    private void BuildOne(EntityMap entityMap, List<ConversionSource> outputs)
+    {
+        ReportLosses(entityMap);
+        ReportTrimmedReads(entityMap);
+
+        var artifact = new EntityArtifact();
+
+        BuildImports(entityMap, artifact);
+        BuildTableSchema(entityMap, artifact);
+        BuildPrimaryKey(entityMap, artifact);
+        BuildProperties(entityMap, artifact);
+        BuildForeignKey(entityMap, artifact);
+        BuildEnforcedMembers(entityMap, artifact);
+
+        // The artifacts leave with the entity and its declaring units on them, and the
+        // ledger is written after the emission so that a loss a framework reported while
+        // emitting counts as dropped (decision 124). The marks the builder left while
+        // writing become positions in the finished artifacts first (decision 125).
+        var finished = FinalizeBuild(entityMap, artifact).ToList();
+        var targets = TargetPositionsOf(entityMap, artifact, finished);
+
+        foreach (var output in finished)
+        {
+            outputs.Add(Attributed(output, entityMap));
+        }
+
+        RecordFacts(entityMap, generated: true, targets);
     }
 
     /// <summary>

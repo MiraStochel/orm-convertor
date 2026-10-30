@@ -16,9 +16,51 @@ namespace DatabaseCatalog;
 /// </summary>
 public sealed class SqlServerCatalogReader(string connectionString) : ICatalogReader, IDisposable
 {
+    /// <summary>
+    /// How long one connection attempt waits for a server that does not answer, where the
+    /// connection string says nothing (decision 197). SqlClient's own default is 15 s, and
+    /// with its retry on top a translation against a silent host waited 37 s (measured
+    /// 2026-10-30); a catalog is an optional input and the translation goes on without it.
+    /// </summary>
+    public const int DefaultConnectTimeoutSeconds = 5;
+
     private readonly CredentialRedaction redaction = CredentialRedaction.For([connectionString]);
 
+    private readonly string boundedConnectionString = BoundedConnection(connectionString);
+
     private SqlConnection? connection;
+
+    /// <summary>
+    /// The connection string with a bounded wait (decision 197): <c>Connect Timeout</c> of
+    /// <see cref="DefaultConnectTimeoutSeconds"/> and no connect retry, each only where the
+    /// operator's string does not state the keyword itself - what the operator wrote wins.
+    /// A string SqlClient cannot parse is left as it is, so that the failure it causes is
+    /// reported where every other read failure is.
+    /// </summary>
+    public static string BoundedConnection(string connectionString)
+    {
+        SqlConnectionStringBuilder builder;
+        try
+        {
+            builder = new SqlConnectionStringBuilder(connectionString);
+        }
+        catch (ArgumentException)
+        {
+            return connectionString;
+        }
+
+        if (!builder.ShouldSerialize("Connect Timeout"))
+        {
+            builder.ConnectTimeout = DefaultConnectTimeoutSeconds;
+        }
+
+        if (!builder.ShouldSerialize("Connect Retry Count"))
+        {
+            builder.ConnectRetryCount = 0;
+        }
+
+        return builder.ConnectionString;
+    }
 
     public IReadOnlyDictionary<string, TableLookup> ReadTables(IReadOnlyList<TableRequest> requests)
         => Guarded(() => ReadTablesCore(requests));
@@ -89,27 +131,30 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
         // re-reading them would only repeat an answer it has.
         var candidateNames = new List<string>();
 
-        using (var command = connection.CreateCommand())
+        foreach (var batch in Batches(referencedNames))
         {
-            command.CommandText = $"""
-                SELECT DISTINCT ps.name, pt.name
-                FROM sys.foreign_keys fk
-                JOIN sys.tables pt ON pt.object_id = fk.parent_object_id
-                JOIN sys.schemas ps ON ps.schema_id = pt.schema_id
-                JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
-                WHERE rt.name IN ({InClause(referencedNames)})
-                """;
-            AddNameParameters(command, referencedNames);
-
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
+            using (var command = connection.CreateCommand())
             {
-                var schema = reader.GetString(0);
-                var name = reader.GetString(1);
+                command.CommandText = $"""
+                    SELECT DISTINCT ps.name, pt.name
+                    FROM sys.foreign_keys fk
+                    JOIN sys.tables pt ON pt.object_id = fk.parent_object_id
+                    JOIN sys.schemas ps ON ps.schema_id = pt.schema_id
+                    JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
+                    WHERE rt.name IN ({InClause(batch)})
+                    """;
+                AddNameParameters(command, batch);
 
-                if (!referenced.Contains((schema.ToLowerInvariant(), name.ToLowerInvariant())))
+                using var reader = command.ExecuteReader();
+                while (reader.Read())
                 {
-                    candidateNames.Add(name);
+                    var schema = reader.GetString(0);
+                    var name = reader.GetString(1);
+
+                    if (!referenced.Contains((schema.ToLowerInvariant(), name.ToLowerInvariant())))
+                    {
+                        candidateNames.Add(name);
+                    }
                 }
             }
         }
@@ -170,7 +215,7 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
     /// </summary>
     private SqlConnection Open()
     {
-        connection ??= new SqlConnection(connectionString);
+        connection ??= new SqlConnection(boundedConnectionString);
 
         if (connection.State == ConnectionState.Broken)
         {
@@ -242,37 +287,41 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
     {
         var columns = new Dictionary<(string Schema, string Table), List<ColumnImage>>();
 
-        using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            SELECT s.name, t.name, c.name, ty.name, c.max_length, c.precision, c.scale,
-                   c.is_nullable, c.is_identity, c.default_object_id
-            FROM sys.tables t
-            JOIN sys.schemas s ON s.schema_id = t.schema_id
-            JOIN sys.columns c ON c.object_id = t.object_id
-            JOIN sys.types ty ON ty.user_type_id = c.user_type_id
-            WHERE t.name IN ({InClause(names)})
-            ORDER BY s.name, t.name, c.column_id
-            """;
-        AddNameParameters(command, names);
-
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        foreach (var batch in Batches(names))
         {
-            var key = (reader.GetString(0), reader.GetString(1));
-            if (!columns.TryGetValue(key, out var list))
-            {
-                columns[key] = list = [];
-            }
+            using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT s.name, t.name, c.name, ty.name, c.max_length, c.precision, c.scale,
+                       c.is_nullable, c.is_identity, c.default_object_id
+                FROM sys.tables t
+                JOIN sys.schemas s ON s.schema_id = t.schema_id
+                JOIN sys.columns c ON c.object_id = t.object_id
+                JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+                WHERE t.name IN ({InClause(batch)})
+                ORDER BY s.name, t.name, c.column_id
+                """;
+            AddNameParameters(command, batch);
 
-            list.Add(ReadColumn(
-                name: reader.GetString(2),
-                sqlType: reader.GetString(3),
-                maxLength: reader.GetInt16(4),
-                precision: reader.GetByte(5),
-                scale: reader.GetByte(6),
-                isNullable: reader.GetBoolean(7),
-                isIdentity: reader.GetBoolean(8),
-                hasDefault: reader.GetInt32(9) != 0));
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var key = (reader.GetString(0), reader.GetString(1));
+                if (!columns.TryGetValue(key, out var list))
+                {
+                    columns[key] = list = [];
+                }
+
+                list.Add(ReadColumn(
+                    name: reader.GetString(2),
+                    sqlType: reader.GetString(3),
+                    maxLength: reader.GetInt16(4),
+                    precision: reader.GetByte(5),
+                    scale: reader.GetByte(6),
+                    isNullable: reader.GetBoolean(7),
+                    isIdentity: reader.GetBoolean(8),
+                    hasDefault: reader.GetInt32(9) != 0));
+
+            }
         }
 
         return columns;
@@ -283,29 +332,33 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
     {
         var keys = new Dictionary<(string Schema, string Table), List<string>>();
 
-        using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            SELECT s.name, t.name, col.name
-            FROM sys.key_constraints kc
-            JOIN sys.tables t ON t.object_id = kc.parent_object_id
-            JOIN sys.schemas s ON s.schema_id = t.schema_id
-            JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
-            JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
-            WHERE kc.type = 'PK' AND t.name IN ({InClause(names)})
-            ORDER BY s.name, t.name, ic.key_ordinal
-            """;
-        AddNameParameters(command, names);
-
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        foreach (var batch in Batches(names))
         {
-            var key = (reader.GetString(0), reader.GetString(1));
-            if (!keys.TryGetValue(key, out var list))
-            {
-                keys[key] = list = [];
-            }
+            using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT s.name, t.name, col.name
+                FROM sys.key_constraints kc
+                JOIN sys.tables t ON t.object_id = kc.parent_object_id
+                JOIN sys.schemas s ON s.schema_id = t.schema_id
+                JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+                JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+                WHERE kc.type = 'PK' AND t.name IN ({InClause(batch)})
+                ORDER BY s.name, t.name, ic.key_ordinal
+                """;
+            AddNameParameters(command, batch);
 
-            list.Add(reader.GetString(2));
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var key = (reader.GetString(0), reader.GetString(1));
+                if (!keys.TryGetValue(key, out var list))
+                {
+                    keys[key] = list = [];
+                }
+
+                list.Add(reader.GetString(2));
+
+            }
         }
 
         return keys;
@@ -323,52 +376,56 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
     {
         var uniques = new Dictionary<(string Schema, string Table), List<UniqueConstraintImage>>();
 
-        using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            SELECT s.name, t.name, kc.name, col.name
-            FROM sys.key_constraints kc
-            JOIN sys.tables t ON t.object_id = kc.parent_object_id
-            JOIN sys.schemas s ON s.schema_id = t.schema_id
-            JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
-            JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
-            WHERE kc.type = 'UQ' AND t.name IN ({InClause(names)})
-            ORDER BY s.name, t.name, kc.name, ic.key_ordinal
-            """;
-        AddNameParameters(command, names);
-
-        using var reader = command.ExecuteReader();
-        (string Schema, string Table, string Name)? current = null;
-        List<string> constraintColumns = [];
-
-        void Flush()
+        foreach (var batch in Batches(names))
         {
-            if (current is not { } c)
+            using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT s.name, t.name, kc.name, col.name
+                FROM sys.key_constraints kc
+                JOIN sys.tables t ON t.object_id = kc.parent_object_id
+                JOIN sys.schemas s ON s.schema_id = t.schema_id
+                JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+                JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+                WHERE kc.type = 'UQ' AND t.name IN ({InClause(batch)})
+                ORDER BY s.name, t.name, kc.name, ic.key_ordinal
+                """;
+            AddNameParameters(command, batch);
+
+            using var reader = command.ExecuteReader();
+            (string Schema, string Table, string Name)? current = null;
+            List<string> constraintColumns = [];
+
+            void Flush()
             {
-                return;
+                if (current is not { } c)
+                {
+                    return;
+                }
+
+                if (!uniques.TryGetValue((c.Schema, c.Table), out var list))
+                {
+                    uniques[(c.Schema, c.Table)] = list = [];
+                }
+
+                list.Add(new UniqueConstraintImage { Name = c.Name, Columns = constraintColumns });
+                constraintColumns = [];
             }
 
-            if (!uniques.TryGetValue((c.Schema, c.Table), out var list))
+            while (reader.Read())
             {
-                uniques[(c.Schema, c.Table)] = list = [];
+                var row = (Schema: reader.GetString(0), Table: reader.GetString(1), Name: reader.GetString(2));
+                if (current != row)
+                {
+                    Flush();
+                    current = row;
+                }
+
+                constraintColumns.Add(reader.GetString(3));
             }
 
-            list.Add(new UniqueConstraintImage { Name = c.Name, Columns = constraintColumns });
-            constraintColumns = [];
+
+            Flush();
         }
-
-        while (reader.Read())
-        {
-            var row = (Schema: reader.GetString(0), Table: reader.GetString(1), Name: reader.GetString(2));
-            if (current != row)
-            {
-                Flush();
-                current = row;
-            }
-
-            constraintColumns.Add(reader.GetString(3));
-        }
-
-        Flush();
 
         return uniques;
     }
@@ -378,66 +435,85 @@ public sealed class SqlServerCatalogReader(string connectionString) : ICatalogRe
     {
         var foreignKeys = new Dictionary<(string Schema, string Table), List<ForeignKeyImage>>();
 
-        using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            SELECT ps.name, pt.name, fk.name, pc.name, rs.name, rt.name, rc.name
-            FROM sys.foreign_keys fk
-            JOIN sys.tables pt ON pt.object_id = fk.parent_object_id
-            JOIN sys.schemas ps ON ps.schema_id = pt.schema_id
-            JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
-            JOIN sys.schemas rs ON rs.schema_id = rt.schema_id
-            JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
-            JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
-            JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
-            WHERE pt.name IN ({InClause(names)})
-            ORDER BY ps.name, pt.name, fk.name, fkc.constraint_column_id
-            """;
-        AddNameParameters(command, names);
-
-        using var reader = command.ExecuteReader();
-        (string Schema, string Table, string Fk)? current = null;
-        List<ForeignKeyColumn> pairs = [];
-        string referencedSchema = string.Empty, referencedTable = string.Empty;
-
-        void Flush()
+        foreach (var batch in Batches(names))
         {
-            if (current is not { } c)
+            using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT ps.name, pt.name, fk.name, pc.name, rs.name, rt.name, rc.name
+                FROM sys.foreign_keys fk
+                JOIN sys.tables pt ON pt.object_id = fk.parent_object_id
+                JOIN sys.schemas ps ON ps.schema_id = pt.schema_id
+                JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
+                JOIN sys.schemas rs ON rs.schema_id = rt.schema_id
+                JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+                JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
+                JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+                WHERE pt.name IN ({InClause(batch)})
+                ORDER BY ps.name, pt.name, fk.name, fkc.constraint_column_id
+                """;
+            AddNameParameters(command, batch);
+
+            using var reader = command.ExecuteReader();
+            (string Schema, string Table, string Fk)? current = null;
+            List<ForeignKeyColumn> pairs = [];
+            string referencedSchema = string.Empty, referencedTable = string.Empty;
+
+            void Flush()
             {
-                return;
+                if (current is not { } c)
+                {
+                    return;
+                }
+
+                if (!foreignKeys.TryGetValue((c.Schema, c.Table), out var list))
+                {
+                    foreignKeys[(c.Schema, c.Table)] = list = [];
+                }
+
+                list.Add(new ForeignKeyImage
+                {
+                    Name = c.Fk,
+                    ReferencedSchema = referencedSchema,
+                    ReferencedTable = referencedTable,
+                    Columns = pairs,
+                });
+                pairs = [];
             }
 
-            if (!foreignKeys.TryGetValue((c.Schema, c.Table), out var list))
+            while (reader.Read())
             {
-                foreignKeys[(c.Schema, c.Table)] = list = [];
+                var row = (Schema: reader.GetString(0), Table: reader.GetString(1), Fk: reader.GetString(2));
+                if (current != row)
+                {
+                    Flush();
+                    current = row;
+                }
+
+                referencedSchema = reader.GetString(4);
+                referencedTable = reader.GetString(5);
+                pairs.Add(new ForeignKeyColumn(reader.GetString(3), reader.GetString(6)));
             }
 
-            list.Add(new ForeignKeyImage
-            {
-                Name = c.Fk,
-                ReferencedSchema = referencedSchema,
-                ReferencedTable = referencedTable,
-                Columns = pairs,
-            });
-            pairs = [];
+
+            Flush();
         }
-
-        while (reader.Read())
-        {
-            var row = (Schema: reader.GetString(0), Table: reader.GetString(1), Fk: reader.GetString(2));
-            if (current != row)
-            {
-                Flush();
-                current = row;
-            }
-
-            referencedSchema = reader.GetString(4);
-            referencedTable = reader.GetString(5);
-            pairs.Add(new ForeignKeyColumn(reader.GetString(3), reader.GetString(6)));
-        }
-
-        Flush();
 
         return foreignKeys;
+    }
+
+    /// <summary>
+    /// SQL Server takes at most 2100 parameters in one command, and every name is one
+    /// (decision 197); a batch stays under that, and a project with more tables than that
+    /// is read in as many commands as it takes rather than refused as an unreachable catalog.
+    /// </summary>
+    private const int NamesPerCommand = 2000;
+
+    private static IEnumerable<IReadOnlyList<string>> Batches(IReadOnlyList<string> names)
+    {
+        for (var start = 0; start < names.Count; start += NamesPerCommand)
+        {
+            yield return [.. names.Skip(start).Take(NamesPerCommand)];
+        }
     }
 
     private static string InClause(IReadOnlyList<string> names)

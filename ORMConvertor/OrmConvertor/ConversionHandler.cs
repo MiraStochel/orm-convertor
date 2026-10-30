@@ -88,11 +88,25 @@ public static class ConversionHandler
         // the other pass leaves the unit alone, since the same text would end the same way.
         void RefuseTooDeep(UnitOutcome unit)
         {
-            if (!unit.TooDeep)
+            if (!unit.Refused)
             {
-                unit.TooDeep = true;
+                unit.Refused = true;
                 runRecords.Add(NotTranslated(targetOrm, unit.Source.ContentType, unit.Reference, ReaderStack.Reason));
             }
+        }
+
+        // The defects of the tool met during this run (decision 196): each one is a Failure
+        // record for the caller and an exception for the log. A reading that threw anything
+        // but a stack exhaustion refuses its unit for both passes - the same text would be
+        // read by the other pass over a model the failed reading may have left half filled -
+        // and what the reading had put into the model before it failed is taken out again.
+        var defects = new List<TranslationDefect>();
+
+        void RefuseDefective(UnitOutcome unit, string activity, Exception exception)
+        {
+            unit.Refused = true;
+            runRecords.Add(NotTranslated(targetOrm, unit.Source.ContentType, unit.Reference, TranslationDefect.Reason(activity, exception)));
+            defects.Add(new TranslationDefect(exception, Unit: unit.Reference));
         }
 
         // 1) Build entity maps using entity parsers only
@@ -107,11 +121,12 @@ public static class ConversionHandler
         // because its reading is their origin (decision 066).
         foreach (var parser in entityParsers)
         {
-            foreach (var unit in units.Where(u => parser.CanParse(u.Source.ContentType) && !u.TooDeep))
+            foreach (var unit in units.Where(u => parser.CanParse(u.Source.ContentType) && !u.Refused))
             {
                 unit.Claimed = true;
 
                 var recordsBefore = entityBuilder.Records.Count;
+                var mapsBefore = entityBuilder.EntityMaps.Count;
 
                 IReadOnlyCollection<EntityMap> read;
                 try
@@ -123,6 +138,16 @@ public static class ConversionHandler
                     // A reader that ran out of stack refuses its unit instead of ending the
                     // process (decision 191).
                     RefuseTooDeep(unit);
+                    continue;
+                }
+                catch (Exception exception)
+                {
+                    // A defect of the tool refuses the unit the same way (decision 196). The
+                    // maps the failed reading declared leave with it; what it stated about
+                    // maps other units declared cannot be told apart and stays.
+                    entityBuilder.AttributeRecords(recordsBefore, unit.Reference);
+                    entityBuilder.EntityMaps.RemoveRange(mapsBefore, entityBuilder.EntityMaps.Count - mapsBefore);
+                    RefuseDefective(unit, $"reading the unit {unit.Reference}", exception);
                     continue;
                 }
 
@@ -144,8 +169,23 @@ public static class ConversionHandler
         // queries formulate a demand of their own, served further down (decision 105).
         var catalogPhase = CatalogCompletion.Complete(entityBuilder, catalogReader, declaredSourceDialect);
 
-        // Emit entities for target ORM
-        results.AddRange(entityBuilder.Build());
+        // Emit entities for target ORM. One entity that cannot be generated is the builder's
+        // own record (decision 196); a defect in the phases over the whole model refuses the
+        // entity artifacts as a whole and says so about the run.
+        try
+        {
+            results.AddRange(entityBuilder.Build());
+        }
+        catch (Exception exception)
+        {
+            runRecords.Add(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Failure,
+                Framework = targetOrm,
+                Reason = TranslationDefect.Reason("generating the entities", exception),
+            });
+            defects.Add(new TranslationDefect(exception));
+        }
 
         // 2) Translate each query independently so we can return multiple query outputs.
         //    Records of the query builders join the entity builder's, because the caller
@@ -187,7 +227,7 @@ public static class ConversionHandler
             // Exactly one parser per source ORM claims a given query language, so the choice
             // does not depend on the order of the list (decision 025).
             var parser = queryParsers.FirstOrDefault(p => p.CanParse(unit.Source.ContentType));
-            if (parser is null || unit.TooDeep)
+            if (parser is null || unit.Refused)
             {
                 continue;
             }
@@ -211,41 +251,48 @@ public static class ConversionHandler
             try
             {
                 filled = parser.Parse(unit.Source.ContentType, unit.Source.Content, entityBuilder.EntityMaps);
+
+                // The size of the model as written (decision 194): a reader that compensates
+                // shares the operand it tests, so a model small in memory is written as many
+                // times over as it nests, and every walk after the reading follows the writing.
+                // Measured first, because the depth below walks the model as written too.
+                if (parseLimits.CapsQueryText)
+                {
+                    foreach (var builder in filled)
+                    {
+                        if (builder.WrittenNodes is var nodes && nodes > parseLimits.MaxQueryTextLength)
+                        {
+                            builder.Discard(QueryTextCap.ModelReason(nodes, parseLimits));
+                        }
+                    }
+                }
+
+                // The depth of the model (decision 191): a chain the text writes without a
+                // bracket is as deep in the model as it is long, and the cap of decision 092
+                // counts only brackets. Measured once here, between the reading and every walk
+                // after it, for all five query languages at once and against the same number.
+                if (parseLimits.CapsNesting)
+                {
+                    foreach (var builder in filled)
+                    {
+                        if (builder.ModelDepth is var depth && depth > parseLimits.MaxNestingDepth)
+                        {
+                            builder.Discard(ModelDepth.Reason(depth, parseLimits));
+                        }
+                    }
+                }
             }
             catch (InsufficientExecutionStackException)
             {
                 RefuseTooDeep(unit);
                 continue;
             }
-
-            // The size of the model as written (decision 194): a reader that compensates shares
-            // the operand it tests, so a model small in memory is written as many times over as
-            // it nests, and every walk after the reading follows the writing. Measured first,
-            // because the depth below walks the model as written too.
-            if (parseLimits.CapsQueryText)
+            catch (Exception exception)
             {
-                foreach (var builder in filled)
-                {
-                    if (builder.WrittenNodes is var nodes && nodes > parseLimits.MaxQueryTextLength)
-                    {
-                        builder.Discard(QueryTextCap.ModelReason(nodes, parseLimits));
-                    }
-                }
-            }
-
-            // The depth of the model (decision 191): a chain the text writes without a bracket
-            // is as deep in the model as it is long, and the cap of decision 092 counts only
-            // brackets. Measured once here, between the reading and every walk after it, for
-            // all five query languages at once and against the same number.
-            if (parseLimits.CapsNesting)
-            {
-                foreach (var builder in filled)
-                {
-                    if (builder.ModelDepth is var depth && depth > parseLimits.MaxNestingDepth)
-                    {
-                        builder.Discard(ModelDepth.Reason(depth, parseLimits));
-                    }
-                }
+                // A defect of the tool in the reading or in the measuring of what was read
+                // refuses the unit (decision 196).
+                RefuseDefective(unit, $"reading the unit {unit.Reference}", exception);
+                continue;
             }
 
             // An empty collection is no error in itself: a mapping document that carries no
@@ -271,10 +318,28 @@ public static class ConversionHandler
         {
             foreach (var queryBuilder in filled)
             {
+                // A defect of the tool met while generating this one query refuses the query
+                // and leaves the rest of the unit alone (decision 196); the builder's own
+                // records still leave with it below.
+                var built = new List<ConversionSource>();
+                try
+                {
+                    built.AddRange(queryBuilder.Build());
+                }
+                catch (Exception exception)
+                {
+                    queryRecords.Add(NotTranslated(
+                        targetOrm,
+                        unit.Source.ContentType,
+                        unit.Reference,
+                        TranslationDefect.Reason($"generating the query {queryBuilder.QueryName}", exception)) with { Query = queryBuilder.QueryName });
+                    defects.Add(new TranslationDefect(exception, Unit: unit.Reference, Query: queryBuilder.QueryName));
+                }
+
                 // A query artifact belongs to no entity and came from exactly this unit, so
                 // it leaves with the unit on it (decision 124) - stated here, where the loop
                 // knows the unit, rather than guessed from names on the client.
-                results.AddRange(queryBuilder.Build().Select(artifact => new ConversionSource
+                results.AddRange(built.Select(artifact => new ConversionSource
                 {
                     ContentType = artifact.ContentType,
                     Content = artifact.Content,
@@ -322,7 +387,7 @@ public static class ConversionHandler
                     unit.Reference,
                     $"{sourceOrm} has no parser for a {unit.Source.ContentType} unit, so it was not read.{hint}"));
             }
-            else if (!unit.Yielded && !unit.TooDeep)
+            else if (!unit.Yielded && !unit.Refused)
             {
                 runRecords.Add(NotTranslated(
                     targetOrm,
@@ -361,6 +426,7 @@ public static class ConversionHandler
             Sources = results,
             Records = [.. entityBuilder.Records, .. queryRecords, .. runRecords],
             Facts = [.. entityBuilder.Facts],
+            Defects = [.. defects, .. entityBuilder.Defects],
             CatalogState = catalog.ConnectionState,
             CatalogReadTime = catalog.ReadTime,
         };
@@ -430,7 +496,10 @@ public static class ConversionHandler
         /// <summary>An entity map or a query came of it.</summary>
         public bool Yielded { get; set; }
 
-        /// <summary>Its reading ran out of stack (decision 191); the refusal says all there is to say about it.</summary>
-        public bool TooDeep { get; set; }
+        /// <summary>
+        /// Its reading ran out of stack (decision 191) or met a defect of the tool (decision
+        /// 196); the refusal says all there is to say about it, and the other pass leaves it alone.
+        /// </summary>
+        public bool Refused { get; set; }
     }
 }

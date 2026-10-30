@@ -218,4 +218,22 @@ public class SqlServerCatalogReaderTest(TestSchemaFixture fixture)
         Assert.NotNull(lookups["Right"].Image);
         Assert.Null(lookups["Wrong"].Image);
     }
+
+    /// <summary>
+    /// SQL Server takes at most 2100 parameters in one command and every name candidate is
+    /// one; a request with more candidates than that is read in batches rather than refused
+    /// as an unreachable catalog (decision 197). The only candidate that resolves sits last,
+    /// so that it lands in the second command.
+    /// </summary>
+    [Fact]
+    public void ReadsMoreNameCandidatesThanOneCommandTakes()
+    {
+        fixture.SkipIfUnavailable();
+
+        var candidates = Enumerable.Range(0, 2500).Select(i => $"NoSuchTable{i}").Append("Customers").ToList();
+
+        var lookups = Read(new TableRequest("Customer", null, candidates));
+
+        Assert.Equal("Customers", lookups["Customer"].Image?.Name);
+    }
 }

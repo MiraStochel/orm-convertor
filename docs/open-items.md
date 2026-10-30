@@ -31,6 +31,7 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | [Úplnost mapování po kategoriích faktů](#úplnost-mapování-po-kategoriích-faktů) | Užitečné | práce | | T2, T3 |
 | [Artefakt EclipseLinku se vlastním parserem nepřečte](#artefakt-eclipselinku-s-čárkou-oddělenými-kořeny-vlastní-parser-jpql-odmítá) | Dotazy | rozhodnutí | | F9, F11 |
 | [Tabulka `User` v SQL bez uvozovek](#tabulka-se-jménem-vyhrazeného-slova-jde-do-sql-bez-uvozovek) | Dotazy | práce | projekt | F11 |
+| [Počet jednotek bez limitu a nadlineární čas](#počet-jednotek-nemá-limit-a-čas-s-ním-roste-nadlineárně) | Užitečné | rozhodnutí | | S3, S4 |
 
 ---
 
@@ -157,6 +158,11 @@ Join bez asociace uvnitř poddotazu píše builder pro EclipseLink jako výčet 
 *Vada. Zjištění [běhu celého vstupu 2026-10-30](./runs/2026-10-30-whole-input.md); builder SQL sdíleného projektu `TransactSql` (rozh. [082](./decisions/082-t-sql-read-and-written-by-a-shared-project.md)). Požadavek F11.*
 
 Entita `User` příkladu Cofoundry jde do SQL cílů Dapper a MyBatis jako `FROM User AS u` bez uvozovek; `USER` je vyhrazené slovo T-SQL, server dotaz odmítne a ScriptDom ho nepřečte (v běhu celého vstupu devět dotazů „Incorrect syntax near 'User'“). Builder má jméno tabulky a sloupce, které je vyhrazeným slovem T-SQL, psát v hranatých závorkách; seznam vyhrazených slov nese ScriptDom. Experimentální běh vadu neukázal, protože příklad bez schématu končí na třetím stupni a SQL se nespouští.
+
+#### Počet jednotek nemá limit a čas s ním roste nadlineárně
+*Rozhodnutí. Zjištění revize odolnosti [2026-10-30](./audits/2026-10-30-robustness-audit.md), nález 3.3; [`threat-model.md`](./threat-model.md), hrozba 2; strop zanoření rozh. [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md) jako vzor limitu, který je faktem instance. Požadavky S3, S4.*
+
+Čas překladu roste s počtem jednotek v jednom požadavku od zhruba pěti tisíc kvadraticky (měřeno 2026-10-30 na MIS2 přes HTTP, entity EF Core s referencí na sousední do NHibernatu: 2 000 jednotek do 2 s, 10 000 za 31 s, 20 000 za 149 s s odpovědí 55 MB) a požadavek nemá limit počtu ani celkové velikosti jednotek — tělo omezuje jen výchozí strop Kestrelu 30 MB. Pod nárokem S3 pro projekty, které nástroj dostává, ale hrozba 2 vede limit jako nenárokovaný. Je třeba rozhodnout, zda limit počtu a celkové velikosti jednotek stanovit jako fakt instance vrácený v odpovědi, po vzoru stropu zanoření, a najít, kde čas vzniká — kandidáty jsou průchody nad všemi mapami na každou entitu (rozlišení jmen, párování vztahů, junction entity).
 
 ## Mimo rozsah
 
