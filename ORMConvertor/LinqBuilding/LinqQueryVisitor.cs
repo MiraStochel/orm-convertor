@@ -41,6 +41,36 @@ public abstract class LinqQueryVisitor(
     protected ExpressionTyping Typing { get; } = typing;
 
     /// <summary>
+    /// The limits the conversion runs under (decision 194), lent by the builder: the text of an
+    /// operand is held to <see cref="ParseLimits.MaxQueryTextLength"/> as it is written, because
+    /// a comparison tested for NULL writes its operand twice and an operand that nests such a
+    /// comparison doubles at every level.
+    /// </summary>
+    public ParseLimits Limits { get; set; } = ParseLimits.Default;
+
+    /// <summary>
+    /// Whether the cap on the text was reached in this chain, held by the outermost visitor so
+    /// that the nested scopes of one query report it once (decision 066).
+    /// </summary>
+    private bool TextCapped
+    {
+        get => outer?.TextCapped ?? textCapped;
+        set
+        {
+            if (outer is not null)
+            {
+                outer.TextCapped = value;
+            }
+            else
+            {
+                textCapped = value;
+            }
+        }
+    }
+
+    private bool textCapped;
+
+    /// <summary>
     /// True while the final projection of the chain is being written - the Select the rows
     /// come back through -, where a provider may evaluate an expression on the client rather
     /// than translate it (decision 118); set by the builder's projection step.
@@ -923,7 +953,32 @@ public abstract class LinqQueryVisitor(
     /// an expression (decision 107), or a column; an aggregate over any of the last three is
     /// the aggregate call over the group's elements.
     /// </summary>
+    /// <summary>
+    /// The text of an operand, held to the cap on the text of one query (decision 194). Every
+    /// place that writes an operand twice - the NULL test of a comparison, the guard of a
+    /// concatenation, the lambda of a quantifier - takes the text from here, so a text past the
+    /// cap is caught at the latest one doubling after it crosses; the operand is then written as
+    /// nothing and the query refused once.
+    /// </summary>
     public string Operand(QueryOperand operand)
+    {
+        var text = WriteOperand(operand);
+
+        if (Limits.CapsQueryText && text.Length > Limits.MaxQueryTextLength)
+        {
+            if (!TextCapped)
+            {
+                TextCapped = true;
+                report(ConversionRecordKind.Failure, QueryTextCap.TextReason("An operand of the query, written in LINQ with the tests for NULL it needs,", text.Length, Limits), QueryFeature.Expression);
+            }
+
+            return string.Empty;
+        }
+
+        return text;
+    }
+
+    private string WriteOperand(QueryOperand operand)
     {
         if (operand.IsValueList)
         {

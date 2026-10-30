@@ -70,6 +70,13 @@ public sealed class ConversionResult
     /// </summary>
     public required int MaxNestingDepth { get; init; }
 
+    /// <summary>
+    /// How many characters the text of one query was allowed on this run, or <see cref="ParseLimits.Unlimited"/>
+    /// where the operator switched the cap off (decision 194). Beside <see cref="MaxNestingDepth"/>
+    /// for the same reason: a query refused for its length on one instance translates on another.
+    /// </summary>
+    public required int MaxQueryTextLength { get; init; }
+
     public required List<ConversionSource> Sources { get; init; }
 
     public required List<ConversionRecord> Records { get; init; }

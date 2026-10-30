@@ -196,6 +196,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 191 | [Hloubku modelu omezuje totéž číslo jako text: řetězy bez závorek měří model po čtení, CASE až po END a řadu prefixových operátorů počítá text před gramatikou, a čtečka, které dochází zásobník, jednotku odmítne](191-the-depth-of-the-model-is-capped-by-the-same-number-as-the-text-and-a-reader-that-runs-out-of-stack-refuses.md) | platí; nahrazuje výčet toho, co strop počítá, a ohraničení emisní strany rozh. 092 | F11, S4, S7, S3 |
 | 192 | [NHibernate drží HQL u řetězu do 32 článků a hlubší dotaz jde nativním SQL: mez vlastního parseru cíle vyslovuje deskriptor, ne strop nástroje](192-nhibernate-is-held-to-a-chain-of-thirty-two-links-and-a-deeper-query-goes-out-in-native-sql.md) | platí | F11, T3, S4 |
 | 193 | [Virtuální stroj Dockeru má 12 GB, aby se do něj vešel součet mezí všeho, co v něm běží současně](193-the-docker-vm-has-twelve-gigabytes-so-that-the-limits-inside-it-add-up-to-less-than-it.md) | platí; nahrazuje 8 GB paměti virtuálního stroje rozh. 145 | S5, S6, T3 |
+| 194 | [Text jednoho dotazu má strop délky: týmž číslem se měří model po čtení, operand LINQ při zápisu, rozvinutí `<include>` MyBatisu a hotový artefakt, a delší dotaz je odmítnut](194-the-text-of-one-query-is-capped-and-the-same-number-holds-the-model-as-written-the-linq-operand-the-mybatis-include-and-the-finished-artifact.md) | platí | S3, S4, F11 |
 
 ## Formát
 

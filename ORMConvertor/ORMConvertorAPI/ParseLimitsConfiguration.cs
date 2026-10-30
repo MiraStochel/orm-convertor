@@ -3,12 +3,12 @@ using AbstractWrappers;
 namespace ORMConvertorAPI;
 
 /// <summary>
-/// Where the parse limits of decision 092 come from: the application's own configuration,
+/// Where the limits of decisions 092 and 194 come from: the application's own configuration,
 /// read once at startup and registered as one value for the lifetime of the process.
 ///
 /// Never from a conversion request. The input a cap defends against must not be able to
-/// carry permission to exceed it, so the limit has no field in <c>ConvertRequest</c> and the
-/// endpoint takes it from the container instead of from the body.
+/// carry permission to exceed it, so the limits have no field in <c>ConvertRequest</c> and the
+/// endpoint takes them from the container instead of from the body.
 /// </summary>
 public static class ParseLimitsConfiguration
 {
@@ -21,14 +21,24 @@ public static class ParseLimitsConfiguration
     /// </summary>
     public const string Key = "Parsing:MaxNestingDepth";
 
+    /// <summary>
+    /// <c>Parsing:MaxQueryTextLength</c> - the cap on the text of one query (decision 194), read
+    /// the same way, stated once in <see cref="ParseLimits.DefaultMaxQueryTextLength"/>, and
+    /// switched off by <see cref="ParseLimits.Unlimited"/> like the depth.
+    /// </summary>
+    public const string QueryTextKey = "Parsing:MaxQueryTextLength";
+
     public static ParseLimits Read(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var configured = configuration.GetValue<int?>(Key);
+        var depth = configuration.GetValue<int?>(Key);
+        var queryText = configuration.GetValue<int?>(QueryTextKey);
 
-        return configured is null
-            ? ParseLimits.Default
-            : new ParseLimits { MaxNestingDepth = configured.Value };
+        return new ParseLimits
+        {
+            MaxNestingDepth = depth ?? ParseLimits.DefaultMaxNestingDepth,
+            MaxQueryTextLength = queryText ?? ParseLimits.DefaultMaxQueryTextLength,
+        };
     }
 }

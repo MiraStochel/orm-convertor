@@ -164,6 +164,7 @@ public static class ConversionHandler
                 ?? throw new InvalidOperationException($"{targetOrm} has no query builder.");
 
             builder.EntityMaps = entityBuilder.EntityMaps;
+            builder.Limits = parseLimits;
 
             return builder;
         }
@@ -215,6 +216,21 @@ public static class ConversionHandler
             {
                 RefuseTooDeep(unit);
                 continue;
+            }
+
+            // The size of the model as written (decision 194): a reader that compensates shares
+            // the operand it tests, so a model small in memory is written as many times over as
+            // it nests, and every walk after the reading follows the writing. Measured first,
+            // because the depth below walks the model as written too.
+            if (parseLimits.CapsQueryText)
+            {
+                foreach (var builder in filled)
+                {
+                    if (builder.WrittenNodes is var nodes && nodes > parseLimits.MaxQueryTextLength)
+                    {
+                        builder.Discard(QueryTextCap.ModelReason(nodes, parseLimits));
+                    }
+                }
             }
 
             // The depth of the model (decision 191): a chain the text writes without a bracket
@@ -341,6 +357,7 @@ public static class ConversionHandler
             TargetDatabaseDialect = entityBuilder.Descriptor.Dialect,
             DeclaredSourceDialect = declaredSourceDialect,
             MaxNestingDepth = parseLimits.MaxNestingDepth,
+            MaxQueryTextLength = parseLimits.MaxQueryTextLength,
             Sources = results,
             Records = [.. entityBuilder.Records, .. queryRecords, .. runRecords],
             Facts = [.. entityBuilder.Facts],

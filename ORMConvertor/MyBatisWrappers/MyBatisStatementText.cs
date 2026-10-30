@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using JavaEntityParsing;
@@ -40,10 +41,12 @@ namespace MyBatisWrappers;
 /// of raw text as it arrives, before anything is substituted, because afterwards it cannot
 /// be made at all.
 /// </summary>
+/// <param name="limits">The limits the conversion runs under (decision 194): the statement, with its includes expanded, is held to <see cref="ParseLimits.MaxQueryTextLength"/> while it expands, because a fragment inlined twice doubles with every level of fragments.</param>
 internal sealed partial class MyBatisStatementText(
     MyBatisReadingContext context,
     string namespaceName,
-    Action<ConversionRecordKind, string, QueryFeature?> report)
+    Action<ConversionRecordKind, string, QueryFeature?> report,
+    ParseLimits limits)
 {
     private static readonly Regex Placeholder = new(@"#\{([^}]*)\}", RegexOptions.CultureInvariant);
 
@@ -96,6 +99,13 @@ internal sealed partial class MyBatisStatementText(
     {
         foreach (var node in nodes)
         {
+            // A refused statement is not expanded further: past the cap of decision 194 every
+            // further include would double a text that is already refused.
+            if (refused)
+            {
+                return;
+            }
+
             switch (node)
             {
                 case XText text:
@@ -219,6 +229,15 @@ internal sealed partial class MyBatisStatementText(
         expanding.Add((fragment, refId));
         AppendNodes(fragment.Nodes(), sql, substitutions);
         expanding.RemoveAt(expanding.Count - 1);
+
+        // The cap on the text of one query (decision 194), held as the statement expands: a
+        // fragment that inlines another twice doubles the text with every level of fragments,
+        // and MyBatis itself would expand it to the same length. Checked after every include,
+        // so the text is at most one doubling past the cap when it is refused.
+        if (!refused && limits.CapsQueryText && sql.Length > limits.MaxQueryTextLength)
+        {
+            Refuse(QueryTextCap.TextReason($"The statement, with <include refid=\"{refId}\"> expanded,", sql.Length, limits));
+        }
     }
 
     /// <summary>The fragments whose &lt;include&gt; is being expanded, outermost first, each with the refid that named it.</summary>

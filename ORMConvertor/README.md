@@ -114,6 +114,7 @@ No connection string has a value in the repository, except the disposable creden
 | `ASPNETCORE_ENVIRONMENT` | API | `Development`: Swagger UI, user secrets. Unset: `Production`. | launch profiles, compose, CI |
 | `ASPNETCORE_URLS` | API | Listening address. | image `runtime`, CI |
 | `Parsing:MaxNestingDepth` | API | Depth cap of the text and of the model (decisions [092](../docs/decisions/092-input-nesting-depth-capped-before-the-descent.md), [191](../docs/decisions/191-the-depth-of-the-model-is-capped-by-the-same-number-as-the-text-and-a-reader-that-runs-out-of-stack-refuses.md)); `0` is off. Unset: 128. | `appsettings.json`, env |
+| `Parsing:MaxQueryTextLength` | API | Cap on the characters of one query's text, held over the model as written, the LINQ operand and the MyBatis include while they are written, and the finished artifact (decision [194](../docs/decisions/194-the-text-of-one-query-is-capped-and-the-same-number-holds-the-model-as-written-the-linq-operand-the-mybatis-include-and-the-finished-artifact.md)); `0` is off. Unset: 1048576. | `appsettings.json`, env |
 | `ORMCONVERTOR_CATALOG_DATABASE` | compose | Catalog of `ormconvertor`. Unset: `WideWorldImporters`; `LdbcSnb` for the LDBC queries, `Fiben` for the FIBEN catalog. | shell |
 | `LDBC_SCALE_FACTOR` | compose | `1`, another Interactive v1 scale factor (`0.1`, `0.3`, `3`, `10`, …) or `none` (no `LdbcSnb`). | shell |
 | `LDBC_TEST_SCALE_FACTOR` | compose, profile `test` | Scale factor of `test_db`. Unset: `0.1`. | shell |

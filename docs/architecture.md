@@ -392,7 +392,17 @@ Kapitola popisuje mechanismus: které třídy co čtou a zapisují a podle jaký
   | zásobník čtečky | `ReaderStack.Ensure` v `SqlQueryReader.ReadCondition`/`ReadOperand`, `LinqQueryParser.ParseCondition`/`ReadOperand`, `ParseNot`/`ParsePrimaryOperand` HQL a JPQL | hráz, ne mez: `InsufficientExecutionStackException` (i Roslynova) | `ConversionHandler` v obou průchodech: jeden `Failure` na jednotku (`ReaderStack.Reason`), druhý průchod ji vynechá |
 
   Jednotka nad stropem nevydá nic, ostatní pokračují (rozh. [045](./decisions/045-a-conversion-that-produced-nothing-says-so.md)). LINQ čte řetěz `?:` jako jeden CASE s tolika větvemi, takže je v modelu plochý.
-- Mez `ParseLimits.DefaultMaxNestingDepth` = 128 dá `ParserFactory.Create` každému parseru (`IParser.Limits`); `ConversionHandler.Convert` ji bere nepovinně, API při startu (`ParseLimitsConfiguration`, klíč `Parsing:MaxNestingDepth`, `0` vypíná text i model, hráz zásobníku zůstává). `ConvertRequest` ji změnit nemůže.
+- **Strop délky textu dotazu** (rozh. [194](./decisions/194-the-text-of-one-query-is-capped-and-the-same-number-holds-the-model-as-written-the-linq-operand-the-mybatis-include-and-the-finished-artifact.md)) je jedno číslo, `ParseLimits.MaxQueryTextLength` (výchozí 2^20 znaků), měřené čtyřikrát, protože dva zápisy rozh. [156](./decisions/156-a-linq-predicate-carries-sql-three-valued-logic-in-both-directions.md) píší operand dvakrát — test na `NULL` vedle porovnání v LINQ, `<> OR IS NULL` čtené z EF Core nad sdíleným operandem — a `<include>` MyBatisu vloží fragment tolikrát, kolikrát je pojmenovaný, takže operand, který nese další takové porovnání, zdvojí text na každé úrovni:
+
+  | Kde | Co se počítá | Překročení |
+  |---|---|---|
+  | model, po čtení, před hloubkou | `QueryTextCap.WrittenNodes` přes `AbstractQueryBuilder.WrittenNodes`: uzly modelu, jak je cíl píše — sdílený uzel tolikrát, kolikrát je dosažen —, memoizace podle reference; každý uzel se píše nejméně jedním znakem | `Discard`: `Failure` s počtem uzlů |
+  | operand LINQ při zápisu | `LinqQueryVisitor.Operand` obaluje `WriteOperand`: délka textu operandu; každé zdvojení (test na `NULL`, stráž konkatenace, lambda kvantifikátoru) bere text odsud | `Failure` jednou za dotaz (`TextCapped` drží nejvnějšnější visitor), operand prázdný |
+  | rozvinutí `<include>` | `MyBatisStatementText.AppendInclude`: délka rozvinutého příkazu po každém `<include>` | `Failure` se jménem fragmentu; `AppendNodes` dál nerozvíjí |
+  | hotový artefakt | `AbstractQueryBuilder.ExceedsTextCap` v `Build` a `SecondForm`: délka textu každého artefaktu dotazu | `Failure` formy; u druhé formy `Omitted`, závazná stojí |
+
+  Entitní artefakty strop nemají. Čas každého průchodu je lineární v délce výstupu (`Combined/NestedShapeTimeTest`); strop drží `Combined/QueryTextCapTest`.
+- Meze `ParseLimits.DefaultMaxNestingDepth` = 128 a `DefaultMaxQueryTextLength` = 2^20 dá `ParserFactory.Create` každému parseru (`IParser.Limits`) a `ConversionHandler` každému builderu dotazu (`AbstractQueryBuilder.Limits`, dědí druhá forma, builder nativního SQL i visitor LINQ); `ConversionHandler.Convert` je bere nepovinně, API při startu (`ParseLimitsConfiguration`, klíče `Parsing:MaxNestingDepth` a `Parsing:MaxQueryTextLength`, `0` vypíná — u zanoření text i model, hráz zásobníku zůstává). `ConvertRequest` je změnit nemůže.
 
 **Čtení C# tříd** dědí .NET entitní parsery ze `CSharpEntityParser` (projekt `CSharpEntityParsing`, Roslyn; rozh. [026](./decisions/026-home-of-shared-query-reading.md)).
 
@@ -803,6 +813,7 @@ Převod vrací vedle artefaktů diagnostické záznamy (rozh. [010](./decisions/
 | `TargetDatabaseDialect` | systém, pro který platí doslovné typy sloupců | [086](./decisions/086-target-database-dialect-declared-by-the-descriptor.md) |
 | `DeclaredSourceDialect` | dialekt vyslovený zdrojem; `null` = nic | [088](./decisions/088-a-declared-foreign-source-dialect-is-not-read.md) |
 | `MaxNestingDepth` | strop hloubky textu i modelu; `0` = vypnutý | [092](./decisions/092-input-nesting-depth-capped-before-the-descent.md), [191](./decisions/191-the-depth-of-the-model-is-capped-by-the-same-number-as-the-text-and-a-reader-that-runs-out-of-stack-refuses.md) |
+| `MaxQueryTextLength` | strop délky textu jednoho dotazu ve znacích; `0` = vypnutý | [194](./decisions/194-the-text-of-one-query-is-capped-and-the-same-number-holds-the-model-as-written-the-linq-operand-the-mybatis-include-and-the-finished-artifact.md) |
 | `ToolVersion` | `ToolRelease.Version` z `<Version>` v `Directory.Build.props`, bez `+commit` | [034](./decisions/034-central-version-management.md) |
 
 Frontend ukazuje fakta běhu v pásu nad výstupem a záznamy pod ním, po entitách s `Failure` první (§6.3). Výjimka je vyhrazená chybě programu; neparsovatelný vstup je záznam (rozh. [093](./decisions/093-unreadable-input-is-a-unit-failure.md)).
@@ -1293,6 +1304,7 @@ flowchart TD
 | Krok | Drží | Záznam |
 |---|---|---|
 | hloubka řetězu | `ModelDepth` proti `TargetFrameworkDescriptor.ChainDepth`, kde vlastní parser cíle přeteče zásobník pod stropem rozh. 191 — NHibernate 32 (rozh. [192](./decisions/192-nhibernate-is-held-to-a-chain-of-thirty-two-links-and-a-deeper-query-goes-out-in-native-sql.md), `NHibernate/NHibernateChainDepthProviderTest`); nativní SQL se neměří | `Fallback` `Expression` → nativní SQL |
+| délka textu | `ExceedsTextCap` po krocích v `Build` i nad druhou formou a nativním SQL: žádný artefakt dotazu delší než `Limits.MaxQueryTextLength` (rozh. [194](./decisions/194-the-text-of-one-query-is-capped-and-the-same-number-holds-the-model-as-written-the-linq-operand-the-mybatis-include-and-the-finished-artifact.md)); místa, kde text roste násobením, měří už při zápisu (§5, *Společná pravidla čtení*) | `Failure` `Expression`; u druhé formy `Omitted` |
 | `GateDefinitions` | jméno jedno na dotaz, žádný dopředný ani laterální odkaz, pojmenované sloupce; rekurzivní definice podle rekurzivního `WITH` SQL Serveru; cíl bez mezivýsledku či rekurze ukončí pokus; limit bez rekurze → `Convention` | `Failure` `IntermediateResult` |
 | `GateRecursiveColumns` | sloupce rekurzivního členu proti kotvě (počet, skalár); `COUNT` je `Long`, takže odmítne i člen, který by SQL Server přijal | `Failure` `IntermediateResult` |
 | `TypeTemporalLiterals` | řetězec ISO 8601 u časového sloupce či poddotazu → časový skalár | `Failure` `Filtering` |

@@ -32,6 +32,9 @@ namespace ORMConvertorAPI.Dtos;
 /// the operator switched the cap off (decision 092). It stands beside the tool version for
 /// the same reason that one does: S2 promises determinism for the same version of the tool,
 /// and a movable cap is the second thing the answer depends on.</param>
+/// <param name="MaxQueryTextLength">How many characters the text of one query was allowed on
+/// this instance, or 0 where the operator switched the cap off (decision 194); beside
+/// <paramref name="MaxNestingDepth"/> for the same reason.</param>
 /// <param name="Sources">The generated artifacts. Each carries the entity it was generated
 /// for and the input units that declared it, or the one unit a query came from (decision
 /// 124) - the pairing of output with input is the server's statement, not a client's
@@ -54,4 +57,5 @@ public record ConvertResponse(
     CatalogConnectionState CatalogState,
     double? CatalogReadMilliseconds = null,
     SourceSqlDialect? DeclaredSourceDialect = null,
-    int MaxNestingDepth = ParseLimits.DefaultMaxNestingDepth);
+    int MaxNestingDepth = ParseLimits.DefaultMaxNestingDepth,
+    int MaxQueryTextLength = ParseLimits.DefaultMaxQueryTextLength);

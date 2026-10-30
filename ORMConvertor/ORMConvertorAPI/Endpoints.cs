@@ -133,7 +133,8 @@ public static class Endpoints
                 converted.CatalogState,
                 converted.CatalogReadTime?.TotalMilliseconds,
                 converted.DeclaredSourceDialect,
-                converted.MaxNestingDepth));
+                converted.MaxNestingDepth,
+                converted.MaxQueryTextLength));
         }
         catch (Exception e)
         {

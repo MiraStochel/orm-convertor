@@ -123,7 +123,7 @@ public sealed class MyBatisAnnotationQueryParser(
             return builder;
         }
 
-        var text = new MyBatisStatementText(context, namespaceName, (kind, reason, feature) => Report(builder, kind, reason, feature));
+        var text = new MyBatisStatementText(context, namespaceName, (kind, reason, feature) => Report(builder, kind, reason, feature), Limits);
 
         foreach (var (name, facts) in StatedParameters(namespaceName, method.Name, parameterType: null, entityMaps))
         {

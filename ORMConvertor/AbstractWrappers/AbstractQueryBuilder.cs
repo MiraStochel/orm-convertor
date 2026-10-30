@@ -52,6 +52,14 @@ public abstract partial class AbstractQueryBuilder
     public IReadOnlyList<EntityMap> EntityMaps { get; set; } = [];
 
     /// <summary>
+    /// The limits this conversion runs under (decision 194), handed over by the orchestration
+    /// before <see cref="Build"/> like <see cref="EntityMaps"/>: the text of one query - the
+    /// finished artifact of either form, and an operand of LINQ while it is written - is held
+    /// to <see cref="ParseLimits.MaxQueryTextLength"/>.
+    /// </summary>
+    public ParseLimits Limits { get; set; } = ParseLimits.Default;
+
+    /// <summary>
     /// Associates each table alias used by the query with the entity it stands for, so that
     /// a condition naming a column can be rendered as a property.
     /// </summary>
@@ -185,6 +193,13 @@ public abstract partial class AbstractQueryBuilder
 
     /// <summary>The depth of the model the parser left in this builder: its instructions and the definitions they read (decision 191).</summary>
     public int ModelDepth => AbstractWrappers.ModelDepth.Of(instructions.Concat<QueryInstruction>(definitions));
+
+    /// <summary>
+    /// How many nodes the model the parser left in this builder writes (decision 194), a shared
+    /// node counted each time a target would write it; clamped at one past the cap of
+    /// <see cref="Limits"/>, which is all the orchestration compares it against.
+    /// </summary>
+    public long WrittenNodes => QueryTextCap.WrittenNodes(instructions.Concat<QueryInstruction>(definitions), Limits.MaxQueryTextLength);
 
     /// <summary>
     /// Refuses the query and drops what the parser read into it (decision 191), so that no walk
@@ -641,7 +656,7 @@ public abstract partial class AbstractQueryBuilder
 
         var artifacts = BuildArtifacts();
 
-        if (refused)
+        if (refused || ExceedsTextCap(artifacts))
         {
             return [];
         }
@@ -676,6 +691,7 @@ public abstract partial class AbstractQueryBuilder
 
         second.writesSecondForm = true;
         second.EntityMaps = EntityMaps;
+        second.Limits = Limits;
         second.QueryName = QueryName;
         second.instructions.AddRange(instructions);
         second.definitions.AddRange(definitions);
@@ -683,7 +699,7 @@ public abstract partial class AbstractQueryBuilder
 
         var artifacts = second.BuildArtifacts();
 
-        if (second.refused || second.unspoken.Count > 0)
+        if (second.refused || second.ExceedsTextCap(artifacts) || second.unspoken.Count > 0)
         {
             var standing = $"so the query has no {second.FormName} form and the {FormName} form stands alone";
 
@@ -735,6 +751,30 @@ public abstract partial class AbstractQueryBuilder
     /// dialect the artifact is bound to from now on. A refusal of the fallback - a shape the
     /// API cannot take, a gate no target passes - refuses the query.
     /// </summary>
+    /// <summary>
+    /// The cap of decision 194 over the finished text: an artifact longer than
+    /// <see cref="ParseLimits.MaxQueryTextLength"/> is refused, whichever step wrote it - the
+    /// multiplying places are held while they write, this holds the claim that no longer query
+    /// leaves the tool. Reported through the channel, so a second form becomes an omission and
+    /// the fallback a failure the way every other refusal does.
+    /// </summary>
+    private bool ExceedsTextCap(List<ConversionSource> artifacts)
+    {
+        if (!Limits.CapsQueryText)
+        {
+            return false;
+        }
+
+        var longest = artifacts.MaxBy(artifact => artifact.Content.Length);
+        if (longest is null || longest.Content.Length <= Limits.MaxQueryTextLength)
+        {
+            return false;
+        }
+
+        Report(ConversionRecordKind.Failure, QueryTextCap.TextReason($"The {FormName} form of the query", longest.Content.Length, Limits), QueryFeature.Expression);
+        return true;
+    }
+
     private List<ConversionSource> FallBack(int attempt)
     {
         var gaps = unspoken.DistinctBy(gap => (gap.Feature, gap.Reason)).ToList();
@@ -759,6 +799,7 @@ public abstract partial class AbstractQueryBuilder
 
         fallback.writesNativeSql = true;
         fallback.EntityMaps = EntityMaps;
+        fallback.Limits = Limits;
         fallback.QueryName = QueryName;
         fallback.instructions.AddRange(instructions);
         fallback.definitions.AddRange(definitions);

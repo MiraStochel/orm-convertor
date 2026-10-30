@@ -137,7 +137,7 @@ public sealed class MyBatisMapperInterfaceParser(
             return;
         }
 
-        var text = new MyBatisStatementText(context, namespaceName, (_, _, _) => { });
+        var text = new MyBatisStatementText(context, namespaceName, (_, _, _) => { }, Limits);
         ReadRenamedColumns(entityMap, text.FromAnnotationText(statement), declaredSourceDialect, at: null);
     }
 

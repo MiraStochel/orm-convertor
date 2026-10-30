@@ -132,7 +132,7 @@ public sealed class MyBatisXmlMappingParser(
                 continue;
             }
 
-            var text = new MyBatisStatementText(context, namespaceName, (_, _, _) => { });
+            var text = new MyBatisStatementText(context, namespaceName, (_, _, _) => { }, Limits);
             ReadRenamedColumns(entityMap, text.FromElement(select), declaredSourceDialect, XmlSource.RangeOf(select));
 
             if (!read.Contains(entityMap))

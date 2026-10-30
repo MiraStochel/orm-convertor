@@ -117,6 +117,7 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
         // quantified comparison (decision 119): the nested scope has closed by then, so the
         // lookup by name is the builder's to lend.
         created.EntityByName = EntityFor;
+        created.Limits = Limits;
         return created;
     }
 
