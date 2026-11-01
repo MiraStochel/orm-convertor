@@ -411,6 +411,14 @@ public static class QueryShapeInputs
             linq: [".Union(", "ctx.Set<ShopProduct>()"],
             jpa: ["union", "p.ProductName as Text"]),
 
+        // A chain of two operations; the JPQL targets write it bare from the left, because
+        // EclipseLink takes no parenthesized operand, which the builder tests of both assert
+        // over the text and the Java suite over the framework.
+        ["SetOperationChain"] = Hallmarks(
+            sql: ["UNION", "EXCEPT", "p.UnitPrice < 20"],
+            linq: [".Union(", ".Except("],
+            jpa: ["union", "except", "p.UnitPrice < 20"]),
+
         ["DistinctProjection"] = Hallmarks(
             sql: ["SELECT DISTINCT ol.ProductId"],
             linq: [".Distinct()"],

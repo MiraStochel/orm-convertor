@@ -1,0 +1,5 @@
+select ol.Description as Text from ShopOrderLine ol where ol.Quantity > 5
+union
+select p.ProductName as Text from ShopProduct p where p.UnitPrice > 100
+except
+select p.ProductName as Text from ShopProduct p where p.UnitPrice < 20

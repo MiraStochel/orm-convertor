@@ -567,9 +567,11 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
 
     /// <summary>
     /// Set operations, standard since JPQL 3.2: each operand rendered through the eight
-    /// steps and joined by the operator; a nested operation is parenthesized so that its
-    /// grouping survives. An ordering or a slice over the composed result has no place in
-    /// the text - the ordering is dropped with a record, a slice refuses (decision 060).
+    /// steps and joined by the operator; a chain is written bare from the left and only a
+    /// nested right operand is parenthesized, so that its grouping survives
+    /// (<see cref="RenderSetOperand"/>). An ordering or a slice over the composed result has
+    /// no place in the text - the ordering is dropped with a record, a slice refuses
+    /// (decision 060).
     /// </summary>
     protected override List<ConversionSource> BuildSetOperation(SetOperationInstruction instruction)
     {
@@ -659,8 +661,8 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
     /// </param>
     private string? RenderSetOperation(SetOperationInstruction instruction, bool spread = false)
     {
-        var left = RenderSetOperand(instruction.Left, spread);
-        var right = RenderSetOperand(instruction.Right, spread);
+        var left = RenderSetOperand(instruction.Left, spread, rightSide: false);
+        var right = RenderSetOperand(instruction.Right, spread, rightSide: true);
         if (left is null || right is null)
         {
             return null;
@@ -685,12 +687,40 @@ public abstract class AbstractJpaQueryBuilder : AbstractQueryBuilder
         return $"{left}\n{keyword}\n{right}";
     }
 
-    private string? RenderSetOperand(SubQueryInstruction operand, bool spread)
+    /// <summary>
+    /// One operand of a set operation: a SELECT through the eight steps, or a nested set
+    /// operation. A chain is left-associated in the representation - every reader folds
+    /// A op B op C into (A op B) op C, the SQL reader after SQL Server's precedence - and
+    /// both implementations read a bare chain the same way whatever its operators
+    /// (measured 2026-11-01 by the Java suite's SetOperationChainClaimsTest of each:
+    /// "a union b intersect c" is (a union b) intersect c under Hibernate 7.4.5 and under
+    /// EclipseLink 5.0.0 alike), so a nested left operand is written bare and its grouping
+    /// survives without parentheses. A nested right operand - A UNION (B INTERSECT C) - has
+    /// to say its grouping out loud: Hibernate takes the parentheses, EclipseLink's parser
+    /// takes none anywhere in a chain (the same measurement; a leading one it refuses as
+    /// "The query does not start with a valid identifier"), so under that profile the
+    /// operation goes out in native SQL (decision 113).
+    /// </summary>
+    /// <param name="rightSide">Whether the operand is the right one of its operation.</param>
+    private string? RenderSetOperand(SubQueryInstruction operand, bool spread, bool rightSide)
     {
         var body = Unwrap(operand.Instructions);
 
         if (body.Count == 1 && body[0] is SetOperationInstruction nested)
         {
+            if (!rightSide)
+            {
+                return RenderSetOperation(nested, spread);
+            }
+
+            if (Profile.RefusesParenthesizedSetOperands)
+            {
+                ReportUnspoken(
+                    $"{Profile.Implementation} takes no parenthesized operand of a set operation, and a nested right operand has no other spelling of its grouping",
+                    QueryFeature.SetOperation);
+                return null;
+            }
+
             var text = RenderSetOperation(nested, spread);
             return text is null ? null : $"({text})";
         }

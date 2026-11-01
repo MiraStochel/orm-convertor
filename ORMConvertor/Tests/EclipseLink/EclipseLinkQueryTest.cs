@@ -182,6 +182,55 @@ public class EclipseLinkQueryTest
         Assert.Contains("em.createNativeQuery(", Method(result));
     }
 
+    /// <summary>
+    /// A chain of set operations is written bare from the left: the readers fold it to the
+    /// left, EclipseLink 5.0.0 reads a bare chain the same way and takes no parenthesized
+    /// operand at all (the Java suite's eclipselink/SetOperationChainClaimsTest), so the text
+    /// opens with the first member and no parenthesis stands around an operand.
+    /// </summary>
+    [Fact]
+    public void AChainOfSetOperationsIsWrittenBareFromTheLeft()
+    {
+        var result = ConvertShop($"""
+            SELECT ol.Description AS Text FROM {QueryShapeInputs.Schema}.ShopOrderLines AS ol WHERE ol.Quantity > 5
+            UNION
+            SELECT p.ProductName AS Text FROM {QueryShapeInputs.Schema}.ShopProducts AS p WHERE p.UnitPrice > 100
+            EXCEPT
+            SELECT p.ProductName AS Text FROM {QueryShapeInputs.Schema}.ShopProducts AS p WHERE p.UnitPrice < 20
+            """);
+
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        Assert.Equal(
+            "select ol.Description as Text from ShopOrderLine ol where ol.Quantity > 5\n"
+            + "union\n"
+            + "select p.ProductName as Text from ShopProduct p where p.UnitPrice > 100\n"
+            + "except\n"
+            + "select p.ProductName as Text from ShopProduct p where p.UnitPrice < 20",
+            Jpql(result).Replace("\r\n", "\n"));
+    }
+
+    /// <summary>
+    /// A nested right operand - the reader groups A UNION B INTERSECT C after SQL Server's
+    /// precedence as A UNION (B INTERSECT C) - has no spelling without parentheses, which
+    /// EclipseLink refuses, so the query goes out in native SQL with the record (decision 113).
+    /// </summary>
+    [Fact]
+    public void ANestedRightOperandOfASetOperationSendsTheQueryToNativeSql()
+    {
+        var result = ConvertShop($"""
+            SELECT ol.Description AS Text FROM {QueryShapeInputs.Schema}.ShopOrderLines AS ol WHERE ol.Quantity > 5
+            UNION
+            SELECT p.ProductName AS Text FROM {QueryShapeInputs.Schema}.ShopProducts AS p WHERE p.UnitPrice > 100
+            INTERSECT
+            SELECT p.ProductName AS Text FROM {QueryShapeInputs.Schema}.ShopProducts AS p WHERE p.UnitPrice < 20
+            """);
+
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.SetOperation && r.Reason.Contains("parenthesized operand", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.JpqlQuery);
+        Assert.Contains("em.createNativeQuery(", Method(result));
+    }
+
     private static readonly string AggregateOverAJoinedEntityInHaving = $"""
         SELECT o.CustomerId AS CustomerId, SUM(ol.Quantity) AS Total
         FROM {QueryShapeInputs.Schema}.ShopOrders AS o

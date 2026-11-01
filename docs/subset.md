@@ -54,7 +54,7 @@ Jak cíl konstrukci píše (*jazyk* = svým dotazovým jazykem, *SQL* = `Fallbac
 | agregát přes celý výsledek bez seskupení | jazyk | jazyk | SQL | jazyk | jazyk | jazyk |
 | druh joinu (vnitřní, levý, pravý, plný; křížový všude, [196]: SQL `CROSS JOIN`, HQL `cross join`, JPQL další proměnná rozsahu, LINQ `SelectMany` nad druhým kořenem; v Hibernatu entity join za čárkou s podmínkou na jiný kořen SQL) | jazyk | jazyk | jazyk; plný složením `LeftJoin`, `Concat`, `RightJoin` ([065]); pravý a plný s podmínkou nad rámec rovností SQL | jazyk; plný SQL | jazyk | jazyk; plný SQL ([180]); vnější s podmínkou na alias vnitřního joinu SQL |
 | join uvnitř poddotazu | jazyk | jazyk | jazyk | jazyk | jazyk | jazyk; vnitřní jako proměnná rozsahu s podmínkou ve `where`, vnější SQL |
-| množinová operace | jazyk | jazyk | jazyk | SQL | jazyk | jazyk; v poddotazu SQL |
+| množinová operace | jazyk | jazyk | jazyk | SQL | jazyk | jazyk; v poddotazu a s vnořeným pravým operandem SQL |
 | mezivýsledek (`WITH`, odvozená tabulka) | jazyk | jazyk | jazyk (proměnná metody) | SQL | jazyk | SQL |
 | rekurze | jazyk | jazyk | SQL | SQL | jazyk; limit hintem na objektu dotazu ([139]) | SQL |
 | seskupení podle výrazu | jazyk | jazyk | jazyk | jazyk | jazyk | jazyk; klíč s literálem s hintem `eclipselink.jdbc.bind-parameters` = `false` na objektu dotazu |
@@ -319,6 +319,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 |---|---|---|---|---|
 | `IN`, kvantifikované či skalární porovnání s poddotazem, který nemá právě jednu projekci (u těla množinové operace rozhoduje nejlevější člen) | SQL by ho odmítlo za běhu | `Failure` (b) | VM | [061], [120] |
 | poddotaz v operandu s tělem množinové operace do NHibernatu a EclipseLinku; skalární porovnání s takovým tělem do LINQ | HQL 5.7 množinovou operaci nemá, parser EclipseLinku 5.0.0 ji v poddotazu odmítne; složené řádky nemají jeden koncový agregát, který by LINQ vzal | `Fallback` (z) | VM | [113], [120] |
+| množinová operace s vnořeným pravým operandem do EclipseLinku — `A UNION (B INTERSECT C)` i `A UNION B INTERSECT C`, které čtečka T-SQL přeskupí podle precedence SQL Serveru | parser EclipseLinku 5.0.0 nevezme uzávorkovaný operand na žádné straně a holý řetěz čte zleva, takže vnořený pravý operand nemá zápis; levý operand řetězu builder píše holý (změřeno `eclipselink/SetOperationChainClaimsTest`) | `Fallback` (z) | VM | [113] |
 | množinová operace, jejíž člen má entitní join, do EclipseLinku | EclipseLink 5.0.0 vypustí joiny člena z SQL a vrátí řádky jeho kořene (změřeno katalogem FIBEN: 49 870 řádků za 189) | `Fallback` (z) | VM | [113], [149] |
 | řazení uvnitř poddotazu či těla definice bez výřezu | T-SQL ho tam nepřipouští, řádky nemění | `Loss` | VM | [061], [112] |
 | výřez v poddotazu či operandu množinové operace do HQL a JPQL; literálový počet řádků nad `Int32` do EF Core, NHibernatu a JPA | text výřez nemá, je na objektu dotazu; API jsou 32bitová | `Fallback` (z) | VM | [060], [113] |

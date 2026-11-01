@@ -52,6 +52,9 @@
 --                   of a single piece is the one the filter of more than one piece drops;
 --   set operation   the description 'Zither' of a line with Quantity > 5 is also the name of
 --                   a product above 100, so UNION meets on it and UNION ALL would not;
+--   chain           that UNION, EXCEPT the products priced below 20, loses the line 'Whistle' -
+--                   a row of the first member; read as a UNION (b EXCEPT c) the chain would
+--                   keep it, so the two groupings differ by one row;
 --   DISTINCT        ten lines over six products;
 --   IN (1, 2, 3)    five lines; IN (1, 2, 5) another five;
 --   collection      products 2 and 4 have four lines between them;

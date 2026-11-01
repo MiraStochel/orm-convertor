@@ -231,6 +231,18 @@ EclipseLink = eclipselink/FindSetOperation.jpql
 MyBatis = mybatis/FindSetOperationMapper.xml
 fallbackBy = NHibernate:SetOperation
 
+# A chain of two operations, read left to right: (a UNION b) EXCEPT c. The member excepted
+# last takes away a row the first brought in, which a regrouping as a UNION (b EXCEPT c) would
+# keep; the JPQL targets write the chain bare, because EclipseLink takes no parenthesized
+# operand (its claims test SetOperationChainClaimsTest).
+[SetOperationChain]
+Dapper = dapper/FindSetOperationChain.sql
+EFCore = efcore/FindSetOperationChain.query.cs
+Hibernate = hibernate/FindSetOperationChain.jpql
+EclipseLink = eclipselink/FindSetOperationChain.jpql
+MyBatis = mybatis/FindSetOperationChainMapper.xml
+fallbackBy = NHibernate:SetOperation
+
 [DistinctProjection]
 Dapper = dapper/FindDistinctProjection.sql
 EFCore = efcore/FindDistinctProjection.query.cs

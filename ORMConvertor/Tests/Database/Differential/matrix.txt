@@ -262,6 +262,15 @@ shape = projection
 orderingKey = none
 mutations = operator
 
+# The chain is read left to right, (a UNION b) EXCEPT c: the member excepted last takes away a
+# row the first brought in, which a target regrouping it as a UNION (b EXCEPT c) would keep.
+[SetOperationChain]
+category = SetOperationChain
+fields = Text
+shape = projection
+orderingKey = none
+mutations = operator
+
 [DistinctProjection]
 category = DistinctProjection
 fields = ProductId

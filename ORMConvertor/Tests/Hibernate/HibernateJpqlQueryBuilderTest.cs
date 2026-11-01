@@ -95,6 +95,50 @@ public class HibernateJpqlQueryBuilderTest
         Assert.Contains("select c.CustomerName from Customer c where c.CreditLimit > 2000", jpql);
     }
 
+    /// <summary>
+    /// A chain is written bare from the left - the readers fold it to the left and Hibernate
+    /// 7.4.5 reads a bare chain the same way (the Java suite's
+    /// hibernate/SetOperationChainClaimsTest) - and a nested right operand keeps its
+    /// parentheses, which Hibernate takes: here the reader's regrouping of
+    /// A UNION B INTERSECT C after SQL Server's precedence.
+    /// </summary>
+    [Fact]
+    public void AChainOfSetOperationsIsWrittenBareFromTheLeftAndParenthesizedOnTheRight()
+    {
+        var chain = Convert(ORMEnum.Dapper, """
+            SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CreditLimit > 2000
+            UNION
+            SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CreditLimit < 10
+            EXCEPT
+            SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CreditLimit = 100
+            """, ConversionContentType.SqlQuery);
+
+        Assert.Equal(
+            "select c.CustomerName from Customer c where c.CreditLimit > 2000\n"
+            + "union\n"
+            + "select c.CustomerName from Customer c where c.CreditLimit < 10\n"
+            + "except\n"
+            + "select c.CustomerName from Customer c where c.CreditLimit = 100",
+            Jpql(chain).Replace("\r\n", "\n"));
+
+        var rightNested = Convert(ORMEnum.Dapper, """
+            SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CreditLimit > 2000
+            UNION
+            SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CreditLimit < 10
+            INTERSECT
+            SELECT c.CustomerName FROM Sales.Customers AS c WHERE c.CreditLimit = 100
+            """, ConversionContentType.SqlQuery);
+
+        Assert.DoesNotContain(rightNested.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        Assert.Equal(
+            "select c.CustomerName from Customer c where c.CreditLimit > 2000\n"
+            + "union\n"
+            + "(select c.CustomerName from Customer c where c.CreditLimit < 10\n"
+            + "intersect\n"
+            + "select c.CustomerName from Customer c where c.CreditLimit = 100)",
+            Jpql(rightNested).Replace("\r\n", "\n"));
+    }
+
     [Fact]
     public void ASubQueryFromSqlIsWrittenInJpql()
     {
