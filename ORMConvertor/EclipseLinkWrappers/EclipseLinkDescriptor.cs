@@ -129,6 +129,17 @@ public static class EclipseLinkDescriptor
         // the left operand of a chain bare, and a nested right operand goes out in native SQL.
         RefusesParenthesizedSetOperands: true,
 
+        // Measured against 5.0.0 on 2026-11-01 after the Java half of the limits run of
+        // 2026-10-30 (series case) and pinned by the Java suite (eclipselink/NestedCaseClaimsTest):
+        // a CASE whose ELSE holds a CASE - directly, or under coalesce - goes to SQL Server as
+        // "CASE ELSE CASE WHEN … WHEN … ELSE ? END END", the outer WHEN branches moved into the
+        // inner CASE, and the server refuses it ("Incorrect syntax near the keyword 'ELSE'");
+        // parentheses change nothing, a CASE in a THEN, in a WHEN or beside another in an
+        // operation is written as it stands. The builder writes a CASE directly in the ELSE as
+        // one CASE with the inner branches appended, which is the same value; a CASE deeper
+        // under the ELSE goes out in native SQL (decision 201).
+        MovesTheOuterBranchesIntoACaseInElse: true,
+
         // Measured the same way: the inner entity joins stand in the list of tables after every
         // outer join ("FROM Message t2 LEFT OUTER JOIN Person_knows_Person t3 ON (... t0 ...),
         // Person t1, Message t0"), so the on of an outer join naming an inner join's alias is

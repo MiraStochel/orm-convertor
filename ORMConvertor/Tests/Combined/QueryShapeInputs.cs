@@ -524,6 +524,16 @@ public static class QueryShapeInputs
             hql: ["case when ol.Quantity > 5 then 'bulk' else 'single' end as Volume"],
             jpa: ["case when ol.Quantity > 5 then 'bulk' else 'single' end as Volume"]),
 
+        // A CASE in the ELSE of a CASE. The marks are common to the nested and the flat
+        // spelling, because LINQ reads the ?: chain as one CASE and EclipseLink is written one
+        // whatever the source (decision 201; its claims test NestedCaseClaimsTest).
+        ["CaseNestedInAnElseInAProjection"] = Hallmarks(
+            sql: ["CASE WHEN ol.Quantity > 10 THEN 'bulk'", "ol.Quantity > 5 THEN 'several' ELSE 'single' END"],
+            linq: ["Volume = (ol.Quantity > 10 ? \"bulk\" : ", "ol.Quantity > 5 ? \"several\" : \"single\")"],
+            hql: ["case when ol.Quantity > 10 then 'bulk'", "ol.Quantity > 5 then 'several' else 'single' end"],
+            jpa: ["case when ol.Quantity > 10 then 'bulk'", "ol.Quantity > 5 then 'several' else 'single' end"],
+            eclipseLink: ["case when ol.Quantity > 10 then 'bulk' when ol.Quantity > 5 then 'several' else 'single' end as Volume"]),
+
         // The flag of IS 7 (decision 122): a CASE in the projection whose condition is a
         // correlated EXISTS. SQL, HQL and JPQL keep the keyword inside the CASE, LINQ writes
         // the filtered chain and Any() as the condition of the conditional operator. The

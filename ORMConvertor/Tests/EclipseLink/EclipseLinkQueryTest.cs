@@ -405,6 +405,56 @@ public class EclipseLinkQueryTest
     }
 
     /// <summary>A Dapper query over the shop domain of the matrices, into EclipseLink.</summary>
+    /// <summary>
+    /// A CASE in the ELSE of a CASE is written as one CASE with the inner branches after the
+    /// outer ones: EclipseLink 5.0.0 moves the outer WHEN branches into a CASE under the ELSE
+    /// and SQL Server refuses the result (the Java suite's eclipselink/NestedCaseClaimsTest),
+    /// and the flat CASE is the same value (decision 201). Three levels fold into one.
+    /// </summary>
+    [Fact]
+    public void ACaseInTheElseOfACaseIsWrittenAsOneCase()
+    {
+        var result = ConvertShop($"""
+            SELECT ol.LineNumber AS LineNumber,
+                   CASE WHEN ol.Quantity > 10 THEN 'bulk' ELSE CASE WHEN ol.Quantity > 5 THEN 'several' ELSE CASE WHEN ol.Quantity > 2 THEN 'few' ELSE 'single' END END END AS Volume
+            FROM {QueryShapeInputs.Schema}.ShopOrderLines AS ol
+            """);
+
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        Assert.Contains(
+            "case when ol.Quantity > 10 then 'bulk' when ol.Quantity > 5 then 'several' when ol.Quantity > 2 then 'few' else 'single' end as Volume",
+            Jpql(result));
+    }
+
+    /// <summary>
+    /// A CASE deeper under the ELSE - here under COALESCE - has no flat spelling, and EclipseLink
+    /// would lose the outer branches there too (the same claims test), so the query goes out in
+    /// native SQL with the record (decision 113). A CASE in a THEN stays where it is.
+    /// </summary>
+    [Fact]
+    public void ACaseUnderAnExpressionOfTheElseSendsTheQueryToNativeSql()
+    {
+        var result = ConvertShop($"""
+            SELECT ol.LineNumber AS LineNumber,
+                   CASE WHEN ol.Quantity > 10 THEN 'bulk' ELSE COALESCE(CASE WHEN ol.Quantity > 5 THEN 'several' END, 'single') END AS Volume
+            FROM {QueryShapeInputs.Schema}.ShopOrderLines AS ol
+            """);
+
+        Assert.Contains(result.Records, r =>
+            r.Kind == ConversionRecordKind.Fallback && r.Feature == QueryFeature.Expression && r.Reason.Contains("under its else", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Sources, s => s.ContentType == ConversionContentType.JpqlQuery);
+        Assert.Contains("em.createNativeQuery(", Method(result));
+
+        var inThen = ConvertShop($"""
+            SELECT ol.LineNumber AS LineNumber,
+                   CASE WHEN ol.Quantity > 5 THEN CASE WHEN ol.Quantity > 10 THEN 'bulk' ELSE 'several' END ELSE 'single' END AS Volume
+            FROM {QueryShapeInputs.Schema}.ShopOrderLines AS ol
+            """);
+
+        Assert.DoesNotContain(inThen.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        Assert.Contains("case when ol.Quantity > 5 then case when ol.Quantity > 10 then 'bulk' else 'several' end else 'single' end as Volume", Jpql(inThen));
+    }
+
     private static ConversionResult ConvertShop(string sql)
         => ConversionHandler.Convert(ORMEnum.Dapper, ORMEnum.EclipseLink,
         [

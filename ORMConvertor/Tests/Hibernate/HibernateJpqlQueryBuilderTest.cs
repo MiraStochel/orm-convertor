@@ -207,4 +207,23 @@ public class HibernateJpqlQueryBuilderTest
         Assert.DoesNotContain(result.Sources, s => s.ContentType.IsQuery());
         Assert.Contains(result.Records, r => r.Kind == ConversionRecordKind.Failure && r.Feature == QueryFeature.QueryParameter);
     }
+
+    /// <summary>
+    /// A CASE in the ELSE of a CASE keeps its nesting for Hibernate, which writes it as it
+    /// stands and answers the rows the nesting means (the Java suite's
+    /// hibernate/NestedCaseClaimsTest); only EclipseLink's profile folds it (decision 201).
+    /// </summary>
+    [Fact]
+    public void ACaseInTheElseOfACaseStaysNested()
+    {
+        var result = Convert(ORMEnum.Dapper, """
+            SELECT c.CustomerName, CASE WHEN c.CreditLimit > 2000 THEN 'gold' ELSE CASE WHEN c.CreditLimit > 100 THEN 'silver' ELSE 'none' END END AS Tier
+            FROM Sales.Customers AS c
+            """, ConversionContentType.SqlQuery);
+
+        Assert.DoesNotContain(result.Records, r => r.Kind == ConversionRecordKind.Fallback);
+        Assert.Contains(
+            "case when c.CreditLimit > 2000 then 'gold' else case when c.CreditLimit > 100 then 'silver' else 'none' end end as Tier",
+            Jpql(result));
+    }
 }

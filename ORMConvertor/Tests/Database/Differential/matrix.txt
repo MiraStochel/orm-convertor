@@ -390,6 +390,16 @@ shape = projection
 orderingKey = none
 mutations =
 
+# A CASE whose ELSE holds another CASE: 'bulk' over ten pieces, 'several' over five, 'single'
+# below - two of each band and six singles over the ten lines. A target that lost the outer
+# branches would fail at run time, one that regrouped them would band other lines.
+[CaseNestedInAnElseInAProjection]
+category = CaseNestedInAnElseInAProjection
+fields = LineNumber, Volume
+shape = projection
+orderingKey = none
+mutations =
+
 # The flag of IS 7 (decision 122): 1 where a line has an allocation, 0 where it has none,
 # four of each over the eight lines of more than one piece. The swap of two projected
 # fields does not reach a CASE, as above; the filter and its operator do.

@@ -550,9 +550,142 @@ public sealed class JpqlQueryVisitor(
             };
         }
 
-        var branches = string.Join(" ", expression.Branches!.Select(b => $"when {b.When.Accept(this)} then {Operand(b.Then)}"));
-        var otherwise = expression.Else is null ? "null" : Operand(expression.Else);
-        return $"case {branches} else {otherwise} end";
+        return Case(expression);
+    }
+
+    /// <summary>
+    /// A searched CASE, whose else the grammar demands, so a CASE without one writes
+    /// <c>else null</c>. Under an implementation that moves the outer WHEN branches into a
+    /// CASE found under the ELSE (<see cref="JpaImplementationProfile.MovesTheOuterBranchesIntoACaseInElse"/>;
+    /// EclipseLink 5.0.0, measured by the Java suite's eclipselink/NestedCaseClaimsTest) a
+    /// CASE directly in the ELSE is written as one CASE with the inner branches after the
+    /// outer ones - the same value, because the model's CASE is searched and the inner CASE is
+    /// reached only where no outer branch held (decision 201) -, and a CASE deeper under the
+    /// ELSE, which no respelling reaches, sends the query out in native SQL (decision 113).
+    /// </summary>
+    private string Case(QueryExpression expression)
+    {
+        var branches = expression.Branches!;
+        var otherwise = expression.Else;
+
+        if (profile?.MovesTheOuterBranchesIntoACaseInElse == true)
+        {
+            var flattened = new List<CaseBranch>(branches);
+            while (otherwise is { IsExpression: true, Expression.IsCase: true })
+            {
+                flattened.AddRange(otherwise.Expression!.Branches!);
+                otherwise = otherwise.Expression.Else;
+            }
+
+            branches = flattened;
+
+            if (otherwise is not null && HoldsACase(otherwise))
+            {
+                report(
+                    ConversionRecordKind.Fallback,
+                    $"{profile.Implementation} moves the branches of a CASE into the CASE under its else, so the else '{otherwise}' would leave the outer CASE without a branch",
+                    QueryFeature.Expression);
+                return string.Empty;
+            }
+        }
+
+        var whens = string.Join(" ", branches.Select(b => $"when {b.When.Accept(this)} then {Operand(b.Then)}"));
+        return $"case {whens} else {(otherwise is null ? "null" : Operand(otherwise))} end";
+    }
+
+    /// <summary>
+    /// Whether a CASE stands anywhere under the operand: in its expression, in the conditions
+    /// of a CASE inside it, or in a subquery of it at any depth - EclipseLink 5.0.0 moves the
+    /// branches into a CASE inside a subquery of the ELSE as well (the same claims test).
+    /// </summary>
+    private static bool HoldsACase(QueryOperand operand)
+    {
+        var pending = new Stack<object>();
+        pending.Push(operand);
+
+        while (pending.Count > 0)
+        {
+            switch (pending.Pop())
+            {
+                case QueryOperand o:
+                    if (o.Expression is { } expression)
+                    {
+                        if (expression.IsCase)
+                        {
+                            return true;
+                        }
+
+                        foreach (var inner in OperandStructure.Inside(expression))
+                        {
+                            pending.Push(inner);
+                        }
+                    }
+
+                    if (o.SubQuery is { } subQuery)
+                    {
+                        pending.Push(subQuery);
+                    }
+
+                    foreach (var value in o.Values ?? [])
+                    {
+                        pending.Push(value);
+                    }
+
+                    break;
+                case SubQueryInstruction nested:
+                    foreach (var instruction in nested.Instructions)
+                    {
+                        pending.Push(instruction);
+                    }
+
+                    break;
+                case ProjectInstruction projection:
+                    pending.Push(projection.Operand);
+                    break;
+                case OrderByInstruction order:
+                    pending.Push(order.Operand);
+                    break;
+                case GroupByInstruction grouping:
+                    pending.Push(grouping.Key);
+                    break;
+                case SelectInstruction filter:
+                    pending.Push(filter.Condition);
+                    break;
+                case HavingInstruction postFilter:
+                    pending.Push(postFilter.Condition);
+                    break;
+                case JoinInstruction { OnCondition: { } joinCondition }:
+                    pending.Push(joinCondition);
+                    break;
+                case SetOperationInstruction set:
+                    pending.Push(set.Left);
+                    pending.Push(set.Right);
+                    break;
+                case WithInstruction definition:
+                    pending.Push(definition.Body);
+                    break;
+                case NotCondition negation:
+                    pending.Push(negation.Operand);
+                    break;
+                case LogicalCondition logical:
+                    foreach (var condition in logical.Operands)
+                    {
+                        pending.Push(condition);
+                    }
+
+                    break;
+                case ComparisonCondition comparison:
+                    pending.Push(comparison.Left);
+                    if (comparison.Right is { } right)
+                    {
+                        pending.Push(right);
+                    }
+
+                    break;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

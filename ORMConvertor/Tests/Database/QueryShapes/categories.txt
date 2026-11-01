@@ -397,6 +397,19 @@ Hibernate = hibernate/FindCaseInAProjection.jpql
 EclipseLink = eclipselink/FindCaseInAProjection.jpql
 MyBatis = mybatis/FindCaseInAProjectionMapper.xml
 
+# A CASE whose ELSE holds another CASE - the chain a price band is usually written as. The
+# JPQL builder writes it for EclipseLink as one CASE with the inner branches appended, because
+# EclipseLink 5.0.0 moves the outer WHEN branches into a CASE under the ELSE (its claims test
+# NestedCaseClaimsTest, decision 201); Hibernate keeps the nesting. LINQ reads the ?: chain
+# as one CASE, so from EF Core every target gets the flat spelling.
+[CaseNestedInAnElseInAProjection]
+Dapper = dapper/FindCaseNestedInAnElseInAProjection.sql
+EFCore = efcore/FindCaseNestedInAnElseInAProjection.query.cs
+NHibernate = nhibernate/FindCaseNestedInAnElseInAProjection.hql
+Hibernate = hibernate/FindCaseNestedInAnElseInAProjection.jpql
+EclipseLink = eclipselink/FindCaseNestedInAnElseInAProjection.jpql
+MyBatis = mybatis/FindCaseNestedInAnElseInAProjectionMapper.xml
+
 # The flag of IS 7 (decision 122): a CASE in the projection whose condition is a correlated
 # EXISTS, 1 where the row exists and 0 where it does not - whether the author of a reply
 # knows the author of the message. Here whether a line has an allocation, over the lines of
