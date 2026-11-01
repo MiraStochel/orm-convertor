@@ -171,6 +171,15 @@
                 <version>${maven-surefire-plugin.version}</version>
                 <configuration>
                     <trimStackTrace>false</trimStackTrace>
+                    <!-- The forked JVM takes the memory of its container - decision 193 sized the
+                         suite's container at 6 GB, and the JVM's default heap is a quarter of it -
+                         and ends itself on an OutOfMemoryError instead of running on with one
+                         thread dead: on 2026-10-31 the OOM of one point of the limits run killed
+                         the HttpClient's selector thread and every later point was a false
+                         "crashed". A run that ends this way is started again over the same
+                         directory and continues where it was (decision 195); the point it died
+                         on is "crashed". -->
+                    <argLine>-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError</argLine>
                 </configuration>
                 <!-- The JUnit Platform provider, declared so that dependency:go-offline
                      bakes it into the image; Surefire would otherwise fetch it at run time. -->
