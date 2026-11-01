@@ -660,7 +660,8 @@ internal static class WebAttempts
 
     private static readonly string[] Numbers = ["seconds", "tokensIn", "tokensOut", "costUsd", "credits"];
 
-    private static readonly string[] Channels = ["console", "chat"];
+    /// <summary>The channels of an attempt: the two of decision 189 the operator makes by hand, and <c>api</c> of decision 202, which the driver fills.</summary>
+    private static readonly string[] Channels = ["console", "chat", ApiAttempts.Channel];
 
     public static string? RunDirectory
         => Environment.GetEnvironmentVariable(RunVariable) is { } directory && !string.IsNullOrWhiteSpace(directory) ? directory.Trim() : null;
@@ -782,7 +783,7 @@ internal static class WebAttempts
             var channel = row.GetValueOrDefault("channel", string.Empty).ToLowerInvariant();
             if (row.GetValueOrDefault("model", string.Empty).Length == 0 || !Channels.Contains(channel))
             {
-                report.Problems.Add($"{id}: {AttemptsFileName} states no model, or a channel other than {string.Join(" or ", Channels)}; the operator writes both (decision 189).");
+                report.Problems.Add($"{id}: {AttemptsFileName} states no model, or a channel other than {string.Join(", ", Channels)}; the operator writes both (decision 189), or the driver of the channel api does (decision 202).");
                 continue;
             }
 
@@ -997,7 +998,7 @@ internal static class WebAttempts
         })];
     }
 
-    private static void WriteTable(string file, IEnumerable<Dictionary<string, string>> rows)
+    internal static void WriteTable(string file, IEnumerable<Dictionary<string, string>> rows)
     {
         var text = new StringBuilder();
         text.Append(string.Join('\t', Columns)).Append('\n');

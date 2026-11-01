@@ -299,6 +299,41 @@ Attempts of a language model made by hand in a web frontend (decision [189](../d
 
 Steps 2 and 4 need neither a database nor an instance of the tool. A recorded run goes into [`docs/runs/`](../docs/runs/README.md) with the frontends and channels, the templates, the cells and why they were chosen, the refused replies per model, the training cut-off each vendor states for its model, and the sums of time, tokens, cost and credits where the channel had them. A comparison of time with the tool is made from console or API attempts only; chat attempts contribute correctness, not time.
 
+### A language model over an API
+
+The same run, with step 3 made by a driver instead of the operator (decision [202](../docs/decisions/202-the-driver-over-an-api-is-an-on-demand-run-over-an-openai-compatible-endpoint-the-channel-api-is-the-third-and-the-pilot-model-is-qwen35-9b-pinned-by-file-hash-and-image-digest.md)): every attempt without a reply is sent as the one user message of a chat completion - no system prompt, no tool - to an OpenAI-compatible endpoint, the content of the answer becomes `reply.md`, and the row of `attempts.tsv` is filled from the settings, the answer and the driver's clock (`channel` `api`, `seconds` around the whole call, `tokensIn`/`tokensOut` as the endpoint counted them, `costUsd` from the prices of the settings). The endpoint is a local server or a vendor's API; the prompts, the import and the rest of the steps are the same.
+
+- **The pilot model** is Qwen3.5-9B, quantization Q4_K_M, in the llama.cpp server on the CPU - the strongest open-weight model that fits a 16 GB machine; the record states the SHA-256 of the model file and the digest of the server image, so the same bytes can be run again. On MIS3 (4 cores, 12 GB for the Docker VM) one attempt of a matrix cell takes about ten minutes: a prompt of ~1 700 tokens at ~13 tokens per second and a reply of ~1 300 at ~2.7. Download `Qwen3.5-9B-Q4_K_M.gguf` from `unsloth/Qwen3.5-9B-GGUF` on Hugging Face into an empty directory outside git, check its hash, and start the server; `--reasoning off` because the model card and the GGUF publisher disagree about the default, `--load-mode none` because a model mapped from a Windows bind mount pages slowly:
+
+  ```sh
+  sha256sum <models>/Qwen3.5-9B-Q4_K_M.gguf
+  docker pull ghcr.io/ggml-org/llama.cpp:server && docker image inspect -f '{{index .RepoDigests 0}}' ghcr.io/ggml-org/llama.cpp:server
+  MSYS_NO_PATHCONV=1 docker run -d --name llm_server -p 8080:8080 -v "<models>:/models:ro" ghcr.io/ggml-org/llama.cpp:server \
+    -m /models/Qwen3.5-9B-Q4_K_M.gguf --host 0.0.0.0 --port 8080 -c 16384 -t 4 --load-mode none --temp 0 --seed 1 --reasoning off
+  curl -s http://localhost:8080/health      # {"status":"ok"} once the model is loaded, about a minute
+  ```
+
+  Nothing else of the test profile runs beside the server: steps 2, 3 and 4 need no database, and steps 5–7 come after `docker rm -f llm_server`.
+- **`api.json`** in the run, beside `cells.tsv`; the key of a vendor's API never stands in it - the file names the environment variable that holds it:
+
+  ```json
+  {
+    "url": "http://localhost:8080/v1",
+    "model": "Qwen3.5-9B-Q4_K_M",
+    "version": "sha256:<hash of the .gguf>",
+    "frontend": "llama.cpp server <build from /props>, ghcr.io/ggml-org/llama.cpp@sha256:<digest>",
+    "temperature": 0,
+    "maxTokens": 8192,
+    "seed": 1,
+    "usdPerMillionTokensIn": 0,
+    "usdPerMillionTokensOut": 0,
+    "extra": { "cache_prompt": false }
+  }
+  ```
+
+  For a vendor: its base URL ending in `/v1`, the model and snapshot as it names them, the prices of its list at the date of the attempt, `"apiKeyVariable": "<name of the variable>"`, and no `extra`. `cache_prompt: false` is llama.cpp's: without it the second attempt of a cell gets its prompt from the cache and its time is not the time of a whole attempt.
+- **Step 3 by the driver**: `ORMCONVERTOR_LLM_RUN=<run> dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ApiAttemptTest.TheAttemptsAreMadeWhereAsked"`. Attempts go one at a time, the table is written after each, and a run stopped from outside continues where it was; an attempt that has a `reply.md` is not made again, one whose reply the import refused and moved aside is. An endpoint that answers with an error, or an answer without `choices[0].message`, stops the run naming the attempt - a failure of the channel, not a result of the model; a reply without files or outside the form is the model's result and the import makes it a row at level 0 as for the operator. A deterministic model at temperature 0 gives the three attempts of a cell the same bytes; that is the measured spread, not a reason to make fewer. Without `api.json` the case skips: the run is one of the web frontend.
+
 ## The experiment run
 
 The table of T2 × T3 (decision [173](../docs/decisions/173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md); [`architecture.md`](../docs/architecture.md) §6.2, *Experimentální běh*): the tool translates every input the suites know into every target and the artifact goes through the levels of the foreign-artifact path into the same row, producer `tool`. It runs **on demand, for a version or a substantial change**, never as part of a build, in the containers of the `test` profile as the FIBEN run does; its record goes into [`docs/runs/`](../docs/runs/README.md).
