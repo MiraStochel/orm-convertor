@@ -25,7 +25,10 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | [Testy Advisoru a benchmarkingu](#advisor-a-benchmarking-nemají-testy-chování) | Advisor | práce | | T7, S6 |
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | | F15, S7 |
 | [Průběžný stav běhu Advisoru](#průběžný-stav-běhu-advisoru-po-buňkách) | Advisor | rozhodnutí | | S7, F15 |
-| [Odevzdání do položek](#odevzdání-není-rozepsané-do-položek) | Odevzdání | práce | projekt | — |
+| [Záznamy experimentů nad stromem vydání](#záznamy-experimentů-nad-stromem-vydání) | Odevzdání | práce | projekt | T2, T3 |
+| [Vydání `2.3.0`](#vydání-230-po-verdiktu-soudce) | Odevzdání | práce | projekt | S2, S6 |
+| [Živá ukázka u obhajoby](#živá-ukázka-u-obhajoby) | Odevzdání | práce | projekt | F10, S5, S7 |
+| [Odevzdání repozitáře](#odevzdání-repozitáře) | Odevzdání | práce | projekt | — |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | | — |
 | [Úplnost mapování po kategoriích faktů](#úplnost-mapování-po-kategoriích-faktů) | Užitečné | práce | | T2, T3 |
 | [Počet jednotek bez limitu a nadlineární čas](#počet-jednotek-nemá-limit-a-čas-s-ním-roste-nadlineárně) | Užitečné | rozhodnutí | | S3, S4 |
@@ -122,10 +125,27 @@ Běh trvá minuty a skládá se z buněk (dotaz × kandidát); obrazovka ukazuje
 
 ## Odevzdání
 
-#### Odevzdání není rozepsané do položek
-*Práce. [Specifikace](./specifikace.tex), kap. *Milníky / Výstupy* a *Vyhodnocení*; konec projektu **2026-12-01** podle [záměru](./zamer.tex).*
+Odevzdání jde v tomto pořadí za verdiktem soudce LDBC ([Dotazy](#dotazy)): záznamy experimentů nad stromem, který se bude vydávat, vydání `2.3.0`, ukázka a odevzdání repozitáře. [Specifikace](./specifikace.tex) (kap. *Milníky / Výstupy* a *Vyhodnocení*) slibuje veřejný repozitář se zdrojovými kódy, kontejnerovou konfigurací, testovací sadou a dokumentací a u obhajoby běžící instanci z `docker compose` na překladu reálných artefaktů mezi .NET a Javou, reprodukci testovací sady jedním příkazem a výsledky experimentů s naměřenými ukazateli kvality nástroje; konec projektu je **2026-12-01** podle [záměru](./zamer.tex). Experimenty s jazykovým modelem podmínkou dokončení nejsou (specifikace, kap. *Vyhodnocení*) a Advisor přijde až po nich, zbude-li čas (rozh. [171](./decisions/171-the-advisor-comes-after-the-experiments-if-time-remains.md)).
 
-Finální dokumentace, odevzdání a příprava obhajoby tu položky nemají; experimenty je mají v oblasti [Experimenty](#experimenty). Specifikace k odevzdání slibuje u obhajoby běžící instanci z `docker compose` s překladem reálných artefaktů mezi .NET a Javou, reprodukci testovací sady jedním příkazem a výsledky experimentů s naměřenými ukazateli kvality nástroje; výsledky mají být podkladem vědecké publikace. Je třeba to do seznamu rozepsat.
+#### Záznamy experimentů nad stromem vydání
+*Potom. Práce podle metodiky [`runs/README.md`](./runs/README.md#druhy-běhů) — experimentální běh a běh FIBEN jsou „na vyžádání, za verzi nebo zásadní změnu" (rozh. [173](./decisions/173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md), [149](./decisions/149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md)); nárok T2 a T3 je měřidlo, čísla jsou záznam verze (rozh. [183](./decisions/183-t2-and-t3-leave-the-exempt-area-in-a-narrower-sense-the-build-holds-the-category-matrix-and-the-run-measures-the-metrics-without-promising-numbers.md)). Požadavky T2, T3.*
+
+Výsledky, které u obhajoby předložíme, mají stát nad stromem, který odevzdáváme. Poslední [záznam experimentálního běhu](./runs/2026-10-24-experiment.md) nese v buňkách EclipseLinku artefakty, které rozh. [179](./decisions/179-eclipselink-carries-no-version-over-a-binary-column-so-the-store-generated-version-is-a-read-only-column-with-a-loss.md) a [180](./decisions/180-a-full-outer-join-into-eclipselink-goes-out-in-native-sql.md) potom změnila, a předchází rozh. [196](./decisions/196-the-cross-join-is-carried-as-a-join-without-a-condition-and-every-artifact-the-tool-writes-reads-back.md) a [201](./decisions/201-a-case-in-the-else-of-a-case-is-written-for-eclipselink-as-one-case-with-the-inner-branches-appended-and-a-case-deeper-under-the-else-goes-out-in-native-sql.md) i opravu řetězu množinových operací v JPQL, které výstup do EclipseLinku měnily také. Po verdiktu soudce zopakujeme experimentální běh (obě půlky, souhrn) nad stromem, který ponese značku, a zapíšeme ho do [`runs/`](./runs/README.md); zda totéž platí o běhu FIBEN, rozhodne porovnání jeho [záznamu](./runs/2026-10-24-fiben.md) se změnami od něj — běh za verzi stojí, dokud ho změna výstupu do některého cíle nezneplatní.
+
+#### Vydání `2.3.0` po verdiktu soudce
+*Potom. Práce podle rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md) (číslo se rozhoduje jednou za vydání) a [095](./decisions/095-a-dated-run-record-names-its-commit.md); první krok úplného běhu podle [`runs/README.md`](./runs/README.md#pořadí-úplného-běhu). Požadavky S2, S6.*
+
+Vydání vyjde s verdiktem soudce LDBC ([Dotazy](#dotazy)). Krok za krokem: obě sady v kontejnerech nad stromem vydání (`build` + `run`, řádek [velikosti sady](./runs/README.md#velikost-sady-a-pokrytí)), číslo do `Directory.Build.props` a do `CITATION.cff` (`version`, `date-released`), anotovaná značka na commitu, který číslo už nese, s tím, co se od `2.2.0` změnilo na tvaru generovaných artefaktů, co přibylo a co se pohnulo na hranici záruk (rozh. 098; `git log 2.2.0..` to vypíše). Sekce *Guarantees* kořenového README, §9 a `traceability.md` popisují `main` a vydání je zmrazí s číslem; před značkou je projdeme proti sobě.
+
+#### Živá ukázka u obhajoby
+*Práce. [Specifikace](./specifikace.tex), kap. *Milníky / Výstupy*; scénáře UC6 a UC7 v [`use-cases.md`](./use-cases.md). Požadavky F10, S5, S7.*
+
+Komisi předvedeme běžící instanci z `docker compose up --build` na překladu reálných artefaktů mezi .NET a Javou, reprodukci testovací sady jedním příkazem a výsledky experimentů. Materiál je v repozitáři: výňatky případových studií jako příklady výkladové stránky (`keycloak-identity` z Hibernatu, `cofoundry-pages` z EF Core) a příklady přes hranici ekosystémů, příkazy obou sad v [`ORMConvertor/README.md`](../ORMConvertor/README.md#tests), záznamy v [`runs/`](./runs/README.md) a kniha tvrzení s diagnostikou u každého převodu. Je třeba sestavit scénář ukázky — které příklady, kterým směrem, co ze záznamů a z knihy tvrzení ukázat, kolik ukázka trvá — a projít ho na čerstvě sestavených obrazech vydání; scénář je podklad k obhajobě, ne součást repozitáře.
+
+#### Odevzdání repozitáře
+*Práce. [Specifikace](./specifikace.tex), kap. *Milníky / Výstupy*; konec projektu **2026-12-01** podle [záměru](./zamer.tex).*
+
+Projekt se odevzdává jako veřejný repozitář se značkou vydání: zdrojové kódy, kontejnerová konfigurace, obě sady a dokumentace — popis architektury, číslovaná rozhodnutí, tento seznam a hranice záruk. Před odevzdáním projdeme, že CI nad commitem značky prošla, že tento seznam nese jen to, co po vydání zůstává (LLM experimenty navazující práce, Advisor, užitečné položky), a že `README.md` a `docs/README.md` vedou čtenáře od spuštění přes nárok k důkazům. Text k obhajobě a podklad publikace, které specifikace jmenuje jako využití výsledků, vznikají mimo repozitář.
 
 ## Užitečné, ne nutné
 

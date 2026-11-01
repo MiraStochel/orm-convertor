@@ -3,7 +3,7 @@
 Datum: 2026-10-24
 Stav: platí
 Požadavky: F9, F10, F11, T2, T3
-Podklad: rozhodnutí [053](053-a-query-that-would-return-other-rows-is-not-emitted.md), [065](065-row-set-as-the-boundary-of-rule-053.md), [076](076-java-frameworks-through-a-shared-jpa-layer.md), [080](080-eclipselink-as-the-second-profile-over-the-jpa-layer.md) a [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md); [první záznam experimentálního běhu](../runs/2026-10-24-experiment.md); Jakarta Persistence 3.2 §4.4.5 (`join` je `[LEFT [OUTER] | INNER]`); položka *`full join` v JPQL pro EclipseLink* v `open-items.md`
+Podklad: rozhodnutí [053](053-a-query-that-would-return-other-rows-is-not-emitted.md), [065](065-row-set-as-the-boundary-of-rule-053.md), [076](076-java-wrappers-in-csharp-jvm-in-containers.md), [080](080-eclipselink-as-the-second-profile-over-the-jpa-layer.md) a [113](113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md); [první záznam experimentálního běhu](../runs/2026-10-24-experiment.md); Jakarta Persistence 3.2 §4.4.5 (`join` je `[LEFT [OUTER] | INNER]`); položka *`full join` v JPQL pro EclipseLink* v `open-items.md`
 
 ## Kontext
 

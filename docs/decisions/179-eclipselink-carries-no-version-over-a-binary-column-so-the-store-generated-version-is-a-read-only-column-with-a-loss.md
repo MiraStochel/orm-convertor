@@ -3,7 +3,7 @@
 Datum: 2026-10-24
 Stav: platí
 Požadavky: F9, F10, F11, T3
-Podklad: rozhodnutí [004](004-unexpressible-facts-as-warnings.md), [030](030-concurrency-token-as-a-version-flag.md), [076](076-java-frameworks-through-a-shared-jpa-layer.md), [080](080-eclipselink-as-the-second-profile-over-the-jpa-layer.md), [116](116-concurrency-check-is-the-version-the-application-keeps.md) a [173](173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md); [první záznam experimentálního běhu](../runs/2026-10-24-experiment.md); Jakarta Persistence 3.2 §11.1.54 (`@Version`); položka *EclipseLink odmítne verzi nad `byte[]`, kterou dává `[Timestamp]` EF Core* v `open-items.md`
+Podklad: rozhodnutí [004](004-unexpressible-facts-as-warnings.md), [030](030-scope-of-version-1-0.md), [076](076-java-wrappers-in-csharp-jvm-in-containers.md), [080](080-eclipselink-as-the-second-profile-over-the-jpa-layer.md), [116](116-concurrency-check-is-the-version-the-application-keeps.md) a [173](173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md); [první záznam experimentálního běhu](../runs/2026-10-24-experiment.md); Jakarta Persistence 3.2 §11.1.54 (`@Version`); položka *EclipseLink odmítne verzi nad `byte[]`, kterou dává `[Timestamp]` EF Core* v `open-items.md`
 
 ## Kontext
 
