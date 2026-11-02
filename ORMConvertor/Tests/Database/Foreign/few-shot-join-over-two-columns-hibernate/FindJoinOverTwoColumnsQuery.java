@@ -1,0 +1,15 @@
+package Shop;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
+
+public final class FindJoinOverTwoColumnsQuery {
+
+    public static Query findJoinOverTwoColumns(EntityManager em) {
+        return em.createQuery(
+                "select ol.Description as Text, o.CustomerId as CustomerId "
+                + "from ShopOrderLine ol "
+                + "inner join ShopOrder o on o.CompanyId = ol.CompanyId and o.OrderId = ol.OrderId "
+                + "where o.CustomerId > 0");
+    }
+}

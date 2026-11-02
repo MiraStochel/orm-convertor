@@ -53,11 +53,22 @@ internal static class EFCoreAcceptance
         return builder.Options;
     }
 
+    /// <summary>
+    /// The public classes of the compilation, as a consumer registers the entity files'. The
+    /// class around a query method is not one of them: the harness's holder is static, and so
+    /// abstract, and the class a whole file of a foreign artifact puts around its method
+    /// (decision 204) is told by that method - public, static, the context as its first
+    /// parameter.
+    /// </summary>
     private static List<Type> EntityTypes(Assembly compiledEntities)
         => compiledEntities
             .GetTypes()
-            .Where(type => type.IsClass && type.IsPublic && !type.IsAbstract)
+            .Where(type => type.IsClass && type.IsPublic && !type.IsAbstract && !HoldsAQuery(type))
             .ToList();
+
+    private static bool HoldsAQuery(Type type)
+        => type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.DeclaredOnly)
+            .Any(method => method.GetParameters() is [var first, ..] && first.ParameterType.IsAssignableFrom(typeof(DbContext)));
 
     private sealed class VerificationContext(
         DbContextOptions<VerificationContext> options,

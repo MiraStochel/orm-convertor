@@ -350,9 +350,10 @@ internal static class ForeignArtifactRun
 
     /// <summary>
     /// Why the language of the target does not read the artifact, or null where it reads every
-    /// unit: syntax diagnostics only - Roslyn's over a C# unit, the query method inside the
-    /// class the compiler puts around it; the XML parser's over a mapping; the T-SQL parser's
-    /// over native SQL. HQL has no reader apart from NHibernate's, which the third level is.
+    /// unit: syntax diagnostics only - Roslyn's over a C# unit, a bare query method inside the
+    /// class the compiler puts around it and a whole file as it is (decision 204); the XML
+    /// parser's over a mapping; the T-SQL parser's over native SQL. HQL has no reader apart from
+    /// NHibernate's, which the third level is.
     /// </summary>
     internal static string? Unreadable(ForeignArtifact artifact)
     {
@@ -361,7 +362,7 @@ internal static class ForeignArtifactRun
             var problem = unit.ContentType switch
             {
                 ConversionContentType.CSharp or ConversionContentType.CSharpEntity => CSharpSyntax(unit.Content),
-                ConversionContentType.CSharpQuery or ConversionContentType.CSharpLinqQuery => CSharpSyntax(GeneratedQueryCompiler.Holder(unit.Content)),
+                ConversionContentType.CSharpQuery or ConversionContentType.CSharpLinqQuery => CSharpSyntax(GeneratedQueryCompiler.IsCompilationUnit(unit.Content) ? unit.Content : GeneratedQueryCompiler.Holder(unit.Content)),
                 ConversionContentType.XML => XmlSyntax(unit.Content),
                 ConversionContentType.SqlQuery => SqlSyntax(unit.Content),
                 _ => null,

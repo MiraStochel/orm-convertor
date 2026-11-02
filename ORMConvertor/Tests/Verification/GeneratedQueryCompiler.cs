@@ -1,5 +1,7 @@
 using Common.Compilation;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Tests.Verification;
 
@@ -73,7 +75,10 @@ internal static class GeneratedQueryCompiler
 
     /// <summary>
     /// Wraps the query method in the class and usings a consumer project would give it, then
-    /// compiles it together with the entity sources.
+    /// compiles it together with the entity sources. A query that is a whole file already - a
+    /// foreign artifact written as a developer writes it (decision 204) - is compiled as it
+    /// is, with its own usings and class; the consumer adds nothing but the project's
+    /// implicit usings.
     /// </summary>
     public static CSharpCompilationResult Compile(
         string assemblyName,
@@ -83,8 +88,27 @@ internal static class GeneratedQueryCompiler
         string extraUsings = "")
         => CSharpSourceCompiler.Compile(
             assemblyName,
-            entitySources.Prepend(Holder(queryMethod, extraUsings)).Prepend(ConsumerPreamble),
+            entitySources.Prepend(IsCompilationUnit(queryMethod) ? queryMethod : Holder(queryMethod, extraUsings)).Prepend(ConsumerPreamble),
             consumerReferences);
+
+    /// <summary>
+    /// Whether the text is a whole file rather than a bare method (decision 204): read as a
+    /// compilation unit it carries a using directive or a namespace, or its top-level members are
+    /// types alone. A bare method read that way is a top-level member that is no type - and so is
+    /// the tool's artifact that declares the row type of a native SQL query beside the method,
+    /// which stays a bare method the consumer wraps.
+    /// </summary>
+    public static bool IsCompilationUnit(string text)
+    {
+        var root = CSharpSyntaxTree.ParseText(text).GetCompilationUnitRoot();
+        return root.Usings.Count > 0
+            || root.Members.Any(member => member is BaseNamespaceDeclarationSyntax)
+            || (root.Members.Count > 0 && root.Members.All(member => member is BaseTypeDeclarationSyntax));
+    }
+
+    /// <summary>Whether the text declares a type anywhere - the class a whole file puts around its method.</summary>
+    public static bool DeclaresAType(string text)
+        => CSharpSyntaxTree.ParseText(text).GetCompilationUnitRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>().Any();
 
     /// <summary>
     /// The class a consumer project puts around the bare method, with the usings in front of

@@ -214,7 +214,7 @@ internal sealed class PreparedQuery : IDisposable
         switch (target)
         {
             case ORMEnum.Dapper:
-                return new PreparedQuery(target, connectionString, GeneratedMethod(Assembly.Load(compiled)));
+                return new PreparedQuery(target, connectionString, GeneratedMethod(Assembly.Load(compiled), target));
 
             case ORMEnum.EFCore:
             {
@@ -227,7 +227,7 @@ internal sealed class PreparedQuery : IDisposable
                 // inside the first run of the query.
                 _ = context.Model;
 
-                return new PreparedQuery(target, connectionString, GeneratedMethod(assembly), connection, context);
+                return new PreparedQuery(target, connectionString, GeneratedMethod(assembly, target), connection, context);
             }
 
             case ORMEnum.NHibernate:
@@ -242,7 +242,7 @@ internal sealed class PreparedQuery : IDisposable
                     NHibernateTypeRegistry.Forget(assembly);
                 }
 
-                return new PreparedQuery(target, connectionString, GeneratedMethod(assembly), sessionFactory: factory, form: form);
+                return new PreparedQuery(target, connectionString, GeneratedMethod(assembly, target), sessionFactory: factory, form: form);
             }
 
             default:
@@ -380,11 +380,34 @@ internal sealed class PreparedQuery : IDisposable
         return string.Join(Environment.NewLine, declarations.Prepend(frameworkUsings));
     }
 
-    /// <summary>The one generated method. Its first parameter is the framework's handle - a connection, a context, a session.</summary>
-    private static MethodInfo GeneratedMethod(Assembly assembly)
-        => assembly.GetTypes()
-            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static))
-            .Single(candidate => candidate.DeclaringType?.Name == "GeneratedQueries");
+    /// <summary>
+    /// The one generated method, found by what makes it the query: its first parameter is the
+    /// framework's handle - a connection, a context, a session. The class around it is the
+    /// harness's for a bare method and the artifact's own for a whole file (decision 204), so
+    /// the name of the class says nothing. None or several is a refusal that names them.
+    /// </summary>
+    private static MethodInfo GeneratedMethod(Assembly assembly, ORMEnum target)
+    {
+        var handle = target switch
+        {
+            ORMEnum.Dapper => typeof(System.Data.IDbConnection),
+            ORMEnum.EFCore => typeof(DbContext),
+            _ => typeof(ISession),
+        };
+
+        var candidates = assembly.GetTypes()
+            .Where(type => type.IsClass)
+            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            .Where(candidate => candidate.GetParameters() is [var first, ..] && first.ParameterType.IsAssignableFrom(handle))
+            .ToList();
+
+        return candidates switch
+        {
+            [var single] => single,
+            [] => throw new InvalidOperationException($"the artifact declares no public static method that takes the framework's handle ({handle.Name}) first"),
+            _ => throw new InvalidOperationException($"the artifact declares {candidates.Count} public static methods that take the framework's handle ({handle.Name}) first, and the caller calls one: {string.Join(", ", candidates.Select(candidate => $"{candidate.DeclaringType?.Name}.{candidate.Name}"))}"),
+        };
+    }
 
     /// <summary>Calls the generated method with the handle in front of the parameters of the query (decision 083).</summary>
     private object? Invoke(string id, object handle, IReadOnlyList<object?> arguments)

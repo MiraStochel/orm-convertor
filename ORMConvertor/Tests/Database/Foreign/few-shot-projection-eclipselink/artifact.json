@@ -11,7 +11,7 @@
     { "path": "ShopProduct.java", "contentType": "JavaEntity" },
     { "path": "ShopDepartment.java", "contentType": "JavaEntity" },
     { "path": "ShopProductLink.java", "contentType": "JavaEntity" },
-    { "path": "FindProjection.java", "contentType": "JavaQuery" },
+    { "path": "FindProjectionQuery.java", "contentType": "JavaQuery" },
     { "path": "FindProjection.jpql" }
   ],
   "metadata": {

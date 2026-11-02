@@ -104,8 +104,8 @@ internal sealed record WebTemplate(string Id, string Prompt, IReadOnlyDictionary
     /// <summary>The template of each variant the web channel has one for.</summary>
     public static readonly IReadOnlyDictionary<string, string> ForVariant = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["zero-shot"] = "web-zero-shot-2",
-        ["few-shot"] = "web-few-shot-1",
+        ["zero-shot"] = "web-zero-shot-3",
+        ["few-shot"] = "web-few-shot-2",
     };
 
     private static readonly Regex Section = new(@"^=== (?:(prompt)|shape (\w+)) ===$", RegexOptions.CultureInvariant);
@@ -773,6 +773,8 @@ internal static class WebAttempts
     /// attempt again in a new conversation -; a reply that gives no artifact the target can read is
     /// a row at level 0; every other reply becomes a directory of a foreign artifact with the
     /// metadata of decision 175 under <c>artifacts/</c>. The rows of level 0 are written whole.
+    /// An attempt of a variant other than <c>zero-shot</c> gets its envelope repaired first
+    /// (<see cref="WebEnvelope"/>, decision 204), and the manifest says so.
     /// </summary>
     public static ImportReport Import(string run)
     {
@@ -838,8 +840,15 @@ internal static class WebAttempts
             var key = ForeignKey.Parse(row["answers"]);
             var source = Enum.Parse<ORMEnum>(row["source"]);
             var target = Enum.Parse<ORMEnum>(row["target"]);
-            var (units, problem) = Units(reply, target);
-            var metadata = Metadata(row, reply, prompt, text, Directory.GetFiles(directory, "refused-*.md").Length);
+
+            // The envelope: judged as it came in zero-shot, repaired by what a consumer gives a
+            // bare method in every other variant (decision 204).
+            var repairs = WebEnvelope.Repairs(row.GetValueOrDefault("variant", string.Empty));
+            var (files, envelopeRepairs) = repairs ? WebEnvelope.Repair(reply.Files, target) : (reply.Files, []);
+            var envelope = !repairs ? WebEnvelope.AsWritten : envelopeRepairs.Count > 0 ? WebEnvelope.Repaired : WebEnvelope.Intact;
+
+            var (units, problem) = Units(reply, target, files);
+            var metadata = Metadata(row, reply, prompt, text, Directory.GetFiles(directory, "refused-*.md").Length, envelope, envelopeRepairs);
 
             if (Directory.Exists(artifactDirectory))
             {
@@ -872,15 +881,17 @@ internal static class WebAttempts
         return report;
     }
 
-    /// <summary>The units of the artifact a reply gives, or why it gives none the target can read: no file, a reply that is not files, a role the target does not have, a path outside the artifact's directory, a file twice.</summary>
-    internal static (List<ForeignUnit> Units, string? Problem) Units(WebReply reply, ORMEnum target)
+    /// <summary>The units of the artifact a reply gives, or why it gives none the target can read: no file, a reply that is not files, a role the target does not have, a path outside the artifact's directory, a file twice. The files are the reply's, or the reply's with the envelope repaired (decision 204).</summary>
+    internal static (List<ForeignUnit> Units, string? Problem) Units(WebReply reply, ORMEnum target, IReadOnlyList<WebReplyFile>? files = null)
     {
+        files ??= reply.Files;
+
         if (reply.Unreadable is not null)
         {
             return ([], $"the reply cannot be read as files: {reply.Unreadable}");
         }
 
-        if (reply.Files.Count == 0)
+        if (files.Count == 0)
         {
             var said = Regex.Replace(reply.Outside, @"\s+", " ").Trim();
             return ([], $"the reply carries no file{(said.Length > 0 ? ": " + (said.Length > 160 ? said[..160] + "…" : said) : string.Empty)}");
@@ -890,7 +901,7 @@ internal static class WebAttempts
         var units = new List<ForeignUnit>();
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var file in reply.Files)
+        foreach (var file in files)
         {
             if (!Enum.TryParse<ConversionContentType>(file.Role, ignoreCase: true, out var role) || !roles.Contains(role))
             {
@@ -917,9 +928,10 @@ internal static class WebAttempts
     /// <summary>
     /// The metadata of an attempt (decision 189): the fields of decision 175 from the generator and
     /// from the operator's measurements, the size of the exchange, the replies refused before this
-    /// one, the files the reply ended inside, and the model's own report as it wrote it.
+    /// one, the files the reply ended inside, what the import did to the envelope (decision 204),
+    /// and the model's own report as it wrote it.
     /// </summary>
-    internal static string Metadata(IReadOnlyDictionary<string, string> row, WebReply reply, string prompt, string text, int refusedBefore)
+    internal static string Metadata(IReadOnlyDictionary<string, string> row, WebReply reply, string prompt, string text, int refusedBefore, string envelope = WebEnvelope.AsWritten, IReadOnlyList<string>? envelopeRepairs = null)
     {
         var metadata = new JsonObject();
 
@@ -988,6 +1000,18 @@ internal static class WebAttempts
             }
 
             metadata["cut"] = paths;
+        }
+
+        metadata["envelope"] = envelope;
+        if (envelopeRepairs is { Count: > 0 })
+        {
+            var sentences = new JsonArray();
+            foreach (var repair in envelopeRepairs)
+            {
+                sentences.Add(repair);
+            }
+
+            metadata["envelopeRepairs"] = sentences;
         }
 
         if (reply.Report is not null)

@@ -6,7 +6,7 @@
   "units": [
     { "path": "Shop.cs", "contentType": "CSharpEntity" },
     { "path": "Shop.hbm.xml", "contentType": "XML" },
-    { "path": "FindAggregationGroupingAndHaving.cs", "contentType": "CSharpQuery" },
+    { "path": "FindAggregationGroupingAndHavingQuery.cs", "contentType": "CSharpQuery" },
     { "path": "FindAggregationGroupingAndHaving.hql" }
   ],
   "metadata": {

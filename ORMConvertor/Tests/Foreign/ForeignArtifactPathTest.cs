@@ -5,6 +5,7 @@ using OrmConvertor;
 using Tests.Combined;
 using Tests.Database;
 using Tests.Differential;
+using Tests.Verification;
 
 namespace Tests.Foreign;
 
@@ -99,6 +100,42 @@ public class ForeignArtifactPathTest(TestSchemaFixture fixture, ITestOutputHelpe
                 expected.Outcome == ForeignVerdict.Agrees
                 && ForeignArtifact.Read(Path.Combine(OwnArtifactsDirectory, expected.Id), "schema").Target == target);
         }
+    }
+
+    /// <summary>
+    /// A query unit is a bare method - the tool's artifact, which the harness wraps - or a whole
+    /// file, which the path compiles as it is (decision 204); the language tells them apart, and
+    /// a file that carries directives around a bare method is neither, and is told so.
+    /// </summary>
+    [Fact]
+    public void AWholeFileAndABareMethodAreToldApartByTheLanguage()
+    {
+        const string Bare = "public static IQueryable<ShopOrderLine> FindFiltering(DbContext ctx)\n{\n    return ctx.Set<ShopOrderLine>();\n}\n";
+        const string Whole = "using Microsoft.EntityFrameworkCore;\n\nnamespace Shop;\n\npublic static class FindFilteringQuery\n{\n    " + Bare + "}\n";
+
+        Assert.False(GeneratedQueryCompiler.IsCompilationUnit(Bare));
+        Assert.True(GeneratedQueryCompiler.IsCompilationUnit(Whole));
+        Assert.True(GeneratedQueryCompiler.DeclaresAType(Whole));
+        Assert.True(GeneratedQueryCompiler.IsCompilationUnit("using Microsoft.EntityFrameworkCore;\n" + Bare));
+        Assert.False(GeneratedQueryCompiler.DeclaresAType("using Microsoft.EntityFrameworkCore;\n" + Bare));
+
+        const string Entity = "namespace Shop;\n\npublic class ShopOrderLine\n{\n    public int CompanyId { get; set; }\n}\n";
+        Assert.True(PreparedQuery.Compile("WholeFile_1", ORMEnum.EFCore, Whole, [Entity]).Success);
+        Assert.True(PreparedQuery.Compile("WholeFile_2", ORMEnum.EFCore, Bare, [Entity]).Success);
+    }
+
+    /// <summary>The class a whole file puts around its query is no entity type of the EF Core model, static or not (decision 204): the model is built over the entities alone.</summary>
+    [Fact]
+    public void TheClassAroundAWholeFileQueryIsNoEntityType()
+    {
+        const string Entity = "using System.ComponentModel.DataAnnotations;\n\nnamespace Shop;\n\npublic class ShopOrderLine\n{\n    [Key]\n    public int CompanyId { get; set; }\n}\n";
+        const string Query = "using Microsoft.EntityFrameworkCore;\n\nnamespace Shop;\n\npublic class Lines\n{\n    public static IQueryable<ShopOrderLine> FindFiltering(DbContext ctx) => ctx.Set<ShopOrderLine>();\n}\n";
+
+        var compiled = PreparedQuery.Compile("WholeFile_3", ORMEnum.EFCore, Query, [Entity]);
+        Assert.True(compiled.Success, string.Join("; ", compiled.Errors.Select(error => error.ToString())));
+
+        var model = EFCoreAcceptance.BuildModel(compiled.Assembly!);
+        Assert.Equal(new[] { "Shop.ShopOrderLine" }, model.GetEntityTypes().Select(type => type.Name));
     }
 
     public static TheoryData<string, ORMEnum, ORMEnum> ToolPairs() => new()

@@ -139,6 +139,12 @@ public final class ForeignArtifactRun {
             // Level 3: the framework accepts the artifact.
             started = System.nanoTime();
             try {
+                // A whole file that declares no query method, or several, compiled and is
+                // refused here, where the caller binds the one it calls (decision 204).
+                if (compiled.methodProblem() != null) {
+                    throw new IllegalStateException(compiled.methodProblem());
+                }
+
                 List<String> mappers = artifact.mappings().stream().map(ForeignArtifact.Unit::content).toList();
                 if (artifact.target() == Orm.MYBATIS) {
                     // The mapper interface lives in the query project, so its loader - a child
@@ -240,9 +246,10 @@ public final class ForeignArtifactRun {
 
     /**
      * Why the language does not read the artifact, or null where it reads every unit: the
-     * parser of {@code javac} over a Java unit - the query inside the class the consumer puts
-     * around it -, the XML parser over a mapping, without fetching the DTD a mapper names.
-     * JPQL has no reader apart from the framework's, which the third level is.
+     * parser of {@code javac} over a Java unit - a bare query method inside the class the
+     * consumer puts around it, a whole file as it is (decision 204) -, the XML parser over a
+     * mapping, without fetching the DTD a mapper names. JPQL has no reader apart from the
+     * framework's, which the third level is.
      */
     static String unreadable(ForeignArtifact artifact) {
         String entityPackage = artifact.entities().isEmpty() ? null : JavaSources.packageOf(artifact.entities().get(0).content());
@@ -251,9 +258,11 @@ public final class ForeignArtifactRun {
             String problem = switch (unit.contentType()) {
                 case ContentType.JAVA, ContentType.JAVA_ENTITY -> javaSyntax(unit.content(), unit.path());
                 case ContentType.JAVA_QUERY -> javaSyntax(
-                        artifact.target() == Orm.MYBATIS
-                                ? JavaSources.wrapMapperInterface(entityPackage, "GeneratedMapper", unit.content())
-                                : JavaSources.wrapQuery(entityPackage, "GeneratedQueries", unit.content()),
+                        JavaSources.isCompilationUnit(unit.content())
+                                ? unit.content()
+                                : artifact.target() == Orm.MYBATIS
+                                        ? JavaSources.wrapMapperInterface(entityPackage, "GeneratedMapper", unit.content())
+                                        : JavaSources.wrapQuery(entityPackage, "GeneratedQueries", unit.content()),
                         unit.path());
                 case ContentType.XML -> xmlSyntax(unit.content());
                 default -> null;
@@ -318,8 +327,34 @@ public final class ForeignArtifactRun {
      * The compiled artifact: the entity classes under the scenario's loader and, where there is a
      * query, its method or its mapper interface; for a project, every query's method, each in a
      * class of its own, with the path of the unit it came from beside it, and no single method.
+     * A whole file whose class declares no query method, or several, compiles and carries the
+     * problem instead of the method; the third level refuses it by that (decision 204).
      */
-    private record Compiled(ClassLoader loader, List<Class<?>> mapped, JavaProject queries, Method method, Class<?> mapper, List<Method> projectMethods, List<String> projectPaths) {
+    private record Compiled(ClassLoader loader, List<Class<?>> mapped, JavaProject queries, Method method, Class<?> mapper, List<Method> projectMethods, List<String> projectPaths, String methodProblem) {
+        Compiled(ClassLoader loader, List<Class<?>> mapped, JavaProject queries, Method method, Class<?> mapper, List<Method> projectMethods, List<String> projectPaths) {
+            this(loader, mapped, queries, method, mapper, projectMethods, projectPaths, null);
+        }
+    }
+
+    /**
+     * The query methods of a compiled class (decision 204): of the class around a JPA query the
+     * public static ones that take the entity manager first - the harness's holder has one, a
+     * whole file whatever the model wrote -, of a mapper interface every declared one; in the
+     * order of their names, so that a run is the same twice.
+     */
+    private static List<Method> queryMethods(Class<?> type, boolean mapper) {
+        return Arrays.stream(type.getDeclaredMethods())
+                .filter(method -> mapper
+                        || (java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                                && java.lang.reflect.Modifier.isPublic(method.getModifiers())
+                                && method.getParameterCount() > 0
+                                && method.getParameterTypes()[0].isAssignableFrom(EntityManager.class)))
+                .sorted(java.util.Comparator.comparing(Method::getName))
+                .toList();
+    }
+
+    private static String names(List<Method> methods) {
+        return methods.stream().map(method -> method.getDeclaringClass().getSimpleName() + "." + method.getName()).collect(Collectors.joining(", "));
     }
 
     /**
@@ -440,24 +475,30 @@ public final class ForeignArtifactRun {
         List<Class<?>> mapped = entities.loadAll();
         String entityPackage = JavaSources.packageOf(artifact.entities().get(0).content());
 
+        boolean myBatis = artifact.target() == Orm.MYBATIS;
+
         if (artifact.isProject()) {
-            // A project: every query in a class or interface of its own, compiled together over
-            // the entities; the compiler names the file of a query that does not compile.
+            // A project: every query in a class or interface of its own - the consumer's around
+            // a bare method, the file's own where the query is a whole file (decision 204) -,
+            // compiled together over the entities; the compiler names the file of a query that
+            // does not compile.
             JavaProject queries = JavaProject.create("foreign-project", entities);
             List<String> wrappers = new ArrayList<>();
             int index = 0;
             for (ForeignArtifact.Unit query : artifact.queryMethods()) {
                 index++;
-                wrappers.add(queries.add(artifact.target() == Orm.MYBATIS
-                        ? JavaSources.wrapMapperInterface(entityPackage, "GeneratedMapper" + index, query.content())
-                        : JavaSources.wrapQuery(entityPackage, "GeneratedQueries" + index, query.content())));
+                wrappers.add(queries.add(JavaSources.isCompilationUnit(query.content())
+                        ? query.content()
+                        : myBatis
+                                ? JavaSources.wrapMapperInterface(entityPackage, "GeneratedMapper" + index, query.content())
+                                : JavaSources.wrapQuery(entityPackage, "GeneratedQueries" + index, query.content())));
             }
             queries.compileAndLoad();
 
             List<Method> methods = new ArrayList<>();
             List<String> paths = new ArrayList<>();
             for (int position = 0; position < wrappers.size(); position++) {
-                for (Method method : queries.load(wrappers.get(position)).getDeclaredMethods()) {
+                for (Method method : queryMethods(queries.load(wrappers.get(position)), myBatis)) {
                     methods.add(method);
                     paths.add(artifact.queryMethods().get(position).path());
                 }
@@ -471,25 +512,43 @@ public final class ForeignArtifactRun {
         }
 
         JavaProject queries = JavaProject.create("foreign-query", entities);
-        if (artifact.target() == Orm.MYBATIS) {
+        boolean wholeFile = JavaSources.isCompilationUnit(query.content());
+        if (myBatis) {
             String statementMapper = artifact.mappings().stream()
                     .map(ForeignArtifact.Unit::content)
                     .filter(content -> content.contains("<select"))
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("the artifact carries no mapper document with a statement"));
 
-            String wrapper = queries.add(JavaSources.wrapMapperInterface(entityPackage, MyBatisBootstrap.interfaceNameOf(statementMapper), query.content()));
+            String wrapper = queries.add(wholeFile
+                    ? query.content()
+                    : JavaSources.wrapMapperInterface(entityPackage, MyBatisBootstrap.interfaceNameOf(statementMapper), query.content()));
             queries.compileAndLoad();
             Class<?> mapper = queries.load(wrapper);
-            return new Compiled(loader, mapped, queries, mapper.getDeclaredMethods()[0], mapper, List.of(mapper.getDeclaredMethods()[0]), List.of(query.path()));
+
+            // The one method of the interface, or - a whole file may declare more - the one
+            // whose name is the id of the statement the document carries.
+            List<Method> methods = queryMethods(mapper, true);
+            Method method = methods.size() == 1
+                    ? methods.get(0)
+                    : methods.stream().filter(candidate -> statementMapper.contains("id=\"" + candidate.getName() + "\"")).findFirst().orElse(null);
+            if (method == null) {
+                return new Compiled(loader, mapped, queries, null, mapper, List.of(), List.of(), methods.isEmpty()
+                        ? "the mapper interface declares no method"
+                        : "the mapper interface declares " + methods.size() + " methods and none is the id of the statement of the mapper document: " + names(methods));
+            }
+            return new Compiled(loader, mapped, queries, method, mapper, List.of(method), List.of(query.path()));
         }
 
-        String wrapper = queries.add(JavaSources.wrapQuery(entityPackage, "GeneratedQueries", query.content()));
+        String wrapper = queries.add(wholeFile ? query.content() : JavaSources.wrapQuery(entityPackage, "GeneratedQueries", query.content()));
         queries.compileAndLoad();
-        Method method = Arrays.stream(queries.load(wrapper).getDeclaredMethods())
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("the generated class declares no method"));
-        return new Compiled(loader, mapped, queries, method, null, List.of(method), List.of(query.path()));
+        List<Method> methods = queryMethods(queries.load(wrapper), false);
+        if (methods.size() != 1) {
+            return new Compiled(loader, mapped, queries, null, null, List.of(), List.of(), methods.isEmpty()
+                    ? "the artifact declares no public static method that takes the entity manager first"
+                    : "the artifact declares " + methods.size() + " public static methods that take the entity manager first, and the caller calls one: " + names(methods));
+        }
+        return new Compiled(loader, mapped, queries, methods.get(0), null, methods, List.of(query.path()));
     }
 
     /** The third level of a JPA query: created with a value of the declared type for every parameter, nothing executed - as {@link PreparedJavaQuery#accept()} does. */

@@ -304,10 +304,11 @@ internal static class ExperimentSummary
         yield return "## Foreign artifacts beside the tool over the same cells (decision 189)";
         yield return string.Empty;
         yield return "A cell is a key, a source and a target. Columns: cells = the cells of the group with a row of the tool; attempts = the rows of the group over them; refused replies = replies the import refused for a trace of a search, made again;";
+        yield return "repaired envelopes = attempts whose envelope the import repaired, of the attempts of a variant it repairs (every variant but zero-shot, decision 204);";
         yield return "the tool = the cells its one row reached the measure in; per attempt = the attempts that reached it; best-of-n = the cells at least one attempt reached it in. ran is counted over the cells with a fourth level, agrees over those with a measure of equivalence.";
         yield return string.Empty;
-        yield return "| group | cells | attempts | refused replies | measure | the tool | per attempt | best-of-n |";
-        yield return "|---|---|---|---|---|---|---|---|";
+        yield return "| group | cells | attempts | refused replies | repaired envelopes | measure | the tool | per attempt | best-of-n |";
+        yield return "|---|---|---|---|---|---|---|---|---|";
 
         var unpaired = new List<string>();
         var cellLines = new List<string>();
@@ -320,6 +321,8 @@ internal static class ExperimentSummary
             var paired = cells.Where(cell => toolByCell.ContainsKey(cell.Key)).ToList();
             var attempts = paired.SelectMany(cell => cell).ToList();
             var refused = attempts.Sum(row => int.TryParse(row.Metadata("refusedBefore"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) ? count : 0);
+            var repairable = attempts.Count(row => row.Metadata("envelope") is WebEnvelope.Intact or WebEnvelope.Repaired);
+            var repaired = attempts.Count(row => row.Metadata("envelope") == WebEnvelope.Repaired);
 
             var first = true;
             foreach (var (name, over, met) in measures)
@@ -330,8 +333,8 @@ internal static class ExperimentSummary
                 var best = cellsOver.Count(cell => cell.Any(met));
 
                 yield return first
-                    ? $"| {group.Key} | {paired.Count} | {attempts.Count} | {refused} | {name} | {ShareOf(byTool, cellsOver.Count)} | {ShareOf(attemptsOver.Count(met), attemptsOver.Count)} | {ShareOf(best, cellsOver.Count)} |"
-                    : $"| | | | | {name} | {ShareOf(byTool, cellsOver.Count)} | {ShareOf(attemptsOver.Count(met), attemptsOver.Count)} | {ShareOf(best, cellsOver.Count)} |";
+                    ? $"| {group.Key} | {paired.Count} | {attempts.Count} | {refused} | {ShareOf(repaired, repairable)} | {name} | {ShareOf(byTool, cellsOver.Count)} | {ShareOf(attemptsOver.Count(met), attemptsOver.Count)} | {ShareOf(best, cellsOver.Count)} |"
+                    : $"| | | | | | {name} | {ShareOf(byTool, cellsOver.Count)} | {ShareOf(attemptsOver.Count(met), attemptsOver.Count)} | {ShareOf(best, cellsOver.Count)} |";
                 first = false;
             }
 

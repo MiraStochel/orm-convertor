@@ -6,7 +6,7 @@
   "units": [
     { "path": "Shop.cs", "contentType": "CSharpEntity" },
     { "path": "Shop.hbm.xml", "contentType": "XML" },
-    { "path": "FindJoinOverTwoColumns.cs", "contentType": "CSharpQuery" },
+    { "path": "FindJoinOverTwoColumnsQuery.cs", "contentType": "CSharpQuery" },
     { "path": "FindJoinOverTwoColumns.hql" }
   ],
   "metadata": {

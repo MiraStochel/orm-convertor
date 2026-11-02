@@ -5,6 +5,7 @@ using OrmConvertor.Factories;
 using ORMConvertorAPI.Data;
 using SampleData;
 using Tests.Database;
+using Tests.Differential;
 using Tests.Experiment;
 
 namespace Tests.Foreign;
@@ -127,7 +128,9 @@ public class WebAttemptTest(ITestOutputHelper output)
     [Theory]
     [InlineData("web-zero-shot-1")]
     [InlineData("web-zero-shot-2")]
+    [InlineData("web-zero-shot-3")]
     [InlineData("web-few-shot-1")]
+    [InlineData("web-few-shot-2")]
     public void EveryTemplateStaysReadable(string id)
     {
         var template = WebTemplate.Load(id);
@@ -179,9 +182,12 @@ public class WebAttemptTest(ITestOutputHelper output)
         Assert.Contains("### Example 3", examples);
         Assert.DoesNotContain("### Example 4", examples);
         Assert.Contains("FILE: FindProjection.sql\n", examples);
-        Assert.Contains("FILE: FindProjection.cs | CSharpQuery\n", examples);
-        Assert.Contains("FILE: FindFiltering.cs | CSharpQuery\n", examples);
-        Assert.Contains("FILE: FindJoinOverTwoColumns.cs | CSharpQuery\n", examples);
+        Assert.Contains("FILE: FindProjectionQuery.cs | CSharpQuery\n", examples);
+        Assert.Contains("FILE: FindFilteringQuery.cs | CSharpQuery\n", examples);
+        Assert.Contains("FILE: FindJoinOverTwoColumnsQuery.cs | CSharpQuery\n", examples);
+
+        // The examples show the form the answer takes (decision 204): a whole file, not a bare method.
+        Assert.Contains("using Microsoft.EntityFrameworkCore;\n\nnamespace Shop;\n\npublic static class FindFilteringQuery\n{\n    public static IQueryable<ShopOrderLine> FindFiltering(DbContext ctx)", examples);
         Assert.DoesNotContain(TrialKey.Id, examples);
         Assert.DoesNotContain("CSharpEntity", examples);
         Assert.Contains("the examples show the queries alone", examples);
@@ -204,7 +210,8 @@ public class WebAttemptTest(ITestOutputHelper output)
         Assert.Contains("### The entity classes of the examples", examples);
         Assert.Equal(1, Regex.Matches(examples, Regex.Escape("FILE: Shop.cs\n")).Count);
         Assert.Equal(1, Regex.Matches(examples, Regex.Escape("FILE: ShopOrderLine.java | JavaEntity\n")).Count);
-        Assert.Contains("FILE: FindProjection.java | JavaQuery\n", examples);
+        Assert.Contains("FILE: FindProjectionQuery.java | JavaQuery\n", examples);
+        Assert.Contains("package Shop;\n\nimport jakarta.persistence.EntityManager;\nimport jakarta.persistence.Query;\n\npublic final class FindProjectionQuery {", examples);
         Assert.Contains("FILE: FindProjection.jpql | JpqlQuery\n", examples);
         Assert.Contains("### Example 3", examples);
         Assert.DoesNotContain("### Example 4", examples);
@@ -463,7 +470,13 @@ public class WebAttemptTest(ITestOutputHelper output)
             Assert.Equal(prompts[0].Length, root.GetProperty("promptChars").GetInt32());
             Assert.Equal("the keys", root.GetProperty("selfReport").GetProperty("assumptions")[0].GetString());
             Assert.False(root.TryGetProperty("tokensIn", out _));
+
+            // Zero-shot is judged as it came (decision 204): the bare method stays bare, the manifest says so.
+            Assert.Equal(WebEnvelope.AsWritten, root.GetProperty("envelope").GetString());
+            Assert.False(root.TryGetProperty("envelopeRepairs", out _));
         }
+
+        Assert.StartsWith("public static IQueryable", artifact.Units.Single(unit => unit.ContentType == ConversionContentType.CSharpQuery).Content, StringComparison.Ordinal);
 
         var row = Assert.Single(SummaryRow.Read(Path.Combine(run, WebAttempts.RowsFileName)));
         Assert.Equal((ids[1], 0, ForeignVerdict.Refused, ForeignArtifact.LanguageRefused), (row["artifact"], row.Reached, row.Outcome, row.Language));
@@ -482,6 +495,105 @@ public class WebAttemptTest(ITestOutputHelper output)
         WebAttempts.Import(run);
         var again = SummaryRow.Read(Path.Combine(run, WebAttempts.RowsFileName)).Single(candidate => candidate["artifact"] == ids[2]);
         Assert.Equal("1", again.Metadata("refusedBefore"));
+    }
+
+    /// <summary>
+    /// An attempt of a variant other than zero-shot gets its envelope repaired by the import
+    /// (decision 204): the directives the consumer gives a bare method and the namespace of the
+    /// entities go into a whole file that lacks them, the manifest lists every repair, and the
+    /// repaired files compile where the written ones did not. Nothing else of the files changes.
+    /// </summary>
+    [Fact]
+    public void AnAttemptOfAnotherVariantGetsItsEnvelopeRepairedAndTheManifestSaysWhat()
+    {
+        using var temp = new TempDirectory();
+        var run = temp.Path;
+        File.WriteAllText(Path.Combine(run, WebCell.FileName), $"answers\tsource\ttarget\tvariant\tattempts\n{TrialKey}\tDapper\tEFCore\tfew-shot\t1\n");
+        var id = Assert.Single(WebAttempts.Prepare(run));
+
+        var table = Path.Combine(run, WebAttempts.AttemptsFileName);
+        var rows = WebAttempts.ReadTable(table);
+        File.WriteAllLines(table, [string.Join('\t', WebAttempts.Columns), .. rows.Select(row => string.Join('\t', WebAttempts.Columns.Select(column => column switch { "model" => "Model X", "channel" => "console", "temperature" => "0", _ => row[column] })))]);
+
+        const string Entity = "namespace Shop;\n\n[Table(\"ShopOrderLines\", Schema = \"{{schema}}\")]\n[PrimaryKey(nameof(CompanyId), nameof(OrderId))]\npublic class ShopOrderLine\n{\n    public int CompanyId { get; set; }\n    public int OrderId { get; set; }\n    public int ProductId { get; set; }\n}";
+        const string Query = "using System.Linq;\n\nnamespace Queries;\n\npublic static class Lines\n{\n    public static IQueryable<ShopOrderLine> FindAggregationGroupingAndHaving(DbContext ctx) => ctx.Set<ShopOrderLine>();\n}";
+        File.WriteAllText(ReplyFile(run, id), Reply(
+            "FILE: Shop.cs | CSharpEntity", "```csharp", Entity, "```",
+            "FILE: Lines.cs | CSharpQuery", "```csharp", Query, "```",
+            "REPORT:", "```json", "{ \"model\": \"x\", \"toolsUsed\": [], \"sourcesConsulted\": [], \"contextUsed\": [], \"assumptions\": [] }", "```"));
+
+        var report = WebAttempts.Import(run);
+        Assert.Equal(new[] { id }, report.Imported);
+
+        var artifact = ForeignArtifact.Read(Path.Combine(run, "artifacts", id), "schema");
+        var entity = artifact.Units.Single(unit => unit.ContentType == ConversionContentType.CSharpEntity).Content;
+        var query = artifact.Units.Single(unit => unit.ContentType == ConversionContentType.CSharpQuery).Content;
+        output.WriteLine(entity);
+        output.WriteLine(query);
+
+        Assert.StartsWith("using System.ComponentModel.DataAnnotations;\nusing System.ComponentModel.DataAnnotations.Schema;\nusing Microsoft.EntityFrameworkCore;\n\nnamespace Shop;", entity, StringComparison.Ordinal);
+        Assert.StartsWith("using Microsoft.EntityFrameworkCore;\nusing Shop;\nusing System.Linq;\n\nnamespace Queries;", query, StringComparison.Ordinal);
+        Assert.EndsWith(Entity.Replace("{{schema}}", "schema", StringComparison.Ordinal)[Entity.IndexOf('[')..] + "\n", entity, StringComparison.Ordinal);
+
+        using (var metadata = JsonDocument.Parse(artifact.Metadata))
+        {
+            var root = metadata.RootElement;
+            Assert.Equal(WebEnvelope.Repaired, root.GetProperty("envelope").GetString());
+            var repairs = root.GetProperty("envelopeRepairs").EnumerateArray().Select(repair => repair.GetString()).ToList();
+            Assert.Equal(2, repairs.Count);
+            Assert.Contains("Shop.cs: added using System.ComponentModel.DataAnnotations; using System.ComponentModel.DataAnnotations.Schema; using Microsoft.EntityFrameworkCore;", repairs);
+            Assert.Contains("Lines.cs: added using Microsoft.EntityFrameworkCore; using Shop;", repairs);
+        }
+
+        // The written files do not compile; the repaired ones do, as a whole file beside the entities.
+        Assert.False(PreparedQuery.Compile("Envelope_Written", ORMEnum.EFCore, Query, [Entity.Replace("{{schema}}", "schema", StringComparison.Ordinal)]).Success);
+        var compiled = PreparedQuery.Compile("Envelope_Repaired", ORMEnum.EFCore, query, [entity]);
+        Assert.True(compiled.Success, string.Join("; ", compiled.Errors.Select(error => error.ToString())));
+    }
+
+    /// <summary>The repair is the consumer's contribution and nothing else (decision 204): on the Java side the file layout, the imports, the package in scope and the binding of a mapper document; a mapping fact stays as written.</summary>
+    [Fact]
+    public void TheEnvelopeRepairGivesAWholeFileWhatTheConsumerGaveABareMethod()
+    {
+        var (files, repairs) = WebEnvelope.Repair(
+        [
+            new WebReplyFile("Shop.java", "JavaEntity", "package Shop;\n\nimport jakarta.persistence.Entity;\n\n@Entity\npublic class ShopOrder {\n    private int orderId;\n}\n\n/** The line. */\n@Entity\npublic class ShopOrderLine {\n    private int lineNumber;\n}\n", false),
+            new WebReplyFile("FindFilteringMapper.java", "XML", "<mapper namespace=\"Shop.LineMapper\">\n  <select id=\"findFiltering\" resultType=\"Shop.ShopOrderLine\">SELECT * FROM {{schema}}.ShopOrderLines</select>\n</mapper>\n", false),
+            new WebReplyFile("FindFilteringMapper.java", "JavaQuery", "package Shop.mappers;\n\nimport java.util.List;\n\npublic interface FindFilteringMapper {\n    List<ShopOrderLine> findFiltering();\n}\n", false),
+        ], ORMEnum.MyBatis);
+
+        foreach (var repair in repairs)
+        {
+            output.WriteLine(repair);
+        }
+
+        Assert.Equal(new[] { "ShopOrder.java", "ShopOrderLine.java", "FindFilteringMapper.xml", "FindFilteringMapper.java" }, files.Select(file => file.Path));
+        Assert.Equal("package Shop;\n\nimport jakarta.persistence.Entity;\n\n@Entity\npublic class ShopOrder {\n    private int orderId;\n}\n", files[0].Content);
+        Assert.StartsWith("package Shop;\n\nimport jakarta.persistence.Entity;\n\n/** The line. */\n@Entity\npublic class ShopOrderLine {", files[1].Content, StringComparison.Ordinal);
+        Assert.Contains("<mapper namespace=\"Shop.mappers.FindFilteringMapper\">", files[2].Content);
+        Assert.Contains("resultType=\"Shop.ShopOrderLine\"", files[2].Content);
+        Assert.StartsWith("package Shop.mappers;\n\nimport java.util.List;\nimport java.math.BigDecimal;", files[3].Content, StringComparison.Ordinal);
+        Assert.Contains("import Shop.*;\n", files[3].Content);
+        Assert.Equal(4, repairs.Count);
+        Assert.Contains(repairs, repair => repair.StartsWith("Shop.java split into ShopOrder.java, ShopOrderLine.java", StringComparison.Ordinal));
+        Assert.Contains(repairs, repair => repair.StartsWith("FindFilteringMapper.java renamed to FindFilteringMapper.xml", StringComparison.Ordinal));
+        Assert.Contains(repairs, repair => repair.Contains("namespace \"Shop.LineMapper\" set to \"Shop.mappers.FindFilteringMapper\"", StringComparison.Ordinal));
+
+        // A file that carries directives and a bare method gets the class a consumer put around the method.
+        var (wrapped, wrapping) = WebEnvelope.Repair(
+            [new WebReplyFile("Find.java", "JavaQuery", "package Shop;\n\nimport jakarta.persistence.EntityManager;\nimport jakarta.persistence.Query;\n\npublic static Query find(EntityManager em) {\n    return em.createQuery(\"select o from ShopOrder o\");\n}\n", false)],
+            ORMEnum.Hibernate);
+        Assert.Contains("public class GeneratedQueries {\n    public static Query find(EntityManager em) {", wrapped[0].Content);
+        Assert.Contains("import jakarta.persistence.TypedQuery;", wrapped[0].Content);
+        Assert.Equal(2, wrapping.Count);
+
+        // Nothing to repair is nothing: no sentence, the files as they were.
+        var whole = new WebReplyFile("FindFilteringQuery.cs", "CSharpQuery", "using Microsoft.EntityFrameworkCore;\n\nnamespace Shop;\n\npublic static class FindFilteringQuery\n{\n    public static IQueryable<ShopOrderLine> FindFiltering(DbContext ctx) => ctx.Set<ShopOrderLine>();\n}\n", false);
+        var (intact, nothing) = WebEnvelope.Repair([whole], ORMEnum.EFCore);
+        Assert.Empty(nothing);
+        Assert.Equal(whole, Assert.Single(intact));
+        Assert.True(WebEnvelope.Repairs("few-shot"));
+        Assert.False(WebEnvelope.Repairs("zero-shot"));
     }
 
     [Fact]
@@ -534,6 +646,8 @@ public class WebAttemptTest(ITestOutputHelper output)
             Row("a2", "matrix:Filtering", "EFCore", "llm", "target", 4, ForeignVerdict.Agrees, Model + ",\"attempt\":2}"),
             Row("a3", "matrix:Filtering", "EFCore", "llm", "target", 1, ForeignVerdict.NotCompiled, Model + ",\"attempt\":3,\"refusedBefore\":1}"),
             Row("c1", "matrix:Projection", "MyBatis", "llm", "target", 4, ForeignVerdict.Agrees, Model + ",\"attempt\":1}"),
+            Row("f1", "matrix:Filtering", "EFCore", "llm", "target", 4, ForeignVerdict.Agrees, "{\"model\":\"m\",\"channel\":\"chat\",\"variant\":\"few-shot\",\"attempt\":1,\"envelope\":\"repaired\",\"envelopeRepairs\":[\"Find.cs: added using Shop;\"]}"),
+            Row("f2", "matrix:Filtering", "EFCore", "llm", "target", 4, ForeignVerdict.Agrees, "{\"model\":\"m\",\"channel\":\"chat\",\"variant\":\"few-shot\",\"attempt\":2,\"envelope\":\"intact\"}"),
         ]);
         File.WriteAllLines(Path.Combine(temp.Path, WebAttempts.RowsFileName),
         [
@@ -547,9 +661,10 @@ public class WebAttemptTest(ITestOutputHelper output)
             output.WriteLine(line);
         }
 
-        Assert.Contains("| llm · m · chat · zero-shot | 2 | 4 | 1 | read | 1 of 2 (50 %) | 3 of 4 (75 %) | 1 of 2 (50 %) |", lines);
-        Assert.Contains("| | | | | compiled | 1 of 2 (50 %) | 2 of 4 (50 %) | 1 of 2 (50 %) |", lines);
-        Assert.Contains("| | | | | agrees | 1 of 2 (50 %) | 2 of 4 (50 %) | 1 of 2 (50 %) |", lines);
+        Assert.Contains("| llm · m · chat · zero-shot | 2 | 4 | 1 | — | read | 1 of 2 (50 %) | 3 of 4 (75 %) | 1 of 2 (50 %) |", lines);
+        Assert.Contains("| | | | | | compiled | 1 of 2 (50 %) | 2 of 4 (50 %) | 1 of 2 (50 %) |", lines);
+        Assert.Contains("| | | | | | agrees | 1 of 2 (50 %) | 2 of 4 (50 %) | 1 of 2 (50 %) |", lines);
+        Assert.Contains("| llm · m · chat · few-shot | 1 | 2 | 0 | 1 of 2 (50 %) | read | 1 of 1 (100 %) | 2 of 2 (100 %) | 1 of 1 (100 %) |", lines);
         Assert.Contains("| matrix:Filtering Dapper → EFCore | llm · m · chat · zero-shot | 4 agrees | 4 agrees · 4 agrees · 1 not compiled |", lines);
         Assert.Contains(lines, line => line.StartsWith("Cells without a row of the tool", StringComparison.Ordinal) && line.Contains("matrix:Projection Dapper → MyBatis", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.StartsWith("| llm | m | zero-shot | .NET → .NET | 4 | 1 |", StringComparison.Ordinal));

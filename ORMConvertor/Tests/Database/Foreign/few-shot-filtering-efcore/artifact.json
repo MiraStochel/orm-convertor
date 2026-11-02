@@ -5,7 +5,7 @@
   "producer": "human",
   "units": [
     { "path": "Shop.cs", "contentType": "CSharpEntity" },
-    { "path": "FindFiltering.cs", "contentType": "CSharpQuery" }
+    { "path": "FindFilteringQuery.cs", "contentType": "CSharpQuery" }
   ],
   "metadata": {
     "note": "the few-shot example of the web channel (decision 189): written by hand as the form the target gives the category; reaches the fourth level and agrees"

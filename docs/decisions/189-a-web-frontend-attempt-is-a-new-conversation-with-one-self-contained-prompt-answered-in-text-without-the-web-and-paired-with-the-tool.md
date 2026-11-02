@@ -1,7 +1,7 @@
 # 189 — Pokus jazykového modelu ve webovém rozhraní je nová konverzace s jedním samostatným promptem a odpověď je text v pevném tvaru; přístup k webu je zakázaný, čas, tokeny a kredity měří obsluha a hlášení modelu se jen opisuje, a souhrn staví pokusy vedle nástroje nad týmiž buňkami
 
 Datum: 2026-10-26
-Stav: revidováno
+Stav: revidováno; tvar dotazové jednotky odpovědi nahrazuje 204
 Požadavky: T4, T5, T6, T3
 Podklad: zadání ([`requirements.md`](../requirements.md), T4: „porovnat pravidlový přístup alespoň s jedním silným LLM v zero-shot a few-shot režimu; uvádět přesný model, verzi, prompt, teplotu, počet pokusů, tokeny, čas a náklady"); schválená [specifikace](../specifikace.tex) (T4–T6: projekt připraví data, rozhraní a měřicí infrastrukturu); rozhodnutí [167](167-records-of-runs-and-measurements-have-a-folder-of-their-own.md), [172](172-a-foreign-artifact-enters-the-verification-levels-as-a-directory-with-a-manifest-beside-the-client.md), [173](173-the-experiment-run-judges-the-tools-artifact-through-the-foreign-path-and-measures-mapping-completeness-by-reading-the-artifact-back.md) a [175](175-the-comparison-with-a-language-model-is-a-protocol-over-the-foreign-path.md); kontrola protokolu z hosta z 2026-10-25 (níž, *Kontext*); otevřená položka *Srovnání s jazykovým modelem nemá model, prompty ani záznam*
 

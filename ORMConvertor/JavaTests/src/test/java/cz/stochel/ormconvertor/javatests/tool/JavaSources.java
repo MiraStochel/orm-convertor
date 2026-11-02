@@ -25,8 +25,15 @@ public final class JavaSources {
     // Anchored at the start of a line: a nested key class is indented and declared static,
     // so the top-level type of the file is the one this matches. An interface counts as
     // well since decision 084, because a MyBatis mapper is one and Java demands the same
-    // file name of it.
-    private static final Pattern PUBLIC_CLASS = Pattern.compile("(?m)^public\\s+(?:class|interface)\\s+(\\w+)\\b");
+    // file name of it; a modifier between public and the keyword is a whole file of a
+    // foreign artifact (decision 204), which a developer writes final.
+    private static final Pattern PUBLIC_CLASS = Pattern.compile("(?m)^public\\s+(?:(?:final|abstract|sealed|non-sealed|strictfp)\\s+)*(?:class|interface|enum|record)\\s+(\\w+)\\b");
+
+    // A whole file rather than a bare method (decision 204): a line that opens a package, an
+    // import or a top-level type declaration, which a method - a signature and a body - never
+    // has at the start of a line.
+    private static final Pattern COMPILATION_UNIT = Pattern.compile(
+            "(?m)^[ \\t]*(?:package\\s|import\\s|(?:@\\w+(?:\\([^)]*\\))?\\s*)*(?:(?:public|final|abstract|sealed|non-sealed|strictfp)\\s+)*(?:class|interface|enum|record)\\s+\\w+)");
 
     private JavaSources() {
     }
@@ -35,6 +42,15 @@ public final class JavaSources {
     public static String packageOf(String source) {
         Matcher matcher = PACKAGE.matcher(source);
         return matcher.find() ? matcher.group(1) : null;
+    }
+
+    /**
+     * Whether the query unit is a whole file - a package, imports and the class or interface
+     * around the method - rather than the bare method the tool writes (decision 204). A whole
+     * file is compiled as it is; a bare method gets the class and the imports of the consumer.
+     */
+    public static boolean isCompilationUnit(String source) {
+        return COMPILATION_UNIT.matcher(source).find();
     }
 
     /** The name of the public top-level class - the name its file must have. */
