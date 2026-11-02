@@ -2,6 +2,8 @@
 
 Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, čísla se nepřepoužívají; **číslo 038 je vynechané**. Stav je převzatý z hlavičky souboru, sloupec *Požadavky* nese vazbu rozhodnutí → požadavek (opačný směr: [`traceability.md`](../traceability.md)).
 
+**Název souboru má nejvýše 168 znaků včetně přípony `.md`.** Celé znění rozhodnutí nese nadpis v tabulce níže a hlavička souboru; název souboru nese jen jádro volby, protože se cituje z ostatních dokumentů a z kódu.
+
 | Č. | Rozhodnutí | Stav | Požadavky |
 |---|---|---|---|
 | 001 | [Odkaz na entitu ve vztahu jménem, ne referencí](001-entity-reference-by-name.md) | platí | F3, F10, F11 |
@@ -203,7 +205,7 @@ Jedno rozhodnutí = jeden soubor. Číslování je chronologické a stabilní, �
 | 198 | [Připojení ke katalogu čeká omezeně: `Connect Timeout` 5 s bez opakování, nevysloví-li řetězec jinak; jména tabulek jdou do katalogu po dávkách pod mezí parametrů příkazu](198-the-catalog-connection-waits-a-bounded-time-and-table-names-go-to-the-catalog-in-batches-under-the-parameter-limit.md) | platí | S3, S7, F4, F6 |
 | 200 | [Instance javové půlky běhu mezí překládají se stropem zanoření vypnutým, proměnnou compose nastavenou jen pro ten běh; jinak drží výchozí strop nasazení](200-the-instances-of-the-java-half-of-the-limits-run-translate-with-the-nesting-cap-off-by-a-compose-variable-of-that-run.md) | platí | S3, T3 |
 | 201 | [CASE v ELSE jiného CASE píše builder JPQL do EclipseLinku jako jeden CASE s větvemi vnitřního připojenými za větve vnějšího; CASE hlouběji pod ELSE jde nativním SQL](201-a-case-in-the-else-of-a-case-is-written-for-eclipselink-as-one-case-with-the-inner-branches-appended-and-a-case-deeper-under-the-else-goes-out-in-native-sql.md) | platí | F9, F10, T2, T3 |
-| 202 | [Ovladač nad API je běh sady na vyžádání nad koncovým bodem kompatibilním s OpenAI, nastavený souborem v adresáři běhu; kanál `api` je třetí vedle konzole a chatu; pilotním modelem je Qwen3.5-9B v kvantizaci Q4_K_M, spouštěný lokálně v llama.cpp a připnutý otiskem souboru a digestem obrazu](202-the-driver-over-an-api-is-an-on-demand-run-over-an-openai-compatible-endpoint-the-channel-api-is-the-third-and-the-pilot-model-is-qwen35-9b-pinned-by-file-hash-and-image-digest.md) | platí | T4, T5, T6, T3, S2 |
+| 202 | [Ovladač nad API je běh sady na vyžádání nad koncovým bodem kompatibilním s OpenAI, nastavený souborem v adresáři běhu; kanál `api` je třetí vedle konzole a chatu; pilotním modelem je Qwen3.5-9B v kvantizaci Q4_K_M, spouštěný lokálně v llama.cpp a připnutý otiskem souboru a digestem obrazu](202-the-driver-over-an-api-is-an-on-demand-run-over-an-openai-compatible-endpoint-and-the-pilot-model-is-qwen35-9b.md) | platí | T4, T5, T6, T3, S2 |
 | 199 | [Položka archivu je relativní cesta bez `..` a bez znaků, které jméno souboru nesmí nést; jiné jméno odmítne celý archiv s 400, které položku jmenuje](199-an-archive-entry-is-a-relative-path-and-any-other-name-refuses-the-archive-by-name.md) | platí | S7, F14, S4 |
 
 ## Formát
