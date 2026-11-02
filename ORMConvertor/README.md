@@ -331,7 +331,23 @@ The same run, with step 3 made by a driver instead of the operator (decision [20
   }
   ```
 
-  For a vendor: its base URL ending in `/v1`, the model and snapshot as it names them, the prices of its list at the date of the attempt, `"apiKeyVariable": "<name of the variable>"`, and no `extra`. `cache_prompt: false` is llama.cpp's: without it the second attempt of a cell gets its prompt from the cache and its time is not the time of a whole attempt.
+  For a vendor: its base URL ending in `/v1`, the model and snapshot as it names them, the prices of its list at the date of the attempt, `"apiKeyVariable": "<name of the variable>"`, and no `extra`. `cache_prompt: false` is llama.cpp's: without it the second attempt of a cell gets its prompt from the cache and its time is not the time of a whole attempt. `temperature` and `seed` are optional: a model that takes no temperature gets a file without it, the request carries none, the row stays blank and the import records `default` - the second setting of decision 175.
+- **The strong model** of T4 is Claude Fable 5.1 over the vendor's OpenAI-compatible endpoint (decision [203](../docs/decisions/203-the-strong-model-is-claude-fable-5-1-over-the-vendors-openai-compatible-endpoint-and-the-temperature-of-the-driver-is-optional.md)), by the same driver over the same `cells.tsv` and prompts, in a run directory of its own. Its `api.json`:
+
+  ```json
+  {
+    "url": "https://api.anthropic.com/v1",
+    "model": "claude-fable-5-1",
+    "version": "claude-fable-5-1",
+    "frontend": "Claude API, OpenAI-compatible layer (/v1/chat/completions)",
+    "maxTokens": 32768,
+    "usdPerMillionTokensIn": 10,
+    "usdPerMillionTokensOut": 50,
+    "apiKeyVariable": "ANTHROPIC_API_KEY"
+  }
+  ```
+
+  No `temperature`: the endpoint answers 400 to any value below 1 on this model, so the run is the second setting of decision 175 and its three attempts of a cell may differ. No `seed`: the endpoint ignores it. The cap is higher than the pilot's because the model's hidden thinking - always on, at the vendor's default effort, not returned and not settable through this layer - counts into `max_tokens` and into `tokensOut`. The key is one from the vendor's console created inside a workspace (a key outside one needs a header the driver does not send), and the organization needs the vendor's default data retention (a zero-retention organization gets 400). The dateless model ID is the vendor's pinned snapshot; the record states the date of the attempts, the model name the endpoint returned, the prices at that date and the training cut-off the vendor publishes. A refusal by the vendor's safety classifiers is a reply without files, a row at level 0 like any other.
 - **Step 3 by the driver**: `ORMCONVERTOR_LLM_RUN=<run> dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ApiAttemptTest.TheAttemptsAreMadeWhereAsked"`. Attempts go one at a time, the table is written after each, and a run stopped from outside continues where it was; an attempt that has a `reply.md` is not made again, one whose reply the import refused and moved aside is. An endpoint that answers with an error, or an answer without `choices[0].message`, stops the run naming the attempt - a failure of the channel, not a result of the model; a reply without files or outside the form is the model's result and the import makes it a row at level 0 as for the operator. A deterministic model at temperature 0 gives the three attempts of a cell the same bytes; that is the measured spread, not a reason to make fewer. Without `api.json` the case skips: the run is one of the web frontend.
 
 ## The experiment run

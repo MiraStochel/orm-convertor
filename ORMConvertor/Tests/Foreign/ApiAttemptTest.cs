@@ -193,6 +193,69 @@ public class ApiAttemptTest(ITestOutputHelper output)
         }
     }
 
+    /// <summary>
+    /// A model whose endpoint takes no temperature (decision 203): the settings leave it out, the
+    /// request carries none, the row stays blank and the import reads it as the second setting of
+    /// decision 175, <c>default</c>.
+    /// </summary>
+    [Fact]
+    public void AModelWithoutATemperatureSendsNoneAndItsRowSaysDefault()
+    {
+        using var temp = new TempDirectory();
+        var run = temp.Path;
+        File.WriteAllText(Path.Combine(run, WebCell.FileName), $"answers\tsource\ttarget\tvariant\tattempts\n{TrialKey}\tDapper\tEFCore\tzero-shot\t1\n");
+        var id = Assert.Single(WebAttempts.Prepare(run));
+
+        File.WriteAllText(Path.Combine(run, ApiSettings.FileName), """
+            { "url": "http://stub.local/v1", "model": "claude-fable-5-1", "version": "claude-fable-5-1", "frontend": "Claude API", "maxTokens": 32768, "usdPerMillionTokensIn": 10, "usdPerMillionTokensOut": 50 }
+            """);
+        var settings = ApiSettings.Read(Path.Combine(run, ApiSettings.FileName));
+        Assert.Null(settings.Temperature);
+        Assert.Null(settings.Seed);
+
+        var content = string.Join("\n",
+            "FILE: Shop.cs | CSharpEntity",
+            "```csharp",
+            "namespace Shop;",
+            "public class ShopOrderLine { public int ProductId { get; set; } }",
+            "```",
+            "REPORT:",
+            "```json",
+            "{ \"model\": \"x\", \"toolsUsed\": [], \"sourcesConsulted\": [], \"assumptions\": [] }",
+            "```");
+
+        JsonObject? body = null;
+        using var stub = new StubEndpoint(request =>
+        {
+            body = (JsonObject)JsonNode.Parse(request.Body)!;
+            return (HttpStatusCode.OK, new JsonObject
+            {
+                ["model"] = "claude-fable-5-1",
+                ["choices"] = new JsonArray(new JsonObject { ["finish_reason"] = "stop", ["message"] = new JsonObject { ["role"] = "assistant", ["content"] = content } }),
+                ["usage"] = new JsonObject { ["prompt_tokens"] = 2000, ["completion_tokens"] = 6000 },
+            }.ToJsonString());
+        });
+
+        ApiAttempts.Make(run, settings, stub);
+
+        Assert.False(body!.ContainsKey("temperature"));
+        Assert.False(body.ContainsKey("seed"));
+        Assert.Equal(32768, body["max_tokens"]!.GetValue<int>());
+        var row = Assert.Single(WebAttempts.ReadTable(Path.Combine(run, WebAttempts.AttemptsFileName)));
+        Assert.Equal(string.Empty, row["temperature"]);
+        Assert.Equal("0.32", row["costUsd"]);
+        Assert.Equal("finish=stop", row["note"]);
+
+        var imported = WebAttempts.Import(run);
+        Assert.Equal([id], imported.Imported);
+        Assert.Empty(imported.Refused);
+        Assert.Empty(imported.Problems);
+        var artifact = ForeignArtifact.Read(Path.Combine(run, "artifacts", id), "schema");
+        using var metadata = JsonDocument.Parse(artifact.Metadata);
+        Assert.Equal("default", metadata.RootElement.GetProperty("temperature").GetString());
+        Assert.Equal("api", metadata.RootElement.GetProperty("channel").GetString());
+    }
+
     [Fact]
     public void AnEndpointThatFailsStopsTheRunByName()
     {

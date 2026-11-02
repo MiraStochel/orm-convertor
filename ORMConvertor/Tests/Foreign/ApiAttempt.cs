@@ -12,17 +12,19 @@ namespace Tests.Foreign;
 /// directory of the run: the base URL of an OpenAI-compatible endpoint (ending in <c>/v1</c>),
 /// the model as the endpoint names it, the version the record states (the SHA-256 of the model
 /// file for a local model, the snapshot for a hosted one), the frontend - the server and its
-/// build -, the temperature, the output limit, the price per million tokens in and out (0 for a
-/// local model), optionally the name of the environment variable that holds the API key (the key
-/// itself never stands in the file), the seed, and <c>extra</c> - fields merged into every
-/// request as they are, such as <c>cache_prompt: false</c> for llama.cpp.
+/// build -, the temperature - absent for a model whose endpoint takes none, which then runs at
+/// its default and is the second setting of decision 175 (decision 203) -, the output limit, the
+/// price per million tokens in and out (0 for a local model), optionally the name of the
+/// environment variable that holds the API key (the key itself never stands in the file), the
+/// seed, and <c>extra</c> - fields merged into every request as they are, such as
+/// <c>cache_prompt: false</c> for llama.cpp.
 /// </summary>
 internal sealed record ApiSettings(
     string Url,
     string Model,
     string Version,
     string Frontend,
-    decimal Temperature,
+    decimal? Temperature,
     int MaxTokens,
     decimal UsdPerMillionTokensIn,
     decimal UsdPerMillionTokensOut,
@@ -64,6 +66,14 @@ internal sealed record ApiSettings(
         string? OptionalText(string name)
             => root[name] is JsonValue value && value.TryGetValue<string>(out var text) && text.Trim().Length > 0 ? text.Trim() : null;
 
+        // Absent is a setting: the model takes no temperature and runs at its default (decision 203).
+        decimal? OptionalNumber(string name)
+            => root[name] is null
+                ? null
+                : root[name] is JsonValue value && value.TryGetValue<decimal>(out var number)
+                    ? number
+                    : throw new InvalidOperationException($"{file}: \"{name}\" is not a number (decision 203).");
+
         var maxTokens = Number("maxTokens");
         if (maxTokens <= 0 || maxTokens != decimal.Truncate(maxTokens))
         {
@@ -78,7 +88,7 @@ internal sealed record ApiSettings(
             Text("model"),
             Text("version"),
             Text("frontend"),
-            Number("temperature"),
+            OptionalNumber("temperature"),
             (int)maxTokens,
             Number("usdPerMillionTokensIn"),
             Number("usdPerMillionTokensOut"),
@@ -155,7 +165,8 @@ internal sealed record ApiReply(string Content, string? FinishReason, int? Token
 /// reply yet, one at a time, by sending its prompt as the one user message of a chat completion -
 /// no system prompt, no tool - to the endpoint of <c>api.json</c>, writes the content of the answer
 /// as <c>reply.md</c> and the measurements into the row of the attempt: the model, version and
-/// frontend of the settings, <c>channel</c> <c>api</c>, the temperature, the seconds of the call by
+/// frontend of the settings, <c>channel</c> <c>api</c>, the temperature (blank where the settings
+/// have none, which the import reads as <c>default</c>), the seconds of the call by
 /// its own clock, the tokens the endpoint counted and the cost from them by the prices of the
 /// settings. The table is written after every attempt, so a run stopped from outside continues
 /// where it was; an attempt with a reply is not made again, and a reply the import refused - moved
@@ -253,9 +264,13 @@ internal static class ApiAttempts
         {
             ["model"] = settings.Model,
             ["messages"] = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt }),
-            ["temperature"] = settings.Temperature,
             ["max_tokens"] = settings.MaxTokens,
         };
+
+        if (settings.Temperature is decimal temperature)
+        {
+            body["temperature"] = temperature;
+        }
 
         if (settings.Seed is int seed)
         {
@@ -277,7 +292,7 @@ internal static class ApiAttempts
         row["version"] = settings.Version;
         row["channel"] = Channel;
         row["frontend"] = settings.Frontend;
-        row["temperature"] = settings.Temperature.ToString(CultureInfo.InvariantCulture);
+        row["temperature"] = settings.Temperature?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
         row["seconds"] = elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture);
         row["tokensIn"] = reply.TokensIn?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
         row["tokensOut"] = reply.TokensOut?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;

@@ -1,8 +1,6 @@
 // The domain of the query-shape matrices as Dapper states it: plain classes, no attribute,
-// no key - every mapping fact is the catalog's to supply (F6). The seven classes carry
-// the prefix Shop, so that the naming rule of decision 050 finds their tables - ShopOrders
-// from ShopOrder - and finds them once: the fixture schema holds Orders, OrderLines and
-// Products of its own. Read by both test suites from this one file.
+// no key - every mapping fact is the catalog's to supply (F6). Read by both test suites
+// from this one file.
 using System;
 
 namespace Shop;

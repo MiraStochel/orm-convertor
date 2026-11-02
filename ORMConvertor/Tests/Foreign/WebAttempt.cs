@@ -927,9 +927,10 @@ internal static class WebAttempts
         {
             Number("temperature");
         }
-        else if (channel == "chat")
+        else if (channel == "chat" || channel == ApiAttempts.Channel)
         {
-            // A chat application has no setting for it: the attempt is the second setting of decision 175.
+            // A chat application has no setting for it, and so has an endpoint whose model takes no
+            // temperature (decision 203): the attempt is the second setting of decision 175.
             metadata["temperature"] = "default";
         }
 
