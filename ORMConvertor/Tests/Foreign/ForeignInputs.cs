@@ -25,7 +25,10 @@ internal static class ForeignInputs
 
     public const string ManifestFileName = "input.json";
 
-    private const string SchemaPlaceholder = "{{schema}}";
+    internal const string SchemaPlaceholder = "{{schema}}";
+
+    /// <summary>The text of a unit with the schema the suite substituted back as the placeholder, so that the file names no schema of this machine; the LDBC schema is named after the fixture's and keeps its suffix.</summary>
+    internal static string Placeholder(string content) => content.Replace(TestDatabase.SchemaName, SchemaPlaceholder, StringComparison.Ordinal);
 
     /// <summary>
     /// Writes every input of the five kinds under the root - or those the filter takes, as the
@@ -147,11 +150,7 @@ internal static class ForeignInputs
             var unit = units[index];
             var path = Unique(unit.Name ?? $"unit-{index + 1}{Extension(unit.ContentType)}", taken);
 
-            // The schema the suite substituted goes back to the placeholder, so that the file
-            // names no schema of this machine; the LDBC schema is named after the fixture's and
-            // keeps its suffix.
-            var content = unit.Content.Replace(TestDatabase.SchemaName, SchemaPlaceholder, StringComparison.Ordinal);
-            File.WriteAllText(Path.Combine(directory, path), content);
+            File.WriteAllText(Path.Combine(directory, path), Placeholder(unit.Content));
 
             manifest.Add($"    {{ \"path\": {JsonSerializer.Serialize(path)}, \"contentType\": \"{unit.ContentType}\" }}{(index < units.Count - 1 ? "," : string.Empty)}");
         }

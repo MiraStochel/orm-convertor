@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="Shop">
+  <class name="ShopCustomer" table="ShopCustomers" schema="{{schema}}">
+    <id name="CustomerId" column="CustomerId" type="Int32">
+      <generator class="identity" />
+    </id>
+    <property name="Name" column="Name" type="String" not-null="true" />
+    <property name="Notes" column="Notes" type="String" />
+  </class>
+  <class name="ShopOrder" table="ShopOrders" schema="{{schema}}">
+    <composite-id>
+      <key-property name="CompanyId" column="CompanyId" type="Int32" />
+      <key-property name="OrderId" column="OrderId" type="Int32" />
+    </composite-id>
+    <property name="CustomerId" column="CustomerId" type="Int32" not-null="true" />
+    <property name="PlacedAt" column="PlacedAt" type="DateTime" not-null="true" />
+    <property name="IsCancelled" column="IsCancelled" type="Boolean" not-null="true" />
+  </class>
+  <class name="ShopOrderLine" table="ShopOrderLines" schema="{{schema}}">
+    <composite-id>
+      <key-property name="CompanyId" column="CompanyId" type="Int32" />
+      <key-property name="OrderId" column="OrderId" type="Int32" />
+      <key-property name="LineNumber" column="LineNumber" type="Int32" />
+    </composite-id>
+    <property name="ProductId" column="ProductId" type="Int32" not-null="true" />
+    <property name="Description" column="Description" type="String" not-null="true" />
+    <property name="Quantity" column="Quantity" type="Int32" not-null="true" />
+    <property name="UnitPrice" column="UnitPrice" type="Decimal" not-null="true" />
+  </class>
+  <class name="ShopOrderLineAllocation" table="ShopOrderLineAllocations" schema="{{schema}}">
+    <composite-id>
+      <key-property name="CompanyId" column="CompanyId" type="Int32" />
+      <key-property name="OrderId" column="OrderId" type="Int32" />
+      <key-property name="LineNumber" column="LineNumber" type="Int32" />
+      <key-property name="AllocationId" column="AllocationId" type="Int32" />
+    </composite-id>
+    <property name="AllocatedQuantity" column="AllocatedQuantity" type="Int32" not-null="true" />
+    <property name="Notes" column="Notes" type="String" />
+  </class>
+  <class name="ShopProduct" table="ShopProducts" schema="{{schema}}">
+    <id name="ProductId" column="ProductId" type="Int32">
+      <generator class="assigned" />
+    </id>
+    <property name="ProductName" column="ProductName" type="String" not-null="true" />
+    <property name="Sku" column="Sku" type="AnsiString" not-null="true" />
+    <property name="UnitPrice" column="UnitPrice" type="Decimal" not-null="true" />
+    <property name="IsDiscontinued" column="IsDiscontinued" type="Boolean" not-null="true" />
+  </class>
+  <class name="ShopDepartment" table="ShopDepartments" schema="{{schema}}">
+    <id name="DepartmentId" column="DepartmentId" type="Int32">
+      <generator class="assigned" />
+    </id>
+    <property name="ParentDepartmentId" column="ParentDepartmentId" type="Int32" />
+    <property name="Name" column="Name" type="String" not-null="true" />
+  </class>
+  <class name="ShopProductLink" table="ShopProductLinks" schema="{{schema}}">
+    <id name="LinkId" column="LinkId" type="Int32">
+      <generator class="assigned" />
+    </id>
+    <property name="FromProductId" column="FromProductId" type="Int32" not-null="true" />
+    <property name="ToProductId" column="ToProductId" type="Int32" not-null="true" />
+  </class>
+</hibernate-mapping>

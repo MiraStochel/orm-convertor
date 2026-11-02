@@ -1,0 +1,13 @@
+{
+  "answers": "matrix:AggregationGroupingAndHaving",
+  "source": "EFCore",
+  "target": "Dapper",
+  "producer": "human",
+  "units": [
+    { "path": "Shop.cs", "contentType": "CSharpEntity" },
+    { "path": "FindAggregationGroupingAndHaving.cs", "contentType": "CSharpQuery" }
+  ],
+  "metadata": {
+    "note": "the few-shot example of the web channel (decision 189): written by hand as the form the target gives the category; reaches the fourth level and agrees"
+  }
+}

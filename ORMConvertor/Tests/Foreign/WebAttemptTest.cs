@@ -1,7 +1,10 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Model;
 using OrmConvertor.Factories;
 using ORMConvertorAPI.Data;
+using SampleData;
+using Tests.Database;
 using Tests.Experiment;
 
 namespace Tests.Foreign;
@@ -109,12 +112,14 @@ public class WebAttemptTest(ITestOutputHelper output)
     [Fact]
     public void EveryTargetIsDescribedWithEveryRoleItTakes()
     {
-        var template = WebTemplate.Load(WebTemplate.ForVariant["zero-shot"]);
-
-        Assert.All(Enum.GetValues<ORMEnum>(), target =>
+        Assert.All(WebTemplate.ForVariant.Values, id =>
         {
-            Assert.True(template.Shapes.ContainsKey(target), $"The template describes no answer for {target}.");
-            Assert.All(WebPrompt.Roles(target), role => Assert.Contains($"`{role}`", template.Shapes[target]));
+            var template = WebTemplate.Load(id);
+            Assert.All(Enum.GetValues<ORMEnum>(), target =>
+            {
+                Assert.True(template.Shapes.ContainsKey(target), $"The template {id} describes no answer for {target}.");
+                Assert.All(WebPrompt.Roles(target), role => Assert.Contains($"`{role}`", template.Shapes[target]));
+            });
         });
     }
 
@@ -122,6 +127,7 @@ public class WebAttemptTest(ITestOutputHelper output)
     [Theory]
     [InlineData("web-zero-shot-1")]
     [InlineData("web-zero-shot-2")]
+    [InlineData("web-few-shot-1")]
     public void EveryTemplateStaysReadable(string id)
     {
         var template = WebTemplate.Load(id);
@@ -131,13 +137,13 @@ public class WebAttemptTest(ITestOutputHelper output)
         Assert.Equal(Enum.GetValues<ORMEnum>().Length, template.Shapes.Count);
     }
 
-    /// <summary>Every input the export writes goes into a prompt, and no prompt names the repository or the tool - the excerpts' marker included (decision 189).</summary>
+    /// <summary>Every input the export writes goes into a prompt of every variant, and no prompt names the repository or the tool - the excerpts' marker included (decision 189).</summary>
     [Fact]
     public void EveryInputGoesIntoAPromptWithoutATrace()
     {
         using var temp = new TempDirectory();
         ForeignInputs.Export(temp.Path);
-        var template = WebTemplate.Load(WebTemplate.ForVariant["zero-shot"]);
+        var templates = WebTemplate.ForVariant.Values.Select(WebTemplate.Load).ToList();
 
         var directories = Directory.GetDirectories(temp.Path);
         Assert.NotEmpty(directories);
@@ -146,8 +152,115 @@ public class WebAttemptTest(ITestOutputHelper output)
         {
             var source = Enum.Parse<ORMEnum>(JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, ForeignInputs.ManifestFileName))).RootElement.GetProperty("source").GetString()!);
             var target = Enum.GetValues<ORMEnum>().First(framework => framework != source);
-            _ = WebPrompt.Render(template, directory, target);
+            foreach (var template in templates)
+            {
+                _ = WebPrompt.Render(template, directory, target);
+            }
         }
+    }
+
+    /// <summary>
+    /// The variant few-shot (decisions 175 and 189): three examples of the cell's direction in the
+    /// order of the matrix, the measured key not among them, and - the input being over the examples'
+    /// own domain - the queries alone: no entity class in the target's form, the placeholder kept.
+    /// </summary>
+    [Fact]
+    public void AFewShotPromptCarriesThreeExamplesOfItsDirectionWithoutTheMeasuredKeyAndWithoutTheSharedDomain()
+    {
+        using var temp = new TempDirectory();
+        var directory = ExportOne(temp.Path, TrialKey, ORMEnum.Dapper);
+        var template = WebTemplate.Load(WebTemplate.ForVariant["few-shot"]);
+
+        var prompt = WebPrompt.Render(template, directory, ORMEnum.EFCore);
+        output.WriteLine(prompt);
+        var examples = ExamplesSection(prompt);
+
+        Assert.Equal(prompt, WebPrompt.Render(template, directory, ORMEnum.EFCore));
+        Assert.Contains("### Example 3", examples);
+        Assert.DoesNotContain("### Example 4", examples);
+        Assert.Contains("FILE: FindProjection.sql\n", examples);
+        Assert.Contains("FILE: FindProjection.cs | CSharpQuery\n", examples);
+        Assert.Contains("FILE: FindFiltering.cs | CSharpQuery\n", examples);
+        Assert.Contains("FILE: FindJoinOverTwoColumns.cs | CSharpQuery\n", examples);
+        Assert.DoesNotContain(TrialKey.Id, examples);
+        Assert.DoesNotContain("CSharpEntity", examples);
+        Assert.Contains("the examples show the queries alone", examples);
+        Assert.Contains(ForeignInputs.SchemaPlaceholder, examples);
+        Assert.DoesNotContain(TestDatabase.SchemaName, prompt);
+        Assert.Contains("FILE: FindAggregationGroupingAndHaving.sql\n", prompt[prompt.IndexOf("## The input", StringComparison.Ordinal)..]);
+    }
+
+    /// <summary>An input over another domain - a query of the FIBEN catalog - gets the entity classes of the examples translated once, before the three queries.</summary>
+    [Fact]
+    public void AFewShotPromptOfAnInputOverAnotherDomainTranslatesTheEntityClassesOnce()
+    {
+        var key = new ForeignKey(ForeignKey.Fiben, FibenSample.Queries[0].Key);
+        using var temp = new TempDirectory();
+        var directory = ExportOne(temp.Path, key, ORMEnum.Dapper);
+
+        var prompt = WebPrompt.Render(WebTemplate.Load(WebTemplate.ForVariant["few-shot"]), directory, ORMEnum.Hibernate);
+        var examples = ExamplesSection(prompt);
+
+        Assert.Contains("### The entity classes of the examples", examples);
+        Assert.Equal(1, Regex.Matches(examples, Regex.Escape("FILE: Shop.cs\n")).Count);
+        Assert.Equal(1, Regex.Matches(examples, Regex.Escape("FILE: ShopOrderLine.java | JavaEntity\n")).Count);
+        Assert.Contains("FILE: FindProjection.java | JavaQuery\n", examples);
+        Assert.Contains("FILE: FindProjection.jpql | JpqlQuery\n", examples);
+        Assert.Contains("### Example 3", examples);
+        Assert.DoesNotContain("### Example 4", examples);
+        Assert.DoesNotContain(key.ToString(), prompt);
+    }
+
+    /// <summary>Every direction has one example more than a prompt takes, so that three remain when the measured key is one of them (decision 175).</summary>
+    [Fact]
+    public void EveryDirectionHasOneExampleMoreThanAPromptTakes()
+    {
+        foreach (var source in Enum.GetValues<ORMEnum>())
+        {
+            foreach (var target in Enum.GetValues<ORMEnum>().Where(framework => framework != source))
+            {
+                var examples = WebExamples.Of(source, target, measured: null);
+                Assert.True(examples.Count >= WebExamples.PerPrompt + 1, $"{source} → {target} has {examples.Count} examples; a prompt takes {WebExamples.PerPrompt} and one may be the measured key.");
+                Assert.Equal(WebExamples.PerPrompt, WebExamples.Of(source, target, examples[0].Artifact.Key).Count + (examples.Count - WebExamples.PerPrompt - 1));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The examples are hand-written artifacts of the path, every one written to reach the fourth
+    /// level and agree, every target has one per example query, and the examples of a target carry
+    /// one and the same domain - which is what lets a prompt translate it once.
+    /// </summary>
+    [Fact]
+    public void TheExamplesAreArtifactsOfThePathAndThoseOfATargetShareOneDomain()
+    {
+        var expected = ForeignArtifactPathTest.Expected();
+
+        Assert.All(WebExamples.Artifacts, artifact =>
+        {
+            var row = Assert.Single(expected, candidate => candidate.Id == artifact.Id);
+            Assert.Equal((ForeignLevel.Ran, ForeignVerdict.Agrees), (row.Reached, row.Outcome));
+            Assert.Equal("human", artifact.Producer);
+            Assert.Equal(ForeignKey.Matrix, artifact.Key.Kind);
+            Assert.NotEmpty(WebExamples.QueryUnits(artifact));
+            Assert.NotEmpty(WebExamples.DomainUnits(artifact));
+        });
+
+        Assert.Equal(Enum.GetValues<ORMEnum>().Order(), WebExamples.Artifacts.Select(artifact => artifact.Target).Distinct().Order());
+        foreach (var target in WebExamples.Artifacts.GroupBy(artifact => artifact.Target))
+        {
+            Assert.Equal(WebExamples.Queries.Select(query => query.Id).Order(), target.Select(artifact => artifact.Key.Id).Order());
+            var domains = target.Select(artifact => string.Join("\n", WebExamples.DomainUnits(artifact).Select(unit => unit.Path + "\n" + unit.Content))).Distinct().ToList();
+            Assert.True(domains.Count == 1, $"The examples of {target.Key} carry {domains.Count} different domains; a prompt translates the domain once, so they carry one.");
+        }
+    }
+
+    private static string ExamplesSection(string prompt)
+    {
+        var start = prompt.IndexOf("## Examples", StringComparison.Ordinal);
+        var end = prompt.IndexOf("## The input", StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start, "The prompt has the section of the examples before the input.");
+        return prompt[start..end];
     }
 
     [Fact]
@@ -392,7 +505,7 @@ public class WebAttemptTest(ITestOutputHelper output)
     public void ACellOfAVariantWithoutATemplateFailsByName()
     {
         using var temp = new TempDirectory();
-        File.WriteAllText(Path.Combine(temp.Path, WebCell.FileName), $"answers\tsource\ttarget\tvariant\n{TrialKey}\tDapper\tEFCore\tfew-shot\n");
+        File.WriteAllText(Path.Combine(temp.Path, WebCell.FileName), $"answers\tsource\ttarget\tvariant\n{TrialKey}\tDapper\tEFCore\trag\n");
 
         var failure = Assert.Throws<InvalidOperationException>(() => WebCell.Read(Path.Combine(temp.Path, WebCell.FileName)));
         Assert.Contains("has no template of the web channel", failure.Message);

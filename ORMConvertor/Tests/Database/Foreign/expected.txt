@@ -54,3 +54,105 @@ outcome = failed
 [q1-mybatis-differs]
 reached = 4
 outcome = differs
+
+# The examples of the variant few-shot of the web channel (decision 189), one per
+# category and target: each is the whole translation - the domain of the query-shape
+# matrices and one query - in the form the target gives it, and every one reaches the
+# fourth level and agrees, like the human artifacts above. The prompt of a cell shows
+# three of them in its direction (Tests/Foreign/WebExample.cs).
+
+[few-shot-projection-dapper]
+reached = 4
+outcome = agrees
+
+[few-shot-projection-efcore]
+reached = 4
+outcome = agrees
+
+[few-shot-projection-nhibernate]
+reached = 4
+outcome = agrees
+
+[few-shot-projection-hibernate]
+reached = 4
+outcome = agrees
+
+[few-shot-projection-eclipselink]
+reached = 4
+outcome = agrees
+
+[few-shot-projection-mybatis]
+reached = 4
+outcome = agrees
+
+[few-shot-filtering-dapper]
+reached = 4
+outcome = agrees
+
+[few-shot-filtering-efcore]
+reached = 4
+outcome = agrees
+
+[few-shot-filtering-nhibernate]
+reached = 4
+outcome = agrees
+
+[few-shot-filtering-hibernate]
+reached = 4
+outcome = agrees
+
+[few-shot-filtering-eclipselink]
+reached = 4
+outcome = agrees
+
+[few-shot-filtering-mybatis]
+reached = 4
+outcome = agrees
+
+[few-shot-join-over-two-columns-dapper]
+reached = 4
+outcome = agrees
+
+[few-shot-join-over-two-columns-efcore]
+reached = 4
+outcome = agrees
+
+[few-shot-join-over-two-columns-nhibernate]
+reached = 4
+outcome = agrees
+
+[few-shot-join-over-two-columns-hibernate]
+reached = 4
+outcome = agrees
+
+[few-shot-join-over-two-columns-eclipselink]
+reached = 4
+outcome = agrees
+
+[few-shot-join-over-two-columns-mybatis]
+reached = 4
+outcome = agrees
+
+[few-shot-aggregation-grouping-and-having-dapper]
+reached = 4
+outcome = agrees
+
+[few-shot-aggregation-grouping-and-having-efcore]
+reached = 4
+outcome = agrees
+
+[few-shot-aggregation-grouping-and-having-nhibernate]
+reached = 4
+outcome = agrees
+
+[few-shot-aggregation-grouping-and-having-hibernate]
+reached = 4
+outcome = agrees
+
+[few-shot-aggregation-grouping-and-having-eclipselink]
+reached = 4
+outcome = agrees
+
+[few-shot-aggregation-grouping-and-having-mybatis]
+reached = 4
+outcome = agrees

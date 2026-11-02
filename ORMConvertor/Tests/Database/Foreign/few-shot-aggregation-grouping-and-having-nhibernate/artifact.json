@@ -1,0 +1,15 @@
+{
+  "answers": "matrix:AggregationGroupingAndHaving",
+  "source": "Dapper",
+  "target": "NHibernate",
+  "producer": "human",
+  "units": [
+    { "path": "Shop.cs", "contentType": "CSharpEntity" },
+    { "path": "Shop.hbm.xml", "contentType": "XML" },
+    { "path": "FindAggregationGroupingAndHaving.cs", "contentType": "CSharpQuery" },
+    { "path": "FindAggregationGroupingAndHaving.hql" }
+  ],
+  "metadata": {
+    "note": "the few-shot example of the web channel (decision 189): written by hand as the form the target gives the category; reaches the fourth level and agrees"
+  }
+}

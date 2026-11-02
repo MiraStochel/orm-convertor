@@ -105,6 +105,7 @@ internal sealed record WebTemplate(string Id, string Prompt, IReadOnlyDictionary
     public static readonly IReadOnlyDictionary<string, string> ForVariant = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["zero-shot"] = "web-zero-shot-2",
+        ["few-shot"] = "web-few-shot-1",
     };
 
     private static readonly Regex Section = new(@"^=== (?:(prompt)|shape (\w+)) ===$", RegexOptions.CultureInvariant);
@@ -249,6 +250,12 @@ internal static class WebPrompt
             .Replace("{{CALL}}", Call(key, target), StringComparison.Ordinal)
             .Replace("{{SHAPE}}", shape, StringComparison.Ordinal);
 
+        // The examples of the variant few-shot, where the template has the section (decision 189).
+        if (text.Contains(WebExamples.Slot, StringComparison.Ordinal))
+        {
+            text = text.Replace(WebExamples.Slot, WebExamples.Render(source, target, key, [.. units.Select(unit => unit.Content)]), StringComparison.Ordinal);
+        }
+
         // The input goes in last, so that nothing in it is ever read as a slot.
         var slot = text.IndexOf("{{INPUT}}", StringComparison.Ordinal);
         if (slot < 0)
@@ -317,14 +324,33 @@ internal static class WebPrompt
 
         foreach (var (path, content) in units)
         {
-            var fence = Fence(content);
-            text.Append("FILE: ").Append(path).Append('\n')
-                .Append(fence).Append(Language(path)).Append('\n')
-                .Append(content.TrimEnd('\n')).Append('\n')
-                .Append(fence).Append("\n\n");
+            text.Append(FileBlock(path, null, content));
         }
 
         return text.ToString().TrimEnd('\n');
+    }
+
+    /// <summary>
+    /// One file as a prompt carries it: the line <c>FILE: &lt;path&gt;</c> - with the role after a bar
+    /// where the file is one of an answer, as the reply writes it - and the fenced block of its
+    /// content below, with LF and the marker of an excerpt neutral; a blank line after.
+    /// </summary>
+    public static string FileBlock(string path, ConversionContentType? role, string content)
+    {
+        var body = Neutral(Lf(content)).TrimEnd('\n');
+        var fence = Fence(body);
+        var text = new StringBuilder();
+        text.Append("FILE: ").Append(path);
+        if (role is not null)
+        {
+            text.Append(" | ").Append(role);
+        }
+
+        return text.Append('\n')
+            .Append(fence).Append(Language(path)).Append('\n')
+            .Append(body).Append('\n')
+            .Append(fence).Append("\n\n")
+            .ToString();
     }
 
     private static string Language(string path) => Path.GetExtension(path).ToLowerInvariant() switch

@@ -1,0 +1,20 @@
+{
+  "answers": "matrix:AggregationGroupingAndHaving",
+  "source": "Dapper",
+  "target": "Hibernate",
+  "producer": "human",
+  "units": [
+    { "path": "ShopCustomer.java", "contentType": "JavaEntity" },
+    { "path": "ShopOrder.java", "contentType": "JavaEntity" },
+    { "path": "ShopOrderLine.java", "contentType": "JavaEntity" },
+    { "path": "ShopOrderLineAllocation.java", "contentType": "JavaEntity" },
+    { "path": "ShopProduct.java", "contentType": "JavaEntity" },
+    { "path": "ShopDepartment.java", "contentType": "JavaEntity" },
+    { "path": "ShopProductLink.java", "contentType": "JavaEntity" },
+    { "path": "FindAggregationGroupingAndHaving.java", "contentType": "JavaQuery" },
+    { "path": "FindAggregationGroupingAndHaving.jpql" }
+  ],
+  "metadata": {
+    "note": "the few-shot example of the web channel (decision 189): written by hand as the form the target gives the category; reaches the fourth level and agrees"
+  }
+}
