@@ -596,7 +596,10 @@ internal sealed class WebReply
 /// a name of the repository, the tool or their authors anywhere, a link outside the blocks of
 /// files, a tool, a source or a context from outside the conversation (a memory, a custom
 /// instruction, a project, a file) the report declares. A link inside a file - the namespace of
-/// an XML document, the DTD of a MyBatis mapper - is no trace.
+/// an XML document, the DTD of a MyBatis mapper - is no trace. In the channel <c>code</c> the
+/// context the report declares is none either: there the captured request shows what the
+/// interface supplied, and the driver lets an attempt pass only with the measured context
+/// (decision 205).
 /// </summary>
 internal static class WebTrace
 {
@@ -605,7 +608,7 @@ internal static class WebTrace
     private static readonly HashSet<string> Nothing = new(["", "none", "n/a", "no", "nothing", "null"], StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The trace the reply carries, or null.</summary>
-    public static string? Find(WebReply reply, string text)
+    public static string? Find(WebReply reply, string text, string channel = "")
     {
         var name = WebPrompt.TraceNames.FirstOrDefault(name => text.Contains(name, StringComparison.OrdinalIgnoreCase));
         if (name is not null)
@@ -621,7 +624,8 @@ internal static class WebTrace
 
         if (reply.Report is not null && TryParse(reply.Report) is JsonObject report)
         {
-            foreach (var field in (string[])["toolsUsed", "sourcesConsulted", "contextUsed"])
+            string[] fields = channel == CodeAttempts.Channel ? ["toolsUsed", "sourcesConsulted"] : ["toolsUsed", "sourcesConsulted", "contextUsed"];
+            foreach (var field in fields)
             {
                 var declared = Declared(report[field]);
                 if (declared.Count > 0)
@@ -686,8 +690,8 @@ internal static class WebAttempts
 
     private static readonly string[] Numbers = ["seconds", "tokensIn", "tokensOut", "costUsd", "credits"];
 
-    /// <summary>The channels of an attempt: the two of decision 189 the operator makes by hand, and <c>api</c> of decision 202, which the driver fills.</summary>
-    private static readonly string[] Channels = ["console", "chat", ApiAttempts.Channel];
+    /// <summary>The channels of an attempt: the two of decision 189 the operator makes by hand, <c>api</c> of decision 202 and <c>code</c> of decision 205, which their drivers fill.</summary>
+    private static readonly string[] Channels = ["console", "chat", ApiAttempts.Channel, CodeAttempts.Channel];
 
     public static string? RunDirectory
         => Environment.GetEnvironmentVariable(RunVariable) is { } directory && !string.IsNullOrWhiteSpace(directory) ? directory.Trim() : null;
@@ -811,7 +815,7 @@ internal static class WebAttempts
             var channel = row.GetValueOrDefault("channel", string.Empty).ToLowerInvariant();
             if (row.GetValueOrDefault("model", string.Empty).Length == 0 || !Channels.Contains(channel))
             {
-                report.Problems.Add($"{id}: {AttemptsFileName} states no model, or a channel other than {string.Join(", ", Channels)}; the operator writes both (decision 189), or the driver of the channel api does (decision 202).");
+                report.Problems.Add($"{id}: {AttemptsFileName} states no model, or a channel other than {string.Join(", ", Channels)}; the operator writes both (decision 189), or the driver of the channel api or code does (decisions 202, 205).");
                 continue;
             }
 
@@ -821,7 +825,7 @@ internal static class WebAttempts
 
             var trace = WebPrompt.Digest(prompt) != row.GetValueOrDefault("promptSha256")
                 ? $"the prompt changed after it was generated (its digest is not the one in {AttemptsFileName})"
-                : WebTrace.Find(reply, text);
+                : WebTrace.Find(reply, text, channel);
 
             if (trace is not null)
             {
@@ -965,10 +969,11 @@ internal static class WebAttempts
         {
             Number("temperature");
         }
-        else if (channel == "chat" || channel == ApiAttempts.Channel)
+        else if (channel == "chat" || channel == ApiAttempts.Channel || channel == CodeAttempts.Channel)
         {
             // A chat application has no setting for it, and so has an endpoint whose model takes no
-            // temperature (decision 203): the attempt is the second setting of decision 175.
+            // temperature (decision 203) and Claude Code (decision 205): the attempt is the second
+            // setting of decision 175.
             metadata["temperature"] = "default";
         }
 
