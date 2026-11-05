@@ -25,7 +25,6 @@ Rejstřík, ne pořadí. Sloupec *Nutné pro* čte [specifikaci](./specifikace.t
 | [Testy Advisoru a benchmarkingu](#advisor-a-benchmarking-nemají-testy-chování) | Advisor | práce | | T7, S6 |
 | [Nedostupnost nativní knihovny](#advisor-hlásí-nedostupnost-nativní-knihovny-až-po-odeslání-běhu) | Advisor | práce | | F15, S7 |
 | [Průběžný stav běhu Advisoru](#průběžný-stav-běhu-advisoru-po-buňkách) | Advisor | rozhodnutí | | S7, F15 |
-| [Vydání `2.3.0`](#vydání-230-po-verdiktu-soudce) | Odevzdání | práce | projekt | S2, S6 |
 | [Živá ukázka u obhajoby](#živá-ukázka-u-obhajoby) | Odevzdání | práce | projekt | F10, S5, S7 |
 | [Odevzdání repozitáře](#odevzdání-repozitáře) | Odevzdání | práce | projekt | — |
 | [Trvalý identifikátor vydání](#trvalý-identifikátor-vydání) | Užitečné | rozhodnutí | | — |
@@ -120,12 +119,7 @@ Běh trvá minuty a skládá se z buněk (dotaz × kandidát); obrazovka ukazuje
 
 ## Odevzdání
 
-Odevzdání jde v tomto pořadí za verdiktem soudce LDBC ([Dotazy](#dotazy)): záznamy experimentů nad stromem, který se bude vydávat, vydání `2.3.0`, ukázka a odevzdání repozitáře. [Specifikace](./specifikace.tex) (kap. *Milníky / Výstupy* a *Vyhodnocení*) slibuje veřejný repozitář se zdrojovými kódy, kontejnerovou konfigurací, testovací sadou a dokumentací a u obhajoby běžící instanci z `docker compose` na překladu reálných artefaktů mezi .NET a Javou, reprodukci testovací sady jedním příkazem a výsledky experimentů s naměřenými ukazateli kvality nástroje; konec projektu je **2026-12-01** podle [záměru](./zamer.tex). Experimenty s jazykovým modelem podmínkou dokončení nejsou (specifikace, kap. *Vyhodnocení*) a Advisor přijde až po nich, zbude-li čas (rozh. [171](./decisions/171-the-advisor-comes-after-the-experiments-if-time-remains.md)).
-
-#### Vydání `2.3.0` po verdiktu soudce
-*Na řadě. Práce podle rozh. [098](./decisions/098-the-number-is-decided-once-per-release.md) (číslo se rozhoduje jednou za vydání) a [095](./decisions/095-a-dated-run-record-names-its-commit.md). Požadavky S2, S6.*
-
-Verdikt soudce LDBC nad celou sadou SF 1, běh FIBEN, obě sady v kontejnerech i experimentální běh stojí nad stromem vydání ([soudce](./runs/2026-11-02-ldbc-judge.md), [FIBEN](./runs/2026-11-02-fiben.md), řádek [velikosti sady](./runs/README.md#velikost-sady-a-pokrytí), [experimentální běh](./runs/2026-11-05-experiment.md)) a číslo je v `Directory.Build.props` i v `CITATION.cff` (`version`, `date-released` podle dne značky). Zbývá anotovaná značka na commitu, který číslo nese, s tím, co se od `2.2.0` změnilo na tvaru generovaných artefaktů, co přibylo a co se pohnulo na hranici záruk (rozh. 098; `git log 2.2.0..` to vypíše). Sekce *Guarantees* kořenového README, §9 a `traceability.md` popisují `main` a vydání je zmrazí s číslem; před značkou je projdeme proti sobě.
+Vydání `2.3.0` stojí na `d0c8763` nad záznamy soudce LDBC, běhu FIBEN a experimentálního běhu ([`runs/`](./runs/README.md#popsané-běhy)); zbývá ukázka a odevzdání repozitáře. [Specifikace](./specifikace.tex) (kap. *Milníky / Výstupy* a *Vyhodnocení*) slibuje veřejný repozitář se zdrojovými kódy, kontejnerovou konfigurací, testovací sadou a dokumentací a u obhajoby běžící instanci z `docker compose` na překladu reálných artefaktů mezi .NET a Javou, reprodukci testovací sady jedním příkazem a výsledky experimentů s naměřenými ukazateli kvality nástroje; konec projektu je **2026-12-01** podle [záměru](./zamer.tex). Experimenty s jazykovým modelem podmínkou dokončení nejsou (specifikace, kap. *Vyhodnocení*) a Advisor přijde až po nich, zbude-li čas (rozh. [171](./decisions/171-the-advisor-comes-after-the-experiments-if-time-remains.md)).
 
 #### Živá ukázka u obhajoby
 *Práce. [Specifikace](./specifikace.tex), kap. *Milníky / Výstupy*; scénáře UC6 a UC7 v [`use-cases.md`](./use-cases.md). Požadavky F10, S5, S7.*
