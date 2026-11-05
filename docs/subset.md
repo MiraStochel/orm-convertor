@@ -119,7 +119,7 @@ Entita ([§4.1]): třída s vlastnostmi a jejich jazykovými fakty (typ, nullabi
 | nullabilita | | | `[Required]` | `not-null` | `@Column(nullable)` |
 | primární klíč | | `<id>` | `[Key]`, `[PrimaryKey]` | **vyžaduje**: `<id>`, `<composite-id>` | **vyžaduje**: `@Id`, `@IdClass` |
 | strategie klíče | | | `[DatabaseGenerated]` | `<generator>` | `@GeneratedValue` |
-| sloupce cizího klíče | | | `[ForeignKey]` | `column` vztahu | `@JoinColumn` |
+| sloupce cizího klíče | | | `[ForeignKey]` | `column` vztahu | `@JoinColumn`; jednodílný klíč sdílený s referencí `@MapsId` nad zapisovatelným `@JoinColumn`, složený sdílený klíč bez `@MapsId` s referencí jen pro čtení ([206]) |
 | sloupec verze | | | `[Timestamp]`; číselná a datočasová `[ConcurrencyCheck]` — jako zdroj jen jediný token třídy nad `short`/`int`/`long`/`DateTime` ([116]) | `<version>` | `@Version`; EclipseLink ne nad binárním typem ([179]) |
 | unikátní omezení, i nad cizím klíčem ([130]) | | | `[Index(IsUnique = true)]`, nad FK přes jeho vlastnosti | `unique`, `unique-key`; nad FK `unique-key` na `<many-to-one>` | `@UniqueConstraint`, `unique` na `@Column` i `@JoinColumn` |
 | transientní vlastnost | | vynechání (`autoMapping="false"`) | `[NotMapped]` | vynechání | `@Transient` |
@@ -576,6 +576,7 @@ Známé není žádné.
 [180]: ./decisions/180-a-full-outer-join-into-eclipselink-goes-out-in-native-sql.md
 [196]: ./decisions/196-the-cross-join-is-carried-as-a-join-without-a-condition-and-every-artifact-the-tool-writes-reads-back.md
 [201]: ./decisions/201-a-case-in-the-else-of-a-case-is-written-for-eclipselink-as-one-case-with-the-inner-branches-appended-and-a-case-deeper-under-the-else-goes-out-in-native-sql.md
+[206]: ./decisions/206-a-single-part-shared-key-is-mapsid-over-a-writable-join-column-and-a-composite-shared-key-keeps-the-read-only-reference-in-both-jpa-profiles.md
 [181]: ./decisions/181-an-alias-in-a-mybatis-select-with-a-result-type-states-the-column-of-the-property.md
 [184]: ./decisions/184-t1-leaves-the-exempt-area-in-a-narrower-sense-the-case-study-meets-the-criteria-counted-from-the-excerpt-and-cofoundry-becomes-its-second-application.md
 [185]: ./decisions/185-the-name-of-an-ef-core-set-names-the-entity-the-context-of-the-conversion-declares-through-one-reading-context-of-both-passes.md

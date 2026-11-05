@@ -508,10 +508,16 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
     /// <summary>
     /// The owning side of a reference: @ManyToOne or @OneToOne with the join columns of
-    /// the resolved pairs. A shared primary key (decision 012) is @MapsId: the key part
-    /// carries no generation and the relation supplies the value. Where no column is known
-    /// the JPA default is written out with a record, or left to the target with a record
-    /// when even the referenced key is unknown (decision 076).
+    /// the resolved pairs. A single-part primary key shared with the reference (decision
+    /// 012) is @MapsId over a writable join column (decision 206): the identifier is derived
+    /// from the reference and carries no generation, and the join column is the one mapping
+    /// that writes the key - with it read-only no mapping would write the key at all, which
+    /// EclipseLink 5.0.0 refuses at deployment (EclipseLink-46) and Hibernate 7.4.5 merely
+    /// tolerates. A composite key shared whole has no @MapsId - EclipseLink refuses it over
+    /// an @IdClass (EclipseLink-48) - and keeps the read-only idiom of a relation over a key
+    /// column, as does a composite key with one shared part; the identifier parts write the
+    /// columns. Where no column is known the JPA default is written out with a record, or
+    /// left to the target with a record when even the referenced key is unknown (decision 076).
     /// </summary>
     private void AppendOwningReference(EntityMap entityMap, Relation relation, PropertyMap propertyMap, StringBuilder code, string annotation)
     {
@@ -525,7 +531,9 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             Mark(code, optional, propertyMap.Property.Name, MappingFactCategory.Nullability);
         }
 
-        if (SharesPrimaryKey(entityMap, relation))
+        var mapsId = SharesPrimaryKey(entityMap, relation) && entityMap.PrimaryKey is { Parts.Count: 1 };
+
+        if (mapsId)
         {
             Import($"{Jakarta}.MapsId");
             code.AppendLine("    @MapsId");
@@ -546,11 +554,25 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
                     propertyMap.IsNullable,
                     unique,
                     // A column that is part of the key is written by the identifier; the
-                    // relation over it is read-only (the NHibernate rule of decision 012).
-                    readOnly: keyColumns.Contains(column));
+                    // relation over it is read-only (the NHibernate rule of decision 012) -
+                    // except under @MapsId, where the relation is the writer (decision 206).
+                    readOnly: keyColumns.Contains(column) && !mapsId);
             }).ToList();
 
             AppendJoinColumns(code, joinColumns, propertyMap.Property.Name);
+            return;
+        }
+
+        if (mapsId && target?.PrimaryKey is { Parts.Count: 1 } targetKey)
+        {
+            // The foreign generator of NHibernate names the navigation and states no column:
+            // under @MapsId the join column is the entity's own key column, which the JPA
+            // parser reads it back as (decision 206). A statement of the source, no record.
+            var ownKey = ColumnOf(entityMap.PrimaryKey!.Parts[0].PropertyMap);
+            AppendJoinColumns(
+                code,
+                [RenderJoinColumn(ownKey, ColumnOf(targetKey.Parts[0].PropertyMap), propertyMap.IsNullable, unique, readOnly: false)],
+                propertyMap.Property.Name);
             return;
         }
 
