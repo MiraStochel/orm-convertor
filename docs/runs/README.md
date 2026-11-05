@@ -127,3 +127,4 @@ Odstup je nejméně čtyřicetinásobný. V katalogové variantě odpovídají t
 
 - [2026-10-15, časy katalogu LDBC](2026-10-15-ldbc-catalog-times.md): věta o dotazech pod 0,2 s jmenuje i IC 14, jehož řádek tabulky ukazuje 2 243 ms.
 - [2026-10-18, doba přehrání po krocích](2026-10-18-ldbc-judge-time-by-step.md): záznam říká, že turbo bylo zapnuté, ale čte nejvyšší stav procesoru `0x63`, při kterém je turbo vypnuté (rozh. 145); jedno z obojího je omyl.
+- [2026-11-05, experimentální běh](2026-11-05-experiment.md): *Červené řádky* kladou dotaz s typem `Template` do `GetPageRegionDetailsByPageVersionIdQueryHandler`; vyšel z `GetPageVersionBlockRenderDetailsByIdQueryHandler` (hledání šablony nad `blockType.Templates`). Řádky EF Core a NHibernatu téhož příkladu mají jednu příčinu, ne dvě: člen zachyceného jména (`dbPage.PageDirectoryId`, `query.PageId`) se četl jako sloupec.

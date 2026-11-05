@@ -56,6 +56,13 @@ internal sealed class QueryVariables
     /// </summary>
     private readonly HashSet<string> declared;
 
+    /// <summary>
+    /// Names of the types the unit declares - a class, a struct, an interface, an enum, a
+    /// record. A member of such a name is a member of a type, not a value from the scope
+    /// around a query (<see cref="IsDeclaredType"/>).
+    /// </summary>
+    private readonly HashSet<string> declaredTypes;
+
     /// <summary>Names that stand at the head of a call, <c>name.Step(…)</c>; nothing else continues a query.</summary>
     private readonly HashSet<string> continued;
 
@@ -100,7 +107,20 @@ internal sealed class QueryVariables
                 _ => null,
             }).OfType<string>(),
         ];
+
+        declaredTypes =
+        [
+            .. root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>().Select(type => type.Identifier.Text),
+        ];
     }
+
+    /// <summary>
+    /// Whether the unit declares a type of this name. The head of a member in operand
+    /// position that names a type the unit declares (<c>Constants.MaxId</c>, a constant of an
+    /// enum the unit declares) is no value from the enclosing scope, where a name it declares
+    /// as a variable or does not declare at all is one (decision 083).
+    /// </summary>
+    public bool IsDeclaredType(string name) => declaredTypes.Contains(name);
 
     /// <summary>
     /// What the unit states about the name a root is written as a member of (decision 114):

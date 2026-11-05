@@ -79,7 +79,29 @@ public class NHibernateXMLMappingParser(
             return [];
         }
 
+        StripQuoting(mapping);
         return ParseMapping(mapping);
+    }
+
+    /// <summary>
+    /// The backticks NHibernate reads as "delimit this name in the dialect" - which the builder
+    /// writes around a table or column spelled like a reserved word of T-SQL (<c>`User`</c>) -
+    /// are no part of the name: every table, schema and column attribute and the name of a
+    /// column element is read without them, so a mapping the tool wrote is one it reads, and
+    /// the SQL targets delimit the bare name by their own rule.
+    /// </summary>
+    private static void StripQuoting(XElement mapping)
+    {
+        foreach (var attribute in mapping.DescendantsAndSelf().Attributes())
+        {
+            var names = attribute.Name.LocalName is "table" or "column" or "schema"
+                        || (attribute.Name.LocalName == "name" && attribute.Parent?.Name.LocalName == "column");
+
+            if (names && attribute.Value.Length > 2 && attribute.Value[0] == '`' && attribute.Value[^1] == '`')
+            {
+                attribute.Value = attribute.Value[1..^1];
+            }
+        }
     }
 
     /// <summary>

@@ -597,4 +597,196 @@ public class QueryParameterTest
         Assert.Contains("o.CreditLimit > @limit", Sql(builder));
         Assert.Contains("(IDbConnection connection, decimal limit)", CSharp(builder));
     }
+
+    // ---- A member of a captured name is a parameter named by the path ---------------
+
+    /// <summary>
+    /// A whole unit rather than a predicate: the shapes below need a name the unit declares
+    /// around the chain - the query object a handler receives, a field of the instance, a
+    /// foreach variable.
+    /// </summary>
+    private static AbstractQueryBuilder ParseLinqUnit(AbstractQueryBuilder builder, string unit)
+    {
+        builder.EntityMaps = [Customers()];
+        new EFCoreLinqQueryParser(() => builder).Parse(ConversionContentType.CSharp, unit, [Customers()]);
+        return builder;
+    }
+
+    private const string ByQueryObject = """
+        public class CustomerReader
+        {
+            private readonly ShopContext _ctx;
+
+            public List<Customer> Run(CustomerQuery query) => _ctx.Customers.Where(c => c.CustomerID == query.Id).ToList();
+        }
+        """;
+
+    /// <summary>
+    /// query.Id on the query object a handler receives is the value of that member, which the
+    /// provider evaluates and binds like a bare name: a parameter named by the path, so that
+    /// two members of one object stay two parameters (decision 083). Read as a column, it was
+    /// a column of an alias no row has.
+    /// </summary>
+    [Fact]
+    public void AMemberOfACapturedNameIsAParameterNamedByThePath()
+    {
+        var builder = ParseLinqUnit(new DapperSqlQueryBuilder(), ByQueryObject);
+
+        Assert.Contains("WHERE c.CustomerID = @query_Id", Sql(builder));
+
+        var method = CSharp(builder);
+        Assert.Contains("(IDbConnection connection, int query_Id)", method);
+        Assert.Contains("new { query_Id }", method);
+    }
+
+    [Fact]
+    public void AMemberOfACapturedNameBecomesACapturedLinqValue()
+    {
+        var builder = ParseLinqUnit(new EFCoreLinqQueryBuilder(), ByQueryObject);
+
+        var method = CSharp(builder);
+        Assert.Contains("(DbContext ctx, int query_Id)", method);
+        Assert.Contains("c.CustomerID == query_Id", method);
+    }
+
+    [Fact]
+    public void AMemberOfACapturedNameBecomesAnHqlParameterAndItsBinding()
+    {
+        var builder = ParseLinqUnit(new NHibernateHqlQueryBuilder(), ByQueryObject);
+
+        Assert.Contains("where c.CustomerID = :query_Id", Hql(builder));
+        Assert.Contains(".SetParameter(\"query_Id\", query_Id)", CSharp(builder));
+    }
+
+    /// <summary>
+    /// The receiver of Contains that is a member of a captured name is a collection from the
+    /// enclosing scope, as a bare name there is - before the decomposition of the receiver,
+    /// which would read it as a navigation of a row the name is not.
+    /// </summary>
+    [Fact]
+    public void AMemberOfACapturedNameUnderContainsIsACollectionParameter()
+    {
+        var builder = ParseLinqUnit(
+            new DapperSqlQueryBuilder(),
+            """
+            public class CustomerQuery
+            {
+                public List<int> Ids { get; set; } = new();
+            }
+
+            public class CustomerReader
+            {
+                private readonly ShopContext _ctx;
+
+                public List<Customer> Run(CustomerQuery query) => _ctx.Customers.Where(c => query.Ids.Contains(c.CustomerID)).ToList();
+            }
+            """);
+
+        Assert.Contains("WHERE c.CustomerID IN @query_Ids", Sql(builder));
+        Assert.Contains("IEnumerable<int> query_Ids", CSharp(builder));
+    }
+
+    [Fact]
+    public void AMemberOfACapturedNameIsARowCount()
+    {
+        var builder = ParseLinqUnit(
+            new DapperSqlQueryBuilder(),
+            """
+            public class CustomerReader
+            {
+                private readonly ShopContext _ctx;
+
+                public List<Customer> Run(CustomerQuery query) => _ctx.Customers.OrderBy(c => c.CustomerID).Take(query.PageSize).ToList();
+            }
+            """);
+
+        Assert.Contains("TOP (@query_PageSize)", Sql(builder));
+        Assert.Contains("int query_PageSize", CSharp(builder));
+    }
+
+    /// <summary>A name through this is the same name (decision 114): this._limit is the parameter _limit.</summary>
+    [Fact]
+    public void AMemberOfTheInstanceIsTheParameterOfItsName()
+    {
+        var builder = ParseLinqUnit(
+            new DapperSqlQueryBuilder(),
+            """
+            public class CustomerReader
+            {
+                private readonly ShopContext _ctx;
+                private readonly decimal _limit;
+
+                public List<Customer> Run() => _ctx.Customers.Where(c => c.CreditLimit > this._limit).ToList();
+            }
+            """);
+
+        Assert.Contains("WHERE c.CreditLimit > @_limit", Sql(builder));
+        Assert.Contains("(IDbConnection connection, decimal _limit)", CSharp(builder));
+    }
+
+    /// <summary>The variable of a foreach holds a row the code loaded; its member is a value, not a column (decision 109).</summary>
+    [Fact]
+    public void AMemberOfAForEachVariableIsAValue()
+    {
+        var builder = ParseLinqUnit(
+            new DapperSqlQueryBuilder(),
+            """
+            public class CustomerReader
+            {
+                private readonly ShopContext _ctx;
+
+                public void Run(IEnumerable<Customer> others)
+                {
+                    foreach (var other in others)
+                    {
+                        var same = _ctx.Customers.Where(c => c.CustomerID == other.CustomerID).ToList();
+                    }
+                }
+            }
+            """);
+
+        Assert.Contains("WHERE c.CustomerID = @other_CustomerID", Sql(builder));
+    }
+
+    /// <summary>A member of the lambda's own parameter is a column whatever the parameter is called.</summary>
+    [Fact]
+    public void AMemberOfALambdaParameterStaysAColumn()
+    {
+        var builder = ParseLinqUnit(
+            new DapperSqlQueryBuilder(),
+            """
+            public class CustomerReader
+            {
+                private readonly ShopContext _ctx;
+
+                public List<Customer> Run(int id) => _ctx.Customers.Where(query => query.CustomerID == id).ToList();
+            }
+            """);
+
+        var sql = Sql(builder);
+        Assert.Contains(".CustomerID = @id", sql);
+        Assert.DoesNotContain("query_", sql);
+        Assert.Contains("(IDbConnection connection, int id)", CSharp(builder));
+    }
+
+    /// <summary>
+    /// A chain deeper than a name and its member is not a value the reading evaluates
+    /// (<c>query.PageVersionId.Value</c>): the filter is refused, not read as a column.
+    /// </summary>
+    [Fact]
+    public void AChainDeeperThanAMemberStaysUnread()
+    {
+        var builder = ParseLinqUnit(
+            new DapperSqlQueryBuilder(),
+            """
+            public class CustomerReader
+            {
+                private readonly ShopContext _ctx;
+
+                public List<Customer> Run(CustomerQuery query) => _ctx.Customers.Where(c => c.CustomerID == query.Page.Id).ToList();
+            }
+            """);
+
+        AssertRefused(builder, QueryFeature.Filtering);
+    }
 }

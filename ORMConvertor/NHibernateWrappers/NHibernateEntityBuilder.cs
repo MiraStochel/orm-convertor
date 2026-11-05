@@ -11,6 +11,7 @@ using NHibernateWrappers.Convertors;
 using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
+using TransactSql;
 
 namespace NHibernateWrappers;
 
@@ -97,7 +98,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         // consumer project supplies, because which assembly the class ends up in is a fact
         // of that project and not of the conversion (decision 028).
         var table = entityMap.Table ?? name; // default = class name
-        var classAttrs = new List<XmlAttribute> { new("name", name), new("table", table) };
+        var classAttrs = new List<XmlAttribute> { new("name", name), new("table", Named(table)) };
 
         if (!string.IsNullOrWhiteSpace(entityMap.Schema))
         {
@@ -134,7 +135,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             if (facets.Count == 0)
             {
-                idAttrs.Add(new("column", columnName));
+                idAttrs.Add(new("column", Named(columnName)));
                 AddTypeAttribute(idAttrs, claim);
                 XmlEmitter.Open(artifact.Mapping, 2, "id", idAttrs);
             }
@@ -184,7 +185,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             if (facets.Count == 0)
             {
-                partAttrs.Add(new("column", columnName));
+                partAttrs.Add(new("column", Named(columnName)));
                 AddTypeAttribute(partAttrs, claim);
                 XmlEmitter.Empty(artifact.Mapping, 3, "key-property", partAttrs);
             }
@@ -330,7 +331,20 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
     /// <summary>The attributes of a nested column element: its name, then the facets.</summary>
     private static List<XmlAttribute> ColumnAttributes(string columnName, IEnumerable<XmlAttribute> facets)
-        => [new XmlAttribute("name", columnName), .. facets];
+        => [new XmlAttribute("name", Named(columnName)), .. facets];
+
+    /// <summary>
+    /// A table or column name as the mapping names it. A name T-SQL reads as a reserved word
+    /// (<c>User</c>, <c>Order</c>, <c>LineNo</c>) goes out in backticks, which
+    /// NHibernate turns into the delimiters of the dialect (<c>[User]</c> on SQL Server) in every
+    /// statement it generates; bare, the server refused the SQL over the User table of the
+    /// Cofoundry example (host check of 2026-11-05). Which names are reserved is the one list
+    /// the SQL targets use (<see cref="SqlNames"/>); every other name, a name that is no identifier among them (the XML escaping is its own concern), stays as the source
+    /// spelled it, and the reader strips the backticks, so a mapping the tool wrote is one it
+    /// reads.
+    /// </summary>
+    private static string Named(string name)
+        => Identifiers.IsRegular(name) && SqlNames.IsReserved(name) ? $"`{name}`" : name;
 
     /// <summary>A number in an attribute, spelled the same way in every culture (S2).</summary>
     private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);
@@ -609,7 +623,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
         {
             if (!string.IsNullOrWhiteSpace(version.ColumnName))
             {
-                attrs.Add(new("column", version.ColumnName));
+                attrs.Add(new("column", Named(version.ColumnName)));
             }
 
             if (typeAttr is not null)
@@ -696,7 +710,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         if (junction?.Table is not null)
         {
-            attrs.Add(new("table", junction.Table));
+            attrs.Add(new("table", Named(junction.Table)));
         }
 
         if (junction?.Schema is not null)
@@ -836,7 +850,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         if (columns.Count == 1)
         {
-            XmlEmitter.Empty(mapping, 3, "many-to-many", [classAttr, new XmlAttribute("column", columns[0])]);
+            XmlEmitter.Empty(mapping, 3, "many-to-many", [classAttr, new XmlAttribute("column", Named(columns[0]))]);
             return;
         }
 
@@ -844,7 +858,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         foreach (var column in columns)
         {
-            XmlEmitter.Empty(mapping, 4, "column", [new XmlAttribute("name", column)]);
+            XmlEmitter.Empty(mapping, 4, "column", [new XmlAttribute("name", Named(column))]);
         }
 
         XmlEmitter.Close(mapping, 3, "many-to-many");
@@ -1236,7 +1250,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
             // The compact form: everything as attributes of the property element itself.
             if (!string.IsNullOrWhiteSpace(propertyMap.ColumnName))
             {
-                attrs.Add(new("column", propertyMap.ColumnName));
+                attrs.Add(new("column", Named(propertyMap.ColumnName)));
             }
 
             if (notNull is not null)
@@ -1532,7 +1546,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
             if (column is not null)
             {
-                attributes.Add(new("column", column));
+                attributes.Add(new("column", Named(column)));
             }
 
             if (unique is not null)
@@ -1583,7 +1597,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         foreach (var column in columns)
         {
-            XmlEmitter.Empty(mapping, 3, "column", [new XmlAttribute("name", column)]);
+            XmlEmitter.Empty(mapping, 3, "column", [new XmlAttribute("name", Named(column))]);
         }
 
         XmlEmitter.Close(mapping, 2, "many-to-one");
@@ -1701,7 +1715,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         if (columns.Count == 1)
         {
-            XmlEmitter.Empty(mapping, 3, "key", [new XmlAttribute("column", columns[0])]);
+            XmlEmitter.Empty(mapping, 3, "key", [new XmlAttribute("column", Named(columns[0]))]);
             return;
         }
 
@@ -1709,7 +1723,7 @@ public class NHibernateEntityBuilder : AbstractEntityBuilder
 
         foreach (var column in columns)
         {
-            XmlEmitter.Empty(mapping, 4, "column", [new XmlAttribute("name", column)]);
+            XmlEmitter.Empty(mapping, 4, "column", [new XmlAttribute("name", Named(column))]);
         }
 
         XmlEmitter.Close(mapping, 3, "key");

@@ -51,7 +51,10 @@
       The advisor translates your entities and queries into every candidate
       framework, measures the generated code against the benchmark database, and
       solves an ILP model over the measured costs to recommend a framework — or a
-      combination — for the workload. It needs the native ILP solver, so it runs
+      combination — for the workload. Today it measures
+      <span id="measured-frameworks">Dapper and EF Core</span> only; the other
+      frameworks it translates but does not measure, and the advisor as a whole is
+      outside the tool's guarantees. It needs the native ILP solver, so it runs
       only in the containerized deployment.
     </p>
 

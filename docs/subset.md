@@ -274,7 +274,8 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | celočíselný počet řádků širší než `Int` (MyBatis `Long`) | API stránkování jsou 32bitová | `Loss`, metoda bere `int` | VM | [085] |
 | poziční parametr do jiného cíle než JPQL | jinde poziční tvar není | pojmenovaný `p1`, `p2` s `Convention` | VM | [083] |
 | `${…}` MyBatisu | textová substituce, ne hodnota | `Failure` (č) | VM | [082], [084] |
-| hodnota z okolí v LINQ hlubší než jméno nebo člen jména (`tokenResult.Data.UserId`, `query.PageVersionId.Value`); převod výčtu na číslo (`(short)query.Status`, `(short)Status.Latest`) | parametr LINQ je zachycené jméno a jeho člen (rozh. 083), delší řetěz čtení za hodnotu nebere; slovník převodů nese čísla, ne výčet | `Failure` (č); hodnota vyčíslená do lokální proměnné před dotazem se čte | VM | [083], [113] |
+| hodnota z okolí v LINQ hlubší než jméno nebo člen jména (`tokenResult.Data.UserId`, `query.PageVersionId.Value`); převod výčtu na číslo (`(short)query.Status`, `(int)Status.Latest`) | parametr LINQ je zachycené jméno a jeho člen (rozh. 083), delší řetěz čtení za hodnotu nebere; slovník převodů nese čísla, ne výčet, a parametr pod převodem nemá z čeho vzít skalár | `Failure` (č); hodnota vyčíslená do lokální proměnné před dotazem se čte | VM | [083], [113] |
+| konstanta výčtu či statický člen typu, který jednotka nedeklaruje, bez převodu (`x.Status == Status.Latest`) | jednotka o jménu nic neříká a člen jména, které není řádkem dotazu, je hodnota z okolí (rozh. 083, 114); nástroj čte bez referencí (S1) | parametr `Status_Latest`, který volající naváže; tytéž řádky, podpis metody o parametr delší | VM | [083], [114] |
 
 ### 2.5 `LIKE`, `DISTINCT` a výčet hodnot
 

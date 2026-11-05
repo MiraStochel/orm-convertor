@@ -307,7 +307,8 @@ public class CompositeKeyTest
         // comes back in the canonical spelling of the target framework.
         Assert.Contains("<key-property name=\"OrderID\" column=\"OrderId\" type=\"Int32\" />", xml);
         Assert.Contains("<key-property name=\"CompanyID\" column=\"CompanyId\" type=\"Int64\" />", xml);
-        Assert.Contains("<key-property name=\"LineNumber\" column=\"LineNo\" type=\"Int32\" />", xml);
+        // LINENO is a reserved word of T-SQL, so the column goes out in backticks (KeywordNameTest).
+        Assert.Contains("<key-property name=\"LineNumber\" column=\"`LineNo`\" type=\"Int32\" />", xml);
 
         int orderIdPos = xml.IndexOf("<key-property name=\"OrderID\"");
         int companyIdPos = xml.IndexOf("<key-property name=\"CompanyID\"");

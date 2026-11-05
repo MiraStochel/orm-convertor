@@ -52,7 +52,8 @@
       frameworks &mdash; Dapper, NHibernate and EF&nbsp;Core on .NET, Hibernate,
       EclipseLink and MyBatis on Java &mdash; through a framework-agnostic
       intermediate representation, and recommends the best framework for a query
-      workload from real benchmark measurements.
+      workload from real benchmark measurements, today taken for Dapper and
+      EF&nbsp;Core only.
     </p>
 
     <div class="card-grid">
@@ -72,7 +73,8 @@
           Give the advisor your entities and a query workload with weights, and it
           selects the best framework &mdash; or combination of frameworks &mdash;
           by measuring the generated code, then solving an ILP model over the
-          measured costs.
+          measured costs. It measures Dapper and EF&nbsp;Core only and is outside the
+          tool's guarantees.
         </p>
         <a href="advisor.html" role="button">Open the advisor</a>
       </article>

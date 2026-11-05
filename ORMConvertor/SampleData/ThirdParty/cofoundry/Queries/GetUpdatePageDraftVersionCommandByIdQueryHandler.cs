@@ -21,12 +21,13 @@ public class GetUpdatePageDraftVersionCommandByIdQueryHandler
 
     public async Task<UpdatePageDraftVersionCommand?> ExecuteAsync(GetPatchableCommandByIdQuery<UpdatePageDraftVersionCommand> query, IExecutionContext executionContext)
     {
+        var draft = (int)WorkFlowStatus.Draft; // ORMConvertor: evaluated into a local before the query (README, change 5)
         var command = await _dbContext
             .PageVersions
             .AsNoTracking()
             .Where(v => !v.PageTemplate.IsArchived) // ORMConvertor: was .FilterActive()
             .Where(v => v.PageId == query.Id) // ORMConvertor: was .FilterByPageId(query.Id)
-            .Where(p => p.WorkFlowStatusId == (int)WorkFlowStatus.Draft)
+            .Where(p => p.WorkFlowStatusId == draft) // ORMConvertor: was == (int)WorkFlowStatus.Draft
             .Select(v => new UpdatePageDraftVersionCommand
             {
                 MetaDescription = v.MetaDescription,

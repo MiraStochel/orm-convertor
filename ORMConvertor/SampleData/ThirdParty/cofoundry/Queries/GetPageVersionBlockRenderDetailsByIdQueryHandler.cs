@@ -140,9 +140,13 @@ public class GetPageVersionBlockRenderDetailsByIdQueryHandler
             return null;
         }
 
-        var template = blockType
-            .Templates
-            .FirstOrDefault(t => t.PageBlockTypeTemplateId == versionBlock.PageBlockTypeTemplateId);
+        // ORMConvertor: left out - LINQ over the templates of a block type summary already in memory, which the tool
+        // takes for a query because PageBlockTypeSummary, whose member it reads, is not part of the excerpt
+        // (decision 114); a query over a table Templates would come out of it. The project's text:
+        // var template = blockType
+            // .Templates
+            // .FirstOrDefault(t => t.PageBlockTypeTemplateId == versionBlock.PageBlockTypeTemplateId);
+        PageBlockTypeTemplateSummary? template = null;
 
         if (template == null)
         {

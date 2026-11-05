@@ -548,14 +548,37 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
     /// <summary>
     /// The argument of a slice the code sets on a query object as a row count (decision 085):
-    /// a non-negative integer literal, or a value from the enclosing scope, which is the
-    /// parameter of that name - the reading Skip and Take get. Null for anything else.
+    /// a non-negative integer literal, or a value from the enclosing scope - a name or a
+    /// member of one -, which is the parameter of that name (<see cref="CapturedValueName"/>)
+    /// - the reading Skip and Take get. Null for anything else.
     /// </summary>
     protected static RowCount? RowCountOf(ExpressionSyntax? expression) => expression switch
     {
         LiteralExpressionSyntax { Token.Value: int value } when value >= 0 => RowCount.Literal(value),
         LiteralExpressionSyntax { Token.Value: long value } when value >= 0 => RowCount.Literal(value),
-        IdentifierNameSyntax identifier => RowCount.Bound(QueryParameter.Named(identifier.Identifier.Text)),
+        not null when CapturedValueName(expression) is { } fromScope => RowCount.Bound(QueryParameter.Named(fromScope)),
+        _ => null,
+    };
+
+    /// <summary>
+    /// The name a value from the enclosing scope gets as a parameter (decision 083). A bare
+    /// name is its own name, the one form of a parameter that needs no decoration stripping,
+    /// because C# writes the name itself. A member of a name - <c>query.PageId</c> on the
+    /// query object a handler receives, <c>dbPage.PageDirectoryId</c> on a row the code
+    /// loaded - is the value of that member, which the provider evaluates and binds as it
+    /// binds the bare name; it is named by its path with the dot replaced,
+    /// <c>query_PageId</c>, the name EF Core's own provider gives such a parameter, so that
+    /// two members of one object stay two parameters. <c>this</c> before the name is the same
+    /// name (decision 114). Null for a chain deeper than a name and its member
+    /// (<c>query.PageVersionId.Value</c>) and for any other shape: the reading takes a name
+    /// and its member for a value, not a longer chain, which it does not know how to evaluate.
+    /// </summary>
+    private static string? CapturedValueName(ExpressionSyntax expression) => expression switch
+    {
+        IdentifierNameSyntax identifier => identifier.Identifier.Text,
+        MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax own } => own.Identifier.Text,
+        MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax head, Name: IdentifierNameSyntax member } => $"{head.Identifier.Text}_{member.Identifier.Text}",
+        MemberAccessExpressionSyntax { Expression: MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax, Name: IdentifierNameSyntax own }, Name: IdentifierNameSyntax member } => $"{own.Identifier.Text}_{member.Identifier.Text}",
         _ => null,
     };
 
@@ -1707,6 +1730,70 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     }
 
     /// <summary>
+    /// The parameter a member of a name in operand position stands for, where the name is not
+    /// a row of the query (decision 083): <c>query.PageId</c> on the query object a handler
+    /// receives, <c>o.Id</c> on the row a foreach loaded, <c>this._limit</c> - values from the
+    /// enclosing scope, which the provider evaluates and binds as parameters, read as a bare
+    /// name is and named by the path (<see cref="CapturedValueName"/>). The name is a row, and
+    /// the member its column, where it is the parameter of a lambda around the expression -
+    /// but not of a query the provider compiles, whose parameters are the query's - or an
+    /// alias of the scope: a member of a joined row, the row a join is bringing in, an element
+    /// of a group standing for the source. A type the unit declares (<c>Constants.MaxId</c>,
+    /// a constant of an enum it declares) is no value of the scope, and its member keeps the
+    /// reading it had. Null for all of those and for a chain deeper than a name and its member.
+    /// </summary>
+    private string? CapturedMemberName(MemberAccessExpressionSyntax member)
+    {
+        if (CapturedValueName(member) is not { } name)
+        {
+            return null;
+        }
+
+        // this._limit, this.query.PageId: a member of the instance is never a row.
+        if (member.Expression is not IdentifierNameSyntax head)
+        {
+            return name;
+        }
+
+        var written = head.Identifier.Text;
+        if (IsLambdaParameterAround(member, written)
+            || AliasesInScope().Contains(written)
+            || aliasSubstitutions.ContainsKey(written)
+            || string.Equals(joiningRow?.Alias, written, StringComparison.OrdinalIgnoreCase)
+            || variables.IsDeclaredType(written))
+        {
+            return null;
+        }
+
+        return name;
+    }
+
+    /// <summary>
+    /// Whether a lambda around the node declares the name as a parameter: the name then
+    /// stands for a row (or an element of a group) and its members are columns. The lambda of
+    /// a query the provider compiles does not count: its parameters are the query's
+    /// parameters, values the caller passes (<see cref="IsCompiledQuery"/>).
+    /// </summary>
+    private bool IsLambdaParameterAround(SyntaxNode node, string name)
+    {
+        foreach (var ancestor in node.Ancestors())
+        {
+            switch (ancestor)
+            {
+                case AnonymousFunctionExpressionSyntax compiled when IsCompiledQuery(compiled):
+                    continue;
+
+                case SimpleLambdaExpressionSyntax lambda when lambda.Parameter.Identifier.Text == name:
+                case ParenthesizedLambdaExpressionSyntax parenthesized when parenthesized.ParameterList.Parameters.Any(p => p.Identifier.Text == name):
+                case AnonymousMethodExpressionSyntax anonymous when anonymous.ParameterList?.Parameters.Any(p => p.Identifier.Text == name) == true:
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// One link of the chain. <paramref name="RewrittenFrom"/> is the terminal a step stands
     /// in for (decision 103): a Take(1) that was First(), a Where that was the predicate of
     /// FirstOrDefault(predicate), so that a record about the step names what was written.
@@ -2523,13 +2610,14 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
 
             RowCount? count;
 
-            // A value from the enclosing scope is the parameter of the same name, which is
-            // the shape a page size has in any real chain (decision 085). It is the same
-            // reading the parser does in operand position (decision 083); the scalar is the
-            // builder template's to fill in, and here it comes from the clause.
-            if (argument is IdentifierNameSyntax fromScope)
+            // A value from the enclosing scope - a name or a member of one, query.PageSize -
+            // is the parameter of that name, which is the shape a page size has in any real
+            // chain (decision 085). It is the same reading the parser does in operand position
+            // (decision 083); the scalar is the builder template's to fill in, and here it
+            // comes from the clause.
+            if (argument is not null && CapturedValueName(argument) is { } fromScope)
             {
-                count = RowCount.Bound(QueryParameter.Named(fromScope.Identifier.Text));
+                count = RowCount.Bound(QueryParameter.Named(fromScope));
             }
             else if (argument is LiteralExpressionSyntax literal && literal.Token.Value is int value && value >= 0)
             {
@@ -5370,9 +5458,10 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// shape the Where handler reads. A Contains whose receiver is an inline collection of
     /// literals - <c>new[] { 1, 2, 3 }</c>, <c>new int[] { … }</c>, <c>new List&lt;int&gt;
     /// { … }</c> - is IN over a list of values (decision 074); a receiver that is a bare
-    /// identifier is a collection from the enclosing scope, which is a collection parameter
-    /// (decision 083). Any other receiver - a member access, a string - is no subquery and
-    /// no list and stays unread.
+    /// identifier, or a member of a name that is not a row (<c>query.PageIds</c>), is a
+    /// collection from the enclosing scope, which is a collection parameter (decision 083).
+    /// Any other receiver - a member of a row, a string - is no subquery and no list and
+    /// stays unread.
     /// </summary>
     private ConditionNode? ReadSubQueryCondition(InvocationExpressionSyntax invocation)
     {
@@ -5394,8 +5483,26 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                         return null;
                     }
 
+                    // query.PageIds.Contains(p.PageId): the collection is a member of a value
+                    // from the enclosing scope, a collection parameter named by the path like a
+                    // scalar one (decision 083) - decided before the decomposition of the
+                    // receiver, which would read the member as a navigation of a row the name
+                    // is not.
+                    var capturedCollection = member.Expression is MemberAccessExpressionSyntax captured
+                        ? CapturedMemberName(captured)
+                        : null;
+
                     QueryOperand? right;
-                    if (TryDecomposeNested(member.Expression, out var root, out var steps, out var correlate, out var defaultAlias))
+                    LinqQueryRoot? root = null;
+                    List<ChainStep> steps = [];
+                    Action? correlate = null;
+                    string? defaultAlias = null;
+                    if (capturedCollection is not null)
+                    {
+                        right = QueryOperand.Bound(
+                            QueryParameter.Named(capturedCollection, isCollection: true));
+                    }
+                    else if (TryDecomposeNested(member.Expression, out root, out steps, out correlate, out defaultAlias))
                     {
                         right = null;
                     }
@@ -5936,6 +6043,12 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
                 }
 
                 return QueryOperand.Computed(QueryExpression.Call(QueryFunction.CurrentTimestamp, []));
+
+            // query.PageId, this._limit: a member of a name that is not a row of the query is
+            // a value from the enclosing scope, read as a bare name is (decision 083). Before
+            // the column reading, which would take the name for an alias no row has.
+            case MemberAccessExpressionSyntax captured when CapturedMemberName(captured) is { } capturedName:
+                return QueryOperand.Bound(QueryParameter.Named(capturedName));
 
             case MemberAccessExpressionSyntax member when member.Expression is IdentifierNameSyntax identifier:
                 return ColumnUnlessNavigation(AliasFor(identifier.Identifier.Text), member.Name.Identifier.Text, member);
@@ -7386,9 +7499,9 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// <summary>
     /// A bare identifier in operand position is a value captured from the enclosing scope -
     /// the LINQ form of a query parameter, and the one form that needs no decoration
-    /// stripping, because C# writes the name itself (decision 083). What the value is, the
-    /// chain does not say; the builder template derives the scalar from the other side of
-    /// the comparison.
+    /// stripping, because C# writes the name itself (decision 083); a member of such a name
+    /// is one too (<see cref="CapturedMemberName"/>). What the value is, the chain does not
+    /// say; the builder template derives the scalar from the other side of the comparison.
     /// </summary>
     private static QueryOperand ValueFromScope(IdentifierNameSyntax identifier)
         => QueryOperand.Bound(QueryParameter.Named(identifier.Identifier.Text));

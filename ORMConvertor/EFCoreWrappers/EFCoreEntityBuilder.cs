@@ -410,6 +410,20 @@ public class EFCoreEntityBuilder : AbstractEntityBuilder
                 });
             }
 
+            // More navigations of the class to one entity than EF Core's convention pairs -
+            // the ancestor and the descendant of a closure row, a parent and its children:
+            // the convention pairs a navigation with the only one pointing back and, with two
+            // candidates, refuses the model (the EF Core row of the Cofoundry example, host
+            // check of 2026-11-05) - so each names its inverse where the source stated it, by
+            // the annotation the parser reads into InverseRelationName. With one navigation
+            // the convention finds the same pair and nothing is written.
+            if (relation.InverseRelationName is { Length: > 0 } inverse
+                && entityMap.Relations.Count(r => r.SourceNavigationProperty is not null
+                                                  && string.Equals(r.TargetEntity, relation.TargetEntity, StringComparison.Ordinal)) > 1)
+            {
+                artifact.Code.AppendLine($"    [InverseProperty(\"{inverse}\")]");
+            }
+
             AppendPropertyAttributes(artifact, propertyMap);
             AppendSignature(artifact, entityMap, propertyMap, BuildPropertySignature(propertyMap.Property, privateSetter: NeedsPrivateSetter(entityMap, propertyMap)));
         }

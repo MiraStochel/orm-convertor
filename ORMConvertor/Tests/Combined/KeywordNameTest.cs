@@ -361,6 +361,70 @@ public class KeywordNameTest
         }
     }
 
+    /// <summary>
+    /// The same table in the mapping of NHibernate: written bare, the SQL NHibernate generated
+    /// over it was refused by the server (host check of 2026-11-05, the NHibernate row of the
+    /// example at the third level). In backticks NHibernate delimits it by the dialect, which
+    /// the SQL of its own query plan shows; the entity name in HQL is no keyword there.
+    /// </summary>
+    [Fact]
+    public void TheUserTableOfCofoundryIsBacktickedInTheMappingAndDelimitedByNHibernate()
+    {
+        var example = Examples.GetExamples.Single(e => e.Key == "cofoundry-pages");
+        var result = ConversionHandler.Convert(example.SourceOrm, ORMEnum.NHibernate, example.Units);
+
+        var mappings = result.Sources.Where(s => s.ContentType == ConversionContentType.XML).Select(s => s.Content).ToList();
+        Assert.Contains(mappings, m => m.Contains("<class name=\"User\" table=\"`User`\"", StringComparison.Ordinal));
+
+        var compiled = GeneratedEntityCompiler.CompileOrFail(
+            "KeywordNameCofoundryNHibernate",
+            result.Sources.Where(s => s.ContentType == ConversionContentType.CSharpEntity).Select(s => s.Content),
+            GeneratedEntityCompiler.NHibernateConsumerReferences);
+        var sql = NHibernateQueryAcceptance.Sql(compiled, mappings, "from User u where u.UserId = 1");
+        Assert.Contains("[User]", sql);
+    }
+
+    /// <summary>A backticked table or column of a mapping reads back as the bare name, which the SQL target brackets by its own rule.</summary>
+    [Fact]
+    public void ABacktickedNameOfAMappingReadsBackBare()
+    {
+        var result = ConversionHandler.Convert(ORMEnum.NHibernate, ORMEnum.Dapper,
+        [
+            new()
+            {
+                ContentType = ConversionContentType.CSharp,
+                Content = """
+                    namespace Shop;
+
+                    public class User
+                    {
+                        public virtual int UserId { get; set; }
+                        public virtual string Name { get; set; }
+                    }
+                    """,
+            },
+            new()
+            {
+                ContentType = ConversionContentType.XML,
+                Content = """
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <hibernate-mapping xmlns="urn:nhibernate-mapping-2.2" namespace="Shop" assembly="Shop">
+                      <class name="User" table="`User`">
+                        <id name="UserId" column="UserId" />
+                        <property name="Name" column="`Order`" />
+                      </class>
+                    </hibernate-mapping>
+                    """,
+            },
+            new() { ContentType = ConversionContentType.HqlQuery, Content = "from User u where u.Name = :name" },
+        ]);
+
+        var sql = Text(result, ConversionContentType.SqlQuery);
+        Assert.Contains("FROM [User]", sql);
+        Assert.Contains("[Order] = @name", sql);
+        Assert.DoesNotContain("`", sql);
+    }
+
     /// <summary>A column, a table alias and a common table expression spelled like a reserved word are bracketed by the same rule, and the statement reads back.</summary>
     [Fact]
     public void AColumnAnAliasAndADefinitionSpelledLikeAReservedWordAreBracketed()

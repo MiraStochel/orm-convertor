@@ -408,6 +408,11 @@ function onLoadSamples() {
 async function init() {
   renderSourceSelect();
   renderTargetCheckboxes();
+  // The lede names the measured frameworks from the same list the checkboxes use, so
+  // the sentence cannot drift from what the advisor offers.
+  const measured = ADVISOR_FRAMEWORKS.map((value) => ORM_LABELS[value]);
+  document.getElementById("measured-frameworks").textContent =
+    measured.length > 1 ? `${measured.slice(0, -1).join(", ")} and ${measured.at(-1)}` : measured.join("");
 
   document.getElementById("source-orm").addEventListener("change", (event) => {
     state.sourceOrm = Number(event.target.value);

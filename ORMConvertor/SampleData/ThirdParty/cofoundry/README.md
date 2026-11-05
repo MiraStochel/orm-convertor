@@ -57,8 +57,11 @@ it; the opening note of each file says whether the file was changed.
    in a note at the end of the line. The `FilterActive` of `Page` returns the pages unchanged and
    is left out. Where the argument of a call is more than a name or a member of one
    (`query.PageVersionId.Value`, `tokenResult.Data.UserId`), it is evaluated into a local before
-   the query, as the call evaluates it; `!x.HasValue` in the bodies of `FilterCanSignIn` and
-   `FilterNotDeleted` is written `x == null`, the form the tool reads.
+   the query, as the call evaluates it, and so is the enum constant `(int)WorkFlowStatus.Draft`
+   in the predicate of `GetUpdatePageDraftVersionCommandById`: `WorkFlowStatus` is not part of
+   the excerpt, so the tool reads its member as a value of the scope and cannot type it through
+   the cast; `!x.HasValue` in the bodies of `FilterCanSignIn` and `FilterNotDeleted` is written
+   `x == null`, the form the tool reads.
 6. **A query the tool reads only in another form is rewritten**: the inherited access rules of a
    page and of a page directory filter by `d.AncestorPageDirectory.AccessRules.Count != 0`, a
    path into a collection, which becomes a correlated `Any` over `PageDirectoryAccessRules`
@@ -72,7 +75,9 @@ it; the opening note of each file says whether the file was changed.
    in `GetPageRouteLookup` two statements of LINQ over versions already in memory, which the tool
    takes for a query because `PageRoute`, whose member they read, is not part of the excerpt
    (decision 114), and the private classes that carry its projections, which the tool would read
-   as entities.
+   as entities; and in `GetPageVersionBlockRenderDetailsById` the lookup of a template among the
+   templates of a block type summary already in memory, taken for a query over a table
+   `Templates` for the same reason (`PageBlockTypeSummary` is not part of the excerpt).
 8. **The write is left out**: `AuthenticateUserCredentials` rehashes a password and saves the
    user; the method, its call and the helper it uses go.
 9. **An upstream mistake is corrected**: `PageGroup.ParentGroupId` maps by convention to a

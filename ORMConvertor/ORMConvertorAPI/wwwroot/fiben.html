@@ -251,14 +251,15 @@
     <section id="run">
       <h2>The documented run</h2>
       <p>
-        On 2026-10-22 and 2026-10-23 the catalog ran in both suites, one after the other,
-        against the container's <code>Fiben</code> database in the fixed environment of the
-        measurements (four processors, the server on two of them and the clients on the other
-        two, one-threaded plans, turbo off): 138 minutes for the 237 queries in Dapper,
-        EF&nbsp;Core and NHibernate, 187 in Hibernate, EclipseLink and MyBatis. In every query
-        and in both suites the catalog's own text returned the rows the judge holds. The record
-        with every number is in the run records of the documentation; this is what it says, and
-        the numbers are that version's.
+        On 2026-11-02 the catalog ran in both suites, one after the other, against the
+        container's <code>Fiben</code> database in the fixed environment of the measurements
+        (four processors, the server on two of them and the clients on the other two,
+        one-threaded plans, turbo off), over the tree of release 2.3.0: 137 minutes for the 237
+        queries in Dapper, EF&nbsp;Core and NHibernate, 187 in Hibernate, EclipseLink and
+        MyBatis. In every query and in both suites the catalog's own text returned the rows the
+        judge holds, every translated cell agreed with the source, and no test failed. The
+        record with every number is in the run records of the documentation; this is what it
+        says, and the numbers are that version's.
       </p>
 
       <div class="table-scroll">
@@ -267,12 +268,12 @@
             <tr><th>Framework</th><th>In its own language</th><th>In native SQL</th><th>Refused</th><th>Rows agree with the source</th><th>Median of a cell's medians</th><th>All medians summed</th></tr>
           </thead>
           <tbody>
-            <tr><td>Dapper (the catalog's text)</td><td>237</td><td>&mdash;</td><td>0</td><td>is the source</td><td>96.4 ms</td><td>642 s</td></tr>
-            <tr><td>EF Core</td><td>176</td><td>61</td><td>0</td><td>237 of 237</td><td>84.6 ms</td><td>644 s</td></tr>
-            <tr><td>NHibernate</td><td>214</td><td>23</td><td>0</td><td>237 of 237</td><td>92.5 ms</td><td>637 s</td></tr>
-            <tr><td>Hibernate</td><td>223</td><td>14</td><td>0</td><td>237 of 237</td><td>122.8 ms</td><td>640 s</td></tr>
-            <tr><td>EclipseLink</td><td>196</td><td>41</td><td>0</td><td>236 of 237</td><td>105.2 ms</td><td>663 s</td></tr>
-            <tr><td>MyBatis</td><td>237</td><td>&mdash;</td><td>0</td><td>237 of 237</td><td>117.0 ms</td><td>649 s</td></tr>
+            <tr><td>Dapper (the catalog's text)</td><td>237</td><td>&mdash;</td><td>0</td><td>is the source</td><td>88.7 ms</td><td>636 s</td></tr>
+            <tr><td>EF Core</td><td>176</td><td>61</td><td>0</td><td>237 of 237</td><td>82.0 ms</td><td>642 s</td></tr>
+            <tr><td>NHibernate</td><td>214</td><td>23</td><td>0</td><td>237 of 237</td><td>89.0 ms</td><td>636 s</td></tr>
+            <tr><td>Hibernate</td><td>223</td><td>14</td><td>0</td><td>237 of 237</td><td>120.6 ms</td><td>641 s</td></tr>
+            <tr><td>EclipseLink</td><td>196</td><td>41</td><td>0</td><td>237 of 237</td><td>104.2 ms</td><td>664 s</td></tr>
+            <tr><td>MyBatis</td><td>237</td><td>&mdash;</td><td>0</td><td>237 of 237</td><td>108.4 ms</td><td>651 s</td></tr>
           </tbody>
         </table>
       </div>
@@ -317,10 +318,11 @@
           <code>UNION</code> member out of its SQL and answers other rows, so a set operation
           with a joined member goes out in native SQL for EclipseLink; and it rebuilds the
           <code>HAVING</code> on the root of the block when the clause opens with a path over
-          another variable, so such a query goes out in native SQL too. It also trims the
-          trailing spaces of a <code>CHAR(5)</code> value (query 63) - a setting of the
-          consumer's session, which the artifact does not make, a stated limit of the target, and
-          the one cell of the run that differs from the source.
+          another variable, so such a query goes out in native SQL too. Its default session trims
+          the trailing spaces of a <code>CHAR(5)</code> value (query 63), so the EclipseLink
+          target returns such a value as SQL returns it - through a concatenation with the empty
+          string and a padding converter - and the one cell that differed from the source in the
+          earlier runs now agrees.
         </li>
         <li>
           <strong>The benchmark's own texts needed care.</strong> Two of the published queries
@@ -343,12 +345,11 @@
         </li>
         <li>
           <strong>The frameworks cost the same, the queries do not.</strong> Summed over the
-          catalog, the medians of the six frameworks lie between 637&nbsp;s (NHibernate) and
-          663&nbsp;s (EclipseLink). Two queries set the length of the run: 205 (<em>which
-          companies reported year over year revenue loss for 2019</em>) at about
-          170&ndash;190&nbsp;s and 233 at about 90&ndash;98&nbsp;s per execution, correlated
-          scalar subqueries with five joins evaluated for every outer row over tables without an
-          index beyond their keys.
+          catalog, the medians of the six frameworks lie between 636&nbsp;s (Dapper and
+          NHibernate) and 664&nbsp;s (EclipseLink). Two queries set the length of the run: 205
+          (<em>which companies reported year over year revenue loss for 2019</em>) and 233,
+          correlated scalar subqueries with five joins evaluated for every outer row over tables
+          without an index beyond their keys.
         </li>
       </ul>
     </section>
