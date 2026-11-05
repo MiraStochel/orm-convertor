@@ -19,8 +19,8 @@ authors:
   - family-names: Abrahám
     given-names: Milan
     affiliation: "Faculty of Mathematics and Physics, Charles University"
-version: 2.2.0
-date-released: "2026-10-12"
+version: 2.3.0
+date-released: "2026-11-05"
 license: MIT
 repository-code: "https://github.com/MiraStochel/orm-convertor"
 keywords:
