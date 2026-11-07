@@ -208,6 +208,24 @@ public class SqlQueryReader(
     private int definitionDepth;
 
     /// <summary>
+    /// What the ORDER BY of one SELECT reads of its select list: the value each element names
+    /// by its position from one - the alias of a projection under one, the operand of one
+    /// without, null for an element the representation does not carry -, the aliases as they
+    /// were declared by their case-insensitive name, which is how SQL Server pairs a reference
+    /// with them, and the aliases of projections that were dropped, which nothing may read.
+    /// </summary>
+    private sealed class SelectList
+    {
+        public List<QueryOperand?> Positions { get; } = [];
+
+        public Dictionary<string, string> Aliases { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public HashSet<string> Dropped { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private SelectList selectList = new();
+
+    /// <summary>
     /// Reads the one SELECT the text states into the builder: the text is the argument of
     /// one construct of the host framework, so a second SELECT refuses it as much as a
     /// statement that writes (decision 108). A text that cannot be read leaves its reason on
@@ -326,6 +344,11 @@ public class SqlQueryReader(
                     break;
                 }
 
+                // The select list of this SELECT, which its ORDER BY reads by position and by
+                // alias; a subquery read on the way has its own and gives this one back.
+                var enclosingList = selectList;
+                selectList = new SelectList();
+
                 queryBuilder.Push();
                 ReadFrom(query);
                 ReadSelect(query, namedByPosition);
@@ -335,6 +358,8 @@ public class SqlQueryReader(
                 ReadOrderBy(query);
                 ReadPagination(query);
                 queryBuilder.Pop();
+
+                selectList = enclosingList;
                 break;
 
             case BinaryQueryExpression binary:
@@ -856,17 +881,44 @@ public class SqlQueryReader(
             queryBuilder.Distinct();
         }
 
+        var projected = 0;
+        var dropped = 0;
+
         foreach (var element in query.SelectElements)
         {
             // Rule Q3: SELECT * is the absence of a projection, not a projection of everything.
             // SELECT t.* names the one row of the joined row it materializes, and is carried
             // as the whole-row projection of that alias; read as the absence of a projection,
-            // it materialized the whole joined row and typed it after the first table.
+            // it materialized the whole joined row and typed it after the first table. A bare
+            // * beside other elements is every column of the row sources, which over one row
+            // source is the whole row of its alias - the builder template gives it the columns
+            // the mapping knows (decision 161) -; over several no alias names it, and dropped
+            // it is a column fewer for the query around an intermediate result to read.
             if (element is SelectStarExpression star)
             {
+                selectList.Positions.Add(null);
                 if (star.Qualifier is { Identifiers.Count: > 0 } qualifier)
                 {
                     queryBuilder.Project(QueryOperand.Column(qualifier.Identifiers[^1].Value, "*"));
+                    projected++;
+                }
+                else if (query.SelectElements.Count > 1)
+                {
+                    if (query.FromClause?.TableReferences is [NamedTableReference or QueryDerivedTable])
+                    {
+                        queryBuilder.Project(QueryOperand.Column(sourceAlias, "*"));
+                        projected++;
+                    }
+                    else
+                    {
+                        Report(
+                            definitionDepth > 0 ? ConversionRecordKind.Failure : ConversionRecordKind.Loss,
+                            definitionDepth > 0
+                                ? "The * beside other columns stands over several row sources, whose columns no alias names, and it is a part of an intermediate result the query reads; no artifact was generated."
+                                : "The * beside other columns stands over several row sources, whose columns no alias names, and was dropped.",
+                            QueryFeature.Projection);
+                        dropped++;
+                    }
                 }
 
                 continue;
@@ -874,19 +926,59 @@ public class SqlQueryReader(
 
             if (element is not SelectScalarExpression scalar)
             {
+                selectList.Positions.Add(null);
                 Report(
                     ConversionRecordKind.Loss,
                     "A select element that is not a scalar expression was dropped.",
                     QueryFeature.Projection);
+                dropped++;
                 continue;
             }
 
             // The alias undecorated, with whether the source delimited it (AS "product.productId",
             // AS [Order]) - a name that is no identifier, which a target delimits in its own
-            // spelling or refuses; written bare it is text no parser reads.
+            // spelling or refuses; written bare it is text no parser reads. T-SQL takes a string
+            // literal in the place of an alias as a delimited identifier (AS 'Number of votes').
             var alias = scalar.ColumnName?.Value;
-            var delimited = scalar.ColumnName?.Identifier is { QuoteType: not QuoteType.NotQuoted };
-            ReadProjection(scalar.Expression, alias, delimited, namedByPosition);
+            var delimited = scalar.ColumnName?.Identifier is { QuoteType: not QuoteType.NotQuoted }
+                            || scalar.ColumnName?.ValueExpression is StringLiteral;
+            if (ReadProjection(scalar.Expression, alias, delimited, namedByPosition, out var unreadable) is { } operand)
+            {
+                selectList.Positions.Add(alias is null ? operand : QueryOperand.Column(null, alias));
+                if (alias is not null)
+                {
+                    selectList.Aliases.TryAdd(alias, alias);
+                }
+
+                projected++;
+            }
+            else
+            {
+                selectList.Positions.Add(null);
+                if (alias is not null)
+                {
+                    selectList.Dropped.Add(alias);
+                }
+
+                // A constant without an alias names nothing and is no column the source asked
+                // for - EXISTS (SELECT 1 …) is the idiom; a construct the representation does
+                // not carry is.
+                if (unreadable)
+                {
+                    dropped++;
+                }
+            }
+        }
+
+        // A select list whose every element was dropped is no projection at all, which rule
+        // Q3 reads as the whole row - another result than the columns the source asked for.
+        // Inside an intermediate result each drop is a refusal of its own already.
+        if (projected == 0 && dropped > 0 && definitionDepth == 0)
+        {
+            Report(
+                ConversionRecordKind.Failure,
+                "No element of the select list is one the query representation carries, and a query without them would return whole rows instead; no artifact was generated.",
+                QueryFeature.Projection);
         }
     }
 
@@ -901,14 +993,17 @@ public class SqlQueryReader(
     /// operation after the leftmost, where SQL names the column after the leftmost member's
     /// by position (decision 112) and the builder gives it that name, as it does an
     /// expression there; a construct outside the vocabulary is dropped with a record that
-    /// names it, under the category of expressions.
+    /// names it, under the category of expressions. Returns the operand projected, or null
+    /// where nothing was.
     /// </summary>
-    private void ReadProjection(ScalarExpression expression, string? alias, bool delimitedAlias, bool namedByPosition)
+    private QueryOperand? ReadProjection(ScalarExpression expression, string? alias, bool delimitedAlias, bool namedByPosition, out bool unreadable)
     {
+        unreadable = false;
         var operand = ReadOperand(expression);
 
         if (operand is null)
         {
+            unreadable = true;
             var (what, category) = unread ?? ($"'{Describe(expression)}'", QueryFeature.Projection);
             unread = null;
 
@@ -921,14 +1016,14 @@ public class SqlQueryReader(
                     ConversionRecordKind.Failure,
                     $"The projected expression {what} is not a column, an aggregate or an expression the query representation carries, and it is a column of an intermediate result the query reads; no artifact was generated.",
                     category ?? QueryFeature.Projection);
-                return;
+                return null;
             }
 
             Report(
                 ConversionRecordKind.Loss,
                 $"The projected expression {what} is not a column, an aggregate or an expression the query representation carries, and was dropped.",
                 category ?? QueryFeature.Projection);
-            return;
+            return null;
         }
 
         // A constant under an alias is a column of the result with a value every row shares -
@@ -941,10 +1036,11 @@ public class SqlQueryReader(
                 ConversionRecordKind.Loss,
                 $"The projected expression '{Describe(expression)}' is a constant without an alias, which names no column, and was dropped.",
                 QueryFeature.Projection);
-            return;
+            return null;
         }
 
         queryBuilder.Project(operand, alias, delimitedAlias);
+        return operand;
     }
 
     private void ReadWhere(QuerySpecification query)
@@ -1023,8 +1119,14 @@ public class SqlQueryReader(
     /// <summary>
     /// The ordering keys (decision 107): a column, an aggregate - <c>ORDER BY COUNT(*) DESC</c>,
     /// which used to be dropped -, an expression, or an alias of the projection, which the
-    /// grammar hands over as an unqualified column. A bare number is a position in T-SQL, not
-    /// a value, and stays the loss it was.
+    /// grammar hands over as an unqualified column and SQL Server pairs with the alias without
+    /// regard to case, so the key takes the spelling the alias was declared with. A bare number
+    /// is a position in T-SQL, not a value: it names the element of the select list at that
+    /// position, and a string literal that spells an alias of the select list names that alias,
+    /// as SQL Server reads both. A key that names nothing the representation carries - a
+    /// position of an element it does not carry, the alias of a dropped projection, a construct
+    /// outside the vocabulary - is the loss it was; under TOP or OFFSET it decides which rows
+    /// the slice keeps, and the query is refused (decisions 053 and 070).
     /// </summary>
     private void ReadOrderBy(QuerySpecification query)
     {
@@ -1033,17 +1135,71 @@ public class SqlQueryReader(
             return;
         }
 
+        var sliced = query.TopRowFilter is not null || query.OffsetClause is not null;
+
         foreach (var element in query.OrderByClause.OrderByElements)
         {
-            var key = ReadOperand(element.Expression);
-            if (key is not null && !key.IsConstant)
+            var ascending = element.SortOrder != SortOrder.Descending;
+            var written = Unparenthesize(element.Expression);
+
+            QueryOperand? key;
+            string? lost = null;
+
+            if (written is IntegerLiteral position)
             {
-                queryBuilder.OrderBy(key, element.SortOrder != SortOrder.Descending);
+                key = int.TryParse(position.Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index)
+                      && index >= 1 && index <= selectList.Positions.Count
+                    ? selectList.Positions[index - 1]
+                    : null;
+                lost = key is null ? $"'{position.Value}', the position of an element of the select list the query representation does not carry" : null;
+            }
+            else if (written is StringLiteral literal && selectList.Aliases.TryGetValue(literal.Value, out var spelled))
+            {
+                key = QueryOperand.Column(null, spelled);
+            }
+            else
+            {
+                key = ReadOperand(element.Expression);
+
+                if (key is { IsColumn: true, Table: null, Function: null } bare)
+                {
+                    if (selectList.Dropped.Contains(bare.Property!) && !selectList.Aliases.ContainsKey(bare.Property!))
+                    {
+                        lost = $"'{bare.Property}', the alias of a projection that was dropped";
+                        key = null;
+                    }
+                    else if (selectList.Aliases.TryGetValue(bare.Property!, out var declared))
+                    {
+                        key = QueryOperand.Column(null, declared);
+                    }
+                }
+
+                if (key is { IsConstant: true })
+                {
+                    key = null;
+                }
+            }
+
+            if (key is not null)
+            {
+                queryBuilder.OrderBy(key, ascending);
                 continue;
             }
 
-            var (what, category) = unread ?? ($"'{Print(element.Expression)}'", QueryFeature.Ordering);
+            var (what, category) = lost is not null
+                ? (lost, QueryFeature.Ordering)
+                : unread ?? ($"'{Print(element.Expression)}'", QueryFeature.Ordering);
             unread = null;
+
+            if (sliced)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    $"The ordering key {what} is not a column, an aggregate or an expression the query representation carries, and the query slices its rows with TOP or OFFSET, so without the key it would keep other rows; no artifact was generated.",
+                    category ?? QueryFeature.Ordering);
+                continue;
+            }
+
             Report(
                 ConversionRecordKind.Loss,
                 $"The ordering key {what} is not a column, an aggregate or an expression the query representation carries, and was dropped.",
@@ -1770,7 +1926,16 @@ public class SqlQueryReader(
         return QueryOperand.Computed(ModelExpression.Call(function, arguments));
     }
 
-    /// <summary>CONCAT of any number of arguments as a left-nested concatenation - the model is binary and a target with an n-ary spelling flattens it again.</summary>
+    /// <summary>
+    /// CONCAT of any number of arguments as a left-nested concatenation - the model is binary
+    /// and a target with an n-ary spelling flattens it again. The concatenation of the model is
+    /// SQL's <c>+</c> over text, which yields NULL from a NULL and takes no number, while
+    /// CONCAT converts each argument into text and takes a NULL for the empty string; so each
+    /// argument is read as exactly that, <c>COALESCE(CAST(x AS NVARCHAR(MAX)), '')</c>, in the
+    /// vocabulary every target writes - a string literal is the text already, and a NULL the
+    /// empty string. The T-SQL writer folds the shape back into CONCAT
+    /// (<see cref="SqlQueryVisitor"/>).
+    /// </summary>
     private QueryOperand? ReadConcat(FunctionCall call)
     {
         if (call.Parameters.Count < 2)
@@ -1782,10 +1947,21 @@ public class SqlQueryReader(
         QueryOperand? result = null;
         foreach (var expression in call.Parameters)
         {
-            var argument = ReadOperand(expression);
-            if (argument is null || !IsLeaf(argument, expression))
+            QueryOperand argument;
+            if (Unparenthesize(expression) is NullLiteral)
             {
-                return null;
+                argument = QueryOperand.Value(QueryConstant.Of(string.Empty, ScalarType.String));
+            }
+            else
+            {
+                if (ReadOperand(expression) is not { } read || !IsLeaf(read, expression))
+                {
+                    return null;
+                }
+
+                argument = read is { IsConstant: true, IsAggregate: false, Constant.Type: ScalarType.String }
+                    ? read
+                    : AsConcatenatedText(read);
             }
 
             result = result is null ? argument : QueryOperand.Computed(ModelExpression.Binary(ExpressionOperator.Concat, result, argument));
@@ -1793,6 +1969,15 @@ public class SqlQueryReader(
 
         return result;
     }
+
+    /// <summary>One argument of CONCAT as the text CONCAT makes of it: converted into text, and the empty string for a NULL.</summary>
+    private static QueryOperand AsConcatenatedText(QueryOperand value)
+        => QueryOperand.Computed(ModelExpression.Call(
+            QueryFunction.Coalesce,
+            [
+                QueryOperand.Computed(ModelExpression.Call(QueryFunction.Cast, [value], castTo: ScalarType.String)),
+                QueryOperand.Value(QueryConstant.Of(string.Empty, ScalarType.String)),
+            ]));
 
     private QueryOperand? ReadSearchedCase(SearchedCaseExpression searched)
     {

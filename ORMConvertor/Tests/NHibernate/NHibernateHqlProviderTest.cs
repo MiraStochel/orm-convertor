@@ -10,7 +10,9 @@ namespace Tests.NHibernate;
 /// on (decision 162). Beside them, what avg hands over, which the visitor's conversion of an
 /// average rests on (decision 161), and what the trimming of a fixed-width value is written as
 /// (decision 169): <c>trim(trailing from x)</c> is <c>rtrim(x)</c>, while <c>rtrim(x)</c>
-/// written directly is refused. A fact the release stops holding on an upgrade shows up here.
+/// written directly is refused; and that the target of a join spelled like an alias in scope is
+/// read as a path off it unless qualified with its namespace (HqlNames). A fact the release
+/// stops holding on an upgrade shows up here.
 /// </summary>
 public class NHibernateHqlProviderTest
 {
@@ -120,6 +122,45 @@ public class NHibernateHqlProviderTest
             "from Sales.Customers customer0_ cross join Sales.Customers customer1_ inner join Sales.Orders purchase2_ on  (purchase2_.CustomerId=customer0_.CustomerId) where customer1_.CustomerId=purchase2_.CustomerId"
         },
 
+        // A subquery of HAVING may cross-join and repeat the aliases of the query around it;
+        // the target of a join spelled like an alias in scope is read qualified with its
+        // namespace (HqlNames, Combined/BenchmarkTrialDefectTest).
+        {
+            "a cross join in a subquery of HAVING under the outer query's aliases",
+            "select p.CustomerId, sum(p.Amount) from Purchase p group by p.CustomerId having sum(p.Amount) > (select sum(p.Amount) * .005 from Purchase p cross join Customer c where c.CustomerId = p.CustomerId)",
+            "having sum(purchase0_.Amount)>(select sum(purchase1_.Amount)*0.005 from Sales.Orders purchase1_ cross join Sales.Customers customer2_ where customer2_.CustomerId=purchase1_.CustomerId)"
+        },
+        {
+            "a joined entity spelled like an outer alias, qualified, in a cross join",
+            "select Customer.CustomerName from Customer Customer where Customer.CustomerId in (select p.CustomerId from Purchase p cross join HqlProbe.Customer c where c.CustomerId = p.CustomerId)",
+            "(select purchase1_.CustomerId from Sales.Orders purchase1_ cross join Sales.Customers customer2_ where customer2_.CustomerId=purchase1_.CustomerId)"
+        },
+        {
+            "a joined entity spelled like an outer alias, qualified, in an entity join",
+            "select Customer.CustomerName from Customer Customer where Customer.CustomerId in (select p.CustomerId from Purchase p inner join HqlProbe.Customer c with c.CustomerId = p.CustomerId)",
+            "inner join Sales.Customers customer2_ on  (customer2_.CustomerId=purchase1_.CustomerId)"
+        },
+        {
+            "a joined entity spelled like an alias of its own query, qualified",
+            "select Customer.CustomerId from Purchase Customer cross join HqlProbe.Customer c where c.CustomerId = Customer.CustomerId",
+            "from Sales.Orders purchase0_ cross join Sales.Customers customer1_ where customer1_.CustomerId=purchase0_.CustomerId"
+        },
+        {
+            "a joined entity spelled like its own alias",
+            "select p.CustomerId from Purchase p cross join Customer Customer where Customer.CustomerId = p.CustomerId",
+            "cross join Sales.Customers customer1_"
+        },
+        {
+            "the root of a subquery spelled like an outer alias",
+            "select Customer.CustomerName from Customer Customer where Customer.CustomerId in (select c.CustomerId from Customer c)",
+            "in (select customer1_.CustomerId from Sales.Customers customer1_)"
+        },
+        {
+            "a joined entity spelled like an outer alias in another case",
+            "select customer.CustomerName from Customer customer where customer.CustomerId in (select p.CustomerId from Purchase p cross join Customer c where c.CustomerId = p.CustomerId)",
+            "cross join Sales.Customers customer2_"
+        },
+
         // The HQL spelling of TrimEnd (decision 169).
         { "a trailing trim as rtrim", "select trim(trailing from c.CustomerName) from Customer c", "select rtrim( customer0_.CustomerName ) as col_0_0_" },
         { "a trailing trim over a maximum", "select trim(trailing from max(c.CustomerName)) from Customer c", "select rtrim( max(customer0_.CustomerName) ) as col_0_0_" },
@@ -130,6 +171,28 @@ public class NHibernateHqlProviderTest
     public void TheProviderRefusesRtrimWrittenDirectly()
     {
         Assert.ThrowsAny<Exception>(() => Sql("rtrim", "select rtrim(c.CustomerName) from Customer c"));
+    }
+
+    /// <summary>
+    /// Why the HQL writer qualifies the target of a join spelled like an alias in scope
+    /// (HqlNames): bare, NHibernate reads it as a path off the alias, in a cross join and in an
+    /// entity join, in a subquery and in the query of the alias alike.
+    /// </summary>
+    public static TheoryData<string, string> ReadAsAPath => new()
+    {
+        { "cross join in a subquery", "select Customer.CustomerName from Customer Customer where Customer.CustomerId in (select p.CustomerId from Purchase p cross join Customer c where c.CustomerId = p.CustomerId)" },
+        { "entity join in a subquery", "select Customer.CustomerName from Customer Customer where Customer.CustomerId in (select p.CustomerId from Purchase p inner join Customer c with c.CustomerId = p.CustomerId)" },
+        { "cross join in the query of the alias", "select Customer.CustomerId from Purchase Customer cross join Customer c where c.CustomerId = Customer.CustomerId" },
+        { "entity join in the query of the alias", "select Customer.CustomerId from Purchase Customer inner join Customer c with c.CustomerId = Customer.CustomerId" },
+    };
+
+    [Theory]
+    [MemberData(nameof(ReadAsAPath))]
+    public void TheProviderReadsAJoinedEntitySpelledLikeAnAliasAsAPath(string shape, string hql)
+    {
+        var failure = Assert.ThrowsAny<Exception>(() => Sql(shape, hql));
+
+        Assert.Contains("Path expected for join!", failure.Message, StringComparison.Ordinal);
     }
 
     [Theory]

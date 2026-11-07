@@ -657,7 +657,7 @@ public static class QueryShapeInputs
 
         ["RoundingAndSquareRoot"] = Hallmarks(
             sql: ["ROUND(p.UnitPrice, 0) AS RoundedPrice", "SQRT(", " AS PriceRoot", "WHERE ROUND(p.UnitPrice, 0) > 50"],
-            linq: ["RoundedPrice = Math.Round(p.UnitPrice", ", 0)", "PriceRoot = Math.Sqrt(", ".Where(p => Math.Round(p.UnitPrice", ", 0) > 50)"],
+            linq: ["RoundedPrice = ", "Math.Round(p.UnitPrice", ", 0)", "PriceRoot = Math.Sqrt(", ".Where(p => ", ", 0) > 50)"],
             hql: ["round(p.UnitPrice, 0) as RoundedPrice", "sqrt(", " as PriceRoot", "where round(p.UnitPrice, 0) > 50"],
             jpa: ["round(p.UnitPrice, 0) as RoundedPrice", "sqrt(", " as PriceRoot", "where round(p.UnitPrice, 0) > 50"]),
 

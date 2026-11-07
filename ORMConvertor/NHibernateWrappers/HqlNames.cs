@@ -11,7 +11,11 @@ namespace NHibernateWrappers;
 /// <item>an alias spelled like a keyword is refused nearly wherever it stands - <c>order</c> and <c>group</c> only in a distinct projection, inside <c>count()</c> and after <c>join</c>, the others everywhere -, while the same alias with a trailing underscore was read in every position.</item>
 /// </list>
 /// A projection alias was read as a keyword everywhere but for <c>ascending</c> and
-/// <c>descending</c>, and is left as the source wrote it.
+/// <c>descending</c>, and is left as the source wrote it. An entity that is the target of a
+/// join while an alias of the same spelling is in scope - declared before it in its own query
+/// or in a query around it, compared with regard to case - is read as a path off that alias
+/// and refused ("Path expected for join!"); qualified with its namespace it is read again, and
+/// the head of a from clause is not affected (<c>NHibernate/NHibernateHqlProviderTest</c>).
 /// </summary>
 internal static class HqlNames
 {
@@ -46,10 +50,12 @@ internal static class HqlNames
     /// that is no keyword stays exactly as it was -, otherwise the name qualified with the
     /// namespace the generated mapping declares on &lt;hibernate-mapping&gt;; null where
     /// NHibernate refuses the bare name and the entity has no namespace to qualify it with.
+    /// <paramref name="shadowed"/> says that the target of a join is spelled like an alias in
+    /// scope, which NHibernate reads the bare name as.
     /// </summary>
-    public static string? Entity(string name, string? entityNamespace, bool joined)
+    public static string? Entity(string name, string? entityNamespace, bool joined, bool shadowed = false)
     {
-        if (!Keywords.Contains(name) || !(joined || NeverNames.Contains(name)))
+        if (!(joined && shadowed) && (!Keywords.Contains(name) || !(joined || NeverNames.Contains(name))))
         {
             return name;
         }

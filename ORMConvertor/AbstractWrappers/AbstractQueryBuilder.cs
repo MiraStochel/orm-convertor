@@ -862,6 +862,10 @@ public abstract partial class AbstractQueryBuilder
         // The whole row of an intermediate result beside columns is its columns (decision
         // 161), before any gate reads a select list or describes a row.
         ExpandWholeRowsOfDefinitions();
+        if (refused)
+        {
+            return [];
+        }
 
         var body = Unwrap(instructions);
 
@@ -896,7 +900,7 @@ public abstract partial class AbstractQueryBuilder
         foreach (var definition in gatedDefinitions)
         {
             var qualified = definition.Body with { Instructions = [.. QualifyColumns(definition.Body.Instructions, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase))] };
-            if (TypeTemporalLiterals(qualified, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase)) is not { } typed)
+            if (refused || TypeTemporalLiterals(qualified, new Dictionary<string, EntityMap>(StringComparer.OrdinalIgnoreCase)) is not { } typed)
             {
                 return [];
             }
@@ -906,7 +910,8 @@ public abstract partial class AbstractQueryBuilder
 
         gatedDefinitions = typedDefinitions;
 
-        if (!TypeTemporalLiterals(QualifyColumns(body, []), [], out body))
+        var qualifiedBody = QualifyColumns(body, []);
+        if (refused || !TypeTemporalLiterals(qualifiedBody, [], out body))
         {
             return [];
         }
@@ -1693,6 +1698,15 @@ public abstract partial class AbstractQueryBuilder
                    || (KeepsTheIntOfACount.Contains(window.WindowAggregate!) && CountsRows(window.Argument, aliases));
         }
 
+        // Arithmetic over a row count and an int is an int to SQL Server too - COUNT(*) / 6 -,
+        // whatever wider whole number the language targets give the count.
+        if (operand is { IsExpression: true, IsAggregate: false, Expression: { IsBinary: true, Operator: not ExpressionOperator.Concat } arithmetic })
+        {
+            var sides = new[] { arithmetic.Left!, arithmetic.Right! };
+            return sides.Any(side => CountsRows(side, aliases))
+                   && sides.All(side => CountsRows(side, aliases) || ScalarOf(side, aliases) is ScalarType.Int or ScalarType.Short or ScalarType.Byte);
+        }
+
         if (!operand.IsColumn || operand.Property is null)
         {
             return false;
@@ -1765,21 +1779,28 @@ public abstract partial class AbstractQueryBuilder
     /// body after them, so that an outer definition's row is described over the columns the
     /// inner one's star already stands for. A star that is the only projection stays the
     /// whole-row projection decision 112 holds it to.
+    ///
+    /// Inside a definition the whole row of a table beside columns - the * a derived table
+    /// writes beside an expression - is a column list the query around it reads by name, so
+    /// with <paramref name="tables"/> it becomes the columns the entity of the table maps, in
+    /// the entity's order; a table no entity of the conversion describes has columns only the
+    /// schema knows, and the query is refused. The catalog's demand asks before the catalog
+    /// has completed the entities, and leaves the tables to the build.
     /// </summary>
-    private void ExpandWholeRowsOfDefinitions()
+    private void ExpandWholeRowsOfDefinitions(bool tables = true)
     {
         for (var i = 0; i < definitions.Count; i++)
         {
             var definition = definitions[i];
             var earlier = definitions.Take(i).ToList();
-            var expanded = ExpandWholeRows(definition.Body.Instructions, earlier);
+            var expanded = ExpandWholeRows(definition.Body.Instructions, earlier, tables);
             if (!ReferenceEquals(expanded, definition.Body.Instructions))
             {
                 definitions[i] = definition with { Body = definition.Body with { Instructions = [.. expanded] } };
             }
         }
 
-        var body = ExpandWholeRows(instructions, definitions);
+        var body = ExpandWholeRows(instructions, definitions, tables: false);
         if (!ReferenceEquals(body, instructions))
         {
             instructions.Clear();
@@ -1788,21 +1809,27 @@ public abstract partial class AbstractQueryBuilder
     }
 
     /// <summary>One scope and the scopes its body holds (<see cref="ExpandWholeRowsOfDefinitions"/>); the same list where nothing changes.</summary>
-    private IReadOnlyList<QueryInstruction> ExpandWholeRows(IReadOnlyList<QueryInstruction> body, IReadOnlyList<WithInstruction> earlier)
+    private IReadOnlyList<QueryInstruction> ExpandWholeRows(IReadOnlyList<QueryInstruction> body, IReadOnlyList<WithInstruction> earlier, bool tables)
     {
-        if (earlier.Count == 0)
+        if (earlier.Count == 0 && !tables)
         {
             return body;
         }
 
-        // The definition each alias of the scope reads, where it reads one.
+        // The definition each alias of the scope reads, where it reads one, and the table it
+        // reads otherwise.
         var sources = new Dictionary<string, WithInstruction>(StringComparer.OrdinalIgnoreCase);
+        var tablesRead = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (alias, table) in body.OfType<FromInstruction>().Select(f => (f.Alias ?? f.Table, f.Table))
                      .Concat(body.OfType<JoinInstruction>().Select(j => (j.RightTableAlias ?? j.RightTable, j.RightTable))))
         {
             if (earlier.FirstOrDefault(d => SameName(d.Name, table)) is { } definition)
             {
                 sources.TryAdd(alias, definition);
+            }
+            else if (!definitions.Any(d => SameName(d.Name, table)))
+            {
+                tablesRead.TryAdd(alias, table);
             }
         }
 
@@ -1826,15 +1853,34 @@ public abstract partial class AbstractQueryBuilder
                     changed = true;
                     break;
 
+                case ProjectInstruction { IsWholeRow: true } whole when tables && projections > 1 && tablesRead.TryGetValue(whole.Operand.Table!, out var table):
+                    if (RenderedEntityFor(table) is not { } entity)
+                    {
+                        Report(
+                            ConversionRecordKind.Failure,
+                            $"The whole row of '{whole.Operand.Table}' stands beside other columns of an intermediate result the query reads, and no entity of the conversion maps the table '{table}', so its columns are the schema's alone; no artifact was generated.",
+                            QueryFeature.IntermediateResult);
+                        result.Add(instruction);
+                        break;
+                    }
+
+                    foreach (var column in entity.PropertyMaps.Select(p => p.ColumnName ?? p.Property.Name))
+                    {
+                        result.Add(new ProjectInstruction(QueryOperand.Column(whole.Operand.Table, column)));
+                    }
+
+                    changed = true;
+                    break;
+
                 case SubQueryInstruction nested:
-                    var inner = ExpandWholeRows(nested.Instructions, earlier);
+                    var inner = ExpandWholeRows(nested.Instructions, earlier, tables);
                     changed |= !ReferenceEquals(inner, nested.Instructions);
                     result.Add(ReferenceEquals(inner, nested.Instructions) ? nested : nested with { Instructions = [.. inner] });
                     break;
 
                 case SetOperationInstruction operation:
-                    var left = ExpandWholeRows(operation.Left.Instructions, earlier);
-                    var right = ExpandWholeRows(operation.Right.Instructions, earlier);
+                    var left = ExpandWholeRows(operation.Left.Instructions, earlier, tables);
+                    var right = ExpandWholeRows(operation.Right.Instructions, earlier, tables);
                     if (ReferenceEquals(left, operation.Left.Instructions) && ReferenceEquals(right, operation.Right.Instructions))
                     {
                         result.Add(operation);
@@ -3307,7 +3353,7 @@ public abstract partial class AbstractQueryBuilder
         // mapping, so that nobody asks the catalog for a table named after a definition, and
         // their bodies are walked like any scope (decision 112), with the whole row of one
         // beside columns already its columns (decision 161), as the build sees them.
-        ExpandWholeRowsOfDefinitions();
+        ExpandWholeRowsOfDefinitions(tables: false);
         DescribeDefinitions();
         foreach (var definition in definitions)
         {
@@ -4013,7 +4059,7 @@ public abstract partial class AbstractQueryBuilder
             case ComparisonCondition comparison:
                 var left = GateOperand(comparison.Left, aliases);
                 var right = comparison.Right is null || GateOperand(comparison.Right, aliases);
-                return left && right;
+                return left && right && GateComparedScalars(comparison, aliases);
             case LogicalCondition logical:
                 return logical.Operands.Aggregate(true, (admitted, operand) => GateExpressions(operand, aliases) && admitted);
             case NotCondition negation:
@@ -4022,6 +4068,41 @@ public abstract partial class AbstractQueryBuilder
                 return true;
         }
     }
+
+    /// <summary>
+    /// A comparison of a moment with a number is held to the rule the arithmetic over the two
+    /// is (decision 107): no target types them as one value - SQL Server converts the number
+    /// into a day count, C# has no operator between a DateTime and an int, and a source that
+    /// writes <c>CreationDate &gt; 2013-01-01</c> means a date it did not write. Refused by
+    /// name. A string compared with a moment is the moment the source wrote, and the typing of
+    /// temporal literals has made it one already.
+    /// </summary>
+    private bool GateComparedScalars(ComparisonCondition comparison, Dictionary<string, EntityMap> aliases)
+    {
+        if (comparison.Right is null || comparison.Right.IsValueList || comparison.Operator is ComparisonOperator.Like)
+        {
+            return true;
+        }
+
+        var sides = new[] { ScalarOf(comparison.Left, aliases), ScalarOf(comparison.Right, aliases) };
+        if (!(sides.Any(IsTemporal) && sides.Any(IsNumber)))
+        {
+            return true;
+        }
+
+        Report(
+            ConversionRecordKind.Failure,
+            $"The comparison of '{comparison.Left}' with '{comparison.Right}' compares the scalars {sides[0]} and {sides[1]}, which no target types as one value; no artifact was generated.",
+            QueryFeature.Expression);
+        return false;
+    }
+
+    private static bool IsTemporal(ScalarType? scalar)
+        => scalar is ScalarType.DateTime or ScalarType.Date or ScalarType.TimeOfDay or ScalarType.DateTimeOffset;
+
+    private static bool IsNumber(ScalarType? scalar)
+        => scalar is ScalarType.Byte or ScalarType.Short or ScalarType.Int or ScalarType.Long
+            or ScalarType.Float or ScalarType.Double or ScalarType.Decimal;
 
     private bool GateOperand(QueryOperand operand, Dictionary<string, EntityMap> aliases, bool inProjection = false)
     {

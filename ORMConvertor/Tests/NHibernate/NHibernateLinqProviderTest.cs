@@ -98,6 +98,8 @@ public class NHibernateLinqProviderTest
         { "NOT IN over a nullable subquery as All", "session.Query<Customer>().Where(c => c.Score != null && session.Query<Order>().Select(o => o.Rating).All(v => v != null && v != c.Score))", "where (customer0_.Score is not null) and  not (exists (select order1_.Rating from Sales.Orders order1_ where  not ((order1_.Rating is not null) and" },
         { "Math.Round, Math.Sqrt, a cast and ToString", "session.Query<Order>().Select(o => new { R = Math.Round(o.Total, 1), S = Math.Sqrt((double)(o.Total)), I = (int)(o.Total), T = o.Total.ToString() })", "round(order0_.Total, ?)" },
         { "modulo", "session.Query<Order>().Where(o => o.OrderId % 2 == 0)", "% (?)" },
+        { "Math.Round over a nullable column through Value", "session.Query<Customer>().Select(c => new { R = (decimal?)Math.Round(c.CreditLimit.Value, 2) })", "round(customer0_.CreditLimit, ?)" },
+        { "Math.Round over a nullable arithmetic through Value", "session.Query<Customer>().Select(c => new { R = (decimal?)Math.Round((c.Score * 1.00m / c.CustomerId).Value, 2) })", "round(" },
         { "a nullable member through Value", "session.Query<Customer>().Where(c => c.Score.Value > 3)", "customer0_.Score>?" },
         { "an anonymous grouping key", InnerJoin + ".GroupBy(t => new { t.c.CustomerName, t.o.Rating }).Select(g => new { g.Key.CustomerName, g.Key.Rating, Count = g.Count() })", "group by customer0_.CustomerName , order1_.Rating" },
 

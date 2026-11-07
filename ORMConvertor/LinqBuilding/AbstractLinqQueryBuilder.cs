@@ -1032,6 +1032,28 @@ public abstract class AbstractLinqQueryBuilder : AbstractQueryBuilder
             return;
         }
 
+        // A member of the anonymous type needs a name of its own: an aggregate over the whole
+        // row carries none without an alias - SQL gives the column none, and the tool does not
+        // invent one -, and two columns of one name are two members C# refuses (CS0833). The
+        // query goes out in native SQL, whose row class holds both to the same rule and says
+        // so (decision 113).
+        var names = clauses.Projections.Select(p => p.Alias ?? MemberName(p.Operand)).ToList();
+        if (names.FirstOrDefault(name => !SyntaxFacts.IsValidIdentifier(name.TrimStart('@'))) is { } nameless)
+        {
+            ReportUnspoken(
+                $"The column '{clauses.Projections[names.IndexOf(nameless)].Operand}' of the result carries no name, and a member of an anonymous type needs one",
+                QueryFeature.Projection);
+            return;
+        }
+
+        if (names.GroupBy(name => name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1) is { } twice)
+        {
+            ReportUnspoken(
+                $"Two columns of the result are named '{twice.Key}', and an anonymous type has one member of one name",
+                QueryFeature.Projection);
+            return;
+        }
+
         visitor.InProjection = true;
         var members = clauses.Projections
             .Select(p => $"{p.Alias ?? MemberName(p.Operand)} = {visitor.Visit(p)}")

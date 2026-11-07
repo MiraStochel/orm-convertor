@@ -75,14 +75,18 @@ public sealed class NHibernateHqlQueryVisitor(
         var name = EntityName(key) ?? EntityTableNaming.EntityNameFor(instr.RightTable);
         var alias = HqlNames.Alias(instr.RightTableAlias ?? Bare(instr.RightTable).ToLowerInvariant());
 
-        // The target of an entity join named like a keyword is read only qualified with its
-        // namespace (HqlNames); without one HQL has no way to name it, and native SQL has.
-        var entity = HqlNames.Entity(name, entities.TryGetValue(key, out var map) ? map.Entity.Namespace : null, joined: true);
+        // The target of an entity join named like a keyword, or like an alias in scope - its
+        // own query's or one around it -, is read only qualified with its namespace (HqlNames);
+        // without one HQL has no way to name it, and native SQL has.
+        var shadowed = entities.Keys.Any(other => !string.Equals(other, key, StringComparison.OrdinalIgnoreCase) && SpelledLike(other, name));
+        var entity = HqlNames.Entity(name, entities.TryGetValue(key, out var map) ? map.Entity.Namespace : null, joined: true, shadowed);
         if (entity is null)
         {
             report(
                 ConversionRecordKind.Fallback,
-                $"HQL in NHibernate 5.7.0 reads the entity '{name}', which is spelled like a keyword of its grammar, as the target of a join only qualified with its namespace, and the entity has none",
+                shadowed
+                    ? $"HQL in NHibernate 5.7.0 reads the entity '{name}', which is spelled like an alias in scope, as the target of a join only qualified with its namespace, and the entity has none"
+                    : $"HQL in NHibernate 5.7.0 reads the entity '{name}', which is spelled like a keyword of its grammar, as the target of a join only qualified with its namespace, and the entity has none",
                 QueryFeature.Join);
             return string.Empty;
         }
@@ -393,6 +397,11 @@ public sealed class NHibernateHqlQueryVisitor(
         => entities.TryGetValue(alias, out var map) ? map.Entity.Name : null;
 
     private static string Bare(string table) => table.Split('.').LastOrDefault() ?? table;
+
+    /// <summary>Whether a range variable of the scope - known by its alias, or by its table where it has none - is written with the entity's exact spelling.</summary>
+    private static bool SpelledLike(string aliasOrTable, string entity)
+        => string.Equals(HqlNames.Alias(aliasOrTable), entity, StringComparison.Ordinal)
+           || string.Equals(HqlNames.Alias(Bare(aliasOrTable).ToLowerInvariant()), entity, StringComparison.Ordinal);
 
     /* ---- expressions (decision 107) --------------------------------------------------- */
 

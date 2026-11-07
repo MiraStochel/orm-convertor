@@ -7229,7 +7229,16 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
             return null;
         }
 
-        var rounded = ReadLeaf(arguments[0].Expression);
+        // A value that may be null reaches Math.Round through its Value (ReadNumericCast); the
+        // Value of a member of the row - p.UnitPrice.Value - or of an expression is the value
+        // itself to SQL. A member named Value directly on a range variable is a column.
+        var first = arguments[0].Expression;
+        if (Unparenthesized(first) is MemberAccessExpressionSyntax { Name.Identifier.Text: "Value", Expression: not IdentifierNameSyntax } unwrapped)
+        {
+            first = unwrapped.Expression;
+        }
+
+        var rounded = ReadLeaf(first);
         var places = arguments.Count == 2
             ? ReadLeaf(arguments[1].Expression)
             : QueryOperand.Value(QueryConstant.Of("0", ScalarType.Int));
@@ -7246,6 +7255,17 @@ public abstract class LinqQueryParser(Func<AbstractQueryBuilder> queryBuilders) 
     /// </summary>
     private QueryOperand? ReadNumericCast(CastExpressionSyntax cast)
     {
+        // The lift the LINQ writer puts around a ROUND of a value that may be null,
+        // (decimal?)Math.Round((x).Value, n): Math.Round takes no nullable, and SQL's ROUND
+        // yields NULL from a NULL, so the cast and the Value are the overload's, not the
+        // query's, and the call reads as the ROUND of x.
+        if (cast.Type is NullableTypeSyntax
+            && Unparenthesized(cast.Expression) is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "Round" } round } rounding
+            && WrittenName(round.Expression) is "Math" or "System.Math")
+        {
+            return ReadMathFunction(rounding, "Round");
+        }
+
         var target = cast.Type is NullableTypeSyntax nullable ? nullable.ElementType : cast.Type;
         ScalarType? scalar = target is PredefinedTypeSyntax predefined
             ? predefined.Keyword.Text switch

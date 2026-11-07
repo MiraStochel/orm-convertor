@@ -1596,13 +1596,74 @@ public abstract class LinqQueryVisitor(
     /// </summary>
     private string Round(QueryOperand value, QueryOperand places)
     {
-        if (ScalarOf(value) is not (ScalarType.Decimal or ScalarType.Double or ScalarType.Float))
+        if (ScalarOf(value) is not (ScalarType.Decimal or ScalarType.Double or ScalarType.Float) || ScalarOf(value) is not { } scalar)
         {
             report(ConversionRecordKind.Fallback, $"Math.Round over '{value}' has no overload C# can choose without the value being a decimal or a floating-point number", QueryFeature.Expression);
             return string.Empty;
         }
 
-        return $"Math.Round({Unwrapped(value)}, {Operand(places)})";
+        // Math.Round takes no nullable value: one that may be null is rounded through its
+        // Value and the result made nullable again, which EF Core 10.0.10 and the provider of
+        // NHibernate 5.7.0 translate as a ROUND of the value itself, NULL where it is NULL
+        // (Combined/BenchmarkTrialDefectTest, NHibernate/NHibernateLinqProviderTest).
+        if (!LiftsToNullable(value))
+        {
+            return $"Math.Round({Operand(value)}, {Operand(places)})";
+        }
+
+        var receiver = value is { IsColumn: true } ? Operand(value) : $"({Operand(value)})";
+        return $"({CSharpTypeConvertor.ToString(LangType.Scalar(scalar))}?)Math.Round({receiver}.Value, {Operand(places)})";
+    }
+
+    /// <summary>
+    /// Whether C# types the value as a nullable value type: a column of one, an aggregate other
+    /// than a count over one, arithmetic with such a side, a conversion of a nullable column, a
+    /// COALESCE ending in such a value, a ROUND of one, and a CASE without an ELSE or with such
+    /// a branch.
+    /// </summary>
+    private bool LiftsToNullable(QueryOperand operand)
+    {
+        if (operand.IsAggregate)
+        {
+            if (string.Equals(operand.Function, "COUNT", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return operand.IsColumn
+                ? NullableElementType(QueryOperand.Column(operand.Table, operand.Property!)) is not null
+                : operand.IsExpression && LiftsToNullable(QueryOperand.Computed(operand.Expression!));
+        }
+
+        if (operand.IsColumn)
+        {
+            return NullableElementType(operand) is not null;
+        }
+
+        if (!operand.IsExpression)
+        {
+            return false;
+        }
+
+        var expression = operand.Expression!;
+        if (expression.IsBinary)
+        {
+            return expression.Operator != ExpressionOperator.Concat
+                   && (LiftsToNullable(expression.Left!) || LiftsToNullable(expression.Right!));
+        }
+
+        if (expression.IsCase)
+        {
+            return expression.Else is null || expression.Branches!.Any(b => LiftsToNullable(b.Then)) || LiftsToNullable(expression.Else);
+        }
+
+        return expression.IsCall && expression.Function switch
+        {
+            QueryFunction.Cast => NullableElementType(expression.Arguments![0]) is not null,
+            QueryFunction.Coalesce => LiftsToNullable(expression.Arguments![^1]),
+            QueryFunction.Round => LiftsToNullable(expression.Arguments![0]),
+            _ => false,
+        };
     }
 
     /// <summary>The argument of Math.Sqrt, which takes a double: a decimal or a value of no known scalar is cast, which the provider translates to the CAST AS float SQL Server makes of it anyway.</summary>

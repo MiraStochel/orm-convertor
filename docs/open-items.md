@@ -11,19 +11,6 @@ Jediný seznam toho, co zbývá. **Rozhodnutí** končí novým souborem v [`dec
 | [Výuková stránka frontendu](#frontend-nemá-výukovou-stránku) | Odevzdání | rozhodnutí | S7 |
 | [Srovnání s jazykovým modelem](#srovnání-s-jazykovým-modelem-nemá-varianty-s-nástroji) | Experimenty | práce, rozhodnutí | T4, T5, T6 |
 | [SEDE jako čtvrtá doména](#sede-jako-čtvrtá-referenční-doména) | Experimenty | práce | T1, T2, T3, T4, T5, F4, F6 |
-| [Sloupec vnějšího dotazu v korelovaném poddotazu](#nekvalifikovaný-sloupec-vnějšího-dotazu-dostane-v-korelovaném-poddotazu-tabulku-vnitřního) | Překlad | práce | F10, F13, T3 |
-| [Pořadové číslo v ORDER BY pod TOP](#pořadové-číslo-v-order-by-se-zahodí-a-top-zůstane) | Překlad | práce | F10, F13, T3 |
-| [Hvězdička v odvozené tabulce](#hvězdička-vedle-výrazu-v-odvozené-tabulce-se-ztratí) | Překlad | práce | F10, F13, T3 |
-| [Projekce s výrazem uvnitř CASE](#projekce-s-nepodporovaným-výrazem-uvnitř-case-se-zahodí-místo-odmítnutí) | Překlad | práce | F10, F13, T3 |
-| [CONCAT jako sčítání](#concat-se-píše-jako-operátor-sčítání) | Překlad | práce | F10, F13, T3 |
-| [Nepojmenovaný agregát v EF Core](#nepojmenovaný-agregát-projde-parserem-a-ef-core-z-něj-napíše-neplatný-člen) | Překlad | práce | F10, F11, T3 |
-| [Dva sloupce výsledku stejného jména](#dva-sloupce-výsledku-stejného-jména-ef-core-nezkompiluje) | Překlad | práce | F10, F11, T3 |
-| [Alias jako řetězcový literál](#alias-zapsaný-jako-řetězcový-literál-se-nepřečte-jako-jméno) | Překlad | práce | F10, F13, T3 |
-| [Alias v jiné velikosti písmen](#odkaz-na-alias-v-jiné-velikosti-písmen-se-nespáruje) | Překlad | práce | F10, F13, T3 |
-| [Porovnání data s číslem](#porovnání-data-s-číslem-projde-parserem) | Překlad | práce | F10, F11, T3 |
-| [Zaokrouhlení nulovatelného výrazu v EF Core](#zaokrouhlení-nulovatelného-výrazu-ef-core-nezkompiluje) | Překlad | práce | F10, F11, T3 |
-| [COUNT v nativním SQL EF Core](#count-v-nativním-sql-ef-core-čte-řádek-jako-long) | Překlad | práce | F10, F13, T3 |
-| [Poddotaz v HAVING v NHibernatu](#nhibernate-odmítne-poddotaz-v-having-s-křížovými-joiny) | Překlad | práce | F10, F13, T3 |
 | [Advisor nad všemi frameworky](#advisor-měří-jen-dapper-a-ef-core) | Advisor | práce | F15, T7 |
 | [Srovnání s variantami a heuristikou](#srovnání-advisoru-s-jednotlivými-frameworky-a-heuristikou-chybí) | Advisor | práce | T7, F15 |
 | [Izolace spouštění cizího kódu](#izolace-spouštění-cizího-kódu-advisorem) | Advisor | rozhodnutí | S4, F15, T7 |
@@ -80,75 +67,6 @@ T1, T2 a T3 jsou nárokované v užším rozsahu — vstup případové studie, 
 *Práce. Rozh. [208](./decisions/208-sede-as-the-fourth-reference-domain-over-the-dba-stack-exchange-dump-judged-by-a-judge-of-our-own.md); vzor FIBEN rozh. [149](./decisions/149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md), [157](./decisions/157-a-target-cell-that-differs-by-a-stated-limit-does-not-block-the-fiben-judge.md) a [167](./decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md); cizí složka podle rozh. [138](./decisions/138-code-of-open-source-projects-enters-as-a-marked-excerpt-under-its-own-permissive-licence.md). Požadavky T1, T2, T3, T4, T5, F4, F6.*
 
 Katalog SEDE nese 1 714 lidmi prověřených dotazů validační a testovací části sady `hirupert/sede` (Apache-2.0) s titulkem a popisem autora; data jsou výpis dba.stackexchange.com z 2024-04-06 z položky `stackexchange` na archive.org (CC BY-SA 4.0). Vzniká po vzoru FIBEN: konzolový import mimo řešení, který z checkoutu SEDE a z dokumentace schématu (meta.stackexchange.com, odpověď 2678) vygeneruje `database/sede/` — schéma 29 tabulek s typy podle výpisu typů SEDE, 38 cizích klíčů z odkazů dokumentace, složený klíč `PostTags` —, entity Dapper a katalog v `SampleData` se zástupnými symboly `##…##` převedenými na parametry a s hodnotami parametrů (výchozí autora, jinak vybrané jednou nad daty). Import musí vyřešit skript, který deklaruje proměnnou stejného jména jako zástupný symbol (`DECLARE @UserId int = ##UserId##`), jinak text přestane být platný. Obraz databáze stáhne archiv při sestavení a při prvním startu načte osm tabulek výpisu z XML, odvodí `PostTags` z `Posts.Tags`, naplní číselníky výčty dokumentace a zapíše rozšířenou vlastnost se jménem výpisu; databáze `Sede` vedle `Fiben`. Běh na vyžádání v obou sadách s proměnnými jako FIBEN, první doložený běh na MIS3 a z něj soudce v `database/sede/`; teprve pak `architecture.md` §6.2, `subset.md`, §9, řádek T1 v `traceability.md`, sekce *License* kořenového README (složka SEDE pod Apache-2.0, data pod CC BY-SA s uvedením zdroje) a záznam v `runs/`.
-
-## Překlad
-
-Vady, které našel zkušební běh kandidátů čtvrté domény nad prázdnými tabulkami (rozh. [208](./decisions/208-sede-as-the-fourth-reference-domain-over-the-dba-stack-exchange-dump-judged-by-a-judge-of-our-own.md), *Kontext*). Příklady jsou dotazy benchmarků, jak je benchmarky číslují — TPC-DS a CH-benCHmark číslem dotazu, SEDE číslem `QuerySetId`; test, který vadu drží, stojí nad tvarem dotazu ve fixtuře matice, ne nad benchmarkem. Pořadové číslo pod `TOP`, ztracená hvězdička a zahozená projekce emitují dotaz s jiným výsledkem, než má zdroj, a hlásí přitom nejvýš ztrátu, což rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md) a [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md) zakazují.
-
-#### Nekvalifikovaný sloupec vnějšího dotazu dostane v korelovaném poddotazu tabulku vnitřního
-*Práce. Rozh. [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md). Požadavky F10, F13, T3.*
-
-V `EXISTS (SELECT * FROM order_line WHERE o_id = ol_o_id AND …)` patří `o_id` vnější tabulce `oorder`, ale parser T-SQL ji připíše jediné tabulce poddotazu a cíle píší `order_line.o_id` — Dapper neplatné SQL, EF Core člen, který entita nemá, NHibernate „could not resolve property"; záznam o tom nevznikne. Totéž ve skalárním poddotazu v projekci (`(SELECT Reputation FROM Users WHERE Id = OwnerUserId)`). SQL váže nekvalifikované jméno na nejbližší rozsah, který sloupec má; parser má rozsahy procházet od vnitřního k vnějšímu podle sloupců z entit a katalogu a jméno, které nenajde v žádném nebo najde ve dvou tabulkách jednoho rozsahu, odmítnout. Příklady: CH-benCHmark Q4 a Q22, SEDE 803444.
-
-#### Pořadové číslo v ORDER BY se zahodí a TOP zůstane
-*Práce. Rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md), [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md). Požadavky F10, F13, T3.*
-
-`ORDER BY 1, 2, 3` parser zahodí se záznamem `Loss` („the ordering key '1' is not a column…"), `TOP (100)` ale ponechá, takže cíl vrátí libovolných sto řádků místo prvních sto podle pořadí. Pořadové číslo jednoznačně jmenuje n-tou položku projekce; parser ho má přeložit na ni, a kde položku nenese, dotaz odmítnout — ztráta pořadí pod `TOP` nebo stránkováním mění řádky. Příklady: TPC-DS 62 a 99.
-
-#### Hvězdička vedle výrazu v odvozené tabulce se ztratí
-*Práce. Rozh. [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md). Požadavky F10, F13, T3.*
-
-Odvozená tabulka `(SELECT SUBSTRING(w_warehouse_name, 1, 20) w_substr, * FROM warehouse) sq1` vyjde jako CTE s jediným sloupcem `w_substr`; hvězdička zmizí bez záznamu a vnější dotaz, který čte `w_warehouse_sk`, je neplatný (kdyby sloupce nečetl, vrátil by tiše méně sloupců). Hvězdičku nad jednou tabulkou lze rozvinout do sloupců entity, jinak odmítnout. Příklady: TPC-DS 62 a 99.
-
-#### Projekce s nepodporovaným výrazem uvnitř CASE se zahodí místo odmítnutí
-*Práce. Rozh. [053](./decisions/053-a-query-that-would-return-other-rows-is-not-emitted.md), [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md). Požadavky F10, F13, T3.*
-
-Projekci `CASE WHEN pmc = 0 THEN NULL ELSE CAST(amc AS decimal(15,4)) / CAST(pmc AS decimal(15,4)) END am_pm_ratio` parser zahodí se záznamem `Loss` kvůli konverzi bez slovníkového typu; z dotazu zbude `SELECT *` nad odvozenými tabulkami a `ORDER BY am_pm_ratio` nad aliasem, který už neexistuje. Stejná konverze na nejvyšší úrovni projekce dotaz správně odmítá; zanořená do `CASE` musí taky. Příklad: TPC-DS 90.
-
-#### CONCAT se píše jako operátor sčítání
-*Práce. Požadavky F10, F13, T3.*
-
-`CONCAT('stackoverflow.com/q/', p.Id)` vyjde v T-SQL cílů (Dapper, nativní SQL) jako `'stackoverflow.com/q/' + p.Id`; `CONCAT` převádí argumenty na řetězec a `NULL` na prázdný řetězec, `+` s celočíselným operandem převádí řetězec na číslo a dotaz spadne („Conversion failed when converting the varchar value…"), s `NULL` vrátí `NULL`. T-SQL cíle mají psát `CONCAT`, jazyky ORM převod operandů na řetězec a náhradu `NULL`, nebo dotaz odmítnout. Příklad: SEDE 1041065.
-
-#### Nepojmenovaný agregát projde parserem a EF Core z něj napíše neplatný člen
-*Práce. Požadavky F10, F11, T3.*
-
-Výraz projekce bez aliasu parser odmítá („carries no alias… the tool does not invent one"), `COUNT(*)` bez aliasu ale propustí a EF Core z něj napíše člen anonymního typu bez jména (CS1525, CS0746). Pravidlo má platit pro agregát stejně jako pro jiný výraz, nebo musí cíl, který jméno potřebuje, odmítnout jako v nativní cestě („the column … carries no name"). Příklad: SEDE 501829.
-
-#### Dva sloupce výsledku stejného jména EF Core nezkompiluje
-*Práce. Požadavky F10, F11, T3.*
-
-`SELECT p.CreationDate, pp.CreationDate …` je v SQL platné, EF Core z něj napíše anonymní typ se dvěma členy stejného jména (CS0833). Nástroj jména nevymýšlí, takže EF Core má takový dotaz odmítnout se záznamem, jako odmítá sloupec bez jména. Příklady: SEDE 927857, TPC-DS 35.
-
-#### Alias zapsaný jako řetězcový literál se nepřečte jako jméno
-*Práce. Požadavky F10, F13, T3.*
-
-T-SQL přijímá alias jako řetězcový literál (`COUNT(*) AS 'Number of upvotes'`) a čte ho jako jméno. Parser ho tak nečte: HQL NHibernatu spadne na „FROM expected", EF Core na syntaxi (CS1003) a `ORDER BY 'Net Score'` se zahodí se ztrátou. Literál v pozici aliasu má parser číst jako ohraničený identifikátor. Příklady: SEDE 1159501 a 1113079.
-
-#### Odkaz na alias v jiné velikosti písmen se nespáruje
-*Práce. Požadavky F10, F13, T3.*
-
-`SELECT … COUNT(*) AS CommentCount … ORDER BY commentcount` SQL Server spáruje bez ohledu na velikost písmen, parser ne: EF Core píše člen `commentcount`, který anonymní typ nemá (CS1061), NHibernate sloupec `TOTAL`, který neexistuje. Odkaz na alias projekce má parser párovat bez ohledu na velikost písmen a psát jméno, jak ho alias deklaruje. Příklady: SEDE 114416 a 61335.
-
-#### Porovnání data s číslem projde parserem
-*Práce. Požadavky F10, F11, T3.*
-
-Aritmetiku smíšenou z `DateTime` a celého čísla parser odmítá („no target types as one value"), porovnání `CreationDate > 2013-01-01` (celočíselný výraz 2011) ale propustí a EF Core z něj napíše `DateTime? > int` (CS0019). Porovnání má podléhat stejnému pravidlu jako aritmetika. Příklady: SEDE 900754 a 803444.
-
-#### Zaokrouhlení nulovatelného výrazu EF Core nezkompiluje
-*Práce. Požadavky F10, F11, T3.*
-
-`ROUND(x * 1.00 / y, 2)` nad nulovatelným výrazem vyjde v EF Core jako `Math.Round(decimal?, 2)` (CS1503). Builder má nulovatelný argument rozbalit s propagací `NULL`; jak takový výraz EF Core přeloží do SQL, se před opravou změří `ToQueryString()` (`EFCoreQueryAcceptance`). Příklad: TPC-DS 78.
-
-#### COUNT v nativním SQL EF Core čte řádek jako long
-*Práce. Rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md). Požadavky F10, F13, T3.*
-
-Když EF Core spadne do nativního SQL (`SqlQuery`), třída řádku nese `COUNT(*)` jako `long`, ale SQL Server vrací z `COUNT` hodnotu `int` (`COUNT_BIG` vrací `bigint`) a materializace spadne na „Unable to cast object of type 'System.Int32' to type 'System.Int64'". Typ sloupce řádku má odpovídat typu, který server vrací. Příklady: SEDE 529759, 529763, 529764.
-
-#### NHibernate odmítne poddotaz v HAVING s křížovými joiny
-*Práce. Požadavky F10, F13, T3.*
-
-HQL `… HAVING sum(stock.S_ORDER_CNT) > (select sum(stock.S_ORDER_CNT) * .005 from STOCK stock cross join supplier supplier cross join nation nation where …)` NHibernate odmítne při spuštění hláškou „Path expected for join!". Kandidáti jsou dva — křížový join uvnitř poddotazu, nebo alias poddotazu, který opakuje alias vnějšího dotazu —; který to je, se před opravou změří nad mapovaným modelem, jak to dělá `NHibernateLinqProviderTest`, jen s HQL přes `ISession.CreateQuery`, a změřený fakt zůstane testem vedle opravy. Příklad: CH-benCHmark Q11.
 
 ## Advisor
 

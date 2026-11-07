@@ -26,46 +26,77 @@ public abstract partial class AbstractQueryBuilder
 
     /// <summary>
     /// Gives every bare column of the query the row it belongs to, as far as the mapping
-    /// representation says it. A scope over one row source owns every bare column it names,
-    /// which is what the source meant by leaving it bare. A scope over a join leaves the
-    /// question to the schema: the one row whose entity maps the column - a scalar property
-    /// or a foreign key a reference holds - owns it, and where no entity of the conversion
-    /// maps it, or the table behind an alias is no entity of the conversion at all, the column
-    /// stays bare. Qualifying it with the first table of the join, which the readers used to
-    /// do, wrote a different column, or one the database refuses. An ordering key that names
-    /// the alias of a projection is that alias and no column. Walks every scope the way the
-    /// typing of temporal literals does; the maps a scope resolves through are those of its
-    /// own aliases, the enclosing ones beneath them.
+    /// representation says it, the way SQL binds a name: to the scope nearest the column whose
+    /// row has it, the subquery's own first and the scopes around it after, outwards. Within a
+    /// scope the one row whose entity maps the column - a scalar property or a foreign key a
+    /// reference holds - owns it; two rows of one scope that both map it are a name SQL Server
+    /// refuses as ambiguous, and the query is refused with it. A scope none of whose rows maps
+    /// the column hands the question to the scope around it only where every row of it is an
+    /// entity whose mapping answers: a row the mapping does not describe may hold the column,
+    /// and the search stops there. Where no scope answers, a scope over one row source owns
+    /// every bare column it names, which is what the source meant by leaving it bare, and a
+    /// scope over a join leaves it bare. Qualifying it with the first table of the join, which
+    /// the readers used to do, wrote a different column, or one the database refuses; giving a
+    /// correlated subquery's outer column the subquery's own table did the same. An ordering
+    /// key that names the alias of a projection is that alias and no column. Walks every scope
+    /// the way the typing of temporal literals does; the maps a scope resolves through are
+    /// those of its own aliases, the enclosing ones beneath them.
     /// </summary>
-    private IReadOnlyList<QueryInstruction> QualifyColumns(IReadOnlyList<QueryInstruction> body, Dictionary<string, EntityMap> enclosing)
+    private IReadOnlyList<QueryInstruction> QualifyColumns(
+        IReadOnlyList<QueryInstruction> body,
+        Dictionary<string, EntityMap> enclosing,
+        IReadOnlyList<IReadOnlyList<(string Alias, EntityMap? Map)>>? outerScopes = null)
     {
+        outerScopes ??= [];
         var aliases = ScopeAliases(body, enclosing, RenderedEntityFor);
         var declared = body.OfType<FromInstruction>().Select(f => f.Alias ?? f.Table)
             .Concat(body.OfType<JoinInstruction>().Select(j => j.RightTableAlias ?? j.RightTable))
             .ToList();
         var projectionAliases = body.OfType<ProjectInstruction>().Select(p => p.Alias).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        IReadOnlyList<(string Alias, EntityMap? Map)> here = [.. declared.Select(alias => (alias, aliases.GetValueOrDefault(alias)))];
+        IReadOnlyList<IReadOnlyList<(string Alias, EntityMap? Map)>> inner = declared.Count == 0 ? outerScopes : [here, .. outerScopes];
+        var feature = QueryFeature.Projection;
+
         // The owner of a bare column in this scope, or null to leave it bare.
         string? OwnerOf(string column)
         {
-            if (declared.Count == 1)
+            foreach (var scope in inner)
             {
-                return declared[0];
+                var owners = scope
+                    .Where(row => row.Map is { } map && MapsColumn(map, column))
+                    .Select(row => row.Alias)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (owners.Count == 1)
+                {
+                    return owners[0];
+                }
+
+                if (owners.Count > 1)
+                {
+                    Report(
+                        ConversionRecordKind.Failure,
+                        $"The column '{column}' is written without its table, and the rows {string.Join(" and ", owners.Select(o => $"'{o}'"))} of one scope both map it, which SQL Server refuses as an ambiguous name; no artifact was generated.",
+                        feature);
+                    return null;
+                }
+
+                if (scope.Any(row => row.Map is null))
+                {
+                    break;
+                }
             }
 
-            var owners = declared
-                .Where(alias => aliases.TryGetValue(alias, out var map) && MapsColumn(map, column))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            return owners.Count == 1 ? owners[0] : null;
+            return declared.Count == 1 ? declared[0] : null;
         }
 
         QueryOperand Operand(QueryOperand operand)
         {
             if (operand.IsSubQuery)
             {
-                return QueryOperand.Nested(operand.SubQuery! with { Instructions = [.. QualifyColumns(operand.SubQuery.Instructions, aliases)] });
+                return QueryOperand.Nested(operand.SubQuery! with { Instructions = [.. QualifyColumns(operand.SubQuery.Instructions, aliases, inner)] });
             }
 
             if (operand.IsExpression)
@@ -99,6 +130,7 @@ public abstract partial class AbstractQueryBuilder
         var result = new List<QueryInstruction>(body.Count);
         foreach (var instruction in body)
         {
+            feature = FeatureOf(instruction);
             result.Add(instruction switch
             {
                 ProjectInstruction projection => projection with { Operand = Operand(projection.Operand) },
@@ -111,11 +143,11 @@ public abstract partial class AbstractQueryBuilder
                 HavingInstruction postFilter => postFilter with { Condition = Condition(postFilter.Condition) },
                 JoinInstruction { OnCondition: null } cross => cross,
                 JoinInstruction join => join with { OnCondition = Condition(join.OnCondition!) },
-                SubQueryInstruction nested => nested with { Instructions = [.. QualifyColumns(nested.Instructions, aliases)] },
+                SubQueryInstruction nested => nested with { Instructions = [.. QualifyColumns(nested.Instructions, aliases, inner)] },
                 SetOperationInstruction operation => operation with
                 {
-                    Left = operation.Left with { Instructions = [.. QualifyColumns(operation.Left.Instructions, enclosing)] },
-                    Right = operation.Right with { Instructions = [.. QualifyColumns(operation.Right.Instructions, enclosing)] },
+                    Left = operation.Left with { Instructions = [.. QualifyColumns(operation.Left.Instructions, enclosing, outerScopes)] },
+                    Right = operation.Right with { Instructions = [.. QualifyColumns(operation.Right.Instructions, enclosing, outerScopes)] },
                 },
                 _ => instruction,
             });

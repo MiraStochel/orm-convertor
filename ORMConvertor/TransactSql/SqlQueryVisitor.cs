@@ -330,6 +330,11 @@ public class SqlQueryVisitor(
 
         if (expression.IsBinary)
         {
+            if (Concatenated(expression) is { } concat)
+            {
+                return concat;
+            }
+
             var symbol = expression.Operator!.Value switch
             {
                 ExpressionOperator.Concat or ExpressionOperator.Add => "+",
@@ -374,6 +379,65 @@ public class SqlQueryVisitor(
         var otherwise = expression.Else is null ? string.Empty : $" ELSE {BuildOperand(expression.Else)}";
         return $"CASE {branches}{otherwise} END";
     }
+
+    /// <summary>
+    /// A concatenation whose every part is a string literal or the text CONCAT makes of a
+    /// value - <c>COALESCE(CAST(x AS NVARCHAR(MAX)), '')</c>, which is how the reader takes
+    /// CONCAT apart -, at least one of them the latter, written back as CONCAT: the same value,
+    /// in the spelling the source had. Null for any other concatenation, which keeps its +.
+    /// </summary>
+    private string? Concatenated(QueryExpression expression)
+    {
+        if (expression.Operator != ExpressionOperator.Concat)
+        {
+            return null;
+        }
+
+        var parts = new List<QueryOperand>();
+        void Flatten(QueryOperand side)
+        {
+            if (side is { IsExpression: true, IsAggregate: false } && side.Expression!.Operator == ExpressionOperator.Concat)
+            {
+                Flatten(side.Expression.Left!);
+                Flatten(side.Expression.Right!);
+                return;
+            }
+
+            parts.Add(side);
+        }
+
+        Flatten(expression.Left!);
+        Flatten(expression.Right!);
+
+        var arguments = new List<string>(parts.Count);
+        var folded = false;
+        foreach (var part in parts)
+        {
+            if (TextOf(part) is { } value)
+            {
+                arguments.Add(BuildOperand(value));
+                folded = true;
+            }
+            else if (part is { IsConstant: true, IsAggregate: false, Constant.Type: ScalarType.String })
+            {
+                arguments.Add(BuildOperand(part));
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        return folded ? $"CONCAT({string.Join(", ", arguments)})" : null;
+    }
+
+    /// <summary>The value x of <c>COALESCE(CAST(x AS NVARCHAR(MAX)), '')</c>, or null for any other operand.</summary>
+    private static QueryOperand? TextOf(QueryOperand part)
+        => part is { IsExpression: true, IsAggregate: false, Expression: { IsCall: true, Function: QueryFunction.Coalesce, Arguments: [var converted, var empty] } }
+           && converted is { IsExpression: true, IsAggregate: false, Expression: { IsCall: true, Function: QueryFunction.Cast, CastTo: ScalarType.String, Arguments: [var value] } }
+           && empty is { IsConstant: true, IsAggregate: false, Constant: { Type: ScalarType.String, Text: "" } }
+            ? value
+            : null;
 
     /// <summary>The keys of a window or of a list aggregate, each with its direction (decision 113).</summary>
     private string Ordered(IReadOnlyList<OrderingKey> ordering)
