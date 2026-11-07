@@ -31,7 +31,7 @@ class ExperimentRunPlanTest {
     /** A row read back is the row written: the file of rows is the state the run continues from. */
     @Test
     void aRowReadBackIsTheRowWritten() {
-        String line = "series-joins-2-Dapper-Hibernate-fixture\t" + KEY + "\tDapper\tHibernate\ttool\tjava\t4\tran\t\t3\t\t12\t340\t1500\t20\t{\"toolVersion\":\"2.2.0\"}";
+        String line = "series-joins-2-Dapper-Hibernate-fixture\t" + KEY + "\tDapper\tHibernate\ttool\tjava\t4\tran\t\t3\t\t12\t340\t1500\t20\t\t{\"toolVersion\":\"2.2.0\"}";
         ForeignVerdict verdict = ForeignVerdict.parse(line);
 
         assertEquals(line, verdict.row());
@@ -101,11 +101,11 @@ class ExperimentRunPlanTest {
     }
 
     private static String row(String artifact, String source, String target, int reached, String outcome) {
-        return artifact + "\t" + KEY + "\t" + source + "\t" + target + "\ttool\tjava\t" + reached + "\t" + outcome + "\t\t\t\t0\t0\t0\t0\t{}";
+        return artifact + "\t" + KEY + "\t" + source + "\t" + target + "\ttool\tjava\t" + reached + "\t" + outcome + "\t\t\t\t0\t0\t0\t0\t\t{}";
     }
 
     private static String dotnetRow(String artifact, String source, String target, String outcome, String detail) {
-        return artifact + "\t" + KEY + "\t" + source + "\t" + target + "\ttool\trefused\t0\t" + outcome + "\t" + detail + "\t\t\t0\t0\t0\t0\t{}"
+        return artifact + "\t" + KEY + "\t" + source + "\t" + target + "\ttool\trefused\t0\t" + outcome + "\t" + detail + "\t\t\t0\t0\t0\t0\t\t{}"
                 + "\tjoins\t2\tfixture\tfail\t35000\t0\t0\t100";
     }
 }

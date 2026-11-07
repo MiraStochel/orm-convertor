@@ -8,7 +8,7 @@ USER root
 RUN --mount=type=cache,target=/var/lib/apt \
     --mount=type=cache,target=/var/cache/apt \
     apt-get update && \
-    apt-get install -y --no-install-recommends curl zstd unzip && \
+    apt-get install -y --no-install-recommends curl zstd unzip p7zip-full python3 && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /var/opt/mssql/backup && \
     curl -L -o /var/opt/mssql/backup/WideWorldImporters-Full.bak \
@@ -49,16 +49,35 @@ RUN mkdir -p /opt/fiben && \
         "https://github.com/IBM/fiben-benchmark/raw/${FIBEN_DATASET}/data.zip"; \
     fi
 
+# The data of the SEDE query set, the fourth database Sede (decision 208): the data dump of one
+# Stack Exchange site (CC BY-SA 4.0) as Stack Exchange uploaded it to the item "stackexchange"
+# on archive.org, fetched while the image is built and unpacked table by table by load-sede.sh
+# on the first start. The name of the data set is the site and the date of the dump, the
+# archive is checked against the MD5 the item publishes for it, so that a replaced file is a
+# failed build and not another data set under the same name; none leaves the database out.
+# The tools of the loader: 7z unpacks the archive, python3 turns the XML into CSV. archive.org
+# serves the file slowly and drops a connection after an hour or two, so the download resumes
+# where it stopped, up to thirty times.
+ARG SEDE_DATASET=dba.stackexchange.com-2024-04-06
+ARG SEDE_DATASET_URL=https://archive.org/download/stackexchange/dba.stackexchange.com.7z
+ARG SEDE_DATASET_MD5=d0f417b3c3c9210ed32623a071651411
+RUN mkdir -p /opt/sede && \
+    if [ "${SEDE_DATASET}" != "none" ]; then \
+        curl -fL --retry 30 --retry-delay 15 --retry-all-errors -C - -o "/opt/sede/${SEDE_DATASET}.7z" "${SEDE_DATASET_URL}" && \
+        if [ -n "${SEDE_DATASET_MD5}" ]; then echo "${SEDE_DATASET_MD5}  /opt/sede/${SEDE_DATASET}.7z" | md5sum -c -; fi; \
+    fi
+
 # The scripts are shared with the test suite, which checks out with CRLF on Windows; sqlcmd
-# and bash here want LF, so the line endings are normalized on the way in. The FIBEN folder
-# goes whole: its judge, judge.tsv, exists only from the first documented run on.
+# and bash here want LF, so the line endings are normalized on the way in. The FIBEN and the
+# SEDE folders go whole: their judges, judge.tsv, exist only from the first documented run on.
 COPY database/ldbc/schema.sql database/ldbc/load.sql database/ldbc/constraints.sql database/ldbc/indexes.sql database/ldbc/validation.sql database/ldbc/load-ldbc.sh /opt/ldbc/
 COPY database/fiben/ /opt/fiben/
+COPY database/sede/ /opt/sede/
 COPY database/init-db.sh /usr/local/bin/init-db.sh
-RUN sed -i 's/\r$//' /opt/ldbc/*.sql /opt/ldbc/load-ldbc.sh /opt/fiben/*.sql /opt/fiben/load-fiben.sh /usr/local/bin/init-db.sh && \
+RUN sed -i 's/\r$//' /opt/ldbc/*.sql /opt/ldbc/load-ldbc.sh /opt/fiben/*.sql /opt/fiben/load-fiben.sh /opt/sede/*.sql /opt/sede/*.tsv /opt/sede/load-sede.sh /opt/sede/xml-to-csv.py /usr/local/bin/init-db.sh && \
     if [ -f /opt/fiben/judge.tsv ]; then sed -i 's/\r$//' /opt/fiben/judge.tsv; fi && \
-    chmod +x /usr/local/bin/init-db.sh /opt/ldbc/load-ldbc.sh /opt/fiben/load-fiben.sh && \
-    chmod -R a+rX /opt/ldbc /opt/fiben
+    chmod +x /usr/local/bin/init-db.sh /opt/ldbc/load-ldbc.sh /opt/fiben/load-fiben.sh /opt/sede/load-sede.sh && \
+    chmod -R a+rX /opt/ldbc /opt/fiben /opt/sede
 
 USER mssql
 

@@ -7,6 +7,7 @@ using DatabaseCatalog;
 using Model;
 using OrmConvertor;
 using Tests.Database;
+using Tests.CatalogRuns;
 using Tests.FibenJudge;
 
 namespace Tests.Experiment;
@@ -446,9 +447,9 @@ internal static class WholeInputRun
             names.Add("case studies");
         }
 
-        if (FibenDatabase.IsConfigured)
+        if (CatalogDatabase.Fiben.IsConfigured)
         {
-            readers.Add(new SqlServerCatalogReader(FibenDatabase.ConnectionString!));
+            readers.Add(new SqlServerCatalogReader(CatalogDatabase.Fiben.ConnectionString!));
             names.Add("Fiben");
         }
 

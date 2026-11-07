@@ -123,6 +123,18 @@ public final class PreparedJavaQuery implements AutoCloseable {
         return names;
     }
 
+    /** The declared types of the query's parameters, in the order of {@link #parameterNames()}; the catalog runs convert their values by them (decision 208). */
+    public List<Type> parameterTypes() {
+        List<Type> types = new ArrayList<>();
+        Parameter[] parameters = method.getParameters();
+
+        for (int index = target == Orm.MYBATIS ? 0 : 1; index < parameters.length; index++) {
+            types.add(parameters[index].getParameterizedType());
+        }
+
+        return types;
+    }
+
     /**
      * Runs the query with the arguments in the order of its parameters. JPQL and native JPA
      * queries hand a projection back as an object array per row, MyBatis as a map keyed by the

@@ -122,7 +122,7 @@ From `ORMConvertor/`, run `dotnet run --configuration Release --launch-profile h
 
 ## License
 
-Released under the [MIT License](LICENSE) — use, modify and redistribute it freely, commercially included, as long as the licence text and the copyright notice travel with it. The licence covers the contents of this repository; third-party assets vendored under `ORMConvertor/ORMConvertorAPI/wwwroot/vendor/`, and excerpts of open-source projects under `ORMConvertor/SampleData/ThirdParty/` that the examples translate, keep their own terms, stated in the licence file shipped beside each of them — permissive ones only (MIT, Apache-2.0, BSD).
+Released under the [MIT License](LICENSE) — use, modify and redistribute it freely, commercially included, as long as the licence text and the copyright notice travel with it. The licence covers the contents of this repository; third-party assets vendored under `ORMConvertor/ORMConvertorAPI/wwwroot/vendor/`, and excerpts of open-source projects under `ORMConvertor/SampleData/ThirdParty/` that the examples translate, keep their own terms, stated in the licence file shipped beside each of them — permissive ones only (MIT, Apache-2.0, BSD). The SEDE query catalog under `ORMConvertor/SampleData/Sede/` is taken from the SEDE data set (Apache-2.0, licence beside it; the schema documentation it was derived with is CC BY-SA 4.0 and kept beside the import); the data it runs over, the public data dump of dba.stackexchange.com, is CC BY-SA 4.0 content of the users of that site, which the database image downloads at build and the repository does not carry.
 
 ## How to cite
 

@@ -1,0 +1,703 @@
+<!--
+  The documentation of the Stack Exchange Data Explorer schema: the body of answer 2678 to
+  question 2677 on meta.stackexchange.com, "Database schema documentation for the public data
+  dump and SEDE" (https://meta.stackexchange.com/a/2678), a community-wiki post licensed under
+  CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/), taken through the Stack
+  Exchange API on 2026-11-07 as it stood after its last edit (API field last_edit_date
+  1774281993). SedeImport reads two things from it (decision 208): the foreign keys of the
+  SEDE schema, which are the links of a column to the table it references, and the
+  enumerations of the type tables (1 = Question, ...). Nothing else of the file is used, and
+  nothing in it was changed.
+-->
+<p><strong>About this list:</strong></p>
+<ul>
+<li><strong>foreign key</strong> fields are formatted as <a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer">links</a> to their parent table</li>
+<li><em>italic</em> table names are found in <strong>both</strong> the Data Dump from each site as well as in the <a href="https://data.stackexchange.com/" rel="nofollow noreferrer">SEDE</a></li>
+<li>if a column is optional or nullable, when it is NULL, it won't appear as an attribute in data dump / <code>&lt;row ...&gt;</code>.</li>
+</ul>
+<hr />
+<h2><em>Posts</em>  / PostsWithDeleted</h2>
+<p>You find in <code>Posts</code> all non-deleted posts. <code>PostsWithDeleted</code> includes rows with deleted posts while sharing the same columns with <code>Posts</code> but <a href="https://meta.stackexchange.com/a/266431">for deleted posts only a few fields populated</a> which are marked with a <sup>1</sup> below.</p>
+<p>Note that starting with the July 2025 data dump, the <code>Posts.xml</code> file will contain 2 artificially generated posts with Id values of 1000000001 &amp; 1000000010. These do not exist in the SEDE database, and can be excluded.</p>
+<ul>
+<li><p><code>Id</code><sup>1</sup></p>
+</li>
+<li><p><code>PostTypeId</code><sup>1</sup> <em>(listed in the <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer"><code>PostTypes</code></a> table)</em><br />
+<sub>1 = Question<br />
+2 = Answer<br />
+3 = Orphaned tag wiki<br />
+4 = Tag wiki excerpt<br />
+5 = Tag wiki<br />
+6 = Moderator nomination<br />
+7 = &quot;Wiki placeholder&quot; <em>(Appears to include auxiliary site content like the <a href="https://stackoverflow.com/posts/58551602/body">help center introduction</a>, <a href="https://stackoverflow.com/posts/8041931/body">election description</a>, and the tour page's <a href="https://stackoverflow.com/posts/14264003/body">introduction</a>, <a href="https://stackoverflow.com/posts/14264713/body">ask</a>, and <a href="https://stackoverflow.com/posts/14264412/body">don't ask</a> sections)</em><br />
+8 = Privilege wiki<br />
+9 = Article<br />
+10 = HelpArticle<br />
+12 = Collection<br />
+13 = ModeratorQuestionnaireResponse<br />
+14 = Announcement<br />
+15 = CollectiveDiscussion<br />
+17 = CollectiveCollection</sub></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>AcceptedAnswerId</code></a> <em>(only present if <code>PostTypeId = 1</code>)</em></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts&amp;pk=Id" rel="nofollow noreferrer"><code>ParentId</code></a><sup>1</sup> <em>(only present if <code>PostTypeId = 2</code>)</em></p>
+</li>
+<li><p><code>CreationDate</code><sup>1</sup></p>
+</li>
+<li><p><code>DeletionDate</code><sup>1</sup> <em>(only non-null for the SEDE <code>PostsWithDeleted</code> table. Deleted posts are not present on <code>Posts</code>. Column not present on data dump.)</em></p>
+</li>
+<li><p><code>Score</code><sup>1</sup> <em>(generally non-zero for only Questions, Answers, and Moderator Nominations)</em></p>
+</li>
+<li><p><code>ViewCount</code> <em>(nullable)</em></p>
+</li>
+<li><p><code>Body</code> <em>(<a href="https://meta.stackexchange.com/questions/51177/include-markdown-post-bodies-in-the-data-dump">as rendered HTML</a>, not Markdown)</em></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>OwnerUserId</code></a> <em>(only present if user has not been deleted; always -1 for tag wiki entries, i.e. the community user owns them)</em></p>
+</li>
+<li><p><code>OwnerDisplayName</code> <em>(nullable)</em></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>LastEditorUserId</code></a> <em>(nullable)</em></p>
+</li>
+<li><p><code>LastEditorDisplayName</code> <em>(nullable)</em></p>
+</li>
+<li><p><code>LastEditDate</code> (e.g. <code>2009-03-05T22:28:34.823</code>) - <em>the date and time of the most recent edit to the post (nullable)</em></p>
+</li>
+<li><p><code>LastActivityDate</code> (e.g. <code>2009-03-11T12:51:01.480</code>) - <em>datetime of the post's most recent activity</em></p>
+</li>
+<li><p><code>Title</code> - <em>question title (<code>PostTypeId = 1</code>), or on Stack Overflow, the tag name for some tag wikis and excerpts (<code>PostTypeId = 4/5</code>)</em></p>
+</li>
+<li><p><code>Tags</code><sup>1</sup> - <em>question tags (<code>PostTypeId = 1</code>), or on Stack Overflow, the subject tag of some tag wikis and excerpts (<code>PostTypeId = 4/5</code>)</em></p>
+</li>
+<li><p><code>AnswerCount</code> - <em>the number of undeleted answers (only present if <code>PostTypeId = 1</code>)</em></p>
+</li>
+<li><p><code>CommentCount</code> <em>(nullable)</em></p>
+</li>
+<li><p><code>FavoriteCount</code> <em>(nullable)</em></p>
+</li>
+<li><p><code>ClosedDate</code><sup>1</sup> <em>(present only if the post is closed)</em></p>
+</li>
+<li><p><code>CommunityOwnedDate</code> <em>(present only if post is community wiki'd)</em></p>
+</li>
+<li><p><code>ContentLicense</code><sup>1</sup></p>
+</li>
+</ul>
+<hr />
+<h2><em>Users</em></h2>
+<ul>
+<li><code>Id</code></li>
+<li><code>Reputation</code></li>
+<li><code>CreationDate</code></li>
+<li><code>DisplayName</code></li>
+<li><code>LastAccessDate</code> <em>(<a href="https://meta.stackexchange.com/a/294750/230261">Datetime user last loaded a page; updated every 30 min at most</a>)</em></li>
+<li><code>WebsiteUrl</code></li>
+<li><code>Location</code></li>
+<li><code>AboutMe</code></li>
+<li><code>Views</code> <em>(<a href="https://meta.stackexchange.com/questions/311938/what-is-views-of-users-in-the-database-schema-documentation">Number of times the profile is viewed</a>)</em></li>
+<li><code>UpVotes</code> <em>(<a href="https://meta.stackexchange.com/questions/260897/what-is-upvotes-of-users-in-database-schema-documentation">How many upvotes the user has cast</a>)</em></li>
+<li><code>DownVotes</code></li>
+<li><code>ProfileImageUrl</code></li>
+<li><code>EmailHash</code> <em>(now always NULL, which means it won't appear as an attribute in the data dump XML)</em></li>
+<li><code>AccountId</code>  <em>(User's Stack Exchange Network profile ID); NULL if the user has hidden this community in their profile</em></li>
+</ul>
+<hr />
+<h2><em>Comments</em></h2>
+<ul>
+<li><code>Id</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>PostId</code></a></li>
+<li><code>Score</code></li>
+<li><code>Text</code> <em>(Comment body)</em></li>
+<li><code>CreationDate</code></li>
+<li><code>UserDisplayName</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>UserId</code></a> <em>(Optional. Absent if user has been deleted)</em></li>
+<li><code>ContentLicense</code></li>
+</ul>
+<hr />
+<h2><em>Badges</em></h2>
+<ul>
+<li><p><code>Id</code></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>UserId</code></a></p>
+</li>
+<li><p><code>Name</code> <em>(Name of the badge)</em></p>
+</li>
+<li><p><code>Date</code> (e.g. <code>2008-09-15T08:55:03.923</code>)</p>
+</li>
+<li><p><code>Class</code><br />
+<sub>1 = Gold<br />
+2 = Silver<br />
+3 = Bronze</sub></p>
+</li>
+<li><p><code>TagBased</code> = <em><code>True</code> if badge is for a tag, otherwise it is a named badge</em></p>
+</li>
+</ul>
+<hr />
+<h2>CloseAsOffTopicReasonTypes</h2>
+<ul>
+<li><code>Id</code></li>
+<li><code>IsUniversal</code></li>
+<li><code>InputTitle</code></li>
+<li><code>MarkdownInputGuidance</code> <em>shown while flagging/voting</em></li>
+<li><code>MarkdownPostOwnerGuidance</code> <em>shown when closed to OP</em></li>
+<li><code>MarkdownPublicGuidance</code> <em>shown when closed to priviledged users</em></li>
+<li><code>MarkdownConcensusDescription</code> (sic) <em>(nullable)</em> <em>shown above the public or post owner guidance</em>.</li>
+<li><code>CreationDate</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>CreationModeratorId</code></a></li>
+<li><code>ApprovalDate</code></li>
+<li><code>ApprovalModeratorId</code></li>
+<li><code>DeactivationDate</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>DeactivationModeratorId</code></a></li>
+</ul>
+<hr />
+<h2>PendingFlags</h2>
+<p>Despite the name, this table in fact contains close-related flags and votes.</p>
+<ul>
+<li><p><code>Id</code></p>
+</li>
+<li><p><code>FlagTypeId</code> <em>(listed in the <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer"><code>FlagTypes</code></a> table)</em><br />
+<sub>13 = canned flag for closure<br />
+14 = vote to close<br />
+15 = vote to reopen</sub></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>PostId</code></a></p>
+</li>
+<li><p><code>CreationDate</code></p>
+</li>
+<li><p><code>CloseReasonTypeId</code> <em>(listed in the <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer"><code>CloseReasonTypes</code></a> table)</em></p>
+</li>
+<li><p><code>CloseAsOffTopicReasonTypeId</code>, <em>if <code>CloseReasonTypeId = 102 (off-topic)</code> (listed in the <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer"><code>CloseAsOffTopicReasonTypes</code></a> table)</em></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>DuplicateOfQuestionId</code></a>, <em>if <code>CloseReasonTypeId</code> is 1 or 101 (old duplicate or current duplicate)</em></p>
+</li>
+<li><p><code>BelongsOnBaseHostAddress</code>, <em>for votes to close and migrate</em></p>
+</li>
+</ul>
+<hr />
+<h2>PostFeedback</h2>
+<p>Collects up and down votes from anonymous visitor and/or unregistered users. See <a href="https://meta.stackexchange.com/a/194939/158100">here</a></p>
+<ul>
+<li><p><code>Id</code></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>PostId</code></a></p>
+</li>
+<li><p><code>IsAnonymous</code></p>
+</li>
+<li><p><code>VoteTypeId</code> <em>(listed in the <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer"><code>VoteTypes</code></a> table)</em><br />
+<sub>2 = UpMod<br />
+3 = DownMod</sub></p>
+</li>
+<li><p><code>CreationDate</code></p>
+</li>
+</ul>
+<hr />
+<h2><em>PostHistory</em></h2>
+<p><em>(Note that the history of deleted posts is scrubbed from this table in SEDE.)</em></p>
+<ul>
+<li><code>Id</code></li>
+<li><code>PostHistoryTypeId</code> <em>(listed in the <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer"><code>PostHistoryTypes</code></a> table)</em><br />
+<sub>1 = Initial Title - initial title <em>(questions only)</em><br />
+2 = Initial Body - initial post raw body text<br />
+3 = Initial Tags - initial list of tags <em>(questions only)</em><br />
+4 = Edit Title - modified title <em>(questions only)</em><br />
+5 = Edit Body - modified post body (raw markdown)<br />
+6 = Edit Tags - modified list of tags <em>(questions only)</em><br />
+7 = Rollback Title - reverted title  <em>(questions only)</em><br />
+8 = Rollback Body - reverted body (raw markdown)<br />
+9 = Rollback Tags - reverted list of tags <em>(questions only)</em><br />
+10 = Post Closed - post voted to be closed<br />
+11 = Post Reopened - post voted to be reopened<br />
+12 = Post Deleted - post voted to be removed<br />
+13 = Post Undeleted - post voted to be restored<br />
+14 = Post Locked - post locked by moderator<br />
+15 = Post Unlocked - post unlocked by moderator<br />
+16 = Community Owned - post now community owned<br />
+17 = Post Migrated - post migrated - <em>now replaced by 35/36 (away/here)</em><br />
+18 = Question Merged - question merged with deleted question<br />
+19 = Question Protected - question was protected by a moderator.<br />
+20 = Question Unprotected - question was unprotected by a moderator.<br />
+21 = Post Disassociated - OwnerUserId removed from post by admin<br />
+22 = Question Unmerged - answers/votes restored to previously merged question<br />
+24 = Suggested Edit Applied<br />
+25 = Post Tweeted<br />
+31 = Comment discussion moved to chat<br />
+33 = Post notice added - <em><code>comment</code> contains foreign key to PostNotices</em><br />
+34 = Post notice removed - <em><code>comment</code> contains foreign key to PostNotices</em><br />
+35 = Post migrated away - <em>replaces id 17</em><br />
+36 = Post migrated here - <em>replaces id 17</em><br />
+37 = Post merge source<br />
+38 = Post merge destination<br />
+50 = Bumped by Community User<br />
+52 = Question became hot network question (main) / Hot Meta question (meta)<br />
+53 = Question removed from hot network/meta questions by a moderator<br />
+66 = Created from Ask Wizard</sub></li>
+</ul>
+<p>Additionally, in <a href="https://meta.stackexchange.com/a/102644/230261">older dumps</a> <em>(all guesses, all seem no longer present in the wild):</em><br />
+<sub>23 = Unknown dev related event<br />
+26 = Vote nullification by dev <em>(ERM?)</em><br />
+27 = Post unmigrated/hidden moderator migration?<br />
+28 = Unknown suggestion event<br />
+29 = Unknown moderator event <em>(possibly de-wikification?)</em><br />
+30 = Unknown event <em>(too rare to guess)</em></sub></p>
+<ul>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>PostId</code></a></p>
+</li>
+<li><p><code>RevisionGUID</code>: At times more than one type of history record can be recorded by a single action.  All of these will be grouped using the same RevisionGUID</p>
+</li>
+<li><p><code>CreationDate</code> (e.g. <code>2009-03-05T22:28:34.823</code>)</p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>UserId</code></a></p>
+</li>
+<li><p><code>UserDisplayName</code>: populated if a user has been removed and no longer referenced by user Id; also happens to the author of a migrated post</p>
+</li>
+<li><p><code>Comment</code>: This field will contain the comment made by the user who edited a post.</p>
+<ul>
+<li><p>If PostHistoryTypeId = 10, this field contains the CloseReasonId of the close reason (listed in <code>CloseReasonTypes</code>):<br />
+<sub><em><strong>Old close reasons:</strong></em><br />
+1 = Exact Duplicate<br />
+2 = Off-topic<br />
+3 = Subjective and argumentative<br />
+4 = Not a real question<br />
+7 = Too localized<br />
+10 = General reference<br />
+20 = Noise or pointless (Meta sites only)<br />
+<em><strong>Current close reasons:</strong></em><br />
+101 = Duplicate<br />
+102 = Off-topic<br />
+103 = Unclear what you're asking<br />
+104 = Too broad<br />
+105 = Primarily opinion-based</sub></p>
+</li>
+<li><p>If <code>PostHistoryTypeId in (33,34)</code> this field contains the <code>PostNoticeId</code> of the <code>PostNotice</code></p>
+</li>
+</ul>
+</li>
+<li><p><code>Text</code>: A raw version of the new value for a given revision<br />
+<sub>- If <code>PostHistoryTypeId in (10,11,12,13,14,15,19,20,35)</code> this column will contain a JSON encoded string with all users who have voted for the <code>PostHistoryTypeId</code></sub><br />
+<sub>- If it is a duplicate close vote, the JSON string will contain an array of original questions as <code>OriginalQuestionIds</code></sub><br />
+<sub>- If <code>PostHistoryTypeId = 17</code> this column will contain migration details of either <code>from &lt;url&gt;</code> or <code>to &lt;url&gt;</code></sub></p>
+</li>
+<li><p><code>ContentLicense</code></p>
+</li>
+</ul>
+<hr />
+<h2><em>PostLinks</em></h2>
+<ul>
+<li><code>Id</code> primary key</li>
+<li><code>CreationDate</code> when the link was created</li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>PostId</code></a> id of source post</li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>RelatedPostId</code></a> id of target/related post</li>
+<li><code>LinkTypeId</code>  type of link<br />
+<sub>1 = Linked (<code>PostId</code> contains a link to <code>RelatedPostId</code>)<br />
+3 = Duplicate (<code>PostId</code> is a duplicate of <code>RelatedPostId</code>)</sub></li>
+</ul>
+<hr />
+<h2>RelatedQuestions</h2>
+<ul>
+<li><code>PostId</code></li>
+<li><code>RelatedPostId</code></li>
+<li><code>Position</code></li>
+<li><code>Score</code></li>
+</ul>
+<hr />
+<h2>PostNotices</h2>
+<ul>
+<li><code>Id</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>PostId</code></a></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=postnoticetypes" rel="nofollow noreferrer"><code>PostNoticeTypeId</code></a><br />
+<sub>1 = Citation needed<br />
+2 = Current event<br />
+3 = Insufficient explanation<br />
+10 = Current answers are outdated<br />
+11 = Draw attention<br />
+12 = Improve details<br />
+13 = Authoritative reference needed<br />
+14 = Canonical answer required<br />
+15 = Reward existing answer<br />
+20 = Content dispute<br />
+21 = Offtopic comments<br />
+22 = Historical significance<br />
+23 = Wiki Answer<br />
+24 = Policy Lock (SO Collectives)<br />
+25 = Recommended Answer (SO Collectives)<br />
+26 = Posted by Recognized Member/Admin (SO Collectives)<br />
+27 = Endorsed Edit (SO Collectives)<br />
+28 = Obsolete (SO Collectives)<br />
+1000 = Redditted (SO)<br />
+9001 = DMCA Takedown</sub></li>
+<li><code>CreationDate</code></li>
+<li><code>DeletionDate</code></li>
+<li><code>ExpiryDate</code></li>
+<li><code>Body</code>  <em>(when present contains the custom text shown with the notice)</em></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>OwnerUserId</code></a></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>DeletionUserId</code></a></li>
+</ul>
+<hr />
+<h2>PostNoticeTypes</h2>
+<ul>
+<li><code>Id</code></li>
+<li><code>ClassId</code><br />
+<sub>0 = DMCA or Redditted<br />
+1 = Historical lock<br />
+2 = Bounty<br />
+4 = Moderator notice (lock)</sub></li>
+<li><code>Name</code></li>
+<li><code>Body</code>  <em>(contains the default notice text)</em></li>
+<li><code>IsHidden</code></li>
+<li><code>Predefined</code></li>
+<li><code>PostNoticeDurationId</code><br />
+<sub>-1 = No duration specified<br />
+1 = 7 days (bounty)</sub></li>
+</ul>
+<hr />
+<h2>PostTags</h2>
+<ul>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>PostId</code></a></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=tags" rel="nofollow noreferrer"><code>TagId</code></a></li>
+</ul>
+<hr />
+<h2>ReviewRejectionReasons</h2>
+<p>Canned rejection reasons for suggested edits. See <a href="https://data.stackexchange.com/stackoverflow/query/199800/show-all-review-rejection-reasons" rel="nofollow noreferrer">Show all review rejection reasons</a></p>
+<ul>
+<li><code>Id</code></li>
+<li><code>Name</code></li>
+<li><code>Description</code></li>
+<li><code>PostTypeId</code> (for reasons that apply to Wiki (5) or Excerpt (6) post types only, otherwise null)</li>
+</ul>
+<hr />
+<h2>ReviewTaskResults</h2>
+<ul>
+<li><p><code>Id</code></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=reviewtasks" rel="nofollow noreferrer"><code>ReviewTaskId</code></a></p>
+</li>
+<li><p><code>ReviewTaskResultTypeId</code> (listed in <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer"><code>ReviewTaskResultTypes</code></a>)<br />
+<sub>1 = Skip<br />
+2 = Approve (suggested edits)<br />
+3 = Reject (suggested edits)<br />
+4 = Delete (low quality)<br />
+5 = Edit (first posts, late answers, low quality)<br />
+6 = Close (close, low quality)<br />
+7 = Looks OK (low quality)<br />
+8 = Do Not Close (close)<br />
+9 = Recommend Deletion (low quality answer)<br />
+10 = Recommend Close (low quality question)<br />
+11 = Other Action (first posts), previously &quot;I'm Done&quot;<br />
+12 = Reopen (reopen)<br />
+13 = Leave Closed (reopen)<br />
+14 = Edit and Reopen (reopen)<br />
+15 = Excellent (community evaluation)<br />
+16 = Satisfactory (community evaluation)<br />
+17 = Needs Improvement (community evaluation)<br />
+18 = No Action Needed (first posts, late answers)</sub></p>
+</li>
+<li><p><code>CreationDate</code> date only (<code>2018-07-31 00:00:00</code>); time data looks to be <a href="/q/933">purposefully removed to protect user privacy</a></p>
+</li>
+<li><p><code>RejectionReasonId</code> (for suggested edits; listed in <code>ReviewRejectionReasons</code>)</p>
+</li>
+<li><p><code>Comment</code></p>
+</li>
+</ul>
+<hr />
+<h2>ReviewTasks</h2>
+<ul>
+<li><p><code>Id</code></p>
+</li>
+<li><p><code>ReviewTaskTypeId</code> (listed in <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer"><code>ReviewTaskTypes</code></a>)<br />
+<sub>1 = Suggested Edit<br />
+2 = Close Votes<br />
+3 = Low Quality Posts<br />
+4 = First Post<br />
+5 = Late Answer<br />
+6 = Reopen Vote<br />
+7 = Community Evaluation<br />
+8 = Link Validation<br />
+9 = Flagged Posts<br />
+10 = Triage<br />
+11 = Helper<br />
+12 = First Questions<br />
+13 = First Answers</sub></p>
+</li>
+<li><p><code>CreationDate</code> date only (<code>2018-07-31 00:00:00</code>)</p>
+</li>
+<li><p><code>DeletionDate</code> date only (<code>2018-07-31 00:00:00</code>)</p>
+</li>
+<li><p><code>ReviewTaskStateId</code> (listed in <a href="https://data.stackexchange.com/stackoverflow/query/199801/show-all-review-task-states" rel="nofollow noreferrer"><code>ReviewTaskStates</code></a>)<br />
+<sub>1 = Active<br />
+2 = Completed<br />
+3 = Invalidated</sub></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>PostId</code></a></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=suggestededits" rel="nofollow noreferrer"><code>SuggestedEditId</code></a> (for suggested edits, which have their own numbering for historical reasons)</p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=ReviewTaskResults" rel="nofollow noreferrer"><code>CompletedByReviewTaskId</code></a>  id associated to the ReviewTaskResult that stores the outcome of a completed review.</p>
+</li>
+</ul>
+<hr />
+<h2>SuggestedEdits</h2>
+<p>If both approval and rejection date are null then this edit is still in review (and its corresponding entry in <code>ReviewTasks</code> will have an active state as well).</p>
+<ul>
+<li><code>Id</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>PostId</code></a></li>
+<li><code>CreationDate</code></li>
+<li><code>ApprovalDate</code> - NULL if not approved (yet).</li>
+<li><code>RejectionDate</code> - NULL if not rejected (yet).</li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>OwnerUserId</code></a></li>
+<li><code>Comment</code></li>
+<li><code>Text</code></li>
+<li><code>Title</code></li>
+<li><code>Tags</code></li>
+<li><code>RevisionGUID</code></li>
+</ul>
+<hr />
+<h2>SuggestedEditVotes</h2>
+<ul>
+<li><code>Id</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=suggestededits" rel="nofollow noreferrer"><code>SuggestedEditId</code></a></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>UserId</code></a></li>
+<li><code>VoteTypeId</code> (listed in the <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer"><code>VoteTypes</code></a> table)<br />
+<sub>2 = Approve (technically UpMod)<br />
+3 = Reject (technically DownMod)</sub></li>
+<li><code>CreationDate</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>TargetUserId</code></a></li>
+<li><code>TargetRepChange</code></li>
+</ul>
+<hr />
+<h2><em>Tags</em></h2>
+<ul>
+<li><code>Id</code></li>
+<li><code>TagName</code></li>
+<li><code>Count</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>ExcerptPostId</code></a>  <em>(nullable) Id of Post that holds the excerpt text of the tag</em></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>WikiPostId</code></a> <em>(nullable) Id of Post that holds the wiki text of the tag</em></li>
+<li><code>IsModeratorOnly</code></li>
+<li><code>IsRequired</code></li>
+</ul>
+<hr />
+<h2>TagSynonyms</h2>
+<ul>
+<li><code>Id</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=tags&amp;pk=tagname" rel="nofollow noreferrer"><code>SourceTagName</code></a>  <em>(nullable)</em></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=tags&amp;pk=tagname" rel="nofollow noreferrer"><code>TargetTagName</code></a>  <em>(nullable)</em></li>
+<li><code>CreationDate</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>OwnerUserId</code></a>   <em>(nullable)</em></li>
+<li><code>AutoRenameCount</code></li>
+<li><code>LastAutoRename</code> <em>(nullable)</em></li>
+<li><code>Score</code></li>
+<li><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>ApprovedByUserId</code></a>  <em>(nullable)</em></li>
+<li><code>ApprovalDate</code> <em>(nullable)</em></li>
+</ul>
+<hr />
+<h2><em>Votes</em></h2>
+<ul>
+<li><p><code>Id</code></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=posts" rel="nofollow noreferrer"><code>PostId</code></a></p>
+</li>
+<li><p><code>VoteTypeId</code> <em>(listed in the <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer"><code>VoteTypes</code></a> table - not all of these can actually appear in Data Explorer or the data dump, and some types - like the <a href="https://stackoverflowteams.help/en/articles/8770232-reactions" rel="nofollow noreferrer">reactions</a>, 17 &amp; 22-28 - are currently only implemented in Stack Overflow for Teams)</em><br />
+<sub>-1 = InformModerator<br />
+0 = UndoMod<br />
+1 = AcceptedByOriginator<br />
+2 = UpMod <em>(<a href="https://meta.stackexchange.com/a/157536">AKA upvote</a>)</em><br />
+3 = DownMod <em>(<a href="https://meta.stackexchange.com/a/157536">AKA downvote</a>)</em><br />
+4 = Offensive<br />
+5 = Favorite <em>(<a href="https://meta.stackexchange.com/q/347558">AKA bookmark</a>; <code>UserId</code> will also be populated)</em>  <em>feature removed after October 2022 / replaced <a href="https://meta.stackexchange.com/questions/382019">by Saves</a></em><br />
+6 = Close (effective 2013-06-25: Close votes are <strong>only</strong> stored in table: <code>PostHistory</code>)<br />
+7 = Reopen<br />
+8 = BountyStart <em>(<code>UserId</code> and <code>BountyAmount</code> will also be populated)</em><br />
+9 = BountyClose <em>(<code>BountyAmount</code> will also be populated)</em><br />
+10 = Deletion<br />
+11 = Undeletion<br />
+12 = Spam<br />
+15 = ModeratorReview <em>(i.e., <a href="https://meta.stackexchange.com/a/157536">a moderator looking at a flagged post</a>)</em><br />
+16 = ApproveEditSuggestion<br />
+17 = Reaction1 (Teams: celebrate)<br />
+18 = Helpful<br />
+19 = ThankYou <em>(see <a href="https://meta.stackoverflow.com/q/398367">Thank You reaction test</a>)</em><br />
+20 = WellWritten<br />
+21 = Follow<br />
+22 = Reaction2 (Teams: smile)<br />
+23 = Reaction3 (Teams: mind blown)<br />
+24 = Reaction4 (Teams: clap)<br />
+25 = Reaction5 (Teams: heart)<br />
+26 = Reaction6 (Teams: fire)<br />
+27 = Reaction7 (Teams: trophy)<br />
+28 = Reaction8 (Teams: wave)<br />
+29 = Outdated <em>(see <a href="https://meta.stackoverflow.com/q/405302">Outdated Answers project</a>)</em><br />
+30 = NotOutdated<br />
+31 = PreVote<br />
+32 = CollectiveDiscussionUpvote<br />
+33 = CollectiveDiscussionDownvote <em>(<a href="https://meta.stackoverflow.com/q/429377">no longer used</a>)</em><br />
+35 = privateAiAnswerCorrect <em>(see <a href="https://meta.stackexchange.com/a/404813/134300">Answer Bot experiment</a>)</em><br />
+36 = privateAiAnswerIncorrect<br />
+37 = privateAiAnswerPartiallyCorrect</sub></p>
+</li>
+<li><p><a href="https://data.stackexchange.com/stackoverflow/query/472607?table=users" rel="nofollow noreferrer"><code>UserId</code></a> <em>(present only if <code>VoteTypeId in (5,8)</code>; -1 if user is deleted)</em></p>
+</li>
+<li><p><code>CreationDate</code> Date only (<code>2018-07-31 00:00:00</code> <em><a href="https://meta.stackexchange.com/q/933/163250">time data is purposefully removed</a> to protect user privacy)</em></p>
+</li>
+<li><p><code>BountyAmount</code> (present only if <code>VoteTypeId in (8,9)</code>)</p>
+</li>
+</ul>
+<hr />
+<h2>xxxTypes</h2>
+<p><em>Not listed here:</em></p>
+<ul>
+<li><code>xxxTypes</code> tables which list (Id, Name) pairs for <code>Posts.PostTypeId</code>, <code>Votes.VoteTypeId</code>, etc. See <a href="https://data.stackexchange.com/stackoverflow/query/36599/show-all-types" rel="nofollow noreferrer">Show all types</a> for an up-to-date list of all types.</li>
+</ul>
+<hr />
+<h2>All Tables/Columns/Type</h2>
+<p>Find the exact <a href="https://docs.microsoft.com/en-us/sql/t-sql/data-types/data-types-transact-sql?view=sql-server-2017" rel="nofollow noreferrer">T-SQL datatype</a> and length/precision of each specific column in this query:</p>
+<p><a href="https://data.stackexchange.com/stackoverflow/query/835150/list-all-fields-in-all-tables-on-sede?/" rel="nofollow noreferrer">List all Fields in all Tables on SEDE</a></p>
+<hr />
+<h2>Views / Stored Procedures</h2>
+<p>To support queries across multiple databases (aka sites) the following views and stored procedure exist in each database. See <a href="https://meta.stackexchange.com/questions/398985/">Create a view that provides a list of databases</a> for usage scenarios.</p>
+<hr />
+<h2>sede_databases</h2>
+<ul>
+<li><code>database_id</code></li>
+<li><code>database_name</code></li>
+<li><code>site_name</code></li>
+<li><code>tiny_name</code></li>
+<li><code>long_name</code></li>
+<li><code>site_type</code> <em>main_site or meta_site</em></li>
+<li><code>site_url</code></li>
+<li><code>sede_url</code></li>
+<li><code>api_site_parameter</code></li>
+<li><code>initialized</code> <em>Datetime when we started populating that database.</em></li>
+<li><code>made_available</code> <em>Datetime when the database came online and was ready for queries</em></li>
+<li><code>processing_time</code> <em>The duration between <code>initialized</code> and <code>made_available</code>, in <code>hh:mm:ss.fff</code> format</em></li>
+<li><code>questions</code> <em>Total number of questions in this site at the time of the current refresh</em></li>
+<li><code>answers</code> <em>Total number of answers in this site at the time of the current refresh</em></li>
+<li><code>latest_post</code> <em>The timestamp of the last <em>non-deleted</em> post captured in this refresh</em></li>
+<li><code>notes</code> <em>This will be non-<code>NULL</code> when a database is in transition</em></li>
+</ul>
+<hr />
+<h2>sede_databases_markdown</h2>
+<ul>
+<li><code>rn</code> <em>row number, for sorting by &quot;long name&quot;</em></li>
+<li><code>content</code> <em>markdown with headers</em></li>
+</ul>
+<hr />
+<h2>sede_tables</h2>
+<ul>
+<li><code>database_id</code> <em>from <code>sys.databases</code></em></li>
+<li><code>database_name</code> <em>from <code>sys.databases</code></em></li>
+<li><code>table_name</code> <em>from <code>sys.tables</code></em></li>
+<li><code>latest_date</code> <em>The latest timestamp (e.g. <code>CreationDate</code>) for tables that have such a column.</em></li>
+<li><code>row_count</code> <em>Number of rows in the table, according to <code>sys.partitions</code>. <strong>Note</strong>: For <code>Posts</code>, this is <code>PostsWithDeleted</code>; if you want non-deleted total number of <code>Posts</code>, use <code>answers + questions</code> from <code>dbo.sede_databases</code></em></li>
+<li><code>initialized</code> <em>Timestamp of initial table creation</em></li>
+<li><code>made_available</code> <em>Timestamp of final operation against table.</em></li>
+<li><code>processing_time</code> <em>Duration of <code>initialized</code> -&gt; <code>made_available</code>, in <code>{hh:mm:ss.fff}</code> format.</em></li>
+</ul>
+<hr />
+<h2>sede_sites</h2>
+<ul>
+<li><code>site_name</code></li>
+<li><code>site_url</code></li>
+<li><code>database_name</code></li>
+<li><code>long_name</code></li>
+<li><code>site_id</code></li>
+</ul>
+<hr />
+<h2>sede_users</h2>
+<ul>
+<li><code>account_id</code></li>
+<li><code>site_id</code></li>
+<li><code>user_id</code></li>
+<li><code>reputation</code></li>
+<li><code>question_count</code></li>
+<li><code>answer_count</code></li>
+</ul>
+<hr />
+<h2>sede_ineachdb</h2>
+<p><em><strong>note:</strong> this is a stored procedure!</em></p>
+<p>See <a href="https://meta.stackexchange.com/a/399304">this answer</a> for usage details.</p>
+<div class="s-table-container"><table class="s-table">
+<thead>
+<tr>
+<th style="text-align: left;">Parameter</th>
+<th style="text-align: left;">Data Type</th>
+<th style="text-align: left;">Default</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">@SQLCommand</td>
+<td style="text-align: left;">nvarchar(4000)</td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">The SQL statement to run</td>
+</tr>
+<tr>
+<td style="text-align: left;">@IncludeMainSites</td>
+<td style="text-align: left;">bit</td>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;">Include all non-meta sites</td>
+</tr>
+<tr>
+<td style="text-align: left;">@IncludeMetaSites</td>
+<td style="text-align: left;">bit</td>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;">Include all meta sites</td>
+</tr>
+<tr>
+<td style="text-align: left;">@IncludeMainMeta</td>
+<td style="text-align: left;">bit</td>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;">Include <code>StackExchange.Meta</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">@CollectResultsForMe</td>
+<td style="text-align: left;">bit</td>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;">For standard <code>SELECT</code> queries, this will attempt to put each database's results into a #temp table</td>
+</tr>
+<tr>
+<td style="text-align: left;">@ErrorOnSkippedSites</td>
+<td style="text-align: left;">bit</td>
+<td style="text-align: left;">0</td>
+<td style="text-align: left;">Set this to 1 if you want execution to halt in the event any site is missing due to transition change</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h1>Timestamps</h1>
+<p>All timestamps are <a href="https://www.epochconverter.com/" rel="nofollow noreferrer"><strong><code>UTC</code></strong></a>, default format: <code>yyyy-MM-dd hh:mm:ss.fff</code> (stored with three digits of millisecond precision as implemented by SQL Server, making the &quot;end&quot; of a day <code>23:59:59.997</code>).</p>
+<p><strong>Example of conversion</strong> current time to <code>PST</code> (including <a href="https://www.google.com/search?q=dst" rel="nofollow noreferrer">DST</a>) using <a href="https://docs.microsoft.com/sql/t-sql/queries/at-time-zone-transact-sql" rel="nofollow noreferrer"><code>At Time Zone</code></a>:</p>
+<pre class="lang-sql prettyprint-override"><code>SELECT GetDate() At Time Zone 'UTC' At Time Zone 'Pacific Standard Time';
+</code></pre>
+<p><sub>The time zones do not have great names, as they imply that you would have to use <code>'Pacific Daylight Time'</code> and know something about DST. To list <strong>available time zones</strong>: <code>SELECT * FROM sys.time_zone_info</code></sub></p>
+<hr />
+<h1>ContentLicense</h1>
+<p>For tables with a <code>ContentLicense</code> column, the string value here indicates that the content is licensed under one of the following three Creative Commons versions, depending on when the content was submitted or last edited (<a href="https://meta.stackexchange.com/questions/347758/creative-commons-licensing-ui-and-data-updates">more details</a>):</p>
+<div class="s-table-container"><table class="s-table">
+<thead>
+<tr>
+<th style="text-align: center;">ContentLicense Value</th>
+<th style="text-align: center;">Date Start</th>
+<th style="text-align: center;">Date End</th>
+<th style="text-align: center;">Link</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;">CC BY-SA 4.0</td>
+<td style="text-align: center;">2018-05-02</td>
+<td style="text-align: center;">-</td>
+<td style="text-align: center;"><a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="nofollow noreferrer">/licenses/by-sa/4.0/</a></td>
+</tr>
+<tr>
+<td style="text-align: center;">CC BY-SA 3.0</td>
+<td style="text-align: center;">2011-04-08</td>
+<td style="text-align: center;">2018-05-01</td>
+<td style="text-align: center;"><a href="https://creativecommons.org/licenses/by-sa/3.0/" rel="nofollow noreferrer">/licenses/by-sa/3.0/</a></td>
+</tr>
+<tr>
+<td style="text-align: center;">CC BY-SA 2.5</td>
+<td style="text-align: center;">-</td>
+<td style="text-align: center;">2011-04-07</td>
+<td style="text-align: center;"><a href="https://creativecommons.org/licenses/by-sa/2.5/" rel="nofollow noreferrer">/licenses/by-sa/2.5/</a></td>
+</tr>
+</tbody>
+</table></div>

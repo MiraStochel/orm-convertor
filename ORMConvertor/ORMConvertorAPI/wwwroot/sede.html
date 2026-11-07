@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ORMConvertor — SEDE data</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
+  <link rel="stylesheet" id="hljs-dark" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    /* Applied before first paint: js/theme.js is a module and therefore deferred, so
+       restoring the theme there would repaint a page the reader can already see. */
+    try {
+      var storedTheme = localStorage.getItem("ormconvertor.theme");
+      if (storedTheme === "light" || storedTheme === "dark") {
+        document.documentElement.dataset.theme = storedTheme;
+        document.getElementById("hljs-dark").media = storedTheme === "dark" ? "all" : "not all";
+      }
+    } catch (e) { /* storage can be denied; the operating system's preference then decides */ }
+  </script>
+</head>
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><strong><a href="index.html">ORMConvertor</a></strong></li>
+      </ul>
+      <ul>
+        <li><a href="translation.html">Translation</a></li>
+        <li><a href="advisor.html">Advisor</a></li>
+        <li><a href="examples.html">Examples</a></li>
+        <li><a href="ldbc.html">LDBC</a></li>
+        <li><a href="fiben.html">FIBEN</a></li>
+        <li><a href="sede.html" aria-current="page">SEDE</a></li>
+        <li>
+          <select id="theme" aria-label="Colour theme">
+            <option value="system">System theme</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Testing on the queries of the Stack Exchange Data Explorer</h1>
+    <p class="lede">
+      SEDE is a set of queries written by the users of the Stack Exchange Data Explorer, each
+      with the title its author gave it: T-SQL against SQL Server, as people write it, over
+      the application schema of a site &mdash; <code>LIKE</code>, <code>TOP</code>,
+      <code>CASE</code>, window functions, common table expressions, outer joins, and
+      everything else they allowed themselves. Here it is the fourth domain for the
+      translator and the first whose text was never ours: <span class="sede-query-count"></span>
+      human-reviewed queries of the validation and the test part of the set, run over the data
+      of dba.stackexchange.com. The tool does not answer titles; it translates the SQL, and this
+      page shows how far.
+    </p>
+
+    <p class="muted-note">
+      The queries are the validation and the test part of <cite>SEDE</cite>
+      (M.&nbsp;Hazoom, V.&nbsp;Malik, B.&nbsp;Bogin, <cite>Text-to-SQL in the Wild: A
+      Naturally-Occurring Dataset Based on Stack Exchange Data</cite>, NLP4Prog 2021),
+      published under the <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License
+      2.0</a> at <a href="https://github.com/hirupert/sede">github.com/hirupert/sede</a>. The
+      data are the public data dump of dba.stackexchange.com of 2024-04-06, as Stack Exchange
+      uploaded it to the <a href="https://archive.org/details/stackexchange">archive.org item
+      <code>stackexchange</code></a>, under
+      <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>, content by
+      the users of the site. Nothing run here is a run of SEDE or a text-to-SQL task: the
+      queries are the authors' own T-SQL with the placeholders of the Data Explorer turned into
+      parameters, and the title beside each one is its intent, for the reader and for the
+      comparison with language models.
+    </p>
+
+    <nav aria-label="On this page">
+      <ul class="page-index">
+        <li><a href="#data-set">The data set</a></li>
+        <li><a href="#using-it">Using it</a></li>
+        <li><a href="#what-translates">What translates, and what does not</a></li>
+        <li><a href="#run">The documented run</a></li>
+        <li><a href="#by-target">Every query in every target</a></li>
+        <li><a href="#queries">The queries</a></li>
+      </ul>
+    </nav>
+
+    <section id="data-set">
+      <h2>The data set</h2>
+      <p>
+        The container loads <strong>the dump of one site</strong> into a fourth database,
+        <code>Sede</code>, beside WideWorldImporters, <code>LdbcSnb</code> and <code>Fiben</code>:
+        the 29 tables of the Data Explorer's schema, named and typed as SEDE names and types
+        them, with the 38 foreign keys the official schema documentation links &mdash; Stack
+        Exchange declares them nowhere else, and the translator reads relations from
+        declarations. Eight tables come from the dump (<code>Posts</code>, <code>Users</code>,
+        <code>Comments</code>, <code>Votes</code>, <code>Badges</code>, <code>PostHistory</code>,
+        <code>PostLinks</code>, <code>Tags</code>), <code>PostTags</code> is derived from the
+        tags of the questions as SEDE derives it, the type tables are filled from the
+        documentation, and the tables the dump does not carry &mdash; review tasks, suggested
+        edits, pending flags, post notices &mdash; stay empty. The data set is named
+        <code class="sede-data-set"></code> after the site and the date of the dump.
+      </p>
+      <p>
+        The site is dba.stackexchange.com for three reasons: its archive fits a SQL Server
+        Express with room to spare where Stack Overflow's would not, its subject is close to
+        what the users of the Data Explorer ask about, and an independent benchmark chose the
+        same site as its gigabyte-scale data. A query written for Stack Overflow returns other
+        rows here, often none; the catalog says which, and the documented run records the share.
+      </p>
+
+      <p>
+        The schema and the queries arrive through a small import tool (<code>SedeImport</code>),
+        which also generates the Dapper entity class of every table. What it changes is one
+        thing: <strong>the placeholders of the Data Explorer become parameters.</strong>
+        <code>##UserId##</code>, <code>##Tag:string##</code> and
+        <code>##Limit:int?100##</code> become <code>@UserId</code>, <code>@Tag</code> and
+        <code>@Limit</code>; inside a string literal, where the Data Explorer pastes the value
+        into the text, the literal becomes a concatenation. A parameter takes the default its
+        author gave it, or a value chosen once over the data for the name the author used. The
+        rest of the text is the author's, mistakes included.
+      </p>
+    </section>
+
+    <section id="using-it">
+      <h2>Using it</h2>
+      <h3>Start the database</h3>
+      <p>
+        From the <code>ORMConvertor</code> directory, <code>docker compose up --build</code>
+        starts the application and a SQL Server with four databases. The archive of the dump
+        (305&nbsp;MB) is downloaded while the image is built and checked against the checksum
+        the archive.org item publishes; the first start unpacks it table by table, turns the
+        XML into CSV and loads it, which takes a few minutes while the server already answers.
+        The volume keeps the data, so later starts skip the load. Connect with:
+      </p>
+      <pre><code>Server=localhost,1444;Database=Sede;User ID=sa;Password=Testingorms123;TrustServerCertificate=true</code></pre>
+      <p>
+        <code>SEDE_DATASET=none docker compose up --build</code> leaves the data out of the
+        image; another site and date of the dump, with the address and the checksum of its
+        archive, selects another one.
+      </p>
+
+      <h3>Translate against it</h3>
+      <p>
+        The queries are written for Dapper, as plain classes and T-SQL, because that is what
+        they are. A Dapper source states no key, no relation and no type; the translator takes
+        all of that from the database catalog, so the instance has to read <code>Sede</code> as
+        its catalog:
+      </p>
+      <pre><code>ORMCONVERTOR_CATALOG_DATABASE=Sede docker compose up --build</code></pre>
+      <p>
+        Without it the catalog is WideWorldImporters, which has none of these tables. Every
+        query below is sent with the entities of the tables it reads and nothing else, as the
+        run sends it; the line above each translation says whether the instance read a catalog
+        at all.
+      </p>
+
+      <h3>Run the catalog</h3>
+      <p>
+        The catalog does not run as part of a build. It runs on demand, for a version or a
+        substantial change, in both suites one after the other, in the stages of the FIBEN
+        run: the catalog is complete; every query reaches every target; the artifacts compile;
+        every target returns the rows the catalog's own text returns with the stated values,
+        and the text returns the rows the frozen judge holds; and every cell is measured. The
+        commands are in the README of the solution, the record of each run in the run records
+        of its documentation.
+      </p>
+    </section>
+
+    <section id="what-translates">
+      <h2>What translates, and what does not</h2>
+      <p>
+        The catalog carries every query of the two parts and leaves none out. <strong><span
+        class="sede-count" data-translation="10"></span> stand as the author wrote them</strong>:
+        one valid read over the schema, which every framework receives and the run holds every
+        target to. <strong><span class="sede-count" data-translation="30"></span> are not
+        translated</strong>, each with the reason in its note: a script rather than one read
+        (a <code>DECLARE</code> before the query, several statements, a temporary table), a text
+        that does not parse or is not valid over the schema (the authors' mistakes, or a
+        table SEDE has and the schema does not), a text that fails over the data with its
+        values, or a result no typed target can carry, because a column of it has no name or
+        two share one. The status is the catalog's claim and says nothing about a target: which
+        target carries a query in its own language, which writes it in native SQL and which
+        refuses it is the measure of a version, taken by the run and shown in the overview
+        below, which the reader can fill from the running instance.
+      </p>
+      <p>
+        Of the <span class="sede-query-count"></span> queries, <span class="sede-set-count"
+        data-set="10"></span> are the validation part and <span class="sede-set-count"
+        data-set="20"></span> the test part of the set, <span class="sede-parameter-count"></span>
+        take parameters, and together they read <span class="sede-table-count"></span> of the
+        tables. What the set brings that LDBC and FIBEN do not is the language of application
+        code against SQL Server: <code>LIKE</code> over bodies and tags, <code>TOP</code> with
+        and without a determining order, <code>CASE</code>, window functions, common table
+        expressions, outer joins, <code>DISTINCT</code>, date arithmetic, string functions,
+        results whose columns are named as the Data Explorer displays them
+        (<code>[User Link]</code>, <code>[Post Link]</code>) &mdash; and the result column names
+        that are not identifiers in C# are the one thing a LINQ target cannot take, which the
+        catalog shows in its real extent.
+      </p>
+      <p>
+        A target whose query language cannot say a query writes it in the native SQL of its
+        database instead, through its framework's own API, and says so in a record; that is
+        counted apart from a translation into the target's own language.
+      </p>
+    </section>
+
+    <section id="run">
+      <h2>The documented run</h2>
+      <p>
+        The catalog has not been run in the fixed environment of the measurements yet. The
+        first documented run makes the judge of the catalog from the rows the catalog's own
+        texts return, records the share of queries that return no rows over this site's data,
+        and gives the table of every framework its numbers; until then this section says so,
+        and the overview below is what the reader can fill from the running instance.
+      </p>
+    </section>
+
+    <section id="by-target">
+      <h2>Every query in every target</h2>
+      <p>
+        One row per query and one column per target. The status column is the catalog's; a
+        target column is filled by the button in its heading, which translates every query
+        into that target through the running instance, one after another, and writes the
+        outcome into its cell &mdash; the target's own language, native SQL, or a refusal.
+        Point at a cell for the reason. This is the first stage of the run, watched live;
+        whether the rows agree is the fourth, which only the run itself does.
+      </p>
+      <div class="table-scroll">
+        <table class="ldbc-matrix sede-matrix">
+          <thead><tr><th scope="col">Query</th><th scope="col">Status</th></tr></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+    </section>
+
+    <section id="queries">
+      <h2>The queries</h2>
+      <p class="sede-load-status" aria-busy="true">Loading the catalog…</p>
+      <p class="sede-error problem" role="alert" hidden></p>
+
+      <details class="example-pane">
+        <summary>The entity classes <small class="sede-entity-count"></small></summary>
+        <p class="muted-note">
+          One per table, generated from the schema. They state properties and nothing else; the
+          rest comes from the catalog. A query is sent with those of the tables it reads.
+        </p>
+        <div class="sede-entities pane-grid"></div>
+      </details>
+
+      <h3>The validation part of the set</h3>
+      <div class="sede-queries" data-set="10"></div>
+
+      <h3>The test part of the set</h3>
+      <div class="sede-queries" data-set="20"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>ORMConvertor &mdash; a research prototype. SEDE under Apache-2.0, the data of dba.stackexchange.com under CC BY-SA 4.0; not a run of SEDE.</p>
+  </footer>
+
+  <template id="query-template">
+    <article class="ldbc-query sede-query">
+      <header>
+        <strong class="query-title"></strong>
+        <span class="query-set badge badge-incompleteness"></span>
+        <span class="query-translation badge"></span>
+      </header>
+      <ul class="query-facts"></ul>
+      <p class="query-note muted-note" hidden></p>
+      <details class="query-text">
+        <summary>The text in T-SQL <small class="query-column-count"></small></summary>
+        <pre><code></code></pre>
+        <div class="toolbar">
+          <button type="button" class="query-copy secondary outline">Copy the T-SQL</button>
+        </div>
+      </details>
+      <details class="query-sede">
+        <summary>The author's text, with the placeholders of the Data Explorer</summary>
+        <pre><code></code></pre>
+      </details>
+      <div class="toolbar query-run">
+        <label>
+          Translate into
+          <select class="query-target"></select>
+        </label>
+        <button type="button" class="query-translate">Translate</button>
+      </div>
+      <p class="query-status" hidden></p>
+      <p class="query-error problem" role="alert" hidden></p>
+      <div class="query-result" hidden>
+        <div class="query-outputs pane-grid"></div>
+        <h4>Records about the query</h4>
+        <div class="query-records"></div>
+      </div>
+    </article>
+  </template>
+
+  <template id="artifact-template">
+    <article class="artifact">
+      <header class="artifact-header">
+        <span>
+          <strong class="artifact-name"></strong>
+          <small class="artifact-type"></small>
+        </span>
+        <span class="artifact-actions">
+          <button type="button" class="artifact-copy secondary outline">Copy</button>
+          <button type="button" class="artifact-download secondary outline">Download</button>
+        </span>
+      </header>
+      <pre><code></code></pre>
+    </article>
+  </template>
+
+  <script type="module" src="js/theme.js"></script>
+  <script type="module" src="js/sede.js"></script>
+</body>
+</html>

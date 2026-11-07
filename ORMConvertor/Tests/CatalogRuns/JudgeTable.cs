@@ -1,22 +1,22 @@
 using Microsoft.Data.SqlClient;
 
-namespace Tests.FibenJudge;
+namespace Tests.CatalogRuns;
 
 /// <summary>
-/// The judge of the FIBEN catalog as the database holds it (decision 149): per query the
+/// The judge of a catalog as its database holds it (decisions 149 and 208): per query the
 /// digest of its result at position 0 and, where the result is small enough, the rows
 /// themselves. Read by the on-demand run and by the path of a foreign artifact that answers
-/// a FIBEN query (decision 172), which is measured against the same judge the tool's
+/// a query of the catalog (decision 172), which is measured against the same judge the tool's
 /// artifact is.
 /// </summary>
-internal static class FibenJudgeTable
+internal static class JudgeTable
 {
     /// <summary>The judge by query key, or null where the database holds no judge yet.</summary>
     public static Dictionary<string, (string Digest, List<string> Rows)>? Read(SqlConnection control)
     {
         using (var exists = control.CreateCommand())
         {
-            exists.CommandText = $"SELECT OBJECT_ID(N'[{FibenDatabase.Schema}].[Judge]', N'U')";
+            exists.CommandText = $"SELECT OBJECT_ID(N'[{CatalogDatabase.Schema}].[Judge]', N'U')";
             if (exists.ExecuteScalar() is null or DBNull)
             {
                 return null;
@@ -26,7 +26,7 @@ internal static class FibenJudgeTable
         var judge = new Dictionary<string, (string Digest, List<string> Rows)>(StringComparer.OrdinalIgnoreCase);
 
         using var command = control.CreateCommand();
-        command.CommandText = $"SELECT [QueryKey], [Position], [Rendered] FROM [{FibenDatabase.Schema}].[Judge] ORDER BY [QueryKey], [Position];";
+        command.CommandText = $"SELECT [QueryKey], [Position], [Rendered] FROM [{CatalogDatabase.Schema}].[Judge] ORDER BY [QueryKey], [Position];";
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -61,6 +61,6 @@ internal static class FibenJudgeTable
             return null;
         }
 
-        return FibenRun.Digest(rows) == entry.Digest && (entry.Rows.Count == 0 || entry.Rows.SequenceEqual(rows));
+        return CatalogRun.Digest(rows) == entry.Digest && (entry.Rows.Count == 0 || entry.Rows.SequenceEqual(rows));
     }
 }

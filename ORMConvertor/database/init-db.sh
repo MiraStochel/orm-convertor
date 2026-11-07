@@ -65,5 +65,10 @@ if ! /opt/fiben/load-fiben.sh; then
     echo "The FIBEN loader stopped before it finished; see its messages above for what Fiben holds."
 fi
 
+# The SEDE query set's data, the dump of one Stack Exchange site, into a fourth (decision 208).
+if ! /opt/sede/load-sede.sh; then
+    echo "The SEDE loader stopped before it finished; see its messages above for what Sede holds."
+fi
+
 # Keep container running
 wait "${sql_pid}"

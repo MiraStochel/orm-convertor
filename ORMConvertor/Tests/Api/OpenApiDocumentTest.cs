@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.Json;
 using OrmConvertor;
 
@@ -38,6 +38,7 @@ public class OpenApiDocumentTest(ApiTestHost host)
         "/examples",
         "/ldbc",
         "/fiben",
+        "/sede",
         "/advisor-test",
         "/advisor/run",
         "/archive",

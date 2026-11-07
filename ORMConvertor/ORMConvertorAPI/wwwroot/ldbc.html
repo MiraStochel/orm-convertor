@@ -34,6 +34,7 @@
         <li><a href="examples.html">Examples</a></li>
         <li><a href="ldbc.html" aria-current="page">LDBC</a></li>
         <li><a href="fiben.html">FIBEN</a></li>
+        <li><a href="sede.html">SEDE</a></li>
         <li>
           <select id="theme" aria-label="Colour theme">
             <option value="system">System theme</option>
@@ -152,9 +153,10 @@
       <h3>Start the database</h3>
       <p>
         From the <code>ORMConvertor</code> directory, <code>docker compose up --build</code>
-        starts the application and a SQL Server with three databases: the WideWorldImporters
-        sample, <code>LdbcSnb</code>, and <code>Fiben</code> of the
-        <a href="fiben.html">FIBEN page</a>. The archive (222&nbsp;MB) is downloaded while the
+        starts the application and a SQL Server with four databases: the WideWorldImporters
+        sample, <code>LdbcSnb</code>, <code>Fiben</code> of the
+        <a href="fiben.html">FIBEN page</a> and <code>Sede</code> of the
+        <a href="sede.html">SEDE page</a>. The archive (222&nbsp;MB) is downloaded while the
         image is built; the first start unpacks it and loads it, which takes a minute or two
         while the server already answers. The volume keeps the data, so later starts skip
         the load. Connect with:

@@ -57,11 +57,14 @@ services:
       mssql_db:
         condition: service_healthy
 
-  # Three databases: WideWorldImporters; LdbcSnb with the LDBC SNB Interactive v1 data set
+  # Four databases: WideWorldImporters; LdbcSnb with the LDBC SNB Interactive v1 data set
   # (decision 110), loaded on the first start - about a minute at scale factor 1, while the
-  # server already answers; and Fiben with the FIBEN benchmark (decision 149), loaded the same
-  # way with the judge of its catalog beside the data. LDBC_SCALE_FACTOR picks another
-  # published scale factor, or none; FIBEN_DATASET another commit of IBM/fiben-benchmark, or none.
+  # server already answers; Fiben with the FIBEN benchmark (decision 149), loaded the same
+  # way with the judge of its catalog beside the data; and Sede with the data dump of
+  # dba.stackexchange.com for the SEDE query set (decision 208), loaded the same way in a few
+  # minutes. LDBC_SCALE_FACTOR picks another published scale factor, or none; FIBEN_DATASET
+  # another commit of IBM/fiben-benchmark, or none; SEDE_DATASET another site and date of
+  # the dump with SEDE_DATASET_URL and SEDE_DATASET_MD5 of its archive, or none.
   mssql_db:
     build:
       context: .
@@ -69,6 +72,9 @@ services:
       args:
         LDBC_SCALE_FACTOR: ${LDBC_SCALE_FACTOR:-1}
         FIBEN_DATASET: ${FIBEN_DATASET:-96eaffc60cc824b8f545cd29adffc2a170e08d04}
+        SEDE_DATASET: ${SEDE_DATASET:-dba.stackexchange.com-2024-04-06}
+        SEDE_DATASET_URL: ${SEDE_DATASET_URL:-https://archive.org/download/stackexchange/dba.stackexchange.com.7z}
+        SEDE_DATASET_MD5: ${SEDE_DATASET_MD5-d0f417b3c3c9210ed32623a071651411}
     ports:
       - "1444:1433"
     cpuset: "${DATABASE_CPUSET-0,1}"
@@ -91,8 +97,9 @@ services:
   # and the tests create it themselves (decision 016). The server is the image of mssql_db,
   # because the judge of the LDBC catalog needs LdbcSnb with its validation set (decision
   # 117) - at scale factor 0.1 here, loaded in seconds; LDBC_TEST_SCALE_FACTOR picks another
-  # one LDBC publishes a validation set for (0.1 to 10). The FIBEN benchmark stays out: its
-  # catalog runs on demand against mssql_db, never as part of a build (decision 149).
+  # one LDBC publishes a validation set for (0.1 to 10). The FIBEN benchmark and the SEDE data
+  # stay out: their catalogs run on demand against mssql_db, never as part of a build
+  # (decisions 149 and 208).
   test_db:
     profiles: ["test"]
     build:
@@ -101,6 +108,7 @@ services:
       args:
         LDBC_SCALE_FACTOR: ${LDBC_TEST_SCALE_FACTOR:-0.1}
         FIBEN_DATASET: none
+        SEDE_DATASET: none
     cpuset: "${DATABASE_CPUSET-0,1}"
     environment:
       - ACCEPT_EULA=Y

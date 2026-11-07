@@ -484,14 +484,16 @@ internal sealed class PreparedQuery : IDisposable
     /// <summary>
     /// The fields of a row read by the names the caller states: off a dictionary for
     /// Dapper's untyped row of a projection (decision 104), off the properties for an entity
-    /// or an anonymous type.
+    /// or an anonymous type. A name is matched without regard to case, as SQL Server matches
+    /// a column's: a text that projects <c>t.tagName</c> over a column <c>TagName</c> returns
+    /// the one spelling through Dapper and the other through a typed projection.
     /// </summary>
     private static object?[] ByName(object? item, string id, IReadOnlyList<string> fields)
     {
         if (item is IDictionary<string, object?> columns)
         {
             return [.. fields.Select(field =>
-                columns.TryGetValue(field, out var value)
+                columns.TryGetValue(field, out var value) || columns.Keys.FirstOrDefault(key => key.Equals(field, StringComparison.OrdinalIgnoreCase)) is { } spelled && columns.TryGetValue(spelled, out value)
                     ? value
                     : throw new InvalidOperationException(
                         $"{id}: the row has no column \"{field}\"; it has {string.Join(", ", columns.Keys)} "
@@ -502,7 +504,7 @@ internal sealed class PreparedQuery : IDisposable
             ?? throw new InvalidOperationException($"{id}: a row of the result is null.");
 
         return [.. fields.Select(field =>
-            (type.GetProperty(field)
+            (type.GetProperty(field, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase)
                 ?? throw new InvalidOperationException(
                     $"{id}: the row type {type.Name} has no member \"{field}\"; the caller states "
                     + $"the fields as {string.Join(", ", fields)}."))

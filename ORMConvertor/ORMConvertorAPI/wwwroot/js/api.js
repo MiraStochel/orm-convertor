@@ -334,6 +334,33 @@ export const getLdbc = () => getJson("ldbc");
  */
 export const getFiben = () => getJson("fiben");
 
+/*
+ * The SEDE query catalog (decision 208): the part of the set a query is from and how much of it
+ * the tool translates, numbered as SampleData numbers them.
+ */
+export const SedeSet = Object.freeze({ Validation: 10, Test: 20 });
+
+export const SEDE_SET_LABELS = Object.freeze({
+  [SedeSet.Validation]: "validation part",
+  [SedeSet.Test]: "test part",
+});
+
+export const SedeTranslation = Object.freeze({ AsSpecified: 10, Simplified: 20, NotTranslated: 30 });
+
+export const SEDE_TRANSLATION_LABELS = Object.freeze({
+  [SedeTranslation.AsSpecified]: "Translated as the author wrote it",
+  [SedeTranslation.Simplified]: "Translated, simplified",
+  [SedeTranslation.NotTranslated]: "Not translated",
+});
+
+/**
+ * GET /sede - the SEDE query catalog (decision 208): { sourceOrm, dataSet, entities, queries },
+ * the entities as /convert units and every query as { key, querySetId, set, title, description,
+ * parameters: [{ name, sqlType, value }], tables, columns, ordered, orderingKey, sql, sedeSql,
+ * translation, note }. A query is run by sending the entities of the tables it names plus its text.
+ */
+export const getSede = () => getJson("sede");
+
 /**
  * POST /convert. Sources are { contentType, content, name? } units; the response carries
  * runId, toolVersion, source/target framework with versions, targetDatabaseDialect, sources

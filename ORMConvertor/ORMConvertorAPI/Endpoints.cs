@@ -53,6 +53,13 @@ public static class Endpoints
             .WithName("Fiben")
             .Produces<FibenCatalogDefinition>(StatusCodes.Status200OK);
 
+        // The SEDE query catalog for its page and for the on-demand run of the Java suite
+        // (decision 208): the entity units over the SEDE tables and the human-reviewed queries
+        // with their titles, parameters and values, each naming the units it reads.
+        group.MapGet("/sede", () => Sede.GetCatalog)
+            .WithName("Sede")
+            .Produces<SedeCatalogDefinition>(StatusCodes.Status200OK);
+
         group.MapPost("/advisor-test", AdvisorTestHandler)
             .WithName("AdvisorTest")
               .Produces<AdvisorSolveResponse>(StatusCodes.Status200OK)

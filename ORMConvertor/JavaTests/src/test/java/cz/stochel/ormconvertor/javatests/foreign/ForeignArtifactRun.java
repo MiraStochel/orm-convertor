@@ -9,8 +9,8 @@ import cz.stochel.ormconvertor.javatests.differential.DifferentialQuery;
 import cz.stochel.ormconvertor.javatests.differential.JavaQueryRunner;
 import cz.stochel.ormconvertor.javatests.differential.ResultRow;
 import cz.stochel.ormconvertor.javatests.eclipselink.EclipseLinkBootstrap;
-import cz.stochel.ormconvertor.javatests.fiben.FibenDatabase;
-import cz.stochel.ormconvertor.javatests.fiben.FibenRun;
+import cz.stochel.ormconvertor.javatests.catalog.CatalogDatabase;
+import cz.stochel.ormconvertor.javatests.catalog.CatalogRun;
 import cz.stochel.ormconvertor.javatests.hibernate.HibernateBootstrap;
 import cz.stochel.ormconvertor.javatests.ldbc.PreparedJavaQuery;
 import cz.stochel.ormconvertor.javatests.mybatis.MyBatisBootstrap;
@@ -93,7 +93,7 @@ public final class ForeignArtifactRun {
      */
     public static String schemaFor(ForeignArtifact.Key key) {
         if (key.kind().equals(ForeignArtifact.Key.FIBEN)) {
-            return FibenDatabase.SCHEMA;
+            return CatalogDatabase.SCHEMA;
         }
         if (key.kind().equals(ForeignArtifact.Key.EXAMPLE) && TestSchema.isCaseStudy(key.id())) {
             return TestDatabase.caseStudySchemaName(key.id().substring(0, key.id().indexOf('-')));
@@ -746,7 +746,7 @@ public final class ForeignArtifactRun {
                     }
 
                     return new Measure(null, null, query.fields(), query.projection(), query.orderingKey(), query.settings(), arguments,
-                            rows -> rows.equals(canonical) ? null : FibenRun.difference(canonical, rows), null);
+                            rows -> rows.equals(canonical) ? null : CatalogRun.difference(canonical, rows), null);
                 }
 
                 case ForeignArtifact.Key.FIBEN -> {
@@ -755,9 +755,9 @@ public final class ForeignArtifactRun {
                         throw new IllegalStateException(artifact.id() + ": the FIBEN catalog has no query " + key.id() + ".");
                     }
 
-                    String jdbcUrl = FibenDatabase.jdbcUrl();
+                    String jdbcUrl = CatalogDatabase.FIBEN.jdbcUrl();
                     if (jdbcUrl == null) {
-                        throw new IllegalStateException(artifact.id() + ": a FIBEN query runs over the Fiben database, and none is configured; set " + FibenDatabase.JDBC_URL_VARIABLE + ".");
+                        throw new IllegalStateException(artifact.id() + ": a FIBEN query runs over the Fiben database, and none is configured; set " + CatalogDatabase.FIBEN.jdbcUrlVariable() + ".");
                     }
 
                     Map<String, ForeignFibenCatalog.Entry> judge = ForeignFibenCatalog.judge(jdbcUrl);
@@ -766,19 +766,19 @@ public final class ForeignArtifactRun {
                     }
 
                     String judged = query.key().toLowerCase(Locale.ROOT);
-                    return new Measure(jdbcUrl, FibenDatabase.SCHEMA, query.columns(), true, query.orderingKey(), ResultRow.Settings.defaults(), new Object[0],
+                    return new Measure(jdbcUrl, CatalogDatabase.SCHEMA, query.columns(), true, query.orderingKey(), ResultRow.Settings.defaults(), new Object[0],
                             rows -> {
                                 ForeignFibenCatalog.Entry entry = judge.get(judged);
                                 if (entry == null) {
                                     return "the judge holds no entry for the query - the run it was made from did not run it";
                                 }
-                                boolean agrees = FibenRun.digest(rows).equals(entry.digest()) && (entry.rows().isEmpty() || entry.rows().equals(rows));
+                                boolean agrees = CatalogRun.digest(rows).equals(entry.digest()) && (entry.rows().isEmpty() || entry.rows().equals(rows));
                                 if (agrees) {
                                     return null;
                                 }
-                                return !entry.rows().isEmpty() || rows.size() <= FibenRun.ROWS_KEPT_BY_THE_JUDGE
-                                        ? FibenRun.difference(entry.rows(), rows)
-                                        : "the judge holds " + entry.digest() + ", the artifact returned " + FibenRun.digest(rows);
+                                return !entry.rows().isEmpty() || rows.size() <= CatalogRun.ROWS_KEPT_BY_THE_JUDGE
+                                        ? CatalogRun.difference(entry.rows(), rows)
+                                        : "the judge holds " + entry.digest() + ", the artifact returned " + CatalogRun.digest(rows);
                             },
                             null);
                 }

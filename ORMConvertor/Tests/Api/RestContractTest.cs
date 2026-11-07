@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.Json;
 using Model;
 using ORMConvertorAPI.Data;
@@ -26,6 +26,7 @@ public class RestContractTest(ApiTestHost host)
         "/examples",
         "/ldbc",
         "/fiben",
+        "/sede",
     ];
 
     [Theory]
@@ -261,6 +262,31 @@ public class RestContractTest(ApiTestHost host)
             Assert.Equal(query.Columns, serialized.GetProperty("columns").EnumerateArray().Select(column => column.GetString()!));
             Assert.Equal(query.OrderingKey.Count > 0, serialized.GetProperty("ordered").GetBoolean());
             Assert.Equal(query.OrderingKey, serialized.GetProperty("orderingKey").EnumerateArray().Select(key => key.GetString()!));
+        }
+    }
+
+    /// <summary>
+    /// The SEDE catalog (decision 208) arrives the same way, with the parameters and the values
+    /// the Java suite's run binds beside the columns and the ordering key.
+    /// </summary>
+    [Fact]
+    public async Task TheSedeCatalogArrivesWithTheKeyAndTheParametersOfEveryQuery()
+    {
+        using var wire = await ReadAsync("/sede");
+
+        var expected = Sede.GetCatalog;
+        var queries = wire.RootElement.GetProperty("queries").EnumerateArray().ToList();
+        Assert.Equal(expected.Queries.Count, queries.Count);
+
+        foreach (var (query, serialized) in expected.Queries.Zip(queries))
+        {
+            Assert.Equal(query.Key, serialized.GetProperty("key").GetString());
+            Assert.Equal(query.Columns, serialized.GetProperty("columns").EnumerateArray().Select(column => column.GetString()!));
+            Assert.Equal(query.OrderingKey.Count > 0, serialized.GetProperty("ordered").GetBoolean());
+            Assert.Equal(query.OrderingKey, serialized.GetProperty("orderingKey").EnumerateArray().Select(key => key.GetString()!));
+            Assert.Equal(
+                query.Parameters.Select(parameter => $"{parameter.Name} {parameter.SqlType} {parameter.Value}"),
+                serialized.GetProperty("parameters").EnumerateArray().Select(parameter => $"{parameter.GetProperty("name").GetString()} {parameter.GetProperty("sqlType").GetString()} {parameter.GetProperty("value").GetString()}"));
         }
     }
 

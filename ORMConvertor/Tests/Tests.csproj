@@ -7,6 +7,13 @@
     <UserSecretsId>ormconvertor-tests-1f0a2c64-3f1e-4a0b-9b7d-2c5b0f4d8e11</UserSecretsId>
   </PropertyGroup>
 
+  <!-- The import of the SEDE catalog (decision 208) reads the ordering key of a query through
+       Verification/OrderingKeys and SourceQueries, the helpers this project holds the FIBEN and
+       the SEDE catalogs with, so that the key the catalog states is the key the suite checks. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="SedeImport" />
+  </ItemGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="Database\TestSchema.sql" />
     <!-- Data, matrix and canonical results of the differential verification (decision 089).

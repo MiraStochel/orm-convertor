@@ -4,7 +4,7 @@ import cz.stochel.ormconvertor.javatests.CaseStudyDatabase;
 import cz.stochel.ormconvertor.javatests.TestDatabase;
 import cz.stochel.ormconvertor.javatests.TestSchema;
 import cz.stochel.ormconvertor.javatests.differential.JavaQueryRunner;
-import cz.stochel.ormconvertor.javatests.fiben.FibenDatabase;
+import cz.stochel.ormconvertor.javatests.catalog.CatalogDatabase;
 import cz.stochel.ormconvertor.javatests.foreign.ForeignArtifact;
 import cz.stochel.ormconvertor.javatests.foreign.ForeignArtifactRun;
 import cz.stochel.ormconvertor.javatests.foreign.ForeignVerdict;
@@ -187,7 +187,7 @@ class ExperimentRunTest {
         if (LdbcDatabase.apiUrl() == null) {
             kinds.remove(ForeignArtifact.Key.LDBC);
         }
-        if (FibenDatabase.apiUrl() == null || FibenDatabase.jdbcUrl() == null) {
+        if (CatalogDatabase.FIBEN.apiUrl() == null || CatalogDatabase.FIBEN.jdbcUrl() == null) {
             kinds.remove(ForeignArtifact.Key.FIBEN);
         }
 
@@ -351,7 +351,7 @@ class ExperimentRunTest {
     private static String instanceOf(ForeignArtifact.Key key) {
         return switch (key.kind()) {
             case ForeignArtifact.Key.LDBC -> LdbcDatabase.apiUrl();
-            case ForeignArtifact.Key.FIBEN -> FibenDatabase.apiUrl();
+            case ForeignArtifact.Key.FIBEN -> CatalogDatabase.FIBEN.apiUrl();
             case ForeignArtifact.Key.EXAMPLE -> isCaseStudy(key) ? CaseStudyDatabase.apiUrl() : ToolApi.baseUrl();
             case ForeignArtifact.Key.SERIES -> CATALOG_NONE.equals(seriesCatalog()) ? dryInstance() : ToolApi.baseUrl();
             default -> ToolApi.baseUrl();

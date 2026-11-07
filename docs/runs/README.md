@@ -11,6 +11,7 @@ Datované záznamy běhů obou sad a měření (rozh. [167](../decisions/167-rec
 | CI, obě sady | push a pull request do `main`, který mění `ORMConvertor/**` nebo `.github/workflows/**` | služba SQL Server 2022 jobu, bez `LdbcSnb` a `Fiben` | — | žádný | — |
 | obě sady v kontejnerech (`build` + `run`) | první krok úplného běhu; k vydání | `test_db` (SF 0,1); soudce LDBC nad prvními 1000 řádky sady jako kontrola | lhostejné | řádek [velikosti sady](#velikost-sady-a-pokrytí) | — |
 | běh FIBEN | na vyžádání, za verzi nebo zásadní změnu (rozh. [149](../decisions/149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md)) | `mssql_db` v měřicím režimu (rozh. [164](../decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md)) | vypnuté | soubor | [2026-11-02](2026-11-02-fiben.md) |
+| běh SEDE | na vyžádání, za verzi nebo zásadní změnu (rozh. [208](../decisions/208-sede-as-the-fourth-reference-domain-over-the-dba-stack-exchange-dump-judged-by-a-judge-of-our-own.md)); týž mechanismus jako běh FIBEN | `mssql_db` v měřicím režimu, instance nad `Sede` | vypnuté | soubor | zatím žádný; první doložený běh dá soudce |
 | soudce LDBC nad celou sadou SF 1 | na vyžádání, spouští ho Míra jménem, v sezení, které nic jiného nedělá | `mssql_db` v režimu soudce (rozh. 164, [166](../decisions/166-the-judge-reads-a-segment-between-inserts-in-every-framework-at-once.md)) | zapnuté | soubor | [2026-11-02](2026-11-02-ldbc-judge.md) v režimu soudce; [2026-10-12](2026-10-12-ldbc-judge.md) před oběma režimy |
 | měření času (katalog LDBC, přehrání soudce po krocích) | k rozhodnutí, které je potřebuje (rozh. [140](../decisions/140-ldbc-path-queries-as-breadth-first-search-in-non-recursive-definitions-with-the-depth-of-the-data.md), [141](../decisions/141-one-data-set-for-the-ldbc-catalog-and-the-depth-of-a-path-query-as-a-measured-property-of-it.md), [145](../decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md), 164, 166) | `mssql_db`, v režimu, o kterém měření je | podle účelu, v záznamu | soubor | v záznamu |
 | běh cizích artefaktů (rozh. [172](../decisions/172-a-foreign-artifact-enters-the-verification-levels-as-a-directory-with-a-manifest-beside-the-client.md)) | na vyžádání, nad artefakty, které nástroj nevyrobil; proces na artefakt s mezí času (`foreign-run.sh`) | `test_db` nebo databáze fixture hostitele; pro klíče `fiben:` `mssql_db` se soudcem | lhostejné (správnost, ne čas) | soubor s původem artefaktů z manifestů (producent, model, prompt, pokusy) a podíly po stupních a cílích | — |
@@ -23,7 +24,7 @@ Kontrola (oddíl [Záznam](#záznam)) se pouští kdykoli. Měřicí prostředí
 
 ### Před dlouhým během
 
-Na MIS3, kde se měří; platí pro běh FIBEN, soudce LDBC a měření času.
+Na MIS3, kde se měří; platí pro běh FIBEN, běh SEDE, soudce LDBC a měření času.
 
 - **Obrazy z dnešního stromu.** Strom čistý a každý obraz, který běh spouští, sestavený z něj. `run` bez `build` běží nad stromem, ze kterého obraz vznikl, a jediným signálem je počet testů proti [velikosti sady](#velikost-sady-a-pokrytí).
 - **Stav procesoru.** Pro měření nejvyšší i nejnižší stav procesoru `0x63`, tedy 99 % bez turba a bez náběhu z klidu (`powercfg /query SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX` a `PROCTHROTTLEMIN`); soudce LDBC není měření a běží s turbem. Záznam říká, co platilo.
@@ -39,14 +40,15 @@ Na MIS3, kde se měří; platí pro běh FIBEN, soudce LDBC a měření času.
 2. .NET sada, pak javová sada v kontejnerech.
 3. `mssql_db` v měřicím režimu a instance nad `Fiben`; počkat na poslední řádek loaderu.
 4. Běh FIBEN: .NET sada, pak javová.
-5. Je-li vyžádán soudce LDBC: `mssql_db` v režimu soudce a instance nad `LdbcSnb`, soudce .NET sady, pak javové.
-6. `mssql_db` zpět v měřicím režimu, instance zpět nad WideWorldImporters.
+5. Je-li vyžádán běh SEDE: instance nad `Sede`, .NET sada, pak javová.
+6. Je-li vyžádán soudce LDBC: `mssql_db` v režimu soudce a instance nad `LdbcSnb`, soudce .NET sady, pak javové.
+7. `mssql_db` zpět v měřicím režimu, instance zpět nad WideWorldImporters.
 
 Proč v tomto pořadí a nikdy dva běhy najednou, říká rozh. 168.
 
 ## Záznam
 
-- **Co se zapisuje:** verdikt soudce LDBC nad celou sadou, běh FIBEN, experimentální běh, měření časů, velikost sady a pokrytí, podíl F4. Kontrola — prefix sady, výběr dotazů FIBEN (`ORMCONVERTOR_FIBEN_QUERIES`), běh z hosta mimo zafixované prostředí — se nezapisuje, s jedinou výjimkou: kontrola, jejíž zjištění **změnilo vstupy experimentu** (příklad, výňatek), se zapíše jako popsaný běh s výsledkem před změnou a po ní a s důvodem změny, protože záznam verze by jinak stál nad jinými vstupy a nic by to nevysvětlovalo.
+- **Co se zapisuje:** verdikt soudce LDBC nad celou sadou, běh FIBEN, běh SEDE, experimentální běh, měření časů, velikost sady a pokrytí, podíl F4. Kontrola — prefix sady, výběr dotazů FIBEN nebo SEDE (`ORMCONVERTOR_FIBEN_QUERIES`, `ORMCONVERTOR_SEDE_QUERIES`), běh z hosta mimo zafixované prostředí — se nezapisuje, s jedinou výjimkou: kontrola, jejíž zjištění **změnilo vstupy experimentu** (příklad, výňatek), se zapíše jako popsaný běh s výsledkem před změnou a po ní a s důvodem změny, protože záznam verze by jinak stál nad jinými vstupy a nic by to nevysvětlovalo.
 - **Popsaný běh** má soubor `RRRR-MM-DD-<druh>.md` podle dne, kdy začal; druhý běh téhož druhu téhož dne dostane příponu `-2`. Obě půlky běhu .NET a javové sady nad týmž stromem jsou jeden soubor. Hlavička: začátek, strom (commit), stroj a prostředí — režim serveru (rozh. [164](../decisions/164-the-database-server-has-a-measurement-mode-and-a-judge-mode-switched-by-one-file.md)) a nejvyšší a nejnižší stav procesoru (rozh. [145](../decisions/145-the-measurement-environment-and-the-iteration-policy-are-fixed.md)) —, pak výsledek a poznámky. V rejstříku dostane řádek s jednou větou výsledku; čísla stojí jen v souboru.
 - **Krátký záznam** — řádek s commitem a poznámkou — je řádkem tabulky v tomto souboru a vlastní soubor nemá.
 - **Omyl** zjištěný později se v záznamu neopravuje; uvede se v oddílu [Nesrovnalosti](#nesrovnalosti).

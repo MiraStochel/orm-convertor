@@ -5,6 +5,7 @@ using Model;
 using OrmConvertor;
 using ORMConvertorAPI.Data;
 using Tests.Database;
+using Tests.CatalogRuns;
 using Tests.FibenJudge;
 using Tests.Foreign;
 
@@ -109,7 +110,7 @@ internal static class ExperimentRun
                 ? new HashSet<string>([ForeignKey.Matrix, ForeignKey.Cross, ForeignKey.Example, ForeignKey.Ldbc, ForeignKey.Fiben], StringComparer.Ordinal)
                 : asked.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(kind => kind.ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
 
-            if (!FibenDatabase.IsConfigured)
+            if (!CatalogDatabase.Fiben.IsConfigured)
             {
                 kinds.Remove(ForeignKey.Fiben);
             }
@@ -145,7 +146,7 @@ internal static class ExperimentRun
     };
 
     private static readonly Lazy<ICatalogReader?> FibenCatalog = new(() =>
-        FibenDatabase.ConnectionString is { } connectionString ? new CachingCatalogReader(new SqlServerCatalogReader(connectionString)) : null);
+        CatalogDatabase.Fiben.ConnectionString is { } connectionString ? new CachingCatalogReader(new SqlServerCatalogReader(connectionString)) : null);
 
     /// <summary>
     /// Translates the input into the target and judges the artifact. A translation with a

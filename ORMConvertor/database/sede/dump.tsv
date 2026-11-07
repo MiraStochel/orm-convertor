@@ -1,0 +1,8 @@
+Badges	Badges.xml	Id,UserId,Name,Date,Class,TagBased
+Comments	Comments.xml	Id,PostId,Score,Text,CreationDate,UserDisplayName,UserId,ContentLicense
+PostHistory	PostHistory.xml	Id,PostHistoryTypeId,PostId,RevisionGUID,CreationDate,UserId,UserDisplayName,Comment,Text,ContentLicense
+PostLinks	PostLinks.xml	Id,CreationDate,PostId,RelatedPostId,LinkTypeId
+Posts	Posts.xml	Id,PostTypeId,AcceptedAnswerId,ParentId,CreationDate,DeletionDate,Score,ViewCount,Body,OwnerUserId,OwnerDisplayName,LastEditorUserId,LastEditorDisplayName,LastEditDate,LastActivityDate,Title,Tags,AnswerCount,CommentCount,FavoriteCount,ClosedDate,CommunityOwnedDate,ContentLicense
+Tags	Tags.xml	Id,TagName,Count,ExcerptPostId,WikiPostId
+Users	Users.xml	Id,Reputation,CreationDate,DisplayName,LastAccessDate,WebsiteUrl,Location,AboutMe,Views,UpVotes,DownVotes,ProfileImageUrl,EmailHash,AccountId
+Votes	Votes.xml	Id,PostId,VoteTypeId,UserId,CreationDate,BountyAmount

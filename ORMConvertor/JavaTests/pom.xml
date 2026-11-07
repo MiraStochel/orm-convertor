@@ -130,6 +130,15 @@
                 </includes>
                 <targetPath>Fiben</targetPath>
             </testResource>
+            <!-- The SEDE catalog as the repository carries it (decision 208): the keys of its
+                 queries state the cases of the on-demand run where no instance is configured. -->
+            <testResource>
+                <directory>${project.basedir}/../SampleData/Sede</directory>
+                <includes>
+                    <include>queries.json</include>
+                </includes>
+                <targetPath>Sede</targetPath>
+            </testResource>
             <!-- The inserts INS 1-8 of the LDBC validation set and their compensation (decision
                  117), read from where the database image and the .NET suite read them; the
                  Docker stage copies the directory beside this project the same way. -->

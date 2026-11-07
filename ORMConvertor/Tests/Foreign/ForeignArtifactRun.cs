@@ -9,6 +9,7 @@ using Model;
 using SampleData;
 using Tests.Database;
 using Tests.Differential;
+using Tests.CatalogRuns;
 using Tests.FibenJudge;
 using Tests.Verification;
 
@@ -45,7 +46,7 @@ internal static class ForeignArtifactRun
     /// </summary>
     public static string SchemaFor(ForeignKey key) => key.Kind switch
     {
-        ForeignKey.Fiben => FibenDatabase.Schema,
+        ForeignKey.Fiben => CatalogDatabase.Schema,
         ForeignKey.Example when ORMConvertorAPI.Data.Examples.RealProjectKeys.Contains(key.Id)
             => TestDatabase.CaseStudySchemaName(Combined.CaseStudySchemaTest.ProjectOf(key.Id)),
         _ => TestDatabase.SchemaName,
@@ -553,7 +554,7 @@ internal static class ForeignArtifactRun
                         prepared => ResultRow.Canonical(
                             prepared.Run(key.Id, [.. query.Arguments.Select(argument => argument.Materialize())], query.Fields, query.Projection),
                             query.Settings, query.Fields, query.OrderingKey),
-                        rows => (rows.SequenceEqual(canonical), FibenRun.Difference(canonical, rows)),
+                        rows => (rows.SequenceEqual(canonical), CatalogRun.Difference(canonical, rows)),
                         null);
                 }
 
@@ -561,14 +562,14 @@ internal static class ForeignArtifactRun
                 {
                     var query = FibenSample.Queries.SingleOrDefault(candidate => candidate.Key.Equals(key.Id, StringComparison.OrdinalIgnoreCase))
                         ?? throw new InvalidOperationException($"{artifact.Id}: the FIBEN catalog has no query {key.Id}.");
-                    var connectionString = FibenDatabase.ConnectionString
-                        ?? throw new InvalidOperationException($"{artifact.Id}: a FIBEN query runs over the Fiben database, and none is configured. {FibenDatabase.NotConfiguredReason}");
+                    var connectionString = CatalogDatabase.Fiben.ConnectionString
+                        ?? throw new InvalidOperationException($"{artifact.Id}: a FIBEN query runs over the Fiben database, and none is configured. {CatalogDatabase.Fiben.NotConfiguredReason}");
 
                     Dictionary<string, (string Digest, List<string> Rows)>? judge;
                     using (var control = new SqlConnection(connectionString))
                     {
                         control.Open();
-                        judge = FibenJudgeTable.Read(control);
+                        judge = JudgeTable.Read(control);
                     }
 
                     if (judge is null)
@@ -579,12 +580,12 @@ internal static class ForeignArtifactRun
                     return new Measure(
                         connectionString,
                         prepared => ResultRow.Canonical(prepared.Run(query.Key, [], query.Columns, projection: true), new ResultRow.RenderSettings(), query.Columns, query.OrderingKey),
-                        rows => FibenJudgeTable.Agrees(judge, query.Key, rows) switch
+                        rows => JudgeTable.Agrees(judge, query.Key, rows) switch
                         {
                             true => (true, string.Empty),
-                            false => (false, judge[query.Key].Rows.Count > 0 || rows.Count <= FibenRun.RowsKeptByTheJudge
-                                ? FibenRun.Difference(judge[query.Key].Rows, rows)
-                                : $"the judge holds {judge[query.Key].Digest}, the artifact returned {FibenRun.Digest(rows)}"),
+                            false => (false, judge[query.Key].Rows.Count > 0 || rows.Count <= CatalogRun.RowsKeptByTheJudge
+                                ? CatalogRun.Difference(judge[query.Key].Rows, rows)
+                                : $"the judge holds {judge[query.Key].Digest}, the artifact returned {CatalogRun.Digest(rows)}"),
                             null => (false, "the judge holds no entry for the query - the run it was made from did not run it"),
                         },
                         null);

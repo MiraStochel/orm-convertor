@@ -5,6 +5,7 @@ using SampleData;
 using Tests.Combined;
 using Tests.Database;
 using Tests.Differential;
+using Tests.CatalogRuns;
 using Tests.FibenJudge;
 
 namespace Tests.Foreign;
