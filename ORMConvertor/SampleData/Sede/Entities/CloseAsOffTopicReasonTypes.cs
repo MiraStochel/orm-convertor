@@ -2,7 +2,7 @@ namespace Sede;
 
 public class CloseAsOffTopicReasonTypes
 {
-    public int Id { get; set; }
+    public short Id { get; set; }
 
     public bool? IsUniversal { get; set; }
 

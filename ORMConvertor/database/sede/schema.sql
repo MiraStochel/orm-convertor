@@ -13,27 +13,27 @@
 --
 -- Batches are separated by a line containing only GO; the {{schema}} placeholder is dbo
 -- in the Sede database of the container.
--- Types: provisional, from the categories of tables_so.json.
+-- Types: from the listing of the SEDE catalog.
 
 CREATE TABLE [{{schema}}].[Badges] (
     [Id] INT NOT NULL,
     [UserId] INT NULL,
-    [Name] NVARCHAR(250) NULL,
+    [Name] NVARCHAR(50) NULL,
     [Date] DATETIME NULL,
-    [Class] INT NULL,
+    [Class] TINYINT NULL,
     [TagBased] BIT NULL,
     CONSTRAINT [PK_Badges] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[CloseAsOffTopicReasonTypes] (
-    [Id] INT NOT NULL,
+    [Id] SMALLINT NOT NULL,
     [IsUniversal] BIT NULL,
-    [InputTitle] NVARCHAR(MAX) NULL,
-    [MarkdownInputGuidance] NVARCHAR(MAX) NULL,
-    [MarkdownPostOwnerGuidance] NVARCHAR(MAX) NULL,
+    [InputTitle] NVARCHAR(100) NULL,
+    [MarkdownInputGuidance] NVARCHAR(500) NULL,
+    [MarkdownPostOwnerGuidance] NVARCHAR(500) NULL,
     [MarkdownPrivilegedUserGuidance] NVARCHAR(MAX) NULL,
-    [MarkdownConcensusDescription] NVARCHAR(MAX) NULL,
+    [MarkdownConcensusDescription] NVARCHAR(500) NULL,
     [CreationDate] DATETIME NULL,
     [CreationModeratorId] INT NULL,
     [ApprovalDate] DATETIME NULL,
@@ -45,9 +45,9 @@ CREATE TABLE [{{schema}}].[CloseAsOffTopicReasonTypes] (
 GO
 
 CREATE TABLE [{{schema}}].[CloseReasonTypes] (
-    [Id] INT NOT NULL,
-    [Name] NVARCHAR(250) NULL,
-    [Description] NVARCHAR(MAX) NULL,
+    [Id] TINYINT NOT NULL,
+    [Name] NVARCHAR(200) NULL,
+    [Description] NVARCHAR(500) NULL,
     CONSTRAINT [PK_CloseReasonTypes] PRIMARY KEY ([Id])
 );
 GO
@@ -56,32 +56,32 @@ CREATE TABLE [{{schema}}].[Comments] (
     [Id] INT NOT NULL,
     [PostId] INT NULL,
     [Score] INT NULL,
-    [Text] NVARCHAR(MAX) NULL,
+    [Text] NVARCHAR(600) NULL,
     [CreationDate] DATETIME NULL,
-    [UserDisplayName] NVARCHAR(250) NULL,
+    [UserDisplayName] NVARCHAR(40) NULL,
     [UserId] INT NULL,
-    [ContentLicense] NVARCHAR(250) NULL,
+    [ContentLicense] VARCHAR(30) NULL,
     CONSTRAINT [PK_Comments] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[FlagTypes] (
-    [Id] INT NOT NULL,
-    [Name] NVARCHAR(250) NULL,
-    [Description] NVARCHAR(MAX) NULL,
+    [Id] TINYINT NOT NULL,
+    [Name] NVARCHAR(50) NULL,
+    [Description] NVARCHAR(500) NULL,
     CONSTRAINT [PK_FlagTypes] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[PendingFlags] (
     [Id] INT NOT NULL,
-    [FlagTypeId] INT NULL,
+    [FlagTypeId] TINYINT NULL,
     [PostId] INT NULL,
-    [CreationDate] DATETIME NULL,
-    [CloseReasonTypeId] INT NULL,
-    [CloseAsOffTopicReasonTypeId] INT NULL,
+    [CreationDate] DATE NULL,
+    [CloseReasonTypeId] TINYINT NULL,
+    [CloseAsOffTopicReasonTypeId] SMALLINT NULL,
     [DuplicateOfQuestionId] INT NULL,
-    [BelongsOnBaseHostAddress] NVARCHAR(250) NULL,
+    [BelongsOnBaseHostAddress] NVARCHAR(100) NULL,
     CONSTRAINT [PK_PendingFlags] PRIMARY KEY ([Id])
 );
 GO
@@ -90,7 +90,7 @@ CREATE TABLE [{{schema}}].[PostFeedback] (
     [Id] INT NOT NULL,
     [PostId] INT NULL,
     [IsAnonymous] BIT NULL,
-    [VoteTypeId] INT NULL,
+    [VoteTypeId] TINYINT NULL,
     [CreationDate] DATETIME NULL,
     CONSTRAINT [PK_PostFeedback] PRIMARY KEY ([Id])
 );
@@ -98,40 +98,40 @@ GO
 
 CREATE TABLE [{{schema}}].[PostHistory] (
     [Id] INT NOT NULL,
-    [PostHistoryTypeId] INT NULL,
+    [PostHistoryTypeId] TINYINT NULL,
     [PostId] INT NULL,
     [RevisionGUID] UNIQUEIDENTIFIER NULL,
     [CreationDate] DATETIME NULL,
     [UserId] INT NULL,
-    [UserDisplayName] NVARCHAR(250) NULL,
-    [Comment] NVARCHAR(MAX) NULL,
+    [UserDisplayName] NVARCHAR(40) NULL,
+    [Comment] NVARCHAR(400) NULL,
     [Text] NVARCHAR(MAX) NULL,
-    [ContentLicense] NVARCHAR(250) NULL,
+    [ContentLicense] VARCHAR(30) NULL,
     CONSTRAINT [PK_PostHistory] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[PostHistoryTypes] (
-    [Id] INT NOT NULL,
-    [Name] NVARCHAR(250) NULL,
+    [Id] TINYINT NOT NULL,
+    [Name] NVARCHAR(50) NULL,
     CONSTRAINT [PK_PostHistoryTypes] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[PostLinks] (
-    [Id] INT NOT NULL,
+    [Id] BIGINT NOT NULL,
     [CreationDate] DATETIME NULL,
     [PostId] INT NULL,
     [RelatedPostId] INT NULL,
-    [LinkTypeId] INT NULL,
+    [LinkTypeId] TINYINT NULL,
     CONSTRAINT [PK_PostLinks] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[PostNoticeTypes] (
     [Id] INT NOT NULL,
-    [ClassId] INT NULL,
-    [Name] NVARCHAR(250) NULL,
+    [ClassId] TINYINT NULL,
+    [Name] NVARCHAR(80) NULL,
     [Body] NVARCHAR(MAX) NULL,
     [IsHidden] BIT NULL,
     [Predefined] BIT NULL,
@@ -162,15 +162,15 @@ CREATE TABLE [{{schema}}].[PostTags] (
 GO
 
 CREATE TABLE [{{schema}}].[PostTypes] (
-    [Id] INT NOT NULL,
-    [Name] NVARCHAR(250) NULL,
+    [Id] TINYINT NOT NULL,
+    [Name] NVARCHAR(50) NULL,
     CONSTRAINT [PK_PostTypes] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[Posts] (
     [Id] INT NOT NULL,
-    [PostTypeId] INT NULL,
+    [PostTypeId] TINYINT NULL,
     [AcceptedAnswerId] INT NULL,
     [ParentId] INT NULL,
     [CreationDate] DATETIME NULL,
@@ -179,26 +179,26 @@ CREATE TABLE [{{schema}}].[Posts] (
     [ViewCount] INT NULL,
     [Body] NVARCHAR(MAX) NULL,
     [OwnerUserId] INT NULL,
-    [OwnerDisplayName] NVARCHAR(250) NULL,
+    [OwnerDisplayName] NVARCHAR(40) NULL,
     [LastEditorUserId] INT NULL,
-    [LastEditorDisplayName] NVARCHAR(250) NULL,
+    [LastEditorDisplayName] NVARCHAR(40) NULL,
     [LastEditDate] DATETIME NULL,
     [LastActivityDate] DATETIME NULL,
     [Title] NVARCHAR(250) NULL,
-    [Tags] NVARCHAR(250) NULL,
+    [Tags] NVARCHAR(4000) NULL,
     [AnswerCount] INT NULL,
     [CommentCount] INT NULL,
     [FavoriteCount] INT NULL,
     [ClosedDate] DATETIME NULL,
     [CommunityOwnedDate] DATETIME NULL,
-    [ContentLicense] NVARCHAR(250) NULL,
+    [ContentLicense] VARCHAR(30) NULL,
     CONSTRAINT [PK_Posts] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[PostsWithDeleted] (
     [Id] INT NOT NULL,
-    [PostTypeId] INT NULL,
+    [PostTypeId] TINYINT NULL,
     [AcceptedAnswerId] INT NULL,
     [ParentId] INT NULL,
     [CreationDate] DATETIME NULL,
@@ -207,36 +207,36 @@ CREATE TABLE [{{schema}}].[PostsWithDeleted] (
     [ViewCount] INT NULL,
     [Body] NVARCHAR(MAX) NULL,
     [OwnerUserId] INT NULL,
-    [OwnerDisplayName] NVARCHAR(250) NULL,
+    [OwnerDisplayName] NVARCHAR(40) NULL,
     [LastEditorUserId] INT NULL,
-    [LastEditorDisplayName] NVARCHAR(250) NULL,
+    [LastEditorDisplayName] NVARCHAR(40) NULL,
     [LastEditDate] DATETIME NULL,
     [LastActivityDate] DATETIME NULL,
     [Title] NVARCHAR(250) NULL,
-    [Tags] NVARCHAR(250) NULL,
+    [Tags] NVARCHAR(4000) NULL,
     [AnswerCount] INT NULL,
     [CommentCount] INT NULL,
     [FavoriteCount] INT NULL,
     [ClosedDate] DATETIME NULL,
     [CommunityOwnedDate] DATETIME NULL,
-    [ContentLicense] NVARCHAR(250) NULL,
+    [ContentLicense] VARCHAR(30) NULL,
     CONSTRAINT [PK_PostsWithDeleted] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[ReviewRejectionReasons] (
-    [Id] INT NOT NULL,
-    [Name] NVARCHAR(250) NULL,
-    [Description] NVARCHAR(MAX) NULL,
-    [PostTypeId] INT NULL,
+    [Id] TINYINT NOT NULL,
+    [Name] NVARCHAR(100) NULL,
+    [Description] NVARCHAR(300) NULL,
+    [PostTypeId] TINYINT NULL,
     CONSTRAINT [PK_ReviewRejectionReasons] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[ReviewTaskResultTypes] (
-    [Id] INT NOT NULL,
-    [Name] NVARCHAR(250) NULL,
-    [Description] NVARCHAR(MAX) NULL,
+    [Id] TINYINT NOT NULL,
+    [Name] NVARCHAR(100) NULL,
+    [Description] NVARCHAR(300) NULL,
     CONSTRAINT [PK_ReviewTaskResultTypes] PRIMARY KEY ([Id])
 );
 GO
@@ -244,36 +244,36 @@ GO
 CREATE TABLE [{{schema}}].[ReviewTaskResults] (
     [Id] INT NOT NULL,
     [ReviewTaskId] INT NULL,
-    [ReviewTaskResultTypeId] INT NULL,
-    [CreationDate] DATETIME NULL,
-    [RejectionReasonId] INT NULL,
-    [Comment] NVARCHAR(MAX) NULL,
+    [ReviewTaskResultTypeId] TINYINT NULL,
+    [CreationDate] DATE NULL,
+    [RejectionReasonId] TINYINT NULL,
+    [Comment] NVARCHAR(400) NULL,
     CONSTRAINT [PK_ReviewTaskResults] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[ReviewTaskStates] (
-    [Id] INT NOT NULL,
-    [Name] NVARCHAR(250) NULL,
-    [Description] NVARCHAR(MAX) NULL,
+    [Id] TINYINT NOT NULL,
+    [Name] NVARCHAR(50) NULL,
+    [Description] NVARCHAR(300) NULL,
     CONSTRAINT [PK_ReviewTaskStates] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[ReviewTaskTypes] (
-    [Id] INT NOT NULL,
-    [Name] NVARCHAR(250) NULL,
-    [Description] NVARCHAR(MAX) NULL,
+    [Id] TINYINT NOT NULL,
+    [Name] NVARCHAR(50) NULL,
+    [Description] NVARCHAR(300) NULL,
     CONSTRAINT [PK_ReviewTaskTypes] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[ReviewTasks] (
     [Id] INT NOT NULL,
-    [ReviewTaskTypeId] INT NULL,
-    [CreationDate] DATETIME NULL,
-    [DeletionDate] DATETIME NULL,
-    [ReviewTaskStateId] INT NULL,
+    [ReviewTaskTypeId] TINYINT NULL,
+    [CreationDate] DATE NULL,
+    [DeletionDate] DATE NULL,
+    [ReviewTaskStateId] TINYINT NULL,
     [PostId] INT NULL,
     [SuggestedEditId] INT NULL,
     [CompletedByReviewTaskId] INT NULL,
@@ -285,7 +285,7 @@ CREATE TABLE [{{schema}}].[SuggestedEditVotes] (
     [Id] INT NOT NULL,
     [SuggestedEditId] INT NULL,
     [UserId] INT NULL,
-    [VoteTypeId] INT NULL,
+    [VoteTypeId] TINYINT NULL,
     [CreationDate] DATETIME NULL,
     [TargetUserId] INT NULL,
     [TargetRepChange] INT NULL,
@@ -300,7 +300,7 @@ CREATE TABLE [{{schema}}].[SuggestedEdits] (
     [ApprovalDate] DATETIME NULL,
     [RejectionDate] DATETIME NULL,
     [OwnerUserId] INT NULL,
-    [Comment] NVARCHAR(MAX) NULL,
+    [Comment] NVARCHAR(800) NULL,
     [Text] NVARCHAR(MAX) NULL,
     [Title] NVARCHAR(250) NULL,
     [Tags] NVARCHAR(250) NULL,
@@ -311,8 +311,8 @@ GO
 
 CREATE TABLE [{{schema}}].[TagSynonyms] (
     [Id] INT NOT NULL,
-    [SourceTagName] NVARCHAR(250) NULL,
-    [TargetTagName] NVARCHAR(250) NULL,
+    [SourceTagName] NVARCHAR(35) NULL,
+    [TargetTagName] NVARCHAR(35) NULL,
     [CreationDate] DATETIME NULL,
     [OwnerUserId] INT NULL,
     [AutoRenameCount] INT NULL,
@@ -326,7 +326,7 @@ GO
 
 CREATE TABLE [{{schema}}].[Tags] (
     [Id] INT NOT NULL,
-    [TagName] NVARCHAR(250) NULL,
+    [TagName] NVARCHAR(35) NULL,
     [Count] INT NULL,
     [ExcerptPostId] INT NULL,
     [WikiPostId] INT NULL,
@@ -338,24 +338,24 @@ CREATE TABLE [{{schema}}].[Users] (
     [Id] INT NOT NULL,
     [Reputation] INT NULL,
     [CreationDate] DATETIME NULL,
-    [DisplayName] NVARCHAR(250) NULL,
+    [DisplayName] NVARCHAR(40) NULL,
     [LastAccessDate] DATETIME NULL,
-    [WebsiteUrl] NVARCHAR(250) NULL,
-    [Location] NVARCHAR(250) NULL,
+    [WebsiteUrl] NVARCHAR(200) NULL,
+    [Location] NVARCHAR(100) NULL,
     [AboutMe] NVARCHAR(MAX) NULL,
     [Views] INT NULL,
     [UpVotes] INT NULL,
     [DownVotes] INT NULL,
-    [ProfileImageUrl] NVARCHAR(250) NULL,
-    [EmailHash] NVARCHAR(250) NULL,
+    [ProfileImageUrl] NVARCHAR(200) NULL,
+    [EmailHash] VARCHAR(32) NULL,
     [AccountId] INT NULL,
     CONSTRAINT [PK_Users] PRIMARY KEY ([Id])
 );
 GO
 
 CREATE TABLE [{{schema}}].[VoteTypes] (
-    [Id] INT NOT NULL,
-    [Name] NVARCHAR(250) NULL,
+    [Id] TINYINT NOT NULL,
+    [Name] NVARCHAR(50) NULL,
     CONSTRAINT [PK_VoteTypes] PRIMARY KEY ([Id])
 );
 GO
@@ -363,7 +363,7 @@ GO
 CREATE TABLE [{{schema}}].[Votes] (
     [Id] INT NOT NULL,
     [PostId] INT NULL,
-    [VoteTypeId] INT NULL,
+    [VoteTypeId] TINYINT NULL,
     [UserId] INT NULL,
     [CreationDate] DATETIME NULL,
     [BountyAmount] INT NULL,

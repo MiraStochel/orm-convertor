@@ -8,7 +8,7 @@ public class SuggestedEditVotes
 
     public int? UserId { get; set; }
 
-    public int? VoteTypeId { get; set; }
+    public byte? VoteTypeId { get; set; }
 
     public DateTime? CreationDate { get; set; }
 

@@ -10,7 +10,7 @@ public class Badges
 
     public DateTime? Date { get; set; }
 
-    public int? Class { get; set; }
+    public byte? Class { get; set; }
 
     public bool? TagBased { get; set; }
 }

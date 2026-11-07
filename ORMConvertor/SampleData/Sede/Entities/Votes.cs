@@ -6,7 +6,7 @@ public class Votes
 
     public int? PostId { get; set; }
 
-    public int? VoteTypeId { get; set; }
+    public byte? VoteTypeId { get; set; }
 
     public int? UserId { get; set; }
 

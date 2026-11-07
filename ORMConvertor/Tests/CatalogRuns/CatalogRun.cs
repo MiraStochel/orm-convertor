@@ -28,6 +28,9 @@ internal sealed class CatalogCell
     /// <summary>The features the target could not say in its own language, where it fell back.</summary>
     public string? FallbackFeatures { get; set; }
 
+    /// <summary>What the translation left out with a Loss record (decision 070): a projection outside the vocabulary, an ordering it does not carry. The artifact is poorer by it, and a read that misses a column says so.</summary>
+    public string? Lost { get; set; }
+
     /// <summary>Why the artifact could not be compiled or its factory built, or null when it could.</summary>
     public string? Unprepared { get; set; }
 
@@ -356,6 +359,8 @@ internal sealed class CatalogRun
                     cell.FallbackFeatures = cell.FellBack
                         ? string.Join("; ", fallbacks.Select(record => $"{record.Feature?.ToString() ?? "-"}: {record.Reason}").Distinct())
                         : null;
+                    var losses = conversion.Records.Where(record => record.Kind == ConversionRecordKind.Loss).Select(record => record.Reason).Distinct().ToList();
+                    cell.Lost = losses.Count > 0 ? string.Join("; ", losses) : null;
 
                     started = Stopwatch.GetTimestamp();
                     try
@@ -382,7 +387,7 @@ internal sealed class CatalogRun
                     catch (Exception exception)
                     {
                         cell.Selected = Stopwatch.GetElapsedTime(started);
-                        cell.Failed = Innermost(exception).Message;
+                        cell.Failed = Innermost(exception).Message + (cell.Lost is null ? string.Empty : $" (the translation lost: {cell.Lost})");
                     }
                 }
 

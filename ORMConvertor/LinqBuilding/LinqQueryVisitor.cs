@@ -409,6 +409,14 @@ public abstract class LinqQueryVisitor(
     /// </summary>
     private string Beside(QueryOperand operand, QueryOperand other)
     {
+        // T-SQL compares a BIT column with 0 or 1, and reads any other number as 1; C# compares
+        // a bool with a bool, so the number becomes the truth value it stands for (found over
+        // the SEDE catalog, decision 208: WHERE TagBased = 0 over a BIT column).
+        if (operand.IsConstant && operand.Constant!.Type is { } whole && IsIntegral(whole) && ScalarOf(other) == ScalarType.Bool)
+        {
+            return operand.Constant.Text.Trim().TrimStart('+', '-').TrimStart('0').Length == 0 ? "false" : "true";
+        }
+
         if (operand.IsConstant && operand.Constant!.Type is { } type && IsFractional(type))
         {
             var scalar = ScalarOf(other);
@@ -422,6 +430,8 @@ public abstract class LinqQueryVisitor(
     }
 
     private static bool IsFractional(ScalarType scalar) => scalar is ScalarType.Decimal or ScalarType.Double or ScalarType.Float;
+
+    private static bool IsIntegral(ScalarType scalar) => scalar is ScalarType.Byte or ScalarType.Short or ScalarType.Int or ScalarType.Long;
 
     /// <summary>
     /// The inline array of an IN list (decision 074). Its element type is inferred from the

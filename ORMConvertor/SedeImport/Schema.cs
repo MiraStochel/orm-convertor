@@ -323,13 +323,35 @@ public sealed class Schema
         foreach (var line in lines.Skip(1))
         {
             var fields = Fields(line);
-            listing[(fields[table].Trim(), fields[column].Trim())] = (
-                fields[type].Trim().ToUpperInvariant(),
+            // The listing links a table to its sample data as "query://...?table=Posts|Posts";
+            // the name is what follows the bar.
+            var name = fields[table].Trim();
+            name = name[(name.LastIndexOf('|') + 1)..];
+            listing[(name, fields[column].Trim())] = (
+                ListedType(fields[type].Trim()),
                 nullable < 0 ? null : fields[nullable].Trim().Equals("YES", StringComparison.OrdinalIgnoreCase) || fields[nullable].Trim() == "1");
         }
 
         log.WriteLine($"Schema/types.csv: {listing.Count} columns listed.");
         return listing;
+    }
+
+    /// <summary>
+    /// The type as T-SQL declares it: the listing writes the precision of a whole number in
+    /// parentheses (int(10), tinyint(3)), which T-SQL has no place for, and the unbounded
+    /// length of a text as -1 (nvarchar(-1)), which T-SQL spells MAX.
+    /// </summary>
+    private static string ListedType(string listed)
+    {
+        var type = listed.ToUpperInvariant();
+        var parenthesis = type.IndexOf('(');
+        var baseType = parenthesis < 0 ? type : type[..parenthesis];
+        return baseType switch
+        {
+            "INT" or "TINYINT" or "SMALLINT" or "BIGINT" or "BIT" or "DATETIME" or "DATETIME2" or "DATE" or "UNIQUEIDENTIFIER" or "FLOAT" or "REAL" => baseType,
+            _ when type.EndsWith("(-1)", StringComparison.Ordinal) => baseType + "(MAX)",
+            _ => type,
+        };
     }
 
     private static List<string> Fields(string line)

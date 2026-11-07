@@ -4,7 +4,7 @@ public class Posts
 {
     public int Id { get; set; }
 
-    public int? PostTypeId { get; set; }
+    public byte? PostTypeId { get; set; }
 
     public int? AcceptedAnswerId { get; set; }
 

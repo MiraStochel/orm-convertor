@@ -4,15 +4,15 @@ public class PendingFlags
 {
     public int Id { get; set; }
 
-    public int? FlagTypeId { get; set; }
+    public byte? FlagTypeId { get; set; }
 
     public int? PostId { get; set; }
 
     public DateTime? CreationDate { get; set; }
 
-    public int? CloseReasonTypeId { get; set; }
+    public byte? CloseReasonTypeId { get; set; }
 
-    public int? CloseAsOffTopicReasonTypeId { get; set; }
+    public short? CloseAsOffTopicReasonTypeId { get; set; }
 
     public int? DuplicateOfQuestionId { get; set; }
 

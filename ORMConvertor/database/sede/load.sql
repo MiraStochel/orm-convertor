@@ -28,7 +28,7 @@ GO
 CREATE TABLE [sede_load].[Badges] ([Id] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [UserId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [Name] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [Date] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [Class] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [TagBased] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8);
 BULK INSERT [sede_load].[Badges] FROM '$(DataPath)/Badges.csv' WITH (FORMAT = 'CSV', FIELDQUOTE = '"', FIELDTERMINATOR = ',', ROWTERMINATOR = '0x0a', CODEPAGE = 'RAW', TABLOCK);
 INSERT INTO [{{schema}}].[Badges] WITH (TABLOCK) ([Id], [UserId], [Name], [Date], [Class], [TagBased])
-SELECT CAST(NULLIF([Id], '') AS INT), CAST(NULLIF([UserId], '') AS INT), [Name], CONVERT(DATETIME, NULLIF([Date], ''), 126), CAST(NULLIF([Class], '') AS INT), CASE NULLIF([TagBased], '') WHEN 'True' THEN 1 WHEN 'False' THEN 0 WHEN '1' THEN 1 WHEN '0' THEN 0 END
+SELECT CAST(NULLIF([Id], '') AS INT), CAST(NULLIF([UserId], '') AS INT), [Name], CONVERT(DATETIME, NULLIF([Date], ''), 126), CAST(NULLIF([Class], '') AS TINYINT), CASE NULLIF([TagBased], '') WHEN 'True' THEN 1 WHEN 'False' THEN 0 WHEN '1' THEN 1 WHEN '0' THEN 0 END
 FROM [sede_load].[Badges];
 DROP TABLE [sede_load].[Badges];
 GO
@@ -44,7 +44,7 @@ GO
 CREATE TABLE [sede_load].[PostHistory] ([Id] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [PostHistoryTypeId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [PostId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [RevisionGUID] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [CreationDate] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [UserId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [UserDisplayName] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [Comment] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [Text] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [ContentLicense] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8);
 BULK INSERT [sede_load].[PostHistory] FROM '$(DataPath)/PostHistory.csv' WITH (FORMAT = 'CSV', FIELDQUOTE = '"', FIELDTERMINATOR = ',', ROWTERMINATOR = '0x0a', CODEPAGE = 'RAW', TABLOCK);
 INSERT INTO [{{schema}}].[PostHistory] WITH (TABLOCK) ([Id], [PostHistoryTypeId], [PostId], [RevisionGUID], [CreationDate], [UserId], [UserDisplayName], [Comment], [Text], [ContentLicense])
-SELECT CAST(NULLIF([Id], '') AS INT), CAST(NULLIF([PostHistoryTypeId], '') AS INT), CAST(NULLIF([PostId], '') AS INT), CAST(NULLIF([RevisionGUID], '') AS UNIQUEIDENTIFIER), CONVERT(DATETIME, NULLIF([CreationDate], ''), 126), CAST(NULLIF([UserId], '') AS INT), [UserDisplayName], [Comment], [Text], [ContentLicense]
+SELECT CAST(NULLIF([Id], '') AS INT), CAST(NULLIF([PostHistoryTypeId], '') AS TINYINT), CAST(NULLIF([PostId], '') AS INT), CAST(NULLIF([RevisionGUID], '') AS UNIQUEIDENTIFIER), CONVERT(DATETIME, NULLIF([CreationDate], ''), 126), CAST(NULLIF([UserId], '') AS INT), [UserDisplayName], [Comment], [Text], [ContentLicense]
 FROM [sede_load].[PostHistory];
 DROP TABLE [sede_load].[PostHistory];
 GO
@@ -52,7 +52,7 @@ GO
 CREATE TABLE [sede_load].[PostLinks] ([Id] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [CreationDate] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [PostId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [RelatedPostId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [LinkTypeId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8);
 BULK INSERT [sede_load].[PostLinks] FROM '$(DataPath)/PostLinks.csv' WITH (FORMAT = 'CSV', FIELDQUOTE = '"', FIELDTERMINATOR = ',', ROWTERMINATOR = '0x0a', CODEPAGE = 'RAW', TABLOCK);
 INSERT INTO [{{schema}}].[PostLinks] WITH (TABLOCK) ([Id], [CreationDate], [PostId], [RelatedPostId], [LinkTypeId])
-SELECT CAST(NULLIF([Id], '') AS INT), CONVERT(DATETIME, NULLIF([CreationDate], ''), 126), CAST(NULLIF([PostId], '') AS INT), CAST(NULLIF([RelatedPostId], '') AS INT), CAST(NULLIF([LinkTypeId], '') AS INT)
+SELECT CAST(NULLIF([Id], '') AS BIGINT), CONVERT(DATETIME, NULLIF([CreationDate], ''), 126), CAST(NULLIF([PostId], '') AS INT), CAST(NULLIF([RelatedPostId], '') AS INT), CAST(NULLIF([LinkTypeId], '') AS TINYINT)
 FROM [sede_load].[PostLinks];
 DROP TABLE [sede_load].[PostLinks];
 GO
@@ -60,7 +60,7 @@ GO
 CREATE TABLE [sede_load].[Posts] ([Id] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [PostTypeId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [AcceptedAnswerId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [ParentId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [CreationDate] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [DeletionDate] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [Score] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [ViewCount] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [Body] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [OwnerUserId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [OwnerDisplayName] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [LastEditorUserId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [LastEditorDisplayName] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [LastEditDate] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [LastActivityDate] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [Title] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [Tags] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [AnswerCount] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [CommentCount] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [FavoriteCount] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [ClosedDate] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [CommunityOwnedDate] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [ContentLicense] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8);
 BULK INSERT [sede_load].[Posts] FROM '$(DataPath)/Posts.csv' WITH (FORMAT = 'CSV', FIELDQUOTE = '"', FIELDTERMINATOR = ',', ROWTERMINATOR = '0x0a', CODEPAGE = 'RAW', TABLOCK);
 INSERT INTO [{{schema}}].[Posts] WITH (TABLOCK) ([Id], [PostTypeId], [AcceptedAnswerId], [ParentId], [CreationDate], [DeletionDate], [Score], [ViewCount], [Body], [OwnerUserId], [OwnerDisplayName], [LastEditorUserId], [LastEditorDisplayName], [LastEditDate], [LastActivityDate], [Title], [Tags], [AnswerCount], [CommentCount], [FavoriteCount], [ClosedDate], [CommunityOwnedDate], [ContentLicense])
-SELECT CAST(NULLIF([Id], '') AS INT), CAST(NULLIF([PostTypeId], '') AS INT), CAST(NULLIF([AcceptedAnswerId], '') AS INT), CAST(NULLIF([ParentId], '') AS INT), CONVERT(DATETIME, NULLIF([CreationDate], ''), 126), CONVERT(DATETIME, NULLIF([DeletionDate], ''), 126), CAST(NULLIF([Score], '') AS INT), CAST(NULLIF([ViewCount], '') AS INT), [Body], CAST(NULLIF([OwnerUserId], '') AS INT), [OwnerDisplayName], CAST(NULLIF([LastEditorUserId], '') AS INT), [LastEditorDisplayName], CONVERT(DATETIME, NULLIF([LastEditDate], ''), 126), CONVERT(DATETIME, NULLIF([LastActivityDate], ''), 126), [Title], [Tags], CAST(NULLIF([AnswerCount], '') AS INT), CAST(NULLIF([CommentCount], '') AS INT), CAST(NULLIF([FavoriteCount], '') AS INT), CONVERT(DATETIME, NULLIF([ClosedDate], ''), 126), CONVERT(DATETIME, NULLIF([CommunityOwnedDate], ''), 126), [ContentLicense]
+SELECT CAST(NULLIF([Id], '') AS INT), CAST(NULLIF([PostTypeId], '') AS TINYINT), CAST(NULLIF([AcceptedAnswerId], '') AS INT), CAST(NULLIF([ParentId], '') AS INT), CONVERT(DATETIME, NULLIF([CreationDate], ''), 126), CONVERT(DATETIME, NULLIF([DeletionDate], ''), 126), CAST(NULLIF([Score], '') AS INT), CAST(NULLIF([ViewCount], '') AS INT), [Body], CAST(NULLIF([OwnerUserId], '') AS INT), [OwnerDisplayName], CAST(NULLIF([LastEditorUserId], '') AS INT), [LastEditorDisplayName], CONVERT(DATETIME, NULLIF([LastEditDate], ''), 126), CONVERT(DATETIME, NULLIF([LastActivityDate], ''), 126), [Title], [Tags], CAST(NULLIF([AnswerCount], '') AS INT), CAST(NULLIF([CommentCount], '') AS INT), CAST(NULLIF([FavoriteCount], '') AS INT), CONVERT(DATETIME, NULLIF([ClosedDate], ''), 126), CONVERT(DATETIME, NULLIF([CommunityOwnedDate], ''), 126), [ContentLicense]
 FROM [sede_load].[Posts];
 DROP TABLE [sede_load].[Posts];
 GO
@@ -84,7 +84,7 @@ GO
 CREATE TABLE [sede_load].[Votes] ([Id] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [PostId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [VoteTypeId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [UserId] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [CreationDate] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8, [BountyAmount] VARCHAR(MAX) COLLATE Latin1_General_100_BIN2_UTF8);
 BULK INSERT [sede_load].[Votes] FROM '$(DataPath)/Votes.csv' WITH (FORMAT = 'CSV', FIELDQUOTE = '"', FIELDTERMINATOR = ',', ROWTERMINATOR = '0x0a', CODEPAGE = 'RAW', TABLOCK);
 INSERT INTO [{{schema}}].[Votes] WITH (TABLOCK) ([Id], [PostId], [VoteTypeId], [UserId], [CreationDate], [BountyAmount])
-SELECT CAST(NULLIF([Id], '') AS INT), CAST(NULLIF([PostId], '') AS INT), CAST(NULLIF([VoteTypeId], '') AS INT), CAST(NULLIF([UserId], '') AS INT), CONVERT(DATETIME, NULLIF([CreationDate], ''), 126), CAST(NULLIF([BountyAmount], '') AS INT)
+SELECT CAST(NULLIF([Id], '') AS INT), CAST(NULLIF([PostId], '') AS INT), CAST(NULLIF([VoteTypeId], '') AS TINYINT), CAST(NULLIF([UserId], '') AS INT), CONVERT(DATETIME, NULLIF([CreationDate], ''), 126), CAST(NULLIF([BountyAmount], '') AS INT)
 FROM [sede_load].[Votes];
 DROP TABLE [sede_load].[Votes];
 GO
@@ -99,7 +99,7 @@ INNER JOIN [{{schema}}].[Tags] t ON t.[TagName] = REPLACE(s.[value], '>', '')
 WHERE p.[Tags] IS NOT NULL;
 GO
 
--- PostTypes, as the documentation lists it.
+-- PostTypes, as the documentation lists it, cut to the length of Name.
 INSERT INTO [{{schema}}].[PostTypes] ([Id], [Name]) VALUES
     (1, N'Question'),
     (2, N'Answer'),
@@ -118,7 +118,7 @@ INSERT INTO [{{schema}}].[PostTypes] ([Id], [Name]) VALUES
     (17, N'CollectiveCollection');
 GO
 
--- PostHistoryTypes, as the documentation lists it.
+-- PostHistoryTypes, as the documentation lists it, cut to the length of Name.
 INSERT INTO [{{schema}}].[PostHistoryTypes] ([Id], [Name]) VALUES
     (1, N'Initial Title'),
     (2, N'Initial Body'),
@@ -153,11 +153,11 @@ INSERT INTO [{{schema}}].[PostHistoryTypes] ([Id], [Name]) VALUES
     (38, N'Post merge destination'),
     (50, N'Bumped by Community User'),
     (52, N'Question became hot network question'),
-    (53, N'Question removed from hot network/meta questions by a moderator'),
+    (53, N'Question removed from hot network/meta questions b'),
     (66, N'Created from Ask Wizard');
 GO
 
--- CloseReasonTypes, as the documentation lists it.
+-- CloseReasonTypes, as the documentation lists it, cut to the length of Name.
 INSERT INTO [{{schema}}].[CloseReasonTypes] ([Id], [Name]) VALUES
     (1, N'Exact Duplicate'),
     (2, N'Off-topic'),
@@ -173,9 +173,8 @@ INSERT INTO [{{schema}}].[CloseReasonTypes] ([Id], [Name]) VALUES
     (105, N'Primarily opinion-based');
 GO
 
--- VoteTypes, as the documentation lists it.
+-- VoteTypes, as the documentation lists it, cut to the length of Name; left out as outside TINYINT: -1.
 INSERT INTO [{{schema}}].[VoteTypes] ([Id], [Name]) VALUES
-    (-1, N'InformModerator'),
     (0, N'UndoMod'),
     (1, N'AcceptedByOriginator'),
     (2, N'UpMod'),

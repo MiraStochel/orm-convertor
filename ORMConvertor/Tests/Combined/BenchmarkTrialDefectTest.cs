@@ -122,6 +122,25 @@ public class BenchmarkTrialDefectTest
             QueryFeature.Projection);
     }
 
+    /* ---- a BIT column compared with a number ---------------------------------------- */
+
+    /// <summary>
+    /// T-SQL compares a BIT column with 0 or 1 and reads any other number as 1; C# compares a
+    /// bool with a bool, so the LINQ writes the truth value the number stands for (found over
+    /// the SEDE catalog, decision 208: WHERE TagBased = 0 did not compile, CS0019).
+    /// </summary>
+    [Theory]
+    [InlineData("p.IsDiscontinued = 0", "p.IsDiscontinued == false")]
+    [InlineData("p.IsDiscontinued = 1", "p.IsDiscontinued == true")]
+    [InlineData("0 <> p.IsDiscontinued", "false != p.IsDiscontinued")]
+    public void ABitColumnComparedWithANumberIsComparedWithABoolean(string condition, string linq)
+    {
+        var sql = $"SELECT p.Sku FROM {{{{schema}}}}.ShopProducts p WHERE {condition}";
+
+        Assert.Contains(linq, Text(Convert(ORMEnum.EFCore, sql)));
+        Assert.Contains(condition, Text(Convert(ORMEnum.Dapper, sql)));
+    }
+
     /* ---- a projection dropped under a CASE ------------------------------------------- */
 
     private const string RatioUnderTop =

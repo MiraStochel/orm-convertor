@@ -144,10 +144,18 @@ public static class Scripts
 
         foreach (var enumeration in schema.Enumerations)
         {
+            // The documentation describes a type in a sentence where SEDE names it in a word or
+            // two, so a name longer than the column is cut to the column's length.
+            var length = Length(schema.ByName[enumeration.Table].Columns.Single(column => column.Name == "Name").SqlType);
+            var idType = schema.ByName[enumeration.Table].Columns.Single(column => column.Name == "Id").SqlType;
+            // The documentation also lists values SEDE's key cannot hold - the VoteTypes -1 and
+            // 0 of a TINYINT key -, which are left out with their reason.
+            var fitting = enumeration.Values.Where(value => Fits(value.Id, idType)).ToList();
             text.AppendLine();
-            text.AppendLine($"-- {enumeration.Table}, as the documentation lists it.");
+            text.AppendLine($"-- {enumeration.Table}, as the documentation lists it, cut to the length of Name"
+                + (fitting.Count == enumeration.Values.Count ? "." : $"; left out as outside {idType}: {string.Join(", ", enumeration.Values.Where(value => !Fits(value.Id, idType)).Select(value => value.Id))}."));
             text.AppendLine($"INSERT INTO [{{{{schema}}}}].[{enumeration.Table}] ([Id], [Name]) VALUES");
-            text.AppendLine(string.Join(",\n", enumeration.Values.Select(value => $"    ({value.Id}, N'{value.Name.Replace("'", "''")}')")) + ";");
+            text.AppendLine(string.Join(",\n", fitting.Select(value => $"    ({value.Id}, N'{Cut(value.Name, length).Replace("'", "''")}')")) + ";");
             text.AppendLine("GO");
         }
 
@@ -157,6 +165,22 @@ public static class Scripts
 
         return text.ToString();
     }
+
+    /// <summary>The length a text type declares, or null for MAX or a type without one.</summary>
+    private static int? Length(string sqlType)
+    {
+        var open = sqlType.IndexOf('(');
+        return open < 0 || sqlType.EndsWith("(MAX)", StringComparison.OrdinalIgnoreCase) ? null : int.Parse(sqlType[(open + 1)..sqlType.IndexOf(')')]);
+    }
+
+    private static string Cut(string name, int? length) => length is { } limit && name.Length > limit ? name[..limit].TrimEnd() : name;
+
+    private static bool Fits(int id, string sqlType) => Column.BaseType(sqlType) switch
+    {
+        "TINYINT" => id is >= 0 and <= 255,
+        "SMALLINT" => id is >= short.MinValue and <= short.MaxValue,
+        _ => true,
+    };
 
     /// <summary>The tables the converter reads from the dump and the columns it writes, in the order load.sql stages them: table, file, columns.</summary>
     public static string Dump(Schema schema)

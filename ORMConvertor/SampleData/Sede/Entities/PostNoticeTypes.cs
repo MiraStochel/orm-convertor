@@ -4,7 +4,7 @@ public class PostNoticeTypes
 {
     public int Id { get; set; }
 
-    public int? ClassId { get; set; }
+    public byte? ClassId { get; set; }
 
     public string? Name { get; set; }
 

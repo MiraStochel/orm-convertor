@@ -4,7 +4,7 @@ public class PostHistory
 {
     public int Id { get; set; }
 
-    public int? PostHistoryTypeId { get; set; }
+    public byte? PostHistoryTypeId { get; set; }
 
     public int? PostId { get; set; }
 

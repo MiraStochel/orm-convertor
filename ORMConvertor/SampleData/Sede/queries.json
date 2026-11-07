@@ -1,5 +1,5 @@
 {
-  "generatedBy": "SedeImport over hirupert/sede 2bf2612, types provisional from tables_so.json, statuses checked against Sede holding dba.stackexchange.com-2024-04-06, every translated text run once. Generated: change the tool and run it again rather than this file.",
+  "generatedBy": "SedeImport over hirupert/sede 2bf2612, types from the listing of the SEDE catalog, statuses checked against Sede holding dba.stackexchange.com-2024-04-06, every translated text run once. Generated: change the tool and run it again rather than this file.",
   "queries": [
     {
       "key": "s1233",
@@ -24382,7 +24382,7 @@
       "sql": "SELECT  OwnerUserId as [User Link], Id As [Post Link]\nFROM Posts\nWHERE ParentId IN (\n    SELECT ID\n    FROM Posts\n    WHERE Tags like '%data.table%'\n      AND Body COLLATE Latin1_General_CS_AS like '%column%'\n  )\n  AND Body COLLATE Latin1_General_CS_AS like '%.BY%'",
       "sedeSql": "SELECT  OwnerUserId as [User Link], Id As [Post Link]\nFROM Posts\nWHERE ParentId IN (\n    SELECT ID\n    FROM Posts\n    WHERE Tags like '%data.table%'\n      AND Body COLLATE Latin1_General_CS_AS like '%column%'\n  )\n  AND Body COLLATE Latin1_General_CS_AS like '%.BY%'",
       "translation": "AsSpecified",
-      "note": ""
+      "note": "Returns no rows over dba.stackexchange.com-2024-04-06 with the stated values."
     },
     {
       "key": "s611696",
@@ -24992,7 +24992,7 @@
       "sql": "SELECT \nId As [Post Link],\nCreationDate\nFROM Posts\nWHERE Body LIKE '%astronomy.stackexchange.com%'\nORDER BY CreationDate DESC",
       "sedeSql": "SELECT \nId As [Post Link],\nCreationDate\nFROM Posts\nWHERE Body LIKE '%astronomy.stackexchange.com%'\nORDER BY CreationDate DESC",
       "translation": "AsSpecified",
-      "note": ""
+      "note": "Returns no rows over dba.stackexchange.com-2024-04-06 with the stated values."
     },
     {
       "key": "s630197",
@@ -40089,7 +40089,7 @@
       "sql": "SELECT  TOP (@num)\n  Id As [Post Link], OwnerUserId AS [User Link], CreationDate, LastActivityDate,  Score, ViewCount, Body\n  FROM Posts WHERE\n    (CONCAT(LOWER(Title),' ',LOWER(Body)) LIKE ('%' + @text1 + '%')) AND (CONCAT(LOWER(Title),' ',LOWER(Body)) Like ('%' + @text2 + '%'))\n  ORDER BY CreationDate DESC",
       "sedeSql": "SELECT  TOP ##num?100##\n  Id As [Post Link], OwnerUserId AS [User Link], CreationDate, LastActivityDate,  Score, ViewCount, Body\n  FROM Posts WHERE\n    (CONCAT(LOWER(Title),' ',LOWER(Body)) LIKE '%##text1?cauchy##%') AND (CONCAT(LOWER(Title),' ',LOWER(Body)) Like '%##text2?swartz##%')\n  ORDER BY CreationDate DESC",
       "translation": "AsSpecified",
-      "note": ""
+      "note": "Returns no rows over dba.stackexchange.com-2024-04-06 with the stated values."
     },
     {
       "key": "s1158204",
