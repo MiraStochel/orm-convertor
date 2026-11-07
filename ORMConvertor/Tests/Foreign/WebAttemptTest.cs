@@ -129,8 +129,11 @@ public class WebAttemptTest(ITestOutputHelper output)
     [InlineData("web-zero-shot-1")]
     [InlineData("web-zero-shot-2")]
     [InlineData("web-zero-shot-3")]
+    [InlineData("web-zero-shot-4")]
     [InlineData("web-few-shot-1")]
     [InlineData("web-few-shot-2")]
+    [InlineData("web-few-shot-3")]
+    [InlineData("web-schema-1")]
     public void EveryTemplateStaysReadable(string id)
     {
         var template = WebTemplate.Load(id);
@@ -157,9 +160,89 @@ public class WebAttemptTest(ITestOutputHelper output)
             var target = Enum.GetValues<ORMEnum>().First(framework => framework != source);
             foreach (var template in templates)
             {
+                // The variant schema has no prompt for a key the tool reads no catalog for (decision 207).
+                if (template.Prompt.Contains(WebPrompt.DatabaseSlot, StringComparison.Ordinal) && ForeignInputs.SchemaOf(directory) is null)
+                {
+                    continue;
+                }
+
                 _ = WebPrompt.Render(template, directory, target);
             }
         }
+    }
+
+    /// <summary>
+    /// The export writes the DDL of the catalog the tool reads beside the input (decision 207): the
+    /// fixture's tables for a key of the matrix, the excerpted project's for a case study, nothing
+    /// for an example written for the tool; statements that write rows stay out.
+    /// </summary>
+    [Fact]
+    public void TheExportWritesTheDdlOfTheCatalogBesideTheInput()
+    {
+        using var temp = new TempDirectory();
+
+        var matrix = ExportOne(temp.Path, TrialKey, ORMEnum.Dapper);
+        var ddl = ForeignInputs.SchemaOf(matrix);
+        Assert.NotNull(ddl);
+        Assert.Contains("CREATE TABLE", ddl);
+        Assert.Contains("{{schema}}", ddl);
+        Assert.Contains("ShopOrders", ddl);
+        Assert.DoesNotContain("INSERT", ddl, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ForeignInputs.SchemaFileName, JsonDocument.Parse(File.ReadAllText(Path.Combine(matrix, ForeignInputs.ManifestFileName))).RootElement.GetProperty("schema").GetString());
+
+        var study = Examples.GetExamples.First(example => Examples.RealProjectKeys.Contains(example.Key));
+        var caseStudy = ExportOne(temp.Path, new ForeignKey(ForeignKey.Example, study.Key), study.SourceOrm);
+        var project = ForeignInputs.SchemaOf(caseStudy);
+        Assert.NotNull(project);
+        Assert.Contains("CREATE TABLE", project);
+        Assert.Contains("{{schema}}", project);
+
+        var written = Examples.GetExamples.First(example => !Examples.RealProjectKeys.Contains(example.Key));
+        var forTheTool = ExportOne(temp.Path, new ForeignKey(ForeignKey.Example, written.Key), written.SourceOrm);
+        Assert.Null(ForeignInputs.SchemaOf(forTheTool));
+        Assert.False(File.Exists(Path.Combine(forTheTool, ForeignInputs.SchemaFileName)));
+    }
+
+    /// <summary>The variant schema is zero-shot with the DDL as one more section (decision 207); a key without DDL has no prompt of it, by name.</summary>
+    [Fact]
+    public void ASchemaPromptCarriesTheDdlAndAKeyWithoutOneHasNoPromptOfIt()
+    {
+        using var temp = new TempDirectory();
+        var template = WebTemplate.Load(WebTemplate.ForVariant["schema"]);
+
+        var directory = ExportOne(temp.Path, TrialKey, ORMEnum.Dapper);
+        var prompt = WebPrompt.Render(template, directory, ORMEnum.EFCore);
+        Assert.Contains("## The database", prompt);
+        Assert.Contains("```sql\n", prompt);
+        Assert.Contains("CREATE TABLE", prompt);
+        Assert.Contains("Every table of the input lives in the schema `{{schema}}`", prompt);
+        Assert.Contains("carries no `assembly` attribute", WebTemplate.Load(WebTemplate.ForVariant["zero-shot"]).Shapes[ORMEnum.NHibernate]);
+
+        var written = Examples.GetExamples.First(example => !Examples.RealProjectKeys.Contains(example.Key));
+        var forTheTool = ExportOne(temp.Path, new ForeignKey(ForeignKey.Example, written.Key), written.SourceOrm);
+        var refused = Assert.Throws<InvalidOperationException>(() => WebPrompt.Render(template, forTheTool, ORMEnum.EFCore));
+        Assert.Contains(ForeignInputs.SchemaFileName, refused.Message);
+    }
+
+    /// <summary>A cell may name the set it belongs to (decision 207); the column is optional and reaches the table of attempts.</summary>
+    [Fact]
+    public void ACellMayNameItsSet()
+    {
+        using var temp = new TempDirectory();
+        var file = Path.Combine(temp.Path, WebCell.FileName);
+        File.WriteAllLines(file,
+        [
+            "answers\tsource\ttarget\tvariant\tset",
+            "matrix:AggregationGroupingAndHaving\tDapper\tEFCore\tzero-shot\tbasic",
+            "matrix:AggregationGroupingAndHaving\tDapper\tEFCore\tschema\t",
+        ]);
+
+        var cells = WebCell.Read(file);
+        Assert.Equal(["basic", ""], cells.Select(cell => cell.Set));
+        Assert.Contains("set", WebAttempts.Columns);
+
+        File.WriteAllLines(file, ["answers\tsource\ttarget\tvariant", "matrix:AggregationGroupingAndHaving\tDapper\tEFCore\tfew-shot"]);
+        Assert.Equal(string.Empty, Assert.Single(WebCell.Read(file)).Set);
     }
 
     /// <summary>
@@ -594,6 +677,7 @@ public class WebAttemptTest(ITestOutputHelper output)
         Assert.Equal(whole, Assert.Single(intact));
         Assert.True(WebEnvelope.Repairs("few-shot"));
         Assert.False(WebEnvelope.Repairs("zero-shot"));
+        Assert.False(WebEnvelope.Repairs("schema"));
     }
 
     [Fact]
@@ -631,7 +715,7 @@ public class WebAttemptTest(ITestOutputHelper output)
         const string Model = "{\"model\":\"m\",\"channel\":\"chat\",\"variant\":\"zero-shot\"";
 
         string Row(string id, string answers, string target, string producer, string language, int reached, string outcome, string metadata)
-            => string.Join('\t', id, answers, "Dapper", target, producer, language, reached.ToString(System.Globalization.CultureInfo.InvariantCulture), outcome, "", "", "", "0", "0", "0", "0", metadata);
+            => string.Join('\t', id, answers, "Dapper", target, producer, language, reached.ToString(System.Globalization.CultureInfo.InvariantCulture), outcome, "", "", "", "0", "0", "0", "0", "", metadata);
 
         File.WriteAllLines(Path.Combine(temp.Path, ExperimentRun.RowsFileName),
         [
@@ -661,10 +745,10 @@ public class WebAttemptTest(ITestOutputHelper output)
             output.WriteLine(line);
         }
 
-        Assert.Contains("| llm · m · chat · zero-shot | 2 | 4 | 1 | — | read | 1 of 2 (50 %) | 3 of 4 (75 %) | 1 of 2 (50 %) |", lines);
-        Assert.Contains("| | | | | | compiled | 1 of 2 (50 %) | 2 of 4 (50 %) | 1 of 2 (50 %) |", lines);
-        Assert.Contains("| | | | | | agrees | 1 of 2 (50 %) | 2 of 4 (50 %) | 1 of 2 (50 %) |", lines);
-        Assert.Contains("| llm · m · chat · few-shot | 1 | 2 | 0 | 1 of 2 (50 %) | read | 1 of 1 (100 %) | 2 of 2 (100 %) | 1 of 1 (100 %) |", lines);
+        Assert.Contains("| llm · m · chat · zero-shot | 2 | 4 | 1 | — | — | read | 1 of 2 (50 %) | 3 of 4 (75 %) | 1 of 2 (50 %) |", lines);
+        Assert.Contains("| | | | | | | compiled | 1 of 2 (50 %) | 2 of 4 (50 %) | 1 of 2 (50 %) |", lines);
+        Assert.Contains("| | | | | | | agrees | 1 of 2 (50 %) | 2 of 4 (50 %) | 1 of 2 (50 %) |", lines);
+        Assert.Contains("| llm · m · chat · few-shot | 1 | 2 | 0 | 1 of 2 (50 %) | — | read | 1 of 1 (100 %) | 2 of 2 (100 %) | 1 of 1 (100 %) |", lines);
         Assert.Contains("| matrix:Filtering Dapper → EFCore | llm · m · chat · zero-shot | 4 agrees | 4 agrees · 4 agrees · 1 not compiled |", lines);
         Assert.Contains(lines, line => line.StartsWith("Cells without a row of the tool", StringComparison.Ordinal) && line.Contains("matrix:Projection Dapper → MyBatis", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.StartsWith("| llm | m | zero-shot | .NET → .NET | 4 | 1 |", StringComparison.Ordinal));

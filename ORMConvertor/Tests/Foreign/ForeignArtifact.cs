@@ -65,9 +65,10 @@ internal sealed record ForeignKey(string Kind, string Id)
 /// the record to carry. The suite reads the four fields and copies the fifth.
 ///
 /// The files may carry the <c>{{schema}}</c> placeholder of the fixture scripts and inputs; it
-/// is substituted with the suite's own schema when the artifact is read, which is how one
-/// artifact runs in both suites' schemas and how the inputs the suite exports can be handed
-/// to a model and the answer handed back unchanged.
+/// is substituted with the schema of the catalog the tool reads for the key when the artifact
+/// is read - the suite's own for the fixture, the project's for a case study (decision 207) -,
+/// which is how one artifact runs in both suites' schemas and how the inputs the suite exports
+/// can be handed to a model and the answer handed back unchanged.
 /// </summary>
 internal sealed record ForeignArtifact(
     string Id,
@@ -170,11 +171,14 @@ internal sealed record ForeignArtifact(
     /// directory directly under it that holds one, in the order of their names. A root without
     /// any is a misconfiguration and stops the run.
     /// </summary>
-    public static IReadOnlyList<ForeignArtifact> Discover(string root, string schema)
+    public static IReadOnlyList<ForeignArtifact> Discover(string root, string schema) => Discover(root, _ => schema);
+
+    /// <summary>The artifacts under a root, each read with the schema its key gets (<paramref name="schemaFor"/>).</summary>
+    public static IReadOnlyList<ForeignArtifact> Discover(string root, Func<ForeignKey, string> schemaFor)
     {
         if (File.Exists(Path.Combine(root, ManifestFileName)))
         {
-            return [Read(root, schema)];
+            return [Read(root, schemaFor)];
         }
 
         if (!System.IO.Directory.Exists(root))
@@ -185,7 +189,7 @@ internal sealed record ForeignArtifact(
         var artifacts = System.IO.Directory.GetDirectories(root)
             .Where(directory => File.Exists(Path.Combine(directory, ManifestFileName)))
             .Order(StringComparer.Ordinal)
-            .Select(directory => Read(directory, schema))
+            .Select(directory => Read(directory, schemaFor))
             .ToList();
 
         if (artifacts.Count == 0)
@@ -197,7 +201,10 @@ internal sealed record ForeignArtifact(
     }
 
     /// <summary>Reads one artifact: the manifest, then every unit it names, with the schema placeholder substituted.</summary>
-    public static ForeignArtifact Read(string directory, string schema)
+    public static ForeignArtifact Read(string directory, string schema) => Read(directory, _ => schema);
+
+    /// <summary>Reads one artifact with the schema its key gets: the manifest first, for the key, then every unit it names with the placeholder substituted (decision 207).</summary>
+    public static ForeignArtifact Read(string directory, Func<ForeignKey, string> schemaFor)
     {
         var id = Path.GetFileName(Path.TrimEndingDirectorySeparator(directory));
         var manifestPath = Path.Combine(directory, ManifestFileName);
@@ -229,6 +236,7 @@ internal sealed record ForeignArtifact(
             var source = Framework(id, "source", Required("source"));
             var target = Framework(id, "target", Required("target"));
             var producer = Required("producer");
+            var schema = schemaFor(key);
 
             if (!root.TryGetProperty("units", out var unitsElement) || unitsElement.ValueKind != JsonValueKind.Array || unitsElement.GetArrayLength() == 0)
             {

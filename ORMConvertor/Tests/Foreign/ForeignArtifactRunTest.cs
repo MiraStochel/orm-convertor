@@ -29,7 +29,7 @@ public class ForeignArtifactRunTest(TestSchemaFixture fixture, ITestOutputHelper
             return data;
         }
 
-        var owned = ForeignArtifact.Discover(root.Trim(), TestDatabase.SchemaName)
+        var owned = ForeignArtifact.Discover(root.Trim(), ForeignArtifactRun.SchemaFor)
             .Where(artifact => ForeignArtifactRun.Owns(artifact.Target))
             .ToList();
 
@@ -56,7 +56,9 @@ public class ForeignArtifactRunTest(TestSchemaFixture fixture, ITestOutputHelper
             Assert.Skip($"No foreign artifact of a .NET target configured: set {ForeignArtifact.ArtifactsVariable} to an artifact or a directory of artifacts (decision 172).");
         }
 
-        var artifact = ForeignArtifact.Read(directory, TestDatabase.SchemaName);
+        // The schema of the catalog the tool reads for the key stands in for the placeholder
+        // (decision 207): the fixture's, or the project's in the case-study database.
+        var artifact = ForeignArtifact.Read(directory, ForeignArtifactRun.SchemaFor);
 
         if (artifact.Key.Kind == ForeignKey.Matrix && !fixture.IsAvailable)
         {

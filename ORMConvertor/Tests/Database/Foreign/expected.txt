@@ -156,3 +156,7 @@ outcome = agrees
 [few-shot-aggregation-grouping-and-having-mybatis]
 reached = 4
 outcome = agrees
+
+[q1-nhibernate-assembly-named]
+reached = 4
+outcome = agrees

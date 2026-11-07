@@ -28,8 +28,8 @@ namespace Tests.Database;
 public sealed class TestSchemaFixture : IAsyncLifetime
 {
     internal const string ScriptResourceName = "Tests.Database.TestSchema.sql";
-    private const string DataResourceName = "Tests.Database.Differential.FixtureData.sql";
-    private const string ShapesDataResourceName = "Tests.Database.QueryShapes.FixtureData.sql";
+    internal const string DataResourceName = "Tests.Database.Differential.FixtureData.sql";
+    internal const string ShapesDataResourceName = "Tests.Database.QueryShapes.FixtureData.sql";
     internal const string LdbcSchemaResourceName = "Tests.Database.Ldbc.schema.sql";
     internal const string LdbcConstraintsResourceName = "Tests.Database.Ldbc.constraints.sql";
     private const string LdbcIndexesResourceName = "Tests.Database.Ldbc.indexes.sql";

@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 /**
@@ -23,7 +24,8 @@ import java.util.stream.Stream;
  * wants the record to carry. The suite reads the four fields and copies the fifth.
  *
  * <p>The files may carry the {@code {{schema}}} placeholder of the fixture scripts and inputs;
- * it is substituted with the suite's own schema when the artifact is read, as the inputs are.
+ * it is substituted with the schema of the catalog the tool reads for the key when the artifact
+ * is read - the suite's own for the fixture, the project's for a case study (decision 207).
  *
  * @param id        the name of the artifact's directory
  * @param directory where it was read from
@@ -170,8 +172,13 @@ public record ForeignArtifact(
      * directory directly under it that holds one, in the order of their names.
      */
     public static List<ForeignArtifact> discover(Path root, String schema) {
+        return discover(root, key -> schema);
+    }
+
+    /** The artifacts under a root, each read with the schema its key gets. */
+    public static List<ForeignArtifact> discover(Path root, Function<Key, String> schemaFor) {
         if (Files.exists(root.resolve(MANIFEST_FILE_NAME))) {
-            return List.of(read(root, schema));
+            return List.of(read(root, schemaFor));
         }
 
         if (!Files.isDirectory(root)) {
@@ -182,7 +189,7 @@ public record ForeignArtifact(
         try (Stream<Path> children = Files.list(root)) {
             children.filter(child -> Files.exists(child.resolve(MANIFEST_FILE_NAME)))
                     .sorted()
-                    .forEach(child -> artifacts.add(read(child, schema)));
+                    .forEach(child -> artifacts.add(read(child, schemaFor)));
         } catch (IOException e) {
             throw new UncheckedIOException("The directory " + root + " could not be listed.", e);
         }
@@ -196,6 +203,11 @@ public record ForeignArtifact(
 
     /** Reads one artifact: the manifest, then every unit it names, with the schema placeholder substituted. */
     public static ForeignArtifact read(Path directory, String schema) {
+        return read(directory, key -> schema);
+    }
+
+    /** Reads one artifact with the schema its key gets: the manifest first, for the key, then every unit with the placeholder substituted (decision 207). */
+    public static ForeignArtifact read(Path directory, Function<Key, String> schemaFor) {
         String id = directory.getFileName().toString();
         Path manifestPath = directory.resolve(MANIFEST_FILE_NAME);
         if (!Files.exists(manifestPath)) {
@@ -213,6 +225,7 @@ public record ForeignArtifact(
         int source = framework(id, "source", required(manifest, id, "source"));
         int target = framework(id, "target", required(manifest, id, "target"));
         String producer = required(manifest, id, "producer");
+        String schema = schemaFor.apply(key);
 
         JsonNode unitsNode = manifest.get("units");
         if (unitsNode == null || !unitsNode.isArray() || unitsNode.isEmpty()) {

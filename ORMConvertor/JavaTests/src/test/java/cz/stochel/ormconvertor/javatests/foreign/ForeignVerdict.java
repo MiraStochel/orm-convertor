@@ -19,7 +19,7 @@ import java.util.TreeMap;
  */
 public final class ForeignVerdict {
 
-    public static final String HEADER = "artifact\tanswers\tsource\ttarget\tproducer\tlanguage\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tmetadata";
+    public static final String HEADER = "artifact\tanswers\tsource\ttarget\tproducer\tlanguage\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tassemblyOverwritten\tmetadata";
 
     /** The levels of decision 016 as the row counts them. */
     public static final int LEVEL_NONE = 0;
@@ -124,7 +124,7 @@ public final class ForeignVerdict {
             throw new IllegalArgumentException("A row has " + columns.length + " columns, the header " + expected + ": " + line);
         }
 
-        ForeignVerdict verdict = new ForeignVerdict(columns[0], columns[1], columns[2], columns[3], columns[4], columns[5], columns[15]);
+        ForeignVerdict verdict = new ForeignVerdict(columns[0], columns[1], columns[2], columns[3], columns[4], columns[5], columns[16]);
         verdict.reached = columns[6].isEmpty() ? LEVEL_NONE : Integer.parseInt(columns[6]);
         verdict.stop(columns[7], columns[8]);
         verdict.rows = columns[9].isEmpty() ? null : Integer.valueOf(columns[9]);
@@ -210,6 +210,8 @@ public final class ForeignVerdict {
                 String.format(Locale.ROOT, "%.0f", compileMs),
                 String.format(Locale.ROOT, "%.0f", acceptMs),
                 String.format(Locale.ROOT, "%.0f", runMs),
+                // assemblyOverwritten is the .NET suite's column (an NHibernate mapping, decision 207): empty for every Java target.
+                "",
                 clean(metadata));
     }
 

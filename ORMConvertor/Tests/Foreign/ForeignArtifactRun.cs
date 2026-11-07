@@ -37,6 +37,21 @@ internal static class ForeignArtifactRun
     public static bool Owns(ORMEnum target) => DotNetQueryRunner.Owns(target);
 
     /// <summary>
+    /// The schema that stands in for the placeholder of an artifact answering the key: the schema
+    /// of the catalog the tool reads for it (decision 207) - the fixture's for the matrix, the
+    /// scenarios, the series and the LDBC catalog (whose tables keep their suffix in the file),
+    /// the project's in the case-study database for the excerpt of a real project (decision 176),
+    /// the FIBEN database's own for its catalog.
+    /// </summary>
+    public static string SchemaFor(ForeignKey key) => key.Kind switch
+    {
+        ForeignKey.Fiben => FibenDatabase.Schema,
+        ForeignKey.Example when ORMConvertorAPI.Data.Examples.RealProjectKeys.Contains(key.Id)
+            => TestDatabase.CaseStudySchemaName(Combined.CaseStudySchemaTest.ProjectOf(key.Id)),
+        _ => TestDatabase.SchemaName,
+    };
+
+    /// <summary>
     /// Runs one artifact through the levels and returns its verdict. The callback sees the
     /// verdict after every level, so that a run stopped from outside leaves the level it
     /// reached behind.
@@ -86,6 +101,13 @@ internal static class ForeignArtifactRun
         var entities = artifact.Entities.Select(unit => unit.Content).ToList();
         var mappings = artifact.Mappings.Select(unit => unit.Content).ToList();
         var method = artifact.QueryMethod;
+
+        // The assembly name of an NHibernate mapping is the consumer's, and the acceptance sets
+        // its own whatever the document carried (decisions 028, 207); the row says when it did.
+        if (artifact.Target == ORMEnum.NHibernate)
+        {
+            verdict.AssemblyOverwritten = mappings.Any(NHibernateAcceptance.NamesAnAssembly);
+        }
         var assemblyName = $"Foreign_{Sanitize(artifact.Id)}_{Interlocked.Increment(ref sequence)}";
 
         clock.Restart();
@@ -236,14 +258,23 @@ internal static class ForeignArtifactRun
     {
         var clock = Stopwatch.StartNew();
         var rows = 0;
+        var ran = 0;
         var returning = new List<string>();
+        var unbound = new List<string>();
 
         foreach (var (query, compiled) in queries)
         {
             try
             {
                 using var one = PreparedQuery.Open(artifact.Target, compiled, mappings, connectionString, artifact.Form);
+                if (EntityParameter(one.Parameters) is { } parameter)
+                {
+                    unbound.Add($"{query.Path} ({parameter})");
+                    continue;
+                }
+
                 var count = one.Count(query.Path, [.. one.Parameters.Select(parameter => Sample(parameter.ParameterType))]);
+                ran++;
                 rows += count;
                 if (count > 0)
                 {
@@ -260,11 +291,54 @@ internal static class ForeignArtifactRun
         }
 
         verdict.RunMs = clock.Elapsed.TotalMilliseconds;
+        var limit = unbound.Count > 0 ? $"; not bound and not run: {string.Join(", ", unbound)} - {EntityParameterLimit}" : string.Empty;
+
+        if (ran == 0)
+        {
+            // Every query has a parameter the path has no value for: the project stays accepted.
+            verdict.Outcome = ForeignVerdict.Accepted;
+            verdict.Detail = $"no query of the project ran{limit}";
+            return;
+        }
+
         verdict.Reached = ForeignLevel.Ran;
         verdict.Rows = rows;
         verdict.Outcome = ForeignVerdict.Ran;
-        verdict.Detail = $"{queries.Count} queries ran over the empty tables of the project's schema"
-            + (returning.Count > 0 ? $"; rows came back from {string.Join(", ", returning)}" : string.Empty);
+        verdict.Detail = $"{ran} queries ran over the empty tables of the project's schema"
+            + (returning.Count > 0 ? $"; rows came back from {string.Join(", ", returning)}" : string.Empty)
+            + limit;
+    }
+
+    /// <summary>The stated limit of the path (decision 207): a parameter of an entity type has no sample value, so the query is neither bound nor run.</summary>
+    internal const string EntityParameterLimit = "a parameter of an entity type of the artifact has no sample value, so the query is not run (decision 207)";
+
+    /// <summary>
+    /// The first parameter whose type is an entity of the artifact - a class the artifact's own
+    /// compilation declares, alone or as the element of a collection -, as "name: type", or null
+    /// where every parameter has a sample value. The artifact's assemblies are loaded from bytes
+    /// and have no location; every assembly of the runtime and of a package has one.
+    /// </summary>
+    internal static string? EntityParameter(IReadOnlyList<System.Reflection.ParameterInfo> parameters)
+    {
+        foreach (var parameter in parameters)
+        {
+            var type = Nullable.GetUnderlyingType(parameter.ParameterType) ?? parameter.ParameterType;
+            if (type.IsArray)
+            {
+                type = type.GetElementType()!;
+            }
+            else if (type != typeof(string) && type.IsGenericType && type.GetGenericArguments() is [var element] && typeof(IEnumerable).IsAssignableFrom(type))
+            {
+                type = element;
+            }
+
+            if (!type.IsPrimitive && string.IsNullOrEmpty(type.Assembly.Location))
+            {
+                return $"{parameter.Name}: {type.Name}";
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The fourth level of one query without a measure (decision 182): it runs over the database of the measure, and the row carries how many rows it returned.</summary>
@@ -273,6 +347,14 @@ internal static class ForeignArtifactRun
         var clock = Stopwatch.StartNew();
         try
         {
+            if (EntityParameter(prepared.Parameters) is { } parameter)
+            {
+                verdict.RunMs = clock.Elapsed.TotalMilliseconds;
+                verdict.Outcome = ForeignVerdict.Accepted;
+                verdict.Detail = $"{query.Path} ({parameter}): {EntityParameterLimit}";
+                return;
+            }
+
             var count = prepared.Count(query.Path, [.. prepared.Parameters.Select(parameter => Sample(parameter.ParameterType))]);
             verdict.RunMs = clock.Elapsed.TotalMilliseconds;
             verdict.Reached = ForeignLevel.Ran;
@@ -415,8 +497,7 @@ internal static class ForeignArtifactRun
         return errors.Count == 0 ? null : string.Join("; ", errors.Select(error => $"{error.Message} ({error.Line})"));
     }
 
-    private static IReadOnlyList<MetadataReference> EntityReferences(ORMEnum target)
-        => target == ORMEnum.EFCore ? GeneratedEntityCompiler.EFCoreConsumerReferences : GeneratedEntityCompiler.NHibernateConsumerReferences;
+    private static IReadOnlyList<MetadataReference> EntityReferences(ORMEnum target) => ConsumerReferences.For(target);
 
     /// <summary>The third level of an artifact without a query: the model of EF Core, the session factory of NHibernate; Dapper has nothing to refuse.</summary>
     private static void Accept(ORMEnum target, byte[] compiled, IReadOnlyList<string> mappings)

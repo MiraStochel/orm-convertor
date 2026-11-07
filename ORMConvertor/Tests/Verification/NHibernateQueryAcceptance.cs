@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Xml.Linq;
 using NHibernate;
 using NHibernate.Cfg;
 using NHibernate.Dialect;
@@ -127,15 +126,7 @@ internal static class NHibernateQueryAcceptance
         }
     }
 
+    /// <summary>The consumer's assembly name on the root of the mapping, whatever the document carried (decisions 028, 207); the entity acceptance's rule.</summary>
     private static string QualifyAssembly(string mappingXml, string assemblyName)
-    {
-        var document = XDocument.Parse(mappingXml);
-
-        if (document.Root!.Attribute("assembly") is null)
-        {
-            document.Root.SetAttributeValue("assembly", assemblyName);
-        }
-
-        return document.ToString();
-    }
+        => NHibernateAcceptance.QualifyAssembly(mappingXml, assemblyName);
 }

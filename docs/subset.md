@@ -276,6 +276,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | `${…}` MyBatisu | textová substituce, ne hodnota | `Failure` (č) | VM | [082], [084] |
 | hodnota z okolí v LINQ hlubší než jméno nebo člen jména (`tokenResult.Data.UserId`, `query.PageVersionId.Value`); převod výčtu na číslo (`(short)query.Status`, `(int)Status.Latest`) | parametr LINQ je zachycené jméno a jeho člen (rozh. 083), delší řetěz čtení za hodnotu nebere; slovník převodů nese čísla, ne výčet, a parametr pod převodem nemá z čeho vzít skalár | `Failure` (č); hodnota vyčíslená do lokální proměnné před dotazem se čte | VM | [083], [113] |
 | konstanta výčtu či statický člen typu, který jednotka nedeklaruje, bez převodu (`x.Status == Status.Latest`) | jednotka o jménu nic neříká a člen jména, které není řádkem dotazu, je hodnota z okolí (rozh. 083, 114); nástroj čte bez referencí (S1) | parametr `Status_Latest`, který volající naváže; tytéž řádky, podpis metody o parametr delší | VM | [083], [114] |
+| parametr typu entity v cizím artefaktu (projekt případové studie, bod řady), který cesta cizího artefaktu soudí na 4. stupni | cesta váže vzorovou hodnotu podle typu a instance entity vzor nemá; nástroj takový dotaz nevydá, mez potkává jen artefakt odjinud | dotaz se neváže a neběží, řádek ho jmenuje, projekt bez běžícího dotazu zůstává `accepted` — mez měřidla, ne překladu | VM | [207] |
 
 ### 2.5 `LIKE`, `DISTINCT` a výčet hodnot
 

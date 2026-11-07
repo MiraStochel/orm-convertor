@@ -35,7 +35,7 @@ class ForeignArtifactRunTest {
             return Stream.of(NONE);
         }
 
-        List<String> owned = ForeignArtifact.discover(Path.of(root), TestDatabase.schemaName()).stream()
+        List<String> owned = ForeignArtifact.discover(Path.of(root), ForeignArtifactRun::schemaFor).stream()
                 .filter(artifact -> ForeignArtifactRun.owns(artifact.target()))
                 .map(artifact -> artifact.directory().toString())
                 .toList();
@@ -65,7 +65,9 @@ class ForeignArtifactRunTest {
                     + " to an artifact or a directory of artifacts (decision 172).");
         }
 
-        ForeignArtifact artifact = ForeignArtifact.read(Path.of(directory), TestDatabase.schemaName());
+        // The schema of the catalog the tool reads for the key stands in for the placeholder
+        // (decision 207): the suite's, or the project's in the case-study database.
+        ForeignArtifact artifact = ForeignArtifact.read(Path.of(directory), ForeignArtifactRun::schemaFor);
         ForeignVerdict verdict = ForeignArtifactRun.run(artifact, ForeignArtifactRunTest::record);
         System.out.println(verdict.describe());
     }

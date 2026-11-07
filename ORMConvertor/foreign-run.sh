@@ -28,7 +28,7 @@ mkdir -p "$results"
 results=$(cd "$results" && pwd)
 rows="$results/foreign-rows.tsv"
 
-printf 'artifact\tanswers\tsource\ttarget\tproducer\tlanguage\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tmetadata\n' > "$rows"
+printf 'artifact\tanswers\tsource\ttarget\tproducer\tlanguage\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tassemblyOverwritten\tmetadata\n' > "$rows"
 
 # Build once, run many times: every process below runs with --no-build.
 (cd "$here" && dotnet build Tests/Tests.csproj --configuration Release > "$results/build-dotnet.log" 2>&1) || { echo "the .NET suite does not build; see $results/build-dotnet.log"; exit 1; }

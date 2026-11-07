@@ -1,0 +1,15 @@
+{
+  "answers": "matrix:q1-entity-filter-ordered",
+  "source": "Dapper",
+  "target": "NHibernate",
+  "producer": "human",
+  "units": [
+    { "path": "DifferentialProduct.cs", "contentType": "CSharpEntity" },
+    { "path": "DifferentialProduct.hbm.xml", "contentType": "XML" },
+    { "path": "ExpensiveProducts.cs", "contentType": "CSharpQuery" },
+    { "path": "ExpensiveProducts.hql" }
+  ],
+  "metadata": {
+    "note": "the human artifact with assembly=\"Shop\" on the mapping, which no consumer has: the judge sets its own name (decisions 028, 207), so it reaches the fourth level and agrees"
+  }
+}

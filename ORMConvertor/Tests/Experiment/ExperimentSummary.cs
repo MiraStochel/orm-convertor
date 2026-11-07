@@ -304,25 +304,26 @@ internal static class ExperimentSummary
         yield return "## Foreign artifacts beside the tool over the same cells (decision 189)";
         yield return string.Empty;
         yield return "A cell is a key, a source and a target. Columns: cells = the cells of the group with a row of the tool; attempts = the rows of the group over them; refused replies = replies the import refused for a trace of a search, made again;";
-        yield return "repaired envelopes = attempts whose envelope the import repaired, of the attempts of a variant it repairs (every variant but zero-shot, decision 204);";
+        yield return "repaired envelopes = attempts whose envelope the import repaired, of the attempts of a variant it repairs (every variant but zero-shot and schema, decisions 204, 207);";
+        yield return "assembly overwritten = attempts of an NHibernate target whose mapping named an assembly the judge replaced with its own (decision 207);";
         yield return "the tool = the cells its one row reached the measure in; per attempt = the attempts that reached it; best-of-n = the cells at least one attempt reached it in. ran is counted over the cells with a fourth level, agrees over those with a measure of equivalence.";
         yield return string.Empty;
-        yield return "| group | cells | attempts | refused replies | repaired envelopes | measure | the tool | per attempt | best-of-n |";
-        yield return "|---|---|---|---|---|---|---|---|---|";
+
+        const string header = "| group | cells | attempts | refused replies | repaired envelopes | assembly overwritten | measure | the tool | per attempt | best-of-n |";
+        const string rule = "|---|---|---|---|---|---|---|---|---|---|";
 
         var unpaired = new List<string>();
         var cellLines = new List<string>();
 
-        foreach (var group in foreign.GroupBy(GroupOf, StringComparer.Ordinal).OrderBy(group => group.Key, StringComparer.Ordinal))
+        // The shares of one group of attempts over the cells it shares with the tool.
+        IEnumerable<string> Shares(string label, List<IGrouping<string, SummaryRow>> paired)
         {
-            var cells = group.GroupBy(CellOf, StringComparer.Ordinal).OrderBy(cell => cell.Key, StringComparer.Ordinal).ToList();
-            unpaired.AddRange(cells.Where(cell => !toolByCell.ContainsKey(cell.Key)).Select(cell => $"{group.Key}: {cell.Key}"));
-
-            var paired = cells.Where(cell => toolByCell.ContainsKey(cell.Key)).ToList();
             var attempts = paired.SelectMany(cell => cell).ToList();
             var refused = attempts.Sum(row => int.TryParse(row.Metadata("refusedBefore"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) ? count : 0);
             var repairable = attempts.Count(row => row.Metadata("envelope") is WebEnvelope.Intact or WebEnvelope.Repaired);
             var repaired = attempts.Count(row => row.Metadata("envelope") == WebEnvelope.Repaired);
+            var nhibernate = attempts.Where(row => row.Target == ORMEnum.NHibernate).ToList();
+            var overwritten = nhibernate.Count(row => row["assemblyOverwritten"] == "1");
 
             var first = true;
             foreach (var (name, over, met) in measures)
@@ -333,9 +334,25 @@ internal static class ExperimentSummary
                 var best = cellsOver.Count(cell => cell.Any(met));
 
                 yield return first
-                    ? $"| {group.Key} | {paired.Count} | {attempts.Count} | {refused} | {ShareOf(repaired, repairable)} | {name} | {ShareOf(byTool, cellsOver.Count)} | {ShareOf(attemptsOver.Count(met), attemptsOver.Count)} | {ShareOf(best, cellsOver.Count)} |"
-                    : $"| | | | | | {name} | {ShareOf(byTool, cellsOver.Count)} | {ShareOf(attemptsOver.Count(met), attemptsOver.Count)} | {ShareOf(best, cellsOver.Count)} |";
+                    ? $"| {label} | {paired.Count} | {attempts.Count} | {refused} | {ShareOf(repaired, repairable)} | {ShareOf(overwritten, nhibernate.Count)} | {name} | {ShareOf(byTool, cellsOver.Count)} | {ShareOf(attemptsOver.Count(met), attemptsOver.Count)} | {ShareOf(best, cellsOver.Count)} |"
+                    : $"| | | | | | | {name} | {ShareOf(byTool, cellsOver.Count)} | {ShareOf(attemptsOver.Count(met), attemptsOver.Count)} | {ShareOf(best, cellsOver.Count)} |";
                 first = false;
+            }
+        }
+
+        yield return header;
+        yield return rule;
+
+        var groups = foreign.GroupBy(GroupOf, StringComparer.Ordinal).OrderBy(group => group.Key, StringComparer.Ordinal).ToList();
+        foreach (var group in groups)
+        {
+            var cells = group.GroupBy(CellOf, StringComparer.Ordinal).OrderBy(cell => cell.Key, StringComparer.Ordinal).ToList();
+            unpaired.AddRange(cells.Where(cell => !toolByCell.ContainsKey(cell.Key)).Select(cell => $"{group.Key}: {cell.Key}"));
+
+            var paired = cells.Where(cell => toolByCell.ContainsKey(cell.Key)).ToList();
+            foreach (var line in Shares(group.Key, paired))
+            {
+                yield return line;
             }
 
             cellLines.AddRange(paired.Select(cell =>
@@ -343,6 +360,31 @@ internal static class ExperimentSummary
         }
 
         yield return string.Empty;
+
+        // The same shares by the set the cell belongs to, where the cells name one (decision 207).
+        if (foreign.Any(row => row.Metadata("set").Length > 0))
+        {
+            yield return "### By set";
+            yield return string.Empty;
+            yield return "The same columns over the cells of each set the table of cells named; a cell without a set stands under \"-\".";
+            yield return string.Empty;
+            yield return header;
+            yield return rule;
+
+            foreach (var group in groups)
+            {
+                foreach (var set in group.GroupBy(row => Or(row.Metadata("set"), "-"), StringComparer.Ordinal).OrderBy(set => set.Key, StringComparer.Ordinal))
+                {
+                    var paired = set.GroupBy(CellOf, StringComparer.Ordinal).Where(cell => toolByCell.ContainsKey(cell.Key)).OrderBy(cell => cell.Key, StringComparer.Ordinal).ToList();
+                    foreach (var line in Shares($"{group.Key} · {set.Key}", paired))
+                    {
+                        yield return line;
+                    }
+                }
+            }
+
+            yield return string.Empty;
+        }
 
         if (unpaired.Count > 0)
         {

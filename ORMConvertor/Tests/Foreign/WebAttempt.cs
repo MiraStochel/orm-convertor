@@ -14,9 +14,10 @@ namespace Tests.Foreign;
 /// <summary>
 /// One cell of the sample of the web channel (decision 189): an exported input - a key and a
 /// source -, the target it is translated into and the variant of decision 175, with the number of
-/// attempts, three unless the table says otherwise. The table is written by the operator.
+/// attempts, three unless the table says otherwise, and the set the cell belongs to where the
+/// table names one (decision 207). The table is written by the operator.
 /// </summary>
-internal sealed record WebCell(ForeignKey Key, ORMEnum Source, ORMEnum Target, string Variant, int Attempts)
+internal sealed record WebCell(ForeignKey Key, ORMEnum Source, ORMEnum Target, string Variant, int Attempts, string Set = "")
 {
     public const string FileName = "cells.tsv";
 
@@ -24,8 +25,9 @@ internal sealed record WebCell(ForeignKey Key, ORMEnum Source, ORMEnum Target, s
 
     /// <summary>
     /// Reads the table: a header naming the columns <c>answers</c>, <c>source</c>, <c>target</c>,
-    /// <c>variant</c> and optionally <c>attempts</c>, then a cell per line; empty lines and lines
-    /// that start with <c>#</c> are left out. A cell the path could not judge fails by name.
+    /// <c>variant</c> and optionally <c>attempts</c> and <c>set</c>, then a cell per line; empty
+    /// lines and lines that start with <c>#</c> are left out. A cell the path could not judge
+    /// fails by name.
     /// </summary>
     public static List<WebCell> Read(string file)
     {
@@ -56,6 +58,7 @@ internal sealed record WebCell(ForeignKey Key, ORMEnum Source, ORMEnum Target, s
         var target = Column("target");
         var variant = Column("variant");
         var attempts = Column("attempts", required: false);
+        var set = Column("set", required: false);
 
         var cells = new List<WebCell>();
         foreach (var (line, number) in lines.Skip(1))
@@ -70,7 +73,8 @@ internal sealed record WebCell(ForeignKey Key, ORMEnum Source, ORMEnum Target, s
                 Value(variant).ToLowerInvariant(),
                 Value(attempts).Length == 0 ? DefaultAttempts : int.TryParse(Value(attempts), NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) && count > 0
                     ? count
-                    : throw new InvalidOperationException($"{file}, line {number}: \"{Value(attempts)}\" is no number of attempts."));
+                    : throw new InvalidOperationException($"{file}, line {number}: \"{Value(attempts)}\" is no number of attempts."),
+                Value(set));
 
             if (cell.Source == cell.Target)
             {
@@ -104,8 +108,9 @@ internal sealed record WebTemplate(string Id, string Prompt, IReadOnlyDictionary
     /// <summary>The template of each variant the web channel has one for.</summary>
     public static readonly IReadOnlyDictionary<string, string> ForVariant = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["zero-shot"] = "web-zero-shot-3",
-        ["few-shot"] = "web-few-shot-2",
+        ["zero-shot"] = "web-zero-shot-4",
+        ["few-shot"] = "web-few-shot-3",
+        ["schema"] = "web-schema-1",
     };
 
     private static readonly Regex Section = new(@"^=== (?:(prompt)|shape (\w+)) ===$", RegexOptions.CultureInvariant);
@@ -197,6 +202,9 @@ internal static class WebPrompt
 
     private static readonly Regex Slot = new(@"\{\{[A-Z_]+\}\}", RegexOptions.CultureInvariant);
 
+    /// <summary>The slot of the variant schema (decision 207): the DDL of the catalog the tool reads for the key, as one block of SQL.</summary>
+    public const string DatabaseSlot = "{{DATABASE}}";
+
     /// <summary>The roles a file of an answer may have in each target, in the order the prompt names them.</summary>
     public static IReadOnlyList<ConversionContentType> Roles(ORMEnum target) => target switch
     {
@@ -254,6 +262,16 @@ internal static class WebPrompt
         if (text.Contains(WebExamples.Slot, StringComparison.Ordinal))
         {
             text = text.Replace(WebExamples.Slot, WebExamples.Render(source, target, key, [.. units.Select(unit => unit.Content)]), StringComparison.Ordinal);
+        }
+
+        // The DDL of the variant schema, where the template has the section (decision 207): the
+        // schema.sql the export wrote beside the input; a key without one has no prompt of it.
+        if (text.Contains(DatabaseSlot, StringComparison.Ordinal))
+        {
+            var ddl = ForeignInputs.SchemaOf(inputDirectory)
+                ?? throw new InvalidOperationException($"The input of {answers} carries no {ForeignInputs.SchemaFileName}: the tool reads no catalog for this key, so the variant of the template {template.Id} has no prompt for it (decision 207).");
+            var fence = Fence(ddl);
+            text = text.Replace(DatabaseSlot, $"{fence}sql\n{Neutral(Lf(ddl)).TrimEnd('\n')}\n{fence}", StringComparison.Ordinal);
         }
 
         // The input goes in last, so that nothing in it is ever read as a slot.
@@ -684,7 +702,7 @@ internal static class WebAttempts
     /// <summary>The columns of the table of attempts: those the generator fills, then those the operator fills.</summary>
     public static readonly IReadOnlyList<string> Columns =
     [
-        "id", "answers", "source", "target", "variant", "attempt", "prompt", "promptSha256",
+        "id", "answers", "source", "target", "variant", "set", "attempt", "prompt", "promptSha256",
         "model", "version", "channel", "frontend", "temperature", "seconds", "tokensIn", "tokensOut", "costUsd", "credits", "creditsUnit", "note",
     ];
 
@@ -756,6 +774,7 @@ internal static class WebAttempts
                 row["source"] = cell.Source.ToString();
                 row["target"] = cell.Target.ToString();
                 row["variant"] = cell.Variant;
+                row["set"] = cell.Set;
                 row["attempt"] = attempt.ToString(CultureInfo.InvariantCulture);
                 row["prompt"] = template.Id;
                 row["promptSha256"] = digest;
@@ -845,8 +864,8 @@ internal static class WebAttempts
             var source = Enum.Parse<ORMEnum>(row["source"]);
             var target = Enum.Parse<ORMEnum>(row["target"]);
 
-            // The envelope: judged as it came in zero-shot, repaired by what a consumer gives a
-            // bare method in every other variant (decision 204).
+            // The envelope: judged as it came in zero-shot and in schema, repaired by what a
+            // consumer gives a bare method in every other variant (decisions 204, 207).
             var repairs = WebEnvelope.Repairs(row.GetValueOrDefault("variant", string.Empty));
             var (files, envelopeRepairs) = repairs ? WebEnvelope.Repair(reply.Files, target) : (reply.Files, []);
             var envelope = !repairs ? WebEnvelope.AsWritten : envelopeRepairs.Count > 0 ? WebEnvelope.Repaired : WebEnvelope.Intact;
@@ -980,6 +999,7 @@ internal static class WebAttempts
         Text("prompt");
         Text("promptSha256");
         Text("variant");
+        Text("set");
         metadata["attempt"] = int.Parse(row["attempt"], CultureInfo.InvariantCulture);
         foreach (var field in Numbers)
         {

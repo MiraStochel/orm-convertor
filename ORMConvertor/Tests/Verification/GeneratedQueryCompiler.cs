@@ -25,53 +25,17 @@ internal static class GeneratedQueryCompiler
         global using System.Linq;
         """;
 
-    public static readonly IReadOnlyList<MetadataReference> EFCoreConsumerReferences =
-        MetadataReferenceProvider.Create(
-            [
-                typeof(object).Assembly,
-                typeof(System.ComponentModel.DataAnnotations.KeyAttribute).Assembly,
-                typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly,
-                typeof(Microsoft.EntityFrameworkCore.PrimaryKeyAttribute).Assembly,
-                typeof(Microsoft.EntityFrameworkCore.RelationalQueryableExtensions).Assembly,
+    /// <summary>
+    /// The references of the consumer project of each target (decision 207, <see cref="ConsumerReferences"/>):
+    /// the shared framework and the pinned package with its closure - the provider of the
+    /// dialect among it for EF Core (decisions 086, 113), whose SQL Server functions a
+    /// consumer project over SQL Server references, as the Advisor's compilation does.
+    /// </summary>
+    public static readonly IReadOnlyList<MetadataReference> EFCoreConsumerReferences = ConsumerReferences.EFCore;
 
-                // The provider of the dialect the artifact is written for (decision 086): a
-                // date difference is EF.Functions.DateDiff…, which SQL Server's provider
-                // defines (decision 113), and a consumer project over SQL Server references
-                // it - the Advisor's compilation does too.
-                typeof(Microsoft.EntityFrameworkCore.SqlServerDbFunctionsExtensions).Assembly,
-                typeof(Queryable).Assembly,
-                typeof(System.Linq.Expressions.Expression).Assembly,
-            ],
-            ["netstandard.dll", "System.Runtime.dll", "System.Collections.dll",
-             "System.ComponentModel.DataAnnotations.dll", "System.ComponentModel.TypeConverter.dll",
-             "System.Linq.dll", "System.Linq.Expressions.dll"]);
+    public static readonly IReadOnlyList<MetadataReference> DapperConsumerReferences = ConsumerReferences.Dapper;
 
-    public static readonly IReadOnlyList<MetadataReference> DapperConsumerReferences =
-        MetadataReferenceProvider.Create(
-            [
-                typeof(object).Assembly,
-                typeof(System.Data.IDbConnection).Assembly,
-                typeof(global::Dapper.SqlMapper).Assembly,
-                typeof(Queryable).Assembly,
-                // A projection materializes as List<dynamic> (decision 104), and the compiler
-                // wants DynamicAttribute for a member typed dynamic; the runtime defines it in
-                // System.Linq.Expressions, which every consumer project references implicitly.
-                typeof(System.Linq.Expressions.Expression).Assembly,
-            ],
-            ["netstandard.dll", "System.Runtime.dll", "System.Collections.dll",
-             "System.Data.Common.dll", "System.Linq.dll", "System.Linq.Expressions.dll"]);
-
-    public static readonly IReadOnlyList<MetadataReference> NHibernateConsumerReferences =
-        MetadataReferenceProvider.Create(
-            [
-                typeof(object).Assembly,
-                typeof(global::NHibernate.ISession).Assembly,
-                typeof(Queryable).Assembly,
-                // The LINQ form of decision 118 returns IQueryable, which the runtime defines in
-                // System.Linq.Expressions; every consumer project references it implicitly.
-                typeof(System.Linq.Expressions.Expression).Assembly,
-            ],
-            ["netstandard.dll", "System.Runtime.dll", "System.Collections.dll", "System.Linq.dll", "System.Linq.Expressions.dll"]);
+    public static readonly IReadOnlyList<MetadataReference> NHibernateConsumerReferences = ConsumerReferences.NHibernate;
 
     /// <summary>
     /// Wraps the query method in the class and usings a consumer project would give it, then

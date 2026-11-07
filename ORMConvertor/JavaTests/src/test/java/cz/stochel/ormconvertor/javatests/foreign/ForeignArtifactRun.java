@@ -25,6 +25,7 @@ import java.io.StringReader;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -82,6 +83,52 @@ public final class ForeignArtifactRun {
 
     public static boolean owns(int target) {
         return JavaQueryRunner.owns(target);
+    }
+
+    /**
+     * The schema that stands in for the placeholder of an artifact answering the key: the schema
+     * of the catalog the tool reads for it (decision 207) - the suite's own for the fixture, the
+     * scenarios, the series and the LDBC catalog, the project's in the case-study database for the
+     * excerpt of a real project (decision 176), the FIBEN database's own for its catalog.
+     */
+    public static String schemaFor(ForeignArtifact.Key key) {
+        if (key.kind().equals(ForeignArtifact.Key.FIBEN)) {
+            return FibenDatabase.SCHEMA;
+        }
+        if (key.kind().equals(ForeignArtifact.Key.EXAMPLE) && TestSchema.isCaseStudy(key.id())) {
+            return TestDatabase.caseStudySchemaName(key.id().substring(0, key.id().indexOf('-')));
+        }
+        return TestDatabase.schemaName();
+    }
+
+    /** The stated limit of the path (decision 207): a parameter of an entity type has no sample value, so the query is neither bound nor run. */
+    static final String ENTITY_PARAMETER_LIMIT = "a parameter of an entity type of the artifact has no sample value, so the query is not run (decision 207)";
+
+    /**
+     * The first parameter whose type is an entity of the artifact - a class of the artifact's own
+     * compilation, alone or as the element of a collection -, as "name: type", or null where every
+     * parameter has a sample value. The framework's handle and every scalar come from loaders the
+     * artifact does not own.
+     */
+    static String entityParameter(Method method, Compiled compiled) {
+        for (Parameter parameter : method.getParameters()) {
+            Type type = parameter.getParameterizedType();
+            if (type instanceof ParameterizedType parameterized && parameterized.getActualTypeArguments().length == 1) {
+                type = parameterized.getActualTypeArguments()[0];
+            }
+            if (type instanceof Class<?> cls && cls.isArray()) {
+                type = cls.getComponentType();
+            }
+            if (type instanceof Class<?> cls && isOfTheArtifact(cls, compiled)) {
+                return parameter.getName() + ": " + cls.getSimpleName();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isOfTheArtifact(Class<?> cls, Compiled compiled) {
+        ClassLoader loader = cls.getClassLoader();
+        return loader != null && (loader == compiled.loader() || (compiled.queries() != null && loader == compiled.queries().loader()));
     }
 
     /** Runs one artifact through the levels; the callback sees the verdict after every level. */
@@ -164,10 +211,13 @@ public final class ForeignArtifactRun {
                 }
 
                 // Every query of the artifact is created against the model - the one of a query
-                // artifact, each of a project's -, nothing executed.
+                // artifact, each of a project's -, nothing executed; one with a parameter of an
+                // entity type is not bound (decision 207) and the fourth level names it.
                 if (jpa != null) {
                     for (Method method : compiled.projectMethods()) {
-                        accept(jpa, method);
+                        if (entityParameter(method, compiled) == null) {
+                            accept(jpa, method);
+                        }
                     }
                 }
             } catch (Throwable e) {
@@ -368,16 +418,24 @@ public final class ForeignArtifactRun {
      */
     private static void runProject(ForeignArtifact artifact, Compiled compiled, EntityManagerFactory jpa, SqlSessionFactory myBatis, ForeignVerdict verdict) {
         int rows = 0;
+        int ran = 0;
         List<String> returning = new ArrayList<>();
+        List<String> unbound = new ArrayList<>();
         List<String> mappers = artifact.mappings().stream().map(ForeignArtifact.Unit::content).toList();
 
         for (int index = 0; index < compiled.projectMethods().size(); index++) {
             Method method = compiled.projectMethods().get(index);
             String path = compiled.projectPaths().get(index);
+            String entity = entityParameter(method, compiled);
+            if (entity != null) {
+                unbound.add(path + " (" + entity + ")");
+                continue;
+            }
             try {
                 int count = artifact.target() == Orm.MYBATIS
                         ? countMyBatis(myBatis, mappers, method)
                         : countJpa(jpa, method);
+                ran++;
                 rows += count;
                 if (count > 0) {
                     returning.add(path + " (" + count + ")");
@@ -388,13 +446,26 @@ public final class ForeignArtifactRun {
             }
         }
 
-        verdict.ran(rows, compiled.projectMethods().size() + " queries ran over the empty tables of the project's schema"
-                + (returning.isEmpty() ? "" : "; rows came back from " + String.join(", ", returning)));
+        String limit = unbound.isEmpty() ? "" : "; not bound and not run: " + String.join(", ", unbound) + " - " + ENTITY_PARAMETER_LIMIT;
+        if (ran == 0) {
+            // Every query has a parameter the path has no value for: the project stays accepted.
+            verdict.stop(ForeignVerdict.ACCEPTED, "no query of the project ran" + limit);
+            return;
+        }
+
+        verdict.ran(rows, ran + " queries ran over the empty tables of the project's schema"
+                + (returning.isEmpty() ? "" : "; rows came back from " + String.join(", ", returning))
+                + limit);
     }
 
     /** The fourth level of one query without a measure (decision 182): it runs over the suite's database, and the row carries how many rows it returned. */
     private static void runOne(ForeignArtifact artifact, Compiled compiled, EntityManagerFactory jpa, SqlSessionFactory myBatis, ForeignVerdict verdict) {
         List<String> mappers = artifact.mappings().stream().map(ForeignArtifact.Unit::content).toList();
+        String entity = entityParameter(compiled.method(), compiled);
+        if (entity != null) {
+            verdict.stop(ForeignVerdict.ACCEPTED, compiled.method().getName() + " (" + entity + "): " + ENTITY_PARAMETER_LIMIT);
+            return;
+        }
         try {
             int count = artifact.target() == Orm.MYBATIS
                     ? countMyBatis(myBatis, mappers, compiled.method())

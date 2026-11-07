@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Model;
 using SampleData;
 using Tests.Combined;
@@ -18,6 +19,12 @@ namespace Tests.Foreign;
 /// The schema stands in the files as the placeholder <c>{{schema}}</c>, as it does in the
 /// inputs of the repository: an artifact that keeps the placeholder runs in either suite's
 /// schema, because the reader substitutes it the way the inputs are substituted.
+///
+/// Beside the units stands <c>schema.sql</c> (decision 207): the DDL of the catalog the tool
+/// reads for the key - CREATE TABLE statements with keys and foreign keys, no rows, the schema
+/// as the placeholder -, which the variant <c>schema</c> of the web channel hands the model and
+/// the tool never reads, because it reads the catalog. A key the tool reads no catalog for has
+/// none, and the manifest names the file where there is one.
 /// </summary>
 internal static class ForeignInputs
 {
@@ -25,7 +32,14 @@ internal static class ForeignInputs
 
     public const string ManifestFileName = "input.json";
 
+    public const string SchemaFileName = "schema.sql";
+
     internal const string SchemaPlaceholder = "{{schema}}";
+
+    private const string FibenSchemaResourceName = "Tests.Database.Fiben.schema.sql";
+
+    /// <summary>A statement that writes rows, at the start of a line of a batch: the batch is data, not schema.</summary>
+    private static readonly Regex DataStatement = new(@"^\s*(INSERT|UPDATE|DELETE|MERGE|SET\s+IDENTITY_INSERT)\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
 
     /// <summary>The text of a unit with the schema the suite substituted back as the placeholder, so that the file names no schema of this machine; the LDBC schema is named after the fixture's and keeps its suffix.</summary>
     internal static string Placeholder(string content) => content.Replace(TestDatabase.SchemaName, SchemaPlaceholder, StringComparison.Ordinal);
@@ -43,7 +57,7 @@ internal static class ForeignInputs
         {
             if (take is null || take(key, source))
             {
-                Write(root, key, source, units(), questions);
+                Write(root, key, source, units(), questions, SchemaScript(key));
                 count++;
             }
         }
@@ -123,9 +137,42 @@ internal static class ForeignInputs
 
     /// <summary>Writes the input of one key and source; what the export does for every key.</summary>
     internal static void WriteOne(string root, ForeignKey key, ORMEnum source, IReadOnlyList<ConversionSource> units, IReadOnlyList<string>? questions)
-        => Write(root, key, source, units, questions);
+        => Write(root, key, source, units, questions, SchemaScript(key));
 
-    private static void Write(string root, ForeignKey key, ORMEnum source, IReadOnlyList<ConversionSource> units, IReadOnlyList<string>? questions)
+    /// <summary>
+    /// The DDL of the catalog the tool reads for the key (decision 207), the schema as the
+    /// placeholder: the fixture's tables for a key of the matrix, a scenario or a point of a
+    /// series, the LDBC tables in the fixture's LDBC schema, the FIBEN tables, the excerpted
+    /// project's tables for a case study; null where the tool reads no catalog (an example
+    /// written for the tool, decision 099). Statements that carry data are left out: the catalog
+    /// has none.
+    /// </summary>
+    internal static string? SchemaScript(ForeignKey key) => key.Kind switch
+    {
+        ForeignKey.Matrix or ForeignKey.Cross or ForeignKey.Series => string.Join("\nGO\n",
+            new[] { TestSchemaFixture.ScriptResourceName, TestSchemaFixture.ShapesDataResourceName, TestSchemaFixture.DataResourceName }
+                .SelectMany(resource => Ddl(TestSchemaFixture.ReadScript(resource, SchemaPlaceholder)))) + "\nGO\n",
+        ForeignKey.Ldbc => string.Join("\nGO\n", Ddl(TestSchemaFixture.ReadScript(TestSchemaFixture.LdbcSchemaResourceName, SchemaPlaceholder + "_ldbc"))) + "\nGO\n",
+        ForeignKey.Fiben => string.Join("\nGO\n", Ddl(TestSchemaFixture.ReadScript(FibenSchemaResourceName, SchemaPlaceholder))) + "\nGO\n",
+        ForeignKey.Example when ORMConvertorAPI.Data.Examples.RealProjectKeys.Contains(key.Id)
+            => ThirdPartySources.Schema(CaseStudySchemaTest.ProjectOf(key.Id)).Replace("\r\n", "\n", StringComparison.Ordinal),
+        _ => null,
+    };
+
+    /// <summary>The batches of a script that define the schema: every batch without a statement that writes rows.</summary>
+    private static IEnumerable<string> Ddl(string script)
+        => TestSchemaFixture.Split(script).Where(batch => !DataStatement.IsMatch(batch));
+
+    /// <summary>The DDL beside an exported input, or null where the manifest names none.</summary>
+    public static string? SchemaOf(string directory)
+    {
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, ManifestFileName)));
+        return manifest.RootElement.TryGetProperty("schema", out var schema) && schema.ValueKind == JsonValueKind.String
+            ? File.ReadAllText(Path.Combine(directory, schema.GetString()!))
+            : null;
+    }
+
+    private static void Write(string root, ForeignKey key, ORMEnum source, IReadOnlyList<ConversionSource> units, IReadOnlyList<string>? questions, string? schemaScript)
     {
         var directory = DirectoryOf(root, key, source);
         Directory.CreateDirectory(directory);
@@ -140,6 +187,12 @@ internal static class ForeignInputs
         if (questions is { Count: > 0 })
         {
             manifest.Add($"  \"questions\": {JsonSerializer.Serialize(questions)},");
+        }
+
+        if (schemaScript is not null)
+        {
+            File.WriteAllText(Path.Combine(directory, SchemaFileName), schemaScript);
+            manifest.Add($"  \"schema\": {JsonSerializer.Serialize(SchemaFileName)},");
         }
 
         manifest.Add("  \"units\": [");

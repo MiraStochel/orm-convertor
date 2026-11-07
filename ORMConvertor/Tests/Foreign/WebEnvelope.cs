@@ -9,14 +9,18 @@ namespace Tests.Foreign;
 /// gives the bare method of the tool - the using directives and imports of the target, the
 /// namespace or package of the entities in scope, the class around a method, one public type per
 /// Java file, the extension a role has, the namespace of a MyBatis mapper document - given to a
-/// whole file that lacks it. The import applies it to every variant but <c>zero-shot</c>, which is
-/// judged as it came, and every repair is one sentence in the manifest. Nothing here touches a
+/// whole file that lacks it. The import applies it to every variant but <c>zero-shot</c> and
+/// <c>schema</c> - zero-shot with the DDL of the key (decision 207) -, which are judged as they
+/// came, and every repair is one sentence in the manifest. Nothing here touches a
 /// mapping fact, a query text, a parameter, or an entity the model did not write: those are the
 /// model's result in every variant.
 /// </summary>
 internal static class WebEnvelope
 {
     public const string ZeroShot = "zero-shot";
+
+    /// <summary>The variant of decision 207: zero-shot with the DDL of the key, judged as it came like zero-shot.</summary>
+    public const string Schema = "schema";
 
     /// <summary>The value of <c>envelope</c> in the manifest of an attempt the import did not touch.</summary>
     public const string AsWritten = "as written";
@@ -76,8 +80,10 @@ internal static class WebEnvelope
         "java.util.Collection", "java.util.List", "java.util.Map", "java.util.UUID", "org.apache.ibatis.annotations.Param",
     ];
 
-    /// <summary>Whether the import repairs the envelope of an attempt of the variant: every variant but <c>zero-shot</c> (decision 204).</summary>
-    public static bool Repairs(string variant) => !string.Equals(variant.Trim(), ZeroShot, StringComparison.OrdinalIgnoreCase);
+    /// <summary>Whether the import repairs the envelope of an attempt of the variant: every variant but <c>zero-shot</c> (decision 204) and <c>schema</c> (decision 207).</summary>
+    public static bool Repairs(string variant)
+        => !string.Equals(variant.Trim(), ZeroShot, StringComparison.OrdinalIgnoreCase)
+           && !string.Equals(variant.Trim(), Schema, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The files with the envelope repaired, and one sentence per repair; no sentence where there was nothing to repair.</summary>
     public static (List<WebReplyFile> Files, List<string> Repairs) Repair(IReadOnlyList<WebReplyFile> files, ORMEnum target)

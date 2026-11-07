@@ -30,7 +30,7 @@ internal static class ForeignLevel
 /// </summary>
 internal sealed class ForeignVerdict
 {
-    public const string Header = "artifact\tanswers\tsource\ttarget\tproducer\tlanguage\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tmetadata";
+    public const string Header = "artifact\tanswers\tsource\ttarget\tproducer\tlanguage\treached\toutcome\tdetail\trows\tagrees\treadMs\tcompileMs\tacceptMs\trunMs\tassemblyOverwritten\tmetadata";
 
     public const string InProgress = "in progress";
 
@@ -86,6 +86,14 @@ internal sealed class ForeignVerdict
 
     public double RunMs { get; set; }
 
+    /// <summary>
+    /// Whether a mapping document of an NHibernate artifact named an assembly, which the judge
+    /// replaced with the name of the assembly it compiled - the consumer's contribution
+    /// (decisions 028, 207) -; empty for every other target. Reported so that the result stands
+    /// both as the artifact came and as the consumer built it.
+    /// </summary>
+    public bool? AssemblyOverwritten { get; set; }
+
     public string Row()
         => string.Join('\t',
             Artifact, Answers, Source, Target, Producer, Language,
@@ -98,6 +106,7 @@ internal sealed class ForeignVerdict
             CompileMs.ToString("F0", CultureInfo.InvariantCulture),
             AcceptMs.ToString("F0", CultureInfo.InvariantCulture),
             RunMs.ToString("F0", CultureInfo.InvariantCulture),
+            AssemblyOverwritten switch { true => "1", false => "0", null => string.Empty },
             Clean(Metadata));
 
     public string Describe()

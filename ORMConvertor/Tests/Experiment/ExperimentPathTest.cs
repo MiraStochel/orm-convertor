@@ -200,14 +200,14 @@ public class ExperimentPathTest(TestSchemaFixture fixture, ITestOutputHelper out
             File.WriteAllLines(Path.Combine(temp.FullName, ExperimentRun.RowsFileName),
             [
                 ForeignVerdict.Header,
-                string.Join('\t', "matrix-q1-entity-filter-ordered-Dapper-EFCore", "matrix:q1-entity-filter-ordered", "Dapper", "EFCore", "tool", "target", "4", "agrees", "", "3", "1", "1", "2", "3", "4", "{\"toolVersion\":\"x\"}"),
-                string.Join('\t', "matrix-q1-entity-filter-ordered-Dapper-NHibernate", "matrix:q1-entity-filter-ordered", "Dapper", "NHibernate", "tool", "refused", "0", "refused", "no key", "", "", "0", "0", "0", "0", "{}"),
-                string.Join('\t', "cross-EFCore-EFCore-Hibernate", "cross:EFCore", "EFCore", "Hibernate", "tool", "target", "3", "accepted", "no fourth level", "", "", "1", "2", "3", "0", "{}"),
+                string.Join('\t', "matrix-q1-entity-filter-ordered-Dapper-EFCore", "matrix:q1-entity-filter-ordered", "Dapper", "EFCore", "tool", "target", "4", "agrees", "", "3", "1", "1", "2", "3", "4", "", "{\"toolVersion\":\"x\"}"),
+                string.Join('\t', "matrix-q1-entity-filter-ordered-Dapper-NHibernate", "matrix:q1-entity-filter-ordered", "Dapper", "NHibernate", "tool", "refused", "0", "refused", "no key", "", "", "0", "0", "0", "0", "", "{}"),
+                string.Join('\t', "cross-EFCore-EFCore-Hibernate", "cross:EFCore", "EFCore", "Hibernate", "tool", "target", "3", "accepted", "no fourth level", "", "", "1", "2", "3", "0", "", "{}"),
             ]);
             File.WriteAllLines(Path.Combine(temp.FullName, ForeignRows.FileName),
             [
                 ForeignVerdict.Header,
-                string.Join('\t', "q1-llm-1", "matrix:q1-entity-filter-ordered", "Dapper", "EFCore", "llm", "native SQL", "4", "differs", "row 1", "2", "0", "1", "2", "3", "4", "{\"model\":\"m\",\"variant\":\"zero-shot\"}"),
+                string.Join('\t', "q1-llm-1", "matrix:q1-entity-filter-ordered", "Dapper", "EFCore", "llm", "native SQL", "4", "differs", "row 1", "2", "0", "1", "2", "3", "4", "", "{\"model\":\"m\",\"variant\":\"zero-shot\"}"),
             ]);
             File.WriteAllLines(Path.Combine(temp.FullName, ExperimentRun.MappingRowsFileName),
             [

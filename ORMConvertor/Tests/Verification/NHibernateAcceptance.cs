@@ -153,17 +153,27 @@ internal static class NHibernateAcceptance
     /// invented an assembly name from the namespace, and the verification tests confirmed
     /// the invention by compiling under exactly that name. Since decision 028 the builder
     /// qualifies nothing, so this always applies and the level is judging the artifact
-    /// rather than itself.
+    /// rather than itself. A name the document carries is replaced too (decision 207): the
+    /// assembly name is the consumer's, and a mapping that names another assembly names one
+    /// no consumer has - the row of a foreign artifact says when that happened.
     /// </summary>
-    private static string QualifyAssembly(string mappingXml, string assemblyName)
+    internal static string QualifyAssembly(string mappingXml, string assemblyName)
     {
         var document = XDocument.Parse(mappingXml);
-
-        if (document.Root!.Attribute("assembly") is null)
-        {
-            document.Root.SetAttributeValue("assembly", assemblyName);
-        }
-
+        document.Root!.SetAttributeValue("assembly", assemblyName);
         return document.ToString();
+    }
+
+    /// <summary>Whether the root of the mapping document names an assembly, which <see cref="QualifyAssembly"/> replaces; false for a document that is not XML, which the first level refuses.</summary>
+    internal static bool NamesAnAssembly(string mappingXml)
+    {
+        try
+        {
+            return XDocument.Parse(mappingXml).Root?.Attribute("assembly") is not null;
+        }
+        catch (System.Xml.XmlException)
+        {
+            return false;
+        }
     }
 }

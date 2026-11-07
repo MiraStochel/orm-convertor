@@ -23,27 +23,13 @@ internal static class GeneratedEntityCompiler
         """;
 
     /// <summary>
-    /// What any consumer project sees of the runtime. An NHibernate entity is a plain
-    /// class, so this is all it gets.
+    /// What a consumer project of the target sees (decision 207, <see cref="ConsumerReferences"/>):
+    /// the shared framework and the pinned package with its closure - one set per target, the
+    /// same an entity and a query compile with.
     /// </summary>
-    public static readonly IReadOnlyList<MetadataReference> NHibernateConsumerReferences =
-        MetadataReferenceProvider.Create(
-            [typeof(object).Assembly],
-            ["netstandard.dll", "System.Runtime.dll", "System.Collections.dll"]);
+    public static readonly IReadOnlyList<MetadataReference> NHibernateConsumerReferences = ConsumerReferences.NHibernate;
 
-    /// <summary>
-    /// An EF Core entity additionally carries data annotations and the EF Core attributes
-    /// ([PrimaryKey], [Keyless], [Precision] live in the Abstractions assembly).
-    /// </summary>
-    public static readonly IReadOnlyList<MetadataReference> EFCoreConsumerReferences =
-        MetadataReferenceProvider.Create(
-            [
-                typeof(object).Assembly,
-                typeof(System.ComponentModel.DataAnnotations.KeyAttribute).Assembly,
-                typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly,
-                typeof(Microsoft.EntityFrameworkCore.PrimaryKeyAttribute).Assembly,
-            ],
-            ["netstandard.dll", "System.Runtime.dll", "System.Collections.dll", "System.ComponentModel.DataAnnotations.dll"]);
+    public static readonly IReadOnlyList<MetadataReference> EFCoreConsumerReferences = ConsumerReferences.EFCore;
 
     public static CSharpCompilationResult Compile(
         string assemblyName,
