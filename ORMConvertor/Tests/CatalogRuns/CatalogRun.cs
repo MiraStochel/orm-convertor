@@ -37,8 +37,19 @@ internal sealed class CatalogCell
     /// <summary>Why the artifact did not return rows, or null when it did.</summary>
     public string? Failed { get; set; }
 
-    /// <summary>The rows the artifact returned, in the canonical form of decision 089; null until it ran.</summary>
-    public List<string>? Rows { get; set; }
+    /// <summary>
+    /// How many rows the artifact returned; null until it ran. The rows themselves, in the
+    /// canonical form of decision 089, are compared with the source's as soon as they are read
+    /// and then let go: a catalog of a thousand and more queries returning a hundred thousand
+    /// rows does not fit a run that keeps them, so the run keeps the verdicts.
+    /// </summary>
+    public int? RowCount { get; set; }
+
+    /// <summary>Whether the rows were the source's, row for row; null where the cell is the source, did not run, or the source did not.</summary>
+    public bool? AgreesWithSource { get; set; }
+
+    /// <summary>The first row where the rows differed from the source's (<see cref="CatalogRun.Difference"/>), where they did.</summary>
+    public string? SourceDifference { get; set; }
 
     public TimeSpan Translated { get; set; }
 
@@ -59,7 +70,7 @@ internal sealed class CatalogCell
     /// <summary>Where the query landed in the target: its own language, native SQL, a refusal, or a failure after the translation.</summary>
     public string Outcome => Refused is not null ? "refused" : Unprepared is not null ? "not compiled" : Failed is not null ? "failed" : FellBack ? "native SQL" : "translated";
 
-    public bool Ran => Rows is not null;
+    public bool Ran => RowCount is not null;
 
     public string Describe()
     {
@@ -67,9 +78,15 @@ internal sealed class CatalogCell
         if (Refused is not null) return $"{cell}: refused: {Refused}";
         if (Unprepared is not null) return $"{cell}: the artifact could not be made: {Unprepared}";
         if (Failed is not null) return $"{cell}: the artifact failed to run: {Failed}";
-        return $"{cell}: {Rows!.Count} rows{(FellBack ? " (native SQL)" : string.Empty)}";
+        return $"{cell}: {RowCount} rows{(FellBack ? " (native SQL)" : string.Empty)}";
     }
 }
+
+/// <summary>
+/// What the run keeps of the source's rows once they are let go: their digest, and the verdict
+/// of the judge over them where the database holds one (null without a judge).
+/// </summary>
+internal sealed record SourceVerdict(string Digest, bool? AgreesWithJudge, string? JudgeDifference);
 
 /// <summary>
 /// The settings of the server a run reads before it starts (decision 164): the MAXDOP the
@@ -170,6 +187,12 @@ internal sealed record CatalogDefinition(
 /// the directory the environment names: the cells, the source rows in the form of
 /// <c>judge.tsv</c>, from which the judge is made after a documented run, and the summary.
 ///
+/// The rows of a query live only while the query is being run: every comparison is made as
+/// soon as the rows are read, the cells and the judge lines of the query are written to the
+/// files before the next query starts, and the summary alone is written at the end. The first
+/// SEDE run kept every row of every cell until the end and ran out of memory while writing,
+/// after eight hours and with nothing written.
+///
 /// The Java suite runs the three Java frameworks the same way against an instance whose
 /// catalog is the catalog's database, with the text itself over JDBC as its source.
 /// </summary>
@@ -189,6 +212,7 @@ internal sealed class CatalogRun
     public const int RowsKeptByTheJudge = 1000;
 
     private readonly Dictionary<(string Key, ORMEnum Framework), CatalogCell> cells = [];
+    private readonly Dictionary<string, SourceVerdict> verdicts = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (string Digest, List<string> Rows)> judge = new(StringComparer.OrdinalIgnoreCase);
 
     private CatalogRun(CatalogDefinition definition, string? unavailable)
@@ -317,10 +341,12 @@ internal sealed class CatalogRun
         Queries = [.. Definition.Queries.Where(query => Database.Keys is null || Database.Keys.Contains(query.Key))];
 
         using var catalog = new CachingCatalogReader(new SqlServerCatalogReader(connectionString));
+        using var results = ResultsWriter.Open(this);
 
         foreach (var query in Queries)
         {
             var prepared = new Dictionary<ORMEnum, PreparedQuery>();
+            List<string>? sourceRows = null;
 
             try
             {
@@ -377,17 +403,33 @@ internal sealed class CatalogRun
                     cell.Compiled = Stopwatch.GetElapsedTime(started);
 
                     started = Stopwatch.GetTimestamp();
+                    List<string> canonical;
                     try
                     {
                         var arguments = ArgumentsFor(prepared[framework].Parameters, query);
                         var rows = prepared[framework].Run(query.Key, arguments, query.Columns, projection: true);
                         cell.Selected = Stopwatch.GetElapsedTime(started);
-                        cell.Rows = Canonical(query, rows);
+                        canonical = Canonical(query, rows);
                     }
                     catch (Exception exception)
                     {
                         cell.Selected = Stopwatch.GetElapsedTime(started);
                         cell.Failed = Innermost(exception).Message + (cell.Lost is null ? string.Empty : $" (the translation lost: {cell.Lost})");
+                        continue;
+                    }
+
+                    // The comparisons happen here, while the rows exist; the cell keeps the verdicts.
+                    cell.RowCount = canonical.Count;
+                    if (framework == Frameworks[0])
+                    {
+                        sourceRows = canonical;
+                        verdicts[query.Key] = Judge(query.Key, canonical);
+                        results?.WriteJudgeLines(query.Key, canonical);
+                    }
+                    else if (sourceRows is not null)
+                    {
+                        cell.AgreesWithSource = canonical.SequenceEqual(sourceRows);
+                        cell.SourceDifference = cell.AgreesWithSource == true ? null : Difference(sourceRows, canonical);
                     }
                 }
 
@@ -412,11 +454,41 @@ internal sealed class CatalogRun
                 {
                     artifact.Dispose();
                 }
+
+                results?.WriteCells(query);
             }
         }
 
         Elapsed = clock.Elapsed;
-        WriteResults();
+        results?.WriteSummary();
+    }
+
+    /// <summary>
+    /// The verdict of the judge over the source's rows, made while they exist (see
+    /// <see cref="AgreesWithJudge"/> for what the values mean).
+    /// </summary>
+    private SourceVerdict Judge(string key, List<string> rows)
+    {
+        var digest = Digest(rows);
+        if (!HasJudge)
+        {
+            return new SourceVerdict(digest, null, null);
+        }
+
+        if (JudgeDigest(key) is not { } expected)
+        {
+            return new SourceVerdict(digest, false, $"the judge holds no entry for it - the run it was made from did not run it, and a new judge is a decision ({Database.Decision})");
+        }
+
+        var kept = JudgeRows(key) ?? [];
+        if (digest == expected && (kept.Count == 0 || kept.SequenceEqual(rows)))
+        {
+            return new SourceVerdict(digest, true, null);
+        }
+
+        return new SourceVerdict(digest, false, kept.Count > 0 || rows.Count <= RowsKeptByTheJudge
+            ? Difference(kept, rows)
+            : $"the judge holds {expected}, the source returned {digest}");
     }
 
     /// <summary>
@@ -559,49 +631,25 @@ internal sealed class CatalogRun
 
             var source = cells[(query.Key, Frameworks[0])];
             var judged = HasJudge ? (AgreesWithJudge(query.Key) switch { true => ", judge =", false => ", judge !=", null => ", judge -" }) : string.Empty;
-            yield return $"{query.Key} ({query.Group}, {(source.Ran ? source.Rows!.Count + " rows" : "no rows")}{judged}): {string.Join("; ", parts)}";
+            yield return $"{query.Key} ({query.Group}, {(source.Ran ? source.RowCount + " rows" : "no rows")}{judged}): {string.Join("; ", parts)}";
         }
     }
 
-    public bool AgreesWithSource(CatalogCell cell)
-        => cells[(cell.Key, Frameworks[0])].Rows is { } source && cell.Rows is { } rows && rows.SequenceEqual(source);
+    /// <summary>Whether the cell's rows were the source's, compared when they were read; false where either did not run.</summary>
+    public bool AgreesWithSource(CatalogCell cell) => cell.AgreesWithSource == true;
 
     /// <summary>
-    /// Whether the source agrees with the judge - by the digest, which every entry has, and by
+    /// Whether the source agreed with the judge - by the digest, which every entry has, and by
     /// the rows where the judge keeps them -; null where the source has no rows to compare or
     /// there is no judge. A query that returned no rows has an entry with the digest of none;
     /// a query the judge has no entry for was not run when the judge was made, so it agrees
-    /// with nothing.
+    /// with nothing. Decided when the source's rows were read.
     /// </summary>
-    public bool? AgreesWithJudge(string key)
-    {
-        if (!HasJudge || cells[(key, Frameworks[0])].Rows is not { } rows)
-        {
-            return null;
-        }
+    public bool? AgreesWithJudge(string key) => verdicts.TryGetValue(key, out var verdict) ? verdict.AgreesWithJudge : null;
 
-        if (JudgeDigest(key) is not { } digest)
-        {
-            return false;
-        }
-
-        return Digest(rows) == digest && (JudgeRows(key) is not { Count: > 0 } kept || kept.SequenceEqual(rows));
-    }
-
-    /// <summary>What the source differs from the judge in, for a failure message.</summary>
+    /// <summary>What the source differed from the judge in, for a failure message.</summary>
     public string JudgeDifference(string key)
-    {
-        if (JudgeDigest(key) is not { } digest)
-        {
-            return $"the judge holds no entry for it - the run it was made from did not run it, and a new judge is a decision ({Database.Decision})";
-        }
-
-        var rows = cells[(key, Frameworks[0])].Rows!;
-        var kept = JudgeRows(key) ?? [];
-        return kept.Count > 0 || rows.Count <= RowsKeptByTheJudge
-            ? Difference(kept, rows)
-            : $"the judge holds {digest}, the source returned {Digest(rows)}";
-    }
+        => verdicts.TryGetValue(key, out var verdict) ? verdict.JudgeDifference ?? "the source agrees with the judge" : "the source did not run";
 
     /// <summary>The first row where two renderings differ, both ways.</summary>
     public static string Difference(IReadOnlyList<string> expected, IReadOnlyList<string> actual)
@@ -617,70 +665,105 @@ internal sealed class CatalogRun
             + Environment.NewLine + "  actual   " + (index < actual.Count ? actual[index] : "(no row)");
     }
 
-    private void WriteResults()
+    /// <summary>
+    /// The files of the run in the directory the environment names, written as the run goes:
+    /// the cells of a query and the source rows of it in the form of <c>judge.tsv</c> - what
+    /// the judge is made from once a run is documented - as soon as the query is done, flushed,
+    /// so that a run that ends early leaves what it did; the summary at the end. Null where no
+    /// directory is named.
+    /// </summary>
+    private sealed class ResultsWriter : IDisposable
     {
-        if (Database.ResultsDirectory is not { } directory)
+        private readonly CatalogRun run;
+        private readonly string directory;
+        private readonly StreamWriter cells;
+        private readonly StreamWriter judge;
+
+        private ResultsWriter(CatalogRun run, string directory)
         {
-            return;
+            this.run = run;
+            this.directory = directory;
+            var encoding = new UTF8Encoding(false);
+            cells = new StreamWriter(Path.Combine(directory, "cells.tsv"), false, encoding) { NewLine = "\n" };
+            cells.WriteLine("key\tgroup\tframework\toutcome\tfellBack\ttranslateMs\tcompileMs\tfirstReadMs\trows\tagreesWithSource\tagreesWithJudge\tmedianMs\twarmups\titerations\tdetail");
+            cells.Flush();
+
+            var stamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
+            judge = new StreamWriter(Path.Combine(directory, "judge-candidate.tsv"), false, encoding) { NewLine = "\n" };
+            judge.WriteLine($"# The judge of the {run.Definition.Name} catalog (decision {run.Database.Decision}): the rows of every query in the canonical form of decisions 089 and 170,");
+            judge.WriteLine($"# as the catalog's own text returned them over {run.DataSet} through Dapper in the run started on {stamp}.");
+            judge.WriteLine("# key<TAB>position<TAB>rendered row; position 0 is the digest of the whole result (row count and SHA-256 of the rows joined by LF),");
+            judge.WriteLine($"# the rows follow it where the result has at most {RowsKeptByTheJudge} of them. A query without a line was not run. Made by the .NET suite's {run.Definition.Name} run.");
+            judge.Flush();
         }
 
-        Directory.CreateDirectory(directory);
-        var stamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
+        public static ResultsWriter? Open(CatalogRun run)
+        {
+            if (run.Database.ResultsDirectory is not { } directory)
+            {
+                return null;
+            }
 
-        var cellsFile = new StringBuilder();
-        cellsFile.AppendLine("key\tgroup\tframework\toutcome\tfellBack\ttranslateMs\tcompileMs\tfirstReadMs\trows\tagreesWithSource\tagreesWithJudge\tmedianMs\twarmups\titerations\tdetail");
-        foreach (var query in Queries)
+            Directory.CreateDirectory(directory);
+            return new ResultsWriter(run, directory);
+        }
+
+        /// <summary>The source's rows of one query, while they exist.</summary>
+        public void WriteJudgeLines(string key, List<string> rows)
+        {
+            judge.Write(key);
+            judge.Write("\t0\t");
+            judge.WriteLine(Digest(rows));
+            if (rows.Count <= RowsKeptByTheJudge)
+            {
+                for (var position = 0; position < rows.Count; position++)
+                {
+                    judge.Write(key);
+                    judge.Write('\t');
+                    judge.Write((position + 1).ToString(CultureInfo.InvariantCulture));
+                    judge.Write('\t');
+                    judge.WriteLine(rows[position]);
+                }
+            }
+
+            judge.Flush();
+        }
+
+        /// <summary>The cells of one query, once it is done in every framework.</summary>
+        public void WriteCells(CatalogRunQuery query)
         {
             foreach (var framework in Frameworks)
             {
-                var cell = cells[(query.Key, framework)];
+                if (!run.cells.TryGetValue((query.Key, framework), out var cell))
+                {
+                    continue;
+                }
+
                 var detail = cell.Refused ?? cell.Unprepared ?? cell.Failed ?? cell.MeasurementFailed ?? cell.FallbackFeatures ?? string.Empty;
-                cellsFile.AppendLine(string.Join('\t',
+                cells.WriteLine(string.Join('\t',
                     query.Key, query.Group, framework, cell.Outcome, cell.FellBack ? "1" : "0",
                     cell.Translated.TotalMilliseconds.ToString("F0", CultureInfo.InvariantCulture),
                     cell.Compiled.TotalMilliseconds.ToString("F0", CultureInfo.InvariantCulture),
                     cell.Selected.TotalMilliseconds.ToString("F0", CultureInfo.InvariantCulture),
-                    cell.Rows?.Count.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-                    framework == Frameworks[0] ? string.Empty : cell.Ran ? (AgreesWithSource(cell) ? "1" : "0") : string.Empty,
-                    framework == Frameworks[0] ? AgreesWithJudge(query.Key) switch { true => "1", false => "0", null => string.Empty } : string.Empty,
+                    cell.RowCount?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                    framework == Frameworks[0] ? string.Empty : cell.Ran ? (run.AgreesWithSource(cell) ? "1" : "0") : string.Empty,
+                    framework == Frameworks[0] ? run.AgreesWithJudge(query.Key) switch { true => "1", false => "0", null => string.Empty } : string.Empty,
                     cell.MedianMilliseconds?.ToString("F1", CultureInfo.InvariantCulture) ?? string.Empty,
                     cell.MedianMilliseconds is null ? string.Empty : cell.WarmupIterations.ToString(CultureInfo.InvariantCulture),
                     cell.MedianMilliseconds is null ? string.Empty : cell.Iterations.ToString(CultureInfo.InvariantCulture),
                     detail.Replace('\t', ' ').Replace("\r", string.Empty).Replace('\n', ' ')));
             }
+
+            cells.Flush();
         }
 
-        File.WriteAllText(Path.Combine(directory, "cells.tsv"), cellsFile.ToString());
+        public void WriteSummary() => File.WriteAllLines(Path.Combine(directory, "summary.txt"), run.Describe());
 
-        // The source rows in the form of judge.tsv: what the judge is made from once a run is
-        // documented. Only the source's rows, and only where the source ran.
-        var judgeFile = new StringBuilder();
-        judgeFile.Append($"# The judge of the {Definition.Name} catalog (decision {Database.Decision}): the rows of every query in the canonical form of decisions 089 and 170,\n");
-        judgeFile.Append($"# as the catalog's own text returned them over {DataSet} through Dapper on {stamp}.\n");
-        judgeFile.Append($"# key<TAB>position<TAB>rendered row; position 0 is the digest of the whole result (row count and SHA-256 of the rows joined by LF),\n");
-        judgeFile.Append($"# the rows follow it where the result has at most {RowsKeptByTheJudge} of them. A query without a line was not run. Made by the .NET suite's {Definition.Name} run.\n");
-        foreach (var query in Queries)
+        public void Dispose()
         {
-            if (cells[(query.Key, Frameworks[0])].Rows is not { } rows)
-            {
-                continue;
-            }
-
-            judgeFile.Append(query.Key).Append("\t0\t").Append(Digest(rows)).Append('\n');
-            if (rows.Count > RowsKeptByTheJudge)
-            {
-                continue;
-            }
-
-            for (var position = 0; position < rows.Count; position++)
-            {
-                judgeFile.Append(query.Key).Append('\t').Append(position + 1).Append('\t').Append(rows[position]).Append('\n');
-            }
+            cells.Dispose();
+            judge.Dispose();
         }
-
-        File.WriteAllText(Path.Combine(directory, "judge-candidate.tsv"), judgeFile.ToString(), new UTF8Encoding(false));
-
-        File.WriteAllLines(Path.Combine(directory, "summary.txt"), Describe());
     }
 
     private static double Median(IEnumerable<double> values)

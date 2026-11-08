@@ -7,6 +7,7 @@ import cz.stochel.ormconvertor.javatests.tool.Orm;
 import cz.stochel.ormconvertor.javatests.tool.RecordKind;
 import cz.stochel.ormconvertor.javatests.tool.ToolApi;
 import cz.stochel.ormconvertor.javatests.tool.ToolResponse;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.reflect.InvocationTargetException;
@@ -53,7 +54,11 @@ import java.util.function.Function;
  * by the policy of decision 145, whose values the .NET suite holds equal to its own.
  *
  * <p>The run happens once per test run and catalog, for the first test that asks for it, and
- * writes its files into the directory the environment names.
+ * writes its files into the directory the environment names. The rows of a query live only
+ * while the query is being run: every comparison is made as soon as the rows are read, the
+ * cells and the judge lines of the query are written before the next query starts, and the
+ * summary alone is written at the end - as in {@code CatalogRun.cs}, after the first SEDE run
+ * kept every row of every cell and ran out of memory.
  */
 public final class CatalogRun {
 
@@ -190,43 +195,56 @@ public final class CatalogRun {
         }
     }
 
+    /** Whether the cell's rows were the source's, compared when they were read; false where either did not run. */
     public boolean agreesWithSource(Cell cell) {
-        Source source = sources.get(cell.key);
-        return source != null && source.rows != null && cell.rows != null && cell.rows.equals(source.rows);
+        return cell.agreesWithSource == Boolean.TRUE;
     }
 
     /**
-     * Whether the source agrees with the judge; null where there is no judge, the source has no rows
+     * Whether the source agreed with the judge; null where there is no judge, the source has no rows
      * or the catalog marks the query as not translated - the run the judge was made from refused it.
      * A query that returned no rows has an entry with the digest of none; any other query the judge
-     * has no entry for was not run when the judge was made, so it agrees with nothing.
+     * has no entry for was not run when the judge was made, so it agrees with nothing. Decided when
+     * the source's rows were read.
      */
     public Boolean agreesWithJudge(String key) {
         Source source = sources.get(key);
-        if (!hasJudge || source == null || source.rows == null || !query(key).translated()) {
-            return null;
-        }
-
-        String expected = judgeDigests.get(key);
-        if (expected == null) {
-            return false;
-        }
-
-        List<String> kept = judgeRows.getOrDefault(key, List.of());
-        return digest(source.rows).equals(expected) && (kept.isEmpty() || kept.equals(source.rows));
+        return source == null ? null : source.agreesWithJudge;
     }
 
+    /** What the source differed from the judge in, for a failure message. */
     public String judgeDifference(String key) {
-        String expected = judgeDigests.get(key);
-        if (expected == null) {
-            return "the judge holds no entry for it - the run it was made from did not run it, and a new judge is a decision (" + database.decision() + ")";
+        Source source = sources.get(key);
+        if (source == null || source.rowCount == null) {
+            return "the source did not run";
+        }
+        return source.judgeDifference != null ? source.judgeDifference : "the source agrees with the judge";
+    }
+
+    /** The verdict of the judge over the source's rows, made while they exist. */
+    private void judge(CatalogQuery query, Source source, List<String> rows) {
+        source.digest = digest(rows);
+        if (!hasJudge || !query.translated()) {
+            return;
         }
 
-        List<String> rows = sources.get(key).rows;
-        List<String> kept = judgeRows.getOrDefault(key, List.of());
-        return !kept.isEmpty() || rows.size() <= ROWS_KEPT_BY_THE_JUDGE
+        String expected = judgeDigests.get(query.key());
+        if (expected == null) {
+            source.agreesWithJudge = false;
+            source.judgeDifference = "the judge holds no entry for it - the run it was made from did not run it, and a new judge is a decision (" + database.decision() + ")";
+            return;
+        }
+
+        List<String> kept = judgeRows.getOrDefault(query.key(), List.of());
+        if (source.digest.equals(expected) && (kept.isEmpty() || kept.equals(rows))) {
+            source.agreesWithJudge = true;
+            return;
+        }
+
+        source.agreesWithJudge = false;
+        source.judgeDifference = !kept.isEmpty() || rows.size() <= ROWS_KEPT_BY_THE_JUDGE
                 ? difference(kept, rows)
-                : "the judge holds " + expected + ", the source returned " + digest(rows);
+                : "the judge holds " + expected + ", the source returned " + source.digest;
     }
 
     public static String difference(List<String> expected, List<String> actual) {
@@ -249,7 +267,7 @@ public final class CatalogRun {
                 hasJudge ? "present" : "absent", server == null ? "not read" : server.describe(),
                 measurementLeftOut() == null ? "by the policy of decisions 145 and 165" : measurementLeftOut()));
 
-        long sourceFailures = sources.values().stream().filter(source -> source.rows == null).count();
+        long sourceFailures = sources.values().stream().filter(source -> source.rowCount == null).count();
         lines.add(String.format(Locale.ROOT, "source (the text over JDBC): %d of %d ran, %.1f s of first reads.",
                 sources.size() - sourceFailures, sources.size(), sources.values().stream().mapToLong(source -> source.selectNanos).sum() / 1e9));
 
@@ -267,7 +285,7 @@ public final class CatalogRun {
                 translated += cell.translateNanos;
                 compiled += cell.compileNanos;
                 selected += cell.selectNanos;
-                if (cell.rows != null) {
+                if (cell.rowCount != null) {
                     ran++;
                     if (agreesWithSource(cell)) {
                         agreeing++;
@@ -294,14 +312,14 @@ public final class CatalogRun {
             StringBuilder parts = new StringBuilder();
             for (int framework : FRAMEWORKS) {
                 Cell cell = cell(query.key(), framework);
-                String agreement = cell.rows != null ? (agreesWithSource(cell) ? " =" : " !=") : "";
+                String agreement = cell.rowCount != null ? (agreesWithSource(cell) ? " =" : " !=") : "";
                 String median = cell.medianMilliseconds != null ? String.format(Locale.ROOT, " %.1f ms", cell.medianMilliseconds) : "";
                 parts.append(parts.length() == 0 ? "" : "; ").append(Orm.nameOf(framework)).append(' ').append(cell.outcome()).append(agreement).append(median);
             }
             Boolean judged = agreesWithJudge(query.key());
             String judge = !hasJudge ? "" : judged == null ? ", judge -" : judged ? ", judge =" : ", judge !=";
             lines.add(query.key() + " (" + query.group() + ", "
-                    + (source.rows != null ? source.rows.size() + " rows" : source.failed != null ? "source failed: " + source.failed : "source not run")
+                    + (source.rowCount != null ? source.rowCount + " rows" : source.failed != null ? "source failed: " + source.failed : "source not run")
                     + (source.medianMilliseconds != null ? String.format(Locale.ROOT, ", text %.1f ms", source.medianMilliseconds) : "")
                     + judge + "): " + parts);
         }
@@ -351,91 +369,120 @@ public final class CatalogRun {
                 .filter(query -> keys == null || keys.contains(query.key().toLowerCase(Locale.ROOT)))
                 .toList();
 
-        for (CatalogQuery query : queries) {
-            Source source = new Source();
-            sources.put(query.key(), source);
-            if (query.translated()) {
-                long started = System.nanoTime();
-                try {
-                    source.rows = canonical(query, text(control, query));
-                } catch (Exception e) {
-                    source.failed = innermost(e).toString();
-                }
-                source.selectNanos = System.nanoTime() - started;
+        try (ResultsWriter results = openResults()) {
+            for (CatalogQuery query : queries) {
+                runQuery(control, jdbcUrl, query, results);
             }
 
-            Map<Integer, PreparedJavaQuery> prepared = new LinkedHashMap<>();
+            elapsed = Duration.ofNanos(System.nanoTime() - start);
+            if (results != null) {
+                results.writeSummary();
+            }
+        }
+    }
+
+    /** One query in the source and in every framework; its rows live in this method alone. */
+    private void runQuery(Connection control, String jdbcUrl, CatalogQuery query, ResultsWriter results) {
+        Source source = new Source();
+        sources.put(query.key(), source);
+        List<String> sourceRows = null;
+        if (query.translated()) {
+            long started = System.nanoTime();
             try {
-                for (int framework : FRAMEWORKS) {
-                    Cell cell = new Cell(query.key(), framework);
-                    cells.put(query.key() + "|" + framework, cell);
-
-                    long started = System.nanoTime();
-                    ConversionResponse response;
-                    try {
-                        ToolResponse answer = ToolApi.convert(database.apiUrl(), Orm.DAPPER, framework, query.units());
-                        response = answer.required();
-                    } catch (Throwable e) {
-                        cell.translateNanos = System.nanoTime() - started;
-                        cell.refused = "the conversion failed: " + innermost(e);
-                        continue;
-                    }
-                    cell.translateNanos = System.nanoTime() - started;
-
-                    if (!response.recordsOf(RecordKind.FAILURE).isEmpty()) {
-                        StringBuilder reasons = new StringBuilder();
-                        response.recordsOf(RecordKind.FAILURE).forEach(record -> reasons.append(reasons.length() == 0 ? "" : "; ").append(record.reason()));
-                        cell.refused = reasons.toString();
-                        continue;
-                    }
-                    cell.fellBack = !response.recordsOf(RecordKind.FALLBACK).isEmpty();
-
-                    started = System.nanoTime();
-                    try {
-                        prepared.put(framework, PreparedJavaQuery.prepare(query.key(), framework, response, null, jdbcUrl));
-                    } catch (Throwable e) {
-                        cell.compileNanos = System.nanoTime() - started;
-                        cell.unprepared = innermost(e).toString();
-                        continue;
-                    }
-                    cell.compileNanos = System.nanoTime() - started;
-
-                    started = System.nanoTime();
-                    try {
-                        Object[] arguments = argumentsFor(prepared.get(framework), query);
-                        List<List<Object>> rows = prepared.get(framework).run(query.key(), arguments, query.columns());
-                        cell.selectNanos = System.nanoTime() - started;
-                        cell.rows = canonical(query, rows);
-                    } catch (Throwable e) {
-                        cell.selectNanos = System.nanoTime() - started;
-                        cell.failed = innermost(e).toString();
-                    }
+                sourceRows = canonical(query, text(control, query));
+            } catch (Exception e) {
+                source.failed = innermost(e).toString();
+            }
+            source.selectNanos = System.nanoTime() - started;
+            if (sourceRows != null) {
+                source.rowCount = sourceRows.size();
+                judge(query, source, sourceRows);
+                if (results != null) {
+                    results.writeJudgeLines(query.key(), sourceRows);
                 }
-
-                if (measurementLeftOut() == null) {
-                    if (source.rows != null) {
-                        measure(source, () -> text(control, query));
-                    }
-                    for (Map.Entry<Integer, PreparedJavaQuery> entry : prepared.entrySet()) {
-                        Cell cell = cell(query.key(), entry.getKey());
-                        if (cell.failed == null) {
-                            Object[] arguments = argumentsFor(entry.getValue(), query);
-                            measure(cell, () -> entry.getValue().run(query.key(), arguments, query.columns()));
-                        }
-                    }
-                }
-            } finally {
-                for (PreparedJavaQuery artifact : prepared.values()) {
-                    artifact.close();
-                }
-                // The entities of a query are the tables it reads, so the compiled domains differ
-                // from query to query; closed here rather than kept for the whole catalog.
-                PreparedJavaQuery.closeAll();
             }
         }
 
-        elapsed = Duration.ofNanos(System.nanoTime() - start);
-        writeResults();
+        Map<Integer, PreparedJavaQuery> prepared = new LinkedHashMap<>();
+        try {
+            for (int framework : FRAMEWORKS) {
+                Cell cell = new Cell(query.key(), framework);
+                cells.put(query.key() + "|" + framework, cell);
+
+                long started = System.nanoTime();
+                ConversionResponse response;
+                try {
+                    ToolResponse answer = ToolApi.convert(database.apiUrl(), Orm.DAPPER, framework, query.units());
+                    response = answer.required();
+                } catch (Throwable e) {
+                    cell.translateNanos = System.nanoTime() - started;
+                    cell.refused = "the conversion failed: " + innermost(e);
+                    continue;
+                }
+                cell.translateNanos = System.nanoTime() - started;
+
+                if (!response.recordsOf(RecordKind.FAILURE).isEmpty()) {
+                    StringBuilder reasons = new StringBuilder();
+                    response.recordsOf(RecordKind.FAILURE).forEach(record -> reasons.append(reasons.length() == 0 ? "" : "; ").append(record.reason()));
+                    cell.refused = reasons.toString();
+                    continue;
+                }
+                cell.fellBack = !response.recordsOf(RecordKind.FALLBACK).isEmpty();
+
+                started = System.nanoTime();
+                try {
+                    prepared.put(framework, PreparedJavaQuery.prepare(query.key(), framework, response, null, jdbcUrl));
+                } catch (Throwable e) {
+                    cell.compileNanos = System.nanoTime() - started;
+                    cell.unprepared = innermost(e).toString();
+                    continue;
+                }
+                cell.compileNanos = System.nanoTime() - started;
+
+                started = System.nanoTime();
+                List<String> canonical;
+                try {
+                    Object[] arguments = argumentsFor(prepared.get(framework), query);
+                    List<List<Object>> rows = prepared.get(framework).run(query.key(), arguments, query.columns());
+                    cell.selectNanos = System.nanoTime() - started;
+                    canonical = canonical(query, rows);
+                } catch (Throwable e) {
+                    cell.selectNanos = System.nanoTime() - started;
+                    cell.failed = innermost(e).toString();
+                    continue;
+                }
+
+                // The comparison happens here, while the rows exist; the cell keeps the verdict.
+                cell.rowCount = canonical.size();
+                if (sourceRows != null) {
+                    cell.agreesWithSource = canonical.equals(sourceRows);
+                    cell.sourceDifference = cell.agreesWithSource ? null : difference(sourceRows, canonical);
+                }
+            }
+
+            if (measurementLeftOut() == null) {
+                if (sourceRows != null) {
+                    measure(source, () -> text(control, query));
+                }
+                for (Map.Entry<Integer, PreparedJavaQuery> entry : prepared.entrySet()) {
+                    Cell cell = cell(query.key(), entry.getKey());
+                    if (cell.failed == null) {
+                        Object[] arguments = argumentsFor(entry.getValue(), query);
+                        measure(cell, () -> entry.getValue().run(query.key(), arguments, query.columns()));
+                    }
+                }
+            }
+        } finally {
+            for (PreparedJavaQuery artifact : prepared.values()) {
+                artifact.close();
+            }
+            // The entities of a query are the tables it reads, so the compiled domains differ
+            // from query to query; closed here rather than kept for the whole catalog.
+            PreparedJavaQuery.closeAll();
+            if (results != null) {
+                results.writeCells(query);
+            }
+        }
     }
 
     /**
@@ -604,68 +651,115 @@ public final class CatalogRun {
         hasJudge = true;
     }
 
-    private void writeResults() {
-        String directory = database.resultsDirectory();
-        if (directory == null) {
-            return;
+    /**
+     * The files of the run in the directory the environment names, written as the run goes: the
+     * cells of a query and the source rows of it in the form of judge.tsv - so that the two
+     * suites' sources can be set beside each other - as soon as the query is done, flushed, so
+     * that a run that ends early leaves what it did; the summary at the end. Null where no
+     * directory is named.
+     */
+    private final class ResultsWriter implements AutoCloseable {
+
+        private final Path root;
+        private final BufferedWriter cells;
+        private final BufferedWriter judge;
+
+        private ResultsWriter(Path root) throws IOException {
+            this.root = root;
+            cells = Files.newBufferedWriter(root.resolve("java-cells.tsv"), StandardCharsets.UTF_8);
+            cells.write("key\tgroup\tframework\toutcome\tfellBack\ttranslateMs\tcompileMs\tfirstReadMs\trows\tagreesWithSource\tagreesWithJudge\tmedianMs\twarmups\titerations\tdetail\n");
+            cells.flush();
+
+            judge = Files.newBufferedWriter(root.resolve("java-judge-candidate.tsv"), StandardCharsets.UTF_8);
+            judge.write("# The rows of every " + database.name() + " query in the canonical form of decisions 089 and 170, as the catalog's own text returned them over "
+                    + dataSet + " through JDBC in the run started on "
+                    + ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'")) + ".\n");
+            judge.write("# key<TAB>position<TAB>rendered row; position 0 is the digest of the whole result, the rows follow where there are at most "
+                    + ROWS_KEPT_BY_THE_JUDGE + ". Made by the Java suite's " + database.name() + " run.\n");
+            judge.flush();
         }
 
-        try {
-            Path root = Files.createDirectories(Path.of(directory));
-            StringBuilder cellsFile = new StringBuilder();
-            cellsFile.append("key\tgroup\tframework\toutcome\tfellBack\ttranslateMs\tcompileMs\tfirstReadMs\trows\tagreesWithSource\tagreesWithJudge\tmedianMs\twarmups\titerations\tdetail\n");
-            for (CatalogQuery query : queries) {
+        /** The source's rows of one query, while they exist. */
+        void writeJudgeLines(String key, List<String> rows) {
+            try {
+                judge.write(key + "\t0\t" + digest(rows) + "\n");
+                if (rows.size() <= ROWS_KEPT_BY_THE_JUDGE) {
+                    for (int position = 0; position < rows.size(); position++) {
+                        judge.write(key + "\t" + (position + 1) + "\t" + rows.get(position) + "\n");
+                    }
+                }
+                judge.flush();
+            } catch (IOException e) {
+                throw failure(e);
+            }
+        }
+
+        /** The source's line and the cells of one query, once it is done in every framework. */
+        void writeCells(CatalogQuery query) {
+            try {
                 Source source = sources.get(query.key());
                 Boolean judged = agreesWithJudge(query.key());
-                cellsFile.append(String.join("\t", query.key(), query.group(), "Text", source.rows != null ? "ran" : query.translated() ? "failed" : "not run", "0",
+                cells.write(String.join("\t", query.key(), query.group(), "Text", source.rowCount != null ? "ran" : query.translated() ? "failed" : "not run", "0",
                         "", "", String.format(Locale.ROOT, "%.0f", source.selectNanos / 1e6),
-                        source.rows != null ? String.valueOf(source.rows.size()) : "", "",
+                        source.rowCount != null ? String.valueOf(source.rowCount) : "", "",
                         judged == null ? "" : judged ? "1" : "0",
                         source.medianMilliseconds != null ? String.format(Locale.ROOT, "%.1f", source.medianMilliseconds) : "",
                         source.medianMilliseconds != null ? String.valueOf(source.warmupIterations) : "",
                         source.medianMilliseconds != null ? String.valueOf(source.iterations) : "",
-                        clean(source.failed != null ? source.failed : source.measurementFailed != null ? source.measurementFailed : ""))).append('\n');
+                        clean(source.failed != null ? source.failed : source.measurementFailed != null ? source.measurementFailed : "")) + "\n");
                 for (int framework : FRAMEWORKS) {
                     Cell cell = cell(query.key(), framework);
+                    if (cell == null) {
+                        continue;
+                    }
                     String detail = cell.refused != null ? cell.refused : cell.unprepared != null ? cell.unprepared : cell.failed != null ? cell.failed : cell.measurementFailed != null ? cell.measurementFailed : "";
-                    cellsFile.append(String.join("\t", query.key(), query.group(), Orm.nameOf(framework), cell.outcome(), cell.fellBack ? "1" : "0",
+                    cells.write(String.join("\t", query.key(), query.group(), Orm.nameOf(framework), cell.outcome(), cell.fellBack ? "1" : "0",
                             String.format(Locale.ROOT, "%.0f", cell.translateNanos / 1e6),
                             String.format(Locale.ROOT, "%.0f", cell.compileNanos / 1e6),
                             String.format(Locale.ROOT, "%.0f", cell.selectNanos / 1e6),
-                            cell.rows != null ? String.valueOf(cell.rows.size()) : "",
-                            cell.rows != null ? (agreesWithSource(cell) ? "1" : "0") : "",
+                            cell.rowCount != null ? String.valueOf(cell.rowCount) : "",
+                            cell.rowCount != null ? (agreesWithSource(cell) ? "1" : "0") : "",
                             "",
                             cell.medianMilliseconds != null ? String.format(Locale.ROOT, "%.1f", cell.medianMilliseconds) : "",
                             cell.medianMilliseconds != null ? String.valueOf(cell.warmupIterations) : "",
                             cell.medianMilliseconds != null ? String.valueOf(cell.iterations) : "",
-                            clean(detail))).append('\n');
+                            clean(detail)) + "\n");
                 }
+                cells.flush();
+            } catch (IOException e) {
+                throw failure(e);
             }
-            Files.writeString(root.resolve("java-cells.tsv"), cellsFile.toString(), StandardCharsets.UTF_8);
+        }
 
-            // The source rows in the form of judge.tsv, so that the two suites' sources can be set beside each other.
-            StringBuilder judgeFile = new StringBuilder();
-            judgeFile.append("# The rows of every ").append(database.name()).append(" query in the canonical form of decisions 089 and 170, as the catalog's own text returned them over ")
-                    .append(dataSet).append(" through JDBC on ")
-                    .append(ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'"))).append(".\n");
-            judgeFile.append("# key<TAB>position<TAB>rendered row; position 0 is the digest of the whole result, the rows follow where there are at most ")
-                    .append(ROWS_KEPT_BY_THE_JUDGE).append(". Made by the Java suite's ").append(database.name()).append(" run.\n");
-            for (CatalogQuery query : queries) {
-                Source source = sources.get(query.key());
-                if (source.rows == null) {
-                    continue;
-                }
-                judgeFile.append(query.key()).append("\t0\t").append(digest(source.rows)).append('\n');
-                if (source.rows.size() > ROWS_KEPT_BY_THE_JUDGE) {
-                    continue;
-                }
-                for (int position = 0; position < source.rows.size(); position++) {
-                    judgeFile.append(query.key()).append('\t').append(position + 1).append('\t').append(source.rows.get(position)).append('\n');
-                }
+        void writeSummary() {
+            try {
+                Files.write(root.resolve("java-summary.txt"), describe(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw failure(e);
             }
-            Files.writeString(root.resolve("java-judge-candidate.tsv"), judgeFile.toString(), StandardCharsets.UTF_8);
+        }
 
-            Files.write(root.resolve("java-summary.txt"), describe(), StandardCharsets.UTF_8);
+        @Override
+        public void close() {
+            try (cells; judge) {
+                // closed by the try
+            } catch (IOException e) {
+                throw failure(e);
+            }
+        }
+
+        private UncheckedIOException failure(IOException e) {
+            return new UncheckedIOException("The results of the " + database.name() + " run could not be written into " + root + ".", e);
+        }
+    }
+
+    private ResultsWriter openResults() {
+        String directory = database.resultsDirectory();
+        if (directory == null) {
+            return null;
+        }
+        try {
+            return new ResultsWriter(Files.createDirectories(Path.of(directory)));
         } catch (IOException e) {
             throw new UncheckedIOException("The results of the " + database.name() + " run could not be written into " + directory + ".", e);
         }
@@ -777,15 +871,29 @@ public final class CatalogRun {
         }
     }
 
-    /** The catalog's own text over JDBC. */
+    /**
+     * The catalog's own text over JDBC. Its rows are compared with the judge and written as
+     * soon as they are read and then let go; what stays is their count, their digest and the
+     * judge's verdict.
+     */
     public static final class Source extends Measured {
 
-        public List<String> rows;
+        /** How many rows the text returned; null where it did not run. */
+        public Integer rowCount;
         public String failed;
+        /** The digest of the rows in the canonical form, where the text ran. */
+        public String digest;
+        /** The judge's verdict over the rows; null without a judge or without rows. */
+        Boolean agreesWithJudge;
+        String judgeDifference;
         long selectNanos;
+
+        public boolean ran() {
+            return rowCount != null;
+        }
     }
 
-    /** What one query did in one framework. */
+    /** What one query did in one framework. The rows are compared with the source's as soon as they are read and then let go. */
     public static final class Cell extends Measured {
 
         public final String key;
@@ -794,7 +902,12 @@ public final class CatalogRun {
         public boolean fellBack;
         public String unprepared;
         public String failed;
-        public List<String> rows;
+        /** How many rows the artifact returned; null where it did not run. */
+        public Integer rowCount;
+        /** Whether the rows were the source's, row for row; null where the cell or the source did not run. */
+        public Boolean agreesWithSource;
+        /** The first row where the rows differed from the source's, where they did. */
+        public String sourceDifference;
         long translateNanos;
         long compileNanos;
         long selectNanos;
@@ -809,7 +922,7 @@ public final class CatalogRun {
         }
 
         public boolean ran() {
-            return rows != null;
+            return rowCount != null;
         }
 
         public String describe() {
@@ -823,7 +936,7 @@ public final class CatalogRun {
             if (failed != null) {
                 return cell + ": the artifact failed to run: " + failed;
             }
-            return cell + ": " + rows.size() + " rows" + (fellBack ? " (native SQL)" : "");
+            return cell + ": " + rowCount + " rows" + (fellBack ? " (native SQL)" : "");
         }
     }
 }

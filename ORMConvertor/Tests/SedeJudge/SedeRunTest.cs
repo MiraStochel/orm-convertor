@@ -92,7 +92,7 @@ public class SedeRunTest(ITestOutputHelper output)
 
         Assert.True(source.Ran, source.Describe());
         Assert.True(cell.Ran, cell.Describe());
-        Assert.True(run.AgreesWithSource(cell), $"{cell.Describe()} differs from the source: {CatalogRun.Difference(source.Rows!, cell.Rows!)}");
+        Assert.True(run.AgreesWithSource(cell), $"{cell.Describe()} differs from the source: {cell.SourceDifference}");
     }
 
     /// <summary>

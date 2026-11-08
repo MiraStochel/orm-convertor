@@ -71,9 +71,9 @@ class SedeRunTest {
         CatalogRun.Source source = run.source(key);
         CatalogRun.Cell cell = run.cell(key, framework);
 
-        assertNotNull(source.rows, () -> key + ": the text failed over JDBC: " + source.failed);
-        assertNotNull(cell.rows, cell::describe);
-        assertTrue(run.agreesWithSource(cell), () -> cell.describe() + " differs from the source: " + CatalogRun.difference(source.rows, cell.rows));
+        assertTrue(source.ran(), () -> key + ": the text failed over JDBC: " + source.failed);
+        assertTrue(cell.ran(), cell::describe);
+        assertTrue(run.agreesWithSource(cell), () -> cell.describe() + " differs from the source: " + cell.sourceDifference);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -92,7 +92,7 @@ class SedeRunTest {
         }
 
         CatalogRun.Source source = run.source(key);
-        assertNotNull(source.rows, () -> key + ": the text failed over JDBC: " + source.failed);
+        assertTrue(source.ran(), () -> key + ": the text failed over JDBC: " + source.failed);
         assertEquals(Boolean.TRUE, run.agreesWithJudge(key), () -> key + ": the source differs from the judge: " + run.judgeDifference(key));
     }
 
