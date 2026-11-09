@@ -63,11 +63,12 @@ public class FibenRunTest(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// The fourth level between the frameworks (decision 089): the artifact of the target
-    /// returns the rows the catalog's own text returns through Dapper, in the canonical form
-    /// of decision 170: in the order of the query's ordering key, the rows of one key value as
-    /// a set, the whole result as a set where the query does not order. A disagreement
-    /// is a wrong translation, or a difference the frameworks make that the text does not.
+    /// The fourth level between the frameworks (decision 089): the artifact of the target -
+    /// Dapper's among them - returns the rows the catalog's own text returns over ADO.NET
+    /// (decision 209), in the canonical form of decision 170: in the order of the query's
+    /// ordering key, the rows of one key value as a set, the whole result as a set where the
+    /// query does not order. A disagreement is a wrong translation, or a difference the
+    /// frameworks make that the text does not.
     /// </summary>
     [Theory]
     [MemberData(nameof(Cells))]
@@ -82,7 +83,7 @@ public class FibenRunTest(ITestOutputHelper output)
             Assert.Skip($"{key} is not translated.");
         }
 
-        var source = run.Cell(key, CatalogRun.Frameworks[0]);
+        var source = run.Source(key);
         var cell = run.Cell(key, framework);
 
         Assert.True(source.Ran, source.Describe());
@@ -115,7 +116,7 @@ public class FibenRunTest(ITestOutputHelper output)
             Assert.Skip($"{key} is not translated, so the judge holds no entry for it.");
         }
 
-        var source = run.Cell(key, CatalogRun.Frameworks[0]);
+        var source = run.Source(key);
         Assert.True(source.Ran, source.Describe());
         Assert.True(run.AgreesWithJudge(key) == true, $"{key}: the source differs from the judge: {run.JudgeDifference(key)}");
     }

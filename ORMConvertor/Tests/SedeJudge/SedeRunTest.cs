@@ -68,11 +68,12 @@ public class SedeRunTest(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// The fourth level between the frameworks (decision 089): the artifact of the target
-    /// returns the rows the catalog's own text returns through Dapper with the catalog's values,
-    /// in the canonical form of decision 170. A disagreement is a wrong translation, a difference
-    /// the frameworks make that the text does not, or a slice of the author's text that does not
-    /// determine its rows - the text stays the author's, and the record says which it was.
+    /// The fourth level between the frameworks (decision 089): the artifact of the target -
+    /// Dapper's among them - returns the rows the catalog's own text returns over ADO.NET with
+    /// the catalog's values (decision 209), in the canonical form of decision 170. A
+    /// disagreement is a wrong translation, a difference the frameworks make that the text does
+    /// not, or a slice of the author's text that does not determine its rows - the text stays
+    /// the author's, and the record says which it was.
     /// </summary>
     [Theory]
     [MemberData(nameof(Cells))]
@@ -87,7 +88,7 @@ public class SedeRunTest(ITestOutputHelper output)
             Assert.Skip($"{key} is not translated.");
         }
 
-        var source = run.Cell(key, CatalogRun.Frameworks[0]);
+        var source = run.Source(key);
         var cell = run.Cell(key, framework);
 
         Assert.True(source.Ran, source.Describe());
@@ -119,7 +120,7 @@ public class SedeRunTest(ITestOutputHelper output)
             Assert.Skip($"{key} is not translated, so the judge holds no entry for it.");
         }
 
-        var source = run.Cell(key, CatalogRun.Frameworks[0]);
+        var source = run.Source(key);
         Assert.True(source.Ran, source.Describe());
         Assert.True(run.AgreesWithJudge(key) == true, $"{key}: the source differs from the judge: {run.JudgeDifference(key)}");
     }

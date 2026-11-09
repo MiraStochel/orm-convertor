@@ -12,8 +12,55 @@ using Tests.Differential;
 
 namespace Tests.CatalogRuns;
 
+/// <summary>The measurement of one execution by the policy of decisions 145 and 165, which the source and every cell carry.</summary>
+internal abstract class CatalogMeasured
+{
+    /// <summary>The median of one execution by the policy of decision 145, or null where it was not measured.</summary>
+    public double? MedianMilliseconds { get; set; }
+
+    public int WarmupIterations { get; set; }
+
+    public int Iterations { get; set; }
+
+    public string? MeasurementFailed { get; set; }
+}
+
+/// <summary>
+/// What the catalog's own text did over the database, run as it stands with the catalog's
+/// values declared in front of it (decision 209): the rows every target is compared with and
+/// the judge is made from. Run only for a query the catalog claims as translated.
+/// </summary>
+internal sealed class CatalogSource : CatalogMeasured
+{
+    public required string Key { get; init; }
+
+    /// <summary>How many rows the text returned; null where it did not run.</summary>
+    public int? RowCount { get; set; }
+
+    /// <summary>Why the text did not return rows, or null where it did or was not run.</summary>
+    public string? Failed { get; set; }
+
+    /// <summary>The time of the one read that produced the rows.</summary>
+    public TimeSpan Selected { get; set; }
+
+    /// <summary>The digest of the rows (<see cref="CatalogRun.Digest"/>), kept once the rows are let go.</summary>
+    public string? Digest { get; set; }
+
+    /// <summary>The verdict of the judge over the rows; null without a judge or without rows.</summary>
+    public bool? AgreesWithJudge { get; set; }
+
+    public string? JudgeDifference { get; set; }
+
+    public bool Ran => RowCount is not null;
+
+    public string Describe()
+        => Ran ? $"{Key}: the text returned {RowCount} rows"
+            : Failed is not null ? $"{Key}: the text failed over ADO.NET: {Failed}"
+            : $"{Key}: the text was not run, because the catalog does not claim the query as translated";
+}
+
 /// <summary>What one query did in one framework over the stages of the run (decisions 149 and 208).</summary>
-internal sealed class CatalogCell
+internal sealed class CatalogCell : CatalogMeasured
 {
     public required string Key { get; init; }
 
@@ -45,7 +92,7 @@ internal sealed class CatalogCell
     /// </summary>
     public int? RowCount { get; set; }
 
-    /// <summary>Whether the rows were the source's, row for row; null where the cell is the source, did not run, or the source did not.</summary>
+    /// <summary>Whether the rows were the text's, row for row; null where the cell did not run or the text did not.</summary>
     public bool? AgreesWithSource { get; set; }
 
     /// <summary>The first row where the rows differed from the source's (<see cref="CatalogRun.Difference"/>), where they did.</summary>
@@ -57,15 +104,6 @@ internal sealed class CatalogCell
 
     /// <summary>The time of the one read that produced the rows.</summary>
     public TimeSpan Selected { get; set; }
-
-    /// <summary>The median of one execution by the policy of decision 145, or null where the cell was not measured.</summary>
-    public double? MedianMilliseconds { get; set; }
-
-    public int WarmupIterations { get; set; }
-
-    public int Iterations { get; set; }
-
-    public string? MeasurementFailed { get; set; }
 
     /// <summary>Where the query landed in the target: its own language, native SQL, a refusal, or a failure after the translation.</summary>
     public string Outcome => Refused is not null ? "refused" : Unprepared is not null ? "not compiled" : Failed is not null ? "failed" : FellBack ? "native SQL" : "translated";
@@ -81,12 +119,6 @@ internal sealed class CatalogCell
         return $"{cell}: {RowCount} rows{(FellBack ? " (native SQL)" : string.Empty)}";
     }
 }
-
-/// <summary>
-/// What the run keeps of the source's rows once they are let go: their digest, and the verdict
-/// of the judge over them where the database holds one (null without a judge).
-/// </summary>
-internal sealed record SourceVerdict(string Digest, bool? AgreesWithJudge, string? JudgeDifference);
 
 /// <summary>
 /// The settings of the server a run reads before it starts (decision 164): the MAXDOP the
@@ -155,8 +187,9 @@ internal sealed record CatalogServer(int Maxdop, int MaxServerMemoryMegabytes, i
 /// One query of a catalog as the run reads it, whatever the catalog: its key, the group the
 /// summary sorts it under (Kim's type for FIBEN, the part of the set for SEDE), the columns of
 /// its result and the key of its ordering (decision 170), the units of its conversion - the
-/// entities of the tables it reads and the text as one more unit -, the values of its
-/// parameters by name, and whether the catalog claims it translated at all.
+/// entities of the tables it reads and the text as one more unit -, the text itself, which the
+/// run executes as the source (decision 209), the values of its parameters by name, and
+/// whether the catalog claims it translated at all.
 /// </summary>
 internal sealed record CatalogRunQuery(
     string Key,
@@ -164,6 +197,7 @@ internal sealed record CatalogRunQuery(
     IReadOnlyList<string> Columns,
     IReadOnlyList<string> OrderingKey,
     Func<List<ConversionSource>> Units,
+    string Sql,
     IReadOnlyList<(string Name, string SqlType, string Value)> Arguments,
     bool IsTranslated);
 
@@ -177,15 +211,17 @@ internal sealed record CatalogDefinition(
 
 /// <summary>
 /// The on-demand run of a query catalog in the .NET suite (decisions 149 and 208): every query
-/// of the catalog translated from Dapper into the three .NET frameworks with the catalog's
-/// database as the catalog and only the entities of the tables it reads, the artifacts
-/// compiled, each run once with the catalog's values and its rows put into the canonical form
-/// of decision 089, the targets compared with the source - Dapper with the catalog's own text,
-/// which judges the text - and the source compared with the judge where the database holds
-/// one, and finally every cell measured by the policy of decision 145. The run happens once
-/// per test run and catalog, for the first test that asks for it, and writes its files into
-/// the directory the environment names: the cells, the source rows in the form of
-/// <c>judge.tsv</c>, from which the judge is made after a documented run, and the summary.
+/// of the catalog translated from Dapper into the three .NET frameworks - Dapper among them -
+/// with the catalog's database as the catalog and only the entities of the tables it reads,
+/// the artifacts compiled, each run once with the catalog's values and its rows put into the
+/// canonical form of decision 089, every target compared with the source - the catalog's own
+/// text run over ADO.NET as it stands, with the values declared in front of it, as the Java
+/// suite runs it over JDBC (decision 209) - and the source compared with the judge where the
+/// database holds one, and finally the source and every cell measured by the policy of
+/// decision 145. The run happens once per test run and catalog, for the first test that asks
+/// for it, and writes its files into the directory the environment names: the cells, the
+/// source rows in the form of <c>judge.tsv</c>, from which the judge is made after a
+/// documented run, and the summary.
 ///
 /// The rows of a query live only while the query is being run: every comparison is made as
 /// soon as the rows are read, the cells and the judge lines of the query are written to the
@@ -194,10 +230,11 @@ internal sealed record CatalogDefinition(
 /// after eight hours and with nothing written.
 ///
 /// The Java suite runs the three Java frameworks the same way against an instance whose
-/// catalog is the catalog's database, with the text itself over JDBC as its source.
+/// catalog is the catalog's database, with the same text over JDBC as its source.
 /// </summary>
 internal sealed class CatalogRun
 {
+    /// <summary>The targets of the run; Dapper is a target like the others, its source is the text (decision 209).</summary>
     public static readonly ORMEnum[] Frameworks = [ORMEnum.Dapper, ORMEnum.EFCore, ORMEnum.NHibernate];
 
     private static readonly ResultRow.RenderSettings Settings = new();
@@ -212,7 +249,7 @@ internal sealed class CatalogRun
     public const int RowsKeptByTheJudge = 1000;
 
     private readonly Dictionary<(string Key, ORMEnum Framework), CatalogCell> cells = [];
-    private readonly Dictionary<string, SourceVerdict> verdicts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CatalogSource> sources = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (string Digest, List<string> Rows)> judge = new(StringComparer.OrdinalIgnoreCase);
 
     private CatalogRun(CatalogDefinition definition, string? unavailable)
@@ -265,7 +302,10 @@ internal sealed class CatalogRun
 
     public CatalogCell Cell(string key, ORMEnum framework) => cells[(key, framework)];
 
-    public bool Covers(string key) => cells.ContainsKey((key, ORMEnum.Dapper));
+    /// <summary>What the catalog's text did for a query (decision 209).</summary>
+    public CatalogSource Source(string key) => sources[key];
+
+    public bool Covers(string key) => sources.ContainsKey(key);
 
     /// <summary>The rows the judge keeps for a query - all of them up to <see cref="RowsKeptByTheJudge"/>, none beyond -, or null where the judge has no entry.</summary>
     public IReadOnlyList<string>? JudgeRows(string key) => judge.TryGetValue(key, out var entry) ? entry.Rows : null;
@@ -346,10 +386,35 @@ internal sealed class CatalogRun
         foreach (var query in Queries)
         {
             var prepared = new Dictionary<ORMEnum, PreparedQuery>();
+            var source = sources[query.Key] = new CatalogSource { Key = query.Key };
             List<string>? sourceRows = null;
 
             try
             {
+                // The source is the catalog's text as it stands (decision 209), run first, and
+                // only where the catalog claims the query: an unclaimed text is not valid over
+                // the schema, not a read, or fails over the data, and judges nothing.
+                if (query.IsTranslated)
+                {
+                    var started = Stopwatch.GetTimestamp();
+                    try
+                    {
+                        sourceRows = Canonical(query, Text(control, query));
+                    }
+                    catch (Exception exception)
+                    {
+                        source.Failed = Innermost(exception).Message;
+                    }
+
+                    source.Selected = Stopwatch.GetElapsedTime(started);
+                    if (sourceRows is not null)
+                    {
+                        source.RowCount = sourceRows.Count;
+                        Judge(source, sourceRows);
+                        results?.WriteJudgeLines(query.Key, sourceRows);
+                    }
+                }
+
                 foreach (var framework in Frameworks)
                 {
                     var cell = cells[(query.Key, framework)] = new CatalogCell { Key = query.Key, Framework = framework };
@@ -368,7 +433,7 @@ internal sealed class CatalogRun
                     }
 
                     cell.Translated = Stopwatch.GetElapsedTime(started);
-                    if (framework == Frameworks[0] && CatalogRead == TimeSpan.Zero)
+                    if (CatalogRead == TimeSpan.Zero)
                     {
                         CatalogRead = cell.Translated;
                     }
@@ -418,15 +483,9 @@ internal sealed class CatalogRun
                         continue;
                     }
 
-                    // The comparisons happen here, while the rows exist; the cell keeps the verdicts.
+                    // The comparison happens here, while the rows exist; the cell keeps the verdict.
                     cell.RowCount = canonical.Count;
-                    if (framework == Frameworks[0])
-                    {
-                        sourceRows = canonical;
-                        verdicts[query.Key] = Judge(query.Key, canonical);
-                        results?.WriteJudgeLines(query.Key, canonical);
-                    }
-                    else if (sourceRows is not null)
+                    if (sourceRows is not null)
                     {
                         cell.AgreesWithSource = canonical.SequenceEqual(sourceRows);
                         cell.SourceDifference = cell.AgreesWithSource == true ? null : Difference(sourceRows, canonical);
@@ -435,6 +494,11 @@ internal sealed class CatalogRun
 
                 if (MeasurementLeftOut is null)
                 {
+                    if (sourceRows is not null)
+                    {
+                        Measure(source, () => Text(control, query));
+                    }
+
                     foreach (var (framework, artifact) in prepared)
                     {
                         var cell = cells[(query.Key, framework)];
@@ -467,28 +531,98 @@ internal sealed class CatalogRun
     /// The verdict of the judge over the source's rows, made while they exist (see
     /// <see cref="AgreesWithJudge"/> for what the values mean).
     /// </summary>
-    private SourceVerdict Judge(string key, List<string> rows)
+    private void Judge(CatalogSource source, List<string> rows)
     {
-        var digest = Digest(rows);
+        var digest = source.Digest = Digest(rows);
         if (!HasJudge)
         {
-            return new SourceVerdict(digest, null, null);
+            return;
         }
 
-        if (JudgeDigest(key) is not { } expected)
+        if (JudgeDigest(source.Key) is not { } expected)
         {
-            return new SourceVerdict(digest, false, $"the judge holds no entry for it - the run it was made from did not run it, and a new judge is a decision ({Database.Decision})");
+            source.AgreesWithJudge = false;
+            source.JudgeDifference = $"the judge holds no entry for it - the run it was made from did not run it, and a new judge is a decision ({Database.Decision})";
+            return;
         }
 
-        var kept = JudgeRows(key) ?? [];
+        var kept = JudgeRows(source.Key) ?? [];
         if (digest == expected && (kept.Count == 0 || kept.SequenceEqual(rows)))
         {
-            return new SourceVerdict(digest, true, null);
+            source.AgreesWithJudge = true;
+            return;
         }
 
-        return new SourceVerdict(digest, false, kept.Count > 0 || rows.Count <= RowsKeptByTheJudge
+        source.AgreesWithJudge = false;
+        source.JudgeDifference = kept.Count > 0 || rows.Count <= RowsKeptByTheJudge
             ? Difference(kept, rows)
-            : $"the judge holds {expected}, the source returned {digest}");
+            : $"the judge holds {expected}, the source returned {digest}";
+    }
+
+    /// <summary>
+    /// The batch the source runs as (decision 209): the catalog's values declared in front of
+    /// the text, one <c>DECLARE</c> each, in the order the catalog states them - the one way a
+    /// text with <c>@name</c> variables runs unchanged, and the batch the Java suite sends over
+    /// JDBC.
+    /// </summary>
+    internal static string TextBatch(CatalogRunQuery query)
+    {
+        var batch = new StringBuilder();
+        foreach (var (name, sqlType, value) in query.Arguments)
+        {
+            batch.Append("DECLARE @").Append(name).Append(' ').Append(sqlType).Append(" = ").Append(Literal(sqlType, value)).Append(";\n");
+        }
+
+        return batch.Append(query.Sql).ToString();
+    }
+
+    /// <summary>A value of the catalog as a T-SQL literal of its type: a number as it is written, anything else a Unicode string.</summary>
+    internal static string Literal(string sqlType, string value)
+    {
+        var parenthesis = sqlType.IndexOf('(');
+        var type = (parenthesis > 0 ? sqlType[..parenthesis] : sqlType).Trim().ToUpperInvariant();
+        return type is "INT" or "BIGINT" or "SMALLINT" or "TINYINT" or "FLOAT" or "REAL" or "DECIMAL" or "NUMERIC" or "BIT"
+            ? value
+            : "N'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
+    }
+
+    /// <summary>
+    /// The catalog's own text over ADO.NET, the source of the comparison: its rows with the
+    /// columns in the order the catalog states, a column the text names otherwise failing the
+    /// source with both names.
+    /// </summary>
+    private static List<object?[]> Text(SqlConnection control, CatalogRunQuery query)
+    {
+        using var command = control.CreateCommand();
+        command.CommandText = TextBatch(query);
+        command.CommandTimeout = BenchmarkPolicy.ExecutionTimeoutSeconds;
+        using var reader = command.ExecuteReader();
+        if (reader.FieldCount != query.Columns.Count)
+        {
+            throw new InvalidOperationException($"{query.Key}: the text returns {reader.FieldCount} columns, the catalog states {query.Columns.Count}.");
+        }
+
+        for (var index = 0; index < reader.FieldCount; index++)
+        {
+            if (!reader.GetName(index).Equals(query.Columns[index], StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"{query.Key}: column {index + 1} is {reader.GetName(index)}, the catalog states {query.Columns[index]}.");
+            }
+        }
+
+        var rows = new List<object?[]>();
+        while (reader.Read())
+        {
+            var row = new object?[reader.FieldCount];
+            for (var index = 0; index < reader.FieldCount; index++)
+            {
+                row[index] = reader.IsDBNull(index) ? null : reader.GetValue(index);
+            }
+
+            rows.Add(row);
+        }
+
+        return rows;
     }
 
     /// <summary>
@@ -536,7 +670,7 @@ internal sealed class CatalogRun
     /// it; then executions until the accumulated time reaches the target and at least the
     /// minimum; the median of one execution is the number.
     /// </summary>
-    private static void Measure(CatalogCell cell, Action execute)
+    private static void Measure(CatalogMeasured cell, Action execute)
     {
         try
         {
@@ -600,11 +734,20 @@ internal sealed class CatalogRun
             + $"first catalog read {CatalogRead.TotalMilliseconds:F0} ms; judge {(HasJudge ? "present" : "absent - this run can make one")}; "
             + $"server {Server?.Describe() ?? "not read"}; measurement {MeasurementLeftOut ?? "by the policy of decisions 145 and 165"}.");
 
+        var texts = sources.Values.ToList();
+        var textsMeasured = texts.Where(source => source.MedianMilliseconds is not null).ToList();
+        yield return FormattableString.Invariant(
+            $"source (the text over ADO.NET): {texts.Count(source => source.Ran)} of {texts.Count(source => Query(source.Key).IsTranslated)} claimed queries ran, {texts.Sum(source => source.Selected.TotalSeconds):F1} s of first reads")
+            + (textsMeasured.Count == 0
+                ? "."
+                : FormattableString.Invariant($"; measured {textsMeasured.Count}, median of medians {Median(textsMeasured.Select(source => source.MedianMilliseconds!.Value)):F1} ms, sum of medians {textsMeasured.Sum(source => source.MedianMilliseconds!.Value) / 1000:F1} s."));
+
         foreach (var framework in Frameworks)
         {
             var mine = cells.Values.Where(cell => cell.Framework == framework).ToList();
             var outcomes = mine.GroupBy(cell => cell.Outcome).OrderBy(group => group.Key).Select(group => $"{group.Count()} {group.Key}");
-            var agreeing = mine.Count(cell => cell.Ran && AgreesWithSource(cell));
+            var compared = mine.Count(cell => cell.AgreesWithSource is not null);
+            var agreeing = mine.Count(AgreesWithSource);
             var measured = mine.Where(cell => cell.MedianMilliseconds is not null).ToList();
 
             var measurement = measured.Count == 0
@@ -616,7 +759,7 @@ internal sealed class CatalogRun
             var compilation = mine.Sum(cell => cell.Compiled.TotalSeconds);
             var reads = mine.Sum(cell => cell.Selected.TotalSeconds);
             yield return FormattableString.Invariant(
-                $"{framework}: {string.Join(", ", outcomes)}; {agreeing} of {ran} runs agree with the source; translation {translation:F1} s, compilation {compilation:F1} s, first reads {reads:F1} s{measurement}.");
+                $"{framework}: {string.Join(", ", outcomes)}; {ran} runs, {agreeing} of the {compared} with a source agree with it; translation {translation:F1} s, compilation {compilation:F1} s, first reads {reads:F1} s{measurement}.");
         }
 
         foreach (var query in Queries)
@@ -625,13 +768,15 @@ internal sealed class CatalogRun
             {
                 var cell = cells[(query.Key, framework)];
                 var median = cell.MedianMilliseconds is { } milliseconds ? string.Create(CultureInfo.InvariantCulture, $" {milliseconds:F1} ms") : string.Empty;
-                var agreement = framework == Frameworks[0] ? string.Empty : cell.Ran ? (AgreesWithSource(cell) ? " =" : " !=") : string.Empty;
+                var agreement = cell.AgreesWithSource switch { true => " =", false => " !=", null => string.Empty };
                 return $"{framework} {cell.Outcome}{agreement}{median}";
             });
 
-            var source = cells[(query.Key, Frameworks[0])];
+            var source = sources[query.Key];
+            var text = source.Ran ? $"{source.RowCount} rows" : source.Failed is not null ? $"source failed: {source.Failed}" : "source not run";
+            var textMedian = source.MedianMilliseconds is { } sourceMilliseconds ? string.Create(CultureInfo.InvariantCulture, $", text {sourceMilliseconds:F1} ms") : string.Empty;
             var judged = HasJudge ? (AgreesWithJudge(query.Key) switch { true => ", judge =", false => ", judge !=", null => ", judge -" }) : string.Empty;
-            yield return $"{query.Key} ({query.Group}, {(source.Ran ? source.RowCount + " rows" : "no rows")}{judged}): {string.Join("; ", parts)}";
+            yield return $"{query.Key} ({query.Group}, {text}{textMedian}{judged}): {string.Join("; ", parts)}";
         }
     }
 
@@ -645,11 +790,11 @@ internal sealed class CatalogRun
     /// a query the judge has no entry for was not run when the judge was made, so it agrees
     /// with nothing. Decided when the source's rows were read.
     /// </summary>
-    public bool? AgreesWithJudge(string key) => verdicts.TryGetValue(key, out var verdict) ? verdict.AgreesWithJudge : null;
+    public bool? AgreesWithJudge(string key) => sources.TryGetValue(key, out var source) ? source.AgreesWithJudge : null;
 
     /// <summary>What the source differed from the judge in, for a failure message.</summary>
     public string JudgeDifference(string key)
-        => verdicts.TryGetValue(key, out var verdict) ? verdict.JudgeDifference ?? "the source agrees with the judge" : "the source did not run";
+        => sources.TryGetValue(key, out var source) && source.Ran ? source.JudgeDifference ?? "the source agrees with the judge" : "the source did not run";
 
     /// <summary>The first row where two renderings differ, both ways.</summary>
     public static string Difference(IReadOnlyList<string> expected, IReadOnlyList<string> actual)
@@ -691,7 +836,7 @@ internal sealed class CatalogRun
             var stamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
             judge = new StreamWriter(Path.Combine(directory, "judge-candidate.tsv"), false, encoding) { NewLine = "\n" };
             judge.WriteLine($"# The judge of the {run.Definition.Name} catalog (decision {run.Database.Decision}): the rows of every query in the canonical form of decisions 089 and 170,");
-            judge.WriteLine($"# as the catalog's own text returned them over {run.DataSet} through Dapper in the run started on {stamp}.");
+            judge.WriteLine($"# as the catalog's own text returned them over {run.DataSet} through ADO.NET in the run started on {stamp} (decision 209).");
             judge.WriteLine("# key<TAB>position<TAB>rendered row; position 0 is the digest of the whole result (row count and SHA-256 of the rows joined by LF),");
             judge.WriteLine($"# the rows follow it where the result has at most {RowsKeptByTheJudge} of them. A query without a line was not run. Made by the .NET suite's {run.Definition.Name} run.");
             judge.Flush();
@@ -729,9 +874,24 @@ internal sealed class CatalogRun
             judge.Flush();
         }
 
-        /// <summary>The cells of one query, once it is done in every framework.</summary>
+        /// <summary>The source's line and the cells of one query, once it is done in every framework; the source's line as the Java suite writes it, with the framework <c>Text</c>.</summary>
         public void WriteCells(CatalogRunQuery query)
         {
+            if (run.sources.TryGetValue(query.Key, out var source))
+            {
+                cells.WriteLine(string.Join('\t',
+                    query.Key, query.Group, "Text", source.Ran ? "ran" : query.IsTranslated ? "failed" : "not run", "0",
+                    string.Empty, string.Empty,
+                    source.Selected.TotalMilliseconds.ToString("F0", CultureInfo.InvariantCulture),
+                    source.RowCount?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                    string.Empty,
+                    source.AgreesWithJudge switch { true => "1", false => "0", null => string.Empty },
+                    source.MedianMilliseconds?.ToString("F1", CultureInfo.InvariantCulture) ?? string.Empty,
+                    source.MedianMilliseconds is null ? string.Empty : source.WarmupIterations.ToString(CultureInfo.InvariantCulture),
+                    source.MedianMilliseconds is null ? string.Empty : source.Iterations.ToString(CultureInfo.InvariantCulture),
+                    Clean(source.Failed ?? source.MeasurementFailed ?? string.Empty)));
+            }
+
             foreach (var framework in Frameworks)
             {
                 if (!run.cells.TryGetValue((query.Key, framework), out var cell))
@@ -746,16 +906,18 @@ internal sealed class CatalogRun
                     cell.Compiled.TotalMilliseconds.ToString("F0", CultureInfo.InvariantCulture),
                     cell.Selected.TotalMilliseconds.ToString("F0", CultureInfo.InvariantCulture),
                     cell.RowCount?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-                    framework == Frameworks[0] ? string.Empty : cell.Ran ? (run.AgreesWithSource(cell) ? "1" : "0") : string.Empty,
-                    framework == Frameworks[0] ? run.AgreesWithJudge(query.Key) switch { true => "1", false => "0", null => string.Empty } : string.Empty,
+                    cell.AgreesWithSource switch { true => "1", false => "0", null => string.Empty },
+                    string.Empty,
                     cell.MedianMilliseconds?.ToString("F1", CultureInfo.InvariantCulture) ?? string.Empty,
                     cell.MedianMilliseconds is null ? string.Empty : cell.WarmupIterations.ToString(CultureInfo.InvariantCulture),
                     cell.MedianMilliseconds is null ? string.Empty : cell.Iterations.ToString(CultureInfo.InvariantCulture),
-                    detail.Replace('\t', ' ').Replace("\r", string.Empty).Replace('\n', ' ')));
+                    Clean(detail)));
             }
 
             cells.Flush();
         }
+
+        private static string Clean(string detail) => detail.Replace('\t', ' ').Replace("\r", string.Empty).Replace('\n', ' ');
 
         public void WriteSummary() => File.WriteAllLines(Path.Combine(directory, "summary.txt"), run.Describe());
 

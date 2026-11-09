@@ -24,6 +24,7 @@ internal static class FibenRun
             query.Columns,
             query.OrderingKey,
             () => Units(query),
+            query.Sql,
             [],
             query.Translation != FibenTranslation.NotTranslated))]);
 

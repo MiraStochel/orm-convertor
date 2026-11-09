@@ -23,6 +23,7 @@ internal static class SedeRun
             query.Columns,
             query.OrderingKey,
             () => Units(query),
+            query.Sql,
             [.. query.Parameters.Select(parameter => (parameter.Name, parameter.SqlType, parameter.Value))],
             query.Translation != SedeTranslation.NotTranslated))]);
 

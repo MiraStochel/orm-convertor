@@ -114,18 +114,53 @@ public class CatalogRunTest
     [Fact]
     public void TheArgumentsFollowTheParametersOfTheMethod()
     {
-        var query = new CatalogRunQuery("s1", "Test", ["Id"], [], () => [], [("UserId", "INT", "1192"), ("p_Tag", "NVARCHAR(MAX)", "sql-server")], true);
+        var query = new CatalogRunQuery("s1", "Test", ["Id"], [], () => [], "SELECT Id FROM Users", [("UserId", "INT", "1192"), ("p_Tag", "NVARCHAR(MAX)", "sql-server")], true);
         var method = typeof(CatalogRunTest).GetMethod(nameof(Sample), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
 
         Assert.Equal(new object?[] { "sql-server", 1192 }, CatalogRun.ArgumentsFor(method.GetParameters(), query));
 
-        var missing = new CatalogRunQuery("s1", "Test", ["Id"], [], () => [], [("UserId", "INT", "1192")], true);
+        var missing = new CatalogRunQuery("s1", "Test", ["Id"], [], () => [], "SELECT Id FROM Users", [("UserId", "INT", "1192")], true);
         var exception = Assert.Throws<InvalidOperationException>(() => CatalogRun.ArgumentsFor(method.GetParameters(), missing));
         Assert.Contains("pTag", exception.Message);
     }
 
     private static void Sample(string pTag, int userId)
     {
+    }
+
+    /// <summary>
+    /// The source is the catalog's text as it stands (decision 209): the values declared in
+    /// front of it in the catalog's order, a number as it is written and anything else as a
+    /// Unicode string with its quotes doubled, then the text unchanged.
+    /// </summary>
+    [Fact]
+    public void TheSourceIsTheTextWithTheValuesDeclaredInFrontOfIt()
+    {
+        var query = new CatalogRunQuery("s1", "Test", ["Id"], [], () => [], "SELECT Id FROM Users WHERE Id = @UserId AND Location = @Where",
+            [("UserId", "INT", "1192"), ("Where", "NVARCHAR(MAX)", "Prague's"), ("Ratio", "DECIMAL(5, 2)", "0.5")], true);
+
+        Assert.Equal(
+            "DECLARE @UserId INT = 1192;\nDECLARE @Where NVARCHAR(MAX) = N'Prague''s';\nDECLARE @Ratio DECIMAL(5, 2) = 0.5;\nSELECT Id FROM Users WHERE Id = @UserId AND Location = @Where",
+            CatalogRun.TextBatch(query));
+    }
+
+    /// <summary>A query without parameters - every FIBEN query - runs as its text alone.</summary>
+    [Fact]
+    public void ATextWithoutParametersRunsAlone()
+        => Assert.Equal("SELECT 1 AS One", CatalogRun.TextBatch(new CatalogRunQuery("q1", "Simple", ["One"], [], () => [], "SELECT 1 AS One", [], true)));
+
+    /// <summary>The Java run sends the same batch over JDBC: it declares the values the same way and writes the same types unquoted.</summary>
+    [Fact]
+    public void TheJavaRunDeclaresTheValuesAlike()
+    {
+        var catalog = Path.Combine(TargetFrameworkDescriptorTest.SolutionDirectory(), "JavaTests", "src", "test", "java", "cz", "stochel", "ormconvertor", "javatests", "catalog");
+        var run = File.ReadAllText(Path.Combine(catalog, "CatalogRun.java"));
+        var query = File.ReadAllText(Path.Combine(catalog, "CatalogQuery.java"));
+
+        Assert.Contains("batch.append(\"DECLARE @\").append(argument.name()).append(' ').append(argument.sqlType()).append(\" = \").append(argument.literal()).append(\";\\n\");", run);
+        Assert.Contains("case \"INT\", \"BIGINT\", \"SMALLINT\", \"TINYINT\", \"FLOAT\", \"REAL\", \"DECIMAL\", \"NUMERIC\", \"BIT\" -> value;", query);
+        Assert.Equal("7", CatalogRun.Literal("BIT", "7"));
+        Assert.Equal("N'7'", CatalogRun.Literal("NVARCHAR(10)", "7"));
     }
 
     /// <summary>

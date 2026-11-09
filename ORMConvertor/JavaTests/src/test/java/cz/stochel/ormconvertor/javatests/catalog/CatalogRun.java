@@ -274,6 +274,7 @@ public final class CatalogRun {
         for (int framework : FRAMEWORKS) {
             Map<String, Integer> outcomes = new TreeMap<>();
             int ran = 0;
+            int compared = 0;
             int agreeing = 0;
             long translated = 0;
             long compiled = 0;
@@ -287,6 +288,10 @@ public final class CatalogRun {
                 selected += cell.selectNanos;
                 if (cell.rowCount != null) {
                     ran++;
+                    // A cell whose source did not run has no verdict and is not counted (decision 209).
+                    if (cell.agreesWithSource != null) {
+                        compared++;
+                    }
                     if (agreesWithSource(cell)) {
                         agreeing++;
                     }
@@ -302,8 +307,8 @@ public final class CatalogRun {
                     "; measured %d cells, median of medians %.1f ms, sum of medians %.1f s",
                     medians.size(), median(medians), medians.stream().mapToDouble(Double::doubleValue).sum() / 1000);
             lines.add(String.format(Locale.ROOT,
-                    "%s: %s; %d of %d runs agree with the source; translation %.1f s, compilation %.1f s (bootstrap %.1f s of it), first reads %.1f s%s.",
-                    Orm.nameOf(framework), outcomeText, agreeing, ran, translated / 1e9, compiled / 1e9,
+                    "%s: %s; %d runs, %d of the %d with a source agree with it; translation %.1f s, compilation %.1f s (bootstrap %.1f s of it), first reads %.1f s%s.",
+                    Orm.nameOf(framework), outcomeText, ran, agreeing, compared, translated / 1e9, compiled / 1e9,
                     PreparedJavaQuery.bootstrapNanos(framework) / 1e9, selected / 1e9, measurement));
         }
 
@@ -312,7 +317,7 @@ public final class CatalogRun {
             StringBuilder parts = new StringBuilder();
             for (int framework : FRAMEWORKS) {
                 Cell cell = cell(query.key(), framework);
-                String agreement = cell.rowCount != null ? (agreesWithSource(cell) ? " =" : " !=") : "";
+                String agreement = cell.agreesWithSource == null ? "" : cell.agreesWithSource ? " =" : " !=";
                 String median = cell.medianMilliseconds != null ? String.format(Locale.ROOT, " %.1f ms", cell.medianMilliseconds) : "";
                 parts.append(parts.length() == 0 ? "" : "; ").append(Orm.nameOf(framework)).append(' ').append(cell.outcome()).append(agreement).append(median);
             }
@@ -718,7 +723,7 @@ public final class CatalogRun {
                             String.format(Locale.ROOT, "%.0f", cell.compileNanos / 1e6),
                             String.format(Locale.ROOT, "%.0f", cell.selectNanos / 1e6),
                             cell.rowCount != null ? String.valueOf(cell.rowCount) : "",
-                            cell.rowCount != null ? (agreesWithSource(cell) ? "1" : "0") : "",
+                            cell.agreesWithSource == null ? "" : cell.agreesWithSource ? "1" : "0",
                             "",
                             cell.medianMilliseconds != null ? String.format(Locale.ROOT, "%.1f", cell.medianMilliseconds) : "",
                             cell.medianMilliseconds != null ? String.valueOf(cell.warmupIterations) : "",
