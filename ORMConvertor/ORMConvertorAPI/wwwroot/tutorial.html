@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ORMConvertor — Tutorial</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="vendor/pico-2.1.1/pico.classless.min.css">
+  <link rel="stylesheet" href="vendor/highlightjs-11.12.0/styles/github.min.css">
+  <link rel="stylesheet" id="hljs-dark" href="vendor/highlightjs-11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    /* Applied before first paint: js/theme.js is a module and therefore deferred, so
+       restoring the theme there would repaint a page the reader can already see. */
+    try {
+      var storedTheme = localStorage.getItem("ormconvertor.theme");
+      if (storedTheme === "light" || storedTheme === "dark") {
+        document.documentElement.dataset.theme = storedTheme;
+        document.getElementById("hljs-dark").media = storedTheme === "dark" ? "all" : "not all";
+      }
+    } catch (e) { /* storage can be denied; the operating system's preference then decides */ }
+  </script>
+</head>
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><strong><a href="index.html">ORMConvertor</a></strong></li>
+      </ul>
+      <ul>
+        <li><a href="translation.html">Translation</a></li>
+        <li><a href="tutorial.html" aria-current="page">Tutorial</a></li>
+        <li><a href="advisor.html">Advisor</a></li>
+        <li><a href="examples.html">Examples</a></li>
+        <li><a href="ldbc.html">LDBC</a></li>
+        <li><a href="fiben.html">FIBEN</a></li>
+        <li><a href="sede.html">SEDE</a></li>
+        <li>
+          <select id="theme" aria-label="Colour theme">
+            <option value="system">System theme</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Tutorial</h1>
+    <p class="lede">
+      One translation from start to finish, in the five steps of the
+      <a href="translation.html">Translation</a> screen: a small Dapper project moves to
+      EF&nbsp;Core. Each step says what to do there and what you will see. The example on
+      this page is live &mdash; its files come from this instance and step&nbsp;4 really
+      converts them &mdash; so what you read below is what the tool returns, not a picture
+      of it. About five minutes.
+    </p>
+
+    <nav class="tutorial-steps" aria-label="Tutorial steps">
+      <ol>
+        <li><a href="#step-example"><span class="step-number">1</span> Example</a></li>
+        <li><a href="#step-direction"><span class="step-number">2</span> Direction</a></li>
+        <li><a href="#step-input"><span class="step-number">3</span> Input files</a></li>
+        <li><a href="#step-convert"><span class="step-number">4</span> Convert</a></li>
+        <li><a href="#step-result"><span class="step-number">5</span> Result</a></li>
+        <li><a href="#step-own"><span class="step-number">&#10003;</span> Your own</a></li>
+      </ol>
+    </nav>
+
+    <p id="tutorial-error" class="problem" role="alert" hidden></p>
+
+    <section id="step-example" class="tutorial-step">
+      <h2><span class="step-number">1</span> Start from an example</h2>
+      <dl class="step-instructions">
+        <dt>Do</dt>
+        <dd>
+          In <strong>Start from an example</strong>, pick
+          <q id="example-option">A source that states little (Dapper → EF Core, 3 files)</q>
+          and press <strong>Load example</strong>.
+        </dd>
+        <dt>See</dt>
+        <dd>
+          The direction switches to <span class="example-direction">Dapper → EF Core</span>
+          and the example's files appear as units under <strong>Input files</strong>.
+        </dd>
+      </dl>
+      <p>
+        The step is optional &mdash; with your own project you start at step&nbsp;2. The list
+        offers two kinds of example: the same customer written in each of the six frameworks
+        (any target), and the examples the <a href="examples.html">Examples</a> page explains,
+        each with the direction it is explained for. This one is the most common migration
+        the tool is built for: a Dapper source states little &mdash; a plain class and a
+        T&#8209;SQL query, no key, no table, no column type &mdash; so the result shows best
+        where the facts the target needs come from.
+      </p>
+      <p class="tutorial-handoff">
+        <a id="open-example" href="translation.html?example=dapper-to-efcore" role="button" class="secondary">Open the translator with this example selected</a>
+        <small class="hint">
+          It only selects the example in the list; loading stays your click, and the
+          translator asks before it replaces work you have there.
+        </small>
+      </p>
+    </section>
+
+    <section id="step-direction" class="tutorial-step">
+      <h2><span class="step-number">2</span> Direction</h2>
+      <dl class="step-instructions">
+        <dt>Do</dt>
+        <dd>
+          Check the row <em>source &rarr; target</em>: <strong>Dapper</strong> on the left,
+          <strong>Entity Framework Core</strong> on the right. Leave the source SQL dialect
+          as it is.
+        </dd>
+        <dt>See</dt>
+        <dd>
+          Under <strong>Input files</strong>, the line
+          <q id="offer-line">Dapper input is read as: C#, SQL query.</q>
+        </dd>
+      </dl>
+      <p>
+        Any of the six frameworks can be the source and any the target; the
+        <strong>&#8644;</strong> button between them swaps the direction. The source decides
+        which languages a unit may be in &mdash; that is the line above. The dialect matters
+        only for literal SQL written for a database other than SQL Server: declare
+        &ldquo;another system&rdquo; and the tool refuses that SQL instead of reading it as
+        T&#8209;SQL.
+      </p>
+    </section>
+
+    <section id="step-input" class="tutorial-step">
+      <h2><span class="step-number">3</span> Input files</h2>
+      <dl class="step-instructions">
+        <dt>Do</dt>
+        <dd>
+          Look over the units the example loaded &mdash; or bring your own with
+          <strong>Add files or a ZIP&hellip;</strong>.
+        </dd>
+        <dt>See</dt>
+        <dd>
+          One unit per file: a name, a language, and an editor with line numbers. These are
+          the example's files, as this instance hands them out:
+        </dd>
+      </dl>
+      <p class="step-status" id="input-status" aria-busy="true">Loading the example…</p>
+      <div class="panes">
+        <div id="tutorial-inputs" class="pane-grid"></div>
+      </div>
+      <p>
+        A unit is a whole source file &mdash; an entity, the code that queries it, or both.
+        The language comes from the extension (<code>.cs</code>, <code>.java</code>,
+        <code>.xml</code>, <code>.sql</code>, <code>.hql</code>, <code>.jpql</code>). A ZIP
+        of a project is unpacked in the browser: every file the source reads becomes a unit,
+        the rest is listed with the reason it was left out. <strong>Add empty unit</strong>
+        gives an editor to paste into, <strong>Remove</strong> and <strong>Clear</strong>
+        take units away. What you type stays in this browser, so a reload loses nothing.
+      </p>
+    </section>
+
+    <section id="step-convert" class="tutorial-step">
+      <h2><span class="step-number">4</span> Convert</h2>
+      <dl class="step-instructions">
+        <dt>Do</dt>
+        <dd>Press <strong>Convert</strong> &mdash; here, or on the Translation screen (Ctrl+Enter works there too).</dd>
+        <dt>See</dt>
+        <dd>
+          The button is busy for the moment the call takes, then a strip under it counts the
+          artifacts and the records by kind; a badge jumps to the records.
+        </dd>
+      </dl>
+      <div class="toolbar">
+        <button type="button" id="tutorial-convert" disabled>Convert</button>
+      </div>
+      <p id="tutorial-convert-status" role="status"></p>
+      <div id="tutorial-summary" class="summary-strip" hidden></div>
+      <p>
+        Before sending, the screen checks what it can: no units, an empty unit, a language the
+        source does not read, malformed XML. A syntax error in C#, Java or SQL comes back from
+        the server as a <em>Failure</em> record with its line and column; the screen marks the
+        line in the unit's editor and <strong>go to line</strong> selects it. A failure in one
+        entity or query does not stop the rest &mdash; everything else is translated.
+      </p>
+    </section>
+
+    <section id="step-result" class="tutorial-step">
+      <h2><span class="step-number">5</span> Read the result</h2>
+      <p id="result-placeholder" class="muted-note">
+        Press <strong>Convert</strong> in step&nbsp;4 and the result of the example appears
+        here, exactly as the Translation screen shows it.
+      </p>
+
+      <div id="tutorial-result" hidden>
+        <h3>5a &middot; The run</h3>
+        <p>
+          The header of the result states the run: both frameworks with the versions the
+          output is written for, whether the source declared a SQL dialect, the state of the
+          database catalog, the tool version and the run's id.
+        </p>
+        <div class="run-facts">
+          <span id="tutorial-frameworks"></span>
+          <span id="tutorial-dialect"></span>
+          <span id="tutorial-catalog"></span>
+          <span>ORMConvertor <code id="tutorial-version"></code></span>
+          <span>run <code id="tutorial-run-id"></code></span>
+        </div>
+        <p class="tutorial-callout" id="catalog-explanation"></p>
+
+        <h3>5b &middot; What you sent, what came back</h3>
+        <p>
+          Input on the left, output on the right. Each artifact says which units it came
+          <em>from</em> and each unit which artifacts it <em>went into</em> &mdash; that pairing
+          is the server's, not guessed from names. Click a name to jump to the other side.
+          Every panel has <strong>Copy</strong> and <strong>Download</strong>.
+        </p>
+        <div class="compare-frame">
+          <div class="compare">
+            <div class="compare-column">
+              <h4>What you sent</h4>
+              <div id="tutorial-sent" class="pane-stack"></div>
+            </div>
+            <div class="compare-column">
+              <h4>What came back</h4>
+              <div id="tutorial-artifacts" class="pane-stack"></div>
+            </div>
+          </div>
+        </div>
+
+        <h3>5c &middot; Facts</h3>
+        <p>
+          Every mapping fact the conversion held &mdash; a table, a column, a key, a type, a
+          relation &mdash; with its <em>origin</em> (the source stated it, the catalog supplied
+          it, the tool derived it) and its <em>outcome</em> (carried into the artifact, dropped,
+          or not generated because the entity failed). Point at a row and the fact lights up in the panels above. The badges filter
+          the table.
+        </p>
+        <div id="tutorial-facts"></div>
+
+        <h3>5d &middot; Records</h3>
+        <p>
+          Everything the conversion had to decide, drop or fill in, one row each &mdash; never
+          silently. Read <em>Failure</em> first: it means an artifact is missing. The legend
+          under the badges says what each kind present means; a badge filters the table, and
+          the <em>Artifact</em> column jumps to the panel the record is about.
+        </p>
+        <div id="tutorial-records"></div>
+
+        <h3>5e &middot; Take it with you</h3>
+        <p>
+          On the Translation screen, <strong>Download all as ZIP</strong> packs every artifact
+          under its file name. The output is source code to put into your project; what is the project&rsquo;s own
+          stays yours to add &mdash; for EF&nbsp;Core the project file, the connection string
+          and the registration of the context.
+        </p>
+      </div>
+    </section>
+
+    <section id="step-own" class="tutorial-step">
+      <h2><span class="step-number">&#10003;</span> Now with your own project</h2>
+      <ol class="tutorial-recap">
+        <li>Pick the direction first &mdash; it decides which files a ZIP contributes.</li>
+        <li><strong>Add files or a ZIP&hellip;</strong> with your entities, mappings and the code that queries them.</li>
+        <li><strong>Convert</strong>, then read <em>Failure</em> records first, then the facts that were not carried.</li>
+        <li><strong>Download all as ZIP</strong>.</li>
+      </ol>
+      <div class="toolbar">
+        <a href="translation.html" role="button">Open the translator</a>
+        <a href="examples.html" role="button" class="secondary">More examples, explained</a>
+      </div>
+      <p class="muted-note">
+        The same conversion is one HTTP call, <code>POST /orm/convert</code>; the
+        <a href="openapi/v1.json">OpenAPI document</a> of this instance describes it. The <a href="advisor.html">Advisor</a> is a
+        separate screen and outside the tool's guarantees.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <p>ORMConvertor &mdash; a research prototype.</p>
+  </footer>
+
+  <template id="artifact-template">
+    <article class="artifact">
+      <header class="artifact-header">
+        <span>
+          <strong class="artifact-name"></strong>
+          <small class="artifact-type"></small>
+        </span>
+        <span class="artifact-actions">
+          <button type="button" class="artifact-copy secondary outline">Copy</button>
+          <button type="button" class="artifact-download secondary outline">Download</button>
+        </span>
+      </header>
+      <p class="artifact-origin" hidden></p>
+      <pre><code></code></pre>
+    </article>
+  </template>
+
+  <template id="input-template">
+    <article class="artifact input-unit">
+      <header class="artifact-header">
+        <span>
+          <strong class="artifact-name"></strong>
+          <small class="artifact-type"></small>
+        </span>
+      </header>
+      <p class="artifact-origin" hidden></p>
+      <pre><code></code></pre>
+    </article>
+  </template>
+
+  <script type="module" src="js/theme.js"></script>
+  <script type="module" src="js/tutorial.js"></script>
+</body>
+</html>

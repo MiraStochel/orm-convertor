@@ -860,3 +860,164 @@ table.sede-matrix th[scope="row"] small {
   white-space: normal;
   max-width: 28rem;
 }
+
+/* ---- the tutorial (decision 213) ----------------------------------------- */
+
+/* The step bar: a row of numbered anchors that stays at the top of the window while the
+   steps scroll under it, and marks the step being read (aria-current, set from the scroll
+   position by tutorial.js). Pico styles a nav as a flex row already; this adds the stickiness
+   and an opaque background, so that the code panels do not show through it. */
+nav.tutorial-steps {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 0 1.5rem;
+  padding: 0.4rem 0;
+  background: var(--pico-background-color);
+  border-bottom: var(--app-panel-border);
+}
+
+nav.tutorial-steps ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+nav.tutorial-steps li {
+  padding: 0;
+}
+
+nav.tutorial-steps a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--pico-border-radius);
+  color: var(--pico-muted-color);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+nav.tutorial-steps a[aria-current="step"] {
+  color: var(--pico-color);
+  font-weight: 600;
+}
+
+nav.tutorial-steps a[aria-current="step"] .step-number {
+  background: var(--pico-primary-background);
+  border-color: var(--pico-primary-background);
+  color: var(--pico-primary-inverse);
+}
+
+/* The number of a step, in the bar and before each step's heading alike: the same mark in
+   both places is what ties the bar to the page. */
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.6em;
+  height: 1.6em;
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 50%;
+  font-size: 0.85em;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.tutorial-step > h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.tutorial-step > h2 .step-number {
+  background: var(--pico-primary-background);
+  border-color: var(--pico-primary-background);
+  color: var(--pico-primary-inverse);
+}
+
+/* A jump to a step lands below the sticky bar, not under it. */
+.tutorial-step {
+  scroll-margin-top: 4rem;
+  padding-bottom: 1rem;
+  border-bottom: var(--app-panel-border);
+}
+
+.tutorial-step:last-of-type {
+  border-bottom: none;
+}
+
+/* Do / See: two labelled lines, the action first. The labels size to their content and the
+   sentences take the rest; one column on a narrow display. */
+dl.step-instructions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.4rem 1rem;
+  align-items: baseline;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--pico-primary-background);
+  background: var(--pico-card-sectioning-background-color);
+  border-radius: 0 var(--pico-border-radius) var(--pico-border-radius) 0;
+}
+
+dl.step-instructions dt {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pico-muted-color);
+}
+
+dl.step-instructions dd {
+  margin: 0;
+}
+
+@media (max-width: 40rem) {
+  dl.step-instructions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.step-status {
+  font-size: 0.9rem;
+  color: var(--pico-muted-color);
+}
+
+.tutorial-handoff a[role="button"] {
+  width: auto;
+}
+
+/* What the catalog state means for the example, under the run header. */
+.tutorial-callout:not(:empty) {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border: var(--app-panel-border);
+  border-radius: var(--pico-border-radius);
+  font-size: 0.9rem;
+}
+
+#tutorial-result > h3 {
+  margin-top: 2rem;
+}
+
+.compare-column > h4 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+/* The tutorial's panels are short excerpts beside the text; a third of the window is enough
+   to read a whole file of the example without the page turning into code. */
+.tutorial-step pre {
+  max-height: max(12rem, 45vh);
+}
+
+.tutorial-recap li {
+  margin-bottom: 0.35rem;
+}

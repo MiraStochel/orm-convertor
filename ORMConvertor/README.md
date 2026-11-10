@@ -562,4 +562,4 @@ A `POST` that cannot be acted on - an unknown framework, a missing `sources` or 
 
 # Frontend
 
-Static pages in `ORMConvertorAPI/wwwroot` — HTML, ES modules, CSS, no build step (decision [032](../docs/decisions/032-frontend-as-static-pages-without-a-build.md)); Pico CSS and highlight.js are vendored in `wwwroot/vendor/`. Six pages — `index.html`, `translation.html`, `examples.html`, `ldbc.html`, `fiben.html` and `advisor.html`; what each shows is in [`architecture.md`](../docs/architecture.md) §6.3. What the browser runs is what is in git: after editing a page, reload it and check the browser console.
+Static pages in `ORMConvertorAPI/wwwroot` — HTML, ES modules, CSS, no build step (decision [032](../docs/decisions/032-frontend-as-static-pages-without-a-build.md)); Pico CSS and highlight.js are vendored in `wwwroot/vendor/`. The pages are `index.html`, `translation.html`, `tutorial.html`, `examples.html`, `advisor.html`, `ldbc.html`, `fiben.html` and `sede.html`; what each shows is in [`architecture.md`](../docs/architecture.md) §6.3. What the browser runs is what is in git: after editing a page, reload it and check the browser console.

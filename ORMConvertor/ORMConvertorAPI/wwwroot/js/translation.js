@@ -997,8 +997,27 @@ async function init() {
     errorElement.hidden = false;
   }
   renderExampleSelect();
+  preselectRequestedExample();
   renderOfferNote();
   renderUnits();
+}
+
+/*
+ * A link may name a row of the example list in the address, as the tutorial does with
+ * translation.html?example=<key> (decision 213). The row is only selected and Load example
+ * takes the focus; loading replaces the units, so it stays the reader's click, with the
+ * question it asks when there is work on the screen. A value the list does not carry leaves
+ * the prompt selected.
+ */
+function preselectRequestedExample() {
+  const requested = new URLSearchParams(location.search).get("example");
+  if (!requested) return;
+  const select = document.getElementById("example-select");
+  if (![...select.options].some((option) => option.value === requested && !option.disabled)) return;
+  select.value = requested;
+  const button = document.getElementById("load-example");
+  button.disabled = false;
+  button.focus();
 }
 
 init();

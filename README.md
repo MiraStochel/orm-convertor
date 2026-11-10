@@ -108,7 +108,7 @@ A release carries the highest position its changes moved, so PATCH changes ride 
 
 ## Getting started
 
-From `ORMConvertor/`, run `dotnet run --configuration Release --launch-profile http --project ORMConvertorAPI/ORMConvertorAPI.csproj` and open `http://localhost:5072/orm/` (the frontend is served as-is from `ORMConvertorAPI/wwwroot`). With Docker, `docker compose up --build` starts the application with a SQL Server holding the sample database, and `docker compose --profile test build tests test_db` then `docker compose --profile test run --rm tests` runs the whole suite with no .NET SDK or database of your own. **Do not skip the `build`:** `run` alone reuses the existing image and so measures the tree it was built from, green and with nothing to say so. Details: [`ORMConvertor/README.md`](ORMConvertor/README.md) ([*Tests*](ORMConvertor/README.md#tests)).
+From `ORMConvertor/`, run `dotnet run --configuration Release --launch-profile http --project ORMConvertorAPI/ORMConvertorAPI.csproj` and open `http://localhost:5072/orm/` (the frontend is served as-is from `ORMConvertorAPI/wwwroot`); its *Tutorial* page walks through one translation step by step. With Docker, `docker compose up --build` starts the application with a SQL Server holding the sample database, and `docker compose --profile test build tests test_db` then `docker compose --profile test run --rm tests` runs the whole suite with no .NET SDK or database of your own. **Do not skip the `build`:** `run` alone reuses the existing image and so measures the tree it was built from, green and with nothing to say so. Details: [`ORMConvertor/README.md`](ORMConvertor/README.md) ([*Tests*](ORMConvertor/README.md#tests)).
 
 ## Benchmarks
 
