@@ -721,7 +721,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         }
 
         Import($"{Jakarta}.OneToOne");
-        code.AppendLine($"    @OneToOne(mappedBy = \"{counterpart}\")");
+        code.AppendLine($"    @OneToOne(mappedBy = \"{JavaMemberNames.Of(counterpart)}\")");
     }
 
     /// <summary>
@@ -737,7 +737,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         var counterpart = OwningCounterpart(entityMap, relation);
         if (counterpart is not null)
         {
-            code.AppendLine($"    @OneToMany(mappedBy = \"{counterpart}\")");
+            code.AppendLine($"    @OneToMany(mappedBy = \"{JavaMemberNames.Of(counterpart)}\")");
             return;
         }
 
@@ -794,7 +794,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
 
         if (counterpart is not null)
         {
-            code.AppendLine($"    @ManyToMany(mappedBy = \"{counterpart}\")");
+            code.AppendLine($"    @ManyToMany(mappedBy = \"{JavaMemberNames.Of(counterpart)}\")");
             return;
         }
 
@@ -1518,7 +1518,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         }
 
         var initializer = RenderInitializer(entityMap, property, langType);
-        var declaration = $"private {type} {property.Name}{initializer};";
+        var declaration = $"private {type} {JavaMemberNames.Of(property.Name)}{initializer};";
         code.AppendLine($"    {declaration}");
 
         // Whatever fact of the property no annotation above carried stands at the field
@@ -1542,7 +1542,25 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             });
         }
 
+        ReportRenamedMember(entityMap, property.Name);
         accessors.Add((type, property.Name, langType));
+    }
+
+    /// <summary>A member written under another name than the property's says so; the column keeps its name (decision 212).</summary>
+    private void ReportRenamedMember(EntityMap entityMap, string property)
+    {
+        if (JavaMemberNames.Of(property) is var member && member != property)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.JavaEntity,
+                Entity = entityMap.Entity.Name,
+                Property = property,
+                Reason = JavaMemberNames.RenameReason(property, member),
+            });
+        }
     }
 
     private string RenderInitializer(EntityMap entityMap, Property property, LangType langType)
@@ -1628,7 +1646,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
         Import("java.util.Objects");
 
         var name = KeyClassName(entityMap);
-        var parts = key.Parts.Select(p => (Type: JavaTypeConvertor.ToString(p.PropertyMap.Property.Type!, forceWrapper: true), p.PropertyMap.Property.Name)).ToList();
+        var parts = key.Parts.Select(p => (Type: JavaTypeConvertor.ToString(p.PropertyMap.Property.Type!, forceWrapper: true), Name: JavaMemberNames.Of(p.PropertyMap.Property.Name))).ToList();
         var code = artifact.Code;
 
         code.AppendLine();
@@ -1712,14 +1730,15 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             var property = entityMap.Entity.Properties.First(p => p.Name == name);
             var getter = property.HasGetter || !property.HasSetter;
             var setter = property.HasSetter || !property.HasGetter;
-            var capitalized = JavaClass.Capitalize(name);
+            var member = JavaMemberNames.Of(name);
+            var capitalized = JavaClass.Capitalize(member);
             var prefix = type == "boolean" ? "is" : "get";
 
             if (getter)
             {
                 code.AppendLine();
                 code.AppendLine($"    public {type} {prefix}{capitalized}() {{");
-                code.AppendLine($"        return {name};");
+                code.AppendLine($"        return {member};");
                 code.AppendLine("    }");
             }
 
@@ -1727,7 +1746,7 @@ public abstract class AbstractJpaEntityBuilder : AbstractEntityBuilder
             {
                 code.AppendLine();
                 code.AppendLine($"    public void set{capitalized}({type} value) {{");
-                code.AppendLine($"        this.{name} = value;");
+                code.AppendLine($"        this.{member} = value;");
                 code.AppendLine("    }");
             }
         }

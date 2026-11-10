@@ -37,16 +37,23 @@ public class MyBatisSqlQueryBuilder : TransactSql.AbstractSqlQueryBuilder
     {
         // The package the artifacts go into is the entities' - the one of the materialized
         // entity, or of any entity of the conversion where the query materializes none.
-        var package = (EntityMaps.FirstOrDefault(m => m.Entity.Name == resultEntity) ?? EntityMaps.FirstOrDefault())
-            ?.Entity.Namespace;
+        var materialized = EntityMaps.FirstOrDefault(m => m.Entity.Name == resultEntity);
+        var package = (materialized ?? EntityMaps.FirstOrDefault())?.Entity.Namespace;
 
         // A query over the whole entity materializes into it; a projection materializes as
         // MyBatis's own untyped row - resultType="map", a Map per row keyed by the columns the
         // projection named (decision 104). An entity resultType over a projection would leave
-        // every projected value out of the instance without a word.
-        var (resultType, returns) = resultEntity is null
-            ? ("map", "List<Map<String, Object>>")
-            : (string.IsNullOrEmpty(package) ? resultEntity : $"{package}.{resultEntity}", $"List<{resultEntity}>");
+        // every projected value out of the instance without a word. An entity of the
+        // conversion is materialized by the <resultMap> its own mapper carries, which names
+        // every column: under a resultType MyBatis maps a column only onto a property of its
+        // name and leaves a property whose column is named otherwise null without a word
+        // (decision 212). A type derived from the table has no mapper of the conversion to
+        // point at, and keeps the resultType.
+        var (resultAttribute, resultValue, returns) = resultEntity is null
+            ? ("resultType", "map", "List<Map<String, Object>>")
+            : materialized is not null
+                ? ("resultMap", $"{MyBatisEntityBuilder.MapperNamespace(package, resultEntity)}.{resultEntity}", $"List<{resultEntity}>")
+                : ("resultType", string.IsNullOrEmpty(package) ? resultEntity : $"{package}.{resultEntity}", $"List<{resultEntity}>");
 
         // The document's own name, which the tool invents the way it invents the name of a
         // generated method: our artifact's identity, made the same way at every conversion,
@@ -67,11 +74,10 @@ public class MyBatisSqlQueryBuilder : TransactSql.AbstractSqlQueryBuilder
         [
             new XmlAttribute("id", MethodName),
 
-            // resultType and not resultMap (decision 082): neither MyBatis nor Dapper states
-            // the materialized type in the query, so the shared builder derives it from the
-            // table - and a resultMap would point into a second document, which a conversion
-            // of a query alone does not have.
-            new XmlAttribute("resultType", resultType),
+            // Neither MyBatis nor Dapper states the materialized type in the query, so the
+            // shared builder derives it from the table (decision 082); the entity's own
+            // <resultMap> where the conversion has its mapper, a resultType otherwise.
+            new XmlAttribute(resultAttribute, resultValue),
         ]);
 
         foreach (var line in Placeholders(XmlEmitter.EscapeText(sql)).Split('\n'))

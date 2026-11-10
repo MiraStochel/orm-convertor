@@ -175,6 +175,10 @@ public class TargetFrameworkDescriptorTest
         // one that writes its literals inline has nothing to switch off (decision 113).
         Assert.Null(hibernateProfile.InlineLiteralsCall);
         Assert.Equal(".setHint(QueryHints.BIND_PARAMETERS, HintValues.FALSE)", eclipseLinkProfile.InlineLiteralsCall);
+
+        // Only EclipseLink reads # as the mark of a named parameter in native SQL (decision 211).
+        Assert.Null(hibernateProfile.NativeSqlParameterDelimiterCall);
+        Assert.Equal(".setHint(QueryHints.PARAMETER_DELIMITER, \"{0}\")", eclipseLinkProfile.NativeSqlParameterDelimiterCall);
     }
 
     /// <summary>

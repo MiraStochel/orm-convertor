@@ -211,6 +211,8 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | alias MyBatisu, který sloupec entity netvrdí: ve výběru s `resultMap` či `@Results` (zbytek mapuje `autoMappingBehavior` konfigurace, která se nečte), s `resultType="map"` či skalárem, nad nekvalifikovaným sloupcem více tabulek `FROM`, nad sloupcem jiné tabulky, nad výrazem, tečkovaný (`"product.productId"`); `mapUnderscoreToCamelCase` | sloupec vlastnosti tvrdí jen výběr, který řádky mapuje na entitu automatickým mapováním, nad tabulkou entity; přepínač je nastavení konfigurace | zůstane aliasem projekce dotazu; sloupec doplní katalog podle jména; `Account` JPetStore (klíč `userid` čtený ze spojené `SIGNON.USERNAME`) proto zůstává bez klíče | VM | [181] |
 | globální mapa typu Dapperu (`SqlMapper.SetTypeMap`, `DefaultTypeMap.MatchNamesWithUnderscores`) | mapa je funkce, přepínač nastavení všech typů; zápis mapování to není | `Loss` `ColumnName` u každého výskytu (č), u mapy se jménem typu | VM | [131] |
 | dva aliasy dávají jedné vlastnosti dva sloupce | model nese jeden sloupec na vlastnost; Dapper mapuje dotaz po dotazu | `Conflict` `ColumnName` (č), platí první v pořadí čtení | VM | [017], [131] |
+| vlastnost `Class` (i `class`) v javovém cíli | getter `getClass()` javac odmítne, `Object.getClass()` je `final` | člen `Class_` (`getClass_()`, `setClass_()`), sloupec `Class` v mapování, `Convention` (č); zpět se čte vlastnost `Class_` | VM | [212] |
+| skalár `Guid` (`uniqueidentifier`) v cíli MyBatis | MyBatis 3.5.19 nemá type handler pro `java.util.UUID`: `<result>` mapper odmítne, pod `resultType` zůstane vlastnost `null` | vlastnost `String` s textem hodnoty a `Loss` (č) na `JavaEntity`; parametr zůstává `UUID`; zpět se čte `String` | VM | [210] |
 
 ### 2.3 Jednotka a předání dotazu
 
@@ -424,6 +426,7 @@ Co je frameworku vlastní ([§5]); odmítnutí, ztráty a nativní SQL jsou v č
 | odmítnutí, která nejsou o jazyku cíle: laterální odkaz, nepojmenovaný sloupec definice, parametr bez skaláru, agregát nad agregátem, pravidla rekurze, `EXCEPT ALL`, `OFFSET` v operandu | neunese je SQL Server, nebo je nenese model | `Failure` i s únikovou cestou | VM | [113] |
 | LINQ složený nad nativním SQL (`FromSql…`, `SqlQuery` s krokem nad sebou); `Database.ExecuteSql…` | EF Core ho spouští jako vlastní poddotaz; `ExecuteSql` je příkaz | `Failure` (`Filtering`) (č) | VM | [070], [113] |
 | zástupné symboly NHibernatu (`{alias}`, `{alias.*}`) v nativním SQL | rozřeší je jen NHibernate | `Failure` (č) | VM | [082], [113] |
+| `?` uvnitř identifikátoru v nativním SQL, cíl EclipseLink (`[a?b]`, i v uvozovkách) | EclipseLink 5.0.0 ho čte jako poziční parametr; hint, kterým builder vypíná čtení `#`, se `?` netýká | artefakt se vydá, dotaz odmítne až EclipseLink při spuštění | VM | [211] |
 | mapování výsledku nativního dotazu (`AddScalar`, `AddEntity`, `AddJoin`, `SetResultTransformer`, `<return>`, druhý argument `createNativeQuery`, `addScalar`, `addEntity` a příbuzné Hibernatu) | dotaz mapování výsledku nenese, cíl ho odvodí z tabulky | `Loss` (č) | VM | [067], [113] |
 
 ### 2.12 Obecné pravidlo: dotaz, který by vrátil jiné řádky, se nevydá
@@ -581,6 +584,9 @@ Známé není žádné.
 [196]: ./decisions/196-the-cross-join-is-carried-as-a-join-without-a-condition-and-every-artifact-the-tool-writes-reads-back.md
 [201]: ./decisions/201-a-case-in-the-else-of-a-case-is-written-for-eclipselink-as-one-case-with-the-inner-branches-appended-and-a-case-deeper-under-the-else-goes-out-in-native-sql.md
 [206]: ./decisions/206-a-single-part-shared-key-is-mapsid-over-a-writable-join-column-and-a-composite-shared-key-keeps-the-read-only-reference-in-both-jpa-profiles.md
+[210]: ./decisions/210-a-guid-property-is-a-string-in-the-mybatis-class-because-mybatis-has-no-type-handler-for-uuid.md
+[211]: ./decisions/211-a-native-query-of-eclipselink-whose-text-holds-a-hash-names-another-parameter-mark-by-a-hint.md
+[212]: ./decisions/212-a-property-whose-getter-would-be-getclass-is-a-java-member-with-an-underscore-and-a-mybatis-query-takes-the-result-map-of-its-entity.md
 [181]: ./decisions/181-an-alias-in-a-mybatis-select-with-a-result-type-states-the-column-of-the-property.md
 [184]: ./decisions/184-t1-leaves-the-exempt-area-in-a-narrower-sense-the-case-study-meets-the-criteria-counted-from-the-excerpt-and-cofoundry-becomes-its-second-application.md
 [185]: ./decisions/185-the-name-of-an-ef-core-set-names-the-entity-the-context-of-the-conversion-declares-through-one-reading-context-of-both-passes.md

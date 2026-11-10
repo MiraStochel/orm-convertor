@@ -1,3 +1,4 @@
+using System.Globalization;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Naming;
@@ -71,6 +72,30 @@ public sealed class JpaNativeSqlQueryBuilder(TargetFrameworkDescriptor descripto
             return p.IsCollection ? $"(?{position})" : $"?{position}";
         });
 
+        // An implementation that reads a mark of named parameters in the text of a native
+        // query wherever it stands - EclipseLink's # inside [#] - is told to read another
+        // character, one the text does not hold, so that nothing in it is a named parameter
+        // (decision 211).
+        var hint = string.Empty;
+        if (profile.NativeSqlParameterDelimiterCall is { } delimiterCall && text.Contains('#', StringComparison.Ordinal))
+        {
+            // Not a line break: javac reads \u000a and \u000d as one even inside a string literal.
+            var free = Enumerable.Range(1, 31)
+                .Select(code => (char)code)
+                .FirstOrDefault(c => c is not ('\n' or '\r') && !text.Contains(c, StringComparison.Ordinal));
+            if (free == default)
+            {
+                Report(
+                    ConversionRecordKind.Failure,
+                    "The native SQL holds #, which the implementation reads as the mark of a named parameter, and every control character besides, so no other mark can be named; no artifact was generated.",
+                    QueryFeature.Projection);
+                return [];
+            }
+
+            // Written as a Unicode escape of Java, so that the artifact holds no control character.
+            hint = "\n        " + string.Format(CultureInfo.InvariantCulture, delimiterCall, $"\\u{(int)free:x4}");
+        }
+
         var resultClass = resultEntity is null ? string.Empty : $", {resultEntity}.class";
         var binding = string.Concat(fixedParameters.Select(p =>
         {
@@ -85,7 +110,7 @@ public sealed class JpaNativeSqlQueryBuilder(TargetFrameworkDescriptor descripto
                 public static Query {{MethodName}}(EntityManager em{{JpaQueryMethod.Parameters(Parameters)}}) {
                     return em.createNativeQuery("""
                 {{JpaQueryMethod.TextBlock(text)}}
-                        """{{resultClass}}){{binding}};
+                        """{{resultClass}}){{hint}}{{binding}};
                 }
                 """";
 
@@ -120,7 +145,7 @@ public sealed class JpaNativeSqlQueryBuilder(TargetFrameworkDescriptor descripto
                 var position = {{fixedParameters.Count}};{{placeholders}}
                 var query = em.createNativeQuery("""
             {{JpaQueryMethod.TextBlock(text)}}
-                    """{{replacements}}{{resultClass}}){{binding}};
+                    """{{replacements}}{{resultClass}}){{hint}}{{binding}};
                 position = {{fixedParameters.Count}};{{elements}}
                 return query;
             }

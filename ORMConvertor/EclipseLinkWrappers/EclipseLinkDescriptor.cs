@@ -140,6 +140,14 @@ public static class EclipseLinkDescriptor
         // under the ELSE goes out in native SQL (decision 201).
         MovesTheOuterBranchesIntoACaseInElse: true,
 
+        // Measured against 5.0.0 when the SEDE catalog ran (decision 211): a native query reads
+        // # as the mark of a named parameter inside a bracketed identifier - SELECT 1 AS [#],
+        // [a#b], [#x] alike fail with "The index 1 is out of range" -, and inside quotes as
+        // soon as the text holds a quoted # beside a parameter (SELECT 1 AS "a#b" WHERE 'x#' =
+        // ?1). Under the hint eclipselink.jdbc.parameter-delimiter naming a character the text
+        // does not hold every such text runs and the positional parameters still bind.
+        NativeSqlParameterDelimiterCall: ".setHint(QueryHints.PARAMETER_DELIMITER, \"{0}\")",
+
         // Measured the same way: the inner entity joins stand in the list of tables after every
         // outer join ("FROM Message t2 LEFT OUTER JOIN Person_knows_Person t3 ON (... t0 ...),
         // Person t1, Message t0"), so the on of an outer join naming an inner join's alias is

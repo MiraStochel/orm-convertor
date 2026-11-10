@@ -1,7 +1,7 @@
 # 104 — Projekce do SQL cíle se materializuje jako netypovaný řádek
 
 Datum: 2026-09-29
-Stav: platí
+Stav: platí; větu *Dotaz bez projekce zůstává `resultType="balík.Entita"`* nahrazuje 212
 Požadavky: F7–F10, F11, F13, T2, T3
 Podklad: rozhodnutí [022](022-native-query-syntax-in-builders.md), [025](025-query-language-as-content-type.md), [027](027-query-artifact-verification.md), [053](053-a-query-that-would-return-other-rows-is-not-emitted.md), [067](067-a-derived-convention-is-a-statement-a-default-is-not.md), [070](070-a-parser-refuses-what-would-change-the-row-set.md), [082](082-t-sql-read-and-written-by-a-shared-project.md), [084](084-mybatis-wrapper-over-the-shared-sql-reading.md) a [089](089-differential-verification-as-the-fourth-level-over-a-query.md); JSS článek, pravidlo Q3; první běh diferenční matice přes kategorie T2 (2026-09-29); dokumentace Dapperu (*Query* bez typového parametru vrací `dynamic`) a MyBatisu (`resultType="map"`, `autoMappingUnknownColumnBehavior`)
 

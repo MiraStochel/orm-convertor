@@ -1,7 +1,7 @@
 # 082 — Čtení i zápis T-SQL bydlí ve sdíleném projektu
 
 Datum: 2026-09-18
-Stav: platí
+Stav: platí; zápis dotazu nad entitou převodu s `resultType` nahrazuje 212
 Požadavky: F8, F10, F11, S1, S2
 Podklad: rozhodnutí [013](013-target-framework-versions.md), [026](026-home-of-shared-query-reading.md), [062](062-hql-read-by-a-hand-written-parser.md), [076](076-java-wrappers-in-csharp-jvm-in-containers.md) a [081](081-a-unit-may-be-a-mapping-and-a-query-at-once.md); [srovnání javových frameworků](../analysis/java-orm-frameworks-comparison.md), §10 a §15; [`architecture.md`](../architecture.md) §5 a §9 (vyňatá oblast 5); JSS §3.2 a dotazová část Table 2
 

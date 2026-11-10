@@ -2,6 +2,7 @@ using AbstractWrappers;
 using AbstractWrappers.Descriptors;
 using AbstractWrappers.Diagnostics;
 using Common.Naming;
+using JavaEntityParsing;
 using Model.AbstractRepresentation;
 using Model.AbstractRepresentation.Enums;
 using Model.QueryInstructions;
@@ -196,7 +197,7 @@ public sealed class JpqlQueryVisitor(
             {
                 if (ReferenceEquals(reference.Conjuncts[0], conjunct))
                 {
-                    parts.Add($"{JpqlNames.Alias(reference.Alias)}.{reference.Navigation} = {JpqlNames.Alias(reference.Target)}");
+                    parts.Add($"{JpqlNames.Alias(reference.Alias)}.{JavaMemberNames.Of(reference.Navigation)} = {JpqlNames.Alias(reference.Target)}");
                 }
 
                 continue;
@@ -443,7 +444,9 @@ public sealed class JpqlQueryVisitor(
                 QueryFeature.Join);
         }
 
-        return ColumnMember.PathOf(map, column) ?? column;
+        // The member as the entity builder wrote it (JavaMemberNames): a property whose getter
+        // would be getClass() is a field with a trailing underscore.
+        return ColumnMember.PathOf(map, column) is { } path ? JavaMemberNames.PathOf(path) : column;
     }
 
     public string? EntityName(string alias)

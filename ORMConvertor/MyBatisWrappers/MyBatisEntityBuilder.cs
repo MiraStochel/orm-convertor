@@ -40,6 +40,14 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
 
     public override TargetFrameworkDescriptor Descriptor => MyBatisDescriptor.Instance;
 
+    /// <summary>
+    /// The namespace of the entity's mapper document, &lt;package&gt;.&lt;Entity&gt;Mapper; its
+    /// single &lt;resultMap&gt; has the entity's name for its id, which is how a query of the
+    /// conversion points at it (decision 212).
+    /// </summary>
+    internal static string MapperNamespace(string? package, string entity)
+        => string.IsNullOrEmpty(package) ? $"{entity}Mapper" : $"{package}.{entity}Mapper";
+
     protected override void BuildImports(EntityMap entityMap, EntityArtifact artifact)
     {
         // The imports follow from what the steps below emit, so they are collected while
@@ -59,11 +67,10 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
         artifact.Mapping.AppendLine("        \"https://mybatis.org/dtd/mybatis-3-mapper.dtd\">");
 
         var package = entityMap.Entity.Namespace;
-        var mapper = $"{entityMap.Entity.Name}Mapper";
 
         XmlEmitter.Open(artifact.Mapping, 0, "mapper",
         [
-            new XmlAttribute("namespace", string.IsNullOrEmpty(package) ? mapper : $"{package}.{mapper}"),
+            new XmlAttribute("namespace", MapperNamespace(package, entityMap.Entity.Name)),
         ]);
 
         XmlEmitter.Open(artifact.Mapping, 1, "resultMap",
@@ -222,14 +229,15 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
             var property = entityMap.Entity.Properties.First(p => p.Name == name);
             var getter = property.HasGetter || !property.HasSetter;
             var setter = property.HasSetter || !property.HasGetter;
-            var capitalized = JavaClass.Capitalize(name);
+            var member = JavaMemberNames.Of(name);
+            var capitalized = JavaClass.Capitalize(member);
             var prefix = type == "boolean" ? "is" : "get";
 
             if (getter)
             {
                 code.AppendLine();
                 code.AppendLine($"    public {type} {prefix}{capitalized}() {{");
-                code.AppendLine($"        return {name};");
+                code.AppendLine($"        return {member};");
                 code.AppendLine("    }");
             }
 
@@ -237,7 +245,7 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
             {
                 code.AppendLine();
                 code.AppendLine($"    public void set{capitalized}({type} value) {{");
-                code.AppendLine($"        this.{name} = value;");
+                code.AppendLine($"        this.{member} = value;");
                 code.AppendLine("    }");
             }
         }
@@ -302,7 +310,7 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
         var attributes = new List<XmlAttribute>
         {
             new("column", propertyMap.ColumnName ?? propertyMap.Property.Name),
-            new("property", propertyMap.Property.Name),
+            new("property", JavaMemberNames.Of(propertyMap.Property.Name)),
         };
 
         if (propertyMap.Type is { } type)
@@ -380,6 +388,25 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
         var langType = property.Type
             ?? throw new NotSupportedException($"Property '{property.Name}' has no language type.");
 
+        // MyBatis 3.5.19 has no type handler for java.util.UUID: a <result> over one refuses
+        // the whole mapper, and automatic mapping under a resultType leaves the property null
+        // without a word. The driver hands a uniqueidentifier over as its text, which String
+        // reads under both, so the class carries the value as String (decision 210).
+        if (langType is { Category: LangTypeCategory.Scalar, ScalarType: ScalarType.Guid })
+        {
+            langType = LangType.Scalar(ScalarType.String, langType.IsNullable);
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Loss,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.JavaEntity,
+                Entity = entityMap.Entity.Name,
+                Property = property.Name,
+                Reason = "MyBatis has no type handler for java.util.UUID, so the property is a String holding the text of the "
+                    + "value, which is what the driver hands a uniqueidentifier over as; the type UUID was dropped.",
+            });
+        }
+
         var type = JavaTypeConvertor.ToString(langType, forceWrapper);
 
         if (JavaTypeConvertor.ImportFor(langType) is { } typeImport)
@@ -392,7 +419,7 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
             imports.Add(elementImport);
         }
 
-        var declaration = $"private {type} {property.Name}{RenderInitializer(entityMap, property, langType)};";
+        var declaration = $"private {type} {JavaMemberNames.Of(property.Name)}{RenderInitializer(entityMap, property, langType)};";
         artifact.Code.AppendLine();
         artifact.Code.AppendLine($"    {declaration}");
         codeDeclarations[property.Name] = declaration;
@@ -410,6 +437,21 @@ public class MyBatisEntityBuilder : AbstractEntityBuilder
                 Entity = entityMap.Entity.Name,
                 Property = property.Name,
                 Reason = $"The modifier '{modifier}' has no counterpart in Java; it was dropped.",
+            });
+        }
+
+        // A member written under another name than the property's says so; the column keeps
+        // its name in the <result> (decision 212).
+        if (JavaMemberNames.Of(property.Name) is var member && member != property.Name)
+        {
+            Report(new ConversionRecord
+            {
+                Kind = ConversionRecordKind.Convention,
+                Framework = Descriptor.Framework,
+                Artifact = ConversionContentType.JavaEntity,
+                Entity = entityMap.Entity.Name,
+                Property = property.Name,
+                Reason = JavaMemberNames.RenameReason(property.Name, member),
             });
         }
 

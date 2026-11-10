@@ -382,8 +382,8 @@ public class MyBatisBuilderTest
     }
 
     /// <summary>
-    /// A query over the whole entity materializes into it: the resultType is the entity in
-    /// its package and the declaration returns a list of it (decision 104).
+    /// A query over the whole entity materializes into it by the entity's own result map,
+    /// which names every column, and the declaration returns a list of it (decisions 104 and 212).
     /// </summary>
     [Fact]
     public void AWholeEntityQueryMaterializesIntoTheEntity()
@@ -393,7 +393,7 @@ public class MyBatisBuilderTest
         Assert.Equal(
             "List<Customer> query(@Param(\"limit\") BigDecimal limit);",
             result.Sources.Single(s => s.ContentType == ConversionContentType.JavaQuery).Content);
-        Assert.Contains("<select id=\"query\" resultType=\"Shop.Customer\">", QueryMapper(result));
+        Assert.Contains("<select id=\"query\" resultMap=\"Shop.CustomerMapper.Customer\">", QueryMapper(result));
     }
 
     /// <summary>

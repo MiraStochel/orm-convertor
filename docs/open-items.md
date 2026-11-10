@@ -11,9 +11,6 @@ Jediný seznam toho, co zbývá. **Rozhodnutí** končí novým souborem v [`dec
 | [Výuková stránka frontendu](#frontend-nemá-výukovou-stránku) | Odevzdání | rozhodnutí | S7 |
 | [Srovnání s jazykovým modelem](#srovnání-s-jazykovým-modelem-nemá-varianty-s-nástroji) | Experimenty | práce, rozhodnutí | T4, T5, T6 |
 | [SEDE jako čtvrtá doména](#sede-jako-čtvrtá-referenční-doména) | Experimenty | práce | T1, T2, T3, T4, T5, F4, F6 |
-| [Sloupec `Class` v Javě](#sloupec-class-dává-v-javě-getter-getclass) | Překlad | práce | F7, F8, F9, F11 |
-| [`UNIQUEIDENTIFIER` v MyBatis](#sloupec-uniqueidentifier-nemá-v-mybatis-type-handler) | Překlad | práce | F8 |
-| [`#` v nativním SQL EclipseLinku](#-ve-jméně-sloupce-čte-eclipselink-v-nativním-sql-jako-parametr) | Překlad | práce | F9 |
 | [Advisor nad všemi frameworky](#advisor-měří-jen-dapper-a-ef-core) | Advisor | práce | F15, T7 |
 | [Srovnání s variantami a heuristikou](#srovnání-advisoru-s-jednotlivými-frameworky-a-heuristikou-chybí) | Advisor | práce | T7, F15 |
 | [Izolace spouštění cizího kódu](#izolace-spouštění-cizího-kódu-advisorem) | Advisor | rozhodnutí | S4, F15, T7 |
@@ -70,25 +67,6 @@ T1, T2 a T3 jsou nárokované v užším rozsahu — vstup případové studie, 
 *Práce. Rozh. [208](./decisions/208-sede-as-the-fourth-reference-domain-over-the-dba-stack-exchange-dump-judged-by-a-judge-of-our-own.md); vzor FIBEN rozh. [149](./decisions/149-fiben-as-a-third-reference-domain-run-on-demand-against-a-judge-of-our-own.md), [157](./decisions/157-a-target-cell-that-differs-by-a-stated-limit-does-not-block-the-fiben-judge.md) a [167](./decisions/167-records-of-runs-and-measurements-have-a-folder-of-their-own.md). Požadavky T1, T2, T3, T4, T5, F4, F6.*
 
 Katalog, databáze `Sede` v obraze a běh na vyžádání v obou sadách stojí ([`architecture.md`](./architecture.md) §6.2, *Katalog SEDE*). Katalog je vygenerovaný s `--database` i `--probe` nad `Sede` kontejneru (hodnoty parametrů ze `SedeImport/Values.cs` podle jmen; dotazy bez řádků a dotazy selhávající nad daty jsou v katalogu označené). Typy sloupců jsou ze seznamu katalogu SEDE (`SedeImport/Schema/types.csv`, dotaz 835150, stažený 2026-11-07); dva sloupce, které seznam nemá, jsou provizorní. První dokončený běh v obou sadách má záznam [2026-11-08](./runs/2026-11-08-sede-2.md). Zdrojem běhu je v obou sadách text katalogu a Dapper je cílem (rozh. [209](./decisions/209-the-rows-a-catalog-run-compares-with-are-the-catalogs-text-run-as-it-stands-in-both-suites-and-dapper-is-a-target-like-the-others.md)). Zbývá: **(1) Ztráta v javovém běhu.** Javový běh nezapisuje do buňky ztrátu (`Loss`), kterou .NET běh uvádí v detailu selhání, a MyBatis ztracenou projekci vrací jako `NULL`, takže se buňka jeví jako rozdíl řádků místo selhání se ztrátou. **(2) Běh podle rozh. 209 a soudce `database/sede/judge.tsv`** z jeho .NET půlky; záznam položí oba kandidáty soudce vedle sebe a rozebere dotazy s rozdílem proti zdroji — výřezy bez určujícího řazení zůstávají textem autora. **(3) Teprve pak** `subset.md`, §9, řádek T1 v `traceability.md` a oddíl doloženého běhu na `sede.html`. Mimo položku: cesta cizího artefaktu a experimentální běh klíč `sede:` nemají; zda ho mají dostat jako `fiben:`, je třeba rozhodnout.
-
-## Překlad
-
-Vady nalezené běhy katalogu SEDE (rozh. [208](./decisions/208-sede-as-the-fourth-reference-domain-over-the-dba-stack-exchange-dump-judged-by-a-judge-of-our-own.md), záznam [2026-11-08](./runs/2026-11-08-sede-2.md)); test, který vadu drží, stojí nad tvarem dotazu ve fixtuře, ne nad SEDE. Projekce `'…' + CONVERT(VARCHAR(10), Id)`, kterou táž kontrola našla jako ztracenou, vada není: konverze s délkou je vyslovená mez slovníku (rozh. [113](./decisions/113-native-sql-as-the-escape-path-and-the-vocabulary-ldbc-needs.md)) a nepřečtená projekce ztráta s vydaným artefaktem (rozh. [070](./decisions/070-a-parser-refuses-what-would-change-the-row-set.md)); běh ji od 2026-11-07 vykazuje jako selhání buňky se ztrátou v detailu. Konverze s délkou do slovníku by byla nové rozhodnutí nad částí rozh. 113.
-
-#### Sloupec `Class` dává v Javě getter `getClass()`
-*Práce. Požadavky F7, F8, F9, F11.*
-
-Tabulka `Badges` má sloupec `Class`; javová entita ho nese jako vlastnost s getterem `getClass()`, který javac odmítne, protože `Object.getClass()` je `final`. Každý dotaz, který čte `Badges`, se proto v Hibernatu, EclipseLinku i MyBatis nezkompiluje. Jméno vlastnosti, jejíž getter nebo setter by kolidoval se členem `java.lang.Object`, má builder změnit a sloupec pojmenovat mapováním.
-
-#### Sloupec `UNIQUEIDENTIFIER` nemá v MyBatis type handler
-*Práce. Požadavky F8.*
-
-Mapper nad `PostHistory` a `SuggestedEdits` MyBatis odmítne při čtení XML: „No typehandler found for property RevisionGUID". Sloupec je `UNIQUEIDENTIFIER` a entita ho nese jako typ, pro který MyBatis vestavěný handler nemá. Builder má zvolit typ, který MyBatis čte bez vlastního handleru, nebo handler vygenerovat.
-
-#### `#` ve jméně sloupce čte EclipseLink v nativním SQL jako parametr
-*Práce. Požadavky F9.*
-
-Dotaz s aliasem `[#]` (pořadí řádku v textech SEDE) odchází do EclipseLinku nativním SQL a EclipseLink čte `#` jako značku parametru: dotaz pak selže „The index 1 is out of range". Builder má `#` v nativním SQL EclipseLinku zapsat tak, aby ho EclipseLink nečetl jako parametr, nebo takový dotaz odmítnout. Hibernate a NHibernate tytéž dotazy nativním SQL většinou spustí.
 
 ## Advisor
 
